@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { DialecticApiClient } from './dialectic.api';
 import type { ApiClient } from './apiClient';
-import type { ApiResponse, ApiError, CreateProjectPayload, DialecticProject, StartSessionPayload, DialecticSession, AIModelCatalogEntry, ContributionContentSignedUrlResponse } from '@paynless/types';
+import type { ApiResponse, ApiError, CreateProjectPayload, DialecticProject, StartSessionPayload, DialecticSession, AIModelCatalogEntry, ContributionContentSignedUrlResponse, DialecticProjectResource, UploadProjectResourceFilePayload } from '@paynless/types';
 
 // Mock the base ApiClient
 const mockApiClientPost = vi.fn();
@@ -584,6 +584,143 @@ describe('DialecticApiClient', () => {
             mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
 
             const result = await dialecticApiClient.getContributionContentSignedUrl(testContributionId);
+
+            expect(result.error).toEqual({
+                code: 'NETWORK_ERROR',
+                message: networkErrorMessage,
+            });
+            expect(result.status).toBe(0);
+            expect(result.data).toBeUndefined();
+        });
+    });
+
+    describe('uploadProjectResourceFile', () => {
+        const endpoint = 'dialectic-service';
+        const mockFile = new File(['dummy content'], 'test-file.md', { type: 'text/markdown' });
+        const validPayload: UploadProjectResourceFilePayload = {
+            projectId: 'project-789',
+            file: mockFile,
+            fileName: mockFile.name,
+            fileSizeBytes: mockFile.size,
+            fileType: mockFile.type,
+            resourceDescription: 'Test resource description',
+        };
+
+        it('should call apiClient.post with FormData containing correct fields', async () => {
+            const mockResourceResponse: DialecticProjectResource = {
+                id: 'resource-123',
+                project_id: validPayload.projectId,
+                file_name: validPayload.fileName,
+                storage_path: 'projects/project-789/resources/test-file.md',
+                mime_type: validPayload.fileType,
+                size_bytes: validPayload.fileSizeBytes,
+                resource_description: validPayload.resourceDescription!,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            const mockResponse: ApiResponse<DialecticProjectResource> = {
+                data: mockResourceResponse,
+                status: 201,
+            };
+            (mockApiClient.post as Mock).mockResolvedValue(mockResponse);
+
+            await dialecticApiClient.uploadProjectResourceFile(validPayload);
+
+            expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+            const [invokedEndpoint, formData] = (mockApiClient.post as Mock).mock.calls[0];
+            
+            expect(invokedEndpoint).toBe(endpoint);
+            expect(formData).toBeInstanceOf(FormData);
+            expect(formData.get('action')).toBe('uploadProjectResourceFile');
+            expect(formData.get('projectId')).toBe(validPayload.projectId);
+            expect(formData.get('fileName')).toBe(validPayload.fileName);
+            expect(formData.get('fileSizeBytes')).toBe(validPayload.fileSizeBytes.toString());
+            expect(formData.get('fileType')).toBe(validPayload.fileType);
+            expect(formData.get('resourceDescription')).toBe(validPayload.resourceDescription);
+            
+            const appendedFile = formData.get('file') as File;
+            expect(appendedFile).toBeInstanceOf(File);
+            expect(appendedFile.name).toBe(validPayload.fileName);
+            expect(appendedFile.size).toBe(validPayload.fileSizeBytes);
+            expect(appendedFile.type).toBe(validPayload.fileType);
+        });
+
+        it('should handle payload without resourceDescription', async () => {
+            const payloadWithoutDescription: UploadProjectResourceFilePayload = {
+                ...validPayload,
+            };
+            delete payloadWithoutDescription.resourceDescription;
+
+            const mockResourceResponse: DialecticProjectResource = {
+                id: 'resource-124',
+                project_id: payloadWithoutDescription.projectId,
+                file_name: payloadWithoutDescription.fileName,
+                storage_path: 'projects/project-789/resources/test-file.md',
+                mime_type: payloadWithoutDescription.fileType,
+                size_bytes: payloadWithoutDescription.fileSizeBytes,
+                resource_description: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+             const mockResponse: ApiResponse<DialecticProjectResource> = {
+                data: mockResourceResponse,
+                status: 201,
+            };
+            (mockApiClient.post as Mock).mockResolvedValue(mockResponse);
+
+            await dialecticApiClient.uploadProjectResourceFile(payloadWithoutDescription);
+
+            expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+            const [, formData] = (mockApiClient.post as Mock).mock.calls[0];
+            expect(formData.get('resourceDescription')).toBeNull();
+        });
+
+
+        it('should return the DialecticProjectResource on successful upload', async () => {
+            const mockResourceResponse: DialecticProjectResource = {
+                id: 'resource-123',
+                project_id: validPayload.projectId,
+                file_name: validPayload.fileName,
+                storage_path: 'projects/project-789/resources/test-file.md',
+                mime_type: validPayload.fileType,
+                size_bytes: validPayload.fileSizeBytes,
+                resource_description: validPayload.resourceDescription!,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            const mockResponse: ApiResponse<DialecticProjectResource> = {
+                data: mockResourceResponse,
+                status: 201,
+            };
+            (mockApiClient.post as Mock).mockResolvedValue(mockResponse);
+
+            const result = await dialecticApiClient.uploadProjectResourceFile(validPayload);
+
+            expect(result.data).toEqual(mockResourceResponse);
+            expect(result.status).toBe(201);
+            expect(result.error).toBeUndefined();
+        });
+
+        it('should return the error object on failed API call', async () => {
+            const mockApiError: ApiError = { code: 'UPLOAD_FAILED', message: 'File upload failed on server' };
+            const mockErrorResponse: ApiResponse<DialecticProjectResource> = {
+                error: mockApiError,
+                status: 500,
+            };
+            (mockApiClient.post as Mock).mockResolvedValue(mockErrorResponse);
+
+            const result = await dialecticApiClient.uploadProjectResourceFile(validPayload);
+
+            expect(result.error).toEqual(mockApiError);
+            expect(result.status).toBe(500);
+            expect(result.data).toBeUndefined();
+        });
+
+        it('should return a network error if apiClient.post rejects', async () => {
+            const networkErrorMessage = 'Simulated network failure during upload';
+            (mockApiClient.post as Mock).mockRejectedValueOnce(new Error(networkErrorMessage));
+
+            const result = await dialecticApiClient.uploadProjectResourceFile(validPayload);
 
             expect(result.error).toEqual({
                 code: 'NETWORK_ERROR',

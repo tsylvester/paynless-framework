@@ -179,7 +179,6 @@ export interface DialecticContribution {
 
     tokens_used_input: number | null;
     tokens_used_output: number | null;
-    cost_usd: number | null;
     processing_time_ms: number | null;
 
     citations: { text: string; url?: string }[] | null;
@@ -221,6 +220,7 @@ export interface DialecticProjectResource {
 
 export interface UploadProjectResourceFilePayload {
     projectId: string;
+    file: File;
     fileName: string;
     fileSizeBytes: number;
     fileType: string;

@@ -233,6 +233,9 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
     const result = await uploadProjectResourceFile({
       projectId,
       file: fileToUpload,
+      fileName: fileToUpload.name,
+      fileSizeBytes: fileToUpload.size,
+      fileType: fileToUpload.type,
       resourceDescription: 'Initial prompt file for project creation.',
     });
     if (result.data) {

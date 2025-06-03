@@ -271,19 +271,27 @@ describe('CreateDialecticProjectForm', () => {
 
     await waitFor(() => {
       expect(mockCreateDialecticProject).toHaveBeenCalledWith({
-        projectName: projectName,
-        initialUserPrompt: fileContent,
+        projectName: 'Project With File',
+        initialUserPrompt: 'Content from uploaded file',
         selectedDomainTag: null,
       });
     });
+
+    const mockProjectResult = mockCreateDialecticProject.mock.results[0].value.data;
+
+    // Wait for the upload function to be called
     await waitFor(() => {
       expect(mockUploadProjectResourceFile).toHaveBeenCalledWith({
-        projectId: mockProject.id,
-        file: expect.objectContaining({ name: fileName }),
+        projectId: mockProjectResult.id,
+        file: expect.any(File),
+        fileName: fileName,
+        fileSizeBytes: fileToUpload.size,
+        fileType: fileToUpload.type,
         resourceDescription: 'Initial prompt file for project creation.',
       });
     });
-    expect(mockOnProjectCreated).toHaveBeenCalledWith(mockProject.id, mockProject.project_name);
+
+    expect(mockOnProjectCreated).toHaveBeenCalledWith(mockProjectResult.id, mockProjectResult.project_name);
   });
 
   it('displays loading state correctly', () => {
@@ -370,5 +378,173 @@ describe('CreateDialecticProjectForm', () => {
     const customText = "Go Go Go";
     renderForm({ submitButtonText: customText });
     expect(screen.getByRole('button', { name: customText })).toBeInTheDocument();
+  });
+
+  it('auto-fills project name from typed prompt if project name is empty and not manually set', async () => {
+    const user = userEvent.setup();
+    renderForm({ defaultProjectName: '' }); // Start with an empty project name
+
+    const promptTyped = "This is the first line for auto-name.\nSecond line.";
+    const expectedProjectName = "This is the first line for auto-name."; // Max 50 chars, but our example is shorter
+
+    // Simulate typing into the mocked TextInputArea for the prompt
+    // This calls the onChange prop passed to the mock, which updates RHF's state for initialUserPrompt
+    act(() => {
+      capturedTextInputAreaProps.onChange(promptTyped);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Project Name/i)).toHaveValue(expectedProjectName);
+    });
+
+    // Now, type more into the prompt, project name should not change if it was already auto-filled from prompt and not touched
+    const additionalPromptText = " More text.";
+    act(() => {
+      capturedTextInputAreaProps.onChange(promptTyped + additionalPromptText);
+    });
+    // It should still be the original auto-filled name unless a new auto-fill logic for subsequent changes is implemented
+    // Based on current logic, it should stick after the first auto-fill from prompt if not manually edited.
+    await waitFor(() => {
+        expect(screen.getByLabelText(/Project Name/i)).toHaveValue(expectedProjectName);
+    });
+  });
+
+  it('manual project name edits stop auto-filling from prompt and subsequent file loads', async () => {
+    const user = userEvent.setup();
+    renderForm({ defaultProjectName: '' });
+
+    // 1. Auto-fill from initial prompt typing
+    const initialPrompt = "Auto-fill me first.";
+    const expectedInitialAutoName = "Auto-fill me first.";
+    act(() => {
+      capturedTextInputAreaProps.onChange(initialPrompt);
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Project Name/i)).toHaveValue(expectedInitialAutoName);
+    });
+
+    // 2. Manually edit project name
+    const manualProjectName = "My Manual Project Name";
+    const projectNameInput = screen.getByLabelText(/Project Name/i) as HTMLInputElement;
+
+    // Clear the input. This will trigger auto-fill.
+    await user.clear(projectNameInput);
+
+    // Wait for the re-auto-fill to occur and capture the re-auto-filled value's length
+    let autoFilledValueLength = 0;
+    await waitFor(() => {
+      expect(projectNameInput.value).toBe(expectedInitialAutoName); // "Auto-fill me first."
+      autoFilledValueLength = projectNameInput.value.length;
+    });
+
+    // Now, type the manual name, ensuring it replaces the re-auto-filled content.
+    // The component's onChange for the input should set projectNameManuallySet = true on the first char typed.
+    await user.type(projectNameInput, manualProjectName, {
+        initialSelectionStart: 0,
+        initialSelectionEnd: autoFilledValueLength, // Use the captured length
+    });
+
+    await waitFor(() => {
+      expect(projectNameInput.value).toBe(manualProjectName);
+    });
+
+    // 3. Type more into the prompt - project name should NOT change
+    const newPromptText = "This new prompt should not change the manual name.";
+    act(() => {
+      capturedTextInputAreaProps.onChange(newPromptText);
+    });
+    await waitFor(() => {
+      expect(projectNameInput).toHaveValue(manualProjectName);
+    });
+
+    // 4. Simulate a new file load - project name should also NOT change
+    const fileContent = "Content from a new file.";
+    const newFile = new File([fileContent], "new-file.md", { type: "text/markdown" });
+    await act(async () => {
+      await triggerMockTextInputAreaOnFileLoad(fileContent, newFile);
+    });
+    await waitFor(() => {
+      // Prompt text area should update
+      expect(capturedTextInputAreaProps.value).toBe(fileContent);
+      // Project name should remain the manual one
+      expect(projectNameInput).toHaveValue(manualProjectName);
+    });
+  });
+
+  it('handles promptFile upload failure gracefully after project creation', async () => {
+    const user = userEvent.setup();
+    const fileName = 'upload-fails.md';
+    const fileContent = 'Content for project whose file upload will fail';
+    const fileToUpload = new File([fileContent], fileName, { type: 'text/markdown' });
+
+    renderForm({ defaultProjectName: '' });
+
+    // Simulate file load for the prompt
+    await act(async () => {
+      await triggerMockTextInputAreaOnFileLoad(fileContent, fileToUpload);
+    });
+    await waitFor(() => {
+      expect(capturedTextInputAreaProps.value).toBe(fileContent);
+      // Project name should auto-fill from file name
+      expect(screen.getByLabelText(/Project Name/i)).toHaveValue('upload-fails'); 
+    });
+
+    const mockSuccessfulProject: DialecticProject = {
+      id: 'proj-upload-fail-456',
+      user_id: 'user-y',
+      project_name: 'upload-fails',
+      initial_user_prompt: fileContent,
+      selected_domain_tag: null,
+      repo_url: null,
+      status: 'active',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    } as DialecticProject;
+
+    mockCreateDialecticProject.mockResolvedValueOnce({ data: mockSuccessfulProject, error: null });
+    // Simulate uploadProjectResourceFile failure
+    const uploadError = { message: 'Simulated upload network error', code: 'NETWORK_ERROR' };
+    mockUploadProjectResourceFile.mockResolvedValueOnce({ data: null, error: uploadError });
+
+    // Spy on console.warn
+    const consoleWarnSpy = vi.spyOn(console, 'warn');
+
+    const submitButton = screen.getByRole('button', { name: /Create Project/i });
+    await user.click(submitButton);
+
+    // Verify project creation was attempted
+    await waitFor(() => {
+      expect(mockCreateDialecticProject).toHaveBeenCalledWith({
+        projectName: 'upload-fails',
+        initialUserPrompt: fileContent,
+        selectedDomainTag: null,
+      });
+    });
+
+    // Verify file upload was attempted
+    await waitFor(() => {
+      expect(mockUploadProjectResourceFile).toHaveBeenCalledWith({
+        projectId: mockSuccessfulProject.id,
+        file: fileToUpload,
+        fileName: fileToUpload.name,
+        fileSizeBytes: fileToUpload.size,
+        fileType: fileToUpload.type,
+        resourceDescription: 'Initial prompt file for project creation.',
+      });
+    });
+
+    // Verify onProjectCreated was still called despite upload failure
+    await waitFor(() => {
+      expect(mockOnProjectCreated).toHaveBeenCalledWith(mockSuccessfulProject.id, mockSuccessfulProject.project_name);
+    });
+
+    // Verify the warning for upload failure was logged
+    await waitFor(() => {
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        'Prompt file resource upload failed:',
+        uploadError.message
+      );
+    });
+    consoleWarnSpy.mockRestore();
   });
 }); 

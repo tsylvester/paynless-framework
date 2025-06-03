@@ -119,14 +119,40 @@ export async function deleteFromStorage(
     const { data, error } = await supabase.storage.from(bucket).remove(paths);
 
     if (error) {
-      console.error("Error deleting from storage:", error);
+      console.error(`Error deleting from storage (bucket: ${bucket}, paths: ${paths.join(', ')}):`, error);
       return { error };
     }
-    // data from remove is an array of FileObject or null, not typically used for confirming deletion success beyond error being null
-    // console.log("Successfully deleted from storage:", data); 
+
+    // Verify that all requested paths were actually reported as removed.
+    // The 'data' returned by 'remove' should be an array of FileObjects corresponding to the deleted files.
+    if (!data || data.length !== paths.length) {
+      const returnedFileCount = data ? data.length : 'null (or undefined)';
+      const returnedFileNames = data ? data.map(f => f.name).join(', ') : 'none';
+      const message = `Storage remove operation reported no explicit error for bucket '${bucket}', but file count mismatch. Expected to remove ${paths.length} files, but confirmation received for ${returnedFileCount} files. Input paths: [${paths.join(', ')}]. Confirmed removed names: [${returnedFileNames}].`;
+      console.error(message);
+      return { error: new Error(message) };
+    }
+
+    // Additionally, ensure all specified paths are found in the names of the returned FileObjects.
+    // This is crucial if paths can contain folder prefixes, but for simple filenames, it's a direct check.
+    const removedFileNames = data.map(fileObject => fileObject.name);
+    const allPathsConfirmed = paths.every(path => {
+      // Assuming paths are filenames or full paths that match FileObject.name directly.
+      // If paths could be like "folder/file.txt" and FileObject.name is "file.txt",
+      // a more sophisticated check would be needed. For now, assume direct match.
+      return removedFileNames.includes(path);
+    });
+
+    if (!allPathsConfirmed) {
+      const message = `Storage remove operation reported no explicit error for bucket '${bucket}', and counts matched (${paths.length}), but not all input path names were found in the confirmed deletion list. Input paths: [${paths.join(', ')}]. Confirmed removed names: [${removedFileNames.join(', ')}].`;
+      console.error(message);
+      return { error: new Error(message) };
+    }
+    
+    // console.log(`Successfully deleted ${data.length} file(s) from storage bucket '${bucket}': ${paths.join(', ')}`);
     return { error: null };
   } catch (e) {
-    console.error("Exception in deleteFromStorage:", e);
+    console.error(`Exception in deleteFromStorage (bucket: ${bucket}, paths: ${paths.join(', ')}):`, e);
     return { error: e instanceof Error ? e : new Error(String(e)) };
   }
 }

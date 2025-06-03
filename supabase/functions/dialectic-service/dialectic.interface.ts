@@ -1,4 +1,5 @@
 import { ChatMessage } from "../_shared/types.ts"; 
+import type { Database } from "../types_db.ts";
 // Removed problematic import: import type { DialecticProject as PackageDialecticProject, ... } from "../../../../packages/types/src/dialectic.types.ts";
 
 // --- START: Redefined types based on packages/types/src/dialectic.types.ts ---
@@ -25,25 +26,34 @@ export interface AIModelCatalogEntry {
     updated_at: string;
 }
 
+// Defines the raw structure from the database
+export type DialecticContributionSql = Database['public']['Tables']['dialectic_contributions']['Row'];
+
+// Defines the structured contribution object used within the service and for API responses,
+// aligning with packages/types/src/dialectic.types.ts
 export interface DialecticContribution {
     id: string;
     session_id: string;
     session_model_id: string;
-    user_id: string | null;
+    user_id: string | null; // Note: Not directly in dialectic_contributions table; added from context.
     stage: string;
     iteration_number: number;
     actual_prompt_sent: string | null;
-    content_storage_bucket: string | null;
-    content_storage_path: string | null;
-    content_mime_type: string | null;
+    
+    content_storage_bucket: string | null; // Aligns with packages/types nullability
+    content_storage_path: string | null;   // Aligns with packages/types nullability
+    content_mime_type: string | null;    // Aligns with packages/types nullability
     content_size_bytes: number | null;
+
     raw_response_storage_path: string | null;
+
     tokens_used_input: number | null;
     tokens_used_output: number | null;
-    cost_usd: number | null;
     processing_time_ms: number | null;
-    citations: { text: string; url?: string }[] | null;
-    parent_contribution_id: string | null;
+
+    citations: { text: string; url?: string }[] | null; // Specific typing for citations
+
+    parent_contribution_id: string | null; // Renamed from DB's target_contribution_id for packages/types alignment
     created_at: string;
     updated_at: string;
 }
@@ -145,13 +155,14 @@ export interface CallUnifiedAIModelOptions {
 
 export interface UnifiedAIResponse {
   content: string | null;
+  error?: string | null;
+  errorCode?: string | null; // e.g., 'MODEL_QUOTA_EXCEEDED', 'API_ERROR', 'TIMEOUT'
   inputTokens?: number;
   outputTokens?: number;
-  cost?: number;
-  rawProviderResponse?: unknown; 
+  tokenUsage?: { prompt_tokens: number; completion_tokens: number; total_tokens?: number } | null;
   processingTimeMs?: number;
-  error: string | null;
-  errorCode: string | null; 
+  contentType?: string; // Added to specify the MIME type of the content
+  rawProviderResponse?: Record<string, unknown>; 
 }
 
 export interface GenerateStageContributionsPayload {

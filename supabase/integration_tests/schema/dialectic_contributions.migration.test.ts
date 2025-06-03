@@ -215,13 +215,13 @@ describe('Migration Test: dialectic_contributions table', () => {
     let column: TableColumnInfo | undefined;
     beforeAll(() => { column = findColumn(columnName); });
 
-    it('should exist', () => expect(column).toBeDefined());
-    it('should be of type numeric', () => expect(column?.data_type).toBe('numeric'));
-    it('should have correct precision and scale (10,6)', () => {
-      expect(column?.numeric_precision).toBe(10);
-      expect(column?.numeric_scale).toBe(6);
-    });
-    it('should be nullable', () => expect(column?.is_nullable).toBe('YES'));
+    it('should NOT exist', () => expect(column).toBeUndefined());
+    // it('should be of type numeric', () => expect(column?.data_type).toBe('numeric'));
+    // it('should have correct precision and scale (10,6)', () => {
+    //   expect(column?.numeric_precision).toBe(10);
+    //   expect(column?.numeric_scale).toBe(6);
+    // });
+    // it('should be nullable', () => expect(column?.is_nullable).toBe('YES'));
   });
 
   describe('Column: raw_response_storage_path', () => {

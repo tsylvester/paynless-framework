@@ -203,7 +203,6 @@ export type Database = {
           content_size_bytes: number | null
           content_storage_bucket: string
           content_storage_path: string
-          cost_usd: number | null
           created_at: string
           error: string | null
           id: string
@@ -227,7 +226,6 @@ export type Database = {
           content_size_bytes?: number | null
           content_storage_bucket?: string
           content_storage_path: string
-          cost_usd?: number | null
           created_at?: string
           error?: string | null
           id?: string
@@ -251,7 +249,6 @@ export type Database = {
           content_size_bytes?: number | null
           content_storage_bucket?: string
           content_storage_path?: string
-          cost_usd?: number | null
           created_at?: string
           error?: string | null
           id?: string

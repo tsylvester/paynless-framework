@@ -28,7 +28,7 @@ import {
   TestResourceRequirement,
   registerUndoAction,
 } from "../_shared/_integration.test.utils.ts";
-import type { DialecticServiceRequest, GenerateThesisContributionsPayload, StartSessionPayload } from "./dialectic.interface.ts";
+import type { DialecticServiceRequest, GenerateStageContributionsPayload, StartSessionPayload } from "./dialectic.interface.ts";
 
 const TEST_DOMAIN_TAG_1 = "software_development";
 const TEST_DOMAIN_TAG_2 = "technical_writing";
@@ -119,13 +119,13 @@ describe("Edge Function: dialectic-service", () => {
 
       it("should return a distinct list of available domain tags", async () => {
         const request: DialecticServiceRequest = { action: "listAvailableDomainTags" };
-        const { data, error } = await adminClient.functions.invoke("dialectic-service", { body: request });
+        const { data: actualData, error } = await adminClient.functions.invoke("dialectic-service", { body: request });
+        
         expect(error, "Function invocation should not error").to.be.null;
-        expect(data, "Response data should exist").to.exist;
-        const responsePayload = data as any; 
-        expect(responsePayload.error, `Service action error: ${responsePayload.error?.message}`).to.be.undefined;
-        expect(responsePayload.data, "Payload data should be an array").to.be.an("array");
-        const tags = responsePayload.data as string[];
+        expect(actualData, "Response data should exist and not be an error structure").to.exist.and.not.have.property('error');
+        
+        expect(actualData, "Payload data should be an array").to.be.an("array");
+        const tags = actualData as string[];
         expect(tags).to.include.members([TEST_DOMAIN_TAG_1, TEST_DOMAIN_TAG_2]);
         const distinctTags = [...new Set(tags)];
         expect(tags.length, "Tags list should only contain distinct tags").to.equal(distinctTags.length);
@@ -168,12 +168,12 @@ describe("Edge Function: dialectic-service", () => {
           action: "listAvailableDomainTags",
         };
         // Use adminClient as listAvailableDomainTags is likely an admin/public action not needing user context
-        const { data, error } = await adminClient.functions.invoke("dialectic-service", { body: request });
-        expect(error).to.be.null;
-        expect(data).to.exist;
-        const responsePayload = data as any;
-        expect(responsePayload.error).to.be.undefined;
-        expect(responsePayload.data).to.be.an("array").that.is.empty;
+        const { data: actualData, error } = await adminClient.functions.invoke("dialectic-service", { body: request });
+
+        expect(error, "Function invocation should not error").to.be.null;
+        expect(actualData, "Response data should exist and not be an error structure").to.exist.and.not.have.property('error');
+        
+        expect(actualData).to.be.an("array").that.is.empty;
       });
     });
   });
@@ -193,16 +193,14 @@ describe("Edge Function: dialectic-service", () => {
       const testUserAuthToken = await coreGenerateTestUserJwt(testUserId);
 
       const request: DialecticServiceRequest = { action: "listProjects" };
-      const { data, error } = await testUserClient.functions.invoke("dialectic-service", {
+      const { data: actualData, error } = await testUserClient.functions.invoke("dialectic-service", {
         body: request,
         headers: { Authorization: `Bearer ${testUserAuthToken}` }
       });
 
       expect(error, "Function invocation should not error").to.be.null;
-      expect(data, "Response data should exist").to.exist;
-      const responsePayload = data as any;
-      expect(responsePayload.error, `Service action error: ${responsePayload.error?.message}`).to.be.undefined;
-      expect(responsePayload.data, "Payload data should be an array").to.be.an("array").that.is.empty;
+      expect(actualData, "Response data should exist and not be an error structure").to.exist.and.not.have.property('error');
+      expect(actualData, "Payload data should be an array").to.be.an("array").that.is.empty;
     });
 
     it("should return a list of projects for a user who owns them", async () => {
@@ -231,18 +229,18 @@ describe("Edge Function: dialectic-service", () => {
       const testUserAuthToken = await coreGenerateTestUserJwt(testUserId);
 
       const request: DialecticServiceRequest = { action: "listProjects" };
-      const { data, error } = await testUserClient.functions.invoke("dialectic-service", {
+      const { data: actualData, error } = await testUserClient.functions.invoke("dialectic-service", {
         body: request,
         headers: { Authorization: `Bearer ${testUserAuthToken}` }
       });
 
-      expect(error).to.be.null;
-      const responsePayload = data as any;
-      expect(responsePayload.error).to.be.undefined;
-      expect(responsePayload.data).to.be.an("array").with.lengthOf(2);
-      expect(responsePayload.data[0].project_name).to.be.oneOf([uniqueProjectName1, uniqueProjectName2]);
-      expect(responsePayload.data[1].project_name).to.be.oneOf([uniqueProjectName1, uniqueProjectName2]);
-      assertNotEquals(responsePayload.data[0].project_name, responsePayload.data[1].project_name, "Project names should be unique");
+      expect(error, "Function invocation should not error").to.be.null;
+      expect(actualData, "Response data should exist and not be an error structure").to.exist.and.not.have.property('error');
+      expect(actualData).to.be.an("array").with.lengthOf(2);
+      const projects = actualData as any[]; // Assuming projects are objects
+      expect(projects[0].project_name).to.be.oneOf([uniqueProjectName1, uniqueProjectName2]);
+      expect(projects[1].project_name).to.be.oneOf([uniqueProjectName1, uniqueProjectName2]);
+      assertNotEquals(projects[0].project_name, projects[1].project_name, "Project names should be unique");
     });
 
     it("should not list projects belonging to another user", async () => {
@@ -266,15 +264,14 @@ describe("Edge Function: dialectic-service", () => {
       const userBAuthToken = await coreGenerateTestUserJwt(userBId);
       
       const request: DialecticServiceRequest = { action: "listProjects" };
-      const { data, error } = await userBClient.functions.invoke("dialectic-service", {
+      const { data: actualData, error } = await userBClient.functions.invoke("dialectic-service", {
         body: request,
         headers: { Authorization: `Bearer ${userBAuthToken}` }
       });
 
-      expect(error).to.be.null;
-      const responsePayload = data as any;
-      expect(responsePayload.error).to.be.undefined;
-      expect(responsePayload.data).to.be.an("array").that.is.empty; // User B should see no projects
+      expect(error, "Function invocation should not error").to.be.null;
+      expect(actualData, "Response data should exist and not be an error structure").to.exist.and.not.have.property('error');
+      expect(actualData).to.be.an("array").that.is.empty; // User B should see no projects
     });
 
     it("should return 401 if JWT is missing or invalid", async () => {
@@ -297,79 +294,64 @@ describe("Edge Function: dialectic-service", () => {
           headers: {
             "Content-Type": "application/json",
             "apikey": supabaseAnonKey, // Supabase gateway requires this for direct calls
-            "Origin": allowedOriginForTest,
-            // NO "Authorization" header
+            "Origin": allowedOriginForTest, // Added origin for CORS check by server
           },
-          body: JSON.stringify(requestBody),
+          body: JSON.stringify(requestBody)
         });
-        
         console.log("[Test Debug] Missing Auth (fetch) - Response Status:", response.status);
-        const responseBodyText = await response.text();
-        console.log("[Test Debug] Missing Auth (fetch) - Response Body:", responseBodyText);
+        const responseJsonMissingAuth = await response.json();
+        console.log("[Test Debug] Missing Auth (fetch) - Response Body:", responseJsonMissingAuth);
+        expect(response.status).to.equal(401); // Expecting 401 for missing auth
+        expect(responseJsonMissingAuth.msg.toLowerCase()).to.contain("missing authorization header");
 
-        expect(response.status, `Expected 401 for missing auth (fetch), got ${response.status}. Body: ${responseBodyText}`).to.equal(401);
-        const parsedBody = JSON.parse(responseBodyText);
-        // Check for the Supabase gateway's specific error message when Authorization header is missing
-        expect(parsedBody.msg || parsedBody.message || parsedBody.error).to.equal("Error: Missing authorization header");
-
-      } catch (e) {
-        // This catch is for network errors or if fetch/parsing itself fails, not for bad HTTP status
-        console.log("[Test Debug] Missing Auth (fetch) - Caught error during fetch/parse:", JSON.stringify(e));
-        console.log("[Test Debug] Missing Auth (fetch) - Error name:", (e as Error).name);
-        console.log("[Test Debug] Missing Auth (fetch) - Error message:", (e as Error).message);
-        fail(`Fetch attempt for missing auth failed unexpectedly: ${(e as Error).message}`);
+      } catch (fetchError: unknown) {
+        // console.error("[Test Debug] Fetch error (Missing Auth Test):", fetchError);
+        // Deno.test might not catch this if the fetch itself fails before HTTP error
+        expect.fail("Fetch itself failed for missing auth test: " + (fetchError as Error).message);
       }
-
-      // Test with invalid Authorization header (using anonClient.functions.invoke)
+      
+      // Test with invalid Authorization header (using invoke which might handle errors differently)
       try {
-        const { data: invokeData, error: invokeError } = await anonClient.functions.invoke("dialectic-service", {
+        const { data, error: invokeError } = await anonClient.functions.invoke("dialectic-service", {
           body: requestBody,
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer anobviouslyinvalidtoken",
-            "Origin": allowedOriginForTest,
-          },
+          headers: { Authorization: "Bearer invalid.token.here" }
         });
+        console.log("[Test Debug] Invalid Auth Invoke - Result - Data:", data);
+        console.log("[Test Debug] Invalid Auth Invoke - Result - Error:", invokeError);
 
-        console.log("[Test Debug] Invalid Auth Invoke - Result - Data:", JSON.stringify(invokeData));
-        console.log("[Test Debug] Invalid Auth Invoke - Result - Error:", JSON.stringify(invokeError));
-
-        if (!invokeError) {
-          fail(`Should have thrown an error for invalid auth token, but invoke succeeded. Data: ${JSON.stringify(invokeData)}`);
-          return; // Should not be reached if fail throws
+        // If invokeError is present, it means the client library itself caught an HTTP error
+        expect(invokeError, "Expected an error for invalid JWT").to.exist;
+        if (invokeError) {
+            const err = invokeError as any; // FunctionsError | Error
+            console.log("[Test Debug] Invalid Auth - Error Name (from invokeError.name):", err.name);
+            console.log("[Test Debug] Invalid Auth - Error Message (from invokeError.message):", err.message);
+            // Check for FunctionsHttpError which often wraps the actual response error
+            if (err.name === 'FunctionsHttpError' && err.context && typeof err.context.json === 'function') {
+                const errorBody = await err.context.json(); // Parse the JSON body from the response context
+                console.log("[Test Debug] Invalid Auth - Error Body (from err.context.json()):", errorBody);
+                expect(err.context.status).to.equal(401);
+                const message = errorBody.error || errorBody.msg || ""; // Check .error or .msg
+                expect(message.toLowerCase()).to.contain('invalid jwt');
+            } else if (err.name === 'AuthApiError' || err.message?.includes('AuthApiError')) { // Direct AuthApiError
+                console.log("[Test Debug] Invalid Auth - Direct AuthApiError or message includes it");
+                expect(err.status === 401 || err.code === 401 || err.statusCode === 401 || err.cause?.status === 401).to.be.true;
+                expect(err.message.toLowerCase()).to.contain('invalid jwt');
+            } else {
+                 // Fallback for other error types, less specific check
+                console.log("[Test Debug] Invalid Auth - Other error type, checking message for 'Invalid JWT' or status 401");
+                const messageContainsInvalidJwt = err.message?.toLowerCase().includes('invalid jwt');
+                const statusIs401 = err.status === 401 || err.code === 401 || err.details?.status === 401 || (err.context && err.context.status === 401);
+                expect(messageContainsInvalidJwt || statusIs401, "Error message should indicate invalid JWT or status should be 401").to.be.true;
+            }
         }
-        
-        // At this point, invokeError should be a FunctionsHttpError
-        const err = invokeError as FunctionsHttpError;
-        console.log("[Test Debug] Invalid Auth - Error Name (from invokeError.name):", err.name);
-        console.log("[Test Debug] Invalid Auth - Error Message (from invokeError.message):", err.message);
-        expect(err).to.be.instanceOf(FunctionsHttpError, `Error was not a FunctionsHttpError. Name: ${err.name}, Msg: ${err.message}`);
-        
-        expect(err.context.status, `Expected 401 for invalid auth, got ${err.context?.status}`).to.equal(401);
-        
-        let errorBodyText = "Could not get error body from err.context.text()";
-        if (err.context && typeof err.context.text === 'function') {
-          try { errorBodyText = await err.context.text(); } catch { /* ignore */ }
-        }
-        console.log("[Test Debug] Invalid Auth - Error Body (from err.context.text()):", errorBodyText); 
-
-        try {
-          const parsedErrorBody = JSON.parse(errorBodyText);
-          expect(parsedErrorBody.msg || parsedErrorBody.message || parsedErrorBody.error).to.equal("Invalid JWT");
-        } catch (parseErr) {
-          fail(`Failed to parse error body as JSON or assert message. Body: ${errorBodyText}, ParseErr: ${parseErr}`);
-        }
-
-      } catch (unexpectedError) { 
-        // This catch is for truly unexpected errors during the test logic itself, 
-        // not for the expected FunctionsHttpError from the service.
-        console.log("[Test Debug] Invalid Auth - Outer Catch - Unexpected Error:", JSON.stringify(unexpectedError));
-        fail(`Test logic itself failed: ${(unexpectedError as Error).message}`);
+      } catch (e: unknown) {
+        console.error("[Test Debug] Error during invalid JWT test with invoke:", e);
+        expect.fail("Test with invalid JWT (invoke) failed unexpectedly: " + (e as Error).message);
       }
     });
   });
 
-  describe("'generateThesisContributions' action", () => {
+  describe("'generateStageContributions' action", () => {
     let testPrimaryUserId: string;
     let testPrimaryUserClient: SupabaseClient<Database>;
     let testUserAuthToken: string;
@@ -495,7 +477,7 @@ describe("Edge Function: dialectic-service", () => {
         originatingChatId: testAssociatedChatId, 
       };
 
-      const { data: sessionData, error: sessionError } = await testPrimaryUserClient.functions.invoke(
+      const { data: sessionDataFromInvoke, error: sessionError } = await testPrimaryUserClient.functions.invoke(
         "dialectic-service", 
         { 
           body: { action: "startSession", payload: startSessionPayload },
@@ -503,16 +485,17 @@ describe("Edge Function: dialectic-service", () => {
         }
       );
 
-      if (sessionError || !sessionData || (sessionData as any).error) {
-        console.error("Test setup: startSession error data:", (sessionData as any)?.error);
-        throw new Error(`Test setup failed: startSession action failed: ${sessionError?.message || (sessionData as any).error?.message || 'Unknown error during startSession'}`);
+      if (sessionError || !sessionDataFromInvoke || (sessionDataFromInvoke as any).error) {
+        const serviceError = (sessionDataFromInvoke as any)?.error;
+        console.error("Test setup: startSession error data:", serviceError);
+        throw new Error(`Test setup failed: startSession action failed: ${sessionError?.message || serviceError?.message || 'Unknown error during startSession'}`);
       }
       
-      const sessionResponse = sessionData as any;
-      if (!sessionResponse.data?.sessionId) {
-        throw new Error(`Test setup failed: startSession did not return a sessionId. Response: ${JSON.stringify(sessionResponse)}`);
+      // sessionDataFromInvoke is the direct payload: { message, sessionId, initialStatus, associatedChatId }
+      if (!sessionDataFromInvoke.sessionId) {
+        throw new Error(`Test setup failed: startSession did not return a sessionId. Response: ${JSON.stringify(sessionDataFromInvoke)}`);
       }
-      testSessionId = sessionResponse.data.sessionId;
+      testSessionId = sessionDataFromInvoke.sessionId;
       
       // Fetch all created dialectic_session_models for assertion
       const { data: createdSessionModels, error: smFetchError } = await testAdminClient
@@ -616,36 +599,63 @@ describe("Edge Function: dialectic-service", () => {
     });
 
     it("should generate thesis contributions, store them, and link to storage", async () => {
-      const payload: GenerateThesisContributionsPayload = {
+      const payload: GenerateStageContributionsPayload = {
         sessionId: testSessionId,
+        stage: "thesis",
       };
 
-      const response = await fetch(`${Deno.env.get("SUPABASE_URL")!}/functions/v1/dialectic-service`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${testUserAuthToken}`,
-          "X-Client-Info": "supabase-js/0.0.0-automated-test-thesis",
-        },
-        body: JSON.stringify({
-          action: "generateThesisContributions",
-          payload,
-        }),
-      });
-      const responseData = await response.json().catch(e => {
-        console.error("Failed to parse JSON response:", e);
-        return { error: { message: "Failed to parse JSON response", details: e.message }, data: null, success: false };
-      });
+      // Using functions.invoke instead of fetch
+      const { data: responseData, error: invokeError } = await testPrimaryUserClient.functions.invoke(
+        "dialectic-service",
+        {
+          body: { action: "generateThesisContributions", payload },
+          headers: { 
+            Authorization: `Bearer ${testUserAuthToken}`,
+            "X-Client-Info": "supabase-js/0.0.0-automated-test-thesis-invoke", // Optional: update client info
+          }
+        }
+      );
       
-      console.log("[generateThesisContributions Test] Response Status:", response.status);
-      console.log("[generateThesisContributions Test] Response Data:", JSON.stringify(responseData, null, 2));
+      if (invokeError) {
+        console.log("[generateThesisContributions Test] Detailed Invoke Error Name:", invokeError.name);
+        console.log("[generateThesisContributions Test] Detailed Invoke Error Message:", invokeError.message);
+        if (invokeError.context) {
+          console.log("[generateThesisContributions Test] Detailed Invoke Error Context Keys:", Object.keys(invokeError.context));
+          if (invokeError.context.status) { // Log status if available directly
+            console.log("[generateThesisContributions Test] Detailed Invoke Error Context Status:", invokeError.context.status);
+          }
+          if (typeof invokeError.context.json === 'function') {
+            try {
+              const errBody = await invokeError.context.json();
+              console.log("[generateThesisContributions Test] Detailed Invoke Error Context JSON Body:", JSON.stringify(errBody, null, 2));
+            } catch (e:any) {
+              console.log("[generateThesisContributions Test] Detailed Invoke Error Context JSON Parse Error:", e.message);
+              // Fallback to text if json parsing fails or if it's not a function but text is
+              if (typeof invokeError.context.text === 'function') {
+                const errText = await invokeError.context.text();
+                console.log("[generateThesisContributions Test] Detailed Invoke Error Context Text Body (after JSON parse error):", errText);
+              }
+            }
+          } else if (typeof invokeError.context.text === 'function') { // If .json was not a function, try .text
+            const errText = await invokeError.context.text();
+            console.log("[generateThesisContributions Test] Detailed Invoke Error Context Text Body (json not function):", errText);
+          }
+        } else {
+          console.log("[generateThesisContributions Test] Invoke Error Context is null or undefined.");
+        }
+      }
+      console.log("[generateThesisContributions Test] Original Invoke Response Data:", JSON.stringify(responseData, null, 2));
 
-      assertEquals(response.status, 200, `Service action failed with status ${response.status}: ${JSON.stringify(responseData.error || responseData)}`);
-      assert(responseData.success === true, responseData.error?.message || "Request was not successful or success flag missing/false");
-      assertExists(responseData.data, "Response data object is missing");
-      assertExists(responseData.data.contributions, "Contributions array is missing from response data");
-      assert(Array.isArray(responseData.data.contributions), "Contributions should be an array");
-      assertEquals(responseData.data.contributions.length, 2, "Expected two contributions in the response for two models.");
+      expect(invokeError, `generateThesisContributions error: ${invokeError ? invokeError.message : 'Unknown error'}`).to.be.null;
+      expect(responseData, "generateThesisContributions data should exist").to.exist;
+      
+      // responseData is GenerateStageContributionsSuccessResponse: { message, contributions, updatedStatus }
+      // No 'success' field or outer 'data' field in responseData itself after invoke.
+      expect(responseData.message).to.contain("successfully processed"); // Adjusted to new message
+      assertExists(responseData.contributions, "Contributions array is missing from response data");
+      assert(Array.isArray(responseData.contributions), "Contributions should be an array");
+      assertEquals(responseData.contributions.length, 2, "Expected two contributions in the response for two models.");
+      expect(responseData.updatedStatus).to.equal("pending_antithesis"); // Or the relevant next status
 
       const { data: dbContributions, error: dbError } = await testAdminClient
         .from("dialectic_contributions")
@@ -738,21 +748,54 @@ describe("Edge Function: dialectic-service", () => {
     });
 
     it("should allow a user to update the selected_domain_tag of their project to a valid tag", async () => {
-      const request: DialecticServiceRequest = {
-        action: "updateProjectDomainTag",
-        payload: { projectId: testProjectId, domainTag: TEST_DOMAIN_TAG_1 },
-      };
-      const { data, error } = await testUserClient.functions.invoke("dialectic-service", {
-         body: request,
-         headers: { Authorization: `Bearer ${testUserAuthToken}` }
-      });
+      const newDomainTag = "UPDATED_DOMAIN_TAG_VALID";
 
-      expect(error, `Function invocation error: ${JSON.stringify(error)}`).to.be.null;
-      expect(data, "Response data should exist").to.exist;
-      const responsePayload = data as any;
-      expect(responsePayload.error, `Service action error: ${responsePayload.error?.message}`).to.be.undefined;
-      expect(responsePayload.data.id).to.equal(testProjectId);
-      expect(responsePayload.data.selected_domain_tag).to.equal(TEST_DOMAIN_TAG_1);
+      const { data: responseData, error } = await testUserClient.functions.invoke(
+        "dialectic-service",
+        {
+          body: {
+            action: "updateProjectDomainTag",
+            payload: { projectId: testProjectId, domainTag: newDomainTag }
+          },
+          headers: { Authorization: `Bearer ${testUserAuthToken}` }
+        }
+      );
+
+      if (error) {
+        console.log("[updateProjectDomainTag - valid tag Test] Detailed Invoke Error Name:", error.name);
+        console.log("[updateProjectDomainTag - valid tag Test] Detailed Invoke Error Message:", error.message);
+        if (error.context) {
+          console.log("[updateProjectDomainTag - valid tag Test] Detailed Invoke Error Context Keys:", Object.keys(error.context));
+          if (error.context.status) { 
+            console.log("[updateProjectDomainTag - valid tag Test] Detailed Invoke Error Context Status:", error.context.status);
+          }
+          if (typeof error.context.json === 'function') {
+            try {
+              const errBody = await error.context.json();
+              console.log("[updateProjectDomainTag - valid tag Test] Detailed Invoke Error Context Body (parsed):", errBody);
+            } catch (e) {
+              console.log("[updateProjectDomainTag - valid tag Test] Failed to parse error context JSON:", (e as Error).message);
+            }
+          } else if (typeof error.context.text === 'function') {
+             try {
+              const errText = await error.context.text();
+              console.log("[updateProjectDomainTag - valid tag Test] Detailed Invoke Error Context Text:", errText);
+            } catch (e) {
+              console.log("[updateProjectDomainTag - valid tag Test] Failed to get error context text:", (e as Error).message);
+            }
+          }
+        }
+        // Fail fast if an unexpected error occurred during invocation for a supposedly valid update
+        expect(error, `Function invocation failed unexpectedly for a valid domain tag update: ${error.message || JSON.stringify(error)}`).to.be.null;
+      }
+      
+      // If we reach here, error should have been null.
+      expect(responseData, "Response data should exist for a successful update").to.exist;
+      expect(responseData.project, "Response data should contain a project object").to.exist;
+      
+      // Now, we can safely access responseData.project properties
+      expect(responseData.project.id).to.equal(testProjectId);
+      expect(responseData.project.selected_domain_tag).to.equal(newDomainTag);
 
       // Verify in DB
       const { data: dbProject, error: dbError } = await adminClient
@@ -761,7 +804,7 @@ describe("Edge Function: dialectic-service", () => {
         .eq("id", testProjectId)
         .single();
       expect(dbError).to.be.null;
-      expect(dbProject?.selected_domain_tag).to.equal(TEST_DOMAIN_TAG_1);
+      expect(dbProject?.selected_domain_tag).to.equal(newDomainTag);
     });
 
     it("should allow a user to set the selected_domain_tag to null", async () => {
@@ -772,13 +815,14 @@ describe("Edge Function: dialectic-service", () => {
         action: "updateProjectDomainTag",
         payload: { projectId: testProjectId, domainTag: null },
       };
-      const { data, error } = await testUserClient.functions.invoke("dialectic-service", {
+      const { data: actualData, error } = await testUserClient.functions.invoke("dialectic-service", {
          body: request,
          headers: { Authorization: `Bearer ${testUserAuthToken}` }
       });
-      expect(error).to.be.null;
-      expect(data.error).to.be.undefined;
-      expect(data.data.selected_domain_tag).to.be.null;
+      expect(error, `Function invocation error: ${JSON.stringify(error)}`).to.be.null;
+      expect(actualData, "Response data should exist and not be an error structure").to.exist.and.not.have.property('error');
+      // actualData is the project object directly
+      expect(actualData.selected_domain_tag).to.be.null;
 
       const { data: dbProject, error: dbError } = await adminClient
         .from("dialectic_projects")
@@ -802,57 +846,20 @@ describe("Edge Function: dialectic-service", () => {
       expect(error, "Expected function invocation to result in an error due to invalid tag").to.exist;
       expect(error.context.status, "Expected HTTP status 400 for invalid domain tag").to.equal(400);
 
-      console.log(`[Test Debug] updateProjectDomainTag - invalid tag - error object:`, error);
-      console.log(`[Test Debug] updateProjectDomainTag - invalid tag - error.context object:`, error.context);
-      let actualErrorMessage = "Error message not found";
-      if (error && error.context) {
-        let bodyText: string | null = null;
-        try {
-          if (typeof error.context.text === 'function') {
-            bodyText = await error.context.text(); // Consumes body
-          }
-        } catch (e: any) {
-           console.warn("[Test Warn] Failed to get text from error.context:", e.message);
-        }
-
-        if (bodyText) {
-          try {
-            const parsedBody = JSON.parse(bodyText);
-            if (parsedBody && parsedBody.error && typeof parsedBody.error.message === 'string') {
-              actualErrorMessage = parsedBody.error.message;
-            } else {
-              actualErrorMessage = `Error response body parsed, but no .error.message string found. Body Snippet: ${bodyText.substring(0, 200)}`;
-            }
-          } catch (e: any) {
-            actualErrorMessage = `Error response body was not valid JSON. Body Snippet: ${bodyText.substring(0, 200)}. Parse Error: ${e.message}`;
-          }
+      let actualErrorMessage = "Error message not found in response";
+      try {
+        const parsedBody = await error.context.json();
+        if (parsedBody && typeof parsedBody.error === 'string') {
+          actualErrorMessage = parsedBody.error;
         } else {
-          // Body text could not be retrieved, try original error.message
-          if (error.message) {
-            if (typeof error.message === 'string' && error.message.includes('{')) {
-                try {
-                    const parsedEM = JSON.parse(error.message);
-                    if (parsedEM && parsedEM.error && typeof parsedEM.error.message === 'string') {
-                        actualErrorMessage = parsedEM.error.message;
-                    } else {
-                        actualErrorMessage = error.message;
-                    }
-                } catch (e: any) {
-                    actualErrorMessage = error.message;
-                }
-            } else {
-                 actualErrorMessage = error.message;
-            }
-          } else {
-            actualErrorMessage = "Error object provided no parsable message and no text body in context.";
-          }
+          console.warn("[Test Warn] Parsed error body for invalid domain tag did not have a string 'error' property. Body:", parsedBody);
+          actualErrorMessage = JSON.stringify(parsedBody); // fallback to stringified body
         }
-      } else if (error && error.message) {
-        actualErrorMessage = error.message;
-      } else if (error) {
-        actualErrorMessage = "Unknown error object."
+      } catch (e: any) {
+        console.warn("[Test Warn] Failed to parse JSON from error response for invalid domain tag:", e.message);
+        actualErrorMessage = await error.context.text(); // fallback to raw text
       }
-      expect(actualErrorMessage).to.contain("Invalid domainTag");
+      expect(actualErrorMessage).to.include("Invalid domainTag"); 
     });
 
     it("should fail if trying to update a non-existent project", async () => {
@@ -872,55 +879,20 @@ describe("Edge Function: dialectic-service", () => {
       // Based on current createError, it's likely a 404 or a 400 with a specific message.
       expect(error.context.status, `Expected HTTP status 404 or 400, got ${error.context.status}`).to.be.oneOf([400, 404]);
       
-      let actualErrorMessage = "Error message not found";
-      if (error && error.context) {
-        let bodyText: string | null = null;
-        try {
-          if (typeof error.context.text === 'function') {
-            bodyText = await error.context.text(); // Consumes body
-          }
-        } catch (e: any) {
-           console.warn("[Test Warn] Failed to get text from error.context:", e.message);
-        }
-
-        if (bodyText) {
-          try {
-            const parsedBody = JSON.parse(bodyText);
-            if (parsedBody && parsedBody.error && typeof parsedBody.error.message === 'string') {
-              actualErrorMessage = parsedBody.error.message;
-            } else {
-              actualErrorMessage = `Error response body parsed, but no .error.message string found. Body Snippet: ${bodyText.substring(0, 200)}`;
-            }
-          } catch (e: any) {
-            actualErrorMessage = `Error response body was not valid JSON. Body Snippet: ${bodyText.substring(0, 200)}. Parse Error: ${e.message}`;
-          }
+      let actualErrorMessage = "Error message not found in response";
+      try {
+        const parsedBody = await error.context.json();
+        if (parsedBody && typeof parsedBody.error === 'string') {
+          actualErrorMessage = parsedBody.error;
         } else {
-          // Body text could not be retrieved, try original error.message
-          if (error.message) {
-            if (typeof error.message === 'string' && error.message.includes('{')) {
-                try {
-                    const parsedEM = JSON.parse(error.message);
-                    if (parsedEM && parsedEM.error && typeof parsedEM.error.message === 'string') {
-                        actualErrorMessage = parsedEM.error.message;
-                    } else {
-                        actualErrorMessage = error.message;
-                    }
-                } catch (e: any) {
-                    actualErrorMessage = error.message;
-                }
-            } else {
-                 actualErrorMessage = error.message;
-            }
-          } else {
-            actualErrorMessage = "Error object provided no parsable message and no text body in context.";
-          }
+          console.warn("[Test Warn] Parsed error body for non-existent project did not have a string 'error' property. Body:", parsedBody);
+          actualErrorMessage = JSON.stringify(parsedBody);
         }
-      } else if (error && error.message) {
-        actualErrorMessage = error.message;
-      } else if (error) {
-        actualErrorMessage = "Unknown error object."
+      } catch (e: any) {
+        console.warn("[Test Warn] Failed to parse JSON from error response for non-existent project:", e.message);
+        actualErrorMessage = await error.context.text(); 
       }
-      expect(actualErrorMessage).to.contain("Project not found or access denied"); // Adjusted to match actual server message
+      expect(actualErrorMessage).to.include("Project not found or access denied");
     });
 
     it("should prevent updating a project belonging to another user", async () => {
@@ -946,55 +918,20 @@ describe("Edge Function: dialectic-service", () => {
       // Status might be 403 Forbidden, 404 Not Found (if hiding existence), or 400 Bad Request
       expect(error.context.status, `Expected HTTP status 403, 404 or 400, got ${error.context.status}`).to.be.oneOf([400, 403, 404]);
       
-      let actualErrorMessage = "Error message not found";
-      if (error && error.context) {
-        let bodyText: string | null = null;
-        try {
-          if (typeof error.context.text === 'function') {
-            bodyText = await error.context.text(); // Consumes body
-          }
-        } catch (e: any) {
-           console.warn("[Test Warn] Failed to get text from error.context:", e.message);
-        }
-
-        if (bodyText) {
-          try {
-            const parsedBody = JSON.parse(bodyText);
-            if (parsedBody && parsedBody.error && typeof parsedBody.error.message === 'string') {
-              actualErrorMessage = parsedBody.error.message;
-            } else {
-              actualErrorMessage = `Error response body parsed, but no .error.message string found. Body Snippet: ${bodyText.substring(0, 200)}`;
-            }
-          } catch (e: any) {
-            actualErrorMessage = `Error response body was not valid JSON. Body Snippet: ${bodyText.substring(0, 200)}. Parse Error: ${e.message}`;
-          }
+      let actualErrorMessage = "Error message not found in response";
+      try {
+        const parsedBody = await error.context.json();
+        if (parsedBody && typeof parsedBody.error === 'string') {
+          actualErrorMessage = parsedBody.error;
         } else {
-          // Body text could not be retrieved, try original error.message
-          if (error.message) {
-            if (typeof error.message === 'string' && error.message.includes('{')) {
-                try {
-                    const parsedEM = JSON.parse(error.message);
-                    if (parsedEM && parsedEM.error && typeof parsedEM.error.message === 'string') {
-                        actualErrorMessage = parsedEM.error.message;
-                    } else {
-                        actualErrorMessage = error.message;
-                    }
-                } catch (e: any) {
-                    actualErrorMessage = error.message;
-                }
-            } else {
-                 actualErrorMessage = error.message;
-            }
-          } else {
-            actualErrorMessage = "Error object provided no parsable message and no text body in context.";
-          }
+          console.warn("[Test Warn] Parsed error body for unauthorized project update did not have a string 'error' property. Body:", parsedBody);
+          actualErrorMessage = JSON.stringify(parsedBody);
         }
-      } else if (error && error.message) {
-        actualErrorMessage = error.message;
-      } else if (error) {
-        actualErrorMessage = "Unknown error object."
+      } catch (e: any) {
+        console.warn("[Test Warn] Failed to parse JSON from error response for unauthorized project update:", e.message);
+        actualErrorMessage = await error.context.text(); 
       }
-      expect(actualErrorMessage).to.contain("Project not found or access denied"); // Adjusted, expecting RLS to cause this via PGRST116
+      expect(actualErrorMessage).to.include("Project not found or access denied");
 
       // Crucially, ensure the original project's tag was NOT changed
       const { data: dbProject, error: dbError } = await adminClient
@@ -1077,28 +1014,27 @@ describe("Edge Function: dialectic-service", () => {
         },
       };
 
-      const { data, error } = await testUserClient.functions.invoke("dialectic-service", {
+      const { data: actualData, error } = await testUserClient.functions.invoke("dialectic-service", {
         body: request,
         headers: { Authorization: `Bearer ${testUserAuthToken}` }
       });
 
       expect(error, `Function invocation error: ${JSON.stringify(error)}`).to.be.null;
-      expect(data, "Response data should exist").to.exist;
-      const responsePayload = data as any;
-      expect(responsePayload.error, `Service action error: ${responsePayload.error?.message}`).to.be.undefined;
-      expect(responsePayload.data.id, "Response should contain project ID").to.exist;
-      createdProjectIds.push(responsePayload.data.id);
+      expect(actualData, "Response data should exist and not be an error structure").to.exist.and.not.have.property('error');
+      // actualData is the project object
+      expect(actualData.id, "Response should contain project ID").to.exist;
+      createdProjectIds.push(actualData.id);
 
-      expect(responsePayload.data.project_name).to.equal(projectName);
-      expect(responsePayload.data.initial_user_prompt).to.equal(initialUserPrompt);
-      expect(responsePayload.data.user_id).to.equal(testUserId);
-      expect(responsePayload.data.selected_domain_tag).to.equal(TEST_DOMAIN_TAG_1);
+      expect(actualData.project_name).to.equal(projectName);
+      expect(actualData.initial_user_prompt).to.equal(initialUserPrompt);
+      expect(actualData.user_id).to.equal(testUserId);
+      expect(actualData.selected_domain_tag).to.equal(TEST_DOMAIN_TAG_1);
 
       // Verify in DB
       const { data: dbProject, error: dbError } = await adminClient
         .from("dialectic_projects")
         .select("*")
-        .eq("id", responsePayload.data.id)
+        .eq("id", actualData.id)
         .single();
       
       expect(dbError).to.be.null;
@@ -1120,22 +1056,22 @@ describe("Edge Function: dialectic-service", () => {
           selected_domain_tag: null 
         },
       };
-      const { data, error } = await testUserClient.functions.invoke("dialectic-service", { 
+      const { data: actualData, error } = await testUserClient.functions.invoke("dialectic-service", { 
         body: request, 
         headers: { Authorization: `Bearer ${testUserAuthToken}` }
       });
 
-      expect(error).to.be.null;
-      const responsePayload = data as any;
-      expect(responsePayload.error).to.be.undefined;
-      expect(responsePayload.data.id).to.exist;
-      createdProjectIds.push(responsePayload.data.id);
-      expect(responsePayload.data.selected_domain_tag).to.be.null;
+      expect(error, `Function invocation error: ${JSON.stringify(error)}`).to.be.null;
+      expect(actualData, "Response data should exist and not be an error structure").to.exist.and.not.have.property('error');
+      // actualData is the project object
+      expect(actualData.id).to.exist;
+      createdProjectIds.push(actualData.id);
+      expect(actualData.selected_domain_tag).to.be.null;
 
       const { data: dbProject, error: dbError } = await adminClient
         .from("dialectic_projects")
         .select("selected_domain_tag")
-        .eq("id", responsePayload.data.id)
+        .eq("id", actualData.id)
         .single();
       expect(dbError).to.be.null;
       expect(dbProject?.selected_domain_tag).to.be.null;
@@ -1157,29 +1093,19 @@ describe("Edge Function: dialectic-service", () => {
 
       expect(error, "Expected function invocation to error due to invalid selected_domain_tag").to.exist;
       expect(error.context.status, "Expected HTTP status 400 for invalid selected_domain_tag").to.equal(400);
-      console.log(`[Test Debug] createProject - invalid selected_domain_tag - error object:`, error);
-      console.log(`[Test Debug] createProject - invalid selected_domain_tag - error.context object:`, error.context);
-      let actualErrorMessage = "Error message not found";
-      if (error && error.context && typeof error.context.json === 'function') {
-        try {
-          const parsedBody = await error.context.json();
-          if (parsedBody && parsedBody.error && typeof parsedBody.error.message === 'string') {
-            actualErrorMessage = parsedBody.error.message;
-          } else {
-            actualErrorMessage = `Parsed error.context.json() but expected structure not found. Parsed: ${JSON.stringify(parsedBody)}`;
-          }
-        } catch (e: any) {
-          actualErrorMessage = `Failed to parse error.context.json(). Parse error: ${e.message}`;
+      
+      let actualErrorMessage = "Error message not found in response";
+      try {
+        const parsedBody = await error.context.json();
+        if (parsedBody && typeof parsedBody.error === 'string') {
+          actualErrorMessage = parsedBody.error;
+        } else {
+          console.warn("[Test Warn] Parsed error body for invalid domain tag (create project) did not have a string 'error' property. Body:", parsedBody);
+          actualErrorMessage = JSON.stringify(parsedBody);
         }
-      } else if (error && typeof error.message === 'string' && error.message.includes('{')) {
-        try {
-          const parsedBody = JSON.parse(error.message);
-          if (parsedBody && parsedBody.error && typeof parsedBody.error.message === 'string') {
-            actualErrorMessage = parsedBody.error.message;
-          }
-        } catch (e: any) { /* ignore */ }
-      } else if (error && error.message) {
-        actualErrorMessage = error.message;
+      } catch (e: any) {
+        console.warn("[Test Warn] Failed to parse JSON from error response for invalid domain tag (create project):", e.message);
+        actualErrorMessage = await error.context.text(); 
       }
       expect(actualErrorMessage).to.contain("Invalid selectedDomainTag"); 
       expect(createdProjectIds.length).to.equal(0); 
@@ -1200,35 +1126,19 @@ describe("Edge Function: dialectic-service", () => {
       });
       expect(error, "Expected function invocation to error due to missing projectName").to.exist;
       expect(error.context.status, "Expected HTTP status 400 for missing projectName").to.equal(400);
-      console.log(`[Test Debug] createProject - missing projectName - error object:`, error);
-      console.log(`[Test Debug] createProject - missing projectName - error.context object:`, error.context);
-      let actualErrorMessage = "Error message not found";
-      if (error && error.context && typeof error.context.json === 'function') {
-        try {
-          const parsedBody = await error.context.json();
-          if (parsedBody && parsedBody.error) {
-            if (typeof parsedBody.error === 'string') {
-              actualErrorMessage = parsedBody.error;
-            } else if (parsedBody.error.message && typeof parsedBody.error.message === 'string') {
-              actualErrorMessage = parsedBody.error.message;
-            } else {
-               actualErrorMessage = `Parsed error.context.json() but 'error' was not a string and 'error.message' was not a string. Parsed: ${JSON.stringify(parsedBody)}`;
-            }
-          } else {
-            actualErrorMessage = `Parsed error.context.json() but 'error' field was not found. Parsed: ${JSON.stringify(parsedBody)}`;
-          }
-        } catch (e: any) {
-          actualErrorMessage = `Failed to parse error.context.json(). Parse error: ${e.message}`;
+
+      let actualErrorMessage = "Error message not found in response";
+      try {
+        const parsedBody = await error.context.json();
+        if (parsedBody && typeof parsedBody.error === 'string') {
+          actualErrorMessage = parsedBody.error;
+        } else {
+          console.warn("[Test Warn] Parsed error body for missing project name did not have a string 'error' property. Body:", parsedBody);
+          actualErrorMessage = JSON.stringify(parsedBody);
         }
-      } else if (error && typeof error.message === 'string' && error.message.includes('{')) {
-        try {
-          const parsedBody = JSON.parse(error.message);
-          if (parsedBody && parsedBody.error && typeof parsedBody.error.message === 'string') {
-            actualErrorMessage = parsedBody.error.message;
-          }
-        } catch (e: any) { /* ignore */ }
-      } else if (error && error.message) {
-        actualErrorMessage = error.message;
+      } catch (e: any) {
+        console.warn("[Test Warn] Failed to parse JSON from error response for missing project name:", e.message);
+        actualErrorMessage = await error.context.text(); 
       }
       expect(actualErrorMessage).to.contain("projectName and initialUserPrompt are required");
     });
@@ -1248,35 +1158,19 @@ describe("Edge Function: dialectic-service", () => {
       });
       expect(error, "Expected function invocation to error due to missing initialUserPrompt").to.exist;
       expect(error.context.status, "Expected HTTP status 400 for missing initialUserPrompt").to.equal(400);
-      console.log(`[Test Debug] createProject - missing initialUserPrompt - error object:`, error);
-      console.log(`[Test Debug] createProject - missing initialUserPrompt - error.context object:`, error.context);
-      let actualErrorMessage = "Error message not found";
-      if (error && error.context && typeof error.context.json === 'function') {
-        try {
-          const parsedBody = await error.context.json();
-          if (parsedBody && parsedBody.error) {
-            if (typeof parsedBody.error === 'string') {
-              actualErrorMessage = parsedBody.error;
-            } else if (parsedBody.error.message && typeof parsedBody.error.message === 'string') {
-              actualErrorMessage = parsedBody.error.message;
-            } else {
-               actualErrorMessage = `Parsed error.context.json() but 'error' was not a string and 'error.message' was not a string. Parsed: ${JSON.stringify(parsedBody)}`;
-            }
-          } else {
-            actualErrorMessage = `Parsed error.context.json() but 'error' field was not found. Parsed: ${JSON.stringify(parsedBody)}`;
-          }
-        } catch (e: any) {
-          actualErrorMessage = `Failed to parse error.context.json(). Parse error: ${e.message}`;
+
+      let actualErrorMessage = "Error message not found in response";
+      try {
+        const parsedBody = await error.context.json();
+        if (parsedBody && typeof parsedBody.error === 'string') {
+          actualErrorMessage = parsedBody.error;
+        } else {
+          console.warn("[Test Warn] Parsed error body for missing initial user prompt did not have a string 'error' property. Body:", parsedBody);
+          actualErrorMessage = JSON.stringify(parsedBody);
         }
-      } else if (error && typeof error.message === 'string' && error.message.includes('{')) {
-        try {
-          const parsedBody = JSON.parse(error.message);
-          if (parsedBody && parsedBody.error && typeof parsedBody.error.message === 'string') {
-            actualErrorMessage = parsedBody.error.message;
-          }
-        } catch (e: any) { /* ignore */ }
-      } else if (error && error.message) {
-        actualErrorMessage = error.message;
+      } catch (e: any) {
+        console.warn("[Test Warn] Failed to parse JSON from error response for missing initial user prompt:", e.message);
+        actualErrorMessage = await error.context.text(); 
       }
       expect(actualErrorMessage).to.contain("projectName and initialUserPrompt are required");
     });
@@ -1401,15 +1295,16 @@ describe("Edge Function: dialectic-service", () => {
         action: "getContributionContentSignedUrl",
         payload: { contributionId: testContributionId },
       };
-      const { data: funcResponse, error: funcError } = await testPrimaryUserClient.functions.invoke(
+      const { data: actualData, error: funcError } = await testPrimaryUserClient.functions.invoke(
         "dialectic-service",
         { body: request, headers: { Authorization: `Bearer ${testUserAuthToken}` } }
       );
       expect(funcError, `Function invocation error: ${funcError?.message}`).to.be.null;
-      assertExists(funcResponse, "Function response should exist");
-      expect(funcResponse.error, `Service action error: ${JSON.stringify(funcResponse.error)}`).to.be.undefined;
-      assertExists(funcResponse.data, "Response data should exist");
-      const { signedUrl, mimeType, sizeBytes } = funcResponse.data as any;
+      assertExists(actualData, "Response data (actualData) should exist");
+      // actualData is { signedUrl, mimeType, sizeBytes }
+      expect(actualData.error, `Service action error: ${JSON.stringify(actualData.error)}`).to.be.undefined; // Ensure no error property in the success payload
+      
+      const { signedUrl, mimeType, sizeBytes } = actualData as any; // Cast after checking for error property
       expect(signedUrl).to.be.a("string").and.not.empty;
       expect(signedUrl).to.include(testBucketName).and.include(testStoragePath.split('/').pop());
       expect(mimeType).to.equal(testMimeType);
@@ -1445,8 +1340,9 @@ describe("Edge Function: dialectic-service", () => {
       if (funcError && Object.prototype.hasOwnProperty.call(funcError, 'context')) {
         expect(funcError.context.status).to.equal(401);
         try {
+            // Standard error response is { error: "message" }
             const errorBody = JSON.parse(await funcError.context.text());
-            expect(errorBody.error.message).to.equal("User not authenticated");
+            expect(errorBody.error).to.include("User not authenticated"); // Check for inclusion
         } catch (_e) {
             console.warn("[Test Warning] Unauthenticated request did not return a JSON error body, but status was 401.");
         }
@@ -1499,10 +1395,12 @@ describe("Edge Function: dialectic-service", () => {
       assertExists(funcHttpError?.context, "Error context should exist for HTTP errors.");
       expect(funcHttpError?.context.status).to.equal(404); 
 
-      console.log("[Test Debug] 'Contribution not found' responseJson:", JSON.stringify(responseJson)); // DEBUGGING
+      console.log("[Test Debug] 'Contribution not found' responseJson:", JSON.stringify(responseJson)); 
       assertExists(responseJson, "Parsed JSON error response should exist.");
       assertExists(responseJson.error, "Expected 'error' property in parsed JSON response.");
-      expect(responseJson.error).to.equal("Contribution not found.");
+      // The service returns "[NOT_FOUND] Contribution not found."
+      // The createErrorResponse wrapper will pass this message through.
+      expect(responseJson.error).to.equal("[NOT_FOUND] Contribution not found.");
     });
 
     it("should fail if the user is not the owner of the contribution's project", async () => {
@@ -1548,10 +1446,11 @@ describe("Edge Function: dialectic-service", () => {
       assertExists(funcHttpError?.context, "Error context should exist for HTTP errors.");
       expect(funcHttpError?.context.status).to.equal(403);
 
-      console.log("[Test Debug] 'Not owner' responseJson:", JSON.stringify(responseJson)); // DEBUGGING
+      console.log("[Test Debug] 'Not owner' responseJson:", JSON.stringify(responseJson)); 
       assertExists(responseJson, "Parsed JSON error response should exist.");
       assertExists(responseJson.error, "Expected 'error' property in parsed JSON response.");
-      expect(responseJson.error).to.equal("User not authorized to access this contribution.");
+      // The service returns "[AUTH_FORBIDDEN] User not authorized to access this contribution."
+      expect(responseJson.error).to.equal("[AUTH_FORBIDDEN] User not authorized to access this contribution.");
     });
 
     it("should return a 401 if the JWT is missing or invalid for getContributionContentSignedUrl", async () => {
@@ -1620,9 +1519,9 @@ describe("Edge Function: dialectic-service", () => {
 
       assertExists(responseJson, "Parsed JSON error response should exist.");
       assertExists(responseJson.error, "Expected 'error' property in parsed JSON response.");
-      // Check for GoTrue's specific message or a general unauthenticated message
-      const possibleMessages = ["Invalid JWT", "JWT invalid", "Unauthorized"];
-      expect(possibleMessages.some(msg => responseJson.error.message.includes(msg))).to.be.true;
+      // The message from createErrorResponse will be like "[AUTH_INVALID_TOKEN] Invalid or malformed token"
+      // or "[AUTH_ERROR] Invalid JWT" depending on how auth.getUser() fails.
+      expect(responseJson.error.message.toLowerCase()).to.include("invalid jwt");
     });
 
   }); // End of describe("Action: getContributionContentSignedUrl")

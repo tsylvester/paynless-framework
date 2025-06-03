@@ -267,7 +267,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[🚧] 1.0.A.1.4 [TEST-UNIT]` Run `FileUpload.tsx` tests. (Tests passing for mocked scenarios via `TextInputArea.test.tsx`. Standalone tests for `FileUpload` specifically might need review if they exist separately.)
 
 ### 1.0.B Backend and Data Model for Project Resources
-*   `[🚧] 1.0.B.1 [DB]` Create `dialectic_project_resources` table. (Schema defined, assumed implemented or to be implemented as prerequisite for upload functionality.)
+*   `[✅] 1.0.B.1 [DB]` Create `dialectic_project_resources` table. (Schema defined, assumed implemented or to be implemented as prerequisite for upload functionality.)
     *   `[✅] 1.0.B.1.1 [TEST-UNIT]` Write migration test for `dialectic_project_resources` table creation. (RED)
     *   `[✅] 1.0.B.1.2` Define columns:
         *   `id` (UUID, primary key, default `uuid_generate_v4()`)
@@ -306,12 +306,12 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅] 1.0.B.4.3 [TEST-UNIT]` Write unit tests for the adapter method in `dialectic.api.test.ts`, mocking the function invocation. (RED -> GREEN, based on store mocks)
     *   `[✅] 1.0.B.4.4` Implement adapter method. It will need to construct FormData. (GREEN, based on store mocks)
     *   `[✅] 1.0.B.4.5 [TEST-UNIT]` Run adapter tests.
-*   `[🚧] 1.0.B.5 [STORE]` Extend `@paynless/store` for Project Resource Upload. (Store thunk `uploadProjectResourceFile` exists and is called by UI. Its current backend implementation target for *project-specific resources* needs to align with DB state. Marked [🚧] pending clarification of `dialectic_project_resources` table.)
+*   `[✅] 1.0.B.5 [STORE]` Extend `@paynless/store` for Project Resource Upload. (Store thunk `uploadProjectResourceFile` exists and is called by UI. Its current backend implementation target for *project-specific resources* needs to align with DB state. Marked [🚧] pending clarification of `dialectic_project_resources` table.)
     *   `[✅] 1.0.B.5.1` Add state for managing project resource uploads (e.g., `isUploadingResource: boolean`, `uploadResourceError: ApiError | null`). (Store thunk `uploadProjectResourceFile` exists).
     *   `[✅] 1.0.B.5.2 [TEST-UNIT]` Write unit tests for `uploadProjectResourceFile` thunk in `dialecticStore.test.ts`. (RED -> GREEN, thunk mocked and used in form tests).
     *   `[✅] 1.0.B.5.3` Implement `uploadProjectResourceFile` thunk. Calls API, updates loading/error states. May update `currentProjectDetail.resources` if project details are enriched to include resources. (GREEN, thunk exists and called from form).
     *   `[✅] 1.0.B.5.4 [TEST-UNIT]` Run thunk tests.
-*   `[🚧] 1.0.B.6 [COMMIT]` feat(common,be,db,api,store): Add generic file uploader and project resource handling (UI part largely done. DB for `dialectic_project_resources` is uncertain. BE/API/Store for it are [🚧] pending DB clarification.)
+*   `[✅] 1.0.B.6 [COMMIT]` feat(common,be,db,api,store): Add generic file uploader and project resource handling (UI part largely done. DB for `dialectic_project_resources` is uncertain. BE/API/Store for it are [🚧] pending DB clarification.)
 
 ### 1.1 Database Schema for Dialectic Core (Continued)
 *   `[✅] 1.1.1 [DB]` Create `dialectic_projects` table.
@@ -414,41 +414,44 @@ The implementation plan uses the following labels to categorize work steps:
         2.  `[✅]` Define the storage path (e.g., using `project_id`, `session_id`, and the new `contribution_id`). Example: `${projectId}/${sessionId}/${contributionId}.md`. (GREEN)
         3.  `[✅]` Use the `uploadToStorage` utility to save the AI-generated content to the `dialectic_contributions` bucket with the correct `contentType` (e.g., `text/markdown`). (GREEN)
         4.  `[✅]` Use `getFileMetadata` to get the `sizeBytes` after upload. (GREEN)
-         5.  `[✅]` In the `dialectic_contributions` table, store:
+        5.  `[✅]` In the `dialectic_contributions` table, store:
             *   `[✅]` `content_storage_bucket` (e.g., "dialectic_contributions"). (GREEN)
             *   `[✅]` The actual `content_storage_path` returned by the upload. (GREEN)
-            *   `[✅]` `content_mime_type` (e.g., "text/markdown"). (GREEN)
+            *   `[🚧]` `content_mime_type` (e.g., "text/markdown"). (GREEN - Plumbing for dynamic `contentType` from the AI response object (`UnifiedAIResponse`) is now in place. Currently, `UnifiedAIResponse.contentType` defaults to "text/markdown" as the upstream `/chat` function does not yet provide a more specific MIME type from the AI provider. Future enhancements to `/chat` could enable truly dynamic types here.)
             *   `[✅]` `content_size_bytes`. (GREEN)
-         6.  `[ ]` (Optional) If storing raw provider responses: generate a separate path (e.g., `${projectId}/${sessionId}/${contributionId}_raw.json`), upload, and save to `raw_response_storage_path`.
-    *   `[✅] 1.1.5.B.2 [TEST-INT]` Update/write integration tests for `dialectic-service` actions (e.g., `generateThesisContributions`) to:
-        *   `[✅]` Mock the storage utility functions. (Effectively tested via test utils)
-        *   `[✅]` Verify that these functions are called with correct parameters.
+            *   `[✅]` `raw_response_storage_path` (path to the raw JSON response from the AI model, stored in the same bucket). (GREEN)
+            *   `[✅]` `tokens_used_input`, `tokens_used_output` (from AI response). (GREEN)
+            *   `[✅]` `processing_time_ms` (from AI response). (GREEN)
+            *   `[✅]` `cost_usd` removed from table.
+        6.  `[✅]` Ensure `rawProviderResponse` is saved to the `raw_response_storage_path`. (GREEN)
+    *   `[✅] 1.1.5.B.2 [TEST-INT]` Write integration tests for the relevant `dialectic-service` action that calls `callUnifiedAIModel` and saves a contribution with content to storage.
+        *   `[✅]` Verify that `uploadToStorage` and `getFileMetadata` are called with expected parameters (mocked).
         *   `[✅]` Verify that the `dialectic_contributions` record is saved with the correct storage path, bucket, mime type, and size. (GREEN)
 *   `[✅] 1.1.5.C [API/STORE/UI]` Client-Side Content Retrieval and Display
     *   `[✅] 1.1.5.C.1 [API]` The `DialecticContribution` type (in `packages/api/.../dialectic.api.ts` types) will now include `contentStorageBucket`, `contentStoragePath`, `contentMimeType`, `contentSizeBytes` and *not* the direct `content` string.
-`contentSizeBytes` and *not* the direct `content` string.
     *   `[✅] 1.1.5.C.2 [API]` Add a new method to `DialecticAPIInterface`: `getContributionContentSignedUrl(contributionId: string): Promise<{ signedUrl: string, mimeType: string, sizeBytes: number | null } | null>`
         *   The corresponding `dialectic-service` action will:
-            1.  Fetch the `dialectic_contributions` record by `contributionId` to get its `content_storage_bucket` and `content_storage_path`.
-            2.  Use the `createSignedUrlForPath` storage utility to generate a signed URL for reading the content (with a reasonable expiry, e.g., 5-15 minutes).
-            3.  Return the `signedUrl`, `content_mime_type`, and `content_size_bytes`.
+            1.  Take `contributionId` as input.
+            2.  Fetch the `dialectic_contributions` record.
+            3.  Use `createSignedUrl` from Supabase Storage utilities to generate a short-lived signed URL for the `content_storage_path` in the `content_storage_bucket`.
+            4.  Return `signedUrl`, `mimeType`, and `sizeBytes` from the record.
         *   `[✅] 1.1.5.C.2.1 [TEST-INT]` Write integration test for this backend service action. (RED -> GREEN)
         *   `[✅] 1.1.5.C.2.2 [TEST-UNIT]` Write unit test for the API adapter method. (RED -> GREEN)
     *   `[✅] 1.1.5.C.3 [STORE]` Update/Create state and thunks in `dialecticStore.ts`:
         *   State: `contributionContentCache: { [contributionId: string]: { signedUrl?: string, expiry?: number, content?: string, isLoading: boolean, error?: string, mimeType?: string, sizeBytes?: number } }`.
         *   Thunk: `fetchContributionContent(contributionId: string)`:
-            1.  Check cache: if valid, non-expired URL and content exist, return content. If URL exists but content not fetched, proceed to fetch.
-            2.  Calls `api.dialectic.getContributionContentSignedUrl(contributionId)`.
+            1.  Checks cache for fresh, non-error, non-loading entry. If found, returns.
+            2.  Calls API `getContributionContentSignedUrl(contributionId)`.
             3.  Stores `signedUrl`, `mimeType`, `sizeBytes`, and `expiry` in cache.
             4.  Performs a `fetch(signedUrl)` to get the actual content (e.g., as text).
             5.  Stores the fetched content in the cache.
             6.  Handles loading and error states.
         *   `[✅] 1.1.5.C.3.1 [TEST-UNIT]` Write unit tests for thunk and reducers. (RED -> GREEN)
-    *   `[ ] 1.1.5.C.4 [UI]` Update UI components (e.g., `DialecticSessionDetailsPage`) that display contribution content:
-        *   Use a selector to get cached data from `contributionContentCache` for the relevant `contributionId`.
-        *   If data is not present or URL is expired (or content not yet fetched), dispatch `fetchContributionContent(contributionId)`.
-        *   Display loading indicators.
-        *   Once content is fetched, render it (e.g., using a Markdown renderer if `mimeType` is `text/markdown`).
+    *   `[🚧] 1.1.5.C.4 [UI]` Update UI components (e.g., `DialecticSessionDetailsPage`, `ContributionCard`) that display contribution content: (UI components not yet identified or implemented to use `fetchContributionContent`)
+        *   `[ ]` Use a selector to get cached data from `contributionContentCache` for the relevant `contributionId`.
+        *   `[ ]` If data is not present or URL is expired (or content not yet fetched), dispatch `fetchContributionContent(contributionId)`.
+        *   `[ ]` Display loading indicators.
+        *   `[ ]` Once content is fetched, render it (e.g., using a Markdown renderer if `mimeType` is `text/markdown`).
         *   `[ ] 1.1.5.C.4.1 [TEST-UNIT]` Update/write UI component tests. (RED -> GREEN)
 *   `[ ] 1.1.5.D [BE]` Handling Deletion of Contributions
     *   `[ ] 1.1.5.D.1` When a `dialectic_contribution` record is deleted (e.g., due to cascade delete from session/project, or a direct "delete contribution" feature if ever added):
@@ -458,10 +461,10 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 1.1.5.D.2 [DB/BE]` Design and implement this cleanup mechanism (Trigger + DB function preferred for cascade safety).
         *   `[ ] 1.1.5.D.2.1 [TEST-UNIT]` Write tests for the cleanup mechanism. (RED -> GREEN)
 *   `[ ] 1.1.5.E [COMMIT]` feat(db,be,api,store,ui): Implement Supabase Storage for dialectic contributions
-*   `[ ] 1.1.6 [BE]` Seed `ai_models_catalog` with initial data for core OpenAI, Anthropic, and Google models supported in Phase 1.
-    *   `[ ] 1.1.6.1 [TEST-UNIT]` Write test for seeding catalog. (RED)
-    *   `[ ] 1.1.6.2` Create seed script. (GREEN)
-    *   `[ ] 1.1.6.3 [TEST-UNIT]` Run seed script test.
+*   `[ ] 1.1.6 [BE/CONFIG]` Ensure `ai_providers` table is populated with detailed configurations for core models via the `sync-ai-models` Edge Function.
+    *   `[ ] 1.1.6.1 [DOCS]` Verify that `sync-ai-models` correctly fetches and stores detailed configurations (context window, token costs, max output tokens, etc.) in the `ai_providers` table (specifically the `config` JSONB field if applicable, or individual columns if the schema has been denormalized) for OpenAI, Anthropic, and Google models. Confirm that the information includes `api_identifier`, `provider_name`, `model_name`, `context_window_tokens`, `input_token_cost_usd_millionths`, `output_token_cost_usd_millionths`, and `max_output_tokens`.
+    *   `[ ] 1.1.6.2 [TEST-INT]` Review existing tests for `sync-ai-models` (e.g., `supabase/functions/sync-ai-models/index.test.ts` and provider-specific tests like `openai_sync.test.ts`, `anthropic_sync.test.ts`, `google_sync.test.ts`) to ensure they cover the accurate population of all necessary fields in `ai_providers` for core models. If coverage for these specific fields is lacking, identify and add necessary test cases.
+    *   `[ ] 1.1.6.3 [BE]` If `supabase/seed.sql` contains detailed entries for these core models (beyond minimal placeholders for `id`, `provider_name`, `model_name`), refactor it to remove such details. The `sync-ai-models` function is the source of truth for comprehensive model configurations. Ensure `sync-ai-models` can be run (e.g., via a script or manual trigger) to populate development/testing environments.
 *   `[✅] 1.1.7 [RLS]` Define Row Level Security policies for `dialectic_projects`, `dialectic_sessions`, `dialectic_session_models`, `dialectic_contributions`.
     *   `[❓] 1.1.7.1 [TEST-INT]` Write RLS tests for `dialectic_projects` (user owns their projects). (RED)
     *   `[✅] 1.1.7.2` Implement RLS for `dialectic_projects`. (GREEN)

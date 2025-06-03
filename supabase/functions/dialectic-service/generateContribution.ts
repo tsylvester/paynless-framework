@@ -7,15 +7,11 @@ import {
     UnifiedAIResponse,
     CallUnifiedAIModelOptions
   } from "./dialectic.interface.ts";
-  import { uploadToStorage as originalUploadToStorage, getFileMetadata as originalGetFileMetadata, deleteFromStorage as originalDeleteFromStorage } from "../_shared/supabase_storage_utils.ts";
-  import { getExtensionFromMimeType as originalGetExtensionFromMimeType } from "../_shared/path_utils.ts";
-  import type {
-
-  } from "../_shared/types.ts";
+  import { uploadToStorage, getFileMetadata, deleteFromStorage } from "../_shared/supabase_storage_utils.ts";
+  import { getExtensionFromMimeType } from "../_shared/path_utils.ts";
   import type { Database } from "../types_db.ts";
-  import { logger as originalLogger, type Logger } from "../_shared/logger.ts";
-  import { callUnifiedAIModel as originalCallUnifiedAIModel } from "./callModel.ts";
-  import { createSupabaseAdminClient } from "../_shared/auth.ts";
+  import { logger, type Logger } from "../_shared/logger.ts";
+  import { callUnifiedAIModel } from "./callModel.ts";
   import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
   
   console.log("generateContribution function started");
@@ -23,22 +19,22 @@ import {
   // Define Dependencies Interface
   export interface GenerateContributionsDeps {
     callUnifiedAIModel: (modelId: string, prompt: string, chatId: string, authToken: string, options?: CallUnifiedAIModelOptions) => Promise<UnifiedAIResponse>;
-    uploadToStorage: typeof originalUploadToStorage;
-    getFileMetadata: typeof originalGetFileMetadata;
-    deleteFromStorage: typeof originalDeleteFromStorage;
-    getExtensionFromMimeType: typeof originalGetExtensionFromMimeType;
+    uploadToStorage: typeof uploadToStorage;
+    getFileMetadata: typeof getFileMetadata;
+    deleteFromStorage: typeof deleteFromStorage;
+    getExtensionFromMimeType: typeof getExtensionFromMimeType;
     logger: Logger;
     randomUUID: () => string;
   }
   
   // Define default dependencies
   const defaultGenerateContributionsDeps: GenerateContributionsDeps = {
-    callUnifiedAIModel: originalCallUnifiedAIModel,
-    uploadToStorage: originalUploadToStorage,
-    getFileMetadata: originalGetFileMetadata,
-    deleteFromStorage: originalDeleteFromStorage,
-    getExtensionFromMimeType: originalGetExtensionFromMimeType,
-    logger: originalLogger,
+    callUnifiedAIModel: callUnifiedAIModel,
+    uploadToStorage: uploadToStorage,
+    getFileMetadata: getFileMetadata,
+    deleteFromStorage: deleteFromStorage,
+    getExtensionFromMimeType: getExtensionFromMimeType,
+    logger: logger,
     randomUUID: crypto.randomUUID,
   };
 
@@ -54,6 +50,7 @@ export async function generateStageContributions(
     const { sessionId } = payload;
     logger.info(`[generateStageContributions] Starting for session ID: ${sessionId}`);
     const BUCKET_NAME = 'dialectic-contributions'; // Define bucket name
+    const ASSUMED_CONTENT_TYPE = "text/markdown"; // Explicitly define the assumed content type
   
     try {
       // 1. Fetch session details: project_id, initial_user_prompt, selected_domain_tag, and selected models
@@ -160,7 +157,7 @@ export async function generateStageContributions(
             authToken,
             // TODO: Pass system_prompt_id if available from session/project setup
           );
-          logger.info(`[generateStageContributions] AI response received from ${modelIdentifier}`, { hasError: !!aiResponse.error, tokens: {in: aiResponse.inputTokens, out: aiResponse.outputTokens}, cost: aiResponse.cost });
+          logger.info(`[generateStageContributions] AI response received from ${modelIdentifier}`, { hasError: !!aiResponse.error, tokens: {in: aiResponse.inputTokens, out: aiResponse.outputTokens} });
   
   
           if (aiResponse.error || !aiResponse.content) {
@@ -173,22 +170,22 @@ export async function generateStageContributions(
               code: aiResponse.errorCode || 'AI_CALL_FAILED',
               inputTokens: aiResponse.inputTokens,
               outputTokens: aiResponse.outputTokens,
-              cost: aiResponse.cost,
               processingTimeMs: aiResponse.processingTimeMs,
             });
             continue; // Move to the next model
           }
   
           const contributionContent = aiResponse.content;
-          const contentType = "text/markdown"; // Assuming markdown for now, TODO: make dynamic based on AI response or settings
-          const fileExtension = getExtensionFromMimeType(contentType);
+          // Use contentType from aiResponse, fallback to a default if not present
+          const determinedContentType = aiResponse.contentType || "text/markdown"; 
+          const fileExtension = getExtensionFromMimeType(determinedContentType);
           const contributionId = randomUUID();
   
           const contentStoragePath = `projects/${sessionDetails.project_id}/sessions/${sessionId}/contributions/${contributionId}/thesis${fileExtension}`;
           const rawResponseStoragePath = `projects/${sessionDetails.project_id}/sessions/${sessionId}/contributions/${contributionId}/raw_thesis_response.json`;
   
           logger.info(`[generateStageContributions] Uploading content for ${modelIdentifier} to: ${contentStoragePath}`);
-          const { error: contentUploadError } = await uploadToStorage(dbClient, BUCKET_NAME, contentStoragePath, contributionContent, { contentType });
+          const { error: contentUploadError } = await uploadToStorage(dbClient, BUCKET_NAME, contentStoragePath, contributionContent, { contentType: determinedContentType });
           if (contentUploadError) {
             logger.error(`[generateStageContributions] Failed to upload content for ${modelIdentifier} to ${contentStoragePath}:`, { error: contentUploadError });
             failedContributionAttempts.push({ 
@@ -233,13 +230,13 @@ export async function generateStageContributions(
               session_model_id: sessionModelId, // Link to the specific dialectic_session_models.id
               user_id: null,
               parent_contribution_id: null,
-              stage: 'thesis',
+              stage: payload.stage, // Use dynamic stage from payload
               content_storage_bucket: BUCKET_NAME, // Ensure the bucket name is included
               content_storage_path: contentStoragePath,
+              content_mime_type: determinedContentType, // Use the determinedContentType from aiResponse
               raw_response_storage_path: rawResponseStoragePath,
-              tokens_used_input: aiResponse.inputTokens,
-              tokens_used_output: aiResponse.outputTokens,
-              cost_usd: aiResponse.cost,
+              tokens_used_input: aiResponse.inputTokens, // This should come from aiResponse.tokenUsage.prompt_tokens
+              tokens_used_output: aiResponse.outputTokens, // This should come from aiResponse.tokenUsage.completion_tokens
               content_size_bytes: contentSizeBytes,
               processing_time_ms: aiResponse.processingTimeMs,
               // model_name, provider_name can be joined if needed later
@@ -322,7 +319,7 @@ export async function generateStageContributions(
             modelId: f.modelId, // This is ai_providers.id
             // sessionModelId: f.sessionModelId, // We might want to expose this to the client if useful for retry/display
             message: f.error,
-            details: `Code: ${f.code}, Details: ${f.details}${f.inputTokens !== undefined ? `, Input Tokens: ${f.inputTokens}` : ''}${f.outputTokens !== undefined ? `, Output Tokens: ${f.outputTokens}` : ''}${f.cost !== undefined ? `, Cost: ${f.cost}` : ''}${f.processingTimeMs !== undefined ? `, Processing Time: ${f.processingTimeMs}ms` : ''}`
+            details: `Code: ${f.code}, Details: ${f.details}${f.inputTokens !== undefined ? `, Input Tokens: ${f.inputTokens}` : ''}${f.outputTokens !== undefined ? `, Output Tokens: ${f.outputTokens}` : ''}${f.processingTimeMs !== undefined ? `, Processing Time: ${f.processingTimeMs}ms` : ''}`
         })) : undefined,
       };
       

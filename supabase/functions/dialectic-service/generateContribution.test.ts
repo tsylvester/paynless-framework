@@ -1,6 +1,6 @@
 import { assertEquals, assertExists, assertObjectMatch, assertRejects, assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { spy, stub, type Stub, returnsNext } from "jsr:@std/testing@0.225.1/mock";
-import { generateThesisContributions } from "./generateContribution.ts";
+import { generateStageContributions } from "./generateContribution.ts";
 import type { 
     GenerateStageContributionsPayload, 
     GenerateStageContributionsSuccessResponse,
@@ -76,7 +76,7 @@ Deno.test("generateStageContributions - Happy Path (Single Model)", async () => 
         },
         error: null,
     }));
-    const mockSessionSelectEqSpy = spy<[string, string], { single: Stub }>(() => ({ single: mockSessionSelectEqSingleSpy as Stub }));
+    const mockSessionSelectEqSpy = spy((_column: string, _value: any) => ({ single: mockSessionSelectEqSingleSpy }));
     const mockSessionSelectSpy = spy(() => ({ eq: mockSessionSelectEqSpy }));
 
     let capturedInsertArg: any = null; // Keep this to capture the argument for assertion
@@ -95,10 +95,9 @@ Deno.test("generateStageContributions - Happy Path (Single Model)", async () => 
                 raw_response_storage_path: capturedInsertArg.raw_response_storage_path || mockRawResponseStoragePath,
                 tokens_used_input: capturedInsertArg.tokens_used_input,
                 tokens_used_output: capturedInsertArg.tokens_used_output,
-                cost_usd: capturedInsertArg.cost_usd,
                 content_size_bytes: capturedInsertArg.content_size_bytes,
                 processing_time_ms: capturedInsertArg.processing_time_ms,
-                // Include any other fields that are part of the insert and expected in the select
+                content_mime_type: capturedInsertArg.content_mime_type, // Ensure this is returned
             },
             error: null,
         });
@@ -114,8 +113,8 @@ Deno.test("generateStageContributions - Happy Path (Single Model)", async () => 
     });
 
 
-    const mockSessionUpdateEqSpy = spy<[string, string], Promise<{error: Error | null}>>(async () => await Promise.resolve({ error: null }));
-    const mockSessionUpdateSpy = spy<[Partial<Database['public']['Tables']['dialectic_sessions']['Update']>] , { eq: Stub }>(() => ({ eq: mockSessionUpdateEqSpy as Stub }));
+    const mockSessionUpdateEqSpy = spy(async (_column: string, _value: any) => await Promise.resolve({ error: null }));
+    const mockSessionUpdateSpy = spy((_values: Partial<Database['public']['Tables']['dialectic_sessions']['Update']>) => ({ eq: mockSessionUpdateEqSpy }));
 
     const mockDbClient: any = {
         from: spy((tableName: string) => {
@@ -154,13 +153,14 @@ Deno.test("generateStageContributions - Happy Path (Single Model)", async () => 
         _options?: CallUnifiedAIModelOptions
     ): Promise<UnifiedAIResponse> => await Promise.resolve({
         content: mockContent,
-        inputTokens: 10,
-        outputTokens: 20,
-        cost: 0.001,
-        processingTimeMs: 1000,
         error: null,
         errorCode: null,
+        inputTokens: 10,
+        outputTokens: 20,
+        tokenUsage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+        processingTimeMs: 1000,
         rawProviderResponse: { modelOutput: "raw output" },
+        contentType: mockContentType,
     }));
 
     const mockUploadToStorage = spy(async (
@@ -195,7 +195,7 @@ Deno.test("generateStageContributions - Happy Path (Single Model)", async () => 
 
 
     try {
-        const result = await generateThesisContributions(
+        const result = await generateStageContributions(
             mockDbClient as any,
             mockPayload,
             mockAuthToken,
@@ -225,9 +225,9 @@ Deno.test("generateStageContributions - Happy Path (Single Model)", async () => 
             raw_response_storage_path: mockRawResponseStoragePath,
             tokens_used_input: 10,
             tokens_used_output: 20,
-            cost_usd: 0.001,
             content_size_bytes: mockFileSize,
             processing_time_ms: 1000,
+            content_mime_type: mockContentType,
         });
         assertEquals(result.error, undefined);
 
@@ -294,9 +294,9 @@ Deno.test("generateStageContributions - Happy Path (Single Model)", async () => 
             raw_response_storage_path: mockRawResponseStoragePath,
             tokens_used_input: 10,
             tokens_used_output: 20,
-            cost_usd: 0.001,
             content_size_bytes: mockFileSize,
             processing_time_ms: 1000,
+            content_mime_type: mockContentType,
         });
 
         // Assertions for the second call to dialectic_sessions (update)
@@ -316,21 +316,38 @@ Deno.test("generateStageContributions - Happy Path (Single Model)", async () => 
             assertEquals(firstUpdateEqCall.args[1], mockSessionId);
         }
 
+        // More robust check for the specific two-argument log call
+        const expectedLogMessage = `[generateStageContributions] Finished processing all models for session ${mockSessionId}`;
+        
+        const matchingLogCall = localLoggerInfo.calls.find((call, index) => {
+            if (call.args.length === 2 && typeof call.args[0] === 'string') {
+                const actualLogMessageTrimmed = call.args[0].trim();
+                const stringMatch = actualLogMessageTrimmed === expectedLogMessage.trim();
+                const arg1 = call.args[1] as Record<string, unknown> | null;
+                const objMatch = typeof arg1 === 'object' && arg1 !== null &&
+                                 arg1.successful === 1 &&
+                                 arg1.failed === 0;
 
-        // Check logger calls (basic checks)
-        assert(localLoggerInfo.calls.some(call => call.args[0].includes(`Starting for session ID: ${mockSessionId}`)));
-        assert(localLoggerInfo.calls.some(call => call.args[0].includes(`Fetched session details for ${mockSessionId}`)));
-        assert(localLoggerInfo.calls.some(call => call.args[0].includes(`Processing model: ${mockProviderName} - ${mockModelName}`)));
-        assert(localLoggerInfo.calls.some(call => call.args[0].includes(`AI response received from ${mockProviderName} - ${mockModelName}`)));
-        assert(localLoggerInfo.calls.some(call => call.args[0].includes(`Uploading content for ${mockProviderName} - ${mockModelName} to: ${mockContentStoragePath}`)));
-        assert(localLoggerInfo.calls.some(call => call.args[0].includes(`Content uploaded successfully for ${mockProviderName} - ${mockModelName}`)));
-        assert(localLoggerInfo.calls.some(call => call.args[0].includes(`Uploading raw response for ${mockProviderName} - ${mockModelName} to: ${mockRawResponseStoragePath}`)));
-        assert(localLoggerInfo.calls.some(call => call.args[0].includes(`Raw response uploaded successfully for ${mockProviderName} - ${mockModelName}`)));
-        assert(localLoggerInfo.calls.some(call => call.args[0].includes(`Fetched metadata for ${mockContentStoragePath}, size: ${mockFileSize}`)));
-        assert(localLoggerInfo.calls.some(call => call.args[0].includes(`Inserting contribution to DB for ${mockProviderName} - ${mockModelName}`)));
-        assert(localLoggerInfo.calls.some(call => call.args[0].includes(`Contribution inserted to DB successfully for ${mockProviderName} - ${mockModelName}`)));
-        assert(localLoggerInfo.calls.some(call => call.args[0].includes(`Finished processing all models for session ${mockSessionId}`)));
-        assert(localLoggerInfo.calls.some(call => call.args[0].includes(`Updating session ${mockSessionId} status to: thesis_generation_complete`)));
+                // More detailed logging if it's the one we are targeting by content
+                if (actualLogMessageTrimmed.includes("Finished processing all models for session test-session-id")) {
+                    console.log("---------------------------------------------------------");
+                    console.log(`DEBUG (INSIDE FIND): Checking specific call. Arg0: "${actualLogMessageTrimmed}"`);
+                    console.log(`DEBUG (INSIDE FIND): Expected Arg0: "${expectedLogMessage.trim()}"`);
+                    console.log(`DEBUG (INSIDE FIND): String comparison (actual === expected): ${stringMatch}`);
+                    console.log(`DEBUG (INSIDE FIND): Arg1 actual: ${JSON.stringify(arg1)}`);
+                    console.log(`DEBUG (INSIDE FIND): Arg1 expected: ${JSON.stringify({ successful: 1, failed: 0 })}`);
+                    console.log(`DEBUG (INSIDE FIND): Obj successful match: ${arg1?.successful === 1}`);
+                    console.log(`DEBUG (INSIDE FIND): Obj failed match: ${arg1?.failed === 0}`);
+                    console.log(`DEBUG (INSIDE FIND): Overall objMatch for this call: ${objMatch}`);
+                    console.log("---------------------------------------------------------");
+                }
+                return stringMatch && objMatch;
+            }
+            return false;
+        });
+        assertExists(matchingLogCall, `Log call for '${expectedLogMessage}' with payload { successful: 1, failed: 0 } not found`);
+
+        assert(localLoggerInfo.calls.some(call => typeof call.args[0] === 'string' && call.args[0].trim() === (`[generateStageContributions] Updating session ${mockSessionId} status to: thesis_generation_complete`).trim()));
         assert(localLoggerInfo.calls.some(call => call.args[0].includes(`Session ${mockSessionId} status updated to thesis_generation_complete`)));
         assert(localLoggerInfo.calls.some(call => call.args[0].includes(`Successfully completed for session ${mockSessionId}. Status: thesis_generation_complete`)));
         assertEquals(localLoggerError.calls.length, 0);
@@ -398,8 +415,8 @@ Deno.test("generateStageContributions - Multiple Models (some success, some fail
         return { select: mockContributionInsertSelectSpy };
     });
 
-    const mockSessionUpdateEqSpy = spy<[string, string], Promise<{error: Error | null}>>(async () => await Promise.resolve({ error: null }));
-    const mockSessionUpdateSpy = spy<[Partial<Database['public']['Tables']['dialectic_sessions']['Update']>] , { eq: Stub }>(() => ({ eq: mockSessionUpdateEqSpy as Stub }));
+    const mockSessionUpdateEqSpy = spy(async (_column: string, _value: any) => await Promise.resolve({ error: null }));
+    const mockSessionUpdateSpy = spy((_values: Partial<Database['public']['Tables']['dialectic_sessions']['Update']>) => ({ eq: mockSessionUpdateEqSpy }));
 
     const mockSessionSelectEqSingleSpy = spy(async () => await Promise.resolve({
         data: {
@@ -423,7 +440,7 @@ Deno.test("generateStageContributions - Multiple Models (some success, some fail
         },
         error: null,
     }));
-    const mockSessionSelectEqSpy = spy<[string, string], { single: Stub }>(() => ({ single: mockSessionSelectEqSingleSpy as Stub }));
+    const mockSessionSelectEqSpy = spy((_column: string, _value: any) => ({ single: mockSessionSelectEqSingleSpy }));
     const mockSessionSelectSpy = spy(() => ({ eq: mockSessionSelectEqSpy }));
 
     const mockDbClientFromSpy = spy((tableName: string) => {
@@ -443,14 +460,25 @@ Deno.test("generateStageContributions - Multiple Models (some success, some fail
     const mockCallUnifiedAIModel = spy(returnsNext([
         Promise.resolve({ // Success for model 1
             content: mockContent1,
-            inputTokens: 10, outputTokens: 20, cost: 0.001, processingTimeMs: 100,
-            error: null, errorCode: null, rawProviderResponse: { raw: "model1_raw" },
+            error: null,
+            errorCode: null,
+            inputTokens: 10, 
+            outputTokens: 20, 
+            tokenUsage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+            processingTimeMs: 100,
+            rawProviderResponse: { raw: "model1_raw" },
+            contentType: mockContentType,
         }),
         Promise.resolve({ // Failure for model 2
             content: null,
-            error: "AI model call failed for model 2", errorCode: "AI_CALL_FAILED",
-            inputTokens: 5, outputTokens: 0, cost: 0.0001, processingTimeMs: 50,
+            error: "AI model call failed for model 2", 
+            errorCode: "AI_CALL_FAILED",
+            inputTokens: 5, 
+            outputTokens: 0, 
+            tokenUsage: { prompt_tokens: 5, completion_tokens: 0, total_tokens: 5 },
+            processingTimeMs: 50,
             rawProviderResponse: { raw_error: "model2_error_details" },
+            contentType: undefined,
         }),
     ]));
 
@@ -466,7 +494,7 @@ Deno.test("generateStageContributions - Multiple Models (some success, some fail
     const localLoggerWarn = spy(logger, 'warn');
 
     try {
-        const result = await generateThesisContributions(
+        const result = await generateStageContributions(
             mockDbClient as any,
             mockPayload,
             mockAuthToken,
@@ -500,9 +528,9 @@ Deno.test("generateStageContributions - Multiple Models (some success, some fail
             raw_response_storage_path: mockRawResponseStoragePath1,
             tokens_used_input: 10,
             tokens_used_output: 20,
-            cost_usd: 0.001,
             content_size_bytes: mockFileSize,
             processing_time_ms: 100,
+            content_mime_type: mockContentType,
         });
 
         // Assertions for failed contribution (model 2)

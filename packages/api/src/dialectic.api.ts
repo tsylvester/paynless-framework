@@ -253,6 +253,7 @@ export class DialecticApiClient {
             if (payload.resourceDescription) {
                 formData.append('resourceDescription', payload.resourceDescription);
             }
+            formData.append('file', payload.file, payload.fileName);
 
             const response = await this.apiClient.post<DialecticProjectResource, FormData>(
                 'dialectic-service',

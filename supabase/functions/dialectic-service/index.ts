@@ -15,7 +15,7 @@ import {
 } from "../_shared/cors-headers.ts";
 import { createSupabaseAdminClient } from "../_shared/auth.ts";
 import { logger } from "../_shared/logger.ts";
-import type { SupabaseClient, User, AuthError } from 'npm:@supabase/supabase-js';
+import type { SupabaseClient, User } from 'npm:@supabase/supabase-js';
 import type {
   ServiceError,
   GetUserFnResult,

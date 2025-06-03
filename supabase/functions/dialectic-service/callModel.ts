@@ -120,23 +120,24 @@ export async function callUnifiedAIModel(
               error: "/chat function response did not include an assistantMessage.",
               errorCode: 'CHAT_API_INVALID_RESPONSE',
               processingTimeMs,
-              rawProviderResponse: chatResponse,
+              rawProviderResponse: chatResponse as unknown as Record<string, unknown>,
           };
       }
       
       const assistantMessage = chatResponse.assistantMessage;
-      // Assuming ChatMessageRow (type of assistantMessage) includes token_usage and cost
-      const tokenUsage = assistantMessage.token_usage as TokenUsage | null; 
-  
+      const tokenUsage = assistantMessage.token_usage as TokenUsage | null;
+
+      const contentType = (assistantMessage as unknown as { contentType?: string }).contentType || "text/markdown";
+
       return {
         content: assistantMessage.content,
+        error: null,
         inputTokens: tokenUsage?.prompt_tokens,
         outputTokens: tokenUsage?.completion_tokens,
-        cost: (assistantMessage as unknown as { cost?: number }).cost ?? undefined, // Explicitly cast to any for cost if type is not fully resolved
+        tokenUsage: tokenUsage,
         processingTimeMs,
-        rawProviderResponse: assistantMessage, 
-        error: null, 
-        errorCode: null,
+        contentType: contentType,
+        rawProviderResponse: assistantMessage as unknown as Record<string, unknown>,
       };
   
     } catch (e) {

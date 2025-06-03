@@ -12,7 +12,6 @@ Deno.test("callUnifiedAIModel - successful call to /chat", async () => {
   const mockRenderedPrompt = "Hello, world!";
   const mockAssociatedChatId = "chat-uuid-123";
   const mockSystemPromptId = "system-prompt-uuid-456";
-  const mockCost = 0.00006;
   const mockUserId = "user-uuid-123";
 
   const mockTokenUsage: TokenUsage = {
@@ -40,13 +39,8 @@ Deno.test("callUnifiedAIModel - successful call to /chat", async () => {
     organization_id: null,
   };
 
-  const assistantMessageWithCost = {
-    ...baseMockAssistantMessage,
-    cost: mockCost,
-  };
-
   const mockChatSuccessResponse: ChatHandlerSuccessResponse = {
-    assistantMessage: assistantMessageWithCost as ChatMessage,
+    assistantMessage: baseMockAssistantMessage as ChatMessage,
     chatId: mockAssociatedChatId,
   };
 
@@ -73,12 +67,12 @@ Deno.test("callUnifiedAIModel - successful call to /chat", async () => {
 
     assertExists(result, "Result should not be null or undefined");
     assertEquals(result.error, null);
-    assertEquals(result.content, assistantMessageWithCost.content);
+    assertEquals(result.content, baseMockAssistantMessage.content);
     assertEquals(result.inputTokens, mockTokenUsage.prompt_tokens);
     assertEquals(result.outputTokens, mockTokenUsage.completion_tokens);
-    assertEquals(result.cost, mockCost);
+    assertEquals(result.tokenUsage, mockTokenUsage);
     assertExists(result.processingTimeMs, "processingTimeMs should exist");
-    assertEquals(result.rawProviderResponse, assistantMessageWithCost);
+    assertEquals(result.rawProviderResponse, baseMockAssistantMessage);
     
     assert(fetchStub.calls.length === 1, "Fetch should be called once");
     const firstCall = fetchStub.calls[0];
@@ -298,11 +292,15 @@ Deno.test("callUnifiedAIModel - with options.historyMessages", async () => {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     status: 'sent',
+    error_type: null,
+    is_active_in_thread: true,
+    response_to_message_id: null,
+    prompt_template_id: null,
+    organization_id: null,
   };
-  const assistantMessageWithCost = { ...baseMockAssistantMessage, cost: 0.00005 }; 
 
   const mockChatSuccessResponse: ChatHandlerSuccessResponse = {
-    assistantMessage: assistantMessageWithCost as ChatMessage,
+    assistantMessage: baseMockAssistantMessage as ChatMessage,
     chatId: mockAssociatedChatId,
   };
 
@@ -336,7 +334,7 @@ Deno.test("callUnifiedAIModel - with options.historyMessages", async () => {
 
     assertExists(result);
     assertEquals(result.error, null);
-    assertEquals(result.content, assistantMessageWithCost.content);
+    assertEquals(result.content, baseMockAssistantMessage.content);
 
     assert(fetchStub.calls.length === 1, "Fetch should be called once");
     const firstCall = fetchStub.calls[0];
@@ -384,11 +382,15 @@ Deno.test("callUnifiedAIModel - with options.currentStageSystemPromptId and opti
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     status: 'sent',
+    error_type: null,
+    is_active_in_thread: true,
+    response_to_message_id: null,
+    prompt_template_id: null,
+    organization_id: null,
   };
-  const assistantMessageWithCost = { ...baseMockAssistantMessage, cost: 0.00008 }; 
 
   const mockChatSuccessResponse: ChatHandlerSuccessResponse = {
-    assistantMessage: assistantMessageWithCost as ChatMessage,
+    assistantMessage: baseMockAssistantMessage as ChatMessage,
     chatId: mockAssociatedChatId,
   };
 
@@ -423,7 +425,7 @@ Deno.test("callUnifiedAIModel - with options.currentStageSystemPromptId and opti
 
     assertExists(result);
     assertEquals(result.error, null);
-    assertEquals(result.content, assistantMessageWithCost.content);
+    assertEquals(result.content, baseMockAssistantMessage.content);
 
     assert(fetchStub.calls.length === 1, "Fetch should be called once");
     const firstCall = fetchStub.calls[0];

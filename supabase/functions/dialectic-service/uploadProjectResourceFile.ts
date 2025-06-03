@@ -1,6 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
 import { SupabaseClient } from '@supabase/supabase-js';
-import type { User } from "npm:@supabase/supabase-js"; // Import User directly from npm package
 import {
   DialecticProjectResource,
   UploadProjectResourceFileSuccessResponse

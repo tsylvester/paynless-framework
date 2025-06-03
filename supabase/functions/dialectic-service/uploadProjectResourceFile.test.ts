@@ -11,8 +11,6 @@ import {
     createMockSupabaseClient,
     type MockSupabaseClientSetup,
     type MockSupabaseDataConfig,
-    type IMockSupabaseClient, // Keep this for type hints if needed, though direct usage is client from setup
-    type IMockStorageFileOptions
 } from '../_shared/supabase.mock.ts';
 import type { ILogger, LogMetadata } from '../_shared/types.ts';
 
