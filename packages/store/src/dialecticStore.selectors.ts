@@ -3,7 +3,8 @@ import type {
     DialecticProject, 
     AIModelCatalogEntry, 
     ApiError, 
-    DomainTagDescriptor 
+    DomainTagDescriptor,
+    DomainOverlayDescriptor
 } from '@paynless/types';
 
 // Selector for the list of available domain tags
@@ -17,6 +18,18 @@ export const selectDomainTagsError = (state: DialecticStateValues): ApiError | n
 
 // Selector for the currently selected domain tag
 export const selectSelectedDomainTag = (state: DialecticStateValues): string | null => state.selectedDomainTag;
+
+// Selector for the selected domain tag
+export const selectSelectedStageAssociation = (state: DialecticStateValues): string | null => state.selectedStageAssociation;
+
+// Selector for the available domain overlays
+export const selectAvailableDomainOverlays = (state: DialecticStateValues): DomainOverlayDescriptor[] => state.availableDomainOverlays ?? [];
+
+// Selector for the loading state of domain overlays
+export const selectIsLoadingDomainOverlays = (state: DialecticStateValues): boolean => state.isLoadingDomainOverlays;
+
+// Selector for any error related to fetching domain overlays
+export const selectDomainOverlaysError = (state: DialecticStateValues): ApiError | null => state.domainOverlaysError;
 
 // Selector for the list of projects
 export const selectDialecticProjects = (state: DialecticStateValues): DialecticProject[] => state.projects;

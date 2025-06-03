@@ -24,7 +24,7 @@ const getModelNameFromContribution = (contribution: DialecticContribution, sessi
   return sessionModel.model_id;
 };
 
-export const DialecticSessionDetailsPage: React.FC = () => {
+export const DialecticSessionDetails: React.FC = () => {
   const { projectId, sessionId } = useParams<{ projectId: string; sessionId: string }>();
 
   const projectDetail = useDialecticStore(selectCurrentProjectDetail);

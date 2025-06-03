@@ -230,3 +230,16 @@ export interface UploadProjectResourceFileSuccessResponse {
   resource: DialecticProjectResource;
 }
 // --- END: Added for Project Resource Upload (1.0.B) ---
+
+export interface DomainOverlayDescriptor {
+  id: string; // Corresponds to domain_specific_prompt_overlays.id
+  domainTag: string;
+  description: string | null;
+  stageAssociation: string; // Corresponds to system_prompts.stage_association
+}
+
+export interface ListAvailableDomainOverlaysPayload {
+  stageAssociation: string;
+}
+
+// Add other service-specific interfaces here if needed in the future

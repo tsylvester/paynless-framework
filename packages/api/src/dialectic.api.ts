@@ -10,7 +10,7 @@ import type {
     UploadProjectResourceFilePayload,
     DialecticProjectResource,
     DomainTagDescriptor,
-    UpdateProjectDomainTagPayload
+    DomainOverlayDescriptor
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -56,28 +56,27 @@ export class DialecticApiClient {
     }
 
     /**
-     * Creates a new dialectic project.
+     * Fetches the list of available domain overlay details for a given stage association.
      * Requires authentication.
      */
-    async createProject(payload: CreateProjectPayload): Promise<ApiResponse<DialecticProject>> {
-        logger.info('Creating a new dialectic project', { projectName: payload.projectName });
+    async listAvailableDomainOverlays(payload: { stageAssociation: string }): Promise<ApiResponse<DomainOverlayDescriptor[]>> {
+        logger.info('Fetching available domain overlay details', { stageAssociation: payload.stageAssociation });
 
         try {
-            const response = await this.apiClient.post<DialecticProject, { action: string; payload: CreateProjectPayload }>(
+            const response = await this.apiClient.post<DomainOverlayDescriptor[], { action: string; payload: { stageAssociation: string } }>(
                 'dialectic-service',
-                { action: 'createProject', payload },
-                // Default options will ensure authentication is handled by apiClient
+                { action: 'listAvailableDomainOverlays', payload }
             );
 
             if (response.error) {
-                logger.error('Error creating dialectic project:', { error: response.error, projectName: payload.projectName });
+                logger.error('Error fetching domain overlay details:', { error: response.error, stageAssociation: payload.stageAssociation });
             } else {
-                logger.info('Successfully created dialectic project', { projectId: response.data?.id });
+                logger.info(`Successfully fetched ${response.data?.length ?? 0} domain overlay details`, { stageAssociation: payload.stageAssociation });
             }
             return response;
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'A network error occurred';
-            logger.error('Network error in createProject:', { errorMessage: message, errorObject: error });
+            logger.error('Network error in listAvailableDomainOverlays:', { errorMessage: message, stageAssociation: payload.stageAssociation, errorObject: error });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },
@@ -275,6 +274,36 @@ export class DialecticApiClient {
                 error: { message: err.message, code: 'NETWORK_ERROR' },
                 status: 0
             } as ApiResponse<DialecticProjectResource>;
+        }
+    }
+
+    /**
+     * Creates a new dialectic project for the authenticated user.
+     * Requires authentication.
+     */
+    async createProject(payload: CreateProjectPayload): Promise<ApiResponse<DialecticProject>> {
+        logger.info('Creating a new dialectic project', { projectName: payload.projectName });
+
+        try {
+            const response = await this.apiClient.post<DialecticProject, { action: string; payload: CreateProjectPayload }>(
+                'dialectic-service',
+                { action: 'createProject', payload }
+            );
+
+            if (response.error) {
+                logger.error('Error creating dialectic project:', { error: response.error, projectName: payload.projectName });
+            } else {
+                logger.info('Successfully created dialectic project', { projectId: response.data?.id });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in createProject:', { errorMessage: message, errorObject: error });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
         }
     }
 } 

@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { DialecticSessionDetailsPage } from './DialecticSessionDetailsPage';
+import { DialecticSessionDetails } from './DialecticSessionDetails';
 import { 
     DialecticProject, 
     DialecticSession, 
@@ -38,8 +38,8 @@ vi.mock('@paynless/store', async (importOriginal) => {
     selectCurrentProjectDetail: actualStore.selectCurrentProjectDetail,
     selectIsLoadingProjectDetail: actualStore.selectIsLoadingProjectDetail,
     selectProjectDetailError: actualStore.selectProjectDetailError,
-    // Add any other named exports from '@paynless/store' that DialecticSessionDetailsPage.tsx
-    // might import. For now, these cover the imports shown in DialecticSessionDetailsPage.tsx.
+    // Add any other named exports from '@paynless/store' that DialecticSessionDetails.tsx
+    // might import. For now, these cover the imports shown in DialecticSessionDetails.tsx.
 
     // Mock useDialecticStore
     useDialecticStore: vi.fn((selectorOrActionAccessor) => {
@@ -220,7 +220,7 @@ const mockFullProject: DialecticProject = {
 };
 
 
-describe('DialecticSessionDetailsPage', () => {
+describe('DialecticSessionDetails', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
@@ -231,24 +231,24 @@ describe('DialecticSessionDetailsPage', () => {
 
   it('fetches project details if not loaded or different projectId', () => {
     mockProjectDetail = null; // Not loaded
-    render(<DialecticSessionDetailsPage />);
+    render(<DialecticSessionDetails />);
     expect(mockFetchProjectDetails).toHaveBeenCalledWith(mockProjectId);
 
     mockFetchProjectDetails.mockClear();
     mockProjectDetail = { ...mockFullProject, id: 'other-proj-id' }; // Different project loaded
-    render(<DialecticSessionDetailsPage />);
+    render(<DialecticSessionDetails />);
     expect(mockFetchProjectDetails).toHaveBeenCalledWith(mockProjectId);
   });
 
   it('does not fetch if correct project details are already loaded', () => {
     mockProjectDetail = mockFullProject;
-    render(<DialecticSessionDetailsPage />);
+    render(<DialecticSessionDetails />);
     expect(mockFetchProjectDetails).not.toHaveBeenCalled();
   });
 
   it('renders loading state', () => {
     mockIsLoadingProjectDetail = true;
-    const { container } = render(<DialecticSessionDetailsPage />);
+      const { container } = render(<DialecticSessionDetails />);
     // Query by a class specific to the Skeleton component, e.g., 'animate-pulse'
     const skeletons = container.querySelectorAll('.animate-pulse');
     expect(skeletons.length).toBeGreaterThan(0);
@@ -256,7 +256,7 @@ describe('DialecticSessionDetailsPage', () => {
 
   it('renders error state', () => {
     mockProjectDetailError = { code: 'FETCH_ERROR', message: 'Failed to fetch' };
-    render(<DialecticSessionDetailsPage />);
+    render(<DialecticSessionDetails />);
     expect(screen.getByText('Error Fetching Project Details')).toBeInTheDocument();
     expect(screen.getByText('Failed to fetch')).toBeInTheDocument();
   });
@@ -264,20 +264,20 @@ describe('DialecticSessionDetailsPage', () => {
   it('renders message if project not found after loading', () => {
     mockProjectDetail = null; // Simulates loaded but not found
     mockIsLoadingProjectDetail = false;
-    render(<DialecticSessionDetailsPage />);
+    render(<DialecticSessionDetails />);
     expect(screen.getByText('Project details not found or not loaded yet.')).toBeInTheDocument();
   });
 
   it('renders message if session not found in project', () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: 'nonexistent-session-id' });
     mockProjectDetail = mockFullProject;
-    render(<DialecticSessionDetailsPage />);
+    render(<DialecticSessionDetails />);
     expect(screen.getByText('Session not found in this project.')).toBeInTheDocument();
   });
 
   it('renders session details and contributions correctly', () => {
     mockProjectDetail = mockFullProject;
-    render(<DialecticSessionDetailsPage />);
+    render(<DialecticSessionDetails />);
 
     expect(screen.getByText(`Session: ${mockSession.session_description}`)).toBeInTheDocument();
     expect(screen.getByText(/Status: thesis_complete | Iteration: 1/)).toBeInTheDocument();
@@ -310,7 +310,7 @@ describe('DialecticSessionDetailsPage', () => {
       ...mockFullProject,
       sessions: [{ ...mockSession, dialectic_contributions: [] }],
     };
-    render(<DialecticSessionDetailsPage />);
+    render(<DialecticSessionDetails />);
     expect(screen.getByText('No contributions found for this session yet.')).toBeInTheDocument();
   });
 

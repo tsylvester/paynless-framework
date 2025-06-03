@@ -1,6 +1,6 @@
 import { SystemPrompt } from './ai.types';
 import type { ApiError, ApiResponse } from './api.types';
-import type { Database, Json } from '@paynless/db-types';
+import type { Database } from '@paynless/db-types';
 
 // Define UpdateProjectDomainTagPayload before its use in DialecticApiClient
 export interface UpdateProjectDomainTagPayload {
@@ -127,6 +127,14 @@ export interface DialecticStateValues {
   domainTagsError: ApiError | null;
   selectedDomainTag: string | null;
 
+  // New state for Domain Overlays
+  selectedStageAssociation: string | null;
+  availableDomainOverlays: DomainOverlayDescriptor[] | null;
+  isLoadingDomainOverlays: boolean;
+  domainOverlaysError: ApiError | null;
+  selectedDomainOverlayId: string | null;
+  // End new state for Domain Overlays
+
   projects: DialecticProject[];
   isLoadingProjects: boolean;
   projectsError: ApiError | null;
@@ -161,6 +169,9 @@ export interface ContributionCacheEntry {
 export interface DialecticActions {
   fetchAvailableDomainTags: () => Promise<void>;
   setSelectedDomainTag: (tag: string | null) => void;
+  fetchAvailableDomainOverlays: (stageAssociation: string) => Promise<void>;
+  setSelectedStageAssociation: (stageAssociation: string | null) => void;
+  setSelectedDomainOverlayId: (overlayId: string | null) => void;
   
   fetchDialecticProjects: () => Promise<void>;
   fetchDialecticProjectDetails: (projectId: string) => Promise<void>;
@@ -209,6 +220,7 @@ export interface DialecticContribution {
 
 export interface DialecticApiClient {
   listAvailableDomainTags(): Promise<ApiResponse<{ data: DomainTagDescriptor[] }>>;
+  listAvailableDomainOverlays(payload: { stageAssociation: string }): Promise<ApiResponse<DomainOverlayDescriptor[]>>;
   createProject(payload: CreateProjectPayload): Promise<ApiResponse<DialecticProject>>;
   listProjects(): Promise<ApiResponse<DialecticProject[]>>;
   getProjectDetails(projectId: string): Promise<ApiResponse<DialecticProject>>;
@@ -248,4 +260,11 @@ export interface UploadProjectResourceFilePayload {
     fileSizeBytes: number;
     fileType: string;
     resourceDescription?: string;
+}
+
+export interface DomainOverlayDescriptor {
+  id: string; // Corresponds to domain_specific_prompt_overlays.id
+  domainTag: string;
+  description: string | null;
+  stageAssociation: string; // Corresponds to system_prompts.stage_association
 }

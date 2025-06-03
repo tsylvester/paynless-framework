@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { DialecticApiClient } from './dialectic.api';
 import type { ApiClient } from './apiClient';
-import type { ApiResponse, ApiError, CreateProjectPayload, DialecticProject, StartSessionPayload, DialecticSession, AIModelCatalogEntry, ContributionContentSignedUrlResponse, DialecticProjectResource, UploadProjectResourceFilePayload } from '@paynless/types';
+import type { ApiResponse, ApiError, CreateProjectPayload, DialecticProject, StartSessionPayload, DialecticSession, AIModelCatalogEntry, ContributionContentSignedUrlResponse, DialecticProjectResource, UploadProjectResourceFilePayload, DomainOverlayDescriptor } from '@paynless/types';
 
 // Mock the base ApiClient
 const mockApiClientPost = vi.fn();
@@ -721,6 +721,72 @@ describe('DialecticApiClient', () => {
             (mockApiClient.post as Mock).mockRejectedValueOnce(new Error(networkErrorMessage));
 
             const result = await dialecticApiClient.uploadProjectResourceFile(validPayload);
+
+            expect(result.error).toEqual({
+                code: 'NETWORK_ERROR',
+                message: networkErrorMessage,
+            });
+            expect(result.status).toBe(0);
+            expect(result.data).toBeUndefined();
+        });
+    });
+
+    describe('listAvailableDomainOverlays', () => {
+        const endpoint = 'dialectic-service';
+        const validPayload = { stageAssociation: 'thesis' };
+        const requestBody = { action: 'listAvailableDomainOverlays', payload: validPayload };
+
+        it('should call apiClient.post with the correct endpoint and body', async () => {
+            const mockResponse: ApiResponse<DomainOverlayDescriptor[]> = {
+                data: [],
+                status: 200,
+            };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            await dialecticApiClient.listAvailableDomainOverlays(validPayload);
+
+            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
+            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+        });
+
+        it('should return the domain overlay descriptors array on successful response', async () => {
+            const mockOverlays: DomainOverlayDescriptor[] = [
+                { id: 'overlay-1', domainTag: 'Tech Overlay 1', description: 'Description 1', stageAssociation: 'thesis' },
+                { id: 'overlay-2', domainTag: 'Tech Overlay 2', description: null, stageAssociation: 'thesis' },
+            ];
+            const mockResponse: ApiResponse<DomainOverlayDescriptor[]> = {
+                data: mockOverlays,
+                status: 200,
+            };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            const result = await dialecticApiClient.listAvailableDomainOverlays(validPayload);
+
+            expect(result.data).toEqual(mockOverlays);
+            expect(result.status).toBe(200);
+            expect(result.error).toBeUndefined();
+        });
+
+        it('should return the error object on failed response', async () => {
+            const mockApiError: ApiError = { code: 'SERVER_ERROR', message: 'Failed to fetch overlays' };
+            const mockErrorResponse: ApiResponse<DomainOverlayDescriptor[]> = {
+                error: mockApiError,
+                status: 500,
+            };
+            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+
+            const result = await dialecticApiClient.listAvailableDomainOverlays(validPayload);
+
+            expect(result.error).toEqual(mockApiError);
+            expect(result.status).toBe(500);
+            expect(result.data).toBeUndefined();
+        });
+
+        it('should return a network error if apiClient.post rejects', async () => {
+            const networkErrorMessage = 'Simulated network failure for overlays';
+            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+
+            const result = await dialecticApiClient.listAvailableDomainOverlays(validPayload);
 
             expect(result.error).toEqual({
                 code: 'NETWORK_ERROR',

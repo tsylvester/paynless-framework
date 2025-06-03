@@ -10,7 +10,6 @@ import type {
   DialecticSession,
   UploadProjectResourceFilePayload,
   DialecticProjectResource,
-  DomainTagDescriptor
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
@@ -21,6 +20,14 @@ export const initialDialecticStateValues: DialecticStateValues = {
   isLoadingDomainTags: false,
   domainTagsError: null,
   selectedDomainTag: null,
+
+  // New initial state for Domain Overlays
+  selectedStageAssociation: null,
+  availableDomainOverlays: [],
+  isLoadingDomainOverlays: false,
+  domainOverlaysError: null,
+  selectedDomainOverlayId: null,
+  // End new initial state for Domain Overlays
 
   projects: [],
   isLoadingProjects: false,
@@ -78,6 +85,64 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
   setSelectedDomainTag: (tag: string | null) => {
     logger.info(`[DialecticStore] Setting selected domain tag to: ${tag}`);
     set({ selectedDomainTag: tag });
+  },
+
+  setSelectedDomainOverlayId: (id: string | null) => {
+    logger.info(`[DialecticStore] Setting selected domain overlay ID to: ${id}`);
+    set({ selectedDomainOverlayId: id });
+  },
+
+  setSelectedStageAssociation: (stage: string | null) => {
+    logger.info(`[DialecticStore] Setting selected stage association to: ${stage}`);
+    set({ 
+      selectedStageAssociation: stage,
+      // When stage selection changes, clear previously fetched overlays and any related errors
+      availableDomainOverlays: [], 
+      domainOverlaysError: null, 
+      isLoadingDomainOverlays: false, // Reset loading state for overlays
+    });
+  },
+
+  fetchAvailableDomainOverlays: async (stageAssociation: string) => {
+    set({
+      isLoadingDomainOverlays: true,
+      domainOverlaysError: null,
+      selectedStageAssociation: stageAssociation, // Store which stage we are fetching for
+      // Optionally clear previous overlays or keep them until new ones are fetched
+      // availableDomainOverlays: [], 
+    });
+    logger.info(`[DialecticStore] Fetching available domain overlays for stage: ${stageAssociation}`);
+    try {
+      const response = await api.dialectic().listAvailableDomainOverlays({ stageAssociation });
+
+      if (response.error) {
+        logger.error('[DialecticStore] Error fetching domain overlays:', { stageAssociation, errorDetails: response.error });
+        set({
+          availableDomainOverlays: [],
+          isLoadingDomainOverlays: false,
+          domainOverlaysError: response.error,
+        });
+      } else {
+        const descriptors = response.data || []; // API returns direct array or null
+        logger.info('[DialecticStore] Successfully fetched domain overlays:', { stageAssociation, count: descriptors.length });
+        set({
+          availableDomainOverlays: descriptors,
+          isLoadingDomainOverlays: false,
+          domainOverlaysError: null,
+        });
+      }
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while fetching domain overlays',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error fetching domain overlays:', { stageAssociation, errorDetails: networkError });
+      set({
+        availableDomainOverlays: [],
+        isLoadingDomainOverlays: false,
+        domainOverlaysError: networkError,
+      });
+    }
   },
 
   fetchDialecticProjects: async () => {

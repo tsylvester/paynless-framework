@@ -8,12 +8,14 @@ import type {
     DialecticSession, 
     AIModelCatalogEntry,
     DomainTagDescriptor,
-    UpdateProjectDomainTagPayload
+    UpdateProjectDomainTagPayload,
+    DomainOverlayDescriptor
 } from '@paynless/types'; 
 
 // --- Dialectic Client Mock Setup ---
 export type MockDialecticApiClient = {
     listAvailableDomainTags: ReturnType<typeof vi.fn<[], Promise<ApiResponse<{ data: DomainTagDescriptor[] }>>>>;
+    listAvailableDomainOverlays: ReturnType<typeof vi.fn<[payload: { stageAssociation: string }], Promise<ApiResponse<DomainOverlayDescriptor[]>>>>;
     createProject: ReturnType<typeof vi.fn<[payload: CreateProjectPayload], Promise<ApiResponse<DialecticProject>>>>;
     listProjects: ReturnType<typeof vi.fn<[], Promise<ApiResponse<DialecticProject[]>>>>;
     getContributionContentSignedUrl: ReturnType<typeof vi.fn<[contributionId: string], Promise<ApiResponse<ContributionContentSignedUrlResponse | null>>>>;
@@ -26,6 +28,7 @@ export type MockDialecticApiClient = {
 // Typed vi.fn() calls
 export const mockDialecticClientInstance: MockDialecticApiClient = {
     listAvailableDomainTags: vi.fn<[], Promise<ApiResponse<{ data: DomainTagDescriptor[] }>>>(),
+    listAvailableDomainOverlays: vi.fn<[{ stageAssociation: string }], Promise<ApiResponse<DomainOverlayDescriptor[]>>>(),
     createProject: vi.fn<[CreateProjectPayload], Promise<ApiResponse<DialecticProject>>>(),
     listProjects: vi.fn<[], Promise<ApiResponse<DialecticProject[]>>>(),
     getContributionContentSignedUrl: vi.fn<[string], Promise<ApiResponse<ContributionContentSignedUrlResponse | null>>>(),
@@ -39,6 +42,7 @@ export const mockDialecticClientInstance: MockDialecticApiClient = {
 export function resetMockDialecticClient(instance?: MockDialecticApiClient) {
   const clientToReset = instance || mockDialecticClientInstance;
   clientToReset.listAvailableDomainTags.mockReset();
+  clientToReset.listAvailableDomainOverlays.mockReset();
   clientToReset.createProject.mockReset();
   clientToReset.listProjects.mockReset();
   clientToReset.getContributionContentSignedUrl.mockReset();

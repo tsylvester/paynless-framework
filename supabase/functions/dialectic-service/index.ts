@@ -6,6 +6,7 @@ import {
   StartSessionPayload,
   GenerateStageContributionsPayload,
   GetProjectDetailsPayload,
+  ListAvailableDomainOverlaysPayload,
 } from "./dialectic.interface.ts";
 import { serve } from "https://deno.land/std@0.170.0/http/server.ts";
 import {
@@ -32,6 +33,7 @@ import { startSession } from "./startSession.ts";
 import { generateStageContributions } from "./generateContribution.ts";
 import { listProjects } from "./listProjects.ts";
 import { uploadProjectResourceFileHandler } from "./uploadProjectResourceFile.ts";
+import { listAvailableDomainOverlays } from "./listAvailableDomainOverlays.ts";
 
 console.log("dialectic-service function started");
 
@@ -122,6 +124,34 @@ serve(async (req: Request) => {
       switch (action) {
         case 'listAvailableDomainTags':
           result = await listAvailableDomainTags(supabaseAdmin);
+          break;
+        case 'listAvailableDomainOverlays':
+          if (!payload || typeof (payload as unknown as ListAvailableDomainOverlaysPayload).stageAssociation !== 'string') {
+            result = { 
+              error: { 
+                message: "Payload with 'stageAssociation' (string) is required for listAvailableDomainOverlays", 
+                status: 400, 
+                code: 'INVALID_PAYLOAD' 
+              } 
+            };
+          } else {
+            try {
+              const descriptors = await listAvailableDomainOverlays(
+                (payload as unknown as ListAvailableDomainOverlaysPayload).stageAssociation, 
+                supabaseAdmin
+              );
+              result = { data: descriptors, success: true };
+            } catch (e) {
+              logger.error('Error in listAvailableDomainOverlays action', { error: e });
+              result = { 
+                error: { 
+                  message: e instanceof Error ? e.message : "Failed to list available domain overlay details", 
+                  status: 500, 
+                  code: 'ACTION_HANDLER_ERROR' 
+                } 
+              };
+            }
+          }
           break;
         case 'updateProjectDomainTag':
           if (!payload) {
