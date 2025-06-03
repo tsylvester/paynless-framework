@@ -1,6 +1,5 @@
 'use client';
 
-import * as React from 'react';
 import { useEffect } from 'react';
 import {
     useDialecticStore,
@@ -9,6 +8,7 @@ import {
     selectDomainTagsError,
     selectSelectedDomainTag
 } from '@paynless/store'; // Assuming store index exports these
+import type { DomainTagDescriptor } from '@paynless/types';
 
 // Assuming Shadcn Select components are available from this path or similar
 import {
@@ -22,10 +22,11 @@ import {
 import { logger } from '@paynless/utils';
 
 export function DomainSelector() {
+    // Actions and state from the store
     const fetchAvailableDomainTags = useDialecticStore(state => state.fetchAvailableDomainTags);
     const setSelectedDomainTag = useDialecticStore(state => state.setSelectedDomainTag);
 
-    const availableDomainTags = useDialecticStore(selectAvailableDomainTags);
+    const availableDomainTags = useDialecticStore(selectAvailableDomainTags); // Removed 'as DomainTagDescriptor[]' cast
     const isLoadingDomainTags = useDialecticStore(selectIsLoadingDomainTags);
     const domainTagsError = useDialecticStore(selectDomainTagsError);
     const selectedDomainTag = useDialecticStore(selectSelectedDomainTag);
@@ -55,6 +56,17 @@ export function DomainSelector() {
         );
     }
 
+    const formatDescriptor = (descriptor: DomainTagDescriptor): string => {
+        let label = descriptor.domainTag;
+        if (descriptor.description) {
+            label += ` - ${descriptor.description}`;
+        }
+        if (descriptor.stageAssociation) {
+            label += ` (${descriptor.stageAssociation})`;
+        }
+        return label;
+    };
+
     return (
         <Select
             value={selectedDomainTag || ''} // Ensure value is not null for Select
@@ -70,9 +82,9 @@ export function DomainSelector() {
                             No domains available
                         </SelectItem>
                     )}
-                    {availableDomainTags.map((tag) => (
-                        <SelectItem key={tag} value={tag}>
-                            {tag} {/* You might want to format this (e.g., capitalize) */}
+                    {availableDomainTags.map((descriptor) => (
+                        <SelectItem key={descriptor.id} value={descriptor.id}>
+                            {formatDescriptor(descriptor)}
                         </SelectItem>
                     ))}
                 </SelectGroup>

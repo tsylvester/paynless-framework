@@ -353,6 +353,7 @@ export type Database = {
           initial_user_prompt: string
           project_name: string
           repo_url: string | null
+          selected_domain_overlay_id: string | null
           selected_domain_tag: string | null
           status: string
           updated_at: string
@@ -365,6 +366,7 @@ export type Database = {
           initial_user_prompt: string
           project_name: string
           repo_url?: string | null
+          selected_domain_overlay_id?: string | null
           selected_domain_tag?: string | null
           status?: string
           updated_at?: string
@@ -377,13 +379,22 @@ export type Database = {
           initial_user_prompt?: string
           project_name?: string
           repo_url?: string | null
+          selected_domain_overlay_id?: string | null
           selected_domain_tag?: string | null
           status?: string
           updated_at?: string
           user_domain_overlay_values?: Json | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "fk_dialectic_projects_selected_domain_overlay"
+            columns: ["selected_domain_overlay_id"]
+            isOneToOne: false
+            referencedRelation: "domain_specific_prompt_overlays"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       dialectic_session_models: {
         Row: {

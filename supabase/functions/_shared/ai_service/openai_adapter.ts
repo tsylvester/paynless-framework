@@ -1,14 +1,16 @@
-import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger } from '../types.ts';
+import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig, TiktokenEncoding } from '../types.ts';
 import type { Json } from '../../../functions/types_db.ts';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 
-// Define a minimal type for the items in the OpenAI models list
+// Define a type for the items in the OpenAI models list
 interface OpenAIModelItem {
   id: string;
   owned_by?: string;
-  // Add other potential fields if needed for filtering/display, but keep minimal
-  [key: string]: unknown; // Allow other fields but treat as unknown
+  context_window?: number; // Provided by OpenAI API for many models
+  // Other fields from OpenAI API might exist, e.g., relating to capabilities or rate limits.
+  // For now, we focus on id and context_window for config derivation.
+  [key: string]: unknown;
 }
 
 /**
@@ -126,14 +128,29 @@ export class OpenAiAdapter implements AiProviderAdapter {
 
     if (jsonResponse.data && Array.isArray(jsonResponse.data)) {
       jsonResponse.data.forEach((model: OpenAIModelItem) => {
-        // We are interested in chat completion models, often contain 'gpt'
-        // This filtering might need refinement based on OpenAI's model ID conventions
-        if (model.id && (model.id.includes('gpt') || model.id.includes('instruct'))) { // Simple filter
+        // Filter for models we are interested in (e.g., GPT series)
+        if (model.id && (model.id.includes('gpt') || model.id.includes('instruct'))) {
+            const config: Partial<AiModelExtendedConfig> = {};
+
+            // Set context window and provider max input tokens from API if available
+            if (model.context_window) {
+                config.context_window_tokens = model.context_window;
+                config.provider_max_input_tokens = model.context_window;
+            }
+
+            // Tokenization strategy is NOT set by the adapter from OpenAI /models endpoint,
+            // as OpenAI does not provide these specific details (encoding name, chatml status) directly here.
+            // These will be handled by defaults in createDefaultOpenAIConfig and merged.
+            // config.tokenization_strategy = { ... }; // REMOVED
+            
+            // provider_max_output_tokens is not set here as it's not reliably in /models list.
+
             models.push({
-                api_identifier: `openai-${model.id}`, // Prepend 'openai-' for our internal identifier
-                name: `OpenAI ${model.id}`, // Simple naming convention
-                description: `Owned by: ${model.owned_by}`, // Example detail
-                // Add other relevant fields if needed and available
+                api_identifier: `openai-${model.id}`,
+                name: `OpenAI ${model.id}`,
+                description: `Owned by: ${model.owned_by}`,
+                // Only include config if it has properties (e.g. context_window_tokens was set)
+                config: Object.keys(config).length > 0 ? config as Json : undefined,
             });
         }
       });

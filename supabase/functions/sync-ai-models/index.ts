@@ -5,22 +5,22 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
 // Import shared response/error handlers
 import { 
-    handleCorsPreflightRequest as actualHandleCorsPreflightRequest, 
-    createErrorResponse as actualCreateErrorResponse, 
-    createSuccessResponse as actualCreateJsonResponse 
+    handleCorsPreflightRequest, 
+    createErrorResponse, 
+    createSuccessResponse 
 } from '../_shared/cors-headers.ts'; 
 
 // Import provider-specific sync functions AND their default deps
 import {
-    syncOpenAIModels as actualSyncOpenAIModels,
+    syncOpenAIModels,
     defaultSyncOpenAIDeps
 } from './openai_sync.ts';
 import {
-    syncAnthropicModels as actualSyncAnthropicModels,
+    syncAnthropicModels,
     defaultSyncAnthropicDeps
 } from './anthropic_sync.ts';
 import {
-    syncGoogleModels as actualSyncGoogleModels,
+    syncGoogleModels,
     defaultSyncGoogleDeps
 } from './google_sync.ts';
 
@@ -58,9 +58,9 @@ type ProviderSyncFunction = (client: SupabaseClient, key: string) => Promise<Syn
 export interface SyncAiModelsDeps {
   createSupabaseClient: (url: string, key: string) => SupabaseClient;
   getEnv: (key: string) => string | undefined;
-  handleCorsPreflightRequest: typeof actualHandleCorsPreflightRequest;
-  createJsonResponse: typeof actualCreateJsonResponse;
-  createErrorResponse: typeof actualCreateErrorResponse;
+  handleCorsPreflightRequest: typeof handleCorsPreflightRequest;
+  createJsonResponse: typeof createSuccessResponse;
+  createErrorResponse: typeof createErrorResponse;
   // Include the sync functions in dependencies for mocking
   doOpenAiSync: ProviderSyncFunction;
   doAnthropicSync: ProviderSyncFunction;
@@ -70,13 +70,13 @@ export interface SyncAiModelsDeps {
 export const defaultDeps: SyncAiModelsDeps = {
   createSupabaseClient: (url, key) => createClient(url, key),
   getEnv: Deno.env.get,
-  handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
-  createJsonResponse: actualCreateJsonResponse,
-  createErrorResponse: actualCreateErrorResponse,
+  handleCorsPreflightRequest,
+  createJsonResponse: createSuccessResponse,
+  createErrorResponse,
   // Provide wrapper functions that call the actual sync functions with their default deps
-  doOpenAiSync: (client, key) => actualSyncOpenAIModels(client, key, defaultSyncOpenAIDeps),
-  doAnthropicSync: (client, key) => actualSyncAnthropicModels(client, key, defaultSyncAnthropicDeps),
-  doGoogleSync: (client, key) => actualSyncGoogleModels(client, key, defaultSyncGoogleDeps),
+  doOpenAiSync: (client, key) => syncOpenAIModels(client, key, defaultSyncOpenAIDeps),
+  doAnthropicSync: (client, key) => syncAnthropicModels(client, key, defaultSyncAnthropicDeps),
+  doGoogleSync: (client, key) => syncGoogleModels(client, key, defaultSyncGoogleDeps),
 };
 
 // --- Provider Configuration (Internal - Uses deps) ---

@@ -1,7 +1,13 @@
-import type { DialecticStateValues, DialecticProject, AIModelCatalogEntry, ApiError } from '@paynless/types';
+import type { 
+    DialecticStateValues, 
+    DialecticProject, 
+    AIModelCatalogEntry, 
+    ApiError, 
+    DomainTagDescriptor 
+} from '@paynless/types';
 
 // Selector for the list of available domain tags
-export const selectAvailableDomainTags = (state: DialecticStateValues): string[] => state.availableDomainTags;
+export const selectAvailableDomainTags = (state: DialecticStateValues): DomainTagDescriptor[] => state.availableDomainTags;
 
 // Selector for the loading state of domain tags
 export const selectIsLoadingDomainTags = (state: DialecticStateValues): boolean => state.isLoadingDomainTags;

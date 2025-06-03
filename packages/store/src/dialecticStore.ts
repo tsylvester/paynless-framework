@@ -10,6 +10,7 @@ import type {
   DialecticSession,
   UploadProjectResourceFilePayload,
   DialecticProjectResource,
+  DomainTagDescriptor
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
@@ -39,6 +40,8 @@ export const initialDialecticStateValues: DialecticStateValues = {
   startSessionError: null,
 
   contributionContentCache: {},
+
+  allSystemPrompts: [],
 };
 
 export const useDialecticStore = create<DialecticStore>((set, get) => ({
@@ -54,10 +57,10 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
         logger.error('[DialecticStore] Error fetching domain tags:', { errorDetails: response.error });
         set({ availableDomainTags: [], isLoadingDomainTags: false, domainTagsError: response.error });
       } else {
-        const tags = response.data && Array.isArray(response.data.data) ? response.data.data : [];
-        logger.info('[DialecticStore] Successfully fetched domain tags:', { tags });
+        const descriptors = response.data && Array.isArray(response.data.data) ? response.data.data : [];
+        logger.info('[DialecticStore] Successfully fetched domain tags:', { descriptors });
         set({
-          availableDomainTags: tags,
+          availableDomainTags: descriptors,
           isLoadingDomainTags: false,
           domainTagsError: null,
         });

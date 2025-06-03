@@ -9,6 +9,8 @@ import type {
     AIModelCatalogEntry,
     UploadProjectResourceFilePayload,
     DialecticProjectResource,
+    DomainTagDescriptor,
+    UpdateProjectDomainTagPayload
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -27,11 +29,11 @@ export class DialecticApiClient {
      * Fetches the list of available domain tags for dialectic projects.
      * This endpoint is public and does not require authentication.
      */
-    async listAvailableDomainTags(): Promise<ApiResponse<{ data: string[] }>> {
+    async listAvailableDomainTags(): Promise<ApiResponse<{ data: DomainTagDescriptor[] }>> {
         logger.info('Fetching available domain tags for dialectic projects');
         
         try {
-            const response = await this.apiClient.post<{ data: string[] }, { action: string }>(
+            const response = await this.apiClient.post<{ data: DomainTagDescriptor[] }, { action: string }>(
                 'dialectic-service', // Endpoint name
                 { action: 'listAvailableDomainTags' } // Body of the request
             );

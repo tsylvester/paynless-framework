@@ -1,7 +1,7 @@
 import { assertEquals, assertExists, assert, assertObjectMatch } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { stub, spy, type Stub } from "jsr:@std/testing@0.225.1/mock";
 import { createProject, type CreateProjectOptions } from "./createProject.ts";
-import type { CreateProjectPayload } from "./dialectic.interface.ts";
+import type { CreateProjectPayload, DialecticProject } from "./dialectic.interface.ts";
 import * as sharedAuth from "../_shared/auth.ts"; // To mock createSupabaseClient
 import * as domainUtils from "../_shared/domain-utils.ts"; // To mock isValidDomainTag
 
@@ -11,12 +11,13 @@ Deno.test("createProject - successful project creation", async () => {
   const mockInitialUserPrompt = "Create a test project.";
   // const mockSelectedDomainTag = "test_domain"; // Keep for expectedBody if re-enabled
 
-  const mockNewProjectData = {
+  const mockNewProjectData: DialecticProject = {
     id: "project-test-id",
     user_id: mockUserId,
     project_name: mockProjectName,
     initial_user_prompt: mockInitialUserPrompt,
-    selected_domain_tag: null, // Reflecting that it won't be passed for this isolation test
+    selected_domain_tag: null, // This is the DB field name, consistent with DialecticProject interface
+    repo_url: null, // Added missing property
     status: "active",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -88,7 +89,7 @@ Deno.test("createProject - successful project creation", async () => {
 
   try {
     const testPayload = { ...mockPayload }; 
-    delete testPayload.selected_domain_tag; 
+    delete (testPayload as any).selectedDomainTag; 
     
     const currentMockRequest = new Request(mockRequest.url, {
         method: mockRequest.method,
@@ -119,6 +120,7 @@ Deno.test("createProject - successful project creation", async () => {
       project_name: mockProjectName,
       initial_user_prompt: mockInitialUserPrompt,
       selected_domain_tag: undefined, // Because it was deleted from testPayload
+      status: "new" // Added expected status
     });
     assert(selectCalled, "select() should have been called on dbAdminClient");
     assert(singleCalled, "single() should have been called on dbAdminClient");
@@ -268,7 +270,7 @@ Deno.test("createProject - invalid selected_domain_tag", async () => {
   const mockPayload: CreateProjectPayload = {
     projectName: mockProjectName,
     initialUserPrompt: mockInitialUserPrompt,
-    selected_domain_tag: mockSelectedDomainTag,
+    selectedDomainTag: mockSelectedDomainTag,
   };
 
   const mockRequest = new Request("http://localhost/createProject", {
@@ -320,12 +322,13 @@ Deno.test("createProject - successful with valid selected_domain_tag", async () 
   const mockInitialUserPrompt = "Create a project with a domain tag.";
   const mockSelectedDomainTag = "valid_domain_tag";
 
-  const mockNewProjectDataWithTag = {
+  const mockNewProjectDataWithTag: DialecticProject = {
     id: "project-id-tag-success",
     user_id: mockUserId,
     project_name: mockProjectName,
     initial_user_prompt: mockInitialUserPrompt,
     selected_domain_tag: mockSelectedDomainTag, // Expect tag to be present
+    repo_url: null, // Added missing property
     status: "active",
     created_at: new Date().toISOString(), // Approximate, exact match not always feasible/needed
     updated_at: new Date().toISOString(), // Approximate
@@ -334,7 +337,7 @@ Deno.test("createProject - successful with valid selected_domain_tag", async () 
   const mockPayload: CreateProjectPayload = {
     projectName: mockProjectName,
     initialUserPrompt: mockInitialUserPrompt,
-    selected_domain_tag: mockSelectedDomainTag,
+    selectedDomainTag: mockSelectedDomainTag,
   };
 
   const mockRequest = new Request("http://localhost/createProject", {

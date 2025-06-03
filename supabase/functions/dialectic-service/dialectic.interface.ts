@@ -112,7 +112,7 @@ export interface DialecticServiceRequest {
 export interface CreateProjectPayload {
   projectName: string;
   initialUserPrompt: string;
-  selected_domain_tag?: string | null;
+  selectedDomainTag?: string | null;
 }
 
 export interface UpdateProjectDomainTagPayload {

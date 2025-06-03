@@ -320,7 +320,7 @@ export interface AiModelExtendedConfig {
   output_token_cost_rate: number | null; // Cost per 1000 output tokens, can be null from DB
   
   tokenization_strategy: 
-    | { type: 'tiktoken'; tiktoken_encoding_name: TiktokenEncoding; tiktoken_model_name_for_rules_fallback?: TiktokenModelForRules; } 
+    | { type: 'tiktoken'; tiktoken_encoding_name: TiktokenEncoding; tiktoken_model_name_for_rules_fallback?: TiktokenModelForRules; is_chatml_model?: boolean; api_identifier_for_tokenization?: string; } 
     | { type: 'rough_char_count'; chars_per_token_ratio?: number; }
     | { type: 'claude_tokenizer'; } // Placeholder for Anthropic's official tokenizer
     | { type: 'google_gemini_tokenizer'; } // Placeholder for Google's official tokenizer
@@ -338,11 +338,8 @@ export interface AiModelExtendedConfig {
   max_context_window_tokens?: number; // Duplicates context_window_tokens? Consolidate if same meaning.
   notes?: string;
 
-  // Optional: Provider-returned limits (can be synced automatically if API provides them)
-  // These seem to overlap with hard_cap_output_tokens and context_window_tokens above.
-  // Let's keep the ones defined initially for AiModelConfig (lines 300-301) if they are distinct.
-  // provider_max_input_tokens?: number; // from the other AiModelConfig def
-  // provider_max_output_tokens?: number; // from the other AiModelConfig def
+  provider_max_input_tokens?: number; 
+  provider_max_output_tokens?: number; 
 
   // Optional: Default parameters for the model (also from other AiModelConfig def)
   default_temperature?: number;

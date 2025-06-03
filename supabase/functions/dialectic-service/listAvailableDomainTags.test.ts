@@ -1,7 +1,7 @@
 import { assertEquals, assertExists, assertArrayIncludes } from "https://deno.land/std@0.192.0/testing/asserts.ts";
 import { describe, it, beforeEach, afterEach } from "https://deno.land/std@0.192.0/testing/bdd.ts";
 
-import { listAvailableDomainTags } from './listAvailableDomainTags.ts';
+import { listAvailableDomainTags, type DomainTagDescriptor } from './listAvailableDomainTags.ts';
 import { 
     createMockSupabaseClient, 
     type MockSupabaseDataConfig,
@@ -34,22 +34,25 @@ describe('listAvailableDomainTags', () => {
     });
 
     it('should return distinct domain tags successfully', async () => {
-        const mockData: Partial<DomainOverlayItem>[] = [
-            { domain_tag: 'tech' }, 
-            { domain_tag: 'health' }, 
-            { domain_tag: 'tech' }, // Duplicate
-            { domain_tag: 'finance' },
-            { domain_tag: null }, // Should be filtered by DB query, but test robustness
-            { domain_tag: 'health' }
+        const mockRawDataFromDb: { id: string; domain_tag: string | null; description: string | null; system_prompts: { stage_association: string | null }[] | null }[] = [
+            { id: '1', domain_tag: 'tech', description: 'Tech stuff', system_prompts: [{ stage_association: 'dev' }] },
+            { id: '2', domain_tag: 'health', description: 'Health stuff', system_prompts: null },
+            { id: '3', domain_tag: 'tech', description: 'More tech', system_prompts: [{ stage_association: 'research' }] }, // Duplicate domain_tag, but different ID/desc
+            { id: '4', domain_tag: 'finance', description: 'Finance stuff', system_prompts: [] },
+            { id: '5', domain_tag: null, description: 'Null tag', system_prompts: null }, // Should be filtered by DB query in SUT
+            { id: '6', domain_tag: 'health', description: 'More health', system_prompts: [{ stage_association: 'user' }] }
         ];
-        
+
         const config: MockSupabaseDataConfig = {
             genericMockResults: {
                 domain_specific_prompt_overlays: {
-                    // The actual .neq('domain_tag', null) is part of the SUT's query.
-                    // The mock here just returns the data as if the query already ran.
-                    // extractDistinctDomainTags in the SUT will handle the final distinct logic.
-                    select: async () => ({ data: mockData.filter(d => d.domain_tag !== null), error: null, count: mockData.length, status: 200, statusText: 'OK' })
+                    select: async () => ({
+                        data: mockRawDataFromDb.filter(d => d.domain_tag !== null), // Simulate SUT's .neq('domain_tag', null)
+                        error: null,
+                        count: mockRawDataFromDb.filter(d => d.domain_tag !== null).length,
+                        status: 200,
+                        statusText: 'OK'
+                    })
                 }
             }
         };
@@ -61,8 +64,18 @@ describe('listAvailableDomainTags', () => {
 
         assertExists(result.data);
         assertEquals(result.error, undefined);
-        assertEquals(result.data.length, 3);
-        assertArrayIncludes(result.data, ['tech', 'health', 'finance']);
+        // The SUT transforms and ensures uniqueness based on domainTag
+        const expectedDomainTags = ['tech', 'health', 'finance'];
+        assertEquals(result.data.length, expectedDomainTags.length);
+
+        const actualDomainTags = result.data.map((d: DomainTagDescriptor) => d.domainTag);
+        assertArrayIncludes(actualDomainTags, expectedDomainTags);
+
+        // Optionally, check other properties if necessary, e.g., that one of the 'tech' descriptors was correctly mapped
+        const techDescriptor = result.data.find((d: DomainTagDescriptor) => d.domainTag === 'tech');
+        assertExists(techDescriptor);
+        // assertEquals(techDescriptor?.description, 'Tech stuff'); // Or based on how SUT selects/merges
+        // assertEquals(techDescriptor?.stageAssociation, 'dev');
     });
 
     it('should return an error if database fetch fails', async () => {
@@ -82,7 +95,7 @@ describe('listAvailableDomainTags', () => {
 
         assertExists(result.error);
         assertEquals(result.data, undefined);
-        assertEquals(result.error.message, 'Failed to fetch domain tags');
+        assertEquals(result.error.message, 'Failed to fetch domain tag descriptors');
         assertEquals(result.error.details, dbError.message);
         assertEquals(result.error.status, 500);
         assertEquals(result.error.code, 'DB_FETCH_ERROR');
@@ -99,16 +112,16 @@ describe('listAvailableDomainTags', () => {
 
     it('should handle null domain_tags from DB gracefully (though filtered by query)', async () => {
         // This tests the extractDistinctDomainTags robustness if nulls somehow pass the .neq query
-        const mockDataWithActualNulls: Partial<DomainOverlayItem>[] = [
-            { domain_tag: 'art' }, 
-            { domain_tag: null }, 
-            { domain_tag: 'science' }
-        ]; 
+        const mockDataWithActualNulls: { id: string; domain_tag: string | null; description: string | null; system_prompts: { stage_association: string | null }[] | null }[] = [
+            { id: 'd1', domain_tag: 'art', description: 'Art', system_prompts: null },
+            { id: 'd2', domain_tag: null, description: 'Null again', system_prompts: null },
+            { id: 'd3', domain_tag: 'science', description: 'Science', system_prompts: [{ stage_association: 'exp' }] }
+        ];
         const config: MockSupabaseDataConfig = {
             genericMockResults: {
                 domain_specific_prompt_overlays: {
                     // Simulate the DB returning some rows that might have nulls, despite neq.
-                    // The SUT's extractDistinctDomainTags should correctly process this.
+                    // The SUT's transformation logic should correctly process this.
                     select: async () => ({ data: mockDataWithActualNulls, error: null, count: mockDataWithActualNulls.length, status: 200, statusText: 'OK' })
                 }
             }
@@ -121,7 +134,11 @@ describe('listAvailableDomainTags', () => {
 
         assertExists(result.data);
         assertEquals(result.error, undefined);
-        assertEquals(result.data.length, 2); // 'art', 'science'
-        assertArrayIncludes(result.data, ['art', 'science']);
+        
+        const expectedDomainTags = ['art', 'science'];
+        assertEquals(result.data.length, expectedDomainTags.length);
+        
+        const actualDomainTags = result.data.map((d: DomainTagDescriptor) => d.domainTag);
+        assertArrayIncludes(actualDomainTags, expectedDomainTags);
     });
 });
