@@ -35,6 +35,8 @@ import { listProjects } from "./listProjects.ts";
 import { uploadProjectResourceFileHandler } from "./uploadProjectResourceFile.ts";
 import { listAvailableDomainOverlays } from "./listAvailableDomainOverlays.ts";
 import { deleteProject } from './deleteProject.ts';
+import { cloneProject } from './cloneProject.ts';
+import { exportProject } from './exportProject.ts';
 
 console.log("dialectic-service function started");
 
@@ -107,6 +109,7 @@ serve(async (req: Request) => {
     success?: boolean;
     data?: unknown;
     error?: ServiceError;
+    status?: number;
   };
 
   try {
@@ -240,13 +243,82 @@ serve(async (req: Request) => {
             result = { error: { message: "User authentication is required to delete a project.", status: 401, code: 'AUTH_TOKEN_MISSING' } };
             break;
           }
+
+          const { data: userData, error: userError } = await getUserFnForRequest();
+          if (userError || !userData?.user) {
+            result = { error: userError || { message: "User not found or authentication failed.", status: 401, code: 'USER_AUTH_FAILED' } };
+            break;
+          }
+
           const deletePayload = payload as { projectId: string };
           if (!deletePayload || typeof deletePayload.projectId !== 'string') {
             result = { error: { message: "Invalid or missing projectId in payload for deleteProject action.", status: 400, code: 'INVALID_PAYLOAD' } };
             break;
           }
-          result = await deleteProject(supabaseAdmin, deletePayload, authToken);
+          result = await deleteProject(supabaseAdmin, deletePayload, userData.user.id);
           break;
+        }
+        case 'cloneProject': {
+          if (!authToken) {
+            result = { error: { message: "User authentication is required to clone a project.", status: 401, code: 'AUTH_TOKEN_MISSING' } };
+            break;
+          }
+
+          const { data: userData, error: userError } = await getUserFnForRequest();
+          if (userError || !userData?.user) {
+            result = { error: userError || { message: "User not found or authentication failed for clone action.", status: 401, code: 'USER_AUTH_FAILED' } };
+            break;
+          }
+
+          const clonePayload = payload as { projectId: string; newProjectName?: string };
+          if (!clonePayload || typeof clonePayload.projectId !== 'string') {
+            result = { error: { message: "Invalid or missing projectId in payload for cloneProject action.", status: 400, code: 'INVALID_PAYLOAD' } };
+            break;
+          }
+          
+          const cloneResult = await cloneProject(
+            supabaseAdmin, 
+            clonePayload.projectId, 
+            clonePayload.newProjectName, 
+            userData.user.id
+          );
+
+          if (cloneResult.error) {
+            result = { 
+              error: { 
+                message: cloneResult.error.message, 
+                details: cloneResult.error.details as string | undefined,
+                status: cloneResult.error.code === 'PGRST116' || cloneResult.error.message.includes('not found') ? 404 : 500, // Example status mapping
+                code: cloneResult.error.code || 'CLONE_PROJECT_FAILED'
+              } 
+            };
+          } else {
+            result = { data: cloneResult.data, status: 201 }; // 201 Created for new resource
+          }
+          break;
+        }
+        case 'exportProject': {
+          if (!authToken) {
+            // To align with other auth checks, let's return the error structure for the common handler
+            result = { error: { message: "User authentication is required to export a project.", status: 401, code: 'AUTH_TOKEN_MISSING_EXPORT' }};
+            break;
+          }
+
+          const { data: userData, error: userError } = await getUserFnForRequest();
+          if (userError || !userData?.user) {
+            result = { error: userError || { message: "User not found or authentication failed for export action.", status: 401, code: 'USER_AUTH_FAILED_EXPORT' }};
+            break;
+          }
+
+          const exportPayload = payload as { projectId: string };
+          if (!exportPayload || typeof exportPayload.projectId !== 'string') {
+            result = { error: { message: "Invalid or missing projectId in payload for exportProject action.", status: 400, code: 'INVALID_PAYLOAD_EXPORT' }};
+            break;
+          }
+          
+          // Call the refactored exportProject, which now returns a data/error object
+          result = await exportProject(supabaseAdmin, exportPayload.projectId, userData.user.id);
+          break; 
         }
         default:
           result = { error: { message: `Unknown action: ${action}`, status: 404, code: 'UNKNOWN_ACTION' } };
@@ -271,7 +343,9 @@ serve(async (req: Request) => {
         req
       );
     }
-    return createSuccessResponse(result.data, 200, req);
+    // Use the status from the result if available, otherwise default to 200
+    const successStatus = (result as { status?: number }).status || 200;
+    return createSuccessResponse(result.data, successStatus, req);
 
   } catch (e: unknown) { 
     const err = e instanceof Error ? e : new Error(String(e));

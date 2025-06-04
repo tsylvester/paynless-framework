@@ -23,6 +23,8 @@ import {
 } from '../_shared/supabase.mock.ts';
 import * as zip from "jsr:@zip-js/zip-js"; // Import all of zip.js for configuration
 import { ZipWriter, TextReader, BlobReader } from "jsr:@zip-js/zip-js"; 
+// import * as supabaseStorageUtils from "../_shared/supabase_storage_utils.ts"; // No longer directly stubbing these
+import type { ServiceError } from "../_shared/types.ts";
 
 describe('Dialectic Service: exportProject Action', () => {
     let mockUser: User;
@@ -31,8 +33,7 @@ describe('Dialectic Service: exportProject Action', () => {
     let loggerWarnStub: Stub | undefined;
     let zipWriterAddSpy: Spy<zip.ZipWriter<Blob>, [string, zip.TextReader | zip.BlobReader, any?], Promise<any>>;
     let zipWriterCloseSpy: Spy<zip.ZipWriter<Blob>, [], Promise<Blob>>;
-    // let originalZipConfig: zip.Configuration; // To store original config if restoring
-
+    
     const mockProjectToExport: Database['public']['Tables']['dialectic_projects']['Row'] = {
         id: 'export-project-uuid',
         user_id: 'user-uuid',
@@ -113,13 +114,9 @@ describe('Dialectic Service: exportProject Action', () => {
         };
         projectIdToExport = mockProjectToExport.id;
         
-        // Configure zip.js to not use web workers for tests to prevent timer leaks
-        // originalZipConfig = zip.getConfiguration(); // If getConfiguration exists and we want to restore
         zip.configure({ useWebWorkers: false });
 
-        // Spy on the prototype methods of ZipWriter from zip.js
         zipWriterAddSpy = spy(zip.ZipWriter.prototype, "add") as unknown as Spy<zip.ZipWriter<Blob>, [string, zip.TextReader | zip.BlobReader, any?], Promise<any>>;
-        
         zipWriterCloseSpy = stub(zip.ZipWriter.prototype, "close", () => 
             Promise.resolve(new Blob(["mock zip content"], {type: "application/zip"}))
         ) as unknown as Spy<zip.ZipWriter<Blob>, [], Promise<Blob>>; 
@@ -131,7 +128,6 @@ describe('Dialectic Service: exportProject Action', () => {
         if (zipWriterCloseSpy && typeof (zipWriterCloseSpy as any).restore === 'function') {
             (zipWriterCloseSpy as any).restore();
         }
-        // zip.configure(originalZipConfig); // Restore original config if it was saved
     });
 
     const createNotFoundError = (message = "Not found", code = "PGRST116") => {
@@ -141,7 +137,7 @@ describe('Dialectic Service: exportProject Action', () => {
         return error;
     };
 
-    it('should successfully export a project and return a zip file response', async () => {
+    it('should successfully export a project and return a signed URL', async () => {
         const dbMockConfig: MockSupabaseDataConfig['genericMockResults'] = {
             'dialectic_projects': {
                 select: async (state: MockQueryBuilderState) => {
@@ -162,6 +158,9 @@ describe('Dialectic Service: exportProject Action', () => {
             }
         };
 
+        const mockUploadedPath = `project_exports/${projectIdToExport}/project_export_project-to-export_test-timestamp.zip`;
+        const mockSignedUrl = `https://mock.supabase.co/storage/v1/object/sign/${mockUploadedPath}?token=mockToken`;
+
         const storageMockConfig: MockSupabaseDataConfig['storageMock'] = {
             downloadResult: async (_bucketId: string, path: string): Promise<IMockStorageDownloadResponse> => {
                 let content: Uint8Array | null = null;
@@ -173,6 +172,15 @@ describe('Dialectic Service: exportProject Action', () => {
                     return { data: new Blob([content]), error: null }; 
                 }
                 return { data: null, error: new Error('File not found in mock storage') };
+            },
+            uploadResult: (_bucketId: string, _path: string, _body: unknown, _options?: unknown) => {
+                return Promise.resolve({ data: { path: mockUploadedPath }, error: null });
+            },
+            createSignedUrlResult: (_bucketId: string, path: string, _expiresIn: number) => {
+                if (path === mockUploadedPath) {
+                    return Promise.resolve({ data: { signedUrl: mockSignedUrl }, error: null });
+                }
+                return Promise.resolve({ data: null, error: new Error('Signed URL path mismatch') });
             }
         };
         
@@ -186,21 +194,18 @@ describe('Dialectic Service: exportProject Action', () => {
             clientConfig
         );
         
-        const response = await exportProject(
+        const result = await exportProject(
             testClient as any, 
             projectIdToExport, 
             mockUser.id
         );
 
-        assertExists(response);
-        assertEquals(response.status, 200);
-        assertEquals(response.headers.get('Content-Type'), 'application/zip');
-        assertEquals(response.headers.get('Content-Disposition'), `attachment; filename="project_export_${projectIdToExport}.zip"`);
+        assertExists(result);
+        assertEquals(result.status, 200);
+        assertExists(result.data?.export_url);
+        assertEquals(result.data?.export_url, mockSignedUrl);
+        assertEquals(result.error, undefined);
         
-        const body = await response.arrayBuffer();
-        assertExists(body);
-        assert(body.byteLength > 0, "Zip body should have content"); 
-
         const projectSelectSpy = testSpies.getHistoricQueryBuilderSpies('dialectic_projects', 'select');
         assertExists(projectSelectSpy);
         assertEquals(projectSelectSpy.callCount > 0, true);
@@ -228,7 +233,7 @@ describe('Dialectic Service: exportProject Action', () => {
         assertExists(resourceFileCall, "Resource file should be added to zip");
         assert(resourceFileCall.args[1] instanceof zip.BlobReader, "Resource file should be added as BlobReader");
         
-        const contentFileCall = zipWriterAddSpy.calls.find(call => call.args[0] === `sessions/${mockSessionToExport.id}/contributions/${mockContributionToExport.id}_content.md`);
+        const contentFileCall = zipWriterAddSpy.calls.find(call => call.args[0] === `sessions/${mockSessionToExport.id}/contributions/${mockContributionToExport.id}_content.markdown`);
         assertExists(contentFileCall, "Contribution content file should be added to zip");
         assert(contentFileCall.args[1] instanceof zip.BlobReader, "Contribution content should be added as BlobReader");
 
@@ -238,6 +243,20 @@ describe('Dialectic Service: exportProject Action', () => {
         
         assertEquals(zipWriterCloseSpy.calls.length, 1, "ZipWriter.close should be called once");
         
+        // Assertions for client's storage method calls
+        const contributionsStorageSpies = testSpies.storage.from('dialectic-contributions');
+        assertEquals(contributionsStorageSpies.uploadSpy.calls.length, 1);
+        const uploadArgs = contributionsStorageSpies.uploadSpy.calls[0].args;
+        assert(uploadArgs[0].startsWith(`project_exports/${projectIdToExport}/project_export_project-to-export_`), "Storage path for zip is incorrect");
+        assert(uploadArgs[1] instanceof Blob, "Content for upload should be a Blob");
+        assertEquals((uploadArgs[2] as any).contentType, "application/zip");
+
+
+        assertEquals(contributionsStorageSpies.createSignedUrlSpy.calls.length, 1);
+        const signedUrlArgs = contributionsStorageSpies.createSignedUrlSpy.calls[0].args;
+        assertEquals(signedUrlArgs[0], mockUploadedPath); // path from uploadToStorage result (which is mockUploadedPath here)
+        assertEquals(signedUrlArgs[1], 3600); // expiresIn
+
         clearAllStubs?.(); 
     });
 
@@ -248,138 +267,184 @@ describe('Dialectic Service: exportProject Action', () => {
                     if (state.filters.some(f => f.column === 'id' && f.value === 'non-existent-project-id')) {
                         return { data: null, error: createNotFoundError("Not found", "PGRST116"), count: 0 };
                     }
-                    return { data: null, error: createNotFoundError("Not found general"), count: 0 };
+                    // Fallback for any other ID to prevent test pollution
+                    return { data: [mockProjectToExport], error: null, count: 1 };
                 }
             }
         };
-        const clientConfig: Omit<MockSupabaseDataConfig, 'mockUser'> = { genericMockResults: dbMockConfig };
-        const { client: testClient, clearAllStubs } = createMockSupabaseClient(mockUser.id, clientConfig);
-
-        const response = await exportProject(testClient as any, 'non-existent-project-id', mockUser.id);
-        assertEquals(response.status, 404);
-        const errorBody = await response.json();
-        assertEquals(errorBody.error, 'Project not found or database error.'); 
+        const { client: testClient, clearAllStubs } = createMockSupabaseClient(mockUser.id, { genericMockResults: dbMockConfig });
         
+        const result = await exportProject(testClient as any, 'non-existent-project-id', mockUser.id);
+
+        assertExists(result.error);
+        assertEquals(result.error?.status, 404);
+        assertEquals(result.error?.code, 'PROJECT_NOT_FOUND');
+        assertEquals(result.data, undefined);
         clearAllStubs?.();
     });
 
-    it('should return 403 if user is not authorized for export', async () => {
-        const unauthorizedProject = { ...mockProjectToExport, user_id: 'other-user-uuid' };
+    it('should return 403 if user is not authorized to export project', async () => {
+        const otherUserId = 'other-user-uuid';
         const dbMockConfig: MockSupabaseDataConfig['genericMockResults'] = {
             'dialectic_projects': {
-                select: async (state: MockQueryBuilderState) => {
-                    if (state.filters.some(f => f.column === 'id' && f.value === projectIdToExport)) {
-                        return { data: [unauthorizedProject], error: null, count: 1 };
-                    }
-                    return { data: null, error: createNotFoundError(), count: 0 };
-                }
+                select: { data: [{ ...mockProjectToExport, user_id: otherUserId }], error: null, count: 1 }
             }
         };
-        const clientConfig: Omit<MockSupabaseDataConfig, 'mockUser'> = { genericMockResults: dbMockConfig };
-        const { client: testClient, clearAllStubs } = createMockSupabaseClient(mockUser.id, clientConfig);
+        const { client: testClient, clearAllStubs } = createMockSupabaseClient(mockUser.id, { genericMockResults: dbMockConfig });
 
-        const response = await exportProject(testClient as any, projectIdToExport, mockUser.id);
-        assertEquals(response.status, 403);
-        const errorBody = await response.json();
-        assertEquals(errorBody.error, 'User not authorized to export this project.');
+        const result = await exportProject(testClient as any, projectIdToExport, mockUser.id);
         
+        assertExists(result.error);
+        assertEquals(result.error?.status, 403);
+        assertEquals(result.error?.code, 'AUTH_EXPORT_FORBIDDEN');
+        assertEquals(result.data, undefined);
+        clearAllStubs?.();
+    });
+
+    it('should return 500 if database error occurs fetching project', async () => {
+        const dbError = new Error("Simulated DB connection error");
+        (dbError as any).code = "XX000"; // Generic internal error
+        const dbMockConfig: MockSupabaseDataConfig['genericMockResults'] = {
+            'dialectic_projects': {
+                select: { data: null, error: dbError, count: 0 }
+            }
+        };
+        const { client: testClient, clearAllStubs } = createMockSupabaseClient(mockUser.id, { genericMockResults: dbMockConfig });
+
+        const result = await exportProject(testClient as any, projectIdToExport, mockUser.id);
+
+        assertExists(result.error);
+        assertEquals(result.error?.status, 500);
+        assertEquals(result.error?.code, 'DB_PROJECT_FETCH_ERROR');
+        assertEquals(result.data, undefined);
+        clearAllStubs?.();
+    });
+
+    it('should return 500 if uploading the zip to storage fails', async () => {
+        // Setup for successful DB reads
+        const dbMockConfig: MockSupabaseDataConfig['genericMockResults'] = {
+            'dialectic_projects': { select: { data: [mockProjectToExport], error: null, count: 1 }},
+            'dialectic_project_resources': { select: { data: [], error: null, count: 0 }}, // Keep it simple
+            'dialectic_sessions': { select: { data: [], error: null, count: 0 }}
+        };
+
+        const uploadError = new Error("Simulated S3 failure");
+        const clientConfig: MockSupabaseDataConfig = { 
+            genericMockResults: dbMockConfig,
+            storageMock: {
+                uploadResult: () => Promise.resolve({ data: null, error: uploadError })
+            }
+        };
+
+        const { client: testClient, spies: testSpies, clearAllStubs } = createMockSupabaseClient(mockUser.id, clientConfig);
+
+        const result = await exportProject(testClient as any, projectIdToExport, mockUser.id);
+
+        assertExists(result.error);
+        assertEquals(result.error?.status, 500);
+        assertEquals(result.error?.code, 'EXPORT_STORAGE_UPLOAD_FAILED');
+        assertEquals(result.error?.details, uploadError.message);
+        assertEquals(result.data, undefined);
+        
+        const contributionsStorageSpies = testSpies.storage.from('dialectic-contributions');
+        assertEquals(contributionsStorageSpies.uploadSpy.calls.length, 1); // It was attempted
+        assertEquals(contributionsStorageSpies.createSignedUrlSpy.calls.length, 0); // Should not be called if upload fails
+        clearAllStubs?.();
+    });
+
+    it('should return 500 if creating signed URL fails', async () => {
+        const dbMockConfig: MockSupabaseDataConfig['genericMockResults'] = {
+            'dialectic_projects': { select: { data: [mockProjectToExport], error: null, count: 1 }},
+            'dialectic_project_resources': { select: { data: [], error: null, count: 0 }},
+            'dialectic_sessions': { select: { data: [], error: null, count: 0 }}
+        };
+        
+        const mockUploadedPath = `project_exports/${projectIdToExport}/project_export_project-to-export_test-timestamp.zip`;
+        const signedUrlError = new Error("Simulated signed URL generation failure");
+
+        const clientConfig: MockSupabaseDataConfig = { 
+            genericMockResults: dbMockConfig,
+            storageMock: {
+                uploadResult: () => Promise.resolve({ data: { path: mockUploadedPath }, error: null }),
+                createSignedUrlResult: () => Promise.resolve({ data: null, error: signedUrlError })
+            }
+        };
+        const { client: testClient, spies: testSpies, clearAllStubs } = createMockSupabaseClient(mockUser.id, clientConfig);
+        
+        const result = await exportProject(testClient as any, projectIdToExport, mockUser.id);
+
+        assertExists(result.error);
+        assertEquals(result.error?.status, 500);
+        assertEquals(result.error?.code, 'EXPORT_SIGNED_URL_FAILED');
+        assertEquals(result.error?.details, signedUrlError.message);
+        assertEquals(result.data, undefined);
+
+        const contributionsStorageSpies = testSpies.storage.from('dialectic-contributions');
+        assertEquals(contributionsStorageSpies.uploadSpy.calls.length, 1); 
+        assertEquals(contributionsStorageSpies.createSignedUrlSpy.calls.length, 1);
+
         clearAllStubs?.();
     });
     
-    it('should still produce a zip if project has no resources or contributions', async () => {
+    // Test for non-fatal errors (e.g., failure to download a specific resource for the zip)
+    // This test ensures the export proceeds but logs warnings. The final result should still be success (signed URL).
+    it('should still complete export if individual resource download fails, logging a warning', async () => {
         const dbMockConfig: MockSupabaseDataConfig['genericMockResults'] = {
-            'dialectic_projects': {
-                select: async (state: MockQueryBuilderState) => { 
-                    if (state.filters.some(f => f.column === 'id' && f.value === projectIdToExport)) {
-                        return { data: [mockProjectToExport], error: null, count: 1 };
-                    }
-                    return { data: null, error: createNotFoundError(), count: 0 };
-                }
-            },
-            'dialectic_project_resources': { select: { data: [], error: null, count: 0 } }, 
-            'dialectic_sessions': { select: { data: [], error: null, count: 0 } }, 
-            'dialectic_contributions': { select: { data: [], error: null, count: 0 } }
-        };
-        const storageMockConfig: MockSupabaseDataConfig['storageMock'] = {
-            // No downloads expected, but provide a safe default
-            downloadResult: async () => ({ data: null, error: new Error('not found in mock for empty test') }) 
-        };
-        const clientConfig: Omit<MockSupabaseDataConfig, 'mockUser'> = { genericMockResults: dbMockConfig, storageMock: storageMockConfig };
-
-        const { client: testClient, clearAllStubs } = createMockSupabaseClient(mockUser.id, clientConfig);
-        
-        const response = await exportProject(testClient as any, projectIdToExport, mockUser.id);
-
-        assertEquals(response.status, 200);
-        assertEquals(response.headers.get('Content-Type'), 'application/zip');
-
-        const manifestCall = zipWriterAddSpy.calls.find(call => call.args[0] === 'project_manifest.json');
-        assertExists(manifestCall, "Manifest should be added to zip");
-        assert(manifestCall.args[1] instanceof zip.TextReader, "Manifest should be added as TextReader for empty project test");
-        
-        // Ensure no other files were attempted to be added
-        const nonManifestCalls = zipWriterAddSpy.calls.filter(call => call.args[0] !== 'project_manifest.json');
-        assertEquals(nonManifestCalls.length, 0, "No files other than manifest should be added for empty project");
-
-        assertEquals(zipWriterCloseSpy.calls.length, 1, "ZipWriter.close should be called for empty project");
-        
-        clearAllStubs?.();
-    });
-
-    it('should handle (skip and log) if a single storage file download fails during export', async () => {
-        const dbMockConfig: MockSupabaseDataConfig['genericMockResults'] = {
-            'dialectic_projects': {
-                select: async (state: MockQueryBuilderState) => {
-                    if (state.filters.some(f => f.column === 'id' && f.value === projectIdToExport)) {
-                        return { data: [mockProjectToExport], error: null, count: 1 };
-                    }
-                    return { data: null, error: createNotFoundError(), count: 0 };
-                }
-            },
-            'dialectic_project_resources': { select: { data: [mockResourceToExport], error: null, count: 1 } }, 
-            'dialectic_sessions': { select: { data: [mockSessionToExport], error: null, count: 1 } },
-            'dialectic_contributions': { select: { data: [mockContributionToExport], error: null, count: 1 } }
+            'dialectic_projects': { select: { data: [mockProjectToExport], error: null, count: 1 }},
+            'dialectic_project_resources': { select: { data: [mockResourceToExport], error: null, count: 1 }},
+            'dialectic_sessions': { select: { data: [], error: null, count: 0 }}, // No sessions for simplicity
+            'dialectic_contributions': { select: { data: [], error: null, count: 0 }}
         };
 
+        const mockUploadedPath = `project_exports/${projectIdToExport}/project_export_project-to-export_test-timestamp.zip`;
+        const mockSignedUrl = `https://mock.supabase.co/storage/v1/object/sign/${mockUploadedPath}?token=mockToken`;
+
+        // Mock storage to fail download for the specific resource, but succeed for upload/signed URL
         const storageMockConfig: MockSupabaseDataConfig['storageMock'] = {
             downloadResult: async (_bucketId: string, path: string): Promise<IMockStorageDownloadResponse> => {
-                if (path === mockResourceToExport.storage_path) { 
-                    return { data: null, error: new Error('Failed to download specific resource') }; // This resource fails
+                if (path === mockResourceToExport.storage_path) {
+                    return { data: null, error: new Error('Mock resource download failure') }; 
                 }
-                if (path === mockContributionToExport.content_storage_path) {
-                    return { data: new Blob([mockContributionContent]), error: null }; // This succeeds
-                }
-                if (path === mockContributionToExport.raw_response_storage_path) {
-                    return { data: new Blob([mockRawResponseContent]), error: null }; // This succeeds
-                }
-                return { data: null, error: new Error('Unexpected download path in mock') };
-            }
+                return { data: new Blob(["other content"]), error: null }; // Other downloads succeed
+            },
+            uploadResult: () => Promise.resolve({ data: { path: mockUploadedPath }, error: null }),
+            createSignedUrlResult: () => Promise.resolve({ data: { signedUrl: mockSignedUrl }, error: null })
         };
-        
-        const clientConfig: Omit<MockSupabaseDataConfig, 'mockUser'> = { genericMockResults: dbMockConfig, storageMock: storageMockConfig };
-        const { client: testClient, clearAllStubs } = createMockSupabaseClient(mockUser.id, clientConfig);
-        
-        loggerWarnStub = stub(sharedLogger.logger, 'warn');
+        const clientConfig: MockSupabaseDataConfig = { genericMockResults: dbMockConfig, storageMock: storageMockConfig };
+        const { client: testClient, spies: testSpies, clearAllStubs } = createMockSupabaseClient(mockUser.id, clientConfig);
 
-        const response = await exportProject(testClient as any, projectIdToExport, mockUser.id);
+        loggerWarnStub = stub(sharedLogger.logger, "warn"); // Spy on logger.warn
 
-        assertEquals(response.status, 200);
-        assertEquals(response.headers.get('Content-Type'), 'application/zip');
+        const result = await exportProject(testClient as any, projectIdToExport, mockUser.id);
+
+        assertExists(result.data?.export_url);
+        assertEquals(result.status, 200);
+        assertEquals(result.data?.export_url, mockSignedUrl);
         
-        assertExists(loggerWarnStub.calls.find(c => (c.args[0] as string).includes('Failed to download project resource for export') && (c.args[1] as any)?.path === mockResourceToExport.storage_path));
-
+        // Check that logger.warn was called for the failed resource download
+        assert(loggerWarnStub.calls.some(call => 
+            call.args[0] === 'Failed to download project resource for export. Skipping file.' &&
+            (call.args[1] as any)?.resourceId === mockResourceToExport.id
+        ));
+        
+        // Zip should still contain manifest (and other successful files if any)
         const manifestCall = zipWriterAddSpy.calls.find(call => call.args[0] === 'project_manifest.json');
-        assertExists(manifestCall, "Manifest should still be added when a file download fails");
+        assertExists(manifestCall, "Manifest should still be added to zip even if a resource fails");
 
-        const failedResourceCall = zipWriterAddSpy.calls.find(call => call.args[0] === `resources/${mockResourceToExport.file_name}`);
-        assertEquals(failedResourceCall, undefined, "Failed resource should not be added to zip");
-        
-        const successfulContentCall = zipWriterAddSpy.calls.find(call => call.args[0] === `sessions/${mockSessionToExport.id}/contributions/${mockContributionToExport.id}_content.md`);
-        assertExists(successfulContentCall, "Successful contribution content should be added");
-        assert(successfulContentCall.args[1] instanceof zip.BlobReader, "Successful content should be added as BlobReader");
+        const resourceFileCall = zipWriterAddSpy.calls.find(call => call.args[0] === `resources/${mockResourceToExport.file_name}`);
+        assertEquals(resourceFileCall, undefined, "Failed resource file should not be added to zip");
 
-        assertEquals(zipWriterCloseSpy.calls.length, 1, "ZipWriter.close should be called even if a file download fails");
-        
+        // Assertions for client's storage method calls
+        const contributionsStorageSpies = testSpies.storage.from('dialectic-contributions');
+        assertEquals(contributionsStorageSpies.uploadSpy.calls.length, 1);
+        const uploadArgs = contributionsStorageSpies.uploadSpy.calls[0].args;
+        assert(uploadArgs[0].startsWith(`project_exports/${projectIdToExport}/project_export_project-to-export_`), "Storage path for zip is incorrect");
+
+        assertEquals(contributionsStorageSpies.createSignedUrlSpy.calls.length, 1);
+        const signedUrlArgs = contributionsStorageSpies.createSignedUrlSpy.calls[0].args;
+        assertEquals(signedUrlArgs[0], mockUploadedPath); 
+
         clearAllStubs?.();
     });
+
 });
