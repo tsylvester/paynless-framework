@@ -49,6 +49,14 @@ export const initialDialecticStateValues: DialecticStateValues = {
   contributionContentCache: {},
 
   allSystemPrompts: [],
+
+  // Project cloning states
+  isCloningProject: false,
+  cloneProjectError: null,
+
+  // Project exporting states
+  isExportingProject: false,
+  exportProjectError: null,
 };
 
 export const useDialecticStore = create<DialecticStore>((set, get) => ({
@@ -247,13 +255,12 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       } else {
         logger.info('[DialecticStore] Successfully started session:', { sessionDetails: response.data });
         set({ isStartingSession: false, startSessionError: null });
-        // Optionally, refresh project details if the new session is part of the current project
-        if (get().currentProjectDetail?.id === payload.projectId) {
-          await get().fetchDialecticProjectDetails(payload.projectId);
+        // After starting a session, we might want to refetch the specific project details
+        // or the list of projects if the session creation affects their status or adds a session entry.
+        if (response.data?.project_id) {
+          await get().fetchDialecticProjectDetails(response.data.project_id);
         } else {
-          // If the session belongs to a project not currently detailed,
-          // or if a full project list refresh is preferred after starting any session.
-          await get().fetchDialecticProjects(); 
+          await get().fetchDialecticProjects(); // Fallback to refreshing all projects
         }
       }
       return response;
@@ -491,7 +498,91 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       });
       return { error: networkError, status: 0 };
     }
-  }
+  },
+
+  deleteDialecticProject: async (projectId: string): Promise<ApiResponse<void>> => {
+    // Reset any previous global project error, as this operation is specific.
+    // Individual errors for this action will be handled by the component using the returned ApiResponse.
+    // However, we should clear the main projectsError if it was related to fetching, 
+    // as a successful delete might change the context.
+    set({ projectsError: null }); 
+    logger.info(`[DialecticStore] Deleting project with ID: ${projectId}`);
+    try {
+      const response = await api.dialectic().deleteProject({ projectId });
+      if (response.error) {
+        logger.error('[DialecticStore] Error deleting project:', { projectId, errorDetails: response.error });
+        // Set projectsError here so UI can react to a failed delete if needed for global error display
+        set({ projectsError: response.error }); 
+      } else {
+        logger.info('[DialecticStore] Successfully deleted project:', { projectId });
+        // Remove the project from the local state
+        set(state => ({
+          projects: state.projects.filter(p => p.id !== projectId),
+          projectsError: null, // Clear error on success
+        }));
+      }
+      return response;
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while deleting project',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error deleting project:', { projectId, errorDetails: networkError });
+      set({ projectsError: networkError }); // Set global projects error for network issues
+      return { error: networkError, status: 0 };
+    }
+  },
+
+  cloneDialecticProject: async (projectId: string): Promise<ApiResponse<DialecticProject>> => {
+    set({ isCloningProject: true, cloneProjectError: null });
+    logger.info(`[DialecticStore] Cloning project with ID: ${projectId}`);
+    try {
+      const response = await api.dialectic().cloneProject({ projectId });
+      if (response.error) {
+        logger.error('[DialecticStore] Error cloning project:', { projectId, errorDetails: response.error });
+        set({ isCloningProject: false, cloneProjectError: response.error });
+      } else {
+        logger.info('[DialecticStore] Successfully cloned project:', { originalProjectId: projectId, newProject: response.data });
+        set({ isCloningProject: false, cloneProjectError: null });
+        await get().fetchDialecticProjects(); // Refetch projects list
+      }
+      return response;
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while cloning project',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error cloning project:', { projectId, errorDetails: networkError });
+      set({ isCloningProject: false, cloneProjectError: networkError });
+      return { error: networkError, status: 0 };
+    }
+  },
+
+  exportDialecticProject: async (projectId: string): Promise<ApiResponse<{ export_url: string }>> => {
+    set({ isExportingProject: true, exportProjectError: null });
+    logger.info(`[DialecticStore] Exporting project with ID: ${projectId}`);
+    try {
+      const response = await api.dialectic().exportProject({ projectId });
+      if (response.error) {
+        logger.error('[DialecticStore] Error exporting project:', { projectId, errorDetails: response.error });
+        set({ isExportingProject: false, exportProjectError: response.error });
+      } else {
+        logger.info('[DialecticStore] Successfully requested project export:', { projectId, exportDetails: response.data });
+        set({ isExportingProject: false, exportProjectError: null });
+        // Depending on the backend, the export might be a URL to a file or the file itself.
+        // The component calling this will handle the response.data.export_url
+      }
+      return response;
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while exporting project',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error exporting project:', { projectId, errorDetails: networkError });
+      set({ isExportingProject: false, exportProjectError: networkError });
+      return { error: networkError, status: 0 };
+    }
+  },
 }));
 
 export const getDialecticStoreInitialState = (): DialecticStateValues => ({ ...initialDialecticStateValues }); 

@@ -78,7 +78,7 @@ BEGIN
         'finance',
         E'{\n            "domain": "financial analysis and management",\n            "domain_standards": "regulatory compliance (SEC, FINRA, SOX), risk management frameworks, fiduciary responsibility, audit trails, data security",\n            "reference_documents": "existing financial models, budget constraints, regulatory filings, audit reports, risk assessments, compliance procedures",\n            "compliance_requirements": "SEC regulations, FINRA rules, SOX compliance, AML requirements, tax code adherence",\n            "system_defined_additional_overlay_considerations": "- Regulatory compliance requirements\\n- Risk assessment methodologies\\n- Financial modeling accuracy\\n- Audit trail maintenance\\n- Stakeholder reporting obligations"\n        }'::jsonb,
         'Finance overlay for Thesis stage, defining specific standards, references, and considerations for financial contexts.',
-        true, 1
+        false, 1
     );
     RAISE NOTICE 'Finished inserting finance overlay.';
 
@@ -92,7 +92,7 @@ BEGIN
         'engineering_construction',
         E'{\n            "domain": "engineering and construction",\n            "domain_standards": "safety regulations, building codes, environmental compliance, project management best practices, quality assurance protocols",\n            "reference_documents": "site surveys, architectural drawings, soil reports, environmental assessments, permit applications, material specifications",\n            "compliance_requirements": "building codes, zoning regulations, environmental protection standards, OSHA safety requirements, local permits",\n            "system_defined_additional_overlay_considerations": "- Safety protocol adherence\\n- Environmental impact assessment\\n- Resource allocation optimization\\n- Timeline and milestone management\\n- Quality control checkpoints"\n        }'::jsonb,
         'Engineering/Construction overlay for Thesis stage, detailing standards and considerations for engineering projects.',
-        true, 1
+        false, 1
     );
     RAISE NOTICE 'Finished inserting engineering_construction overlay.';
 
@@ -106,7 +106,7 @@ BEGIN
         'legal',
         E'{\n            "domain": "legal practice and document management",\n            "domain_standards": "attorney-client privilege, ethical guidelines, procedural compliance, evidence handling, confidentiality protocols",\n            "reference_documents": "existing contracts, case law precedents, regulatory guidance, court rules, client files, organizational policies",\n            "compliance_requirements": "bar association rules, court procedures, confidentiality requirements, conflict of interest policies, billing regulations",\n            "system_defined_additional_overlay_considerations": "- Ethical obligation compliance\\n- Procedural rule adherence\\n- Confidentiality maintenance\\n- Evidence chain of custody\\n- Client communication protocols"\n        }'::jsonb,
         'Legal overlay for Thesis stage, specifying standards and considerations pertinent to legal work.',
-        true, 1
+        false, 1
     );
     RAISE NOTICE 'Finished inserting legal overlay.';
 

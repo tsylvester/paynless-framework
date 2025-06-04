@@ -13,6 +13,7 @@ export interface DialecticProject {
     user_id: string;
     project_name: string;
     initial_user_prompt: string;
+    selected_domain_overlay_id: string | null;
     selected_domain_tag: string | null;
     repo_url: string | null;
     status: string;
@@ -26,6 +27,14 @@ export interface CreateProjectPayload {
     initialUserPrompt: string;
     selectedDomainTag?: string | null;
     selected_domain_overlay_id?: string | null;
+}
+
+export interface DeleteProjectPayload {
+  projectId: string;
+}
+
+export interface GetContributionContentSignedUrlPayload {
+  contributionId: string;
 }
 
 export interface StartSessionPayload {
@@ -57,16 +66,17 @@ export interface DialecticSession {
     active_parenthesis_prompt_template_id: string | null;
     active_paralysis_prompt_template_id: string | null;
     
-    formal_debate_structure_id?: string | null;
+    formal_debate_structure_id: string | null;
     max_iterations: number;
+    current_iteration: number;
+    convergence_status: string | null;
+    preferred_model_for_stage: Record<string, string> | null;
     
     created_at: string;
     updated_at: string;
 
     dialectic_session_models?: DialecticSessionModel[];
     dialectic_contributions?: DialecticContribution[];
-    
-    convergence_status?: string | null;
 }
 
 export interface DialecticSessionModel {
@@ -155,6 +165,14 @@ export interface DialecticStateValues {
   contributionContentCache: { [contributionId: string]: ContributionCacheEntry };
 
   allSystemPrompts: SystemPrompt[] | null;
+
+  // Project cloning states
+  isCloningProject: boolean;
+  cloneProjectError: ApiError | null;
+
+  // Project exporting states
+  isExportingProject: boolean;
+  exportProjectError: ApiError | null;
 }
 
 export interface ContributionCacheEntry {
@@ -186,6 +204,11 @@ export interface DialecticActions {
 
   resetCreateProjectError: () => void;
   resetProjectDetailsError: () => void;
+
+  // New actions
+  deleteDialecticProject: (projectId: string) => Promise<ApiResponse<void>>;
+  cloneDialecticProject: (projectId: string) => Promise<ApiResponse<DialecticProject>>;
+  exportDialecticProject: (projectId: string) => Promise<ApiResponse<{ export_url: string }>>;
 
   _resetForTesting?: () => void;
 }
@@ -234,6 +257,12 @@ export interface DialecticApiClient {
   updateProjectDomainTag(payload: UpdateProjectDomainTagPayload): Promise<ApiResponse<DialecticProject>>;
 
   generateContributions(payload: { sessionId: string }): Promise<ApiResponse<{ message: string; contributions?: DialecticContribution[] }>>;
+
+  deleteProject(payload: DeleteProjectPayload): Promise<ApiResponse<void>>;
+
+  // New API client methods
+  cloneProject(payload: { projectId: string }): Promise<ApiResponse<DialecticProject>>;
+  exportProject(payload: { projectId: string }): Promise<ApiResponse<{ export_url: string }>>;
 }
 
 export interface ContributionContentSignedUrlResponse {
@@ -268,4 +297,46 @@ export interface DomainOverlayDescriptor {
   domainTag: string;
   description: string | null;
   stageAssociation: string; // Corresponds to system_prompts.stage_association
+}
+
+export type DialecticServiceActionPayload = {
+  action: 'createProject';
+  payload: CreateProjectPayload;
+} | {
+  action: 'deleteProject';
+  payload: DeleteProjectPayload;
+} | {
+  action: 'startSession';
+  payload: StartSessionPayload;
+} | {
+  action: 'listProjects';
+  payload?: undefined; // Or a specific payload if filtering/pagination is added
+} | {
+  action: 'getProjectDetails';
+  payload: { projectId: string };
+} | {
+  action: 'listModelCatalog';
+  payload?: undefined;
+} | {
+  action: 'listAvailableDomainOverlays';
+  payload: { stageAssociation: string };
+} | {
+  action: 'getContributionContentSignedUrl';
+  payload: GetContributionContentSignedUrlPayload;
+} | {
+  action: 'uploadProjectResourceFile';
+  payload: FormData; // Placeholder, refine if specific metadata is also in JSON part
+} | {
+  action: 'generateThesisContributions';
+  payload: { sessionId: string };
+} | {
+  action: 'cloneProject';
+  payload: { projectId: string };
+} | {
+  action: 'exportProject';
+  payload: { projectId: string };
+}
+
+export interface DialecticServiceResponsePayload {
+  // ... existing code ...
 }

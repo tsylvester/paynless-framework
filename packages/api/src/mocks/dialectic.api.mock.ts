@@ -26,6 +26,9 @@ export type MockDialecticApiClient = {
     listModelCatalog: ReturnType<typeof vi.fn<[], Promise<ApiResponse<AIModelCatalogEntry[]>>>>;
     updateProjectDomainTag: ReturnType<typeof vi.fn<[payload: UpdateProjectDomainTagPayload], Promise<ApiResponse<DialecticProject>>>>;
     uploadProjectResourceFile: ReturnType<typeof vi.fn<[payload: UploadProjectResourceFilePayload], Promise<ApiResponse<DialecticProjectResource>>>>;
+    deleteProject: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<void>>>>;
+    cloneProject: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<DialecticProject>>>>;
+    exportProject: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<{ export_url: string }>>>>;
 };
 
 // Typed vi.fn() calls
@@ -40,6 +43,9 @@ export const mockDialecticClientInstance: MockDialecticApiClient = {
     listModelCatalog: vi.fn<[], Promise<ApiResponse<AIModelCatalogEntry[]>>>(),
     updateProjectDomainTag: vi.fn<[UpdateProjectDomainTagPayload], Promise<ApiResponse<DialecticProject>>>(),
     uploadProjectResourceFile: vi.fn<[UploadProjectResourceFilePayload], Promise<ApiResponse<DialecticProjectResource>>>(),
+    deleteProject: vi.fn<[string], Promise<ApiResponse<void>>>(),
+    cloneProject: vi.fn<[string], Promise<ApiResponse<DialecticProject>>>(),
+    exportProject: vi.fn<[string], Promise<ApiResponse<{ export_url: string }>>>(),
 };
 
 // Moved reset logic into its own function
@@ -55,6 +61,9 @@ export function resetMockDialecticClient(instance?: MockDialecticApiClient) {
   clientToReset.listModelCatalog.mockReset();
   clientToReset.updateProjectDomainTag.mockReset();
   clientToReset.uploadProjectResourceFile.mockReset();
+  clientToReset.deleteProject.mockReset();
+  clientToReset.cloneProject.mockReset();
+  clientToReset.exportProject.mockReset();
 }
 
 /**

@@ -1,19 +1,17 @@
 import React, { useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
 import { useDialecticStore } from '@paynless/store';
 import {
   selectDialecticProjects,
   selectIsLoadingProjects,
   selectProjectsError,
 } from '@paynless/store'; // Assuming selectors are exported from main store index
-import { Button } from '@/components/ui/button'; // Assuming a Button component is available
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'; // Assuming Card components
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react'; // For loading spinner
+import { DialecticProjectCard } from '@/components/dialectic/DialecticProjectCard'; // Added import
+import { CreateNewDialecticProjectButton } from '@/components/dialectic/CreateNewDialecticProjectButton'; // Added import
 
 export const DialecticProjectsPage: React.FC = () => {
-  const navigate = useNavigate();
   const fetchDialecticProjects = useDialecticStore((state) => state.fetchDialecticProjects);
   const projects = useDialecticStore(selectDialecticProjects);
   const isLoading = useDialecticStore(selectIsLoadingProjects);
@@ -22,10 +20,6 @@ export const DialecticProjectsPage: React.FC = () => {
   useEffect(() => {
     fetchDialecticProjects();
   }, [fetchDialecticProjects]);
-
-  const handleCreateNewProject = () => {
-    navigate('/dialectic/new'); // Placeholder for actual route
-  };
 
   if (isLoading) {
     return (
@@ -49,9 +43,7 @@ export const DialecticProjectsPage: React.FC = () => {
     <div className="container mx-auto py-8 px-4 md:px-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold tracking-tight">Dialectic Projects</h1>
-        <Button onClick={handleCreateNewProject} size="lg">
-          Create New Project
-        </Button>
+        <CreateNewDialecticProjectButton size="lg" />
       </div>
 
       <Separator className="mb-8" />
@@ -62,33 +54,17 @@ export const DialecticProjectsPage: React.FC = () => {
           <p className="text-muted-foreground mb-6">
             Get started by creating your first dialectic project.
           </p>
-          <Button onClick={handleCreateNewProject} variant="outline" size="lg">
+          <CreateNewDialecticProjectButton variant="outline" size="lg">
             Create Your First Project
-          </Button>
+          </CreateNewDialecticProjectButton>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {projects.map((project) => (
-            <Card key={project.id} className="flex flex-col">
-              <CardHeader>
-                <CardTitle className="hover:text-primary transition-colors">
-                  <Link to={`/dialectic/${project.id}`}>{project.projectName}</Link>
-                </CardTitle>
-                <CardDescription>
-                  Created: {new Date(project.createdAt).toLocaleDateString()}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex-grow">
-                <p className="text-sm text-muted-foreground line-clamp-3">
-                  {project.initialUserPrompt}
-                </p>
-              </CardContent>
-              <CardFooter className="mt-auto">
-                <Button asChild variant="outline" className="w-full">
-                  <Link to={`/dialectic/${project.id}`}>View Project</Link>
-                </Button>
-              </CardFooter>
-            </Card>
+            <DialecticProjectCard
+              key={project.id}
+              project={project}
+            />
           ))}
         </div>
       )}

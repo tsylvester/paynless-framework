@@ -100,8 +100,49 @@ export class ApiClient {
     private async request<T>(endpoint: string, options: FetchOptions = {}): Promise<ApiResponse<T>> {
         const url = `${this.functionsUrl}/${endpoint.startsWith('/') ? endpoint.substring(1) : endpoint}`;
         const headers = new Headers(options.headers || {});
-        headers.append('Content-Type', 'application/json');
-        headers.append('apikey', this.supabaseAnonKey); // <<< Always add apikey header
+        let processedBody = options.body; // Assume body is passed as-is initially
+
+        // 1. Handle FormData:
+        if (options.body instanceof FormData) {
+            // If the body is FormData, let the browser set the Content-Type.
+            // Remove any Content-Type erroneously set by the caller for FormData to prevent conflicts.
+            if (headers.has('Content-Type')) {
+                logger.warn("[apiClient] Content-Type header was removed because body is FormData. Browser will set appropriate Content-Type.");
+                headers.delete('Content-Type');
+            }
+            // `processedBody` remains `options.body` (the FormData instance).
+        } else if (options.body !== undefined && options.body !== null) {
+            // 2. Handle non-FormData bodies:
+            const contentType = headers.get('Content-Type');
+
+            // Check if it's a "plain" JS object (not a Blob, ArrayBuffer, File, etc.)
+            const isPlainObject = typeof options.body === 'object' &&
+                                  !(options.body instanceof Blob) &&
+                                  !(options.body instanceof ArrayBuffer) &&
+                                  !(options.body instanceof URLSearchParams) &&
+                                  // Add other Fetch API body types if necessary
+                                  Object.prototype.toString.call(options.body) === '[object Object]';
+
+            if (!contentType && isPlainObject) {
+                // Case 2a: No Content-Type from caller, and body is a plain object.
+                // Default to application/json and stringify.
+                headers.set('Content-Type', 'application/json');
+                // For the condition below, we need the updated Content-Type if it was just set.
+                // So, we re-fetch it if it was initially null and then set.
+                const currentContentType = headers.get('Content-Type'); 
+                if (currentContentType && currentContentType.toLowerCase().includes('application/json') && isPlainObject) {
+                    processedBody = JSON.stringify(options.body);
+                }
+            } else if (contentType && contentType.toLowerCase().includes('application/json') && isPlainObject) {
+                // Case 2b: Caller set Content-Type to application/json (or similar), and body is a plain object.
+                processedBody = JSON.stringify(options.body);
+            }
+            // Case 2c: Else (body is already a string, Blob, ArrayBuffer, URLSearchParams,
+            // or it's an object but Content-Type is not JSON, or no Content-Type and not a plain object).
+            // In these cases, `processedBody` remains `options.body`, and `headers` remain as set by the caller.
+        }
+
+        headers.append('apikey', this.supabaseAnonKey);
 
         // Only add Authorization if not already present in options.headers and not public
         if (!options.isPublic && !headers.has('Authorization')) {
@@ -117,7 +158,11 @@ export class ApiClient {
         logger.info(`[apiClient] Requesting ${options.method || 'GET'} ${url}`, { headers: headersObject });
 
         try {
-            const response = await fetch(url, { ...options, headers });
+            const response = await fetch(url, {
+                ...options,
+                headers: headers,
+                body: processedBody
+            });
             
             // ---> Log right after fetch, before parsing body <--- 
             logger.info('[apiClient] Fetch completed', { status: response.status, ok: response.ok, url: response.url });
@@ -217,15 +262,15 @@ export class ApiClient {
     }
 
     public async post<T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> {
-        return this.request<T>(endpoint, { ...options, method: 'POST', body: JSON.stringify(body) });
+        return this.request<T>(endpoint, { ...options, method: 'POST', body: body as BodyInit | null | undefined });
     }
 
     public async put<T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> {
-        return this.request<T>(endpoint, { ...options, method: 'PUT', body: JSON.stringify(body) });
+        return this.request<T>(endpoint, { ...options, method: 'PUT', body: body as BodyInit | null | undefined });
     }
 
     public async patch<T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> {
-        return this.request<T>(endpoint, { ...options, method: 'PATCH', body: JSON.stringify(body) });
+        return this.request<T>(endpoint, { ...options, method: 'PATCH', body: body as BodyInit | null | undefined });
     }
 
     public async delete<T>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<T>> {

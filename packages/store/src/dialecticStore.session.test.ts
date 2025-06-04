@@ -64,7 +64,10 @@ describe('useDialecticStore', () => {
             session_description: startSessionPayload.sessionDescription || null,
             current_stage_seed_prompt: '',
             iteration_count: 1,
+            current_iteration: 1,
             status: 'pending_thesis',
+            convergence_status: null,
+            preferred_model_for_stage: null,
             associated_chat_id: 'chat-123',
             active_thesis_prompt_template_id: null,
             active_antithesis_prompt_template_id: null,
@@ -79,22 +82,15 @@ describe('useDialecticStore', () => {
             dialectic_contributions: [],
         };
 
-        it('should start a session and refetch project details or projects on success', async () => {
+        it('should start a session and refetch project details if project_id is present in response', async () => {
             const mockResponse: ApiResponse<DialecticSession> = { data: mockSession, status: 201 };
             mockDialecticApi.startSession.mockResolvedValue(mockResponse);
-            // Mock project details refetch
             const mockProject: DialecticProject = { id: startSessionPayload.projectId } as DialecticProject;
             mockDialecticApi.getProjectDetails.mockResolvedValue({ data: mockProject, status: 200 });
-             // Mock projects refetch (fallback)
-            mockDialecticApi.listProjects.mockResolvedValue({ data: [], status: 200 });
+            mockDialecticApi.listProjects.mockResolvedValue({ data: [], status: 200 }); // Still mock for safety, but shouldn't be called
 
-
-            const { startDialecticSession, currentProjectDetail } = useDialecticStore.getState();
-            
-            // Simulate currentProjectDetail being set for one path of the logic
-            useDialecticStore.setState({ currentProjectDetail: { id: startSessionPayload.projectId } as DialecticProject });
-            
-            let result = await startDialecticSession(startSessionPayload);
+            const { startDialecticSession } = useDialecticStore.getState();
+            const result = await startDialecticSession(startSessionPayload);
 
             const state = useDialecticStore.getState();
             expect(state.isStartingSession).toBe(false);
@@ -102,13 +98,29 @@ describe('useDialecticStore', () => {
             expect(result.data).toEqual(mockSession);
             expect(mockDialecticApi.startSession).toHaveBeenCalledWith(startSessionPayload);
             expect(mockDialecticApi.getProjectDetails).toHaveBeenCalledWith(startSessionPayload.projectId);
+            expect(mockDialecticApi.listProjects).not.toHaveBeenCalled();
+        });
 
-            // Simulate currentProjectDetail NOT being set for the other path
-            useDialecticStore.setState({ currentProjectDetail: null });
-            result = await startDialecticSession(startSessionPayload);
+        it('should start a session and refetch project list if project_id is NOT present in response', async () => {
+            const mockSessionWithoutProjectId: DialecticSession = { ...mockSession, project_id: null as any }; // or undefined
+            const mockResponse: ApiResponse<DialecticSession> = { data: mockSessionWithoutProjectId, status: 201 };
+            mockDialecticApi.startSession.mockResolvedValue(mockResponse);
+            mockDialecticApi.listProjects.mockResolvedValue({ data: [], status: 200 });
+            // Mock getProjectDetails for safety, but it shouldn't be called
+            const mockProject: DialecticProject = { id: "anyID" } as DialecticProject;
+            mockDialecticApi.getProjectDetails.mockResolvedValue({ data: mockProject, status: 200 });
+
+
+            const { startDialecticSession } = useDialecticStore.getState();
+            const result = await startDialecticSession(startSessionPayload);
+
+            const state = useDialecticStore.getState();
+            expect(state.isStartingSession).toBe(false);
+            expect(state.startSessionError).toBeNull();
+            expect(result.data).toEqual(mockSessionWithoutProjectId);
+            expect(mockDialecticApi.startSession).toHaveBeenCalledWith(startSessionPayload);
             expect(mockDialecticApi.listProjects).toHaveBeenCalled();
-
-
+            expect(mockDialecticApi.getProjectDetails).not.toHaveBeenCalled();
         });
 
         it('should set error state if startSession API returns an error', async () => {

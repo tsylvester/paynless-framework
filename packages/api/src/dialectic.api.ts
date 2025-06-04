@@ -11,7 +11,9 @@ import type {
     DialecticProjectResource,
     DomainTagDescriptor,
     DomainOverlayDescriptor,
-    UpdateProjectDomainTagPayload
+    UpdateProjectDomainTagPayload,
+    DeleteProjectPayload,
+    DialecticServiceActionPayload,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -215,9 +217,12 @@ export class DialecticApiClient {
         logger.info('Fetching signed URL for contribution content', { contributionId });
 
         try {
-            const response = await this.apiClient.post<ContributionContentSignedUrlResponse | null, { action: string; payload: { contributionId: string } }>(
+            const response = await this.apiClient.post<ContributionContentSignedUrlResponse | null, DialecticServiceActionPayload>(
                 'dialectic-service',
-                { action: 'getContributionContentSignedUrl', payload: { contributionId } }
+                {
+                    action: 'getContributionContentSignedUrl',
+                    payload: { contributionId },
+                } as DialecticServiceActionPayload
             );
 
             if (response.error) {
@@ -330,6 +335,82 @@ export class DialecticApiClient {
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'A network error occurred';
             logger.error('Network error in updateProjectDomainTag:', { errorMessage: message, errorObject: error });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
+    }
+
+    async deleteProject(payload: DeleteProjectPayload): Promise<ApiResponse<void>> {
+        logger.info('[DialecticApi] Deleting project', { projectId: payload.projectId });
+        try {
+            const response = await this.apiClient.post<void, DialecticServiceActionPayload>(
+                'dialectic-service',
+                {
+                    action: 'deleteProject',
+                    payload,
+                } as DialecticServiceActionPayload
+            );
+
+            if (response.error) {
+                logger.error('[DialecticApi] Error deleting project:', { error: response.error, projectId: payload.projectId });
+            } else {
+                logger.info('[DialecticApi] Successfully initiated project deletion', { projectId: payload.projectId });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred during project deletion';
+            logger.error('[DialecticApi] Network error in deleteProject:', { errorMessage: message, projectId: payload.projectId, errorObject: error });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            } as ApiResponse<void>;
+        }
+    }
+
+    async cloneProject(payload: { projectId: string }): Promise<ApiResponse<DialecticProject>> {
+        logger.info('Cloning dialectic project', { projectId: payload.projectId });
+        try {
+            const response = await this.apiClient.post<DialecticProject, DialecticServiceActionPayload>(
+                'dialectic-service',
+                { action: 'cloneProject', payload } as DialecticServiceActionPayload
+            );
+            if (response.error) {
+                logger.error('Error cloning project:', { error: response.error, projectId: payload.projectId });
+            } else {
+                logger.info('Successfully cloned project', { newProjectId: response.data?.id });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred while cloning project';
+            logger.error('Network error in cloneProject:', { errorMessage: message, errorObject: error });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
+    }
+
+    async exportProject(payload: { projectId: string }): Promise<ApiResponse<{ export_url: string }>> {
+        logger.info('Exporting dialectic project', { projectId: payload.projectId });
+        try {
+            const response = await this.apiClient.post<{ export_url: string }, DialecticServiceActionPayload>(
+                'dialectic-service',
+                { action: 'exportProject', payload } as DialecticServiceActionPayload
+            );
+            if (response.error) {
+                logger.error('Error exporting project:', { error: response.error, projectId: payload.projectId });
+            } else {
+                logger.info('Successfully initiated project export', { exportUrl: response.data?.export_url });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred while exporting project';
+            logger.error('Network error in exportProject:', { errorMessage: message, errorObject: error });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },

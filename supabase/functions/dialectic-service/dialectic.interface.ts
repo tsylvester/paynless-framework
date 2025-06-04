@@ -244,4 +244,26 @@ export interface ListAvailableDomainOverlaysPayload {
   stageAssociation: string;
 }
 
+
+export interface DeleteProjectPayload {
+  projectId: string;
+}
+
+export interface GetContributionContentSignedUrlPayload {
+  contributionId: string;
+}
+
+export interface CloneProjectPayload {
+}
+
+export interface CloneProjectSuccessResponse {
+}
+
+export interface ExportProjectPayload {
+}
+
+export interface ExportProjectSuccessResponse {
+  export_url: string;
+}
+
 // Add other service-specific interfaces here if needed in the future

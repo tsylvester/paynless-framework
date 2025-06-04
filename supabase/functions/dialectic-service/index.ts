@@ -34,6 +34,7 @@ import { generateStageContributions } from "./generateContribution.ts";
 import { listProjects } from "./listProjects.ts";
 import { uploadProjectResourceFileHandler } from "./uploadProjectResourceFile.ts";
 import { listAvailableDomainOverlays } from "./listAvailableDomainOverlays.ts";
+import { deleteProject } from './deleteProject.ts';
 
 console.log("dialectic-service function started");
 
@@ -122,7 +123,7 @@ serve(async (req: Request) => {
       const { action, payload } = requestBody;
 
       switch (action) {
-        case 'listAvailableDomainTags':
+        case 'listAvailableDomainTags': {
           const listTagsOutcome = await listAvailableDomainTags(supabaseAdmin);
           if (listTagsOutcome && typeof listTagsOutcome === 'object' && 'error' in listTagsOutcome) {
             // It's an error object returned by listAvailableDomainTags itself (e.g., DB fetch error)
@@ -132,6 +133,7 @@ serve(async (req: Request) => {
             result = { data: listTagsOutcome, success: true };
           }
           break;
+        }
         case 'listAvailableDomainOverlays':
           if (!payload || typeof (payload as unknown as ListAvailableDomainOverlaysPayload).stageAssociation !== 'string') {
             result = { 
@@ -233,6 +235,19 @@ serve(async (req: Request) => {
             } 
           };
           break;
+        case 'deleteProject': {
+          if (!authToken) {
+            result = { error: { message: "User authentication is required to delete a project.", status: 401, code: 'AUTH_TOKEN_MISSING' } };
+            break;
+          }
+          const deletePayload = payload as { projectId: string };
+          if (!deletePayload || typeof deletePayload.projectId !== 'string') {
+            result = { error: { message: "Invalid or missing projectId in payload for deleteProject action.", status: 400, code: 'INVALID_PAYLOAD' } };
+            break;
+          }
+          result = await deleteProject(supabaseAdmin, deletePayload, authToken);
+          break;
+        }
         default:
           result = { error: { message: `Unknown action: ${action}`, status: 404, code: 'UNKNOWN_ACTION' } };
       }

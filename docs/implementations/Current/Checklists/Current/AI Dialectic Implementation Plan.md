@@ -267,8 +267,8 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅] 1.0.6.2 [BE]` Enhance `supabase/functions/_shared/supabase.mock.ts` to support Supabase client storage mocking.
     *   `[✅] 1.0.6.3 [TEST-UNIT]` Write unit tests for `uploadToStorage` in `supabase/functions/_shared/supabase_storage_utils.test.ts` using the enhanced mock.
 *   `[✅] 1.0.7 [COMMIT]` feat: foundational setup, RLS, and shared storage utility (Adjusted numbering & description)
-*   `[ ] 1.0.8 [REFACTOR/API/TEST-UNIT/TEST-INT]` Refine Core `ApiClient.request` Method for Dynamic Content-Type and Body Handling.
-    *   `[ ] 1.0.8.1 [API]` Modify the private `request` method in `packages/api/src/apiClient.ts`:
+*   `[✅] 1.0.8 [REFACTOR/API/TEST-UNIT/TEST-INT]` Refine Core `ApiClient.request` Method for Dynamic Content-Type and Body Handling.
+    *   `[✅] 1.0.8.1 [API]` Modify the private `request` method in `packages/api/src/apiClient.ts`:
         *   **Content-Type Header Logic:**
             *   If `FetchOptions.headers` (passed to `request`) explicitly includes a `Content-Type` header, this provided `Content-Type` MUST be used and respected.
             *   If `FetchOptions.body` is an instance of `FormData`, the `apiClient` MUST NOT set any `Content-Type` header itself. This allows the browser's `fetch` API to correctly set the `Content-Type` to `multipart/form-data` along with the necessary `boundary` parameter.
@@ -276,18 +276,18 @@ The implementation plan uses the following labels to categorize work steps:
         *   **Request Body Processing Logic:**
             *   The `FetchOptions.body` MUST only be transformed (e.g., via `JSON.stringify()`) if the effective `Content-Type` (whether explicitly set by caller or defaulted by `apiClient` for objects) is `application/json` and the body itself is a type that requires stringification (e.g., a plain JavaScript object).
             *   If the `FetchOptions.body` is `FormData`, or if it's already a string (e.g., pre-stringified JSON when the caller also sets the appropriate `Content-Type`), it MUST be passed to the underlying `fetch` call as-is, without modification.
-    *   `[ ] 1.0.8.2 [API]` Review and update the public helper methods within `ApiClient` (e.g., `post`, `put`, `patch`) to ensure they pass the `body` and `options` to the refined `request` method correctly, aligning with the new dynamic handling logic (i.e., avoid unconditional `JSON.stringify`).
-    *   `[ ] 1.0.8.3 [TEST-UNIT]` Update all relevant API client unit tests in `packages/api/src/**/*.test.ts` (including but not limited to `apiClient.test.ts` and specific adapter tests like `dialectic.api.test.ts`):
+    *   `[✅] 1.0.8.2 [API]` Review and update the public helper methods within `ApiClient` (e.g., `post`, `put`, `patch`) to ensure they pass the `body` and `options` to the refined `request` method correctly, aligning with the new dynamic handling logic (i.e., avoid unconditional `JSON.stringify`).
+    *   `[✅] 1.0.8.3 [TEST-UNIT]` Update all relevant API client unit tests in `packages/api/src/**/*.test.ts` (including but not limited to `apiClient.test.ts` and specific adapter tests like `dialectic.api.test.ts`):
         *   Verify the new dynamic `Content-Type` and body handling logic within the `request` method and its public callers (`post`, `put`, etc.).
         *   Ensure comprehensive test coverage for scenarios involving `FormData` bodies (asserting no `Content-Type` is set by `apiClient` and body is not stringified).
         *   Test cases where `Content-Type` is explicitly provided by the caller for various body types.
         *   Test cases where plain objects are sent without explicit `Content-Type` (asserting default to `application/json` and body is stringified).
-    *   `[ ] 1.0.8.4 [TEST-INT]` Review and update all integration tests for backend Edge Functions (located in `supabase/functions/**/*.test.ts`) that are invoked via the `ApiClient`.
+    *   `[✅] 1.0.8.4 [TEST-INT]` Review and update all integration tests for backend Edge Functions (located in `supabase/functions/**/*.test.ts`) that are invoked via the `ApiClient`.
         *   Ensure that test setups, mocks for the `ApiClient` or `fetch`, and assertions correctly reflect the expected `Content-Type` (especially `multipart/form-data` with appropriate boundary handling by mock servers if applicable) and the raw request body formats.
         *   Verify that Edge Function routing based on `Content-Type` (e.g., differentiating `multipart/form-data` from `application/json`) behaves as expected with the corrected client-side requests.
-    *   `[ ] 1.0.8.5 [DOCS]` Briefly document this dynamic and flexible request handling behavior in `packages/api/README.md` or as prominent inline comments within `apiClient.ts`. This will serve as a guide for developers using or extending the `ApiClient`.
-    *   `[ ] 1.0.8.6 [COMMIT]` refactor(api): implement dynamic Content-Type and body handling in core ApiClient, update tests
-    
+    *   `[✅] 1.0.8.5 [DOCS]` Briefly document this dynamic and flexible request handling behavior in `packages/api/README.md` or as prominent inline comments within `apiClient.ts`. This will serve as a guide for developers using or extending the `ApiClient`.
+    *   `[✅] 1.0.8.6 [COMMIT]` refactor(api): implement dynamic Content-Type and body handling in core ApiClient, update tests
+
 ### 1.0.A Shared UI Components - File Uploader
 *   `[✅] 1.0.A.1 [UI]` Create Generic `FileUpload` Component in `apps/web/src/components/common/`. (Component implemented, various render modes including dropZoneOverlay and minimalButton. Drag/drop functionality refined. Refactored into `TextInputArea` and working well there. Standalone testing might still be partial.)
     *   `[✅] 1.0.A.1.1 [TEST-UNIT]` Write unit tests for `FileUpload.tsx`. (RED -> GREEN - Basic tests for config, callbacks, and states are in place or mocked. Component is heavily used and tested via `TextInputArea.test.tsx`. Dedicated tests for `FileUpload` might be less comprehensive if covered by `TextInputArea`.)
@@ -793,13 +793,13 @@ The implementation plan uses the following labels to categorize work steps:
 *   `[🚧] 1.5.8 [COMMIT]` feat(ui): add core pages and navigation for dialectic engine
 
 ### Fixes for Dialectic flow
-*   [ ] 404 err on file upload for project creation
+*   [✅] 404 err on file upload for project creation
 *   [ ] "Project Name" auto-fill only works for one char
-*   [ ] Projects page (/dialectic/) needs cards to be independent
-*   [ ] Projects cards "created at" not displaying
-*   [ ] Project cards need project title displayed 
-*   [ ] Project cards need "delete" interaction
-*   [ ] Project cards need "clone/copy" interaction
+*   [✅] Projects page (/dialectic/) needs cards to be independent
+*   [✅] Projects cards "created at" not displaying
+*   [✅] Project cards need project title displayed 
+*   [✅] Project cards need "delete" interaction
+*   [✅] Project cards need "clone/copy" interaction
 *   [ ] Project page (/dialectic/:id) shows Project ID instead of title
 *   [ ] Project page doesn't show IPS 
 *   [ ] Project page should show initial selected prompt and provide edit capability
