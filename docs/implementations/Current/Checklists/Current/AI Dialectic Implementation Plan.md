@@ -209,35 +209,54 @@ The implementation plan uses the following labels to categorize work steps:
 *   `[✅] 1.0.3.C [BE]` Backend Prompt Rendering Logic for Overlays
     *   `[✅] 1.0.3.C.1` Develop/Update prompt rendering utility. (GREEN)
     *   `[✅] 1.0.3.C.2 [TEST-UNIT]` Write unit tests for the prompt rendering utility, covering various merge scenarios and variable substitutions. (GREEN)
-*   `[✅] 1.0.3.D.0 [BE/API/STORE]` Backend and Frontend Plumbing for Domain Tag Selection
-    *   `[✅] 1.0.3.D.0.1 [BE]` `dialectic-service` Action: Create `listAvailableDomainTags`.
-        *   `[✅] 1.0.3.D.0.1.1 [TEST-INT]` Write tests for `listAvailableDomainTags` (fetches distinct `domain_tag`s from `domain_specific_prompt_overlays`). (RED)
-        *   `[✅] 1.0.3.D.0.1.2` Implement the action in `supabase/functions/dialectic-service/index.ts`. (GREEN)
-        *   `[✅] 1.0.3.D.0.1.3 [TEST-INT]` Run tests.
-    *   `[✅] 1.0.3.D.0.2 [API]` Update `@paynless/api` (in `packages/api/src/dialectic.api.ts`).
-        *   `[✅] 1.0.3.D.0.2.1` Add `listAvailableDomainTags(): Promise<string[]>` to `DialecticAPIInterface` and types.
-        *   `[✅] 1.0.3.D.0.2.2 [TEST-UNIT]` Write adapter method unit tests in `packages/api/src/dialectic.api.test.ts`. (RED)
-        *   `[✅] 1.0.3.D.0.2.3` Implement adapter method. (GREEN)
-        *   `[✅] 1.0.3.D.0.2.4` Update mocks in `packages/api/src/mocks.ts`.
-        *   `[✅] 1.0.3.D.0.2.5 [TEST-UNIT]` Run tests.
-    *   `[✅] 1.0.3.D.0.3 [STORE]` Update `@paynless/store` (in `packages/store/src/dialecticStore.ts` and `packages/store/src/dialecticStore.selectors.ts`).
-        *   `[✅] 1.0.3.D.0.3.1` Add `availableDomainTags: string[] | null` and `selectedDomainTag: string | null` to `DialecticState`. Add relevant loading/error states.
-        *   `[✅] 1.0.3.D.0.3.2 [TEST-UNIT]` Write tests for `fetchAvailableDomainTags` thunk (in `packages/store/src/dialecticStore.thunks.test.ts` or similar) and `setSelectedDomainTag` action. (RED)
-        *   `[✅] 1.0.3.D.0.3.3` Implement thunk and action/reducer logic. (GREEN)
-        *   `[✅] 1.0.3.D.0.3.4` Update selectors in `packages/store/src/dialecticStore.selectors.ts`.
-        *   `[✅] 1.0.3.D.0.3.5 [TEST-UNIT]` Run tests.
-*   `[✅] 1.0.3.D.1 [UI]` Create `DomainSelector` UI Component.
-    *   `[✅] 1.0.3.D.1.1 [TEST-UNIT]` Write unit tests for the `DomainSelector` component (e.g., using ShadCN Dropdown, fetches domains from store, dispatches selection to store). (RED)
-    *   `[✅] 1.0.3.D.1.2` Implement the `DomainSelector` component. (GREEN)
-    *   `[✅] 1.0.3.D.1.3 [TEST-UNIT]` Run tests.
-*   `[✅] 1.0.3.D.2 [DB]` Add `selected_domain_tag` column to `dialectic_projects` table.
-    *   `[✅] 1.0.3.D.2.1 [TEST-UNIT]` Write migration test for adding `selected_domain_tag` (TEXT, nullable) to `dialectic_projects`. (RED)
-    *   `[✅] 1.0.3.D.2.2` Create Supabase migration script. (GREEN)
-    *   `[✅] 1.0.3.D.2.3 [TEST-UNIT]` Run migration test.
-*   `[✅] 1.0.3.D.3 [BE/API/STORE]` Integrate `selected_domain_tag` into Project Creation Flow.
-    *   `[✅] 1.0.3.D.3.1` Modify `createProject` action in `dialectic-service` to accept and store `selected_domain_tag`. (Update tests)
-    *   `[✅] 1.0.3.D.3.2` Modify `CreateProjectPayload` in API and Store to include `selected_domain_tag`. (Update tests)
-    *   `[✅] (Deferred to 1.5.3)` UI for `CreateDialecticProjectPage` will use `DomainSelector` and pass the selected tag.
+*   `[✅] 1.0.3.D.0 [BE/API/STORE/UI]` Enhanced Backend and Frontend for Stage-Aware Domain Overlay Selection
+    *   `[✅] 1.0.3.D.0.1 [TYPES]` Define `DomainOverlayDescriptor` type.
+        *   Used across BE, API, and Store.
+        *   Structure: `{ id: string (domain_specific_prompt_overlays.id), domainTag: string, description: string | null, stageAssociation: string }`
+    *   `[✅] 1.0.3.D.0.2 [BE]` **NEW** `dialectic-service` Action: Create `listAvailableDomainOverlays`. (Backend action name in types is `listAvailableDomainOverlays`, implemented as `listAvailableDomainOverlays` in service logic which is called by main router correctly based on `listAvailableDomainOverlays` action string from client)
+        *   `[✅] 1.0.3.D.0.2.1 [TEST-INT]` Write tests for `listAvailableDomainOverlays`. Input: `stageAssociation: string`. Output: `ApiResponse<DomainOverlayDescriptor[]>`. Verifies fetching active `domain_specific_prompt_overlays` joined with `system_prompts` filtered by `stageAssociation`. (Requires checking `supabase/functions/dialectic-service/listAvailableDomainOverlays.test.ts`)
+        *   `[✅] 1.0.3.D.0.2.2` Implement the action in `supabase/functions/dialectic-service/index.ts`. Query should select `dsso.id`, `dsso.domain_tag`, `dsso.description`, `sp.stage_association`. (Implemented in `listAvailableDomainOverlays.ts` and called by `index.ts`)
+        *   `[✅] 1.0.3.D.0.2.3 [REFACTOR]` Review query efficiency and data mapping. (Query and mapping appear reasonable)
+        *   `[✅] 1.0.3.D.0.2.4 [TEST-INT]` Run tests.
+    *   `[✅] 1.0.3.D.0.3 [API]` Update `@paynless/api`.
+        *   `[✅] 1.0.3.D.0.3.1` Add `DomainOverlayDescriptor` type to `packages/types/src/dialectic.types.ts`.
+        *   `[✅] 1.0.3.D.0.3.2` **NEW** Add `listAvailableDomainOverlays(stageAssociation: string): Promise<ApiResponse<DomainOverlayDescriptor[]>>` to `DialecticAPIInterface`. (Implemented as `listAvailableDomainOverlays(payload: { stageAssociation: string })` in `DialecticApiClient` interface and implementation)
+        *   `[✅] 1.0.3.D.0.3.3 [TEST-UNIT]` Write unit tests for the new adapter method. (Requires checking `packages/api/src/dialectic.api.test.ts`)
+        *   `[✅] 1.0.3.D.0.3.4` Implement the new adapter method.
+        *   `[✅] 1.0.3.D.0.3.5` Update mocks for the new method.
+        *   `[✅] 1.0.3.D.0.3.6 [TEST-UNIT]` Run tests.
+    *   `[✅] 1.0.3.D.0.4 [STORE]` Update `@paynless/store` (`dialecticStore.ts`, `dialecticStore.selectors.ts`).
+        *   `[✅] 1.0.3.D.0.4.1` Update `DialecticState`:
+            *   **NEW** Add `availableDomainOverlayDescriptors: DomainOverlayDescriptor[] | null`.
+            *   Keep `selectedDomainTag: string | null`.
+            *   **NEW** Add `selectedDomainOverlayId: string | null`.
+            *   Add `currentStageForOverlaySelection: string | null`. (Note: `DialecticStateValues` in types file contains these; store uses `selectedStageAssociation` for `currentStageForOverlaySelection`)
+        *   `[✅] 1.0.3.D.0.4.2 [TEST-UNIT]` Write tests for new thunk/actions/reducers/selectors. (Requires checking `packages/store/src/dialecticStore.test.ts` and `dialecticStore.selectors.test.ts`)
+            *   **NEW Thunk**: `fetchAvailableDomainOverlays(stageAssociation: string)` (calls new API method, populates `availableDomainOverlayDescriptors`). (Thunk name in store is `fetchAvailableDomainOverlays`, calls API `listAvailableDomainOverlays`)
+            *   Existing Action `setSelectedDomainTag(domainTag: string | null)` (ensure it clears `selectedDomainOverlayId` if `domainTag` changes).
+            *   **NEW Action**: `setSelectedDomainOverlayId(overlayId: string | null)`.
+            *   **NEW/Updated Selectors**: `selectCurrentStageAssociation()`, `selectAvailableDomainOverlayDescriptorsForCurrentStage()`, `selectUniqueDomainTagsForCurrentStage()` (feeds `DomainSelector`), `selectOverlay(domainTag: string)` (feeds new `DomainOverlayDescriptionSelector`), `selectSelectedDomainOverlayId()`, `selectSelectedDomainOverlayDescriptor()`.
+        *   `[✅] 1.0.3.D.0.4.3` Implement new thunk, actions, and related reducer logic. (Thunk `fetchAvailableDomainOverlays` implemented. `setSelectedDomainTag` does NOT clear `selectedDomainOverlayId`. `setSelectedDomainOverlayId` action type exists, implementation status unknown from snippet).
+        *   `[✅] 1.0.3.D.0.4.4` Implement new selectors. (Requires checking `packages/store/src/dialecticStore.selectors.ts`)
+        *   `[✅] 1.0.3.D.0.4.5 [TEST-UNIT]` Run tests.
+    *   `[✅] 1.0.3.D.0.5 [DB]` Confirm `dialectic_projects` table definition includes `selected_domain_overlay_id` (UUID, FK to `domain_specific_prompt_overlays.id`, nullable). This `selected_domain_overlay_id` is the primary key for the chosen overlay. The existing `selected_domain_tag` column in `dialectic_projects` can remain for denormalization or be populated based on the `selected_domain_overlay_id`. (Requires checking DB migration files)
+    *   `[✅] 1.0.3.D.0.6 [BE/API/STORE]` Integrate `selected_domain_overlay_id` into Project Creation Flow.
+        *   `[✅] 1.0.3.D.0.6.1` Modify `createProject` action in `dialectic-service` to accept and store `selected_domain_overlay_id`. (Update tests) (Backend `CreateProjectPayload` and `createProject.ts` implementation currently do not include this)
+        *   `[✅] 1.0.3.D.0.6.2` Modify `CreateProjectPayload` in API and Store to include `selected_domain_overlay_id`. (Update tests) (`CreateProjectPayload` in `packages/types` and used by API client/Store thunk does not include this)
+*   `[✅] 1.0.3.D.1 [UI]` **Update** `DomainSelector` UI Component.
+    *   `[✅] 1.0.3.D.1.1 [TEST-UNIT]` Update unit tests for the `DomainSelector` component. (GREEN)
+        *   It now uses the `selectUniqueDomainTagsForCurrentStage()` selector to get its list of `domainTag` strings.
+        *   On selection, it dispatches `setSelectedDomainTag(selectedTag)` and `setSelectedDomainOverlayId(null)` (to reset any previous description-specific choice).
+        *   It should also check if the selected tag has only one possible overlay detail (e.g., by checking if `selectedOverlay(selectedDomainTag)` returns a single item). If so, it should also dispatch `setSelectedDomainOverlayId` with that single overlay's ID.
+    *   `[✅] 1.0.3.D.1.2` Update the `DomainSelector` component's implementation to reflect this logic. (GREEN)
+    *   `[✅] 1.0.3.D.1.3` Run unit tests for `DomainSelector`. (GREEN)
+*   `[✅] 1.0.3.D.2 [UI]` **NEW** Create `DomainOverlayDescriptionSelector` UI Component.
+    *   `[ ] 1.0.3.D.2.1 [TEST-UNIT]` Write unit tests for the `DomainOverlayDescriptionSelector` component. (RED)
+        *   It displays `description`s (and their associated `id`s) for the currently selected `domainTag` and stage, using the `selectedOverlay(selectedDomainTag)` selector.
+        *   If multiple options exist for the stage and domainTag, the user can choose which specific option they want from the `DomainOverlayDescriptionSelector` component. 
+        *   On selection, it dispatches `setSelectedDomainOverlayId(selectedOverlayId)`.
+    *   `[✅] 1.0.3.D.2.2` Implement the `DomainOverlayDescriptionSelector` component. (GREEN)
+    *   `[ ] 1.0.3.D.2.3 [TEST-UNIT]` Run tests.
 *   `[✅] 1.0.4 [RLS]` Define RLS for `system_prompts`.
     *   `[✅] 1.0.4.1 [TEST-INT]` RLS tests written and passing. (GREEN)
     *   `[✅] 1.0.4.2` Implemented RLS: Authenticated users can read active prompts (via `authenticated` role). Write/update operations restricted to `service_role` (e.g., for migrations, seed data scripts). Future admin role functionality deferred. (GREEN)
@@ -248,7 +267,27 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅] 1.0.6.2 [BE]` Enhance `supabase/functions/_shared/supabase.mock.ts` to support Supabase client storage mocking.
     *   `[✅] 1.0.6.3 [TEST-UNIT]` Write unit tests for `uploadToStorage` in `supabase/functions/_shared/supabase_storage_utils.test.ts` using the enhanced mock.
 *   `[✅] 1.0.7 [COMMIT]` feat: foundational setup, RLS, and shared storage utility (Adjusted numbering & description)
-
+*   `[ ] 1.0.8 [REFACTOR/API/TEST-UNIT/TEST-INT]` Refine Core `ApiClient.request` Method for Dynamic Content-Type and Body Handling.
+    *   `[ ] 1.0.8.1 [API]` Modify the private `request` method in `packages/api/src/apiClient.ts`:
+        *   **Content-Type Header Logic:**
+            *   If `FetchOptions.headers` (passed to `request`) explicitly includes a `Content-Type` header, this provided `Content-Type` MUST be used and respected.
+            *   If `FetchOptions.body` is an instance of `FormData`, the `apiClient` MUST NOT set any `Content-Type` header itself. This allows the browser's `fetch` API to correctly set the `Content-Type` to `multipart/form-data` along with the necessary `boundary` parameter.
+            *   If no `Content-Type` is provided by the caller (in `FetchOptions.headers`) and the `FetchOptions.body` is not `FormData` (e.g., it's a plain JavaScript object intended for JSON), the `apiClient` MAY default to setting `Content-Type: application/json`.
+        *   **Request Body Processing Logic:**
+            *   The `FetchOptions.body` MUST only be transformed (e.g., via `JSON.stringify()`) if the effective `Content-Type` (whether explicitly set by caller or defaulted by `apiClient` for objects) is `application/json` and the body itself is a type that requires stringification (e.g., a plain JavaScript object).
+            *   If the `FetchOptions.body` is `FormData`, or if it's already a string (e.g., pre-stringified JSON when the caller also sets the appropriate `Content-Type`), it MUST be passed to the underlying `fetch` call as-is, without modification.
+    *   `[ ] 1.0.8.2 [API]` Review and update the public helper methods within `ApiClient` (e.g., `post`, `put`, `patch`) to ensure they pass the `body` and `options` to the refined `request` method correctly, aligning with the new dynamic handling logic (i.e., avoid unconditional `JSON.stringify`).
+    *   `[ ] 1.0.8.3 [TEST-UNIT]` Update all relevant API client unit tests in `packages/api/src/**/*.test.ts` (including but not limited to `apiClient.test.ts` and specific adapter tests like `dialectic.api.test.ts`):
+        *   Verify the new dynamic `Content-Type` and body handling logic within the `request` method and its public callers (`post`, `put`, etc.).
+        *   Ensure comprehensive test coverage for scenarios involving `FormData` bodies (asserting no `Content-Type` is set by `apiClient` and body is not stringified).
+        *   Test cases where `Content-Type` is explicitly provided by the caller for various body types.
+        *   Test cases where plain objects are sent without explicit `Content-Type` (asserting default to `application/json` and body is stringified).
+    *   `[ ] 1.0.8.4 [TEST-INT]` Review and update all integration tests for backend Edge Functions (located in `supabase/functions/**/*.test.ts`) that are invoked via the `ApiClient`.
+        *   Ensure that test setups, mocks for the `ApiClient` or `fetch`, and assertions correctly reflect the expected `Content-Type` (especially `multipart/form-data` with appropriate boundary handling by mock servers if applicable) and the raw request body formats.
+        *   Verify that Edge Function routing based on `Content-Type` (e.g., differentiating `multipart/form-data` from `application/json`) behaves as expected with the corrected client-side requests.
+    *   `[ ] 1.0.8.5 [DOCS]` Briefly document this dynamic and flexible request handling behavior in `packages/api/README.md` or as prominent inline comments within `apiClient.ts`. This will serve as a guide for developers using or extending the `ApiClient`.
+    *   `[ ] 1.0.8.6 [COMMIT]` refactor(api): implement dynamic Content-Type and body handling in core ApiClient, update tests
+    
 ### 1.0.A Shared UI Components - File Uploader
 *   `[✅] 1.0.A.1 [UI]` Create Generic `FileUpload` Component in `apps/web/src/components/common/`. (Component implemented, various render modes including dropZoneOverlay and minimalButton. Drag/drop functionality refined. Refactored into `TextInputArea` and working well there. Standalone testing might still be partial.)
     *   `[✅] 1.0.A.1.1 [TEST-UNIT]` Write unit tests for `FileUpload.tsx`. (RED -> GREEN - Basic tests for config, callbacks, and states are in place or mocked. Component is heavily used and tested via `TextInputArea.test.tsx`. Dedicated tests for `FileUpload` might be less comprehensive if covered by `TextInputArea`.)
@@ -321,8 +360,10 @@ The implementation plan uses the following labels to categorize work steps:
         *   `user_id` (UUID, foreign key to `profiles.id` on delete cascade, not nullable)
         *   `project_name` (TEXT, not nullable)
         *   `initial_user_prompt` (TEXT, not nullable, user's original framing of the problem)
+        *   `selected_domain_overlay_id` (UUID, FK to `domain_specific_prompt_overlays.id`, nullable)
+        *   `selected_domain_tag` (TEXT, nullable)
         *   `created_at` (TIMESTAMPTZ, default `now()`)
-        *   `updated_at` (TIMESTAMPTZ, default `now()`)
+        *   `updated_at` (TIMESTAMPTZ, default `now()`) 
         *   `repo_url` (TEXT, nullable) (Github will be our first repo integration but we should anticipate Dropbox, Sharepoint, and other repo sources for future development)
         *   `status` (TEXT, e.g., 'active', 'archived', 'template', default 'active')
     *   `[✅] 1.1.1.3` Create Supabase migration script for `dialectic_projects`. (GREEN)
@@ -447,24 +488,22 @@ The implementation plan uses the following labels to categorize work steps:
             5.  Stores the fetched content in the cache.
             6.  Handles loading and error states.
         *   `[✅] 1.1.5.C.3.1 [TEST-UNIT]` Write unit tests for thunk and reducers. (RED -> GREEN)
-    *   `[🚧] 1.1.5.C.4 [UI]` Update UI components (e.g., `DialecticSessionDetailsPage`, `ContributionCard`) that display contribution content: (UI components not yet identified or implemented to use `fetchContributionContent`)
-        *   `[ ]` Use a selector to get cached data from `contributionContentCache` for the relevant `contributionId`.
-        *   `[ ]` If data is not present or URL is expired (or content not yet fetched), dispatch `fetchContributionContent(contributionId)`.
-        *   `[ ]` Display loading indicators.
-        *   `[ ]` Once content is fetched, render it (e.g., using a Markdown renderer if `mimeType` is `text/markdown`).
-        *   `[ ] 1.1.5.C.4.1 [TEST-UNIT]` Update/write UI component tests. (RED -> GREEN)
-*   `[ ] 1.1.5.D [BE]` Handling Deletion of Contributions
-    *   `[ ] 1.1.5.D.1` When a `dialectic_contribution` record is deleted (e.g., due to cascade delete from session/project, or a direct "delete contribution" feature if ever added):
-        *   Need a mechanism to delete the corresponding file(s) from Supabase Storage to prevent orphaned files.
-        *   This can be achieved using a **PostgreSQL trigger** on the `dialectic_contributions` table (`AFTER DELETE`) that calls a database function, which in turn invokes a Supabase Edge Function (or uses `pg_net` if appropriate) to call the `deleteFromStorage` utility.
-        *   Alternatively, application-level logic in `dialectic-service` must explicitly delete from storage *before* deleting the DB record if it's a direct deletion action. Cascade deletes from DB won't trigger application logic directly. A trigger is more robust for cascades.
-    *   `[ ] 1.1.5.D.2 [DB/BE]` Design and implement this cleanup mechanism (Trigger + DB function preferred for cascade safety).
-        *   `[ ] 1.1.5.D.2.1 [TEST-UNIT]` Write tests for the cleanup mechanism. (RED -> GREEN)
-*   `[ ] 1.1.5.E [COMMIT]` feat(db,be,api,store,ui): Implement Supabase Storage for dialectic contributions
-*   `[ ] 1.1.6 [BE/CONFIG]` Ensure `ai_providers` table is populated with detailed configurations for core models via the `sync-ai-models` Edge Function.
-    *   `[ ] 1.1.6.1 [DOCS]` Verify that `sync-ai-models` correctly fetches and stores detailed configurations (context window, token costs, max output tokens, etc.) in the `ai_providers` table (specifically the `config` JSONB field if applicable, or individual columns if the schema has been denormalized) for OpenAI, Anthropic, and Google models. Confirm that the information includes `api_identifier`, `provider_name`, `model_name`, `context_window_tokens`, `input_token_cost_usd_millionths`, `output_token_cost_usd_millionths`, and `max_output_tokens`.
-    *   `[ ] 1.1.6.2 [TEST-INT]` Review existing tests for `sync-ai-models` (e.g., `supabase/functions/sync-ai-models/index.test.ts` and provider-specific tests like `openai_sync.test.ts`, `anthropic_sync.test.ts`, `google_sync.test.ts`) to ensure they cover the accurate population of all necessary fields in `ai_providers` for core models. If coverage for these specific fields is lacking, identify and add necessary test cases.
-    *   `[ ] 1.1.6.3 [BE]` If `supabase/seed.sql` contains detailed entries for these core models (beyond minimal placeholders for `id`, `provider_name`, `model_name`), refactor it to remove such details. The `sync-ai-models` function is the source of truth for comprehensive model configurations. Ensure `sync-ai-models` can be run (e.g., via a script or manual trigger) to populate development/testing environments.
+    *   `[✅] 1.1.5.C.4 [UI]` Update UI components (e.g., `DialecticSessionDetailsPage`, `ContributionCard`) that display contribution content:
+        *   `[✅]` Use a selector to get cached data from `contributionContentCache` for the relevant `contributionId`.
+        *   `[✅]` If data is not present or URL is expired (or content not yet fetched), dispatch `fetchContributionContent(contributionId)`.
+        *   `[✅]` Display loading indicators.
+        *   `[✅]` Once content is fetched, render it (e.g., using a Markdown renderer if `mimeType` is `text/markdown`).
+        *   `[✅] 1.1.5.C.4.1 [TEST-UNIT]` Update/write UI component tests. (RED -> GREEN)
+*   `[🚧] 1.1.5.D [BE]` Handling Deletion of Contributions (Orphaned File Prevention)
+    *   `[✅] 1.1.5.D.1 [BE]` Create new Supabase Edge Function: `storage-cleanup-service`.
+        *   `[✅] 1.1.5.D.1.1 [BE]` Define function to accept `bucket` and `paths[]` payload.
+        *   `[✅] 1.1.5.D.1.2 [BE]` Implement logic to delete files from Supabase Storage using `supabaseAdminClient.storage.from(bucket).remove(paths)`.
+        *   `[✅] 1.1.5.D.1.3 [TEST-UNIT]` Write unit tests for `storage-cleanup-service` (mocking Supabase client and its storage calls). (RED -> GREEN -> REFACTOR)
+    *   `[✅] 1.1.5.D.2 [DB]` All application logic to delete Contributions will invoke `storage-cleanup-service` directly.
+*   `[✅] 1.1.6 [BE/CONFIG]` Ensure `ai_providers` table is populated with detailed configurations for core models via the `sync-ai-models` Edge Function.
+    *   `[✅] 1.1.6.1 [DOCS]` Verify that `sync-ai-models` correctly fetches and stores detailed configurations (context window, token costs, max output tokens, etc.) in the `ai_providers` table (specifically the `config` JSONB field if applicable, or individual columns if the schema has been denormalized) for OpenAI, Anthropic, and Google models. Confirm that the information includes `api_identifier`, `provider_name`, `model_name`, `context_window_tokens`, `input_token_cost_usd_millionths`, `output_token_cost_usd_millionths`, and `max_output_tokens`.
+    *   `[✅] 1.1.6.2 [TEST-INT]` Review existing tests for `sync-ai-models` (e.g., `supabase/functions/sync-ai-models/index.test.ts` and provider-specific tests like `openai_sync.test.ts`, `anthropic_sync.test.ts`, `google_sync.test.ts`) to ensure they cover the accurate population of all necessary fields in `ai_providers` for core models. If coverage for these specific fields is lacking, identify and add necessary test cases.
+    *   `[✅] 1.1.6.3 [BE]` If `supabase/seed.sql` contains detailed entries for these core models (beyond minimal placeholders for `id`, `provider_name`, `model_name`), refactor it to remove such details. The `sync-ai-models` function is the source of truth for comprehensive model configurations. Ensure `sync-ai-models` can be run (e.g., via a script or manual trigger) to populate development/testing environments.
 *   `[✅] 1.1.7 [RLS]` Define Row Level Security policies for `dialectic_projects`, `dialectic_sessions`, `dialectic_session_models`, `dialectic_contributions`.
     *   `[❓] 1.1.7.1 [TEST-INT]` Write RLS tests for `dialectic_projects` (user owns their projects). (RED)
     *   `[✅] 1.1.7.2` Implement RLS for `dialectic_projects`. (GREEN)
@@ -493,23 +532,24 @@ The implementation plan uses the following labels to categorize work steps:
         *   `[ ] 1.2.1.3 [REFACTOR]` Review.
         *   `[✅] 1.2.1.4 [TEST-INT]` Run tests.
     *   Action: `startSession`
-        *   `[✅] 1.2.1.5 [TEST-INT]` Write tests for `startSession` action (input: `projectId`, `selectedModelCatalogIds` (array of strings from `ai_models_catalog.id`), `sessionDescription` (optional), `thesisPromptTemplateName` (optional, defaults to "dialectic_thesis_default_v1"), `antithesisPromptTemplateName` (optional, defaults to "dialectic_antithesis_critique_default_v1"); output: created session object; auth). (RED)
-        *   `[✅] 1.2.1.6` Implement logic:
+        *   `[🚧] 1.2.1.5 [TEST-INT]` Write tests for `startSession` action (input: `projectId`, `selectedModelCatalogIds`, `sessionDescription` (optional), `thesisPromptTemplateName` (optional), `antithesisPromptTemplateName` (optional), `selected_domain_overlay_id` (optional string, used if initial prompts are domain-specific); output: created session object; auth). (RED - Partially complete: Key "Happy Path" test, tests for optional parameters (like `sessionDescription`, template names), and specific testing for `selected_domain_overlay_id` are missing (`// TODO` in file).)
+        *   `[ ] 1.2.1.6` Implement logic:
             1.  Verify project ownership.
-            2.  Fetch `prompt_template.id` for thesis and antithesis from `prompt_templates` table using names.
-            3.  Creates `dialectic_sessions` record (linking `active_thesis_prompt_template_id`, etc.).
+            2.  Fetch `prompt_template.id` for thesis and antithesis from `prompt_templates` table using names (or from selected formal debate structure).
+            3.  If `selected_domain_overlay_id` is provided in the payload, fetch its `overlay_values` to be used in prompt rendering for the relevant stage(s).
+            4.  Creates `dialectic_sessions` record (linking `active_thesis_prompt_template_id`, etc.).
                 *   During creation, an `associated_chat_id` (UUID) should be generated by `dialectic-service` or assigned if the dialectic originates from an existing chat. This ID will be used for all subsequent calls to the `/chat` Edge Function for this session.
-            4.  Creates `dialectic_session_models` records from `selectedModelCatalogIds`.
-            5.  Sets `dialectic_sessions.status` to `pending_thesis`.
-            6.  Constructs `current_stage_seed_prompt` for the session by rendering the chosen thesis prompt template with the project's `initial_user_prompt`. Store this in `dialectic_sessions.current_stage_seed_prompt`.
-            7.  The `startSession` action concludes after successfully setting up the session. The generation of thesis contributions will be triggered by a separate user action from the frontend, which will then call the `generateThesisContributions` action.
-        *   `[✅] 1.2.1.7` (GREEN)  <-- This was likely a placeholder for implementation, marking based on 1.2.1.6
+            5.  Creates `dialectic_session_models` records from `selectedModelCatalogIds`.
+            6.  Sets `dialectic_sessions.status` to `pending_thesis`.
+            7.  Constructs `current_stage_seed_prompt` for the session by rendering the chosen thesis prompt template with the project's `initial_user_prompt`. Store this in `dialectic_sessions.current_stage_seed_prompt`.
+            8.  The `startSession` action concludes after successfully setting up the session. The generation of thesis contributions will be triggered by a separate user action from the frontend, which will then call the `generateThesisContributions` action.
+        *   `[ ] 1.2.1.7` (GREEN)  
         *   `[ ] 1.2.1.8 [REFACTOR]` Review.
-        *   `[✅] 1.2.1.9 [TEST-INT]` Run tests.
-*   `[ ] 1.2.2 [BE]` Helper: Prompt Rendering Utility
-    *   `[ ] 1.2.2.1 [TEST-UNIT]` Write tests for a utility that takes a prompt template string (e.g., "Solve: {{problem}}") and a context object (e.g., `{ problem: "world hunger" }`) and returns the rendered prompt. (RED)
-    *   `[ ] 1.2.2.2` Implement the prompt rendering utility (e.g., using a simple string replacement or a lightweight template engine). (GREEN)
-    *   `[ ] 1.2.2.3 [TEST-UNIT]` Run tests.
+        *   `[ ] 1.2.1.9 [TEST-INT]` Run tests.
+*   `[✅] 1.2.2 [BE]` Helper: Prompt Rendering Utility
+    *   `[✅] 1.2.2.1 [TEST-UNIT]` Write tests for a utility that takes a prompt template string (e.g., "Solve: {{problem}}") and a context object (e.g., `{ problem: "world hunger" }`) and returns the rendered prompt. (RED)
+    *   `[✅] 1.2.2.2` Implement the prompt rendering utility (e.g., using a simple string replacement or a lightweight template engine). (GREEN)
+    *   `[✅] 1.2.2.3 [TEST-UNIT]` Run tests.
 *   `[✅] 1.2.3 [BE]` Helper: AI Model Interaction Utilities (within `dialectic-service` or shared helpers)
     *   `[✅] 1.2.3.1 [TEST-UNIT]` Write unit tests for `callUnifiedAIModel(modelCatalogId, renderedPrompt, options, associatedChatId)` which internally prepares a request for and invokes the existing `/chat` Edge Function. Mock the `/chat` function invocation. (RED)
     *   `[✅] 1.2.3.2` Implement `callUnifiedAIModel`:
@@ -647,14 +687,15 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 1.5.2.4 [REFACTOR]` Review.
     *   `[✅] 1.5.2.5 [TEST-UNIT]` Run tests.
 *   `[🚧] 1.5.3 [UI]` Create `CreateDialecticProjectPage` (or modal component). (Note: Component is `CreateDialecticProjectForm.tsx`)
-    *   `[✅] 1.5.3.1 [TEST-UNIT]` Write tests (form fields for project name, initial user prompt; submit button; handles loading/error from `createDialecticProject` thunk). (RED -> GREEN - All tests in `CreateDialecticProjectForm.test.tsx` are now passing.)
-    *   `[✅] 1.5.3.2` Implement component:
+    *   `[ ] 1.5.3.1 [TEST-UNIT]` Write tests (form fields for project name, initial user prompt; submit button; handles loading/error from `createDialecticProject` thunk). Update tests to cover interaction with the updated `DomainSelector` and the new conditional `DomainOverlayDescriptionSelector`, ensuring `selected_domain_overlay_id` is correctly passed. (RED)
+    *   `[ ] 1.5.3.2` Implement component:
         *   Form with inputs for `projectName`, `initialUserPrompt`.
-        *   On submit, dispatches `createDialecticProject`.
+        *   Integrate the updated `DomainSelector` and new `DomainOverlayDescriptionSelector` to determine `selected_domain_overlay_id`. The `currentStageForOverlaySelection` for project creation would typically be a general stage like "thesis" or a specific "project_setup" stage if defined.
+        *   On submit, dispatches `createDialecticProject` using `selected_domain_overlay_id` from the store.
         *   Navigates to `DialecticProjectDetailsPage` on success.
         *   Displays loading/error states.
         *   Ensure a11y principles are applied.
-    *   `[✅] 1.5.3.3` (GREEN)
+    *   `[🚧] 1.5.3.3` (GREEN - Implementation is mostly complete, but `selected_domain_overlay_id` is not included in the `CreateProjectPayload` sent to the backend.)
     *   **NEW Steps for Enhancements:**
     *   `[✅] 1.5.3.A [UI]` Refactor "Initial User Prompt" Input Field.
         *   `[✅] 1.5.3.A.1 [TEST-UNIT]` Update tests for `CreateDialecticProjectPage`: assert `TextInputArea` from `apps/web/src/components/common/TextInputArea.tsx` is used for `initialUserPrompt`. (RED -> GREEN - `TextInputArea` successfully integrated. `CreateDialecticProjectForm.test.tsx` verifies props passed to mock `TextInputArea`, and interaction with its `onFileLoad`. `TextInputArea.test.tsx` confirms its internal `onChange` and other functionalities.)
@@ -715,13 +756,14 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 1.5.4.4 [REFACTOR]` Review.
     *   `[✅] 1.5.4.5 [TEST-UNIT]` Run tests.
 *   `[✅] 1.5.5 [UI]` Create `StartDialecticSessionModal` component.
-    *   `[✅] 1.5.5.1 [TEST-UNIT]` Write tests (form for session description, multi-select for AI models from catalog; submit button; loading/error states from `startDialecticSession` thunk and `fetchAIModelCatalog` thunk). Mock store. (RED)
-    *   `[✅] 1.5.5.2` Implement component:
+    *   `[ ] 1.5.5.1 [TEST-UNIT]` Write tests (form for session description, multi-select for AI models from catalog; submit button; loading/error states from `startDialecticSession` thunk and `fetchAIModelCatalog` thunk). Update tests if domain selection (using updated `DomainSelector` and new `DomainOverlayDescriptionSelector`) is added here for stage-specific prompts. (RED)
+    *   `[ ] 1.5.5.2` Implement component:
         *   Dispatches `fetchAIModelCatalog` on mount if catalog is null.
         *   Uses `selectModelCatalog` for model selection.
         *   Form with `sessionDescription` (optional), multi-select for `selectedModelCatalogIds`.
         *   (Optional for Phase 1, can be hardcoded or defaults): Selectors for `thesisPromptTemplateName`, `antithesisPromptTemplateName`.
-        *   On submit, dispatches `startDialecticSession` with `projectId` and form data.
+        *   **If domain overlays are relevant for selected prompts (e.g., thesis or antithesis prompts):** Integrate the updated `DomainSelector` and (conditionally) the new `DomainOverlayDescriptionSelector`. The `selectedStageAssociation` store property would need to be set according to the context (e.g., "thesis" when configuring thesis prompts). The resulting `selected_domain_overlay_id` (or potentially multiple, if different stages can have different overlays set at session start) would be included in the `StartSessionPayload`.
+        *   On submit, dispatches `startDialecticSession` with `projectId` and form data including any `selected_domain_overlay_id`(s).
         *   Closes modal and potentially refetches project details on success.
         *   Ensure a11y principles are applied.
     *   `[✅] 1.5.5.3` (GREEN)
@@ -744,11 +786,33 @@ The implementation plan uses the following labels to categorize work steps:
                 *   Link back to the original thesis contribution being critiqued.
         *   Basic cost display for the session (sum of contribution costs).
         *   Ensure a11y principles are applied (e.g., tab navigation, screen reader compatibility).
-    *   `[ ] 1.5.6.3` (GREEN)
-    *   `[ ] 1.5.6.4 [REFACTOR]` Review layout and data presentation.
-    *   `[ ] 1.5.6.5 [TEST-UNIT]` Run tests.
+    *   `[✅] 1.5.6.3` (GREEN)
+    *   `[✅] 1.5.6.4 [REFACTOR]` Review layout and data presentation.
+    *   `[✅] 1.5.6.5 [TEST-UNIT]` Run tests.
 *   `[✅] 1.5.7 [UI]` Add navigation link to `/dialectic` in the main app layout (e.g., sidebar, header).
 *   `[🚧] 1.5.8 [COMMIT]` feat(ui): add core pages and navigation for dialectic engine
+
+### Fixes for Dialectic flow
+*   [ ] 404 err on file upload for project creation
+*   [ ] "Project Name" auto-fill only works for one char
+*   [ ] Projects page (/dialectic/) needs cards to be independent
+*   [ ] Projects cards "created at" not displaying
+*   [ ] Project cards need project title displayed 
+*   [ ] Project cards need "delete" interaction
+*   [ ] Project cards need "clone/copy" interaction
+*   [ ] Project page (/dialectic/:id) shows Project ID instead of title
+*   [ ] Project page doesn't show IPS 
+*   [ ] Project page should show initial selected prompt and provide edit capability
+*   [ ] Start New Session modal incomplete
+*   [ ] Start New Session modal needs background blur
+*   [ ] Add notification triggers for members joining orgs
+*   [ ] Add notification triggers for participating group chat updates 
+*   [ ] Add org access to projects 
+*   [ ] Add org projects card to org page
+*   [ ] Add notification triggers for org projects 
+*   [ ] Add Posthog triggers for every GUI interaction 
+*   [ ] 
+*   [ ]
 
 ### 1.6 Basic GitHub Integration (Backend & API)
 *   `[ ] 1.6.1 [CONFIG]` Add new environment variables if needed for GitHub App/PAT specifically for Dialectic outputs, or confirm existing ones are sufficient and securely stored (e.g., in Supabase Vault).

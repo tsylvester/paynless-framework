@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
     useDialecticStore,
     selectAvailableDomainTags,
     selectIsLoadingDomainTags,
     selectDomainTagsError,
-    selectSelectedDomainTag
+    selectSelectedDomainTag,
+    selectSelectedStageAssociation,
+    selectSelectedDomainOverlayId,
+    selectOverlay
 } from '@paynless/store'; // Assuming store index exports these
 import type { DomainTagDescriptor } from '@paynless/types';
 
@@ -14,81 +17,107 @@ import type { DomainTagDescriptor } from '@paynless/types';
 import {
     Select,
     SelectContent,
-    SelectGroup,
     SelectItem,
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select'; // Adjust this path if needed
 import { logger } from '@paynless/utils';
 
+// Helper function to convert snake_case to Spaced Title Case
+function snakeToSpacedTitleCase(str: string): string {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
 export function DomainSelector() {
     // Actions and state from the store
-    const fetchAvailableDomainTags = useDialecticStore(state => state.fetchAvailableDomainTags);
-    const setSelectedDomainTag = useDialecticStore(state => state.setSelectedDomainTag);
+    const fetchAvailableDomainTagsAction = useDialecticStore(state => state.fetchAvailableDomainTags);
+    const setSelectedDomainTagAction = useDialecticStore(state => state.setSelectedDomainTag);
+    const fetchAvailableDomainOverlaysAction = useDialecticStore(state => state.fetchAvailableDomainOverlays);
+    const setSelectedDomainOverlayIdAction = useDialecticStore(state => state.setSelectedDomainOverlayId);
 
-    const availableDomainTags = useDialecticStore(selectAvailableDomainTags); // Removed 'as DomainTagDescriptor[]' cast
+    const availableDomainTags = useDialecticStore(selectAvailableDomainTags);
     const isLoadingDomainTags = useDialecticStore(selectIsLoadingDomainTags);
     const domainTagsError = useDialecticStore(selectDomainTagsError);
-    const selectedDomainTag = useDialecticStore(selectSelectedDomainTag);
+    const currentSelectedDomainTag = useDialecticStore(selectSelectedDomainTag);
+    const currentSelectedStageAssociation = useDialecticStore(selectSelectedStageAssociation);
+    const currentSelectedDomainOverlayId = useDialecticStore(selectSelectedDomainOverlayId);
 
     useEffect(() => {
-        logger.info('[DomainSelector] Component mounted, fetching domain tags.');
-        fetchAvailableDomainTags();
-    }, [fetchAvailableDomainTags]);
+        logger.info('[DomainSelector] Component mounted or stage association changed, fetching domain tags if needed.');
+        fetchAvailableDomainTagsAction();
+    }, [fetchAvailableDomainTagsAction]);
 
-    const handleValueChange = (value: string) => {
-        // The Shadcn Select might return an empty string if "nothing" is selected
-        // or if a placeholder is somehow selected. We treat empty string as null.
-        logger.info(`[DomainSelector] Value changed to: ${value}`);
-        setSelectedDomainTag(value === '' ? null : value);
-    };
+    useEffect(() => {
+        if (currentSelectedStageAssociation) {
+            logger.info(`[DomainSelector] Stage association is ${currentSelectedStageAssociation}, fetching domain overlays.`);
+            fetchAvailableDomainOverlaysAction(currentSelectedStageAssociation);
+        }
+    }, [currentSelectedStageAssociation, fetchAvailableDomainOverlaysAction]);
+
+    const filteredDomainTags = useMemo(() => {
+        if (!currentSelectedStageAssociation || !Array.isArray(availableDomainTags) || availableDomainTags.length === 0) {
+            logger.info('[DomainSelector] No stage association selected or no available domain tags. Returning empty for filtered domain tags.', { currentSelectedStageAssociation, availableDomainTagsCount: availableDomainTags?.length });
+            return [];
+        }
+        logger.info(`[DomainSelector] Filtering domain tags for stage: ${currentSelectedStageAssociation}`);
+        const filtered = availableDomainTags.filter(tagDesc => tagDesc.stageAssociation === currentSelectedStageAssociation);
+        logger.info(`[DomainSelector] Found ${filtered.length} domain tag descriptors for stage ${currentSelectedStageAssociation}.`);
+        return filtered;
+    }, [availableDomainTags, currentSelectedStageAssociation]);
+
+    const overlaysForCurrentTag = useDialecticStore(state => selectOverlay(state, currentSelectedDomainTag));
+
+    useEffect(() => {
+        if (currentSelectedDomainTag && overlaysForCurrentTag && overlaysForCurrentTag.length === 1) {
+            const singleOverlayId = overlaysForCurrentTag[0].id;
+            if (singleOverlayId !== currentSelectedDomainOverlayId) {
+                logger.info(`[DomainSelector] Auto-selecting single overlay: ${singleOverlayId} for domain tag ${currentSelectedDomainTag}`);
+                setSelectedDomainOverlayIdAction(singleOverlayId);
+            }
+        }
+    }, [currentSelectedDomainTag, overlaysForCurrentTag, currentSelectedDomainOverlayId, setSelectedDomainOverlayIdAction, logger]);
 
     if (isLoadingDomainTags) {
-        return <p className="text-sm text-muted-foreground">Loading domains...</p>; // Basic loading indicator
+        return <div className="text-sm text-muted-foreground">Loading domains...</div>;
     }
 
     if (domainTagsError) {
-        return (
-            <div className="text-sm text-destructive">
-                <p>Error loading domains:</p>
-                <p className="font-mono text-xs">{domainTagsError.message}</p>
-            </div>
-        );
+        return <div className="text-sm text-destructive">Error loading domains: {domainTagsError.message}</div>;
     }
 
-    const formatDescriptor = (descriptor: DomainTagDescriptor): string => {
-        let label = descriptor.domainTag;
-        if (descriptor.description) {
-            label += ` - ${descriptor.description}`;
-        }
-        if (descriptor.stageAssociation) {
-            label += ` (${descriptor.stageAssociation})`;
-        }
-        return label;
+    if (!filteredDomainTags || filteredDomainTags.length === 0) {
+        return <div className="text-sm text-muted-foreground">No domains available for the current stage.</div>;
+    }
+    
+    const handleValueChange = (newlySelectedTagValue: string) => {
+        // Since a domain must always be chosen and cannot be cleared to a placeholder state by user,
+        // we directly set the selected tag and reset the overlay ID.
+        setSelectedDomainTagAction(newlySelectedTagValue);
+        setSelectedDomainOverlayIdAction(null);
     };
 
     return (
-        <Select
-            value={selectedDomainTag || ''} // Ensure value is not null for Select
-            onValueChange={handleValueChange}
-        >
-            <SelectTrigger className="w-auto">
-                <SelectValue placeholder="Select a domain" />
-            </SelectTrigger>
-            <SelectContent className="bg-background/90 backdrop-blur-md border-border">
-                <SelectGroup>
-                    {availableDomainTags.length === 0 && !isLoadingDomainTags && (
-                        <SelectItem value="---" disabled>
-                            No domains available
-                        </SelectItem>
-                    )}
-                    {availableDomainTags.map((descriptor) => (
-                        <SelectItem key={descriptor.id} value={descriptor.id}>
-                            {formatDescriptor(descriptor)}
+        <div className="space-y-2">
+            <Select
+                value={currentSelectedDomainTag || undefined}
+                onValueChange={handleValueChange}
+            >
+                <SelectTrigger id="domain-tag-selector">
+                    <SelectValue placeholder="Choose domain..." />
+                </SelectTrigger>
+                <SelectContent className="bg-background/70 backdrop-blur-md">
+                    {filteredDomainTags.map((descriptor: DomainTagDescriptor) => (
+                        <SelectItem key={descriptor.id} value={descriptor.domainTag}>
+                            {snakeToSpacedTitleCase(descriptor.domainTag)}
                         </SelectItem>
                     ))}
-                </SelectGroup>
-            </SelectContent>
-        </Select>
+                </SelectContent>
+            </Select>
+        </div>
     );
 } 

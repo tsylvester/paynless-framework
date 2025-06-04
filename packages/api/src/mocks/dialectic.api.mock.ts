@@ -9,7 +9,9 @@ import type {
     AIModelCatalogEntry,
     DomainTagDescriptor,
     UpdateProjectDomainTagPayload,
-    DomainOverlayDescriptor
+    DomainOverlayDescriptor,
+    UploadProjectResourceFilePayload,
+    DialecticProjectResource
 } from '@paynless/types'; 
 
 // --- Dialectic Client Mock Setup ---
@@ -23,6 +25,7 @@ export type MockDialecticApiClient = {
     getProjectDetails: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<DialecticProject>>>>;
     listModelCatalog: ReturnType<typeof vi.fn<[], Promise<ApiResponse<AIModelCatalogEntry[]>>>>;
     updateProjectDomainTag: ReturnType<typeof vi.fn<[payload: UpdateProjectDomainTagPayload], Promise<ApiResponse<DialecticProject>>>>;
+    uploadProjectResourceFile: ReturnType<typeof vi.fn<[payload: UploadProjectResourceFilePayload], Promise<ApiResponse<DialecticProjectResource>>>>;
 };
 
 // Typed vi.fn() calls
@@ -36,6 +39,7 @@ export const mockDialecticClientInstance: MockDialecticApiClient = {
     getProjectDetails: vi.fn<[string], Promise<ApiResponse<DialecticProject>>>(),
     listModelCatalog: vi.fn<[], Promise<ApiResponse<AIModelCatalogEntry[]>>>(),
     updateProjectDomainTag: vi.fn<[UpdateProjectDomainTagPayload], Promise<ApiResponse<DialecticProject>>>(),
+    uploadProjectResourceFile: vi.fn<[UploadProjectResourceFilePayload], Promise<ApiResponse<DialecticProjectResource>>>(),
 };
 
 // Moved reset logic into its own function
@@ -50,6 +54,7 @@ export function resetMockDialecticClient(instance?: MockDialecticApiClient) {
   clientToReset.getProjectDetails.mockReset();
   clientToReset.listModelCatalog.mockReset();
   clientToReset.updateProjectDomainTag.mockReset();
+  clientToReset.uploadProjectResourceFile.mockReset();
 }
 
 /**

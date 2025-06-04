@@ -10,14 +10,21 @@ export let mockLocalContributionCache: DialecticStateValues['contributionContent
 export const resetDialecticStoreMocks = () => {
   mockFetchContributionContent.mockClear();
   mockLocalContributionCache = {};
+  selectOverlay.mockClear();
 };
 
 const actualStoreModule = originalStore as unknown as { 
   selectContributionContentCache: (state: DialecticStateValues) => DialecticStateValues['contributionContentCache'];
+  selectSelectedDomainTag: (state: DialecticStateValues) => string | null;
+  selectSelectedDomainOverlayId: (state: DialecticStateValues) => string | null;
+  selectOverlay: (state: DialecticStateValues, domainTag: string | null) => DomainOverlayDescriptor[];
   // Add other selectors if needed by other components using this general mock
 };
 
 export const selectContributionContentCache = actualStoreModule.selectContributionContentCache;
+export const selectSelectedDomainTag = actualStoreModule.selectSelectedDomainTag;
+export const selectSelectedDomainOverlayId = actualStoreModule.selectSelectedDomainOverlayId;
+export const selectOverlay = vi.fn();
 
 export const useDialecticStore = vi.fn(<TResult,>(selectorFn: (state: DialecticStore) => TResult): TResult => {
   const mockStateValues: DialecticStateValues = {
@@ -39,6 +46,12 @@ export const useDialecticStore = vi.fn(<TResult,>(selectorFn: (state: DialecticS
     createProjectError: null,
     isStartingSession: false,
     startSessionError: null,
+    selectedStageAssociation: null,
+    availableDomainOverlays: [],
+    isLoadingDomainOverlays: false,
+    domainOverlaysError: null,
+    selectedDomainOverlayId: null,
+    allSystemPrompts: [],
   };
 
   const mockStoreActions = {

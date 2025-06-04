@@ -25,7 +25,7 @@ import {
     payload: CreateProjectPayload,
     options?: CreateProjectOptions // Optional DI for Supabase client and isValidDomainTag
   ) {
-    const { projectName, initialUserPrompt, selectedDomainTag } = payload;
+    const { projectName, initialUserPrompt, selectedDomainTag, selected_domain_overlay_id } = payload;
   
     if (!projectName || !initialUserPrompt) {
       return { error: { message: "projectName and initialUserPrompt are required", status: 400 } };
@@ -57,6 +57,7 @@ import {
         project_name: projectName,
         initial_user_prompt: initialUserPrompt,
         selected_domain_tag: selectedDomainTag,
+        selected_domain_overlay_id: selected_domain_overlay_id,
         status: 'new',
         // created_at and updated_at are handled by default in table definition
       })
@@ -85,7 +86,8 @@ import {
       user_id: newProjectData.user_id,
       project_name: newProjectData.project_name,
       initial_user_prompt: newProjectData.initial_user_prompt,
-      selected_domain_tag: newProjectData.selected_domain_tag, // This is from DB, so it's snake_case
+      selected_domain_tag: newProjectData.selected_domain_tag,
+      selected_domain_overlay_id: newProjectData.selected_domain_overlay_id,
       repo_url: newProjectData.repo_url,
       status: newProjectData.status,
       created_at: newProjectData.created_at,

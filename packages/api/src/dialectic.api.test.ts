@@ -1,7 +1,20 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { DialecticApiClient } from './dialectic.api';
 import type { ApiClient } from './apiClient';
-import type { ApiResponse, ApiError, CreateProjectPayload, DialecticProject, StartSessionPayload, DialecticSession, AIModelCatalogEntry, ContributionContentSignedUrlResponse, DialecticProjectResource, UploadProjectResourceFilePayload, DomainOverlayDescriptor } from '@paynless/types';
+import type { 
+    ApiResponse, 
+    ApiError, 
+    CreateProjectPayload, 
+    DialecticProject, 
+    StartSessionPayload, 
+    DialecticSession, 
+    AIModelCatalogEntry, 
+    ContributionContentSignedUrlResponse, 
+    DialecticProjectResource, 
+    UploadProjectResourceFilePayload, 
+    DomainOverlayDescriptor, 
+    UpdateProjectDomainTagPayload 
+} from '@paynless/types';
 
 // Mock the base ApiClient
 const mockApiClientPost = vi.fn();
@@ -787,6 +800,83 @@ describe('DialecticApiClient', () => {
             mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
 
             const result = await dialecticApiClient.listAvailableDomainOverlays(validPayload);
+
+            expect(result.error).toEqual({
+                code: 'NETWORK_ERROR',
+                message: networkErrorMessage,
+            });
+            expect(result.status).toBe(0);
+            expect(result.data).toBeUndefined();
+        });
+    });
+
+    describe('updateProjectDomainTag', () => {
+        const endpoint = 'dialectic-service';
+        const validPayload: UpdateProjectDomainTagPayload = {
+            projectId: 'project-123',
+            selectedDomainTag: 'new_domain_tag',
+        };
+        const requestBody = { action: 'updateProjectDomainTag', payload: validPayload };
+        const mockUpdatedProject: DialecticProject = {
+            id: 'project-123',
+            user_id: 'user-xyz',
+            project_name: 'Test Project',
+            initial_user_prompt: 'Initial prompt',
+            selected_domain_tag: 'new_domain_tag',
+            repo_url: null,
+            status: 'active',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            sessions: [],
+        };
+
+        it('should call apiClient.post with the correct endpoint and body', async () => {
+            const mockResponse: ApiResponse<DialecticProject> = {
+                data: mockUpdatedProject,
+                status: 200,
+            };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            await dialecticApiClient.updateProjectDomainTag(validPayload);
+
+            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
+            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+        });
+
+        it('should return the updated project data on successful response', async () => {
+            const mockResponse: ApiResponse<DialecticProject> = {
+                data: mockUpdatedProject,
+                status: 200,
+            };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            const result = await dialecticApiClient.updateProjectDomainTag(validPayload);
+
+            expect(result.data).toEqual(mockUpdatedProject);
+            expect(result.status).toBe(200);
+            expect(result.error).toBeUndefined();
+        });
+
+        it('should return the error object on failed API call (e.g., project not found)', async () => {
+            const mockApiError: ApiError = { code: 'NOT_FOUND', message: 'Project not found' };
+            const mockErrorResponse: ApiResponse<DialecticProject> = {
+                error: mockApiError,
+                status: 404,
+            };
+            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+
+            const result = await dialecticApiClient.updateProjectDomainTag(validPayload);
+
+            expect(result.error).toEqual(mockApiError);
+            expect(result.status).toBe(404);
+            expect(result.data).toBeUndefined();
+        });
+
+        it('should return a network error if apiClient.post rejects', async () => {
+            const networkErrorMessage = 'Simulated network failure for updateProjectDomainTag';
+            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+
+            const result = await dialecticApiClient.updateProjectDomainTag(validPayload);
 
             expect(result.error).toEqual({
                 code: 'NETWORK_ERROR',

@@ -2,14 +2,16 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
+import { logger } from '@paynless/utils';
 
 import { useDialecticStore } from '@paynless/store';
 import {
   selectIsCreatingProject,
   selectCreateProjectError,
   selectSelectedDomainTag,
+  selectSelectedStageAssociation,
 } from '@paynless/store';
-import type { CreateProjectPayload } from '@paynless/types';
+import type { CreateProjectPayload, DialecticProjectResource } from '@paynless/types';
 import { DomainSelector } from '@/components/dialectic/DomainSelector';
 
 import { Button } from '@/components/ui/button';
@@ -22,14 +24,7 @@ import { TextInputArea } from '@/components/common/TextInputArea';
 import { usePlatform } from '@paynless/platform';
 import type { FileSystemCapabilities } from '@paynless/types';
 import { platformEventEmitter } from '@paynless/platform';
-
-// Placeholder type until DialecticProjectResource is available in @paynless/types
-interface PlaceholderDialecticProjectResource {
-    id: string;
-    projectId: string;
-    fileName: string;
-    storagePath: string;
-}
+import { DomainOverlayDescriptionSelector } from './DomainOverlayDescriptionSelector';
 
 const createProjectFormSchema = z.object({
   projectName: z.string().min(3, 'Project name must be at least 3 characters').max(100),
@@ -60,7 +55,10 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
   const creationError = useDialecticStore(selectCreateProjectError);
   const selectedDomainTag = useDialecticStore(selectSelectedDomainTag);
   const resetCreateProjectError = useDialecticStore((state) => state.resetCreateProjectError);
-  const uploadProjectResourceFile = useDialecticStore((state) => (state as any).uploadProjectResourceFile); 
+  const uploadProjectResourceFile = useDialecticStore((state) => state.uploadProjectResourceFile); 
+  const setSelectedStageAssociation = useDialecticStore((state) => state.setSelectedStageAssociation);
+  const fetchAvailableDomainOverlays = useDialecticStore((state) => state.fetchAvailableDomainOverlays);
+  const currentSelectedStage = useDialecticStore(selectSelectedStageAssociation);
 
   const [promptFile, setPromptFile] = useState<File | null>(null);
   const [projectNameManuallySet, setProjectNameManuallySet] = useState<boolean>(false);
@@ -207,6 +205,21 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
     }
   }, [capabilities, handleFileLoadForPrompt]);
 
+  // Set the initial stage association to 'thesis' when the component mounts
+  useEffect(() => {
+    if (setSelectedStageAssociation) {
+        setSelectedStageAssociation('thesis');
+    }
+  }, [setSelectedStageAssociation]);
+
+  // Fetch domain overlays when the stage association is set or changes
+  useEffect(() => {
+    if (currentSelectedStage && fetchAvailableDomainOverlays) {
+      logger.info(`[CreateDialecticProjectForm] Stage set to ${currentSelectedStage}, fetching overlays.`);
+      fetchAvailableDomainOverlays(currentSelectedStage);
+    }
+  }, [currentSelectedStage, fetchAvailableDomainOverlays]);
+
   useEffect(() => {
     reset({
         projectName: defaultProjectName,
@@ -225,7 +238,7 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
     };
   }, [creationError, resetCreateProjectError]);
 
-  const handleActualFileUpload = async (fileToUpload: File, projectId: string): Promise<{ success: boolean; error?: string; resourceReference?: PlaceholderDialecticProjectResource }> => {
+  const handleActualFileUpload = async (fileToUpload: File, projectId: string): Promise<{ success: boolean; error?: string; resourceReference?: DialecticProjectResource }> => {
     if (!uploadProjectResourceFile) {
       console.error("uploadProjectResourceFile thunk is not available");
       return { success: false, error: "File upload service not configured." };
@@ -240,7 +253,7 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
     });
     if (result.data) {
       console.log('File uploaded successfully as project resource:', result.data);
-      return { success: true, resourceReference: result.data as PlaceholderDialecticProjectResource };
+      return { success: true, resourceReference: result.data };
     } else {
       console.error('Failed to upload file as project resource:', result.error);
       return { success: false, error: result.error?.message || 'Unknown upload error' };
@@ -292,7 +305,7 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
           <span>Project</span>
         </CardTitle>
         <CardDescription>
-          Define the initial parameters for your new dialectic exploration.
+          <DomainOverlayDescriptionSelector />
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">

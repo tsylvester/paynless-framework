@@ -25,6 +25,7 @@ export interface CreateProjectPayload {
     projectName: string;
     initialUserPrompt: string;
     selectedDomainTag?: string | null;
+    selected_domain_overlay_id?: string | null;
 }
 
 export interface StartSessionPayload {
@@ -122,7 +123,7 @@ export interface DomainTagDescriptor {
 }
 
 export interface DialecticStateValues {
-  availableDomainTags: DomainTagDescriptor[];
+  availableDomainTags: { data: DomainTagDescriptor[] } | DomainTagDescriptor[];
   isLoadingDomainTags: boolean;
   domainTagsError: ApiError | null;
   selectedDomainTag: string | null;

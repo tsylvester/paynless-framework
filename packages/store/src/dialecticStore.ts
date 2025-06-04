@@ -64,7 +64,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
         logger.error('[DialecticStore] Error fetching domain tags:', { errorDetails: response.error });
         set({ availableDomainTags: [], isLoadingDomainTags: false, domainTagsError: response.error });
       } else {
-        const descriptors = response.data && Array.isArray(response.data.data) ? response.data.data : [];
+        const descriptors = response.data || [];
         logger.info('[DialecticStore] Successfully fetched domain tags:', { descriptors });
         set({
           availableDomainTags: descriptors,
@@ -201,9 +201,20 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
 
   createDialecticProject: async (payload: CreateProjectPayload): Promise<ApiResponse<DialecticProject>> => {
     set({ isCreatingProject: true, createProjectError: null });
-    logger.info('[DialecticStore] Creating dialectic project...', { projectPayload: payload });
+    const { selectedDomainTag, selectedDomainOverlayId } = get(); // Get values from store state
+
+    // Construct the final payload for the API call,
+    // ensuring projectName and initialUserPrompt are from the input payload,
+    // and selectedDomainTag and selected_domain_overlay_id are from the store's state.
+    const payloadForApi: CreateProjectPayload = {
+      ...payload, // Spreads projectName, initialUserPrompt, and any other fields from incoming payload
+      selectedDomainTag: selectedDomainTag, // Explicitly use store's selectedDomainTag
+      selected_domain_overlay_id: selectedDomainOverlayId, // Explicitly use store's selectedDomainOverlayId
+    };
+
+    logger.info('[DialecticStore] Creating dialectic project...', { projectPayload: payloadForApi });
     try {
-      const response = await api.dialectic().createProject(payload);
+      const response = await api.dialectic().createProject(payloadForApi);
       
       if (response.error) {
         logger.error('[DialecticStore] Error creating project:', { errorDetails: response.error });

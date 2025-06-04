@@ -95,6 +95,7 @@ export interface DialecticProject {
     project_name: string;
     initial_user_prompt: string;
     selected_domain_tag: string | null;
+    selected_domain_overlay_id?: string | null;
     repo_url: string | null;
     status: string;
     created_at: string;
@@ -113,6 +114,7 @@ export interface CreateProjectPayload {
   projectName: string;
   initialUserPrompt: string;
   selectedDomainTag?: string | null;
+  selected_domain_overlay_id?: string | null;
 }
 
 export interface UpdateProjectDomainTagPayload {

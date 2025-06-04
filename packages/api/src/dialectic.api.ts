@@ -10,7 +10,8 @@ import type {
     UploadProjectResourceFilePayload,
     DialecticProjectResource,
     DomainTagDescriptor,
-    DomainOverlayDescriptor
+    DomainOverlayDescriptor,
+    UpdateProjectDomainTagPayload
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -29,11 +30,11 @@ export class DialecticApiClient {
      * Fetches the list of available domain tags for dialectic projects.
      * This endpoint is public and does not require authentication.
      */
-    async listAvailableDomainTags(): Promise<ApiResponse<{ data: DomainTagDescriptor[] }>> {
+    async listAvailableDomainTags(): Promise<ApiResponse<DomainTagDescriptor[]>> {
         logger.info('Fetching available domain tags for dialectic projects');
         
         try {
-            const response = await this.apiClient.post<{ data: DomainTagDescriptor[] }, { action: string }>(
+            const response = await this.apiClient.post<DomainTagDescriptor[], { action: string }>(
                 'dialectic-service', // Endpoint name
                 { action: 'listAvailableDomainTags' } // Body of the request
             );
@@ -41,7 +42,7 @@ export class DialecticApiClient {
             if (response.error) {
                 logger.error('Error fetching available domain tags:', { error: response.error });
             } else {
-                logger.info(`Fetched ${response.data?.data?.length ?? 0} available domain tags`);
+                logger.info(`Fetched ${response.data?.length ?? 0} available domain tags`);
             }
             return response;
         } catch (error: unknown) {
@@ -299,6 +300,36 @@ export class DialecticApiClient {
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'A network error occurred';
             logger.error('Network error in createProject:', { errorMessage: message, errorObject: error });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
+    }
+
+    /**
+     * Updates the domain tag for a specific project.
+     * Requires authentication.
+     */
+    async updateProjectDomainTag(payload: UpdateProjectDomainTagPayload): Promise<ApiResponse<DialecticProject>> {
+        logger.info('Updating domain tag for project', { projectId: payload.projectId, newTag: payload.selectedDomainTag });
+
+        try {
+            const response = await this.apiClient.post<DialecticProject, { action: string; payload: UpdateProjectDomainTagPayload }> (
+                'dialectic-service',
+                { action: 'updateProjectDomainTag', payload }
+            );
+
+            if (response.error) {
+                logger.error('Error updating project domain tag:', { error: response.error, projectId: payload.projectId });
+            } else {
+                logger.info('Successfully updated project domain tag', { projectId: response.data?.id });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in updateProjectDomainTag:', { errorMessage: message, errorObject: error });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },

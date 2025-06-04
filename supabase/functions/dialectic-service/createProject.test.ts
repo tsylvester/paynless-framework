@@ -9,15 +9,16 @@ Deno.test("createProject - successful project creation", async () => {
   const mockUserId = "user-test-id";
   const mockProjectName = "Test Project";
   const mockInitialUserPrompt = "Create a test project.";
-  // const mockSelectedDomainTag = "test_domain"; // Keep for expectedBody if re-enabled
+  const mockSelectedDomainOverlayId = "overlay-uuid-for-testing"; // New mock value
 
   const mockNewProjectData: DialecticProject = {
     id: "project-test-id",
     user_id: mockUserId,
     project_name: mockProjectName,
     initial_user_prompt: mockInitialUserPrompt,
-    selected_domain_tag: null, // This is the DB field name, consistent with DialecticProject interface
-    repo_url: null, // Added missing property
+    selected_domain_tag: null,
+    selected_domain_overlay_id: mockSelectedDomainOverlayId, // Added
+    repo_url: null,
     status: "active",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -26,7 +27,7 @@ Deno.test("createProject - successful project creation", async () => {
   const mockPayload: CreateProjectPayload = {
     projectName: mockProjectName,
     initialUserPrompt: mockInitialUserPrompt,
-    // selected_domain_tag: mockSelectedDomainTag, // Will be removed from testPayload
+    selected_domain_overlay_id: mockSelectedDomainOverlayId, // Added
   };
 
   const mockRequest = new Request("http://localhost/createProject", {
@@ -57,6 +58,7 @@ Deno.test("createProject - successful project creation", async () => {
                   return await Promise.resolve({ data: {
                     ...mockNewProjectData,
                     // selected_domain_tag is already null in mockNewProjectData if we remove it from payload
+                    // selected_domain_overlay_id is now part of mockNewProjectData
                   }, error: null });
                 },
               };
@@ -89,7 +91,7 @@ Deno.test("createProject - successful project creation", async () => {
 
   try {
     const testPayload = { ...mockPayload }; 
-    delete (testPayload as any).selectedDomainTag; 
+    // delete (testPayload as any).selectedDomainTag; // No longer deleting, as we are testing without it initially
     
     const currentMockRequest = new Request(mockRequest.url, {
         method: mockRequest.method,
@@ -119,8 +121,9 @@ Deno.test("createProject - successful project creation", async () => {
       user_id: mockUserId,
       project_name: mockProjectName,
       initial_user_prompt: mockInitialUserPrompt,
-      selected_domain_tag: undefined, // Because it was deleted from testPayload
-      status: "new" // Added expected status
+      selected_domain_tag: undefined, // mockPayload doesn't have selectedDomainTag in this specific test setup
+      selected_domain_overlay_id: mockSelectedDomainOverlayId, // Added assertion
+      status: "new"
     });
     assert(selectCalled, "select() should have been called on dbAdminClient");
     assert(singleCalled, "single() should have been called on dbAdminClient");
@@ -321,23 +324,26 @@ Deno.test("createProject - successful with valid selected_domain_tag", async () 
   const mockProjectName = "Test Project Valid Tag";
   const mockInitialUserPrompt = "Create a project with a domain tag.";
   const mockSelectedDomainTag = "valid_domain_tag";
+  const mockSelectedDomainOverlayId = "overlay-uuid-for-tag-test";
 
   const mockNewProjectDataWithTag: DialecticProject = {
     id: "project-id-tag-success",
     user_id: mockUserId,
     project_name: mockProjectName,
     initial_user_prompt: mockInitialUserPrompt,
-    selected_domain_tag: mockSelectedDomainTag, // Expect tag to be present
-    repo_url: null, // Added missing property
+    selected_domain_tag: mockSelectedDomainTag,
+    selected_domain_overlay_id: mockSelectedDomainOverlayId,
+    repo_url: null,
     status: "active",
-    created_at: new Date().toISOString(), // Approximate, exact match not always feasible/needed
-    updated_at: new Date().toISOString(), // Approximate
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   };
 
   const mockPayload: CreateProjectPayload = {
     projectName: mockProjectName,
     initialUserPrompt: mockInitialUserPrompt,
     selectedDomainTag: mockSelectedDomainTag,
+    selected_domain_overlay_id: mockSelectedDomainOverlayId,
   };
 
   const mockRequest = new Request("http://localhost/createProject", {
@@ -353,6 +359,7 @@ Deno.test("createProject - successful with valid selected_domain_tag", async () 
         insert: (data: any) => {
           // Check that selected_domain_tag is included in the insert data
           assertEquals(data.selected_domain_tag, mockSelectedDomainTag);
+          assertEquals(data.selected_domain_overlay_id, mockSelectedDomainOverlayId); // Added check for overlay_id
           return {
             select: () => ({
               single: async () => await Promise.resolve({ data: mockNewProjectDataWithTag, error: null })
@@ -384,13 +391,16 @@ Deno.test("createProject - successful with valid selected_domain_tag", async () 
   assertExists(result.data, "Response data should exist on success");
   assertExists(result.data?.created_at);
   assertExists(result.data?.updated_at);
-  assertObjectMatch(result.data as object, { 
+  assertObjectMatch(result.data!, {
     id: mockNewProjectDataWithTag.id,
     user_id: mockNewProjectDataWithTag.user_id,
     project_name: mockNewProjectDataWithTag.project_name,
     initial_user_prompt: mockNewProjectDataWithTag.initial_user_prompt,
     selected_domain_tag: mockNewProjectDataWithTag.selected_domain_tag,
+    selected_domain_overlay_id: mockNewProjectDataWithTag.selected_domain_overlay_id,
     status: mockNewProjectDataWithTag.status,
+    // repo_url, created_at, updated_at are checked with assertExists or implicitly part of full object match if DialecticProject was used directly
+    // For assertObjectMatch with a literal, we list the most important fields to verify.
   });
 
   assert(mockCreateSupabaseClientFn.calls.length > 0, "mockCreateSupabaseClientFn should have been called");
@@ -401,6 +411,115 @@ Deno.test("createProject - successful with valid selected_domain_tag", async () 
   assertEquals(firstCallValidTag.args.length, 2, "mockIsValidDomainTagReturnsTrueFn should be called with two arguments");
   assertEquals((firstCallValidTag.args as any[])[0], mockDbAdminClient);
   assertEquals((firstCallValidTag.args as any[])[1], mockSelectedDomainTag);
+});
+
+Deno.test("createProject - successful with selected_domain_overlay_id only", async () => {
+  const mockUserId = "user-id-overlay-only-success";
+  const mockProjectName = "Test Project Overlay Only";
+  const mockInitialUserPrompt = "Create a project with an overlay ID only.";
+  const mockSelectedDomainOverlayId = "overlay-uuid-for-overlay-only-test";
+
+  const mockNewProjectDataOverlayOnly: DialecticProject = {
+    id: "project-id-overlay-only-success",
+    user_id: mockUserId,
+    project_name: mockProjectName,
+    initial_user_prompt: mockInitialUserPrompt,
+    selected_domain_tag: null,
+    selected_domain_overlay_id: mockSelectedDomainOverlayId,
+    repo_url: null,
+    status: "active",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  const mockPayload: CreateProjectPayload = {
+    projectName: mockProjectName,
+    initialUserPrompt: mockInitialUserPrompt,
+    selectedDomainTag: null,
+    selected_domain_overlay_id: mockSelectedDomainOverlayId,
+  };
+
+  const mockRequest = new Request("http://localhost/createProject", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(mockPayload)
+  });
+
+  let fromCalled = false;
+  let insertCalledWith: any = null;
+  let selectCalled = false;
+  let singleCalled = false;
+
+  const mockDbAdminClient: any = {
+    from: (tableName: string) => {
+      fromCalled = true;
+      assertEquals(tableName, "dialectic_projects");
+      return {
+        insert: (data: any) => {
+          insertCalledWith = data;
+          return {
+            select: () => {
+              selectCalled = true;
+              return {
+                single: async () => {
+                  singleCalled = true;
+                  return await Promise.resolve({ data: mockNewProjectDataOverlayOnly, error: null });
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+  
+  const mockGetUserImplementation = async () => {
+    return await Promise.resolve({ data: { user: { id: mockUserId } }, error: null });
+  };
+  const getUserSpy = spy(mockGetUserImplementation);
+  const mockAuthObject = { getUser: getUserSpy };
+  const mockSupabaseUserClient = { auth: mockAuthObject };
+  const mockCreateSupabaseClientFn = spy(() => mockSupabaseUserClient as any);
+  const mockIsValidDomainTagFn = spy(async () => await Promise.resolve(true));
+
+  const result = await createProject(
+    mockRequest, 
+    mockDbAdminClient, 
+    mockPayload,
+    {
+      createSupabaseClient: mockCreateSupabaseClientFn,
+      isValidDomainTag: mockIsValidDomainTagFn
+    }
+  );
+
+  assertExists(result.data, "Response data should exist on success");
+  assertEquals(result.error, undefined, "Error should be undefined on success");
+  assertObjectMatch(result.data!, {
+    id: mockNewProjectDataOverlayOnly.id,
+    user_id: mockNewProjectDataOverlayOnly.user_id,
+    project_name: mockNewProjectDataOverlayOnly.project_name,
+    initial_user_prompt: mockNewProjectDataOverlayOnly.initial_user_prompt,
+    selected_domain_tag: mockNewProjectDataOverlayOnly.selected_domain_tag,
+    selected_domain_overlay_id: mockNewProjectDataOverlayOnly.selected_domain_overlay_id,
+    status: mockNewProjectDataOverlayOnly.status,
+    // repo_url, created_at, updated_at could be checked with assertExists if necessary
+  });
+
+  assert(getUserSpy.calls.length > 0, "getUserSpy should have been called"); 
+  assert(fromCalled, "from() should have been called on dbAdminClient");
+  assertExists(insertCalledWith, "insert() should have been called on dbAdminClient");
+  assertEquals(insertCalledWith, {
+    user_id: mockUserId,
+    project_name: mockProjectName,
+    initial_user_prompt: mockInitialUserPrompt,
+    selected_domain_tag: null,
+    selected_domain_overlay_id: mockSelectedDomainOverlayId,
+    status: "new"
+  });
+  assert(selectCalled, "select() should have been called on dbAdminClient");
+  assert(singleCalled, "single() should have been called on dbAdminClient");
+  assert(mockCreateSupabaseClientFn.calls.length > 0, "mockCreateSupabaseClientFn should have been called");
+  assertEquals(mockIsValidDomainTagFn.calls.length, 0, "mockIsValidDomainTagFn should NOT have been called");
 });
 
 Deno.test("createProject - database error during project creation", async () => {

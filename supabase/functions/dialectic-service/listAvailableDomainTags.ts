@@ -15,8 +15,8 @@ interface SupabaseDomainOverlayItem {
   id: string;
   domain_tag: string;
   description: string | null;
-  // system_prompts can be an array if Supabase returns it as such for a to-one join, or null.
-  system_prompts: { stage_association: string | null; }[] | null; 
+  // system_prompts is an object if a related system_prompt exists, or null.
+  system_prompts: { stage_association: string | null; } | null; 
 }
 
 export async function listAvailableDomainTags(dbClient: SupabaseClient) {
@@ -52,12 +52,12 @@ export async function listAvailableDomainTags(dbClient: SupabaseClient) {
   logger.info("[listAvailableDomainTags] Raw data received from DB for descriptors:", { rawData: data });
 
   // Transform the data to the desired flat structure
-  const mappedDescriptors: DomainTagDescriptor[] = (data || [])
-    .map((item: SupabaseDomainOverlayItem) => ({
+  const mappedDescriptors: DomainTagDescriptor[] = ((data as unknown as SupabaseDomainOverlayItem[]) || [])
+    .map((item) => ({
       id: item.id,
-      domainTag: item.domain_tag, // item.domain_tag should not be null due to .neq query, but good to be defensive
+      domainTag: item.domain_tag,
       description: item.description,
-      stageAssociation: item.system_prompts && item.system_prompts.length > 0 ? item.system_prompts[0].stage_association : null,
+      stageAssociation: item.system_prompts ? item.system_prompts.stage_association : null,
     }))
     // Filter out any items where domain_tag might have been null (e.g., if DB constraint changes or for robustness)
     .filter((descriptor): descriptor is DomainTagDescriptor & { domainTag: string } => descriptor.domainTag !== null);
@@ -75,8 +75,10 @@ export async function listAvailableDomainTags(dbClient: SupabaseClient) {
 
   logger.info("[listAvailableDomainTags] Transformed and deduplicated descriptors:", { descriptors: uniqueDescriptors });
 
-  // The Edge function's top-level response structure is { data: result } or { error: ... }
-  // So, the actual payload for success should be the array of descriptors.
-  return { data: uniqueDescriptors };
+  // Log the exact object/array the function is about to return
+  logger.info("[listAvailableDomainTags] Attempting to return this directly:", { returnValue: uniqueDescriptors });
+
+  // Return the array of descriptors directly. The main router (index.ts) will wrap this in a Response.
+  return uniqueDescriptors;
 }
   

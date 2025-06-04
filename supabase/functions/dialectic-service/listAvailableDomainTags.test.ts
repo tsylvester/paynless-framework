@@ -62,20 +62,24 @@ describe('listAvailableDomainTags', () => {
 
         const result = await listAvailableDomainTags(mockDbClient as any);
 
-        assertExists(result.data);
-        assertEquals(result.error, undefined);
-        // The SUT transforms and ensures uniqueness based on domainTag
-        const expectedDomainTags = ['tech', 'health', 'finance'];
-        assertEquals(result.data.length, expectedDomainTags.length);
+        if (Array.isArray(result)) {
+            assertExists(result); // Now 'result' is known to be DomainTagDescriptor[]
+            // The SUT transforms and ensures uniqueness based on domainTag
+            const expectedDomainTags = ['tech', 'health', 'finance'];
+            assertEquals(result.length, expectedDomainTags.length);
 
-        const actualDomainTags = result.data.map((d: DomainTagDescriptor) => d.domainTag);
-        assertArrayIncludes(actualDomainTags, expectedDomainTags);
+            const actualDomainTags = result.map((d: DomainTagDescriptor) => d.domainTag);
+            assertArrayIncludes(actualDomainTags, expectedDomainTags);
 
-        // Optionally, check other properties if necessary, e.g., that one of the 'tech' descriptors was correctly mapped
-        const techDescriptor = result.data.find((d: DomainTagDescriptor) => d.domainTag === 'tech');
-        assertExists(techDescriptor);
-        // assertEquals(techDescriptor?.description, 'Tech stuff'); // Or based on how SUT selects/merges
-        // assertEquals(techDescriptor?.stageAssociation, 'dev');
+            // Optionally, check other properties if necessary, e.g., that one of the 'tech' descriptors was correctly mapped
+            const techDescriptor = result.find((d: DomainTagDescriptor) => d.domainTag === 'tech');
+            assertExists(techDescriptor);
+            // assertEquals(techDescriptor?.description, 'Tech stuff'); // Or based on how SUT selects/merges
+            // assertEquals(techDescriptor?.stageAssociation, 'dev');
+        } else {
+            // If result is not an array here, it's an error, which is unexpected for this test case.
+            throw new Error(`Test failed: Expected successful data array, got error: ${JSON.stringify((result as { error: unknown }).error)}`);
+        }
     });
 
     it('should return an error if database fetch fails', async () => {
@@ -93,21 +97,33 @@ describe('listAvailableDomainTags', () => {
 
         const result = await listAvailableDomainTags(mockDbClient as any);
 
-        assertExists(result.error);
-        assertEquals(result.data, undefined);
-        assertEquals(result.error.message, 'Failed to fetch domain tag descriptors');
-        assertEquals(result.error.details, dbError.message);
-        assertEquals(result.error.status, 500);
-        assertEquals(result.error.code, 'DB_FETCH_ERROR');
+        if ('error' in result) {
+            assertExists(result.error);
+            // Assert that data is not present when an error occurs (optional, but good practice)
+            // For the purpose of satisfying TS, we are in the error block, so `result.data` wouldn't exist anyway.
+            // assertEquals((result as any).data, undefined); // This would require casting or a more complex type guard for the `data` property.
+                                                        // Simpler to rely on the fact we are in the `if ('error' in result)` block.
+
+            assertEquals(result.error.message, 'Failed to fetch domain tag descriptors');
+            assertEquals(result.error.details, dbError.message);
+            assertEquals(result.error.status, 500);
+            assertEquals(result.error.code, 'DB_FETCH_ERROR');
+        } else {
+            // If result does not have an error property, it's a data array, which is unexpected for this test case.
+            throw new Error(`Test failed: Expected error object, got data: ${JSON.stringify(result)}`);
+        }
     });
 
     it('should return an empty array if no domain tags are found', async () => {
         // Default config in beforeEach already covers this (returns empty array)
         const result = await listAvailableDomainTags(mockDbClient as any);
 
-        assertExists(result.data);
-        assertEquals(result.error, undefined);
-        assertEquals(result.data.length, 0);
+        if (Array.isArray(result)) {
+            assertExists(result);
+            assertEquals(result.length, 0);
+        } else {
+            throw new Error(`Test failed: Expected empty data array, got error: ${JSON.stringify((result as { error: unknown }).error)}`);
+        }
     });
 
     it('should handle null domain_tags from DB gracefully (though filtered by query)', async () => {
@@ -132,13 +148,16 @@ describe('listAvailableDomainTags', () => {
 
         const result = await listAvailableDomainTags(mockDbClient as any);
 
-        assertExists(result.data);
-        assertEquals(result.error, undefined);
-        
-        const expectedDomainTags = ['art', 'science'];
-        assertEquals(result.data.length, expectedDomainTags.length);
-        
-        const actualDomainTags = result.data.map((d: DomainTagDescriptor) => d.domainTag);
-        assertArrayIncludes(actualDomainTags, expectedDomainTags);
+        if (Array.isArray(result)) {
+            assertExists(result);
+            
+            const expectedDomainTags = ['art', 'science'];
+            assertEquals(result.length, expectedDomainTags.length);
+            
+            const actualDomainTags = result.map((d: DomainTagDescriptor) => d.domainTag);
+            assertArrayIncludes(actualDomainTags, expectedDomainTags);
+        } else {
+            throw new Error(`Test failed: Expected successful data array, got error: ${JSON.stringify((result as { error: unknown }).error)}`);
+        }
     });
 });

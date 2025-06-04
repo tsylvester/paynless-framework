@@ -123,7 +123,14 @@ serve(async (req: Request) => {
 
       switch (action) {
         case 'listAvailableDomainTags':
-          result = await listAvailableDomainTags(supabaseAdmin);
+          const listTagsOutcome = await listAvailableDomainTags(supabaseAdmin);
+          if (listTagsOutcome && typeof listTagsOutcome === 'object' && 'error' in listTagsOutcome) {
+            // It's an error object returned by listAvailableDomainTags itself (e.g., DB fetch error)
+            result = listTagsOutcome as { error: ServiceError };
+          } else {
+            // It's the array of descriptors on success
+            result = { data: listTagsOutcome, success: true };
+          }
           break;
         case 'listAvailableDomainOverlays':
           if (!payload || typeof (payload as unknown as ListAvailableDomainOverlaysPayload).stageAssociation !== 'string') {
