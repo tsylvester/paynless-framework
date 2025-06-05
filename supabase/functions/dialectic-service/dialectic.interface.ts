@@ -266,4 +266,11 @@ export interface ExportProjectSuccessResponse {
   export_url: string;
 }
 
+export enum DialecticStage {
+  THESIS = 'thesis',
+  ANTITHESIS = 'antithesis',
+  SYNTHESIS = 'synthesis',
+  PARENTHESIS = 'parenthesis',
+  PARALYSIS = 'paralysis',
+}
 // Add other service-specific interfaces here if needed in the future

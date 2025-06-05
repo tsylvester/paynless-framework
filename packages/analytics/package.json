@@ -21,15 +21,14 @@
   "dependencies": {
     "@paynless/types": "workspace:*",
     "@paynless/utils": "workspace:*",
-    "posthog-js": "^1.140.1" 
+    "posthog-js": "^1.140.1",
+    "vite-plugin-node-polyfills": "^0.23.0"
   },
   "devDependencies": {
+    "@types/node": "^20.11.20",
+    "eslint": "^8.57.0",
     "typescript": "^5.2.2",
     "vite": "^5.2.0",
-    "vitest": "^1.6.0",
-    "eslint": "^8.57.0",
-    "@types/node": "^20.11.20"
-  },
-  "peerDependencies": {
+    "vitest": "^1.6.0"
   }
-} 
+}

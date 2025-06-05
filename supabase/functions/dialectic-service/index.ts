@@ -7,6 +7,7 @@ import {
   GenerateStageContributionsPayload,
   GetProjectDetailsPayload,
   ListAvailableDomainOverlaysPayload,
+  DialecticStage,
 } from "./dialectic.interface.ts";
 import { serve } from "https://deno.land/std@0.170.0/http/server.ts";
 import {
@@ -127,13 +128,15 @@ serve(async (req: Request) => {
 
       switch (action) {
         case 'listAvailableDomainTags': {
-          const listTagsOutcome = await listAvailableDomainTags(supabaseAdmin);
+          // The payload might contain 'stageAssociation', so pass it along.
+          // The listAvailableDomainTags function is expected to handle 'undefined' if no payload is sent.
+          const listTagsOutcome = await listAvailableDomainTags(supabaseAdmin, payload as { stageAssociation?: DialecticStage } | undefined);
           if (listTagsOutcome && typeof listTagsOutcome === 'object' && 'error' in listTagsOutcome) {
             // It's an error object returned by listAvailableDomainTags itself (e.g., DB fetch error)
             result = listTagsOutcome as { error: ServiceError };
           } else {
             // It's the array of descriptors on success
-            result = { data: listTagsOutcome, success: true };
+            result = { data: listTagsOutcome };
           }
           break;
         }
@@ -192,11 +195,11 @@ serve(async (req: Request) => {
               result = await startSession(req, supabaseAdmin, payload as unknown as StartSessionPayload, { logger });
           }
           break;
-        case 'generateThesisContributions': 
+        case 'generateContributions': 
           if (!payload || typeof payload !== 'object' || typeof (payload as Partial<GenerateStageContributionsPayload>).sessionId !== 'string') {
-              result = { success: false, error: { message: "Payload with 'sessionId' (string) is required for generateThesisContributions", status: 400, code: 'INVALID_PAYLOAD' } };
+              result = { success: false, error: { message: "Payload with 'sessionId' (string) is required for generateContributions", status: 400, code: 'INVALID_PAYLOAD' } };
           } else if (!authToken) {
-               result = { success: false, error: { message: "User authentication token is required for generateThesisContributions", status: 401, code: 'AUTH_TOKEN_MISSING' } };
+               result = { success: false, error: { message: "User authentication token is required for generateContributions", status: 401, code: 'AUTH_TOKEN_MISSING' } };
           } else {
               const currentSessionId = (payload as { sessionId: string }).sessionId;
               const stagePayload: GenerateStageContributionsPayload = {

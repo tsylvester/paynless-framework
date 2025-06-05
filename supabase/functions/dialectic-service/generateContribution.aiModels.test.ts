@@ -15,7 +15,7 @@ Deno.test("generateStageContributions - Session has no AI models", async () => {
     const mockChatId = "chat-id-no-models";
     const mockInitialPrompt = "Prompt for no models";
 
-    const mockPayload: GenerateThesisContributionsPayload = { sessionId: mockSessionId };
+    const mockPayload: GenerateStageContributionsPayload = { sessionId: mockSessionId, stage: DialecticStage.THESIS };
 
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
@@ -56,7 +56,7 @@ Deno.test("generateStageContributions - Session has no AI models", async () => {
     };
 
     try {
-        const result = await generateThesisContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
+        const result = await generateStageContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
         
         // If no models, it behaves like all models failed because successfulContributions will be empty.
         assertEquals(result.success, false);

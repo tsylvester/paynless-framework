@@ -133,6 +133,15 @@ export interface DomainTagDescriptor {
   stageAssociation: string | null;
 }
 
+// Define the new DialecticStage enum
+export enum DialecticStage {
+  THESIS = 'thesis',
+  ANTITHESIS = 'antithesis',
+  SYNTHESIS = 'synthesis',
+  PARENTHESIS = 'parenthesis',
+  PARALYSIS = 'paralysis',
+}
+
 export interface DialecticStateValues {
   availableDomainTags: { data: DomainTagDescriptor[] } | DomainTagDescriptor[];
   isLoadingDomainTags: boolean;
@@ -140,7 +149,7 @@ export interface DialecticStateValues {
   selectedDomainTag: string | null;
 
   // New state for Domain Overlays
-  selectedStageAssociation: string | null;
+  selectedStageAssociation: DialecticStage | null;
   availableDomainOverlays: DomainOverlayDescriptor[] | null;
   isLoadingDomainOverlays: boolean;
   domainOverlaysError: ApiError | null;
@@ -179,6 +188,7 @@ export interface DialecticStateValues {
   isUploadingProjectResource: boolean;
   uploadProjectResourceError: ApiError | null;
   isStartNewSessionModalOpen: boolean;
+  selectedModelIds: string[];
 }
 
 export interface ContributionCacheEntry {
@@ -194,8 +204,8 @@ export interface ContributionCacheEntry {
 export interface DialecticActions {
   fetchAvailableDomainTags: () => Promise<void>;
   setSelectedDomainTag: (tag: string | null) => void;
-  fetchAvailableDomainOverlays: (stageAssociation: string) => Promise<void>;
-  setSelectedStageAssociation: (stageAssociation: string | null) => void;
+  fetchAvailableDomainOverlays: (stageAssociation: DialecticStage) => Promise<void>;
+  setSelectedStageAssociation: (stage: DialecticStage | null) => void;
   setSelectedDomainOverlayId: (overlayId: string | null) => void;
   
   fetchDialecticProjects: () => Promise<void>;
@@ -217,6 +227,8 @@ export interface DialecticActions {
   exportDialecticProject: (projectId: string) => Promise<ApiResponse<{ export_url: string }>>;
   updateDialecticProjectInitialPrompt: (payload: UpdateProjectInitialPromptPayload) => Promise<ApiResponse<DialecticProject>>;
   setStartNewSessionModalOpen: (isOpen: boolean) => void;
+  toggleSelectedModelId: (modelId: string) => void;
+  resetSelectedModelId: () => void;
 
   _resetForTesting?: () => void;
 }
@@ -337,7 +349,7 @@ export type DialecticServiceActionPayload = {
   action: 'uploadProjectResourceFile';
   payload: FormData; // Placeholder, refine if specific metadata is also in JSON part
 } | {
-  action: 'generateThesisContributions';
+  action: 'generateContributions';
   payload: { sessionId: string };
 } | {
   action: 'cloneProject';

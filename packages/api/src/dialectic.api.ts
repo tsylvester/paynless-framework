@@ -32,26 +32,36 @@ export class DialecticApiClient {
 
     /**
      * Fetches the list of available domain tags for dialectic projects.
+     * Can be filtered by stageAssociation.
      * This endpoint is public and does not require authentication.
      */
-    async listAvailableDomainTags(): Promise<ApiResponse<DomainTagDescriptor[]>> {
-        logger.info('Fetching available domain tags for dialectic projects');
+    async listAvailableDomainTags(params?: { stageAssociation?: string }): Promise<ApiResponse<DomainTagDescriptor[]>> {
+        logger.info('Fetching available domain tags for dialectic projects', { params });
         
         try {
-            const response = await this.apiClient.post<DomainTagDescriptor[], { action: string }>(
-                'dialectic-service', // Endpoint name
-                { action: 'listAvailableDomainTags' } // Body of the request
+            // The Edge Function expects the parameters in the body for a POST request.
+            // We will send the action and an optional payload containing stageAssociation.
+            const requestBody: { action: string; payload?: { stageAssociation?: string } } = {
+                action: 'listAvailableDomainTags',
+            };
+            if (params?.stageAssociation) {
+                requestBody.payload = { stageAssociation: params.stageAssociation };
+            }
+
+            const response = await this.apiClient.post<DomainTagDescriptor[], typeof requestBody>(
+                'dialectic-service', 
+                requestBody 
             );
 
             if (response.error) {
-                logger.error('Error fetching available domain tags:', { error: response.error });
+                logger.error('Error fetching available domain tags:', { error: response.error, params });
             } else {
-                logger.info(`Fetched ${response.data?.length ?? 0} available domain tags`);
+                logger.info(`Fetched ${response.data?.length ?? 0} available domain tags`, { params });
             }
             return response;
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'A network error occurred';
-            logger.error('Network error in listAvailableDomainTags:', { errorMessage: message, errorObject: error });
+            logger.error('Network error in listAvailableDomainTags:', { errorMessage: message, errorObject: error, params });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },

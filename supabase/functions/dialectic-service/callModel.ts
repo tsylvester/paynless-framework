@@ -29,7 +29,7 @@ export async function callUnifiedAIModel(
   
     // Note: callUnifiedAIModel is designed to handle interaction with a single AI model provider (via the /chat function)
     // for a single prompt. Functions that require generating responses from multiple AI models for a given stage
-    // (e.g., generateThesisContributions) are responsible for iterating through the selected models
+    // (e.g., generateContributions) are responsible for iterating through the selected models
     // (obtained from dialectic_session_models linked to the session) and calling callUnifiedAIModel individually for each one.
   
     const historyForChatApi: { role: ChatMessageRole; content: string }[] = 

@@ -11,6 +11,7 @@ import type {
   UploadProjectResourceFilePayload,
   DialecticProjectResource,
   UpdateProjectInitialPromptPayload,
+  DialecticStage,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
@@ -64,6 +65,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
   isUploadingProjectResource: false,
   uploadProjectResourceError: null,
   isStartNewSessionModalOpen: false,
+  selectedModelIds: [],
 };
 
 export const useDialecticStore = create<DialecticStore>((set, get) => ({
@@ -107,7 +109,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     set({ selectedDomainOverlayId: id });
   },
 
-  setSelectedStageAssociation: (stage: string | null) => {
+  setSelectedStageAssociation: (stage: DialecticStage | null) => {
     logger.info(`[DialecticStore] Setting selected stage association to: ${stage}`);
     set({ 
       selectedStageAssociation: stage,
@@ -118,7 +120,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     });
   },
 
-  fetchAvailableDomainOverlays: async (stageAssociation: string) => {
+  fetchAvailableDomainOverlays: async (stageAssociation: DialecticStage) => {
     set({
       isLoadingDomainOverlays: true,
       domainOverlaysError: null,
@@ -128,7 +130,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     });
     logger.info(`[DialecticStore] Fetching available domain overlays for stage: ${stageAssociation}`);
     try {
-      const response = await api.dialectic().listAvailableDomainOverlays({ stageAssociation });
+      const response = await api.dialectic().listAvailableDomainOverlays({ stageAssociation: stageAssociation as string });
 
       if (response.error) {
         logger.error('[DialecticStore] Error fetching domain overlays:', { stageAssociation, errorDetails: response.error });
@@ -648,6 +650,21 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
   setStartNewSessionModalOpen: (isOpen: boolean) => {
     logger.info(`[DialecticStore] Setting StartNewSessionModal open state to: ${isOpen}`);
     set({ isStartNewSessionModalOpen: isOpen });
+  },
+
+  toggleSelectedModelId: (modelId: string) => {
+    set((state) => {
+      const currentSelectedIds = state.selectedModelIds || [];
+      if (currentSelectedIds.includes(modelId)) {
+        return { selectedModelIds: currentSelectedIds.filter((id) => id !== modelId) };
+      } else {
+        return { selectedModelIds: [...currentSelectedIds, modelId] };
+      }
+    });
+  },
+
+  resetSelectedModelId: () => {
+    set({ selectedModelIds: [] });
   },
 }));
 

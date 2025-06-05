@@ -19,10 +19,19 @@ interface SupabaseDomainOverlayItem {
   system_prompts: { stage_association: string | null; } | null; 
 }
 
-export async function listAvailableDomainTags(dbClient: SupabaseClient) {
-  logger.info("[listAvailableDomainTags] Attempting to fetch domain tag descriptors.");
+// Define a type for the expected request body or query params if any
+// For this modification, we expect an optional stageAssociation in query params
+interface ListAvailableDomainTagsParams {
+  stageAssociation?: string;
+}
+
+export async function listAvailableDomainTags(
+  dbClient: SupabaseClient, 
+  params?: ListAvailableDomainTagsParams // Accept params, which could come from query string
+) {
+  logger.info("[listAvailableDomainTags] Attempting to fetch domain tag descriptors.", { params });
   
-  const { data, error } = await dbClient
+  let query = dbClient
     .from('domain_specific_prompt_overlays')
     .select(`
       id,
@@ -32,6 +41,17 @@ export async function listAvailableDomainTags(dbClient: SupabaseClient) {
     `)
     .eq('is_active', true)
     .neq('domain_tag', null);
+
+  // If stageAssociation is provided in params, add it to the query
+  if (params?.stageAssociation) {
+    logger.info(`[listAvailableDomainTags] Filtering by stageAssociation: ${params.stageAssociation}`);
+    // Attempting to filter on the related table's column.
+    // The string 'system_prompts.stage_association' is passed to PostgREST.
+    // TypeScript's strictness with column names known at compile time can be an issue here.
+    query = query.eq('system_prompts.stage_association', params.stageAssociation);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     logger.error("[listAvailableDomainTags] Error fetching domain tag descriptors from DB:", { 

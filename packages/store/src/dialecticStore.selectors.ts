@@ -5,7 +5,8 @@ import type {
     ApiError, 
     DomainTagDescriptor,
     DomainOverlayDescriptor,
-    DialecticSession
+    DialecticSession,
+    DialecticStage,
 } from '@paynless/types';
 
 // Selector for the list of available domain tags
@@ -31,11 +32,11 @@ export const selectSelectedDomainTag = (state: DialecticStateValues): string | n
 // Selector for the selected domain overlay ID
 export const selectSelectedDomainOverlayId = (state: DialecticStateValues): string | null => state.selectedDomainOverlayId;
 
-// Selector for the selected domain tag
-export const selectSelectedStageAssociation = (state: DialecticStateValues): string | null => state.selectedStageAssociation;
+// Selector for the selected stage association
+export const selectSelectedStageAssociation = (state: DialecticStateValues): DialecticStage | null => state.selectedStageAssociation;
 
 // Selector for the current stage to be used for overlay selection
-export const selectCurrentStageForOverlaySelection = (state: DialecticStateValues): string | null => state.selectedStageAssociation;
+export const selectCurrentStageForOverlaySelection = (state: DialecticStateValues): DialecticStage | null => state.selectedStageAssociation;
 
 // Selector for the available domain overlays
 export const selectAvailableDomainOverlays = (state: DialecticStateValues): DomainOverlayDescriptor[] => state.availableDomainOverlays ?? [];
@@ -121,6 +122,9 @@ export const selectCurrentProjectId = (state: DialecticStateValues): string | un
 // Selector for the start new session modal status
 export const selectIsStartNewSessionModalOpen = (state: DialecticStateValues): boolean => 
   state.isStartNewSessionModalOpen;
+
+// Selector for selected model IDs for the new session modal
+export const selectSelectedModelIds = (state: DialecticStateValues): string[] => state.selectedModelIds || [];
 
 // Example of how you might use these with the store hook directly in a component:
 // import { useDialecticStore } from './dialecticStore';

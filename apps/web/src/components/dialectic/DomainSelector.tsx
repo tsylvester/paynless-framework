@@ -11,7 +11,7 @@ import {
     selectSelectedDomainOverlayId,
     selectOverlay
 } from '@paynless/store'; // Assuming store index exports these
-import type { DomainTagDescriptor } from '@paynless/types';
+import type { DomainTagDescriptor, DialecticStage } from '@paynless/types';
 
 // Assuming Shadcn Select components are available from this path or similar
 import {
@@ -44,11 +44,11 @@ export function DomainSelector() {
     const isLoadingDomainTags = useDialecticStore(selectIsLoadingDomainTags);
     const domainTagsError = useDialecticStore(selectDomainTagsError);
     const currentSelectedDomainTag = useDialecticStore(selectSelectedDomainTag);
-    const currentSelectedStageAssociation = useDialecticStore(selectSelectedStageAssociation);
+    const currentSelectedStageAssociation: DialecticStage | null = useDialecticStore(selectSelectedStageAssociation);
     const currentSelectedDomainOverlayId = useDialecticStore(selectSelectedDomainOverlayId);
 
     useEffect(() => {
-        logger.info('[DomainSelector] Component mounted or stage association changed, fetching domain tags if needed.');
+        logger.info('[DomainSelector] Component mounted, fetching domain tags if needed.');
         fetchAvailableDomainTagsAction();
     }, [fetchAvailableDomainTagsAction]);
 
@@ -80,7 +80,7 @@ export function DomainSelector() {
                 setSelectedDomainOverlayIdAction(singleOverlayId);
             }
         }
-    }, [currentSelectedDomainTag, overlaysForCurrentTag, currentSelectedDomainOverlayId, setSelectedDomainOverlayIdAction, logger]);
+    }, [currentSelectedDomainTag, overlaysForCurrentTag, currentSelectedDomainOverlayId, setSelectedDomainOverlayIdAction]);
 
     if (isLoadingDomainTags) {
         return <div className="text-sm text-muted-foreground">Loading domains...</div>;
@@ -95,8 +95,6 @@ export function DomainSelector() {
     }
     
     const handleValueChange = (newlySelectedTagValue: string) => {
-        // Since a domain must always be chosen and cannot be cleared to a placeholder state by user,
-        // we directly set the selected tag and reset the overlay ID.
         setSelectedDomainTagAction(newlySelectedTagValue);
         setSelectedDomainOverlayIdAction(null);
     };

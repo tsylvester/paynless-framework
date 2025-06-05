@@ -449,7 +449,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   `getFileMetadata(bucket: string, path: string): Promise<{ size?: number, mimeType?: string, error: Error | null }>` (To get size after upload if not available directly).
             *   `[✅] 1.1.5.A.2.5 [TEST-UNIT]` Unit test. (RED -> GREEN)
 *   `[🚧] 1.1.5.B [BE]` Integrate Storage Utilities into `dialectic-service` (Content Handling)
-    *   Modify relevant actions in `dialectic-service` (e.g., `generateThesisContributions`, `generateAntithesisContributions`, etc., which are called by `callUnifiedAIModel` or its callers).
+    *   Modify relevant actions in `dialectic-service` (e.g., `generateContributions`, etc., which are called by `callUnifiedAIModel` or its callers).
     *   `[✅] 1.1.5.B.1` When an AI model's output is received:
         1.  `[✅]` Generate a UUID for the `dialectic_contributions.id` *before* uploading content, so it can be used in the storage path for consistency. (GREEN)
         2.  `[✅]` Define the storage path (e.g., using `project_id`, `session_id`, and the new `contribution_id`). Example: `${projectId}/${sessionId}/${contributionId}.md`. (GREEN)
@@ -542,7 +542,7 @@ The implementation plan uses the following labels to categorize work steps:
             5.  Creates `dialectic_session_models` records from `selectedModelCatalogIds`.
             6.  Sets `dialectic_sessions.status` to `pending_thesis`.
             7.  Constructs `current_stage_seed_prompt` for the session by rendering the chosen thesis prompt template with the project's `initial_user_prompt`. Store this in `dialectic_sessions.current_stage_seed_prompt`.
-            8.  The `startSession` action concludes after successfully setting up the session. The generation of thesis contributions will be triggered by a separate user action from the frontend, which will then call the `generateThesisContributions` action.
+            8.  The `startSession` action concludes after successfully setting up the session. The generation of thesis contributions will be triggered by a separate user action from the frontend, which will then call the `generateContributions` action.
         *   `[ ] 1.2.1.7` (GREEN)  
         *   `[ ] 1.2.1.8 [REFACTOR]` Review.
         *   `[ ] 1.2.1.9 [TEST-INT]` Run tests.
@@ -555,7 +555,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅] 1.2.3.2` Implement `callUnifiedAIModel`:
         *   This function will **not** directly call AI provider SDKs.
         *   It receives `modelCatalogId` (which is `ai_providers.id`), the `renderedPrompt`, an `options` object (for things like history, `max_tokens_to_generate`), and the `associatedChatId` for the dialectic session.
-        *   **Note:** `callUnifiedAIModel` is designed to handle interaction with a single AI model provider (via the `/chat` function) for a single prompt. Functions that require generating responses from multiple AI models for a given stage (e.g., `generateThesisContributions`) are responsible for iterating through the selected models (obtained from `dialectic_session_models` linked to the session) and calling `callUnifiedAIModel` individually for each one.
+        *   **Note:** `callUnifiedAIModel` is designed to handle interaction with a single AI model provider (via the `/chat` function) for a single prompt. Functions that require generating responses from multiple AI models for a given stage (e.g., `generateContributions`) are responsible for iterating through the selected models (obtained from `dialectic_session_models` linked to the session) and calling `callUnifiedAIModel` individually for each one.
         *   **Prepare Request for `/chat` Function:**
             *   Construct the `ChatApiRequest` payload required by the `/chat` Edge Function. This includes:
                 *   `message`: The `renderedPrompt`.
@@ -575,11 +575,11 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅] 1.2.3.3` (GREEN) <!-- Corresponds to 1.2.3.2 implementation being complete -->
     *   `[ ] 1.2.3.4 [REFACTOR]` Review error handling and interaction with `/chat` function.
     *   `[✅] 1.2.3.5 [TEST-UNIT]` Run tests. <!-- Dependent on 1.2.3.1 -->
-*   `[✅] 1.2.4 [BE]` `dialectic-service` Action: `generateThesisContributions` (triggered by user action from frontend after `startSession` is complete)
+*   `[✅] 1.2.4 [BE]` `dialectic-service` Action: `generateContributions` (triggered by user action from frontend after `startSession` is complete)
     *   `[✅] 1.2.4.1 [TEST-INT]` Write tests (input: `sessionId`; auth: user; verifies contributions are created and session status updated). (RED -> 🚧 Tests pass for basic success response, full contribution verification pending actual implementation)
     *   `[✅] 1.2.4.2` Implement logic: (🚧 Placeholder implementation returns success structure; core logic for model calls and contribution saving pending)
         1.  `[✅]` Fetch `dialectic_session` (including `associated_chat_id`), its `dialectic_session_models`, and the `current_stage_seed_prompt`. Ensure user owns the project/session.
-        2.  `[✅]` Verify session status is `pending_thesis`. Update to `generating_thesis`. Log this transition.
+        2.  `[✅]` Verify session status is `pending_thesis`. Update to `generating_contribution`. Log this transition.
         3.  `[✅]` For each `session_model` representing an AI provider selected for this session (retrieved from `dialectic_session_models`):
             *   `[✅]` Call `callUnifiedAIModel` with that specific `session_model.model_id` (which is an `ai_providers.id`), the `current_stage_seed_prompt`, and the `session.associated_chat_id`.
             *   `[✅]` Save result in `dialectic_contributions` (stage 'thesis', `actual_prompt_sent` = `current_stage_seed_prompt`, store costs, tokens from `UnifiedAIResponse`, ensured `content_storage_bucket` is NOT NULL and correctly populated along with path, mime type, and size). If a model call fails, record the error in the contribution and proceed with other models. (Refined error handling in contribution evolving)
@@ -588,7 +588,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅] 1.2.4.3` (GREEN)
     *   `[✅] 1.2.4.4 [REFACTOR]` Review error handling for individual model failures and overall session status updates. (GREEN)
     *   `[✅] 1.2.4.5 [TEST-INT]` Run tests.
-*   `[✅] 1.2.4.6 [BE]` Implement retry logic (e.g., 3 attempts with exponential backoff) for `callUnifiedAIModel` within `generateThesisContributions`. (GREEN)
+*   `[✅] 1.2.4.6 [BE]` Implement retry logic (e.g., 3 attempts with exponential backoff) for `callUnifiedAIModel` within `generateContributions`. (GREEN)
 *   `[✅] 1.2.4.7 [BE]` Ensure `contentType` is not hardcoded and `getExtensionFromMimeType` is used for storage paths. (GREEN)
     *   `[✅] 1.2.4.7.1 [BE]` Create `path_utils.ts` with `getExtensionFromMimeType` function. (GREEN)
     *   `[✅] 1.2.4.7.2 [TEST-UNIT]` Create `path_utils.test.ts` and add unit tests for `getExtensionFromMimeType`. (GREEN for creation; test failures are separate issues for that utility)
@@ -800,9 +800,9 @@ The implementation plan uses the following labels to categorize work steps:
 *   [✅] Project cards need project title displayed 
 *   [✅] Project cards need "delete" interaction
 *   [✅] Project cards need "clone/copy" interaction
-*   [ ] Project page (/dialectic/:id) shows Project ID instead of title
-*   [ ] Project page doesn't show IPS 
-*   [ ] Project page should show initial selected prompt and provide edit capability
+*   [✅] Project page (/dialectic/:id) shows Project ID instead of title
+*   [✅] Project page doesn't show IPS 
+*   [✅] Project page should show initial selected prompt and provide edit capability
 *   [ ] Start New Session modal incomplete
 *   [ ] Start New Session modal needs background blur
 *   [ ] Add notification triggers for members joining orgs
@@ -813,6 +813,55 @@ The implementation plan uses the following labels to categorize work steps:
 *   [ ] Add Posthog triggers for every GUI interaction 
 *   [ ] 
 *   [ ]
+
+{repo_root}/  (Root of the user's GitHub repository)
+└── {dialectic_outputs_base_dir_name}/ (Configurable, e.g., "ai_dialectic_sessions")
+    └── {project_name_slug}/
+        ├── project_readme.md      (High-level project description, goals, defined by user or initial setup)
+        ├── Implementation/          (User-managed folder for their current work-in-progress files related to this project)
+        │   └── ...
+        ├── Complete/                (User-managed folder for their completed work items for this project)
+        │   └── ...
+        └── session_{session_id_short}/  (Each distinct run of the dialectic process)
+            └── iteration_{N}/        (N being the iteration number, e.g., "iteration_1")
+                ├── 0_seed_inputs/
+                │   ├── user_prompt_for_iteration.md  (The specific prompt that kicked off this iteration)
+                │   └── system_settings.json          (Models, selected formal debate structure, core prompt templates used for this iteration)
+                ├── 1_hypothesis/
+                │   ├── {model_name_slug}_hypothesis.md (Contains YAML frontmatter + AI response)
+                │   ├── ... (other models' hypothesis outputs)
+                │   ├── user_feedback_hypothesis.md   (User's feedback on this stage)
+                │   └── documents/                      (Optional refined documents, e.g., PRDs from each model)
+                │       └── {model_name_slug}_prd_hypothesis.md
+                │       └── ...
+                ├── 2_antithesis/
+                │   ├── {critiquer_model_slug}_critique_on_{original_model_slug}.md
+                │   ├── ...
+                │   └── user_feedback_antithesis.md
+                ├── 3_synthesis/
+                │   ├── {model_name_slug}_synthesis.md
+                │   ├── ...
+                │   ├── user_feedback_synthesis.md
+                │   └── documents/                      (Refined documents from each model, e.g., PRDs, business cases)
+                │       ├── {model_name_slug}_prd_synthesis.md
+                │       ├── {model_name_slug}_business_case_synthesis.md
+                │       └── ...
+                ├── 4_parenthesis/
+                │   ├── {model_name_slug}_parenthesis.md
+                │   ├── ...
+                │   ├── user_feedback_parenthesis.md
+                │   └── documents/                      (Detailed implementation plans from each model)
+                │       └── {model_name_slug}_implementation_plan_parenthesis.md
+                │       └── ...
+                ├── 5_paralysis/
+                │   ├── {model_name_slug}_paralysis.md
+                │   ├── ...
+                │   ├── user_feedback_paralysis.md
+                │   └── documents/                      (The user-selected/finalized canonical outputs)
+                │       ├── chosen_implementation_plan.md
+                │       ├── project_checklist.csv
+                │       └── ... (other formats like Jira importable CSV/JSON)
+                └── iteration_summary.md (Optional: An AI or user-generated summary of this iteration's key outcomes and learnings)
 
 ### 1.6 Basic GitHub Integration (Backend & API)
 *   `[ ] 1.6.1 [CONFIG]` Add new environment variables if needed for GitHub App/PAT specifically for Dialectic outputs, or confirm existing ones are sufficient and securely stored (e.g., in Supabase Vault).
@@ -827,14 +876,27 @@ The implementation plan uses the following labels to categorize work steps:
 *   `[ ] 1.6.3 [BE]` Helper utility for GitHub file operations (within `dialectic-service` or shared): `commitFileToGitHub(repoUrl, filePath, fileContent, commitMessage, userGitHubTokenOrAppAuthCredentials)`.
     *   `[ ] 1.6.3.1 [TEST-UNIT]` Write tests (mocks GitHub API calls). (RED)
     *   `[ ] 1.6.3.2` Implement using GitHub REST API (e.g., via Octokit or a lightweight client). Handles creating/updating files.
-        *   File path structure (as per your previous note, simplified for Phase 1):
-            *   `{repo_root}/dialectic/{project_name_slug}/{session_id_short}/thesis/{model_name_slug}.md`
-            *   `{repo_root}/dialectic/{project_name_slug}/{session_id_short}/antithesis/{critiquer_model_slug}_on_{original_model_slug}.md`
+        *   File path structure for Phase 1 (simplified, iteration 1 assumed, base output directory is configurable, e.g., `ai_dialectic_sessions`):
+            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/project_readme.md` (Created once, if not existing)
+            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/Implementation/` (User-managed, ensure directory can be created if not present)
+            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/Complete/` (User-managed, ensure directory can be created if not present)
+            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_1/0_seed_inputs/user_prompt_for_iteration.md`
+            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_1/0_seed_inputs/system_settings.json` (Containing models, selected debate structure, prompt template IDs used)
+            *   **Hypothesis (Thesis) Outputs:**
+            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_1/1_hypothesis/{model_name_slug}_hypothesis.md`
+            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_1/1_hypothesis/user_feedback_hypothesis.md` (If user provides feedback at this stage)
+            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_1/1_hypothesis/documents/{model_name_slug}_prd_hypothesis.md` (Optional refined documents)
+            *   **Antithesis Outputs:**
+            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_1/2_antithesis/{critiquer_model_slug}_critique_on_{original_model_slug}.md`
+            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_1/2_antithesis/user_feedback_antithesis.md`
+        *   `project_name_slug` and `model_name_slug` should be filesystem-friendly (e.g., lowercase, underscores instead of spaces).
+        *   The `dialectic_outputs_base_dir_name` should be configurable, defaulting to something like `ai_dialectic_sessions`.
+        *   The `Implementation/` and `Complete/` folders are primarily for user organization but their paths should be known if the AI needs to reference or suggest locations.
         *   Ensure a defined Markdown template structure is used for `fileContent` (e.g., YAML frontmatter for `modelName`, `promptId`, `timestamp`, `stage`, `version`; followed by H1 for original prompt, then AI response content).
         *   Credentials (`userGitHubTokenOrAppAuthCredentials`) should be retrieved securely by the calling service action (e.g., from Supabase Vault) and not passed directly by clients.
     *   `[ ] 1.6.3.3` (GREEN)
     *   `[ ] 1.6.3.4 [TEST-UNIT]` Run tests.
-*   `[ ] 1.6.4 [BE]` Modify `generateThesisContributions` and `generateAntithesisContributions` actions in `dialectic-service`:
+*   `[ ] 1.6.4 [BE]` Modify `generateContributions` actions in `dialectic-service` to use the `stage` and `domain` selected by the user:
     *   `[ ] 1.6.4.1` After successfully saving a contribution to the DB:
         *   Fetch `repo_url` for the project.
         *   If URL exists:
@@ -1110,7 +1172,7 @@ The implementation plan uses the following labels to categorize work steps:
             *   Extract suggested focus areas or prompt modifications from Paralysis output.
             *   Construct the seed prompt for the next iteration's Thesis (or Synthesis, if design allows skipping). This might involve combining `initial_user_prompt` with the focus areas from Paralysis. Store this as `dialectic_sessions.current_stage_seed_prompt` for the new iteration.
             *   Update `dialectic_sessions.status` to `pending_thesis` (or `pending_synthesis`). Log this.
-            *   The system will now wait for the user to trigger the next iteration's first stage (e.g., Thesis or Synthesis) via a frontend action. It does not automatically trigger `generateThesisContributions`.
+            *   The system will now wait for the user to trigger the stage via a frontend action. It does not automatically trigger `generateContributions`.
     *   `[ ] 3.2.2.3` (GREEN)
     *   `[ ] 3.2.2.4 [REFACTOR]` Review (including parsing paralysis output and iteration triggering).
     *   `[ ] 3.2.2.5 [TEST-INT]` Run tests.
@@ -1185,10 +1247,23 @@ The implementation plan uses the following labels to categorize work steps:
 *   `[ ] 3.5.1 [BE]` GitHub Integration:
     *   `[ ] 3.5.1.1` Ensure Parenthesis and Paralysis outputs are saved to GitHub by the respective backend actions (`generateParenthesisContribution`, `generateParalysisContribution`).
         *   File paths:
-            *   `.../session_{session_id_short}/iteration_{N}/4_parenthesis/{model_name_slug}_parenthesis.md`
-            *   `.../session_{session_id_short}/iteration_{N}/5_paralysis/{model_name_slug}_paralysis.md`
+            *   **General Structure for all stages (Thesis, Antithesis, Synthesis, Parenthesis, Paralysis) within an iteration {N}:**
+            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_{N}/{stage_number}_{stage_name}/{model_name_slug}_{stage_suffix}.md`
+                *   Example Parenthesis: `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_{N}/4_parenthesis/{model_name_slug}_parenthesis.md`
+                *   Example Paralysis: `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_{N}/5_paralysis/{model_name_slug}_paralysis.md`
+            *   User feedback files: `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_{N}/{stage_number}_{stage_name}/user_feedback_{stage_name}.md`
+            *   **Documents Subfolders (for Hypothesis, Synthesis, Parenthesis, Paralysis):**
+            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_{N}/{stage_number}_{stage_name}/documents/`
+                *   Synthesis Example: `.../3_synthesis/documents/{model_name_slug}_prd_synthesis.md`
+                *   Synthesis Example: `.../3_synthesis/documents/{model_name_slug}_business_case_synthesis.md`
+                *   Parenthesis Example: `.../4_parenthesis/documents/{model_name_slug}_implementation_plan_parenthesis.md`
+                *   Paralysis Documents (Canonical/Chosen by User):
+                    *   `.../5_paralysis/documents/chosen_implementation_plan.md`
+                    *   `.../5_paralysis/documents/project_checklist.csv` (or other PM tool formats)
+            *   Optional iteration summary: `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_{N}/iteration_summary.md`
         *   Ensure Markdown templates include citation rendering for Parenthesis stage.
-    *   `[ ] 3.5.1.2` All stage outputs (Thesis, Antithesis, Synthesis, Parenthesis, Paralysis) should be consistently saved under iteration-specific folders if `current_iteration > 1`.
+    *   `[ ] 3.5.1.2` All stage outputs (Thesis, Antithesis, Synthesis, Parenthesis, Paralysis, including their `documents/` subfolders and user feedback files) should be consistently saved under the appropriate iteration-specific folders (`iteration_{N}`).
+    *   `[ ] 3.5.1.3` The `project_readme.md`, `Implementation/`, and `Complete/` folders are at the project level: `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/`.
 *   `[ ] 3.5.2 [IDE]` Foundational work for IDE plugins (VS Code, JetBrains - primarily design and API needs analysis for Phase 3):
     *   `[ ] 3.5.2.1 [DOCS]` Define core IDE use cases:
         *   Initiate a dialectic session from IDE (e.g., right-click on a code block or requirement file).
@@ -1333,7 +1408,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 4.1.E.1 [CONFIG]` Identify a logging/monitoring solution compatible with Supabase (e.g., Supabase's built-in logging, or integration with a third-party service like BetterStack, Logflare, Datadog if project needs warrant).
     *   `[ ] 4.1.E.2 [BE]` Ensure `dialectic-service` and other relevant backend functions emit structured logs for key events:
         *   Project/Session creation.
-        *   Stage transitions (e.g., `pending_thesis` -> `generating_thesis` -> `thesis_complete`).
+        *   Stage transitions (e.g., `pending_contribution` -> `generating_contribution` -> `complete_contribution`) using the next `stage` tag from `DialecticStage` and the `domain` tag selected by the user.
         *   AI model calls (model used, tokens in/out, duration, cost, success/failure).
         *   HitL interactions.
         *   Errors and exceptions, with correlation IDs if possible.
@@ -1348,3 +1423,43 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 4.1.E.6 [COMMIT]` feat(ops): foundational analytics and monitoring infrastructure
 
 ---
+
+### Epic 5: Future Integrations to Consider
+
+Project & Task Management (beyond Jira):
+*   [ ] Asana: Very popular for task and project management.
+*   [ ] Monday.com: Highly visual and flexible work OS.
+*   [ ] ClickUp: Aims to be an all-in-one productivity platform.
+*   [ ] Wrike: Robust for enterprise project management.
+*   [ ] Trello: Kanban-style, simpler task management.
+*   [ ] Basecamp: Known for its focus on simplicity and remote team collaboration.
+*   [ ] Smartsheet: Spreadsheet-like interface with powerful PM features.
+Version Control & Dev Platforms (beyond GitHub):
+*   [ ] GitLab: Offers a complete DevOps platform.
+*   [ ] Bitbucket: Atlassian's Git solution, integrates well with Jira.
+Collaboration & Document Management (beyond what's listed):
+*   [ ] Confluence: Atlassian's wiki/documentation tool, often paired with Jira.
+*   [ ] Slack: Ubiquitous for team communication; could integrate for notifications or initiating dialectic processes.
+*   [ ] Zoho Projects / Zoho One: A comprehensive suite of business apps.
+Design & Whiteboarding (for early-stage hypothesis/ideation):
+*   [ ] Miro: Online collaborative whiteboard.
+*   [ ] Figma / FigJam: Design and whiteboarding.
+General Principles for Future-Proofing Integrations:
+*   [ ] Standardized Data Formats for Export/Import:
+*   [ ] Prioritize common formats like CSV, JSON, and Markdown. These are widely supported.
+*   [ ] For more complex data (like task dependencies), investigate if there's a common interchange format (though this is rare, often it's API-to-API).
+Well-Defined API for Your Engine:
+*   [ ] As planned for Phase 4 (Public API), having your own robust API is the most critical step. Other platforms will integrate with you via this API.
+*   [ ] Ensure the API can provide data in easily consumable formats (JSON primarily).
+Webhook Support:
+*   [ ] For your system to send updates to other platforms (e.g., "Paralysis complete, new checklist available"), implement outgoing webhooks.
+*   [ ] For your system to receive updates (e.g., task status changed in Jira), you'd consume webhooks from those platforms.
+Modular Integration Layer:
+*   [ ] When you start building specific integrations, try to create an abstraction layer. So, instead of code_that_talks_to_jira.ts, you might have task_management_adapter.ts with a JiraSpecificImplementation.ts. This makes adding AsanaSpecificImplementation.ts easier later.
+Authentication Strategy:
+*   [ ] OAuth 2.0 is the standard for user-authorized access to other platforms. For service-to-service, API keys or service accounts are common.
+Focus on Core Data, Not Just UI:
+*   [ ] The key for portability is the data. If the core dialectic outputs (prompts, responses, feedback, decisions, final documents) are well-structured and accessible via API or export, integrating the representation of that data into another tool's UI becomes a secondary problem.
+User-Driven Demand:
+*   [ ] While it's great to be proactive, let user demand guide which specific integrations you build out first after the foundational ones (like GitHub).
+*   [ ] By focusing on Markdown and structured JSON/CSV for your core outputs (as planned for Paralysis documents), and building a solid API, you'll be in a very good position for future portability and integrations without boxing yourself in now. The GitHub integration itself will teach you a lot about the patterns needed for other tools.

@@ -1,84 +1,139 @@
 import { vi } from 'vitest';
-import { DialecticStateValues, DialecticStore } from '@paynless/types';
-import * as originalStore from '@paynless/store'; // Import actual store to get original selectors
+import type {
+  DialecticStateValues,
+  DialecticStore,
+  DialecticActions,
+  DialecticProject,
+  ApiResponse,
+  DialecticSession,
+  DialecticProjectResource,
+  DialecticStage,
+} from '@paynless/types';
 
-// Exportable mock functions and state so tests can control them
-export const mockFetchContributionContent = vi.fn();
-export let mockLocalContributionCache: DialecticStateValues['contributionContentCache'] = {};
-
-// Function to reset mocks, can be called in beforeEach
-export const resetDialecticStoreMocks = () => {
-  mockFetchContributionContent.mockClear();
-  mockLocalContributionCache = {};
-  selectOverlay.mockClear();
+// 1. Define initial state values locally
+const initialDialecticStateValues: DialecticStateValues = {
+  availableDomainTags: [],
+  isLoadingDomainTags: false,
+  domainTagsError: null,
+  selectedDomainTag: null,
+  selectedStageAssociation: null,
+  availableDomainOverlays: [],
+  isLoadingDomainOverlays: false,
+  domainOverlaysError: null,
+  selectedDomainOverlayId: null,
+  projects: [],
+  isLoadingProjects: false,
+  projectsError: null,
+  currentProjectDetail: null,
+  isLoadingProjectDetail: false,
+  projectDetailError: null,
+  modelCatalog: [],
+  isLoadingModelCatalog: false,
+  modelCatalogError: null,
+  isCreatingProject: false,
+  createProjectError: null,
+  isStartingSession: false,
+  startSessionError: null,
+  contributionContentCache: {},
+  allSystemPrompts: [],
+  isCloningProject: false,
+  cloneProjectError: null,
+  isExportingProject: false,
+  exportProjectError: null,
+  isUpdatingProjectPrompt: false,
+  isUploadingProjectResource: false,
+  uploadProjectResourceError: null,
+  isStartNewSessionModalOpen: false,
+  selectedModelIds: [],
 };
 
-const actualStoreModule = originalStore as unknown as { 
-  selectContributionContentCache: (state: DialecticStateValues) => DialecticStateValues['contributionContentCache'];
-  selectSelectedDomainTag: (state: DialecticStateValues) => string | null;
-  selectSelectedDomainOverlayId: (state: DialecticStateValues) => string | null;
-  selectOverlay: (state: DialecticStateValues, domainTag: string | null) => DomainOverlayDescriptor[];
-  // Add other selectors if needed by other components using this general mock
+// 2. Define the internal state variable
+let internalMockDialecticStoreState: DialecticStore;
+
+// 3. Create the initialization function
+const initializeInternalDialecticStoreState = (): DialecticStore => {
+  const newState = {
+    ...initialDialecticStateValues,
+
+    // Actions
+    fetchAvailableDomainTags: vi.fn().mockResolvedValue(undefined as void),
+    setSelectedDomainTag: vi.fn((tag: string | null) => { newState.selectedDomainTag = tag; }),
+    fetchAvailableDomainOverlays: vi.fn().mockResolvedValue(undefined as void),
+    setSelectedStageAssociation: vi.fn((stage: DialecticStage | null) => { newState.selectedStageAssociation = stage; }),
+    setSelectedDomainOverlayId: vi.fn((id: string | null) => { newState.selectedDomainOverlayId = id; }),
+    fetchDialecticProjects: vi.fn().mockResolvedValue(undefined as void),
+    fetchDialecticProjectDetails: vi.fn().mockResolvedValue(undefined as void),
+    createDialecticProject: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 } as ApiResponse<DialecticProject>),
+    startDialecticSession: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 } as ApiResponse<DialecticSession>),
+    fetchAIModelCatalog: vi.fn().mockResolvedValue(undefined as void),
+    fetchContributionContent: vi.fn().mockResolvedValue(undefined as void),
+    uploadProjectResourceFile: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 } as ApiResponse<DialecticProjectResource>),
+    resetCreateProjectError: vi.fn(() => { newState.createProjectError = null; }),
+    resetProjectDetailsError: vi.fn(() => { newState.projectDetailError = null; }),
+    deleteDialecticProject: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 } as ApiResponse<void>),
+    cloneDialecticProject: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 } as ApiResponse<DialecticProject>),
+    exportDialecticProject: vi.fn().mockResolvedValue({ data: { export_url: '' }, error: undefined, status: 200 } as ApiResponse<{ export_url: string }>),
+    updateDialecticProjectInitialPrompt: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 } as ApiResponse<DialecticProject>),
+    setStartNewSessionModalOpen: vi.fn((isOpen: boolean) => { newState.isStartNewSessionModalOpen = isOpen; }),
+    toggleSelectedModelId: vi.fn((modelId: string) => { newState.selectedModelIds.push(modelId); }),
+    resetSelectedModelId: vi.fn(() => { newState.selectedModelIds = []; }),
+    _resetForTesting: vi.fn(() => { internalMockDialecticStoreState = initializeInternalDialecticStoreState(); }),
+  } as DialecticStore; // Cast to DialecticStore to satisfy type, setters modify 'newState' which becomes internalMockDialecticStoreState
+  return newState;
 };
 
-export const selectContributionContentCache = actualStoreModule.selectContributionContentCache;
-export const selectSelectedDomainTag = actualStoreModule.selectSelectedDomainTag;
-export const selectSelectedDomainOverlayId = actualStoreModule.selectSelectedDomainOverlayId;
+// 4. Initialize the state at module level
+internalMockDialecticStoreState = initializeInternalDialecticStoreState();
+
+// 5. Getter for the current state
+export const getDialecticStoreState = (): DialecticStore => internalMockDialecticStoreState;
+
+// 6. Mock Hook Logic
+export const mockedUseDialecticStoreHookLogic = <TResult,>(
+  selector?: (state: DialecticStore) => TResult,
+  _equalityFn?: (a: TResult, b: TResult) => boolean // For zustand spyOn compatibility
+): TResult | DialecticStore => {
+  const state = getDialecticStoreState();
+  return selector ? selector(state) : state;
+};
+(mockedUseDialecticStoreHookLogic as unknown as Record<string, unknown>)['getState'] = getDialecticStoreState;
+
+// 7. Export the mock hook itself
+export const useDialecticStore = mockedUseDialecticStoreHookLogic;
+
+// 8. State Helper for tests to set values
+export const setDialecticStateValues = (newValues: Partial<DialecticStateValues>) => {
+  // Directly assign to internalMockDialecticStoreState properties
+  // This ensures that the state object identity is maintained if tests hold a reference to it,
+  // while still updating its contents.
+  for (const key in newValues) {
+    if (Object.prototype.hasOwnProperty.call(newValues, key)) {
+      (internalMockDialecticStoreState as unknown as Record<string, unknown>)[key] = (newValues as unknown as Record<string, unknown>)[key];
+    }
+  }
+};
+
+// Legacy initialize function for tests - now primarily uses setDialecticStateValues
+// This will reset the state and apply partial new state if provided.
+export const initializeMockDialecticState = (initialState?: Partial<DialecticStateValues>) => {
+  internalMockDialecticStoreState = initializeInternalDialecticStoreState(); // Full reset
+  if (initialState) {
+    setDialecticStateValues(initialState);
+  }
+};
+
+// Compatibility for tests that used the old setDialecticState
+export const setDialecticState = setDialecticStateValues;
+
+// 9. Reset Function for tests
+export const resetDialecticStoreMock = () => {
+  internalMockDialecticStoreState = initializeInternalDialecticStoreState();
+};
+
+// 10. Action Access (for tests that might still use it, now returns the whole state/store object)
+export const getDialecticStoreActions = (): DialecticActions => {
+  return internalMockDialecticStoreState; // Actions are part of the state object
+};
+
+// Keep selectOverlay mock if it's a standalone mock not part of the store state directly
 export const selectOverlay = vi.fn();
-
-export const useDialecticStore = vi.fn(<TResult,>(selectorFn: (state: DialecticStore) => TResult): TResult => {
-  const mockStateValues: DialecticStateValues = {
-    contributionContentCache: mockLocalContributionCache,
-    availableDomainTags: [],
-    isLoadingDomainTags: false,
-    domainTagsError: null,
-    selectedDomainTag: null,
-    projects: [],
-    isLoadingProjects: false,
-    projectsError: null,
-    currentProjectDetail: null,
-    isLoadingProjectDetail: false,
-    projectDetailError: null,
-    modelCatalog: [],
-    isLoadingModelCatalog: false,
-    modelCatalogError: null,
-    isCreatingProject: false,
-    createProjectError: null,
-    isStartingSession: false,
-    startSessionError: null,
-    selectedStageAssociation: null,
-    availableDomainOverlays: [],
-    isLoadingDomainOverlays: false,
-    domainOverlaysError: null,
-    selectedDomainOverlayId: null,
-    allSystemPrompts: [],
-  };
-
-  const mockStoreActions = {
-    fetchContributionContent: mockFetchContributionContent,
-    fetchAvailableDomainTags: vi.fn(),
-    setSelectedDomainTag: vi.fn(),
-    fetchDialecticProjects: vi.fn(),
-    fetchDialecticProjectDetails: vi.fn(),
-    fetchModelCatalog: vi.fn(),
-    fetchAIModelCatalog: vi.fn(),
-    createDialecticProject: vi.fn(),
-    startDialecticSession: vi.fn(),
-    updateContributionContentCacheEntry: vi.fn(),
-    clearDialecticState: vi.fn(),
-    uploadProjectResourceFile: vi.fn(),
-    resetCreateProjectError: vi.fn(),
-    resetProjectDetailsError: vi.fn(),
-  };
-
-  const fullMockStore: DialecticStore = {
-    ...mockStateValues,
-    ...mockStoreActions,
-  };
-  return selectorFn(fullMockStore);
-});
-
-// If other components also mock '@paynless/store' and need specific selectors,
-// those selectors can be imported from '@paynless/store' and re-exported here,
-// similar to selectContributionContentCache.
-// For now, this mock is tailored to ContributionCard's needs.

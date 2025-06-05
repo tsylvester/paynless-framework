@@ -255,10 +255,10 @@ export const DialecticSessionDetailsPage: React.FC = () => {
           <p><strong>Associated Chat ID:</strong> {session.associated_chat_id || 'N/A'}</p>
           <div className="mt-4 space-x-2">
             <Button 
-              onClick={() => alert('Trigger generateThesisContributions or appropriate action based on current status')}
-              disabled={session.status === 'generating_thesis' || session.status === 'generating_antithesis'}
+              onClick={() => alert('Trigger generateContributions or appropriate action based on current status')}
+              disabled={session.status === 'generating_contributions'}
             >
-              {session.status === 'pending_thesis' ? 'Generate Thesis' : 'Re-generate Current Stage'}
+              {session.status === 'pending_contributions' ? 'Generate Contributions' : 'Re-generate Current Stage'}
             </Button>
             <Button 
               variant="outline" 

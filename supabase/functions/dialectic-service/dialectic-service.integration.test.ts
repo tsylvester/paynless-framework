@@ -391,7 +391,7 @@ describe("Edge Function: dialectic-service", () => {
             identifier: { system_prompt_id: baseThesisPromptId, domain_tag: TEST_DOMAIN_TAG_1, version: 99 },
             desiredState: { 
               overlay_values: { test_data: "ensure software_development for thesis" } as unknown as Json, 
-              description: "Test overlay for software_development (thesis) for generateThesisContributions",
+              description: "Test overlay for software_development (thesis) for generateContributions",
               is_active: true,
             },
           },
@@ -400,7 +400,7 @@ describe("Edge Function: dialectic-service", () => {
             identifier: { system_prompt_id: baseAntithesisPromptId, domain_tag: TEST_DOMAIN_TAG_1, version: 99 },
             desiredState: { 
               overlay_values: { test_data: "ensure software_development for antithesis" } as unknown as Json, 
-              description: "Test overlay for software_development (antithesis) for generateThesisContributions",
+              description: "Test overlay for software_development (antithesis) for generateContributions",
               is_active: true,
             },
           },
@@ -465,7 +465,7 @@ describe("Edge Function: dialectic-service", () => {
         .single();
 
       if (projectError || !projectData) {
-        throw new Error(`Test setup for generateThesisContributions failed to fetch project details: ${projectError?.message || 'No project data'}`);
+        throw new Error(`Test setup for generateContributions failed to fetch project details: ${projectError?.message || 'No project data'}`);
       }
 
       // Prepare and call startSession to create session and session_models
@@ -608,7 +608,7 @@ describe("Edge Function: dialectic-service", () => {
       const { data: responseData, error: invokeError } = await testPrimaryUserClient.functions.invoke(
         "dialectic-service",
         {
-          body: { action: "generateThesisContributions", payload },
+          body: { action: "generateContributions", payload },
           headers: { 
             Authorization: `Bearer ${testUserAuthToken}`,
             "X-Client-Info": "supabase-js/0.0.0-automated-test-thesis-invoke", // Optional: update client info
@@ -617,37 +617,37 @@ describe("Edge Function: dialectic-service", () => {
       );
       
       if (invokeError) {
-        console.log("[generateThesisContributions Test] Detailed Invoke Error Name:", invokeError.name);
-        console.log("[generateThesisContributions Test] Detailed Invoke Error Message:", invokeError.message);
+        console.log("[generateContributions Test] Detailed Invoke Error Name:", invokeError.name);
+        console.log("[generateContributions Test] Detailed Invoke Error Message:", invokeError.message);
         if (invokeError.context) {
-          console.log("[generateThesisContributions Test] Detailed Invoke Error Context Keys:", Object.keys(invokeError.context));
+          console.log("[generateContributions Test] Detailed Invoke Error Context Keys:", Object.keys(invokeError.context));
           if (invokeError.context.status) { // Log status if available directly
-            console.log("[generateThesisContributions Test] Detailed Invoke Error Context Status:", invokeError.context.status);
+            console.log("[generateContributions Test] Detailed Invoke Error Context Status:", invokeError.context.status);
           }
           if (typeof invokeError.context.json === 'function') {
             try {
               const errBody = await invokeError.context.json();
-              console.log("[generateThesisContributions Test] Detailed Invoke Error Context JSON Body:", JSON.stringify(errBody, null, 2));
+              console.log("[generateContributions Test] Detailed Invoke Error Context JSON Body:", JSON.stringify(errBody, null, 2));
             } catch (e:any) {
-              console.log("[generateThesisContributions Test] Detailed Invoke Error Context JSON Parse Error:", e.message);
+              console.log("[generateContributions Test] Detailed Invoke Error Context JSON Parse Error:", e.message);
               // Fallback to text if json parsing fails or if it's not a function but text is
               if (typeof invokeError.context.text === 'function') {
                 const errText = await invokeError.context.text();
-                console.log("[generateThesisContributions Test] Detailed Invoke Error Context Text Body (after JSON parse error):", errText);
+                console.log("[generateContributions Test] Detailed Invoke Error Context Text Body (after JSON parse error):", errText);
               }
             }
           } else if (typeof invokeError.context.text === 'function') { // If .json was not a function, try .text
             const errText = await invokeError.context.text();
-            console.log("[generateThesisContributions Test] Detailed Invoke Error Context Text Body (json not function):", errText);
+            console.log("[generateContributions Test] Detailed Invoke Error Context Text Body (json not function):", errText);
           }
         } else {
-          console.log("[generateThesisContributions Test] Invoke Error Context is null or undefined.");
+          console.log("[generateContributions Test] Invoke Error Context is null or undefined.");
         }
       }
-      console.log("[generateThesisContributions Test] Original Invoke Response Data:", JSON.stringify(responseData, null, 2));
+      console.log("[generateContributions Test] Original Invoke Response Data:", JSON.stringify(responseData, null, 2));
 
-      expect(invokeError, `generateThesisContributions error: ${invokeError ? invokeError.message : 'Unknown error'}`).to.be.null;
-      expect(responseData, "generateThesisContributions data should exist").to.exist;
+      expect(invokeError, `generateContributions error: ${invokeError ? invokeError.message : 'Unknown error'}`).to.be.null;
+      expect(responseData, "generateContributions data should exist").to.exist;
       
       // responseData is GenerateStageContributionsSuccessResponse: { message, contributions, updatedStatus }
       // No 'success' field or outer 'data' field in responseData itself after invoke.
