@@ -90,5 +90,29 @@ describe('useDialecticStore', () => {
         });
     });
 
+    describe('setStartNewSessionModalOpen action', () => {
+        it('should have isStartNewSessionModalOpen as false initially', () => {
+            const state = useDialecticStore.getState();
+            expect(state.isStartNewSessionModalOpen).toBe(false);
+        });
 
+        it('should set isStartNewSessionModalOpen to true', () => {
+            const { setStartNewSessionModalOpen } = useDialecticStore.getState();
+            setStartNewSessionModalOpen(true);
+            const state = useDialecticStore.getState();
+            expect(state.isStartNewSessionModalOpen).toBe(true);
+        });
+
+        it('should set isStartNewSessionModalOpen to false after being true', () => {
+            const { setStartNewSessionModalOpen } = useDialecticStore.getState();
+            // Set to true first
+            setStartNewSessionModalOpen(true);
+            expect(useDialecticStore.getState().isStartNewSessionModalOpen).toBe(true);
+
+            // Then set to false
+            setStartNewSessionModalOpen(false);
+            const state = useDialecticStore.getState();
+            expect(state.isStartNewSessionModalOpen).toBe(false);
+        });
+    });
 }); 

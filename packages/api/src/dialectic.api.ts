@@ -7,13 +7,15 @@ import type {
     StartSessionPayload,
     DialecticSession,
     AIModelCatalogEntry,
-    UploadProjectResourceFilePayload,
     DialecticProjectResource,
     DomainTagDescriptor,
     DomainOverlayDescriptor,
     UpdateProjectDomainTagPayload,
     DeleteProjectPayload,
     DialecticServiceActionPayload,
+    UpdateProjectInitialPromptPayload,
+    UploadProjectResourceFilePayload,
+    FetchOptions
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -248,38 +250,65 @@ export class DialecticApiClient {
      * Uploads a project resource file.
      * Requires authentication.
      */
-    async uploadProjectResourceFile(payload: UploadProjectResourceFilePayload): Promise<ApiResponse<DialecticProjectResource>> {
-        logger.info(`[DialecticApi] Uploading resource for project ${payload.projectId}: ${payload.fileName}`);
+    async uploadProjectResourceFile(
+        payload: UploadProjectResourceFilePayload,
+        methodOptions?: { onUploadProgress?: (progressEvent: ProgressEvent) => void } & FetchOptions
+    ): Promise<ApiResponse<DialecticProjectResource>> {
+        logger.info('Uploading project resource file', { projectId: payload.projectId, fileName: payload.fileName });
+        const formData = new FormData();
+        formData.append('action', 'uploadProjectResourceFile');
+        formData.append('projectId', payload.projectId);
+        formData.append('file', payload.file, payload.fileName);
+        formData.append('fileName', payload.fileName);
+        formData.append('fileSizeBytes', payload.fileSizeBytes.toString());
+        formData.append('fileType', payload.fileType);
+
+        if (payload.resourceDescription) {
+            formData.append('resourceDescription', payload.resourceDescription);
+        }
+
+        const fetchOptsFromMethodOpts: FetchOptions | undefined = methodOptions ? {
+            method: methodOptions.method,
+            headers: methodOptions.headers,
+            body: methodOptions.body,
+            mode: methodOptions.mode,
+            credentials: methodOptions.credentials,
+            cache: methodOptions.cache,
+            redirect: methodOptions.redirect,
+            referrer: methodOptions.referrer,
+            referrerPolicy: methodOptions.referrerPolicy,
+            integrity: methodOptions.integrity,
+            keepalive: methodOptions.keepalive,
+            signal: methodOptions.signal,
+            isPublic: methodOptions.isPublic,
+            token: methodOptions.token,
+        } : undefined;
+
         try {
-            const formData = new FormData();
-            formData.append('action', 'uploadProjectResourceFile');
-            formData.append('projectId', payload.projectId);
-            formData.append('fileName', payload.fileName);
-            formData.append('fileSizeBytes', payload.fileSizeBytes.toString());
-            formData.append('fileType', payload.fileType);
-            if (payload.resourceDescription) {
-                formData.append('resourceDescription', payload.resourceDescription);
+            if (methodOptions?.onUploadProgress) {
+                logger.info('onUploadProgress callback was provided to DialecticApiClient.uploadProjectResourceFile. This is not currently passed to the generic apiClient.post.');
             }
-            formData.append('file', payload.file, payload.fileName);
 
             const response = await this.apiClient.post<DialecticProjectResource, FormData>(
                 'dialectic-service',
-                formData
+                formData,
+                fetchOptsFromMethodOpts
             );
 
             if (response.error) {
-                logger.error('[DialecticApi] Error uploading project resource file:', { error: response.error, projectId: payload.projectId });
+                logger.error('Error uploading project resource file:', { error: response.error, projectId: payload.projectId, fileName: payload.fileName });
             } else {
-                logger.info('[DialecticApi] Successfully uploaded project resource file:', { resource: response.data, projectId: payload.projectId });
+                logger.info('Successfully uploaded project resource file', { resourceId: response.data?.id });
             }
             return response;
         } catch (error: unknown) {
-            const err = error as Error;
-            logger.error('[DialecticApi] Network error uploading project resource file:', { error: err.message, projectId: payload.projectId });
+            const message = error instanceof Error ? error.message : 'A network error occurred during file upload';
+            logger.error('Network error in uploadProjectResourceFile:', { errorMessage: message, errorObject: error, projectId: payload.projectId, fileName: payload.fileName });
             return {
-                error: { message: err.message, code: 'NETWORK_ERROR' },
-                status: 0
-            } as ApiResponse<DialecticProjectResource>;
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
         }
     }
 
@@ -417,5 +446,12 @@ export class DialecticApiClient {
                 status: 0,
             };
         }
+    }
+
+    async updateDialecticProjectInitialPrompt(payload: UpdateProjectInitialPromptPayload): Promise<ApiResponse<DialecticProject>> {
+        return this.apiClient.post<DialecticProject, { action: string; payload: UpdateProjectInitialPromptPayload }>(
+            'dialectic-service',
+            { action: 'updateProjectInitialPrompt', payload }
+        );
     }
 } 

@@ -1,182 +1,129 @@
-import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useDialecticStore } from '@paynless/store';
 import {
   selectCurrentProjectDetail,
   selectIsLoadingProjectDetail,
-  selectProjectDetailError,
 } from '@paynless/store';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, PlayCircle, ListChecks, Edit3, FileText } from 'lucide-react';
-// import { StartDialecticSessionModal } from '@/components/dialectic/StartDialecticSessionModal'; // Will be used later
+import { ArrowLeft, PlayCircle, Layers } from 'lucide-react';
+import { EditableInitialProblemStatement } from '@/components/dialectic/EditableInitialProblemStatement';
+import { ProjectSessionsList } from '@/components/dialectic/ProjectSessionsList';
+import { StartDialecticSessionModal } from '@/components/dialectic/StartDialecticSessionModal';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export const DialecticProjectDetailsPage: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
-  const fetchProjectDetails = useDialecticStore((state) => state.fetchDialecticProjectDetails);
-  const project = useDialecticStore(selectCurrentProjectDetail);
-  const isLoading = useDialecticStore(selectIsLoadingProjectDetail);
-  const error = useDialecticStore(selectProjectDetailError);
-  const resetProjectDetailsError = useDialecticStore((state) => state.resetProjectDetailsError);
-
-  // Local state for modal visibility - will be connected to actual modal later
-  const [isStartSessionModalOpen, setIsStartSessionModalOpen] = useState(false);
+  const navigate = useNavigate();
+  const {
+    fetchDialecticProjectDetails,
+    currentProjectDetail,
+    isLoadingProjectDetail,
+    projectDetailError,
+    setStartNewSessionModalOpen,
+  } = useDialecticStore((state) => ({
+    fetchDialecticProjectDetails: state.fetchDialecticProjectDetails,
+    currentProjectDetail: selectCurrentProjectDetail(state),
+    isLoadingProjectDetail: selectIsLoadingProjectDetail(state),
+    projectDetailError: state.projectDetailError,
+    setStartNewSessionModalOpen: state.setStartNewSessionModalOpen,
+  }));
 
   useEffect(() => {
     if (projectId) {
-        if(error) resetProjectDetailsError(); // Clear previous error before new fetch
-        fetchProjectDetails(projectId);
+      fetchDialecticProjectDetails(projectId);
+    } else {
+      console.error("No project ID found in URL");
+      navigate('/dialectic');
     }
-    return () => {
-        if(error) resetProjectDetailsError(); // Clear error on unmount if it occurred
-    }
-  }, [projectId, fetchProjectDetails, resetProjectDetailsError]); // removed error from dep array
+  }, [projectId, fetchDialecticProjectDetails, navigate]);
 
-  const handleOpenStartSessionModal = () => {
-    setIsStartSessionModalOpen(true);
-    // When StartDialecticSessionModal is integrated, this will likely manage its open state
-    // console.log('Open Start New Session Modal - Placeholder');
+  const handleStartNewSession = () => {
+    setStartNewSessionModalOpen(true);
   };
 
-  if (isLoading) {
+  const handleSessionStarted = (sessionId: string) => {
+    if (projectId) {
+      navigate(`/dialectic/${projectId}/session/${sessionId}`);
+    }
+  };
+
+  if (isLoadingProjectDetail) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="ml-2 text-lg">Loading project details...</p>
+      <div className="container mx-auto p-6 space-y-8">
+        <Skeleton className="h-10 w-1/4" />
+        <Skeleton className="h-8 w-1/2" />
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-40 w-full" />
       </div>
     );
   }
 
-  if (error) {
+  if (projectDetailError) {
     return (
-      <Alert variant="destructive" className="max-w-lg mx-auto mt-8">
-        <AlertTitle>Error loading project details:</AlertTitle>
-        <AlertDescription>{error.message}</AlertDescription>
-        <Button onClick={() => projectId && fetchProjectDetails(projectId)} variant="outline" className="mt-4">
-          Try Again
-        </Button>
-      </Alert>
+      <div className="container mx-auto p-6 text-center">
+        <h1 className="text-2xl font-bold text-destructive">Error Loading Project</h1>
+        <p>{projectDetailError.message || "Could not fetch project details."}</p>
+        <Button onClick={() => navigate('/dialectic')} className="mt-4">Go to Projects</Button>
+      </div>
     );
   }
 
-  if (!project) {
+  if (!currentProjectDetail) {
     return (
-      <Alert className="max-w-lg mx-auto mt-8">
-        <AlertTitle>Project not found</AlertTitle>
-        <AlertDescription>
-          The requested project could not be found. It might have been deleted or you may not have access.
-        </AlertDescription>
-        <Button asChild variant="outline" className="mt-4">
-            <Link to="/dialectic">Back to Projects List</Link>
-        </Button>
-      </Alert>
+        <div className="container mx-auto p-6 text-center">
+            <p>No project data available. It might be loading or the project ID is invalid.</p>
+            <Button onClick={() => navigate('/dialectic')} className="mt-4">Go to Projects</Button>
+        </div>
+    );
+  }
+
+  if (projectId !== currentProjectDetail.id) {
+    return (
+      <div className="container mx-auto p-6 text-center">
+        <p>Loading project data...</p> 
+        <Skeleton className="h-10 w-1/4 mt-2" />
+      </div>
     );
   }
 
   return (
-    <div className="container mx-auto py-8 px-4 md:px-6">
-      <header className="mb-8">
-        <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight flex items-center">
-                    <FileText className="mr-3 h-8 w-8 text-primary" /> 
-                    {project.projectName}
-                </h1>
-                <p className="text-muted-foreground mt-1">
-                    Project ID: {project.id}
-                </p>
-            </div>
-            <Button onClick={handleOpenStartSessionModal} size="lg">
-                <PlayCircle className="mr-2 h-5 w-5" /> Start New Session
-            </Button>
-        </div>
-        {project.selectedDomainTag && (
-            <Badge variant="secondary" className="mt-2 text-sm">
-                Domain: {project.selectedDomainTag}
+    <div className="container mx-auto p-4 md:p-6 space-y-6 md:space-y-8">
+      <Button variant="outline" size="sm" onClick={() => navigate('/dialectic')} className="mb-4">
+        <ArrowLeft className="mr-2 h-4 w-4" /> Back to Projects
+      </Button>
+
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-x-4 gap-y-2 mb-6">
+        <div className="flex-grow flex items-center flex-wrap gap-x-3 gap-y-1 min-w-0">
+          <h1 className="text-xl md:text-2xl font-semibold flex items-center mr-2 shrink-0">
+            <Layers className="mr-2 h-6 w-6 text-primary shrink-0" /> 
+            <span className="truncate" title={currentProjectDetail.project_name}>
+              {currentProjectDetail.project_name}
+            </span>
+          </h1>
+          <span className="text-sm text-muted-foreground truncate" title={currentProjectDetail.id}>ID: {currentProjectDetail.id}</span>
+          {currentProjectDetail.selected_domain_tag && (
+            <Badge variant="outline" className="text-sm whitespace-nowrap">
+              {currentProjectDetail.selected_domain_tag}
             </Badge>
-        )}
-      </header>
-
-      <Card className="mb-8">
-        <CardHeader>
-          <CardTitle className="text-xl">Initial Problem Statement</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground whitespace-pre-wrap">{project.initialUserPrompt}</p>
-        </CardContent>
-      </Card>
-
-      <Separator className="my-8" />
-
-      <div>
-        <h2 className="text-2xl font-semibold mb-6 flex items-center">
-            <ListChecks className="mr-3 h-7 w-7 text-primary" /> Sessions
-        </h2>
-        {project.dialecticSessions && project.dialecticSessions.length > 0 ? (
-          <div className="space-y-6">
-            {project.dialecticSessions.map((session) => (
-              <Card key={session.id} className="hover:shadow-lg transition-shadow">
-                <CardHeader className="pb-4">
-                  <div className="flex justify-between items-start">
-                    <div>
-                        <CardTitle className="text-lg hover:text-primary transition-colors">
-                            <Link to={`/dialectic/${project.id}/session/${session.id}`}>
-                                {session.sessionDescription || `Session ${session.id.substring(0, 8)}`}
-                            </Link>
-                        </CardTitle>
-                        <CardDescription>
-                            Created: {new Date(session.createdAt).toLocaleString()} | Status: <Badge variant={session.status.startsWith('pending') || session.status.startsWith('generating') ? 'outline' : 'default'}>{session.status}</Badge>
-                        </CardDescription>
-                    </div>
-                    <Button asChild variant="ghost" size="sm">
-                        <Link to={`/dialectic/${project.id}/session/${session.id}`}>View Session</Link>
-                    </Button>
-                  </div>
-                </CardHeader>
-                {session.currentStageSeedPrompt && (
-                    <CardContent className="pt-0">
-                        <p className="text-xs text-muted-foreground line-clamp-2">
-                            <strong>Last Seed Prompt:</strong> {session.currentStageSeedPrompt}
-                        </p>
-                    </CardContent>
-                )}
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-10 border-2 border-dashed border-muted rounded-lg">
-            <Edit3 className="mx-auto h-12 w-12 text-muted-foreground mb-3" />
-            <h3 className="text-xl font-medium text-muted-foreground">No sessions yet for this project.</h3>
-            <p className="text-sm text-muted-foreground mt-1 mb-4">Start a new session to begin the dialectic process.</p>
-            <Button onClick={handleOpenStartSessionModal} variant="outline">
-                <PlayCircle className="mr-2 h-4 w-4" /> Start First Session
-            </Button>
-          </div>
-        )}
-      </div>
-
-      {/* Placeholder for StartDialecticSessionModal */}
-      {isStartSessionModalOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <Card className="w-full max-w-md">
-                <CardHeader>
-                    <CardTitle>Start New Dialectic Session (Modal)</CardTitle>
-                    <CardDescription>Modal content will go here.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <p>Configure your new session.</p>
-                </CardContent>
-                <CardFooter>
-                    <Button variant="outline" onClick={() => setIsStartSessionModalOpen(false)} className="mr-2">Cancel</Button>
-                    <Button onClick={() => { alert('Starting session...'); setIsStartSessionModalOpen(false); }}>Start Session</Button>
-                </CardFooter>
-            </Card>
+          )}
         </div>
-      )}
 
+        <div className="flex-shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
+            <Button onClick={handleStartNewSession} className="w-full sm:w-auto">
+                <PlayCircle className="mr-2 h-4 w-4" /> Start New Session
+            </Button>
+        </div>
+      </div>
+      
+      <EditableInitialProblemStatement />
+      
+      <ProjectSessionsList onStartNewSession={handleStartNewSession} />
+
+      <StartDialecticSessionModal 
+        onSessionStarted={handleSessionStarted} 
+      />
     </div>
   );
 }; 

@@ -23,21 +23,21 @@ export const CardSkeleton: React.FC<CardSkeletonProps> = ({
     <Card className="w-full flex flex-col">
       {includeHeader && (
         <CardHeader>
-          <Skeleton className={`w-3/4 ${headerHeight} mb-2`} />
-          <Skeleton className={`w-1/2 ${fieldHeight}`} />
+          <Skeleton data-testid="skeleton-loader" className={`w-3/4 ${headerHeight} mb-2`} />
+          <Skeleton data-testid="skeleton-loader" className={`w-1/2 ${fieldHeight}`} />
         </CardHeader>
       )}
       <CardContent className="space-y-3 pt-6 flex-grow">
         {Array.from({ length: numberOfFields }).map((_, index) => (
           <div key={index} className="space-y-2">
-            <Skeleton className={`w-1/3 ${fieldHeight}`} />
-            <Skeleton className={`w-full ${fieldHeight}`} />
+            <Skeleton data-testid="skeleton-loader" className={`w-1/3 ${fieldHeight}`} />
+            <Skeleton data-testid="skeleton-loader" className={`w-full ${fieldHeight}`} />
           </div>
         ))}
       </CardContent>
       {includeFooter && (
         <CardFooter>
-          <Skeleton className={`w-1/4 ${footerHeight}`} />
+          <Skeleton data-testid="skeleton-loader" className={`w-1/4 ${footerHeight}`} />
         </CardFooter>
       )}
     </Card>

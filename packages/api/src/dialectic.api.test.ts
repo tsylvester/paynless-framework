@@ -704,7 +704,9 @@ describe('DialecticApiClient', () => {
             };
             (mockApiClient.post as Mock).mockResolvedValue(mockResponse);
 
-            await dialecticApiClient.uploadProjectResourceFile(validPayload);
+            await dialecticApiClient.uploadProjectResourceFile(validPayload, {
+                onUploadProgress: vi.fn(),
+            });
 
             expect(mockApiClient.post).toHaveBeenCalledTimes(1);
             const [invokedEndpoint, formData] = (mockApiClient.post as Mock).mock.calls[0];
@@ -748,7 +750,9 @@ describe('DialecticApiClient', () => {
             };
             (mockApiClient.post as Mock).mockResolvedValue(mockResponse);
 
-            await dialecticApiClient.uploadProjectResourceFile(payloadWithoutDescription);
+            await dialecticApiClient.uploadProjectResourceFile(payloadWithoutDescription, {
+                onUploadProgress: vi.fn(),
+            });
 
             expect(mockApiClient.post).toHaveBeenCalledTimes(1);
             const [, formData] = (mockApiClient.post as Mock).mock.calls[0];
@@ -774,7 +778,9 @@ describe('DialecticApiClient', () => {
             };
             (mockApiClient.post as Mock).mockResolvedValue(mockResponse);
 
-            const result = await dialecticApiClient.uploadProjectResourceFile(validPayload);
+            const result = await dialecticApiClient.uploadProjectResourceFile(validPayload, {
+                onUploadProgress: vi.fn(),
+            });
 
             expect(result.data).toEqual(mockResourceResponse);
             expect(result.status).toBe(201);
@@ -789,7 +795,9 @@ describe('DialecticApiClient', () => {
             };
             (mockApiClient.post as Mock).mockResolvedValue(mockErrorResponse);
 
-            const result = await dialecticApiClient.uploadProjectResourceFile(validPayload);
+            const result = await dialecticApiClient.uploadProjectResourceFile(validPayload, {
+                onUploadProgress: vi.fn(),
+            });
 
             expect(result.error).toEqual(mockApiError);
             expect(result.status).toBe(500);
@@ -800,7 +808,9 @@ describe('DialecticApiClient', () => {
             const networkErrorMessage = 'Simulated network failure during upload';
             (mockApiClient.post as Mock).mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            const result = await dialecticApiClient.uploadProjectResourceFile(validPayload);
+            const result = await dialecticApiClient.uploadProjectResourceFile(validPayload, {
+                onUploadProgress: vi.fn(),
+            });
 
             expect(result.error).toEqual({
                 code: 'NETWORK_ERROR',

@@ -20,6 +20,7 @@ export interface DialecticProject {
     created_at: string;
     updated_at: string;
     sessions?: DialecticSession[]; 
+    resources?: DialecticProjectResource[];
 }
 
 export interface CreateProjectPayload {
@@ -173,6 +174,11 @@ export interface DialecticStateValues {
   // Project exporting states
   isExportingProject: boolean;
   exportProjectError: ApiError | null;
+
+  isUpdatingProjectPrompt: boolean;
+  isUploadingProjectResource: boolean;
+  uploadProjectResourceError: ApiError | null;
+  isStartNewSessionModalOpen: boolean;
 }
 
 export interface ContributionCacheEntry {
@@ -209,6 +215,8 @@ export interface DialecticActions {
   deleteDialecticProject: (projectId: string) => Promise<ApiResponse<void>>;
   cloneDialecticProject: (projectId: string) => Promise<ApiResponse<DialecticProject>>;
   exportDialecticProject: (projectId: string) => Promise<ApiResponse<{ export_url: string }>>;
+  updateDialecticProjectInitialPrompt: (payload: UpdateProjectInitialPromptPayload) => Promise<ApiResponse<DialecticProject>>;
+  setStartNewSessionModalOpen: (isOpen: boolean) => void;
 
   _resetForTesting?: () => void;
 }
@@ -263,6 +271,8 @@ export interface DialecticApiClient {
   // New API client methods
   cloneProject(payload: { projectId: string }): Promise<ApiResponse<DialecticProject>>;
   exportProject(payload: { projectId: string }): Promise<ApiResponse<{ export_url: string }>>;
+
+  updateDialecticProjectInitialPrompt(payload: UpdateProjectInitialPromptPayload): Promise<ApiResponse<DialecticProject>>;
 }
 
 export interface ContributionContentSignedUrlResponse {
@@ -338,5 +348,14 @@ export type DialecticServiceActionPayload = {
 }
 
 export interface DialecticServiceResponsePayload {
+  // ... existing code ...
+}
+
+export type UpdateProjectInitialPromptPayload = {
+  projectId: string;
+  newInitialPrompt: string;
+};
+
+export interface DialecticServiceFunctions {
   // ... existing code ...
 }

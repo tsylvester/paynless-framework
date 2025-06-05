@@ -10,6 +10,7 @@ import type {
   DialecticSession,
   UploadProjectResourceFilePayload,
   DialecticProjectResource,
+  UpdateProjectInitialPromptPayload,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
@@ -57,6 +58,12 @@ export const initialDialecticStateValues: DialecticStateValues = {
   // Project exporting states
   isExportingProject: false,
   exportProjectError: null,
+
+  // Added for IPS update
+  isUpdatingProjectPrompt: false,
+  isUploadingProjectResource: false,
+  uploadProjectResourceError: null,
+  isStartNewSessionModalOpen: false,
 };
 
 export const useDialecticStore = create<DialecticStore>((set, get) => ({
@@ -209,15 +216,15 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
 
   createDialecticProject: async (payload: CreateProjectPayload): Promise<ApiResponse<DialecticProject>> => {
     set({ isCreatingProject: true, createProjectError: null });
-    const { selectedDomainTag, selectedDomainOverlayId } = get(); // Get values from store state
+    const { selectedDomainOverlayId } = get(); // Get values from store state
 
     // Construct the final payload for the API call,
     // ensuring projectName and initialUserPrompt are from the input payload,
     // and selectedDomainTag and selected_domain_overlay_id are from the store's state.
     const payloadForApi: CreateProjectPayload = {
       ...payload, // Spreads projectName, initialUserPrompt, and any other fields from incoming payload
-      selectedDomainTag: selectedDomainTag, // Explicitly use store's selectedDomainTag
-      selected_domain_overlay_id: selectedDomainOverlayId, // Explicitly use store's selectedDomainOverlayId
+      selected_domain_overlay_id: selectedDomainOverlayId, // Correctly uses store's selectedDomainOverlayId
+      selectedDomainTag: get().selectedDomainTag, // Add selectedDomainTag from the store
     };
 
     logger.info('[DialecticStore] Creating dialectic project...', { projectPayload: payloadForApi });
@@ -468,35 +475,36 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
   },
 
   uploadProjectResourceFile: async (payload: UploadProjectResourceFilePayload): Promise<ApiResponse<DialecticProjectResource>> => {
+    set({ isUploadingProjectResource: true, uploadProjectResourceError: null });
     logger.info('[DialecticStore] Uploading project resource file...', { projectId: payload.projectId, fileName: payload.fileName });
     try {
+      // Pass the payload object directly, ensuring all its properties (like file, fileName, fileSizeBytes, fileType)
+      // are correctly received by the API client method, which now expects a single object.
       const response = await api.dialectic().uploadProjectResourceFile(payload);
 
       if (response.error) {
-        logger.error('[DialecticStore] Error uploading project resource file:', { 
-          projectId: payload.projectId, 
-          fileName: payload.fileName, 
-          errorDetails: response.error 
-        });
-      } else {
-        logger.info('[DialecticStore] Successfully uploaded project resource file:', { 
-          projectId: payload.projectId, 
-          fileName: payload.fileName, 
-          resource: response.data 
-        });
+        logger.error('[DialecticStore] Error uploading project resource file:', { errorDetails: response.error });
+        set({ isUploadingProjectResource: false, uploadProjectResourceError: response.error });
+        return { data: undefined, error: response.error, status: response.status || 0 };
       }
+      logger.info('[DialecticStore] Successfully uploaded project resource file', { resource: response.data });
+      // Optionally update project details if the resource is linked there
+      set(state => ({
+        isUploadingProjectResource: false,
+        currentProjectDetail: state.currentProjectDetail && state.currentProjectDetail.id === response.data?.project_id
+          ? { 
+              ...state.currentProjectDetail,
+              resources: [...(state.currentProjectDetail.resources || []), response.data!]
+            }
+          : state.currentProjectDetail,
+      }));
       return response;
-    } catch (error: unknown) {
-      const networkError: ApiError = {
-        message: error instanceof Error ? error.message : 'An unknown network error occurred while uploading file',
-        code: 'NETWORK_ERROR',
-      };
-      logger.error('[DialecticStore] Network error uploading project resource file:', { 
-        projectId: payload.projectId, 
-        fileName: payload.fileName, 
-        errorDetails: networkError 
-      });
-      return { error: networkError, status: 0 };
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      const networkError: ApiError = { message: errMsg, code: 'NETWORK_ERROR' };
+      logger.error('[DialecticStore] Network error uploading project resource file:', { errorDetails: networkError });
+      set({ isUploadingProjectResource: false, uploadProjectResourceError: networkError });
+      return { data: undefined, error: networkError, status: 0 };
     }
   },
 
@@ -605,6 +613,41 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       set({ isExportingProject: false, exportProjectError: networkError });
       return { error: networkError, status: 0 };
     }
+  },
+
+  updateDialecticProjectInitialPrompt: async (payload: UpdateProjectInitialPromptPayload): Promise<ApiResponse<DialecticProject>> => {
+    set({ isUpdatingProjectPrompt: true, projectDetailError: null });
+    logger.info(`[DialecticStore] Attempting to update initial prompt for project: ${payload.projectId}`);
+    try {
+      const response = await api.dialectic().updateDialecticProjectInitialPrompt(payload);
+      if (response.error || !response.data) {
+        const error = response.error || { message: 'No data returned from update initial prompt', code: 'UNKNOWN_ERROR' } as ApiError;
+        logger.error('[DialecticStore] Failed to update initial prompt:', { errorDetails: error });
+        set({ isUpdatingProjectPrompt: false, projectDetailError: error });
+        return { data: undefined, error, status: response.status || 0 };
+      }
+      logger.info(`[DialecticStore] Successfully updated initial prompt for project: ${response.data.id}`);
+      set(state => ({
+        isUpdatingProjectPrompt: false,
+        projectDetailError: null,
+        currentProjectDetail: state.currentProjectDetail && state.currentProjectDetail.id === response.data?.id 
+          ? response.data 
+          : state.currentProjectDetail,
+        projects: state.projects.map(p => p.id === response.data?.id ? response.data! : p),
+      }));
+      return response;
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      const networkError: ApiError = { message: errMsg, code: 'NETWORK_ERROR' };
+      logger.error('[DialecticStore] Network or unexpected error updating initial prompt:', { errorDetails: networkError });
+      set({ isUpdatingProjectPrompt: false, projectDetailError: networkError });
+      return { data: undefined, error: networkError, status: 0 };
+    }
+  },
+
+  setStartNewSessionModalOpen: (isOpen: boolean) => {
+    logger.info(`[DialecticStore] Setting StartNewSessionModal open state to: ${isOpen}`);
+    set({ isStartNewSessionModalOpen: isOpen });
   },
 }));
 

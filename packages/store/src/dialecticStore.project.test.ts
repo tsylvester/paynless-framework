@@ -24,6 +24,7 @@ import type {
   DomainTagDescriptor,
   UploadProjectResourceFilePayload,
   DialecticProjectResource,
+  UpdateProjectInitialPromptPayload,
 } from '@paynless/types';
 
 // Add the mock call here
@@ -667,8 +668,122 @@ describe('useDialecticStore', () => {
         });
     });
 
-    // describe('fetchProjectDetails action', () => {
-    // This suite was empty and causing "No test found" error. 
-    // Tests for fetchDialecticProjectDetails are already in place above.
-    // });
+    describe('updateDialecticProjectInitialPrompt action', () => {
+        const projectId = 'proj123';
+        const oldInitialPrompt = 'Old initial prompt';
+        const newInitialPrompt = 'New and improved initial prompt';
+        const mockExistingProject: DialecticProject = {
+            id: projectId,
+            project_name: 'Test Project',
+            initial_user_prompt: oldInitialPrompt,
+            user_id: 'user1',
+            selected_domain_tag: null,
+            selected_domain_overlay_id: null,
+            repo_url: null,
+            status: 'active',
+            created_at: '2023-01-01T00:00:00Z',
+            updated_at: '2023-01-01T00:00:00Z',
+            sessions: [],
+            resources: [],
+        };
+        const mockUpdatedProject: DialecticProject = {
+            ...mockExistingProject,
+            initial_user_prompt: newInitialPrompt,
+            updated_at: '2023-01-02T00:00:00Z',
+        };
+        const payload: UpdateProjectInitialPromptPayload = { projectId, newInitialPrompt };
+
+        beforeEach(() => {
+            // Pre-fill the store with an existing project
+            useDialecticStore.setState({
+                projects: [mockExistingProject],
+                currentProjectDetail: mockExistingProject,
+                isLoadingProjectDetail: false,
+                projectDetailError: null,
+                isUpdatingProjectPrompt: false,
+            });
+        });
+
+        it('should update project initial prompt, currentProjectDetail, and projects list on success', async () => {
+            const mockResponse: ApiResponse<DialecticProject> = { data: mockUpdatedProject, status: 200 };
+            (mockDialecticApi.updateDialecticProjectInitialPrompt as Mock).mockResolvedValue(mockResponse);
+
+            const { updateDialecticProjectInitialPrompt } = useDialecticStore.getState();
+            const result = await updateDialecticProjectInitialPrompt(payload);
+
+            expect(result.data).toEqual(mockUpdatedProject);
+            expect(result.status).toBe(200);
+            expect(mockDialecticApi.updateDialecticProjectInitialPrompt).toHaveBeenCalledWith(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.isUpdatingProjectPrompt).toBe(false);
+            expect(state.projectDetailError).toBeNull();
+            expect(state.currentProjectDetail).toEqual(mockUpdatedProject);
+            expect(state.projects.find(p => p.id === projectId)).toEqual(mockUpdatedProject);
+        });
+
+        it('should update only projects list if currentProjectDetail is different', async () => {
+            // Set currentProjectDetail to a different project
+            useDialecticStore.setState({
+                currentProjectDetail: { ...mockExistingProject, id: 'otherProject' }
+            });
+            const mockResponse: ApiResponse<DialecticProject> = { data: mockUpdatedProject, status: 200 };
+            (mockDialecticApi.updateDialecticProjectInitialPrompt as Mock).mockResolvedValue(mockResponse);
+
+            const { updateDialecticProjectInitialPrompt } = useDialecticStore.getState();
+            await updateDialecticProjectInitialPrompt(payload);
+            
+            const state = useDialecticStore.getState();
+            expect(state.currentProjectDetail?.id).toBe('otherProject'); // Should not change
+            expect(state.projects.find(p => p.id === projectId)).toEqual(mockUpdatedProject);
+        });
+
+
+        it('should set error state if API returns an error', async () => {
+            const mockError: ApiError = { code: 'UPDATE_FAILED', message: 'Failed to update prompt' };
+            const mockResponse: ApiResponse<DialecticProject> = { error: mockError, status: 500 };
+            (mockDialecticApi.updateDialecticProjectInitialPrompt as Mock).mockResolvedValue(mockResponse);
+
+            const { updateDialecticProjectInitialPrompt } = useDialecticStore.getState();
+            const result = await updateDialecticProjectInitialPrompt(payload);
+
+            expect(result.error).toEqual(mockError);
+            expect(result.status).toBe(500);
+
+            const state = useDialecticStore.getState();
+            expect(state.isUpdatingProjectPrompt).toBe(false);
+            expect(state.projectDetailError).toEqual(mockError);
+            // Ensure original project data is not changed
+            expect(state.currentProjectDetail?.initial_user_prompt).toBe(oldInitialPrompt);
+            expect(state.projects.find(p => p.id === projectId)?.initial_user_prompt).toBe(oldInitialPrompt);
+        });
+
+        it('should set network error state if API call throws', async () => {
+            const networkErrorMessage = 'Network connection failed';
+            (mockDialecticApi.updateDialecticProjectInitialPrompt as Mock).mockRejectedValue(new Error(networkErrorMessage));
+
+            const { updateDialecticProjectInitialPrompt } = useDialecticStore.getState();
+            const result = await updateDialecticProjectInitialPrompt(payload);
+            
+            const expectedError: ApiError = { message: networkErrorMessage, code: 'NETWORK_ERROR' };
+            expect(result.error).toEqual(expectedError);
+            expect(result.status).toBe(0);
+
+            const state = useDialecticStore.getState();
+            expect(state.isUpdatingProjectPrompt).toBe(false);
+            expect(state.projectDetailError).toEqual(expectedError);
+        });
+
+        it('should set loading state during the update operation', () => {
+            (mockDialecticApi.updateDialecticProjectInitialPrompt as Mock).mockReturnValue(new Promise(() => {})); // Pending promise
+
+            const { updateDialecticProjectInitialPrompt } = useDialecticStore.getState();
+            updateDialecticProjectInitialPrompt(payload); // Do not await
+
+            const state = useDialecticStore.getState();
+            expect(state.isUpdatingProjectPrompt).toBe(true);
+            expect(state.projectDetailError).toBeNull();
+            expect(mockDialecticApi.updateDialecticProjectInitialPrompt).toHaveBeenCalledWith(payload);
+        });
+    });
 });

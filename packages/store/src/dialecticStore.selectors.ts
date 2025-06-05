@@ -4,7 +4,8 @@ import type {
     AIModelCatalogEntry, 
     ApiError, 
     DomainTagDescriptor,
-    DomainOverlayDescriptor
+    DomainOverlayDescriptor,
+    DialecticSession
 } from '@paynless/types';
 
 // Selector for the list of available domain tags
@@ -77,6 +78,18 @@ export const selectIsLoadingProjectDetail = (state: DialecticStateValues): boole
 // Selector for any error related to fetching project detail
 export const selectProjectDetailError = (state: DialecticStateValues): ApiError | null => state.projectDetailError;
 
+// Selector for the current project initial prompt
+export const selectCurrentProjectInitialPrompt = (state: DialecticStateValues): string | undefined => 
+  state.currentProjectDetail?.initial_user_prompt;
+
+// Selector for the current project sessions
+export const selectCurrentProjectSessions = (state: DialecticStateValues): DialecticSession[] | undefined => 
+  state.currentProjectDetail?.sessions;
+
+// Selector for the project prompt update status
+export const selectIsUpdatingProjectPrompt = (state: DialecticStateValues): boolean => 
+  state.isUpdatingProjectPrompt;
+
 // Selector for the model catalog
 export const selectModelCatalog = (state: DialecticStateValues): AIModelCatalogEntry[] => state.modelCatalog;
 
@@ -100,6 +113,14 @@ export const selectStartSessionError = (state: DialecticStateValues): ApiError |
 
 // Selector for the contribution content cache
 export const selectContributionContentCache = (state: DialecticStateValues) => state.contributionContentCache;
+
+// Selector for the current project ID
+export const selectCurrentProjectId = (state: DialecticStateValues): string | undefined => 
+  state.currentProjectDetail?.id;
+
+// Selector for the start new session modal status
+export const selectIsStartNewSessionModalOpen = (state: DialecticStateValues): boolean => 
+  state.isStartNewSessionModalOpen;
 
 // Example of how you might use these with the store hook directly in a component:
 // import { useDialecticStore } from './dialecticStore';

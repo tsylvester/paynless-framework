@@ -11,7 +11,8 @@ import type {
     UpdateProjectDomainTagPayload,
     DomainOverlayDescriptor,
     UploadProjectResourceFilePayload,
-    DialecticProjectResource
+    DialecticProjectResource,
+    UpdateProjectInitialPromptPayload
 } from '@paynless/types'; 
 
 // --- Dialectic Client Mock Setup ---
@@ -29,6 +30,7 @@ export type MockDialecticApiClient = {
     deleteProject: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<void>>>>;
     cloneProject: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<DialecticProject>>>>;
     exportProject: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<{ export_url: string }>>>>;
+    updateDialecticProjectInitialPrompt: ReturnType<typeof vi.fn<[payload: UpdateProjectInitialPromptPayload], Promise<ApiResponse<DialecticProject>>>>;
 };
 
 // Typed vi.fn() calls
@@ -46,6 +48,7 @@ export const mockDialecticClientInstance: MockDialecticApiClient = {
     deleteProject: vi.fn<[string], Promise<ApiResponse<void>>>(),
     cloneProject: vi.fn<[string], Promise<ApiResponse<DialecticProject>>>(),
     exportProject: vi.fn<[string], Promise<ApiResponse<{ export_url: string }>>>(),
+    updateDialecticProjectInitialPrompt: vi.fn<[UpdateProjectInitialPromptPayload], Promise<ApiResponse<DialecticProject>>>(),
 };
 
 // Moved reset logic into its own function
@@ -64,6 +67,7 @@ export function resetMockDialecticClient(instance?: MockDialecticApiClient) {
   clientToReset.deleteProject.mockReset();
   clientToReset.cloneProject.mockReset();
   clientToReset.exportProject.mockReset();
+  clientToReset.updateDialecticProjectInitialPrompt.mockReset();
 }
 
 /**
