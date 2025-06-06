@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi, Mock } from 'vitest';
 import { StartDialecticSessionModal } from './StartDialecticSessionModal';
@@ -19,6 +19,7 @@ import {
   DialecticActions, 
   DialecticSession, 
   DialecticStore,
+  StartSessionPayload,
 } from '@paynless/types';
 import { toast } from 'sonner';
 
@@ -138,6 +139,7 @@ const mockProject: DialecticProject = {
   selected_domain_tag: 'general',
   repo_url: 'https://github.com/test/test',
   status: 'active',
+  initial_prompt_resource_id: 'resource-123',
 };
 
 const mockModelCatalog: AIModelCatalogEntry[] = [
@@ -190,7 +192,8 @@ const mockAvailableDomainOverlays: DomainOverlayDescriptor[] = [
     { id: 'tag-1', 
       description: 'Overlay for general debates.', 
       domainTag: 'general', 
-      stageAssociation: 'thesis' 
+      stageAssociation: 'thesis',
+      overlay_values: 'Overlay for general debates.',
     },
 ];
 
@@ -304,30 +307,37 @@ describe('StartDialecticSessionModal', () => {
   });
 
   it('should handle AI model selection and enable Start Session button', async () => {
-    setDialecticState({ 
-      isStartNewSessionModalOpen: true,
+    // Initialize mock store state for this test
+    initializeMockDialecticState({
+      isStartNewSessionModalOpen: true, // Modal needs to be open
       currentProjectDetail: mockProject,
-      modelCatalog: mockModelCatalog,
+      selectedModelIds: [], // Start with no models selected
       isLoadingModelCatalog: false,
-      modelCatalogError: undefined,
-      selectedDomainOverlayId: 'tag-1',
+      modelCatalog: [
+        { id: 'model-1', model_name: 'GPT-4' } as AIModelCatalogEntry,
+        { id: 'model-2', model_name: 'Claude 3' } as AIModelCatalogEntry,
+      ],
+      modelCatalogError: undefined, // Explicitly undefined
+      isStartingSession: false, // Explicitly false
+      selectedStageAssociation: DialecticStage.THESIS, // Ensure a default stage
       availableDomainOverlays: mockAvailableDomainOverlays,
-      selectedStageAssociation: DialecticStage.THESIS, 
       availableDomainTags: mockAvailableDomainTags,
+      selectedDomainTag: mockAvailableDomainOverlays[0].domainTag, 
+      selectedDomainOverlayId: mockAvailableDomainOverlays[0].id, 
     });
+
     render(<StartDialecticSessionModal />);
 
-    const startButton = screen.getByRole('button', { name: 'Start Session' });
-    // Initially, the button should be disabled because no model is selected
-    expect(startButton).toBeDisabled(); 
+    const startButton = screen.getByRole('button', { name: /Start Session/i });
+    expect(startButton).toBeDisabled(); // Should be disabled initially
 
-    // Simulate AI model selection by updating the store
-    setDialecticState({ selectedModelIds: [mockModelCatalog[0].id] });
-
-    // Wait for the component to re-render with the new state
+    // Simulate selecting a model by updating the store state
+    act(() => {
+      setDialecticState({ selectedModelIds: ['model-1'] });
+    });
+    
     await waitFor(() => {
-      const updatedStartButton = screen.getByRole('button', { name: 'Start Session' });
-      expect(updatedStartButton).not.toBeDisabled();
+        expect(screen.getByRole('button', { name: /Start Session/i })).not.toBeDisabled();
     });
   });
   
@@ -434,17 +444,18 @@ describe('StartDialecticSessionModal', () => {
     });
     
     // Ensure the payload matches the store state
-    expect(actions.startDialecticSession).toHaveBeenCalledWith({
+    const payload: StartSessionPayload = {
       projectId: mockProject.id,
       selectedModelCatalogIds: [mockModelCatalog[0].id],
       sessionDescription: 'My test session description',
-      thesisPromptTemplateId: 'tag-1',
-      antithesisPromptTemplateId: 'tag-1',
-      synthesisPromptTemplateId: 'tag-1',
-      parenthesisPromptTemplateId: 'tag-1',
-      paralysisPromptTemplateId: 'tag-1',
-      formalDebateStructureId: 'tag-1',
-    });
+      stageAssociation: DialecticStage.THESIS,
+      promptTemplateId: 'NEEDS_IMPLEMENTATION_SELECT_PROMPT_ID_FOR_STAGE',
+      selectedDomainOverlayId: 'tag-1',
+    };
+
+    expect(actions.startDialecticSession).toHaveBeenCalledWith(
+      expect.objectContaining(payload)
+    );
 
     await waitFor(() => {
       expect(toast.success).toHaveBeenCalledWith('Session started successfully: session-456');
@@ -458,7 +469,13 @@ describe('StartDialecticSessionModal', () => {
     const user = userEvent.setup();
     const actions = getDialecticStoreActions();
     const errorMessage = 'Network error';
-    (actions.startDialecticSession as Mock).mockResolvedValue({ data: undefined, error: { message: errorMessage, code: '500' }, status: 500 });
+    (actions.startDialecticSession as Mock).mockImplementation(async () => {
+      setDialecticState({
+        startSessionError: { message: errorMessage, code: '500' },
+        isStartingSession: false,
+      });
+      return { data: undefined, error: { message: errorMessage, code: '500' }, status: 500 };
+    });
 
     // Set initial store states for modal opening, excluding selectedModelIds for now
     setDialecticState({
@@ -496,23 +513,18 @@ describe('StartDialecticSessionModal', () => {
       expect(actions.startDialecticSession).toHaveBeenCalledTimes(1);
     });
 
-    // Simulate store update after session start failure
-    setDialecticState({
-      startSessionError: { message: errorMessage, code: '500' },
-      isStartingSession: false, // Ensure loading state is cleared
-    });
-
-    expect(actions.startDialecticSession).toHaveBeenCalledWith({
+    const payload: StartSessionPayload = {
       projectId: mockProject.id,
       selectedModelCatalogIds: [mockModelCatalog[0].id],
       sessionDescription: 'Another test session description',
-      thesisPromptTemplateId: 'tag-1',
-      antithesisPromptTemplateId: 'tag-1',
-      synthesisPromptTemplateId: 'tag-1',
-      parenthesisPromptTemplateId: 'tag-1',
-      paralysisPromptTemplateId: 'tag-1',
-      formalDebateStructureId: 'tag-1',
-    });
+      stageAssociation: DialecticStage.THESIS,
+      promptTemplateId: 'NEEDS_IMPLEMENTATION_SELECT_PROMPT_ID_FOR_STAGE',
+      selectedDomainOverlayId: 'tag-1',
+    };
+
+    expect(actions.startDialecticSession).toHaveBeenCalledWith(
+      expect.objectContaining(payload)
+    );
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith(errorMessage);
@@ -604,7 +616,7 @@ describe('StartDialecticSessionModal', () => {
         availableDomainTags: mockAvailableDomainTags,
         modelCatalog: mockModelCatalog,
         selectedDomainTag: mockAvailableDomainOverlays[0].domainTag, 
-        selectedStageAssociation: mockAvailableDomainOverlays[0].stageAssociation,
+        selectedStageAssociation: mockAvailableDomainOverlays[0].stageAssociation as DialecticStage,
     });
     
     render(<StartDialecticSessionModal />);

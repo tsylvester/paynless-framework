@@ -143,7 +143,35 @@ export async function uploadProjectResourceFileHandler(
         return { error: { message: 'Failed to create resource, record not found after insert.', status: 500, code: 'DB_INSERT_UNEXPECTED_MISSING' } };
     }
 
-    loggerInstance.info('Project resource created successfully', { resourceId: dbResource.id, projectId });
+    // 6. Link resource to project if it's an initial prompt resource
+    // (This assumes that if a file is uploaded via this endpoint in the context of project creation,
+    // it's meant to be the initial prompt resource. The frontend logic should ensure
+    // initialUserPrompt is empty in the CreateProjectPayload if this flow is used for the initial prompt.)
+    const { error: updateProjectError } = await dbAdminClient
+      .from('dialectic_projects')
+      .update({ initial_prompt_resource_id: dbResource.id })
+      .eq('id', projectId);
+
+    if (updateProjectError) {
+      loggerInstance.error('Failed to link project resource to dialectic_project', { 
+        projectId, 
+        resourceId: dbResource.id, 
+        error: updateProjectError 
+      });
+      // Even if linking fails, the resource is created. 
+      // Depending on desired atomicity, this could be a rollback point or just a warning.
+      // For now, treating as a critical error for the operation's intent.
+      return { 
+        error: { 
+          message: 'Resource created but failed to link to project.', 
+          status: 500, 
+          details: updateProjectError.message, 
+          code: 'DB_PROJECT_LINK_ERROR' 
+        }
+      };
+    }
+
+    loggerInstance.info('Project resource created and linked successfully', { resourceId: dbResource.id, projectId });
     return {
       data: {
         message: 'File uploaded and resource created successfully.',

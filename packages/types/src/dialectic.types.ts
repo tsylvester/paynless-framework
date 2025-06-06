@@ -12,7 +12,8 @@ export interface DialecticProject {
     id: string;
     user_id: string;
     project_name: string;
-    initial_user_prompt: string;
+    initial_user_prompt?: string | null; // This will be empty if initial_prompt_resource_id is set
+    initial_prompt_resource_id?: string | null; // FK to dialectic_contributions.id
     selected_domain_overlay_id: string | null;
     selected_domain_tag: string | null;
     repo_url: string | null;
@@ -25,9 +26,10 @@ export interface DialecticProject {
 
 export interface CreateProjectPayload {
     projectName: string;
-    initialUserPrompt: string;
+    initialUserPrompt?: string | null;
     selectedDomainTag?: string | null;
     selected_domain_overlay_id?: string | null;
+    promptFile?: DialecticProjectResource | null;
 }
 
 export interface DeleteProjectPayload {
@@ -40,15 +42,12 @@ export interface GetContributionContentSignedUrlPayload {
 
 export interface StartSessionPayload {
     projectId: string;
-    selectedModelCatalogIds: string[];
     sessionDescription?: string | null;
+    selectedModelCatalogIds: string[];
     originatingChatId?: string | null;
-    thesisPromptTemplateId?: string;
-    antithesisPromptTemplateId?: string;
-    synthesisPromptTemplateId?: string;
-    parenthesisPromptTemplateId?: string;
-    paralysisPromptTemplateId?: string;
-    formalDebateStructureId?: string | null;
+    stageAssociation: DialecticStage;
+    selectedDomainOverlayId?: string | null;
+    promptTemplateId?: string | null;
     maxIterations?: number;
 }
 

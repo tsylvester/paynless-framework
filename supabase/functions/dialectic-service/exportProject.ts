@@ -31,7 +31,7 @@ function slugify(text: string): string {
 // --- END: Helper Functions ---
 
 type Project = Database['public']['Tables']['dialectic_projects']['Row'];
-type Resource = Database['public']['Tables']['dialectic_project_resources']['Row'];
+type ProjectResource = Database['public']['Tables']['dialectic_project_resources']['Row'];
 type Session = Database['public']['Tables']['dialectic_sessions']['Row'];
 type Contribution = Database['public']['Tables']['dialectic_contributions']['Row'];
 // type DialecticSessionModel = Database['public']['Tables']['dialectic_session_models']['Row']; // Not directly used in current export
@@ -39,7 +39,7 @@ type Contribution = Database['public']['Tables']['dialectic_contributions']['Row
 
 interface ProjectManifest {
     project: Project;
-    resources: Resource[];
+    resources: ProjectResource[];
     sessions: Array<Session & {
         contributions: Contribution[];
         // models: DialecticSessionModel[]; // Future: export models
@@ -143,7 +143,7 @@ export async function exportProject(
                 if (resource.storage_path && resource.file_name) {
                     try {
                         const { data: fileBlob, error: downloadError } = await supabaseClient.storage
-                            .from(resource.storage_bucket || 'dialectic-project-resources') // Fallback bucket
+                            .from(resource.storage_bucket || 'dialectic-contributions') // Fallback bucket
                             .download(resource.storage_path);
 
                         if (downloadError) {

@@ -2,11 +2,13 @@
 import { 
     StartSessionPayload, 
     StartSessionSuccessResponse, 
+    DialecticStage,
 } from "./dialectic.interface.ts";
-import { createSupabaseClient as originalCreateSupabaseClient } from "../_shared/auth.ts";
+import { createSupabaseClient } from "../_shared/auth.ts";
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../types_db.ts";
-import { logger as originalLogger, type Logger } from "../_shared/logger.ts";
+import { logger } from "../_shared/logger.ts";
+import type { ILogger } from "../_shared/types.ts";
 
 console.log("startSession function started");
 
@@ -14,24 +16,23 @@ console.log("startSession function started");
 export interface StartSessionDeps {
   createSupabaseClient: (req: Request) => SupabaseClient;
   randomUUID: () => string;
-  logger: Logger;
+  logger: ILogger;
 }
 
 // Define default dependencies
 const defaultStartSessionDeps: StartSessionDeps = {
-  createSupabaseClient: originalCreateSupabaseClient,
+  createSupabaseClient: createSupabaseClient,
   randomUUID: () => crypto.randomUUID(),
-  logger: originalLogger,
+  logger: logger,
 };
 
 export async function startSession(
   req: Request, // For user authentication
-  dbClient: SupabaseClient<Database>, // Corrected type
+  dbClient: SupabaseClient<Database>,
   payload: StartSessionPayload,
   partialDeps?: Partial<StartSessionDeps> 
 ): Promise<{ data?: StartSessionSuccessResponse; error?: { message: string; status?: number; details?: string, code?: string } }> {
   const deps = { ...defaultStartSessionDeps, ...partialDeps };
-  // Revert to const as logger methods are not reassigned by the function itself
   const { createSupabaseClient, randomUUID, logger } = deps;
 
   logger.info(`startSession called with payload: ${JSON.stringify(payload)}`);
@@ -45,7 +46,6 @@ export async function startSession(
   const userId = userSession.user.id;
   logger.info(`[startSession] User ${userId} authenticated.`);
 
-  // Explicitly check for originatingChatId
   let associatedChatIdToUse: string;
   if (payload.originatingChatId) {
     logger.info(`[startSession] Using provided originatingChatId: ${payload.originatingChatId}`);
@@ -57,7 +57,7 @@ export async function startSession(
 
   const { data: project, error: projectError } = await dbClient
     .from('dialectic_projects')
-    .select('id, user_id, initial_user_prompt, selected_domain_tag')
+    .select('id, user_id, initial_user_prompt, selected_domain_tag, selected_domain_overlay_id')
     .eq('id', payload.projectId)
     .eq('user_id', userId)
     .single();
@@ -69,60 +69,91 @@ export async function startSession(
   }
   logger.info(`[startSession] Project ${project.id} details fetched.`);
 
-  // 2. Fetch prompt template IDs (thesis, antithesis)
-  let thesisPromptId: string | null = null;
-  let antithesisPromptId: string | null = null;
-  let thesisPromptText: string | null = null;
+  // Fetch system prompt based on project's selected_domain_overlay_id or payload.promptTemplateId
+  let systemPromptId: string | null = null;
+  let systemPromptText: string | null = null;
 
   try {
-    logger.info(`[startSession] Fetching thesis prompt for project ${project.id}, template name: ${payload.thesisPromptTemplateName || "default"}, context: ${project.selected_domain_tag || 'general'}`);
-    let thesisQuery = dbClient.from('system_prompts').select('id, prompt_text').eq('is_active', true);
-    if (payload.thesisPromptTemplateName) {
-      thesisQuery = thesisQuery.eq('name', payload.thesisPromptTemplateName);
-    } else {
-      thesisQuery = thesisQuery.eq('stage_association', 'thesis').eq('is_stage_default', true)
-                   .eq('context', project.selected_domain_tag || 'general');
-    }
-    const { data: thesisP, error: thesisErr } = await thesisQuery.maybeSingle(); 
-    if (thesisErr) throw new Error(`Error fetching thesis prompt: ${thesisErr.message}`);
-    if (!thesisP) throw new Error(`No suitable thesis prompt found for name '${payload.thesisPromptTemplateName || "default"}' or default for context '${project.selected_domain_tag || 'general'}'`);
-    thesisPromptId = thesisP.id;
-    thesisPromptText = thesisP.prompt_text;
-    logger.info(`[startSession] Thesis prompt ID ${thesisPromptId} fetched.`);
+    if (payload.promptTemplateId) {
+        logger.info(`[startSession] Using provided promptTemplateId: ${payload.promptTemplateId}`);
+        const { data: directPrompt, error: directPromptErr } = await dbClient
+            .from('system_prompts')
+            .select('id, prompt_text')
+            .eq('id', payload.promptTemplateId)
+            .eq('is_active', true)
+            .single();
+        if (directPromptErr) throw new Error(`Error fetching prompt by direct ID ${payload.promptTemplateId}: ${directPromptErr.message}`);
+        if (!directPrompt) throw new Error(`No active prompt found for ID ${payload.promptTemplateId}`);
+        systemPromptId = directPrompt.id;
+        systemPromptText = directPrompt.prompt_text;
+    } else if (project.selected_domain_overlay_id) {
+      logger.info(`[startSession] Fetching system_prompt_id from domain_specific_prompt_overlays for overlay ID: ${project.selected_domain_overlay_id}`);
+      const { data: overlay, error: overlayErr } = await dbClient
+        .from('domain_specific_prompt_overlays')
+        .select('system_prompt_id')
+        .eq('id', project.selected_domain_overlay_id)
+        .single();
 
-    logger.info(`[startSession] Fetching antithesis prompt for project ${project.id}, template name: ${payload.antithesisPromptTemplateName || "default"}, context: ${project.selected_domain_tag || 'general'}`);
-    let antithesisQuery = dbClient.from('system_prompts').select('id').eq('is_active', true);
-    if (payload.antithesisPromptTemplateName) {
-      antithesisQuery = antithesisQuery.eq('name', payload.antithesisPromptTemplateName);
+      if (overlayErr) throw new Error(`Error fetching domain_specific_prompt_overlay: ${overlayErr.message}`);
+      if (!overlay || !overlay.system_prompt_id) throw new Error(`Domain overlay ${project.selected_domain_overlay_id} not found or has no system_prompt_id.`);
+      
+      logger.info(`[startSession] Fetched system_prompt_id: ${overlay.system_prompt_id}. Now fetching prompt text.`);
+      const { data: promptFromOverlay, error: promptFromOverlayErr } = await dbClient
+        .from('system_prompts')
+        .select('id, prompt_text')
+        .eq('id', overlay.system_prompt_id)
+        .eq('is_active', true)
+        .single();
+      
+      if (promptFromOverlayErr) throw new Error(`Error fetching system prompt using ID from overlay (${overlay.system_prompt_id}): ${promptFromOverlayErr.message}`);
+      if (!promptFromOverlay) throw new Error(`No active system prompt found for ID ${overlay.system_prompt_id} (linked from overlay ${project.selected_domain_overlay_id})`);
+      
+      systemPromptId = promptFromOverlay.id;
+      systemPromptText = promptFromOverlay.prompt_text;
     } else {
-      antithesisQuery = antithesisQuery.eq('stage_association', 'antithesis').eq('is_stage_default', true)
-                   .eq('context', project.selected_domain_tag || 'general');
+      // Fallback or default logic if neither promptTemplateId nor selected_domain_overlay_id is present
+      // This might involve fetching a generic default based on stageAssociation or other criteria
+      logger.info(`[startSession] No promptTemplateId or project.selected_domain_overlay_id. Fetching default prompt for stage: ${payload.stageAssociation}, context: ${project.selected_domain_tag || 'general'}`);
+      const { data: defaultPrompt, error: defaultPromptErr } = await dbClient
+        .from('system_prompts')
+        .select('id, prompt_text')
+        .eq('is_active', true)
+        .eq('stage_association', payload.stageAssociation)
+        .eq('is_stage_default', true)
+        .eq('context', project.selected_domain_tag || 'general')
+        .maybeSingle(); // Use maybeSingle as a default might not exist
+      
+      if (defaultPromptErr) throw new Error(`Error fetching default prompt: ${defaultPromptErr.message}`);
+      if (!defaultPrompt) throw new Error(`No suitable default prompt found for stage '${payload.stageAssociation}' and context '${project.selected_domain_tag || 'general'}'`);
+      
+      systemPromptId = defaultPrompt.id;
+      systemPromptText = defaultPrompt.prompt_text;
     }
-    const { data: antithesisP, error: antithesisErr } = await antithesisQuery.maybeSingle();
-    if (antithesisErr) throw new Error(`Error fetching antithesis prompt: ${antithesisErr.message}`);
-    if (!antithesisP) throw new Error(`No suitable antithesis prompt found for name '${payload.antithesisPromptTemplateName || "default"}' or default for context '${project.selected_domain_tag || 'general'}'`);
-    antithesisPromptId = antithesisP.id;
-    logger.info(`[startSession] Antithesis prompt ID ${antithesisPromptId} fetched.`);
+    logger.info(`[startSession] System prompt ID ${systemPromptId} and text fetched.`);
 
   } catch (e) {
     const errorMessage = e instanceof Error ? e.message : String(e);
     logger.error("[startSession] Prompt fetching error:", { error: errorMessage });
-    return { error: { message: errorMessage, status: 400 } };
+    return { error: { message: `Prompt fetching failed: ${errorMessage}`, status: 400 } };
   }
   
-  // 3. & 5. Create dialectic_sessions record with status 'pending_thesis'
-  const sessionStatus = 'pending_thesis';
-  logger.info(`[startSession] Inserting dialectic_sessions record for project ${project.id} with status ${sessionStatus}`);
+  const sessionStage = payload.stageAssociation.toUpperCase() as Database["public"]["Enums"]["dialectic_stage_enum"]; // Ensure stage is uppercase and type-casted
+  const sessionStatus = `pending_${payload.stageAssociation.toLowerCase()}`; // e.g. pending_thesis
+
+  logger.info(`[startSession] Inserting dialectic_sessions record for project ${project.id} with stage ${sessionStage} and status ${sessionStatus}`);
   const { data: sessionData, error: sessionInsertError } = await dbClient
     .from('dialectic_sessions')
     .insert({
       project_id: project.id,
       session_description: payload.sessionDescription,
-      active_thesis_prompt_template_id: thesisPromptId,
-      active_antithesis_prompt_template_id: antithesisPromptId,
-      status: sessionStatus,
+      stage: sessionStage, // Using the new stage field
+      status: sessionStatus, // Still using status for now, can be reviewed
       iteration_count: 1, 
-      associated_chat_id: associatedChatIdToUse, 
+      associated_chat_id: associatedChatIdToUse,
+      selected_model_catalog_ids: payload.selectedModelCatalogIds, // Storing selected model IDs
+      // Removed: active_thesis_prompt_template_id, active_antithesis_prompt_template_id
+      // We will store the rendered seed prompt, not just template IDs.
+      // The actual system_prompt_id used for the first stage will be stored in the first dialectic_contribution record.
     })
     .select('id') 
     .single();
@@ -132,55 +163,36 @@ export async function startSession(
     return { error: { message: "Failed to create session.", details: sessionInsertError?.message, status: 500 } };
   }
   const newSessionId = sessionData.id;
-  logger.info(`[startSession] Session ${newSessionId} created.`);
+  logger.info(`[startSession] Session ${newSessionId} created with stage ${sessionStage}.`);
 
-  // 4. Create dialectic_session_models records
-  logger.info(`[startSession] Inserting dialectic_session_models for session ${newSessionId}`, { modelIds: payload.selectedModelCatalogIds });
-  const sessionModelsData = payload.selectedModelCatalogIds.map(modelId => ({
-    session_id: newSessionId,
-    model_id: modelId, 
-  }));
-
-  const { error: sessionModelsInsertError } = await dbClient
-    .from('dialectic_session_models')
-    .insert(sessionModelsData);
-
-  if (sessionModelsInsertError) {
-    logger.error("[startSession] Error inserting session models:", { sessionId: newSessionId, error: sessionModelsInsertError });
-    // Attempt to clean up the created session
-    logger.warn(`[startSession] Attempting to delete orphaned session ${newSessionId} due to session_models insert failure.`);
-    await dbClient.from('dialectic_sessions').delete().eq('id', newSessionId); 
-    return { error: { message: "Failed to associate models with session.", details: sessionModelsInsertError.message, status: 500 } };
-  }
-  logger.info(`[startSession] Session models associated with session ${newSessionId}.`);
-
-  // 6. Construct and store current_stage_seed_prompt
-  const currentStageSeedPrompt = `Rendered Thesis Prompt: ${thesisPromptText}
-Initial User Prompt: ${project.initial_user_prompt}`;
+  // The dialectic_session_models table is removed. Model IDs are now an array in dialectic_sessions.
+  // So, no separate insertion for dialectic_session_models is needed.
+  logger.info(`[startSession] Selected model IDs ${payload.selectedModelCatalogIds.join(', ')} stored in session ${newSessionId}.`);
   
-  logger.info(`[startSession] Updating session ${newSessionId} with current_stage_seed_prompt.`);
-  const { data: updatedSession, error: updateSessionError } = await dbClient
-    .from('dialectic_sessions')
-    .update({ current_stage_seed_prompt: currentStageSeedPrompt })
-    .eq('id', newSessionId)
-    .select('id') 
-    .single();
+  // Construct the seed prompt for the initial stage (e.g., Thesis)
+  // This prompt will be used to generate the first contribution.
+  // It should be stored in the first dialectic_contribution record, not directly in dialectic_sessions.
+  // However, the user might want to see what this initial prompt looks like.
+  const initialStageSeedPrompt = `Rendered System Prompt for ${payload.stageAssociation}:
+${systemPromptText}
 
-  if (updateSessionError || !updatedSession) {
-      logger.error("[startSession] Error updating session with seed prompt:", { sessionId: newSessionId, error: updateSessionError });
-      return { error: { message: "Failed to set initial prompt for session.", details: updateSessionError?.message, status: 500 } };
-  }
-  logger.info(`[startSession] Session ${newSessionId} updated with seed prompt.`);
+Initial User Prompt (from project):
+${project.initial_user_prompt}`;
+  
+  logger.info(`[startSession] Initial seed prompt for session ${newSessionId} constructed. This will be used for the first contribution of stage ${payload.stageAssociation}.`);
+  // The field 'current_stage_seed_prompt' was removed from 'dialectic_sessions' table.
+  // This information will now be part of the first 'dialectic_contributions' record for this session and stage.
+  // No direct update to the session record with this seed prompt is performed here.
 
-  // 7. \`startSession\` concludes. Thesis generation triggered by separate user action.
-  logger.info(`[startSession] Session ${newSessionId} started successfully. Associated chat ID for /chat interactions: ${associatedChatIdToUse}. Waiting for user to trigger thesis generation.`);
+  logger.info(`[startSession] Session ${newSessionId} started successfully. Stage: ${sessionStage}, Status: ${sessionStatus}. Associated chat ID for /chat interactions: ${associatedChatIdToUse}.`);
 
   return { 
       data: { 
           message: "Session started successfully", 
           sessionId: newSessionId, 
-          initialStatus: sessionStatus,
+          initialStatus: sessionStatus, // Consider returning 'initialStage' as well or instead
           associatedChatId: associatedChatIdToUse,
+          // Potentially return initialStageSeedPrompt or systemPromptText if useful for the client
       } 
   }; 
 }

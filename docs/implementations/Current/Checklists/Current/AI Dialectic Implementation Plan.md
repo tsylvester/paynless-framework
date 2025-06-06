@@ -375,47 +375,34 @@ The implementation plan uses the following labels to categorize work steps:
         *   `id` (UUID, primary key, default `uuid_generate_v4()`)
         *   `project_id` (UUID, foreign key to `dialectic_projects.id` on delete cascade, not nullable)
         *   `session_description` (TEXT, nullable, e.g., "Initial run with models A, B, C using default thesis prompt")
-        *   `current_stage_seed_prompt` (TEXT, nullable, the actual prompt that was used to initiate the current stage, can be a combination of user input and template)
+        *   `user_input_reference_url` (TEXT, nullable, Link to the user's collated input/selections for the current stage) **(MODIFIED/RENAMED)**
         *   `iteration_count` (INTEGER, default 1, for multi-cycle sessions later)
-        *   `active_thesis_prompt_template_id` (UUID, foreign key to `prompt_templates.id`, nullable)
-        *   `active_antithesis_prompt_template_id` (UUID, foreign key to `system_prompts.id` on delete set null, nullable)
+        *   `selected_model_catalog_ids` (UUID[], nullable, Array of `ai_providers.id` for selected models) **(NEW)**
+        *   `stage` (ENUM `dialectic_stage_enum` - e.g., 'THESIS', 'ANTITHESIS', 'SYNTHESIS', 'PARENTHESIS', 'PARALYSIS', NOT NULL) **(NEW)**
         *   `created_at` (TIMESTAMPTZ, default `now()`, not nullable)
         *   `updated_at` (TIMESTAMPTZ, default `now()`, not nullable)
         *   `status` (TEXT, e.g., `pending_thesis`, `thesis_complete`, `pending_antithesis`, `antithesis_complete`, `pending_synthesis`, `synthesis_complete`, `critique_recommended`, `complete_final_review`, `archived_failed`, `archived_incomplete`, `archived_complete`)
         *   `associated_chat_id` (UUID, nullable, tracks the `chat.id` used for interactions with the `/chat` Edge Function for this dialectic session. This allows dialectics to potentially originate from or integrate with existing chat sessions.)
+        *   (REMOVED: `current_stage_seed_prompt`, `active_thesis_prompt_template_id`, `active_antithesis_prompt_template_id`)
     *   `[✅] 1.1.2.3 [DB]` Define constraints (FKs already included with columns, add any CHECK constraints if needed for `status` or `iteration_count`).
     *   `[✅] 1.1.2.4 [REFACTOR]` Review migration script and table definition.
     *   `[✅] 1.1.2.5 [TEST-UNIT]` Run `dialectic_sessions` schema migration test. (GREEN)
-*   `[✅] 1.1.3 [DB]` Create `dialectic_session_prompts` table (or consider if columns in `dialectic_sessions` are sufficient for MVP if only one prompt pair per session iteration).
-    *   `[✅] 1.1.3.1 [TEST-UNIT]` Write migration test for `dialectic_session_prompts` table.
-    *   `[✅] 1.1.3.2 [DB]` Create migration script for `dialectic_session_prompts` table.
-    *   `[✅] 1.1.3.3 [DB]` Update `types_db.ts` for `dialectic_session_prompts`.
-    *   `[✅] 1.1.3.4 [RLS]` Define RLS policies for `dialectic_session_prompts` table.
-        *   Policy Details:
-            *   **Service Role Access**: Full access (SELECT, INSERT, UPDATE, DELETE).
-            *   **Authenticated User Access (Project/Session Ownership Based)**:
-                *   **SELECT**: Users can SELECT if they own the associated `dialectic_project`.
-                    *   `USING`: `EXISTS (SELECT 1 FROM dialectic_sessions ds JOIN dialectic_projects dp ON ds.project_id = dp.id WHERE ds.id = dialectic_session_prompts.session_id AND dp.user_id = auth.uid())`
-                *   **INSERT**: Users can INSERT if they own the associated `dialectic_project` for the `NEW.session_id`.
-                    *   `WITH CHECK`: `EXISTS (SELECT 1 FROM dialectic_sessions ds JOIN dialectic_projects dp ON ds.project_id = dp.id WHERE ds.id = NEW.session_id AND dp.user_id = auth.uid())`
-                *   **UPDATE**: Users can UPDATE if they own the associated `dialectic_project`.
-                    *   `USING`: `EXISTS (SELECT 1 FROM dialectic_sessions ds JOIN dialectic_projects dp ON ds.project_id = dp.id WHERE ds.id = dialectic_session_prompts.session_id AND dp.user_id = auth.uid())`
-                    *   `WITH CHECK`: `EXISTS (SELECT 1 FROM dialectic_sessions ds JOIN dialectic_projects dp ON ds.project_id = dp.id WHERE ds.id = NEW.session_id AND dp.user_id = auth.uid())` (assuming session_id is not changed, otherwise OLD.session_id for the check part related to the original row context if session_id were mutable).
-                *   **DELETE**: Users can DELETE if they own the associated `dialectic_project`.
-                    *   `USING`: `EXISTS (SELECT 1 FROM dialectic_sessions ds JOIN dialectic_projects dp ON ds.project_id = dp.id WHERE ds.id = dialectic_session_prompts.session_id AND dp.user_id = auth.uid())`
-    *   `[✅] 1.1.3.5 [TEST-INT]` Write RLS tests for `dialectic_session_prompts`.
-*   `[✅] 1.1.4 [DB]` Create `dialectic_session_models` table (associative table for models participating in a session).
-    *   `[✅] 1.1.4.1 [TEST-UNIT]` Write migration test for `dialectic_session_models` table. (GREEN)
-    *   `[✅] 1.1.4.2` Define columns:
-        *   `id` (UUID, primary key, default `uuid_generate_v4()`)
-        *   `session_id` (UUID, foreign key to `dialectic_sessions.id` on delete cascade, not nullable)
-        *   `model_id` (TEXT, not nullable, e.g., "openai/gpt-4", "anthropic/claude-3-opus". This will later be validated against `ai_models_catalog.id`).
-        *   `model_role` (TEXT, nullable, e.g., "thesis_generator", "critiquer", for future advanced role assignment; for Phase 1, all models generate thesis and critique others)
-        *   `created_at` (TIMESTAMPTZ, default `now()`)
-    *   `[✅] 1.1.4.3` Add unique constraint on (`session_id`, `model_id`).
-    *   `[✅] 1.1.4.4` Create Supabase migration script for `dialectic_session_models`. (GREEN)
-    *   `[✅] 1.1.4.5 [REFACTOR]` Review migration script.
-    *   `[✅] 1.1.4.6 [TEST-UNIT]` Run migration test. (GREEN)
+*   `[✅] 1.1.3 [DB]` ~~Create `dialectic_session_prompts` table~~ **DEPRECATED/REMOVED**.
+    *   This table is no longer needed. The functionality of storing the fully rendered prompt sent to the agent is now handled by `dialectic_contributions.seed_prompt_url` (which links to the prompt file in storage).
+    *   ~~`[✅] 1.1.3.1 [TEST-UNIT]` Write migration test for `dialectic_session_prompts` table.~~
+    *   ~~`[✅] 1.1.3.2 [DB]` Create migration script for `dialectic_session_prompts` table.~~
+    *   ~~`[✅] 1.1.3.3 [DB]` Update `types_db.ts` for `dialectic_session_prompts`.~~
+    *   ~~`[✅] 1.1.3.4 [RLS]` Define RLS policies for `dialectic_session_prompts` table.~~
+        *   ~~Policy Details: ...~~
+    *   ~~`[✅] 1.1.3.5 [TEST-INT]` Write RLS tests for `dialectic_session_prompts`.~~
+*   `[✅] 1.1.4 [DB]` ~~Create `dialectic_session_models` table~~ **DEPRECATED/REMOVED**.
+    *   This table is no longer needed. The list of selected models is stored in `dialectic_sessions.selected_model_catalog_ids` (array of UUIDs). The specific model used for a contribution is recorded in `dialectic_contributions.model_id`.
+    *   ~~`[✅] 1.1.4.1 [TEST-UNIT]` Write migration test for `dialectic_session_models` table. (GREEN)~~
+    *   ~~`[✅] 1.1.4.2` Define columns: ...~~
+    *   ~~`[✅] 1.1.4.3` Add unique constraint on (`session_id`, `model_id`).~~
+    *   ~~`[✅] 1.1.4.4` Create Supabase migration script for `dialectic_session_models`. (GREEN)~~
+    *   ~~`[✅] 1.1.4.5 [REFACTOR]` Review migration script.~~
+    *   ~~`[✅] 1.1.4.6 [TEST-UNIT]` Run migration test. (GREEN)~~
 *   `[✅] 1.1.5 [DB]` Create `dialectic_contributions` table.
     *   `[✅] 1.1.5.1 [TEST-UNIT]` Write migration test for `dialectic_contributions` table. (RED -> GREEN)
         *   `[✅] 1.1.5.1.1` Test for correct column definitions (name, type, nullability, defaults - including `content` and `content_format` being TEXT and nullable for now).
@@ -428,9 +415,30 @@ The implementation plan uses the following labels to categorize work steps:
         *   `[✅] 1.1.5.1.8` Test for new storage path columns: `raw_content_storage_path`, `structured_content_storage_path` (TEXT, nullable).
         *   `[✅] 1.1.5.1.9` Test for original content columns `content`, `content_format` are now nullable (or removed if plan shifts). - *They are nullable per current schema.*
         *   `[✅] 1.1.5.1.A` Test for FK delete rules (`ON DELETE CASCADE` for `session_id`, `ON DELETE SET NULL` for `user_id` and `parent_contribution_id`).
-    *   `[✅] 1.1.5.3` Create Supabase migration script for `dialectic_contributions` with these storage-oriented columns. (GREEN)
-    *   `[✅] 1.1.5.4 [REFACTOR]` Review migration script.
-    *   `[✅] 1.1.5.5 [TEST-UNIT]` Run migration schema test. (GREEN)
+    *   `[✅] 1.1.5.2` Define columns for `dialectic_contributions`:
+        *   `id` (UUID, primary key, default `uuid_generate_v4()`)
+        *   `session_id` (UUID, foreign key to `dialectic_sessions.id` on delete cascade, not nullable)
+        *   `model_id` (UUID, foreign key to `ai_providers.id` on delete set null, nullable) **(NEW)** - Identifies the AI model used.
+        *   `model_name` (TEXT, nullable) **(NEW)** - Snapshot of the model's name for historical reference.
+        *   `stage` (TEXT, not nullable, e.g., 'thesis', 'antithesis', 'synthesis') - Current definition (was `contribution_type`).
+        *   `iteration_number` (INTEGER, not nullable, default 1) - Tracks iteration within the stage for the session.
+        *   `prompt_template_id_used` (UUID, foreign key to `system_prompts.id` on delete set null, nullable)
+        *   `seed_prompt_url` (TEXT, nullable - URL to the final, fully compiled prompt file sent to the agent) **(RENAMED from `actual_prompt_sent`)**
+        *   `content_storage_bucket` (TEXT, nullable)
+        *   `content_storage_path` (TEXT, nullable)
+        *   `content_mime_type` (TEXT, nullable)
+        *   `content_size_bytes` (BIGINT, nullable)
+        *   `raw_response_storage_path` (TEXT, nullable)
+        *   `target_contribution_id` (UUID, foreign key to `dialectic_contributions.id` on delete set null, nullable)
+        *   `tokens_used_input` (INTEGER, nullable)
+        *   `tokens_used_output` (INTEGER, nullable)
+        *   `processing_time_ms` (INTEGER, nullable)
+        *   `error` (TEXT, nullable)
+        *   `citations` (JSONB, nullable)
+        *   `created_at` (TIMESTAMPTZ, default `now()`, not nullable)
+        *   `updated_at` (TIMESTAMPTZ, default `now()`, not nullable)
+        *   (REMOVED: `session_model_id`, `actual_prompt_sent` - which was renamed)
+        *   (Existing but not listed above and kept: `user_id`, `content`, `content_format`, `notes`, `cost_usd` needs review if still present/needed)
 *   `[✅] 1.1.5.A [BE/CONFIG]` Supabase Storage Setup & Utility Functions
     *   `[✅] 1.1.5.A.1 [CONFIG]` Create Supabase Storage Bucket named `dialectic-contributions` (note: no underscores) and define initial RLS policies.
         *   RLS Policies Configured (via Supabase Dashboard):
@@ -803,16 +811,50 @@ The implementation plan uses the following labels to categorize work steps:
 *   [✅] Project page (/dialectic/:id) shows Project ID instead of title
 *   [✅] Project page doesn't show IPS 
 *   [✅] Project page should show initial selected prompt and provide edit capability
-*   [ ] Start New Session modal incomplete
-*   [ ] Start New Session modal needs background blur
+*   [✅] Start New Session modal incomplete
+*   [✅] Start New Session modal needs background blur
+
+### Enable Org Dialectic & Notifications 
+*   [ ] Add Org Switcher to Dialectic page
+*   [ ] Add Org Dialectic toggle to Org page
 *   [ ] Add notification triggers for members joining orgs
 *   [ ] Add notification triggers for participating group chat updates 
 *   [ ] Add org access to projects 
 *   [ ] Add org projects card to org page
 *   [ ] Add notification triggers for org projects 
 *   [ ] Add Posthog triggers for every GUI interaction 
-*   [ ] 
-*   [ ]
+
+### Fix Prompt Submission
+*   [✅] Fix StartSessionPayload throughout the app
+*   [✅] Reduce nPromptTemplateId to promptTemplateId
+*   [✅] Pass the stage with the PromptTemplateId
+*   [✅] Set up table for sample_prompt additional details (This refers to `domain_specific_prompt_overlays` and user inputs)
+*   [✅] Ensure that the sample_prompt additional details have a json column and a bucket route (Overlay `overlay_values` is JSONB. User inputs will be linked via `dialectic_sessions.user_input_reference_url`)
+*   [✅] Ensure all payloads use the same structure
+*   [✅] Only one startSession function that processes the payload for each stage
+*   [✅] Fix dialectic_projects.initial_user_prompt to only populate the derived title (This refers to user input for the project, which is distinct from session-level inputs)
+*   [✅] Always attach a bucket_route to the project for user uploads (User uploads for project resources are handled by `dialectic_project_resources`. Session-specific inputs linked via `user_input_reference_url` in `dialectic_sessions`).
+*   [✅] Always attach the user_domain_overlay_values to the project
+*   [✅] Save the user's input (typed or uploaded) to the storage bucket (This will be pointed to by `dialectic_sessions.user_input_reference_url`)
+*   [✅] Ensure the user can upload, store, and send these additional fields if they wish (Via the `user_input_reference_url` mechanism)
+*   [ ] - `{domain}` - The knowledge domain (software development, finance, engineering, legal)
+*   [ ] - `{user_objective}` - The specific goal or problem to solve
+*   [ ] - `{context_description}` - Detailed description of the current situation/requirements
+*   [ ] - `{deployment_context}` - Where/how the solution will be implemented
+*   [ ] - `{domain_standards}` - Domain-specific quality standards and best practices
+*   [ ] - `{deliverable_format}` - Expected output format (code, document, plan, etc.)
+*   [ ] - `{success_criteria}` - Measurable outcomes that define success
+*   [ ] - `{constraint_boundaries}` - Non-negotiable requirements and limitations
+*   [ ] - `{stakeholder_considerations}` - Who will be affected and how
+*   [ ] - `{reference_documents}` - User-provided reference materials and existing assets
+*   [ ] - `{compliance_requirements}` - Regulatory, legal, or organizational compliance mandates
+*   [ ] - `{agent_count}` - Number of agents participating in this dialectic process (This will be derived from `dialectic_sessions.selected_model_catalog_ids.length`)
+*   [ ] - `{prior_stage_outputs}` - All outputs from the previous dialectic stage (multiple versions)
+*   [✅] Provide default values (or null) for these fields if the user doesn't supply them.
+*   [✅] Render the entire prompt payload for the user's inspection before sending to the backend (The compiled prompt for an agent will be linked via `dialectic_contributions.seed_prompt_url`)
+*   [✅] Render the entire prompt cost estimate for the user's inspection before sending to the backend
+*   [✅] Fix dialectic_sessions table to link to the current_stage_seed_prompt document as a file stored in the bucket **(Replaced by `user_input_reference_url` in `dialectic_sessions` for user input, and `seed_prompt_url` in `dialectic_contributions` for agent input)**
+
 
 {repo_root}/  (Root of the user's GitHub repository)
 └── {dialectic_outputs_base_dir_name}/ (Configurable, e.g., "ai_dialectic_sessions")

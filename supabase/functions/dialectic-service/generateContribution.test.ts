@@ -33,7 +33,6 @@ Deno.test("generateStageContributions - Happy Path (Single Model)", async () => 
     const mockChatId = "test-chat-id";
     const mockInitialPrompt = "Test initial prompt";
     const mockModelProviderId = "test-ai-provider-id"; // This is ai_providers.id
-    const mockSessionModelId = "test-session-model-id"; // This is dialectic_session_models.id
     const mockApiIdentifier = "test-api-identifier";
     const mockProviderName = "TestProvider";
     const mockModelName = "TestModel";
@@ -57,27 +56,29 @@ Deno.test("generateStageContributions - Happy Path (Single Model)", async () => 
             project_id: mockProjectId,
             status: 'pending_thesis',
             associated_chat_id: mockChatId,
+            selected_model_catalog_ids: [mockModelProviderId],
             dialectic_projects: { 
                 initial_user_prompt: mockInitialPrompt,
                 selected_domain_tag: null,
             },
-            dialectic_session_models: [
-                {
-                    id: mockSessionModelId,
-                    model_id: mockModelProviderId, 
-                    ai_providers: { 
-                        id: mockModelProviderId,
-                        provider_name: mockProviderName,
-                        model_name: mockModelName,
-                        api_identifier: mockApiIdentifier,
-                    },
-                },
-            ],
         },
         error: null,
     }));
     const mockSessionSelectEqSpy = spy((_column: string, _value: any) => ({ single: mockSessionSelectEqSingleSpy }));
     const mockSessionSelectSpy = spy(() => ({ eq: mockSessionSelectEqSpy }));
+
+    // Spies for ai_providers table
+    const mockAiProvidersSelectEqSingleSpy = spy(async () => await Promise.resolve({
+        data: {
+            id: mockModelProviderId,
+            provider: mockProviderName,
+            name: mockModelName,
+            api_identifier: mockApiIdentifier,
+        },
+        error: null,
+    }));
+    const mockAiProvidersSelectEqSpy = spy((_column: string, _value: any) => ({ single: mockAiProvidersSelectEqSingleSpy }));
+    const mockAiProvidersSelectSpy = spy(() => ({ eq: mockAiProvidersSelectEqSpy }));
 
     let capturedInsertArg: any = null; // Keep this to capture the argument for assertion
 
@@ -88,7 +89,8 @@ Deno.test("generateStageContributions - Happy Path (Single Model)", async () => 
             data: {
                 id: mockContributionId, // Keep mock ID for predictability in tests
                 session_id: capturedInsertArg.session_id || mockSessionId, // Use captured or default
-                session_model_id: capturedInsertArg.session_model_id || mockSessionModelId,
+                model_id: capturedInsertArg.model_id || mockModelProviderId,
+                model_name: capturedInsertArg.model_name || mockModelName,
                 stage: capturedInsertArg.stage || 'thesis',
                 content_storage_bucket: capturedInsertArg.content_storage_bucket,
                 content_storage_path: capturedInsertArg.content_storage_path || mockContentStoragePath,
@@ -116,34 +118,19 @@ Deno.test("generateStageContributions - Happy Path (Single Model)", async () => 
     const mockSessionUpdateEqSpy = spy(async (_column: string, _value: any) => await Promise.resolve({ error: null }));
     const mockSessionUpdateSpy = spy((_values: Partial<Database['public']['Tables']['dialectic_sessions']['Update']>) => ({ eq: mockSessionUpdateEqSpy }));
 
-    const mockDbClient: any = {
-        from: spy((tableName: string) => {
-            if (tableName === 'dialectic_sessions') {
-                // For the initial fetch of session details
-                // And for the final update of session status
-                // We need a way to differentiate or make the spies return different things based on call order or context
-                // For now, assuming the first call is select, second is update for simplicity in this structure
-                // This is fragile. A better mock would inspect the query type (select/update)
-                if (mockSessionSelectSpy.calls.length === 0) { // Crude way to distinguish select from update
-                    return { select: mockSessionSelectSpy, update: mockSessionUpdateSpy }; // Provide both for first call context
-                } else {
-                    return { update: mockSessionUpdateSpy, select: mockSessionSelectSpy }; // And for subsequent
-                }
-            } else if (tableName === 'dialectic_contributions') {
-                return {
-                    insert: mockContributionInsertSpy, // Use the refined insert spy
-                };
-            }
-            // Fallback for unexpected table name
-            console.warn(`Mock DBClient called with unexpected table: ${tableName}`);
-            return { // Provide all methods to avoid crashing if code unexpectedly calls something else
-                select: spy(() => ({ eq: spy(() => ({ single: spy(async () => await Promise.resolve({ data: null, error: { message: `Unexpected select on ${tableName}` } })) })) })),
-                insert: spy(() => ({ select: spy(() => ({ single: spy(async () => await Promise.resolve({ data: null, error: { message: `Unexpected insert on ${tableName}` } })) })) })),
-                update: spy(() => ({ eq: spy(async () => await Promise.resolve({ error: { message: `Unexpected update on ${tableName}` } })) })),
-            };
-        }),
-    };
-
+    // Refactor mockDbClient.from to use returnsNext for precise call sequence control
+    const mockDbClientFromSpy = spy(returnsNext([
+        // 1. dialectic_sessions (fetch session)
+        { select: mockSessionSelectSpy }, 
+        // 2. ai_providers (model 1)
+        { select: mockAiProvidersSelectSpy }, 
+        // Correct sequence for single model:
+        // 3. dialectic_contributions (insert for model 1 - success)
+        { insert: mockContributionInsertSpy }, 
+        // 4. dialectic_sessions (update session status)
+        { update: mockSessionUpdateSpy }, 
+    ]));
+    const mockDbClient: any = { from: mockDbClientFromSpy };
 
     const mockCallUnifiedAIModel = spy(async (
         _modelId: string, 
@@ -216,10 +203,13 @@ Deno.test("generateStageContributions - Happy Path (Single Model)", async () => 
         assertEquals(result.data?.sessionId, mockSessionId);
         assertEquals(result.data?.status, 'thesis_generation_complete');
         assertEquals(result.data?.contributions?.length, 1);
-        assertObjectMatch(result.data?.contributions?.[0] as any, {
+        
+        // Ensure properties for DialecticContribution are asserted
+        const expectedContribution: Partial<DialecticContribution> = {
             id: mockContributionId,
             session_id: mockSessionId,
-            session_model_id: mockSessionModelId,
+            model_id: mockModelProviderId,
+            model_name: mockModelName,
             stage: 'thesis',
             content_storage_path: mockContentStoragePath,
             raw_response_storage_path: mockRawResponseStoragePath,
@@ -228,19 +218,23 @@ Deno.test("generateStageContributions - Happy Path (Single Model)", async () => 
             content_size_bytes: mockFileSize,
             processing_time_ms: 1000,
             content_mime_type: mockContentType,
-        });
+        };
+        assertObjectMatch(result.data?.contributions?.[0] as any, expectedContribution as any);
+
         assertEquals(result.error, undefined);
 
         // Verify mocks were called
         const fromSpy = mockDbClient.from as Stub;
         // Expected calls: 
         // 1. dialectic_sessions (fetch session)
-        // 2. dialectic_contributions (insert contribution)
-        // 3. dialectic_sessions (update session status)
-        assertEquals(fromSpy.calls.length, 3); 
-        assertEquals(fromSpy.calls[0].args[0], 'dialectic_sessions');
-        assertEquals(fromSpy.calls[1].args[0], 'dialectic_contributions');
-        assertEquals(fromSpy.calls[2].args[0], 'dialectic_sessions');
+        // 2. ai_providers (fetch model details for mockModelProviderId)
+        // 3. dialectic_contributions (insert contribution)
+        // 4. dialectic_sessions (update session status)
+        assertEquals(fromSpy.calls.length, 4, "dbClient.from() was not called the expected number of times. Calls: " + fromSpy.calls.map(c => c.args[0]).join(', ')); 
+        assertEquals(fromSpy.calls[0].args[0], 'dialectic_sessions', "First call to from() was not for 'dialectic_sessions'");
+        assertEquals(fromSpy.calls[1].args[0], 'ai_providers', "Second call to from() was not for 'ai_providers'");
+        assertEquals(fromSpy.calls[2].args[0], 'dialectic_contributions', "Third call to from() was not for 'dialectic_contributions'");
+        assertEquals(fromSpy.calls[3].args[0], 'dialectic_sessions', "Fourth call to from() was not for 'dialectic_sessions'");
 
         // Assertions for the first call to dialectic_sessions (fetch)
         assertEquals(mockSessionSelectSpy.calls.length, 1);
@@ -277,17 +271,25 @@ Deno.test("generateStageContributions - Happy Path (Single Model)", async () => 
         assertEquals(mockGetFileMetadata.calls[0].args[1], 'dialectic-contributions');
         assertEquals(mockGetFileMetadata.calls[0].args[2], mockContentStoragePath);
 
-        // Assertions for the call to dialectic_contributions (insert)
+        // Assertions for the call to ai_providers (fetch model details)
+        assertEquals(mockAiProvidersSelectSpy.calls.length, 1, "ai_providers.select was not called once");
+        assertEquals(mockAiProvidersSelectEqSpy.calls.length, 1, "ai_providers.select().eq() was not called once");
+        assertEquals(mockAiProvidersSelectEqSpy.calls[0].args[0], 'id', "ai_providers.select().eq() was not called with 'id'");
+        assertEquals(mockAiProvidersSelectEqSpy.calls[0].args[1], mockModelProviderId, `ai_providers.select().eq() was not called with ${mockModelProviderId}`);
+        assertEquals(mockAiProvidersSelectEqSingleSpy.calls.length, 1, "ai_providers.select().eq().single() was not called once");
+
+        // Assertions for dialectic_contributions (insert)
         assertEquals(mockContributionInsertSpy.calls.length, 1);
         assertEquals(mockContributionInsertSelectSpy.calls.length, 1); // Called by mockContributionInsertSpy
         assertEquals(mockContributionInsertSelectSingleSpy.calls.length, 1); // Called by mockContributionInsertSelectSpy
         
         // Check the actual argument passed to the insert spy
-        const actualInsertArg = capturedInsertArg;
+        const actualInsertArg = mockContributionInsertSpy.calls[0].args[0];
         assertExists(actualInsertArg, "capturedInsertArg should exist after insert call"); // Ensure it exists
         assertObjectMatch(actualInsertArg as object, {
             session_id: mockSessionId,
-            session_model_id: mockSessionModelId,
+            model_id: mockModelProviderId,
+            model_name: mockModelName,
             stage: 'thesis',
             content_storage_bucket: 'dialectic-contributions',
             content_storage_path: mockContentStoragePath,
@@ -358,140 +360,169 @@ Deno.test("generateStageContributions - Happy Path (Single Model)", async () => 
         localLoggerInfo.restore();
         localLoggerError.restore();
         localLoggerWarn.restore();
+        // mockDbClientFromSpy.restore(); // This spy uses returnsNext and cannot/should not be restored.
         // mockCallUnifiedAIModel, mockUploadToStorage, etc., are now spies on new functions, not stubs on modules.
         // No restore needed for them, nor for mockRandomUUID (spy on a new function).
-        // mockDbClient spies are also from jsr, no restore needed for its `from` spy as it's on a new object.
     }
 });
 
 Deno.test("generateStageContributions - Multiple Models (some success, some fail)", async () => {
+    const localLoggerInfo = spy(logger, 'info');
+    const localLoggerError = spy(logger, 'error');
+    const localLoggerWarn = spy(logger, 'warn');
+
     const mockAuthToken = "test-auth-token-multi";
     const mockSessionId = "test-session-id-multi";
     const mockProjectId = "test-project-id-multi";
     const mockChatId = "test-chat-id-multi";
     const mockInitialPrompt = "Test initial prompt for multiple models";
 
-    const mockModelProviderId1 = "ai-provider-id-1";
-    const mockSessionModelId1 = "session-model-id-1";
-    const mockApiIdentifier1 = "api-identifier-1";
-    const mockProviderName1 = "ProviderOne";
-    const mockModelName1 = "ModelOne";
+    // Define multiple models
+    const mockModelProviderId1 = "model-id-1-success";
+    const mockProviderName1 = "Provider1";
+    const mockModelName1 = "Model1-S";
+    const mockApiIdentifier1 = "api-1";
     const mockContributionId1 = "contrib-uuid-1";
-    const mockContent1 = "Generated content from model 1.";
+    const mockContent1 = "Successful content from Model 1.";
 
-    const mockModelProviderId2 = "ai-provider-id-2";
-    const mockSessionModelId2 = "session-model-id-2";
-    const mockApiIdentifier2 = "api-identifier-2";
-    const mockProviderName2 = "ProviderTwo";
-    const mockModelName2 = "ModelTwo";
-    // No contribution ID or content for model 2 as it will fail
+    const mockModelProviderId2 = "model-id-2-fail-ai";
+    const mockProviderName2 = "Provider2";
+    const mockModelName2 = "Model2-F-AI";
+    const mockApiIdentifier2 = "api-2";
+    
+    const mockModelProviderId3 = "model-id-3-fail-upload";
+    const mockProviderName3 = "Provider3";
+    const mockModelName3 = "Model3-F-Upload";
+    const mockApiIdentifier3 = "api-3";
+    const mockContributionId3 = "contrib-uuid-3"; // Will attempt to generate this before failing upload
+    const mockContent3 = "Content from Model 3 that fails upload.";
 
-    const mockContentType = "text/markdown";
-    const mockFileExtension = ".md";
-    const mockContentStoragePath1 = `projects/${mockProjectId}/sessions/${mockSessionId}/contributions/${mockContributionId1}/thesis${mockFileExtension}`;
-    const mockRawResponseStoragePath1 = `projects/${mockProjectId}/sessions/${mockSessionId}/contributions/${mockContributionId1}/raw_thesis_response.json`;
-    const mockFileSize = 50;
+    const mockFileExtension = ".md"; // Assume same extension for simplicity
 
     const mockPayload: GenerateStageContributionsPayload = {
         sessionId: mockSessionId,
         stage: 'thesis',
     };
 
-    // --- Spies for DB client --- 
-    let capturedInsertArg1: any = null;
-    const mockContributionInsertSelectSingleSpy = spy(async () => {
-        assertExists(capturedInsertArg1, "capturedInsertArg1 must be set by mockContributionInsertSpy");
-        return await Promise.resolve({
+    const mockSessionData = {
+        id: mockSessionId,
+        project_id: mockProjectId,
+        status: 'pending_thesis',
+        associated_chat_id: mockChatId,
+        selected_model_catalog_ids: [mockModelProviderId1, mockModelProviderId2, mockModelProviderId3], // Key change
+        dialectic_projects: {
+            initial_user_prompt: mockInitialPrompt,
+            selected_domain_tag: null,
+        },
+    };
+
+    const mockSessionSelectEqSingleSpy = spy(async () => await Promise.resolve({ data: mockSessionData, error: null }));
+    const mockSessionSelectEqSpy = spy((_column: string, _value: any) => ({ single: mockSessionSelectEqSingleSpy }));
+    const mockSessionSelectSpy = spy(() => ({ eq: mockSessionSelectEqSpy }));
+
+    // Mock for ai_providers table - using returnsNext for different models
+    const mockAiProvidersSelectEqSingleSpy = spy(returnsNext([ // Changed from stub to spy
+        Promise.resolve({ // Model 1 - Success
+            data: { id: mockModelProviderId1, provider: mockProviderName1, name: mockModelName1, api_identifier: mockApiIdentifier1 },
+            error: null,
+        }),
+        Promise.resolve({ // Model 2 - AI Call Fails
+            data: { id: mockModelProviderId2, provider: mockProviderName2, name: mockModelName2, api_identifier: mockApiIdentifier2 },
+            error: null,
+        }),
+        Promise.resolve({ // Model 3 - Upload Fails
+            data: { id: mockModelProviderId3, provider: mockProviderName3, name: mockModelName3, api_identifier: mockApiIdentifier3 },
+            error: null,
+        }),
+    ]));
+    const mockAiProvidersSelectEqSpy = spy((_column: string, _value: any) => ({ single: mockAiProvidersSelectEqSingleSpy as any })); // Cast because stub type is complex
+    const mockAiProvidersSelectSpy = spy(() => ({ eq: mockAiProvidersSelectEqSpy }));
+
+
+    const capturedInsertArgs: any[] = []; // Array to capture multiple inserts
+    const mockContributionInsertSelectSingleSpyImpl = async () => {
+        const lastArg = capturedInsertArgs[capturedInsertArgs.length -1];
+        assertExists(lastArg);
+        return await Promise.resolve({ // Simulate successful DB insert for model 1 and model 3 (before its upload fails)
             data: {
-                id: mockContributionId1,
-                ...capturedInsertArg1 
+                id: lastArg.model_id === mockModelProviderId1 ? mockContributionId1 : mockContributionId3,
+                session_id: lastArg.session_id,
+                model_id: lastArg.model_id,
+                model_name: lastArg.model_name,
+                stage: lastArg.stage,
+                content_storage_bucket: lastArg.content_storage_bucket,
+                content_storage_path: lastArg.content_storage_path,
+                raw_response_storage_path: lastArg.raw_response_storage_path,
+                tokens_used_input: lastArg.tokens_used_input,
+                tokens_used_output: lastArg.tokens_used_output,
+                content_size_bytes: lastArg.content_size_bytes,
+                processing_time_ms: lastArg.processing_time_ms,
+                content_mime_type: lastArg.content_mime_type,
             },
             error: null,
         });
-    });
-    const mockContributionInsertSelectSpy = spy(() => ({ single: mockContributionInsertSelectSingleSpy }));
+    };
+    // Spy on the implementation for assertion, stub for control.
+    const spiedMockContributionInsertSelectSingle = spy(mockContributionInsertSelectSingleSpyImpl);
+    const mockContributionInsertSelectSpy = spy(() => ({ single: spiedMockContributionInsertSelectSingle as any }));
     const mockContributionInsertSpy = spy((data: any) => {
-        capturedInsertArg1 = data;
+        capturedInsertArgs.push(data);
         return { select: mockContributionInsertSelectSpy };
     });
 
     const mockSessionUpdateEqSpy = spy(async (_column: string, _value: any) => await Promise.resolve({ error: null }));
     const mockSessionUpdateSpy = spy((_values: Partial<Database['public']['Tables']['dialectic_sessions']['Update']>) => ({ eq: mockSessionUpdateEqSpy }));
 
-    const mockSessionSelectEqSingleSpy = spy(async () => await Promise.resolve({
-        data: {
-            id: mockSessionId,
-            project_id: mockProjectId,
-            status: 'pending_thesis',
-            associated_chat_id: mockChatId,
-            dialectic_projects: { initial_user_prompt: mockInitialPrompt, selected_domain_tag: null },
-            dialectic_session_models: [
-                {
-                    id: mockSessionModelId1,
-                    model_id: mockModelProviderId1,
-                    ai_providers: { id: mockModelProviderId1, provider_name: mockProviderName1, model_name: mockModelName1, api_identifier: mockApiIdentifier1 },
-                },
-                {
-                    id: mockSessionModelId2,
-                    model_id: mockModelProviderId2,
-                    ai_providers: { id: mockModelProviderId2, provider_name: mockProviderName2, model_name: mockModelName2, api_identifier: mockApiIdentifier2 },
-                },
-            ],
-        },
-        error: null,
-    }));
-    const mockSessionSelectEqSpy = spy((_column: string, _value: any) => ({ single: mockSessionSelectEqSingleSpy }));
-    const mockSessionSelectSpy = spy(() => ({ eq: mockSessionSelectEqSpy }));
-
-    const mockDbClientFromSpy = spy((tableName: string) => {
-        if (tableName === 'dialectic_sessions') {
-            return (mockSessionSelectSpy.calls.length === 0) ? 
-                   { select: mockSessionSelectSpy, update: mockSessionUpdateSpy } : 
-                   { update: mockSessionUpdateSpy, select: mockSessionSelectSpy }; 
-        } else if (tableName === 'dialectic_contributions') {
-            return { insert: mockContributionInsertSpy };
-        }
-        console.warn(`Mock DBClient (multi-test) called with unexpected table: ${tableName}`);
-        return { select: spy(), insert: spy(), update: spy() }; // Basic fallback
-    });
-    const mockDbClient: any = { from: mockDbClientFromSpy };    
-
-    // --- Spies for dependencies --- 
-    const mockCallUnifiedAIModel = spy(returnsNext([
-        Promise.resolve({ // Success for model 1
-            content: mockContent1,
-            error: null,
-            errorCode: null,
-            inputTokens: 10, 
-            outputTokens: 20, 
-            tokenUsage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
-            processingTimeMs: 100,
-            rawProviderResponse: { raw: "model1_raw" },
-            contentType: mockContentType,
+    const mockDbClient: any = {
+        from: spy(returnsNext([
+            // 1. dialectic_sessions (fetch session)
+            { select: mockSessionSelectSpy },
+            // 2. ai_providers (fetch model 1 details)
+            { select: mockAiProvidersSelectSpy },
+            // 3. dialectic_contributions (insert contribution for model 1)
+            { insert: mockContributionInsertSpy },
+            // 4. ai_providers (fetch model 2 details)
+            { select: mockAiProvidersSelectSpy },
+            // 5. ai_providers (fetch model 3 details)
+            { select: mockAiProvidersSelectSpy },
+            // 6. dialectic_sessions (update session status because at least one model succeeded)
+            { update: mockSessionUpdateSpy },
+        ])),
+    };
+    
+    // Mock callUnifiedAIModel to simulate different outcomes
+    const mockCallUnifiedAIModel = spy(returnsNext([ // Changed from stub to spy
+        Promise.resolve({ // Model 1 - Success
+            content: mockContent1, error: null, inputTokens: 10, outputTokens: 20, processingTimeMs: 100, contentType: "text/markdown", rawProviderResponse: {}
         }),
-        Promise.resolve({ // Failure for model 2
-            content: null,
-            error: "AI model call failed for model 2", 
-            errorCode: "AI_CALL_FAILED",
-            inputTokens: 5, 
-            outputTokens: 0, 
-            tokenUsage: { prompt_tokens: 5, completion_tokens: 0, total_tokens: 5 },
-            processingTimeMs: 50,
-            rawProviderResponse: { raw_error: "model2_error_details" },
-            contentType: undefined,
+        Promise.resolve({ // Model 2 - AI Call Fails
+            content: null, error: "AI failed", errorCode: "AI_CALL_FAILED", inputTokens: 5, outputTokens: 0, processingTimeMs: 50, rawProviderResponse: {}
+        }),
+        Promise.resolve({ // Model 3 - AI Call Success (but upload will fail)
+            content: mockContent3, error: null, inputTokens: 15, outputTokens: 25, processingTimeMs: 120, contentType: "text/markdown", rawProviderResponse: {}
         }),
     ]));
 
-    const mockUploadToStorage = spy(async (_db: any, _bkt: string, path: string, _cnt: any, _opt: any): Promise<UploadStorageResult> => await Promise.resolve({ error: null, path }));
-    const mockGetFileMetadata = spy(async (): Promise<{ size?: number; mimeType?: string; error: Error | null; }> => await Promise.resolve({ size: mockFileSize, mimeType: mockContentType, error: null }));
-    const mockDeleteFromStorage = spy(async (): Promise<DeleteStorageResult> => await Promise.resolve({ data: [], error: null }));
-    const mockGetExtensionFromMimeType = spy((_mimeType: string): string => mockFileExtension);
-    const mockRandomUUID = spy(returnsNext([mockContributionId1])); // Only one success, so one UUID needed
+    // Mock uploadToStorage for different outcomes
+    const mockUploadToStorage = spy(returnsNext([ // Changed from stub to spy
+        Promise.resolve({ error: null, path: `projects/${mockProjectId}/sessions/${mockSessionId}/contributions/${mockContributionId1}/thesis${mockFileExtension}` }), // Model 1 - Content Upload Success
+        Promise.resolve({ error: null, path: `projects/${mockProjectId}/sessions/${mockSessionId}/contributions/${mockContributionId1}/raw_thesis_response.json` }), // Model 1 - Raw Response Upload Success
+        // Model 2 doesn't reach upload
+        Promise.resolve({ error: { name: "StorageError", message: "Failed to upload for Model 3" }, path: null }), // Model 3 - Content Upload Fails
+        // Model 3 raw response upload is skipped due to content upload failure.
+    ]));
 
-    // Spies for logger - re-initialize for this test
-    const localLoggerInfo = spy(logger, 'info');
-    const localLoggerError = spy(logger, 'error');
-    const localLoggerWarn = spy(logger, 'warn');
+    const mockGetFileMetadata = spy(async (_dbClient: any, _bucketName: string, path: string)
+        : Promise<{ size?: number; mimeType?: string; error: Error | null; }> => {
+        if (path.includes(mockContributionId1)) return await Promise.resolve({ size: 50, mimeType: "text/markdown", error: null });
+        // For model 3, this might be called before upload failure is known by main func, or not at all. Let's assume it's not called if upload fails.
+        return await Promise.resolve({ size: 0, error: new Error("File not found for metadata in test") }); 
+    });
+    
+    const mockDeleteFromStorage = spy(async (_dbClient: any, _bucketName: string, _paths: string[]): Promise<DeleteStorageResult> => await Promise.resolve({ data: [], error: null }));
+    const mockGetExtensionFromMimeType = spy((_mimeType: string): string => mockFileExtension);
+    const mockRandomUUID = spy(returnsNext([mockContributionId1, mockContributionId3])); // Changed from stub to spy; UUIDs for successful attempt and the one that fails at upload
+
 
     try {
         const result = await generateStageContributions(
@@ -499,84 +530,305 @@ Deno.test("generateStageContributions - Multiple Models (some success, some fail
             mockPayload,
             mockAuthToken,
             {
-                callUnifiedAIModel: mockCallUnifiedAIModel,
-                uploadToStorage: mockUploadToStorage,
+                callUnifiedAIModel: mockCallUnifiedAIModel as any,
+                uploadToStorage: mockUploadToStorage as any,
                 getFileMetadata: mockGetFileMetadata,
                 deleteFromStorage: mockDeleteFromStorage,
                 getExtensionFromMimeType: mockGetExtensionFromMimeType,
-                logger: logger, 
-                randomUUID: mockRandomUUID
+                logger: logger,
+                randomUUID: mockRandomUUID as any,
             }
         );
 
-        assertEquals(result.success, true);
+        assertEquals(result.success, true); // Still true because one succeeded
         assertExists(result.data);
         assertEquals(result.data?.sessionId, mockSessionId);
         assertEquals(result.data?.status, 'thesis_generation_partial');
         assertEquals(result.data?.contributions?.length, 1);
-        assertEquals(result.data?.errors?.length, 1);
-
-        // Assertions for successful contribution (model 1)
-        const successfulContribution = result.data?.contributions?.[0];
-        assertExists(successfulContribution);
-        assertObjectMatch(successfulContribution as any, {
+        
+        const firstContribution = result.data?.contributions?.[0];
+        assertObjectMatch(firstContribution as any, {
             id: mockContributionId1,
             session_id: mockSessionId,
-            session_model_id: mockSessionModelId1,
+            model_id: mockModelProviderId1,
+            model_name: mockModelName1,
             stage: 'thesis',
-            content_storage_path: mockContentStoragePath1,
-            raw_response_storage_path: mockRawResponseStoragePath1,
+            content_storage_path: `projects/${mockProjectId}/sessions/${mockSessionId}/contributions/${mockContributionId1}/thesis${mockFileExtension}`,
+            content_mime_type: "text/markdown",
             tokens_used_input: 10,
             tokens_used_output: 20,
-            content_size_bytes: mockFileSize,
             processing_time_ms: 100,
-            content_mime_type: mockContentType,
+            content_size_bytes: 50,
         });
 
-        // Assertions for failed contribution (model 2)
-        const failedAttempt = result.data?.errors?.[0];
-        assertExists(failedAttempt);
-        assertEquals(failedAttempt?.modelId, mockModelProviderId2);
-        assertEquals(failedAttempt?.message, "AI model call failed for model 2");
-        assertExists(failedAttempt?.details, "Details string should exist for failed attempt");
-        assert(typeof failedAttempt?.details === 'string', "Details should be a string");
-        // deno-lint-ignore-next-line
-        assert((failedAttempt?.details as string).includes("Code: AI_CALL_FAILED"), "Details string should include error code");
+        assertExists(result.data?.errors);
+        assertEquals(result.data?.errors?.length, 2);
 
-        // Verify mock calls
-        assertEquals(mockDbClientFromSpy.calls.length, 3);
-        assertEquals(mockSessionSelectSpy.calls.length, 1);
-        assertEquals(mockContributionInsertSpy.calls.length, 1); // Only 1 insert for the successful model
-        assertEquals(mockSessionUpdateSpy.calls.length, 1);
+        const errorForModel2 = result.data?.errors?.find(e => e.modelId === mockModelProviderId2);
+        assertExists(errorForModel2);
+        assertObjectMatch(errorForModel2, {
+            modelId: mockModelProviderId2,
+            modelName: mockModelName2,
+            providerName: mockProviderName2,
+            message: "AI failed",
+            details: "Code: AI_CALL_FAILED, Details: AI_CALL_FAILED, Input Tokens: 5, Output Tokens: 0, Processing Time: 50ms"
+        });
+
+        const errorForModel3 = result.data?.errors?.find(e => e.modelId === mockModelProviderId3);
+        assertExists(errorForModel3);
+        assertObjectMatch(errorForModel3, { // This assumes the error is captured as STORAGE_UPLOAD_ERROR
+            modelId: mockModelProviderId3,
+            modelName: mockModelName3,
+            providerName: mockProviderName3,
+            message: "Failed to upload contribution content.",
+            details: "Code: STORAGE_UPLOAD_ERROR, Details: Failed to upload for Model 3"
+        });
         
-        assertEquals(mockCallUnifiedAIModel.calls.length, 2); // Called for both models
-        if (mockCallUnifiedAIModel.calls.length === 2) { // Guard for linter
-            const firstCall = mockCallUnifiedAIModel.calls[0];
-            const secondCall = mockCallUnifiedAIModel.calls[1];
-            assertExists(firstCall?.args, "Args for first AI call should exist");
-            assertExists(secondCall?.args, "Args for second AI call should exist");
-            // deno-lint-ignore no-explicit-any
-            assertEquals(firstCall.args[0], mockModelProviderId1);
-            // deno-lint-ignore no-explicit-any
-            assertEquals(secondCall.args[0], mockModelProviderId2);
-        }
+        const fromSpy = mockDbClient.from as Stub<any[], any>;
+        assertEquals(fromSpy.calls.length, 6, "dbClient.from() calls mismatch. Expected 6."); 
+        assertEquals(fromSpy.calls[0].args[0], 'dialectic_sessions', "Call 0: Expected dialectic_sessions (session fetch)");
+        assertEquals(fromSpy.calls[1].args[0], 'ai_providers', "Call 1: Expected ai_providers (Model 1 details)");
+        assertEquals(fromSpy.calls[2].args[0], 'dialectic_contributions', "Call 2: Expected dialectic_contributions (Model 1 insert)");
+        assertEquals(fromSpy.calls[3].args[0], 'ai_providers', "Call 3: Expected ai_providers (Model 2 details)");
+        assertEquals(fromSpy.calls[4].args[0], 'ai_providers', "Call 4: Expected ai_providers (Model 3 details)");
+        assertEquals(fromSpy.calls[5].args[0], 'dialectic_sessions', "Call 5: Expected dialectic_sessions (session update)");
 
-        assertEquals(mockRandomUUID.calls.length, 1); // Called once for the successful contribution
-        assertEquals(mockUploadToStorage.calls.length, 2); // Content + raw for the successful one
-        assertEquals(mockGetFileMetadata.calls.length, 1); // For the successful one
+        assertEquals(mockSessionSelectSpy.calls.length, 1);
+        assertEquals(mockAiProvidersSelectSpy.calls.length, 3); // Called for each model
+        assertEquals(mockContributionInsertSpy.calls.length, 1); // Only for successful model 1
+        assertEquals(mockSessionUpdateSpy.calls.length, 1);
 
-        // Check logger calls (simplified checks)
-        assert(localLoggerInfo.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes(`Processing model: ${mockProviderName1}`)));
-        assert(localLoggerInfo.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes(`Processing model: ${mockProviderName2}`)));
-        assert(localLoggerError.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes(`Error from callUnifiedAIModel for ${mockProviderName2}`)));
-        assert(localLoggerInfo.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes(`Finished processing all models for session ${mockSessionId}`)));
-        assert(localLoggerInfo.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes(`Updating session ${mockSessionId} status to: thesis_generation_partial`)));
+        assertEquals(mockCallUnifiedAIModel.calls.length, 3); // Called for all 3 models initially
+        // Model 1: content upload, raw response upload
+        // Model 3: content upload (fails)
+        assertEquals(mockUploadToStorage.calls.length, 3, "uploadToStorage calls mismatch"); // M1_content, M1_raw, M3_content_fail
+
+        // Check cleanup for Model 3's failed upload
+        const deleteCalls = mockDeleteFromStorage.calls;
+        // CORRECTING ASSERTION: Model 3 fails at upload, so no DB insert is attempted, thus no storage cleanup via deleteFromStorage is triggered for it.
+        assertEquals(deleteCalls.length, 0, "deleteFromStorage should be 0 because Model 3 fails before DB insert.");
+        // The following lines assume deleteCalls[0] exists, which it shouldn't in this scenario.
+        // assert(deleteCalls[0].args[2].some((p: string) => p.includes(mockContributionId3) && p.includes("thesis")), "Cleanup for Model 3 content not called");
+        // assert(deleteCalls[0].args[2].some((p: string) => p.includes(mockContributionId3) && p.includes("raw_thesis_response.json")), "Cleanup for Model 3 raw response not called");
+
 
     } finally {
-        // Restore any test-specific stubs or spies if they were not global with afterEach/restoreAll setup
+        // Restore spies that were attached to objects or had complex setups
         localLoggerInfo.restore();
         localLoggerError.restore();
         localLoggerWarn.restore();
+        // The following spies are standalone wrappers of returnsNext and do not need/support .restore()
+        // mockAiProvidersSelectEqSingleSpy.restore(); 
+        // mockCallUnifiedAIModel.restore();           
+        // mockUploadToStorage.restore();              
+        // mockRandomUUID.restore();                   
+        // if (spiedMockContributionInsertSelectSingle && typeof spiedMockContributionInsertSelectSingle.restore === 'function') { 
+        //     spiedMockContributionInsertSelectSingle.restore(); // This line was causing MockError
+        // }
+    }
+});
+
+Deno.test("generateStageContributions - All Models Fail (e.g., AI errors for all)", async () => {
+    const localLoggerInfo = spy(logger, 'info');
+    const localLoggerError = spy(logger, 'error');
+    const localLoggerWarn = spy(logger, 'warn');
+
+    const mockAuthToken = "test-auth-token-all-fail";
+    const mockSessionId = "test-session-id-all-fail";
+    const mockProjectId = "test-project-id-all-fail";
+    const mockChatId = "test-chat-id-all-fail";
+    const mockInitialPrompt = "Test initial prompt for all models to fail";
+
+    // Model 1: AI Success, Uploads Success, DB Insert Fails
+    const mockModelProviderId1 = "model-id-1-db-fail";
+    const mockProviderName1 = "Provider1";
+    const mockModelName1 = "Model1-DB-Fail";
+    const mockApiIdentifier1 = "api-1-db-fail";
+    const mockContributionId1 = "contrib-uuid-1-db-fail";
+    const mockContentForModel1 = "AI Content for Model 1 (DB Fail)";
+
+    // Model 2: AI Call Fails
+    const mockModelProviderId2 = "model-id-2-ai-fail";
+    const mockProviderName2 = "Provider2";
+    const mockModelName2 = "Model2-AI-Fail";
+    const mockApiIdentifier2 = "api-2-ai-fail";
+    
+    // Model 3: AI Success, Upload Fails
+    const mockModelProviderId3 = "model-id-3-upload-fail";
+    const mockProviderName3 = "Provider3";
+    const mockModelName3 = "Model3-Upload-Fail";
+    const mockApiIdentifier3 = "api-3-upload-fail";
+    const mockContentForModel3 = "AI Content for Model 3 (Upload Fail)";
+    const mockContributionIdForM3 = "contrib-uuid-3-upload-fail"; 
+
+    const mockFileExtension = ".md";
+
+    const mockPayload: GenerateStageContributionsPayload = {
+        sessionId: mockSessionId,
+        stage: 'thesis',
+    };
+
+    const mockSessionData = {
+        id: mockSessionId,
+        project_id: mockProjectId,
+        status: 'pending_thesis',
+        associated_chat_id: mockChatId,
+        selected_model_catalog_ids: [mockModelProviderId1, mockModelProviderId2, mockModelProviderId3],
+        dialectic_projects: {
+            initial_user_prompt: mockInitialPrompt,
+            selected_domain_tag: null,
+        },
+    };
+
+    const mockSessionSelectEqSingleSpy = spy(async () => await Promise.resolve({ data: mockSessionData, error: null }));
+    const mockSessionSelectEqSpy = spy((_column: string, _value: any) => ({ single: mockSessionSelectEqSingleSpy }));
+    const mockSessionSelectSpy = spy(() => ({ eq: mockSessionSelectEqSpy }));
+
+    const mockAiProvidersSelectEqSingleSpy = spy(returnsNext([
+        Promise.resolve({ data: { id: mockModelProviderId1, provider: mockProviderName1, name: mockModelName1, api_identifier: mockApiIdentifier1 }, error: null }),
+        Promise.resolve({ data: { id: mockModelProviderId2, provider: mockProviderName2, name: mockModelName2, api_identifier: mockApiIdentifier2 }, error: null }),
+        Promise.resolve({ data: { id: mockModelProviderId3, provider: mockProviderName3, name: mockModelName3, api_identifier: mockApiIdentifier3 }, error: null }),
+    ]));
+    const mockAiProvidersSelectEqSpy = spy((_column: string, _value: any) => ({ single: mockAiProvidersSelectEqSingleSpy as any }));
+    const mockAiProvidersSelectSpy = spy(() => ({ eq: mockAiProvidersSelectEqSpy }));
+
+    let capturedInsertArgForModel1: any = null; 
+    const mockContributionInsertSelectSingleSpyImpl = async () => {
+        assertExists(capturedInsertArgForModel1, "capturedInsertArgForModel1 should be set for Model 1's insert attempt");
+        assertEquals(capturedInsertArgForModel1.model_id, mockModelProviderId1);
+        return await Promise.resolve({
+            data: null, // DB insert fails
+            error: { message: "DB insert failed for Model 1", code: "DB_INSERT_ERROR_M1" },
+        });
+    };
+    const spiedMockContributionInsertSelectSingle = spy(mockContributionInsertSelectSingleSpyImpl);
+    const mockContributionInsertSelectSpy = spy(() => ({ single: spiedMockContributionInsertSelectSingle as any }));
+    const mockContributionInsertSpy = spy((data: any) => {
+        if (data.model_id === mockModelProviderId1) {
+            capturedInsertArgForModel1 = data;
+        }
+        return { select: mockContributionInsertSelectSpy };
+    });
+
+    const mockSessionUpdateEqSpy = spy(async (_column: string, _value: any) => await Promise.resolve({ error: null }));
+    const mockSessionUpdateSpy = spy((_values: Partial<Database['public']['Tables']['dialectic_sessions']['Update']>) => ({ eq: mockSessionUpdateEqSpy }));
+
+    const mockDbClient: any = {
+        from: spy(returnsNext([
+             // 1. dialectic_sessions (fetch session)
+            { select: mockSessionSelectSpy },
+             // 2. ai_providers (fetch model 1 details)
+            { select: mockAiProvidersSelectSpy },
+             // 3. dialectic_contributions (insert contribution for model 1 - mocked to fail)
+            { insert: mockContributionInsertSpy }, // This will be called, then error out
+             // 4. ai_providers (fetch model 2 details)
+            { select: mockAiProvidersSelectSpy },
+             // 5. ai_providers (fetch model 3 details)
+            { select: mockAiProvidersSelectSpy },
+             // No session update should occur as all models fail
+        ])),
+    };
+    
+    const mockCallUnifiedAIModel = spy(returnsNext([
+        Promise.resolve({ // Model 1 - AI Success (DB fail)
+            content: mockContentForModel1, error: null, inputTokens: 10, outputTokens: 20, processingTimeMs: 100, contentType: "text/markdown", rawProviderResponse: {}
+        }),
+        Promise.resolve({ // Model 2 - AI Fail
+            content: null, error: "AI failed for Model 2", errorCode: "AI_CALL_FAILED_M2", inputTokens: 5, outputTokens: 0, processingTimeMs: 50, rawProviderResponse: {}
+        }),
+        Promise.resolve({ // Model 3 - AI Success (Upload fail)
+            content: mockContentForModel3, error: null, inputTokens: 15, outputTokens: 25, processingTimeMs: 120, contentType: "text/markdown", rawProviderResponse: {}
+        }),
+    ]));
+
+    const mockUploadToStorage = spy(returnsNext([
+        // Model 1 (DB fail) - uploads succeed
+        Promise.resolve({ error: null, path: `projects/${mockProjectId}/sessions/${mockSessionId}/contributions/${mockContributionId1}/thesis${mockFileExtension}` }), 
+        Promise.resolve({ error: null, path: `projects/${mockProjectId}/sessions/${mockSessionId}/contributions/${mockContributionId1}/raw_thesis_response.json` }), 
+        // Model 2 (AI fail) - does not reach upload
+        // Model 3 (Upload fail) - content upload fails
+        Promise.resolve({ error: { name: "UploadErrorM3", message: "Upload failed for Model 3 content" }, path: null }), 
+    ]));
+
+    const mockGetFileMetadata = spy(async (_dbClient: any, _bucketName: string, path: string)
+        : Promise<{ size?: number; mimeType?: string; error: Error | null; }> => {
+        if (path.includes(mockContributionId1)) return await Promise.resolve({ size: 50, mimeType: "text/markdown", error: null }); // For Model 1
+        return await Promise.resolve({ size: 0, error: new Error("File not found for metadata in AllFailTest") }); 
+    });
+    
+    const mockDeleteFromStorage = spy(async (_dbClient: any, _bucketName: string, _paths: string[]): Promise<DeleteStorageResult> => await Promise.resolve({ data: [], error: null }));
+    const mockGetExtensionFromMimeType = spy((_mimeType: string): string => mockFileExtension);
+    const mockRandomUUID = spy(returnsNext([mockContributionId1, mockContributionIdForM3]));
+
+    try {
+        const result = await generateStageContributions(
+            mockDbClient as any,
+            mockPayload,
+            mockAuthToken,
+            {
+                callUnifiedAIModel: mockCallUnifiedAIModel as any,
+                uploadToStorage: mockUploadToStorage as any,
+                getFileMetadata: mockGetFileMetadata,
+                deleteFromStorage: mockDeleteFromStorage,
+                getExtensionFromMimeType: mockGetExtensionFromMimeType,
+                logger: logger,
+                randomUUID: mockRandomUUID as any,
+            }
+        );
+
+        assertEquals(result.success, false);
+        assertEquals(result.data, undefined); 
+        assertExists(result.error);
+        assertEquals(result.error.message, "All models failed to generate stage contributions.");
+        assertEquals(result.error.status, 500);
+        assertExists(result.error.details, "Error details string should exist");
+
+        const errorDetailsString = result.error.details;
+        
+        // For Model 1 (DB Insert Fail)
+        const model1ErrorString = `Model (ID ${mockModelProviderId1}, Name: ${mockModelName1}): Failed to insert contribution into database. (DB insert failed for Model 1)`;
+        assert(
+            errorDetailsString.includes(model1ErrorString),
+            `Error details for Model 1 (DB fail) incorrect. Expected to include: '${model1ErrorString}', Got: ${errorDetailsString}`
+        );
+
+        // For Model 2 (AI Fail)
+        const model2ErrorString = `Model (ID ${mockModelProviderId2}, Name: ${mockModelName2}): AI failed for Model 2 (AI_CALL_FAILED_M2)`;
+        assert(
+            errorDetailsString.includes(model2ErrorString),
+            `Error details for Model 2 (AI fail) incorrect. Expected to include: '${model2ErrorString}', Got: ${errorDetailsString}`
+        );
+        
+        // For Model 3 (Upload Fail)
+        const model3ErrorString = `Model (ID ${mockModelProviderId3}, Name: ${mockModelName3}): Failed to upload contribution content. (Upload failed for Model 3 content)`;
+        assert(
+            errorDetailsString.includes(model3ErrorString),
+            `Error details for Model 3 (upload fail) incorrect. Expected to include: '${model3ErrorString}', Got: ${errorDetailsString}`
+        );
+
+        const fromSpy = mockDbClient.from as Stub<any[], any>;
+        assertEquals(fromSpy.calls.length, 5, "dbClient.from() calls mismatch. Expected 5 for all-fail scenario."); 
+        assertEquals(fromSpy.calls[0].args[0], 'dialectic_sessions', "Call 0: Expected dialectic_sessions (session fetch)");
+        assertEquals(fromSpy.calls[1].args[0], 'ai_providers', "Call 1: Expected ai_providers (Model 1 details)");
+        assertEquals(fromSpy.calls[2].args[0], 'dialectic_contributions', "Call 2: Expected dialectic_contributions (Model 1 insert)");
+        assertEquals(fromSpy.calls[3].args[0], 'ai_providers', "Call 3: Expected ai_providers (Model 2 details)");
+        assertEquals(fromSpy.calls[4].args[0], 'ai_providers', "Call 4: Expected ai_providers (Model 3 details)");
+        
+        // Verify that the mockSessionUpdateSpy (and thus mockSessionUpdateEqSpy) was not called,
+        // indicating no attempt was made to update the session status.
+        assertEquals(mockSessionUpdateSpy.calls.length, 0, "Session status should not be updated when all models fail.");
+
+    } finally {
+        localLoggerInfo.restore();
+        localLoggerError.restore();
+        localLoggerWarn.restore();
+        // mockAiProvidersSelectEqSingleSpy.restore(); 
+        // mockCallUnifiedAIModel.restore();           
+        // mockUploadToStorage.restore();              
+        // mockRandomUUID.restore();                   
+        // if (spiedMockContributionInsertSelectSingle && typeof spiedMockContributionInsertSelectSingle.restore === 'function') { 
+        //    spiedMockContributionInsertSelectSingle.restore(); // Commented out
+        // }
     }
 });
 

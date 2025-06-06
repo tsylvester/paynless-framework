@@ -119,6 +119,19 @@ Deno.test('uploadProjectResourceFileHandler - successful upload', async () => {
                         };
                     }
                     return { data: null, error: new Error('Project not found or not owned by user'), count: 0, status: 404, statusText: 'Not Found' };
+                },
+                update: async (state) => {
+                    const projectIdFilter = state.filters.find(f => f.column === 'id' && f.value === testProjectId);
+                    if (projectIdFilter && (state.updateData as Partial<{ initial_prompt_resource_id: string }>)?.initial_prompt_resource_id === generatedResourceId) {
+                        return {
+                            data: [{ id: testProjectId, initial_prompt_resource_id: generatedResourceId }],
+                            error: null,
+                            count: 1,
+                            status: 200,
+                            statusText: 'OK'
+                        };
+                    }
+                    return { data: null, error: new Error('Update mock failure: project ID not found or resource ID mismatch'), count: 0, status: 400, statusText: 'Bad Request' };
                 }
             },
             'dialectic_project_resources': { 
@@ -204,14 +217,19 @@ Deno.test('uploadProjectResourceFileHandler - successful upload', async () => {
     }
 
     const { fromSpy, storage: storageSpies } = mockSupabase.spies;
-    const projectSelectSpy = mockSupabase.spies.getLatestQueryBuilderSpies('dialectic_projects')?.select;
+    
+    const projectQuerySpiesCollection = mockSupabase.spies.getAllQueryBuilderSpies('dialectic_projects');
+    const projectSelectSpy = projectQuerySpiesCollection && projectQuerySpiesCollection.length > 0 ? projectQuerySpiesCollection[0]?.select : undefined;
+    const projectUpdateSpy = projectQuerySpiesCollection && projectQuerySpiesCollection.length > 1 ? projectQuerySpiesCollection[1]?.update : undefined;
+
     const resourceInsertSpy = mockSupabase.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.insert;
     const uploadSpy = storageSpies.from('dialectic-contributions').uploadSpy;
     const listSpy = storageSpies.from('dialectic-contributions').listSpy;
 
-    assertEquals((fromSpy as any).calls.length, 2, "Supabase.from should be called twice (project check, resource insert)");
+    assertEquals((fromSpy as any).calls.length, 3, "Supabase.from should be called thrice (project check, resource insert, project update)");
     assertEquals((projectSelectSpy as any)?.calls.length, 1, "Select on dialectic_projects should be called for ownership check");
     assertEquals((resourceInsertSpy as any)?.calls.length, 1, "Insert on dialectic_project_resources should be called");
+    assertEquals((projectUpdateSpy as any)?.calls.length, 1, "Update on dialectic_projects should be called to link resource");
     assertEquals((uploadSpy as any).calls.length, 1, "Storage upload should be called");
     assertEquals((listSpy as any).calls.length, 1, "Storage list should be called by getFileMetadata");
 

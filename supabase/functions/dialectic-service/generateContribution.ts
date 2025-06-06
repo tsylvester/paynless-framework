@@ -10,9 +10,10 @@ import {
   import { uploadToStorage, getFileMetadata, deleteFromStorage } from "../_shared/supabase_storage_utils.ts";
   import { getExtensionFromMimeType } from "../_shared/path_utils.ts";
   import type { Database } from "../types_db.ts";
-  import { logger, type Logger } from "../_shared/logger.ts";
+  import { logger } from "../_shared/logger.ts";
   import { callUnifiedAIModel } from "./callModel.ts";
   import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
+  import type { ILogger } from "../_shared/types.ts";
   
   console.log("generateContribution function started");
   
@@ -23,7 +24,7 @@ import {
     getFileMetadata: typeof getFileMetadata;
     deleteFromStorage: typeof deleteFromStorage;
     getExtensionFromMimeType: typeof getExtensionFromMimeType;
-    logger: Logger;
+    logger: ILogger;
     randomUUID: () => string;
   }
   
@@ -50,10 +51,10 @@ export async function generateStageContributions(
     const { sessionId } = payload;
     logger.info(`[generateStageContributions] Starting for session ID: ${sessionId}`);
     const BUCKET_NAME = 'dialectic-contributions'; // Define bucket name
-    const ASSUMED_CONTENT_TYPE = "text/markdown"; // Explicitly define the assumed content type
+    // const ASSUMED_CONTENT_TYPE = "text/markdown"; // No longer needed here as we use determinedContentType
   
     try {
-      // 1. Fetch session details: project_id, initial_user_prompt, selected_domain_tag, and selected models
+      // 1. Fetch session details: project_id, initial_user_prompt, selected_domain_tag, and selected_model_catalog_ids
       const { data: sessionDetails, error: sessionError } = await dbClient
         .from('dialectic_sessions')
         .select(
@@ -62,19 +63,10 @@ export async function generateStageContributions(
           project_id,
           status,
           associated_chat_id,
+          selected_model_catalog_ids, 
           dialectic_projects (
             initial_user_prompt,
             selected_domain_tag
-          ),
-          dialectic_session_models (
-            id,
-            model_id,
-            ai_providers (
-              id,
-              provider_name: provider,
-              model_name: name,
-              api_identifier
-            )
           )
         `
         )
@@ -90,9 +82,9 @@ export async function generateStageContributions(
       // despite types_db.ts suggesting an array. Use 'as unknown as' to bridge this.
       const projectDetails = sessionDetails.dialectic_projects as unknown as { initial_user_prompt: string; selected_domain_tag: string | null } | null | undefined;
   
-      logger.info(`[generateStageContributions] Fetched session details for ${sessionId}`, { 
-        joinedProjectData: projectDetails, // Log the raw joined data
-        numModels: sessionDetails.dialectic_session_models.length 
+      logger.info(`[generateStageContributions] Fetched session details for ${sessionId}`, {
+        joinedProjectData: projectDetails,
+        numSelectedModels: sessionDetails.selected_model_catalog_ids?.length ?? 0
       });
   
       if (sessionDetails.status !== 'pending_thesis') {
@@ -118,29 +110,48 @@ export async function generateStageContributions(
           return { success: false, error: { message: "Associated chat ID is missing for session.", status: 500 } };
       }
   
-      const successfulContributions: Database['public']['Tables']['dialectic_contributions']['Row'][] = []; // Typed contributions
-      const failedContributionAttempts: { modelId: string; sessionModelId: string; error: string; details?: string; code?: string; inputTokens?: number; outputTokens?: number, cost?: number, processingTimeMs?: number }[] = [];
+      if (!sessionDetails.selected_model_catalog_ids || sessionDetails.selected_model_catalog_ids.length === 0) {
+        logger.error(`[generateStageContributions] No models selected for session ${sessionId} (selected_model_catalog_ids is null or empty).`);
+        return { success: false, error: { message: "No models selected for this session.", status: 400, code: 'NO_MODELS_SELECTED' } };
+      }
+  
+      const successfulContributions: Database['public']['Tables']['dialectic_contributions']['Row'][] = [];
+      const failedContributionAttempts: {
+        modelId: string; // This is ai_providers.id
+        modelName?: string;
+        providerName?: string | null;
+        error: string;
+        details?: string;
+        code?: string;
+        inputTokens?: number;
+        outputTokens?: number;
+        processingTimeMs?: number;
+      }[] = [];
   
   
-      for (const sessionModel of sessionDetails.dialectic_session_models) {
-        // Runtime logs show ai_providers is a single object here due to the to-one join from dialectic_session_models.
-        // The `as unknown` is to bridge the gap if types_db.ts generally types it as an array.
-        const providerDetails = sessionModel.ai_providers as unknown as SelectedAiProvider | null | undefined;
+      for (const modelCatalogId of sessionDetails.selected_model_catalog_ids) {
+        // Fetch AI provider details for this modelCatalogId
+        const { data: providerData, error: providerError } = await dbClient
+          .from('ai_providers')
+          .select('id, provider, name, api_identifier') // Use direct field names as per types_db
+          .eq('id', modelCatalogId)
+          .single();
   
-        if (!providerDetails || typeof providerDetails !== 'object') {
-          logger.error(`[generateStageContributions] AI Provider details (expected as direct object) missing or not an object for sessionModel ${sessionModel.id} (model_id: ${sessionModel.model_id}). Value: ${JSON.stringify(providerDetails)}`);
+        if (providerError || !providerData) {
+          logger.error(`[generateStageContributions] Failed to fetch AI Provider details for model ID ${modelCatalogId}. Session ${sessionId}.`, { error: providerError });
           failedContributionAttempts.push({
-            modelId: sessionModel.model_id, 
-            sessionModelId: sessionModel.id,
-            error: "AI Provider details (expected as direct object from joined 'ai_providers' table) missing, null, or not an object.",
-            code: 'PROVIDER_DETAILS_OBJECT_ISSUE' 
+            modelId: modelCatalogId,
+            error: "Failed to fetch AI Provider details from database.",
+            details: providerError?.message,
+            code: providerError?.code || 'PROVIDER_FETCH_FAILED'
           });
           continue;
         }
+        
+        const providerDetails = providerData as unknown as SelectedAiProvider;
   
-        const modelId = providerDetails.id; 
-        const sessionModelId = sessionModel.id; // This is dialectic_session_models.id
-        const modelIdentifier = `${providerDetails.provider_name} - ${providerDetails.model_name} (SM_ID: ${sessionModelId}, ProviderID: ${modelId}, API_ID: ${providerDetails.api_identifier})`;
+        const modelIdForCall = providerDetails.id; 
+        const modelIdentifier = `${providerDetails.provider || 'Unknown Provider'} - ${providerDetails.name} (ProviderID: ${modelIdForCall}, API_ID: ${providerDetails.api_identifier})`;
         logger.info(`[generateStageContributions] Processing model: ${modelIdentifier} for session ${sessionId}`);
   
         try {
@@ -151,7 +162,7 @@ export async function generateStageContributions(
   
   
           const aiResponse = await callUnifiedAIModel(
-            modelId,
+            modelIdForCall,
             renderedPrompt,
             associatedChatId,
             authToken,
@@ -162,11 +173,12 @@ export async function generateStageContributions(
   
           if (aiResponse.error || !aiResponse.content) {
             logger.error(`[generateStageContributions] Error from callUnifiedAIModel for ${modelIdentifier}:`, { error: aiResponse.error });
-            failedContributionAttempts.push({ 
-              modelId: modelId, 
-              sessionModelId: sessionModelId,
-              error: aiResponse.error || "AI model returned no content.", 
-              details: typeof aiResponse.errorCode === 'string' ? aiResponse.errorCode : undefined, 
+            failedContributionAttempts.push({
+              modelId: modelIdForCall,
+              modelName: providerDetails.name,
+              providerName: providerDetails.provider,
+              error: aiResponse.error || "AI model returned no content.",
+              details: typeof aiResponse.errorCode === 'string' ? aiResponse.errorCode : undefined,
               code: aiResponse.errorCode || 'AI_CALL_FAILED',
               inputTokens: aiResponse.inputTokens,
               outputTokens: aiResponse.outputTokens,
@@ -177,7 +189,7 @@ export async function generateStageContributions(
   
           const contributionContent = aiResponse.content;
           // Use contentType from aiResponse, fallback to a default if not present
-          const determinedContentType = aiResponse.contentType || "text/markdown"; 
+          const determinedContentType = aiResponse.contentType || "text/markdown";
           const fileExtension = getExtensionFromMimeType(determinedContentType);
           const contributionId = randomUUID();
   
@@ -188,12 +200,13 @@ export async function generateStageContributions(
           const { error: contentUploadError } = await uploadToStorage(dbClient, BUCKET_NAME, contentStoragePath, contributionContent, { contentType: determinedContentType });
           if (contentUploadError) {
             logger.error(`[generateStageContributions] Failed to upload content for ${modelIdentifier} to ${contentStoragePath}:`, { error: contentUploadError });
-            failedContributionAttempts.push({ 
-              modelId: modelId, 
-              sessionModelId: sessionModelId,
-              error: "Failed to upload contribution content.", 
-              details: contentUploadError.message, 
-              code: 'STORAGE_UPLOAD_ERROR' 
+            failedContributionAttempts.push({
+              modelId: modelIdForCall,
+              modelName: providerDetails.name,
+              providerName: providerDetails.provider,
+              error: "Failed to upload contribution content.",
+              details: contentUploadError.message,
+              code: 'STORAGE_UPLOAD_ERROR'
             });
             continue;
           }
@@ -227,7 +240,8 @@ export async function generateStageContributions(
             .from('dialectic_contributions')
             .insert({
               session_id: sessionId,
-              session_model_id: sessionModelId, // Link to the specific dialectic_session_models.id
+              model_id: modelIdForCall, 
+              model_name: providerDetails.name, 
               user_id: null,
               parent_contribution_id: null,
               stage: payload.stage, // Use dynamic stage from payload
@@ -250,12 +264,13 @@ export async function generateStageContributions(
             logger.warn(`[generateStageContributions] Attempting to clean up storage for failed DB insert for ${modelIdentifier}`);
             await deleteFromStorage(dbClient, BUCKET_NAME, [contentStoragePath]).catch(e => logger.error(`Cleanup error for ${contentStoragePath}:`, {error: e}));
             await deleteFromStorage(dbClient, BUCKET_NAME, [rawResponseStoragePath]).catch(e => logger.error(`Cleanup error for ${rawResponseStoragePath}:`, {error: e}));
-            failedContributionAttempts.push({ 
-              modelId: modelId, 
-              sessionModelId: sessionModelId,
-              error: "Failed to insert contribution into database.", 
-              details: dbInsertError.message, 
-              code: dbInsertError.code || 'DB_INSERT_ERROR' 
+            failedContributionAttempts.push({
+              modelId: modelIdForCall,
+              modelName: providerDetails.name,
+              providerName: providerDetails.provider,
+              error: "Failed to insert contribution into database.",
+              details: dbInsertError.message,
+              code: dbInsertError.code || 'DB_INSERT_ERROR'
             });
             continue;
           }
@@ -265,28 +280,29 @@ export async function generateStageContributions(
         } catch (modelProcessingError) {
           logger.error(`[generateStageContributions] Unhandled error processing model ${modelIdentifier}:`, { error: modelProcessingError });
           failedContributionAttempts.push({
-            modelId: modelId,
-            sessionModelId: sessionModelId,
+            modelId: modelIdForCall,
+            modelName: providerDetails.name,
+            providerName: providerDetails.provider,
             error: "Unhandled error during model processing.",
             details: modelProcessingError instanceof Error ? modelProcessingError.message : String(modelProcessingError),
             code: 'MODEL_PROCESSING_ERROR'
           });
         }
-      } // End of for...of sessionModels loop
+      } // End of for...of modelCatalogId loop
   
       logger.info(`[generateStageContributions] Finished processing all models for session ${sessionId}`, { successful: successfulContributions.length, failed: failedContributionAttempts.length });
   
-      if (successfulContributions.length === 0) {
+      if (successfulContributions.length === 0 && sessionDetails.selected_model_catalog_ids.length > 0) { // Check if models were supposed to run
         logger.error(`[generateStageContributions] All models failed to generate contributions for session ${sessionId}`, { errors: failedContributionAttempts });
         // Return a generic error, but include details of all failures
-        const errorDetails = failedContributionAttempts.map(f => `Model (SM_ID ${f.sessionModelId}): ${f.error} (${f.details || f.code})`).join('; ');
-        return { 
-          success: false, 
-          error: { 
-            message: "All models failed to generate stage contributions.", 
-            status: 500, 
-            details: errorDetails 
-          } 
+        const errorDetails = failedContributionAttempts.map(f => `Model (ID ${f.modelId}, Name: ${f.modelName || 'N/A'}): ${f.error} (${f.details || f.code})`).join('; ');
+        return {
+          success: false,
+          error: {
+            message: "All models failed to generate stage contributions.",
+            status: 500,
+            details: errorDetails
+          }
         };
       }
   
@@ -316,10 +332,11 @@ export async function generateStageContributions(
         status: finalStatus,
         contributions: successfulContributions as unknown as DialecticContribution[],
         errors: failedContributionAttempts.length > 0 ? failedContributionAttempts.map(f => ({
-            modelId: f.modelId, // This is ai_providers.id
-            // sessionModelId: f.sessionModelId, // We might want to expose this to the client if useful for retry/display
+            modelId: f.modelId, 
+            modelName: f.modelName, // Propagated from failedContributionAttempts
+            providerName: f.providerName, // Propagated from failedContributionAttempts
             message: f.error,
-            details: `Code: ${f.code}, Details: ${f.details}${f.inputTokens !== undefined ? `, Input Tokens: ${f.inputTokens}` : ''}${f.outputTokens !== undefined ? `, Output Tokens: ${f.outputTokens}` : ''}${f.processingTimeMs !== undefined ? `, Processing Time: ${f.processingTimeMs}ms` : ''}`
+            details: `Code: ${f.code || 'N/A'}, Details: ${f.details || 'N/A'}${f.inputTokens !== undefined ? `, Input Tokens: ${f.inputTokens}` : ''}${f.outputTokens !== undefined ? `, Output Tokens: ${f.outputTokens}` : ''}${f.processingTimeMs !== undefined ? `, Processing Time: ${f.processingTimeMs}ms` : ''}`
         })) : undefined,
       };
       

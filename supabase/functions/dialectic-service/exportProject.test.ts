@@ -39,6 +39,7 @@ describe('Dialectic Service: exportProject Action', () => {
         user_id: 'user-uuid',
         project_name: 'Project To Export',
         initial_user_prompt: 'Export this prompt',
+        initial_prompt_resource_id: null,
         selected_domain_overlay_id: null,
         selected_domain_tag: null,
         repo_url: null,
@@ -53,7 +54,7 @@ describe('Dialectic Service: exportProject Action', () => {
         project_id: mockProjectToExport.id,
         user_id: mockProjectToExport.user_id!,
         file_name: 'resource_to_export.txt',
-        storage_bucket: 'dialectic-project-resources',
+        storage_bucket: 'dialectic-project-resources-bucket',
         storage_path: `projects/${mockProjectToExport.id}/resources/resource_to_export.txt`,
         mime_type: 'text/plain',
         size_bytes: 100,
@@ -67,12 +68,12 @@ describe('Dialectic Service: exportProject Action', () => {
         id: 'export-session-uuid',
         project_id: mockProjectToExport.id,
         session_description: 'Session to export',
-        current_stage_seed_prompt: 'seed prompt for export session',
         iteration_count: 1,
-        active_thesis_prompt_template_id: null,
-        active_antithesis_prompt_template_id: null,
+        selected_model_catalog_ids: null,
+        stage: "SYNTHESIS",
         status: 'synthesis_complete',
         associated_chat_id: null,
+        user_input_reference_url: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
     };
@@ -85,7 +86,6 @@ describe('Dialectic Service: exportProject Action', () => {
         content_mime_type: 'text/markdown',
         content_size_bytes: 150,
         raw_response_storage_path: `${mockProjectToExport.id}/${mockSessionToExport.id}/export-contrib-uuid_raw.json`,
-        actual_prompt_sent: 'Prompt for exported contribution',
         tokens_used_input: 5,
         tokens_used_output: 100,
         processing_time_ms: 2000,
@@ -94,11 +94,13 @@ describe('Dialectic Service: exportProject Action', () => {
         iteration_number: 1,
         citations: null,
         error: null,
+        model_id: 'session-model-id',
+        model_name: 'gpt-4',
         model_version_details: null,
         stage: 'synthesis',
         target_contribution_id: null,
         prompt_template_id_used: null,
-        session_model_id: 'session-model-id',
+        seed_prompt_url: null,
     };
     const mockContributionContent = new TextEncoder().encode('# Contribution Content');
     const mockRawResponseContent = new TextEncoder().encode('{"raw": "response"}');
@@ -214,11 +216,11 @@ describe('Dialectic Service: exportProject Action', () => {
         assertExists(resourceSelectSpy);
         assertEquals(resourceSelectSpy.callCount > 0, true);
 
-        const downloadSpyProjectResources = testSpies.storage.from("dialectic-project-resources").downloadSpy;
+        const downloadSpyProjectResources = testSpies.storage.from(mockResourceToExport.storage_bucket).downloadSpy;
         assertExists(downloadSpyProjectResources);
         assertExists(downloadSpyProjectResources.calls.find(c => c.args[0] === mockResourceToExport.storage_path));
         
-        const downloadSpyContributions = testSpies.storage.from("dialectic-contributions").downloadSpy;
+        const downloadSpyContributions = testSpies.storage.from(mockContributionToExport.content_storage_bucket).downloadSpy;
         assertExists(downloadSpyContributions);
         assertExists(downloadSpyContributions.calls.find(c => c.args[0] === mockContributionToExport.content_storage_path));
         assertExists(downloadSpyContributions.calls.find(c => c.args[0] === mockContributionToExport.raw_response_storage_path));

@@ -10,7 +10,8 @@ import {
 } from '@/components/ui/dialog';
 import { TextInputArea } from '@/components/common/TextInputArea';
 import { useDialecticStore } from '@paynless/store';
-import type { StartSessionPayload, DialecticProject, DomainOverlayDescriptor, DialecticStage, DomainTagDescriptor } from '@paynless/types';
+import type { StartSessionPayload, DialecticProject, DomainOverlayDescriptor, DomainTagDescriptor } from '@paynless/types';
+import { DialecticStage } from '@paynless/types';
 import {
   selectCurrentProjectDetail,
   selectIsStartNewSessionModalOpen,
@@ -190,12 +191,9 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
       projectId: currentProjectDetail.id,
       selectedModelCatalogIds: currentSelectedModelIds,
       sessionDescription: sessionDescriptionForPayload,
-      thesisPromptTemplateId: selectedDomainOverlayDescriptor?.id || undefined,
-      antithesisPromptTemplateId: selectedDomainOverlayDescriptor?.id || undefined,
-      synthesisPromptTemplateId: selectedDomainOverlayDescriptor?.id || undefined,
-      parenthesisPromptTemplateId: selectedDomainOverlayDescriptor?.id || undefined, 
-      paralysisPromptTemplateId: selectedDomainOverlayDescriptor?.id || undefined,
-      formalDebateStructureId: selectedDomainOverlayDescriptor?.id || undefined,
+      stageAssociation: currentDialecticStage || DialecticStage.THESIS,
+      promptTemplateId: "NEEDS_IMPLEMENTATION_SELECT_PROMPT_ID_FOR_STAGE",
+      selectedDomainOverlayId: currentSelectedOverlayIdFromStore || undefined,
     };
 
     const result = await startDialecticSession(payload);

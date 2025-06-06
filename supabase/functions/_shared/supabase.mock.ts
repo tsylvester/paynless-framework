@@ -108,6 +108,22 @@ export interface IMockClientSpies {
     maybeSingle?: Spy<IMockQueryBuilder['maybeSingle']>;
     then?: Spy<IMockQueryBuilder['then']>;
   } | undefined);
+  getAllQueryBuilderSpies: (tableName: string) => Array<{
+    select?: Spy<IMockQueryBuilder['select']>;
+    insert?: Spy<IMockQueryBuilder['insert']>;
+    update?: Spy<IMockQueryBuilder['update']>;
+    delete?: Spy<IMockQueryBuilder['delete']>;
+    upsert?: Spy<IMockQueryBuilder['upsert']>;
+    eq?: Spy<IMockQueryBuilder['eq']>;
+    neq?: Spy<IMockQueryBuilder['neq']>;
+    gt?: Spy<IMockQueryBuilder['gt']>;
+    gte?: Spy<IMockQueryBuilder['gte']>;
+    lt?: Spy<IMockQueryBuilder['lt']>;
+    lte?: Spy<IMockQueryBuilder['lte']>;
+    single?: Spy<IMockQueryBuilder['single']>;
+    maybeSingle?: Spy<IMockQueryBuilder['maybeSingle']>;
+    then?: Spy<IMockQueryBuilder['then']>;
+  }> | undefined;
   getHistoricQueryBuilderSpies: (tableName: string, methodName: string) => { callCount: number; callsArgs: unknown[][] } | undefined;
 }
 
@@ -816,24 +832,58 @@ export function createMockSupabaseClient(
         auth: {
             getUserSpy: mockAuth.getUserSpy,
         },
+        rpcSpy: mockClientInstance.rpcSpy,
+        fromSpy: mockClientInstance.fromSpy,
         storage: { 
             from: (bucketId: string) => {
-                const bucketAPI = mockClientInstance.storage.from(bucketId) as MockStorageBucketAPIImpl; 
+                const bucketAPI = mockClientInstance.storage.from(bucketId) as MockStorageBucketAPIImpl | undefined;
+                if (!bucketAPI) {
+                    // This case should ideally not happen if 'from' is called on existing buckets
+                    // or if getStorageBucketApiInstance auto-creates. For now, throw or return undefined spies.
+                    console.warn(`[Mock Supabase Spies] Storage bucket API not found for ${bucketId} when creating spies.`);
+                    // Return an object with undefined spies or throw an error
+                    return {
+                        uploadSpy: undefined as any, downloadSpy: undefined as any, createSignedUrlSpy: undefined as any,
+                        removeSpy: undefined as any, listSpy: undefined as any, copySpy: undefined as any,
+                    };
+                }
                 return {
-                    uploadSpy: bucketAPI.upload as Spy<any, any[], any>,
-                    downloadSpy: bucketAPI.download as Spy<any, any[], any>,
-                    createSignedUrlSpy: bucketAPI.createSignedUrl as Spy<any, any[], any>,
-                    removeSpy: bucketAPI.remove as Spy<any, any[], any>,
-                    listSpy: bucketAPI.list as Spy<any, any[], any>,
-                    copySpy: bucketAPI.copy as Spy<any, any[], any>,
+                    uploadSpy: bucketAPI.upload as Spy<IMockStorageBucketAPI['upload']>,
+                    downloadSpy: bucketAPI.download as Spy<IMockStorageBucketAPI['download']>,
+                    createSignedUrlSpy: bucketAPI.createSignedUrl as Spy<IMockStorageBucketAPI['createSignedUrl']>,
+                    removeSpy: bucketAPI.remove as Spy<IMockStorageBucketAPI['remove']>,
+                    listSpy: bucketAPI.list as Spy<IMockStorageBucketAPI['list']>,
+                    copySpy: bucketAPI.copy as Spy<IMockStorageBucketAPI['copy']>,
                 };
             }
         },
-        rpcSpy: mockClientInstance.rpcSpy,
-        fromSpy: mockClientInstance.fromSpy,
         getLatestQueryBuilderSpies: (tableName: string) => {
             const builder = mockClientInstance.getLatestBuilder(tableName);
-            return (builder as MockQueryBuilder)?.methodSpies as ReturnType<IMockClientSpies['getLatestQueryBuilderSpies']> | undefined;
+            return builder?.methodSpies as ReturnType<IMockClientSpies['getLatestQueryBuilderSpies']> | undefined;
+        },
+        getAllQueryBuilderSpies: (tableName: string) => {
+            const historicBuilders = mockClientInstance.getHistoricBuildersForTable(tableName);
+            if (!historicBuilders || historicBuilders.length === 0) {
+                return undefined;
+            }
+            return historicBuilders.map(builder =>
+                builder.methodSpies as { // Cast each methodSpies object
+                    select?: Spy<IMockQueryBuilder['select']>;
+                    insert?: Spy<IMockQueryBuilder['insert']>;
+                    update?: Spy<IMockQueryBuilder['update']>;
+                    delete?: Spy<IMockQueryBuilder['delete']>;
+                    upsert?: Spy<IMockQueryBuilder['upsert']>;
+                    eq?: Spy<IMockQueryBuilder['eq']>;
+                    neq?: Spy<IMockQueryBuilder['neq']>;
+                    gt?: Spy<IMockQueryBuilder['gt']>;
+                    gte?: Spy<IMockQueryBuilder['gte']>;
+                    lt?: Spy<IMockQueryBuilder['lt']>;
+                    lte?: Spy<IMockQueryBuilder['lte']>;
+                    single?: Spy<IMockQueryBuilder['single']>;
+                    maybeSingle?: Spy<IMockQueryBuilder['maybeSingle']>;
+                    then?: Spy<IMockQueryBuilder['then']>;
+                }
+            );
         },
         getHistoricQueryBuilderSpies: (tableName: string, methodName: string): { callCount: number; callsArgs: unknown[][] } | undefined => {
             const historicBuilders = mockClientInstance.getHistoricBuildersForTable(tableName);

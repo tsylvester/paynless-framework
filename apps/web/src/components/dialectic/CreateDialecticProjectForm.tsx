@@ -4,13 +4,14 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { logger } from '@paynless/utils';
 
-import { useDialecticStore } from '@paynless/store';
-import {
+import { 
+  useDialecticStore, 
   selectIsCreatingProject,
   selectCreateProjectError,
   selectSelectedDomainTag,
   selectSelectedStageAssociation,
 } from '@paynless/store';
+import { DialecticStage } from '@paynless/types';
 import type { CreateProjectPayload, DialecticProjectResource } from '@paynless/types';
 import { DomainSelector } from '@/components/dialectic/DomainSelector';
 
@@ -69,7 +70,6 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
     formState: { errors },
     setValue,
     reset, 
-    watch, 
   } = useForm<CreateProjectFormValues>({
     resolver: zodResolver(createProjectFormSchema),
     defaultValues: {
@@ -90,6 +90,12 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
     name: 'projectName',
   });
 
+  const stripMarkdown = (text: string): string => {
+    // Basic markdown stripping: removes #, *, _, `, [], () and trims
+    // More complex regex can be used for more thorough stripping if needed.
+    return text.replace(/[#*_`[\]()]/g, '').trim();
+  };
+
   const handleFileLoadForPrompt = useCallback((fileContent: string | ArrayBuffer, file: File) => {
     if (typeof fileContent === 'string') {
       setValue('initialUserPrompt', fileContent, { shouldValidate: true, shouldDirty: true });
@@ -97,7 +103,7 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
       // Automatically update project name if not manually set
       if (!projectNameManuallySet && file.name) {
         const fileNameWithoutExt = file.name.split('.').slice(0, -1).join('.');
-        const summary = fileNameWithoutExt.substring(0, 50);
+        const summary = stripMarkdown(fileNameWithoutExt).substring(0, 50);
         if (summary) {
           setValue('projectName', summary, { shouldValidate: true, shouldDirty: true });
         }
@@ -107,28 +113,26 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
     }
   }, [setValue, projectNameManuallySet]);
 
-  // Auto-name project from prompt text if project name is empty and not manually set
+  // Auto-name project from prompt text or file name if project name is empty and not manually set
   useEffect(() => {
-    if (!projectNameManuallySet && watchedPrompt && (!watchedProjectName || watchedProjectName.trim() === '')) {
-      const firstLine = watchedPrompt.split('\n')[0].trim();
-      const summary = firstLine.substring(0, 50); // Cap at 50 chars
-      if (summary) {
+    if (projectNameManuallySet) return;
+
+    if (promptFile && promptFile.name) {
+      // If a file is loaded, prioritize its name
+      const fileNameWithoutExt = promptFile.name.split('.').slice(0, -1).join('.');
+      const summary = stripMarkdown(fileNameWithoutExt).substring(0, 50);
+      if (summary && summary !== watchedProjectName) {
+        setValue('projectName', summary, { shouldValidate: true, shouldDirty: true });
+      }
+    } else if (watchedPrompt && (!watchedProjectName || watchedProjectName.trim() === '')) {
+      // If no file, use the typed prompt
+      const firstLine = watchedPrompt.split('\n')[0]; // No need to trim here, stripMarkdown will do it
+      const summary = stripMarkdown(firstLine).substring(0, 50);
+      if (summary && summary !== watchedProjectName) {
         setValue('projectName', summary, { shouldValidate: true, shouldDirty: true });
       }
     }
-  }, [watchedPrompt, watchedProjectName, projectNameManuallySet, setValue]);
-
-  // Handle manual project name input to stop auto-naming
-  useEffect(() => {
-    const subscription = watch((value, { name }) => {
-      if (name === 'projectName' && value.projectName !== watchedProjectName) {
-        if (value.projectName !== watchedPrompt.split('\n')[0].trim().substring(0,50)) {
-            setProjectNameManuallySet(true);
-        }
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, [watch, watchedPrompt, watchedProjectName]);
+  }, [watchedPrompt, promptFile, watchedProjectName, projectNameManuallySet, setValue]);
 
   // Global drag/drop prevention for the window - WEB PLATFORM ONLY
   useEffect(() => {
@@ -208,7 +212,7 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
   // Set the initial stage association to 'thesis' when the component mounts
   useEffect(() => {
     if (setSelectedStageAssociation) {
-        setSelectedStageAssociation('thesis');
+        setSelectedStageAssociation(DialecticStage.THESIS);
     }
   }, [setSelectedStageAssociation]);
 
@@ -265,7 +269,8 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
       resetCreateProjectError();
     }
     const payload: CreateProjectPayload = {
-      ...data,
+      projectName: data.projectName,
+      initialUserPrompt: promptFile ? "" : data.initialUserPrompt, // Send empty string if file uploaded
       selectedDomainTag: enableDomainSelection ? selectedDomainTag : null, 
     };
     
@@ -333,6 +338,7 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
                     if (e.target.value.trim() !== '') {
                         setProjectNameManuallySet(true);
                     } else {
+                        // If user clears the field, allow auto-naming to resume
                         setProjectNameManuallySet(false);
                     }
                   }}

@@ -240,14 +240,13 @@ describe("getProjectDetails", () => {
     const result = await getProjectDetails(mockRequest, currentMockDbClient as any, payload, getTestAuthOptions(currentMockDbClient));
 
     assertExists(result.error);
-    assertEquals(result.error?.message, "Project not found or access denied");
-    assertEquals(result.error?.code, "NOT_FOUND");
-    assertEquals(result.error?.status, 404);
+    assertEquals(result.error?.message, "Failed to fetch project details");
+    assertEquals(result.error?.code, "DB_FETCH_ERROR");
+    assertEquals(result.error?.status, 500);
   });
 
-  type MockDbProjectData = Omit<DialecticProject, 'sessions' | 'session_models' | 'contributions'> & {
-    dialectic_sessions: (Omit<DialecticSession, 'session_models' | 'contributions' | 'dialectic_contributions' | 'dialectic_session_models'> & {
-        dialectic_session_models?: (Omit<DialecticSessionModel, 'ai_provider'> & { ai_provider?: Partial<AIModelCatalogEntry>})[];
+  type MockDbProjectData = Omit<DialecticProject, 'sessions' | 'contributions'> & {
+    dialectic_sessions: (Omit<DialecticSession, 'contributions' | 'dialectic_contributions'> & {
         dialectic_contributions?: Partial<DialecticContribution>[] | null;
     })[] | null;
   };
@@ -282,20 +281,6 @@ describe("getProjectDetails", () => {
           status: "thesis_complete",
           associated_chat_id: "chat-1",
           max_iterations: 3,
-          dialectic_session_models: [
-            {
-              id: "model-link-1",
-              session_id: "session-1",
-              model_id: "provider-model-1",
-              model_role: "thesis_generator",
-              created_at: new Date().toISOString(),
-              ai_provider: { 
-                id: "provider-model-1",
-                provider_name: "TestProvider",
-                model_name: "TestModel",
-              } as Partial<AIModelCatalogEntry>,
-            },
-          ],
           dialectic_contributions: [
             { 
             id: "contrib-2", 
@@ -325,7 +310,6 @@ describe("getProjectDetails", () => {
           status: "pending_thesis",
           associated_chat_id: "chat-2",
           max_iterations: 3,
-          dialectic_session_models: [],
           dialectic_contributions: [], 
         },
          {
@@ -346,7 +330,6 @@ describe("getProjectDetails", () => {
           status: "pending_thesis",
           max_iterations: 3,
           associated_chat_id: "chat-3",
-          dialectic_session_models: [],
           dialectic_contributions: null, 
         },
       ],
@@ -394,11 +377,6 @@ describe("getProjectDetails", () => {
 
     const session1 = resultData.dialectic_sessions.find((s: any) => s.id === "session-1");
     assertExists(session1);
-    assertExists(session1.dialectic_session_models);
-    assertEquals(session1.dialectic_session_models.length, 1);
-    assertEquals(session1.dialectic_session_models[0].model_id, "provider-model-1");
-    assertExists(session1.dialectic_session_models[0].ai_provider);
-    assertEquals(session1.dialectic_session_models[0].ai_provider.model_name, "TestModel");
 
     assertExists(session1.dialectic_contributions);
     assertEquals(session1.dialectic_contributions.length, 2);
@@ -423,7 +401,7 @@ describe("getProjectDetails", () => {
     assertEquals(fromSpy.calls[0].args[0], 'dialectic_projects');
     
     assertEquals(qbSpies.select.calls.length, 1);
-    const expectedSelect = "*, dialectic_sessions (*, dialectic_session_models (*, ai_providers (*) ), dialectic_contributions (*) )";
+    const expectedSelect = "*, dialectic_sessions (*, dialectic_contributions (*) )";
     const actualSelect = qbSpies.select.calls[0].args[0]?.toString().replace(/\s+/g, ' ').trim();
     assertEquals(actualSelect, expectedSelect);
 

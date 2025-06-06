@@ -34,7 +34,8 @@ export type DialecticContributionSql = Database['public']['Tables']['dialectic_c
 export interface DialecticContribution {
     id: string;
     session_id: string;
-    session_model_id: string;
+    model_id: string | null;
+    model_name: string | null;
     user_id: string | null; // Note: Not directly in dialectic_contributions table; added from context.
     stage: string;
     iteration_number: number;
@@ -94,6 +95,7 @@ export interface DialecticProject {
     user_id: string;
     project_name: string;
     initial_user_prompt: string;
+    initial_prompt_resource_id?: string | null;
     selected_domain_tag: string | null;
     selected_domain_overlay_id?: string | null;
     repo_url: string | null;
@@ -122,22 +124,26 @@ export interface UpdateProjectDomainTagPayload {
   domainTag: string | null;
 }
 
+export interface UpdateProjectDomainTagSuccessData {
+  id: string;
+  project_name: string;
+  selected_domain_tag: string | null;
+  updated_at: string;
+}
+
 export interface GetProjectDetailsPayload { 
   projectId: string;
 }
 
 export interface StartSessionPayload {
   projectId: string;
-  selectedModelCatalogIds: string[]; 
   sessionDescription?: string | null;
-  originatingChatId?: string | null; 
-  thesisPromptTemplateName?: string;
-  antithesisPromptTemplateName?: string;
-  synthesisPromptTemplateId?: string; 
-  parenthesisPromptTemplateId?: string; 
-  paralysisPromptTemplateId?: string; 
-  formalDebateStructureId?: string | null; 
-  maxIterations?: number; 
+  selectedModelCatalogIds: string[];
+  originatingChatId?: string | null;
+  stageAssociation: DialecticStage;
+  selectedDomainOverlayId?: string | null;
+  promptTemplateId?: string | null;
+  maxIterations?: number;
 }
 
 export interface StartSessionSuccessResponse {
@@ -179,6 +185,8 @@ export interface GenerateStageContributionsSuccessResponse {
   contributions: DialecticContribution[]; 
   errors?: { 
     modelId: string; 
+    modelName?: string; 
+    providerName?: string | null;
     message: string;
     details?: string;
   }[];
@@ -186,8 +194,8 @@ export interface GenerateStageContributionsSuccessResponse {
 
 export interface SelectedAiProvider {
   id: string;                 
-  provider_name: string;    
-  model_name: string;       
+  provider: string | null;
+  name: string;
   api_identifier: string;   
 }
 

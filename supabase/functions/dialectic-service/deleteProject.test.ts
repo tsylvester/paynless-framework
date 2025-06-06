@@ -9,7 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // Define mock STORAGE_BUCKETS to resolve linter errors
 const STORAGE_BUCKETS = {
     DIALECTIC_CONTRIBUTIONS: "mock-dialectic-contributions-bucket",
-    DIALECTIC_PROJECT_RESOURCES: "mock-dialectic-project-resources-bucket",
+    dialectic_contributions: "mock-dialectic-contributions-bucket",
 };
 
 Deno.test("deleteProject - Happy Path: successfully deletes a project and its resources", async () => {
@@ -23,7 +23,7 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
         { id: "contrib-2", session_id: "session-2", content_storage_path: "path/c2.md", raw_response_storage_path: null, content_storage_bucket: STORAGE_BUCKETS.DIALECTIC_CONTRIBUTIONS },
     ];
     const mockProjectResourcesData = [
-        { id: "res-1", project_id: mockProjectId, storage_path: "resources/file1.pdf", storage_bucket: STORAGE_BUCKETS.DIALECTIC_PROJECT_RESOURCES },
+        { id: "res-1", project_id: mockProjectId, storage_path: "resources/file1.pdf", storage_bucket: STORAGE_BUCKETS.dialectic_contributions },
         { id: "res-2", project_id: mockProjectId, storage_path: "resources/image.png", storage_bucket: "other-bucket" },
     ];
 
@@ -87,7 +87,7 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
     assertEquals(functionsInvokeSpy.calls.length, 3, "Should call storage-cleanup-service 3 times");
     const expectedCleanupCalls = [
         { bucket: STORAGE_BUCKETS.DIALECTIC_CONTRIBUTIONS, paths: ["path/c1.txt", "path/r1.json", "path/c2.md"] },
-        { bucket: STORAGE_BUCKETS.DIALECTIC_PROJECT_RESOURCES, paths: ["resources/file1.pdf"] },
+        { bucket: STORAGE_BUCKETS.dialectic_contributions, paths: ["resources/file1.pdf"] },
         { bucket: "other-bucket", paths: ["resources/image.png"] }
     ];
     for (const expectedCall of expectedCleanupCalls) {
@@ -186,7 +186,7 @@ Deno.test("deleteProject - Error fetching sessions (should still proceed)", asyn
     });
     const mockProjectResourcesSelect = spy(async (state: any) => {
         if (state.filters.some((f: any) => f.column === 'project_id' && f.value === mockProjectId)) {
-            return { data: [{ id: "res-x", project_id: mockProjectId, storage_path: "resources/some_file.pdf", storage_bucket: STORAGE_BUCKETS.DIALECTIC_PROJECT_RESOURCES }], error: null, count: 1, status: 200, statusText: "OK" };
+            return { data: [{ id: "res-x", project_id: mockProjectId, storage_path: "resources/some_file.pdf", storage_bucket: STORAGE_BUCKETS.dialectic_contributions }], error: null, count: 1, status: 200, statusText: "OK" };
         }
         return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
     });
@@ -220,7 +220,7 @@ Deno.test("deleteProject - Error fetching sessions (should still proceed)", asyn
         assertEquals(mockContributionsSelect.calls.length, 0); // Should not be called if sessions fail and sessionIds is empty
         assertEquals(mockProjectResourcesSelect.calls.length, 1);
         assertEquals(functionsInvokeSpy.calls.length, 1); // Only project resources
-        assertExists(functionsInvokeSpy.calls.find(call => call.args[1].body.bucket === STORAGE_BUCKETS.DIALECTIC_PROJECT_RESOURCES && call.args[1].body.paths[0] === "resources/some_file.pdf")); // Path defined in this test
+        assertExists(functionsInvokeSpy.calls.find(call => call.args[1].body.bucket === STORAGE_BUCKETS.dialectic_contributions && call.args[1].body.paths[0] === "resources/some_file.pdf")); // Path defined in this test
         assertEquals(mockProjectsDelete.calls.length, 1);
     } finally {
         consoleErrorSpy.restore();
@@ -257,7 +257,7 @@ Deno.test("deleteProject - No sessions found (should still proceed)", async () =
     });
     const mockProjectResourcesSelect = spy(async (state: any) => {
         if (state.filters.some((f: any) => f.column === 'project_id' && f.value === mockProjectId)) {
-            return { data: [{ id: "res-y", project_id: mockProjectId, storage_path: mockProjectResourcePath, storage_bucket: STORAGE_BUCKETS.DIALECTIC_PROJECT_RESOURCES }], error: null, count: 1, status: 200, statusText: "OK" };
+            return { data: [{ id: "res-y", project_id: mockProjectId, storage_path: mockProjectResourcePath, storage_bucket: STORAGE_BUCKETS.dialectic_contributions }], error: null, count: 1, status: 200, statusText: "OK" };
         }
         return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
     });
@@ -286,7 +286,7 @@ Deno.test("deleteProject - No sessions found (should still proceed)", async () =
         assertEquals(mockContributionsSelect.calls.length, 0); // Should NOT be called if sessions is empty
         assertEquals(mockProjectResourcesSelect.calls.length, 1);
         assertEquals(functionsInvokeSpy.calls.length, 1); // Only project resources, as contributions paths are empty
-        assertExists(functionsInvokeSpy.calls.find(call => call.args[1].body.bucket === STORAGE_BUCKETS.DIALECTIC_PROJECT_RESOURCES && call.args[1].body.paths[0] === mockProjectResourcePath));
+        assertExists(functionsInvokeSpy.calls.find(call => call.args[1].body.bucket === STORAGE_BUCKETS.dialectic_contributions && call.args[1].body.paths[0] === mockProjectResourcePath));
         assertEquals(mockProjectsDelete.calls.length, 1);
     } finally {
         consoleInfoSpy.restore();
@@ -324,7 +324,7 @@ Deno.test("deleteProject - Error fetching contributions (should still proceed)",
     });
     const mockProjectResourcesSelect = spy(async (state: any) => {
         if (state.filters.some((f: any) => f.column === 'project_id' && f.value === mockProjectId)) {
-            return { data: [{ id: "res-z", project_id: mockProjectId, storage_path: mockProjectResourcePath, storage_bucket: STORAGE_BUCKETS.DIALECTIC_PROJECT_RESOURCES }], error: null, count: 1, status: 200, statusText: "OK" };
+            return { data: [{ id: "res-z", project_id: mockProjectId, storage_path: mockProjectResourcePath, storage_bucket: STORAGE_BUCKETS.dialectic_contributions }], error: null, count: 1, status: 200, statusText: "OK" };
         }
         return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
     });
@@ -353,7 +353,7 @@ Deno.test("deleteProject - Error fetching contributions (should still proceed)",
         assertEquals(mockContributionsSelect.calls.length, 1);
         assertEquals(mockProjectResourcesSelect.calls.length, 1);
         assertEquals(functionsInvokeSpy.calls.length, 1); // Only project resources, as contributions errored resulting in empty paths
-        assertExists(functionsInvokeSpy.calls.find(call => call.args[1].body.bucket === STORAGE_BUCKETS.DIALECTIC_PROJECT_RESOURCES && call.args[1].body.paths[0] === mockProjectResourcePath));
+        assertExists(functionsInvokeSpy.calls.find(call => call.args[1].body.bucket === STORAGE_BUCKETS.dialectic_contributions && call.args[1].body.paths[0] === mockProjectResourcePath));
         assertEquals(mockProjectsDelete.calls.length, 1);
     } finally {
         consoleErrorSpy.restore();
@@ -391,7 +391,7 @@ Deno.test("deleteProject - No contributions found (should still proceed)", async
     });
     const mockProjectResourcesSelect = spy(async (state: any) => {
         if (state.filters.some((f: any) => f.column === 'project_id' && f.value === mockProjectId)) {
-            return { data: [{ id: "res-a", project_id: mockProjectId, storage_path: mockProjectResourcePath, storage_bucket: STORAGE_BUCKETS.DIALECTIC_PROJECT_RESOURCES }], error: null, count: 1, status: 200, statusText: "OK" };
+            return { data: [{ id: "res-a", project_id: mockProjectId, storage_path: mockProjectResourcePath, storage_bucket: STORAGE_BUCKETS.dialectic_contributions }], error: null, count: 1, status: 200, statusText: "OK" };
         }
         return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
     });
@@ -417,7 +417,7 @@ Deno.test("deleteProject - No contributions found (should still proceed)", async
         assertEquals(response.status, 204);
         assertEquals(mockProjectResourcesSelect.calls.length, 1); // Called, found none
         assertEquals(functionsInvokeSpy.calls.length, 1); // Only project resources as contribs paths are empty
-        assertExists(functionsInvokeSpy.calls.find(call => call.args[1].body.bucket === STORAGE_BUCKETS.DIALECTIC_PROJECT_RESOURCES && call.args[1].body.paths[0] === mockProjectResourcePath));
+        assertExists(functionsInvokeSpy.calls.find(call => call.args[1].body.bucket === STORAGE_BUCKETS.dialectic_contributions && call.args[1].body.paths[0] === mockProjectResourcePath));
         assertEquals(mockProjectsDelete.calls.length, 1);
     } finally {
         consoleInfoSpy.restore();
@@ -482,7 +482,7 @@ Deno.test("deleteProject - Error fetching project resources (should still procee
         assertEquals(consoleErrorSpy.calls.length, 1);
         assertExists(consoleErrorSpy.calls[0].args.find(arg => typeof arg === 'string' && arg.includes("Error fetching project resources for deletion")));
         assertEquals(mockProjectResourcesSelect.calls.length, 1);
-        assertEquals(functionsInvokeSpy.calls.length, 1); // Only contributions, as project resources errored
+        assertEquals(functionsInvokeSpy.calls.length, 1);
         assertExists(functionsInvokeSpy.calls.find(call => call.args[1].body.bucket === STORAGE_BUCKETS.DIALECTIC_CONTRIBUTIONS && call.args[1].body.paths[0] === mockContributionPath));
         assertEquals(mockProjectsDelete.calls.length, 1);
     } finally {
@@ -589,7 +589,7 @@ Deno.test("deleteProject - Error during storage-cleanup-service invocation (shou
     });
     const mockProjectResourcesSelect = spy(async (state: any) => {
         if (state.filters.some((f: any) => f.column === 'project_id' && f.value === mockProjectId)) {
-            return { data: [{ id: "res-b", project_id: mockProjectId, storage_path: mockResourcePath, storage_bucket: STORAGE_BUCKETS.DIALECTIC_PROJECT_RESOURCES }], error: null, count: 1, status: 200, statusText: "OK" };
+            return { data: [{ id: "res-b", project_id: mockProjectId, storage_path: mockResourcePath, storage_bucket: STORAGE_BUCKETS.dialectic_contributions }], error: null, count: 1, status: 200, statusText: "OK" };
         }
         return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
     });
@@ -618,7 +618,7 @@ Deno.test("deleteProject - Error during storage-cleanup-service invocation (shou
         const response = await deleteProject(adminDbClient, mockPayload, mockUserId);
         assertEquals(response.error, undefined);
         assertEquals(response.status, 204);
-        assertEquals(consoleErrorSpy.calls.length, 1);
+        assertEquals(consoleErrorSpy.calls.length, 2);
         assertExists(consoleErrorSpy.calls[0].args.find(arg => 
             typeof arg === 'string' && 
             arg.includes(`Error cleaning storage for bucket ${STORAGE_BUCKETS.DIALECTIC_CONTRIBUTIONS}:`) &&
@@ -663,7 +663,7 @@ Deno.test("deleteProject - Error during final project deletion from DB (returns 
     });
     const mockProjectResourcesSelect = spy(async (state: any) => {
         if (state.filters.some((f: any) => f.column === 'project_id' && f.value === mockProjectId)) {
-            return { data: [{ id: "res-final-err", project_id: mockProjectId, storage_path: mockResourcePath, storage_bucket: STORAGE_BUCKETS.DIALECTIC_PROJECT_RESOURCES }], error: null, count: 1, status: 200, statusText: "OK" };
+            return { data: [{ id: "res-final-err", project_id: mockProjectId, storage_path: mockResourcePath, storage_bucket: STORAGE_BUCKETS.dialectic_contributions }], error: null, count: 1, status: 200, statusText: "OK" };
         }
         return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
     });

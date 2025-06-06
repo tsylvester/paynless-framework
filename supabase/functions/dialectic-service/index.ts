@@ -1,13 +1,21 @@
 // deno-lint-ignore-file no-explicit-any
 import {
   DialecticServiceRequest,
-  CreateProjectPayload,
   UpdateProjectDomainTagPayload,
   StartSessionPayload,
   GenerateStageContributionsPayload,
   GetProjectDetailsPayload,
   ListAvailableDomainOverlaysPayload,
   DialecticStage,
+  DialecticProject,
+  DialecticSession,
+  DialecticContribution,
+  DialecticProjectResource,
+  DomainOverlayDescriptor,
+  UpdateProjectDomainTagSuccessData,
+  StartSessionSuccessResponse,
+  GenerateStageContributionsSuccessResponse,
+  UploadProjectResourceFileSuccessResponse,
 } from "./dialectic.interface.ts";
 import { serve } from "https://deno.land/std@0.170.0/http/server.ts";
 import {
@@ -22,9 +30,10 @@ import type {
   ServiceError,
   GetUserFnResult,
   GetUserFn,
+  ILogger
 } from '../_shared/types.ts';
+import type { DomainTagDescriptor } from "./listAvailableDomainTags.ts";
 
-// Import individual action handlers
 import { createProject } from "./createProject.ts";
 import { listAvailableDomainTags } from "./listAvailableDomainTags.ts";
 import { updateProjectDomainTag } from "./updateProjectDomainTag.ts";
@@ -36,19 +45,17 @@ import { listProjects } from "./listProjects.ts";
 import { uploadProjectResourceFileHandler } from "./uploadProjectResourceFile.ts";
 import { listAvailableDomainOverlays } from "./listAvailableDomainOverlays.ts";
 import { deleteProject } from './deleteProject.ts';
-import { cloneProject } from './cloneProject.ts';
+import { cloneProject, CloneProjectResult } from './cloneProject.ts';
 import { exportProject } from './exportProject.ts';
 
 console.log("dialectic-service function started");
-
-const supabaseAdmin = createSupabaseAdminClient();
 
 // --- START: DI Helper Functions (AuthError replaced with ServiceError) ---
 interface IsValidDomainTagFn { (dbClient: SupabaseClient, domainTag: string): Promise<boolean>; }
 interface CreateSignedUrlFnResult { signedUrl: string | null; error: ServiceError | Error | null; }
 interface CreateSignedUrlFn { (client: SupabaseClient, bucket: string, path: string, expiresIn: number): Promise<CreateSignedUrlFnResult>; }
 
-const isValidDomainTagDefaultFn: IsValidDomainTagFn = async (dbClient, domainTag) => {
+export const isValidDomainTagDefaultFn: IsValidDomainTagFn = async (dbClient, domainTag) => {
   if (domainTag === null) return true;
   const { data, error } = await dbClient
     .from('domain_specific_prompt_overlays')
@@ -62,10 +69,9 @@ const isValidDomainTagDefaultFn: IsValidDomainTagFn = async (dbClient, domainTag
   return !!data;
 };
 
-const createSignedUrlDefaultFn: CreateSignedUrlFn = async (client, bucket, path, expiresIn) => {
+export const createSignedUrlDefaultFn: CreateSignedUrlFn = async (client, bucket, path, expiresIn) => {
   const { data, error } = await client.storage.from(bucket).createSignedUrl(path, expiresIn);
   if (error) {
-    // Common Supabase storage error structure (error is an Error instance with added fields)
     const storageError = error as Error & { statusCode?: string; error?: string; message: string };
     const serviceError: ServiceError = {
         message: storageError.message || 'Storage error creating signed URL',
@@ -78,7 +84,28 @@ const createSignedUrlDefaultFn: CreateSignedUrlFn = async (client, bucket, path,
 };
 // --- END: DI Helper Functions ---
 
-serve(async (req: Request) => {
+// Define ActionHandlers interface
+export interface ActionHandlers {
+  createProject: (req: Request, dbClient: SupabaseClient) => Promise<{ data?: DialecticProject; error?: ServiceError; status?: number }>;
+  listAvailableDomainTags: (dbClient: SupabaseClient, payload?: { stageAssociation?: DialecticStage }) => Promise<DomainTagDescriptor[] | { error: ServiceError }>;
+  updateProjectDomainTag: (getUserFn: GetUserFn, dbClient: SupabaseClient, isValidDomainTagFn: IsValidDomainTagFn, payload: UpdateProjectDomainTagPayload, logger: ILogger) => Promise<{ data?: UpdateProjectDomainTagSuccessData; error?: ServiceError }>;
+  getProjectDetails: (req: Request, dbClient: SupabaseClient, payload: GetProjectDetailsPayload) => Promise<{ data?: DialecticProject; error?: ServiceError; status?: number }>;
+  getContributionContentSignedUrlHandler: (getUserFn: GetUserFn, dbClient: SupabaseClient, createSignedUrlFn: CreateSignedUrlFn, logger: ILogger, payload: { contributionId: string }) => Promise<{ data?: { signedUrl: string }; error?: ServiceError; status?: number }>;
+  startSession: (req: Request, dbClient: SupabaseClient, payload: StartSessionPayload, dependencies: { logger: ILogger }) => Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }>;
+  generateStageContributions: (dbClient: SupabaseClient, payload: GenerateStageContributionsPayload, authToken: string, dependencies: { logger: ILogger }) => Promise<{ success: boolean; data?: GenerateStageContributionsSuccessResponse; error?: ServiceError }>;
+  listProjects: (req: Request, dbClient: SupabaseClient) => Promise<{ data?: DialecticProject[]; error?: ServiceError; status?: number }>;
+  uploadProjectResourceFileHandler: (req: Request, dbClient: SupabaseClient, getUserFn: GetUserFn, logger: ILogger) => Promise<{ data?: UploadProjectResourceFileSuccessResponse; error?: ServiceError }>;
+  listAvailableDomainOverlays: (stageAssociation: DialecticStage, dbClient: SupabaseClient) => Promise<DomainOverlayDescriptor[]>;
+  deleteProject: (dbClient: SupabaseClient, payload: { projectId: string }, userId: string) => Promise<{data?: null, error?: { message: string; details?: string | undefined; }, status: number}>;
+  cloneProject: (dbClient: SupabaseClient, originalProjectId: string, newProjectName: string | undefined, cloningUserId: string) => Promise<CloneProjectResult>;
+  exportProject: (dbClient: SupabaseClient, projectId: string, userId: string) => Promise<{ data?: { export_url: string }; error?: ServiceError; status?: number }>;
+}
+
+export async function handleRequest(
+  req: Request, 
+  dbAdminClient: SupabaseClient,
+  handlers: ActionHandlers
+): Promise<Response> {
   const preflightResponse = handleCorsPreflightRequest(req);
   if (preflightResponse) {
     return preflightResponse;
@@ -94,7 +121,7 @@ serve(async (req: Request) => {
       if (!authToken) {
           return { data: { user: null }, error: { message: "User not authenticated", status: 401, code: 'AUTH_TOKEN_MISSING' } };
       }
-      const { data: { user }, error } = await supabaseAdmin.auth.getUser(authToken);
+      const { data: { user }, error } = await dbAdminClient.auth.getUser(authToken);
       let serviceError: ServiceError | null = null;
       if (error) {
           serviceError = { 
@@ -114,29 +141,43 @@ serve(async (req: Request) => {
   };
 
   try {
-    // Handle multipart/form-data for file uploads first
-    if (req.method === 'POST' && req.headers.get("content-type")?.startsWith("multipart/form-data")) {
-      // Assuming 'uploadProjectResourceFile' is the only action using multipart/form-data
-      // A more robust way would be to check an 'action' field in FormData or part of the URL path
-      // if multiple multipart actions were supported by this single Edge Function.
-      // For now, if it's multipart, it must be for uploadProjectResourceFile.
-      result = await uploadProjectResourceFileHandler(req, supabaseAdmin, getUserFnForRequest, logger);
-    } else if (req.headers.get("content-type")?.startsWith("application/json")) {
-      // Handle application/json requests
+    const contentType = req.headers.get("content-type");
+
+    if (req.method === 'POST' && contentType?.startsWith("multipart/form-data")) {
+      const formData = await req.formData();
+      const action = formData.get('action') as string | null;
+      
+      logger.info('Multipart POST request received', { actionFromFormData: action });
+
+      switch (action) {
+        case 'createProject':
+          result = await handlers.createProject(req, dbAdminClient);
+          break;
+        case 'uploadProjectResourceFile':
+          result = await handlers.uploadProjectResourceFileHandler(req, dbAdminClient, getUserFnForRequest, logger);
+          break;
+        default:
+          logger.warn('Unknown action for multipart/form-data', { action });
+          result = { 
+            error: { 
+              message: `Unknown action '${action}' for multipart/form-data.`, 
+              status: 400, 
+              code: 'INVALID_MULTIPART_ACTION' 
+            } 
+          };
+      }
+    } else if (contentType?.startsWith("application/json")) {
       const requestBody: DialecticServiceRequest = await req.json();
       const { action, payload } = requestBody;
+      logger.info('JSON request received', { action, payloadExists: !!payload });
 
       switch (action) {
         case 'listAvailableDomainTags': {
-          // The payload might contain 'stageAssociation', so pass it along.
-          // The listAvailableDomainTags function is expected to handle 'undefined' if no payload is sent.
-          const listTagsOutcome = await listAvailableDomainTags(supabaseAdmin, payload as { stageAssociation?: DialecticStage } | undefined);
-          if (listTagsOutcome && typeof listTagsOutcome === 'object' && 'error' in listTagsOutcome) {
-            // It's an error object returned by listAvailableDomainTags itself (e.g., DB fetch error)
-            result = listTagsOutcome as { error: ServiceError };
+          const listTagsOutcome = await handlers.listAvailableDomainTags(dbAdminClient, payload as { stageAssociation?: DialecticStage } | undefined);
+          if (listTagsOutcome && typeof listTagsOutcome === 'object' && 'error' in listTagsOutcome && listTagsOutcome.error) {
+            result = { error: listTagsOutcome.error };
           } else {
-            // It's the array of descriptors on success
-            result = { data: listTagsOutcome };
+            result = { data: listTagsOutcome as DomainTagDescriptor[] };
           }
           break;
         }
@@ -151,20 +192,24 @@ serve(async (req: Request) => {
             };
           } else {
             try {
-              const descriptors = await listAvailableDomainOverlays(
-                (payload as unknown as ListAvailableDomainOverlaysPayload).stageAssociation, 
-                supabaseAdmin
+              const descriptors = await handlers.listAvailableDomainOverlays(
+                (payload as unknown as ListAvailableDomainOverlaysPayload).stageAssociation as DialecticStage,
+                dbAdminClient
               );
               result = { data: descriptors, success: true };
             } catch (e) {
               logger.error('Error in listAvailableDomainOverlays action', { error: e });
-              result = { 
-                error: { 
+              let serviceErr: ServiceError;
+              if (e && typeof e === 'object' && 'message' in e && 'status' in e) {
+                serviceErr = e as ServiceError;
+              } else {
+                serviceErr = { 
                   message: e instanceof Error ? e.message : "Failed to list available domain overlay details", 
                   status: 500, 
                   code: 'ACTION_HANDLER_ERROR' 
-                } 
-              };
+                }; 
+              }
+              result = { error: serviceErr };
             }
           }
           break;
@@ -172,27 +217,20 @@ serve(async (req: Request) => {
           if (!payload) {
               result = { error: { message: "Payload is required for updateProjectDomainTag", status: 400, code: 'PAYLOAD_MISSING' } };
           } else {
-              result = await updateProjectDomainTag(
+              result = await handlers.updateProjectDomainTag(
                   getUserFnForRequest, 
-                  supabaseAdmin, 
+                  dbAdminClient, 
                   isValidDomainTagDefaultFn, 
                   payload as unknown as UpdateProjectDomainTagPayload,
                   logger
               );
           }
           break;
-        case 'createProject':
-          if (!payload) {
-              result = { error: { message: "Payload is required for createProject", status: 400, code: 'PAYLOAD_MISSING' } };
-          } else {
-              result = await createProject(req, supabaseAdmin, payload as unknown as CreateProjectPayload);
-          }
-          break;
         case 'startSession':
           if (!payload) {
               result = { error: { message: "Payload is required for startSession", status: 400, code: 'PAYLOAD_MISSING' } };
           } else {
-              result = await startSession(req, supabaseAdmin, payload as unknown as StartSessionPayload, { logger });
+              result = await handlers.startSession(req, dbAdminClient, payload as unknown as StartSessionPayload, { logger });
           }
           break;
         case 'generateContributions': 
@@ -206,16 +244,16 @@ serve(async (req: Request) => {
                   sessionId: currentSessionId,
                   stage: "thesis",
               };
-              result = await generateStageContributions(supabaseAdmin, stagePayload, authToken, { logger });
+              result = await handlers.generateStageContributions(dbAdminClient, stagePayload, authToken, { logger });
           }
           break;
         case 'getContributionContentSignedUrl':
           if (!payload || typeof payload !== 'object' || typeof (payload as Partial<{ contributionId: string }>).contributionId !== 'string') {
             result = { error: { message: "Invalid payload for getContributionContentSignedUrl. Expected { contributionId: string }", status: 400, code: 'INVALID_PAYLOAD' } };
           } else {
-            result = await getContributionContentSignedUrlHandler(
+            result = await handlers.getContributionContentSignedUrlHandler(
               getUserFnForRequest, 
-              supabaseAdmin, 
+              dbAdminClient, 
               createSignedUrlDefaultFn, 
               logger,
               payload as { contributionId: string }
@@ -223,172 +261,158 @@ serve(async (req: Request) => {
           }
           break;
         case 'listProjects':
-          result = await listProjects(req, supabaseAdmin);
+          result = await handlers.listProjects(req, dbAdminClient);
           break;
         case 'getProjectDetails':
           if (!payload || !("projectId" in payload) || typeof payload.projectId !== 'string') { 
               result = { error: { message: "Invalid or missing projectId in payload for getProjectDetails action.", status: 400, code: 'INVALID_PAYLOAD' } };
           } else {
-              result = await getProjectDetails(req, supabaseAdmin, payload as unknown as GetProjectDetailsPayload);
+              result = await handlers.getProjectDetails(req, dbAdminClient, payload as unknown as GetProjectDetailsPayload);
           }
-          break;
-        case 'uploadProjectResourceFile': // This case should ideally not be hit if multipart/form-data is used
-          result = { 
-            error: { 
-              message: "This action expects multipart/form-data, not application/json. Please use the correct endpoint/client for file uploads.", 
-              status: 415, // Unsupported Media Type
-              code: 'UNSUPPORTED_MEDIA_TYPE_FOR_ACTION'
-            } 
-          };
           break;
         case 'deleteProject': {
           if (!authToken) {
-            result = { error: { message: "User authentication is required to delete a project.", status: 401, code: 'AUTH_TOKEN_MISSING' } };
-            break;
+            result = { error: { message: "User authentication required for deleteProject.", status: 401, code: 'AUTH_TOKEN_MISSING' } };
+          } else if (!payload || typeof (payload as Partial<{ projectId: string }>).projectId !== 'string') {
+            result = { error: { message: "Invalid payload for deleteProject. Expected { projectId: string }", status: 400, code: 'INVALID_PAYLOAD' } };
+          } else {
+            const { data: userData, error: userError } = await getUserFnForRequest();
+            if (userError || !userData?.user) {
+              result = { error: userError || { message: "User not found or authentication failed for deleteProject.", status: 401, code: 'USER_AUTH_FAILED' } };
+            } else {
+              const projectId = (payload as { projectId: string }).projectId;
+              const deleteHandlerResponse = await handlers.deleteProject(
+                dbAdminClient, 
+                { projectId }, 
+                userData.user.id
+              );
+              if (deleteHandlerResponse.error) {
+                result = { 
+                  error: { 
+                    message: deleteHandlerResponse.error.message,
+                    details: deleteHandlerResponse.error.details,
+                    status: deleteHandlerResponse.status, 
+                    code: 'DELETE_PROJECT_FAILED' 
+                  }
+                };
+              } else {
+                result = { data: deleteHandlerResponse.data, status: deleteHandlerResponse.status, success: true };
+              }
+            }
           }
-
-          const { data: userData, error: userError } = await getUserFnForRequest();
-          if (userError || !userData?.user) {
-            result = { error: userError || { message: "User not found or authentication failed.", status: 401, code: 'USER_AUTH_FAILED' } };
-            break;
-          }
-
-          const deletePayload = payload as { projectId: string };
-          if (!deletePayload || typeof deletePayload.projectId !== 'string') {
-            result = { error: { message: "Invalid or missing projectId in payload for deleteProject action.", status: 400, code: 'INVALID_PAYLOAD' } };
-            break;
-          }
-          result = await deleteProject(supabaseAdmin, deletePayload, userData.user.id);
           break;
         }
         case 'cloneProject': {
           if (!authToken) {
-            result = { error: { message: "User authentication is required to clone a project.", status: 401, code: 'AUTH_TOKEN_MISSING' } };
-            break;
-          }
-
-          const { data: userData, error: userError } = await getUserFnForRequest();
-          if (userError || !userData?.user) {
-            result = { error: userError || { message: "User not found or authentication failed for clone action.", status: 401, code: 'USER_AUTH_FAILED' } };
-            break;
-          }
-
-          const clonePayload = payload as { projectId: string; newProjectName?: string };
-          if (!clonePayload || typeof clonePayload.projectId !== 'string') {
-            result = { error: { message: "Invalid or missing projectId in payload for cloneProject action.", status: 400, code: 'INVALID_PAYLOAD' } };
-            break;
-          }
-          
-          const cloneResult = await cloneProject(
-            supabaseAdmin, 
-            clonePayload.projectId, 
-            clonePayload.newProjectName, 
-            userData.user.id
-          );
-
-          if (cloneResult.error) {
-            result = { 
-              error: { 
-                message: cloneResult.error.message, 
-                details: cloneResult.error.details as string | undefined,
-                status: cloneResult.error.code === 'PGRST116' || cloneResult.error.message.includes('not found') ? 404 : 500, // Example status mapping
-                code: cloneResult.error.code || 'CLONE_PROJECT_FAILED'
-              } 
-            };
+             result = { error: { message: "User authentication required for cloneProject.", status: 401, code: 'AUTH_TOKEN_MISSING' } };
+          } else if (!payload || typeof (payload as Partial<{ projectId: string; newProjectName?: string }>).projectId !== 'string') {
+             result = { error: { message: "Invalid payload for cloneProject. Expected { projectId: string, newProjectName?: string }", status: 400, code: 'INVALID_PAYLOAD' } };
           } else {
-            result = { data: cloneResult.data, status: 201 }; // 201 Created for new resource
+            const { data: userData, error: userError } = await getUserFnForRequest();
+            if (userError || !userData?.user) {
+              result = { error: userError || { message: "User not found or authentication failed for cloneProject.", status: 401, code: 'USER_AUTH_FAILED' } };
+            } else {
+              const clonePayload = payload as { projectId: string; newProjectName?: string };
+              const cloneHandlerResponse = await handlers.cloneProject(
+                dbAdminClient, 
+                clonePayload.projectId,
+                clonePayload.newProjectName,
+                userData.user.id
+              );
+              if (cloneHandlerResponse.error) {
+                let status = 500;
+                if (cloneHandlerResponse.error.message.toLowerCase().includes('not found')) {
+                  status = 404;
+                }
+                result = { 
+                  error: { 
+                    message: cloneHandlerResponse.error.message,
+                    details: cloneHandlerResponse.error.details as string | undefined, 
+                    status: status, 
+                    code: cloneHandlerResponse.error.code || 'CLONE_PROJECT_FAILED'
+                  }
+                };
+              } else {
+                result = { data: cloneHandlerResponse.data, status: 201, success: true }; 
+              }
+            }
           }
           break;
         }
         case 'exportProject': {
           if (!authToken) {
-            // To align with other auth checks, let's return the error structure for the common handler
-            result = { error: { message: "User authentication is required to export a project.", status: 401, code: 'AUTH_TOKEN_MISSING_EXPORT' }};
-            break;
+             result = { error: { message: "User authentication required for exportProject.", status: 401, code: 'AUTH_TOKEN_MISSING' } };
+          } else if (!payload || typeof (payload as Partial<{ projectId: string }>).projectId !== 'string') {
+             result = { error: { message: "Invalid payload for exportProject. Expected { projectId: string }", status: 400, code: 'INVALID_PAYLOAD' } };
+          } else {
+            const { data: userData, error: userError } = await getUserFnForRequest();
+            if (userError || !userData?.user) {
+              result = { error: userError || { message: "User not found or authentication failed for exportProject.", status: 401, code: 'USER_AUTH_FAILED' } };
+            } else {
+              const projectId = (payload as { projectId: string }).projectId;
+              result = await handlers.exportProject(
+                dbAdminClient, 
+                projectId,
+                userData.user.id
+             );
+            }
           }
-
-          const { data: userData, error: userError } = await getUserFnForRequest();
-          if (userError || !userData?.user) {
-            result = { error: userError || { message: "User not found or authentication failed for export action.", status: 401, code: 'USER_AUTH_FAILED_EXPORT' }};
-            break;
-          }
-
-          const exportPayload = payload as { projectId: string };
-          if (!exportPayload || typeof exportPayload.projectId !== 'string') {
-            result = { error: { message: "Invalid or missing projectId in payload for exportProject action.", status: 400, code: 'INVALID_PAYLOAD_EXPORT' }};
-            break;
-          }
-          
-          // Call the refactored exportProject, which now returns a data/error object
-          result = await exportProject(supabaseAdmin, exportPayload.projectId, userData.user.id);
-          break; 
+          break;
         }
         default:
-          result = { error: { message: `Unknown action: ${action}`, status: 404, code: 'UNKNOWN_ACTION' } };
+          logger.warn('Unknown action for application/json', { action });
+          result = { error: { message: `Unknown action '${action}' for application/json.`, status: 400, code: 'INVALID_JSON_ACTION' } };
       }
     } else {
-      // Neither multipart/form-data nor application/json
-      return createErrorResponse("Unsupported content type. Please use multipart/form-data for file uploads or application/json for other actions.", 415, req);
+      logger.warn('Unsupported request method or content type', { method: req.method, contentType });
+      result = { 
+        error: { 
+          message: "Unsupported request method or content type. Please use POST with application/json or multipart/form-data.", 
+          status: 415, 
+          code: 'UNSUPPORTED_MEDIA_TYPE' 
+        } 
+      };
     }
-
-    // Common response handling
-    if (result.error) {
-        let errorMessage = result.error.message || "Action failed";
-        if (result.error.code) {
-            errorMessage = `[${result.error.code}] ${errorMessage}`;
-        }
-        if (result.error.details) {
-            errorMessage = `${errorMessage} (Details: ${result.error.details})`;
-        }
-      return createErrorResponse(
-        errorMessage,
-        result.error.status || 400,
-        req
-      );
+  } catch (error) {
+    logger.error("Unhandled error in dialectic-service function", { error });
+    if (error && typeof error === 'object' && 'status' in error && 'message' in error) {
+        result = { error: error as ServiceError };
+    } else {
+        result = { error: { message: error instanceof Error ? error.message : "An unexpected error occurred.", status: 500, code: 'UNHANDLED_EXCEPTION' } };
     }
-    // Use the status from the result if available, otherwise default to 200
-    const successStatus = (result as { status?: number }).status || 200;
-    return createSuccessResponse(result.data, successStatus, req);
-
-  } catch (e: unknown) { 
-    const err = e instanceof Error ? e : new Error(String(e));
-    let responseMessage = err.message || "An unexpected error occurred in dialectic-service.";
-    let responseStatus = 500;
-    let responseCode: string | undefined = 'UNEXPECTED_ERROR';
-    const originalErrorForLogging: Error | unknown = e;
-
-    if (e && typeof e === 'object' && e !== null) {
-        const errObj = e as Record<string, unknown>;
-        responseStatus = typeof errObj.status === 'number' ? errObj.status : responseStatus;
-        if (typeof errObj.code === 'string') responseCode = errObj.code;
-        else if (typeof errObj.error === 'string') responseCode = errObj.error;
-        else if (errObj.name === 'AuthApiError') responseCode = 'AUTH_API_ERROR';
-        
-        if (errObj.name === 'AuthApiError' || errObj.message?.toString().toLowerCase().includes('jwt')) {
-            responseMessage = "Invalid or malformed token";
-            responseStatus = 401;
-            responseCode = 'AUTH_INVALID_TOKEN';
-        }
-    }
-    if (err instanceof SyntaxError && err.message.toLowerCase().includes("json")) {
-        responseMessage = "Invalid JSON payload";
-        responseStatus = 400;
-        responseCode = 'INVALID_JSON';
-    }
-    
-    logger.error('Error in dialectic-service request', { 
-        message: responseMessage, 
-        status: responseStatus, 
-        code: responseCode, 
-        originalError: originalErrorForLogging,
-        path: new URL(req.url).pathname,
-        method: req.method,
-    });
-
-    return createErrorResponse(
-        `[${responseCode || 'ERROR'}] ${responseMessage}`, 
-        responseStatus, 
-        req
-    );
   }
+
+  if (result.error) {
+    const status = result.error.status || 500;
+    return createErrorResponse(result.error.message, status, req, result.error);
+  } else {
+    const status = result.status || 200;
+    return createSuccessResponse(result.data, status, req);
+  }
+}
+
+const supabaseAdmin = createSupabaseAdminClient();
+
+// Create the actual handlers map
+const actualHandlers: ActionHandlers = {
+  createProject,
+  listAvailableDomainTags,
+  updateProjectDomainTag,
+  getProjectDetails,
+  getContributionContentSignedUrlHandler,
+  startSession,
+  generateStageContributions,
+  listProjects,
+  uploadProjectResourceFileHandler,
+  listAvailableDomainOverlays,
+  deleteProject,
+  cloneProject,
+  exportProject,
+};
+
+serve(async (req: Request) => {
+  return await handleRequest(req, supabaseAdmin, actualHandlers);
 });
+
+// For testing purposes, you might want to export your handlers if they are not already.
+// This is already done for createProject, listAvailableDomainTags etc. at the top.

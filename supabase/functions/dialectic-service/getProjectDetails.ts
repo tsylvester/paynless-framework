@@ -37,11 +37,8 @@ import {
       .select(`
         *,
         dialectic_sessions (*,
-          dialectic_session_models (*,
-            ai_providers (*)
-          ),
           dialectic_contributions (*)
-          )
+        )
       `)
       .eq('id', projectId)
       .eq('user_id', user.id)

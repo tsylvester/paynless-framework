@@ -2,13 +2,16 @@
   "version": "5",
   "specifiers": {
     "jsr:@std/assert@*": "0.225.3",
+    "jsr:@std/assert@0.225.1": "0.225.1",
     "jsr:@std/assert@0.225.3": "0.225.3",
     "jsr:@std/assert@1.0.0-rc.1": "1.0.0-rc.1",
     "jsr:@std/cli@^1.0.17": "1.0.17",
     "jsr:@std/encoding@^1.0.10": "1.0.10",
+    "jsr:@std/fmt@0.225": "0.225.6",
     "jsr:@std/fmt@^1.0.8": "1.0.8",
     "jsr:@std/html@^1.0.4": "1.0.4",
     "jsr:@std/http@*": "1.0.16",
+    "jsr:@std/internal@0.225": "0.225.1",
     "jsr:@std/internal@1": "1.0.6",
     "jsr:@std/media-types@^1.1.0": "1.1.0",
     "jsr:@std/net@^1.0.4": "1.0.4",
@@ -55,16 +58,23 @@
     "npm:typescript@5.8.3": "5.8.3"
   },
   "jsr": {
+    "@std/assert@0.225.1": {
+      "integrity": "7342fa32a6d82c2c7c98ffea566baa9a892d04b22815b9fcf62cedeee5764f9c",
+      "dependencies": [
+        "jsr:@std/fmt@0.225",
+        "jsr:@std/internal@0.225"
+      ]
+    },
     "@std/assert@0.225.3": {
       "integrity": "b3c2847aecf6955b50644cdb9cf072004ea3d1998dd7579fc0acb99dbb23bd4f",
       "dependencies": [
-        "jsr:@std/internal"
+        "jsr:@std/internal@1"
       ]
     },
     "@std/assert@1.0.0-rc.1": {
       "integrity": "f2f1f1d5b5eab3a2165744996c42b3c501688d887a015067e12267fe5e6fb804",
       "dependencies": [
-        "jsr:@std/internal"
+        "jsr:@std/internal@1"
       ]
     },
     "@std/cli@1.0.17": {
@@ -72,6 +82,9 @@
     },
     "@std/encoding@1.0.10": {
       "integrity": "8783c6384a2d13abd5e9e87a7ae0520a30e9f56aeeaa3bdf910a3eaaf5c811a1"
+    },
+    "@std/fmt@0.225.6": {
+      "integrity": "aba6aea27f66813cecfd9484e074a9e9845782ab0685c030e453a8a70b37afc8"
     },
     "@std/fmt@1.0.8": {
       "integrity": "71e1fc498787e4434d213647a6e43e794af4fd393ef8f52062246e06f7e372b7"
@@ -84,13 +97,16 @@
       "dependencies": [
         "jsr:@std/cli",
         "jsr:@std/encoding",
-        "jsr:@std/fmt",
+        "jsr:@std/fmt@^1.0.8",
         "jsr:@std/html",
         "jsr:@std/media-types",
         "jsr:@std/net",
         "jsr:@std/path",
         "jsr:@std/streams"
       ]
+    },
+    "@std/internal@0.225.1": {
+      "integrity": "7d8a812be88c2792f15ab9cf46911e521ccca50435948a8f24df5cefda96bde9"
     },
     "@std/internal@1.0.6": {
       "integrity": "9533b128f230f73bd209408bb07a4b12f8d4255ab2a4d22a1fd6d87304aca9a4"

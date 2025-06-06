@@ -197,7 +197,6 @@ export type Database = {
       }
       dialectic_contributions: {
         Row: {
-          actual_prompt_sent: string | null
           citations: Json | null
           content_mime_type: string
           content_size_bytes: number | null
@@ -207,12 +206,14 @@ export type Database = {
           error: string | null
           id: string
           iteration_number: number
+          model_id: string | null
+          model_name: string | null
           model_version_details: string | null
           processing_time_ms: number | null
           prompt_template_id_used: string | null
           raw_response_storage_path: string | null
+          seed_prompt_url: string | null
           session_id: string
-          session_model_id: string
           stage: string
           target_contribution_id: string | null
           tokens_used_input: number | null
@@ -220,7 +221,6 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          actual_prompt_sent?: string | null
           citations?: Json | null
           content_mime_type?: string
           content_size_bytes?: number | null
@@ -230,12 +230,14 @@ export type Database = {
           error?: string | null
           id?: string
           iteration_number?: number
+          model_id?: string | null
+          model_name?: string | null
           model_version_details?: string | null
           processing_time_ms?: number | null
           prompt_template_id_used?: string | null
           raw_response_storage_path?: string | null
+          seed_prompt_url?: string | null
           session_id: string
-          session_model_id: string
           stage: string
           target_contribution_id?: string | null
           tokens_used_input?: number | null
@@ -243,7 +245,6 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          actual_prompt_sent?: string | null
           citations?: Json | null
           content_mime_type?: string
           content_size_bytes?: number | null
@@ -253,12 +254,14 @@ export type Database = {
           error?: string | null
           id?: string
           iteration_number?: number
+          model_id?: string | null
+          model_name?: string | null
           model_version_details?: string | null
           processing_time_ms?: number | null
           prompt_template_id_used?: string | null
           raw_response_storage_path?: string | null
+          seed_prompt_url?: string | null
           session_id?: string
-          session_model_id?: string
           stage?: string
           target_contribution_id?: string | null
           tokens_used_input?: number | null
@@ -281,17 +284,17 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "dialectic_contributions_session_model_id_fkey"
-            columns: ["session_model_id"]
-            isOneToOne: false
-            referencedRelation: "dialectic_session_models"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "dialectic_contributions_target_contribution_id_fkey"
             columns: ["target_contribution_id"]
             isOneToOne: false
             referencedRelation: "dialectic_contributions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_dialectic_contributions_model_id"
+            columns: ["model_id"]
+            isOneToOne: false
+            referencedRelation: "ai_providers"
             referencedColumns: ["id"]
           },
         ]
@@ -350,6 +353,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          initial_prompt_resource_id: string | null
           initial_user_prompt: string
           project_name: string
           repo_url: string | null
@@ -363,6 +367,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          initial_prompt_resource_id?: string | null
           initial_user_prompt: string
           project_name: string
           repo_url?: string | null
@@ -376,6 +381,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          initial_prompt_resource_id?: string | null
           initial_user_prompt?: string
           project_name?: string
           repo_url?: string | null
@@ -394,155 +400,61 @@ export type Database = {
             referencedRelation: "domain_specific_prompt_overlays"
             referencedColumns: ["id"]
           },
-        ]
-      }
-      dialectic_session_models: {
-        Row: {
-          created_at: string
-          id: string
-          model_id: string
-          model_role: string | null
-          session_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          model_id: string
-          model_role?: string | null
-          session_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          model_id?: string
-          model_role?: string | null
-          session_id?: string
-        }
-        Relationships: [
           {
-            foreignKeyName: "fk_model_id_to_ai_providers"
-            columns: ["model_id"]
+            foreignKeyName: "fk_initial_prompt_resource"
+            columns: ["initial_prompt_resource_id"]
             isOneToOne: false
-            referencedRelation: "ai_providers"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "fk_session"
-            columns: ["session_id"]
-            isOneToOne: false
-            referencedRelation: "dialectic_sessions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      dialectic_session_prompts: {
-        Row: {
-          created_at: string
-          id: string
-          iteration_number: number
-          rendered_prompt_text: string
-          session_id: string
-          stage_association: string
-          system_prompt_id: string | null
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          iteration_number?: number
-          rendered_prompt_text: string
-          session_id: string
-          stage_association: string
-          system_prompt_id?: string | null
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          iteration_number?: number
-          rendered_prompt_text?: string
-          session_id?: string
-          stage_association?: string
-          system_prompt_id?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "dialectic_session_prompts_session_id_fkey"
-            columns: ["session_id"]
-            isOneToOne: false
-            referencedRelation: "dialectic_sessions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "dialectic_session_prompts_system_prompt_id_fkey"
-            columns: ["system_prompt_id"]
-            isOneToOne: false
-            referencedRelation: "system_prompts"
+            referencedRelation: "dialectic_project_resources"
             referencedColumns: ["id"]
           },
         ]
       }
       dialectic_sessions: {
         Row: {
-          active_antithesis_prompt_template_id: string | null
-          active_thesis_prompt_template_id: string | null
           associated_chat_id: string | null
           created_at: string
-          current_stage_seed_prompt: string | null
           id: string
           iteration_count: number
           project_id: string
+          selected_model_catalog_ids: string[] | null
           session_description: string | null
+          stage: Database["public"]["Enums"]["dialectic_stage_enum"]
           status: string
           updated_at: string
+          user_input_reference_url: string | null
         }
         Insert: {
-          active_antithesis_prompt_template_id?: string | null
-          active_thesis_prompt_template_id?: string | null
           associated_chat_id?: string | null
           created_at?: string
-          current_stage_seed_prompt?: string | null
           id?: string
           iteration_count?: number
           project_id: string
+          selected_model_catalog_ids?: string[] | null
           session_description?: string | null
+          stage: Database["public"]["Enums"]["dialectic_stage_enum"]
           status?: string
           updated_at?: string
+          user_input_reference_url?: string | null
         }
         Update: {
-          active_antithesis_prompt_template_id?: string | null
-          active_thesis_prompt_template_id?: string | null
           associated_chat_id?: string | null
           created_at?: string
-          current_stage_seed_prompt?: string | null
           id?: string
           iteration_count?: number
           project_id?: string
+          selected_model_catalog_ids?: string[] | null
           session_description?: string | null
+          stage?: Database["public"]["Enums"]["dialectic_stage_enum"]
           status?: string
           updated_at?: string
+          user_input_reference_url?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "fk_antithesis_prompt_template"
-            columns: ["active_antithesis_prompt_template_id"]
-            isOneToOne: false
-            referencedRelation: "system_prompts"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "fk_project"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "dialectic_projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "fk_thesis_prompt_template"
-            columns: ["active_thesis_prompt_template_id"]
-            isOneToOne: false
-            referencedRelation: "system_prompts"
             referencedColumns: ["id"]
           },
         ]
@@ -1337,6 +1249,12 @@ export type Database = {
       }
     }
     Enums: {
+      dialectic_stage_enum:
+        | "THESIS"
+        | "ANTITHESIS"
+        | "SYNTHESIS"
+        | "PARENTHESIS"
+        | "PARALYSIS"
       org_token_usage_policy_enum: "member_tokens" | "organization_tokens"
       user_role: "user" | "admin"
     }
@@ -1457,6 +1375,13 @@ export const Constants = {
   },
   public: {
     Enums: {
+      dialectic_stage_enum: [
+        "THESIS",
+        "ANTITHESIS",
+        "SYNTHESIS",
+        "PARENTHESIS",
+        "PARALYSIS",
+      ],
       org_token_usage_policy_enum: ["member_tokens", "organization_tokens"],
       user_role: ["user", "admin"],
     },

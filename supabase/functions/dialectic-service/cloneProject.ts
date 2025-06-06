@@ -5,14 +5,8 @@ import type { FileObject } from "npm:@supabase/storage-js@^2.5.5"; // For delete
 
 type DialecticProjectRow = Database['public']['Tables']['dialectic_projects']['Row'];
 type DialecticProjectInsert = Database['public']['Tables']['dialectic_projects']['Insert'];
-type DialecticProjectResourceRow = Database['public']['Tables']['dialectic_project_resources']['Row'];
 type DialecticProjectResourceInsert = Database['public']['Tables']['dialectic_project_resources']['Insert'];
-type DialecticSessionRow = Database['public']['Tables']['dialectic_sessions']['Row'];
 type DialecticSessionInsert = Database['public']['Tables']['dialectic_sessions']['Insert'];
-type DialecticSessionModelRow = Database['public']['Tables']['dialectic_session_models']['Row'];
-type DialecticSessionModelInsert = Database['public']['Tables']['dialectic_session_models']['Insert'];
-type DialecticSessionPromptRow = Database['public']['Tables']['dialectic_session_prompts']['Row'];
-type DialecticSessionPromptInsert = Database['public']['Tables']['dialectic_session_prompts']['Insert'];
 type DialecticContributionRow = Database['public']['Tables']['dialectic_contributions']['Row'];
 type DialecticContributionInsert = Database['public']['Tables']['dialectic_contributions']['Insert'];
 
@@ -167,10 +161,10 @@ export async function cloneProject(
                     id: newSessionIdInternal, // Use the generated UUID for the initial insert attempt
                     project_id: actualClonedProjectId!,
                     session_description: originalSession.session_description ?? undefined,
-                    current_stage_seed_prompt: originalSession.current_stage_seed_prompt ?? undefined,
                     iteration_count: originalSession.iteration_count,
-                    active_thesis_prompt_template_id: originalSession.active_thesis_prompt_template_id ?? undefined,
-                    active_antithesis_prompt_template_id: originalSession.active_antithesis_prompt_template_id ?? undefined,
+                    selected_model_catalog_ids: originalSession.selected_model_catalog_ids ?? undefined,
+                    user_input_reference_url: originalSession.user_input_reference_url ?? undefined,
+                    stage: originalSession.stage,
                     status: originalSession.status,
                     associated_chat_id: originalSession.associated_chat_id ?? undefined,
                     created_at: now,
@@ -189,61 +183,6 @@ export async function cloneProject(
                 const actualNewSessionId = newSessionData.id; // Use the ID returned by the database/mock
                 console.log(`[cloneProject] New session entry created successfully with actual ID: ${actualNewSessionId}`);
 
-                const { data: originalSessionModels, error: fetchSMError } = await supabaseClient
-                    .from('dialectic_session_models')
-                    .select('*')
-                    .eq('session_id', originalSession.id);
-                
-                if (fetchSMError) console.warn(`[cloneProject] Error fetching session models for ${originalSession.id}:`, fetchSMError);
-
-                if (originalSessionModels && originalSessionModels.length > 0) {
-                    const newSessionModelsToInsert: DialecticSessionModelInsert[] = originalSessionModels.map((sm: DialecticSessionModelRow) => ({
-                        id: crypto.randomUUID(),
-                        session_id: actualNewSessionId, // Use actualNewSessionId
-                        model_id: sm.model_id,
-                        model_role: sm.model_role ?? undefined,
-                        created_at: now,
-                    }));
-                    if (newSessionModelsToInsert.length > 0) {
-                        const { error: insertSMError } = await supabaseClient
-                            .from('dialectic_session_models')
-                            .insert(newSessionModelsToInsert);
-                        if (insertSMError) {
-                             console.error(`[cloneProject] Error inserting new session models for ${actualNewSessionId}:`, insertSMError); // Use actualNewSessionId
-                            throw new Error('Failed to insert new session model entries.');
-                        }
-                    }
-                }
-
-                const { data: originalSessionPrompts, error: fetchSPError } = await supabaseClient
-                    .from('dialectic_session_prompts')
-                    .select('*')
-                    .eq('session_id', originalSession.id);
-
-                if (fetchSPError) console.warn(`[cloneProject] Error fetching session prompts for ${originalSession.id}:`, fetchSPError);
-
-                if (originalSessionPrompts && originalSessionPrompts.length > 0) {
-                    const newSessionPromptsToInsert: DialecticSessionPromptInsert[] = originalSessionPrompts.map((sp: DialecticSessionPromptRow) => ({
-                        id: crypto.randomUUID(),
-                        session_id: actualNewSessionId, // Use actualNewSessionId
-                        stage_association: sp.stage_association,
-                        rendered_prompt_text: sp.rendered_prompt_text,
-                        system_prompt_id: sp.system_prompt_id ?? undefined,
-                        iteration_number: sp.iteration_number,
-                        created_at: now,
-                        updated_at: now,
-                    }));
-                    if (newSessionPromptsToInsert.length > 0) {
-                        const { error: insertSPError } = await supabaseClient
-                            .from('dialectic_session_prompts')
-                            .insert(newSessionPromptsToInsert);
-                        if (insertSPError) {
-                             console.error(`[cloneProject] Error inserting new session prompts for ${actualNewSessionId}:`, insertSPError); // Use actualNewSessionId
-                            throw new Error('Failed to insert new session prompt entries.');
-                        }
-                    }
-                }
-
                 const { data: originalContributions, error: fetchContError } = await supabaseClient
                     .from('dialectic_contributions')
                     .select('*')
@@ -252,53 +191,13 @@ export async function cloneProject(
                 if (fetchContError) console.warn(`[cloneProject] Error fetching contributions for ${originalSession.id}:`, fetchContError);
 
                 if (originalContributions && originalContributions.length > 0) {
-                    // Fetch the newly created session models for the current new session
-                    // to map original session_model_ids to new ones.
-                    const { data: newClonedSessionModels, error: fetchNewSMError } = await supabaseClient
-                        .from('dialectic_session_models')
-                        .select('id, model_id, model_role') // Fetch model_role for robust mapping
-                        .eq('session_id', actualNewSessionId); // Use actualNewSessionId
-
-                    if (fetchNewSMError) {
-                        console.error(`[cloneProject] Error fetching newly cloned session models for session ${actualNewSessionId}:`, fetchNewSMError); // Use actualNewSessionId
-                        throw new Error('Failed to fetch new session models for contribution mapping.');
-                    }
-
-                    // Create a map from original model_id (if unique per session) or find a more robust way to map.
-                    // For this fix, we'll assume we can map based on the model_id and order if there are multiple,
-                    // though a more robust solution might involve fetching original and new side-by-side and correlating.
-                    // A simpler direct mapping: if originalSessionModels and newClonedSessionModels are in the same order
-                    // and correspond one-to-one by their properties (e.g., model_id + role).
-                    const originalToNewSessionModelIdMap = new Map<string, string>();
-                    if (originalSessionModels && newClonedSessionModels && originalSessionModels.length === newClonedSessionModels.length) {
-                        // This naive mapping assumes the order of selection and insertion is preserved
-                        // and that model_id + model_role could be a composite key if IDs are not directly mapped.
-                        // A truly robust solution would be to explicitly map based on a unique characteristic or clone them individually.
-                        for (let i = 0; i < originalSessionModels.length; i++) {
-                            // This is a potential point of failure if originalSessionModels[i].id is not the ID we need
-                            // or if the order isn't guaranteed. The original code didn't store old IDs to new IDs for session models.
-                            // Let's refine this to map based on a characteristic that should be preserved, like model_id and model_role
-                            const originalSM = originalSessionModels[i];
-                            const foundNewSM = newClonedSessionModels.find(nsm => 
-                                nsm.model_id === originalSM.model_id && nsm.model_role === originalSM.model_role
-                            ); 
-                            if (foundNewSM) {
-                                originalToNewSessionModelIdMap.set(originalSM.id, foundNewSM.id);
-                            } else {
-                                console.warn(`[cloneProject] Mapping issue: Did not find a new session model match for original session model ID ${originalSM.id} (model_id: ${originalSM.model_id}, model_role: ${originalSM.model_role}) in new session ${actualNewSessionId}. This original session model will not be mapped.`); // Use actualNewSessionId
-                            }
-                        }
-                    } else {
-                        console.warn(`[cloneProject] Session model count mismatch for original session ${originalSession.id} (cloning to new session ${actualNewSessionId}). Original models count: ${originalSessionModels?.length}, New cloned models count: ${newClonedSessionModels?.length}. The map from original to new session model IDs will be empty or incomplete for this session, potentially skipping contributions.`); // Use actualNewSessionId
-                    }
-
                     for (const originalContrib of originalContributions as DialecticContributionRow[]) {
                         const newContribId = crypto.randomUUID();
 
                         let newContentPath: string | undefined = undefined;
                         if (originalContrib.content_storage_bucket && originalContrib.content_storage_path) {
                             const extension = originalContrib.content_storage_path.split('.').pop() || 'bin';
-                            newContentPath = `projects/${actualClonedProjectId!}/${actualNewSessionId}/${newContribId}.${extension}`; // Use actualNewSessionId
+                            newContentPath = `projects/${actualClonedProjectId!}/${actualNewSessionId}/${newContribId}.${extension}`;
                             const { error: copyContentError } = await supabaseClient.storage
                                 .from(originalContrib.content_storage_bucket)
                                 .copy(originalContrib.content_storage_path, newContentPath);
@@ -311,8 +210,8 @@ export async function cloneProject(
 
                         let newRawResponsePath: string | undefined = undefined;
                         if (originalContrib.raw_response_storage_path) {
-                            const bucket = originalContrib.content_storage_bucket || 'dialectic-contributions';
-                            newRawResponsePath = `projects/${actualClonedProjectId!}/${actualNewSessionId}/${newContribId}_raw.json`; // Use actualNewSessionId
+                            const bucket = originalContrib.content_storage_bucket || 'dialectic-contributions'; // Assuming same bucket or a default
+                            newRawResponsePath = `projects/${actualClonedProjectId!}/${actualNewSessionId}/${newContribId}_raw.json`;
                              const { error: copyRawError } = await supabaseClient.storage
                                 .from(bucket)
                                 .copy(originalContrib.raw_response_storage_path, newRawResponsePath);
@@ -323,23 +222,15 @@ export async function cloneProject(
                             newStorageFilesCreated.push({ bucket: bucket, path: newRawResponsePath });
                         }
                         
-                        const newClonedSessionModelId = originalToNewSessionModelIdMap.get(originalContrib.session_model_id);
-                        if (!newClonedSessionModelId) {
-                            console.error(`[cloneProject] Could not find a cloned session model ID for original session_model_id: ${originalContrib.session_model_id} in new session ${actualNewSessionId}. Skipping contribution ${originalContrib.id}.`); // Use actualNewSessionId
-                            // Or throw an error, depending on desired behavior for unmappable contributions
-                            // throw new Error(`Failed to map original session model ID ${originalContrib.session_model_id} to a new one.`);
-                            continue; 
-                        }
-
                         const newContribToInsert: DialecticContributionInsert = {
                             id: newContribId,
-                            session_id: actualNewSessionId, // Use actualNewSessionId
+                            session_id: actualNewSessionId,
+                            model_id: originalContrib.model_id, // Use model_id directly from original contribution
                             content_storage_bucket: originalContrib.content_storage_bucket,
                             content_storage_path: newContentPath || '',
                             content_mime_type: originalContrib.content_mime_type,
                             content_size_bytes: originalContrib.content_size_bytes,
                             raw_response_storage_path: newRawResponsePath,
-                            actual_prompt_sent: originalContrib.actual_prompt_sent,
                             tokens_used_input: originalContrib.tokens_used_input,
                             tokens_used_output: originalContrib.tokens_used_output,
                             processing_time_ms: originalContrib.processing_time_ms,
@@ -347,8 +238,9 @@ export async function cloneProject(
                             citations: originalContrib.citations ?? undefined,
                             created_at: now,
                             updated_at: now,
-                            session_model_id: newClonedSessionModelId, // Use the new session model ID
                             stage: originalContrib.stage,
+                            model_name: originalContrib.model_name,
+                            seed_prompt_url: originalContrib.seed_prompt_url ?? undefined,
                         };
 
                         const { error: insertContribError } = await supabaseClient
@@ -419,29 +311,7 @@ export async function cloneProject(
                     console.log(`[cloneProject-Rollback] Deleted contributions for project ${actualClonedProjectId}`);
                 }
 
-                // 2. Delete session_prompts (depend on sessions)
-                const { error: deleteSessionPromptsError } = await supabaseClient
-                    .from('dialectic_session_prompts')
-                    .delete()
-                    .in('session_id', clonedSessionIds);
-                if (deleteSessionPromptsError) {
-                    console.error(`[cloneProject-Rollback] Failed to delete session prompts for project ${actualClonedProjectId}:`, deleteSessionPromptsError);
-                } else {
-                    console.log(`[cloneProject-Rollback] Deleted session prompts for project ${actualClonedProjectId}`);
-                }
-
-                // 3. Delete session_models (depend on sessions)
-                const { error: deleteSessionModelsError } = await supabaseClient
-                    .from('dialectic_session_models')
-                    .delete()
-                    .in('session_id', clonedSessionIds);
-                if (deleteSessionModelsError) {
-                    console.error(`[cloneProject-Rollback] Failed to delete session models for project ${actualClonedProjectId}:`, deleteSessionModelsError);
-                } else {
-                    console.log(`[cloneProject-Rollback] Deleted session models for project ${actualClonedProjectId}`);
-                }
-                
-                // 4. Delete sessions (depend on project)
+                // 2. Delete sessions (depend on project)
                 const { error: deleteSessionsError } = await supabaseClient
                     .from('dialectic_sessions')
                     .delete()

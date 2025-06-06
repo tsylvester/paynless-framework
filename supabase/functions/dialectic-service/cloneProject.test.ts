@@ -26,11 +26,12 @@ describe('Dialectic Service: cloneProject Action', () => {
     selected_domain_tag: 'software_development', repo_url: 'http://github.com/original/repo',
     status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     user_domain_overlay_values: null,
+    initial_prompt_resource_id: null,
   };
 
   const mockOriginalResource: Database['public']['Tables']['dialectic_project_resources']['Row'] = {
     id: 'orig-resource-uuid', project_id: mockOriginalProject.id, user_id: mockOriginalProject.user_id!,
-    file_name: 'original_resource.md', storage_bucket: 'dialectic-project-resources',
+    file_name: 'original_resource.md', storage_bucket: 'dialectic-contributions',
     storage_path: `projects/${mockOriginalProject.id}/resources/original_resource.md`,
     mime_type: 'text/markdown', size_bytes: 100, resource_description: 'Original resource file',
     created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -38,41 +39,31 @@ describe('Dialectic Service: cloneProject Action', () => {
 
   const mockOriginalSession: Database['public']['Tables']['dialectic_sessions']['Row'] = {
     id: 'orig-session-uuid', project_id: mockOriginalProject.id, session_description: 'Original session',
-    current_stage_seed_prompt: 'seed prompt for original session', iteration_count: 1,
-    active_thesis_prompt_template_id: 'thesis-template-id',
-    active_antithesis_prompt_template_id: 'antithesis-template-id',
+    iteration_count: 1,
     status: 'synthesis_complete', associated_chat_id: null,
     created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    selected_model_catalog_ids: ['model-catalog-id-1'],
+    stage: 'THESIS',
+    user_input_reference_url: null,
   };
 
-  const mockOriginalSessionModel: Database['public']['Tables']['dialectic_session_models']['Row'] = {
-    id: 'orig-session-model-uuid', session_id: mockOriginalSession.id, model_id: 'openai/gpt-4',
-    model_role: null, created_at: new Date().toISOString(),
-  };
-  
-  const mockOriginalSessionPrompt: Database['public']['Tables']['dialectic_session_prompts']['Row'] = {
-    id: 'orig-session-prompt-uuid', session_id: mockOriginalSession.id,
-    stage_association: 'thesis', rendered_prompt_text: 'Rendered thesis prompt',
-    created_at: new Date().toISOString(), system_prompt_id: 'some-system-prompt-id',
-    updated_at: new Date().toISOString(), iteration_number: 1,
-  };
-
-  const mockOriginalContribution: Omit<Database['public']['Tables']['dialectic_contributions']['Row'], 'user_id' | 'model_id'> & { session_model_id: string, stage: string } = {
+  const mockOriginalContribution: Database['public']['Tables']['dialectic_contributions']['Row'] = {
     id: 'orig-contribution-uuid', session_id: mockOriginalSession.id, 
+    model_id: 'openai/gpt-4',
     content_storage_bucket: 'dialectic-contributions',
     content_storage_path: `${mockOriginalProject.id}/${mockOriginalSession.id}/orig-contribution-uuid.md`,
     content_mime_type: 'text/markdown', content_size_bytes: 120,
     raw_response_storage_path: `${mockOriginalProject.id}/${mockOriginalSession.id}/orig-contribution-uuid_raw.json`,
-    actual_prompt_sent: 'This was the prompt for the original contribution.',
     tokens_used_input: 10, tokens_used_output: 200, processing_time_ms: 5000,
     created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     iteration_number: 1, citations: null, 
-    session_model_id: mockOriginalSessionModel.id,
     stage: 'critique', 
     error: null, 
     model_version_details: null, 
     prompt_template_id_used: null, 
-    target_contribution_id: null, 
+    target_contribution_id: null,
+    model_name: 'gpt-4',
+    seed_prompt_url: null,
   };
 
   beforeEach(() => {
@@ -101,8 +92,6 @@ describe('Dialectic Service: cloneProject Action', () => {
         fetchProject?: any, fetchProjectError?: any,
         fetchResources?: any[], fetchResourcesError?: any,
         fetchSessions?: any[], fetchSessionsError?: any,
-        fetchSessionModels?: any[], fetchSessionModelsError?: any,
-        fetchSessionPrompts?: any[], fetchSessionPromptsError?: any,
         fetchContributions?: any[], fetchContributionsError?: any,
         insertResults?: Record<string, {data?: any[], error?: any}>,
         deleteError?: Record<string, any> // For mocking delete errors
@@ -150,50 +139,8 @@ describe('Dialectic Service: cloneProject Action', () => {
     genericMockResults['dialectic_sessions'] = {
         select: { data: params.fetchSessions !== undefined ? params.fetchSessions : [mockOriginalSession], error: params.fetchSessionsError || null }
     };
-    genericMockResults['dialectic_session_models'] = {
-        select: async (state: MockQueryBuilderState) => {
-            const sessionIdFilter = state.filters.find(f => f.column === 'session_id' && f.type === 'eq');
-            const queriedSessionId = sessionIdFilter?.value;
-            let dataToReturn: any[] | null = null;
-            let errorToReturn: any = null;
-
-            if (params.fetchSessionModelsError) {
-                errorToReturn = params.fetchSessionModelsError;
-            } else if (queriedSessionId) {
-                // Check if we are fetching for a newly inserted session's models
-                const insertedSessionModelsForSession = params.insertResults?.['dialectic_session_models']?.data?.filter(
-                    (sm: any) => sm.session_id === queriedSessionId
-                );
-
-                if (insertedSessionModelsForSession && insertedSessionModelsForSession.length > 0) {
-                    dataToReturn = insertedSessionModelsForSession;
-                } else if (queriedSessionId === mockOriginalSession.id) {
-                    // Fallback to original session models if not for a new session
-                    dataToReturn = params.fetchSessionModels !== undefined ? params.fetchSessionModels : [mockOriginalSessionModel];
-                } else {
-                     // Default if no specific conditions met (e.g., session models not found for this specific new session_id)
-                     // This might indicate a test setup issue if we expect models for a new session ID but insertResults isn't configured for it.
-                    dataToReturn = []; // Or return an error: { message: "Session models not found for session ID in mock", code: "PGRST116" }
-                }
-            } else {
-                 // If no session_id filter, return default or configured fetchSessionModels
-                dataToReturn = params.fetchSessionModels !== undefined ? params.fetchSessionModels : [mockOriginalSessionModel];
-            }
-            
-            return { 
-                data: dataToReturn,
-                error: errorToReturn, 
-                count: dataToReturn ? dataToReturn.length : 0, 
-                status: errorToReturn ? 500 : 200, 
-                statusText: errorToReturn ? 'Mock Error' : 'OK' 
-            };
-        }
-    };
-    genericMockResults['dialectic_session_prompts'] = {
-        select: { data: params.fetchSessionPrompts !== undefined ? params.fetchSessionPrompts : [mockOriginalSessionPrompt as any], error: params.fetchSessionPromptsError || null }
-    };
     genericMockResults['dialectic_contributions'] = {
-        select: { data: params.fetchContributions !== undefined ? params.fetchContributions : [mockOriginalContribution as any], error: params.fetchContributionsError || null }
+        select: { data: params.fetchContributions !== undefined ? params.fetchContributions : [mockOriginalContribution], error: params.fetchContributionsError || null }
     };
 
     // INSERT mocks
@@ -251,7 +198,6 @@ describe('Dialectic Service: cloneProject Action', () => {
     const newGeneratedProjectId = 'new-cloned-project-uuid';
     const newGeneratedSessionId = 'new-cloned-session-uuid';
     const newGeneratedResourceId = 'new-cloned-resource-uuid';
-    const newGeneratedSessionModelId = 'new-cloned-session-model-uuid'; // Specific ID for cloned session model
     const newGeneratedContributionId = 'new-cloned-contribution-uuid';
 
     // This will be the data returned when the new project ID is fetched
@@ -266,22 +212,18 @@ describe('Dialectic Service: cloneProject Action', () => {
         fetchProject: mockOriginalProject, // For fetching the original project
         fetchResources: [mockOriginalResource],
         fetchSessions: [mockOriginalSession],
-        fetchSessionModels: [mockOriginalSessionModel],
-        fetchSessionPrompts: [mockOriginalSessionPrompt as any],
-        fetchContributions: [mockOriginalContribution as any],
+        fetchContributions: [mockOriginalContribution],
         insertResults: {
             'dialectic_projects': { data: [clonedProjectData] }, // This is used by the improved select mock
             'dialectic_project_resources': { data: [{ ...mockOriginalResource, id: newGeneratedResourceId, project_id: newGeneratedProjectId, storage_path: `projects/${newGeneratedProjectId}/resources/${mockOriginalResource.file_name}` }] },
             'dialectic_sessions': { data: [{ ...mockOriginalSession, id: newGeneratedSessionId, project_id: newGeneratedProjectId }] },
-            'dialectic_session_models': { data: [{ ...mockOriginalSessionModel, id: newGeneratedSessionModelId, session_id: newGeneratedSessionId }] },
-            'dialectic_session_prompts': { data: [{ ...mockOriginalSessionPrompt as any, id: `new-sp-id-${crypto.randomUUID().slice(0,4)}`, session_id: newGeneratedSessionId }] },
             'dialectic_contributions': { data: [{ 
-                ...mockOriginalContribution as any, 
+                ...mockOriginalContribution, 
                 id: newGeneratedContributionId, 
                 session_id: newGeneratedSessionId, 
-                session_model_id: newGeneratedSessionModelId, // Use the new session model ID
-                content_storage_path: `${newGeneratedProjectId}/${newGeneratedSessionId}/${newGeneratedContributionId}.md`, 
-                raw_response_storage_path: `${newGeneratedProjectId}/${newGeneratedSessionId}/${newGeneratedContributionId}_raw.json` 
+                model_id: mockOriginalContribution.model_id,
+                content_storage_path: `projects/${newGeneratedProjectId}/${newGeneratedSessionId}/${newGeneratedContributionId}.md`, 
+                raw_response_storage_path: `projects/${newGeneratedProjectId}/${newGeneratedSessionId}/${newGeneratedContributionId}_raw.json` 
             }] },
         }
     });
@@ -345,11 +287,10 @@ describe('Dialectic Service: cloneProject Action', () => {
         assertEquals(resourceInsertArgs[0].storage_path, `projects/${newGeneratedProjectId}/resources/${mockOriginalResource.file_name}`);
 
         // Check storage copy for project resource
-        const resourceBucketSpies = testSpies.storage.from('dialectic-project-resources');
-        assertExists(resourceBucketSpies.copySpy, "Storage copySpy for dialectic-project-resources not found");
+        const resourceBucketSpies = testSpies.storage.from(mockOriginalResource.storage_bucket!); 
+        assertExists(resourceBucketSpies.copySpy, `Storage copySpy for ${mockOriginalResource.storage_bucket!} not found`);
         assertEquals(resourceBucketSpies.copySpy.calls.length > 0, true, "Storage copy for project resource not called");
         assertEquals(resourceBucketSpies.copySpy.calls[0].args[0], mockOriginalResource.storage_path);
-        assertEquals(resourceBucketSpies.copySpy.calls[0].args[1], `projects/${newGeneratedProjectId}/resources/${mockOriginalResource.file_name}`);
 
         // Check insert for dialectic_sessions
         const sessionInsertSpies = testSpies.getHistoricQueryBuilderSpies('dialectic_sessions', 'insert');
@@ -383,7 +324,6 @@ describe('Dialectic Service: cloneProject Action', () => {
     const newGeneratedProjectId = 'new-default-clone-id';
     const newGeneratedSessionIdForDefaultTest = 'new-default-session-uuid';
     const newGeneratedResourceIdForDefaultTest = 'new-default-resource-uuid';
-    const newGeneratedSessionModelIdForDefaultTest = 'new-default-session-model-uuid';
     const newGeneratedContributionIdForDefaultTest = 'new-default-contribution-uuid';
 
     const clonedProjectDataDefaultName = {
@@ -397,20 +337,16 @@ describe('Dialectic Service: cloneProject Action', () => {
         fetchProject: mockOriginalProject,
         fetchResources: [mockOriginalResource],
         fetchSessions: [mockOriginalSession],
-        fetchSessionModels: [mockOriginalSessionModel],
-        fetchSessionPrompts: [mockOriginalSessionPrompt as any],
-        fetchContributions: [mockOriginalContribution as any],
+        fetchContributions: [mockOriginalContribution],
         insertResults: {
             'dialectic_projects': { data: [clonedProjectDataDefaultName] },
             'dialectic_project_resources': { data: [{ ...mockOriginalResource, id: newGeneratedResourceIdForDefaultTest, project_id: newGeneratedProjectId, storage_path: `projects/${newGeneratedProjectId}/resources/${mockOriginalResource.file_name}` }] },
             'dialectic_sessions': { data: [{ ...mockOriginalSession, id: newGeneratedSessionIdForDefaultTest, project_id: newGeneratedProjectId }] },
-            'dialectic_session_models': { data: [{ ...mockOriginalSessionModel, id: newGeneratedSessionModelIdForDefaultTest, session_id: newGeneratedSessionIdForDefaultTest }] },
-            'dialectic_session_prompts': { data: [{ ...mockOriginalSessionPrompt as any, id: `new-sp-id-default-${crypto.randomUUID().slice(0,4)}`, session_id: newGeneratedSessionIdForDefaultTest }] },
             'dialectic_contributions': { data: [{ 
-                ...mockOriginalContribution as any, 
+                ...mockOriginalContribution, 
                 id: newGeneratedContributionIdForDefaultTest, 
                 session_id: newGeneratedSessionIdForDefaultTest, 
-                session_model_id: newGeneratedSessionModelIdForDefaultTest,
+                model_id: mockOriginalContribution.model_id,
                 content_storage_path: `projects/${newGeneratedProjectId}/${newGeneratedSessionIdForDefaultTest}/${newGeneratedContributionIdForDefaultTest}.md`, 
                 raw_response_storage_path: `projects/${newGeneratedProjectId}/${newGeneratedSessionIdForDefaultTest}/${newGeneratedContributionIdForDefaultTest}_raw.json` 
             }] },

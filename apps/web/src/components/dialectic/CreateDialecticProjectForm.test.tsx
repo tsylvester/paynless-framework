@@ -272,7 +272,7 @@ describe('CreateDialecticProjectForm', () => {
     await waitFor(() => {
       expect(mockCreateDialecticProject).toHaveBeenCalledWith({
         projectName: 'Project With File',
-        initialUserPrompt: 'Content from uploaded file',
+        initialUserPrompt: '',
         selectedDomainTag: null,
       });
     });
@@ -516,7 +516,7 @@ describe('CreateDialecticProjectForm', () => {
     await waitFor(() => {
       expect(mockCreateDialecticProject).toHaveBeenCalledWith({
         projectName: 'upload-fails',
-        initialUserPrompt: fileContent,
+        initialUserPrompt: '',
         selectedDomainTag: null,
       });
     });
