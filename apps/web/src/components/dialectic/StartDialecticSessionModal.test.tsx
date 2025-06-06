@@ -134,7 +134,7 @@ const mockProject: DialecticProject = {
   updated_at: new Date().toISOString(),
   user_id: 'user-abc',
   initial_user_prompt: 'Initial user prompt',
-  selected_domain_overlay_id: 'overlay-1',
+  selected_domain_overlay_id: 'tag-1',
   selected_domain_tag: 'general',
   repo_url: 'https://github.com/test/test',
   status: 'active',
@@ -187,7 +187,7 @@ const mockAvailableDomainTags: DomainTagDescriptor[] = [
 ];
 
 const mockAvailableDomainOverlays: DomainOverlayDescriptor[] = [
-    { id: 'overlay-1', 
+    { id: 'tag-1', 
       description: 'Overlay for general debates.', 
       domainTag: 'general', 
       stageAssociation: 'thesis' 
@@ -228,8 +228,7 @@ describe('StartDialecticSessionModal', () => {
     render(<StartDialecticSessionModal />);
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByText('Start New Dialectic Session')).toBeInTheDocument();
-    expect(screen.getByText(/For project: Test Project/i)).toBeInTheDocument();
+    expect(screen.getByText(`Start New Dialectic Session for ${mockProject.project_name}`)).toBeInTheDocument();
     
     // Verify mocked child components are rendered
     expect(screen.getByTestId('mock-dialectic-stage-selector')).toBeInTheDocument();
@@ -244,7 +243,7 @@ describe('StartDialecticSessionModal', () => {
   it('should display project name correctly', () => {
     setDialecticState({ isStartNewSessionModalOpen: true });
     render(<StartDialecticSessionModal />);
-    expect(screen.getByText(`For project: ${mockProject.project_name}`)).toBeInTheDocument();
+    expect(screen.getByText(`Start New Dialectic Session for ${mockProject.project_name}`)).toBeInTheDocument();
   });
   
   it('should display project id if name is not available', () => {
@@ -253,7 +252,7 @@ describe('StartDialecticSessionModal', () => {
       currentProjectDetail: { ...mockProject, project_name: '' } 
     });
     render(<StartDialecticSessionModal />);
-    expect(screen.getByText(`For project: ${mockProject.id}`)).toBeInTheDocument();
+    expect(screen.getByText(`Start New Dialectic Session for ${mockProject.id}`)).toBeInTheDocument();
   });
 
   it('should show loading project if no project details', () => {
@@ -262,7 +261,7 @@ describe('StartDialecticSessionModal', () => {
       currentProjectDetail: undefined 
     });
     render(<StartDialecticSessionModal />);
-    expect(screen.getByText(/For project: Loading project.../i)).toBeInTheDocument();
+    expect(screen.getByText(/Start New Dialectic Session for Loading project.../i)).toBeInTheDocument();
     expect(screen.getByText('Waiting for project information...')).toBeInTheDocument();
     const startButton = screen.getByRole('button', { name: 'Start Session' });
     expect(startButton).toBeDisabled();
@@ -274,14 +273,14 @@ describe('StartDialecticSessionModal', () => {
   it('should correctly set initial session description based on selected domain overlay', async () => {
     setDialecticState({
       isStartNewSessionModalOpen: true,
-      selectedDomainOverlayId: 'overlay-1',
+      selectedDomainOverlayId: 'tag-1',
       currentProjectDetail: mockProject
     });
     render(<StartDialecticSessionModal />);
-    const descriptionTextarea = screen.getByLabelText('Session Description') as HTMLTextAreaElement;
 
     await waitFor(() => {
-      expect(descriptionTextarea.value).toBe(mockAvailableDomainOverlays[0].description);
+      const previewArea = screen.getByTestId('session-description-input-area-markdown-preview');
+      expect(previewArea.textContent).toBe(mockAvailableDomainOverlays[0].description);
     });
   });
 
@@ -290,31 +289,31 @@ describe('StartDialecticSessionModal', () => {
       isStartNewSessionModalOpen: true,
       selectedDomainOverlayId: null,
       selectedDomainTag: 'tech',
-      currentProjectDetail: mockProject
+      currentProjectDetail: { ...mockProject, selected_domain_overlay_id: null, selected_domain_tag: 'tech' } 
     });
   
     const techTagDescriptor = mockAvailableDomainTags.find(tag => tag.domainTag === 'tech');
     expect(techTagDescriptor).toBeDefined();
   
     render(<StartDialecticSessionModal />);
-    const descriptionTextarea = screen.getByLabelText('Session Description') as HTMLTextAreaElement;
   
     await waitFor(() => {
-      expect(descriptionTextarea.value).toBe(techTagDescriptor!.description);
+      const previewArea = screen.getByTestId('session-description-input-area-markdown-preview');
+      expect(previewArea.textContent).toBe(techTagDescriptor!.description);
     });
   });
 
   it('should handle AI model selection and enable Start Session button', async () => {
     setDialecticState({ 
       isStartNewSessionModalOpen: true,
-      currentProjectDetail: mockProject, // Ensure project detail is present
-      modelCatalog: mockModelCatalog, // Ensure model catalog is loaded for selection
+      currentProjectDetail: mockProject,
+      modelCatalog: mockModelCatalog,
       isLoadingModelCatalog: false,
       modelCatalogError: undefined,
-      selectedDomainOverlayId: 'overlay-1', 
-      availableDomainOverlays: mockAvailableDomainOverlays, // ADDED: Explicitly provide for this render
+      selectedDomainOverlayId: 'tag-1',
+      availableDomainOverlays: mockAvailableDomainOverlays,
       selectedStageAssociation: DialecticStage.THESIS, 
-      // selectedModelIds is still [] from beforeEach
+      availableDomainTags: mockAvailableDomainTags,
     });
     render(<StartDialecticSessionModal />);
 
@@ -402,11 +401,13 @@ describe('StartDialecticSessionModal', () => {
     setDialecticState({
       isStartNewSessionModalOpen: true,
       currentProjectDetail: mockProject,
-      selectedDomainOverlayId: 'overlay-1', 
+      selectedDomainOverlayId: 'tag-1',
       selectedStageAssociation: DialecticStage.THESIS, 
       modelCatalog: mockModelCatalog, 
       isLoadingModelCatalog: false,
       modelCatalogError: undefined,
+      availableDomainOverlays: mockAvailableDomainOverlays,
+      availableDomainTags: mockAvailableDomainTags,
     });
   
     render(<StartDialecticSessionModal onSessionStarted={onSessionStartedMock} />); 
@@ -414,6 +415,10 @@ describe('StartDialecticSessionModal', () => {
     // Simulate model selection after modal is open and initialized
     setDialecticState({ selectedModelIds: [mockModelCatalog[0].id] });
   
+    // Click the toggle button to switch to edit mode
+    const toggleButton = screen.getByTestId('session-description-input-area-preview-toggle');
+    await user.click(toggleButton);
+
     const descriptionTextarea = screen.getByLabelText('Session Description') as HTMLTextAreaElement;
     fireEvent.change(descriptionTextarea, { target: { value: 'My test session description' } });
   
@@ -431,14 +436,14 @@ describe('StartDialecticSessionModal', () => {
     // Ensure the payload matches the store state
     expect(actions.startDialecticSession).toHaveBeenCalledWith({
       projectId: mockProject.id,
-      selectedModelCatalogIds: [mockModelCatalog[0].id], // From store
-      sessionDescription: 'My test session description', // From local state
-      thesisPromptTemplateId: 'overlay-1',
-      antithesisPromptTemplateId: 'overlay-1',
-      synthesisPromptTemplateId: 'overlay-1',
-      parenthesisPromptTemplateId: 'overlay-1',
-      paralysisPromptTemplateId: 'overlay-1',
-      formalDebateStructureId: 'overlay-1',
+      selectedModelCatalogIds: [mockModelCatalog[0].id],
+      sessionDescription: 'My test session description',
+      thesisPromptTemplateId: 'tag-1',
+      antithesisPromptTemplateId: 'tag-1',
+      synthesisPromptTemplateId: 'tag-1',
+      parenthesisPromptTemplateId: 'tag-1',
+      paralysisPromptTemplateId: 'tag-1',
+      formalDebateStructureId: 'tag-1',
     });
 
     await waitFor(() => {
@@ -459,17 +464,23 @@ describe('StartDialecticSessionModal', () => {
     setDialecticState({
       isStartNewSessionModalOpen: true,
       currentProjectDetail: mockProject,
-      selectedDomainOverlayId: 'overlay-1',
+      selectedDomainOverlayId: 'tag-1',
       selectedStageAssociation: DialecticStage.THESIS,
       modelCatalog: mockModelCatalog,
       isLoadingModelCatalog: false,
       modelCatalogError: undefined,
+      availableDomainOverlays: mockAvailableDomainOverlays,
+      availableDomainTags: mockAvailableDomainTags,
     });
 
     render(<StartDialecticSessionModal />); 
 
     // Simulate model selection after modal is open and initialized
     setDialecticState({ selectedModelIds: [mockModelCatalog[0].id] });
+
+    // Click the toggle button to switch to edit mode
+    const toggleButton = screen.getByTestId('session-description-input-area-preview-toggle');
+    await user.click(toggleButton);
 
     const descriptionTextarea = screen.getByLabelText('Session Description') as HTMLTextAreaElement;
     fireEvent.change(descriptionTextarea, { target: { value: 'Another test session description' } });
@@ -495,12 +506,12 @@ describe('StartDialecticSessionModal', () => {
       projectId: mockProject.id,
       selectedModelCatalogIds: [mockModelCatalog[0].id],
       sessionDescription: 'Another test session description',
-      thesisPromptTemplateId: 'overlay-1',
-      antithesisPromptTemplateId: 'overlay-1',
-      synthesisPromptTemplateId: 'overlay-1',
-      parenthesisPromptTemplateId: 'overlay-1',
-      paralysisPromptTemplateId: 'overlay-1',
-      formalDebateStructureId: 'overlay-1',
+      thesisPromptTemplateId: 'tag-1',
+      antithesisPromptTemplateId: 'tag-1',
+      synthesisPromptTemplateId: 'tag-1',
+      parenthesisPromptTemplateId: 'tag-1',
+      paralysisPromptTemplateId: 'tag-1',
+      formalDebateStructureId: 'tag-1',
     });
 
     await waitFor(() => {
@@ -511,20 +522,24 @@ describe('StartDialecticSessionModal', () => {
   });
   
   it('should display start session error from store if it occurs (e.g. after submit)', async () => {
-    setDialecticState({
+    const errorMessage = "A server-side validation error occurred.";
+    initializeMockDialecticState({
       isStartNewSessionModalOpen: true,
       currentProjectDetail: mockProject,
       modelCatalog: mockModelCatalog, 
       isLoadingModelCatalog: false,
       modelCatalogError: undefined,
+      availableDomainOverlays: mockAvailableDomainOverlays,
+      availableDomainTags: mockAvailableDomainTags,
+      selectedDomainOverlayId: 'tag-1',
+      selectedStageAssociation: DialecticStage.THESIS,
+      selectedDomainTag: 'general',
+      startSessionError: { message: errorMessage, code: '500' }
     });
 
     render(<StartDialecticSessionModal />);
     
-    const errorMessage = "A server-side validation error occurred.";
-    setDialecticState({ startSessionError: { message: errorMessage, code: '500' } });
-
-    // Assert that the toast was called, as the effect should have run
+    // Assert that the toast was called, as the effect should have run on mount
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith(errorMessage);
     });
@@ -560,12 +575,23 @@ describe('StartDialecticSessionModal', () => {
 
   it('should call setStartNewSessionModalOpen with false when dialog is closed via X or overlay', async () => {
     const user = userEvent.setup();
-    setDialecticState({ isStartNewSessionModalOpen: true, currentProjectDetail: mockProject });
     const { setStartNewSessionModalOpen } = getDialecticStoreActions();
+    setDialecticState({ 
+      isStartNewSessionModalOpen: true, 
+      currentProjectDetail: mockProject,
+      selectedDomainOverlayId: 'tag-1',
+      availableDomainOverlays: mockAvailableDomainOverlays,
+      availableDomainTags: mockAvailableDomainTags,
+      selectedStageAssociation: DialecticStage.THESIS,
+    });
     render(<StartDialecticSessionModal />);
 
+    // Part 1: Change description
+    const toggleButton = screen.getByTestId('session-description-input-area-preview-toggle');
+    await user.click(toggleButton);
     const descriptionTextarea = screen.getByLabelText('Session Description') as HTMLTextAreaElement;
     fireEvent.change(descriptionTextarea, { target: { value: 'User typed description' } });
+
     const cancelButton = screen.getByRole('button', { name: /cancel/i });
     await user.click(cancelButton);
     expect(setStartNewSessionModalOpen).toHaveBeenCalledWith(false);
@@ -573,15 +599,19 @@ describe('StartDialecticSessionModal', () => {
     initializeMockDialecticState({
         isStartNewSessionModalOpen: true, 
         currentProjectDetail: mockProject,
-        selectedDomainOverlayId: 'overlay-1',
+        selectedDomainOverlayId: 'tag-1',
         availableDomainOverlays: mockAvailableDomainOverlays,
         availableDomainTags: mockAvailableDomainTags,
-        modelCatalog: mockModelCatalog
+        modelCatalog: mockModelCatalog,
+        selectedDomainTag: mockAvailableDomainOverlays[0].domainTag, 
+        selectedStageAssociation: mockAvailableDomainOverlays[0].stageAssociation,
     });
     
     render(<StartDialecticSessionModal />);
-    const newDescriptionTextarea = screen.getByLabelText('Session Description') as HTMLTextAreaElement;
-    expect(newDescriptionTextarea.value).toBe(mockAvailableDomainOverlays[0].description);
+    await waitFor(() => {
+        const newPreviewArea = screen.getByTestId('session-description-input-area-markdown-preview');
+        expect(newPreviewArea.textContent).toBe(mockAvailableDomainOverlays[0].description);
+    });
   });
   
   it('should render the mocked child selectors', () => {

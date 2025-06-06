@@ -319,6 +319,7 @@ export interface DomainOverlayDescriptor {
   domainTag: string;
   description: string | null;
   stageAssociation: string; // Corresponds to system_prompts.stage_association
+  overlay_values: Record<string, unknown> | string | null; // Added field for overlay_values
 }
 
 export type DialecticServiceActionPayload = {

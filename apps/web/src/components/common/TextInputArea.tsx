@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -31,7 +31,6 @@ export interface TextInputAreaProps {
   onFileLoad?: FileLoadHandler; // Handles content of loaded file
   dropZoneLabel?: string;
   
-  // Optional: To allow parent to control preview mode if needed, though typically internal
   initialPreviewMode?: boolean; 
   onPreviewModeChange?: (isPreview: boolean) => void;
 }
@@ -58,15 +57,35 @@ export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputArea
     initialPreviewMode = false,
     onPreviewModeChange,
   }, externalRef) => {
+    const minHeightStyle = '30vh';//`${Math.max(rows * 20, 80)}px`;
+
     const [isPreviewMode, setIsPreviewMode] = useState<boolean>(initialPreviewMode);
-    const [inputAreaHeight, setInputAreaHeight] = useState<number | null>(null);
-    const [inputAreaWidth, setInputAreaWidth] = useState<number | null>(null);
+    const [currentHeight, setCurrentHeight] = useState<string | number>(minHeightStyle);
+    
+    const containerRef = useRef<HTMLDivElement>(null);
     const internalTextAreaRef = useRef<HTMLTextAreaElement>(null);
-    const ref = externalRef || internalTextAreaRef;
+    const resolvedRef = externalRef || internalTextAreaRef;
 
     useEffect(() => {
       setIsPreviewMode(initialPreviewMode);
     }, [initialPreviewMode]);
+
+    // Observer for the main container resize
+    useEffect(() => {
+      const targetElement = containerRef.current;
+      if (!targetElement) return;
+
+      const observer = new ResizeObserver(() => {
+        if (containerRef.current) {
+          setCurrentHeight(containerRef.current.offsetHeight + 'px');
+        }
+      });
+      observer.observe(targetElement);
+      return () => {
+        observer.unobserve(targetElement);
+        observer.disconnect();
+      };
+    }, []); // Runs once on mount to observe the container
 
     const handleTextChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
       onChange(event.target.value);
@@ -80,32 +99,6 @@ export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputArea
       }
     };
     
-    const updateInputAreaHeight = useCallback(() => {
-      if (ref && 'current' in ref && ref.current) {
-        setInputAreaHeight(ref.current.offsetHeight);
-      }
-    }, [ref]);
-
-    const updateInputAreaWidth = useCallback(() => {
-      if (ref && 'current' in ref && ref.current) {
-        setInputAreaWidth(ref.current.offsetWidth);
-      }
-    }, [ref]);
-
-    useEffect(() => {
-      updateInputAreaHeight();
-      // Also update on window resize for responsive adjustments
-      window.addEventListener('resize', updateInputAreaHeight);
-      return () => window.removeEventListener('resize', updateInputAreaHeight);
-    }, [value, updateInputAreaHeight]);
-
-    useEffect(() => {
-      updateInputAreaWidth();
-      window.addEventListener('resize', updateInputAreaWidth);
-      return () => window.removeEventListener('resize', updateInputAreaWidth);
-    }, [value, updateInputAreaWidth]);
-
-    // Default FileUploadConfig if showFileUpload is true but no config is provided by parent
     const defaultMdUploadConfig: FileUploadConfig = {
         acceptedFileTypes: ['.md', 'text/markdown'],
         maxSize: 5 * 1024 * 1024, // 5MB
@@ -113,12 +106,10 @@ export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputArea
     };
     const currentFileUploadConfig = showFileUpload ? (fileUploadConfig || defaultMdUploadConfig) : undefined;
 
-    const handleInternalDummyUploadTrigger = async (_unusedFile: File) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const handleInternalDummyUploadTrigger = async (_file: File) => {
       return { success: true, error: 'File content loaded locally; no direct upload by TextInputArea.' };
     };
-
-    const minHeightStyle = `${Math.max(rows * 20, 80)}px`;
-    const minWidthStyle = `${Math.max(rows * 20, 80)}px`;
 
     return (
       <div className="grid w-full gap-1.5">
@@ -152,21 +143,31 @@ export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputArea
             </div>
         </div>
 
-        <div className="relative">
+        <div 
+          ref={containerRef}
+          className="relative w-full resize-y overflow-auto border rounded-md" // Added border and rounded-md here for consistent look
+          style={{
+            height: currentHeight,
+            minHeight: minHeightStyle,
+            // Consider adding a maxHeight if needed, e.g., maxHeight: '70vh'
+          }}
+        >
           {isPreviewMode && showPreviewToggle ? (
             <div 
-              className="p-3 border rounded-md bg-muted/20 prose prose-sm dark:prose-invert max-w-full overflow-y-auto relative"
-              style={{ 
-                minHeight: inputAreaHeight ? `${Math.max(inputAreaHeight, parseFloat(minHeightStyle))}px` : minHeightStyle, 
-                height: inputAreaHeight ? `${Math.max(inputAreaHeight, parseFloat(minHeightStyle))}px` : minHeightStyle,
-                minWidth: inputAreaWidth ? `${Math.max(inputAreaWidth, parseFloat(minWidthStyle))}` : minWidthStyle,
-              }}
+              className={cn(
+                "p-3 bg-muted/20 prose prose-sm dark:prose-invert",
+                "w-full h-full max-w-none",
+                "overflow-y-auto",
+                "prose-pre:whitespace-pre-wrap",
+                "prose-pre:break-words"
+              )}
+              // style prop for height/minHeight removed, now h-full
               data-testid={dataTestId ? `${dataTestId}-markdown-preview` : "markdown-preview"}
             >
               {value && value.length > 0 ? (
                 <MarkdownRenderer content={value} />
               ) : (
-                <p className="text-sm text-muted-foreground italic">Nothing to preview.</p>
+                <p className="text-sm text-muted-foreground italic p-3">Nothing to preview.</p> // Added p-3 for consistency
               )}
             </div>
           ) : (
@@ -177,15 +178,16 @@ export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputArea
               disabled={disabled}
               placeholder={placeholder}
               aria-label={label}
-              rows={rows}
+              rows={rows} // rows can give an initial height hint before manual resize
               data-testid={dataTestId}
               className={cn(
-                "w-full resize-y",
+                "w-full h-full p-3", // Added p-3 for consistency with preview, h-full to fill container
+                "resize-none",      // Remove Textarea's own resize handle
+                "border-none focus:ring-0 focus-visible:ring-0", // Remove default border and focus ring as parent has border
                 textAreaClassName
               )}
-              style={{ minHeight: minHeightStyle }}
-              ref={ref}
-              onInput={updateInputAreaHeight}
+              // style prop for minHeight removed, now h-full
+              ref={resolvedRef}
             />
           )}
           {showFileUpload && currentFileUploadConfig && onFileLoad && (

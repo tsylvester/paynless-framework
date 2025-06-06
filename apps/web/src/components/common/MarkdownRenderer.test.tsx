@@ -52,11 +52,15 @@ describe('MarkdownRenderer', () => {
   it('should render a GFM code block correctly', () => {
     const codeContent = 'function greet() {\n  console.log("Hello");\n}';
     render(<MarkdownRenderer content={"```javascript\n" + codeContent + "\n```"} />);
-    const codeElement = document.querySelector('pre > code.language-javascript');
+    
+    const preElement = document.querySelector('pre[class*="language-javascript"]');
+    expect(preElement).toBeInTheDocument();
+    expect(preElement?.tagName).toBe('PRE');
+
+    const codeElement = preElement?.querySelector('code');
     expect(codeElement).toBeInTheDocument();
     expect(codeElement?.tagName).toBe('CODE');
-    expect(codeElement?.parentElement?.tagName).toBe('PRE');
-    expect(codeElement).toHaveClass('language-javascript');
+    
     expect(codeElement?.textContent?.trim()).toBe(codeContent.trim());
   });
 
@@ -160,5 +164,50 @@ World`} />);
     expect(screen.getByRole('cell', { name: 'Cell 2' })).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: 'Cell 3' })).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: 'Cell 4' })).toBeInTheDocument();
+  });
+
+  it('should render an object as a JSON code block', () => {
+    const jsonObject = { key: "value", number: 123, nested: { bool: true } };
+    render(<MarkdownRenderer content={jsonObject} />);
+    
+    const preElement = document.querySelector('pre[class*="language-json"]');
+    expect(preElement).toBeInTheDocument();
+    expect(preElement?.tagName).toBe('PRE');
+
+    const codeElement = preElement?.querySelector('code');
+    expect(codeElement).toBeInTheDocument();
+    expect(codeElement?.tagName).toBe('CODE');
+
+    // Check for some key parts of the JSON string within the code block
+    expect(codeElement?.textContent).toContain('"key": "value"');
+    expect(codeElement?.textContent).toContain('"number": 123');
+    expect(codeElement?.textContent).toContain('"nested": {');
+    expect(codeElement?.textContent).toContain('"bool": true');
+    expect(codeElement?.textContent?.startsWith('{')).toBeTruthy();
+    expect(codeElement?.textContent?.trim().endsWith('}')).toBeTruthy();
+  });
+
+  it('should treat actual newlines in plain strings as hard breaks (remark-breaks)', () => {
+    render(<MarkdownRenderer content={"First line\nSecond line"} />);
+    const pElement = screen.getByText(/First line/).closest('p');
+    expect(pElement).toBeInTheDocument();
+    expect(pElement?.innerHTML).toMatch(/First line<br>\s*Second line/);
+  });
+
+  it('should convert literal "\\n" in plain strings to hard breaks', () => {
+    render(<MarkdownRenderer content={"First line\\nSecond line"} />); 
+    const pElement = screen.getByText(/First line/).closest('p');
+    expect(pElement).toBeInTheDocument();
+    expect(pElement?.innerHTML).toMatch(/First line<br>\s*Second line/);
+  });
+
+  it('should render newlines within JSON string values as visual breaks in the code block', () => {
+    const jsonData = { description: "Line one\nLine two" };
+    render(<MarkdownRenderer content={jsonData} />);
+
+    const codeElement = document.querySelector('pre[class*="language-json"] > code');
+    expect(codeElement).toBeInTheDocument();
+
+    expect(codeElement?.textContent).toContain('"description": "Line one\nLine two"');
   });
 }); 

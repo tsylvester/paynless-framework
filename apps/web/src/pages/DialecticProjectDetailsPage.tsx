@@ -89,13 +89,15 @@ export const DialecticProjectDetailsPage: React.FC = () => {
   }
 
   return (
-    <div className="container mx-auto p-4 md:p-6 space-y-6 md:space-y-8">
-      <Button variant="outline" size="sm" onClick={() => navigate('/dialectic')} className="mb-4">
-        <ArrowLeft className="mr-2 h-4 w-4" /> Back to Projects
-      </Button>
+    <div className="container mx-auto p-4 md:p-6 space-y-2 md:space-y-4">
 
       <div className="flex flex-col sm:flex-row justify-between items-center gap-x-4 gap-y-2 mb-6">
         <div className="flex-grow flex items-center flex-wrap gap-x-3 gap-y-1 min-w-0">
+          <div className="flex-shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
+            <Button variant="outline" size="sm" onClick={() => navigate('/dialectic')} className="w-full sm:w-auto">
+              <ArrowLeft className="mr-2 h-4 w-4" /> Back to Projects
+            </Button>
+          </div>
           <h1 className="text-xl md:text-2xl font-semibold flex items-center mr-2 shrink-0">
             <Layers className="mr-2 h-6 w-6 text-primary shrink-0" /> 
             <span className="truncate" title={currentProjectDetail.project_name}>

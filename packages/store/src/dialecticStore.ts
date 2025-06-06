@@ -124,9 +124,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     set({
       isLoadingDomainOverlays: true,
       domainOverlaysError: null,
-      selectedStageAssociation: stageAssociation, // Store which stage we are fetching for
-      // Optionally clear previous overlays or keep them until new ones are fetched
-      // availableDomainOverlays: [], 
+      selectedStageAssociation: stageAssociation, 
     });
     logger.info(`[DialecticStore] Fetching available domain overlays for stage: ${stageAssociation}`);
     try {
@@ -140,7 +138,8 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
           domainOverlaysError: response.error,
         });
       } else {
-        const descriptors = response.data || []; // API returns direct array or null
+        const descriptors = response.data || []; 
+        logger.info('[DialecticStore] Raw descriptors received from API:', { descriptors }); 
         logger.info('[DialecticStore] Successfully fetched domain overlays:', { stageAssociation, count: descriptors.length });
         set({
           availableDomainOverlays: descriptors,

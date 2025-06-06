@@ -5,14 +5,12 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
+import { TextInputArea } from '@/components/common/TextInputArea';
 import { useDialecticStore } from '@paynless/store';
-import type { StartSessionPayload, DialecticProject, DomainOverlayDescriptor, DialecticStage } from '@paynless/types';
+import type { StartSessionPayload, DialecticProject, DomainOverlayDescriptor, DialecticStage, DomainTagDescriptor } from '@paynless/types';
 import {
   selectCurrentProjectDetail,
   selectIsStartNewSessionModalOpen,
@@ -48,9 +46,15 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
   const {
     setStartNewSessionModalOpen,
     startDialecticSession,
+    setSelectedDomainTag,
+    setSelectedDomainOverlayId,
+    setSelectedStageAssociation,
   } = useDialecticStore((state) => ({
     setStartNewSessionModalOpen: state.setStartNewSessionModalOpen,
     startDialecticSession: state.startDialecticSession,
+    setSelectedDomainTag: state.setSelectedDomainTag,
+    setSelectedDomainOverlayId: state.setSelectedDomainOverlayId,
+    setSelectedStageAssociation: state.setSelectedStageAssociation,
   }));
 
   const currentProjectDetail = useDialecticStore(selectCurrentProjectDetail) as DialecticProject | null;
@@ -60,35 +64,86 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
   const selectedDomainOverlayDescriptor = useDialecticStore(selectSelectedDomainOverlayDescriptor);
   const isLoadingModelCatalog = useDialecticStore(selectIsLoadingModelCatalog);
 
-  const selectedDomainTag = useDialecticStore(selectSelectedDomainTag);
+  const currentSelectedDomainTagFromStore = useDialecticStore(selectSelectedDomainTag);
   const availableDomainTags = useDialecticStore(selectAvailableDomainTags);
+
+  const currentSelectedStageFromStore = useDialecticStore(selectSelectedStageAssociation);
+  const currentSelectedOverlayIdFromStore = useDialecticStore(selectSelectedDomainOverlayId);
 
   const currentDialecticStage = useDialecticStore(selectSelectedStageAssociation) as DialecticStage | undefined;
   const currentSelectedModelIds = useDialecticStore(selectSelectedModelIds) || [];
 
-  const [sessionDescription, setSessionDescription] = useState('');
+  const [sessionDescription, setSessionDescription] = useState<string | object>('');
   const [hasUserEditedDescription, setHasUserEditedDescription] = useState(false);
 
   const baseDomainTagDescription = useMemo(() => {
-    if (!selectedDomainTag || !availableDomainTags) return null;
-    const currentTagDescriptor = availableDomainTags.find(tag => tag.domainTag === selectedDomainTag);
+    if (!currentSelectedDomainTagFromStore || !availableDomainTags) return null;
+    const currentTagDescriptor = availableDomainTags.find(tag => tag.domainTag === currentSelectedDomainTagFromStore);
     return currentTagDescriptor?.description || null;
-  }, [selectedDomainTag, availableDomainTags]);
+  }, [currentSelectedDomainTagFromStore, availableDomainTags]);
+
+  useEffect(() => {
+    if (isModalOpen && currentProjectDetail && availableDomainTags && availableDomainTags.length > 0) {
+      let projectOverlayId = currentProjectDetail.selected_domain_overlay_id;
+      const projectDomainTag = currentProjectDetail.selected_domain_tag;
+      let targetDescriptor: DomainTagDescriptor | undefined = undefined;
+
+      if (projectOverlayId) {
+        targetDescriptor = availableDomainTags.find(d => d.id === projectOverlayId);
+      } else if (projectDomainTag) {
+        targetDescriptor = availableDomainTags.find(d => d.domainTag === projectDomainTag);
+        if (targetDescriptor) {
+          projectOverlayId = targetDescriptor.id;
+        }
+      }
+
+      if (targetDescriptor) {
+        const needsUpdate =
+          targetDescriptor.stageAssociation !== currentSelectedStageFromStore ||
+          targetDescriptor.domainTag !== currentSelectedDomainTagFromStore ||
+          projectOverlayId !== currentSelectedOverlayIdFromStore;
+
+        if (needsUpdate) {
+          if (targetDescriptor.stageAssociation && targetDescriptor.stageAssociation !== currentSelectedStageFromStore) {
+            setSelectedStageAssociation(targetDescriptor.stageAssociation as DialecticStage);
+          }
+          if (targetDescriptor.domainTag && targetDescriptor.domainTag !== currentSelectedDomainTagFromStore) {
+            setSelectedDomainTag(targetDescriptor.domainTag);
+          }
+          if (projectOverlayId !== currentSelectedOverlayIdFromStore) {
+            setSelectedDomainOverlayId(projectOverlayId || null);
+          }
+        }
+      } else if (!projectOverlayId && !projectDomainTag) {
+        if (currentSelectedDomainTagFromStore !== null) { setSelectedDomainTag(null); }
+        if (currentSelectedOverlayIdFromStore !== null) { setSelectedDomainOverlayId(null); }
+      }
+    } else if (isModalOpen && !currentProjectDetail) {
+      if (currentSelectedDomainTagFromStore !== null) { setSelectedDomainTag(null); }
+      if (currentSelectedOverlayIdFromStore !== null) { setSelectedDomainOverlayId(null); }
+    }
+  }, [
+    isModalOpen,
+    currentProjectDetail,
+    availableDomainTags,
+    setSelectedStageAssociation,
+    setSelectedDomainTag,
+    setSelectedDomainOverlayId,
+    currentSelectedStageFromStore,
+    currentSelectedDomainTagFromStore,
+    currentSelectedOverlayIdFromStore
+  ]);
 
   useEffect(() => {
     if (isModalOpen && !hasUserEditedDescription) {
-      const newDescription = selectedDomainOverlayDescriptor?.description || baseDomainTagDescription || '';
-      setSessionDescription(newDescription);
+      const ov = selectedDomainOverlayDescriptor?.overlay_values;
+      if (ov !== undefined && ov !== null) {
+        setSessionDescription(ov);
+      } else {
+        setSessionDescription(selectedDomainOverlayDescriptor?.description || baseDomainTagDescription || '');
+      }
     }
   }, [selectedDomainOverlayDescriptor, baseDomainTagDescription, isModalOpen, hasUserEditedDescription]);
-
-  useEffect(() => {
-    if (isModalOpen) {
-      setHasUserEditedDescription(false);
-      const newDescription = selectedDomainOverlayDescriptor?.description || baseDomainTagDescription || '';
-      setSessionDescription(newDescription);
-    }
-  }, [currentDialecticStage, isModalOpen, selectedDomainOverlayDescriptor, baseDomainTagDescription]);
 
   const handleOpenChange = (open: boolean) => {
     if (!open) {
@@ -97,8 +152,18 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
     setStartNewSessionModalOpen(open);
   };
 
-  const handleSessionDescriptionChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setSessionDescription(e.target.value);
+  const getSessionDescriptionForTextarea = (): string => {
+    if (typeof sessionDescription === 'string') {
+      return sessionDescription;
+    }
+    if (typeof sessionDescription === 'object' && sessionDescription !== null) {
+      return `\`\`\`json\n${JSON.stringify(sessionDescription, null, 2)}\n\`\`\``;
+    }
+    return '';
+  };
+
+  const handleSessionDescriptionChange = (newValue: string) => {
+    setSessionDescription(newValue);
     setHasUserEditedDescription(true);
   };
 
@@ -112,10 +177,19 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
       return;
     }
 
+    let sessionDescriptionForPayload: string | undefined;
+    if (typeof sessionDescription === 'string') {
+      sessionDescriptionForPayload = sessionDescription || undefined;
+    } else if (typeof sessionDescription === 'object' && sessionDescription !== null) {
+      sessionDescriptionForPayload = `\`\`\`json\n${JSON.stringify(sessionDescription, null, 2)}\n\`\`\``;
+    } else {
+      sessionDescriptionForPayload = undefined;
+    }
+
     const payload: StartSessionPayload = {
       projectId: currentProjectDetail.id,
       selectedModelCatalogIds: currentSelectedModelIds,
-      sessionDescription: sessionDescription || undefined,
+      sessionDescription: sessionDescriptionForPayload,
       thesisPromptTemplateId: selectedDomainOverlayDescriptor?.id || undefined,
       antithesisPromptTemplateId: selectedDomainOverlayDescriptor?.id || undefined,
       synthesisPromptTemplateId: selectedDomainOverlayDescriptor?.id || undefined,
@@ -145,14 +219,11 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
 
   return (
     <Dialog open={isModalOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg md:max-w-xl lg:max-w-2xl xl:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Start New Dialectic Session</DialogTitle>
-          <DialogDescription>
-            For project: {currentProjectDetail?.project_name || currentProjectDetail?.id || 'Loading project...'}
-          </DialogDescription>
+          <DialogTitle>Start New Dialectic Session for {currentProjectDetail?.project_name || currentProjectDetail?.id || 'Loading project...'}</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-4 py-4">
+        <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
           <div className="flex flex-row gap-4 items-start">
             <div className="flex-1 grid gap-1">
               <DialecticStageSelector
@@ -166,14 +237,17 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="sessionDescription">Session Description</Label>
-            <Textarea
+            <TextInputArea
               id="sessionDescription"
-              placeholder={selectedDomainOverlayDescriptor?.description || baseDomainTagDescription || undefined}
-              value={sessionDescription}
+              label="Session Description"
+              placeholder="Enter session description (Markdown supported)"
+              value={getSessionDescriptionForTextarea()}
               onChange={handleSessionDescriptionChange}
               disabled={isStartingSession}
-              rows={3}
+              rows={5}
+              showPreviewToggle={true}
+              initialPreviewMode={true}
+              dataTestId="session-description-input-area"
             />
           </div>
 
