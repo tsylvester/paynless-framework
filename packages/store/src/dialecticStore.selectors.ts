@@ -80,7 +80,7 @@ export const selectIsLoadingProjectDetail = (state: DialecticStateValues): boole
 export const selectProjectDetailError = (state: DialecticStateValues): ApiError | null => state.projectDetailError;
 
 // Selector for the current project initial prompt
-export const selectCurrentProjectInitialPrompt = (state: DialecticStateValues): string | undefined => 
+export const selectCurrentProjectInitialPrompt = (state: DialecticStateValues): string | undefined | null=> 
   state.currentProjectDetail?.initial_user_prompt;
 
 // Selector for the current project sessions

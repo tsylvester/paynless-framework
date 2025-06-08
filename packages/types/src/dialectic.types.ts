@@ -226,7 +226,7 @@ export interface DialecticActions {
   exportDialecticProject: (projectId: string) => Promise<ApiResponse<{ export_url: string }>>;
   updateDialecticProjectInitialPrompt: (payload: UpdateProjectInitialPromptPayload) => Promise<ApiResponse<DialecticProject>>;
   setStartNewSessionModalOpen: (isOpen: boolean) => void;
-  toggleSelectedModelId: (modelId: string) => void;
+  setModelMultiplicity: (modelId: string, count: number) => void;
   resetSelectedModelId: () => void;
 
   _resetForTesting?: () => void;

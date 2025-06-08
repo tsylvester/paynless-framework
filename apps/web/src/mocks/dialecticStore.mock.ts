@@ -75,7 +75,15 @@ const initializeInternalDialecticStoreState = (): DialecticStore => {
     exportDialecticProject: vi.fn().mockResolvedValue({ data: { export_url: '' }, error: undefined, status: 200 } as ApiResponse<{ export_url: string }>),
     updateDialecticProjectInitialPrompt: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 } as ApiResponse<DialecticProject>),
     setStartNewSessionModalOpen: vi.fn((isOpen: boolean) => { newState.isStartNewSessionModalOpen = isOpen; }),
-    toggleSelectedModelId: vi.fn((modelId: string) => { newState.selectedModelIds.push(modelId); }),
+    setModelMultiplicity: vi.fn((modelId: string, count: number) => {
+      const currentSelectedIds = newState.selectedModelIds || [];
+      const filteredIds = currentSelectedIds.filter((id) => id !== modelId);
+      const newSelectedIds = [...filteredIds];
+      for (let i = 0; i < count; i++) {
+        newSelectedIds.push(modelId);
+      }
+      newState.selectedModelIds = newSelectedIds;
+    }),
     resetSelectedModelId: vi.fn(() => { newState.selectedModelIds = []; }),
     _resetForTesting: vi.fn(() => { internalMockDialecticStoreState = initializeInternalDialecticStoreState(); }),
   } as DialecticStore; // Cast to DialecticStore to satisfy type, setters modify 'newState' which becomes internalMockDialecticStoreState

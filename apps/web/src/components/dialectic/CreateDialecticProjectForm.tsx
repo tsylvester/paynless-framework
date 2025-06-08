@@ -100,39 +100,78 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
     if (typeof fileContent === 'string') {
       setValue('initialUserPrompt', fileContent, { shouldValidate: true, shouldDirty: true });
       setPromptFile(file);
-      // Automatically update project name if not manually set
-      if (!projectNameManuallySet && file.name) {
-        const fileNameWithoutExt = file.name.split('.').slice(0, -1).join('.');
-        const summary = stripMarkdown(fileNameWithoutExt).substring(0, 50);
-        if (summary) {
-          setValue('projectName', summary, { shouldValidate: true, shouldDirty: true });
+
+      if (!projectNameManuallySet) {
+        let derivedProjectName = '';
+        const fileExtension = file.name.split('.').pop()?.toLowerCase();
+
+        if (fileExtension === 'md' || file.type === 'text/markdown') {
+          const firstLine = fileContent.split('\n')[0];
+          const potentialName = stripMarkdown(firstLine);
+          if (potentialName) {
+            derivedProjectName = potentialName.substring(0, 50);
+          }
+        } else if (fileExtension === 'json' || file.type === 'application/json') {
+          try {
+            const jsonData = JSON.parse(fileContent);
+            let jsonFieldName = '';
+            if (typeof jsonData.title === 'string' && jsonData.title.trim()) {
+              jsonFieldName = jsonData.title.trim();
+            } else if (typeof jsonData.name === 'string' && jsonData.name.trim()) {
+              jsonFieldName = jsonData.name.trim();
+            } else if (typeof jsonData.description === 'string' && jsonData.description.trim()) {
+              jsonFieldName = jsonData.description.trim();
+            }
+
+            if (jsonFieldName) {
+              derivedProjectName = stripMarkdown(jsonFieldName).substring(0, 50);
+            }
+          } catch (e) {
+            const errorLogDetails = e instanceof Error 
+              ? { message: e.message, name: e.name, stack: e.stack } 
+              : { rawError: String(e) };
+            logger.error("Error parsing JSON for project name derivation", errorLogDetails);
+            // Fallback to filename will be handled below if derivedProjectName remains empty
+          }
+        }
+
+        // Fallback to filename if derivedProjectName is still empty after content processing
+        if (!derivedProjectName && file.name) {
+            const fileNameWithoutExt = file.name.split('.').slice(0, -1).join('.');
+            const potentialName = stripMarkdown(fileNameWithoutExt);
+            if (potentialName) {
+                derivedProjectName = potentialName.substring(0, 50);
+            }
+        }
+        
+        if (derivedProjectName) {
+          setValue('projectName', derivedProjectName, { shouldValidate: true, shouldDirty: true });
         }
       }
     } else {
-      console.error("File content is not a string, cannot set prompt.");
+      logger.error("File content is not a string, cannot set prompt or derive project name.");
     }
-  }, [setValue, projectNameManuallySet]);
+  }, [setValue, projectNameManuallySet, stripMarkdown]);
 
-  // Auto-name project from prompt text or file name if project name is empty and not manually set
+  // Auto-name project from prompt text if project name is empty and not manually set
   useEffect(() => {
     if (projectNameManuallySet) return;
 
-    if (promptFile && promptFile.name) {
-      // If a file is loaded, prioritize its name
-      const fileNameWithoutExt = promptFile.name.split('.').slice(0, -1).join('.');
-      const summary = stripMarkdown(fileNameWithoutExt).substring(0, 50);
-      if (summary && summary !== watchedProjectName) {
-        setValue('projectName', summary, { shouldValidate: true, shouldDirty: true });
-      }
-    } else if (watchedPrompt && (!watchedProjectName || watchedProjectName.trim() === '')) {
-      // If no file, use the typed prompt
-      const firstLine = watchedPrompt.split('\n')[0]; // No need to trim here, stripMarkdown will do it
-      const summary = stripMarkdown(firstLine).substring(0, 50);
-      if (summary && summary !== watchedProjectName) {
-        setValue('projectName', summary, { shouldValidate: true, shouldDirty: true });
-      }
+    // This effect handles auto-naming from the typed prompt.
+    // If a file was loaded, handleFileLoadForPrompt would have already attempted to set the name.
+    // Subsequent typing in the prompt will override it if projectName is not manually set.
+    if (watchedPrompt) {
+        const firstLine = watchedPrompt.split('\n')[0];
+        const summary = stripMarkdown(firstLine).substring(0, 50);
+        // Update if summary is non-empty AND (it's different from current projectName OR projectName was empty).
+        if (summary && (summary !== watchedProjectName || !watchedProjectName?.trim())) {
+            setValue('projectName', summary, { shouldValidate: true, shouldDirty: true });
+        }
     }
-  }, [watchedPrompt, promptFile, watchedProjectName, projectNameManuallySet, setValue]);
+    // Note: If watchedPrompt becomes empty, 'summary' will be empty, and the above condition
+    // `(summary && ...)` will be false. This means an empty prompt will not clear an existing
+    // project name, which is acceptable for now.
+  }, [watchedPrompt, watchedProjectName, projectNameManuallySet, setValue, stripMarkdown]); // promptFile removed from deps as its direct role here is simplified
 
   // Global drag/drop prevention for the window - WEB PLATFORM ONLY
   useEffect(() => {

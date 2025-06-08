@@ -651,18 +651,23 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     set({ isStartNewSessionModalOpen: isOpen });
   },
 
-  toggleSelectedModelId: (modelId: string) => {
+  setModelMultiplicity: (modelId: string, count: number) => {
     set((state) => {
       const currentSelectedIds = state.selectedModelIds || [];
-      if (currentSelectedIds.includes(modelId)) {
-        return { selectedModelIds: currentSelectedIds.filter((id) => id !== modelId) };
-      } else {
-        return { selectedModelIds: [...currentSelectedIds, modelId] };
+      // Filter out all occurrences of the current modelId
+      const filteredIds = currentSelectedIds.filter((id) => id !== modelId);
+      // Add the modelId 'count' times
+      const newSelectedIds = [...filteredIds];
+      for (let i = 0; i < count; i++) {
+        newSelectedIds.push(modelId);
       }
+      logger.info(`[DialecticStore] Setting multiplicity for model ${modelId} to ${count}. New selectedModelIds:`, newSelectedIds);
+      return { selectedModelIds: newSelectedIds };
     });
   },
 
   resetSelectedModelId: () => {
+    logger.info(`[DialecticStore] Resetting selectedModelIds.`);
     set({ selectedModelIds: [] });
   },
 }));

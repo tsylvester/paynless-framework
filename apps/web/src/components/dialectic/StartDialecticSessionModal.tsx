@@ -7,6 +7,7 @@ import {
   DialogTitle,
   DialogFooter,
   DialogClose,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { TextInputArea } from '@/components/common/TextInputArea';
 import { useDialecticStore } from '@paynless/store';
@@ -191,7 +192,7 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
       projectId: currentProjectDetail.id,
       selectedModelCatalogIds: currentSelectedModelIds,
       sessionDescription: sessionDescriptionForPayload,
-      stageAssociation: currentDialecticStage || DialecticStage.THESIS,
+      stageAssociation: currentDialecticStage as DialecticStage,
       promptTemplateId: "NEEDS_IMPLEMENTATION_SELECT_PROMPT_ID_FOR_STAGE",
       selectedDomainOverlayId: currentSelectedOverlayIdFromStore || undefined,
     };
@@ -220,6 +221,9 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
       <DialogContent className="sm:max-w-lg md:max-w-xl lg:max-w-2xl xl:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Start New Dialectic Session for {currentProjectDetail?.project_name || currentProjectDetail?.id || 'Loading project...'}</DialogTitle>
+          <DialogDescription>
+            Configure and start a new Dialectic session for the selected project. Choose the stage, domain, describe the session, and select AI models.
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
           <div className="flex flex-row gap-4 items-start">
