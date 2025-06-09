@@ -27,7 +27,8 @@ export async function isValidDomainTag(dbClient: any, domainTag: string): Promis
 
   if (error) {
     console.error(`Error validating domain tag "${domainTag}":`, error);
-    return false; // Treat database errors as invalid for safety
+    // return false; // Treat database errors as invalid for safety
+    throw error; // Re-throw the error to be caught by the caller
   }
   return data && data.length > 0;
 } 

@@ -76,6 +76,45 @@ export interface IMockSupabaseClient {
   getSpiesForTableQueryMethod: (tableName: string, methodName: keyof IMockQueryBuilder, callIndex?: number) => Spy | undefined;
 }
 
+// Helper type for the comprehensive set of spied query builder methods
+export type AllQueryBuilderSpyMethods = {
+  select?: Spy<IMockQueryBuilder['select']>;
+  insert?: Spy<IMockQueryBuilder['insert']>;
+  update?: Spy<IMockQueryBuilder['update']>;
+  delete?: Spy<IMockQueryBuilder['delete']>;
+  upsert?: Spy<IMockQueryBuilder['upsert']>;
+  eq?: Spy<IMockQueryBuilder['eq']>;
+  neq?: Spy<IMockQueryBuilder['neq']>;
+  gt?: Spy<IMockQueryBuilder['gt']>;
+  gte?: Spy<IMockQueryBuilder['gte']>;
+  lt?: Spy<IMockQueryBuilder['lt']>;
+  lte?: Spy<IMockQueryBuilder['lte']>;
+  like?: Spy<IMockQueryBuilder['like']>;
+  ilike?: Spy<IMockQueryBuilder['ilike']>;
+  is?: Spy<IMockQueryBuilder['is']>;
+  in?: Spy<IMockQueryBuilder['in']>;
+  contains?: Spy<IMockQueryBuilder['contains']>;
+  containedBy?: Spy<IMockQueryBuilder['containedBy']>;
+  rangeGt?: Spy<IMockQueryBuilder['rangeGt']>;
+  rangeGte?: Spy<IMockQueryBuilder['rangeGte']>;
+  rangeLt?: Spy<IMockQueryBuilder['rangeLt']>;
+  rangeLte?: Spy<IMockQueryBuilder['rangeLte']>;
+  rangeAdjacent?: Spy<IMockQueryBuilder['rangeAdjacent']>;
+  overlaps?: Spy<IMockQueryBuilder['overlaps']>;
+  textSearch?: Spy<IMockQueryBuilder['textSearch']>;
+  match?: Spy<IMockQueryBuilder['match']>;
+  or?: Spy<IMockQueryBuilder['or']>;
+  filter?: Spy<IMockQueryBuilder['filter']>;
+  not?: Spy<IMockQueryBuilder['not']>;
+  order?: Spy<IMockQueryBuilder['order']>;
+  limit?: Spy<IMockQueryBuilder['limit']>;
+  range?: Spy<IMockQueryBuilder['range']>;
+  single?: Spy<IMockQueryBuilder['single']>;
+  maybeSingle?: Spy<IMockQueryBuilder['maybeSingle']>;
+  then?: Spy<IMockQueryBuilder['then']>;
+  returns?: Spy<IMockQueryBuilder['returns']>; 
+};
+
 export interface IMockClientSpies {
   auth: {
     getUserSpy: Spy<IMockSupabaseAuth['getUser']>;
@@ -92,38 +131,8 @@ export interface IMockClientSpies {
       copySpy: Spy<IMockStorageBucketAPI['copy']>;
     };
   };
-  getLatestQueryBuilderSpies: (tableName: string) => ({
-    select?: Spy<IMockQueryBuilder['select']>;
-    insert?: Spy<IMockQueryBuilder['insert']>;
-    update?: Spy<IMockQueryBuilder['update']>;
-    delete?: Spy<IMockQueryBuilder['delete']>;
-    upsert?: Spy<IMockQueryBuilder['upsert']>;
-    eq?: Spy<IMockQueryBuilder['eq']>;
-    neq?: Spy<IMockQueryBuilder['neq']>;
-    gt?: Spy<IMockQueryBuilder['gt']>;
-    gte?: Spy<IMockQueryBuilder['gte']>;
-    lt?: Spy<IMockQueryBuilder['lt']>;
-    lte?: Spy<IMockQueryBuilder['lte']>;
-    single?: Spy<IMockQueryBuilder['single']>;
-    maybeSingle?: Spy<IMockQueryBuilder['maybeSingle']>;
-    then?: Spy<IMockQueryBuilder['then']>;
-  } | undefined);
-  getAllQueryBuilderSpies: (tableName: string) => Array<{
-    select?: Spy<IMockQueryBuilder['select']>;
-    insert?: Spy<IMockQueryBuilder['insert']>;
-    update?: Spy<IMockQueryBuilder['update']>;
-    delete?: Spy<IMockQueryBuilder['delete']>;
-    upsert?: Spy<IMockQueryBuilder['upsert']>;
-    eq?: Spy<IMockQueryBuilder['eq']>;
-    neq?: Spy<IMockQueryBuilder['neq']>;
-    gt?: Spy<IMockQueryBuilder['gt']>;
-    gte?: Spy<IMockQueryBuilder['gte']>;
-    lt?: Spy<IMockQueryBuilder['lt']>;
-    lte?: Spy<IMockQueryBuilder['lte']>;
-    single?: Spy<IMockQueryBuilder['single']>;
-    maybeSingle?: Spy<IMockQueryBuilder['maybeSingle']>;
-    then?: Spy<IMockQueryBuilder['then']>;
-  }> | undefined;
+  getLatestQueryBuilderSpies: (tableName: string) => AllQueryBuilderSpyMethods | undefined;
+  getAllQueryBuilderSpies: (tableName: string) => Array<AllQueryBuilderSpyMethods> | undefined;
   getHistoricQueryBuilderSpies: (tableName: string, methodName: string) => { callCount: number; callsArgs: unknown[][] } | undefined;
 }
 
@@ -859,7 +868,7 @@ export function createMockSupabaseClient(
         },
         getLatestQueryBuilderSpies: (tableName: string) => {
             const builder = mockClientInstance.getLatestBuilder(tableName);
-            return builder?.methodSpies as ReturnType<IMockClientSpies['getLatestQueryBuilderSpies']> | undefined;
+            return builder?.methodSpies as AllQueryBuilderSpyMethods | undefined;
         },
         getAllQueryBuilderSpies: (tableName: string) => {
             const historicBuilders = mockClientInstance.getHistoricBuildersForTable(tableName);
@@ -867,22 +876,7 @@ export function createMockSupabaseClient(
                 return undefined;
             }
             return historicBuilders.map(builder =>
-                builder.methodSpies as { // Cast each methodSpies object
-                    select?: Spy<IMockQueryBuilder['select']>;
-                    insert?: Spy<IMockQueryBuilder['insert']>;
-                    update?: Spy<IMockQueryBuilder['update']>;
-                    delete?: Spy<IMockQueryBuilder['delete']>;
-                    upsert?: Spy<IMockQueryBuilder['upsert']>;
-                    eq?: Spy<IMockQueryBuilder['eq']>;
-                    neq?: Spy<IMockQueryBuilder['neq']>;
-                    gt?: Spy<IMockQueryBuilder['gt']>;
-                    gte?: Spy<IMockQueryBuilder['gte']>;
-                    lt?: Spy<IMockQueryBuilder['lt']>;
-                    lte?: Spy<IMockQueryBuilder['lte']>;
-                    single?: Spy<IMockQueryBuilder['single']>;
-                    maybeSingle?: Spy<IMockQueryBuilder['maybeSingle']>;
-                    then?: Spy<IMockQueryBuilder['then']>;
-                }
+                builder.methodSpies as AllQueryBuilderSpyMethods
             );
         },
         getHistoricQueryBuilderSpies: (tableName: string, methodName: string): { callCount: number; callsArgs: unknown[][] } | undefined => {

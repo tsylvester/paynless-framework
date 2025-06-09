@@ -2,10 +2,9 @@
 import { 
     StartSessionPayload, 
     StartSessionSuccessResponse, 
-    DialecticStage,
 } from "./dialectic.interface.ts";
-import { createSupabaseClient } from "../_shared/auth.ts";
-import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
+// import { createSupabaseClient } from "../_shared/auth.ts"; // No longer needed for direct auth here
+import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2"; // Added User
 import type { Database } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
 import type { ILogger } from "../_shared/types.ts";
@@ -14,37 +13,40 @@ console.log("startSession function started");
 
 // Define Dependencies Interface
 export interface StartSessionDeps {
-  createSupabaseClient: (req: Request) => SupabaseClient;
+  // createSupabaseClient: (req: Request) => SupabaseClient; // Removed if only used for auth
   randomUUID: () => string;
   logger: ILogger;
 }
 
 // Define default dependencies
 const defaultStartSessionDeps: StartSessionDeps = {
-  createSupabaseClient: createSupabaseClient,
+  // createSupabaseClient: createSupabaseClient, // Removed
   randomUUID: () => crypto.randomUUID(),
   logger: logger,
 };
 
 export async function startSession(
-  req: Request, // For user authentication
+  // req: Request, // For user authentication -> Removed
+  user: User, // Added user object
   dbClient: SupabaseClient<Database>,
   payload: StartSessionPayload,
   partialDeps?: Partial<StartSessionDeps> 
 ): Promise<{ data?: StartSessionSuccessResponse; error?: { message: string; status?: number; details?: string, code?: string } }> {
   const deps = { ...defaultStartSessionDeps, ...partialDeps };
-  const { createSupabaseClient, randomUUID, logger } = deps;
+  // const { createSupabaseClient, randomUUID, logger } = deps; // createSupabaseClient removed from here
+  const { randomUUID, logger } = deps;
 
-  logger.info(`startSession called with payload: ${JSON.stringify(payload)}`);
+  logger.info(`startSession called with payload: ${JSON.stringify(payload)} for user ${user.id}`);
 
-  const { data: userSession, error: authError } = await createSupabaseClient(req).auth.getUser();
+  // const { data: userSession, error: authError } = await createSupabaseClient(req).auth.getUser(); // Removed auth call
 
-  if (authError || !userSession?.user?.id) {
-    logger.warn(`[startSession] User not authenticated.`, { error: authError });
-    return { error: { message: "User not authenticated", status: 401, code: "AUTH_UNAUTHENTICATED" } };
-  }
-  const userId = userSession.user.id;
-  logger.info(`[startSession] User ${userId} authenticated.`);
+  // if (authError || !userSession?.user?.id) { // User is now passed directly and assumed to be valid
+  //   logger.warn(`[startSession] User not authenticated.`, { error: authError });
+  //   return { error: { message: "User not authenticated", status: 401, code: "AUTH_UNAUTHENTICATED" } };
+  // }
+  // const userId = userSession.user.id; // Use user.id directly
+  const userId = user.id;
+  logger.info(`[startSession] User ${userId} authenticated (passed to function).`);
 
   let associatedChatIdToUse: string;
   if (payload.originatingChatId) {

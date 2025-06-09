@@ -1,27 +1,28 @@
-import { createSupabaseClient } from "../_shared/auth.ts";
+// import { createSupabaseClient } from "../_shared/auth.ts"; // Removed
 import type { Database } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { SupabaseClient, User } from "npm:@supabase/supabase-js@2"; // Added User
 
 console.log("listProjects function started");
 
-interface ListProjectsOptions {
-  createSupabaseClientOverride?: (req: Request) => SupabaseClient;
-}
+// interface ListProjectsOptions { // Removed
+//   createSupabaseClientOverride?: (req: Request) => SupabaseClient;
+// }
 
 export async function listProjects(
-  req: Request, // For user authentication
-  dbClient: SupabaseClient, // Changed type from typeof supabaseAdmin
-  options?: ListProjectsOptions // Added options parameter
+  // req: Request, // Removed req
+  user: User, // Added user
+  dbClient: SupabaseClient // Changed type from typeof supabaseAdmin
+  // options?: ListProjectsOptions // Removed options
 ): Promise<{ data?: Database['public']['Tables']['dialectic_projects']['Row'][]; error?: { message: string; status?: number; code?: string; details?: string } }> {
-  const effectiveCreateSupabaseClient = options?.createSupabaseClientOverride || createSupabaseClient;
-  const supabaseUserClient = effectiveCreateSupabaseClient(req);
-  const { data: { user }, error: userError } = await supabaseUserClient.auth.getUser();
+  // const effectiveCreateSupabaseClient = options?.createSupabaseClientOverride || createSupabaseClient; // Removed
+  // const supabaseUserClient = effectiveCreateSupabaseClient(req); // Removed
+  // const { data: { user }, error: userError } = await supabaseUserClient.auth.getUser(); // Removed
 
-  if (userError || !user) {
-    logger.warn("User not authenticated for listProjects", { error: userError });
-    return { error: { message: "User not authenticated", status: 401, code: "AUTH_ERROR" } };
-  }
+  // if (userError || !user) { // User is now guaranteed by the caller or this function isn't called
+  //   logger.warn("User not authenticated for listProjects", { error: userError });
+  //   return { error: { message: "User not authenticated", status: 401, code: "AUTH_ERROR" } };
+  // }
 
   const { data: projectsData, error: projectsError } = await dbClient
     .from('dialectic_projects')

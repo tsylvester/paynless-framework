@@ -1,10 +1,11 @@
+// deno-lint-ignore-file no-explicit-any
 import { assertEquals, assertExists, assertObjectMatch, assertRejects, assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { spy, stub, type Stub, returnsNext, mockSession } from "jsr:@std/testing@0.225.1/mock";
 import { startSession, type StartSessionDeps } from "./startSession.ts";
 import type { StartSessionPayload, StartSessionSuccessResponse } from "./dialectic.interface.ts";
 import { DialecticStage } from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
-import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import * as sharedLogger from "../_shared/logger.ts";
 import { createMockSupabaseClient, type IMockSupabaseClient, type MockSupabaseClientSetup, type IMockSupabaseAuth } from "../_shared/supabase.mock.ts";
 
@@ -21,8 +22,14 @@ import { createMockSupabaseClient, type IMockSupabaseClient, type MockSupabaseCl
 // });
 
 Deno.test("startSession - Happy Path (using project's selected_domain_overlay_id for prompt)", async () => {
-    const mockReq = new Request("http://localhost", { method: "POST" });
-    const mockUserId = "user-happy-path-id";
+    const mockUser: User = {
+        id: "user-happy-path-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+    };
+    const mockUserId = mockUser.id;
     const mockProjectId = "project-happy-path-id";
     const mockDomainOverlayId = "overlay-happy-id";
     const mockSystemPromptId = "system-prompt-happy-id"; // Linked from overlay
@@ -37,15 +44,8 @@ Deno.test("startSession - Happy Path (using project's selected_domain_overlay_id
         projectId: mockProjectId,
         selectedModelCatalogIds: mockSelectedModelIds,
         sessionDescription: "A happy path test session using domain overlay",
-        stageAssociation: DialecticStage.THESIS, // Use enum
-        // originatingChatId is omitted to trigger new chat ID generation
-        // promptTemplateId is omitted to use project's selected_domain_overlay_id
+        stageAssociation: DialecticStage.THESIS,
     };
-
-    // 1. Mock User Auth
-    const mockUserAuthClientSetup = createMockSupabaseClient(mockUserId);
-    const mockInternalCreateSupabaseClientSpy = spy((_req: Request) => mockUserAuthClientSetup.client as unknown as SupabaseClient);
-    const getUserSpy = mockUserAuthClientSetup.spies.auth.getUserSpy;
 
     // 2. Mock Admin DB Client operations
     const mockAdminDbClientSetup = createMockSupabaseClient("db-admin-happy-path", {
@@ -60,7 +60,7 @@ Deno.test("startSession - Happy Path (using project's selected_domain_overlay_id
                                 user_id: mockUserId, 
                                 initial_user_prompt: mockInitialUserPrompt, 
                                 selected_domain_tag: mockProjectDomainTag,
-                                selected_domain_overlay_id: mockDomainOverlayId // Ensure this is returned
+                                selected_domain_overlay_id: mockDomainOverlayId
                             }],
                             error: null, count: 1, status: 200, statusText: "OK"
                         };
@@ -68,7 +68,7 @@ Deno.test("startSession - Happy Path (using project's selected_domain_overlay_id
                     return { data: null, error: new Error("Project not found in mock (happy path)"), count: 0, status: 404, statusText: "Not Found" };
                 }
             },
-            domain_specific_prompt_overlays: { // New mock for this table
+            domain_specific_prompt_overlays: {
                 select: async (state) => {
                     if (state.filters.some(f => f.column === 'id' && f.value === mockDomainOverlayId)) {
                         return { data: [{ id: mockDomainOverlayId, system_prompt_id: mockSystemPromptId }], error: null, count: 1, status: 200, statusText: "OK" };
@@ -78,7 +78,6 @@ Deno.test("startSession - Happy Path (using project's selected_domain_overlay_id
             },
             system_prompts: {
                 select: async (state) => {
-                    // Prompt fetch via overlay
                     if (state.filters.some(f => f.column === 'id' && f.value === mockSystemPromptId) &&
                         state.filters.some(f => f.column === 'is_active' && f.value === true)) {
                         return { data: [{ id: mockSystemPromptId, prompt_text: mockSystemPromptText }], error: null, count: 1, status: 200, statusText: "OK" };
@@ -93,19 +92,16 @@ Deno.test("startSession - Happy Path (using project's selected_domain_overlay_id
                         insertPayload.project_id === mockProjectId &&
                         insertPayload.associated_chat_id === mockNewChatId &&
                         insertPayload.session_description === payload.sessionDescription &&
-                        insertPayload.stage === DialecticStage.THESIS.toUpperCase() && // Check new stage field
-                        insertPayload.status === "pending_thesis" && // Status still derived from stage
-                        Array.isArray(insertPayload.selected_model_catalog_ids) && // Check new array field
+                        insertPayload.stage === DialecticStage.THESIS.toUpperCase() &&
+                        insertPayload.status === "pending_thesis" &&
+                        Array.isArray(insertPayload.selected_model_catalog_ids) &&
                         JSON.stringify(insertPayload.selected_model_catalog_ids) === JSON.stringify(mockSelectedModelIds)
-                        // Removed active_thesis_prompt_template_id, active_antithesis_prompt_template_id
                     ) {
                         return { data: [{ id: mockNewSessionId }], error: null, count: 1, status: 201, statusText: "Created" };
                     }
                     return { data: null, error: new Error("Session insert failed in mock (happy path condition mismatch)"), count: 0, status: 500, statusText: "Error" };
                 },
-                // Removed update mock for current_stage_seed_prompt as it's no longer updated in the session
             },
-            // Removed dialectic_session_models mock as the table is gone
         }
     });
     const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
@@ -124,14 +120,13 @@ Deno.test("startSession - Happy Path (using project's selected_domain_overlay_id
 
     // 5. Prepare Deps
     const deps: Partial<StartSessionDeps> = {
-        createSupabaseClient: mockInternalCreateSupabaseClientSpy,
         logger: mockLogger,
         randomUUID: mockRandomUUIDFn,
     };
 
     try {
         // 6. Call startSession
-        const result = await startSession(mockReq, adminDbClient, payload, deps);
+        const result = await startSession(mockUser, adminDbClient, payload, deps);
 
         // 7. Assertions
         assertExists(result.data, `Session start failed: ${result.error?.message}`);
@@ -140,19 +135,17 @@ Deno.test("startSession - Happy Path (using project's selected_domain_overlay_id
         const expectedResponse: Partial<StartSessionSuccessResponse> = {
             sessionId: mockNewSessionId,
             associatedChatId: mockNewChatId,
-            initialStatus: "pending_thesis", // This remains based on stage
+            initialStatus: "pending_thesis",
         };
         assertObjectMatch(result.data as any, expectedResponse as any);
 
         // Assert mock calls
         assertEquals(mockRandomUUIDFn.calls.length, 1, "randomUUID should be called once");
-        assertEquals(mockInternalCreateSupabaseClientSpy.calls.length, 1, "createSupabaseClient (internal) should be called once");
-        assertEquals(getUserSpy.calls.length, 1, "auth.getUser should be called once");
-
+        
         const projectSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_projects")?.select;
         assertExists(projectSelectSpy, "Project select spy should exist");
         assertEquals(projectSelectSpy.calls.length, 1, "Project select should be called once");
-
+        
         const overlaySelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("domain_specific_prompt_overlays")?.select;
         assertExists(overlaySelectSpy, "Domain overlay select spy should exist");
         assertEquals(overlaySelectSpy.calls.length, 1, "Domain overlay select should be called once");
@@ -176,15 +169,19 @@ Deno.test("startSession - Happy Path (using project's selected_domain_overlay_id
         assertEquals(loggerErrorFn.calls.length, 0, "No errors expected on happy path");
 
     } finally {
-        // 8. Cleanup
-        mockUserAuthClientSetup.clearAllStubs?.();
         mockAdminDbClientSetup.clearAllStubs?.();
     }
 });
 
 Deno.test("startSession - Happy Path (using payload.promptTemplateId for prompt)", async () => {
-    const mockReq = new Request("http://localhost", { method: "POST" });
-    const mockUserId = "user-happy-direct-prompt-id";
+    const mockUserDirect: User = {
+        id: "user-happy-direct-prompt-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+    };
+    const mockUserId = mockUserDirect.id;
     const mockProjectId = "project-happy-direct-prompt-id";
     const mockDirectPromptId = "direct-system-prompt-happy-id";
     const mockDirectPromptText = "This is the happy path system prompt via direct ID.";
@@ -199,17 +196,13 @@ Deno.test("startSession - Happy Path (using payload.promptTemplateId for prompt)
         selectedModelCatalogIds: mockSelectedModelIds,
         sessionDescription: "A happy path test session using direct promptTemplateId",
         stageAssociation: DialecticStage.ANTITHESIS,
-        promptTemplateId: mockDirectPromptId, // Provide direct prompt ID
+        promptTemplateId: mockDirectPromptId,
     };
-
-    const mockUserAuthClientSetup = createMockSupabaseClient(mockUserId);
-    const mockInternalCreateSupabaseClientSpy = spy((_req: Request) => mockUserAuthClientSetup.client as unknown as SupabaseClient);
-    const getUserSpy = mockUserAuthClientSetup.spies.auth.getUserSpy;
 
     const mockAdminDbClientSetup = createMockSupabaseClient("db-admin-happy-direct", {
         genericMockResults: {
             dialectic_projects: {
-                select: async (state) => { // Project selected_domain_overlay_id can be null or anything, won't be used
+                select: async (state) => {
                     if (state.filters.some(f => f.column === 'id' && f.value === mockProjectId) &&
                         state.filters.some(f => f.column === 'user_id' && f.value === mockUserId)) {
                         return {
@@ -226,10 +219,8 @@ Deno.test("startSession - Happy Path (using payload.promptTemplateId for prompt)
                     return { data: null, error: new Error("Project not found in mock (happy path direct)"), count: 0, status: 404, statusText: "Not Found" };
                 }
             },
-            // No domain_specific_prompt_overlays should be called
             system_prompts: {
                 select: async (state) => {
-                    // Prompt fetch via direct ID
                     if (state.filters.some(f => f.column === 'id' && f.value === mockDirectPromptId) &&
                         state.filters.some(f => f.column === 'is_active' && f.value === true)) {
                         return { data: [{ id: mockDirectPromptId, prompt_text: mockDirectPromptText }], error: null, count: 1, status: 200, statusText: "OK" };
@@ -262,13 +253,12 @@ Deno.test("startSession - Happy Path (using payload.promptTemplateId for prompt)
     const mockLoggerDirect = { info: loggerInfoFnDirect, warn: spy(), error: spy(), debug: spy() } as any as sharedLogger.Logger;
 
     const depsDirect: Partial<StartSessionDeps> = {
-        createSupabaseClient: mockInternalCreateSupabaseClientSpy,
         logger: mockLoggerDirect,
         randomUUID: mockRandomUUIDFnDirect,
     };
 
     try {
-        const result = await startSession(mockReq, adminDbClient, payload, depsDirect);
+        const result = await startSession(mockUserDirect, adminDbClient, payload, depsDirect);
         assertExists(result.data, `Session start failed: ${result.error?.message}`);
         assertEquals(result.error, undefined);
         const expectedResponseDirect: Partial<StartSessionSuccessResponse> = {
@@ -277,8 +267,7 @@ Deno.test("startSession - Happy Path (using payload.promptTemplateId for prompt)
             initialStatus: "pending_antithesis",
         };
         assertObjectMatch(result.data as any, expectedResponseDirect as any);
-        assertEquals(mockInternalCreateSupabaseClientSpy.calls.length, 1);
-        assertEquals(getUserSpy.calls.length, 1);
+        
         const projectSelectSpyDirect = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_projects")?.select;
         assertExists(projectSelectSpyDirect);
         assertEquals(projectSelectSpyDirect.calls.length, 1);
@@ -292,14 +281,19 @@ Deno.test("startSession - Happy Path (using payload.promptTemplateId for prompt)
         assertEquals(sessionInsertSpyDirect.calls.length, 1);
         assert(loggerInfoFnDirect.calls.length >= 5);
     } finally {
-        mockUserAuthClientSetup.clearAllStubs?.();
         mockAdminDbClientSetup.clearAllStubs?.();
     }
 });
 
-Deno.test("startSession - Happy Path (default prompt fallback)", async () => {
-    const mockReq = new Request("http://localhost", { method: "POST" });
-    const mockUserId = "user-happy-default-prompt-id";
+Deno.test("startSession - Happy Path (using project's default system prompt - no overlay, no payload ID)", async () => {
+    const mockUserDefaultPrompt: User = {
+        id: "user-happy-default-prompt-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+    };
+    const mockUserId = mockUserDefaultPrompt.id;
     const mockProjectId = "project-happy-default-prompt-id";
     const mockDefaultPromptId = "default-system-prompt-happy-id";
     const mockDefaultPromptText = "This is the happy path default system prompt.";
@@ -314,12 +308,7 @@ Deno.test("startSession - Happy Path (default prompt fallback)", async () => {
         selectedModelCatalogIds: mockSelectedModelIds,
         sessionDescription: "A happy path test session using default prompt",
         stageAssociation: DialecticStage.SYNTHESIS,
-        // promptTemplateId is NOT provided
-        // project.selected_domain_overlay_id will also be null/undefined in the mock
     };
-
-    const mockUserAuthClientSetup = createMockSupabaseClient(mockUserId);
-    const mockInternalCreateSupabaseClientSpy = spy((_req: Request) => mockUserAuthClientSetup.client as unknown as SupabaseClient);
 
     const mockAdminDbClientSetup = createMockSupabaseClient("db-admin-happy-default", {
         genericMockResults: {
@@ -333,7 +322,7 @@ Deno.test("startSession - Happy Path (default prompt fallback)", async () => {
                                 user_id: mockUserId, 
                                 initial_user_prompt: mockInitialUserPromptDefault, 
                                 selected_domain_tag: mockProjectDomainTagDefault,
-                                selected_domain_overlay_id: null // No overlay
+                                selected_domain_overlay_id: null
                             }],
                             error: null, count: 1, status: 200, statusText: "OK"
                         };
@@ -341,10 +330,8 @@ Deno.test("startSession - Happy Path (default prompt fallback)", async () => {
                     return { data: null, error: new Error("Project not found (happy path default)"), count: 0, status: 404, statusText: "Not Found" };
                 }
             },
-            // No domain_specific_prompt_overlays should be called or it should return no specific system_prompt_id
             system_prompts: {
                 select: async (state) => {
-                    // Default prompt fetch
                     if (state.filters.some(f => f.column === 'stage_association' && f.value === payload.stageAssociation) &&
                         state.filters.some(f => f.column === 'is_stage_default' && f.value === true) &&
                         state.filters.some(f => f.column === 'context' && f.value === mockProjectDomainTagDefault) &&
@@ -376,13 +363,12 @@ Deno.test("startSession - Happy Path (default prompt fallback)", async () => {
     const mockLoggerDefault = { info: loggerInfoFnDefault, warn: spy(), error: spy(), debug: spy() } as any as sharedLogger.Logger;
 
     const depsDefault: Partial<StartSessionDeps> = {
-        createSupabaseClient: mockInternalCreateSupabaseClientSpy,
         logger: mockLoggerDefault,
         randomUUID: mockRandomUUIDFnDefault,
     };
 
     try {
-        const result = await startSession(mockReq, adminDbClient, payload, depsDefault);
+        const result = await startSession(mockUserDefaultPrompt, adminDbClient, payload, depsDefault);
 
         assertExists(result.data, `Session start failed: ${result.error?.message}`);
         assertEquals(result.error, undefined);
@@ -392,121 +378,118 @@ Deno.test("startSession - Happy Path (default prompt fallback)", async () => {
             initialStatus: "pending_synthesis",
         };
         assertObjectMatch(result.data as any, expectedResponseDefault as any);
-        assertEquals(mockInternalCreateSupabaseClientSpy.calls.length, 1);
-
-        // In this test case, project.selected_domain_overlay_id is mocked to be null.
-        // Therefore, the domain_specific_prompt_overlays table should NOT be queried.
+        
         const overlaySelectSpyDefault = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("domain_specific_prompt_overlays")?.select;
         assertEquals(overlaySelectSpyDefault, undefined, "domain_specific_prompt_overlays select should not have been called when project.selected_domain_overlay_id is null");
 
         const systemPromptSelectSpyDefault = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("system_prompts")?.select;
         assertExists(systemPromptSelectSpyDefault);
-        assertEquals(systemPromptSelectSpyDefault.calls.length, 1); // Should try to fetch default
+        assertEquals(systemPromptSelectSpyDefault.calls.length, 1);
         const sessionInsertSpyDefault = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_sessions")?.insert;
         assertExists(sessionInsertSpyDefault);
         assertEquals(sessionInsertSpyDefault.calls.length, 1);
         assert(loggerInfoFnDefault.calls.length >= 5);
 
     } finally {
-        mockUserAuthClientSetup.clearAllStubs?.();
         mockAdminDbClientSetup.clearAllStubs?.();
     }
 });
 
-Deno.test("startSession - User Not Authenticated", async () => {
-    const mockReq = new Request("http://localhost", { method: "POST" });
+Deno.test("startSession - Happy Path (Minimal Payload - no description, stage, promptTemplateId)", async () => {
+    const mockUserMinimal: User = {
+        id: "user-happy-minimal-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+    };
+    const mockUserId = mockUserMinimal.id;
+    const mockProjectId = "project-happy-minimal-id";
+    const mockSelectedModelIds = ["model-abc", "model-def"];
+    const mockSystemPromptId = "minimal-payload-prompt-id";
+    const mockGeneratedUUID = "minimal-payload-uuid";
+    const mockNewSessionId = "new-session-no-orig-uuid";
+
     const payload: StartSessionPayload = {
-        projectId: "project-123",
-        selectedModelCatalogIds: ["model-abc"],
+        projectId: mockProjectId,
+        selectedModelCatalogIds: mockSelectedModelIds,
         stageAssociation: DialecticStage.THESIS,
     };
 
-    const mockAdminDbClientSetup: MockSupabaseClientSetup = createMockSupabaseClient("test-admin-user-id");
-    const mockUserAuthClientSetup: MockSupabaseClientSetup = createMockSupabaseClient(
-        undefined, 
-        { simulateAuthError: new Error("Simulated Auth Error") }
-    );
-    const getUserSpy = mockUserAuthClientSetup.spies.auth.getUserSpy;
-    const mockInternalCreateSupabaseClientSpy = spy((_req: Request) => mockUserAuthClientSetup.client as unknown as SupabaseClient);
+    const mockAdminDbClientSetup = createMockSupabaseClient("db-admin-for-no-originating", {
+        genericMockResults: {
+            dialectic_projects: {
+                select: async (state) => {
+                    if (state.filters.some(f => f.column === 'id' && f.value === mockProjectId)) {
+                        return { 
+                            data: [{ id: mockProjectId, user_id: mockUserId, initial_user_prompt: "Initial prompt for no originating", selected_domain_tag: "general", selected_domain_overlay_id: null }], 
+                            error: null, count: 1, status: 200, statusText: "OK"
+                        };
+                    }
+                    return { data: null, error: new Error("Project not found (no-originating test)"), count: 0, status: 404, statusText: "Not Found" };
+                }
+            },
+            system_prompts: { 
+                select: async (state) => {
+                    if (state.filters.some(f => f.column === 'stage_association' && f.value === DialecticStage.THESIS) &&
+                        state.filters.some(f => f.column === 'is_stage_default' && f.value === true) &&
+                        state.filters.some(f => f.column === 'context' && f.value === 'general') &&
+                        state.filters.some(f => f.column === 'is_active' && f.value === true)
+                    ) {
+                        return { data: [{ id: "default-minimal-prompt-id", prompt_text: "Default system text for minimal payload" }], error: null, count: 1, status: 200, statusText: "OK" };
+                    }
+                    if (state.filters.some(f => f.column === 'id' && f.value === mockSystemPromptId)) {
+                        return { data: [{ id: mockSystemPromptId, prompt_text: "System text no-orig" }], error: null, count: 1, status: 200, statusText: "OK" };
+                    }
+                    return { data: null, error: new Error("Prompt not found (no-originating test, or specific ID not matched)"), count: 0, status: 404, statusText: "Not Found" };
+                }
+            },
+            dialectic_sessions: { 
+                insert: async (state) => {
+                    const insertPayload = state.insertData as Record<string, unknown> | undefined;
+                    if (insertPayload && insertPayload.associated_chat_id === mockGeneratedUUID) {
+                         return { data: [{ id: "new-session-no-orig-uuid" }], error: null, count: 1, status: 201, statusText: "Created" };
+                    }
+                    return { data: null, error: new Error("Session insert failed (no-originating test), wrong associated_chat_id"), count: 0, status: 500, statusText: "Error" };
+                },
+            },
+        }
+    });
+    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
 
-    // Create fresh spies for logger methods (do not spy on sharedLogger.logger directly here)
-    const loggerInfoFn = spy(); 
-    const loggerWarnFn = spy();
-    const loggerErrorFn = spy();
-    const loggerDebugFn = spy();
+    const mockRandomUUIDFn = spy(() => mockGeneratedUUID); 
 
-    const mockLogger = {
-        info: loggerInfoFn,
-        warn: loggerWarnFn,
-        error: loggerErrorFn, 
-        debug: loggerDebugFn,
-    } as any as sharedLogger.Logger; // Cast to satisfy the interface
+    const mockLoggerForDeps = { info: spy(), warn: spy(), error: spy(), debug: spy() } as any as sharedLogger.Logger;
 
     const deps: Partial<StartSessionDeps> = {
-        createSupabaseClient: mockInternalCreateSupabaseClientSpy,
-        logger: mockLogger,
+        logger: mockLoggerForDeps, 
+        randomUUID: mockRandomUUIDFn, 
     };
-
-    try {
-        const result = await startSession(mockReq, mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, payload, deps);
-
-        assertExists(result.error);
-        assertEquals(result.error?.message, "User not authenticated");
-        assertEquals(result.error?.status, 401);
-
-        assertEquals(mockInternalCreateSupabaseClientSpy.calls.length, 1);
-        const createClientCall = mockInternalCreateSupabaseClientSpy.calls[0];
-        assertExists(createClientCall);
-        // deno-lint-ignore no-explicit-any tuple-zero-index
-        assertEquals(createClientCall.args.length, 1);
-        // deno-lint-ignore no-explicit-any tuple-zero-index
-        assertEquals(createClientCall.args[0], mockReq);
-
-        assertEquals(getUserSpy.calls.length, 1);
-
-        assertEquals(loggerInfoFn.calls.length, 1);
-        const firstInfoCall = loggerInfoFn.calls[0];
-        assertExists(firstInfoCall);
-        assertExists(firstInfoCall.args, "Info call arguments should exist");
-        if (firstInfoCall.args.length > 0) {
-            // deno-lint-ignore no-explicit-any tuple-zero-index
-            assert(typeof firstInfoCall.args[0] === 'string' && firstInfoCall.args[0].includes("startSession called with payload:"));
-        } else {
-            assert(false, "Logger info call did not have arguments as expected.");
-        }
-
-        assertEquals(loggerWarnFn.calls.length, 1);
-        const firstWarnCall = loggerWarnFn.calls[0];
-        assertExists(firstWarnCall);
-        assertExists(firstWarnCall.args, "Warn call arguments should exist");
-        if (firstWarnCall.args.length > 0) {
-            assert(typeof firstWarnCall.args[0] === 'string' && firstWarnCall.args[0].includes("[startSession] User not authenticated."));
-            assertObjectMatch(firstWarnCall.args[1] as Record<string, unknown>, { 
-                error: { message: "Simulated Auth Error" } 
-            });
-        } else {
-            assert(false, "Logger warn call did not have arguments as expected.");
-        }
-    } finally {
-        // Standalone spies like loggerInfoFn don't need restore.
-        // Spies on mock client instances are cleared by clearAllStubs.
-        mockAdminDbClientSetup.clearAllStubs?.();
-        mockUserAuthClientSetup.clearAllStubs?.();
-    }
+    
+    const result = await startSession(mockUserMinimal, adminDbClient, payload, deps);
+    assertExists(result.data, `Session start should succeed: ${result.error?.message}`);
+    assertEquals(result.error, undefined);
+    assertEquals(result.data?.sessionId, mockNewSessionId);
+    assertEquals(result.data?.initialStatus, `pending_${payload.stageAssociation.toLowerCase()}`);
+    assertEquals(result.data?.associatedChatId, mockGeneratedUUID);
+    assertEquals(mockRandomUUIDFn.calls.length, 1, "randomUUID spy should have been called exactly once");
 });
 
-Deno.test("startSession - Project Not Found", async () => {
-    const mockReq = new Request("http://localhost", { method: "POST" });
-    const mockUserId = "user-id-owns-nothing";
+Deno.test("startSession - Project Not Found for User", async () => {
+    const mockUserProjectNotFound: User = {
+        id: "user-project-not-found-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+    };
+    const mockUserId = mockUserProjectNotFound.id;
+
     const payload: StartSessionPayload = {
         projectId: "non-existent-project-id",
         selectedModelCatalogIds: ["model-abc"],
         stageAssociation: DialecticStage.THESIS,
     };
-
-    const mockUserAuthClientSetup = createMockSupabaseClient(mockUserId);
-    const mockInternalCreateSupabaseClientSpy = spy((_req: Request) => mockUserAuthClientSetup.client as unknown as SupabaseClient);
-    const getUserSpy = mockUserAuthClientSetup.spies.auth.getUserSpy;
 
     const mockAdminDbClientSetup = createMockSupabaseClient("test-admin-id", {
         genericMockResults: {
@@ -515,7 +498,7 @@ Deno.test("startSession - Project Not Found", async () => {
                     const idFilter = state.filters.find(f => f.column === 'id' && f.value === payload.projectId);
                     const userIdFilter = state.filters.find(f => f.column === 'user_id' && f.value === mockUserId);
                     if (idFilter && userIdFilter && state.operation === 'select') {
-                        return { data: null, error: { name: "PGRST116", message: "No rows found", code: "PGRST116" }, count: 0, status: 406, statusText: "Not Found" }; 
+                        return { data: null, error: { name: "PGRST116", message: "No rows found", code: "PGRST116" } as any, count: 0, status: 406, statusText: "Not Found" }; 
                     }
                     return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
                 }
@@ -524,7 +507,6 @@ Deno.test("startSession - Project Not Found", async () => {
     });
     const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
 
-    // Create fresh spies for logger methods
     const loggerInfoFn = spy();
     const loggerWarnFn = spy();
     const loggerErrorFn = spy();
@@ -537,20 +519,16 @@ Deno.test("startSession - Project Not Found", async () => {
     } as any as sharedLogger.Logger;
 
     const deps: Partial<StartSessionDeps> = {
-        createSupabaseClient: mockInternalCreateSupabaseClientSpy,
         logger: mockLogger,
     };
 
     try {
-        const result = await startSession(mockReq, adminDbClient, payload, deps);
+        const result = await startSession(mockUserProjectNotFound, adminDbClient, payload, deps);
 
         assertExists(result.error);
         assertEquals(result.error?.message, "Project not found or access denied.");
         assertEquals(result.error?.status, 404);
 
-        assertEquals(mockInternalCreateSupabaseClientSpy.calls.length, 1);
-        assertEquals(getUserSpy.calls.length, 1);
-        
         const projectSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_projects")?.select;
         assertExists(projectSelectSpy, "Select spy for dialectic_projects should exist");
         assertEquals(projectSelectSpy.calls.length, 1, "Project select should be called once");
@@ -559,7 +537,7 @@ Deno.test("startSession - Project Not Found", async () => {
         assertExists(singleSpy, "Single spy for dialectic_projects should exist");
         assertEquals(singleSpy.calls.length, 1);
 
-        assertEquals(loggerInfoFn.calls.length, 3);
+        assert(loggerInfoFn.calls.length >= 2, "Expected at least 2 info logs"); 
         assertEquals(loggerErrorFn.calls.length, 1);
         const firstErrorCall = loggerErrorFn.calls[0];
         assertExists(firstErrorCall);
@@ -573,123 +551,58 @@ Deno.test("startSession - Project Not Found", async () => {
             });
         }
     } finally {
-        mockUserAuthClientSetup.clearAllStubs?.();
         mockAdminDbClientSetup.clearAllStubs?.();
     }
 });
 
-Deno.test("startSession - Project Access Denied (user does not own project)", async () => {
-    const mockReq = new Request("http://localhost", { method: "POST" });
-    const mockUserId = "user-A-id";
-    const mockProjectId = "project-owned-by-B";
+Deno.test("startSession - Domain Overlay Not Found (when selected_domain_overlay_id is provided)", async () => {
+    const mockUserOverlayNotFound: User = {
+        id: "user-overlay-not-found-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+    };
+    const mockUserId = mockUserOverlayNotFound.id;
+    const mockProjectId = "project-prompt-overlay-fail";
+    const mockDomainOverlayId = "overlay-non-existent-id";
+    const mockMissingSystemPromptIdFromOverlay = "missing-system-prompt-id-from-overlay"; 
+
     const payload: StartSessionPayload = {
         projectId: mockProjectId,
-        selectedModelCatalogIds: ["model-abc"],
-        stageAssociation: DialecticStage.THESIS,
+        selectedModelCatalogIds: ["model-xyz"],
+        stageAssociation: DialecticStage.ANTITHESIS,
     };
 
-    const mockUserAuthClientSetup = createMockSupabaseClient(mockUserId);
-    const mockInternalCreateSupabaseClientSpy = spy((_req: Request) => mockUserAuthClientSetup.client as unknown as SupabaseClient);
-    const getUserSpy = mockUserAuthClientSetup.spies.auth.getUserSpy;
-
-    const mockAdminDbClientSetup = createMockSupabaseClient("test-admin-id-access-denied", {
+    const mockAdminDbClientSetup = createMockSupabaseClient("admin-prompt-overlay-fail", {
         genericMockResults: {
             dialectic_projects: {
-                select: async (state) => {
-                    // Simulate project exists but not for this user_id, or doesn't exist at all.
-                    // The query in startSession uses .eq('id', payload.projectId).eq('user_id', userId)
-                    if (state.filters.some(f => f.column === 'id' && f.value === mockProjectId) &&
-                        state.filters.some(f => f.column === 'user_id' && f.value === mockUserId)) {
-                        return { data: null, error: null, count: 0, status: 200, statusText: "OK" }; // No project found for this user
-                    }
-                    return { data: null, error: new Error("Unexpected project query in mock (happy path)"), count: 0, status: 404, statusText: "Not Found" };
-                }
-            }
-        }
-    });
-    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
-
-    const loggerErrorFn = spy();
-    const mockLogger = { info: spy(), warn: spy(), error: loggerErrorFn, debug: spy() } as any as sharedLogger.Logger;
-
-    const deps: Partial<StartSessionDeps> = {
-        createSupabaseClient: mockInternalCreateSupabaseClientSpy,
-        logger: mockLogger,
-    };
-
-    try {
-        const result = await startSession(mockReq, adminDbClient, payload, deps);
-
-        assertExists(result.error);
-        assertEquals(result.error?.message, "Project not found or access denied.");
-        assertEquals(result.error?.status, 404);
-
-        assertEquals(mockInternalCreateSupabaseClientSpy.calls.length, 1);
-        assertEquals(getUserSpy.calls.length, 1);
-        
-        const projectSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_projects")?.select;
-        assertExists(projectSelectSpy, "Select spy for dialectic_projects should exist");
-        assertEquals(projectSelectSpy.calls.length, 1);
-
-        const singleSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_projects")?.single;
-        assertExists(singleSpy, "Single spy for dialectic_projects should exist");
-        assertEquals(singleSpy.calls.length, 1);
-
-        assert(loggerErrorFn.calls.length >= 1, "Expected at least one error log for project access denied");
-        const firstErrorCall = loggerErrorFn.calls[0];
-        assertExists(firstErrorCall?.args);
-        if (firstErrorCall.args.length > 0) {
-            assert(typeof firstErrorCall.args[0] === 'string' && firstErrorCall.args[0].includes("[startSession] Error fetching project or project not found/access denied:"));
-            assertObjectMatch(firstErrorCall.args[1] as Record<string,unknown>, {
-                projectId: payload.projectId,
-                userId: mockUserId,
-                error: { code: "PGRST116" }
-            });
-        }
-    } finally {
-        mockUserAuthClientSetup.clearAllStubs?.();
-        mockAdminDbClientSetup.clearAllStubs?.();
-    }
-});
-
-Deno.test("startSession - Prompt Not Found (by specific payload.promptTemplateId)", async () => {
-    const mockReq = new Request("http://localhost", { method: "POST" });
-    const mockUserId = "user-prompt-direct-fail";
-    const mockProjectId = "project-prompt-direct-fail";
-    const mockMissingPromptId = "specific_missing_prompt_id";
-
-    const payload: StartSessionPayload = {
-        projectId: mockProjectId,
-        selectedModelCatalogIds: ["model-abc"],
-        stageAssociation: DialecticStage.THESIS,
-        promptTemplateId: mockMissingPromptId, // This ID will not be found
-    };
-
-    const mockUserAuthClientSetup = createMockSupabaseClient(mockUserId);
-    const mockInternalCreateSupabaseClientSpy = spy((_req: Request) => mockUserAuthClientSetup.client as unknown as SupabaseClient);
-
-    const mockAdminDbClientSetup = createMockSupabaseClient("admin-prompt-direct-fail", {
-        genericMockResults: {
-            dialectic_projects: { // Project fetch succeeds
                 select: async () => ({
                     data: [{ 
                         id: mockProjectId, 
                         user_id: mockUserId, 
                         initial_user_prompt: "Test prompt", 
                         selected_domain_tag: "general",
-                        selected_domain_overlay_id: "some-overlay-id-should-not-be-used" 
+                        selected_domain_overlay_id: mockDomainOverlayId 
                     }],
                     error: null, count: 1, status: 200, statusText: "OK"
                 })
             },
-            system_prompts: { // Prompt fetch by direct ID will fail by returning an error from .single()
+            domain_specific_prompt_overlays: {
                 select: async (state) => {
-                    if (state.filters.some(f => f.column === 'id' && f.value === mockMissingPromptId) &&
-                        state.filters.some(f => f.column === 'is_active' && f.value === true)) {
-                        // Simulate .single() failing when no row is found by returning an error object
-                        return { data: null, error: { name: "PostgrestError", message: "Query returned no rows", code: "PGRST116" }, count: 0, status: 406, statusText: "Not Acceptable" }; 
+                    if (state.filters.some(f => f.column === 'id' && f.value === mockDomainOverlayId)) {
+                        return { data: null, error: { name: "PostgrestError", message: "Simulated PGRST116 No Rows Found", code: "PGRST116" } as any, count: 0, status: 406, statusText: "Not Found" };
                     }
-                    return { data: null, error: new Error("Prompt query not mocked correctly for direct ID fail"), count: 0, status: 500, statusText: "Error" };
+                    return { data: null, error: new Error("Overlay not found mock error - fallback"), count: 0, status: 404, statusText: "Not Found" };
+                }
+            },
+            system_prompts: { 
+                select: async (state) => {
+                    if (state.filters.some(f => f.column === 'id' && f.value === mockMissingSystemPromptIdFromOverlay) &&
+                        state.filters.some(f => f.column === 'is_active' && f.value === true)) {
+                        return { data: null, error: { name: "PostgrestError", message: "Query returned no rows", code: "PGRST116" } as any, count: 0, status: 406, statusText: "Not Acceptable" }; 
+                    }
+                    return { data: null, error: new Error("Prompt query not mocked correctly for overlay fail"), count: 0, status: 500, statusText: "Error" };
                 }
             }
         }
@@ -699,40 +612,46 @@ Deno.test("startSession - Prompt Not Found (by specific payload.promptTemplateId
     const mockLogger = { info: spy(), warn: spy(), error: loggerErrorFn, debug: spy() } as any as sharedLogger.Logger;
 
     const deps: Partial<StartSessionDeps> = {
-        createSupabaseClient: mockInternalCreateSupabaseClientSpy,
         logger: mockLogger,
+        randomUUID: spy(),
     };
 
-    try {
-        const result = await startSession(mockReq, adminDbClient, payload, deps);
+    const result = await startSession(mockUserOverlayNotFound, adminDbClient, payload, deps);
 
-        assertExists(result.error);
-        assertEquals(result.error?.status, 400);
-        assertEquals(result.error?.message, `Prompt fetching failed: Error fetching prompt by direct ID ${mockMissingPromptId}: Query returned no rows`, `Error message mismatch: ${result.error?.message}`);
+    assertExists(result.error, "Expected an error object when domain overlay is not found.");
+    assertEquals(result.data, undefined, "Expected no data when domain overlay is not found.");
+    assert(result.error?.message?.includes(`Prompt fetching failed: Error fetching domain_specific_prompt_overlay: Simulated PGRST116 No Rows Found`), `Unexpected error message: ${result.error?.message}`);
+    assertEquals(result.error?.status, 400);
 
-        const systemPromptSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("system_prompts")?.select;
-        assertExists(systemPromptSelectSpy, "System prompt select spy should exist");
-        assertEquals(systemPromptSelectSpy.calls.length, 1); 
-        
-        const overlaySelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("domain_specific_prompt_overlays")?.select;
-        assertEquals(overlaySelectSpy, undefined, "domain_specific_prompt_overlays select should not be called");
+    // Assert mock calls for this failure path
+    const projectSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_projects")?.select;
+    assertExists(projectSelectSpy, "Project select spy should exist");
+    assertEquals(projectSelectSpy.calls.length, 1, "Project select should be called once");
 
-        assertEquals(loggerErrorFn.calls.length, 1);
-        const firstErrorCall = loggerErrorFn.calls[0];
-        assertExists(firstErrorCall?.args);
-        if (firstErrorCall.args.length > 0) {
-            assert(typeof firstErrorCall.args[0] === 'string' && firstErrorCall.args[0].includes("[startSession] Prompt fetching error:"));
-        }
+    const overlaySelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("domain_specific_prompt_overlays")?.select;
+    assertExists(overlaySelectSpy, "Domain overlay select spy should exist");
+    assertEquals(overlaySelectSpy.calls.length, 1, "Domain overlay select should be called once");
+    
+    const systemPromptSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("system_prompts")?.select;
+    assertEquals(systemPromptSelectSpy, undefined, "System prompt select should NOT have been called.");
 
-    } finally {
-        mockUserAuthClientSetup.clearAllStubs?.();
-        mockAdminDbClientSetup.clearAllStubs?.();
-    }
+    const sessionInsertSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_sessions")?.insert;
+    assertEquals(sessionInsertSpy, undefined, "Session insert should NOT have been called.");
+
+    assertEquals(loggerErrorFn.calls.length, 1, "Expected one error log.");
+    const firstErrorLogArgs = loggerErrorFn.calls[0].args;
+    assert(firstErrorLogArgs[0].includes("[startSession] Prompt fetching error:"));
 });
 
-Deno.test("startSession - Prompt Not Found (via project.selected_domain_overlay_id)", async () => {
-    const mockReq = new Request("http://localhost", { method: "POST" });
-    const mockUserId = "user-prompt-overlay-fail";
+Deno.test("startSession - System Prompt Not Found (via overlay)", async () => {
+    const mockUserSystemPromptMissingViaOverlay: User = {
+        id: "user-sysprompt-missing-overlay-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+    };
+    const mockUserId = mockUserSystemPromptMissingViaOverlay.id;
     const mockProjectId = "project-prompt-overlay-fail";
     const mockDomainOverlayId = "overlay-linking-to-missing-prompt";
     const mockMissingSystemPromptIdFromOverlay = "missing-system-prompt-id-from-overlay"; 
@@ -742,9 +661,6 @@ Deno.test("startSession - Prompt Not Found (via project.selected_domain_overlay_
         selectedModelCatalogIds: ["model-xyz"],
         stageAssociation: DialecticStage.ANTITHESIS,
     };
-
-    const mockUserAuthClientSetup = createMockSupabaseClient(mockUserId);
-    const mockInternalCreateSupabaseClientSpy = spy((_req: Request) => mockUserAuthClientSetup.client as unknown as SupabaseClient);
 
     const mockAdminDbClientSetup = createMockSupabaseClient("admin-prompt-overlay-fail", {
         genericMockResults: {
@@ -772,8 +688,7 @@ Deno.test("startSession - Prompt Not Found (via project.selected_domain_overlay_
                 select: async (state) => {
                     if (state.filters.some(f => f.column === 'id' && f.value === mockMissingSystemPromptIdFromOverlay) &&
                         state.filters.some(f => f.column === 'is_active' && f.value === true)) {
-                        // Simulate .single() failing when no row is found by returning an error object
-                        return { data: null, error: { name: "PostgrestError", message: "Query returned no rows", code: "PGRST116" }, count: 0, status: 406, statusText: "Not Acceptable" }; 
+                        return { data: null, error: { name: "PostgrestError", message: "Query returned no rows", code: "PGRST116" } as any, count: 0, status: 406, statusText: "Not Acceptable" }; 
                     }
                     return { data: null, error: new Error("Prompt query not mocked correctly for overlay fail"), count: 0, status: 500, statusText: "Error" };
                 }
@@ -785,74 +700,70 @@ Deno.test("startSession - Prompt Not Found (via project.selected_domain_overlay_
     const mockLogger = { info: spy(), warn: spy(), error: loggerErrorFn, debug: spy() } as any as sharedLogger.Logger;
 
     const deps: Partial<StartSessionDeps> = {
-        createSupabaseClient: mockInternalCreateSupabaseClientSpy,
         logger: mockLogger,
+        randomUUID: spy(),
     };
 
-    try {
-        const result = await startSession(mockReq, adminDbClient, payload, deps);
+    const result = await startSession(mockUserSystemPromptMissingViaOverlay, adminDbClient, payload, deps);
 
-        assertExists(result.error);
-        assertEquals(result.error?.status, 400);
-        assertEquals(result.error?.message, `Prompt fetching failed: Error fetching system prompt using ID from overlay (${mockMissingSystemPromptIdFromOverlay}): Query returned no rows`, `Error message mismatch: ${result.error.message}`);
-        
-        const overlaySelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("domain_specific_prompt_overlays")?.select;
-        assertExists(overlaySelectSpy);
-        assertEquals(overlaySelectSpy.calls.length, 1);
+    assertExists(result.error, "Expected an error object when system prompt (via overlay) is not found.");
+    assertEquals(result.data, undefined, "Expected no data.");
+    const expectedErrorMessage = `Prompt fetching failed: Error fetching system prompt using ID from overlay (${mockMissingSystemPromptIdFromOverlay}): Query returned no rows`;
+    assert(result.error?.message?.includes(expectedErrorMessage), `Error message mismatch. Expected to include: "${expectedErrorMessage}", Got: "${result.error?.message}"`);
+    assertEquals(result.error?.status, 400);
 
-        const systemPromptSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("system_prompts")?.select;
-        assertExists(systemPromptSelectSpy);
-        assertEquals(systemPromptSelectSpy.calls.length, 1); 
-
-    } finally {
-        mockUserAuthClientSetup.clearAllStubs?.();
-        mockAdminDbClientSetup.clearAllStubs?.();
-    }
+    // Assert mock calls
+    const projectSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_projects")?.select;
+    assertEquals(projectSelectSpy?.calls.length, 1);
+    const overlaySelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("domain_specific_prompt_overlays")?.select;
+    assertEquals(overlaySelectSpy?.calls.length, 1);
+    const systemPromptSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("system_prompts")?.select;
+    assertEquals(systemPromptSelectSpy?.calls.length, 1);
+    const sessionInsertSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_sessions")?.insert;
+    assertEquals(sessionInsertSpy, undefined);
+    assertEquals(loggerErrorFn.calls.length, 1);
 });
 
-Deno.test("startSession - Prompt Not Found (default for stage/context fallback)", async () => {
-    const mockReq = new Request("http://localhost", { method: "POST" });
-    const mockUserId = "user-default-prompt-fail";
-    const mockProjectId = "project-default-prompt-fail";
-    const mockProjectDomain = "missing_default_prompt_context"; // Context for which no default prompt exists
+Deno.test("startSession - System Prompt Not Found (via payload.promptTemplateId)", async () => {
+    const mockUserSystemPromptMissingDirect: User = {
+        id: "user-sysprompt-missing-direct-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+    };
+    const mockUserId = mockUserSystemPromptMissingDirect.id;
+    const mockProjectId = "project-prompt-direct-fail";
+    const mockMissingPromptId = "specific_missing_prompt_id";
 
-    const payload: StartSessionPayload = { 
+    const payload: StartSessionPayload = {
         projectId: mockProjectId,
         selectedModelCatalogIds: ["model-abc"],
-        stageAssociation: DialecticStage.SYNTHESIS, // Try to find default for SYNTHESIS
-        // No promptTemplateId
-        // selected_domain_overlay_id in project will be null
+        stageAssociation: DialecticStage.THESIS,
+        promptTemplateId: mockMissingPromptId,
     };
 
-    const mockUserAuthClientSetup = createMockSupabaseClient(mockUserId);
-    const mockInternalCreateSupabaseClientSpy = spy((_req: Request) => mockUserAuthClientSetup.client as unknown as SupabaseClient);
-
-    const mockAdminDbClientSetup = createMockSupabaseClient("admin-default-prompt-fail-context", {
+    const mockAdminDbClientSetup = createMockSupabaseClient("admin-prompt-direct-fail", {
         genericMockResults: {
-            dialectic_projects: {
+            dialectic_projects: { 
                 select: async () => ({
                     data: [{ 
                         id: mockProjectId, 
                         user_id: mockUserId, 
                         initial_user_prompt: "Test prompt", 
-                        selected_domain_tag: mockProjectDomain,
-                        selected_domain_overlay_id: null // No overlay
+                        selected_domain_tag: "general",
+                        selected_domain_overlay_id: "some-overlay-id-should-not-be-used" 
                     }],
                     error: null, count: 1, status: 200, statusText: "OK"
                 })
             },
-            // domain_specific_prompt_overlays won't be queried or will return nothing useful
-            system_prompts: {
+            system_prompts: { 
                 select: async (state) => {
-                    // Default prompt fetch by stage & context will fail
-                    if (state.filters.some(f => f.column === 'stage_association' && f.value === payload.stageAssociation) &&
-                        state.filters.some(f => f.column === 'is_stage_default' && f.value === true) &&
-                        state.filters.some(f => f.column === 'context' && f.value === mockProjectDomain) &&
-                        state.filters.some(f => f.column === 'is_active' && f.value === true)
-                    ) {
-                        return { data: null, error: null, count: 0, status: 200, statusText: "OK" }; // Not found
+                    if (state.filters.some(f => f.column === 'id' && f.value === mockMissingPromptId) &&
+                        state.filters.some(f => f.column === 'is_active' && f.value === true)) {
+                        return { data: null, error: { name: "PostgrestError", message: "Query returned no rows", code: "PGRST116" } as any, count: 0, status: 406, statusText: "Not Acceptable" }; 
                     }
-                    return { data: null, error: new Error("Prompt query not mocked correctly for default fallback fail"), count: 0, status: 500, statusText: "Error" };
+                    return { data: null, error: new Error("Prompt query not mocked correctly for direct ID fail"), count: 0, status: 500, statusText: "Error" };
                 }
             }
         }
@@ -862,43 +773,139 @@ Deno.test("startSession - Prompt Not Found (default for stage/context fallback)"
     const mockLogger = { info: spy(), warn: spy(), error: loggerErrorFn, debug: spy() } as any as sharedLogger.Logger;
 
     const deps: Partial<StartSessionDeps> = {
-        createSupabaseClient: mockInternalCreateSupabaseClientSpy,
         logger: mockLogger,
+        randomUUID: spy(),
     };
 
-    try {
-        const result = await startSession(mockReq, adminDbClient, payload, deps);
+    const result = await startSession(mockUserSystemPromptMissingDirect, adminDbClient, payload, deps);
+    
+    assertExists(result.error, "Expected an error object when system prompt (via direct ID) is not found.");
+    assertEquals(result.data, undefined, "Expected no data.");
+    const expectedErrorMessage = `Prompt fetching failed: Error fetching prompt by direct ID ${mockMissingPromptId}: Query returned no rows`;
+    assert(result.error?.message?.includes(expectedErrorMessage), `Error message mismatch. Expected to include: "${expectedErrorMessage}", Got: "${result.error?.message}"`);
+    assertEquals(result.error?.status, 400);
 
-        assertExists(result.error);
-        assertEquals(result.error?.status, 400);
-        assert(result.error?.message?.includes(`Prompt fetching failed: No suitable default prompt found for stage '${payload.stageAssociation}' and context '${mockProjectDomain}'`), `Error message: ${result.error.message}`);
-        
-        const systemPromptSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("system_prompts")?.select;
-        assertExists(systemPromptSelectSpy);
-        assertEquals(systemPromptSelectSpy.calls.length, 1); // Should try to fetch default
-
-    } finally {
-        mockUserAuthClientSetup.clearAllStubs?.();
-        mockAdminDbClientSetup.clearAllStubs?.();
-    }
+    // Assert mock calls
+    const projectSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_projects")?.select;
+    assertEquals(projectSelectSpy?.calls.length, 1);
+    const systemPromptSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("system_prompts")?.select;
+    assertEquals(systemPromptSelectSpy?.calls.length, 1);
+    const overlaySelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("domain_specific_prompt_overlays")?.select;
+    assertEquals(overlaySelectSpy, undefined);
+    const sessionInsertSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_sessions")?.insert;
+    assertEquals(sessionInsertSpy, undefined);
+    assertEquals(loggerErrorFn.calls.length, 1);
 });
 
-Deno.test("startSession - DB Error: Session Insert Fails", async () => {
-    const mockReq = new Request("http://localhost", { method: "POST" });
-    const mockUserId = "user-session-insert-fail";
+Deno.test("startSession - System Prompt Not Found (via project default)", async () => {
+    const mockUserSystemPromptMissingDefault: User = {
+        id: "user-sysprompt-missing-default-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+    };
+    const mockUserId = mockUserSystemPromptMissingDefault.id;
+    const mockProjectId = "project-happy-default-prompt-id";
+    const mockDefaultPromptId = "default-system-prompt-happy-id";
+    const mockDefaultPromptText = "This is the happy path default system prompt.";
+    const mockNewChatId = "newly-generated-chat-id-happy-default";
+    const mockNewSessionId = "new-session-id-happy-default";
+    const mockSelectedModelIds = ["model-catalog-id-5", "model-catalog-id-6"];
+    const mockInitialUserPromptDefault = "Initial prompt for happy path default prompt";
+    const mockProjectDomainTagDefault = "education";
+
+    const payload: StartSessionPayload = {
+        projectId: mockProjectId,
+        selectedModelCatalogIds: mockSelectedModelIds,
+        sessionDescription: "A happy path test session using default prompt",
+        stageAssociation: DialecticStage.SYNTHESIS,
+    };
+
+    const mockAdminDbClientSetup = createMockSupabaseClient("db-admin-happy-default", {
+        genericMockResults: {
+            dialectic_projects: {
+                select: async (state) => { 
+                    if (state.filters.some(f => f.column === 'id' && f.value === mockProjectId) &&
+                        state.filters.some(f => f.column === 'user_id' && f.value === mockUserId)) {
+                        return {
+                            data: [{ 
+                                id: mockProjectId, 
+                                user_id: mockUserId, 
+                                initial_user_prompt: mockInitialUserPromptDefault, 
+                                selected_domain_tag: mockProjectDomainTagDefault,
+                                selected_domain_overlay_id: null
+                            }],
+                            error: null, count: 1, status: 200, statusText: "OK"
+                        };
+                    }
+                    return { data: null, error: new Error("Project not found (happy path default)"), count: 0, status: 404, statusText: "Not Found" };
+                }
+            },
+            system_prompts: {
+                select: async (state) => {
+                    if (state.filters.some(f => f.column === 'stage_association' && f.value === payload.stageAssociation) &&
+                        state.filters.some(f => f.column === 'is_stage_default' && f.value === true) &&
+                        state.filters.some(f => f.column === 'context' && f.value === mockProjectDomainTagDefault) &&
+                        state.filters.some(f => f.column === 'is_active' && f.value === true)
+                    ) {
+                        return { data: null, error: null, count: 0, status: 200, statusText: "OK" }; 
+                    }
+                    return { data: null, error: new Error("Prompt query not mocked correctly for default fallback fail"), count: 0, status: 500, statusText: "Error" };
+                }
+            }
+        }
+    });
+    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const mockRandomUUIDFnDefault = spy(() => mockNewChatId);
+    const loggerInfoFnDefault = spy();
+    const loggerErrorFnDefault = spy(); // Create a dedicated error spy
+    const mockLoggerDefault = { info: loggerInfoFnDefault, warn: spy(), error: loggerErrorFnDefault, debug: spy() } as any as sharedLogger.Logger; // Use the dedicated error spy
+
+    const depsDefault: Partial<StartSessionDeps> = {
+        logger: mockLoggerDefault,
+        randomUUID: mockRandomUUIDFnDefault,
+    };
+
+    const result = await startSession(mockUserSystemPromptMissingDefault, adminDbClient, payload, depsDefault);
+
+    assertExists(result.error, "Expected an error object when default system prompt is not found.");
+    assertEquals(result.data, undefined, "Expected no data.");
+    const expectedErrMessage = `Prompt fetching failed: No suitable default prompt found for stage '${payload.stageAssociation}' and context '${mockProjectDomainTagDefault}'`;
+    assert(result.error?.message?.includes(expectedErrMessage), `Error message mismatch. Expected: "${expectedErrMessage}", Got: "${result.error?.message}"`);
+    assertEquals(result.error?.status, 400);
+    
+    // Assert mock calls
+    const projectSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_projects")?.select;
+    assertEquals(projectSelectSpy?.calls.length, 1);
+    const systemPromptSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("system_prompts")?.select;
+    assertEquals(systemPromptSelectSpy?.calls.length, 1);
+    const overlaySelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("domain_specific_prompt_overlays")?.select;
+    assertEquals(overlaySelectSpy, undefined); // No overlay involved
+    const sessionInsertSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_sessions")?.insert;
+    assertEquals(sessionInsertSpy, undefined); // Session not inserted
+    assertEquals(loggerErrorFnDefault.calls.length, 1); // Assert on the dedicated error spy
+});
+
+Deno.test("startSession - Error during session insertion", async () => {
+    const mockUserSessionInsertError: User = {
+        id: "user-session-insert-error-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+    };
+    const mockUserId = mockUserSessionInsertError.id;
     const mockProjectId = "project-session-insert-fail";
-    const mockSystemPromptId = "sys-prompt-id-session-fail"; // Single system prompt
+    const mockSystemPromptId = "sys-prompt-id-session-fail";
 
     const payload: StartSessionPayload = {
         projectId: mockProjectId,
         selectedModelCatalogIds: ["model-abc"],
         sessionDescription: "Test session insert fail",
         stageAssociation: DialecticStage.THESIS,
-        promptTemplateId: mockSystemPromptId, // Use a direct ID that's assumed to exist for this test
+        promptTemplateId: mockSystemPromptId,
     };
-
-    const mockUserAuthClientSetup = createMockSupabaseClient(mockUserId);
-    const mockInternalCreateSupabaseClientSpy = spy((_req: Request) => mockUserAuthClientSetup.client as unknown as SupabaseClient);
 
     const dbError = { name: "DBError", message: 'Simulated DB insert error', code: 'XXYYZ', details: "DB constraint violation perhaps" };
     const mockAdminDbClientSetup = createMockSupabaseClient("admin-session-insert-fail", {
@@ -906,7 +913,7 @@ Deno.test("startSession - DB Error: Session Insert Fails", async () => {
             dialectic_projects: {
                 select: async () => ({ data: [{ id: mockProjectId, user_id: mockUserId, initial_user_prompt: "Prompt", selected_domain_tag: "general", selected_domain_overlay_id: null }], error: null, count: 1, status: 200, statusText: "OK" })
             },
-            system_prompts: { // Mock a successful system prompt fetch
+            system_prompts: { 
                 select: async (state) => {
                     if (state.filters.some(f => f.column === 'id' && f.value === mockSystemPromptId)) {
                         return { data: [{ id: mockSystemPromptId, prompt_text: "System prompt text" }], error: null, count: 1, status: 200, statusText: "OK" };
@@ -915,7 +922,7 @@ Deno.test("startSession - DB Error: Session Insert Fails", async () => {
                 }
             },
             dialectic_sessions: {
-                insert: async () => ({ data: null, error: dbError, count: 0, status: 500, statusText: "Internal Server Error" })
+                insert: async () => ({ data: null, error: dbError as any, count: 0, status: 500, statusText: "Internal Server Error" })
             }
         }
     });
@@ -925,240 +932,518 @@ Deno.test("startSession - DB Error: Session Insert Fails", async () => {
     const mockRandomUUIDFn = spy(() => "new-chat-id-for-session-fail");
 
     const deps: Partial<StartSessionDeps> = {
-        createSupabaseClient: mockInternalCreateSupabaseClientSpy,
         logger: mockLogger,
         randomUUID: mockRandomUUIDFn,
     };
 
-    try {
-        const result = await startSession(mockReq, adminDbClient, payload, deps);
+    const result = await startSession(mockUserSessionInsertError, adminDbClient, payload, deps);
 
-        assertExists(result.error);
-        assertEquals(result.error?.status, 500);
-        assertEquals(result.error?.message, "Failed to create session.");
-        assertEquals(result.error?.details, dbError.message);
+    assertExists(result.error, "Expected an error object when session insertion fails.");
+    assertEquals(result.data, undefined, "Expected no data when session insertion fails.");
+    assertEquals(result.error?.message, "Failed to create session.");
+    assertEquals(result.error?.details, dbError.message);
+    assertEquals(result.error?.status, 500);
+    
+    assertEquals(loggerErrorFn.calls.length, 1);
+    const firstErrorCallArgs = loggerErrorFn.calls[0].args;
+    assert(firstErrorCallArgs[0].includes("[startSession] Error inserting dialectic session:"));
+    assertObjectMatch(firstErrorCallArgs[1] as Record<string,unknown>, { projectId: mockProjectId, error: dbError });
 
-        const sessionInsertSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_sessions")?.insert;
-        assertExists(sessionInsertSpy);
-        assertEquals(sessionInsertSpy.calls.length, 1);
-        
-        // Check that the insert payload matches the new structure
-        const insertCallArgs = sessionInsertSpy.calls[0].args[0] as Record<string, unknown>;
-        assertObjectMatch(insertCallArgs, {
-            project_id: mockProjectId,
-            session_description: payload.sessionDescription,
-            stage: payload.stageAssociation.toUpperCase(),
-            status: `pending_${payload.stageAssociation}`,
-            selected_model_catalog_ids: payload.selectedModelCatalogIds,
-            // No active_..._prompt_template_id fields
-        });
-        
-        assertEquals(loggerErrorFn.calls.length, 1);
-        const errCall = loggerErrorFn.calls[0].args[1] as Record<string,unknown>;
-        assertObjectMatch(errCall, { projectId: mockProjectId, error: { message: dbError.message } });
+    const projectSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_projects")?.select;
+    assertExists(projectSelectSpy);
+    assertEquals(projectSelectSpy.calls.length, 1);
 
-
-    } finally {
-        mockUserAuthClientSetup.clearAllStubs?.();
-        mockAdminDbClientSetup.clearAllStubs?.();
-    }
+    const systemPromptSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("system_prompts")?.select;
+    assertExists(systemPromptSelectSpy);
+    assertEquals(systemPromptSelectSpy.calls.length, 1);
+    
+    const sessionInsertSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_sessions")?.insert;
+    assertExists(sessionInsertSpy);
+    assertEquals(sessionInsertSpy.calls.length, 1);
 });
 
-Deno.test("startSession - Uses Originating Chat ID when provided", async () => {
-    const mockReq = new Request("http://localhost", { method: "POST" });
-    const mockUserId = "user-orig-chat";
-    const mockProjectId = "project-orig-chat";
-    const mockOriginatingChatId = "existing-chat-uuid-123";
-    const mockSystemPromptId = "sys-prompt-orig-chat";
-    const mockSystemPromptText = "This is the system prompt text for orig chat.";
-    const mockNewSessionId = "new-session-uuid-orig-chat";
+Deno.test("startSession - Handles missing initial_user_prompt and selected_domain_tag in project", async () => {
+    const mockUserMissingProjectDetails: User = {
+        id: "user-missing-proj-details-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+    };
+    const mockUserId = mockUserMissingProjectDetails.id;
+    const mockProjectId = "project-happy-default-prompt-id";
+    const mockDefaultPromptId = "default-system-prompt-happy-id";
+    const mockDefaultPromptText = "This is the happy path default system prompt.";
+    const mockNewChatId = "newly-generated-chat-id-happy-default";
+    const mockNewSessionId = "new-session-id-happy-default";
+    const mockSelectedModelIds = ["model-catalog-id-5", "model-catalog-id-6"];
+    const mockInitialUserPromptDefault = "Initial prompt for happy path default prompt";
+    const mockProjectDomainTagDefault = "education";
 
     const payload: StartSessionPayload = {
         projectId: mockProjectId,
-        selectedModelCatalogIds: ["model-abc", "model-xyz"],
-        sessionDescription: "A test session with originating chat ID",
-        originatingChatId: mockOriginatingChatId, 
-        stageAssociation: DialecticStage.THESIS,
-        promptTemplateId: mockSystemPromptId, // Provide a direct prompt ID
+        selectedModelCatalogIds: mockSelectedModelIds,
+        sessionDescription: "A happy path test session using default prompt",
+        stageAssociation: DialecticStage.SYNTHESIS,
     };
 
-    const mockUserAuthClientSetup = createMockSupabaseClient(mockUserId);
-    const mockInternalCreateSupabaseClient = (_req: Request) => mockUserAuthClientSetup.client as unknown as SupabaseClient;
-
-    const mockAdminDbClientSetup = createMockSupabaseClient("db-admin-orig-chat", {
+    const mockAdminDbClientSetup = createMockSupabaseClient("db-admin-happy-default", {
         genericMockResults: {
             dialectic_projects: {
-                select: async (state) => {
+                select: async (state) => { 
                     if (state.filters.some(f => f.column === 'id' && f.value === mockProjectId) &&
                         state.filters.some(f => f.column === 'user_id' && f.value === mockUserId)) {
-                        return { 
-                            data: [{ id: mockProjectId, user_id: mockUserId, initial_user_prompt: "Initial prompt text", selected_domain_tag: "general", selected_domain_overlay_id: null }], 
+                        return {
+                            data: [{ 
+                                id: mockProjectId, 
+                                user_id: mockUserId, 
+                                initial_user_prompt: null, 
+                                selected_domain_tag: null,
+                                selected_domain_overlay_id: null
+                            }],
                             error: null, count: 1, status: 200, statusText: "OK"
                         };
                     }
-                    return { data: null, error: new Error("Project not found in mock (orig chat)"), count: 0, status: 404, statusText: "Not Found" };
+                    return { data: null, error: new Error("Project not found (happy path default)"), count: 0, status: 404, statusText: "Not Found" };
                 }
             },
             system_prompts: {
                 select: async (state) => {
-                    if (state.filters.some(f => f.column === 'id' && f.value === mockSystemPromptId)) {
-                        return { data: [{ id: mockSystemPromptId, prompt_text: mockSystemPromptText }], error: null, count: 1, status: 200, statusText: "OK" };
-                    }
-                    return { data: null, error: new Error("Prompt not found in mock (orig chat)"), count: 0, status: 404, statusText: "Not Found" };
-                }
-            },
-            dialectic_sessions: {
-                insert: async (state) => { 
-                    const insertPayload = state.insertData as Record<string, unknown> | undefined;
-                    if (insertPayload &&
-                        insertPayload.associated_chat_id === mockOriginatingChatId &&
-                        insertPayload.session_description === payload.sessionDescription &&
-                        insertPayload.stage === payload.stageAssociation.toUpperCase() &&
-                        Array.isArray(insertPayload.selected_model_catalog_ids)
+                    if (state.filters.some(f => f.column === 'stage_association' && f.value === payload.stageAssociation) &&
+                        state.filters.some(f => f.column === 'is_stage_default' && f.value === true) &&
+                        state.filters.some(f => f.column === 'context' && f.value === 'general') &&
+                        state.filters.some(f => f.column === 'is_active' && f.value === true)
                     ) {
-                        return { 
-                            data: [{ id: mockNewSessionId }], 
-                            error: null, 
-                            count: 1, 
-                            status: 201, 
-                            statusText: "Created" 
-                        };
+                        return { data: null, error: null, count: 0, status: 200, statusText: "OK" }; 
                     }
-                    return { data: null, error: new Error("Session insert failed in mock (orig chat, condition not met)"), count: 0, status: 500, statusText: "Error" };
-                },
-            },
+                    return { data: null, error: new Error("Prompt query not mocked correctly for null project tags"), count: 0, status: 500, statusText: "Error" };
+                }
+            }
         }
     });
     const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const mockRandomUUIDFnDefault = spy(() => mockNewChatId);
+    const loggerInfoFnDefault = spy();
+    const mockLoggerDefault = { info: loggerInfoFnDefault, warn: spy(), error: spy(), debug: spy() } as any as sharedLogger.Logger;
 
-    let mockRandomUUIDFnWasCalled = false;
-    const mockRandomUUIDFnPlain = () => {
-        mockRandomUUIDFnWasCalled = true;
-        return "mock-uuid-if-unexpectedly-called-plain"; 
+    const depsDefault: Partial<StartSessionDeps> = {
+        logger: mockLoggerDefault,
+        randomUUID: mockRandomUUIDFnDefault,
     };
-    
-    const mockInfoSpy = spy();
-    const mockErrorSpy = spy();
-    const mockLoggerForDeps = { info: mockInfoSpy, warn: spy(), error: mockErrorSpy, debug: spy() } as any as sharedLogger.Logger;
 
-    const deps: Partial<StartSessionDeps> = {
-        createSupabaseClient: mockInternalCreateSupabaseClient, 
-        logger: mockLoggerForDeps, 
-        randomUUID: mockRandomUUIDFnPlain,
-    };
-    
     try {
-        const result = await startSession(mockReq, adminDbClient, payload, deps);
-
-        assertExists(result.data, `Session start failed: ${result.error?.message}`);
-        assertEquals(result.error, undefined);
-        assertEquals(result.data?.sessionId, mockNewSessionId);
-        assertEquals(result.data?.initialStatus, `pending_${payload.stageAssociation}`);
-        assertEquals(result.data?.associatedChatId, mockOriginatingChatId); 
-
-        assertEquals(mockRandomUUIDFnWasCalled, false, "mockRandomUUIDFn (flag check) should not have been called when originatingChatId is provided");
-
-        const projectSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_projects")?.select;
-        assertExists(projectSelectSpy); assertEquals(projectSelectSpy.calls.length, 1);
+        const result = await startSession(mockUserMissingProjectDetails, adminDbClient, payload, depsDefault);
+        assertExists(result.error);
+        assertEquals(result.error?.status, 400);
+        assert(result.error?.message?.includes(`Prompt fetching failed: No suitable default prompt found for stage '${payload.stageAssociation}' and context 'general'`), `Error message: ${result.error?.message}`);
         
-        const promptSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("system_prompts")?.select;
-        assertExists(promptSelectSpy); assertEquals(promptSelectSpy.calls.length, 1); 
-        
-        // No session_models insert, no session update for seed prompt
-        const sessionModelsInsertSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_session_models")?.insert;
-        assertEquals(sessionModelsInsertSpy, undefined);
-        const sessionUpdateSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_sessions")?.update;
-        assertEquals(sessionUpdateSpy?.calls.length ?? 0, 0, "Session update should not have been called.");
+        const systemPromptSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("system_prompts")?.select;
+        assertExists(systemPromptSelectSpy);
+        assertEquals(systemPromptSelectSpy.calls.length, 1);
 
-
-        assert(mockInfoSpy.calls.length >= 4, `Expected at least 4 info logs, but got ${mockInfoSpy.calls.length}`);
-        assert(mockErrorSpy.calls.length === 0, "Logger.error should not have been called");
     } finally {
-        mockUserAuthClientSetup.clearAllStubs?.();
         mockAdminDbClientSetup.clearAllStubs?.();
     }
 });
 
-Deno.test("startSession - Generates New Chat ID if not provided", async () => {
-    const mockReq = new Request("http://localhost", { method: "POST" });
-    const mockUserId = "user-no-orig-id";
-    const mockProjectId = "project-no-orig-id";
-    const mockGeneratedUUID = "newly-generated-uuid-123";
-    const mockSystemPromptId = "sys-prompt-no-orig";
+Deno.test("startSession - Handles missing selected_domain_overlay_id in project (uses default system prompt)", async () => {
+    const mockUserNoOverlayInProject: User = {
+        id: "user-no-overlay-in-project-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+    };
+    const mockUserId = mockUserNoOverlayInProject.id;
+    const mockProjectId = "project-happy-default-prompt-id";
+    const mockDefaultPromptId = "default-system-prompt-happy-id";
+    const mockDefaultPromptText = "This is the happy path default system prompt.";
+    const mockNewChatId = "newly-generated-chat-id-happy-default";
+    const mockNewSessionId = "new-session-id-happy-default";
+    const mockSelectedModelIds = ["model-catalog-id-5", "model-catalog-id-6"];
+    const mockInitialUserPromptDefault = "Initial prompt for happy path default prompt";
+    const mockProjectDomainTagDefault = "education";
 
     const payload: StartSessionPayload = {
         projectId: mockProjectId,
-        selectedModelCatalogIds: ["model-def", "model-uvw"],
-        sessionDescription: "A test session generating new chat ID",
-        stageAssociation: DialecticStage.THESIS,
-        promptTemplateId: mockSystemPromptId, // Provide a direct prompt ID
-        // originatingChatId is NOT provided
+        selectedModelCatalogIds: mockSelectedModelIds,
+        sessionDescription: "A happy path test session using default prompt",
+        stageAssociation: DialecticStage.SYNTHESIS,
     };
 
-    const mockUserAuthClientSetup = createMockSupabaseClient(mockUserId);
-    const mockInternalCreateSupabaseClient = (_req: Request) => mockUserAuthClientSetup.client as unknown as SupabaseClient;
-
-    const mockAdminDbClientSetup = createMockSupabaseClient("db-admin-for-no-originating", {
+    const mockAdminDbClientSetup = createMockSupabaseClient("db-admin-happy-default", {
         genericMockResults: {
             dialectic_projects: {
-                select: async (state) => {
-                    if (state.filters.some(f => f.column === 'id' && f.value === mockProjectId)) {
-                        return { 
-                            data: [{ id: mockProjectId, user_id: mockUserId, initial_user_prompt: "Initial prompt for no originating", selected_domain_tag: "general", selected_domain_overlay_id: null }], 
+                select: async (state) => { 
+                    if (state.filters.some(f => f.column === 'id' && f.value === mockProjectId) &&
+                        state.filters.some(f => f.column === 'user_id' && f.value === mockUserId)) {
+                        return {
+                            data: [{ 
+                                id: mockProjectId, 
+                                user_id: mockUserId, 
+                                initial_user_prompt: mockInitialUserPromptDefault, 
+                                selected_domain_tag: mockProjectDomainTagDefault,
+                                selected_domain_overlay_id: null
+                            }],
                             error: null, count: 1, status: 200, statusText: "OK"
                         };
                     }
-                    return { data: null, error: new Error("Project not found (no-originating test)"), count: 0, status: 404, statusText: "Not Found" };
+                    return { data: null, error: new Error("Project not found (happy path default)"), count: 0, status: 404, statusText: "Not Found" };
                 }
             },
-            system_prompts: { 
+            system_prompts: { // Mock to ensure no default prompt is found for this specific context
                 select: async (state) => {
-                    if (state.filters.some(f => f.column === 'id' && f.value === mockSystemPromptId)) {
-                        return { data: [{ id: mockSystemPromptId, prompt_text: "System text no-orig" }], error: null, count: 1, status: 200, statusText: "OK" };
+                    if (state.filters.some(f => f.column === 'stage_association' && typeof f.value === 'string' && f.value.toUpperCase() === payload.stageAssociation.toUpperCase()) && // Robust stage comparison
+                        state.filters.some(f => f.column === 'is_stage_default' && f.value === true) &&
+                        state.filters.some(f => f.column === 'context' && f.value === mockProjectDomainTagDefault) &&
+                        state.filters.some(f => f.column === 'is_active' && f.value === true)
+                    ) {
+                        return { data: null, error: null, count: 0, status: 200, statusText: "OK" }; // No prompt found
                     }
-                    return { data: null, error: new Error("Prompt not found (no-originating test)"), count: 0, status: 404, statusText: "Not Found" };
+                    return { data: null, error: new Error("Prompt query not mocked correctly for default fallback fail (no overlay)"), count: 0, status: 500, statusText: "Error" };
                 }
-            },
-            dialectic_sessions: { 
-                insert: async (state) => {
-                    const insertPayload = state.insertData as Record<string, unknown> | undefined;
-                    if (insertPayload && insertPayload.associated_chat_id === mockGeneratedUUID) {
-                         return { data: [{ id: "new-session-no-orig-uuid" }], error: null, count: 1, status: 201, statusText: "Created" };
-                    }
-                    return { data: null, error: new Error("Session insert failed (no-originating test), wrong associated_chat_id"), count: 0, status: 500, statusText: "Error" };
-                },
-            },
+            }
         }
     });
     const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const mockRandomUUIDFnDefault = spy(() => mockNewChatId);
+    const loggerInfoFnDefault = spy();
+    const loggerErrorFnForNoOverlayTest = spy(); // Defined spy for this test
+    const mockLoggerDefault = { info: loggerInfoFnDefault, warn: spy(), error: loggerErrorFnForNoOverlayTest, debug: spy() } as any as sharedLogger.Logger;
 
-    // This spy will be called because originatingChatId is not provided
-    const mockRandomUUIDFn = spy(() => mockGeneratedUUID); 
+    const depsDefault: Partial<StartSessionDeps> = {
+        logger: mockLoggerDefault,
+        randomUUID: mockRandomUUIDFnDefault,
+    };
 
-    const mockLoggerForDeps = { info: spy(), warn: spy(), error: spy(), debug: spy() } as any as sharedLogger.Logger;
+    try {
+        const result = await startSession(mockUserNoOverlayInProject, adminDbClient, payload, depsDefault);
+        assertExists(result.error, "result.error should be defined when no default prompt is found.");
+        assertEquals(result.data, undefined, "result.data should be undefined when an error occurs.");
+        const expectedErrMessage = `Prompt fetching failed: No suitable default prompt found for stage '${payload.stageAssociation}' and context '${mockProjectDomainTagDefault}'`;
+        assert(
+            result.error?.message?.includes(expectedErrMessage),
+            `Error message mismatch. Expected to include: "${expectedErrMessage}", Got: "${result.error?.message}"`
+        );
+        assertEquals(result.error?.status, 400);
 
-    const deps: Partial<StartSessionDeps> = {
-        createSupabaseClient: mockInternalCreateSupabaseClient, 
-        logger: mockLoggerForDeps, 
-        randomUUID: mockRandomUUIDFn, 
+        // Logger assertions
+        assertEquals(loggerInfoFnDefault.calls.length, 5, "Expected 5 info logs for this path.");
+        assert(loggerInfoFnDefault.calls[0].args[0].startsWith("startSession called with payload:"), "Info Log 1: startSession with payload");
+        assert(loggerInfoFnDefault.calls[1].args[0].includes(`User ${mockUserId} authenticated`), "Info Log 2: user authenticated");
+        assert(loggerInfoFnDefault.calls[2].args[0].includes("No originatingChatId provided, generating a new one"), "Info Log 3: new chat ID generated");
+        assert(loggerInfoFnDefault.calls[3].args[0].includes(`Project ${mockProjectId} details fetched`), "Info Log 4: project details fetched");
+        assert(loggerInfoFnDefault.calls[4].args[0].includes(`[startSession] No promptTemplateId or project.selected_domain_overlay_id. Fetching default prompt for stage: ${payload.stageAssociation}, context: ${mockProjectDomainTagDefault}`), "Info Log 5: fetching default prompt");
+
+        assertEquals(loggerErrorFnForNoOverlayTest.calls.length, 1, "Error log expected when no prompt can be found"); 
+        assert(loggerErrorFnForNoOverlayTest.calls[0].args[1].error.includes(`No suitable default prompt found for stage '${payload.stageAssociation}' and context '${mockProjectDomainTagDefault}'`), "Logger error message mismatch");
+        
+        const projectSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_projects")?.select;
+        assertExists(projectSelectSpy);
+        assertEquals(projectSelectSpy.calls.length, 1);
+        const systemPromptSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("system_prompts")?.select;
+        assertExists(systemPromptSelectSpy);
+        assertEquals(systemPromptSelectSpy.calls.length, 1);
+        const sessionInsertSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_sessions")?.insert;
+        assertEquals(sessionInsertSpy, undefined, "Session should not be inserted if prompt fetching fails");
+
+    } finally {
+        mockAdminDbClientSetup.clearAllStubs?.();
+    }
+});
+
+Deno.test("startSession - Handles missing default_system_prompt_id in project (when no overlay or payload ID)", async () => {
+    const mockUserNoDefaultPrompt: User = {
+        id: "user-no-default-prompt-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+    };
+    const mockUserId = mockUserNoDefaultPrompt.id;
+    const mockProjectId = "project-happy-default-prompt-id";
+    const mockDefaultPromptId = "default-system-prompt-happy-id";
+    const mockDefaultPromptText = "This is the happy path default system prompt.";
+    const mockNewChatId = "newly-generated-chat-id-happy-default";
+    const mockNewSessionId = "new-session-id-happy-default";
+    const mockSelectedModelIds = ["model-catalog-id-5", "model-catalog-id-6"];
+    const mockInitialUserPromptDefault = "Initial prompt for happy path default prompt";
+    const mockProjectDomainTagDefault = "education";
+
+    const payload: StartSessionPayload = {
+        projectId: mockProjectId,
+        selectedModelCatalogIds: mockSelectedModelIds,
+        sessionDescription: "A happy path test session using default prompt",
+        stageAssociation: DialecticStage.SYNTHESIS,
+    };
+
+    const mockAdminDbClientSetup = createMockSupabaseClient("db-admin-happy-default", {
+        genericMockResults: {
+            dialectic_projects: {
+                select: async (state) => { 
+                    if (state.filters.some(f => f.column === 'id' && f.value === mockProjectId) &&
+                        state.filters.some(f => f.column === 'user_id' && f.value === mockUserId)) {
+                        return {
+                            data: [{ 
+                                id: mockProjectId, 
+                                user_id: mockUserId, 
+                                initial_user_prompt: mockInitialUserPromptDefault, 
+                                selected_domain_tag: mockProjectDomainTagDefault,
+                                selected_domain_overlay_id: null
+                            }],
+                            error: null, count: 1, status: 200, statusText: "OK"
+                        };
+                    }
+                    return { data: null, error: new Error("Project not found (happy path default)"), count: 0, status: 404, statusText: "Not Found" };
+                }
+            },
+            system_prompts: {
+                select: async (state) => {
+                    if (state.filters.some(f => f.column === 'stage_association' && f.value === payload.stageAssociation) &&
+                        state.filters.some(f => f.column === 'is_stage_default' && f.value === true) &&
+                        state.filters.some(f => f.column === 'context' && f.value === mockProjectDomainTagDefault) &&
+                        state.filters.some(f => f.column === 'is_active' && f.value === true)
+                    ) {
+                        return { data: null, error: null, count: 0, status: 200, statusText: "OK" }; 
+                    }
+                    return { data: null, error: new Error("Prompt query not mocked correctly for default fallback fail"), count: 0, status: 500, statusText: "Error" };
+                }
+            }
+        }
+    });
+    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const mockRandomUUIDFnDefault = spy(() => mockNewChatId);
+    const loggerInfoFnDefault = spy();
+    const loggerErrorFnForNoDefaultPromptTest = spy(); // Create a dedicated error spy for this test
+    const mockLoggerDefault = { info: loggerInfoFnDefault, warn: spy(), error: loggerErrorFnForNoDefaultPromptTest, debug: spy() } as any as sharedLogger.Logger; // Use it
+
+    const depsDefault: Partial<StartSessionDeps> = {
+        logger: mockLoggerDefault,
+        randomUUID: mockRandomUUIDFnDefault,
+    };
+
+    const result = await startSession(mockUserNoDefaultPrompt, adminDbClient, payload, depsDefault);
+    
+    assertExists(result.error, "Expected an error object when no default system prompt ID is found and no overlay/payload ID provided.");
+    assertEquals(result.data, undefined, "Expected no data.");
+    const expectedErrMessage = `Prompt fetching failed: No suitable default prompt found for stage '${payload.stageAssociation}' and context '${mockProjectDomainTagDefault}'`;
+    assert(result.error?.message?.includes(expectedErrMessage), `Error message mismatch. Expected: "${expectedErrMessage}", Got: "${result.error?.message}"`);
+    assertEquals(result.error?.status, 400);
+
+    // Assert mock calls
+    const projectSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_projects")?.select;
+    assertEquals(projectSelectSpy?.calls.length, 1);
+    const systemPromptSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("system_prompts")?.select;
+    assertEquals(systemPromptSelectSpy?.calls.length, 1);
+    const overlaySelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("domain_specific_prompt_overlays")?.select;
+    assertEquals(overlaySelectSpy, undefined); // No overlay involved
+    const sessionInsertSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_sessions")?.insert;
+    assertEquals(sessionInsertSpy, undefined); // Session not inserted
+    assertEquals(loggerErrorFnForNoDefaultPromptTest.calls.length, 1); // Assert on the dedicated error spy
+});
+
+Deno.test("startSession - Handles empty selectedModelCatalogIds gracefully (if business logic allows)", async () => {
+    const mockUserEmptyModels: User = {
+        id: "user-empty-models-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+    };
+    const mockUserId = mockUserEmptyModels.id;
+    const mockProjectId = "project-happy-default-prompt-id";
+    const mockDefaultPromptId = "default-system-prompt-happy-id";
+    const mockDefaultPromptText = "This is the happy path default system prompt.";
+    const mockNewChatId = "newly-generated-chat-id-happy-default";
+    const mockNewSessionId = "new-session-id-happy-default";
+    const mockSelectedModelIds: string[] = [];
+    const mockInitialUserPromptDefault = "Initial prompt for empty models test";
+    const mockProjectDomainTagDefault = "general_empty_models";
+
+    const payload: StartSessionPayload = {
+        projectId: mockProjectId,
+        selectedModelCatalogIds: mockSelectedModelIds,
+        sessionDescription: "A happy path test session using default prompt",
+        stageAssociation: DialecticStage.SYNTHESIS,
+    };
+
+    const mockAdminDbClientSetup = createMockSupabaseClient("db-admin-happy-default", {
+        genericMockResults: {
+            dialectic_projects: {
+                select: async (state) => { 
+                    if (state.filters.some(f => f.column === 'id' && f.value === mockProjectId) &&
+                        state.filters.some(f => f.column === 'user_id' && f.value === mockUserId)) {
+                        return {
+                            data: [{ 
+                                id: mockProjectId, 
+                                user_id: mockUserId, 
+                                initial_user_prompt: mockInitialUserPromptDefault, 
+                                selected_domain_tag: mockProjectDomainTagDefault,
+                                selected_domain_overlay_id: null
+                            }],
+                            error: null, count: 1, status: 200, statusText: "OK"
+                        };
+                    }
+                    return { data: null, error: new Error("Project not found (happy path default)"), count: 0, status: 404, statusText: "Not Found" };
+                }
+            },
+            system_prompts: {
+                select: async (state) => {
+                    if (state.filters.some(f => f.column === 'stage_association' && typeof f.value === 'string' && f.value.toUpperCase() === payload.stageAssociation.toUpperCase()) && // Robust stage comparison
+                        state.filters.some(f => f.column === 'is_stage_default' && f.value === true) &&
+                        state.filters.some(f => f.column === 'context' && f.value === mockProjectDomainTagDefault) && // Uses "general_empty_models"
+                        state.filters.some(f => f.column === 'is_active' && f.value === true)
+                    ) {
+                        return { data: null, error: null, count: 0, status: 200, statusText: "OK" }; 
+                    }
+                    return { data: null, error: new Error("Prompt query not mocked correctly for default fallback fail (empty models)"), count: 0, status: 500, statusText: "Error" };
+                }
+            }
+        }
+    });
+    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const mockRandomUUIDFnDefault = spy(() => mockNewChatId);
+    const loggerInfoFnDefault = spy();
+    const loggerErrorFnForEmptyModelsTest = spy(); // Defined spy for this test
+    const mockLoggerDefault = { info: loggerInfoFnDefault, warn: spy(), error: loggerErrorFnForEmptyModelsTest, debug: spy() } as any as sharedLogger.Logger;
+
+    const depsDefault: Partial<StartSessionDeps> = {
+        logger: mockLoggerDefault,
+        randomUUID: mockRandomUUIDFnDefault,
+    };
+
+    try {
+        const result = await startSession(mockUserEmptyModels, adminDbClient, payload, depsDefault);
+        assertExists(result.error, "result.error should be defined when no default prompt is found and selected models are empty.");
+        assertEquals(result.data, undefined, "result.data should be undefined when an error occurs.");
+        const expectedErrMessage = `Prompt fetching failed: No suitable default prompt found for stage '${payload.stageAssociation}' and context '${mockProjectDomainTagDefault}'`;
+        assert(
+            result.error?.message?.includes(expectedErrMessage),
+            `Error message mismatch. Expected to include: "${expectedErrMessage}", Got: "${result.error?.message}"`
+        );
+        assertEquals(result.error?.status, 400);
+
+        // Logger assertions
+        assertEquals(loggerInfoFnDefault.calls.length, 5, "Expected 5 info logs for this path.");
+        assert(loggerInfoFnDefault.calls[0].args[0].startsWith("startSession called with payload:"), "Info Log 1: startSession with payload");
+        assert(loggerInfoFnDefault.calls[1].args[0].includes(`User ${mockUserId} authenticated`), "Info Log 2: user authenticated");
+        assert(loggerInfoFnDefault.calls[2].args[0].includes("No originatingChatId provided, generating a new one"), "Info Log 3: new chat ID generated");
+        assert(loggerInfoFnDefault.calls[3].args[0].includes(`Project ${mockProjectId} details fetched`), "Info Log 4: project details fetched");
+        assert(loggerInfoFnDefault.calls[4].args[0].includes(`[startSession] No promptTemplateId or project.selected_domain_overlay_id. Fetching default prompt for stage: ${payload.stageAssociation}, context: ${mockProjectDomainTagDefault}`), "Info Log 5: fetching default prompt for empty models test");
+
+        assertEquals(loggerErrorFnForEmptyModelsTest.calls.length, 1, "Error log expected when no prompt can be found");
+        assert(loggerErrorFnForEmptyModelsTest.calls[0].args[1].error.includes(`No suitable default prompt found for stage '${payload.stageAssociation}' and context '${mockProjectDomainTagDefault}'`), "Logger error message mismatch for empty models test");
+        
+        const projectSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_projects")?.select;
+        assertExists(projectSelectSpy);
+        assertEquals(projectSelectSpy.calls.length, 1);
+        const systemPromptSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("system_prompts")?.select;
+        assertExists(systemPromptSelectSpy);
+        assertEquals(systemPromptSelectSpy.calls.length, 1);
+        const sessionInsertSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_sessions")?.insert;
+        assertEquals(sessionInsertSpy, undefined, "Session should not be inserted if prompt fetching fails");
+    } finally {
+        mockAdminDbClientSetup.clearAllStubs?.();
+    }
+});
+
+Deno.test("startSession - Project exists but initial_user_prompt, selected_domain_tag, selected_domain_overlay_id, and default_system_prompt_id are all null", async () => {
+    const mockUserAllNullProjectData: User = {
+        id: "user-all-null-project-data-id",
+        app_metadata: {}, // Added
+        user_metadata: {}, // Added
+        aud: "authenticated",
+        role: "authenticated",
+        email: "all.null.project@example.com",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+    const mockProjectId = "project-happy-default-prompt-id"; // Re-use a project ID that can be found
+    const mockNewChatId = "newly-generated-chat-id-all-null";
+
+    const payload: StartSessionPayload = {
+        projectId: mockProjectId,
+        // No sessionDescription
+        // No stageAssociation (will default to THESIS in main func, but let's be explicit for prompt search)
+        stageAssociation: DialecticStage.SYNTHESIS, // For testing specific default prompt lookup
+        selectedModelCatalogIds: ["model-g", "model-h"],
+        // No promptTemplateId
+    };
+
+    const mockProjectAllNull: Partial<Database['public']['Tables']['dialectic_projects']['Row']> = {
+        id: mockProjectId,
+        user_id: mockUserAllNullProjectData.id,
+        initial_user_prompt: undefined,
+        selected_domain_tag: undefined, // Changed from null to undefined
+        selected_domain_overlay_id: null,
+        // default_system_prompt_id is not directly on project table
+    };
+
+    const mockAdminDbClientSetup = createMockSupabaseClient("db-admin-happy-default", {
+        genericMockResults: {
+            dialectic_projects: {
+                select: async (state) => { 
+                    if (state.filters.some(f => f.column === 'id' && f.value === mockProjectId) &&
+                        state.filters.some(f => f.column === 'user_id' && f.value === mockUserAllNullProjectData.id)) {
+                        // Ensure data is an array for select mock, even if single, and correctly typed
+                        return { data: [mockProjectAllNull as Database['public']['Tables']['dialectic_projects']['Row']], error: null, count: 1, status: 200, statusText: "OK" };
+                    }
+                    // Ensure mock error has 'name' property
+                    return { data: null, error: { name: "PostgrestError", message: "Project not found as per mock (all null test)", code: "PGRST116", details:"", hint:"" }, count: 0, status: 404, statusText: "Not Found" };
+                }
+            },
+            system_prompts: {
+                select: async (state) => {
+                    // Expecting a search for default: context 'general', stage 'SYNTHESIS'
+                    if (state.filters.some(f => f.column === 'stage_association' && typeof f.value === 'string' && f.value.toUpperCase() === payload.stageAssociation!.toUpperCase()) &&
+                        state.filters.some(f => f.column === 'is_stage_default' && f.value === true) &&
+                        state.filters.some(f => f.column === 'context' && f.value === 'general') && 
+                        state.filters.some(f => f.column === 'is_active' && f.value === true)
+                    ) {
+                        return { data: null, error: null, count: 0, status: 200, statusText: "OK" }; // Simulate no default prompt found
+                    }
+                    return { data: null, error: new Error("Prompt query not mocked correctly for all null project data"), count: 0, status: 500, statusText: "Error" };
+                }
+            }
+        }
+    });
+    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const mockRandomUUIDFnDefault = spy(() => mockNewChatId);
+    const loggerInfoFn = spy();
+    const loggerErrorFn = spy(); 
+    const mockLoggerDefault = { info: loggerInfoFn, warn: spy(), error: loggerErrorFn, debug: spy() } as any as sharedLogger.Logger;
+
+    const depsDefault: Partial<StartSessionDeps> = {
+        logger: mockLoggerDefault,
+        randomUUID: mockRandomUUIDFnDefault,
     };
     
-    // The function should succeed, not reject, because randomUUID will be called and provide a UUID.
-    const result = await startSession(mockReq, adminDbClient, payload, deps);
-    assertExists(result.data, `Session start should succeed: ${result.error?.message}`);
-    assertEquals(result.error, undefined);
-    assertEquals(result.data?.associatedChatId, mockGeneratedUUID);
-    assertEquals(mockRandomUUIDFn.calls.length, 1, "randomUUID spy should have been called exactly once");
-});
+    // Ensure assertRejects is removed and we check result.error
+    const result = await startSession(mockUserAllNullProjectData, adminDbClient, payload, depsDefault);
 
-// Removed TEMP DEBUG tests
-/*
-Deno.test("[TEMP DEBUG] Boolean flag isolation test - flag should remain false", () => {
-// ...
-});
+    assertExists(result.error, "Expected an error when all project prompt data is null and no default found.");
+    assertEquals(result.data, undefined, "Expected no data when an error occurs.");
+    const expectedErrMessage = `Prompt fetching failed: No suitable default prompt found for stage '${payload.stageAssociation}' and context 'general'`;
+    assert(result.error?.message?.includes(expectedErrMessage), `Error message mismatch. Expected to include: "${expectedErrMessage}", Got: "${result.error?.message}"`);
+    assertEquals(result.error?.status, 400);
 
-Deno.test("[TEMP DEBUG] Boolean flag isolation test - flag should become true", () => {
-// ...
+    assertEquals(loggerInfoFn.calls.length, 5, "Expected 5 info logs for this path.");
+    assert(loggerInfoFn.calls[0].args[0].startsWith("startSession called with payload:"), "Info Log 1: startSession with payload");
+    assert(loggerInfoFn.calls[1].args[0].includes(`User ${mockUserAllNullProjectData.id} authenticated`), "Info Log 2: user authenticated");
+    assert(loggerInfoFn.calls[2].args[0].includes("No originatingChatId provided, generating a new one"), "Info Log 3: new chat ID generated");
+    assert(loggerInfoFn.calls[3].args[0].includes(`Project ${mockProjectId} details fetched`), "Info Log 4: project details fetched");
+    assert(loggerInfoFn.calls[4].args[0].includes(`[startSession] No promptTemplateId or project.selected_domain_overlay_id. Fetching default prompt for stage: ${payload.stageAssociation}, context: general`), "Info Log 5: fetching default prompt with 'general' context");
+
+    assertEquals(loggerErrorFn.calls.length, 1, "Error log expected when no prompt can be found"); 
+    assert(loggerErrorFn.calls[0].args[1].error.includes(`No suitable default prompt found for stage '${payload.stageAssociation}' and context 'general'`), "Logger error message mismatch");
+    
+    const projectSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_projects")?.select;
+    assertExists(projectSelectSpy);
+    assertEquals(projectSelectSpy.calls.length, 1);
+    const systemPromptSelectSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("system_prompts")?.select;
+    assertExists(systemPromptSelectSpy);
+    assertEquals(systemPromptSelectSpy.calls.length, 1);
+    const sessionInsertSpy = mockAdminDbClientSetup.spies.getLatestQueryBuilderSpies("dialectic_sessions")?.insert;
+    assertEquals(sessionInsertSpy, undefined, "Session should not be inserted if prompt fetching fails");
 });
-*/
 

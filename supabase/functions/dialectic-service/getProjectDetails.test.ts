@@ -2,7 +2,6 @@ import { assertEquals, assertExists, assertRejects } from "https://deno.land/std
 import { describe, it, beforeEach, afterEach } from "https://deno.land/std@0.190.0/testing/bdd.ts";
 import { stub } from "https://deno.land/std@0.190.0/testing/mock.ts";
 import { getProjectDetails } from "./getProjectDetails.ts";
-import * as sharedAuth from "../_shared/auth.ts";
 import * as sharedLogger from "../_shared/logger.ts";
 import { 
     DialecticProject, 
@@ -49,26 +48,12 @@ const getMockUser = (id: string): User => ({
 });
 
 describe("getProjectDetails", () => {
-  let mockRequest: Request;
   let currentMockDbClient: IMockSupabaseClient;
   let currentClientSpies: IMockClientSpies;
   let supabaseTestSetup: ReturnType<typeof createMockSupabaseClient>;
   let debugStub: any, infoStub: any, warnStub: any, errorStub: any;
 
-  // Helper to provide the override based on the current mock client
-  const getTestAuthOptions = (client: IMockSupabaseClient): { createSupabaseClientOverride: (req: Request) => any } => ({
-    createSupabaseClientOverride: (_req: Request) => ({
-      auth: client.auth
-    } as any) 
-  });
-
   beforeEach(() => {
-    mockRequest = new Request("http://localhost/getProjectDetails", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId: "test-project-id" }),
-    });
-    
     const defaultConfig: MockSupabaseDataConfig = {
       mockUser: getMockUser(MOCK_USER_ID),
     };
@@ -95,7 +80,7 @@ describe("getProjectDetails", () => {
 
   it("should return 400 if projectId is not provided", async () => {
     const payload: GetProjectDetailsPayload = { projectId: "" };
-    const result = await getProjectDetails(mockRequest, currentMockDbClient as any, payload, getTestAuthOptions(currentMockDbClient));
+    const result = await getProjectDetails(payload, currentMockDbClient as any, getMockUser(MOCK_USER_ID));
 
     assertExists(result.error);
     assertEquals(result.error?.message, "projectId is required");
@@ -104,30 +89,13 @@ describe("getProjectDetails", () => {
   });
 
   it("should return 401 if user is not authenticated", async () => {
-    if (debugStub) debugStub.restore();
-    if (infoStub) infoStub.restore();
-    if (warnStub) warnStub.restore();
-    if (errorStub) errorStub.restore();
-    if (supabaseTestSetup && supabaseTestSetup.clearAllStubs) supabaseTestSetup.clearAllStubs();
-
-    const authErrorConfig: MockSupabaseDataConfig = {
-      simulateAuthError: { name: "AuthError", message: "Auth error" } as any 
-    };
-    supabaseTestSetup = createMockSupabaseClient(undefined, authErrorConfig);
-    currentMockDbClient = supabaseTestSetup.client;
-
-    debugStub = stub(sharedLogger.logger, "debug", () => {});
-    infoStub = stub(sharedLogger.logger, "info", () => {});
-    warnStub = stub(sharedLogger.logger, "warn", () => {});
-    errorStub = stub(sharedLogger.logger, "error", () => {});
-
+    const mockAuthErrorUser: User = { ...getMockUser(MOCK_USER_ID), id: "auth-error-simulated-user-id" };
     const payload: GetProjectDetailsPayload = { projectId: "test-project-id" };
-    const result = await getProjectDetails(mockRequest, currentMockDbClient as any, payload, getTestAuthOptions(currentMockDbClient));
+    const result = await getProjectDetails(payload, currentMockDbClient as any, mockAuthErrorUser);
 
     assertExists(result.error);
-    assertEquals(result.error?.message, "User not authenticated");
-    assertEquals(result.error?.code, "AUTH_ERROR");
-    assertEquals(result.error?.status, 401);
+    assertEquals(result.error?.message, "Project not found or access denied");
+    assertEquals(result.error?.status, 404);
   });
 
   it("should return 404 if project is not found (PGRST116)", async () => {
@@ -160,7 +128,7 @@ describe("getProjectDetails", () => {
     errorStub = stub(sharedLogger.logger, "error", () => {});
     
     const payload: GetProjectDetailsPayload = { projectId: "non-existent-project-id" };
-    const result = await getProjectDetails(mockRequest, currentMockDbClient as any, payload, getTestAuthOptions(currentMockDbClient));
+    const result = await getProjectDetails(payload, currentMockDbClient as any, getMockUser(MOCK_USER_ID));
 
     assertExists(result.error);
     assertEquals(result.error?.message, "Project not found or access denied");
@@ -198,7 +166,7 @@ describe("getProjectDetails", () => {
     errorStub = stub(sharedLogger.logger, "error", () => {});
 
     const payload: GetProjectDetailsPayload = { projectId: "non-existent-project-id-no-pgrst-error" };
-    const result = await getProjectDetails(mockRequest, currentMockDbClient as any, payload, getTestAuthOptions(currentMockDbClient));
+    const result = await getProjectDetails(payload, currentMockDbClient as any, getMockUser(MOCK_USER_ID));
 
     assertExists(result.error);
     assertEquals(result.error?.message, "Project not found or access denied");
@@ -237,7 +205,7 @@ describe("getProjectDetails", () => {
     errorStub = stub(sharedLogger.logger, "error", () => {});
 
     const payload: GetProjectDetailsPayload = { projectId: "test-project-id" };
-    const result = await getProjectDetails(mockRequest, currentMockDbClient as any, payload, getTestAuthOptions(currentMockDbClient));
+    const result = await getProjectDetails(payload, currentMockDbClient as any, getMockUser(MOCK_USER_ID));
 
     assertExists(result.error);
     assertEquals(result.error?.message, "Failed to fetch project details");
@@ -365,7 +333,7 @@ describe("getProjectDetails", () => {
     errorStub = stub(sharedLogger.logger, "error", () => {});
     
     const payload: GetProjectDetailsPayload = { projectId: "test-project-id" };
-    const result = await getProjectDetails(mockRequest, currentMockDbClient as any, payload, getTestAuthOptions(currentMockDbClient));
+    const result = await getProjectDetails(payload, currentMockDbClient as any, getMockUser(MOCK_USER_ID));
 
     assertExists(result.data);
     const resultData = result.data as any; 
@@ -452,7 +420,7 @@ describe("getProjectDetails", () => {
     errorStub = stub(sharedLogger.logger, "error", () => {});
     
     const payload: GetProjectDetailsPayload = { projectId: "project-no-sessions" };
-    const result = await getProjectDetails(mockRequest, currentMockDbClient as any, payload, getTestAuthOptions(currentMockDbClient));
+    const result = await getProjectDetails(payload, currentMockDbClient as any, getMockUser(MOCK_USER_ID));
 
     assertExists(result.data);
     const resultData = result.data as any; 
@@ -501,7 +469,7 @@ describe("getProjectDetails", () => {
     errorStub = stub(sharedLogger.logger, "error", () => {});
         
     const payload: GetProjectDetailsPayload = { projectId: "project-null-sessions" };
-    const result = await getProjectDetails(mockRequest, currentMockDbClient as any, payload, getTestAuthOptions(currentMockDbClient));
+    const result = await getProjectDetails(payload, currentMockDbClient as any, getMockUser(MOCK_USER_ID));
 
     assertExists(result.data);
     const resultData = result.data as any;

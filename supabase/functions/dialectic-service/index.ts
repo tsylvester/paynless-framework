@@ -24,7 +24,7 @@ import {
   createSuccessResponse,
 } from "../_shared/cors-headers.ts";
 import { createSupabaseAdminClient } from "../_shared/auth.ts";
-import { logger } from "../_shared/logger.ts";
+import { logger, Logger } from "../_shared/logger.ts";
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js';
 import type {
   ServiceError,
@@ -42,7 +42,7 @@ import { getContributionContentSignedUrlHandler } from "./getContributionContent
 import { startSession } from "./startSession.ts";
 import { generateStageContributions } from "./generateContribution.ts";
 import { listProjects } from "./listProjects.ts";
-import { uploadProjectResourceFileHandler } from "./uploadProjectResourceFile.ts";
+import { uploadProjectResourceFileHandler, type UploadProjectResourceFileResult } from "./uploadProjectResourceFile.ts";
 import { listAvailableDomainOverlays } from "./listAvailableDomainOverlays.ts";
 import { deleteProject } from './deleteProject.ts';
 import { cloneProject, CloneProjectResult } from './cloneProject.ts';
@@ -86,17 +86,17 @@ export const createSignedUrlDefaultFn: CreateSignedUrlFn = async (client, bucket
 
 // Define ActionHandlers interface
 export interface ActionHandlers {
-  createProject: (req: Request, dbClient: SupabaseClient) => Promise<{ data?: DialecticProject; error?: ServiceError; status?: number }>;
+  createProject: (payload: FormData, dbClient: SupabaseClient, user: User) => Promise<{ data?: DialecticProject; error?: ServiceError; status?: number }>;
   listAvailableDomainTags: (dbClient: SupabaseClient, payload?: { stageAssociation?: DialecticStage }) => Promise<DomainTagDescriptor[] | { error: ServiceError }>;
   updateProjectDomainTag: (getUserFn: GetUserFn, dbClient: SupabaseClient, isValidDomainTagFn: IsValidDomainTagFn, payload: UpdateProjectDomainTagPayload, logger: ILogger) => Promise<{ data?: UpdateProjectDomainTagSuccessData; error?: ServiceError }>;
-  getProjectDetails: (req: Request, dbClient: SupabaseClient, payload: GetProjectDetailsPayload) => Promise<{ data?: DialecticProject; error?: ServiceError; status?: number }>;
+  getProjectDetails: (payload: GetProjectDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: DialecticProject; error?: ServiceError; status?: number }>;
   getContributionContentSignedUrlHandler: (getUserFn: GetUserFn, dbClient: SupabaseClient, createSignedUrlFn: CreateSignedUrlFn, logger: ILogger, payload: { contributionId: string }) => Promise<{ data?: { signedUrl: string }; error?: ServiceError; status?: number }>;
-  startSession: (req: Request, dbClient: SupabaseClient, payload: StartSessionPayload, dependencies: { logger: ILogger }) => Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }>;
+  startSession: (user: User, dbClient: SupabaseClient, payload: StartSessionPayload, dependencies: { logger: ILogger }) => Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }>;
   generateStageContributions: (dbClient: SupabaseClient, payload: GenerateStageContributionsPayload, authToken: string, dependencies: { logger: ILogger }) => Promise<{ success: boolean; data?: GenerateStageContributionsSuccessResponse; error?: ServiceError }>;
-  listProjects: (req: Request, dbClient: SupabaseClient) => Promise<{ data?: DialecticProject[]; error?: ServiceError; status?: number }>;
-  uploadProjectResourceFileHandler: (req: Request, dbClient: SupabaseClient, getUserFn: GetUserFn, logger: ILogger) => Promise<{ data?: UploadProjectResourceFileSuccessResponse; error?: ServiceError }>;
+  listProjects: (user: User, dbClient: SupabaseClient) => Promise<{ data?: DialecticProject[]; error?: ServiceError; status?: number }>;
+  uploadProjectResourceFileHandler: (payload: FormData, dbClient: SupabaseClient, user: User, logger: Logger) => Promise<UploadProjectResourceFileResult>;
   listAvailableDomainOverlays: (stageAssociation: DialecticStage, dbClient: SupabaseClient) => Promise<DomainOverlayDescriptor[]>;
-  deleteProject: (dbClient: SupabaseClient, payload: { projectId: string }, userId: string) => Promise<{data?: null, error?: { message: string; details?: string | undefined; }, status: number}>;
+  deleteProject: (dbClient: SupabaseClient, payload: { projectId: string }, userId: string) => Promise<{data?: null, error?: { message: string; details?: string | undefined; }, status?: number}>;
   cloneProject: (dbClient: SupabaseClient, originalProjectId: string, newProjectName: string | undefined, cloningUserId: string) => Promise<CloneProjectResult>;
   exportProject: (dbClient: SupabaseClient, projectId: string, userId: string) => Promise<{ data?: { export_url: string }; error?: ServiceError; status?: number }>;
 }
@@ -149,12 +149,30 @@ export async function handleRequest(
       
       logger.info('Multipart POST request received', { actionFromFormData: action });
 
+      let userForMultipart: User | null = null;
+      if (action === 'createProject' || action === 'uploadProjectResourceFile') {
+        const { data: userData, error: userError } = await getUserFnForRequest();
+        if (userError || !userData?.user) {
+          const err = userError || { message: "User not authenticated for this multipart action.", status: 401, code: 'USER_AUTH_FAILED' };
+          return createErrorResponse(err.message, err.status || 401, req, err);
+        }
+        userForMultipart = userData.user;
+      }
+
       switch (action) {
         case 'createProject':
-          result = await handlers.createProject(req, dbAdminClient);
+          if (!userForMultipart) { 
+            // This case should ideally not be reached if auth check above is comprehensive
+            return createErrorResponse("User authentication failed for createProject.", 401, req, { message: "User authentication failed.", status: 401, code: 'USER_AUTH_FAILED' });
+          }
+          result = await handlers.createProject(formData, dbAdminClient, userForMultipart);
           break;
         case 'uploadProjectResourceFile':
-          result = await handlers.uploadProjectResourceFileHandler(req, dbAdminClient, getUserFnForRequest, logger);
+          if (!userForMultipart) {
+            // This case should ideally not be reached
+            return createErrorResponse("User authentication failed for uploadProjectResourceFile.", 401, req, { message: "User authentication failed.", status: 401, code: 'USER_AUTH_FAILED' });
+          }
+          result = await handlers.uploadProjectResourceFileHandler(formData, dbAdminClient, userForMultipart, logger);
           break;
         default:
           logger.warn('Unknown action for multipart/form-data', { action });
@@ -170,6 +188,23 @@ export async function handleRequest(
       const requestBody: DialecticServiceRequest = await req.json();
       const { action, payload } = requestBody;
       logger.info('JSON request received', { action, payloadExists: !!payload });
+
+      let userForJson: User | null = null;
+      // List actions that require user authentication for JSON payloads
+      const actionsRequiringAuth = [
+        'listProjects', 'getProjectDetails', 'updateProjectDomainTag', 
+        'startSession', 'generateContributions', 'getContributionContentSignedUrl',
+        'deleteProject', 'cloneProject', 'exportProject'
+      ];
+
+      if (actionsRequiringAuth.includes(action)) {
+        const { data: userData, error: userError } = await getUserFnForRequest();
+        if (userError || !userData?.user) {
+          const err = userError || { message: `User not authenticated for action: ${action}.`, status: 401, code: 'USER_AUTH_FAILED' };
+          return createErrorResponse(err.message, err.status || 401, req, err);
+        }
+        userForJson = userData.user;
+      }
 
       switch (action) {
         case 'listAvailableDomainTags': {
@@ -216,9 +251,13 @@ export async function handleRequest(
         case 'updateProjectDomainTag':
           if (!payload) {
               result = { error: { message: "Payload is required for updateProjectDomainTag", status: 400, code: 'PAYLOAD_MISSING' } };
+          } else if (!userForJson) { // Should be caught by auth block if made mandatory for this action
+              return createErrorResponse("User authentication failed for updateProjectDomainTag.", 401, req, { message: "User authentication failed.", status: 401, code: 'USER_AUTH_FAILED' });
           } else {
+              // updateProjectDomainTag still uses getUserFn internally, keeping as is for now unless refactoring its internal auth too.
+              // For now, the userForJson check above is a safeguard if we make it mandatory at this level.
               result = await handlers.updateProjectDomainTag(
-                  getUserFnForRequest, 
+                  getUserFnForRequest, // Kept as is, as handler expects getUserFn
                   dbAdminClient, 
                   isValidDomainTagDefaultFn, 
                   payload as unknown as UpdateProjectDomainTagPayload,
@@ -229,20 +268,23 @@ export async function handleRequest(
         case 'startSession':
           if (!payload) {
               result = { error: { message: "Payload is required for startSession", status: 400, code: 'PAYLOAD_MISSING' } };
+          } else if (!userForJson) {
+              // This case should ideally not be reached due to actionsRequiringAuth check
+              return createErrorResponse("User authentication failed for startSession.", 401, req, { message: "User authentication failed.", status: 401, code: 'USER_AUTH_FAILED' });
           } else {
-              result = await handlers.startSession(req, dbAdminClient, payload as unknown as StartSessionPayload, { logger });
+              result = await handlers.startSession(userForJson, dbAdminClient, payload as unknown as StartSessionPayload, { logger });
           }
           break;
         case 'generateContributions': 
           if (!payload || typeof payload !== 'object' || typeof (payload as Partial<GenerateStageContributionsPayload>).sessionId !== 'string') {
               result = { success: false, error: { message: "Payload with 'sessionId' (string) is required for generateContributions", status: 400, code: 'INVALID_PAYLOAD' } };
-          } else if (!authToken) {
+          } else if (!authToken) { // This action specifically checks authToken, keep for now as per previous logic
                result = { success: false, error: { message: "User authentication token is required for generateContributions", status: 401, code: 'AUTH_TOKEN_MISSING' } };
           } else {
               const currentSessionId = (payload as { sessionId: string }).sessionId;
               const stagePayload: GenerateStageContributionsPayload = {
                   sessionId: currentSessionId,
-                  stage: "thesis",
+                  stage: "thesis", // Default stage, should be passed in payload ideally
               };
               result = await handlers.generateStageContributions(dbAdminClient, stagePayload, authToken, { logger });
           }
@@ -250,9 +292,11 @@ export async function handleRequest(
         case 'getContributionContentSignedUrl':
           if (!payload || typeof payload !== 'object' || typeof (payload as Partial<{ contributionId: string }>).contributionId !== 'string') {
             result = { error: { message: "Invalid payload for getContributionContentSignedUrl. Expected { contributionId: string }", status: 400, code: 'INVALID_PAYLOAD' } };
+          } else if (!userForJson) { // This handler uses getUserFn internally
+            return createErrorResponse("User authentication failed for getContributionContentSignedUrl.", 401, req, { message: "User authentication failed.", status: 401, code: 'USER_AUTH_FAILED' });
           } else {
             result = await handlers.getContributionContentSignedUrlHandler(
-              getUserFnForRequest, 
+              getUserFnForRequest, // Kept as is
               dbAdminClient, 
               createSignedUrlDefaultFn, 
               logger,
@@ -261,101 +305,93 @@ export async function handleRequest(
           }
           break;
         case 'listProjects':
-          result = await handlers.listProjects(req, dbAdminClient);
+          if (!userForJson) { 
+            // This case should ideally not be reached if auth check above is comprehensive
+            return createErrorResponse("User authentication failed for listProjects.", 401, req, { message: "User authentication failed for listProjects.", status: 401, code: 'USER_AUTH_FAILED' });
+          }
+          result = await handlers.listProjects(userForJson, dbAdminClient);
           break;
         case 'getProjectDetails':
           if (!payload || !("projectId" in payload) || typeof payload.projectId !== 'string') { 
               result = { error: { message: "Invalid or missing projectId in payload for getProjectDetails action.", status: 400, code: 'INVALID_PAYLOAD' } };
+          } else if (!userForJson) {
+            // This case should ideally not be reached
+            return createErrorResponse("User authentication failed for getProjectDetails.", 401, req, { message: "User authentication failed for getProjectDetails.", status: 401, code: 'USER_AUTH_FAILED' });
           } else {
-              result = await handlers.getProjectDetails(req, dbAdminClient, payload as unknown as GetProjectDetailsPayload);
+              result = await handlers.getProjectDetails(payload as unknown as GetProjectDetailsPayload, dbAdminClient, userForJson);
           }
           break;
-        case 'deleteProject': {
-          if (!authToken) {
-            result = { error: { message: "User authentication required for deleteProject.", status: 401, code: 'AUTH_TOKEN_MISSING' } };
+        case 'deleteProject': { 
+          if (!userForJson) { // Check if userForJson (which should hold the authenticated user) is available
+            return createErrorResponse("User not authenticated for deleteProject.", 401, req, { message: "User not authenticated for deleteProject.", status: 401, code: 'USER_AUTH_FAILED' });
           } else if (!payload || typeof (payload as Partial<{ projectId: string }>).projectId !== 'string') {
             result = { error: { message: "Invalid payload for deleteProject. Expected { projectId: string }", status: 400, code: 'INVALID_PAYLOAD' } };
           } else {
-            const { data: userData, error: userError } = await getUserFnForRequest();
-            if (userError || !userData?.user) {
-              result = { error: userError || { message: "User not found or authentication failed for deleteProject.", status: 401, code: 'USER_AUTH_FAILED' } };
+            const projectId = (payload as { projectId: string }).projectId;
+            const deleteHandlerResponse = await handlers.deleteProject(
+              dbAdminClient, 
+              { projectId }, 
+              userForJson.id // Pass userForJson.id
+            );
+            if (deleteHandlerResponse.error) {
+              result = { 
+                error: { 
+                  message: deleteHandlerResponse.error.message,
+                  details: deleteHandlerResponse.error.details,
+                  status: deleteHandlerResponse.status, 
+                  code: 'DELETE_PROJECT_FAILED' 
+                }
+              };
             } else {
-              const projectId = (payload as { projectId: string }).projectId;
-              const deleteHandlerResponse = await handlers.deleteProject(
-                dbAdminClient, 
-                { projectId }, 
-                userData.user.id
-              );
-              if (deleteHandlerResponse.error) {
-                result = { 
-                  error: { 
-                    message: deleteHandlerResponse.error.message,
-                    details: deleteHandlerResponse.error.details,
-                    status: deleteHandlerResponse.status, 
-                    code: 'DELETE_PROJECT_FAILED' 
-                  }
-                };
-              } else {
-                result = { data: deleteHandlerResponse.data, status: deleteHandlerResponse.status, success: true };
-              }
+              result = { data: deleteHandlerResponse.data, status: deleteHandlerResponse.status, success: true };
             }
           }
           break;
         }
-        case 'cloneProject': {
-          if (!authToken) {
-             result = { error: { message: "User authentication required for cloneProject.", status: 401, code: 'AUTH_TOKEN_MISSING' } };
+        case 'cloneProject': { 
+          if (!userForJson) { // Check if userForJson is available
+            return createErrorResponse("User not authenticated for cloneProject.", 401, req, { message: "User not authenticated for cloneProject.", status: 401, code: 'USER_AUTH_FAILED' });
           } else if (!payload || typeof (payload as Partial<{ projectId: string; newProjectName?: string }>).projectId !== 'string') {
              result = { error: { message: "Invalid payload for cloneProject. Expected { projectId: string, newProjectName?: string }", status: 400, code: 'INVALID_PAYLOAD' } };
           } else {
-            const { data: userData, error: userError } = await getUserFnForRequest();
-            if (userError || !userData?.user) {
-              result = { error: userError || { message: "User not found or authentication failed for cloneProject.", status: 401, code: 'USER_AUTH_FAILED' } };
-            } else {
-              const clonePayload = payload as { projectId: string; newProjectName?: string };
-              const cloneHandlerResponse = await handlers.cloneProject(
-                dbAdminClient, 
-                clonePayload.projectId,
-                clonePayload.newProjectName,
-                userData.user.id
-              );
-              if (cloneHandlerResponse.error) {
-                let status = 500;
-                if (cloneHandlerResponse.error.message.toLowerCase().includes('not found')) {
-                  status = 404;
-                }
-                result = { 
-                  error: { 
-                    message: cloneHandlerResponse.error.message,
-                    details: cloneHandlerResponse.error.details as string | undefined, 
-                    status: status, 
-                    code: cloneHandlerResponse.error.code || 'CLONE_PROJECT_FAILED'
-                  }
-                };
-              } else {
-                result = { data: cloneHandlerResponse.data, status: 201, success: true }; 
+            const clonePayload = payload as { projectId: string; newProjectName?: string };
+            const cloneHandlerResponse = await handlers.cloneProject(
+              dbAdminClient, 
+              clonePayload.projectId,
+              clonePayload.newProjectName,
+              userForJson.id // Pass userForJson.id
+            );
+            if (cloneHandlerResponse.error) {
+              let status = 500;
+              if (cloneHandlerResponse.error.message.toLowerCase().includes('not found')) {
+                status = 404;
               }
+              result = { 
+                error: { 
+                  message: cloneHandlerResponse.error.message,
+                  details: cloneHandlerResponse.error.details as string | undefined, 
+                  status: status, 
+                  code: cloneHandlerResponse.error.code || 'CLONE_PROJECT_FAILED'
+                }
+              };
+            } else {
+              result = { data: cloneHandlerResponse.data, status: 201, success: true }; 
             }
           }
           break;
         }
-        case 'exportProject': {
-          if (!authToken) {
-             result = { error: { message: "User authentication required for exportProject.", status: 401, code: 'AUTH_TOKEN_MISSING' } };
+        case 'exportProject': { 
+          if (!userForJson) { // Check if userForJson is available
+            return createErrorResponse("User not authenticated for exportProject.", 401, req, { message: "User not authenticated for exportProject.", status: 401, code: 'USER_AUTH_FAILED' });
           } else if (!payload || typeof (payload as Partial<{ projectId: string }>).projectId !== 'string') {
              result = { error: { message: "Invalid payload for exportProject. Expected { projectId: string }", status: 400, code: 'INVALID_PAYLOAD' } };
           } else {
-            const { data: userData, error: userError } = await getUserFnForRequest();
-            if (userError || !userData?.user) {
-              result = { error: userError || { message: "User not found or authentication failed for exportProject.", status: 401, code: 'USER_AUTH_FAILED' } };
-            } else {
-              const projectId = (payload as { projectId: string }).projectId;
-              result = await handlers.exportProject(
-                dbAdminClient, 
-                projectId,
-                userData.user.id
-             );
-            }
+            const projectId = (payload as { projectId: string }).projectId;
+            result = await handlers.exportProject(
+              dbAdminClient, 
+              projectId,
+              userForJson.id // Pass userForJson.id
+           );
           }
           break;
         }

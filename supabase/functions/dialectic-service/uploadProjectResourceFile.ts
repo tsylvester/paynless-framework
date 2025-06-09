@@ -1,187 +1,194 @@
 // deno-lint-ignore-file no-explicit-any
-import { SupabaseClient } from '@supabase/supabase-js';
-import {
-  DialecticProjectResource,
-  UploadProjectResourceFileSuccessResponse
-} from './dialectic.interface.ts';
-import { uploadToStorage, getFileMetadata } from '../_shared/supabase_storage_utils.ts';
-import type { // Import other shared types
-  ServiceError,
-  GetUserFn,
-  ILogger
-} from '../_shared/types.ts';
+import type { SupabaseClient, User } from "@supabase/supabase-js";
+import type { Logger } from "../_shared/logger.ts";
+import { DialecticProjectResource } from "./dialectic.interface.ts";
 
-// Local DI interfaces are removed as they are now imported/handled.
-
-const BUCKET_NAME = 'dialectic-contributions';
+// Define a type for the expected structure of the response
+export interface UploadProjectResourceFileResult {
+  data?: DialecticProjectResource;
+  error?: {
+    message: string;
+    details?: string;
+    status: number;
+  };
+}
 
 export async function uploadProjectResourceFileHandler(
-  req: Request,
-  dbAdminClient: SupabaseClient,
-  getUserFn: GetUserFn, 
-  loggerInstance: ILogger
-): Promise<{ data?: UploadProjectResourceFileSuccessResponse; error?: ServiceError }> { 
-  loggerInstance.info('uploadProjectResourceFileHandler started');
-
-  if (req.method !== 'POST') {
-    return { error: { message: 'Method not allowed. Please use POST.', status: 405, code: 'METHOD_NOT_ALLOWED' } };
-  }
-
-  let formData;
-  try {
-    formData = await req.formData();
-  } catch (e: unknown) {
-    const errorMessage = e instanceof Error ? e.message : String(e);
-    loggerInstance.error('Failed to parse FormData', { error: errorMessage });
-    return { error: { message: 'Invalid FormData.', status: 400, details: errorMessage, code: 'FORMDATA_ERROR' } };
-  }
-
-  const file = formData.get('file') as File | null;
-  const projectId = formData.get('projectId') as string | null;
-  const resourceDescription = formData.get('resourceDescription') as string | null;
-
-  if (!file) {
-    return { error: { message: "'file' field is missing in FormData.", status: 400, code: 'MISSING_FILE' } };
-  }
-  if (!projectId) {
-    return { error: { message: "'projectId' field is missing in FormData.", status: 400, code: 'MISSING_PROJECT_ID' } };
-  }
-  if (typeof projectId !== 'string') {
-    return { error: { message: "'projectId' must be a string.", status: 400, code: 'INVALID_PROJECT_ID_TYPE' } };
-  }
-
-  const { data: { user }, error: userError } = await getUserFn(); // user here is of type User | null (from npm via GetUserFnResult)
-  if (userError || !user) {
-    loggerInstance.warn('User not authenticated for uploadProjectResourceFile', { error: userError });
-    const errorResponse: ServiceError = userError 
-      ? { ...userError, code: userError.code || 'AUTH_ERROR' } 
-      : { message: 'User not authenticated.', status: 401, code: 'AUTH_ERROR' };
-    return { error: errorResponse };
-  }
-  // After this check, user is confirmed to be of type User (not null)
+  payload: FormData,
+  dbClient: SupabaseClient,
+  user: User,
+  logger: Logger,
+): Promise<UploadProjectResourceFileResult> {
+  logger.info("uploadProjectResourceFileHandler function invoked");
 
   try {
-    // 1. Verify project ownership
-    const { data: project, error: projectError } = await dbAdminClient
-      .from('dialectic_projects')
-      .select('id, user_id')
-      .eq('id', projectId)
-      .eq('user_id', user.id) // user.id is correct as user is of type User
-      .single();
+    const projectId = payload.get("projectId") as string | null;
+    const resourceFile = payload.get("resourceFile") as File | null;
+    const resourceDescription = payload.get("resourceDescription") as string | null;
 
-    if (projectError) {
-      loggerInstance.error('Error fetching project for ownership verification', { projectId, userId: user.id, error: projectError });
-      if (projectError.code === 'PGRST116') { 
-        return { error: { message: 'Project not found or access denied.', status: 404, code: 'PROJECT_NOT_FOUND_OR_FORBIDDEN' } };
+    logger.info(
+      "Received payload for file upload",
+      {
+        projectId,
+        fileName: resourceFile?.name,
+        fileSize: resourceFile?.size,
+        fileType: resourceFile?.type,
+        resourceDescription,
       }
-      return { error: { message: 'Failed to verify project ownership.', status: 500, details: projectError.message, code: 'DB_PROJECT_FETCH_ERROR' } };
-    }
-
-    if (!project) { 
-        loggerInstance.warn('Project not found after successful query (edge case)', { projectId, userId: user.id });
-        return { error: { message: 'Project not found or access denied.', status: 404, code: 'PROJECT_NOT_FOUND_UNEXPECTED' } };
-    }
-
-    // 2. Prepare for storage
-    const resourceId = crypto.randomUUID();
-    const originalFileName = file.name;
-    const storagePath = `projects/${projectId}/resources/${resourceId}/${originalFileName}`;
-
-    // 3. Upload to Supabase Storage
-    loggerInstance.info('Attempting to upload file to storage', { bucket: BUCKET_NAME, path: storagePath, fileName: originalFileName });
-    const { error: uploadError } = await uploadToStorage(
-      dbAdminClient, 
-      BUCKET_NAME,
-      storagePath,
-      file, 
-      { contentType: file.type || 'application/octet-stream', upsert: false }
     );
 
-    if (uploadError) {
-      loggerInstance.error('Failed to upload file to Supabase Storage', { error: uploadError, bucket: BUCKET_NAME, path: storagePath });
-      const details = uploadError instanceof Error ? uploadError.message : String(uploadError);
-      return { error: { message: 'Failed to upload file to storage.', status: 500, details, code: 'STORAGE_UPLOAD_ERROR' } };
+    if (!projectId) {
+      return { error: { message: "projectId is required.", status: 400 } };
     }
-    loggerInstance.info('File uploaded successfully', { path: storagePath });
-    
-    // 4. Get file metadata (size) after upload
-    let sizeBytes = file.size; 
-    const metadataResult = await getFileMetadata(dbAdminClient, BUCKET_NAME, storagePath);
-    if (metadataResult.error) {
-        loggerInstance.warn('Failed to get file metadata from storage, using FormData size as fallback.', { path: storagePath, error: metadataResult.error });
-    } else if (metadataResult.size !== undefined) {
-        sizeBytes = metadataResult.size;
-        loggerInstance.info('Got file size from storage metadata', { sizeBytes });
+    if (!resourceFile) {
+      return { error: { message: "resourceFile is required.", status: 400 } };
     }
 
-    // 5. Insert record into dialectic_project_resources
-    const newResource: Omit<DialecticProjectResource, 'id' | 'created_at' | 'updated_at'> & {id: string} = {
-      id: resourceId,
+    // Verify user has permission to upload to this project
+    try {
+      const { data: projectData, error: projectError } = await dbClient
+        .from('dialectic_projects')
+        .select('id, user_id') // Select minimal data, user_id for ownership check
+        .eq('id', projectId)
+        .single(); // Use single to expect one row or an error
+
+      if (projectError) {
+        logger.error(
+          "Error verifying project ownership or project not found", 
+          { projectId, userId: user.id, error: projectError.message }
+        );
+        // PGRST116 is the code for "zero rows returned by ডান single-row INSERT, UPDATE, or DELETE statement"
+        // or " exactamente zero rows returned by a SELECT statement that expected one"
+        const status = projectError.code === 'PGRST116' ? 404 : 500;
+        const message = projectError.code === 'PGRST116' ? 
+          'Project not found or user does not have permission to upload to this project.' :
+          'Failed to verify project ownership.';
+        return { error: { message, details: projectError.message, status } };
+      }
+
+      if (!projectData) { // Should be caught by projectError with PGRST116, but as a safeguard
+        logger.warn("Project not found after ownership check (no error, but no data)", { projectId, userId: user.id });
+        return { error: { message: 'Project not found.', status: 404 } };
+      }
+
+      if (projectData.user_id !== user.id) {
+        logger.warn("User permission denied for project resource upload", { projectId, projectOwner: projectData.user_id, requestingUser: user.id });
+        return { error: { message: 'Permission denied: You do not own this project.', status: 403 } };
+      }
+
+      logger.info("User permission verified for project", { projectId, userId: user.id });
+
+    } catch (e) { // Catch any unexpected errors during permission check phase
+      logger.error("Unexpected error during project permission verification", { projectId, userId: user.id, error: e });
+      const details = e instanceof Error ? e.message : String(e);
+      return { error: { message: "An unexpected error occurred while verifying project permissions.", details, status: 500 } };
+    }
+
+    const projectResourceRecordId = crypto.randomUUID();
+    const storagePath = `projects/${projectId}/resources/${projectResourceRecordId}/${resourceFile.name}`;
+    const storageBucket = "dialectic-contributions"; // Assuming this is your target bucket
+
+    logger.info(`Attempting to upload file to storage: ${storageBucket}/${storagePath}`);
+
+    const { data: uploadData, error: uploadError } = await dbClient.storage
+      .from(storageBucket)
+      .upload(storagePath, resourceFile, {
+        contentType: resourceFile.type || "application/octet-stream", // Default content type
+        upsert: false, // Do not overwrite if file already exists (should be unique due to UUID path)
+      });
+
+    if (uploadError) {
+      logger.error("Error uploading file to Supabase storage", {
+        error: uploadError,
+        storagePath,
+        bucket: storageBucket,
+      });
+      return {
+        error: {
+          message: "Failed to upload resource file to storage.",
+          details: uploadError.message,
+          status: 500,
+        },
+      };
+    }
+
+    if (!uploadData) {
+      logger.warn("No data returned from storage upload, though no explicit error.", { storagePath });
+      return {
+        error: {
+          message: "Failed to upload resource file, no upload data returned from storage.",
+          status: 500,
+        },
+      };
+    }
+
+    logger.info("File uploaded successfully to storage", { path: uploadData.path });
+
+    const resourceToInsert = {
+      id: projectResourceRecordId,
       project_id: projectId,
-      user_id: user.id, // user.id is correct
-      file_name: originalFileName,
-      storage_bucket: BUCKET_NAME,
-      storage_path: storagePath,
-      mime_type: file.type || 'application/octet-stream',
-      size_bytes: sizeBytes,
-      resource_description: resourceDescription || null,
+      user_id: user.id,
+      file_name: resourceFile.name,
+      storage_bucket: storageBucket,
+      storage_path: uploadData.path, // Use the path returned by storage
+      mime_type: resourceFile.type || "application/octet-stream",
+      size_bytes: resourceFile.size,
+      resource_description: resourceDescription || `Resource file: ${resourceFile.name}`, // Default description
+      status: "active", // Assuming 'active' is a valid status
     };
 
-    const { data: dbResource, error: dbInsertError } = await dbAdminClient
-      .from('dialectic_project_resources')
-      .insert(newResource)
+    logger.info("Attempting to insert resource record into database", { data: resourceToInsert });
+
+    const { data: dbResourceData, error: dbInsertError } = await dbClient
+      .from("dialectic_project_resources")
+      .insert(resourceToInsert)
       .select()
       .single();
 
     if (dbInsertError) {
-      loggerInstance.error('Failed to insert project resource record into DB', { error: dbInsertError, resourceData: newResource });
-      return { error: { message: 'Failed to save resource metadata.', status: 500, details: dbInsertError.message, code: 'DB_INSERT_ERROR' } };
-    }
-    
-    if (!dbResource) {
-        loggerInstance.error('DB resource not found after insert (unexpected)', { resourceId });
-        return { error: { message: 'Failed to create resource, record not found after insert.', status: 500, code: 'DB_INSERT_UNEXPECTED_MISSING' } };
-    }
-
-    // 6. Link resource to project if it's an initial prompt resource
-    // (This assumes that if a file is uploaded via this endpoint in the context of project creation,
-    // it's meant to be the initial prompt resource. The frontend logic should ensure
-    // initialUserPrompt is empty in the CreateProjectPayload if this flow is used for the initial prompt.)
-    const { error: updateProjectError } = await dbAdminClient
-      .from('dialectic_projects')
-      .update({ initial_prompt_resource_id: dbResource.id })
-      .eq('id', projectId);
-
-    if (updateProjectError) {
-      loggerInstance.error('Failed to link project resource to dialectic_project', { 
-        projectId, 
-        resourceId: dbResource.id, 
-        error: updateProjectError 
+      logger.error("Error inserting resource record into database", {
+        error: dbInsertError,
+        resourceData: resourceToInsert,
       });
-      // Even if linking fails, the resource is created. 
-      // Depending on desired atomicity, this could be a rollback point or just a warning.
-      // For now, treating as a critical error for the operation's intent.
-      return { 
-        error: { 
-          message: 'Resource created but failed to link to project.', 
-          status: 500, 
-          details: updateProjectError.message, 
-          code: 'DB_PROJECT_LINK_ERROR' 
-        }
+      // Attempt to clean up the uploaded file if DB insert fails
+      logger.info("Attempting to remove uploaded file from storage due to DB error", { path: uploadData.path });
+      const { error: removeError } = await dbClient.storage.from(storageBucket).remove([uploadData.path]);
+      if (removeError) {
+        logger.error("Failed to remove orphaned file from storage", { path: uploadData.path, error: removeError });
+      }
+      return {
+        error: {
+          message: "Failed to record resource file metadata in database.",
+          details: dbInsertError.message,
+          status: 500,
+        },
       };
     }
 
-    loggerInstance.info('Project resource created and linked successfully', { resourceId: dbResource.id, projectId });
-    return {
-      data: {
-        message: 'File uploaded and resource created successfully.',
-        resource: dbResource as DialecticProjectResource,
-      }
-    };
+    if (!dbResourceData) {
+      logger.warn("No data returned from database insert for resource, though no explicit error.");
+      return {
+        error: {
+          message: "Failed to record resource file metadata, no data returned from database.",
+          status: 500,
+        },
+      };
+    }
+    
+    const typedResourceData = dbResourceData as DialecticProjectResource;
 
-  } catch (e: unknown) {
-    const errorMessage = e instanceof Error ? e.message : String(e);
-    loggerInstance.error('Unexpected error in uploadProjectResourceFileHandler', { error: errorMessage, projectId });
-    return { error: { message: 'An unexpected error occurred.', status: 500, details: errorMessage, code: 'UNEXPECTED_ERROR' } };
+    logger.info("Resource file uploaded and recorded successfully", { resourceId: typedResourceData.id });
+    return { data: typedResourceData };
+
+  } catch (e) {
+    logger.error("Unexpected error in uploadProjectResourceFileHandler", { error: e });
+    const details = e instanceof Error ? e.message : String(e);
+    return {
+      error: {
+        message: "An unexpected error occurred while uploading the resource file.",
+        details,
+        status: 500,
+      },
+    };
   }
 }

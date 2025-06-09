@@ -1,540 +1,625 @@
 // deno-lint-ignore-file no-explicit-any
-import { assertEquals, assertExists, assertObjectMatch } from "https://deno.land/std@0.170.0/testing/asserts.ts";
-// import { SupabaseClient } from '@supabase/supabase-js'; // Assuming this type is available. Will be provided by mock.
-import type { User, SupabaseClient } from "npm:@supabase/supabase-js@^2.43.4";
-import { uploadProjectResourceFileHandler } from './uploadProjectResourceFile.ts';
+import { assertEquals, assertExists, assertNotEquals, assert, assertInstanceOf } from "https://deno.land/std@0.190.0/testing/asserts.ts";
+import { spy, stub, restore } from "https://deno.land/std@0.190.0/testing/mock.ts";
+import type { Spy } from "https://deno.land/std@0.190.0/testing/mock.ts";
+import type { User } from "npm:@supabase/supabase-js";
+import { uploadProjectResourceFileHandler } from "./uploadProjectResourceFile.ts";
+import type { DialecticProjectResource } from "./dialectic.interface.ts";
 import {
-    // DialecticProjectResource, // Not directly used in this test's assertions after refactor
-    // UploadProjectResourceFileSuccessResponse // Not directly used in this test's assertions after refactor
-} from './dialectic.interface.ts';
-import {
-    createMockSupabaseClient,
-    type MockSupabaseClientSetup,
-    type MockSupabaseDataConfig,
-} from '../_shared/supabase.mock.ts';
-import type { ILogger, LogMetadata } from '../_shared/types.ts';
+  createMockSupabaseClient,
+} from "../_shared/supabase.mock.ts";
+import { logger as testLoggerInstance, Logger } from "../_shared/logger.ts"; // Assuming default instance is fine
+import type { MockSupabaseClientSetup, MockSupabaseDataConfig, MockQueryBuilderState, IMockStorageUploadResponse, IMockStorageBasicResponse } from "../_shared/supabase.mock.ts"; // For typing mock client setup
 
+// Define testUserOwnsProject for use in this test file
+const testUserOwnsProject: User = {
+  id: "user-owns-project",
+  aud: "authenticated",
+  role: "authenticated",
+  email: "user-owns-project@example.com",
+  created_at: new Date().toISOString(),
+  app_metadata: { provider: 'email', providers: ['email'] },
+  user_metadata: {},
+};
+
+// Dummy user for tests that don't focus on specific user ownership but require a User object
+const genericTestUser: User = {
+  id: "test-user-generic",
+  aud: "authenticated",
+  role: "authenticated",
+  email: "generic@example.com",
+  created_at: new Date().toISOString(),
+  app_metadata: { provider: 'email', providers: ['email'] },
+  user_metadata: {},
+};
 
 // Mock DI Interfaces (should ideally be imported from a shared testing mock file)
 // interface User { id: string; } // Will use SupabaseUser from npm:@supabase/supabase-js
 interface AuthError { message: string; status?: number; details?: string; } // Can be removed if not used elsewhere
-interface GetUserFnResult { data: { user: User | null }; error: AuthError | null; } // Adjusted to SupabaseUser
-interface GetUserFn { (): Promise<GetUserFnResult>; }
+// interface GetUserFnResult { data: { user: User | null }; error: AuthError | null; } // Adjusted to SupabaseUser - No longer needed for direct User pass
+// interface GetUserFn { (): Promise<GetUserFnResult>; } // No longer needed
 
-const mockLogger: ILogger = {
-    debug: (message: string, metadata?: LogMetadata) => console.debug("[DEBUG]", message, metadata || ''),
-    info: (message: string, metadata?: LogMetadata) => console.log("[INFO]", message, metadata || ''),
-    warn: (message: string, metadata?: LogMetadata) => console.warn("[WARN]", message, metadata || ''),
-    error: (message: string | Error, metadata?: LogMetadata) => console.error("[ERROR]", message, metadata || ''),
-};
+// const mockLogger: ILogger = { // REMOVED - using testLoggerInstance
+//     debug: (message: string, metadata?: LogMetadata) => console.debug("[DEBUG]", message, metadata || ''),
+//     info: (message: string, metadata?: LogMetadata) => console.log("[INFO]", message, metadata || ''),
+//     warn: (message: string, metadata?: LogMetadata) => console.warn("[WARN]", message, metadata || ''),
+//     error: (message: string | Error, metadata?: LogMetadata) => console.error("[ERROR]", message, metadata || ''),
+// };
 
 // --- Mock Implementations --- (REMOVED - Will use createMockSupabaseClient)
-// let mockUser: User | null = { id: 'test-user-id' };
-// let mockUserError: AuthError | null = null;
-// const mockGetUser: GetUserFn = async () => ({ data: { user: mockUser }, error: mockUserError });
-
-// let mockProjectData: any = { id: 'test-project-id', user_id: 'test-user-id' };
-// let mockProjectError: any = null;
-// let mockDbInsertData: any = null;
-// let mockDbInsertError: any = null;
-// let mockUploadError: Error | null = null;
-// const mockMetadataResult: { size?: number; mimeType?: string; error: Error | null } = { size: 12345, error: null };
-// let mockListResult: { data: any[] | null, error: Error | null } = { data: [], error: null };
-
-// const mockDbAdminClient = { ... } as unknown as SupabaseClient; // REMOVED
-
-// Mock external utilities if they are not part of SupabaseClient passed to handler
-// For now, assuming uploadToStorage and getFileMetadata are simple wrappers around dbAdminClient.storage.from()...
-// If they are more complex, they should be mocked directly via import mockery.
 
 // Helper to create a mock FormData object
-function createMockFormData(fileData?: { name: string, type: string, content: string }, projectId?: string, resourceDescription?: string): FormData {
+function createMockFormData(
+    fileData?: { name: string, type: string, content: string, size?: number }, 
+    projectId?: string, 
+    resourceDescription?: string
+): FormData {
     const fd = new FormData();
     if (fileData) {
         const blob = new Blob([fileData.content], { type: fileData.type });
-        fd.append('file', blob, fileData.name);
+        Object.defineProperty(blob, 'size', { value: fileData.size !== undefined ? fileData.size : blob.size, configurable: true });
+        fd.append('resourceFile', blob, fileData.name);
     }
     if (projectId) fd.append('projectId', projectId);
     if (resourceDescription) fd.append('resourceDescription', resourceDescription);
     return fd;
 }
 
-// Helper to create a mock Request object
-function createMockRequest(method: string, formData?: FormData, headers?: Record<string, string>): Request {
-    const body = formData;
-    return new Request('http://localhost/test', {
-        method,
-        body,
-        headers: { ...(formData ? {} : {'Content-Type': 'application/json'}), ...headers }, // FormData sets its own Content-Type
+// Helper to create a mock Request object - NO LONGER DIRECTLY USED BY HANDLER CALL
+// function createMockRequest(method: string, formData?: FormData, headers?: Record<string, string>): Request {
+//     const body = formData;
+//     return new Request('http://localhost/test', {
+//         method,
+//         body,
+//         headers: { ...(formData ? {} : {'Content-Type': 'application/json'}), ...headers }, // FormData sets its own Content-Type
+//     });
+// }
+
+Deno.test(
+  "'uploadProjectResourceFileHandler - successful upload'",
+  async (t) => {
+    const currentTestUserId = "user-owns-project";
+    const testProjectId = "project-123";
+    const mockFile = new File(["content"], "test.md", {
+      type: "text/markdown",
     });
-}
+    const mockResourceDescription = "Test description";
+    const formData = new FormData();
+    formData.append("projectId", testProjectId);
+    formData.append("resourceFile", mockFile);
+    formData.append("resourceDescription", mockResourceDescription);
 
-Deno.test('uploadProjectResourceFileHandler - successful upload', async () => {
-    const currentTestUserId = 'user-owns-project';
-    const testProjectId = 'project-123';
-    const testFileName = 'test.md';
-    const testFileSize = 100;
-    const testMimeType = 'text/markdown';
-    const resourceDescription = 'Test description';
-    const generatedResourceId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef'; // Valid v4 UUID format
+    const generatedResourceId = "a1b2c3d4-e5f6-7890-1234-567890abcdef";
 
-    // Expected data for the dialectic_project_resources table insert
-    const expectedResourceInsert = {
-        project_id: testProjectId,
-        user_id: currentTestUserId,
-        file_name: testFileName,
-        storage_bucket: 'dialectic-contributions',
-        mime_type: testMimeType,
-        size_bytes: testFileSize,
-        resource_description: resourceDescription,
-    };
+    let mockSetup: MockSupabaseClientSetup | undefined;
 
-    const mockDbInsertResultData = {
-        ...expectedResourceInsert,
-        id: generatedResourceId, 
-        storage_path: `projects/${testProjectId}/resources/${generatedResourceId}/${testFileName}`,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-    };
-
-    const mockSupabaseConfig: MockSupabaseDataConfig = {
-        mockUser: {
-            id: currentTestUserId,
-            aud: 'authenticated',
-            role: 'authenticated',
-            email: 'test@example.com'
-        } as User,
+    const mockSupabaseConfigObj: MockSupabaseDataConfig = {
         genericMockResults: {
-            'dialectic_projects': { 
-                select: async (state) => {
-                    const projectIdFilter = state.filters.find(f => f.column === 'id' && f.value === testProjectId);
-                    const userIdFilter = state.filters.find(f => f.column === 'user_id' && f.value === currentTestUserId);
-                    if (projectIdFilter && userIdFilter) {
-                        return {
-                            data: [{ id: testProjectId, user_id: currentTestUserId }],
-                            error: null,
-                            count: 1,
-                            status: 200,
-                            statusText: 'OK'
-                        };
-                    }
-                    return { data: null, error: new Error('Project not found or not owned by user'), count: 0, status: 404, statusText: 'Not Found' };
-                },
-                update: async (state) => {
-                    const projectIdFilter = state.filters.find(f => f.column === 'id' && f.value === testProjectId);
-                    if (projectIdFilter && (state.updateData as Partial<{ initial_prompt_resource_id: string }>)?.initial_prompt_resource_id === generatedResourceId) {
-                        return {
-                            data: [{ id: testProjectId, initial_prompt_resource_id: generatedResourceId }],
-                            error: null,
-                            count: 1,
-                            status: 200,
-                            statusText: 'OK'
-                        };
-                    }
-                    return { data: null, error: new Error('Update mock failure: project ID not found or resource ID mismatch'), count: 0, status: 400, statusText: 'Bad Request' };
-                }
+          dialectic_projects: {
+            select: async () => ({
+              data: [{ id: testProjectId, user_id: currentTestUserId }],
+              error: null,
+              count: 1,
+              status: 200,
+              statusText: "OK",
+            }),
+          },
+          dialectic_project_resources: {
+            insert: async (state: MockQueryBuilderState): Promise<{ data: DialecticProjectResource[] | null; error: any; count?: number | null; status?: number; statusText?: string }> => {
+              const resourceToInsert = state.insertData as DialecticProjectResource;
+              const insertedResource: DialecticProjectResource = {
+                id: generatedResourceId,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                status: "active",
+                project_id: resourceToInsert.project_id || testProjectId,
+                user_id: resourceToInsert.user_id,
+                file_name: resourceToInsert.file_name || mockFile.name,
+                storage_bucket: resourceToInsert.storage_bucket || "dialectic-contributions",
+                storage_path: resourceToInsert.storage_path || `projects/${testProjectId}/resources/${generatedResourceId}/${mockFile.name}`,
+                mime_type: resourceToInsert.mime_type || mockFile.type,
+                size_bytes: resourceToInsert.size_bytes || mockFile.size,
+                resource_description: resourceToInsert.resource_description || mockResourceDescription,
+                embeddings_status: "pending",
+                last_embedded_at: null,
+                checksum: null,
+                processing_status: "pending",
+                processing_error: null,
+                metadata: null,
+              };
+              return { data: [insertedResource], error: null, count: 1, status: 201, statusText: "Created" };
             },
-            'dialectic_project_resources': { 
-                insert: async (_state) => { 
-                    return {
-                        data: [mockDbInsertResultData], 
-                        error: null,
-                        count: 1,
-                        status: 201,
-                        statusText: 'Created'
-                    };
-                }
-            }
+          },
         },
         storageMock: {
-            defaultBucket: 'dialectic-contributions',
-            uploadResult: async (bucketId, path, _body, _options) => {
-                if (bucketId === 'dialectic-contributions' && path.startsWith(`projects/${testProjectId}/resources/${generatedResourceId}/`)) {
-                    return { data: { path }, error: null };
-                }
-                return { data: null, error: new Error('Storage upload mock failure: incorrect path or bucket') };
+          defaultBucket: "dialectic-contributions",
+          uploadResult: async (): Promise<IMockStorageUploadResponse> => ({
+            data: {
+              path:
+                `projects/${testProjectId}/resources/${generatedResourceId}/${mockFile.name}`,
             },
-            listResult: async (bucketId, pathPrefix, _options) => {
-                if (bucketId === 'dialectic-contributions' && pathPrefix === `projects/${testProjectId}/resources/${generatedResourceId}`) {
-                    return {
-                        data: [{
-                            name: testFileName,
-                            id: 'mock-storage-file-id',
-                            updated_at: new Date().toISOString(),
-                            created_at: new Date().toISOString(),
-                            last_accessed_at: new Date().toISOString(),
-                            metadata: {
-                                size: testFileSize,
-                                mimetype: testMimeType,
-                                eTag: "some-etag",
-                                cacheControl: "max-age=3600",
-                                lastModified: new Date().toISOString(),
-                                httpStatusCode: 200
-                            }
-                        }],
-                        error: null
-                    };
-                }
-                return { data: [], error: new Error('Storage list mock failure: incorrect path or bucket for list') };
-            }
-        }
-    };
+            error: null,
+          }),
+          removeResult: async (): Promise<IMockStorageBasicResponse> => ({ data: null, error: null }),
+        },
+      };
 
-    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(currentTestUserId, mockSupabaseConfig);
+    stub(crypto, "randomUUID", () => generatedResourceId as any);
 
-    const formData = createMockFormData({ name: testFileName, type: testMimeType, content: '# Test' }, testProjectId, resourceDescription);
-    const req = createMockRequest('POST', formData);
+    try {
+      mockSetup = createMockSupabaseClient(currentTestUserId, mockSupabaseConfigObj as any);
+      const { client: mockDbClient, spies: mockSpies } = mockSetup;
 
-    const getUserFnForTest: GetUserFn = () => mockSupabase.client.auth.getUser() as Promise<GetUserFnResult>;
+      const result = await uploadProjectResourceFileHandler(
+        formData,
+        mockDbClient as any, 
+        testUserOwnsProject, 
+        testLoggerInstance,
+      );
 
-    const originalCryptoRandomUUID = crypto.randomUUID;
-    globalThis.crypto.randomUUID = () => generatedResourceId;
+      assert(result, "Result should be defined");
+      assertEquals(result.error, undefined, "Expected no error on successful upload"); 
+      assertExists(result.data, "Expected data for successful upload");
+      assertEquals(result.data?.project_id, testProjectId);
+      assertEquals(result.data?.file_name, mockFile.name);
+      assertEquals(
+        result.data?.resource_description,
+        mockResourceDescription,
+      );
+      assertEquals(result.data?.id, generatedResourceId);
+      assertEquals(result.data?.status, "active"); 
 
-    const result = await uploadProjectResourceFileHandler(
-        req, 
-        mockSupabase.client as unknown as SupabaseClient, // Cast to SupabaseClient
-        getUserFnForTest, 
-        mockLogger
-    );
-
-    globalThis.crypto.randomUUID = originalCryptoRandomUUID;
-
-    assertExists(result.data, 'Expected data for successful upload');
-    assertEquals(result.error, undefined, `Unexpected error: ${result.error?.message}`);
-    assertEquals(result.data?.message, 'File uploaded and resource created successfully.');
-    assertExists(result.data?.resource, "Resource object should exist in successful response");
-
-    if (result.data?.resource) {
-        assertEquals(result.data.resource.id, generatedResourceId);
-        assertEquals(result.data.resource.project_id, testProjectId);
-        assertEquals(result.data.resource.user_id, currentTestUserId);
-        assertEquals(result.data.resource.file_name, testFileName);
-        assertEquals(result.data.resource.storage_bucket, 'dialectic-contributions');
-        assertEquals(result.data.resource.storage_path, `projects/${testProjectId}/resources/${generatedResourceId}/${testFileName}`);
-        assertEquals(result.data.resource.mime_type, testMimeType);
-        assertEquals(result.data.resource.size_bytes, testFileSize);
-        assertEquals(result.data.resource.resource_description, resourceDescription);
+      const storageAPI = mockDbClient.storage.from("dialectic-contributions");
+      const removeSpy = storageAPI.remove as Spy<any>; 
+      assert(
+        removeSpy.calls.length === 0,
+        "Storage remove should not be called on successful insert",
+      );
+    } finally {
+      restore(); 
+      if (mockSetup && mockSetup.clearAllStubs) {
+        mockSetup.clearAllStubs(); 
+      }
     }
+  },
+);
 
-    const { fromSpy, storage: storageSpies } = mockSupabase.spies;
+Deno.test('uploadProjectResourceFileHandler - error when resourceFile is missing', async () => {
+    const { client: mockDbClient, clearAllStubs } = createMockSupabaseClient('test-user');
+    const mockUserForTest: User = { id: 'test-user', aud: 'authenticated', role: 'authenticated', email: 'test@example.com', created_at: new Date().toISOString(), app_metadata: {}, user_metadata: {} };
     
-    const projectQuerySpiesCollection = mockSupabase.spies.getAllQueryBuilderSpies('dialectic_projects');
-    const projectSelectSpy = projectQuerySpiesCollection && projectQuerySpiesCollection.length > 0 ? projectQuerySpiesCollection[0]?.select : undefined;
-    const projectUpdateSpy = projectQuerySpiesCollection && projectQuerySpiesCollection.length > 1 ? projectQuerySpiesCollection[1]?.update : undefined;
+    const formData = createMockFormData(undefined, 'project-123'); // No file
+    const result = await uploadProjectResourceFileHandler(formData, mockDbClient as any, mockUserForTest, testLoggerInstance);
 
-    const resourceInsertSpy = mockSupabase.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.insert;
-    const uploadSpy = storageSpies.from('dialectic-contributions').uploadSpy;
-    const listSpy = storageSpies.from('dialectic-contributions').listSpy;
-
-    assertEquals((fromSpy as any).calls.length, 3, "Supabase.from should be called thrice (project check, resource insert, project update)");
-    assertEquals((projectSelectSpy as any)?.calls.length, 1, "Select on dialectic_projects should be called for ownership check");
-    assertEquals((resourceInsertSpy as any)?.calls.length, 1, "Insert on dialectic_project_resources should be called");
-    assertEquals((projectUpdateSpy as any)?.calls.length, 1, "Update on dialectic_projects should be called to link resource");
-    assertEquals((uploadSpy as any).calls.length, 1, "Storage upload should be called");
-    assertEquals((listSpy as any).calls.length, 1, "Storage list should be called by getFileMetadata");
-
-    if (mockSupabase.clearAllStubs) {
-      mockSupabase.clearAllStubs();
-    }
-});
-
-Deno.test('uploadProjectResourceFileHandler - error when file is missing', async () => {
-    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(); // No specific config needed as error is pre-DB
-    const getUserFnForTest: GetUserFn = () => mockSupabase.client.auth.getUser() as Promise<GetUserFnResult>;
-
-    const formData = createMockFormData(undefined, 'project-123');
-    const req = createMockRequest('POST', formData);
-    const result = await uploadProjectResourceFileHandler(
-        req, 
-        mockSupabase.client as unknown as SupabaseClient, 
-        getUserFnForTest, 
-        mockLogger
-    );
-
-    assertExists(result.error, 'Expected error when file is missing');
+    assertExists(result.error, "Error should exist when file is missing");
     assertEquals(result.data, undefined);
+    assertEquals(result.error?.message, 'resourceFile is required.');
     assertEquals(result.error?.status, 400);
-    assertEquals(result.error?.code, 'MISSING_FILE');
-
-    if (mockSupabase.clearAllStubs) {
-        mockSupabase.clearAllStubs();
-    }
+    if (clearAllStubs) clearAllStubs();
 });
 
 Deno.test('uploadProjectResourceFileHandler - error when projectId is missing', async () => {
-    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(); // No specific config needed
-    const getUserFnForTest: GetUserFn = () => mockSupabase.client.auth.getUser() as Promise<GetUserFnResult>;
+    const { client: mockDbClient, clearAllStubs } = createMockSupabaseClient('test-user');
+    const mockUserForTest: User = { id: 'test-user', aud: 'authenticated', role: 'authenticated', email: 'test@example.com', created_at: new Date().toISOString(), app_metadata: {}, user_metadata: {} };
 
-    const formData = createMockFormData({ name: 'test.md', type: 'text/plain', content: 'abc' });
-    const req = createMockRequest('POST', formData);
-    const result = await uploadProjectResourceFileHandler(
-        req, 
-        mockSupabase.client as unknown as SupabaseClient, 
-        getUserFnForTest, 
-        mockLogger
-    );
+    const formData = createMockFormData({ name: 'test.txt', type: 'text/plain', content: 'test' }); // No projectId
+    const result = await uploadProjectResourceFileHandler(formData, mockDbClient as any, mockUserForTest, testLoggerInstance);
 
-    assertExists(result.error, 'Expected error when projectId is missing');
+    assertExists(result.error, "Error should exist when projectId is missing");
     assertEquals(result.data, undefined);
+    assertEquals(result.error?.message, 'projectId is required.');
     assertEquals(result.error?.status, 400);
-    assertEquals(result.error?.code, 'MISSING_PROJECT_ID');
-
-    if (mockSupabase.clearAllStubs) {
-        mockSupabase.clearAllStubs();
-    }
+    if (clearAllStubs) clearAllStubs();
 });
 
-Deno.test('uploadProjectResourceFileHandler - error when user not authenticated', async () => {
-    const mockSupabaseConfig: MockSupabaseDataConfig = {
-        mockUser: null, // Simulate no user authenticated
-        // or use simulateAuthError: { message: 'Auth failed', status: 401 }
-    };
-    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(undefined, mockSupabaseConfig);
-    const getUserFnForTest: GetUserFn = () => mockSupabase.client.auth.getUser() as Promise<GetUserFnResult>;
-
-    const formData = createMockFormData({ name: 'test.md', type: 'text/plain', content: 'abc' }, 'project-123');
-    const req = createMockRequest('POST', formData);
-    const result = await uploadProjectResourceFileHandler(
-        req, 
-        mockSupabase.client as unknown as SupabaseClient, 
-        getUserFnForTest, 
-        mockLogger
-    );
-
-    assertExists(result.error, 'Expected error for unauthenticated user');
-    assertEquals(result.error?.status, 401);
-    assertEquals(result.error?.code, 'AUTH_ERROR');
-    // No need to reset mockUser/mockUserError as they are scoped by createMockSupabaseClient
-
-    if (mockSupabase.clearAllStubs) {
-        mockSupabase.clearAllStubs();
-    }
-});
-
-Deno.test('uploadProjectResourceFileHandler - error when project not found or not owned', async () => {
-    const currentTestUserId = 'other-user';
-    const testProjectId = 'project-does-not-exist';
+Deno.test('uploadProjectResourceFileHandler - project not found or user does not own project', async () => {
+    const currentTestUserId = 'user-does-not-own-project';
+    const otherUserId = 'actual-owner-id';
+    const testProjectId = 'project-owned-by-other';
+    const mockUserForTest: User = { id: currentTestUserId, aud: 'authenticated', role: 'authenticated', email: 'test@example.com', created_at: new Date().toISOString(), app_metadata: {}, user_metadata: {} };
 
     const mockSupabaseConfig: MockSupabaseDataConfig = {
-        mockUser: { 
-            id: currentTestUserId, 
-            aud: 'authenticated', 
-            role: 'authenticated', 
-            email: 'other@example.com' 
-        } as User,
-        genericMockResults: {
-            'dialectic_projects': { // Table for project ownership check
-                select: async (state) => {
-                    // Simulate project not found or not owned by this user
-                    const projectIdFilter = state.filters.find(f => f.column === 'id' && f.value === testProjectId);
-                    // const userIdFilter = state.filters.find(f => f.column === 'user_id' && f.value === currentTestUserId);
-                    if (projectIdFilter) { // Query is for the project, but we'll return not found
-                        return {
-                            data: null, 
-                            error: { name: 'PGRSTError', message: 'JWSError JWSInvalidSignature', code: 'PGRST116' }, // Simulate PostgREST error for not found
-                            count: 0, 
-                            status: 406, // Or 404, depending on how Supabase client translates this error type
-                            statusText: 'Not Acceptable' 
-                        };
-                    }
-                    // Fallback if the query wasn't what we expected for this test (should not happen ideally)
-                    return { data: null, error: new Error('Unexpected project query in mock'), count: 0, status: 500, statusText: 'Internal Server Error' };
-                }
-            }
-        }
-    };
-    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(currentTestUserId, mockSupabaseConfig);
-    const getUserFnForTest: GetUserFn = () => mockSupabase.client.auth.getUser() as Promise<GetUserFnResult>;
-
-    const formData = createMockFormData({ name: 'test.md', type: 'text/plain', content: 'abc' }, testProjectId);
-    const req = createMockRequest('POST', formData);
-    const result = await uploadProjectResourceFileHandler(
-        req, 
-        mockSupabase.client as unknown as SupabaseClient, 
-        getUserFnForTest, 
-        mockLogger
-    );
-
-    assertExists(result.error, 'Expected error for project not found/owned');
-    assertEquals(result.error?.status, 404); // Handler should normalize to 404
-    assertEquals(result.error?.code, 'PROJECT_NOT_FOUND_OR_FORBIDDEN');
-    // No need to reset global mocks
-
-    if (mockSupabase.clearAllStubs) {
-        mockSupabase.clearAllStubs();
-    }
-});
-
-Deno.test('uploadProjectResourceFileHandler - error when user is not authenticated', async () => {
-    const mockSupabaseConfig: MockSupabaseDataConfig = {
-        mockUser: null, // Simulate unauthenticated user
-        // No genericMockResults or storageMock needed as auth should fail first
-    };
-    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient('unauth-user', mockSupabaseConfig);
-    const getUserFnForTest: GetUserFn = () => mockSupabase.client.auth.getUser() as Promise<GetUserFnResult>;
-
-    const formData = createMockFormData({ name: 'test.txt', type: 'text/plain', content: 'data' }, 'project-id');
-    const req = createMockRequest('POST', formData);
-    const result = await uploadProjectResourceFileHandler(
-        req,
-        mockSupabase.client as unknown as SupabaseClient,
-        getUserFnForTest,
-        mockLogger // ensure mockLogger is passed
-    );
-
-    assertExists(result.error, 'Expected error when user is not authenticated');
-    assertEquals(result.error?.status, 401);
-    assertEquals(result.error?.code, 'AUTH_ERROR');
-
-    if (mockSupabase.clearAllStubs) {
-        mockSupabase.clearAllStubs();
-    }
-});
-
-Deno.test('uploadProjectResourceFileHandler - error when project does not exist or not owned by user', async () => {
-    const currentTestUserId = 'user-without-project-access';
-    const testProjectId = 'non-existent-project';
-
-    const mockSupabaseConfig: MockSupabaseDataConfig = {
-        mockUser: { id: currentTestUserId, aud: 'authenticated', role: 'authenticated', email: 'test@example.com' } as User,
+        mockUser: mockUserForTest,
         genericMockResults: {
             'dialectic_projects': {
-                select: async (state) => { // Mock to return no project
-                    const projectIdFilter = state.filters.find(f => f.column === 'id' && f.value === testProjectId);
-                    const userIdFilter = state.filters.find(f => f.column === 'user_id' && f.value === currentTestUserId);
-                    if (projectIdFilter && userIdFilter) { // This condition should ideally not be met
-                        return { data: null, error: null, count: 0, status: 200, statusText: 'OK' };
+                select: async (state: MockQueryBuilderState) => { // Project ownership check
+                    if (state.filters.find((f: {column?: string; value?: unknown}) => f.column === 'id' && f.value === testProjectId)) {
+                        // Simulate project exists but is owned by someone else
+                        return { data: [{ id: testProjectId, user_id: otherUserId }], error: null, count: 1, status: 200, statusText: 'OK' };
                     }
-                    // More accurate mock for "not found"
-                    return { data: null, error: new Error('Project not found or not owned by user'), count: 0, status: 404, statusText: 'Not Found' };
-
+                    // Simulate project not found
+                    return { data: null, error: { name: "PostgrestError", message: 'Project not found', code: 'PGRST116', details: '', hint:'' }, count: 0, status: 404, statusText: 'Not Found' };
                 }
             }
         }
-        // No storageMock needed as project check should fail first
     };
-    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(currentTestUserId, mockSupabaseConfig);
-    const getUserFnForTest: GetUserFn = () => mockSupabase.client.auth.getUser() as Promise<GetUserFnResult>;
+    const { client: mockDbClient, spies, clearAllStubs } = createMockSupabaseClient(currentTestUserId, mockSupabaseConfig);
+    const formData = createMockFormData({ name: 'test.txt', type: 'text/plain', content: 'test', size: 4 }, testProjectId);
+    
+    const result = await uploadProjectResourceFileHandler(formData, mockDbClient as any, mockUserForTest, testLoggerInstance);
 
-    const formData = createMockFormData({ name: 'test.txt', type: 'text/plain', content: 'data' }, testProjectId);
-    const req = createMockRequest('POST', formData);
-    const result = await uploadProjectResourceFileHandler(
-        req,
-        mockSupabase.client as unknown as SupabaseClient,
-        getUserFnForTest,
-        mockLogger // ensure mockLogger is passed
-    );
+    assertExists(result.error);
+    assertEquals(result.data, undefined);
+    assertEquals(result.error?.message, 'Permission denied: You do not own this project.');
+    assertEquals(result.error?.status, 403);
+    
+    // Check that from('dialectic_projects').select was called
+    const projectSelectSpy = spies.getLatestQueryBuilderSpies('dialectic_projects')?.select;
+    assertExists(projectSelectSpy);
+    assertEquals(projectSelectSpy?.calls.length, 1);
 
-    assertExists(result.error, 'Expected error when project is not found or not owned by user');
-    assertEquals(result.error?.status, 404);
-    assertEquals(result.error?.code, 'PROJECT_NOT_FOUND_OR_FORBIDDEN');
-
-    if (mockSupabase.clearAllStubs) {
-        mockSupabase.clearAllStubs();
-    }
+    if (clearAllStubs) clearAllStubs();
 });
 
-Deno.test('uploadProjectResourceFileHandler - error during file upload to storage', async () => {
-    const currentTestUserId = 'user-upload-fail';
-    const testProjectId = 'project-upload-fail';
-    const testFileName = 'fail.txt';
-    const generatedResourceId = globalThis.crypto.randomUUID();
+
+Deno.test('uploadProjectResourceFileHandler - project check returns PGRST116 (project not found)', async () => {
+    const currentTestUserId = 'user-id';
+    const testProjectId = 'non-existent-project';
+    const mockUserForTest: User = { id: currentTestUserId, aud: 'authenticated', role: 'authenticated', email: 'test@example.com', created_at: new Date().toISOString(), app_metadata: {}, user_metadata: {} };
 
     const mockSupabaseConfig: MockSupabaseDataConfig = {
-        mockUser: { id: currentTestUserId, aud: 'authenticated', role: 'authenticated', email: 'test@example.com' } as User,
+        mockUser: mockUserForTest,
         genericMockResults: {
-            'dialectic_projects': { // Assume project exists and is owned
+            'dialectic_projects': {
+                select: async (_state: MockQueryBuilderState) => { // Project ownership check
+                     // Simulate project not found by PostgREST
+                    return { data: null, error: { name: "PostgrestError", message: '0 rows found', code: 'PGRST116', details: '', hint:'' }, count: 0, status: 404, statusText: 'Not Found' };
+                }
+            }
+        }
+    };
+    const { client: mockDbClient, clearAllStubs } = createMockSupabaseClient(currentTestUserId, mockSupabaseConfig);
+    const formData = createMockFormData({ name: 'test.txt', type: 'text/plain', content: 'test', size:4 }, testProjectId);
+    
+    const result = await uploadProjectResourceFileHandler(formData, mockDbClient as any, mockUserForTest, testLoggerInstance);
+
+    assertExists(result.error);
+    assertEquals(result.data, undefined);
+    assertEquals(result.error?.message, 'Project not found or user does not have permission to upload to this project.');
+    assertEquals(result.error?.status, 404);
+    if (clearAllStubs) clearAllStubs();
+});
+
+
+Deno.test('uploadProjectResourceFileHandler - storage upload fails', async () => {
+    const currentTestUserId = 'user-owns-project-storage-fail';
+    const testProjectId = 'project-storage-fail';
+    const mockUserForTest: User = { id: currentTestUserId, aud: 'authenticated', role: 'authenticated', email: 'test@example.com', created_at: new Date().toISOString(), app_metadata: {}, user_metadata: {} };
+
+    const mockSupabaseConfig: MockSupabaseDataConfig = {
+        mockUser: mockUserForTest,
+        genericMockResults: {
+            'dialectic_projects': { // Simulate project ownership check passes
                 select: async () => ({ data: [{ id: testProjectId, user_id: currentTestUserId }], error: null, count: 1, status: 200, statusText: 'OK' })
             }
-            // dialectic_project_resources insert will not be reached if upload fails
         },
         storageMock: {
             defaultBucket: 'dialectic-contributions',
-            uploadResult: async () => ({ data: null, error: new Error('Simulated storage upload failure') }) // Simulate upload error
-            // listResult not needed if upload fails
+            uploadResult: async () => ({ data: null, error: new Error('Simulated storage upload failure') })
         }
     };
-    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(currentTestUserId, mockSupabaseConfig);
-    const getUserFnForTest: GetUserFn = () => mockSupabase.client.auth.getUser() as Promise<GetUserFnResult>;
+    const { client: mockDbClient, spies, clearAllStubs } = createMockSupabaseClient(currentTestUserId, mockSupabaseConfig);
+    const formData = createMockFormData({ name: 'fail.txt', type: 'text/plain', content: 'fail content', size: 12 }, testProjectId);
+    
+    const result = await uploadProjectResourceFileHandler(formData, mockDbClient as any, mockUserForTest, testLoggerInstance);
+
+    assertExists(result.error);
+    assertEquals(result.data, undefined);
+    assertEquals(result.error?.message, 'Failed to upload resource file to storage.');
+    assertEquals(result.error?.details, 'Simulated storage upload failure');
+    assertEquals(result.error?.status, 500);
+
+    const uploadSpy = spies.storage.from('dialectic-contributions').uploadSpy;
+    assertExists(uploadSpy);
+    assertEquals(uploadSpy.calls.length, 1);
+    
+    if (clearAllStubs) clearAllStubs();
+});
+
+Deno.test('uploadProjectResourceFileHandler - database insert for resource fails (with storage cleanup)', async () => {
+    const currentTestUserId = 'user-db-insert-fail';
+    const testProjectId = 'project-db-fail';
+    const testFileName = 'db_fail.md';
+    const generatedResourceId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
+    const storagePath = `projects/${testProjectId}/resources/${generatedResourceId}/${testFileName}`;
+    const mockUserForTest: User = { id: currentTestUserId, aud: 'authenticated', role: 'authenticated', email: 'test@example.com', created_at: new Date().toISOString(), app_metadata: {}, user_metadata: {} };
+
+
+    const mockSupabaseConfig: MockSupabaseDataConfig = {
+        mockUser: mockUserForTest,
+        genericMockResults: {
+            'dialectic_projects': { // Project ownership check passes
+                select: async () => ({ data: [{ id: testProjectId, user_id: currentTestUserId }], error: null, count: 1, status: 200, statusText: 'OK' })
+            },
+            'dialectic_project_resources': { // DB insert fails
+                insert: async () => ({ data: null, error: { name: "PostgrestError", message: 'Simulated DB insert error', code: 'DBFAIL', details: 'Constraint violation', hint: '' }, status: 500, statusText: 'Error' })
+            }
+        },
+        storageMock: {
+            defaultBucket: 'dialectic-contributions',
+            uploadResult: async () => ({ data: { path: storagePath }, error: null }), // Storage upload succeeds
+            removeResult: async (_bucket: string, paths: string[]) => { // Mock storage remove
+                if (paths.includes(storagePath)) return { data: null, error: null };
+                return {data: null, error: new Error("Mock remove failed: path not found")};
+            }
+        }
+    };
+
+    const { client: mockDbClient, spies, clearAllStubs } = createMockSupabaseClient(currentTestUserId, mockSupabaseConfig);
+    const formData = createMockFormData({ name: testFileName, type: 'text/markdown', content: '# DB Fail Test', size: 15 }, testProjectId);
 
     const originalCryptoRandomUUID = crypto.randomUUID;
     globalThis.crypto.randomUUID = () => generatedResourceId;
+    
+    try {
+        const result = await uploadProjectResourceFileHandler(formData, mockDbClient as any, mockUserForTest, testLoggerInstance);
 
-    const formData = createMockFormData({ name: testFileName, type: 'text/plain', content: 'data' }, testProjectId);
-    const req = createMockRequest('POST', formData);
-    const result = await uploadProjectResourceFileHandler(
-        req,
-        mockSupabase.client as unknown as SupabaseClient,
-        getUserFnForTest,
-        mockLogger // ensure mockLogger is passed
-    );
+        assertExists(result.error);
+        assertEquals(result.data, undefined);
+        assertEquals(result.error?.message, 'Failed to record resource file metadata in database.');
+        assertEquals(result.error?.details, 'Simulated DB insert error');
+        assertEquals(result.error?.status, 500);
 
-    globalThis.crypto.randomUUID = originalCryptoRandomUUID;
+        const uploadSpy = spies.storage.from('dialectic-contributions').uploadSpy;
+        const removeSpy = spies.storage.from('dialectic-contributions').removeSpy;
+        const resourceInsertSpy = spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.insert;
 
-    assertExists(result.error, 'Expected error during file upload to storage');
-    assertEquals(result.error?.status, 500);
-    assertEquals(result.error?.code, 'STORAGE_UPLOAD_ERROR');
+        assertExists(uploadSpy);
+        assertEquals(uploadSpy.calls.length, 1, "Storage upload should have been called");
+        assertExists(resourceInsertSpy);
+        assertEquals(resourceInsertSpy?.calls.length, 1, "Resource insert should have been attempted");
+        assertExists(removeSpy);
+        assertEquals(removeSpy.calls.length, 1, "Storage remove (cleanup) should have been called");
+        assertEquals(removeSpy.calls[0].args[0], [storagePath], "Cleanup called with correct path");
 
-    if (mockSupabase.clearAllStubs) {
-        mockSupabase.clearAllStubs();
+    } finally {
+        globalThis.crypto.randomUUID = originalCryptoRandomUUID;
+        if (clearAllStubs) clearAllStubs();
     }
 });
 
-Deno.test('uploadProjectResourceFileHandler - error during database insert of resource metadata', async () => {
-    const currentTestUserId = 'user-db-insert-fail';
-    const testProjectId = 'project-db-insert-fail';
-    const testFileName = 'db_fail.txt';
-    const testFileSize = 50;
-    const testMimeType = 'text/plain';
-    const generatedResourceId = globalThis.crypto.randomUUID();
+
+Deno.test('uploadProjectResourceFileHandler - storage cleanup fails after DB insert error', async () => {
+    const currentTestUserId = 'user-cleanup-fail';
+    const testProjectId = 'project-cleanup-fail';
+    const testFileName = 'cleanup_fail.txt';
+    const generatedResourceId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
+    const storagePath = `projects/${testProjectId}/resources/${generatedResourceId}/${testFileName}`;
+    const mockUserForTest: User = { id: currentTestUserId, aud: 'authenticated', role: 'authenticated', email: 'test@example.com', created_at: new Date().toISOString(), app_metadata: {}, user_metadata: {} };
 
     const mockSupabaseConfig: MockSupabaseDataConfig = {
-        mockUser: { id: currentTestUserId, aud: 'authenticated', role: 'authenticated', email: 'test@example.com' } as User,
+        mockUser: mockUserForTest,
         genericMockResults: {
             'dialectic_projects': {
                 select: async () => ({ data: [{ id: testProjectId, user_id: currentTestUserId }], error: null, count: 1, status: 200, statusText: 'OK' })
             },
             'dialectic_project_resources': {
-                insert: async () => ({ data: null, error: new Error('Simulated database insert failure'), count: 0, status: 500, statusText: 'Internal Server Error' })
+                insert: async () => ({ data: null, error: { name: "PostgrestError", message: 'DB error', code: 'DBERR', details: '', hint: '' }, status: 500, statusText: 'Error' })
             }
         },
-        storageMock: { // Assume upload is successful for this test case
+        storageMock: {
             defaultBucket: 'dialectic-contributions',
-            uploadResult: async (bucketId, path, _body, _options) => ({ data: { path }, error: null }),
-            listResult: async (bucketId, pathPrefix, _options) => ({ // Simulate file exists after (mocked) successful upload
-                data: [{ name: testFileName, id: 'mock-id', metadata: { size: testFileSize, mimetype: testMimeType } } as any], // Cast to any for brevity
-                error: null
-            })
+            uploadResult: async () => ({ data: { path: storagePath }, error: null }),
+            removeResult: async () => ({ data: null, error: new Error('Simulated storage cleanup failure') }) // Storage remove fails
         }
     };
-    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(currentTestUserId, mockSupabaseConfig);
-    const getUserFnForTest: GetUserFn = () => mockSupabase.client.auth.getUser() as Promise<GetUserFnResult>;
+    const { client: mockDbClient, spies, clearAllStubs } = createMockSupabaseClient(currentTestUserId, mockSupabaseConfig);
+    const formData = createMockFormData({ name: testFileName, type: 'text/plain', content: 'cleanup fail', size:12 }, testProjectId);
 
     const originalCryptoRandomUUID = crypto.randomUUID;
     globalThis.crypto.randomUUID = () => generatedResourceId;
+    const consoleErrorSpy = spy(console, "error");
 
-    const formData = createMockFormData({ name: testFileName, type: testMimeType, content: 'db insert fail data' }, testProjectId);
-    const req = createMockRequest('POST', formData);
-    const result = await uploadProjectResourceFileHandler(
-        req,
-        mockSupabase.client as unknown as SupabaseClient,
-        getUserFnForTest,
-        mockLogger // ensure mockLogger is passed
-    );
+    try {
+        const result = await uploadProjectResourceFileHandler(formData, mockDbClient as any, mockUserForTest, testLoggerInstance);
 
-    globalThis.crypto.randomUUID = originalCryptoRandomUUID;
+        assertExists(result.error);
+        assertEquals(result.data, undefined);
+        assertEquals(result.error?.message, 'Failed to record resource file metadata in database.'); // Primary error is still DB error
+        assertEquals(result.error?.status, 500);
 
-    assertExists(result.error, 'Expected error during database insert of resource metadata');
-    assertEquals(result.error?.status, 500);
-    assertEquals(result.error?.code, 'DB_INSERT_ERROR');
+        // Check that the logger caught the cleanup failure
+        // This relies on the logger actually printing to console.error in the test environment
+        // and the logger instance passed being the one spied on or its methods.
+        // For simplicity, checking our shared testLoggerInstance.
+        // This is a bit of an indirect test. A direct spy on testLoggerInstance.error would be better if easy.
+        
+        let loggedCleanupError = false;
+        for (const call of consoleErrorSpy.calls) {
+            if (typeof call.args[0] === 'string' && call.args[0].includes('Failed to remove orphaned file from storage')) {
+                loggedCleanupError = true;
+                assertEquals(call.args[1]?.path, storagePath);
+                assertInstanceOf(call.args[1]?.error, Error);
+                assertEquals(call.args[1]?.error.message, 'Simulated storage cleanup failure');
+                break;
+            }
+        }
+        assertEquals(loggedCleanupError, true, "Expected logger to report storage cleanup failure.");
 
-    if (mockSupabase.clearAllStubs) {
-        mockSupabase.clearAllStubs();
+
+    } finally {
+        globalThis.crypto.randomUUID = originalCryptoRandomUUID;
+        consoleErrorSpy.restore();
+        if (clearAllStubs) clearAllStubs();
     }
 });
 
-// Add more tests for:
-// - Storage upload failure (mockUploadError)
-// - DB insert failure (mockDbInsertError)
-// - getFileMetadata failure (mockMetadataResult.error)
-// - Invalid HTTP method
+// Add more tests:
+// - Unexpected error during project permission verification
+// - Storage upload returns no data (but no error)
+// - DB insert returns no data (but no error)
+// - resourceDescription is null or very long (if there are constraints)
+// - file name with special characters (if relevant for storage path)
+
+Deno.test('uploadProjectResourceFileHandler - unexpected error during project permission check', async () => {
+    const currentTestUserId = 'user-perm-check-unexpected-error';
+    const testProjectId = 'project-perm-check-unexpected-error';
+    const mockUserForTest: User = { id: currentTestUserId, aud: 'authenticated', email: 'test@example.com', created_at: new Date().toISOString(), app_metadata: {}, user_metadata: {}, role: 'authenticated' };
+
+    const mockSupabaseConfig: MockSupabaseDataConfig = {
+        mockUser: mockUserForTest,
+        genericMockResults: {
+            'dialectic_projects': {
+                select: async (_state: MockQueryBuilderState) => {
+                    throw new Error("Unexpected DB error during permission select!");
+                }
+            }
+        }
+    };
+    const { client: mockDbClient, clearAllStubs } = createMockSupabaseClient(currentTestUserId, mockSupabaseConfig);
+    const formData = createMockFormData({ name: 'perm_error.txt', type: 'text/plain', content: 'content', size: 7 }, testProjectId);
+
+    const result = await uploadProjectResourceFileHandler(formData, mockDbClient as any, mockUserForTest, testLoggerInstance);
+
+    assertExists(result.error);
+    assertEquals(result.data, undefined);
+    assertEquals(result.error?.message, 'Failed to verify project ownership.');
+    assertEquals(result.error?.details, 'Unexpected DB error during permission select!');
+    assertEquals(result.error?.status, 500);
+
+    if (clearAllStubs) clearAllStubs();
+});
+
+Deno.test('uploadProjectResourceFileHandler - storage upload returns no data (but no error)', async () => {
+    const currentTestUserId = 'user-storage-no-data';
+    const testProjectId = 'project-storage-no-data';
+    const mockUserForTest: User = { id: currentTestUserId, aud: 'authenticated', email: 'test@example.com', created_at: new Date().toISOString(), app_metadata: {}, user_metadata: {}, role: 'authenticated' };
+    const generatedResourceId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
+
+    const mockSupabaseConfig: MockSupabaseDataConfig = {
+        mockUser: mockUserForTest,
+        genericMockResults: {
+            'dialectic_projects': {
+                select: async () => ({ data: [{ id: testProjectId, user_id: currentTestUserId }], error: null, count: 1, status: 200, statusText: 'OK' })
+            }
+        },
+        storageMock: {
+            defaultBucket: 'dialectic-contributions',
+            uploadResult: async () => ({ data: null, error: null }) // No data, no error
+        }
+    };
+    const { client: mockDbClient, clearAllStubs } = createMockSupabaseClient(currentTestUserId, mockSupabaseConfig);
+    const formData = createMockFormData({ name: 'no_data.txt', type: 'text/plain', content: 'content', size: 7 }, testProjectId);
+    
+    const originalCryptoRandomUUID = crypto.randomUUID;
+    globalThis.crypto.randomUUID = () => generatedResourceId;
+
+    try {
+        const result = await uploadProjectResourceFileHandler(formData, mockDbClient as any, mockUserForTest, testLoggerInstance);
+
+        assertExists(result.error);
+        assertEquals(result.data, undefined);
+        assertEquals(result.error?.message, 'Failed to upload resource file, no upload data returned from storage.');
+        assertEquals(result.error?.status, 500);
+    } finally {
+        globalThis.crypto.randomUUID = originalCryptoRandomUUID;
+        if (clearAllStubs) clearAllStubs();
+    }
+});
+
+
+Deno.test('uploadProjectResourceFileHandler - DB insert for resource returns no data (but no error)', async () => {
+    const currentTestUserId = 'user-db-no-data';
+    const testProjectId = 'project-db-no-data';
+    const testFileName = 'db_no_data.md';
+    const generatedResourceId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
+    const storagePath = `projects/${testProjectId}/resources/${generatedResourceId}/${testFileName}`;
+    const mockUserForTest: User = { id: currentTestUserId, aud: 'authenticated', email: 'test@example.com', created_at: new Date().toISOString(), app_metadata: {}, user_metadata: {}, role: 'authenticated' };
+
+    const mockSupabaseConfig: MockSupabaseDataConfig = {
+        mockUser: mockUserForTest,
+        genericMockResults: {
+            'dialectic_projects': {
+                select: async () => ({ data: [{ id: testProjectId, user_id: currentTestUserId }], error: null, count: 1, status: 200, statusText: 'OK' })
+            },
+            'dialectic_project_resources': {
+                insert: async () => ({ data: null, error: null, count: 0, status: 201, statusText: 'Created' }) // No data, no error
+            }
+        },
+        storageMock: {
+            defaultBucket: 'dialectic-contributions',
+            uploadResult: async () => ({ data: { path: storagePath }, error: null }) // Storage upload succeeds
+        }
+    };
+    const { client: mockDbClient, clearAllStubs } = createMockSupabaseClient(currentTestUserId, mockSupabaseConfig);
+    const formData = createMockFormData({ name: testFileName, type: 'text/markdown', content: '# DB No Data', size: 13 }, testProjectId);
+
+    const originalCryptoRandomUUID = crypto.randomUUID;
+    globalThis.crypto.randomUUID = () => generatedResourceId;
+    
+    try {
+        const result = await uploadProjectResourceFileHandler(formData, mockDbClient as any, mockUserForTest, testLoggerInstance);
+
+        assertExists(result.error);
+        assertEquals(result.data, undefined);
+        assertEquals(result.error?.message, 'Failed to record resource file metadata in database.');
+        assertEquals(result.error?.status, 500);
+    } finally {
+        globalThis.crypto.randomUUID = originalCryptoRandomUUID;
+        if (clearAllStubs) clearAllStubs();
+    }
+});
+
+Deno.test('uploadProjectResourceFileHandler - default resource description if not provided', async () => {
+    const currentTestUserId = 'user-default-desc';
+    const testProjectId = 'project-default-desc';
+    const testFileName = 'file_with_default_desc.dat';
+    const testFileSize = 50;
+    const testMimeType = 'application/octet-stream';
+    const generatedResourceId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
+    const mockUserForTest: User = { id: currentTestUserId, aud: 'authenticated', email: 'test@example.com', created_at: new Date().toISOString(), app_metadata: {}, user_metadata: {}, role: 'authenticated' };
+
+    const mockExpectedResourceData: DialecticProjectResource = {
+        id: generatedResourceId,
+        project_id: testProjectId,
+        user_id: currentTestUserId,
+        file_name: testFileName,
+        storage_bucket: 'dialectic-contributions',
+        storage_path: `projects/${testProjectId}/resources/${generatedResourceId}/${testFileName}`,
+        mime_type: testMimeType,
+        size_bytes: testFileSize,
+        resource_description: `Resource file: ${testFileName}`, // Expected default
+        status: "active",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+    const mockSupabaseConfig: MockSupabaseDataConfig = {
+        mockUser: mockUserForTest,
+        genericMockResults: {
+            'dialectic_projects': {
+                select: async () => ({ data: [{ id: testProjectId, user_id: currentTestUserId }], error: null, count: 1, status: 200, statusText: 'OK' }),
+            },
+            'dialectic_project_resources': {
+                insert: async (state: MockQueryBuilderState) => {
+                     const insertedData = state.insertData as DialecticProjectResource;
+                     if (insertedData?.resource_description === `Resource file: ${testFileName}`) {
+                        return { data: [{...mockExpectedResourceData, created_at: new Date().toISOString(), updated_at: new Date().toISOString()}], error: null, count: 1, status: 201, statusText: 'Created' };
+                     }
+                     return {data: null, error: {name: "PostgrestError", message: "resource_description mismatch", code:"ASSERT", details:"", hint:""}, status: 400, statusText:"Bad Request"};
+                }
+            }
+        },
+        storageMock: {
+            defaultBucket: 'dialectic-contributions',
+            uploadResult: async (_b: string, p: string) => ({ data: { path: p }, error: null })
+        }
+    };
+
+    const { client: mockDbClient, clearAllStubs } = createMockSupabaseClient(currentTestUserId, mockSupabaseConfig);
+    const formData = createMockFormData({ name: testFileName, type: testMimeType, content: 'binary data'.repeat(5), size: testFileSize }, testProjectId, undefined /* no description */);
+    
+    const originalCryptoRandomUUID = crypto.randomUUID;
+    globalThis.crypto.randomUUID = () => generatedResourceId;
+
+    try {
+        const result = await uploadProjectResourceFileHandler(formData, mockDbClient as any, mockUserForTest, testLoggerInstance);
+        
+        assertExists(result.data, 'Expected data for successful upload with default description');
+        assertEquals(result.error, undefined, `Unexpected error: ${result.error?.message}`);
+        assertEquals(result.data?.resource_description, `Resource file: ${testFileName}`);
+    } finally {
+        globalThis.crypto.randomUUID = originalCryptoRandomUUID;
+        if (clearAllStubs) clearAllStubs();
+    }
+});

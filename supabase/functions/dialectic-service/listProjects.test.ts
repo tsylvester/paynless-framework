@@ -87,8 +87,8 @@ describe("listProjects", () => {
 
   it("should return a list of projects for an authenticated user", async () => {
     const mockProjectsData: DialecticProjectRow[] = [
-      { id: "proj-1", user_id: MOCK_USER_ID, project_name: "Project Alpha", created_at: new Date().toISOString(), initial_user_prompt: "prompt1", repo_url: null, selected_domain_tag: null, status: "active", updated_at: new Date().toISOString(), user_domain_overlay_values: {} },
-      { id: "proj-2", user_id: MOCK_USER_ID, project_name: "Project Beta", created_at: new Date(Date.now() - 100000).toISOString(), initial_user_prompt: "prompt2", repo_url:null, selected_domain_tag: null, status: "active", updated_at: new Date().toISOString(), user_domain_overlay_values: null },
+      { id: "proj-1", user_id: MOCK_USER_ID, project_name: "Project Alpha", created_at: new Date().toISOString(), initial_user_prompt: "prompt1", repo_url: null, selected_domain_tag: null, status: "active", updated_at: new Date().toISOString(), user_domain_overlay_values: {}, initial_prompt_resource_id: null, selected_domain_overlay_id: null },
+      { id: "proj-2", user_id: MOCK_USER_ID, project_name: "Project Beta", created_at: new Date(Date.now() - 100000).toISOString(), initial_user_prompt: "prompt2", repo_url:null, selected_domain_tag: null, status: "active", updated_at: new Date().toISOString(), user_domain_overlay_values: null, initial_prompt_resource_id: null, selected_domain_overlay_id: null },
     ];
 
     // Restore global stubs before re-initializing and re-stubbing locally
@@ -116,7 +116,7 @@ describe("listProjects", () => {
     errorStub = stub(sharedLogger.logger, "error", () => {});
 
 
-    const result = await listProjects(mockRequest, currentMockDbClient as any, getTestAuthOptions(currentMockDbClient));
+    const result = await listProjects(getMockUser(MOCK_USER_ID), currentMockDbClient as any);
 
     assertExists(result.data);
     assertEquals(result.data?.length, 2);
@@ -166,39 +166,11 @@ describe("listProjects", () => {
     warnStub = stub(sharedLogger.logger, "warn", () => {});
     errorStub = stub(sharedLogger.logger, "error", () => {});
 
-    const result = await listProjects(mockRequest, currentMockDbClient as any, getTestAuthOptions(currentMockDbClient));
+    const result = await listProjects(getMockUser(MOCK_USER_ID), currentMockDbClient as any);
 
     assertExists(result.data);
     assertEquals(result.data?.length, 0);
     assertEquals(result.error, undefined);
-  });
-
-  it("should return 401 if user is not authenticated", async () => {
-    // Restore global stubs before re-initializing and re-stubbing locally
-    debugStub?.restore();
-    infoStub?.restore();
-    warnStub?.restore();
-    errorStub?.restore();
-    if (supabaseTestSetup && supabaseTestSetup.clearAllStubs) supabaseTestSetup.clearAllStubs();
-
-    const authErrorConfig: MockSupabaseDataConfig = {
-      simulateAuthError: { name: "AuthError", message: "Simulated auth error" } as any 
-    };
-    supabaseTestSetup = createMockSupabaseClient(undefined, authErrorConfig); 
-    currentMockDbClient = supabaseTestSetup.client;
-
-    debugStub = stub(sharedLogger.logger, "debug", () => {});
-    infoStub = stub(sharedLogger.logger, "info", () => {});
-    warnStub = stub(sharedLogger.logger, "warn", () => {});
-    errorStub = stub(sharedLogger.logger, "error", () => {});
-
-    const result = await listProjects(mockRequest, currentMockDbClient as any, getTestAuthOptions(currentMockDbClient));
-
-    assertExists(result.error);
-    assertEquals(result.data, undefined);
-    assertEquals(result.error?.message, "User not authenticated");
-    assertEquals(result.error?.status, 401);
-    assertEquals(result.error?.code, "AUTH_ERROR");
   });
 
   it("should return 500 for database errors", async () => {
@@ -227,7 +199,7 @@ describe("listProjects", () => {
     errorStub = stub(sharedLogger.logger, "error", () => {});
 
 
-    const result = await listProjects(mockRequest, currentMockDbClient as any, getTestAuthOptions(currentMockDbClient));
+    const result = await listProjects(getMockUser(MOCK_USER_ID), currentMockDbClient as any);
 
     assertExists(result.error);
     assertEquals(result.data, undefined);

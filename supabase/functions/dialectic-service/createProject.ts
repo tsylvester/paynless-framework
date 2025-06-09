@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { 
     DialecticProject 
   } from "./dialectic.interface.ts";
@@ -19,19 +19,19 @@ import {
   }
 
 export async function createProject(
-  req: Request,
+  payload: FormData,
   dbAdminClient: SupabaseClient,
-  options?: CreateProjectOptions // Optional DI for Supabase client and isValidDomainTag
+  user: User,
+  options?: CreateProjectOptions
 ) {
   console.log("createProject function invoked");
 
   try {
-    const formData = await req.formData();
-    const projectName = formData.get('projectName') as string | null;
-    const initialUserPromptText = formData.get('initialUserPromptText') as string | null;
-    const selectedDomainTag = formData.get('selectedDomainTag') as string | null;
-    const selected_domain_overlay_id = formData.get('selectedDomainOverlayId') as string | null;
-    const promptFile = formData.get('promptFile') as File | null;
+    const projectName = payload.get('projectName') as string | null;
+    const initialUserPromptText = payload.get('initialUserPromptText') as string | null;
+    const selectedDomainTag = payload.get('selectedDomainTag') as string | null;
+    const selected_domain_overlay_id = payload.get('selectedDomainOverlayId') as string | null;
+    const promptFile = payload.get('promptFile') as File | null;
 
     console.log({ projectName, initialUserPromptText, selectedDomainTag, selected_domain_overlay_id, promptFileExists: !!promptFile });
 
@@ -42,20 +42,9 @@ export async function createProject(
       return { error: { message: "Either initialUserPromptText or a promptFile must be provided.", status: 400 } };
     }
 
-    const resolvedCreateSupabaseClient = options?.createSupabaseClient || createSupabaseClient;
-    const supabaseUserClient = resolvedCreateSupabaseClient(req);
-    const { data: { user }, error: userError } = await supabaseUserClient.auth.getUser();
-
-    if (userError || !user) {
-      console.warn("User not authenticated for createProject", userError);
-      return { error: { message: "User not authenticated", status: 401 } };
-    }
-  
-    // Use injected isValidDomainTag if provided, otherwise use the original
-    const resolvedIsValidDomainTag = options?.isValidDomainTag || isValidDomainTag;
     if (selectedDomainTag) {
       try {
-        const tagIsValid = await resolvedIsValidDomainTag(dbAdminClient, selectedDomainTag);
+        const tagIsValid = await isValidDomainTag(dbAdminClient, selectedDomainTag);
         if (!tagIsValid) {
           return { error: { message: `Invalid selectedDomainTag: "${selectedDomainTag}"`, status: 400 } };
         }
@@ -71,11 +60,11 @@ export async function createProject(
       .insert({
         user_id: user.id,
         project_name: projectName,
-        initial_user_prompt: initialUserPromptText || null, // Insert null if initialUserPrompt is empty
+        initial_user_prompt: initialUserPromptText || null,
         selected_domain_tag: selectedDomainTag,
         selected_domain_overlay_id: selected_domain_overlay_id,
         status: 'new',
-        initial_prompt_resource_id: null, // Initially null
+        initial_prompt_resource_id: null,
       })
       .select()
       .single();
@@ -92,26 +81,20 @@ export async function createProject(
       return { error: { message: "Failed to create project, no data returned from initial insert.", status: 500 }};
     }
 
-    // 2. If promptFile exists, upload it and create a resource record
     if (promptFile) {
       console.log(`Processing promptFile: ${promptFile.name}, size: ${promptFile.size}, type: ${promptFile.type}`);
       const projectResourceRecordId = crypto.randomUUID();
       const storagePath = `projects/${newProjectData.id}/initial-prompts/${projectResourceRecordId}/${promptFile.name}`;
       
-      // Note: uploadToStorage typically uses the user-specific client for RLS, 
-      // but here we might need admin to write to a general project assets bucket.
-      // Ensure 'uploadToStorage' is flexible or use 'dbAdminClient.storage' directly if appropriate.
-      // Using dbAdminClient.storage directly for clarity on permissions.
       const { data: uploadData, error: uploadError } = await dbAdminClient.storage
-        .from('dialectic-contributions') // Corrected bucket name
+        .from('dialectic-contributions')
         .upload(storagePath, promptFile, {
           contentType: promptFile.type,
-          upsert: false, // Do not upsert, expect unique paths
+          upsert: false,
         });
 
       if (uploadError) {
         console.error("Error uploading promptFile to storage:", uploadError);
-        // Optionally, delete the partially created project record newProjectData.id
         return { error: { message: "Failed to upload initial prompt file.", details: uploadError.message, status: 500 } };
       }
       
@@ -128,8 +111,8 @@ export async function createProject(
           project_id: newProjectData.id,
           user_id: user.id,
           file_name: promptFile.name,
-          storage_bucket: 'dialectic-contributions', // Corrected bucket name
-          storage_path: uploadData.path, // Use the path returned by storage
+          storage_bucket: 'dialectic-contributions',
+          storage_path: uploadData.path,
           mime_type: promptFile.type,
           size_bytes: promptFile.size,
           resource_description: 'Initial project prompt file',
@@ -139,8 +122,7 @@ export async function createProject(
 
       if (resourceCreateError) {
         console.error("Error creating dialectic_project_resources record:", resourceCreateError);
-        // Attempt to delete the orphaned file from storage
-        await dbAdminClient.storage.from('dialectic-contributions').remove([uploadData.path]); // Corrected bucket name
+        await dbAdminClient.storage.from('dialectic-contributions').remove([uploadData.path]);
         return { error: { message: "Failed to record prompt file resource.", details: resourceCreateError.message, status: 500 } };
       }
 
@@ -148,8 +130,6 @@ export async function createProject(
         return { error: { message: "Failed to record prompt file resource, no data returned.", status: 500 } };
       }
 
-      
-      // 3. Update project with resource_id and adjust initial_user_prompt
       const { data: updatedProjectData, error: updateProjectError } = await dbAdminClient
         .from('dialectic_projects')
         .update({
@@ -162,30 +142,26 @@ export async function createProject(
 
       if (updateProjectError) {
         console.error("Error updating project with resource ID:", updateProjectError);
-        // Potentially rollback: delete resource record and storage file
         return { error: { message: "Failed to finalize project with file resource.", details: updateProjectError.message, status: 500 } };
       }
       if (!updatedProjectData) {
          return { error: { message: "Failed to finalize project with file resource, no data returned from update.", status: 500 }};
       }
-       // Use updatedProjectData for the response
        Object.assign(newProjectData, updatedProjectData);
     }
     
-    // Map to the DialecticProject interface structure
     const responseData: DialecticProject = {
       id: newProjectData.id,
       user_id: newProjectData.user_id,
       project_name: newProjectData.project_name,
-      initial_user_prompt: newProjectData.initial_user_prompt, // This will be the final version
-      initial_prompt_resource_id: newProjectData.initial_prompt_resource_id, // This will be the final version
+      initial_user_prompt: newProjectData.initial_user_prompt,
+      initial_prompt_resource_id: newProjectData.initial_prompt_resource_id,
       selected_domain_tag: newProjectData.selected_domain_tag,
       selected_domain_overlay_id: newProjectData.selected_domain_overlay_id,
       repo_url: newProjectData.repo_url,
       status: newProjectData.status,
       created_at: newProjectData.created_at,
       updated_at: newProjectData.updated_at,
-      // user_domain_overlay_values: newProjectData.user_domain_overlay_values // Removed due to interface mismatch
     };
     
     console.log("Project created/updated successfully:", responseData.id);

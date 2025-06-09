@@ -214,17 +214,24 @@ export interface ContributionWithNestedOwner {
 
 // --- START: Added for Project Resource Upload (1.0.B) ---
 export interface DialecticProjectResource {
-  id: string; // UUID
-  project_id: string; // UUID
-  user_id: string; // UUID
+  id: string;
+  project_id: string;
+  user_id: string;
   file_name: string;
   storage_bucket: string;
   storage_path: string;
   mime_type: string;
-  size_bytes: number; // Represent BIGINT as number
+  size_bytes: number;
   resource_description: string | null;
-  created_at: string; // TIMESTAMPTZ as string
-  updated_at: string; // TIMESTAMPTZ as string
+  status: "active" | "inactive" | "archived" | "error";
+  created_at: string;
+  updated_at: string;
+  embeddings_status?: "pending" | "completed" | "failed" | "in-progress";
+  last_embedded_at?: string | null;
+  checksum?: string | null;
+  processing_status?: "pending" | "completed" | "failed" | "in-progress";
+  processing_error?: string | null;
+  metadata?: Record<string, unknown> | null; // For any other structured data
 }
 
 export interface UploadProjectResourceFilePayload {

@@ -4,33 +4,34 @@ import {
     DialecticProject,
     DialecticContribution,
   } from "./dialectic.interface.ts";
-  import { createSupabaseClient } from "../_shared/auth.ts";
+  // import { createSupabaseClient } from "../_shared/auth.ts"; // Removed, user passed directly
   import { logger } from "../_shared/logger.ts";
-  import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+  import type { SupabaseClient, User } from "npm:@supabase/supabase-js@2"; // Added User import
   console.log("getProjectDetails function started");
 
-  interface GetProjectDetailsOptions {
-    createSupabaseClientOverride?: (req: Request) => SupabaseClient;
-  }
+  // interface GetProjectDetailsOptions { // Removed options
+  //   createSupabaseClientOverride?: (req: Request) => SupabaseClient;
+  // }
 
   export async function getProjectDetails(
-    req: Request,
-    dbClient: SupabaseClient,
+    // req: Request, // Removed req
     payload: GetProjectDetailsPayload,
-    options?: GetProjectDetailsOptions
+    dbClient: SupabaseClient,
+    user: User // Added user parameter
+    // options?: GetProjectDetailsOptions // Removed options
   ): Promise<{ data?: DialecticProject; error?: { message: string; status?: number; details?: string; code?: string } }> {
     const { projectId } = payload;
     if (!projectId) {
       return { error: { message: "projectId is required", code: "VALIDATION_ERROR", status: 400 } };
     }
   
-    const clientProvider = options?.createSupabaseClientOverride || createSupabaseClient;
-    const supabaseUserClient = clientProvider(req);
-    const { data: { user }, error: userError } = await supabaseUserClient.auth.getUser();
-    if (userError || !user) {
-      logger.warn("User not authenticated for getProjectDetails", { error: userError, projectId });
-      return { error: { message: "User not authenticated", code: "AUTH_ERROR", status: 401 } };
-    }
+    // const clientProvider = options?.createSupabaseClientOverride || createSupabaseClient; // Removed
+    // const supabaseUserClient = clientProvider(req); // Removed
+    // const { data: { user }, error: userError } = await supabaseUserClient.auth.getUser(); // Removed
+    // if (userError || !user) { // User is now guaranteed by the caller or this function isn't called
+    //   logger.warn("User not authenticated for getProjectDetails", { error: userError, projectId });
+    //   return { error: { message: "User not authenticated", code: "AUTH_ERROR", status: 401 } };
+    // }
   
     const { data: project, error: projectError } = await dbClient
       .from('dialectic_projects')

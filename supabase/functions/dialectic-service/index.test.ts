@@ -15,8 +15,9 @@ import {
 import type { SupabaseClient, User, AuthError } from 'npm:@supabase/supabase-js';
 import type { ServiceError } from '../_shared/types.ts';
 import { handleCorsPreflightRequest } from "../_shared/cors-headers.ts";
+import type { GenerateStageContributionsSuccessResponse, DialecticContribution, DialecticProject, /* DomainTagDescriptor */ } from "./dialectic.interface.ts"; 
 
-// Mock SupabaseClient (can be enhanced for auth.getUser)
+// Mock SupabaseClient
 const mockSupabaseClient = (
   methods?: Partial<SupabaseClient<any, "public", any>['functions' | 'from' | 'rpc' | 'storage']> 
     & { storage?: Partial<SupabaseClient<any, "public", any>['storage']> & { from?: (bucketId: string) => any } }
@@ -31,9 +32,9 @@ const mockSupabaseClient = (
     auth: {
       getUser: methods?.auth?.getUser || (async (token?: string) => { 
         if (token === 'valid-token-for-mock') {
-            return { data: { user: { id: 'mock-user-id' } as User }, error: null };
+            return { data: { user: { id: 'mock-user-id', email: 'mock@example.com' } as User }, error: null };
         }
-        return { data: { user: null }, error: { message: "Mock: Invalid token", status: 401, code: 'INVALID_TOKEN', name: 'AuthApiError', __isAuthError: true } as any as AuthError };
+        return { data: { user: null }, error: createMockAuthError("Mock: Invalid token", 401, 'INVALID_TOKEN') };
       }),
     },
   } as unknown as SupabaseClient;
@@ -45,9 +46,30 @@ const createMockAuthError = (message: string, status: number, code: string): Aut
     message,
     status,
     code,
-    name: 'AuthApiError', // Or a more specific error name if needed
+    name: 'AuthApiError', 
     __isAuthError: true,
   } as any as AuthError;
+};
+
+// Helper to create a mostly empty but type-compliant ActionHandlers mock
+const createMockHandlers = (overrides?: Partial<ActionHandlers>): ActionHandlers => {
+    const emptySpy = spy(async () => ({ error: { message: "Not implemented in mock", status: 501 } }));
+    return {
+        createProject: overrides?.createProject || emptySpy,
+        listAvailableDomainTags: overrides?.listAvailableDomainTags || emptySpy,
+        updateProjectDomainTag: overrides?.updateProjectDomainTag || emptySpy,
+        getProjectDetails: overrides?.getProjectDetails || emptySpy,
+        getContributionContentSignedUrlHandler: overrides?.getContributionContentSignedUrlHandler || emptySpy,
+        startSession: overrides?.startSession || emptySpy,
+        generateStageContributions: overrides?.generateStageContributions || emptySpy,
+        listProjects: overrides?.listProjects || emptySpy,
+        uploadProjectResourceFileHandler: overrides?.uploadProjectResourceFileHandler || emptySpy,
+        listAvailableDomainOverlays: overrides?.listAvailableDomainOverlays || emptySpy,
+        deleteProject: overrides?.deleteProject || emptySpy,
+        cloneProject: overrides?.cloneProject || emptySpy,
+        exportProject: overrides?.exportProject || emptySpy,
+        ...overrides,
+    } as ActionHandlers;
 };
 
 Deno.test("isValidDomainTagDefaultFn - Unit Tests", async (t) => {
@@ -95,10 +117,8 @@ Deno.test("isValidDomainTagDefaultFn - Unit Tests", async (t) => {
         }),
       }),
     });
-    // Mock logger to spy on it if needed, for now, just check the return value
     const result = await isValidDomainTagDefaultFn(client, "test");
     assertEquals(result, false);
-    // Potentially check logger output here if a spy mechanism is available
   });
 });
 
@@ -173,8 +193,8 @@ Deno.test("createSignedUrlDefaultFn - Unit Tests", async (t) => {
 Deno.test("handleRequest - Routing and Dispatching", async (t) => {
   let mockAdminClient: SupabaseClient;
   let mockHandlers: ActionHandlers;
+  const mockUser = { id: 'mock-user-id', email: 'mock@example.com' } as User;
 
-  // Helper to create a JSON request
   const createJsonRequest = (action: string, payload?: unknown, authToken?: string): Request => {
     const headers = new Headers({ "Content-Type": "application/json" });
     if (authToken) {
@@ -183,11 +203,10 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
     return new Request("http://localhost/test", {
       method: "POST",
       headers,
-      body: JSON.stringify({ action, payload }),
+      body: payload ? JSON.stringify({ action, payload }) : JSON.stringify({ action }),
     });
   };
 
-  // Helper to create a FormData request
   const createFormDataRequest = (action: string, additionalData?: Record<string, string | File>, authToken?: string): Request => {
     const formData = new FormData();
     formData.append("action", action);
@@ -207,22 +226,23 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
     });
   };
   
-  const mockUser = { id: 'user-123', email: 'test@example.com' } as User;
-
   await t.step("should handle CORS preflight request", async () => {
     const req = new Request("http://localhost/test", { method: "OPTIONS" });
     mockAdminClient = mockSupabaseClient();
-    mockHandlers = {} as ActionHandlers;
+    mockHandlers = createMockHandlers();
     const corsResponse = handleCorsPreflightRequest(req);
     if (corsResponse) { 
-        const response = await handleRequest(req, mockAdminClient, mockHandlers as ActionHandlers);
+        const response = await handleRequest(req, mockAdminClient, mockHandlers);
         assertEquals(response.status, corsResponse.status);
-    } 
+    } else {
+        const response = await handleRequest(req, mockAdminClient, mockHandlers);
+        assertNotEquals(response.status, 200); 
+    }
   });
 
   await t.step("Unsupported method should return 415", async () => {
     mockAdminClient = mockSupabaseClient();
-    mockHandlers = {} as ActionHandlers;
+    mockHandlers = createMockHandlers();
     const req = new Request("http://localhost/test", { method: "GET" });
     const response = await handleRequest(req, mockAdminClient, mockHandlers);
     assertEquals(response.status, 415);
@@ -231,53 +251,66 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
   });
 
   // --- Multipart/form-data tests ---
-  await t.step("Multipart: createProject should call correct handler", async () => {
+  await t.step("Multipart: createProject should call correct handler with auth", async () => {
     let capturedArgs: any[] | null = null;
     const createProjectSpy = spy(async (...args: any[]) => { 
         capturedArgs = args;
         return { data: { id: "proj-123" } as any, status: 201 }; 
     });
-    mockHandlers = { createProject: createProjectSpy } as unknown as ActionHandlers;
-    mockAdminClient = mockSupabaseClient();
-    const req = createFormDataRequest("createProject");
+    mockHandlers = createMockHandlers({ createProject: createProjectSpy });
+    mockAdminClient = mockSupabaseClient(); 
+    const req = createFormDataRequest("createProject", {}, "valid-token-for-mock");
     const response = await handleRequest(req, mockAdminClient, mockHandlers);
     assertEquals(response.status, 201);
     assertEquals(createProjectSpy.calls.length, 1);
     assertExists(capturedArgs, "createProject spy was called but args not captured");
     if (capturedArgs) {
-        assertEquals(capturedArgs[0], req); 
+        assertExists(capturedArgs[0]); 
+        assertEquals((capturedArgs[0] as FormData).get("action"), "createProject");
         assertEquals(capturedArgs[1], mockAdminClient);
+        assertEquals((capturedArgs[2] as User)?.id, mockUser.id); 
     }
   });
+  
+  await t.step("Multipart: createProject should return 401 if no auth token", async () => {
+    const createProjectSpy = spy(async () => ({ data: { id: "proj-123" } as any, status: 201 }));
+    mockHandlers = createMockHandlers({ createProject: createProjectSpy });
+    mockAdminClient = mockSupabaseClient();
+    const req = createFormDataRequest("createProject"); 
+    const response = await handleRequest(req, mockAdminClient, mockHandlers);
+    assertEquals(response.status, 401);
+    const body = await response.json();
+    assertEquals(body.error, "User not authenticated"); 
+    assertEquals(createProjectSpy.calls.length, 0);
+  });
 
-  await t.step("Multipart: uploadProjectResourceFile should call correct handler", async () => {
+  await t.step("Multipart: uploadProjectResourceFile should call correct handler with auth", async () => {
     let capturedArgs: any[] | null = null;
     const uploadSpy = spy(async (...args: any[]) => { 
         capturedArgs = args;
         return { data: { id: "res-123" } as any, status: 200 }; 
     });
-    mockHandlers = { uploadProjectResourceFileHandler: uploadSpy } as unknown as ActionHandlers;
-    const mockGetUser = spy(async () => ({ data: { user: mockUser }, error: null }));
-    mockAdminClient = mockSupabaseClient({ auth: { getUser: mockGetUser as any }});
+    mockHandlers = createMockHandlers({ uploadProjectResourceFileHandler: uploadSpy });
+    mockAdminClient = mockSupabaseClient(); 
     const req = createFormDataRequest("uploadProjectResourceFile", {}, "valid-token-for-mock");
     const response = await handleRequest(req, mockAdminClient, mockHandlers);
     assertEquals(response.status, 200);
-    if(response.ok){
-        assertEquals(uploadSpy.calls.length, 1);
-        if (uploadSpy.calls.length > 0) {
-            assertEquals(uploadSpy.calls[0].args[0], req); 
-            assertEquals(uploadSpy.calls[0].args[1], mockAdminClient);
-            assertExists(uploadSpy.calls[0].args[2]); 
-            assertExists(uploadSpy.calls[0].args[3]);
-        }
+    assertEquals(uploadSpy.calls.length, 1);
+    assertExists(capturedArgs);
+    if (capturedArgs) {
+        assertExists(capturedArgs[0]); 
+        assertEquals((capturedArgs[0] as FormData).get("action"), "uploadProjectResourceFile");
+        assertEquals(capturedArgs[1], mockAdminClient);
+        assertEquals((capturedArgs[2] as User)?.id, mockUser.id); 
+        assertExists(capturedArgs[3]); 
     }
   });
 
   await t.step("Multipart: unknown action should return 400", async () => {
-    mockHandlers = {} as ActionHandlers;
+    mockHandlers = createMockHandlers(); 
     mockAdminClient = mockSupabaseClient();
     const actionName = "unknownMultipartAction";
-    const req = createFormDataRequest(actionName);
+    const req = createFormDataRequest(actionName, {}, "valid-token-for-mock"); 
     const response = await handleRequest(req, mockAdminClient, mockHandlers);
     assertEquals(response.status, 400);
     const body = await response.json();
@@ -285,30 +318,28 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
   });
 
   // --- Application/json tests ---
-  await t.step("JSON: listAvailableDomainTags should call correct handler", async () => {
+  await t.step("JSON: listAvailableDomainTags should call correct handler (no auth needed)", async () => {
     let capturedArgs: any[] | null = null;
     const listTagsSpy = spy(async (...args: any[]) => { 
-        capturedArgs = args; 
-        return { data: [{ domain_tag: "test" }] }; 
+        capturedArgs = args;
+        return [{ domain_tag: "test", description: "Mock Tag" }] as any[]; // Using any[] due to DomainTagDescriptor not being exported
     });
-    mockHandlers = { listAvailableDomainTags: listTagsSpy } as unknown as ActionHandlers;
+    mockHandlers = createMockHandlers({ listAvailableDomainTags: listTagsSpy });
     mockAdminClient = mockSupabaseClient();
     const reqPayload = { stageAssociation: "thesis" };
-    const req = createJsonRequest("listAvailableDomainTags", reqPayload);
+    const req = createJsonRequest("listAvailableDomainTags", reqPayload); 
     const response = await handleRequest(req, mockAdminClient, mockHandlers);
     assertEquals(response.status, 200);
-    if(response.ok){
-        assertEquals(listTagsSpy.calls.length, 1);
-        if (listTagsSpy.calls.length > 0) {
-            assertEquals(listTagsSpy.calls[0].args[0], mockAdminClient);
-            assertEquals(listTagsSpy.calls[0].args[1], reqPayload);
-        }
+    assertEquals(listTagsSpy.calls.length, 1);
+    if (listTagsSpy.calls.length > 0) {
+        assertEquals(listTagsSpy.calls[0].args[0], mockAdminClient);
+        assertEquals(listTagsSpy.calls[0].args[1], reqPayload);
     }
   });
   
-  await t.step("JSON: listAvailableDomainOverlays requires stageAssociation", async () => {
-    const listOverlaysSpy = spy(async () => ([]));
-    mockHandlers = { listAvailableDomainOverlays: listOverlaysSpy } as unknown as ActionHandlers;
+  await t.step("JSON: listAvailableDomainOverlays requires stageAssociation (no auth needed)", async () => {
+    const listOverlaysSpy = spy(async () => ([])); 
+    mockHandlers = createMockHandlers({ listAvailableDomainOverlays: listOverlaysSpy });
     mockAdminClient = mockSupabaseClient();
     const req = createJsonRequest("listAvailableDomainOverlays", {}); 
     const response = await handleRequest(req, mockAdminClient, mockHandlers);
@@ -318,25 +349,36 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
     assertEquals(listOverlaysSpy.calls.length, 0); 
   });
 
-  await t.step("JSON: updateProjectDomainTag requires payload", async () => {
-    const updateTagSpy = spy(async () => ({ data: { id: "proj-1" } as any, status: 200}));
-    mockHandlers = { updateProjectDomainTag: updateTagSpy } as unknown as ActionHandlers;
+  await t.step("JSON: updateProjectDomainTag requires auth; then payload", async () => {
+    const updateTagSpy = spy(async () => ({ data: { id: "proj-1" } as any, status: 200})); 
+    mockHandlers = createMockHandlers({ updateProjectDomainTag: updateTagSpy });
+    
+    // Case 1: No auth token
     mockAdminClient = mockSupabaseClient();
-    const req = createJsonRequest("updateProjectDomainTag"); 
-    const response = await handleRequest(req, mockAdminClient, mockHandlers);
-    assertEquals(response.status, 400);
-    const body = await response.json();
-    assertEquals(body.error, "Payload is required for updateProjectDomainTag");
+    const req_no_auth = createJsonRequest("updateProjectDomainTag"); 
+    const response_no_auth = await handleRequest(req_no_auth, mockAdminClient, mockHandlers);
+    assertEquals(response_no_auth.status, 401);
+    const body_no_auth = await response_no_auth.json();
+    assertEquals(body_no_auth.error, "User not authenticated");
     assertEquals(updateTagSpy.calls.length, 0);
+
+    // Case 2: Auth token present, but no payload
+    mockAdminClient = mockSupabaseClient(); 
+    const req_no_payload = createJsonRequest("updateProjectDomainTag", undefined, "valid-token-for-mock");
+    const response_no_payload = await handleRequest(req_no_payload, mockAdminClient, mockHandlers);
+    assertEquals(response_no_payload.status, 400);
+    const body_no_payload = await response_no_payload.json();
+    assertEquals(body_no_payload.error, "Payload is required for updateProjectDomainTag");
+    assertEquals(updateTagSpy.calls.length, 0); 
   });
   
    await t.step("JSON: deleteProject requires auth and projectId", async () => {
-    let capturedArgs: any[] | null = null;
+    let capturedArgsDelete: any[] | null = null;
     const deleteProjectSpy = spy(async (...args: any[]) => { 
-        capturedArgs = args;
+        capturedArgsDelete = args;
         return { data: null, status: 204 }; 
     });
-    mockHandlers = { deleteProject: deleteProjectSpy } as unknown as ActionHandlers;
+    mockHandlers = createMockHandlers({ deleteProject: deleteProjectSpy });
     
     // Case 1: No auth token
     mockAdminClient = mockSupabaseClient(); 
@@ -344,22 +386,20 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
     const response_dp_1 = await handleRequest(req_dp_1, mockAdminClient, mockHandlers);
     assertEquals(response_dp_1.status, 401);
     const body_dp_1 = await response_dp_1.json();
-    assertEquals(body_dp_1.error, "User authentication required for deleteProject.");
+    assertEquals(body_dp_1.error, "User not authenticated"); 
     assertEquals(deleteProjectSpy.calls.length, 0);
     
-    // Case 2: Auth token present, but getUser fails
-    const failingGetUser_dp = spy(async () => ({ data: { user: null }, error: createMockAuthError("Auth error", 401, "TOKEN_INVALID") }));
-    mockAdminClient = mockSupabaseClient({ auth: { getUser: failingGetUser_dp as any } }); 
-    const req_dp_2 = createJsonRequest("deleteProject", { projectId: "proj-123" }, "fake-token-auth-fails");
+    // Case 2: Auth token present, but getUser fails (e.g. invalid token)
+    mockAdminClient = mockSupabaseClient(); 
+    const req_dp_2 = createJsonRequest("deleteProject", { projectId: "proj-123" }, "invalid-token");
     const response_dp_2 = await handleRequest(req_dp_2, mockAdminClient, mockHandlers);
     assertEquals(response_dp_2.status, 401); 
     const body_dp_2 = await response_dp_2.json();
-    assertEquals(body_dp_2.error, "Auth error"); 
+    assertEquals(body_dp_2.error, "Mock: Invalid token"); 
     assertEquals(deleteProjectSpy.calls.length, 0);
 
     // Case 3: Auth token present, getUser succeeds, but no projectId
-    const successfulGetUserMock_dp_c3 = spy(async () => ({ data: { user: mockUser }, error: null }));
-    mockAdminClient = mockSupabaseClient({ auth: { getUser: successfulGetUserMock_dp_c3 as any } });
+    mockAdminClient = mockSupabaseClient(); 
     const req_dp_3 = createJsonRequest("deleteProject", {}, "valid-token-for-mock"); 
     const response_dp_3 = await handleRequest(req_dp_3, mockAdminClient, mockHandlers);
     assertEquals(response_dp_3.status, 400);
@@ -368,59 +408,68 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
     assertEquals(deleteProjectSpy.calls.length, 0);
     
     // Case 4: Auth token present, getUser succeeds, projectId present
-    capturedArgs = null; // Reset for this case
-    const successfulGetUserMock_dp_c4 = spy(async () => ({ data: { user: mockUser }, error: null })); 
-    mockAdminClient = mockSupabaseClient({ auth: { getUser: successfulGetUserMock_dp_c4 as any } });
+    capturedArgsDelete = null; 
+    mockAdminClient = mockSupabaseClient(); 
     const reqPayload_dp_4 = { projectId: "proj-123" };
     const req_dp_4 = createJsonRequest("deleteProject", reqPayload_dp_4, "valid-token-for-mock");
     const response_dp_4 = await handleRequest(req_dp_4, mockAdminClient, mockHandlers);
     assertEquals(response_dp_4.status, 204); 
     assertEquals(deleteProjectSpy.calls.length, 1);
-    assertExists(capturedArgs, "deleteProject spy was called but args not captured in case 4");
-    if(capturedArgs) {
-        assertEquals(capturedArgs[0], mockAdminClient);
-        assertEquals(capturedArgs[1], reqPayload_dp_4); 
-        assertEquals(capturedArgs[2], mockUser.id);
+    assertExists(capturedArgsDelete, "deleteProject spy was called but args not captured in case 4");
+    if(capturedArgsDelete) {
+        assertEquals(capturedArgsDelete[0], mockAdminClient);
+        assertEquals(capturedArgsDelete[1], reqPayload_dp_4); 
+        assertEquals(capturedArgsDelete[2], mockUser.id);
     }
   });
 
   await t.step("JSON: unknown action should return 400", async () => {
-    mockHandlers = {} as ActionHandlers;
+    mockHandlers = createMockHandlers(); 
     mockAdminClient = mockSupabaseClient();
     const actionName = "unknownJsonAction";
-    const req = createJsonRequest(actionName, {});
+    const req = createJsonRequest(actionName, {}, "valid-token-for-mock"); 
     const response = await handleRequest(req, mockAdminClient, mockHandlers);
     assertEquals(response.status, 400);
     const body = await response.json();
     assertEquals(body.error, `Unknown action '${actionName}' for application/json.`);
   });
   
-  await t.step("Handler error should be caught and returned as 500 (or handler specific error)", async () => {
+  await t.step("Handler error (returns ServiceError) should be caught", async () => {
     const errorMessage = "Handler exploded!";
     const errorStatus = 503;
     const errorCode = "HANDLER_SELF_DESTRUCT";
-    let capturedArgs: any[] | null = null;
-    const listProjectsErrorSpy = spy(async (...args: any[]) => { 
-        capturedArgs = args;
+    
+    const listProjectsErrorSpy = spy(async () => { 
         return { error: { message: errorMessage, status: errorStatus, code: errorCode }  as ServiceError };
     });
-    mockHandlers = { listProjects: listProjectsErrorSpy } as unknown as ActionHandlers;
-    mockAdminClient = mockSupabaseClient();
-    const req = createJsonRequest("listProjects");
+    mockHandlers = createMockHandlers({ listProjects: listProjectsErrorSpy });
+    mockAdminClient = mockSupabaseClient(); 
+    const req = createJsonRequest("listProjects", undefined, "valid-token-for-mock"); 
     const response = await handleRequest(req, mockAdminClient, mockHandlers);
     assertEquals(response.status, errorStatus);
     const body = await response.json();
     assertEquals(body.error, errorMessage);
     assertEquals(listProjectsErrorSpy.calls.length, 1);
-    assertExists(capturedArgs);
+  });
+
+  await t.step("Handler error (returns ServiceError) for listProjects should return 401 if no auth", async () => {
+    const listProjectsErrorSpy = spy(async () => ({ error: { message: "some error", status: 500 }}));
+    mockHandlers = createMockHandlers({ listProjects: listProjectsErrorSpy });
+    mockAdminClient = mockSupabaseClient();
+    const req = createJsonRequest("listProjects"); 
+    const response = await handleRequest(req, mockAdminClient, mockHandlers);
+    assertEquals(response.status, 401);
+    const body = await response.json();
+    assertEquals(body.error, "User not authenticated");
+    assertEquals(listProjectsErrorSpy.calls.length, 0);
   });
   
   await t.step("Unexpected handler exception should return 500", async () => {
     const errorMessage = "Totally unexpected JS error";
-    const listProjectsErrorSpy = spy(async () => { throw new Error(errorMessage); });
-    mockHandlers = { listProjects: listProjectsErrorSpy } as unknown as ActionHandlers;
-    mockAdminClient = mockSupabaseClient();
-    const req = createJsonRequest("listProjects");
+    const listProjectsErrorSpy = spy(async () => { throw new Error(errorMessage); }); 
+    mockHandlers = createMockHandlers({ listProjects: listProjectsErrorSpy });
+    mockAdminClient = mockSupabaseClient(); 
+    const req = createJsonRequest("listProjects", undefined, "valid-token-for-mock"); 
     const response = await handleRequest(req, mockAdminClient, mockHandlers);
     assertEquals(response.status, 500);
     const body = await response.json();
@@ -430,244 +479,253 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
 
   // --- Tests for remaining JSON actions (Scope variables locally for each case) ---
 
-  await t.step("JSON: getProjectDetails requires projectId in payload", async () => {
-    let capturedArgs: any[] | null = null;
+  await t.step("JSON: getProjectDetails requires auth; then projectId", async () => {
+    let capturedArgsGPD: any[] | null = null;
     const getDetailsSpy = spy(async (...args: any[]) => { 
-        capturedArgs = args; 
+        capturedArgsGPD = args; 
         return { data: { id: "proj-1" } as any, status: 200 }; 
     });
-    mockHandlers = { getProjectDetails: getDetailsSpy } as unknown as ActionHandlers;
-    mockAdminClient = mockSupabaseClient();
+    mockHandlers = createMockHandlers({ getProjectDetails: getDetailsSpy });
 
-    // Case 1: Missing projectId
-    const req_gpd_1 = createJsonRequest("getProjectDetails", { foo: "bar" });
+    // Case 0: No auth
+    mockAdminClient = mockSupabaseClient();
+    const req_gpd_0 = createJsonRequest("getProjectDetails", { projectId: "proj-xyz" }); 
+    const response_gpd_0 = await handleRequest(req_gpd_0, mockAdminClient, mockHandlers);
+    assertEquals(response_gpd_0.status, 401);
+    const body_gpd_0 = await response_gpd_0.json();
+    assertEquals(body_gpd_0.error, "User not authenticated");
+    assertEquals(getDetailsSpy.calls.length, 0);
+
+    // Case 1: Missing projectId (with auth)
+    mockAdminClient = mockSupabaseClient(); 
+    const req_gpd_1 = createJsonRequest("getProjectDetails", { foo: "bar" }, "valid-token-for-mock");
     const response_gpd_1 = await handleRequest(req_gpd_1, mockAdminClient, mockHandlers);
     assertEquals(response_gpd_1.status, 400);
     const body_gpd_1 = await response_gpd_1.json();
     assertEquals(body_gpd_1.error, "Invalid or missing projectId in payload for getProjectDetails action.");
     assertEquals(getDetailsSpy.calls.length, 0);
 
-    // Case 2: projectId is not a string
-    const req_gpd_2 = createJsonRequest("getProjectDetails", { projectId: 123 });
+    // Case 2: projectId is not a string (with auth)
+    const req_gpd_2 = createJsonRequest("getProjectDetails", { projectId: 123 }, "valid-token-for-mock");
     const response_gpd_2 = await handleRequest(req_gpd_2, mockAdminClient, mockHandlers);
     assertEquals(response_gpd_2.status, 400);
     const body_gpd_2 = await response_gpd_2.json();
     assertEquals(body_gpd_2.error, "Invalid or missing projectId in payload for getProjectDetails action.");
     assertEquals(getDetailsSpy.calls.length, 0);
 
-    // Case 3: Valid projectId
-    capturedArgs = null; 
+    // Case 3: Valid projectId (with auth)
+    capturedArgsGPD = null; 
     const payload_gpd_3 = { projectId: "proj-xyz" }; 
-    const req_gpd_3 = createJsonRequest("getProjectDetails", payload_gpd_3);
+    const req_gpd_3 = createJsonRequest("getProjectDetails", payload_gpd_3, "valid-token-for-mock");
     const response_gpd_3 = await handleRequest(req_gpd_3, mockAdminClient, mockHandlers);
     assertEquals(response_gpd_3.status, 200);
     assertEquals(getDetailsSpy.calls.length, 1);
-    assertExists(capturedArgs);
-    if(capturedArgs){
-        assertEquals(capturedArgs[0], req_gpd_3);
-        assertEquals(capturedArgs[1], mockAdminClient);
-        assertEquals(capturedArgs[2], payload_gpd_3);
+    assertExists(capturedArgsGPD);
+    if(capturedArgsGPD){
+        assertEquals(capturedArgsGPD[0], payload_gpd_3); 
+        assertEquals(capturedArgsGPD[1], mockAdminClient); 
+        assertEquals((capturedArgsGPD[2] as User)?.id, mockUser.id); 
     }
   });
 
-  await t.step("JSON: startSession requires payload", async () => {
-    let capturedArgs: any[] | null = null;
+  await t.step("JSON: startSession requires auth; then payload", async () => {
+    let capturedArgsSS: any[] | null = null;
     const startSessionSpy = spy(async (...args: any[]) => { 
-        capturedArgs = args; 
+        capturedArgsSS = args; 
         return { data: { id: "sess-1" } as any, status: 201 }; 
     });
-    mockHandlers = { startSession: startSessionSpy } as unknown as ActionHandlers;
+    mockHandlers = createMockHandlers({ startSession: startSessionSpy });
+    
+    // Case 0: No auth
     mockAdminClient = mockSupabaseClient();
+    const req_ss_0 = createJsonRequest("startSession", { projectId: "proj-abc" }); 
+    const response_ss_0 = await handleRequest(req_ss_0, mockAdminClient, mockHandlers);
+    assertEquals(response_ss_0.status, 401);
+    const body_ss_0 = await response_ss_0.json();
+    assertEquals(body_ss_0.error, "User not authenticated");
+    assertEquals(startSessionSpy.calls.length, 0);
 
-    // Case 1: No payload
-    const req_ss_1 = createJsonRequest("startSession");
+    // Case 1: No payload (with auth)
+    mockAdminClient = mockSupabaseClient(); 
+    const req_ss_1 = createJsonRequest("startSession", undefined, "valid-token-for-mock");
     const response_ss_1 = await handleRequest(req_ss_1, mockAdminClient, mockHandlers);
     assertEquals(response_ss_1.status, 400);
     const body_ss_1 = await response_ss_1.json();
     assertEquals(body_ss_1.error, "Payload is required for startSession");
     assertEquals(startSessionSpy.calls.length, 0);
 
-    // Case 2: Valid payload
-    capturedArgs = null; 
+    // Case 2: Valid payload (with auth)
+    capturedArgsSS = null; 
     const payload_ss_2 = { projectId: "proj-abc", initialPrompt: "Test prompt" }; 
-    const req_ss_2 = createJsonRequest("startSession", payload_ss_2);
+    const req_ss_2 = createJsonRequest("startSession", payload_ss_2, "valid-token-for-mock");
     const response_ss_2 = await handleRequest(req_ss_2, mockAdminClient, mockHandlers);
     assertEquals(response_ss_2.status, 201);
     assertEquals(startSessionSpy.calls.length, 1);
-    assertExists(capturedArgs);
-    if(capturedArgs){
-        assertEquals(capturedArgs[0], req_ss_2);
-        assertEquals(capturedArgs[1], mockAdminClient);
-        assertEquals(capturedArgs[2], payload_ss_2);
+    assertExists(capturedArgsSS);
+    if(capturedArgsSS){
+        assertEquals((capturedArgsSS[0] as User)?.id, mockUser.id); 
+        assertEquals(capturedArgsSS[1], mockAdminClient); 
+        assertEquals(capturedArgsSS[2], payload_ss_2); 
+        assertExists(capturedArgsSS[3]); 
     }
   });
 
-  await t.step("JSON: generateContributions requires sessionId and authToken", async () => {
-    let capturedArgs: any[] | null = null;
-    const genContributionsSpy = spy(async (...args: any[]) => { 
-        capturedArgs = args;
-        return { data: { id: "contrib-1" } as any, success: true, status: 200 }; 
+  await t.step("JSON: generateContributions requires auth, sessionId, and token passed to handler", async () => {
+    let capturedArgsGC: any[] | null = null;
+    const genContributionsSpy = spy(async (...args: any[]) => {
+        capturedArgsGC = args;
+        const mockResponseData: GenerateStageContributionsSuccessResponse = {
+            message: "Mock contributions generated",
+            sessionId: (args[1] as {sessionId: string}).sessionId,
+            status: "completed",
+            contributions: [] as DialecticContribution[],
+        };
+        return { data: mockResponseData, success: true, status: 200 };
     });
-    mockHandlers = { generateStageContributions: genContributionsSpy } as unknown as ActionHandlers;
-    
-    // Case 1: No payload 
-    const req_gc_1 = createJsonRequest("generateContributions");
+    mockHandlers = createMockHandlers({ generateStageContributions: genContributionsSpy });
+
+    // Case 0: No auth token (and no payload)
     mockAdminClient = mockSupabaseClient(); 
+    const req_gc_0 = createJsonRequest("generateContributions");
+    const response_gc_0 = await handleRequest(req_gc_0, mockAdminClient, mockHandlers);
+    assertEquals(response_gc_0.status, 401); 
+    const body_gc_0 = await response_gc_0.json();
+    assertEquals(body_gc_0.error, "User not authenticated");
+    assertEquals(genContributionsSpy.calls.length, 0);
+
+    // Case 1: Auth token, but no payload 
+    mockAdminClient = mockSupabaseClient();
+    const req_gc_1 = createJsonRequest("generateContributions", undefined, "valid-token-for-mock");
     const response_gc_1 = await handleRequest(req_gc_1, mockAdminClient, mockHandlers);
-    assertEquals(response_gc_1.status, 400);
+    assertEquals(response_gc_1.status, 400); 
     const body_gc_1 = await response_gc_1.json();
     assertEquals(body_gc_1.error, "Payload with 'sessionId' (string) is required for generateContributions");
     assertEquals(genContributionsSpy.calls.length, 0);
 
-    // Case 2: Payload missing sessionId
-    const req_gc_2 = createJsonRequest("generateContributions", { stage: "thesis" });
-    mockAdminClient = mockSupabaseClient(); 
+    // Case 2: Auth token, payload missing sessionId
+    const req_gc_2 = createJsonRequest("generateContributions", { stage: "thesis" }, "valid-token-for-mock");
     const response_gc_2 = await handleRequest(req_gc_2, mockAdminClient, mockHandlers);
-    assertEquals(response_gc_2.status, 400);
+    assertEquals(response_gc_2.status, 400); 
     const body_gc_2 = await response_gc_2.json();
     assertEquals(body_gc_2.error, "Payload with 'sessionId' (string) is required for generateContributions");
     assertEquals(genContributionsSpy.calls.length, 0);
-
-    // Case 3: Valid payload, but no authToken
-    const payload_gc_3 = { sessionId: "sess-xyz", stage: "thesis" };
-    const req_gc_3 = createJsonRequest("generateContributions", payload_gc_3); 
+    
+    // Case 3: Valid payload and good authToken (Success Path)
+    capturedArgsGC = null; 
+    mockHandlers = createMockHandlers({ generateStageContributions: genContributionsSpy }); 
     mockAdminClient = mockSupabaseClient(); 
-    const response_gc_3 = await handleRequest(req_gc_3, mockAdminClient, mockHandlers);
-    assertEquals(response_gc_3.status, 401);
-    const body_gc_3 = await response_gc_3.json();
-    assertEquals(body_gc_3.error, "User authentication token is required for generateContributions");
-    assertEquals(genContributionsSpy.calls.length, 0);
-
-    // Case 4: Valid payload and authToken, but underlying getUser might fail.
-    capturedArgs = null; 
-    const payload_gc_4 = { sessionId: "sess-xyz", stage: "thesis" };
-    const mockGetUserFails_gc = spy(async () => ({ data: { user: null }, error: createMockAuthError("Token invalid", 401, "TOKEN_INVALID") }));
-    const tempMockAdminClient_gc = mockSupabaseClient({ auth: { getUser: mockGetUserFails_gc as any } });
-    const req_gc_4 = createJsonRequest("generateContributions", payload_gc_4, "bad-token-but-present"); 
-    const response_gc_4 = await handleRequest(req_gc_4, tempMockAdminClient_gc, mockHandlers);
-    assertEquals(response_gc_4.status, 200); 
-    // BUG_NOTE: The following assertion currently fails. Expected `genContributionsSpy.calls.length` to be 1 after a single handleRequest call,
-    // but it is 2. This suggests the spy is being invoked twice unexpectedly. Investigation may be needed if this persists,
-    // possibly related to Deno's std/testing/mock versioning or a subtle interaction in this specific test case.
-    assertEquals(genContributionsSpy.calls.length, 1);
-    assertExists(capturedArgs);
-
-    // Case 5: Valid payload and good authToken
-    capturedArgs = null; 
     const goodToken_gc = "valid-token-for-mock";
     const payload_gc_5 = { sessionId: "sess-xyz", stage: "thesis" }; 
     const req_gc_5 = createJsonRequest("generateContributions", payload_gc_5, goodToken_gc);
-    mockAdminClient = mockSupabaseClient(); 
     const response_gc_5 = await handleRequest(req_gc_5, mockAdminClient, mockHandlers);
+    
     assertEquals(response_gc_5.status, 200); 
-    assertEquals(genContributionsSpy.calls.length, 2); 
-    assertExists(capturedArgs);
-    if(capturedArgs){
-        assertEquals(capturedArgs[0], mockAdminClient);
+    assertEquals(genContributionsSpy.calls.length, 1); 
+    assertExists(capturedArgsGC);
+    if(capturedArgsGC){
+        assertEquals(capturedArgsGC[0], mockAdminClient); 
         const expectedPayloadToHandler = { sessionId: payload_gc_5.sessionId, stage: "thesis" };
-        assertEquals(capturedArgs[1], expectedPayloadToHandler);
-        assertEquals(capturedArgs[2], goodToken_gc);
+        assertEquals(capturedArgsGC[1], expectedPayloadToHandler); 
+        assertEquals(capturedArgsGC[2], goodToken_gc); 
+        assertExists(capturedArgsGC[3]); 
     }
   });
 
-  await t.step("JSON: getContributionContentSignedUrl requires contributionId and auth", async () => {
-    let capturedArgsMainSpy: any[] | null = null;
+  await t.step("JSON: getContributionContentSignedUrl requires auth; then contributionId", async () => {
+    let capturedArgsMainSpyGCS: any[] | null = null;
     const getUrlSpy = spy(async (...args: any[]) => { 
-        capturedArgsMainSpy = args;
+        capturedArgsMainSpyGCS = args;
         return { data: { signedUrl: "http://example.com/url" }, status: 200 }; 
     });
-    
-    let capturedArgsAuthFailSpy: any[] | null = null;
-    const getUrlSpyAuthFail_gcs = spy(async (...args: any[]) => {
-      capturedArgsAuthFailSpy = args;
-      const getUserFn = args[0]; 
-      const { error } = await getUserFn(); 
-      return { error: error || createMockAuthError("Simulated auth fail in handler", 401, "HANDLER_AUTH_FAIL"), status: 401 };
-    });
+    mockHandlers = createMockHandlers({ getContributionContentSignedUrlHandler: getUrlSpy });
 
+    // Case 0: No auth
+    mockAdminClient = mockSupabaseClient();
+    const req_gcs_0 = createJsonRequest("getContributionContentSignedUrl", { contributionId: "c-123" }); 
+    const response_gcs_0 = await handleRequest(req_gcs_0, mockAdminClient, mockHandlers);
+    assertEquals(response_gcs_0.status, 401);
+    const body_gcs_0 = await response_gcs_0.json();
+    assertEquals(body_gcs_0.error, "User not authenticated");
+    assertEquals(getUrlSpy.calls.length, 0);
+    
     // Case 1: Missing contributionId (with token)
-    mockHandlers = { getContributionContentSignedUrlHandler: getUrlSpy } as unknown as ActionHandlers;
     const req_gcs_1 = createJsonRequest("getContributionContentSignedUrl", { foo: "bar" }, "valid-token-for-mock");
-    mockAdminClient = mockSupabaseClient(); 
     const response_gcs_1 = await handleRequest(req_gcs_1, mockAdminClient, mockHandlers);
     assertEquals(response_gcs_1.status, 400);
     const body_gcs_1 = await response_gcs_1.json();
     assertEquals(body_gcs_1.error, "Invalid payload for getContributionContentSignedUrl. Expected { contributionId: string }");
-    assertEquals(getUrlSpy.calls.length, 0);
+    assertEquals(getUrlSpy.calls.length, 0); 
 
     // Case 2: contributionId not a string (with token)
-    mockHandlers = { getContributionContentSignedUrlHandler: getUrlSpy } as unknown as ActionHandlers;
     const req_gcs_2 = createJsonRequest("getContributionContentSignedUrl", { contributionId: 123 }, "valid-token-for-mock");
-    mockAdminClient = mockSupabaseClient();
     const response_gcs_2 = await handleRequest(req_gcs_2, mockAdminClient, mockHandlers);
     assertEquals(response_gcs_2.status, 400);
     const body_gcs_2 = await response_gcs_2.json();
     assertEquals(body_gcs_2.error, "Invalid payload for getContributionContentSignedUrl. Expected { contributionId: string }");
-    assertEquals(getUrlSpy.calls.length, 0);
+    assertEquals(getUrlSpy.calls.length, 0); 
 
-    // Case 3: No auth token (even if payload is fine)
-    capturedArgsAuthFailSpy = null; 
-    mockHandlers = { getContributionContentSignedUrlHandler: getUrlSpyAuthFail_gcs } as unknown as ActionHandlers;
-    const payload_gcs_3 = { contributionId: "contrib-xyz" };
-    const req_gcs_3 = createJsonRequest("getContributionContentSignedUrl", payload_gcs_3); 
+    // Case 3: Valid payload and auth token (handler uses getUserFn internally)
+    capturedArgsMainSpyGCS = null; 
     mockAdminClient = mockSupabaseClient(); 
-    const response_gcs_3 = await handleRequest(req_gcs_3, mockAdminClient, mockHandlers);
-    assertEquals(response_gcs_3.status, 401);
-    const body_gcs_3 = await response_gcs_3.json();
-    assertStringIncludes(body_gcs_3.error, "User not authenticated"); 
-    assertEquals(getUrlSpyAuthFail_gcs.calls.length, 1);
-    assertExists(capturedArgsAuthFailSpy);
-
-    // Case 4: Valid payload and auth token
-    capturedArgsMainSpy = null; 
-    mockHandlers = { getContributionContentSignedUrlHandler: getUrlSpy } as unknown as ActionHandlers; 
-    const successfulGetUserMock_gcs = spy(async () => ({ data: { user: mockUser }, error: null })); 
-    mockAdminClient = mockSupabaseClient({ auth: { getUser: successfulGetUserMock_gcs as any } }); 
     const payload_gcs_4 = { contributionId: "contrib-xyz" };
     const req_gcs_4 = createJsonRequest("getContributionContentSignedUrl", payload_gcs_4, "valid-token-for-mock");
     const response_gcs_4 = await handleRequest(req_gcs_4, mockAdminClient, mockHandlers);
     assertEquals(response_gcs_4.status, 200);
     assertEquals(getUrlSpy.calls.length, 1); 
-    assertExists(capturedArgsMainSpy);
-    if(capturedArgsMainSpy){
-        assertExists(capturedArgsMainSpy[0]); 
-        assertEquals(capturedArgsMainSpy[1], mockAdminClient);
-        assertExists(capturedArgsMainSpy[2]); 
-        assertExists(capturedArgsMainSpy[3]); 
-        assertEquals(capturedArgsMainSpy[4], payload_gcs_4);
+    assertExists(capturedArgsMainSpyGCS);
+    if(capturedArgsMainSpyGCS){
+        assertExists(capturedArgsMainSpyGCS[0]); 
+        assertEquals(capturedArgsMainSpyGCS[1], mockAdminClient); 
+        assertExists(capturedArgsMainSpyGCS[2]); 
+        assertExists(capturedArgsMainSpyGCS[3]); 
+        assertEquals(capturedArgsMainSpyGCS[4], payload_gcs_4); 
     }
   });
 
-  await t.step("JSON: cloneProject requires projectId and authToken", async () => {
-    let capturedArgs: any[] | null = null;
+  await t.step("JSON: cloneProject requires auth; then projectId", async () => {
+    let capturedArgsClone: any[] | null = null;
     const cloneSpy = spy(async (...args: any[]) => { 
-        capturedArgs = args;
-        return { data: { id: "proj-clone" } as any, status: 201 }; 
+        capturedArgsClone = args;
+        // Explicitly create a structure that matches what CloneProjectResult seems to expect for its data field
+        const mockProjectDataForCloneResult = {
+            id: "proj-clone",
+            user_id: mockUser.id,
+            project_name: (args[2] as string) || "Cloned Project",
+            initial_user_prompt: "Cloned prompt",
+            initial_prompt_resource_id: null, // from DialecticProject (optional)
+            selected_domain_tag: null, // from DialecticProject
+            selected_domain_overlay_id: null, // from DialecticProject (optional)
+            repo_url: null, // from DialecticProject
+            status: "active", // from DialecticProject
+            created_at: new Date().toISOString(), // from DialecticProject
+            updated_at: new Date().toISOString(), // from DialecticProject
+            sessions: [], // from DialecticProject (optional)
+            user_domain_overlay_values: {}, // The field linter expects for CloneProjectResult's data
+        };
+        return { data: mockProjectDataForCloneResult as any, error: null, status: 201 }; // Cast to any to bypass strict DialecticProject type for now
     });
-    mockHandlers = { cloneProject: cloneSpy } as unknown as ActionHandlers;
+    mockHandlers = createMockHandlers({ cloneProject: cloneSpy });
 
-    // Case 1: No auth token
+    // Case 0: No auth token
     mockAdminClient = mockSupabaseClient();
-    const req_cp_1 = createJsonRequest("cloneProject", { projectId: "orig-proj" });
-    const response_cp_1 = await handleRequest(req_cp_1, mockAdminClient, mockHandlers);
-    assertEquals(response_cp_1.status, 401);
-    const body_cp_1 = await response_cp_1.json();
-    assertEquals(body_cp_1.error, "User authentication required for cloneProject.");
+    const req_cp_0 = createJsonRequest("cloneProject", { projectId: "orig-proj" });
+    const response_cp_0 = await handleRequest(req_cp_0, mockAdminClient, mockHandlers);
+    assertEquals(response_cp_0.status, 401);
+    const body_cp_0 = await response_cp_0.json();
+    assertEquals(body_cp_0.error, "User not authenticated");
     assertEquals(cloneSpy.calls.length, 0);
 
-    // Case 2: Auth token, but getUser fails
-    const mockGetUserFails_cp = spy(async () => ({ data: { user: null }, error: createMockAuthError("Auth error for clone", 401, "CLONE_AUTH_ERROR") }));
-    mockAdminClient = mockSupabaseClient({ auth: { getUser: mockGetUserFails_cp as any } });
+    // Case 1: Auth token, but getUser fails (e.g. invalid token)
+    mockAdminClient = mockSupabaseClient(); 
     const req_cp_2 = createJsonRequest("cloneProject", { projectId: "orig-proj" }, "bad-token");
     const response_cp_2 = await handleRequest(req_cp_2, mockAdminClient, mockHandlers);
     assertEquals(response_cp_2.status, 401);
     const body_cp_2 = await response_cp_2.json();
-    assertEquals(body_cp_2.error, "Auth error for clone");
+    assertEquals(body_cp_2.error, "Mock: Invalid token");
     assertEquals(cloneSpy.calls.length, 0);
 
-    // Case 3: Auth token, getUser succeeds, but no projectId
-    const successfulGetUserMock_cp_c3 = spy(async () => ({ data: { user: mockUser }, error: null })); 
-    mockAdminClient = mockSupabaseClient({ auth: { getUser: successfulGetUserMock_cp_c3 as any } });
+    // Case 2: Auth token, getUser succeeds, but no projectId
+    mockAdminClient = mockSupabaseClient(); 
     const req_cp_3 = createJsonRequest("cloneProject", { newProjectName: "Cloned" }, "valid-token-for-mock"); 
     const response_cp_3 = await handleRequest(req_cp_3, mockAdminClient, mockHandlers);
     assertEquals(response_cp_3.status, 400);
@@ -675,54 +733,51 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
     assertEquals(body_cp_3.error, "Invalid payload for cloneProject. Expected { projectId: string, newProjectName?: string }");
     assertEquals(cloneSpy.calls.length, 0);
     
-    // Case 4: Auth token, getUser succeeds, projectId present
-    capturedArgs = null; 
-    const successfulGetUserMock_cp_c4 = spy(async () => ({ data: { user: mockUser }, error: null })); 
-    mockAdminClient = mockSupabaseClient({ auth: { getUser: successfulGetUserMock_cp_c4 as any } });
+    // Case 3: Auth token, getUser succeeds, projectId present
+    capturedArgsClone = null; 
+    mockAdminClient = mockSupabaseClient(); 
     const clonePayload_cp_4 = { projectId: "orig-proj-123", newProjectName: "My Clone" };
     const req_cp_4 = createJsonRequest("cloneProject", clonePayload_cp_4, "valid-token-for-mock");
     const response_cp_4 = await handleRequest(req_cp_4, mockAdminClient, mockHandlers);
     assertEquals(response_cp_4.status, 201);
     assertEquals(cloneSpy.calls.length, 1);
-    assertExists(capturedArgs);
-    if(capturedArgs){
-        assertEquals(capturedArgs[0], mockAdminClient);
-        assertEquals(capturedArgs[1], clonePayload_cp_4.projectId);
-        assertEquals(capturedArgs[2], clonePayload_cp_4.newProjectName);
-        assertEquals(capturedArgs[3], mockUser.id);
+    assertExists(capturedArgsClone);
+    if(capturedArgsClone){
+        assertEquals(capturedArgsClone[0], mockAdminClient);
+        assertEquals(capturedArgsClone[1], clonePayload_cp_4.projectId);
+        assertEquals(capturedArgsClone[2], clonePayload_cp_4.newProjectName);
+        assertEquals(capturedArgsClone[3], mockUser.id);
     }
   });
 
-  await t.step("JSON: exportProject requires projectId and authToken", async () => {
-    let capturedArgs: any[] | null = null;
+  await t.step("JSON: exportProject requires auth; then projectId", async () => {
+    let capturedArgsExport: any[] | null = null;
     const exportSpy = spy(async (...args: any[]) => { 
-        capturedArgs = args;
+        capturedArgsExport = args;
         return { data: { export_url: "http://example.com/export" }, status: 200 }; 
     });
-    mockHandlers = { exportProject: exportSpy } as unknown as ActionHandlers;
+    mockHandlers = createMockHandlers({ exportProject: exportSpy });
 
-    // Case 1: No auth token
+    // Case 0: No auth token
     mockAdminClient = mockSupabaseClient();
-    const req_ep_1 = createJsonRequest("exportProject", { projectId: "proj-to-export" });
-    const response_ep_1 = await handleRequest(req_ep_1, mockAdminClient, mockHandlers);
-    assertEquals(response_ep_1.status, 401);
-    const body_ep_1 = await response_ep_1.json();
-    assertEquals(body_ep_1.error, "User authentication required for exportProject.");
+    const req_ep_0 = createJsonRequest("exportProject", { projectId: "proj-to-export" });
+    const response_ep_0 = await handleRequest(req_ep_0, mockAdminClient, mockHandlers);
+    assertEquals(response_ep_0.status, 401);
+    const body_ep_0 = await response_ep_0.json();
+    assertEquals(body_ep_0.error, "User not authenticated");
     assertEquals(exportSpy.calls.length, 0);
 
-    // Case 2: Auth token, but getUser fails
-    const mockGetUserFails_ep = spy(async () => ({ data: { user: null }, error: createMockAuthError("Auth error for export", 401, "EXPORT_AUTH_ERROR") }));
-    mockAdminClient = mockSupabaseClient({ auth: { getUser: mockGetUserFails_ep as any } });
+    // Case 1: Auth token, but getUser fails
+    mockAdminClient = mockSupabaseClient(); 
     const req_ep_2 = createJsonRequest("exportProject", { projectId: "proj-to-export" }, "bad-token-export");
     const response_ep_2 = await handleRequest(req_ep_2, mockAdminClient, mockHandlers);
     assertEquals(response_ep_2.status, 401);
     const body_ep_2 = await response_ep_2.json();
-    assertEquals(body_ep_2.error, "Auth error for export");
+    assertEquals(body_ep_2.error, "Mock: Invalid token");
     assertEquals(exportSpy.calls.length, 0);
 
-    // Case 3: Auth token, getUser succeeds, but no projectId
-    const successfulGetUserMock_ep_c3 = spy(async () => ({ data: { user: mockUser }, error: null })); 
-    mockAdminClient = mockSupabaseClient({ auth: { getUser: successfulGetUserMock_ep_c3 as any } });
+    // Case 2: Auth token, getUser succeeds, but no projectId
+    mockAdminClient = mockSupabaseClient(); 
     const req_ep_3 = createJsonRequest("exportProject", {}, "valid-token-for-mock"); 
     const response_ep_3 = await handleRequest(req_ep_3, mockAdminClient, mockHandlers);
     assertEquals(response_ep_3.status, 400);
@@ -730,21 +785,19 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
     assertEquals(body_ep_3.error, "Invalid payload for exportProject. Expected { projectId: string }");
     assertEquals(exportSpy.calls.length, 0);
     
-    // Case 4: Auth token, getUser succeeds, projectId present
-    capturedArgs = null; 
-    const successfulGetUserMock_ep_c4 = spy(async () => ({ data: { user: mockUser }, error: null })); 
-    mockAdminClient = mockSupabaseClient({ auth: { getUser: successfulGetUserMock_ep_c4 as any } });
+    // Case 3: Auth token, getUser succeeds, projectId present
+    capturedArgsExport = null; 
+    mockAdminClient = mockSupabaseClient(); 
     const exportPayload_ep_4 = { projectId: "proj-export-123" };
     const req_ep_4 = createJsonRequest("exportProject", exportPayload_ep_4, "valid-token-for-mock");
     const response_ep_4 = await handleRequest(req_ep_4, mockAdminClient, mockHandlers);
     assertEquals(response_ep_4.status, 200);
     assertEquals(exportSpy.calls.length, 1);
-    assertExists(capturedArgs);
-    if(capturedArgs){
-        assertEquals(capturedArgs[0], mockAdminClient);
-        assertEquals(capturedArgs[1], exportPayload_ep_4.projectId);
-        assertEquals(capturedArgs[2], mockUser.id);
+    assertExists(capturedArgsExport);
+    if(capturedArgsExport){
+        assertEquals(capturedArgsExport[0], mockAdminClient);
+        assertEquals(capturedArgsExport[1], exportPayload_ep_4.projectId);
+        assertEquals(capturedArgsExport[2], mockUser.id);
     }
   });
-
 }); 

@@ -20,7 +20,7 @@ export interface DialecticProject {
     status: string;
     created_at: string;
     updated_at: string;
-    sessions?: DialecticSession[]; 
+    dialectic_sessions?: DialecticSession[];
     resources?: DialecticProjectResource[];
 }
 
@@ -318,7 +318,8 @@ export interface DomainOverlayDescriptor {
   domainTag: string;
   description: string | null;
   stageAssociation: string; // Corresponds to system_prompts.stage_association
-  overlay_values: Record<string, unknown> | string | null; // Added field for overlay_values
+  overlay_values: Record<string, unknown> | string | null;
+  system_prompt_id?: string | null; // Added for the associated system prompt ID
 }
 
 export type DialecticServiceActionPayload = {
