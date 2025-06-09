@@ -17,6 +17,7 @@ import { HomePage } from '../pages/Home';
 import { DialecticProjectsPage } from '../pages/DialecticProjectsPage';
 import { CreateDialecticProjectPage } from '../pages/CreateDialecticProjectPage';
 import { DialecticProjectDetailsPage } from '../pages/DialecticProjectDetailsPage';
+import { DialecticSessionDetailsPage } from '../pages/DialecticSessionDetailsPage';
 //import { ForgotPassword } from '../pages/ForgotPassword';
 //import { ResetPassword } from '../pages/ResetPassword';
 //import { VerifyEmail } from '../pages/VerifyEmail';
@@ -149,6 +150,14 @@ const routes: RouteObject[] = [
         element: (
           <ProtectedRoute>
             <DialecticProjectDetailsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'dialectic/:projectId/session/:sessionId',
+        element: (
+          <ProtectedRoute>
+            <DialecticSessionDetailsPage />
           </ProtectedRoute>
         ),
       },

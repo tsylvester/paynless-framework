@@ -85,7 +85,7 @@ export const selectCurrentProjectInitialPrompt = (state: DialecticStateValues): 
 
 // Selector for the current project sessions
 export const selectCurrentProjectSessions = (state: DialecticStateValues): DialecticSession[] | undefined => 
-  state.currentProjectDetail?.sessions;
+  state.currentProjectDetail?.dialectic_sessions;
 
 // Selector for the project prompt update status
 export const selectIsUpdatingProjectPrompt = (state: DialecticStateValues): boolean => 

@@ -12,7 +12,7 @@ import {
   selectSelectedStageAssociation,
 } from '@paynless/store';
 import { DialecticStage } from '@paynless/types';
-import type { CreateProjectPayload, DialecticProjectResource } from '@paynless/types';
+import type { DialecticProject, ApiError } from '@paynless/types';
 import { DomainSelector } from '@/components/dialectic/DomainSelector';
 
 import { Button } from '@/components/ui/button';
@@ -23,8 +23,7 @@ import { Loader2 } from 'lucide-react';
 
 import { TextInputArea } from '@/components/common/TextInputArea';
 import { usePlatform } from '@paynless/platform';
-import type { FileSystemCapabilities } from '@paynless/types';
-import { platformEventEmitter } from '@paynless/platform';
+import { platformEventEmitter, type PlatformEvents, type FileDropPayload } from '@paynless/platform';
 import { DomainOverlayDescriptionSelector } from './DomainOverlayDescriptionSelector';
 
 const createProjectFormSchema = z.object({
@@ -34,13 +33,21 @@ const createProjectFormSchema = z.object({
 
 type CreateProjectFormValues = z.infer<typeof createProjectFormSchema>;
 
+interface CreateProjectThunkPayload {
+  projectName: string;
+  initialUserPromptText?: string;
+  promptFile?: File | null;
+  selectedDomainTag?: string | null;
+  selectedDomainOverlayId?: string | null;
+}
+
 interface CreateDialecticProjectFormProps {
   onProjectCreated?: (projectId: string, projectName?: string) => void;
   defaultProjectName?: string;
   defaultInitialPrompt?: string;
   enableDomainSelection?: boolean;
   submitButtonText?: string;
-  containerClassName?: string; // Optional class for the root Card element
+  containerClassName?: string;
 }
 
 export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProps> = ({
@@ -49,14 +56,14 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
   defaultInitialPrompt = '',
   enableDomainSelection = true,
   submitButtonText = 'Create Project',
-  containerClassName = 'max-w-3xl' // Default max-width, can be overridden
+  containerClassName = 'max-w-3xl'
 }) => {
   const createDialecticProject = useDialecticStore((state) => state.createDialecticProject);
   const isCreating = useDialecticStore(selectIsCreatingProject);
   const creationError = useDialecticStore(selectCreateProjectError);
   const selectedDomainTag = useDialecticStore(selectSelectedDomainTag);
+  const currentSelectedDomainOverlayId = useDialecticStore((state) => state.selectedDomainOverlayId);
   const resetCreateProjectError = useDialecticStore((state) => state.resetCreateProjectError);
-  const uploadProjectResourceFile = useDialecticStore((state) => state.uploadProjectResourceFile); 
   const setSelectedStageAssociation = useDialecticStore((state) => state.setSelectedStageAssociation);
   const fetchAvailableDomainOverlays = useDialecticStore((state) => state.fetchAvailableDomainOverlays);
   const currentSelectedStage = useDialecticStore(selectSelectedStageAssociation);
@@ -90,11 +97,9 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
     name: 'projectName',
   });
 
-  const stripMarkdown = (text: string): string => {
-    // Basic markdown stripping: removes #, *, _, `, [], () and trims
-    // More complex regex can be used for more thorough stripping if needed.
+  const stripMarkdown = useCallback((text: string): string => {
     return text.replace(/[#*_`[\]()]/g, '').trim();
-  };
+  }, []);
 
   const handleFileLoadForPrompt = useCallback((fileContent: string | ArrayBuffer, file: File) => {
     if (typeof fileContent === 'string') {
@@ -131,11 +136,9 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
               ? { message: e.message, name: e.name, stack: e.stack } 
               : { rawError: String(e) };
             logger.error("Error parsing JSON for project name derivation", errorLogDetails);
-            // Fallback to filename will be handled below if derivedProjectName remains empty
           }
         }
 
-        // Fallback to filename if derivedProjectName is still empty after content processing
         if (!derivedProjectName && file.name) {
             const fileNameWithoutExt = file.name.split('.').slice(0, -1).join('.');
             const potentialName = stripMarkdown(fileNameWithoutExt);
@@ -153,39 +156,23 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
     }
   }, [setValue, projectNameManuallySet, stripMarkdown]);
 
-  // Auto-name project from prompt text if project name is empty and not manually set
   useEffect(() => {
     if (projectNameManuallySet) return;
-
-    // This effect handles auto-naming from the typed prompt.
-    // If a file was loaded, handleFileLoadForPrompt would have already attempted to set the name.
-    // Subsequent typing in the prompt will override it if projectName is not manually set.
     if (watchedPrompt) {
         const firstLine = watchedPrompt.split('\n')[0];
         const summary = stripMarkdown(firstLine).substring(0, 50);
-        // Update if summary is non-empty AND (it's different from current projectName OR projectName was empty).
         if (summary && (summary !== watchedProjectName || !watchedProjectName?.trim())) {
             setValue('projectName', summary, { shouldValidate: true, shouldDirty: true });
         }
     }
-    // Note: If watchedPrompt becomes empty, 'summary' will be empty, and the above condition
-    // `(summary && ...)` will be false. This means an empty prompt will not clear an existing
-    // project name, which is acceptable for now.
-  }, [watchedPrompt, watchedProjectName, projectNameManuallySet, setValue, stripMarkdown]); // promptFile removed from deps as its direct role here is simplified
+  }, [watchedPrompt, watchedProjectName, projectNameManuallySet, setValue, stripMarkdown]); 
 
-  // Global drag/drop prevention for the window - WEB PLATFORM ONLY
   useEffect(() => {
     if (capabilities?.platform === 'web') {
       const preventGlobalDragDrop = (e: DragEvent) => {
-        // Only prevent if not dropping onto a designated drop zone within TextInputArea
-        // This check is basic; a more robust solution might involve checking e.target against TextInputArea's dropzone element.
-        // For now, we allow TextInputArea to handle its own drops via onDragOver in its own container.
-        // If TextInputArea is not configured for file drops, this global preventer will still catch it.
         let targetElement = e.target as HTMLElement | null;
         let isOverTextInputAreaDropZone = false;
         while (targetElement) {
-            // This selector needs to be specific to the dropzone *inside* TextInputArea
-            // Assuming TextInputArea's dropzone might have a specific data attribute or class
             if (targetElement.matches('[data-testid$="-dropzone"]')) { 
                 isOverTextInputAreaDropZone = true;
                 break;
@@ -200,7 +187,7 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
         let targetElement = e.target as HTMLElement | null;
         let isOverTextInputAreaDropZone = false;
         while (targetElement) {
-            if (targetElement.matches('[data-testid$="-dropzone"]')) {
+           if (targetElement.matches('[data-testid$="-dropzone"]')) {
                 isOverTextInputAreaDropZone = true;
                 break;
             }
@@ -208,6 +195,7 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
         }
         if (!isOverTextInputAreaDropZone) {
             e.preventDefault();
+            logger.warn("Global drop event prevented outside designated dropzone.");
         }
       };
 
@@ -220,175 +208,144 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
     }
   }, [capabilities?.platform]);
 
-  // Tauri-specific file drop handler
   useEffect(() => {
-    if (capabilities?.platform === 'tauri' && capabilities.fileSystem.isAvailable) {
-      const handleTauriFileDrop = async (paths: string[]) => {
-        if (paths && paths.length > 0) {
+    if (capabilities?.platform === 'desktop' && platformEventEmitter && platformEventEmitter.on) {
+      const handler = (eventPayload: unknown) => {
+        const payload = eventPayload as Partial<FileDropPayload & { paths?: string[] }>;
+        logger.info('Desktop file drop event received', { payload });
+
+        const paths = payload?.paths;
+
+        if (Array.isArray(paths) && paths.length > 0) {
           const filePath = paths[0];
-          try {
-            const fs = capabilities.fileSystem as FileSystemCapabilities; 
-            const fileContentBuffer = await fs.readFile(filePath);
-            const fileName = filePath.split(/[\\/]/).pop() || 'dropped-file'; 
-            const tempFile = new File([fileContentBuffer.slice()], fileName); 
-            
-            const fileContentText = new TextDecoder().decode(fileContentBuffer);
-            // Directly call handleFileLoadForPrompt, which is now passed to TextInputArea
-            handleFileLoadForPrompt(fileContentText, tempFile);
-          } catch (error) {
-            console.error('Error reading dropped file on Tauri:', error);
-          }
+          logger.info('File path from desktop drop', { filePath });
+          alert(`File dropped (Desktop): ${filePath}. Auto-load needs platform specific file reading logic here.`);
+        } else {
+          logger.warn('Desktop file drop event received without valid paths.', { payload });
         }
       };
-      
-      platformEventEmitter.on('file-drop', handleTauriFileDrop);
+      const eventName = 'file-drop' as keyof PlatformEvents;
+      platformEventEmitter.on(eventName, handler as (payload: unknown) => void);
       return () => {
-        platformEventEmitter.off('file-drop', handleTauriFileDrop);
+        platformEventEmitter.off(eventName, handler as (payload: unknown) => void);
       };
     }
   }, [capabilities, handleFileLoadForPrompt]);
 
-  // Set the initial stage association to 'thesis' when the component mounts
   useEffect(() => {
-    if (setSelectedStageAssociation) {
-        setSelectedStageAssociation(DialecticStage.THESIS);
+    if (creationError) {
+      const timer = setTimeout(() => {
+        resetCreateProjectError();
+      }, 5000);
+      return () => clearTimeout(timer);
     }
-  }, [setSelectedStageAssociation]);
+  }, [creationError, resetCreateProjectError]);
 
-  // Fetch domain overlays when the stage association is set or changes
   useEffect(() => {
-    if (currentSelectedStage && fetchAvailableDomainOverlays) {
-      logger.info(`[CreateDialecticProjectForm] Stage set to ${currentSelectedStage}, fetching overlays.`);
+    if (enableDomainSelection && currentSelectedStage !== DialecticStage.THESIS) {
+      setSelectedStageAssociation(DialecticStage.THESIS);
+    }
+  }, [enableDomainSelection, currentSelectedStage, setSelectedStageAssociation]);
+
+  useEffect(() => {
+    if (enableDomainSelection && currentSelectedStage) {
       fetchAvailableDomainOverlays(currentSelectedStage);
     }
-  }, [currentSelectedStage, fetchAvailableDomainOverlays]);
+  }, [enableDomainSelection, currentSelectedStage, fetchAvailableDomainOverlays]);
 
   useEffect(() => {
     reset({
-        projectName: defaultProjectName,
-        initialUserPrompt: defaultInitialPrompt,
+      projectName: defaultProjectName,
+      initialUserPrompt: defaultInitialPrompt,
     });
-  }, [defaultProjectName, defaultInitialPrompt, reset]);
-
-  useEffect(() => {
-    if (creationError) {
-      resetCreateProjectError();
-    }
-    return () => {
-      if (creationError) {
-        resetCreateProjectError();
-      }
-    };
-  }, [creationError, resetCreateProjectError]);
-
-  const handleActualFileUpload = async (fileToUpload: File, projectId: string): Promise<{ success: boolean; error?: string; resourceReference?: DialecticProjectResource }> => {
-    if (!uploadProjectResourceFile) {
-      console.error("uploadProjectResourceFile thunk is not available");
-      return { success: false, error: "File upload service not configured." };
-    }
-    const result = await uploadProjectResourceFile({
-      projectId,
-      file: fileToUpload,
-      fileName: fileToUpload.name,
-      fileSizeBytes: fileToUpload.size,
-      fileType: fileToUpload.type,
-      resourceDescription: 'Initial prompt file for project creation.',
-    });
-    if (result.data) {
-      console.log('File uploaded successfully as project resource:', result.data);
-      return { success: true, resourceReference: result.data };
-    } else {
-      console.error('Failed to upload file as project resource:', result.error);
-      return { success: false, error: result.error?.message || 'Unknown upload error' };
-    }
-  };
+    setPromptFile(null);
+    setProjectNameManuallySet(!!defaultProjectName);
+    resetCreateProjectError(); 
+  }, [defaultProjectName, defaultInitialPrompt, reset, resetCreateProjectError]);
 
   const onSubmit = async (data: CreateProjectFormValues) => {
-    if (creationError) {
-      resetCreateProjectError();
-    }
-    const payload: CreateProjectPayload = {
-      projectName: data.projectName,
-      initialUserPrompt: promptFile ? "" : data.initialUserPrompt, // Send empty string if file uploaded
-      selectedDomainTag: enableDomainSelection ? selectedDomainTag : null, 
-    };
-    
-    const projectCreationResult = await createDialecticProject(payload);
+    resetCreateProjectError(); 
 
-    if (projectCreationResult.data) {
-      const newProjectId = projectCreationResult.data.id;
-      const newProjectName = projectCreationResult.data.project_name;
-      if (promptFile) {
-        console.log(`Project ${newProjectId} created. Now uploading prompt file ${promptFile.name}...`);
-        handleActualFileUpload(promptFile, newProjectId).then(uploadResult => {
-          if (uploadResult.success) {
-            console.log("Prompt file uploaded as resource successfully.");
-          } else {
-            console.warn("Prompt file resource upload failed:", uploadResult.error);
-          }
+    const thunkPayload: CreateProjectThunkPayload = {
+      projectName: data.projectName,
+      initialUserPromptText: data.initialUserPrompt, 
+      promptFile: promptFile, 
+      selectedDomainTag: enableDomainSelection ? selectedDomainTag : null,
+      selectedDomainOverlayId: enableDomainSelection ? currentSelectedDomainOverlayId : null,
+    };
+
+    logger.info('Submitting create project form with payload:', { 
+      projectName: thunkPayload.projectName, 
+      hasInitialUserPromptText: !!thunkPayload.initialUserPromptText,
+      promptFileName: thunkPayload.promptFile?.name,
+      promptFileSize: thunkPayload.promptFile?.size,
+      selectedDomainTag: thunkPayload.selectedDomainTag,
+      selectedDomainOverlayId: thunkPayload.selectedDomainOverlayId,
+    });
+
+    try {
+      const result = await createDialecticProject(thunkPayload);
+
+      if (result.data) { 
+        const newProject = result.data as DialecticProject;
+        logger.info('Project created successfully', { projectId: newProject.id, projectName: newProject.project_name });
+        
+        if (onProjectCreated) {
+          onProjectCreated(newProject.id, newProject.project_name);
+        }
+      } else if (result.error) {
+        const error = result.error as ApiError;
+        logger.error('Project creation failed in onSubmit', { 
+          message: error?.message,
+          details: error?.details 
         });
       }
-      if (onProjectCreated) {
-        onProjectCreated(newProjectId, newProjectName);
-      }
-    } else if (projectCreationResult.error) {
-      console.error("Project creation failed:", projectCreationResult.error);
+    } catch (e) {
+      const errorLogDetails = e instanceof Error 
+        ? { message: e.message, name: e.name, stack: e.stack } 
+        : { rawError: String(e) };
+      logger.error("An unexpected error occurred during project creation submission (outer catch)", errorLogDetails);
     }
   };
 
   return (
-    <Card className={containerClassName}> 
+    <Card className={containerClassName}>
       <CardHeader>
-        <CardTitle className="text-2xl flex items-center gap-2">
-          <span>Create New</span>
-          {enableDomainSelection ? (
-            <DomainSelector />
-          ) : (
-            <span>Dialectic</span>
-          )}
-          <span>Project</span>
-        </CardTitle>
+        <CardTitle>Create New Dialectic Project</CardTitle>
         <CardDescription>
-          <DomainOverlayDescriptionSelector />
+          Define the initial parameters for your AI-assisted dialectic exploration. 
+          You can start with a textual prompt or upload a markdown file.
         </CardDescription>
       </CardHeader>
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={handleSubmit(onSubmit)}>
         <CardContent className="space-y-6">
-          {creationError && (
-            <Alert variant="destructive" data-testid="creation-error-alert">
-              <AlertTitle>Creation Failed</AlertTitle>
-              <AlertDescription>{creationError.message}</AlertDescription>
-            </Alert>
-          )}
-          
           <div className="space-y-2">
             <Label htmlFor="projectName">Project Name</Label>
             <Controller
               name="projectName"
               control={control}
               render={({ field }) => (
-                <input
+                <TextInputArea
                   id="projectName"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  placeholder="E.g., Q4 Product Strategy (auto-fills from prompt or file name)"
+                  label="Project Name"
+                  placeholder="e.g., Q4 Marketing Strategy Analysis"
                   {...field}
-                  onChange={(e) => {
-                    field.onChange(e); 
-                    if (e.target.value.trim() !== '') {
-                        setProjectNameManuallySet(true);
-                    } else {
-                        // If user clears the field, allow auto-naming to resume
-                        setProjectNameManuallySet(false);
-                    }
+                  onChange={(value) => {
+                    field.onChange(value);
+                    setProjectNameManuallySet(true);
                   }}
-                  aria-invalid={!!errors.projectName}
+                  disabled={isCreating}
+                  rows={1}
+                  showFileUpload={false} 
+                  showPreviewToggle={false}
+                  dataTestId="text-input-area-for-project-name"
                 />
               )}
             />
-            {errors.projectName && <p className="text-sm text-destructive data-testid='project-name-error'">{errors.projectName.message}</p>}
+            {errors.projectName && <p className="text-sm text-red-500">{errors.projectName.message}</p>}
           </div>
 
-          <div className="space-y-2 relative"> 
+          <div className="space-y-2">
             <Controller
               name="initialUserPrompt"
               control={control}
@@ -396,14 +353,10 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
                 <TextInputArea
                   id="initialUserPrompt"
                   label="Initial User Prompt / Problem Statement"
-                  placeholder="Describe the core problem, question, or topic... or load from a .md file."
-                  value={field.value}
-                  onChange={field.onChange}
-                  rows={8} 
-                  dataTestId="text-input-area-for-prompt"
+                  placeholder="Describe the problem, question, or document you want to analyze and iterate on..."
+                  {...field}
                   disabled={isCreating}
-                  textAreaClassName="relative z-10 bg-transparent w-full min-h-[168px] resize-y"
-                  showPreviewToggle={true}
+                  rows={8}
                   showFileUpload={true}
                   fileUploadConfig={{
                     acceptedFileTypes: ['.md', 'text/markdown'],
@@ -411,18 +364,42 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
                     multipleFiles: false,
                   }}
                   onFileLoad={handleFileLoadForPrompt}
-                  dropZoneLabel="Drag & drop a .md file here, or click to select for prompt"
+                  showPreviewToggle={true}
+                  dataTestId="text-input-area-for-prompt"
                 />
               )}
             />
-            {errors.initialUserPrompt && <p className="text-sm text-destructive data-testid='prompt-error'" >{errors.initialUserPrompt.message}</p>}
+            {errors.initialUserPrompt && <p className="text-sm text-red-500">{errors.initialUserPrompt.message}</p>}
           </div>
-          
+
+          {enableDomainSelection && (
+            <>
+              <DomainSelector 
+                disabled={isCreating} 
+              />
+              <DomainOverlayDescriptionSelector 
+                disabled={isCreating}
+              />
+            </>
+          )}
+
+          {creationError && (
+            <Alert variant="destructive">
+              <AlertTitle>Error Creating Project</AlertTitle>
+              <AlertDescription>
+                {creationError.message || 'An unknown error occurred.'}
+                {typeof creationError.details === 'string' && <p>{creationError.details}</p>}
+              </AlertDescription>
+            </Alert>
+          )}
         </CardContent>
         <CardFooter>
-          <Button type="submit" disabled={isCreating} className="w-full data-testid='create-project-button'">
+          <Button type="submit" disabled={isCreating} className="w-full">
             {isCreating ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating {submitButtonText}...</>
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creating...
+              </>
             ) : (
               submitButtonText
             )}

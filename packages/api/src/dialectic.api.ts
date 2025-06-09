@@ -265,6 +265,7 @@ export class DialecticApiClient {
         methodOptions?: { onUploadProgress?: (progressEvent: ProgressEvent) => void } & FetchOptions
     ): Promise<ApiResponse<DialecticProjectResource>> {
         logger.info('Uploading project resource file', { projectId: payload.projectId, fileName: payload.fileName });
+
         const formData = new FormData();
         formData.append('action', 'uploadProjectResourceFile');
         formData.append('projectId', payload.projectId);
@@ -272,48 +273,26 @@ export class DialecticApiClient {
         formData.append('fileName', payload.fileName);
         formData.append('fileSizeBytes', payload.fileSizeBytes.toString());
         formData.append('fileType', payload.fileType);
-
         if (payload.resourceDescription) {
             formData.append('resourceDescription', payload.resourceDescription);
         }
 
-        const fetchOptsFromMethodOpts: FetchOptions | undefined = methodOptions ? {
-            method: methodOptions.method,
-            headers: methodOptions.headers,
-            body: methodOptions.body,
-            mode: methodOptions.mode,
-            credentials: methodOptions.credentials,
-            cache: methodOptions.cache,
-            redirect: methodOptions.redirect,
-            referrer: methodOptions.referrer,
-            referrerPolicy: methodOptions.referrerPolicy,
-            integrity: methodOptions.integrity,
-            keepalive: methodOptions.keepalive,
-            signal: methodOptions.signal,
-            isPublic: methodOptions.isPublic,
-            token: methodOptions.token,
-        } : undefined;
-
         try {
-            if (methodOptions?.onUploadProgress) {
-                logger.info('onUploadProgress callback was provided to DialecticApiClient.uploadProjectResourceFile. This is not currently passed to the generic apiClient.post.');
-            }
-
             const response = await this.apiClient.post<DialecticProjectResource, FormData>(
                 'dialectic-service',
                 formData,
-                fetchOptsFromMethodOpts
+                methodOptions
             );
 
             if (response.error) {
-                logger.error('Error uploading project resource file:', { error: response.error, projectId: payload.projectId, fileName: payload.fileName });
+                logger.error('Error uploading project resource file:', { error: response.error, projectId: payload.projectId });
             } else {
                 logger.info('Successfully uploaded project resource file', { resourceId: response.data?.id });
             }
             return response;
         } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : 'A network error occurred during file upload';
-            logger.error('Network error in uploadProjectResourceFile:', { errorMessage: message, errorObject: error, projectId: payload.projectId, fileName: payload.fileName });
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in uploadProjectResourceFile:', { errorMessage: message, errorObject: error });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },
@@ -323,20 +302,28 @@ export class DialecticApiClient {
     }
 
     /**
-     * Creates a new dialectic project for the authenticated user.
+     * Creates a new dialectic project.
+     * The payload is FormData, which should include an 'action' field set to 'createProject',
+     * 'projectName', and optionally 'initialUserPromptText' or 'promptFile',
+     * 'selectedDomainTag', and 'selected_domain_overlay_id'.
      * Requires authentication.
      */
-    async createProject(payload: CreateProjectPayload): Promise<ApiResponse<DialecticProject>> {
-        logger.info('Creating a new dialectic project', { projectName: payload.projectName });
+    async createProject(payload: FormData): Promise<ApiResponse<DialecticProject>> {
+        logger.info('Creating new dialectic project using FormData', { 
+            projectName: payload.get('projectName'), 
+            hasPromptFile: !!payload.get('promptFile') 
+        });
 
         try {
-            const response = await this.apiClient.post<DialecticProject, { action: string; payload: CreateProjectPayload }>(
+            // The payload is already FormData and includes the 'action' field.
+            // The apiClient.post method should handle FormData correctly.
+            const response = await this.apiClient.post<DialecticProject, FormData>(
                 'dialectic-service',
-                { action: 'createProject', payload }
+                payload,
             );
 
             if (response.error) {
-                logger.error('Error creating dialectic project:', { error: response.error, projectName: payload.projectName });
+                logger.error('Error creating dialectic project:', { error: response.error });
             } else {
                 logger.info('Successfully created dialectic project', { projectId: response.data?.id });
             }

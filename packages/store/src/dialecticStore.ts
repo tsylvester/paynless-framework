@@ -217,38 +217,61 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
 
   createDialecticProject: async (payload: CreateProjectPayload): Promise<ApiResponse<DialecticProject>> => {
     set({ isCreatingProject: true, createProjectError: null });
-    const { selectedDomainOverlayId } = get(); // Get values from store state
+    const { selectedDomainTag: currentSelectedDomainTag, selectedDomainOverlayId: currentSelectedDomainOverlayId } = get();
 
-    // Construct the final payload for the API call,
-    // ensuring projectName and initialUserPrompt are from the input payload,
-    // and selectedDomainTag and selected_domain_overlay_id are from the store's state.
-    const payloadForApi: CreateProjectPayload = {
-      ...payload, // Spreads projectName, initialUserPrompt, and any other fields from incoming payload
-      selected_domain_overlay_id: selectedDomainOverlayId, // Correctly uses store's selectedDomainOverlayId
-      selectedDomainTag: get().selectedDomainTag, // Add selectedDomainTag from the store
-    };
+    // Construct FormData
+    const formData = new FormData();
+    formData.append('action', 'createProject'); // Required by the backend router for FormData
+    formData.append('projectName', payload.projectName);
 
-    logger.info('[DialecticStore] Creating dialectic project...', { projectPayload: payloadForApi });
+    const domainTagToUse = payload.selectedDomainTag || currentSelectedDomainTag;
+    const overlayIdToUse = payload.selected_domain_overlay_id || currentSelectedDomainOverlayId;
+
+    if (domainTagToUse) {
+      formData.append('selectedDomainTag', domainTagToUse);
+    }
+    if (overlayIdToUse) {
+      formData.append('selected_domain_overlay_id', overlayIdToUse);
+    }
+
+    if (payload.promptFile) {
+      formData.append('promptFile', payload.promptFile);
+      // If a file is provided, initialUserPrompt (text) might be ignored by the backend
+      // or used as a description. For now, we don't append initialUserPrompt if promptFile exists.
+    } else if (payload.initialUserPrompt) {
+      // Key is 'initialUserPromptText' for FormData to align with backend expectations
+      formData.append('initialUserPromptText', payload.initialUserPrompt);
+    }
+
+    logger.info('[DialecticStore] Creating dialectic project with FormData...', { 
+      projectName: payload.projectName, 
+      hasPromptFile: !!payload.promptFile,
+      initialUserPrompt: payload.initialUserPrompt,
+      selectedDomainTag: domainTagToUse,
+      selected_domain_overlay_id: overlayIdToUse
+    });
+
     try {
-      const response = await api.dialectic().createProject(payloadForApi);
-      
+      const response = await api.dialectic().createProject(formData);
       if (response.error) {
         logger.error('[DialecticStore] Error creating project:', { errorDetails: response.error });
         set({ isCreatingProject: false, createProjectError: response.error });
+        return { error: response.error, status: response.status, data: undefined };
       } else {
         logger.info('[DialecticStore] Successfully created project:', { projectDetails: response.data });
         set({ isCreatingProject: false, createProjectError: null });
-        await get().fetchDialecticProjects(); 
+        // After successful creation, refetch the list of projects
+        await get().fetchDialecticProjects();
+        return { data: response.data, status: response.status };
       }
-      return response; 
     } catch (error: unknown) {
       const networkError: ApiError = {
-        message: error instanceof Error ? error.message : 'An unknown network error occurred while creating project',
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while creating the project',
         code: 'NETWORK_ERROR',
       };
       logger.error('[DialecticStore] Network error creating project:', { errorDetails: networkError });
       set({ isCreatingProject: false, createProjectError: networkError });
-      return { error: networkError, status: 0 }; 
+      return { error: networkError, status: 0, data: undefined };
     }
   },
 
@@ -260,18 +283,22 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       if (response.error) {
         logger.error('[DialecticStore] Error starting session:', { errorDetails: response.error });
         set({ isStartingSession: false, startSessionError: response.error });
+        return { error: response.error, status: response.status };
       } else {
         logger.info('[DialecticStore] Successfully started session:', { sessionDetails: response.data });
         set({ isStartingSession: false, startSessionError: null });
-        // After starting a session, we might want to refetch the specific project details
-        // or the list of projects if the session creation affects their status or adds a session entry.
+        
+        // If session start is successful, refetch project details to get updated session list
+        // or refetch the entire project list if project_id is not in the session response
         if (response.data?.project_id) {
+          logger.info(`[DialecticStore] Session started for project ${response.data.project_id}. Refetching project details.`);
           await get().fetchDialecticProjectDetails(response.data.project_id);
         } else {
-          await get().fetchDialecticProjects(); // Fallback to refreshing all projects
+          logger.info('[DialecticStore] Session started, but no project_id in response. Refetching project list.');
+          await get().fetchDialecticProjects();
         }
+        return { data: response.data, status: response.status };
       }
-      return response;
     } catch (error: unknown) {
       const networkError: ApiError = {
         message: error instanceof Error ? error.message : 'An unknown network error occurred while starting session',
@@ -669,6 +696,14 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
   resetSelectedModelId: () => {
     logger.info(`[DialecticStore] Resetting selectedModelIds.`);
     set({ selectedModelIds: [] });
+  },
+
+  reset: () => {
+    logger.info(
+      '[DialecticStore] Resetting store to initial state', 
+      { storeKeys: Object.keys(initialDialecticStateValues) }
+    );
+    set(initialDialecticStateValues);
   },
 }));
 

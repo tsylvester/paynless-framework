@@ -147,10 +147,17 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
     }
   }, [selectedDomainOverlayDescriptor, baseDomainTagDescription, isModalOpen, hasUserEditedDescription]);
 
+  const resetFormAndClose = () => {
+    setSessionDescription('');
+    setHasUserEditedDescription(false);
+    setSelectedDomainTag(null);
+    setSelectedDomainOverlayId(null);
+    setSelectedStageAssociation(null);
+    // Note: setSelectedModelCatalogIds([]) would be needed here for full reset if available
+    setStartNewSessionModalOpen(false);
+  };
+
   const handleOpenChange = (open: boolean) => {
-    if (!open) {
-      setHasUserEditedDescription(false);
-    }
     setStartNewSessionModalOpen(open);
   };
 
@@ -183,7 +190,7 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
     if (typeof sessionDescription === 'string') {
       sessionDescriptionForPayload = sessionDescription || undefined;
     } else if (typeof sessionDescription === 'object' && sessionDescription !== null) {
-      sessionDescriptionForPayload = `\`\`\`json\n${JSON.stringify(sessionDescription, null, 2)}\n\`\`\``;
+      sessionDescriptionForPayload = `\`\`\`json\\n${JSON.stringify(sessionDescription, null, 2)}\\n\`\`\``;
     } else {
       sessionDescriptionForPayload = undefined;
     }
@@ -193,16 +200,33 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
       selectedModelCatalogIds: currentSelectedModelIds,
       sessionDescription: sessionDescriptionForPayload,
       stageAssociation: currentDialecticStage as DialecticStage,
-      promptTemplateId: "NEEDS_IMPLEMENTATION_SELECT_PROMPT_ID_FOR_STAGE",
+      promptTemplateId: (selectedDomainOverlayDescriptor?.system_prompt_id && selectedDomainOverlayDescriptor.system_prompt_id !== "NEEDS_IMPLEMENTATION_SELECT_PROMPT_ID_FOR_STAGE") 
+                        ? selectedDomainOverlayDescriptor.system_prompt_id 
+                        : undefined,
       selectedDomainOverlayId: currentSelectedOverlayIdFromStore || undefined,
     };
 
     const result = await startDialecticSession(payload);
+    const responseData = result.data as unknown as { sessionId?: string; [key: string]: unknown };
 
-    if (result && !result.error && result.data) {
-      toast.success(`Session started successfully: ${result.data.id}`);
-      onSessionStarted?.(result.data.id);
-      handleOpenChange(false);
+    if (result && responseData && typeof responseData.sessionId === 'string' && responseData.sessionId.trim() !== '') {
+      toast.success(`Session started successfully: ${responseData.sessionId}`);
+      onSessionStarted?.(responseData.sessionId);
+      resetFormAndClose();
+    } else {
+      let errorMessage = "Failed to start session.";
+      if (result && result.error && result.error.message) {
+        errorMessage = result.error.message;
+      } else if (result && result.error) {
+        errorMessage = "An unknown error occurred while starting the session.";
+      } else if (result && responseData && (typeof responseData.sessionId !== 'string' || responseData.sessionId.trim() === '')) {
+        errorMessage = "Session may have been created, but a valid Session ID was not returned by the server.";
+        console.error("Start session response missing or invalid ID. Response data:", responseData);
+      } else if (!result || !responseData) {
+        errorMessage = "Failed to start session. No data or an unexpected response was returned from the server.";
+        console.error("Start session response was missing, did not contain data, or was malformed. Response:", result);
+      }
+      toast.error(errorMessage);
     }
   };
   
@@ -262,7 +286,7 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
         </div>
         <DialogFooter>
           <DialogClose asChild>
-            <Button variant="outline" disabled={isStartingSession}>Cancel</Button>
+            <Button variant="outline" disabled={isStartingSession} onClick={resetFormAndClose}>Cancel</Button>
           </DialogClose>
           <Button 
             onClick={handleStartSessionSubmit} 

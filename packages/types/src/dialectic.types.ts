@@ -29,7 +29,7 @@ export interface CreateProjectPayload {
     initialUserPrompt?: string | null;
     selectedDomainTag?: string | null;
     selected_domain_overlay_id?: string | null;
-    promptFile?: DialecticProjectResource | null;
+    promptFile?: File | null;
 }
 
 export interface DeleteProjectPayload {
@@ -264,7 +264,7 @@ export interface DialecticContribution {
 export interface DialecticApiClient {
   listAvailableDomainTags(): Promise<ApiResponse<{ data: DomainTagDescriptor[] }>>;
   listAvailableDomainOverlays(payload: { stageAssociation: string }): Promise<ApiResponse<DomainOverlayDescriptor[]>>;
-  createProject(payload: CreateProjectPayload): Promise<ApiResponse<DialecticProject>>;
+  createProject(payload: FormData): Promise<ApiResponse<DialecticProject>>;
   listProjects(): Promise<ApiResponse<DialecticProject[]>>;
   getProjectDetails(projectId: string): Promise<ApiResponse<DialecticProject>>;
   startSession(payload: StartSessionPayload): Promise<ApiResponse<DialecticSession>>;
@@ -324,7 +324,7 @@ export interface DomainOverlayDescriptor {
 
 export type DialecticServiceActionPayload = {
   action: 'createProject';
-  payload: CreateProjectPayload;
+  payload: FormData;
 } | {
   action: 'deleteProject';
   payload: DeleteProjectPayload;

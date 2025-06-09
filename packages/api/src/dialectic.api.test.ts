@@ -153,7 +153,24 @@ describe('DialecticApiClient', () => {
             initialUserPrompt: 'Test prompt',
             selectedDomainTag: 'software_development',
         };
-        const requestBody = { action: 'createProject', payload: validPayload };
+
+        // Helper to create FormData from CreateProjectPayload for tests
+        const createFormDataFromPayload = (payload: CreateProjectPayload): FormData => {
+            const formData = new FormData();
+            formData.append('action', 'createProject');
+            formData.append('projectName', payload.projectName);
+            if (payload.initialUserPrompt) {
+                formData.append('initialUserPromptText', payload.initialUserPrompt);
+            }
+            if (payload.selectedDomainTag) {
+                formData.append('selectedDomainTag', payload.selectedDomainTag);
+            }
+            if (payload.selected_domain_overlay_id) {
+                formData.append('selected_domain_overlay_id', payload.selected_domain_overlay_id);
+            }
+            // Assuming promptFile would be handled here if tests included it
+            return formData;
+        };
 
         it('should call apiClient.post with the correct endpoint and body for createProject', async () => {
             const mockProjectResponse: DialecticProject = {
@@ -174,13 +191,20 @@ describe('DialecticApiClient', () => {
             };
             mockApiClientPost.mockResolvedValue(mockResponse);
 
-            await dialecticApiClient.createProject(validPayload);
+            const formData = createFormDataFromPayload(validPayload);
+            await dialecticApiClient.createProject(formData);
 
             expect(mockApiClientPost).toHaveBeenCalledTimes(1);
             const calls = mockApiClientPost.mock.calls;
             expect(calls[0][0]).toEqual(endpoint);
-            expect(calls[0][1]).toEqual(requestBody);
-            expect(calls[0][2]).toBeUndefined();
+            // Check FormData content more robustly if possible, or ensure it's a FormData instance
+            expect(calls[0][1]).toBeInstanceOf(FormData);
+            const sentFormData = calls[0][1] as FormData;
+            expect(sentFormData.get('action')).toEqual('createProject');
+            expect(sentFormData.get('projectName')).toEqual(validPayload.projectName);
+            expect(sentFormData.get('initialUserPromptText')).toEqual(validPayload.initialUserPrompt);
+            expect(sentFormData.get('selectedDomainTag')).toEqual(validPayload.selectedDomainTag);
+            expect(calls[0][2]).toBeUndefined(); // No options expected
         });
 
         it('should return the created project data on successful response', async () => {
@@ -202,7 +226,8 @@ describe('DialecticApiClient', () => {
             };
             mockApiClientPost.mockResolvedValue(mockResponse);
 
-            const result = await dialecticApiClient.createProject(validPayload);
+            const formData = createFormDataFromPayload(validPayload);
+            const result = await dialecticApiClient.createProject(formData);
 
             expect(result.data).toEqual(mockProjectData);
             expect(result.status).toBe(201);
@@ -216,8 +241,9 @@ describe('DialecticApiClient', () => {
                 status: 400,
             };
             mockApiClientPost.mockResolvedValue(mockErrorResponse);
-
-            const result = await dialecticApiClient.createProject(validPayload); 
+            
+            const formData = createFormDataFromPayload(validPayload);
+            const result = await dialecticApiClient.createProject(formData); 
 
             expect(result.error).toEqual(mockApiError);
             expect(result.status).toBe(400);
@@ -228,7 +254,8 @@ describe('DialecticApiClient', () => {
             const networkErrorMessage = 'Simulated network failure';
             mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            const result = await dialecticApiClient.createProject(validPayload); 
+            const formData = createFormDataFromPayload(validPayload);
+            const result = await dialecticApiClient.createProject(formData); 
 
             expect(result.error).toEqual({
                 code: 'NETWORK_ERROR',

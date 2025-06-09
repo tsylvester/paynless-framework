@@ -156,12 +156,16 @@ describe('useDialecticStore', () => {
 
             expect(result.data).toEqual(mockCreatedProject);
             expect(result.status).toBe(201);
-            // Verify the payload sent to the API includes selectedDomainTag and selected_domain_overlay_id from the store's initial state (null)
-            expect(mockDialecticApi.createProject).toHaveBeenCalledWith({
-                ...projectPayload,
-                selectedDomainTag: null, 
-                selected_domain_overlay_id: null 
-            });
+            expect(mockDialecticApi.createProject).toHaveBeenCalledWith(expect.any(FormData));
+            
+            const formData = (mockDialecticApi.createProject as Mock).mock.calls[0][0] as FormData;
+            expect(formData.get('action')).toBe('createProject');
+            expect(formData.get('projectName')).toBe(projectPayload.projectName);
+            expect(formData.get('initialUserPromptText')).toBe(projectPayload.initialUserPrompt);
+            expect(formData.get('selectedDomainTag')).toBeNull(); // Initial store state
+            expect(formData.get('selected_domain_overlay_id')).toBeNull(); // Initial store state
+            expect(formData.get('promptFile')).toBeNull();
+
             expect(mockDialecticApi.listProjects).toHaveBeenCalledTimes(1);
         });
 
@@ -178,8 +182,8 @@ describe('useDialecticStore', () => {
                 id: 'newTaggedProjId',
                 project_name: inputPayload.projectName,
                 initial_user_prompt: inputPayload.initialUserPrompt,
-                selected_domain_tag: testSelectedDomainTag, // Expecting the value from store state
-                selected_domain_overlay_id: testSelectedDomainOverlayId, // Expecting the value from store state
+                selected_domain_tag: testSelectedDomainTag, 
+                selected_domain_overlay_id: testSelectedDomainOverlayId, 
                 user_id: 'user1',
                 repo_url: null,
                 status: 'active',
@@ -192,18 +196,20 @@ describe('useDialecticStore', () => {
             (mockDialecticApi.createProject as Mock).mockResolvedValue(mockResponse);
             (mockDialecticApi.listProjects as Mock).mockResolvedValue({ data: [mockCreatedTaggedProject], status: 200 });
 
-            const result = await createDialecticProject(inputPayload); // Pass the input payload without tag/overlay
+            const result = await createDialecticProject(inputPayload); 
 
             expect(result.data).toEqual(mockCreatedTaggedProject);
             expect(result.status).toBe(201);
-            // Verify the API was called with projectName and initialUserPrompt from input,
-            // and selectedDomainTag/selected_domain_overlay_id from the store state
-            expect(mockDialecticApi.createProject).toHaveBeenCalledWith({
-                projectName: inputPayload.projectName,
-                initialUserPrompt: inputPayload.initialUserPrompt,
-                selectedDomainTag: testSelectedDomainTag,
-                selected_domain_overlay_id: testSelectedDomainOverlayId
-            });
+            expect(mockDialecticApi.createProject).toHaveBeenCalledWith(expect.any(FormData));
+
+            const formData = (mockDialecticApi.createProject as Mock).mock.calls[0][0] as FormData;
+            expect(formData.get('action')).toBe('createProject');
+            expect(formData.get('projectName')).toBe(inputPayload.projectName);
+            expect(formData.get('initialUserPromptText')).toBe(inputPayload.initialUserPrompt);
+            expect(formData.get('selectedDomainTag')).toBe(testSelectedDomainTag);
+            expect(formData.get('selected_domain_overlay_id')).toBe(testSelectedDomainOverlayId);
+            expect(formData.get('promptFile')).toBeNull();
+            
             expect(mockDialecticApi.listProjects).toHaveBeenCalledTimes(1);
         });
 
@@ -232,11 +238,14 @@ describe('useDialecticStore', () => {
             const state = useDialecticStore.getState();
             expect(state.isCreatingProject).toBe(true);
             expect(state.createProjectError).toBeNull();
-            expect(mockDialecticApi.createProject).toHaveBeenCalledWith({
-                ...projectPayload,
-                selectedDomainTag: null, 
-                selected_domain_overlay_id: null
-            });
+            expect(mockDialecticApi.createProject).toHaveBeenCalledWith(expect.any(FormData));
+            const formData = (mockDialecticApi.createProject as Mock).mock.calls[0][0] as FormData;
+            expect(formData.get('action')).toBe('createProject');
+            expect(formData.get('projectName')).toBe(projectPayload.projectName);
+            expect(formData.get('initialUserPromptText')).toBe(projectPayload.initialUserPrompt);
+            expect(formData.get('selectedDomainTag')).toBeNull();
+            expect(formData.get('selected_domain_overlay_id')).toBeNull();
+            expect(formData.get('promptFile')).toBeNull();
         });
 
         it('should set network error state if createProject API call throws and not refetch', async () => {
@@ -248,6 +257,7 @@ describe('useDialecticStore', () => {
 
             const state = useDialecticStore.getState();
             expect(state.isCreatingProject).toBe(false);
+            expect(state.projects).toEqual([]); // Ensure projects list is not modified
             expect(state.createProjectError).toEqual({
                 message: networkErrorMessage,
                 code: 'NETWORK_ERROR',
@@ -256,7 +266,8 @@ describe('useDialecticStore', () => {
                 message: networkErrorMessage,
                 code: 'NETWORK_ERROR',
             });
-            expect(result.status).toBe(0);
+            expect(result.data).toBeUndefined();
+            // expect(result.status).toBe(0); // Status is not set for network errors in the new return type
             expect(mockDialecticApi.listProjects).not.toHaveBeenCalled(); // Should not attempt to refetch
         });
     });
