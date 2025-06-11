@@ -14,7 +14,7 @@ import {
   DialecticStore,
 } from '@paynless/types';
 import { vi, Mock } from 'vitest';
-import { mockLocalContributionCache, resetDialecticStoreMocks } from '../mocks/dialecticStore.mock';
+import { resetDialecticStoreMock } from '../mocks/dialecticStore.mock';
 
 // Mock the @paynless/store module
 vi.mock('@paynless/store', async (importOriginal) => {
@@ -134,6 +134,14 @@ const mockSession: DialecticSession = {
   max_iterations: 10,
   dialectic_contributions: [mockThesisContribution1, mockAntithesisContribution1], // Assign contributions
   dialectic_session_models: mockSessionModels, // Assign session models
+  current_iteration: 1,
+  preferred_model_for_stage: {
+    thesis: 'openai/gpt-4',
+    antithesis: 'anthropic/claude-3-opus',
+    synthesis: 'openai/gpt-4',
+    paralysis: 'openai/gpt-4',
+    parenthesis: 'openai/gpt-4',
+  },
 };
 
 const mockProject: DialecticProject = {
@@ -144,9 +152,10 @@ const mockProject: DialecticProject = {
   created_at: '2023-01-01T08:00:00Z',
   updated_at: '2023-01-01T08:00:00Z',
   status: 'active',
-  sessions: [mockSession],
+  dialectic_sessions: [mockSession],
   selected_domain_tag: 'software_development',
   repo_url: 'https://github.com/paynless/test-project',
+  selected_domain_overlay_id: null,
 };
 
 // Helper to create a fully typed mock store state for each test
@@ -162,16 +171,33 @@ const createMockStore = (overrides: Partial<DialecticStore> = {}): DialecticStor
     modelCatalog: mockModelCatalog, // Default to mockModelCatalog
     isLoadingModelCatalog: false,
     modelCatalogError: null,
-    contributionContentCache: { ...mockLocalContributionCache }, // Use a copy
+    contributionContentCache: {}, // Initialize as empty, tests can populate as needed
     availableDomainTags: [],
     isLoadingDomainTags: false,
     domainTagsError: null,
     selectedDomainTag: null,
+    selectedStageAssociation: null,
+    availableDomainOverlays: [], // Added
+    isLoadingDomainOverlays: false, // Added
+    domainOverlaysError: null, // Added
+    selectedDomainOverlayId: null, // Added
     isCreatingProject: false,
     createProjectError: null,
     isStartingSession: false,
     startSessionError: null,
-    allSystemPrompts: null,
+    allSystemPrompts: [], // Changed from null
+    isCloningProject: false, // Added
+    cloneProjectError: null, // Added
+    isExportingProject: false, // Added
+    exportProjectError: null, // Added
+    isUpdatingProjectPrompt: false, // Added
+    isUploadingProjectResource: false, // Added
+    uploadProjectResourceError: null, // Added
+    isStartNewSessionModalOpen: false, // Added
+    selectedModelIds: [], // Added
+    initialPromptFileContent: null, // Added to fix linter error
+    isLoadingInitialPromptFileContent: false, // Added to fix linter error
+    initialPromptFileContentError: null, // Added to fix linter error
 
     // DialecticActions (mocked)
     fetchDialecticProjectDetails: vi.fn(),
@@ -185,6 +211,17 @@ const createMockStore = (overrides: Partial<DialecticStore> = {}): DialecticStor
     uploadProjectResourceFile: vi.fn(),
     resetCreateProjectError: vi.fn(),
     resetProjectDetailsError: vi.fn(),
+    fetchAvailableDomainOverlays: vi.fn(), // Added
+    setSelectedStageAssociation: vi.fn(), // Added
+    setSelectedDomainOverlayId: vi.fn(), // Added
+    deleteDialecticProject: vi.fn(), // Added
+    cloneDialecticProject: vi.fn(), // Added
+    exportDialecticProject: vi.fn(), // Added
+    updateDialecticProjectInitialPrompt: vi.fn(), // Added
+    setStartNewSessionModalOpen: vi.fn(), // Added
+    setModelMultiplicity: vi.fn(), // Added
+    resetSelectedModelId: vi.fn(), // Added
+    fetchInitialPromptContent: vi.fn(), // Added to fix linter error
     _resetForTesting: vi.fn(),
     ...overrides,
   };
@@ -199,7 +236,7 @@ describe('DialecticSessionDetailsPage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    resetDialecticStoreMocks(); // Resets parts of the shared mock if it mutates global state (like mockLocalContributionCache)
+    resetDialecticStoreMock(); // Resets parts of the shared mock if it mutates global state (like mockLocalContributionCache)
     
     // Initialize a fresh store for each test
     currentMockStore = createMockStore();
@@ -244,7 +281,7 @@ describe('DialecticSessionDetailsPage', () => {
   });
 
   it('should render error state if session is not found in project details', () => {
-    currentMockStore.currentProjectDetail = { ...mockProject, sessions: [] }; // Project has no sessions
+    currentMockStore.currentProjectDetail = { ...mockProject, dialectic_sessions: [] }; // Project has no sessions
     // currentMockStore.modelCatalog = mockModelCatalog;
     
     renderPage();
@@ -260,7 +297,7 @@ describe('DialecticSessionDetailsPage', () => {
       // currentMockStore.modelCatalog = mockModelCatalog; // Default
       // Pre-fill cache for direct rendering
       currentMockStore.contributionContentCache['contrib-thesis-1'] = { content: 'Thesis content from OpenAI GPT-4', isLoading: false, error: undefined, mimeType: 'text/markdown', signedUrl: 'url1', expiry: Date.now() + 3600000, sizeBytes:100  };
-      currentMockStore.contributionContentCache['contrib-antithesis-1'] = { content: 'Antithesis content from Anthropic Claude 3 Opus', isLoading: false, error: undefined, mimeType: 'text/markdown', signedUrl: 'url2', expiry: Date.now() + 3600000, sizeBytes:120 };
+      currentMockStore.contributionContentCache['contrib-antithesis-1'] = { content: 'Anthropic Claude 3 Opus critiques OpenAI GPT-4', isLoading: false, error: undefined, mimeType: 'text/markdown', signedUrl: 'url2', expiry: Date.now() + 3600000, sizeBytes:120 };
       
       renderPage();
     });
@@ -295,13 +332,40 @@ describe('DialecticSessionDetailsPage', () => {
       const antithesisTab = screen.getByRole('tab', { name: /^Antithesis \(\d+\)$/i });
       antithesisTab.click();
 
-      // Wait for the "Antithesis Contributions" title to appear and be visible
-      const antithesisPanelTitle = await screen.findByText('Antithesis');
-      expect(antithesisPanelTitle).toBeVisible();
+      await waitFor(() => {
+        // Log when waitFor starts to help track execution flow in logs
+        console.log("[Antithesis Test] Entering waitFor block.");
 
-      // Now that the panel is confirmed visible, check for the specific contribution details
-      expect(screen.getByText(/^Anthropic Claude 3 Opus critiques OpenAI GPT-4 \(Contribution ID: contrib-t\.\.\. \)$/i)).toBeInTheDocument();
-      expect(screen.getByText('Antithesis content from Anthropic Claude 3 Opus')).toBeInTheDocument();
+        const titleElement = screen.getByText((content, element) => {
+          const isCardTitle = element?.getAttribute('data-slot') === 'card-title';
+          
+          if (isCardTitle) {
+            const normalizedText = content.replace(/\s+/g, ' ').trim();
+            // Log the normalized text of every card title encountered
+            console.log(`[Antithesis Test] Encountered card-title with normalizedText: "${normalizedText}"`);
+
+            const expectedModelA = "Anthropic Claude 3 Opus";
+            const expectedModelB = "OpenAI GPT-4";
+            // mockAntithesisContribution1 should be in scope from the test file's top level
+            const parentIdShort = mockAntithesisContribution1.parent_contribution_id.substring(0, 8);
+            const expectedFullTitleString = `${expectedModelA} critiques ${expectedModelB} (Contribution ID: ${parentIdShort}...)`;
+            
+            // Optional: For debugging, log the constructed expected string too
+            // console.log(`[Antithesis Test] Expected full title string: "${expectedFullTitleString}"`);
+
+            if (normalizedText === expectedFullTitleString) {
+              console.log(`[Antithesis Test] SUCCESS: Matched expected title: "${normalizedText}"`);
+              return true;
+            }
+          }
+          return false;
+        });
+
+        expect(titleElement).toBeInTheDocument();
+        
+        // Check for the content, matching the user's update to the mock data
+        expect(screen.getByText('Anthropic Claude 3 Opus critiques OpenAI GPT-4')).toBeInTheDocument();
+      });
     });
 
     // Removed placeholder cost test
@@ -334,7 +398,7 @@ describe('DialecticSessionDetailsPage Accessibility (Placeholder)', () => {
 
     beforeEach(() => { // Setup mock store for accessibility tests
         vi.clearAllMocks();
-        resetDialecticStoreMocks();
+        resetDialecticStoreMock();
         currentMockStoreAcc = createMockStore({
             currentProjectDetail: mockProject,
             isLoadingProjectDetail: false,

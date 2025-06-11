@@ -66,6 +66,11 @@ export const initialDialecticStateValues: DialecticStateValues = {
   uploadProjectResourceError: null,
   isStartNewSessionModalOpen: false,
   selectedModelIds: [],
+
+  // New initial state for initial prompt file content
+  initialPromptFileContent: null,
+  isLoadingInitialPromptFileContent: false,
+  initialPromptFileContentError: null,
 };
 
 export const useDialecticStore = create<DialecticStore>((set, get) => ({
@@ -225,13 +230,13 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     formData.append('projectName', payload.projectName);
 
     const domainTagToUse = payload.selectedDomainTag || currentSelectedDomainTag;
-    const overlayIdToUse = payload.selected_domain_overlay_id || currentSelectedDomainOverlayId;
+    const overlayIdToUse = payload.selectedDomainOverlayId || currentSelectedDomainOverlayId;
 
     if (domainTagToUse) {
       formData.append('selectedDomainTag', domainTagToUse);
     }
     if (overlayIdToUse) {
-      formData.append('selected_domain_overlay_id', overlayIdToUse);
+      formData.append('selectedDomainOverlayId', overlayIdToUse);
     }
 
     if (payload.promptFile) {
@@ -248,7 +253,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       hasPromptFile: !!payload.promptFile,
       initialUserPrompt: payload.initialUserPrompt,
       selectedDomainTag: domainTagToUse,
-      selected_domain_overlay_id: overlayIdToUse
+      selectedDomainOverlayId: overlayIdToUse
     });
 
     try {
@@ -688,7 +693,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       for (let i = 0; i < count; i++) {
         newSelectedIds.push(modelId);
       }
-      logger.info(`[DialecticStore] Setting multiplicity for model ${modelId} to ${count}. New selectedModelIds:`, newSelectedIds);
+      logger.info(`[DialecticStore] Setting multiplicity for model ${modelId} to ${count}.`, { newSelectedModelIds: newSelectedIds });
       return { selectedModelIds: newSelectedIds };
     });
   },
@@ -696,6 +701,50 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
   resetSelectedModelId: () => {
     logger.info(`[DialecticStore] Resetting selectedModelIds.`);
     set({ selectedModelIds: [] });
+  },
+
+  fetchInitialPromptContent: async (resourceId: string) => {
+    set({ 
+      isLoadingInitialPromptFileContent: true, 
+      initialPromptFileContentError: null,
+      initialPromptFileContent: null // Clear previous content
+    });
+    logger.info(`[DialecticStore] Fetching initial prompt content for resource ID: ${resourceId}`);
+    try {
+      const response = await api.dialectic().getProjectResourceContent({ resourceId });
+      
+      if (response.error || !response.data) {
+        const error = response.error || { message: 'No data returned while fetching prompt content', code: 'NO_DATA' } as ApiError;
+        logger.error('[DialecticStore] Error fetching initial prompt content:', { resourceId, errorDetails: error });
+        set({ 
+          isLoadingInitialPromptFileContent: false, 
+          initialPromptFileContentError: error,
+          initialPromptFileContent: null
+        });
+      } else {
+        logger.info('[DialecticStore] Successfully fetched initial prompt content:', { 
+          resourceId, 
+          fileName: response.data.fileName,
+          contentLength: response.data.content?.length 
+        });
+        set({
+          initialPromptFileContent: response.data,
+          isLoadingInitialPromptFileContent: false,
+          initialPromptFileContentError: null,
+        });
+      }
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while fetching initial prompt content',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error fetching initial prompt content:', { resourceId, errorDetails: networkError });
+      set({ 
+        isLoadingInitialPromptFileContent: false, 
+        initialPromptFileContentError: networkError,
+        initialPromptFileContent: null 
+      });
+    }
   },
 
   reset: () => {

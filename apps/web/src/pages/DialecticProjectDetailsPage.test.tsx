@@ -31,8 +31,8 @@ vi.mock('react-router-dom', async (importOriginal) => {
 });
 
 // Mock child components to simplify page testing and avoid their internal logic/API calls
-vi.mock('@/components/dialectic/EditableInitialProblemStatement', () => ({
-  EditableInitialProblemStatement: vi.fn(() => <div data-testid="editable-initial-problem-statement-mock"></div>),
+vi.mock('@/components/dialectic/InitialProblemStatement', () => ({
+  InitialProblemStatement: vi.fn(() => <div data-testid="editable-initial-problem-statement-mock"></div>),
 }));
 
 vi.mock('@/components/dialectic/ProjectSessionsList', () => ({

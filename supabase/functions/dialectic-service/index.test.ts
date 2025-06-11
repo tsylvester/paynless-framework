@@ -5,7 +5,7 @@ import {
   assertStringIncludes,
   assertMatch,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { spy, stub, returnsNext } from "https://deno.land/std@0.208.0/testing/mock.ts";
+import { spy, stub, returnsNext, type Spy } from "https://deno.land/std@0.208.0/testing/mock.ts";
 import {
   isValidDomainTagDefaultFn,
   createSignedUrlDefaultFn,
@@ -15,7 +15,13 @@ import {
 import type { SupabaseClient, User, AuthError } from 'npm:@supabase/supabase-js';
 import type { ServiceError } from '../_shared/types.ts';
 import { handleCorsPreflightRequest } from "../_shared/cors-headers.ts";
-import type { GenerateStageContributionsSuccessResponse, DialecticContribution, DialecticProject, /* DomainTagDescriptor */ } from "./dialectic.interface.ts"; 
+import type { 
+  GenerateStageContributionsSuccessResponse, 
+  DialecticContribution, 
+  DialecticProject, 
+  GetProjectResourceContentPayload, 
+  GetProjectResourceContentResponse 
+} from "./dialectic.interface.ts"; 
 
 // Mock SupabaseClient
 const mockSupabaseClient = (
@@ -68,6 +74,7 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers>): ActionHandlers
         deleteProject: overrides?.deleteProject || emptySpy,
         cloneProject: overrides?.cloneProject || emptySpy,
         exportProject: overrides?.exportProject || emptySpy,
+        getProjectResourceContent: overrides?.getProjectResourceContent || emptySpy,
         ...overrides,
     } as ActionHandlers;
 };
@@ -798,6 +805,111 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
         assertEquals(capturedArgsExport[0], mockAdminClient);
         assertEquals(capturedArgsExport[1], exportPayload_ep_4.projectId);
         assertEquals(capturedArgsExport[2], mockUser.id);
+    }
+  });
+
+  await t.step("JSON: getProjectResourceContent requires auth; then resourceId", async () => {
+    // Explicit type for the handler function signature
+    type GetProjectResourceContentHandlerFn = (
+      payload: GetProjectResourceContentPayload,
+      dbClient: SupabaseClient,
+      user: User
+    ) => Promise<{ data?: GetProjectResourceContentResponse; error?: ServiceError; status?: number }>;
+
+    let mockGetProjectResourceContentHandler: Spy<GetProjectResourceContentHandlerFn>;
+
+    // Test case 1: No auth token
+    mockAdminClient = mockSupabaseClient(); // Fresh client for each sub-step
+    mockGetProjectResourceContentHandler = spy(
+      async (payload, dbClient, user) => 
+        Promise.resolve({ error: { message: "Should not be called", status: 500, code: "MOCK_ERROR" } })
+    );
+    mockHandlers = createMockHandlers({ getProjectResourceContent: mockGetProjectResourceContentHandler });
+    let req = createJsonRequest("getProjectResourceContent", { resourceId: "res123" }); // No token
+    let response = await handleRequest(req, mockAdminClient, mockHandlers);
+    assertEquals(response.status, 401);
+    let body = await response.json();
+    assertEquals(body.error, "User not authenticated"); 
+    assertEquals(mockGetProjectResourceContentHandler.calls.length, 0);
+
+    // Test case 2: Invalid auth token
+    mockGetProjectResourceContentHandler = spy(
+      async (payload, dbClient, user) => 
+        Promise.resolve({ error: { message: "Should not be called", status: 500, code: "MOCK_ERROR" } })
+    );
+    mockHandlers = createMockHandlers({ getProjectResourceContent: mockGetProjectResourceContentHandler });
+    req = createJsonRequest("getProjectResourceContent", { resourceId: "res123" }, "invalid-token");
+    response = await handleRequest(req, mockAdminClient, mockHandlers);
+    assertEquals(response.status, 401);
+    body = await response.json();
+    assertEquals(body.error, "Mock: Invalid token"); // Specific to mockSupabaseClient's auth.getUser
+    assertEquals(mockGetProjectResourceContentHandler.calls.length, 0);
+
+    // Test case 3: No payload
+    mockGetProjectResourceContentHandler = spy(
+      async (payload, dbClient, user) => 
+        Promise.resolve({ error: { message: "Should not be called", status: 500, code: "MOCK_ERROR" } })
+    );
+    mockHandlers = createMockHandlers({ getProjectResourceContent: mockGetProjectResourceContentHandler });
+    req = createJsonRequest("getProjectResourceContent", undefined, "valid-token-for-mock");
+    response = await handleRequest(req, mockAdminClient, mockHandlers);
+    assertEquals(response.status, 400);
+    body = await response.json();
+    assertEquals(body.error, "Invalid or missing 'resourceId' (string) in payload for getProjectResourceContent action.");
+    assertEquals(mockGetProjectResourceContentHandler.calls.length, 0);
+
+    // Test case 4: Payload missing resourceId
+    mockGetProjectResourceContentHandler = spy(
+      async (payload, dbClient, user) => 
+        Promise.resolve({ error: { message: "Should not be called", status: 500, code: "MOCK_ERROR" } })
+    );
+    mockHandlers = createMockHandlers({ getProjectResourceContent: mockGetProjectResourceContentHandler });
+    req = createJsonRequest("getProjectResourceContent", { otherData: "foo" }, "valid-token-for-mock");
+    response = await handleRequest(req, mockAdminClient, mockHandlers);
+    assertEquals(response.status, 400);
+    body = await response.json();
+    assertEquals(body.error, "Invalid or missing 'resourceId' (string) in payload for getProjectResourceContent action.");
+    assertEquals(mockGetProjectResourceContentHandler.calls.length, 0);
+
+    // Test case 5: Payload with empty resourceId - Handler is called and returns error
+    mockGetProjectResourceContentHandler = spy(
+      async (payload, dbClient, user) => {
+        // Simulate the actual handler's check for empty resourceId
+        if (!payload.resourceId) { 
+          return Promise.resolve({ error: { message: "resourceId is required", status: 400, code: "VALIDATION_ERROR" } });
+        }
+        // Fallback, should not be reached in this specific test if resourceId is empty
+        return Promise.resolve({ data: { fileName: "unexpected.txt", mimeType: "text/plain", content: "fallback"} }); 
+      }
+    );
+    mockHandlers = createMockHandlers({ getProjectResourceContent: mockGetProjectResourceContentHandler });
+    req = createJsonRequest("getProjectResourceContent", { resourceId: "" }, "valid-token-for-mock");
+    response = await handleRequest(req, mockAdminClient, mockHandlers);
+    assertEquals(response.status, 400);
+    body = await response.json();
+    assertEquals(body.error, "resourceId is required");
+    assertEquals(mockGetProjectResourceContentHandler.calls.length, 1); // Handler is called
+
+    // Test case 6: Valid request, handler should be called
+    const successResponseData: GetProjectResourceContentResponse = { fileName: "test.txt", mimeType: "text/plain", content: "content" };
+    mockGetProjectResourceContentHandler = spy(
+      async (payload, dbClient, user) => 
+        Promise.resolve({ data: successResponseData })
+    );
+    mockHandlers = createMockHandlers({ getProjectResourceContent: mockGetProjectResourceContentHandler });
+    req = createJsonRequest("getProjectResourceContent", { resourceId: "resValid123" }, "valid-token-for-mock");
+    response = await handleRequest(req, mockAdminClient, mockHandlers);
+    assertEquals(response.status, 200);
+    body = await response.json();
+    assertEquals(body.fileName, "test.txt");
+    assertEquals(mockGetProjectResourceContentHandler.calls.length, 1);
+    // Verify payload and user passed to handler
+    if (mockGetProjectResourceContentHandler.calls.length > 0) {
+      const handlerCall = mockGetProjectResourceContentHandler.calls[0];
+      assertEquals((handlerCall.args[0] as GetProjectResourceContentPayload).resourceId, "resValid123");
+      assertExists(handlerCall.args[1]); // dbClient
+      assertExists(handlerCall.args[2]); // User
+      assertEquals((handlerCall.args[2] as User).id, "mock-user-id");
     }
   });
 }); 

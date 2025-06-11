@@ -2,7 +2,6 @@ import type { ApiClient } from './apiClient';
 import type {
     ApiResponse,
     DialecticProject,
-    CreateProjectPayload,
     ContributionContentSignedUrlResponse,
     StartSessionPayload,
     DialecticSession,
@@ -15,7 +14,9 @@ import type {
     DialecticServiceActionPayload,
     UpdateProjectInitialPromptPayload,
     UploadProjectResourceFilePayload,
-    FetchOptions
+    FetchOptions,
+    GetProjectResourceContentPayload,
+    GetProjectResourceContentResponse
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -450,5 +451,45 @@ export class DialecticApiClient {
             'dialectic-service',
             { action: 'updateProjectInitialPrompt', payload }
         );
+    }
+
+    async getProjectResourceContent(
+      payload: GetProjectResourceContentPayload
+    ): Promise<ApiResponse<GetProjectResourceContentResponse>> {
+      logger.info('[DialecticApi] Fetching project resource content', { resourceId: payload.resourceId });
+      try {
+        const response = await this.apiClient.post<GetProjectResourceContentResponse, DialecticServiceActionPayload>(
+          'dialectic-service',
+          {
+            action: 'getProjectResourceContent',
+            payload,
+          } as DialecticServiceActionPayload
+        );
+    
+        if (response.error) {
+          logger.error('[DialecticApi] Error fetching project resource content:', { 
+            error: response.error, 
+            resourceId: payload.resourceId 
+          });
+        } else {
+          logger.info('[DialecticApi] Successfully fetched project resource content', { 
+            resourceId: payload.resourceId, 
+            fileName: response.data?.fileName 
+          });
+        }
+        return response;
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'A network error occurred while fetching resource content';
+        logger.error('[DialecticApi] Network error in getProjectResourceContent:', { 
+          errorMessage: message, 
+          resourceId: payload.resourceId, 
+          errorObject: error 
+        });
+        return {
+          data: undefined,
+          error: { code: 'NETWORK_ERROR', message },
+          status: 0,
+        } as ApiResponse<GetProjectResourceContentResponse>;
+      }
     }
 } 

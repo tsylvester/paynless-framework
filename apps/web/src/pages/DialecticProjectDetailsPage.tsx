@@ -8,7 +8,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, PlayCircle, Layers } from 'lucide-react';
-import { EditableInitialProblemStatement } from '@/components/dialectic/EditableInitialProblemStatement';
+import { InitialProblemStatement } from '@/components/dialectic/InitialProblemStatement';
 import { ProjectSessionsList } from '@/components/dialectic/ProjectSessionsList';
 import { StartDialecticSessionModal } from '@/components/dialectic/StartDialecticSessionModal';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -119,7 +119,7 @@ export const DialecticProjectDetailsPage: React.FC = () => {
         </div>
       </div>
       
-      <EditableInitialProblemStatement />
+      <InitialProblemStatement />
       
       <ProjectSessionsList onStartNewSession={handleStartNewSession} />
 

@@ -69,25 +69,31 @@ export interface DialecticSessionModel {
 }
 
 export interface DialecticSession {
-    id: string;
-    project_id: string;
-    session_description: string | null;
-    current_stage_seed_prompt: string | null;
-    iteration_count: number;
-    status: string;
-    associated_chat_id: string | null;
-    active_thesis_prompt_template_id: string | null;
-    active_antithesis_prompt_template_id: string | null;
-    active_synthesis_prompt_template_id: string | null;
-    active_parenthesis_prompt_template_id: string | null;
-    active_paralysis_prompt_template_id: string | null;
-    formal_debate_structure_id?: string | null;
-    max_iterations: number;
-    created_at: string;
-    updated_at: string;
-    dialectic_session_models?: DialecticSessionModel[];
-    dialectic_contributions?: DialecticContribution[];
-    convergence_status?: string | null;
+  id: string;
+  project_id: string;
+  session_description: string | null;
+  current_stage_seed_prompt: string | null;
+  iteration_count: number;
+  status: string;
+  associated_chat_id: string | null;
+
+  active_thesis_prompt_template_id: string | null;
+  active_antithesis_prompt_template_id: string | null;
+  active_synthesis_prompt_template_id: string | null;
+  active_parenthesis_prompt_template_id: string | null;
+  active_paralysis_prompt_template_id: string | null;
+  
+  formal_debate_structure_id: string | null;
+  max_iterations: number;
+  current_iteration: number;
+  convergence_status: string | null;
+  preferred_model_for_stage: Record<string, string> | null;
+  
+  created_at: string;
+  updated_at: string;
+
+  dialectic_session_models?: DialecticSessionModel[];
+  dialectic_contributions?: DialecticContribution[];
 }
 
 export interface DialecticProject {
@@ -146,12 +152,7 @@ export interface StartSessionPayload {
   maxIterations?: number;
 }
 
-export interface StartSessionSuccessResponse {
-    message: string;
-    sessionId: string;
-    initialStatus: string;
-    associatedChatId: string; 
-}
+export type StartSessionSuccessResponse = DialecticSession;
 
 export interface CallUnifiedAIModelOptions {
   customParameters?: {
@@ -289,4 +290,15 @@ export enum DialecticStage {
   PARENTHESIS = 'parenthesis',
   PARALYSIS = 'paralysis',
 }
+
+export interface GetProjectResourceContentPayload {
+  resourceId: string;
+}
+
+export interface GetProjectResourceContentResponse {
+  fileName: string;
+  mimeType: string;
+  content: string;
+}
+
 // Add other service-specific interfaces here if needed in the future

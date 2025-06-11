@@ -130,6 +130,57 @@ The implementation plan uses the following labels to categorize work steps:
 
 ---
 
+## Section 0: Core Data Handling Principles & Supabase Storage Architecture
+
+**Overarching Principle:** This section establishes the foundational strategy for how the AI Dialectic Engine will manage and store data artifacts. Understanding and adhering to these principles is crucial for all subsequent development phases.
+
+**Key Goals:**
+*   Ensure a consistent, reliable, and scalable approach to storing all generated and user-provided artifacts.
+*   Align internal storage structures with the planned GitHub export structure for seamless integration.
+*   Provide clear linkage between database records and their corresponding file-based artifacts in cloud storage.
+
+---
+*   `[✅] 0.1 [ARCH]` **Define Supabase Storage as Primary Artifact Repository:**
+    *   `[✅] 0.1.1 [DOCS]` Document that Supabase Storage will serve as the primary, canonical storage for all dialectic session artifacts. This includes, but is not limited to:
+        *   Initial user prompts (text or file references).
+        *   System-generated seed input components for each iteration (e.g., `user_prompt.md`, `system_settings.json`).
+        *   Raw and formatted AI model contributions for each stage (e.g., Thesis, Antithesis, Synthesis).
+        *   User-provided feedback files or structured data.
+        *   Supporting documents or resources generated during the dialectic process.
+        *   Project-level readme and organizational folders (`Implementation/`, `Complete/`).
+    *   `[✅] 0.1.2 [DOCS]` Specify that the folder structure within the designated Supabase Storage bucket (e.g., a configurable bucket name, defaulting to `dialectic-contributions`) will strictly follow the pattern outlined for GitHub export (referencing details in `Section 1.6.3.2` and its associated file path structure). The base path will be `projects/{project_id}/`.
+        *   Example structure within `projects/{project_id}/`:
+            *   `project_readme.md`
+            *   `Implementation/`
+            *   `Complete/`
+            *   `sessions/{session_id}/`
+                *   `iteration_{N}/`
+                    *   `0_seed_inputs/`
+                        *   `user_prompt.md`
+                        *   `system_settings.json`
+                        *   `seed_prompt.md` (the actual content sent to the model for completion)
+                    *   `1_hypothesis/` (or `1_thesis`)
+                        *   `{model_name_slug}_hypothesis.md`
+                        *   `user_feedback_hypothesis.md` (optional)
+                    *   `2_antithesis/`
+                        *   `...`
+                    *   (Other stages: `3_synthesis/`, `4_parenthesis/`, `5_paralysis/`)
+                    *   `iteration_summary.md` (optional)
+*   `[✅] 0.2 [ARCH]` **Database Path and Bucket Conventions:**
+    *   `[✅] 0.2.1 [DOCS]` Clarify that all database fields designed to store paths to files (e.g., `dialectic_contributions.content_storage_path`, `dialectic_contributions.seed_prompt_url`, `dialectic_project_resources.storage_path`) will store relative paths *within the designated Supabase Storage bucket*. These paths will not include the bucket name itself.
+    *   `[✅] 0.2.2 [DOCS]` Relevant tables (e.g., `dialectic_contributions`, `dialectic_project_resources`) will include a `content_storage_bucket` (or similarly named) field. This field will store the name of the Supabase Storage bucket where the artifact resides (e.g., "dialectic-contributions"). This allows for future flexibility if multiple buckets are used, though a single primary bucket is the initial plan.
+*   `[✅] 0.3 [DEFS]` **Define "Seed Input Components" for an Iteration (Stored in Supabase Storage):**
+    *   `[✅] 0.3.1 [DOCS]` **`user_prompt.md`**: This Markdown file contains the specific user-provided or system-derived textual input that forms the core basis of an iteration's prompt. It is stored in Supabase Storage at the path: `projects/{project_id}/sessions/{session_id}/iteration_{N}/0_seed_inputs/user_prompt.md`.
+    *   `[✅] 0.3.2 [DOCS]` **`system_settings.json`**: A JSON file detailing the AI models selected for the iteration/stage, core `system_prompts.id` used, active `domain_specific_prompt_overlays` configurations, and other critical system-level parameters or variables applied to construct the full prompt for that iteration. Stored in Supabase Storage at: `projects/{project_id}/sessions/{session_id}/iteration_{N}/0_seed_inputs/system_settings.json`.
+    *   `[✅] 0.3.3 [DOCS]` **"Fully Constructed Seed Prompt" (Conceptual/In-Memory)**: This refers to the complete and final prompt text that is actually sent to an AI model for a given contribution. It is dynamically assembled by the backend service (e.g., `dialectic-service`) by combining the content of the stored `user_prompt.md`, the configurations from `system_settings.json`, and any applicable prompt templates (`system_prompts.prompt_text`).
+        *   `[ ] 0.3.3.1 [BE]` Consider if and where to log/store this fully constructed prompt for auditing or advanced debugging (e.g., as a separate file in Supabase Storage like `.../0_seed_inputs/full_constructed_prompt_for_{model_slug}.txt`, or as a field in `dialectic_contributions` if size permits and is deemed necessary). For Phase 1, primary reliance is on reconstructing from components.
+*   `[✅] 0.4 [ARCH]` **Frontend Data Access:**
+    *   `[✅] 0.4.1 [DOCS]` Document that the frontend application will primarily fetch file-based content (e.g., AI contributions, user prompts stored as files) directly from Supabase Storage. This will typically be achieved using presigned URLs generated by the backend or via the Supabase client SDK if appropriate RLS and access policies are in place for direct client access to specific paths.
+*   `[✅] 0.5 [ARCH]` **GitHub Export as a Replicator:**
+    *   `[✅] 0.5.1 [DOCS]` Emphasize that the GitHub integration feature (detailed in Section 1.6) acts as an exporter or replicator. It will read the structured artifacts from Supabase Storage and commit them to the user's connected GitHub repository, maintaining the identical folder and file structure. Supabase Storage remains the primary source of truth for the application.
+
+---
+
 ## Section 1: Phase 1 - Multi-Model Response & Basic Dialectic (Thesis & Antithesis)
 
 **Phase 1 Value:** Enable users to submit a prompt to multiple AI models simultaneously and view their initial responses (Thesis). Introduce a basic critique stage where models review peer responses (Antithesis). Provide a basic user interface and GitHub integration for these initial outputs.
@@ -306,24 +357,24 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[🚧] 1.0.A.1.4 [TEST-UNIT]` Run `FileUpload.tsx` tests. (Tests passing for mocked scenarios via `TextInputArea.test.tsx`. Standalone tests for `FileUpload` specifically might need review if they exist separately.)
 
 ### 1.0.B Backend and Data Model for Project Resources
-*   `[✅] 1.0.B.1 [DB]` Create `dialectic_project_resources` table. (Schema defined, assumed implemented or to be implemented as prerequisite for upload functionality.)
-    *   `[✅] 1.0.B.1.1 [TEST-UNIT]` Write migration test for `dialectic_project_resources` table creation. (RED)
+*   `[✅] 1.0.B.1 [DB]` Create `dialectic_contributions` table. (Schema defined, assumed implemented or to be implemented as prerequisite for upload functionality.)
+    *   `[✅] 1.0.B.1.1 [TEST-UNIT]` Write migration test for `dialectic_contributions` table creation. (RED)
     *   `[✅] 1.0.B.1.2` Define columns:
         *   `id` (UUID, primary key, default `uuid_generate_v4()`)
         *   `project_id` (UUID, foreign key to `dialectic_projects.id` on delete cascade, not nullable)
         *   `user_id` (UUID, foreign key to `auth.users.id` on delete set null, not nullable)
         *   `file_name` (TEXT, not nullable)
-        *   `storage_bucket` (TEXT, not nullable, e.g., "dialectic-contributions" or a new "dialectic-project-resources" bucket)
+        *   `storage_bucket` (TEXT, not nullable, e.g., "dialectic-contributions")
         *   `storage_path` (TEXT, not nullable, unique within bucket)
         *   `mime_type` (TEXT, not nullable)
         *   `size_bytes` (BIGINT, not nullable)
         *   `resource_description` (TEXT, nullable, e.g., "Initial prompt attachment for project creation")
         *   `created_at` (TIMESTAMPTZ, default `now()`, not nullable)
         *   `updated_at` (TIMESTAMPTZ, default `now()`, not nullable)
-    *   `[✅] 1.0.B.1.3` Create Supabase migration script for `dialectic_project_resources`. (GREEN)
+    *   `[✅] 1.0.B.1.3` Create Supabase migration script for `dialectic_contributions`. (GREEN)
     *   `[✅] 1.0.B.1.4 [REFACTOR]` Review migration.
-    *   `[✅] 1.0.B.1.5 [TEST-UNIT]` Run `dialectic_project_resources` schema migration test.
-*   `[✅] 1.0.B.2 [RLS]` Define RLS for `dialectic_project_resources`.
+    *   `[✅] 1.0.B.1.5 [TEST-UNIT]` Run `dialectic_contributions` schema migration test.
+*   `[✅] 1.0.B.2 [RLS]` Define RLS for `dialectic_contributions`.
     *   `[✅] 1.0.B.2.1 [TEST-INT]` Write RLS tests (user can CRUD resources for projects they own; service role full access). (RED)
     *   `[✅] 1.0.B.2.2` Implement RLS policies. (GREEN)
     *   `[✅ 1.0.B.2.3 [TEST-INT]` Run RLS tests.
@@ -332,7 +383,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   Input: `projectId` (string), `fileName` (string), `fileType` (string/mime-type). The actual file will be part of a FormData request. Auth.
         *   Output: `DialecticProjectResource` object (or subset of its fields).
         *   Verifies file is uploaded to Supabase Storage in a path like `projects/{projectId}/resources/{fileName}` or `projects/{projectId}/resources/{resource_uuid}/{fileName}`.
-        *   Verifies a record is created in `dialectic_project_resources`.
+        *   Verifies a record is created in `dialectic_contributions`.
     *   `[✅] 1.0.B.3.2` Implement `uploadProjectResourceFile` action in `supabase/functions/dialectic-service/index.ts`.
         *   Handle FormData/multipart file upload.
         *   Authenticate user and verify ownership of `projectId`.
@@ -345,12 +396,12 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅] 1.0.B.4.3 [TEST-UNIT]` Write unit tests for the adapter method in `dialectic.api.test.ts`, mocking the function invocation. (RED -> GREEN, based on store mocks)
     *   `[✅] 1.0.B.4.4` Implement adapter method. It will need to construct FormData. (GREEN, based on store mocks)
     *   `[✅] 1.0.B.4.5 [TEST-UNIT]` Run adapter tests.
-*   `[✅] 1.0.B.5 [STORE]` Extend `@paynless/store` for Project Resource Upload. (Store thunk `uploadProjectResourceFile` exists and is called by UI. Its current backend implementation target for *project-specific resources* needs to align with DB state. Marked [🚧] pending clarification of `dialectic_project_resources` table.)
+*   `[✅] 1.0.B.5 [STORE]` Extend `@paynless/store` for Project Resource Upload. (Store thunk `uploadProjectResourceFile` exists and is called by UI. Its current backend implementation target for *project-specific resources* needs to align with DB state. Marked [🚧] pending clarification of `dialectic_contributions` table.)
     *   `[✅] 1.0.B.5.1` Add state for managing project resource uploads (e.g., `isUploadingResource: boolean`, `uploadResourceError: ApiError | null`). (Store thunk `uploadProjectResourceFile` exists).
     *   `[✅] 1.0.B.5.2 [TEST-UNIT]` Write unit tests for `uploadProjectResourceFile` thunk in `dialecticStore.test.ts`. (RED -> GREEN, thunk mocked and used in form tests).
     *   `[✅] 1.0.B.5.3` Implement `uploadProjectResourceFile` thunk. Calls API, updates loading/error states. May update `currentProjectDetail.resources` if project details are enriched to include resources. (GREEN, thunk exists and called from form).
     *   `[✅] 1.0.B.5.4 [TEST-UNIT]` Run thunk tests.
-*   `[✅] 1.0.B.6 [COMMIT]` feat(common,be,db,api,store): Add generic file uploader and project resource handling (UI part largely done. DB for `dialectic_project_resources` is uncertain. BE/API/Store for it are [🚧] pending DB clarification.)
+*   `[✅] 1.0.B.6 [COMMIT]` feat(common,be,db,api,store): Add generic file uploader and project resource handling (UI part largely done. DB for `dialectic_contributions` is uncertain. BE/API/Store for it are [🚧] pending DB clarification.)
 
 ### 1.1 Database Schema for Dialectic Core (Continued)
 *   `[✅] 1.1.1 [DB]` Create `dialectic_projects` table.
@@ -359,13 +410,16 @@ The implementation plan uses the following labels to categorize work steps:
         *   `id` (UUID, primary key, default `uuid_generate_v4()`)
         *   `user_id` (UUID, foreign key to `profiles.id` on delete cascade, not nullable)
         *   `project_name` (TEXT, not nullable)
-        *   `initial_user_prompt` (TEXT, not nullable, user's original framing of the problem)
+        *   `initial_user_prompt` (TEXT, nullable, user's original framing of the problem or filename if uploaded)
+        *   `initial_prompt_resource_id` (UUID, nullable, FK to `dialectic_contributions.id` ON DELETE SET NULL) - Link to the uploaded initial prompt file.
         *   `selected_domain_overlay_id` (UUID, FK to `domain_specific_prompt_overlays.id`, nullable)
         *   `selected_domain_tag` (TEXT, nullable)
         *   `created_at` (TIMESTAMPTZ, default `now()`)
         *   `updated_at` (TIMESTAMPTZ, default `now()`) 
         *   `repo_url` (TEXT, nullable) (Github will be our first repo integration but we should anticipate Dropbox, Sharepoint, and other repo sources for future development)
         *   `status` (TEXT, e.g., 'active', 'archived', 'template', default 'active')
+    *   `[ ] 1.1.1.2.A [TEST-UNIT]` Update migration test for `dialectic_projects` to include testing for the `initial_prompt_resource_id` column and its FK constraint. (RED)
+    *   `[ ] 1.1.1.2.B [DB]` Update the Supabase migration script for `dialectic_projects` (or create a new one) to add the `initial_prompt_resource_id` column and its foreign key. (GREEN)
     *   `[✅] 1.1.1.3` Create Supabase migration script for `dialectic_projects`. (GREEN)
     *   `[✅] 1.1.1.4 [REFACTOR]` Review migration script and table definition.
     *   `[✅] 1.1.1.5 [TEST-UNIT]` Run `dialectic_projects` schema migration test. (GREEN)
@@ -543,7 +597,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   `[🚧] 1.2.1.5 [TEST-INT]` Write tests for `startSession` action (input: `projectId`, `selectedModelCatalogIds`, `sessionDescription` (optional), `thesisPromptTemplateName` (optional), `antithesisPromptTemplateName` (optional), `selected_domain_overlay_id` (optional string, used if initial prompts are domain-specific); output: created session object; auth). (RED - Partially complete: Key "Happy Path" test, tests for optional parameters (like `sessionDescription`, template names), and specific testing for `selected_domain_overlay_id` are missing (`// TODO` in file).)
         *   `[ ] 1.2.1.6` Implement logic:
             1.  Verify project ownership.
-            2.  Fetch `prompt_template.id` for thesis and antithesis from `prompt_templates` table using names (or from selected formal debate structure).
+            2.  Fetch `prompt_template.id` for thesis and antithesis from `prompt_templates` table using names.
             3.  If `selected_domain_overlay_id` is provided in the payload, fetch its `overlay_values` to be used in prompt rendering for the relevant stage(s).
             4.  Creates `dialectic_sessions` record (linking `active_thesis_prompt_template_id`, etc.).
                 *   During creation, an `associated_chat_id` (UUID) should be generated by `dialectic-service` or assigned if the dialectic originates from an existing chat. This ID will be used for all subsequent calls to the `/chat` Edge Function for this session.
@@ -600,15 +654,15 @@ The implementation plan uses the following labels to categorize work steps:
 *   `[✅] 1.2.4.7 [BE]` Ensure `contentType` is not hardcoded and `getExtensionFromMimeType` is used for storage paths. (GREEN)
     *   `[✅] 1.2.4.7.1 [BE]` Create `path_utils.ts` with `getExtensionFromMimeType` function. (GREEN)
     *   `[✅] 1.2.4.7.2 [TEST-UNIT]` Create `path_utils.test.ts` and add unit tests for `getExtensionFromMimeType`. (GREEN for creation; test failures are separate issues for that utility)
-*   `[ ] 1.2.5 [BE]` `dialectic-service` Action: `generateAntithesisContributions` (internal)
+*   `[ ] 1.2.5 [BE]` `dialectic-service` Action: `generateContribution` (internal)
     *   `[ ] 1.2.5.1 [TEST-INT]` Write tests (input: `sessionId`; auth: service role; verifies critiques are created against each thesis, and session status updated). (RED)
     *   `[ ] 1.2.5.2` Implement logic:
-        1.  Fetch session (including `associated_chat_id`), its models, all 'thesis' contributions for the current iteration, and `antithesis_prompt_template_id` from session. Fetch `initial_user_prompt` from project. Fetch antithesis prompt template content. Ensure user owns the project/session.
-        2.  Verify status is `thesis_complete`. Update to `generating_antithesis`. Log this transition.
-        3.  For each `critiquer_session_model` representing an AI provider selected for this session:
-            *   For each `thesis_contribution` (that was successfully generated and is targeted for critique):
-                *   Render the antithesis prompt template using context: `initial_user_prompt`, `original_thesis_content = thesis_contribution.content` (or path to content).
-                *   Call `callUnifiedAIModel` with the `critiquer_session_model.model_id`, the rendered critique prompt, and the `session.associated_chat_id`.
+        1.  Fetch session (including `associated_chat_id`), its models, all 'thesis' contributions for the current iteration, and `prompt_template_id` from session. Fetch `initial_user_prompt` from project. Fetch stage-appropriate prompt template content. Ensure user owns the project/session.
+        2.  Verify the prior stage has completed and the user has indicated they wish to begin the next stage. Update to the default stage to the subsequent stage. Log this transition.
+        3.  For each `session_model` representing an AI provider selected for this session:
+            *   For each prior stage thesis contribution that was successfully generated and is targeted for critique:
+                *   Render the antithesis prompt template using context: `initial_user_prompt`, the correct stage prompt, and the correct user-chosen prompt overlay.
+                *   Call `callUnifiedAIModel` with the `session_model.model_id`, the rendered critique prompt, and the `session.associated_chat_id`.
                 *   Save result in `dialectic_contributions` (stage 'antithesis', `target_contribution_id = thesis_contribution.id`, `actual_prompt_sent` = rendered critique prompt). Record errors if any.
         4.  Update `dialectic_sessions.status` to `antithesis_complete`. Log this transition.
         5.  This action concludes. The next stage (Synthesis) will be triggered by a separate user action.
@@ -833,7 +887,7 @@ The implementation plan uses the following labels to categorize work steps:
 *   [✅] Ensure all payloads use the same structure
 *   [✅] Only one startSession function that processes the payload for each stage
 *   [✅] Fix dialectic_projects.initial_user_prompt to only populate the derived title (This refers to user input for the project, which is distinct from session-level inputs)
-*   [✅] Always attach a bucket_route to the project for user uploads (User uploads for project resources are handled by `dialectic_project_resources`. Session-specific inputs linked via `user_input_reference_url` in `dialectic_sessions`).
+*   [✅] Always attach a bucket_route to the project for user uploads (User uploads for project resources are handled by `dialectic_contributions`. Session-specific inputs linked via `user_input_reference_url` in `dialectic_sessions`).
 *   [✅] Always attach the user_domain_overlay_values to the project
 *   [✅] Save the user's input (typed or uploaded) to the storage bucket (This will be pointed to by `dialectic_sessions.user_input_reference_url`)
 *   [✅] Ensure the user can upload, store, and send these additional fields if they wish (Via the `user_input_reference_url` mechanism)
@@ -855,6 +909,60 @@ The implementation plan uses the following labels to categorize work steps:
 *   [✅] Render the entire prompt cost estimate for the user's inspection before sending to the backend
 *   [✅] Fix dialectic_sessions table to link to the current_stage_seed_prompt document as a file stored in the bucket **(Replaced by `user_input_reference_url` in `dialectic_sessions` for user input, and `seed_prompt_url` in `dialectic_contributions` for agent input)**
 
+### 1.X [REFACTOR] Refactor Project Creation Flow for Integrated File Handling
+
+*   **Objective:** To refactor the dialectic project creation process to support an optional file upload for the initial prompt as part of a single, orchestrated backend action. This ensures that whether a user types a prompt or uploads a file, the experience is seamless, and the backend handles data storage and linking correctly.
+*   **Key Changes:**
+    *   Frontend will always send `FormData` for project creation.
+    *   The `createProject` function within `dialectic-service` will become the primary orchestrator for this process, handling `FormData`, file uploads (if present), and all necessary database interactions for project and resource creation.
+    *   A reusable internal utility will manage the specifics of file storage and `dialectic_contributions` table entries.
+*   **Note on Coordinated Refactoring:** This `1.X` refactoring involves coordinated changes across the client-side (API call and form submission, `1.X.3`), the main `index.ts` request handler (`1.X.2.2`), and specific backend handlers like `createProject.ts` (`1.X.2.1`). The end goal is a single `FormData`-based request from the client for project creation, inclusive of an optional file upload.
+*   `[✅] 1.X.1 [DOCS]` Note: All file storage paths and metadata handling within this refactor must adhere to "Section 0: Core Data Handling Principles & Supabase Storage Architecture". The `dialectic_contributions` table (schema defined in `1.0.B.1.2` or `1.1.5.2` - note: current backend implementation uses `dialectic_project_resources` for initial prompt file metadata) will be used to store metadata for the initial prompt file if one is provided.
+*   `[✅] 1.X.2 [BE/REFACTOR]` **Phase 2: Backend - `createProject` Function Becomes the Orchestrator**
+    *   `[✅] 1.X.2.1 [BE/REFACTOR]` Modify `createProject` function in `supabase/functions/dialectic-service/createProject.ts`.
+        *   `[✅] 1.X.2.1.1` Update function signature **in the `ActionHandlers` interface (within `index.ts`) and in `createProject.ts` itself**: `createProject` function in `createProject.ts` and its definition in `ActionHandlers` in `index.ts` both correctly accept `payload: FormData` and the authenticated `user` object.
+        *   `[✅] 1.X.2.1.2` Implement full orchestration logic in `createProject.ts`:
+            1.  [✅] The main `index.ts` handler (`handleRequest`) will authenticate the user from `req` and parse the request.
+            2.  [✅] For `multipart/form-data` requests intended for `createProject`, `handleRequest` will call `await req.formData()` and route based on an `action='createProject'` field within the `FormData`. It then passes the entire `FormData` object and the authenticated `user` object to the `createProject` function.
+            3.  [✅] The `createProject` function (in `createProject.ts`) receives `payload: FormData` and `user: User` as arguments. It parses this `payload` object to obtain individual fields like `projectName`, `initialUserPromptText`, `selectedDomainTag`, `selected_domain_overlay_id`, and `promptFile` (File object).
+            4.  [✅] Validate required fields (e.g., `projectName` obtained from `payload.get('projectName')`).
+            5.  [✅] Prepare data for `dialectic_projects` insertion using fields from `FormData`.
+            6.  [✅] Insert this initial record into `dialectic_projects` table. Get the `newProjectId`.
+            7.  [✅] **If `promptFile` (from `payload.get('promptFile') as File`) exists:**
+                a.  [✅] Define `storageBucket` (e.g., "dialectic-contributions").
+                b.  [✅] Define `storagePath` (e.g., `projects/{newProjectId}/initial-prompts/{resource_uuid}/{promptFile.name}`).
+                c.  [✅] Use direct Supabase client calls to:
+                    i.   Upload `promptFile` to the `storagePath` within the `storageBucket`.
+                    ii.  Create a record in `dialectic_project_resources` (Note: plan mentions `dialectic_contributions`, but current implementation uses `dialectic_project_resources` for this specific initial prompt file metadata) with necessary details (`project_id`, `user_id`, `file_name`, `storage_bucket`, `storage_path`, `mime_type`, `size_bytes`, `resource_description`).
+                    iii. Get the `id` of this new `dialectic_project_resources` record.
+                d.  [✅] If file processing and DB insertion for the resource are successful: Update the `dialectic_projects` record (for `newProjectId`): set `initial_prompt_resource_id` and adjust `initial_user_prompt`.
+                e.  [✅] If file processing or resource record creation fails: Log the error and attempt to rollback/cleanup (e.g., remove uploaded file).
+            8.  [✅] Fetch the final (potentially updated) `dialectic_projects` record.
+            9.  [✅] Return the project data (or error).
+        *   `[ ] 1.X.2.1.3 [TEST-UNIT]` Write/update comprehensive unit/integration tests for `createProject`. Mock interactions and test scenarios: no file, file success, file processing failure, DB update failure.
+    *   `[✅] 1.X.2.2 [BE/REFACTOR]` Simplify the `'createProject'` action case in `supabase/functions/dialectic-service/index.ts`.
+        *   `[✅] 1.X.2.2.1` It now primarily calls `handlers.createProject(formData, dbAdminClient, userForMultipart)` and returns its result.
+        *   `[ ] 1.X.2.2.2 [TEST-INT]` Update integration tests for the `index.ts` endpoint for project creation involving `FormData`.
+
+*   `[ ] 1.X.3 [API/STORE/UI/REFACTOR]` **Phase 3: Frontend Adjustments**
+    *   `[✅] 1.X.3.1 [STORE/REFACTOR]` Modify `createDialecticProject` thunk in `packages/store/src/dialecticStore.ts`.
+        *   `[✅] 1.X.3.1.1` Ensure it always constructs and sends `FormData`.
+        *   `[✅] 1.X.3.1.2` Payload for thunk (`CreateProjectThunkPayload`): `{ projectName, initialUserPromptText?, promptFile?, ... }`.
+        *   `[✅] 1.X.3.1.3` `FormData` construction: include `projectName`, `initialUserPrompt` (text, only if no file), and `promptFile` (if exists).
+        *   `[✅] 1.X.3.1.4 [TEST-UNIT]` Update store unit tests.
+    *   `[✅] 1.X.3.2 [API/REFACTOR]` Update `apiClient.dialectic.createProject` method in `packages/api/src/dialectic.api.ts`.
+        *   `[✅] 1.X.3.2.1` Ensure its method signature accepts `FormData`.
+        *   `[✅] 1.X.3.2.2` Ensure it passes `FormData` correctly to the underlying `this.apiClient.post` (which should handle `FormData` by not setting `Content-Type: application/json`).
+        *   `[✅] 1.X.3.2.3 [TEST-UNIT]` Update API client unit tests.
+    *   `[✅] 1.X.3.3 [UI/REFACTOR]` Update `CreateDialecticProjectForm.tsx` in `apps/web/src/components/dialectic/`.
+        *   `[✅] 1.X.3.3.1` Modify `onSubmit` handler:
+            *   Collect `projectName`, `initialUserPromptText` (from textarea), `promptFile` (from component state if a file was selected/dropped via `TextInputArea`).
+            *   Dispatch `createDialecticProject` thunk with these values, ensuring the thunk will package them into a single `FormData` object.
+            *   **Remove** the secondary/subsequent call to `handleActualFileUpload` or `uploadProjectResourceFile` thunk; this functionality should now be part of the single `createDialecticProject` backend flow.
+        *   `[✅] 1.X.3.3.2 [TEST-UNIT]` Update component unit tests to reflect the single `FormData` submission flow and removal of the secondary upload call.
+
+*   `[ ] 1.X.4 [DOCS]` Update any relevant backend or frontend documentation regarding project creation to reflect this new unified flow.
+*   `[ ] 1.X.5 [COMMIT]` refactor: implement unified project creation with optional file upload
 
 {repo_root}/  (Root of the user's GitHub repository)
 └── {dialectic_outputs_base_dir_name}/ (Configurable, e.g., "ai_dialectic_sessions")
@@ -867,8 +975,9 @@ The implementation plan uses the following labels to categorize work steps:
         └── session_{session_id_short}/  (Each distinct run of the dialectic process)
             └── iteration_{N}/        (N being the iteration number, e.g., "iteration_1")
                 ├── 0_seed_inputs/
-                │   ├── user_prompt_for_iteration.md  (The specific prompt that kicked off this iteration)
-                │   └── system_settings.json          (Models, selected formal debate structure, core prompt templates used for this iteration)
+                │   ├── user_prompt.md  (The specific prompt that kicked off this iteration)
+                │   ├── system_settings.json          (Models, core prompt templates used for this iteration)
+                │   └── seed_prompt.md  (The actual input prompt sent to the model for completion)
                 ├── 1_hypothesis/
                 │   ├── {model_name_slug}_hypothesis.md (Contains YAML frontmatter + AI response)
                 │   ├── ... (other models' hypothesis outputs)
@@ -1051,7 +1160,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 2.2.2.2` Implement logic: Input `sessionId`, `targetContributionId` (optional), `feedbackType`, `feedbackValueNumeric`, `feedbackValueText`, `feedbackValueBoolean`, `notes`. Inserts into `dialectic_hitl_feedback`. Ensure user owns the session. (GREEN)
     *   `[ ] 2.2.2.3 [REFACTOR]` Review.
     *   `[ ] 2.2.2.4 [TEST-INT]` Run tests.
-*   `[ ] 2.2.3 [BE]` Modify `generateAntithesisContributions` to asynchronously call `generateSynthesisContributions` after `antithesis_complete` status.
+*   `[ ] 2.2.3 [BE]` Sequence `getContributions` calls to follow the dialectic pattern once the user approves moving to the next step in the sequence.
 *   `[ ] 2.2.4 [COMMIT]` feat(be): implement Synthesis stage and HitL feedback logic
 
 ### 2.3 API Client (`@paynless/api`) & Store (`@paynless/store`) Updates
@@ -1142,7 +1251,6 @@ The implementation plan uses the following labels to categorize work steps:
 6.  Enhance UI to display Parenthesis and Paralysis outputs, manage iterations, and show convergence indicators. UI should clearly show all 5 stages in the progression.
 7.  Advanced GitHub options: ensure outputs from all 5 stages are saved with appropriate naming (e.g., `.../4_parenthesis/...`, `.../5_paralysis/...`). If iterating, outputs for each iteration should be distinct (e.g., `.../iteration_1/1_thesis/...`, `.../iteration_2/1_thesis/...`).
 8.  Begin foundational work/design for IDE plugins (VS Code, JetBrains) - primarily analysis of API needs.
-9.  Introduce "Formal Debate Structures": Allow users to select a predefined set of prompt templates for all 5 stages, tailored for specific debate styles (e.g., "Standard Constructive", "Pro/Con Deep Dive").
 10. Implement basic "Argument Mapping" visualization (a simple, clear visual flow of Thesis -> Antithesis links -> Synthesis -> Parenthesis -> Paralysis).
 11. Support for Evidence/Citation in Parenthesis stage: Prompts should encourage models to add citations, and the DB/UI should be ableto store/display them.
 12. (Experimental) Dynamic Model Routing: Allow different models (or model capabilities) to be prioritized for different stages based on catalog data (e.g., a highly analytical model for Parenthesis).
@@ -1157,7 +1265,6 @@ The implementation plan uses the following labels to categorize work steps:
 *   Basic mechanisms for detecting convergence and terminating sessions automatically or by user command.
 *   UI to visualize all 5 stages, manage iterations, and display convergence status/indicators.
 *   GitHub integration for all 5 stages, with clear separation for iterative outputs.
-*   Initial support for selectable formal debate structures and prompts that encourage citation.
 *   A basic visual argument map.
 
 ---
@@ -1167,7 +1274,6 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 3.1.1.2` Add `active_parenthesis_prompt_template_id` (UUID, FK to `prompt_templates.id`, nullable) and `active_paralysis_prompt_template_id` (UUID, FK to `prompt_templates.id`, nullable).
     *   `[ ] 3.1.1.3` Add `max_iterations` (INTEGER, default 3, configurable by user), `current_iteration` (INTEGER, default 1).
     *   `[ ] 3.1.1.4` Add `convergence_status` (TEXT, e.g., 'converged', 'diverged', 'max_iterations_reached', 'user_terminated', nullable).
-    *   `[ ] 3.1.1.5` Add `formal_debate_structure_id` (UUID, FK to a new `formal_debate_structures` table, nullable). (GREEN)
     *   `[ ] 3.1.1.6` Run migration test.
 *   `[ ] 3.1.2 [PROMPT]` Seed `prompt_templates` for Parenthesis and Paralysis stages.
     *   `[ ] 3.1.2.1 [TEST-UNIT]` Write tests for new seed data. (RED)
@@ -1178,18 +1284,12 @@ The implementation plan uses the following labels to categorize work steps:
         3.  **Explicitly recommend: Should another iteration be performed?** If yes, suggest specific focus areas or modifications to prompts for the next iteration (e.g., 'Re-run synthesis focusing on critique X', 'Generate new theses with an emphasis on Y'). If no, explain why the current solution is adequate or why further iteration is unlikely to yield significant benefit.
         4.  What are the key takeaways or learning from this entire dialectic process?" (GREEN)
     *   `[ ] 3.1.2.4 [TEST-UNIT]` Run tests.
-*   `[ ] 3.1.3 [DB]` Create `formal_debate_structures` table.
-    *   `[ ] 3.1.3.1 [TEST-UNIT]` Write migration test. (RED)
-    *   `[ ] 3.1.3.2` Columns: `id` (UUID PK), `name` (TEXT, unique, e.g., "Standard 5-Stage Constructive", "Pro/Con Deep Dive"), `description` (TEXT), `default_thesis_template_id` (UUID FK to `prompt_templates.id`), `default_antithesis_template_id` (UUID FK), `default_synthesis_template_id` (UUID FK), `default_parenthesis_template_id` (UUID FK), `default_paralysis_template_id` (UUID FK), `is_active` (BOOLEAN, default true).
-    *   `[ ] 3.1.3.3` Seed with a "Standard 5-Stage Constructive" entry linking the default_v1 prompt templates created so far. (GREEN)
-    *   `[ ] 3.1.3.4 [TEST-UNIT]` Run migration test.
-    *   `[ ] 3.1.3.5 [RLS]` Define RLS for read-only access for users.
 *   `[ ] 3.1.4 [DB]` Update `dialectic_contributions` table:
     *   `[ ] 3.1.4.1 [TEST-UNIT]` Write migration test. (RED)
     *   `[ ] 3.1.4.2` Add `iteration_number` (INTEGER, not nullable, default 1) to associate contribution with a specific iteration cycle within the session.
     *   `[ ] 3.1.4.3` Add `citations` (JSONB, nullable, array of objects e.g., `[{text: "Source A", url: "link_to_source_a"}, {text: "Another reference"}]`) - primarily for Parenthesis stage. (GREEN)
     *   `[ ] 3.1.4.4` Run migration test.
-*   `[ ] 3.1.5 [COMMIT]` feat(db,prompt): schema for full 5-stage cycle, iteration, formal debates, citations
+*   `[ ] 3.1.5 [COMMIT]` feat(db,prompt): schema for full 5-stage cycle, iteration, citations
 
 ### 3.2 Backend Logic for Parenthesis, Paralysis, Iteration & Advanced Orchestration
 *   `[ ] 3.2.1 [BE]` `dialectic-service` Actions: `generateParenthesisContribution`, `generateParalysisContribution`.
@@ -1220,37 +1320,34 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 3.2.2.5 [TEST-INT]` Run tests.
 *   `[ ] 3.2.3 [BE]` `dialectic-service` Action: `updateSessionParameters`.
     *   `[ ] 3.2.3.1 [TEST-INT]` Write tests. (RED)
-    *   `[ ] 3.2.3.2` Input: `sessionId`, `maxIterations` (optional), `formalDebateStructureId` (optional). Allows user to change these for an ongoing or future session.
-    *   `[ ] 3.2.3.3` Updates `dialectic_sessions` table. If `formalDebateStructureId` changes, it should update all `active_..._prompt_template_id` fields in the session from the new structure's defaults. (GREEN)
+    *   `[ ] 3.2.3.2` Input: `sessionId`, `maxIterations` (optional). Allows user to change these for an ongoing or future session.
+    *   `[ ] 3.2.3.3` Updates `dialectic_sessions` table, update all `active_..._prompt_template_id` fields in the session from the new structure's defaults. (GREEN)
     *   `[ ] 3.2.3.4 [REFACTOR]` Review.
     *   `[ ] 3.2.3.5 [TEST-INT]` Run tests.
 *   `[ ] 3.2.4 [BE]` (Experimental) Dynamic Model Routing for Stages:
     *   `[ ] 3.2.4.1 [TEST-UNIT]` Write tests. (RED)
-    *   `[ ] 3.2.4.2` Add `preferred_model_for_stage` (JSONB, e.g., `{"parenthesis": "openai/gpt-4-turbo", "synthesis": "anthropic/claude-3-opus"}`) to `dialectic_sessions` or `formal_debate_structures`. (DB change, ensure migration)
+    *   `[ ] 3.2.4.2` Add `preferred_model_for_stage` (JSONB, e.g., `{"parenthesis": "openai/gpt-4-turbo", "synthesis": "anthropic/claude-3-opus"}`) to `dialectic_sessions`. (DB change, ensure migration)
     *   `[ ] 3.2.4.3` When executing `generate[StageName]Contribution`, if a preferred model is set for that stage, use it. Otherwise, fall back to the general list of session models. (GREEN)
     *   `[ ] 3.2.4.4 [TEST-UNIT]` Run tests for this routing logic.
 *   `[ ] 3.2.5 [COMMIT]` feat(be): implement Parenthesis, Paralysis, iteration, convergence, dynamic model routing
 
 ### 3.3 API/Store Updates for Full Cycle & Advanced Features
 *   `[ ] 3.3.1 [API]` Update types in `interface.ts`:
-    *   `DialecticSession`: add `maxIterations`, `currentIteration`, `convergenceStatus`, `formalDebateStructureId`, new prompt template IDs, `preferredModelForStage`.
+    *   `DialecticSession`: add `maxIterations`, `currentIteration`, `convergenceStatus`, new prompt template IDs, `preferredModelForStage`.
     *   `DialecticContribution`: add `iterationNumber`, `citations`.
-    *   Add `FormalDebateStructure` type.
     *   Add `UpdateSessionParametersPayload`.
 *   `[ ] 3.3.2 [API]` Add API methods:
-    *   `listFormalDebateStructures(): Promise<FormalDebateStructure[]>`
     *   `updateSessionParameters(payload: UpdateSessionParametersPayload): Promise<DialecticSession>`
 *   `[ ] 3.3.3 [API]` Implement new methods in adapter.
     *    `[ ] 3.3.3.1 [TEST-UNIT]` Write tests. (RED)
     *    `[ ] 3.3.3.2` Implement. (GREEN)
     *    `[ ] 3.3.3.3 [TEST-UNIT]` Run tests.
-*   `[ ] 3.3.4 [STORE]` Update `DialecticState`: add `formalDebateStructures: FormalDebateStructure[] | null`, and new fields to `currentProjectDetails.sessions`.
-*   `[ ] 3.3.5 [STORE]` Add Thunks/Actions/Reducers for `listFormalDebateStructures` and `updateSessionParameters`.
+*   `[ ] 3.3.5 [STORE]` Add Thunks/Actions/Reducers for `updateSessionParameters`.
     *    `[ ] 3.3.5.1 [TEST-UNIT]` Write tests. (RED)
     *    `[ ] 3.3.5.2` Implement. (GREEN)
     *    `[ ] 3.3.5.3 [TEST-UNIT]` Run tests.
 *   `[ ] 3.3.6 [STORE]` Ensure `fetchDialecticProjectDetails` populates all new fields, including contributions from all iterations, properly associated.
-*   `[ ] 3.3.7 [COMMIT]` feat(api,store): support full 5-stage cycle, iteration params, formal debates
+*   `[ ] 3.3.7 [COMMIT]` feat(api,store): support full 5-stage cycle, iteration params
 
 ### 3.4 UI for Full Cycle, Iteration, Advanced Features
 *   `[ ] 3.4.1 [UI]` Update `DialecticSessionDetailsPage`:
@@ -1267,7 +1364,6 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 3.4.1.8 [TEST-UNIT]` Run tests.
 *   `[ ] 3.4.2 [UI]` `StartDialecticSessionModal` (or a new "Session Settings" modal accessible from `DialecticProjectDetailsPage`):
     *   `[ ] 3.4.2.1 [TEST-UNIT]` Write tests. (RED)
-    *   `[ ] 3.4.2.2` Allow selection of `FormalDebateStructure` (fetches using `listFormalDebateStructures` thunk). This selection will define the set of default prompt templates for the session.
     *   `[ ] 3.4.2.3` Input for `max_iterations`.
     *   `[ ] 3.4.2.4` (Optional for Phase 3) UI to set preferred models for specific stages if dynamic routing is implemented. (GREEN)
     *   `[ ] 3.4.2.5 [TEST-UNIT]` Run tests.
@@ -1283,7 +1379,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   Use simple boxes and lines; no complex graphing library needed yet. Focus on clear flow. Ensure a11y. (GREEN)
     *   `[ ] 3.4.3.4 [TEST-UNIT]` Run tests.
 *   `[ ] 3.4.4 [REFACTOR]` Review all new UI elements and logic.
-*   `[ ] 3.4.5 [COMMIT]` feat(ui): display full 5-stage cycle, iteration controls, formal debate selection, basic argument map, citation display
+*   `[ ] 3.4.5 [COMMIT]` feat(ui): display full 5-stage cycle, iteration controls, basic argument map, citation display
 
 ### 3.5 Advanced GitHub & IDE Foundation
 *   `[ ] 3.5.1 [BE]` GitHub Integration:
@@ -1316,12 +1412,11 @@ The implementation plan uses the following labels to categorize work steps:
 
 ### 3.6 Finalizing Phase 3
 *   `[ ] 3.6.1 [TEST-E2E]` Write/Update E2E tests for the full 5-stage iterative workflow, including:
-    *   Starting a session with a formal debate structure.
     *   Session proceeding through multiple iterations.
     *   Session terminating due to convergence or max iterations.
     *   Viewing citations.
     *   Viewing the basic argument map.
-*   `[ ] 3.6.2 [DOCS]` Update all user and developer documentation for the 5-stage process, iteration management, formal debate structures, citation support, and argument mapping.
+*   `[ ] 3.6.2 [DOCS]` Update all user and developer documentation for the 5-stage process, iteration management, citation support, and argument mapping.
 *   `[ ] 3.6.3 [REFACTOR]` Perform a general review and refactor of all Phase 3 code.
 *   `[ ] 3.6.4 [COMMIT]` feat: complete Phase 3 of AI Dialectic Engine
 *   `[ ] 3.6.5 [DEPLOY]` Phase 3 deployment checkpoint. Review deployment readiness.
@@ -1338,7 +1433,7 @@ The implementation plan uses the following labels to categorize work steps:
 **Phase 4 Value:** Domain specialization, deeper Human-in-the-Loop (HitL) integration, ecosystem building, learning from dialectical patterns, and advanced tooling. This phase is ongoing and features will be prioritized based on learning and user feedback.
 
 **Phase 4 Objectives (High-Level from PRD, specific items to be broken down further in future planning):**
-1.  **Domain-Specific Configurations:** Create specialized DialeqAI setups for coding, legal, scientific research, etc. (e.g., pre-canned prompt libraries, model selections, workflow rules, specialized formal debate structures).
+1.  **Domain-Specific Configurations:** Create specialized DialeqAI setups for coding, legal, scientific research, etc. (e.g., pre-canned prompt libraries, model selections, workflow rules).
 2.  **Advanced HitL:** Allow user intervention at any stage (e.g., edit a model's contribution before it's used in the next stage), collaborative editing of outputs, and more granular feedback mechanisms that directly influence subsequent steps.
 3.  **Learning & Auto-Tuning:** System learns from successful dialectical patterns (user feedback, convergence rates, quality of output) to improve prompt generation, model selection for stages, or orchestration strategies. (Long-term research-oriented).
 4.  **Expanded Model Support:** Integrate more models, including open-source (e.g., via local Ollama or Hugging Face integrations if feasible) and potentially user-provided custom models (BYOM - Bring Your Own Model API keys/endpoints).
@@ -1348,7 +1443,7 @@ The implementation plan uses the following labels to categorize work steps:
 8.  **Advanced Code-Specific Tools (If "Coding" Domain is prioritized):** Deeper integration for developers (e.g., generating unit tests for code produced in Parenthesis, suggesting refactors, linking dialectic discussions to specific code blocks or PRs).
 9.  **CLI Enhancements:** Develop a feature-rich CLI tool as described in PRDs (`aigc new`, `aigc models`, `aigc prompt`, `aigc status`, `aigc review`, `aigc resolve`, `aigc export`) for power users and automation.
 10. **Failure Mode Mitigation & UX:** Robust cost controls (hard limits), latency optimization (e.g., streaming partial results for long generations where possible), UX patterns that emphasize critical thinking and human oversight.
-11. **UGC Showcase & Community Prompts:** Platform for users to share successful prompt templates and formal debate structures.
+11. **UGC Showcase & Community Prompts:** Platform for users to share successful prompt templates.
 
 **Estimated Duration:** Ongoing, iterative development.
 
@@ -1356,7 +1451,7 @@ The implementation plan uses the following labels to categorize work steps:
 
 **Deliverables for Phase 4 (Iterative & Ongoing, examples for first few sprints):**
 *   (Sprint 1-2) Enhanced CLI tool with key commands (`list-projects`, `create-project`, `start-session`, `get-session-status`).
-*   (Sprint 1-2) Initial Domain Specialization: "Software Development - Architecture Planning" formal debate structure with tailored prompts.
+*   (Sprint 1-2) Initial Domain Specialization: "Software Development - Architecture Planning" tailored prompts.
 *   (Sprint 3-4) Advanced HitL: Allow user to edit a "Synthesis" output before it goes to "Parenthesis".
 *   (Sprint 3-4) Public API V1: Document and expose core endpoints for session creation and status retrieval with API key auth.
 *   (Ongoing) Incremental improvements to argument mapping, model support, cost controls, etc.
@@ -1390,7 +1485,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 4.1.B.2 [DB]` Seed these new prompts into `prompt_templates`.
         *   `[ ] 4.1.B.2.1 [TEST-UNIT]` Write tests. (RED)
         *   `[ ] 4.1.B.2.2` Implement. (GREEN)
-    *   `[ ] 4.1.B.3 [DB]` Create a new entry in `formal_debate_structures` named "Software Architecture Planning" linking these 5 new prompt templates.
+    *   `[ ] 4.1.B.3 [DB]` Create a new entry "Software Architecture Planning" linking these 5 new prompt templates.
         *   `[ ] 4.1.B.3.1 [TEST-UNIT]` Write tests. (RED)
         *   `[ ] 4.1.B.3.2` Implement. (GREEN)
     *   `[ ] 4.1.B.4 [UI]` Ensure this new structure is selectable in the UI when starting a session. Add a "Domain" or "Category" filter for debate structures if the list becomes long.
@@ -1434,7 +1529,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   `[ ] 4.1.D.1.2` Implement. (GREEN)
     *   `[ ] 4.1.D.2 [BE]` Modify `dialectic-service` (or create new dedicated public API Edge Functions if separation is desired for security/rate-limiting):
         *   `[ ] 4.1.D.2.1 [TEST-INT]` Write tests for public endpoints with API key auth. (RED)
-        *   `[ ] 4.1.D.2.2` Expose `listProjects`, `getProjectDetails`, `startSession`, `listModelCatalog`, `listFormalDebateStructures` actions.
+        *   `[ ] 4.1.D.2.2` Expose `listProjects`, `getProjectDetails`, `startSession`, `listModelCatalog`actions.
         *   `[ ] 4.1.D.2.3` Ensure these endpoints check for a valid API key if user session is not present.
         *   `[ ] 4.1.D.2.4` Apply appropriate rate limiting for API key access. (GREEN)
     *   `[ ] 4.1.D.3 [DOCS]` Create OpenAPI (Swagger) V3 specification for these public endpoints. Document authentication, request/response schemas, rate limits. Host this documentation (e.g., using Supabase's built-in API docs if Edge Functions are standard, or a separate tool like Redocly).

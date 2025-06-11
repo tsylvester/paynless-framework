@@ -28,7 +28,8 @@ export interface CreateProjectPayload {
     projectName: string;
     initialUserPrompt?: string | null;
     selectedDomainTag?: string | null;
-    selected_domain_overlay_id?: string | null;
+    selectedDomainOverlayId?: string | null;
+    promptTemplateId?: string | null;
     promptFile?: File | null;
 }
 
@@ -188,6 +189,11 @@ export interface DialecticStateValues {
   uploadProjectResourceError: ApiError | null;
   isStartNewSessionModalOpen: boolean;
   selectedModelIds: string[];
+
+  // New state for initial prompt file content
+  initialPromptFileContent: GetProjectResourceContentResponse | null;
+  isLoadingInitialPromptFileContent: boolean;
+  initialPromptFileContentError: ApiError | null;
 }
 
 export interface ContributionCacheEntry {
@@ -228,6 +234,9 @@ export interface DialecticActions {
   setStartNewSessionModalOpen: (isOpen: boolean) => void;
   setModelMultiplicity: (modelId: string, count: number) => void;
   resetSelectedModelId: () => void;
+
+  // New action for fetching initial prompt file content
+  fetchInitialPromptContent: (resourceId: string) => Promise<void>;
 
   _resetForTesting?: () => void;
 }
@@ -358,6 +367,9 @@ export type DialecticServiceActionPayload = {
 } | {
   action: 'exportProject';
   payload: { projectId: string };
+} | {
+  action: 'getProjectResourceContent';
+  payload: GetProjectResourceContentPayload;
 }
 
 export interface DialecticServiceResponsePayload {
@@ -372,3 +384,15 @@ export type UpdateProjectInitialPromptPayload = {
 export interface DialecticServiceFunctions {
   // ... existing code ...
 }
+
+// Added for fetching project resource content
+export interface GetProjectResourceContentPayload {
+  resourceId: string;
+}
+
+export interface GetProjectResourceContentResponse {
+  fileName: string;
+  mimeType: string;
+  content: string;
+}
+// End added types

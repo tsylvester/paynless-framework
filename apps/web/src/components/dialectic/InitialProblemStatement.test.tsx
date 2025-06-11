@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 
 import { useDialecticStore, initialDialecticStateValues } from '@paynless/store';
 import type { DialecticStore, DialecticProject } from '@paynless/types';
-import { EditableInitialProblemStatement } from './EditableInitialProblemStatement';
+import { InitialProblemStatement } from './InitialProblemStatement';
 import { useWarnIfUnsavedChanges } from '@/hooks/useWarnIfUnsavedChanges';
 
 // Mock dependencies
@@ -121,7 +121,7 @@ const mockLocalStorage = {
   clear: vi.fn(() => { mockLocalStorageStore = {}; }),
 };
 
-describe('EditableInitialProblemStatement', () => {
+describe('InitialProblemStatement', () => {
   const testProjectId = 'project-id-123';
   const initialStorePromptText = 'This is the initial prompt from the store.';
   const localStorageKey = `unsavedPrompt_${testProjectId}`;
@@ -153,7 +153,7 @@ describe('EditableInitialProblemStatement', () => {
   it('renders skeletons if currentProjectDetail is null', () => {
     const nullProjectState = createMockStoreState({ currentProjectDetail: null });
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(nullProjectState));
-    render(<EditableInitialProblemStatement />);
+    render(<InitialProblemStatement />);
     expect(screen.getAllByTestId('skeleton-loader')[0]).toBeInTheDocument();
   });
 
@@ -176,41 +176,45 @@ describe('EditableInitialProblemStatement', () => {
       } as DialecticProject,
     });
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mismatchedState));
-    render(<EditableInitialProblemStatement />);
-    expect(screen.getAllByTestId('skeleton-loader')[0]).toBeInTheDocument();
+    render(<InitialProblemStatement />);
+    expect(screen.getByText('No initial problem statement provided for this project.')).toBeInTheDocument();
   });
   
   it('displays the initial prompt from the store when loaded', () => {
     // Default beforeEach setup provides a valid project with prompt
-    render(<EditableInitialProblemStatement />);
-    expect(screen.getByTestId('mock-text-input-area')).toHaveValue(initialStorePromptText);
-    expect(vi.mocked(useWarnIfUnsavedChanges)).toHaveBeenLastCalledWith(false); // Should not be dirty
+    render(<InitialProblemStatement />);
+    expect(screen.getByText(initialStorePromptText)).toBeInTheDocument();
   });
 
+  /* // Test for editable component - not applicable to DisplayInitialProblemStatement
   it('loads and displays prompt from localStorage if it exists and differs from store prompt', async () => {
     const localPromptText = 'Unsaved prompt from localStorage.';
     mockLocalStorageStore[localStorageKey] = localPromptText;
     
     // Default beforeEach setup provides store state with initialStorePromptText
-    render(<EditableInitialProblemStatement />);    
+    render(<InitialProblemStatement />);    
     await waitFor(() => {
       expect(screen.getByTestId('mock-text-input-area')).toHaveValue(localPromptText);
     });
-    expect(vi.mocked(useWarnIfUnsavedChanges)).toHaveBeenLastCalledWith(true); // Should be dirty
+    // expect(vi.mocked(useWarnIfUnsavedChanges)).toHaveBeenLastCalledWith(true); // Should be dirty
   });
+  */
 
+  /* // Test for editable component - not applicable to DisplayInitialProblemStatement
   it('initializes with store prompt if localStorage prompt is the same as store prompt', async () => {
     mockLocalStorageStore[localStorageKey] = initialStorePromptText; // Same as store
-    render(<EditableInitialProblemStatement />);
+    render(<InitialProblemStatement />);
     await waitFor(() => {
         expect(screen.getByTestId('mock-text-input-area')).toHaveValue(initialStorePromptText);
     });
-    expect(vi.mocked(useWarnIfUnsavedChanges)).toHaveBeenLastCalledWith(false);
-    expect(mockLocalStorage.removeItem).toHaveBeenCalledWith(localStorageKey);
+    // expect(vi.mocked(useWarnIfUnsavedChanges)).toHaveBeenLastCalledWith(false);
+    // expect(mockLocalStorage.removeItem).toHaveBeenCalledWith(localStorageKey);
   });
+  */
 
+  /* // Test for editable component - not applicable to DisplayInitialProblemStatement
   it('updates text area and localStorage on change, and calls useWarnIfUnsavedChanges', () => {
-    render(<EditableInitialProblemStatement />);
+    render(<InitialProblemStatement />);
     const newPromptText = 'User is typing a new prompt.';
     const textArea = screen.getByTestId('mock-text-input-area');
     
@@ -218,18 +222,20 @@ describe('EditableInitialProblemStatement', () => {
     
     expect(textArea).toHaveValue(newPromptText);
     expect(mockLocalStorage.setItem).toHaveBeenCalledWith(localStorageKey, newPromptText);
-    expect(vi.mocked(useWarnIfUnsavedChanges)).toHaveBeenLastCalledWith(true); // isDirty becomes true
+    // expect(vi.mocked(useWarnIfUnsavedChanges)).toHaveBeenLastCalledWith(true); // isDirty becomes true
 
     // Change back to original
-    fireEvent.change(textArea, { target: { value: initialStorePromptText } });
-    expect(textArea).toHaveValue(initialStorePromptText);
-    expect(mockLocalStorage.removeItem).toHaveBeenCalledWith(localStorageKey);
-    expect(vi.mocked(useWarnIfUnsavedChanges)).toHaveBeenLastCalledWith(false); // isDirty becomes false
+    // fireEvent.change(textArea, { target: { value: initialStorePromptText } });
+    // expect(textArea).toHaveValue(initialStorePromptText);
+    // expect(mockLocalStorage.removeItem).toHaveBeenCalledWith(localStorageKey);
+    // expect(vi.mocked(useWarnIfUnsavedChanges)).toHaveBeenLastCalledWith(false); // isDirty becomes false
   });
+  */
 
+  /* // Test for editable component - not applicable to DisplayInitialProblemStatement
   it('handles save correctly', async () => {
     mockUpdateDialecticProjectInitialPrompt.mockResolvedValue({ data: { id: testProjectId } as DialecticProject, error: null, status: 200 });
-    render(<EditableInitialProblemStatement />);
+    render(<InitialProblemStatement />);
     const newPromptText = 'This is a new prompt to be saved.';
     const textArea = screen.getByTestId('mock-text-input-area');
     fireEvent.change(textArea, { target: { value: newPromptText } }); // Make it dirty
@@ -249,33 +255,27 @@ describe('EditableInitialProblemStatement', () => {
     // To test the save logic more directly without relying on finding the button in a potentially complex DOM:
     // We can simulate the conditions and call the save handler if possible, or verify through side effects.
     
-    // Simulate dirty state so save button would be active.
-    // The component itself should render a save button. Let's assume it does with text "Save Changes"
-    // If not, this test needs to be adapted or the component needs to expose the save button.
-    // For now, we directly test the interaction leading to the API call.
+    // Simulating call to a save function (if it were exposed or part of the component logic for testing)
+    // For this example, let's assume `handleSave` would be called.
+    // If handleSave was part of the component and callable:
+    // const instance = result.container.firstChild; // Or however you get instance if needed
+    // await act(async () => {
+    //   await instance.handleSave(); 
+    // });
 
-    // To make this testable, we need to ensure the save button is rendered or its action is testable.
-    // Given the component structure, the save button is within a CardFooter shown when isDirty is true.
-    // So, making it dirty should show the button.
+    // Directly check the effects of saving
+    await waitFor(() => {
+      expect(mockUpdateDialecticProjectInitialPrompt).toHaveBeenCalledWith({
+        projectId: testProjectId,
+        initialUserPrompt: newPromptText,
+      });
+    });
 
-    // The component will re-render with CardFooter if isDirty becomes true.
-    // Let's try to find the save button after making it dirty.
-    await waitFor(() => {
-        // The save button should appear, and we can click it
-        // This requires that the actual component (not a fully mocked one) is rendered to find the button
-        // The test current setup does render the actual EditableInitialProblemStatement component.
-        const saveButton = screen.getByRole('button', { name: /Save Changes/i });
-        expect(saveButton).toBeInTheDocument();
-        fireEvent.click(saveButton);
-    });
-    
-    await waitFor(() => {
-      expect(mockUpdateDialecticProjectInitialPrompt).toHaveBeenCalledWith({ projectId: testProjectId, newInitialPrompt: newPromptText });
-    });
     expect(toast.success).toHaveBeenCalledWith('Success', { description: 'Initial problem statement saved.' });
     expect(mockLocalStorage.removeItem).toHaveBeenCalledWith(localStorageKey);
-    expect(vi.mocked(useWarnIfUnsavedChanges)).toHaveBeenLastCalledWith(false); // isDirty becomes false after save
+    // expect(vi.mocked(useWarnIfUnsavedChanges)).toHaveBeenLastCalledWith(false); // isDirty becomes false after save
   });
+  */
 
   // Further tests: cancel, file upload, save failure, etc.
 }); 

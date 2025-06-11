@@ -22,8 +22,19 @@ export const ProjectSessionsList: React.FC<ProjectSessionsListProps> = ({ onStar
   const projectDetail = useDialecticStore(selectCurrentProjectDetail);
   const sessions = useDialecticStore(selectCurrentProjectSessions);
 
+  // DEBUG LOGGING START
+  console.log('[ProjectSessionsList] projectIdFromStore:', projectIdFromStore);
+  console.log('[ProjectSessionsList] projectDetail from store (raw):', projectDetail ? JSON.parse(JSON.stringify(projectDetail)) : null); // Deep clone for logging
+  console.log('[ProjectSessionsList] sessions from selectCurrentProjectSessions (raw):', sessions ? JSON.parse(JSON.stringify(sessions)) : null); // Deep clone
+  
   const projectIdForLinks = projectDetail?.id === projectIdFromStore ? projectIdFromStore : undefined;
   const displayableSessions = projectDetail?.id === projectIdFromStore ? sessions : undefined;
+
+  console.log('[ProjectSessionsList] Condition (projectDetail?.id === projectIdFromStore):', projectDetail?.id === projectIdFromStore);
+  console.log('[ProjectSessionsList] projectDetail.id:', projectDetail?.id);
+  console.log('[ProjectSessionsList] projectIdForLinks:', projectIdForLinks);
+  console.log('[ProjectSessionsList] displayableSessions (before length check):', displayableSessions ? JSON.parse(JSON.stringify(displayableSessions)) : null);
+  // DEBUG LOGGING END
 
   if (!projectIdForLinks) {
     return (

@@ -60,7 +60,7 @@ export async function createProject(
       .insert({
         user_id: user.id,
         project_name: projectName,
-        initial_user_prompt: initialUserPromptText || null,
+        initial_user_prompt: initialUserPromptText || "",
         selected_domain_tag: selectedDomainTag,
         selected_domain_overlay_id: selected_domain_overlay_id,
         status: 'new',

@@ -234,11 +234,13 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
 
   useEffect(() => {
     if (creationError) {
-      const timer = setTimeout(() => {
-        resetCreateProjectError();
-      }, 5000);
-      return () => clearTimeout(timer);
+      resetCreateProjectError();
     }
+    return () => {
+      if (creationError) {
+        resetCreateProjectError();
+      }
+    };
   }, [creationError, resetCreateProjectError]);
 
   useEffect(() => {
@@ -309,43 +311,58 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
   };
 
   return (
-    <Card className={containerClassName}>
+    <Card className={containerClassName}> 
       <CardHeader>
-        <CardTitle>Create New Dialectic Project</CardTitle>
+        <CardTitle className="text-2xl flex items-center gap-2">
+          <span>Create New</span>
+          {enableDomainSelection ? (
+            <DomainSelector />
+          ) : (
+            <span>Dialectic</span>
+          )}
+          <span>Project</span>
+        </CardTitle>
         <CardDescription>
-          Define the initial parameters for your AI-assisted dialectic exploration. 
-          You can start with a textual prompt or upload a markdown file.
+          <DomainOverlayDescriptionSelector />
         </CardDescription>
       </CardHeader>
-      <form onSubmit={handleSubmit(onSubmit)}>
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <CardContent className="space-y-6">
+          {creationError && (
+            <Alert variant="destructive" data-testid="creation-error-alert">
+              <AlertTitle>Creation Failed</AlertTitle>
+              <AlertDescription>{creationError.message}</AlertDescription>
+            </Alert>
+          )}
+          
           <div className="space-y-2">
             <Label htmlFor="projectName">Project Name</Label>
             <Controller
               name="projectName"
               control={control}
               render={({ field }) => (
-                <TextInputArea
+                <input
                   id="projectName"
-                  label="Project Name"
-                  placeholder="e.g., Q4 Marketing Strategy Analysis"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  placeholder="E.g., Q4 Product Strategy (auto-fills from prompt or file name)"
                   {...field}
-                  onChange={(value) => {
-                    field.onChange(value);
-                    setProjectNameManuallySet(true);
+                  onChange={(e) => {
+                    field.onChange(e); 
+                    if (e.target.value.trim() !== '') {
+                        setProjectNameManuallySet(true);
+                    } else {
+                        // If user clears the field, allow auto-naming to resume
+                        setProjectNameManuallySet(false);
+                    }
                   }}
-                  disabled={isCreating}
-                  rows={1}
-                  showFileUpload={false} 
-                  showPreviewToggle={false}
-                  dataTestId="text-input-area-for-project-name"
+                  aria-invalid={!!errors.projectName}
                 />
               )}
             />
-            {errors.projectName && <p className="text-sm text-red-500">{errors.projectName.message}</p>}
+            {errors.projectName && <p className="text-sm text-destructive data-testid='project-name-error'">{errors.projectName.message}</p>}
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 relative"> 
             <Controller
               name="initialUserPrompt"
               control={control}
@@ -353,10 +370,14 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
                 <TextInputArea
                   id="initialUserPrompt"
                   label="Initial User Prompt / Problem Statement"
-                  placeholder="Describe the problem, question, or document you want to analyze and iterate on..."
-                  {...field}
+                  placeholder="Describe the core problem, question, or topic... or load from a .md file."
+                  value={field.value}
+                  onChange={field.onChange}
+                  rows={8} 
+                  dataTestId="text-input-area-for-prompt"
                   disabled={isCreating}
-                  rows={8}
+                  textAreaClassName="relative z-10 bg-transparent w-full min-h-[168px] resize-y"
+                  showPreviewToggle={true}
                   showFileUpload={true}
                   fileUploadConfig={{
                     acceptedFileTypes: ['.md', 'text/markdown'],
@@ -364,42 +385,18 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
                     multipleFiles: false,
                   }}
                   onFileLoad={handleFileLoadForPrompt}
-                  showPreviewToggle={true}
-                  dataTestId="text-input-area-for-prompt"
+                  dropZoneLabel="Drag & drop a .md file here, or click to select for prompt"
                 />
               )}
             />
-            {errors.initialUserPrompt && <p className="text-sm text-red-500">{errors.initialUserPrompt.message}</p>}
+            {errors.initialUserPrompt && <p className="text-sm text-destructive data-testid='prompt-error'" >{errors.initialUserPrompt.message}</p>}
           </div>
-
-          {enableDomainSelection && (
-            <>
-              <DomainSelector 
-                disabled={isCreating} 
-              />
-              <DomainOverlayDescriptionSelector 
-                disabled={isCreating}
-              />
-            </>
-          )}
-
-          {creationError && (
-            <Alert variant="destructive">
-              <AlertTitle>Error Creating Project</AlertTitle>
-              <AlertDescription>
-                {creationError.message || 'An unknown error occurred.'}
-                {typeof creationError.details === 'string' && <p>{creationError.details}</p>}
-              </AlertDescription>
-            </Alert>
-          )}
+          
         </CardContent>
         <CardFooter>
-          <Button type="submit" disabled={isCreating} className="w-full">
+          <Button type="submit" disabled={isCreating} className="w-full data-testid='create-project-button'">
             {isCreating ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating...
-              </>
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating {submitButtonText}...</>
             ) : (
               submitButtonText
             )}

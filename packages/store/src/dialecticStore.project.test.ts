@@ -163,7 +163,7 @@ describe('useDialecticStore', () => {
             expect(formData.get('projectName')).toBe(projectPayload.projectName);
             expect(formData.get('initialUserPromptText')).toBe(projectPayload.initialUserPrompt);
             expect(formData.get('selectedDomainTag')).toBeNull(); // Initial store state
-            expect(formData.get('selected_domain_overlay_id')).toBeNull(); // Initial store state
+            expect(formData.get('selectedDomainOverlayId')).toBeNull(); // Initial store state
             expect(formData.get('promptFile')).toBeNull();
 
             expect(mockDialecticApi.listProjects).toHaveBeenCalledTimes(1);
@@ -207,7 +207,7 @@ describe('useDialecticStore', () => {
             expect(formData.get('projectName')).toBe(inputPayload.projectName);
             expect(formData.get('initialUserPromptText')).toBe(inputPayload.initialUserPrompt);
             expect(formData.get('selectedDomainTag')).toBe(testSelectedDomainTag);
-            expect(formData.get('selected_domain_overlay_id')).toBe(testSelectedDomainOverlayId);
+            expect(formData.get('selectedDomainOverlayId')).toBe(testSelectedDomainOverlayId);
             expect(formData.get('promptFile')).toBeNull();
             
             expect(mockDialecticApi.listProjects).toHaveBeenCalledTimes(1);
@@ -244,7 +244,7 @@ describe('useDialecticStore', () => {
             expect(formData.get('projectName')).toBe(projectPayload.projectName);
             expect(formData.get('initialUserPromptText')).toBe(projectPayload.initialUserPrompt);
             expect(formData.get('selectedDomainTag')).toBeNull();
-            expect(formData.get('selected_domain_overlay_id')).toBeNull();
+            expect(formData.get('selectedDomainOverlayId')).toBeNull();
             expect(formData.get('promptFile')).toBeNull();
         });
 

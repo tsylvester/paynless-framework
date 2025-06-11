@@ -139,7 +139,27 @@ export const DialecticSessionDetailsPage: React.FC = () => {
     );
   }
 
-  const session = project.sessions?.find((s: DialecticSession) => s.id === sessionId);
+  // DEBUG LOGGING (can be removed later)
+  console.log('[DialecticSessionDetailsPage] projectId from URL:', projectId);
+  console.log('[DialecticSessionDetailsPage] sessionId from URL:', sessionId);
+  console.log('[DialecticSessionDetailsPage] isLoading (project details check - should be false here ideally):', isLoading);
+  console.log('[DialecticSessionDetailsPage] project from store (currentProjectDetail):', JSON.stringify(project, null, 2));
+
+  if (project && project.dialectic_sessions) {
+    console.log(`[DialecticSessionDetailsPage] Searching for session ID '${sessionId}' in project.dialectic_sessions:`);
+    project.dialectic_sessions.forEach((s: DialecticSession, index: number) => {
+      const sessionIdFromProject = s && s.id ? s.id : 'MISSING_ID';
+      console.log(`  [Session ${index}] ID on object: ${sessionIdFromProject}, Full Object:`, JSON.stringify(s, null, 2));
+    });
+  } else if (project) {
+    console.log('[DialecticSessionDetailsPage] project from store does not have a dialectic_sessions array or it is null.');
+  } else {
+    console.log('[DialecticSessionDetailsPage] project from store is null or undefined at logging point.');
+  }
+
+  const session = project.dialectic_sessions?.find((s: DialecticSession) => s.id === sessionId);
+  console.log('[DialecticSessionDetailsPage] Result of find (session):', JSON.stringify(session, null, 2));
+  // END DEBUG LOGGING
 
   if (!session) {
     return (

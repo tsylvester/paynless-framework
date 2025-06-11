@@ -8,7 +8,7 @@ import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2"; //
 import type { Database } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
 import type { ILogger } from "../_shared/types.ts";
-
+import type { DialecticSession } from "./dialectic.interface.ts";
 console.log("startSession function started");
 
 // Define Dependencies Interface
@@ -59,7 +59,7 @@ export async function startSession(
 
   const { data: project, error: projectError } = await dbClient
     .from('dialectic_projects')
-    .select('id, user_id, initial_user_prompt, selected_domain_tag, selected_domain_overlay_id')
+    .select('id, user_id, project_name, initial_user_prompt, selected_domain_tag, selected_domain_overlay_id')
     .eq('id', payload.projectId)
     .eq('user_id', userId)
     .single();
@@ -88,8 +88,32 @@ export async function startSession(
         if (!directPrompt) throw new Error(`No active prompt found for ID ${payload.promptTemplateId}`);
         systemPromptId = directPrompt.id;
         systemPromptText = directPrompt.prompt_text;
+    } else if (payload.selectedDomainOverlayId) {
+      logger.info(`[startSession] Using provided selectedDomainOverlayId from payload: ${payload.selectedDomainOverlayId} to fetch system_prompt_id.`);
+      const { data: overlay, error: overlayErr } = await dbClient
+        .from('domain_specific_prompt_overlays')
+        .select('system_prompt_id')
+        .eq('id', payload.selectedDomainOverlayId)
+        .single();
+
+      if (overlayErr) throw new Error(`Error fetching domain_specific_prompt_overlay using payload ID: ${overlayErr.message}`);
+      if (!overlay || !overlay.system_prompt_id) throw new Error(`Domain overlay ${payload.selectedDomainOverlayId} (from payload) not found or has no system_prompt_id.`);
+      
+      logger.info(`[startSession] Fetched system_prompt_id: ${overlay.system_prompt_id} using payload overlay ID. Now fetching prompt text.`);
+      const { data: promptFromOverlay, error: promptFromOverlayErr } = await dbClient
+        .from('system_prompts')
+        .select('id, prompt_text')
+        .eq('id', overlay.system_prompt_id)
+        .eq('is_active', true)
+        .single();
+      
+      if (promptFromOverlayErr) throw new Error(`Error fetching system prompt using ID from payload overlay (${overlay.system_prompt_id}): ${promptFromOverlayErr.message}`);
+      if (!promptFromOverlay) throw new Error(`No active system prompt found for ID ${overlay.system_prompt_id} (linked from payload overlay ${payload.selectedDomainOverlayId})`);
+      
+      systemPromptId = promptFromOverlay.id;
+      systemPromptText = promptFromOverlay.prompt_text;
     } else if (project.selected_domain_overlay_id) {
-      logger.info(`[startSession] Fetching system_prompt_id from domain_specific_prompt_overlays for overlay ID: ${project.selected_domain_overlay_id}`);
+      logger.info(`[startSession] Fetching system_prompt_id from domain_specific_prompt_overlays for project's overlay ID: ${project.selected_domain_overlay_id}`);
       const { data: overlay, error: overlayErr } = await dbClient
         .from('domain_specific_prompt_overlays')
         .select('system_prompt_id')
@@ -142,60 +166,79 @@ export async function startSession(
   const sessionStage = payload.stageAssociation.toUpperCase() as Database["public"]["Enums"]["dialectic_stage_enum"]; // Ensure stage is uppercase and type-casted
   const sessionStatus = `pending_${payload.stageAssociation.toLowerCase()}`; // e.g. pending_thesis
 
+  // Construct a user-friendly session description
+  const friendlySessionDescription = `${project.project_name || 'Unnamed Project'} - ${payload.stageAssociation} (${project.selected_domain_tag || 'General'})`;
+  logger.info(`[startSession] Constructed friendly session description: "${friendlySessionDescription}"`);
+
   logger.info(`[startSession] Inserting dialectic_sessions record for project ${project.id} with stage ${sessionStage} and status ${sessionStatus}`);
   const { data: sessionData, error: sessionInsertError } = await dbClient
     .from('dialectic_sessions')
     .insert({
       project_id: project.id,
-      session_description: payload.sessionDescription,
+      session_description: friendlySessionDescription, // Use the friendly description
       stage: sessionStage, // Using the new stage field
       status: sessionStatus, // Still using status for now, can be reviewed
       iteration_count: 1, 
       associated_chat_id: associatedChatIdToUse,
       selected_model_catalog_ids: payload.selectedModelCatalogIds, // Storing selected model IDs
-      // Removed: active_thesis_prompt_template_id, active_antithesis_prompt_template_id
-      // We will store the rendered seed prompt, not just template IDs.
-      // The actual system_prompt_id used for the first stage will be stored in the first dialectic_contribution record.
     })
-    .select('id') 
+    .select('*')  // Changed from select('id') to select('*')
     .single();
 
   if (sessionInsertError || !sessionData) {
     logger.error("[startSession] Error inserting dialectic session:", { projectId: project.id, error: sessionInsertError });
     return { error: { message: "Failed to create session.", details: sessionInsertError?.message, status: 500 } };
   }
-  const newSessionId = sessionData.id;
-  logger.info(`[startSession] Session ${newSessionId} created with stage ${sessionStage}.`);
+  // const newSessionId = sessionData.id; // sessionData is now the full session object
+  logger.info(`[startSession] Session ${sessionData.id} created with stage ${sessionStage}.`);
 
-  // The dialectic_session_models table is removed. Model IDs are now an array in dialectic_sessions.
-  // So, no separate insertion for dialectic_session_models is needed.
-  logger.info(`[startSession] Selected model IDs ${payload.selectedModelCatalogIds.join(', ')} stored in session ${newSessionId}.`);
+  logger.info(`[startSession] Selected model IDs ${payload.selectedModelCatalogIds.join(', ')} stored in session ${sessionData.id}.`);
   
-  // Construct the seed prompt for the initial stage (e.g., Thesis)
-  // This prompt will be used to generate the first contribution.
-  // It should be stored in the first dialectic_contribution record, not directly in dialectic_sessions.
-  // However, the user might want to see what this initial prompt looks like.
-  const initialStageSeedPrompt = `Rendered System Prompt for ${payload.stageAssociation}:
-${systemPromptText}
-
-Initial User Prompt (from project):
-${project.initial_user_prompt}`;
+  const initialStageSeedPrompt = `Rendered System Prompt for ${payload.stageAssociation}:\n${systemPromptText}\n\nInitial User Prompt (from project):\n${project.initial_user_prompt}`;
   
-  logger.info(`[startSession] Initial seed prompt for session ${newSessionId} constructed. This will be used for the first contribution of stage ${payload.stageAssociation}.`);
-  // The field 'current_stage_seed_prompt' was removed from 'dialectic_sessions' table.
-  // This information will now be part of the first 'dialectic_contributions' record for this session and stage.
-  // No direct update to the session record with this seed prompt is performed here.
+  logger.info(`[startSession] Initial seed prompt for session ${sessionData.id} constructed. This will be used for the first contribution of stage ${payload.stageAssociation}.`);
 
-  logger.info(`[startSession] Session ${newSessionId} started successfully. Stage: ${sessionStage}, Status: ${sessionStatus}. Associated chat ID for /chat interactions: ${associatedChatIdToUse}.`);
+  logger.info(`[startSession] Session ${sessionData.id} started successfully. Stage: ${sessionStage}, Status: ${sessionStatus}. Associated chat ID for /chat interactions: ${associatedChatIdToUse}.`);
 
-  return { 
-      data: { 
-          message: "Session started successfully", 
-          sessionId: newSessionId, 
-          initialStatus: sessionStatus, // Consider returning 'initialStage' as well or instead
-          associatedChatId: associatedChatIdToUse,
-          // Potentially return initialStageSeedPrompt or systemPromptText if useful for the client
-      } 
-  }; 
+  // Construct the DialecticSession object explicitly to match the interface
+  const resultSession: DialecticSession = {
+    id: sessionData.id,
+    project_id: sessionData.project_id,
+    session_description: sessionData.session_description,
+    current_stage_seed_prompt: initialStageSeedPrompt,
+    iteration_count: sessionData.iteration_count, // This is 1 from DB insert
+    status: sessionData.status, // e.g. pending_thesis
+    associated_chat_id: sessionData.associated_chat_id,
+
+    active_thesis_prompt_template_id: null,
+    active_antithesis_prompt_template_id: null,
+    active_synthesis_prompt_template_id: null,
+    active_parenthesis_prompt_template_id: null,
+    active_paralysis_prompt_template_id: null,
+
+    formal_debate_structure_id: null,
+    max_iterations: payload.maxIterations ?? 10, // Default to 10 if not provided in payload
+    current_iteration: sessionData.iteration_count, // This is 1 for a new session
+    convergence_status: null,
+    preferred_model_for_stage: null,
+    
+    created_at: sessionData.created_at,
+    updated_at: sessionData.updated_at,
+
+    dialectic_session_models: [], // Initialize as empty, to be populated later if needed
+    dialectic_contributions: [], // Initialize as empty, to be populated later if needed
+  };
+
+  // Set the active prompt template ID based on the current stage
+  const stageLower = payload.stageAssociation.toLowerCase();
+  if (systemPromptId) { // systemPromptId was fetched earlier
+    if (stageLower === "thesis") resultSession.active_thesis_prompt_template_id = systemPromptId;
+    else if (stageLower === "antithesis") resultSession.active_antithesis_prompt_template_id = systemPromptId;
+    else if (stageLower === "synthesis") resultSession.active_synthesis_prompt_template_id = systemPromptId;
+    else if (stageLower === "parenthesis") resultSession.active_parenthesis_prompt_template_id = systemPromptId;
+    else if (stageLower === "paralysis") resultSession.active_paralysis_prompt_template_id = systemPromptId;
+  }
+  
+  return { data: resultSession }; 
 }
   

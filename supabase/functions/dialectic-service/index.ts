@@ -16,6 +16,8 @@ import {
   StartSessionSuccessResponse,
   GenerateStageContributionsSuccessResponse,
   UploadProjectResourceFileSuccessResponse,
+  GetProjectResourceContentPayload,
+  GetProjectResourceContentResponse,
 } from "./dialectic.interface.ts";
 import { serve } from "https://deno.land/std@0.170.0/http/server.ts";
 import {
@@ -47,6 +49,7 @@ import { listAvailableDomainOverlays } from "./listAvailableDomainOverlays.ts";
 import { deleteProject } from './deleteProject.ts';
 import { cloneProject, CloneProjectResult } from './cloneProject.ts';
 import { exportProject } from './exportProject.ts';
+import { getProjectResourceContent } from "./getProjectResourceContent.ts";
 
 console.log("dialectic-service function started");
 
@@ -99,6 +102,7 @@ export interface ActionHandlers {
   deleteProject: (dbClient: SupabaseClient, payload: { projectId: string }, userId: string) => Promise<{data?: null, error?: { message: string; details?: string | undefined; }, status?: number}>;
   cloneProject: (dbClient: SupabaseClient, originalProjectId: string, newProjectName: string | undefined, cloningUserId: string) => Promise<CloneProjectResult>;
   exportProject: (dbClient: SupabaseClient, projectId: string, userId: string) => Promise<{ data?: { export_url: string }; error?: ServiceError; status?: number }>;
+  getProjectResourceContent: (payload: GetProjectResourceContentPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetProjectResourceContentResponse; error?: ServiceError; status?: number }>;
 }
 
 export async function handleRequest(
@@ -194,7 +198,7 @@ export async function handleRequest(
       const actionsRequiringAuth = [
         'listProjects', 'getProjectDetails', 'updateProjectDomainTag', 
         'startSession', 'generateContributions', 'getContributionContentSignedUrl',
-        'deleteProject', 'cloneProject', 'exportProject'
+        'deleteProject', 'cloneProject', 'exportProject', 'getProjectResourceContent'
       ];
 
       if (actionsRequiringAuth.includes(action)) {
@@ -315,10 +319,19 @@ export async function handleRequest(
           if (!payload || !("projectId" in payload) || typeof payload.projectId !== 'string') { 
               result = { error: { message: "Invalid or missing projectId in payload for getProjectDetails action.", status: 400, code: 'INVALID_PAYLOAD' } };
           } else if (!userForJson) {
-            // This case should ideally not be reached
             return createErrorResponse("User authentication failed for getProjectDetails.", 401, req, { message: "User authentication failed for getProjectDetails.", status: 401, code: 'USER_AUTH_FAILED' });
           } else {
               result = await handlers.getProjectDetails(payload as unknown as GetProjectDetailsPayload, dbAdminClient, userForJson);
+          }
+          break;
+        case 'getProjectResourceContent':
+          if (!userForJson) {
+            return createErrorResponse("User authentication required for getProjectResourceContent.", 401, req, { message: "User not authenticated.", status: 401, code: 'USER_AUTH_FAILED' });
+          }
+          if (!payload || typeof payload.resourceId !== 'string') {
+            result = { error: { message: "Invalid or missing 'resourceId' (string) in payload for getProjectResourceContent action.", status: 400, code: 'INVALID_PAYLOAD' } };
+          } else {
+            result = await handlers.getProjectResourceContent(payload as unknown as GetProjectResourceContentPayload, dbAdminClient, userForJson);
           }
           break;
         case 'deleteProject': { 
@@ -444,6 +457,7 @@ const actualHandlers: ActionHandlers = {
   deleteProject,
   cloneProject,
   exportProject,
+  getProjectResourceContent,
 };
 
 serve(async (req: Request) => {
