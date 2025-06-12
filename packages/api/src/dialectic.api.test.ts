@@ -16,7 +16,10 @@ import {
     UpdateProjectDomainTagPayload,
     DeleteProjectPayload,
     DialecticServiceActionPayload,
-    GetContributionContentSignedUrlPayload
+    GetContributionContentSignedUrlPayload,
+    DialecticStage,
+    GetProjectResourceContentPayload,
+    DialecticContribution
 } from '@paynless/types';
 
 // Mock the base ApiClient
@@ -165,8 +168,8 @@ describe('DialecticApiClient', () => {
             if (payload.selectedDomainTag) {
                 formData.append('selectedDomainTag', payload.selectedDomainTag);
             }
-            if (payload.selected_domain_overlay_id) {
-                formData.append('selected_domain_overlay_id', payload.selected_domain_overlay_id);
+            if (payload.selectedDomainOverlayId) {
+                formData.append('selectedDomainOverlayId', payload.selectedDomainOverlayId);
             }
             // Assuming promptFile would be handled here if tests included it
             return formData;
@@ -344,6 +347,7 @@ describe('DialecticApiClient', () => {
             projectId: 'project-123',
             selectedModelCatalogIds: ['model-abc', 'model-def'],
             sessionDescription: 'Test session',
+            stageAssociation: DialecticStage.THESIS,
         };
         const requestBody = { action: 'startSession', payload: validPayload };
 
@@ -379,6 +383,7 @@ describe('DialecticApiClient', () => {
                 projectId: 'test-project-id',
                 selectedModelCatalogIds: ['model1', 'model2'],
                 sessionDescription: 'Test session description',
+                stageAssociation: DialecticStage.THESIS,
                 // ensure other fields from StartSessionPayload are here if needed by your types
             };
 
@@ -850,8 +855,9 @@ describe('DialecticApiClient', () => {
 
     describe('listAvailableDomainOverlays', () => {
         const endpoint = 'dialectic-service';
-        const validPayload = { stageAssociation: 'thesis' };
-        const requestBody = { action: 'listAvailableDomainOverlays', payload: validPayload };
+        const stageAssociation = DialecticStage.THESIS;
+        const requestPayload = { stageAssociation };
+        const actionPayload = { action: 'listAvailableDomainOverlays', payload: requestPayload };
 
         it('should call apiClient.post with the correct endpoint and body', async () => {
             const mockResponse: ApiResponse<DomainOverlayDescriptor[]> = {
@@ -860,16 +866,30 @@ describe('DialecticApiClient', () => {
             };
             mockApiClientPost.mockResolvedValue(mockResponse);
 
-            await dialecticApiClient.listAvailableDomainOverlays(validPayload);
+            await dialecticApiClient.listAvailableDomainOverlays(requestPayload);
 
             expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, actionPayload);
         });
 
         it('should return the domain overlay descriptors array on successful response', async () => {
             const mockOverlays: DomainOverlayDescriptor[] = [
-                { id: 'overlay-1', domainTag: 'Tech Overlay 1', description: 'Description 1', stageAssociation: 'thesis' },
-                { id: 'overlay-2', domainTag: 'Tech Overlay 2', description: null, stageAssociation: 'thesis' },
+                {
+                    id: 'overlay-1',
+                    domainTag: 'tech_writing',
+                    description: 'Technical Writing Overlay',
+                    stageAssociation: 'thesis',
+                    overlay_values: { detailLevel: 'high', tone: 'formal' },
+                    system_prompt_id: 'sp-1',
+                },
+                {
+                    id: 'overlay-2',
+                    domainTag: 'code_gen',
+                    description: 'Code Generation Overlay',
+                    stageAssociation: 'thesis',
+                    overlay_values: { language: 'python', style: 'functional' },
+                    system_prompt_id: 'sp-2',
+                },
             ];
             const mockResponse: ApiResponse<DomainOverlayDescriptor[]> = {
                 data: mockOverlays,
@@ -877,7 +897,7 @@ describe('DialecticApiClient', () => {
             };
             mockApiClientPost.mockResolvedValue(mockResponse);
 
-            const result = await dialecticApiClient.listAvailableDomainOverlays(validPayload);
+            const result = await dialecticApiClient.listAvailableDomainOverlays(requestPayload);
 
             expect(result.data).toEqual(mockOverlays);
             expect(result.status).toBe(200);
@@ -892,7 +912,7 @@ describe('DialecticApiClient', () => {
             };
             mockApiClientPost.mockResolvedValue(mockErrorResponse);
 
-            const result = await dialecticApiClient.listAvailableDomainOverlays(validPayload);
+            const result = await dialecticApiClient.listAvailableDomainOverlays(requestPayload);
 
             expect(result.error).toEqual(mockApiError);
             expect(result.status).toBe(500);
@@ -903,7 +923,7 @@ describe('DialecticApiClient', () => {
             const networkErrorMessage = 'Simulated network failure for overlays';
             mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            const result = await dialecticApiClient.listAvailableDomainOverlays(validPayload);
+            const result = await dialecticApiClient.listAvailableDomainOverlays(requestPayload);
 
             expect(result.error).toEqual({
                 code: 'NETWORK_ERROR',
@@ -1160,6 +1180,112 @@ describe('DialecticApiClient', () => {
             const result = await dialecticApiClient.exportProject(exportPayload);
 
             expect(result.error).toEqual({ code: 'NETWORK_ERROR', message: networkErrorMessage });
+            expect(result.status).toBe(0);
+            expect(result.data).toBeUndefined();
+        });
+    });
+
+    describe('generateContributions', () => {
+        const endpoint = 'dialectic-service';
+        const validSessionId = 'test-session-id-for-generation';
+        const requestPayload: { sessionId: string } = { sessionId: validSessionId };
+        const actionPayload: DialecticServiceActionPayload = {
+            action: 'generateContributions',
+            payload: requestPayload,
+        };
+
+        it('should call apiClient.post with correct endpoint and body for generateContributions', async () => {
+            const mockSuccessResponse: ApiResponse<{ message: string; contributions?: DialecticContribution[] }> = {
+                data: { message: 'Contributions generation started', contributions: [] },
+                status: 200,
+            };
+            mockApiClientPost.mockResolvedValue(mockSuccessResponse);
+
+            await dialecticApiClient.generateContributions(requestPayload);
+
+            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
+            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, actionPayload);
+        });
+
+        it('should return success message and contributions on successful response', async () => {
+            const mockContributions: DialecticContribution[] = [
+                { 
+                    id: 'contrib-1', 
+                    session_id: validSessionId, 
+                    session_model_id: 'sm-1',
+                    stage: DialecticStage.THESIS, 
+                    iteration_number: 1,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    content_storage_bucket: null,
+                    content_storage_path: null,
+                    content_mime_type: null,
+                    content_size_bytes: null,
+                    raw_response_storage_path: null,
+                    tokens_used_input: null,
+                    tokens_used_output: null,
+                    processing_time_ms: null,
+                    citations: null,
+                    parent_contribution_id: null,
+                    user_id: null,
+                    actual_prompt_sent: null,
+                }
+            ];
+            const mockSuccessData = { message: 'Successfully generated contributions', contributions: mockContributions };
+            const mockResponse: ApiResponse<{ message: string; contributions?: DialecticContribution[] }> = {
+                data: mockSuccessData,
+                status: 200,
+            };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            const result = await dialecticApiClient.generateContributions(requestPayload);
+
+            expect(result.data).toEqual(mockSuccessData);
+            expect(result.status).toBe(200);
+            expect(result.error).toBeUndefined();
+        });
+
+        it('should return only a message if no contributions are returned immediately', async () => {
+            const mockSuccessData = { message: 'Contribution generation initiated' };
+            const mockResponse: ApiResponse<{ message: string; contributions?: DialecticContribution[] }> = {
+                data: mockSuccessData,
+                status: 202,
+            };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            const result = await dialecticApiClient.generateContributions(requestPayload);
+
+            expect(result.data).toEqual(mockSuccessData);
+            expect(result.status).toBe(202);
+            expect(result.error).toBeUndefined();
+        });
+
+
+        it('should return the error object on failed API call (e.g., session not found)', async () => {
+            const mockApiError: ApiErrorType = { code: 'NOT_FOUND', message: 'Session not found or not in a valid state for contribution generation.' };
+            const mockErrorResponse: ApiResponse<never> = {
+                error: mockApiError,
+                status: 404,
+            };
+            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+
+            const result = await dialecticApiClient.generateContributions(requestPayload);
+
+            expect(result.error).toEqual(mockApiError);
+            expect(result.status).toBe(404);
+            expect(result.data).toBeUndefined();
+        });
+
+        it('should return a network error if apiClient.post rejects', async () => {
+            const networkErrorMessage = 'Simulated network failure for generateContributions';
+            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+
+            const result = await dialecticApiClient.generateContributions(requestPayload);
+
+            expect(result.error).toEqual({
+                code: 'NETWORK_ERROR',
+                message: networkErrorMessage,
+            });
             expect(result.status).toBe(0);
             expect(result.data).toBeUndefined();
         });

@@ -207,11 +207,11 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
     };
 
     const result = await startDialecticSession(payload);
-    const responseData = result.data as unknown as { sessionId?: string; [key: string]: unknown };
+    const responseData = result.data as import('@paynless/types').DialecticSession | undefined;
 
-    if (result && responseData && typeof responseData.sessionId === 'string' && responseData.sessionId.trim() !== '') {
-      toast.success(`Session started successfully: ${responseData.sessionId}`);
-      onSessionStarted?.(responseData.sessionId);
+    if (result && responseData && typeof responseData.id === 'string' && responseData.id.trim() !== '') {
+      toast.success(`Session started successfully: ${responseData.id}`);
+      onSessionStarted?.(responseData.id);
       resetFormAndClose();
     } else {
       let errorMessage = "Failed to start session.";
@@ -219,7 +219,7 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
         errorMessage = result.error.message;
       } else if (result && result.error) {
         errorMessage = "An unknown error occurred while starting the session.";
-      } else if (result && responseData && (typeof responseData.sessionId !== 'string' || responseData.sessionId.trim() === '')) {
+      } else if (result && responseData && (typeof responseData.id !== 'string' || responseData.id.trim() === '')) {
         errorMessage = "Session may have been created, but a valid Session ID was not returned by the server.";
         console.error("Start session response missing or invalid ID. Response data:", responseData);
       } else if (!result || !responseData) {

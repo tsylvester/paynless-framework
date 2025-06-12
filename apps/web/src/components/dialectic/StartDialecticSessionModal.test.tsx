@@ -426,10 +426,10 @@ describe('StartDialecticSessionModal', () => {
     expect(vi.isMockFunction(actions.startDialecticSession)).toBe(true); 
 
     // Restore original mock implementation
-    (actions.startDialecticSession as Mock).mockImplementation(async (payload: StartSessionPayload): Promise<ApiResponse<Omit<DialecticSession, 'id'> & { sessionId: string }>> => {
-      return { 
+    (actions.startDialecticSession as Mock).mockImplementation(async (payload: StartSessionPayload): Promise<ApiResponse<DialecticSession>> => {
+      return {
         data: {
-          sessionId: 'session-456',
+          id: 'session-456',
           project_id: payload.projectId,
           session_description: payload.sessionDescription,
           current_stage_seed_prompt: null,
@@ -446,9 +446,11 @@ describe('StartDialecticSessionModal', () => {
           current_iteration: 0,
           convergence_status: null,
           preferred_model_for_stage: {},
+          dialectic_session_models: [],
+          dialectic_contributions: [],
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-        } as Omit<DialecticSession, 'id'> & { sessionId: string },
+        } as DialecticSession,
         error: undefined,
         status: 200
       };

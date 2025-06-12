@@ -12,7 +12,9 @@ import type {
     DomainOverlayDescriptor,
     UploadProjectResourceFilePayload,
     DialecticProjectResource,
-    UpdateProjectInitialPromptPayload
+    UpdateProjectInitialPromptPayload,
+    GenerateContributionsPayload,
+    GenerateContributionsResponse
 } from '@paynless/types'; 
 
 // --- Dialectic Client Mock Setup ---
@@ -31,6 +33,7 @@ export type MockDialecticApiClient = {
     cloneProject: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<DialecticProject>>>>;
     exportProject: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<{ export_url: string }>>>>;
     updateDialecticProjectInitialPrompt: ReturnType<typeof vi.fn<[payload: UpdateProjectInitialPromptPayload], Promise<ApiResponse<DialecticProject>>>>;
+    generateContributions: ReturnType<typeof vi.fn<[payload: GenerateContributionsPayload], Promise<ApiResponse<GenerateContributionsResponse>>>>;
 };
 
 // Typed vi.fn() calls
@@ -49,6 +52,7 @@ export const mockDialecticClientInstance: MockDialecticApiClient = {
     cloneProject: vi.fn<[string], Promise<ApiResponse<DialecticProject>>>(),
     exportProject: vi.fn<[string], Promise<ApiResponse<{ export_url: string }>>>(),
     updateDialecticProjectInitialPrompt: vi.fn<[UpdateProjectInitialPromptPayload], Promise<ApiResponse<DialecticProject>>>(),
+    generateContributions: vi.fn<[GenerateContributionsPayload], Promise<ApiResponse<GenerateContributionsResponse>>>(),
 };
 
 // Moved reset logic into its own function
@@ -68,10 +72,20 @@ export function resetMockDialecticClient(instance?: MockDialecticApiClient) {
   clientToReset.cloneProject.mockReset();
   clientToReset.exportProject.mockReset();
   clientToReset.updateDialecticProjectInitialPrompt.mockReset();
+  clientToReset.generateContributions.mockReset();
 }
 
 /**
  * Helper to get the current instance of the mock Dialectic client.
  */
 export const getMockDialecticClient = (): MockDialecticApiClient => mockDialecticClientInstance;
+
+/**
+ * Helper to reset all mocks in the Dialectic client.
+ * If you only need to reset the Dialectic client, prefer `resetMockDialecticClient`.
+ * This is typically used in a global `beforeEach` or `afterEach`.
+ */
+export function resetAllDialecticMocks() {
+    resetMockDialecticClient(mockDialecticClientInstance);
+}
 

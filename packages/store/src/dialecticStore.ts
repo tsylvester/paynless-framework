@@ -71,6 +71,10 @@ export const initialDialecticStateValues: DialecticStateValues = {
   initialPromptFileContent: null,
   isLoadingInitialPromptFileContent: false,
   initialPromptFileContentError: null,
+
+  // States for generating contributions
+  isGeneratingContributions: false,
+  generateContributionsError: null,
 };
 
 export const useDialecticStore = create<DialecticStore>((set, get) => ({
@@ -753,6 +757,36 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       { storeKeys: Object.keys(initialDialecticStateValues) }
     );
     set(initialDialecticStateValues);
+  },
+
+  generateContributions: async (payload: { sessionId: string; projectId: string }) => {
+    set({ isGeneratingContributions: true, generateContributionsError: null });
+    logger.info('[DialecticStore] Generating contributions...', { sessionId: payload.sessionId });
+    try {
+      const response = await api.dialectic().generateContributions({ sessionId: payload.sessionId });
+      if (response.error) {
+        logger.error('[DialecticStore] Error generating contributions:', { errorDetails: response.error, sessionId: payload.sessionId });
+        set({ isGeneratingContributions: false, generateContributionsError: response.error });
+        return { error: response.error, status: response.status, data: undefined };
+      } else {
+        logger.info('[DialecticStore] Successfully generated contributions:', { responseData: response.data, sessionId: payload.sessionId });
+        set({ isGeneratingContributions: false, generateContributionsError: null });
+        
+        // Refetch project details to update UI with new contributions and session status
+        logger.info(`[DialecticStore] Contributions generated for session ${payload.sessionId}. Refetching project details for project ${payload.projectId}.`);
+        await get().fetchDialecticProjectDetails(payload.projectId);
+        
+        return { data: response.data, status: response.status };
+      }
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while generating contributions',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error generating contributions:', { errorDetails: networkError, sessionId: payload.sessionId });
+      set({ isGeneratingContributions: false, generateContributionsError: networkError });
+      return { error: networkError, status: 0, data: undefined };
+    }
   },
 }));
 

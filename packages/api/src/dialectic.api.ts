@@ -16,7 +16,8 @@ import type {
     UploadProjectResourceFilePayload,
     FetchOptions,
     GetProjectResourceContentPayload,
-    GetProjectResourceContentResponse
+    GetProjectResourceContentResponse,
+    DialecticContribution
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -491,5 +492,38 @@ export class DialecticApiClient {
           status: 0,
         } as ApiResponse<GetProjectResourceContentResponse>;
       }
+    }
+
+    /**
+     * Triggers the generation of contributions for a given session.
+     * Requires authentication.
+     */
+    async generateContributions(payload: { sessionId: string }): Promise<ApiResponse<{ message: string; contributions?: DialecticContribution[] }>> {
+        logger.info('Generating contributions for session', { sessionId: payload.sessionId });
+
+        try {
+            const response = await this.apiClient.post<{ message: string; contributions?: DialecticContribution[] }, DialecticServiceActionPayload>(
+                'dialectic-service',
+                {
+                    action: 'generateContributions',
+                    payload,
+                } as DialecticServiceActionPayload
+            );
+
+            if (response.error) {
+                logger.error('Error generating contributions:', { error: response.error, sessionId: payload.sessionId });
+            } else {
+                logger.info('Successfully initiated contribution generation', { sessionId: payload.sessionId, responseData: response.data });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in generateContributions:', { errorMessage: message, errorObject: error, sessionId: payload.sessionId });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
     }
 } 

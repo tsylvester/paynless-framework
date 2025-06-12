@@ -194,6 +194,10 @@ export interface DialecticStateValues {
   initialPromptFileContent: GetProjectResourceContentResponse | null;
   isLoadingInitialPromptFileContent: boolean;
   initialPromptFileContentError: ApiError | null;
+
+  // States for generating contributions
+  isGeneratingContributions: boolean;
+  generateContributionsError: ApiError | null;
 }
 
 export interface ContributionCacheEntry {
@@ -237,6 +241,9 @@ export interface DialecticActions {
 
   // New action for fetching initial prompt file content
   fetchInitialPromptContent: (resourceId: string) => Promise<void>;
+
+  // Action for generating contributions
+  generateContributions: (payload: { sessionId: string; projectId: string }) => Promise<ApiResponse<{ message: string; contributions?: DialecticContribution[] }>>;
 
   _resetForTesting?: () => void;
 }
@@ -293,6 +300,15 @@ export interface DialecticApiClient {
   exportProject(payload: { projectId: string }): Promise<ApiResponse<{ export_url: string }>>;
 
   updateDialecticProjectInitialPrompt(payload: UpdateProjectInitialPromptPayload): Promise<ApiResponse<DialecticProject>>;
+}
+
+export interface GenerateContributionsPayload {
+  sessionId: string;
+}
+
+export interface GenerateContributionsResponse {
+  message: string;
+  contributions?: DialecticContribution[];
 }
 
 export interface ContributionContentSignedUrlResponse {
