@@ -156,15 +156,36 @@ The implementation plan uses the following labels to categorize work steps:
             *   `sessions/{session_id}/`
                 *   `iteration_{N}/`
                     *   `0_seed_inputs/`
-                        *   `user_prompt.md`
-                        *   `system_settings.json`
-                        *   `seed_prompt.md` (the actual content sent to the model for completion)
+                        *   `user_prompt.md`                (The specific user textual input that kicked off this iteration)
+                        *   `system_settings.json`          (Models, core prompt templates used for this iteration)
                     *   `1_hypothesis/` (or `1_thesis`)
-                        *   `{model_name_slug}_hypothesis.md`
-                        *   `user_feedback_hypothesis.md` (optional)
+                        *   `seed_prompt.md`                (The complete prompt sent to the models for *this specific stage's* completion, incorporating elements from `0_seed_inputs` and the hypothesis stage prompt template)
+                        *   `{model_name_slug}_hypothesis.md` (Contains YAML frontmatter + AI response)
+                        *   `user_feedback_hypothesis.md`   (User's consolidated feedback on this stage's contributions)
+                        *   `documents/`                      (Optional refined documents, e.g., PRDs from each model)
+                        *       `{model_name_slug}_prd_hypothesis.md`
+                        *       `...`
                     *   `2_antithesis/`
+                        *   `seed_prompt.md`                (The complete prompt for *this stage*, built from hypothesis outputs, user feedback on hypothesis, and antithesis stage prompt template)
+                        *   `{critiquer_model_slug}_critique_on_{original_model_slug}.md`
                         *   `...`
-                    *   (Other stages: `3_synthesis/`, `4_parenthesis/`, `5_paralysis/`)
+                        *   `user_feedback_antithesis.md`
+                    *   `3_synthesis/`
+                        *   `seed_prompt.md`                (The complete prompt for *this stage*)
+                        *   `{model_name_slug}_synthesis.md`
+                        *   `...`
+                        *   `user_feedback_synthesis.md`
+                    *   `4_parenthesis/`
+                        *   `seed_prompt.md`                (The complete prompt for *this stage*)
+                        *   `{model_name_slug}_parenthesis.md`
+                        *   `...`
+                        *   `user_feedback_parenthesis.md`
+                    *   `5_paralysis/`
+                        *   `seed_prompt.md`                (The complete prompt for *this stage*)
+                        *   `{model_name_slug}_paralysis.md`
+                        *   `...`
+                        *   `user_feedback_paralysis.md`
+                    *   (Additional stages would follow the same pattern with their own `seed_prompt.md`)
                     *   `iteration_summary.md` (optional)
 *   `[✅] 0.2 [ARCH]` **Database Path and Bucket Conventions:**
     *   `[✅] 0.2.1 [DOCS]` Clarify that all database fields designed to store paths to files (e.g., `dialectic_contributions.content_storage_path`, `dialectic_contributions.seed_prompt_url`, `dialectic_project_resources.storage_path`) will store relative paths *within the designated Supabase Storage bucket*. These paths will not include the bucket name itself.
@@ -172,8 +193,12 @@ The implementation plan uses the following labels to categorize work steps:
 *   `[✅] 0.3 [DEFS]` **Define "Seed Input Components" for an Iteration (Stored in Supabase Storage):**
     *   `[✅] 0.3.1 [DOCS]` **`user_prompt.md`**: This Markdown file contains the specific user-provided or system-derived textual input that forms the core basis of an iteration's prompt. It is stored in Supabase Storage at the path: `projects/{project_id}/sessions/{session_id}/iteration_{N}/0_seed_inputs/user_prompt.md`.
     *   `[✅] 0.3.2 [DOCS]` **`system_settings.json`**: A JSON file detailing the AI models selected for the iteration/stage, core `system_prompts.id` used, active `domain_specific_prompt_overlays` configurations, and other critical system-level parameters or variables applied to construct the full prompt for that iteration. Stored in Supabase Storage at: `projects/{project_id}/sessions/{session_id}/iteration_{N}/0_seed_inputs/system_settings.json`.
-    *   `[✅] 0.3.3 [DOCS]` **"Fully Constructed Seed Prompt" (Conceptual/In-Memory)**: This refers to the complete and final prompt text that is actually sent to an AI model for a given contribution. It is dynamically assembled by the backend service (e.g., `dialectic-service`) by combining the content of the stored `user_prompt.md`, the configurations from `system_settings.json`, and any applicable prompt templates (`system_prompts.prompt_text`).
-        *   `[ ] 0.3.3.1 [BE]` Consider if and where to log/store this fully constructed prompt for auditing or advanced debugging (e.g., as a separate file in Supabase Storage like `.../0_seed_inputs/full_constructed_prompt_for_{model_slug}.txt`, or as a field in `dialectic_contributions` if size permits and is deemed necessary). For Phase 1, primary reliance is on reconstructing from components.
+    *   `[✅] 0.3.3 [DOCS]` **"Fully Constructed Stage Seed Prompt" (`seed_prompt.md` within each stage folder)**: This refers to the complete and final prompt text that is actually sent to an AI model for generating contributions for a *specific stage* within an iteration. It is dynamically assembled by the backend service (e.g., `dialectic-service`) by combining:
+        *   The iteration's base `user_prompt.md` (from `.../iteration_{N}/0_seed_inputs/user_prompt.md`).
+        *   The iteration's `system_settings.json` (from `.../iteration_{N}/0_seed_inputs/system_settings.json`).
+        *   The relevant `system_prompts.prompt_text` for the current stage.
+        *   For stages after the first (e.g., Antithesis, Synthesis), it also incorporates the AI-generated contributions (and any user edits to them) and collated user feedback from the *previous* stage.
+    *   `[✅] 0.3.3.1 [BE]` This fully constructed seed prompt for a stage is stored in Supabase Storage at a path like: `projects/{project_id}/sessions/{session_id}/iteration_{N}/{stage_name_slug}/seed_prompt.md`. The `dialectic_contributions.seed_prompt_url` field will point to this file for each contribution generated in that stage.
 *   `[✅] 0.4 [ARCH]` **Frontend Data Access:**
     *   `[✅] 0.4.1 [DOCS]` Document that the frontend application will primarily fetch file-based content (e.g., AI contributions, user prompts stored as files) directly from Supabase Storage. This will typically be achieved using presigned URLs generated by the backend or via the Supabase client SDK if appropriate RLS and access policies are in place for direct client access to specific paths.
 *   `[✅] 0.5 [ARCH]` **GitHub Export as a Replicator:**
@@ -437,7 +462,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   `updated_at` (TIMESTAMPTZ, default `now()`, not nullable)
         *   `status` (TEXT, e.g., `pending_thesis`, `thesis_complete`, `pending_antithesis`, `antithesis_complete`, `pending_synthesis`, `synthesis_complete`, `critique_recommended`, `complete_final_review`, `archived_failed`, `archived_incomplete`, `archived_complete`)
         *   `associated_chat_id` (UUID, nullable, tracks the `chat.id` used for interactions with the `/chat` Edge Function for this dialectic session. This allows dialectics to potentially originate from or integrate with existing chat sessions.)
-        *   (REMOVED: `current_stage_seed_prompt`, `active_thesis_prompt_template_id`, `active_antithesis_prompt_template_id`)
+        *   (REMOVED: `seed_prompt_url`, `prompt_template_id_used`)
     *   `[✅] 1.1.2.3 [DB]` Define constraints (FKs already included with columns, add any CHECK constraints if needed for `status` or `iteration_count`).
     *   `[✅] 1.1.2.4 [REFACTOR]` Review migration script and table definition.
     *   `[✅] 1.1.2.5 [TEST-UNIT]` Run `dialectic_sessions` schema migration test. (GREEN)
@@ -477,11 +502,15 @@ The implementation plan uses the following labels to categorize work steps:
         *   `stage` (TEXT, not nullable, e.g., 'thesis', 'antithesis', 'synthesis') - Current definition (was `contribution_type`).
         *   `iteration_number` (INTEGER, not nullable, default 1) - Tracks iteration within the stage for the session.
         *   `prompt_template_id_used` (UUID, foreign key to `system_prompts.id` on delete set null, nullable)
-        *   `seed_prompt_url` (TEXT, nullable - URL to the final, fully compiled prompt file sent to the agent) **(RENAMED from `actual_prompt_sent`)**
+        *   `seed_prompt_url` (TEXT, nullable - Path to the stage-specific `seed_prompt.md` file in Supabase Storage that was used to generate this contribution. E.g., `projects/{project_id}/sessions/{session_id}/iteration_{N}/{stage_slug}/seed_prompt.md`)
         *   `content_storage_bucket` (TEXT, nullable)
         *   `content_storage_path` (TEXT, nullable)
         *   `content_mime_type` (TEXT, nullable)
         *   `content_size_bytes` (BIGINT, nullable)
+        *   `edit_version` (INTEGER, NOT NULL, default 1) - Increments for each user edit of this specific conceptual contribution. AI generation is version 1.
+        *   `is_latest_edit` (BOOLEAN, NOT NULL, default TRUE) - True if this row represents the latest version of this conceptual contribution (either AI-generated or user-edited).
+        *   `original_model_contribution_id` (UUID, FK to `dialectic_contributions.id` ON DELETE SET NULL, nullable) - If this is a user edit (`edit_version > 1`), this points to the initial AI-generated contribution row (`edit_version = 1`). For initial AI contributions, this can be NULL or point to self.
+        *   `user_id` (UUID, FK to `auth.users.id` on delete set null, nullable) - For AI-generated contributions, this might be the user who initiated the session. For user-edited contributions, this is the ID of the user who made the edit.
         *   `raw_response_storage_path` (TEXT, nullable)
         *   `target_contribution_id` (UUID, foreign key to `dialectic_contributions.id` on delete set null, nullable)
         *   `tokens_used_input` (INTEGER, nullable)
@@ -491,7 +520,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   `citations` (JSONB, nullable)
         *   `created_at` (TIMESTAMPTZ, default `now()`, not nullable)
         *   `updated_at` (TIMESTAMPTZ, default `now()`, not nullable)
-        *   (REMOVED: `session_model_id`, `actual_prompt_sent` - which was renamed)
+        *   (REMOVED: `session_model_id`. Fields like `content`, `content_format`, `notes`, `cost_usd` should be reviewed and removed if fully superseded by storage paths and token counts.)
         *   (Existing but not listed above and kept: `user_id`, `content`, `content_format`, `notes`, `cost_usd` needs review if still present/needed)
 *   `[✅] 1.1.5.A [BE/CONFIG]` Supabase Storage Setup & Utility Functions
     *   `[✅] 1.1.5.A.1 [CONFIG]` Create Supabase Storage Bucket named `dialectic-contributions` (note: no underscores) and define initial RLS policies.
@@ -516,16 +545,19 @@ The implementation plan uses the following labels to categorize work steps:
         1.  `[✅]` Generate a UUID for the `dialectic_contributions.id` *before* uploading content, so it can be used in the storage path for consistency. (GREEN)
         2.  `[✅]` Define the storage path (e.g., using `project_id`, `session_id`, and the new `contribution_id`). Example: `${projectId}/${sessionId}/${contributionId}.md`. (GREEN)
         3.  `[✅]` Use the `uploadToStorage` utility to save the AI-generated content to the `dialectic_contributions` bucket with the correct `contentType` (e.g., `text/markdown`). (GREEN)
-        4.  `[✅]` Use `getFileMetadata` to get the `sizeBytes` after upload. (GREEN)
+        4.  `[✅]` Record `sizeBytes` (from file or `getFileMetadata`) after upload. (GREEN)
         5.  `[✅]` In the `dialectic_contributions` table, store:
-            *   `[✅]` `content_storage_bucket` (e.g., "dialectic_contributions"). (GREEN)
+            *   `[✅]` `content_storage_bucket` (e.g., "dialectic-contributions"). (GREEN)
             *   `[✅]` The actual `content_storage_path` returned by the upload. (GREEN)
             *   `[🚧]` `content_mime_type` (e.g., "text/markdown"). (GREEN - Plumbing for dynamic `contentType` from the AI response object (`UnifiedAIResponse`) is now in place. Currently, `UnifiedAIResponse.contentType` defaults to "text/markdown" as the upstream `/chat` function does not yet provide a more specific MIME type from the AI provider. Future enhancements to `/chat` could enable truly dynamic types here.)
             *   `[✅]` `content_size_bytes`. (GREEN)
             *   `[✅]` `raw_response_storage_path` (path to the raw JSON response from the AI model, stored in the same bucket). (GREEN)
             *   `[✅]` `tokens_used_input`, `tokens_used_output` (from AI response). (GREEN)
             *   `[✅]` `processing_time_ms` (from AI response). (GREEN)
-            *   `[✅]` `cost_usd` removed from table.
+            *   `[✅]` `seed_prompt_url` will point to the specific `seed_prompt.md` file (e.g., `projects/{project_id}/sessions/{session_id}/iteration_{N}/{current_stage_slug}/seed_prompt.md`) that was used for this generation.
+            *   `[✅]` Initialize `edit_version = 1`, `is_latest_edit = TRUE`, `original_model_contribution_id = NULL` (or self).
+            *   `[✅]` `user_id` likely the session initiator.
+            *   `[✅]` `cost_usd` field removed from table if relying solely on token counts for estimation.
         6.  `[✅]` Ensure `rawProviderResponse` is saved to the `raw_response_storage_path`. (GREEN)
     *   `[✅] 1.1.5.B.2 [TEST-INT]` Write integration tests for the relevant `dialectic-service` action that calls `callUnifiedAIModel` and saves a contribution with content to storage.
         *   `[✅]` Verify that `uploadToStorage` and `getFileMetadata` are called with expected parameters (mocked).
@@ -599,11 +631,11 @@ The implementation plan uses the following labels to categorize work steps:
             1.  Verify project ownership.
             2.  Fetch `prompt_template.id` for thesis and antithesis from `prompt_templates` table using names.
             3.  If `selected_domain_overlay_id` is provided in the payload, fetch its `overlay_values` to be used in prompt rendering for the relevant stage(s).
-            4.  Creates `dialectic_sessions` record (linking `active_thesis_prompt_template_id`, etc.).
+            4.  Creates `dialectic_sessions` record (linking `prompt_template_id_used`, etc.).
                 *   During creation, an `associated_chat_id` (UUID) should be generated by `dialectic-service` or assigned if the dialectic originates from an existing chat. This ID will be used for all subsequent calls to the `/chat` Edge Function for this session.
             5.  Creates `dialectic_session_models` records from `selectedModelCatalogIds`.
             6.  Sets `dialectic_sessions.status` to `pending_thesis`.
-            7.  Constructs `current_stage_seed_prompt` for the session by rendering the chosen thesis prompt template with the project's `initial_user_prompt`. Store this in `dialectic_sessions.current_stage_seed_prompt`.
+            7.  Constructs `seed_prompt_url` for the session by rendering the chosen thesis prompt template with the project's `initial_user_prompt`. Store the combined user prompt, prompt template, and any provided template overlays into a file in the storage bucket using the file/folder schema and link it to the session record in `dialectic_sessions.seed_prompt_url`.
             8.  The `startSession` action concludes after successfully setting up the session. The generation of thesis contributions will be triggered by a separate user action from the frontend, which will then call the `generateContributions` action.
         *   `[ ] 1.2.1.7` (GREEN)  
         *   `[ ] 1.2.1.8 [REFACTOR]` Review.
@@ -640,16 +672,16 @@ The implementation plan uses the following labels to categorize work steps:
 *   `[✅] 1.2.4 [BE]` `dialectic-service` Action: `generateContributions` (triggered by user action from frontend after `startSession` is complete)
     *   `[✅] 1.2.4.1 [TEST-INT]` Write tests (input: `sessionId`; auth: user; verifies contributions are created and session status updated). (RED -> 🚧 Tests pass for basic success response, full contribution verification pending actual implementation)
     *   `[✅] 1.2.4.2` Implement logic: (🚧 Placeholder implementation returns success structure; core logic for model calls and contribution saving pending)
-        1.  `[✅]` Fetch `dialectic_session` (including `associated_chat_id`), its `dialectic_session_models`, and the `current_stage_seed_prompt`. Ensure user owns the project/session.
+        1.  `[✅]` Fetch `dialectic_session` (including `associated_chat_id`), its `dialectic_session_models`, and the `seed_prompt_url`. Ensure user owns the project/session.
         2.  `[✅]` Verify session status is `pending_thesis`. Update to `generating_contribution`. Log this transition.
         3.  `[✅]` For each `session_model` representing an AI provider selected for this session (retrieved from `dialectic_session_models`):
-            *   `[✅]` Call `callUnifiedAIModel` with that specific `session_model.model_id` (which is an `ai_providers.id`), the `current_stage_seed_prompt`, and the `session.associated_chat_id`.
-            *   `[✅]` Save result in `dialectic_contributions` (stage 'thesis', `actual_prompt_sent` = `current_stage_seed_prompt`, store costs, tokens from `UnifiedAIResponse`, ensured `content_storage_bucket` is NOT NULL and correctly populated along with path, mime type, and size). If a model call fails, record the error in the contribution and proceed with other models. (Refined error handling in contribution evolving)
+            *   `[✅]` Call `callUnifiedAIModel` with that specific `session_model.model_id` (which is an `ai_providers.id`), the `seed_prompt_url`.
+            *   `[✅]` Save result in `dialectic_contributions` (stage 'thesis', `actual_prompt_sent` = the file content from the file referenced at `seed_prompt_url`, store costs, tokens from `UnifiedAIResponse`, ensured `content_storage_bucket` is NOT NULL and correctly populated along with path, mime type, and size). If a model call fails, record the error in the contribution and proceed with other models. (Refined error handling in contribution evolving)
         4.  `[✅]` Update `dialectic_sessions.status` to `thesis_complete`. Log this transition. (Consider `thesis_complete_with_errors` status)
         5.  `[✅]` This action concludes. The next stage (Antithesis) will be triggered by a separate user action.
     *   `[✅] 1.2.4.3` (GREEN)
     *   `[✅] 1.2.4.4 [REFACTOR]` Review error handling for individual model failures and overall session status updates. (GREEN)
-    *   `[✅] 1.2.4.5 [TEST-INT]` Run tests.
+    *   `[✅] 1.2.4.5 [TEST-INT]` Run tests. (Tests should verify `seed_prompt_url` in `dialectic_contributions` points to the correct stage-specific seed file.)
 *   `[✅] 1.2.4.6 [BE]` Implement retry logic (e.g., 3 attempts with exponential backoff) for `callUnifiedAIModel` within `generateContributions`. (GREEN)
 *   `[✅] 1.2.4.7 [BE]` Ensure `contentType` is not hardcoded and `getExtensionFromMimeType` is used for storage paths. (GREEN)
     *   `[✅] 1.2.4.7.1 [BE]` Create `path_utils.ts` with `getExtensionFromMimeType` function. (GREEN)
@@ -683,6 +715,101 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 1.2.8.3 [TEST-INT]` Run tests.
 *   `[ ] 1.2.9 [DOCS]` Document the `dialectic-service` Edge Function, its actions, inputs, outputs, and error handling strategies in a relevant README (e.g., `supabase/functions/dialectic-service/README.md`).
 *   `[ ] 1.2.10 [COMMIT]` feat(be): implement dialectic-service edge function with core actions
+
+### 1.2.Y [BE/DB/API/STORE/GITHUB] Backend for Enhanced Contribution Interaction (User Edits & Responses, and Next Stage Seeding)
+*   **Objective:** Implement backend logic to allow users to directly edit AI-generated contributions and provide structured textual responses to them. These user inputs will then be consolidated and used to form the seed prompt for the subsequent stage in the dialectic process, ensuring user guidance is deeply integrated. All new artifacts will be stored according to the established file/folder structure and included in GitHub exports.
+*   `[ ] 1.2.Y.1 [DB]` Update `dialectic_contributions` Table for Storing User Edits:
+    *   `[ ] 1.2.Y.1.1 [TEST-UNIT]` Write migration test to add new columns to `dialectic_contributions`:
+        *   `edit_version` (INTEGER, NOT NULL, default 1)
+        *   `is_latest_edit` (BOOLEAN, NOT NULL, default TRUE)
+        *   `original_model_contribution_id` (UUID, FK to `dialectic_contributions.id` ON DELETE SET NULL, nullable)
+        *   (Ensure `user_id` can store the ID of the editing user).
+        *   (Ensure `content_storage_path` and related fields are used for the edited content). (RED)
+    *   `[ ] 1.2.Y.1.2` Create Supabase migration script to add/modify these columns. (GREEN)
+    *   `[ ] 1.2.Y.1.3 [REFACTOR]` Review the migration script.
+    *   `[ ] 1.2.Y.1.4 [TEST-UNIT]` Apply migration and run the migration test. (GREEN)
+*   `[ ] 1.2.Y.1.A [DB]` **Optional - Create `dialectic_hitl_feedback` Table**
+    *   `[ ] 1.2.Y.1.A.1 [TEST-UNIT]` Write migration test for `dialectic_hitl_feedback` table. (RED)
+    *   `[ ] 1.2.Y.1.A.2` Define columns: `id` (UUID), `session_id` (UUID, FK), `contribution_id` (UUID, FK to `dialectic_contributions.id`, nullable if feedback is general to stage), `user_id` (UUID, FK), `feedback_type` (TEXT, e.g., 'text_response', 'rating_stars', 'thumb_reaction'), `feedback_value_text` (TEXT, nullable), `feedback_value_structured` (JSONB, nullable, for ratings, etc.), `created_at`.
+    *   `[ ] 1.2.Y.1.A.3` Create Supabase migration script. (GREEN)
+    *   `[ ] 1.2.Y.1.A.4 [TEST-UNIT]` Run migration test. (GREEN)
+*   `[ ] 1.2.Y.2 [BE]` `dialectic-service` Action: `saveContributionEdit`
+    *   `[ ] 1.2.Y.2.1 [TEST-INT]` Write integration tests for `saveContributionEdit` (Input: `originalContributionIdToEdit`, `editedContentText`; Auth: user owns session; Output: new `DialecticContribution` object representing the edit). (RED)
+        *   Verifies a new row is created in `dialectic_contributions`.
+        *   Verifies the new row has `edit_version` incremented, `is_latest_edit=TRUE`, `original_model_contribution_id` set to `originalContributionIdToEdit`, `user_id` of editor.
+        *   Verifies `editedContentText` is saved to a new file in storage, and `content_storage_path` in the new row points to it.
+        *   Verifies the *previous* version (identified by `originalContributionIdToEdit` and its latest `edit_version`) has `is_latest_edit` set to `FALSE` and its `updated_at` field is touched.
+    *   `[ ] 1.2.Y.2.2` Implement the `saveContributionEdit` action:
+        *   Authenticate the user and verify ownership of the session associated with the `contributionId`.
+        *   Fetch the contribution record being edited (the current `is_latest_edit=TRUE` version for the given `originalContributionIdToEdit` or the `contributionIdToEdit` itself if it's the first edit).
+        *   Save `editedContentText` to a new file in Supabase Storage (e.g., `projects/{project_id}/sessions/{session_id}/iteration_{N}/{stage_slug}/{new_edit_contribution_id}.md`).
+        *   Create a new `dialectic_contributions` record:
+            *   Copy relevant fields from original (e.g., `session_id`, `model_id`, `stage`, `iteration_number`, `prompt_template_id_used`, `seed_prompt_url`).
+            *   Set `content_storage_path` to the new file, update `content_mime_type`, `content_size_bytes`.
+            *   Set `edit_version` to `original.edit_version + 1`.
+            *   Set `is_latest_edit = TRUE`.
+            *   Set `original_model_contribution_id` to `originalContributionIdToEdit` (or `original.original_model_contribution_id` if it exists, otherwise `original.id`).
+            *   Set `user_id` to the current authenticated user.
+        *   Update the previous version of this contribution: set `is_latest_edit = FALSE` and touch `updated_at`.
+    *   `[ ] 1.2.Y.2.3 [TEST-INT]` Run `saveContributionEdit` integration tests. (GREEN)
+*   `[ ] 1.2.Y.3 [BE]` `dialectic-service` Action: `submitStageResponsesAndPrepareNextSeed`
+    *   `[ ] 1.2.Y.3.1 [TEST-INT]` Write integration tests for `submitStageResponsesAndPrepareNextSeed` (Input: `sessionId`, `currentStageSlug` (e.g., \"hypothesis\"), `currentIterationNumber`, `responses: [{originalContributionId: string, responseText: string}]`; Auth: user owns session). Verify: (RED)
+        *   For each response in the payload, a `dialectic_hitl_feedback` record is created (type 'text_response').
+        *   A `user_consolidated_feedback.md` file is correctly generated and stored in Supabase Storage at `projects/{project_id}/sessions/{session_id}/iteration_{N}/{currentStageSlug}/user_feedback_{currentStageSlug}.md`.
+        *   The seed prompt for the *next* stage (e.g., `antithesis/seed_prompt.md`) is correctly compiled and stored. This compilation includes:
+            *   Content of AI contributions from `currentStageSlug` (fetching the `is_latest_edit=TRUE` version for each `original_model_contribution_id`).
+            *   Content of the `user_consolidated_feedback.md` just created.
+            *   The appropriate system prompt template and settings for the *next* stage.
+        *   The `dialectic_sessions.current_stage_name` (or similar field indicating active stage) is advanced if applicable (e.g., from "THESIS_COMPLETE" to "PENDING_ANTITHESIS").
+    *   `[ ] 1.2.Y.3.2` Implement the `submitStageResponsesAndPrepareNextSeed` action in `supabase/functions/dialectic-service/index.ts` (or a dedicated handler):
+        1.  Authenticate user and verify ownership of `sessionId`.
+        2.  **Store Individual User Responses:** For each item in the `responses` array:
+            *   Create a `dialectic_hitl_feedback` record: `contribution_id` is `item.originalContributionId` (latest edit), `feedback_type = 'text_response'`, `feedback_value_text = item.responseText`.
+        3.  **Concatenate All User Responses for the Current Stage:**
+            *   Initialize an empty Markdown string for concatenated feedback.
+            *   For each item in the `responses` payload:
+                *   Fetch the latest edit of `dialectic_contributions` for `item.originalContributionId` to get model name or other context for the header.
+                *   Append a section to the Markdown string, e.g.: `### Response to Contribution by [Model Name/ID] (Contribution ID: [item.originalContributionId]):\n\n[item.responseText]\n\n---\n`.
+        4.  **Store Concatenated User Responses File (`user_consolidated_feedback.md`):**
+            *   Define `storageBucket = \"dialectic-contributions\"`.
+            *   Construct `filePath` using `currentStageSlug`: `projects/{project_id}/sessions/{session_id}/iteration_{currentIterationNumber}/{currentStageSlug}/user_feedback_{currentStageSlug}.md`.
+            *   Use the shared `uploadToStorage` utility to save the concatenated Markdown string to this `filePath` in the `storageBucket`.
+        5.  **Prepare Full Seed Input (`seed_prompt.md`) for the Next Stage:**
+            *   Determine `nextStageSlug` (helper function: e.g., "hypothesis" -> "antithesis").
+            *   Fetch all relevant AI contributions from the `currentStageSlug` and `currentIterationNumber`. For each unique `original_model_contribution_id`, fetch the content of its `is_latest_edit=TRUE` version.
+            *   Fetch the content of the `user_consolidated_feedback.md` file just created.
+            *   Retrieve the system prompt template for `nextStageSlug` and relevant `system_settings.json` from `.../iteration_{N}/0_seed_inputs/`.
+            *   Construct the complete seed prompt for the `nextStageSlug`. This prompt will combine:
+                *   The original/edited AI contributions from the current stage (formatted nicely).
+                *   The full content of `user_consolidated_feedback.md`.
+                *   The system prompt template text for `nextStageSlug`, filled with the above.
+            *   Define `nextStageSeedPath = projects/{project_id}/sessions/{session_id}/iteration_{currentIterationNumber}/{nextStageSlug}/seed_prompt.md`.
+            *   Use `uploadToStorage` to save this fully constructed prompt to `nextStageSeedPath` in the `storageBucket`.
+        6.  Update `dialectic_sessions.status` (e.g., to `pending_{nextStageSlug}`) or `dialectic_sessions.current_stage_name` to `nextStageSlug`.
+        7.  Return a success status, and potentially the storage paths of the created `user_consolidated_feedback.md` and the new `seed_prompt.md` for the next stage.
+    *   `[ ] 1.2.Y.3.3 [TEST-INT]` Run `submitStageResponsesAndPrepareNextSeed` integration tests. (GREEN)
+*   `[ ] 1.2.Y.4 [BE]` Modify Core AI Contribution Generation Logic (e.g., `generateContributions`):
+    *   `[ ] 1.2.Y.4.1` Update `generateContributions(sessionId, stageSlugToGenerate, iterationNumber)`:
+        *   It derives the required seed prompt path: `projects/{project_id}/sessions/{session_id}/iteration_{iterationNumber}/{stageSlugToGenerate}/seed_prompt.md`.
+        *   It fetches content from this path to use as the prompt for `callUnifiedAIModel`.
+        *   When saving new AI contributions, the `seed_prompt_url` field in `dialectic_contributions` is set to this path.
+        *   New AI contributions are saved with `edit_version = 1`, `is_latest_edit = TRUE`, `original_model_contribution_id = NULL` (or points to self).
+    *   `[ ] 1.2.Y.4.2 [TEST-INT]` Update/Write integration tests for these generation actions to ensure they correctly use the seed prompt fetched from the specified storage path.
+*   `[ ] 1.2.Y.5 [API/STORE]` Add/Update API Client Methods and Store Thunks:
+    *   `[ ] 1.2.Y.5.1 [API]` Define necessary request/response types (e.g., `SaveContributionEditPayload`, `SaveContributionEditResponse`, `SubmitStageResponsesPayload`, `SubmitStageResponsesResponse`) in `packages/types/src/dialectic.types.ts`.
+    *   `[ ] 1.2.Y.5.2 [API]` Add `saveContributionEdit(payload: SaveContributionEditPayload): Promise<ApiResponse<DialecticContribution>>` and `submitStageResponsesAndPrepareNextSeed(payload: SubmitStageResponsesPayload): Promise<ApiResponse<SubmitStageResponsesResponse>>` to `DialecticAPIInterface`.
+    *   `[ ] 1.2.Y.5.3 [TEST-UNIT]` Write unit tests for these new API adapter methods in `packages/api/src/dialectic.api.test.ts`.
+    *   `[ ] 1.2.Y.5.4` Implement the new adapter methods in `packages/api/src/dialectic.api.ts`.
+    *   `[ ] 1.2.Y.5.5 [STORE]` Define new state properties in `DialecticStateValues` if needed (e.g., for loading/error states of these new actions).
+    *   `[ ] 1.2.Y.5.6 [STORE]` Implement new async thunks in `dialecticStore.ts` for `saveContributionEdit` and `submitStageResponsesAndPrepareNextSeed`. Ensure they call the API, handle loading states, manage errors, and update the `currentProjectDetail.sessions[...].contributions` and session status appropriately (e.g., by refetching or strategically merging new/updated contribution data).
+    *   `[ ] 1.2.Y.5.7 [TEST-UNIT]` Write unit tests for these new store thunks and any associated reducer logic.
+*   `[ ] 1.2.Y.6 [GITHUB]` Update GitHub Export Logic (Referencing Sections `1.6`, `2.5`, `3.5` for context and full file path structure):
+    *   `[ ] 1.2.Y.6.1` When exporting AI-generated contribution files (e.g., `{repo_root}/.../{project_name_slug}/session_{session_id_short}/iteration_{N}/{stage_number}_{stage_slug}/{model_name_slug}_{stage_suffix}.md`):
+        *   The content for the exported file must be from the `dialectic_contributions` row that has `is_latest_edit = TRUE` for that specific model's contribution line in that stage/iteration.
+    *   `[ ] 1.2.Y.6.2` The `user_consolidated_feedback.md` file must be exported to `{repo_root}/.../{project_name_slug}/session_{session_id_short}/iteration_{N}/{stage_number}_{stage_slug}/user_feedback_{stage_slug}.md`.
+    *   `[ ] 1.2.Y.6.3` The stage-specific `seed_prompt.md` file (the one used to generate contributions for a stage) must be correctly exported to its storage path: `{repo_root}/.../{project_name_slug}/session_{session_id_short}/iteration_{N}/{stage_number}_{stage_slug}/seed_prompt.md`.
+*   `[ ] 1.2.Y.7 [COMMIT]` feat(be,db,api,store,github): Implement contribution editing, structured user responses, next-stage seed preparation, and update GitHub export logic.
+
 
 ### 1.3 API Client (`@paynless/api`)
 *   `[✅] 1.3.1 [API]` Define types in `packages/types/src/dialectic.types.ts` for Dialectic Engine.
@@ -831,28 +958,115 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅] 1.5.5.3` (GREEN)
     *   `[ ] 1.5.5.4 [REFACTOR]` Review.
     *   `[✅] 1.5.5.5 [TEST-UNIT]` Run tests.
-*   `[ ] 1.5.6 [UI]` Create `DialecticSessionDetailsPage` component (route e.g., `/dialectic/:projectId/session/:sessionId`). This will be the main view for Thesis/Antithesis.
-    *   `[ ] 1.5.6.1 [TEST-UNIT]` Write tests (displays session description, status; separate views/tabs for Thesis and Antithesis; displays contributions for each stage, grouped by model; loading/error states). Mock store. (RED)
-    *   `[ ] 1.5.6.2` Implement component:
-        *   Extracts `projectId`, `sessionId` from params.
-        *   Uses `selectCurrentProjectDetails` to find the specific session and its contributions.
-        *   (If project details not loaded or session not found, dispatch `fetchDialecticProjectDetails`).
-        *   Displays overall session status (e.g., 'Generating Thesis', 'Thesis Complete', 'Generating Antithesis', 'Antithesis Complete').
-        *   **Thesis View:**
-            *   For each model in the session, display its 'thesis' stage contribution content.
-            *   Include model name, timestamp, cost/tokens if available.
-        *   **Antithesis View:**
-            *   For each model in the session (critiquer):
-                *   List the 'thesis' contributions it critiqued.
-                *   Display its 'antithesis' stage critique content for each.
-                *   Link back to the original thesis contribution being critiqued.
-        *   Basic cost display for the session (sum of contribution costs).
-        *   Ensure a11y principles are applied (e.g., tab navigation, screen reader compatibility).
-    *   `[✅] 1.5.6.3` (GREEN)
-    *   `[✅] 1.5.6.4 [REFACTOR]` Review layout and data presentation.
-    *   `[✅] 1.5.6.5 [TEST-UNIT]` Run tests.
+*   `[ ] 1.5.6 [UI]` **Refactor `DialecticSessionDetailsPage` for Enhanced Modularity, Interaction, and Alignment with Coding Standards** (route e.g., `/dialectic/:projectId/session/:sessionId`)
+    *   **Objective:** Overhaul the `DialecticSessionDetailsPage` to use independent, self-managing card components for session information, stage tabs, and contribution displays. Enable users to directly edit AI contributions and provide structured responses, with these inputs feeding into subsequent dialectic stages. This addresses departures from coding standards by promoting component reusability and clear separation of concerns.
+    *   `[ ] 1.5.6.1 [UI/REFACTOR]` **Overall `DialecticSessionDetailsPage` Structure** (`apps/web/src/pages/dialectic/[projectId]/session/[sessionId].tsx`)
+        *   `[ ] 1.5.6.1.1 [TEST-UNIT]` Update/Write tests for `DialecticSessionDetailsPage.tsx`. Verify it correctly integrates new child card components: `SessionInfoCard`, multiple `StageTabCard` instances (one per stage), and `SessionContributionsDisplayCard`. Ensure tests cover props passing from page to child components and basic layout rendering. (RED)
+        *   `[ ] 1.5.6.1.2` Modify `DialecticSessionDetailsPage.tsx` implementation:
+            *   Continues to extract `projectId` and `sessionId` from route parameters.
+            *   Dispatches `fetchDialecticProjectDetails(projectId)` on mount if project details (including the specific session) are not already loaded or are considered stale. Uses selectors to retrieve data.
+            *   Uses selectors like `selectProjectById(projectId)` and `selectSessionById(sessionId)` (or `selectSessionFromProject(project, sessionId)`).
+            *   Manages page-level state for the `activeStageSlug` (e.g., \"hypothesis\", \"antithesis\"), defaulting to the session's current stage slug or \"hypothesis\".
+            *   Renders a `SessionInfoCard` component at the top, passing `projectId` and `sessionId` as props.
+            *   Iterates through the defined dialectic stages applicable to the session (e.g., Thesis, Antithesis, Synthesis, Parenthesis, Paralysis, based on session type or progress). For each stage, it renders a `StageTabCard` component. Props passed to `StageTabCard` include `sessionId`, a `stageDefinition` object (e.g., `{ name: \"THESIS\", displayName: \"Thesis\", stageNumber: 1, slug: \"hypothesis\" }`), a boolean `isActiveStage` (true if this stage's slug matches `activeStageSlug`), and an `onSelectStage` callback function that updates the page's `activeStageSlug` state.
+            *   Renders a `SessionContributionsDisplayCard` component, passing `sessionId` and the current `activeStageSlug` as props.
+            *   Ensures overall page accessibility, including keyboard navigation for stage tabs and ARIA attributes where appropriate.
+        *   `[ ] 1.5.6.1.3 [TEST-UNIT]` Run tests for `DialecticSessionDetailsPage.tsx` to ensure correct integration and behavior. (GREEN)
+    *   `[ ] 1.5.6.2 [UI]` **NEW Create `SessionInfoCard` Component** (`apps/web/src/components/dialectic/SessionInfoCard.tsx`)
+        *   `[ ] 1.5.6.2.1 [TEST-UNIT]` Write unit tests for `SessionInfoCard.tsx`. Test rendering of session description, iteration count, status (derived from `projectId` and `sessionId` props via selectors) and specifically test the fetching and rendering logic for the iteration\'s "initial user prompt" (`projects/{projectId}/sessions/{sessionId}/iteration_{session.current_iteration_number}/0_seed_inputs/user_prompt.md`), including loading and error states. (RED)
+        *   `[ ] 1.5.6.2.2` Implement `SessionInfoCard.tsx`:
+            *   Accepts props: `projectId: string`, `sessionId: string`.
+            *   Uses store selectors (`selectSessionById(sessionId)`, `selectProjectById(projectId)`) to get session and project data.
+            *   Displays key session-level information: description, iteration count, status.
+            *   **Loads and displays the iteration\'s "initial user prompt":**
+                *   Constructs storage path: `projects/{projectId}/sessions/{sessionId}/iteration_{session.current_iteration_number}/0_seed_inputs/user_prompt.md`.
+                *   Uses a store thunk (e.g., `fetchFileContent`) to fetch content from Supabase Storage.
+                *   Renders the fetched Markdown content using the shared `MarkdownRenderer` component.
+                *   Implements appropriate loading (e.g., shimmer/spinner) and error (e.g., message) states while fetching the prompt content.
+            *   Ensure the component is accessible.
+        *   `[ ] 1.5.6.2.3 [TEST-UNIT]` Run `SessionInfoCard.tsx` unit tests. (GREEN)
+    *   `[ ] 1.5.6.3 [UI]` **NEW Create `StageTabCard` Component** (`apps/web/src/components/dialectic/StageTabCard.tsx`)
+        *   `[ ] 1.5.6.3.1 [TEST-UNIT]` Write unit tests for `StageTabCard.tsx`. Test with various `stageDefinition` props (e.g., for \"THESIS\" with `slug: "hypothesis"`), `isActiveStage` true/false, `sessionId` prop, and the `onSelectStage` callback invocation with the `slug`. Test visibility and interaction of the \"Generate Contributions\" button based on session status, active stage, and existence of the stage's seed prompt file. (RED)
+        *   `[ ] 1.5.6.3.2` Implement `StageTabCard.tsx`:
+            *   Accepts props: `sessionId: string`, `stageDefinition: { name: string, displayName: string, stageNumber: number, slug: string }`, `isActiveStage: boolean`, `onSelectStage: (stageSlug: string) => void`.
+            *   Uses `selectSessionById(sessionId)` selector.
+            *   Displays the `stageDefinition.displayName` (e.g., \"Thesis\").
+            *   Visually indicates if it\'s the `isActiveStage` (e.g., different background, border).
+            *   The entire card should be clickable, invoking `props.onSelectStage(stageDefinition.slug)`.
+            *   **\"Generate/Regenerate Contributions\" Button:**
+                *   This button is displayed if `isActiveStage` is true AND the session\'s current status permits generation for this `stageDefinition.slug` (e.g., for \"hypothesis\", if `session.status` is `pending_hypothesis` or if regeneration is allowed).
+                *   **Enablement also depends on the existence of the stage's seed prompt file**: `projects/{projectId}/sessions/{sessionId}/iteration_{session.iteration_number}/{stageDefinition.slug}/seed_prompt.md`. (Component checks this, possibly via a new selector or a lightweight HEAD request/metadata check thunk).
+                *   Button text: \"Generate [Stage Display Name] Contributions\" or \"Regenerate...\".
+                *   On click, dispatches the relevant backend action thunk (e.g., `generateContributions` from store, ensuring payload includes `sessionId`, `stageDefinition.slug`, `session.current_iteration_number`).
+                *   Manages its own loading state for this generation action (e.g., button disabled with a spinner, displays error message from the thunk if generation fails).
+                *   If contributions for this stage/iteration already exist (check store), button might change to "Regenerate..." or be disabled unless explicit regeneration is allowed.
+                *   If the user loads a stage that has incomplete preceding stages, warn the user that the stage is not ready, and advise them of the next stage to run first. 
+            *   Ensure the component (especially the button and clickable area) is accessible.
+        *   `[ ] 1.5.6.3.3 [TEST-UNIT]` Run `StageTabCard.tsx` unit tests. (GREEN)
+    *   `[ ] 1.5.6.4 [UI]` **NEW Create `SessionContributionsDisplayCard` Component** (`apps/web/src/components/dialectic/SessionContributionsDisplayCard.tsx`)
+        *   `[ ] 1.5.6.4.1 [TEST-UNIT]` Write unit tests for `SessionContributionsDisplayCard.tsx`. Test filtering of contributions based on `activeStageSlug` and `session.current_iteration_number`, ensuring only latest edits are shown per original contribution. Test layout of child `GeneratedContributionCard` components. Test the state management for responses (keyed by `original_model_contribution_id`) and the functionality of the \"Submit Responses for [Active Stage Name] & Prepare Next Stage\" button, including thunk dispatch with correct payload. (RED)
+        *   `[ ] 1.5.6.4.2` Implement `SessionContributionsDisplayCard.tsx`:
+            *   Accepts props: `sessionId: string`, `activeStageSlug: string`.
+            *   Uses `selectSessionById(sessionId)` and then filters its contributions:
+                *   Select contributions matching `activeStageSlug` and `session.current_iteration_number`.
+                *   For each unique `original_model_contribution_id` within these, select the one with `is_latest_edit=TRUE`.
+            *   Manages local component state for user responses to each displayed contribution: `stageResponses: { [originalModelContributionIdOrContributionId: string]: string }`. This state is updated by callbacks from child `GeneratedContributionCard` components.
+            *   Renders a flex-grid of `GeneratedContributionCard` components. For each latest contribution version, it passes its `contribution.id` (which is the ID of the latest edit row, or the original AI row if no edits), the `original_model_contribution_id` (or `contribution.id` if it's the first version) as `originalModelContributionIdForResponse`, the current `responseText` from `stageResponses` for that conceptual contribution, and an `onResponseChange` callback function.
+            *   **\"Submit Responses for [Active Stage Name] & Prepare Next Stage\" Button:**
+                *   This button becomes enabled when the user has provided some input in any `stageResponses` text area for the current stage OR if no responses are mandatory to proceed.
+                *   On click, it constructs the `responses` array for the thunk: `[{originalContributionId: string, responseText: string}]` using data from `stageResponses`.
+                *   Dispatches the `submitStageResponsesAndPrepareNextSeed` thunk with `sessionId`, `activeStageSlug`, `session.current_iteration_number`, and the constructed `responses` array.
+                *   Manages its own loading/error states for this submission. On successful submission, it should clear the `stageResponses` local state and provide user feedback (e.g., \"Responses submitted, next stage is being prepared.\"). The UI might then automatically switch to/enable the next stage tab.
+            *   Ensure accessibility of the grid and the submit button.
+        *   `[ ] 1.5.6.4.3 [TEST-UNIT]` Run `SessionContributionsDisplayCard.tsx` unit tests. (GREEN)
+    *   `[ ] 1.5.6.5 [UI]` **NEW Create `GeneratedContributionCard` Component** (`apps/web/src/components/dialectic/GeneratedContributionCard.tsx`)
+        *   `[ ] 1.5.6.5.1 [TEST-UNIT]` Write unit tests for `GeneratedContributionCard.tsx`. Test:
+            *   Correct rendering of content (original vs. edited, including fetching from storage using `contributionId` prop and selector).
+            *   Uses selectors to get the full `contribution` object by ID.
+            *   Toggle for edit mode (`isEditing` state).
+            *   Functionality of \"Save\" and \"Discard\" buttons for edits, including thunk dispatch for \"Save\" (`saveContributionEdit` with `originalContributionIdToEdit`).
+            *   Integration and functionality of the `TextInputArea` for user responses.
+            *   `onResponseChange` callback invocation with `originalModelContributionIdForResponse`.
+            *   Display of the guidance message. (RED)
+        *   `[ ] 1.5.6.5.2` Implement `GeneratedContributionCard.tsx`:
+            *   Accepts props: `contributionId: string` (ID of the specific contribution version to display, typically the latest), `originalModelContributionIdForResponse: string` (ID of the base AI contribution this response is for), `initialResponseText: string | undefined`, `onResponseChange: (originalModelContributionIdForResponse: string, responseText: string) => void`.
+            *   Uses `selectContributionById(contributionId)` selector to get the `contribution` object.
+            *   Manages its own local component state for:
+                *   `isEditing: boolean` (defaults to false).
+                *   `editedContentText: string` (initialized when editing starts).
+                *   `isLoadingContent: boolean` (for fetching original content via store, if not already cached).
+                *   `contentError: string | null`.
+                *   `displayContent: string` (the content to show, from store/cache or edited).
+            *   **Content Display & Fetching Logic:**
+                *   On mount or when `contributionId` prop changes:
+                    *   If `contribution.content_storage_path` exists (obtained via selector using `contributionId`), dispatch `fetchContributionContent(contributionId)` thunk (from `1.1.5.C.3`) to load content from storage if not already in cache. Update `displayContent`, `isLoadingContent`, `contentError` based on thunk/cache state.
+                *   Renders `displayContent` (from store/cache) using the shared `MarkdownRenderer`. Shows loading/error state.
+                *   Clearly indicates if the displayed content is user-edited (e.g., a small badge or note, based on `contribution.edit_version > 1`).
+            *   **Direct Editing Feature:**
+                *   \"Edit\" button:
+                    *   Visible if not `isEditing`.
+                    *   Sets `isEditing` to true.
+                    *   Initializes `editedContentText` with the current `displayContent`.
+                *   If `isEditing` is true:
+                    *   Render a `Textarea` (or `TextInputArea` in raw text mode) bound to `editedContentText`.
+                    *   \"Save\" button: Dispatches `saveContributionEdit` thunk with `originalContributionIdToEdit: contribution.original_model_contribution_id || contribution.id` and `editedContentText`. On success, sets `isEditing` to false. The component should re-render with the new latest version from the store.
+                    *   \"Discard\" button: Sets `isEditing` to false, discards changes by resetting `editedContentText` (no API call).
+                *   Displays a guiding message near the edit controls: \"Recommended for minor corrections or quick fixes. For substantive dialogue or building upon this idea, please use the response area below.\"
+            *   **User Response Area (Below Content/Edit section):**
+                *   Integrates a `TextInputArea` component (with raw text and markdown preview tabs).
+                *   The `TextInputArea`\'s `value` is controlled by `props.initialResponseText` (or internal state if preferred, synced with prop).
+                *   The `TextInputArea`\'s `onChange` callback invokes `props.onResponseChange(props.originalModelContributionIdForResponse, newResponseText)`.
+            *   Ensure all interactive elements (buttons, text areas) are accessible.
+        *   `[ ] 1.5.6.5.3 [TEST-UNIT]` Run `GeneratedContributionCard.tsx` unit tests. (GREEN)
+    *   `[ ] 1.5.6.6 [REFACTOR]` Conduct a thorough review of the entire `DialecticSessionDetailsPage` and its new child components (`SessionInfoCard`, `StageTabCard`, `SessionContributionsDisplayCard`, `GeneratedContributionCard`). Focus areas:
+        *   Confirm clear separation of concerns and well-defined responsibilities for each component.
+        *   Optimize data flow from the Zustand store and minimize unnecessary prop drilling.
+        *   Ensure a consistent and intuitive user experience for viewing content, editing contributions, and providing responses.
+        *   Verify robust error handling and loading state management across all new components and their interactions with thunks.
+        *   Check for adherence to accessibility best practices.
+    *   `[ ] 1.5.6.7 [COMMIT]` feat(ui): Refactor DialecticSessionDetailsPage with modular cards, implement contribution editing & user response capabilities.
 *   `[✅] 1.5.7 [UI]` Add navigation link to `/dialectic` in the main app layout (e.g., sidebar, header).
-*   `[🚧] 1.5.8 [COMMIT]` feat(ui): add core pages and navigation for dialectic engine
+*   `[🚧] 1.5.8 [COMMIT]` feat(ui): add core pages and navigation for dialectic engine (This commit message will be superseded by `1.5.6.7` upon completion of the refactor).
 
 ### Fixes for Dialectic flow
 *   [✅] 404 err on file upload for project creation
@@ -907,7 +1121,8 @@ The implementation plan uses the following labels to categorize work steps:
 *   [✅] Provide default values (or null) for these fields if the user doesn't supply them.
 *   [✅] Render the entire prompt payload for the user's inspection before sending to the backend (The compiled prompt for an agent will be linked via `dialectic_contributions.seed_prompt_url`)
 *   [✅] Render the entire prompt cost estimate for the user's inspection before sending to the backend
-*   [✅] Fix dialectic_sessions table to link to the current_stage_seed_prompt document as a file stored in the bucket **(Replaced by `user_input_reference_url` in `dialectic_sessions` for user input, and `seed_prompt_url` in `dialectic_contributions` for agent input)**
+*   `[✅]` Fix `dialectic_sessions` table to link to the `seed_prompt_url` document as a file stored in the bucket **(Replaced by `user_input_reference_url` in `dialectic_sessions` for user input, and `seed_prompt_url` in `dialectic_contributions` for agent input. The following sections will detail how user feedback and edits contribute to forming the `seed_prompt_url` for subsequent stages.)** 
+*   [ ]     User Input Reference URL is for the user to submit additional documents matching the overlay values from the domain_prompt_overlay value listed immediately above. The app will eventually be updated to permit users to attach these additional files for more accurate constraints and expectation setting for the AI completion target.  
 
 ### 1.X [REFACTOR] Refactor Project Creation Flow for Integrated File Handling
 
@@ -976,9 +1191,9 @@ The implementation plan uses the following labels to categorize work steps:
             └── iteration_{N}/        (N being the iteration number, e.g., "iteration_1")
                 ├── 0_seed_inputs/
                 │   ├── user_prompt.md  (The specific prompt that kicked off this iteration)
-                │   ├── system_settings.json          (Models, core prompt templates used for this iteration)
-                │   └── seed_prompt.md  (The actual input prompt sent to the model for completion)
+                │   └── system_settings.json          (Models, core prompt templates used for this iteration)
                 ├── 1_hypothesis/
+                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
                 │   ├── {model_name_slug}_hypothesis.md (Contains YAML frontmatter + AI response)
                 │   ├── ... (other models' hypothesis outputs)
                 │   ├── user_feedback_hypothesis.md   (User's feedback on this stage)
@@ -986,10 +1201,12 @@ The implementation plan uses the following labels to categorize work steps:
                 │       └── {model_name_slug}_prd_hypothesis.md
                 │       └── ...
                 ├── 2_antithesis/
+                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
                 │   ├── {critiquer_model_slug}_critique_on_{original_model_slug}.md
                 │   ├── ...
                 │   └── user_feedback_antithesis.md
                 ├── 3_synthesis/
+                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
                 │   ├── {model_name_slug}_synthesis.md
                 │   ├── ...
                 │   ├── user_feedback_synthesis.md
@@ -998,6 +1215,7 @@ The implementation plan uses the following labels to categorize work steps:
                 │       ├── {model_name_slug}_business_case_synthesis.md
                 │       └── ...
                 ├── 4_parenthesis/
+                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
                 │   ├── {model_name_slug}_parenthesis.md
                 │   ├── ...
                 │   ├── user_feedback_parenthesis.md
@@ -1005,6 +1223,7 @@ The implementation plan uses the following labels to categorize work steps:
                 │       └── {model_name_slug}_implementation_plan_parenthesis.md
                 │       └── ...
                 ├── 5_paralysis/
+                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
                 │   ├── {model_name_slug}_paralysis.md
                 │   ├── ...
                 │   ├── user_feedback_paralysis.md
@@ -1013,590 +1232,3 @@ The implementation plan uses the following labels to categorize work steps:
                 │       ├── project_checklist.csv
                 │       └── ... (other formats like Jira importable CSV/JSON)
                 └── iteration_summary.md (Optional: An AI or user-generated summary of this iteration's key outcomes and learnings)
-
-### 1.6 Basic GitHub Integration (Backend & API)
-*   `[ ] 1.6.1 [CONFIG]` Add new environment variables if needed for GitHub App/PAT specifically for Dialectic outputs, or confirm existing ones are sufficient and securely stored (e.g., in Supabase Vault).
-*   `[ ] 1.6.2 [BE]` `dialectic-service` Action: `configureGitHubRepo`
-    *   `[ ] 1.6.2.1 [TEST-INT]` Write tests (input: `projectId`, `githubRepoUrl`; auth; output: success/failure; updates `dialectic_projects.repo_url`). (RED)
-    *   `[ ] 1.6.2.2` Implement logic:
-        *   Validates `githubRepoUrl` format.
-        *   Updates `dialectic_projects` table.
-        *   (Optional: Test connectivity to the repo if a PAT/App has rights).
-    *   `[ ] 1.6.2.3` (GREEN)
-    *   `[ ] 1.6.2.4 [TEST-INT]` Run tests.
-*   `[ ] 1.6.3 [BE]` Helper utility for GitHub file operations (within `dialectic-service` or shared): `commitFileToGitHub(repoUrl, filePath, fileContent, commitMessage, userGitHubTokenOrAppAuthCredentials)`.
-    *   `[ ] 1.6.3.1 [TEST-UNIT]` Write tests (mocks GitHub API calls). (RED)
-    *   `[ ] 1.6.3.2` Implement using GitHub REST API (e.g., via Octokit or a lightweight client). Handles creating/updating files.
-        *   File path structure for Phase 1 (simplified, iteration 1 assumed, base output directory is configurable, e.g., `ai_dialectic_sessions`):
-            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/project_readme.md` (Created once, if not existing)
-            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/Implementation/` (User-managed, ensure directory can be created if not present)
-            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/Complete/` (User-managed, ensure directory can be created if not present)
-            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_1/0_seed_inputs/user_prompt_for_iteration.md`
-            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_1/0_seed_inputs/system_settings.json` (Containing models, selected debate structure, prompt template IDs used)
-            *   **Hypothesis (Thesis) Outputs:**
-            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_1/1_hypothesis/{model_name_slug}_hypothesis.md`
-            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_1/1_hypothesis/user_feedback_hypothesis.md` (If user provides feedback at this stage)
-            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_1/1_hypothesis/documents/{model_name_slug}_prd_hypothesis.md` (Optional refined documents)
-            *   **Antithesis Outputs:**
-            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_1/2_antithesis/{critiquer_model_slug}_critique_on_{original_model_slug}.md`
-            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_1/2_antithesis/user_feedback_antithesis.md`
-        *   `project_name_slug` and `model_name_slug` should be filesystem-friendly (e.g., lowercase, underscores instead of spaces).
-        *   The `dialectic_outputs_base_dir_name` should be configurable, defaulting to something like `ai_dialectic_sessions`.
-        *   The `Implementation/` and `Complete/` folders are primarily for user organization but their paths should be known if the AI needs to reference or suggest locations.
-        *   Ensure a defined Markdown template structure is used for `fileContent` (e.g., YAML frontmatter for `modelName`, `promptId`, `timestamp`, `stage`, `version`; followed by H1 for original prompt, then AI response content).
-        *   Credentials (`userGitHubTokenOrAppAuthCredentials`) should be retrieved securely by the calling service action (e.g., from Supabase Vault) and not passed directly by clients.
-    *   `[ ] 1.6.3.3` (GREEN)
-    *   `[ ] 1.6.3.4 [TEST-UNIT]` Run tests.
-*   `[ ] 1.6.4 [BE]` Modify `generateContributions` actions in `dialectic-service` to use the `stage` and `domain` selected by the user:
-    *   `[ ] 1.6.4.1` After successfully saving a contribution to the DB:
-        *   Fetch `repo_url` for the project.
-        *   If URL exists:
-            *   Format contribution content as Markdown **using the defined template structure**.
-            *   Determine file path and commit message.
-            *   Retrieve necessary GitHub credentials securely.
-            *   Call `commitFileToGitHub` helper with the formatted content, path, message, and credentials.
-            *   Log success/failure of GitHub commit (do not fail the whole process if GitHub commit fails, but log it).
-*   `[ ] 1.6.5 [API]` Add `configureGitHubRepo` to `DialecticAPIInterface` and implement in adapter, calling the `dialectic-service` action.
-    *   `[ ] 1.6.5.1` Define types, add to interface.
-    *   `[ ] 1.6.5.2 [TEST-UNIT]` Write adapter method tests. (RED)
-    *   `[ ] 1.6.5.3` Implement adapter method. (GREEN)
-    *   `[ ] 1.6.5.4 [TEST-UNIT]` Run tests.
-*   `[ ] 1.6.6 [STORE]` Add thunk/action for `configureGitHubRepo` to `dialecticSlice`.
-    *   `[ ] 1.6.6.1 [TEST-UNIT]` Write store tests. (RED)
-    *   `[ ] 1.6.6.2` Implement thunk. (GREEN)
-    *   `[ ] 1.6.6.3 [TEST-UNIT]` Run tests.
-*   `[ ] 1.6.7 [UI]` Add UI element in `DialecticProjectDetailsPage` to configure GitHub repo URL.
-    *   `[ ] 1.6.7.1 [TEST-UNIT]` Write UI tests for form input and submit. (RED)
-    *   `[ ] 1.6.7.2` Implement UI (input field for repo URL, save button dispatching `configureGitHubRepo` thunk). (GREEN)
-    *   `[ ] 1.6.7.3 [TEST-UNIT]` Run tests.
-*   `[ ] 1.6.8 [COMMIT]` feat: basic GitHub integration for dialectic outputs
-
-### 1.7 Finalizing Phase 1
-*   `[ ] 1.7.1 [TEST-E2E]` Write basic End-to-End tests for Phase 1 core workflow:
-    *   `[ ] 1.7.1.1` User creates a project.
-    *   `[ ] 1.7.1.2` User starts a session with 2-3 models.
-    *   `[ ] 1.7.1.3` User views Thesis contributions from each model.
-    *   `[ ] 1.7.1.4` User views Antithesis contributions (critiques).
-    *   `[ ] 1.7.1.5` (Optional E2E): User configures GitHub repo and verifies files are created (requires more complex test setup).
-*   `[ ] 1.7.2 [DOCS]` Update main README and any relevant package READMEs for new Dialectic Engine features.
-*   `[ ] 1.7.3 [DOCS]` Create initial user-facing documentation on how to use the Phase 1 Dialectic features.
-*   `[ ] 1.7.4 [REFACTOR]` Perform a general review and refactor of all Phase 1 code.
-*   `[ ] 1.7.5 [COMMIT]` feat: complete Phase 1 of AI Dialectic Engine
-*   `[ ] 1.7.6 [DEPLOY]` Phase 1 deployment checkpoint. Review deployment readiness.
-
----
-**Checkpoint Reminder for User:** After completing these steps for Section 1 / Phase 1:
-1.  Run all tests: `npm test` (or specific test scripts for packages). Ensure they are integrated into CI/CD.
-2.  Build all relevant packages and applications: `npm run build` (or equivalent).
-3.  Restart development servers and manually verify the functionality in `apps/web`.
-4.  Consider committing the work: `git commit -m "feat: AI Dialectic Engine Phase 1 complete"`
-5.  If ready, proceed with Phase 1 deployment.
----
-
-## Section 2: Phase 2 - Structured Collaboration & Synthesis (Adding Synthesis Stage & Basic Human-in-the-Loop)
-
-**Phase 2 Value:** Implement the full initial dialectic cycle (Thesis -> Antithesis -> Synthesis). Introduce basic Human-in-the-Loop (HitL) capabilities, allowing users to guide the synthesis process. Enhance GitHub integration and expand prompt template library.
-
-**Phase 2 Objectives:**
-1.  Extend database schema and backend logic to support the Synthesis stage.
-2.  Implement backend orchestration for models to generate Synthesis contributions based on Thesis and Antithesis.
-3.  Introduce database schema and backend logic for basic HitL (e.g., user ratings/selections on critiques or thesis points).
-4.  Update API and Store to manage Synthesis data and HitL inputs.
-5.  Enhance UI to display Synthesis outputs and allow user interaction for HitL.
-6.  Expand GitHub integration for Synthesis stage outputs, following the established Markdown template structure and file organization.
-7.  Grow the system prompts library, including templates for non-developer roles.
-8.  Improve UI/UX for clearly indicating different dialectic stages, including specific visualization components for stage progression.
-
-**Estimated Duration (as per PRD):** 3-4 months
-
-**Starting Point:** Completion of all items in Section 1 (Phase 1). All foundational elements for Thesis and Antithesis are in place.
-
-**Deliverables for Phase 2:**
-*   Functional Synthesis stage in the dialectic workflow.
-*   Ability for users to provide basic feedback (e.g., rating critiques) to influence synthesis.
-*   Synthesis outputs saved to GitHub using the defined Markdown template and file structure (`.../3_synthesis/{model_name_slug}_synthesis.md`).
-*   Expanded prompt template library accessible to users.
-*   Clearer visual distinction of stages in the UI, including a basic stage progression indicator.
-
----
-### 2.1 Database Schema & Prompt Template Enhancements for Synthesis & HitL
-*   `[ ] 2.1.1 [DB]` Update `dialectic_sessions` table:
-    *   `[ ] 2.1.1.1 [TEST-UNIT]` Write migration test. (RED)
-    *   `[ ] 2.1.1.2` Add `active_synthesis_prompt_template_id` (UUID, foreign key to `prompt_templates.id`, nullable). (GREEN)
-    *   `[ ] 2.1.1.3` Run migration test.
-*   `[ ] 2.1.2 [PROMPT]` Seed new prompt templates for Synthesis stage in `prompt_templates` table.
-    *   `[ ] 2.1.2.1 [TEST-UNIT]` Write test for new seed data. (RED)
-    *   `[ ] 2.1.2.2` E.g., `template_name = "dialectic_synthesis_default_v1"`, `stage_association = "synthesis"`. Content like: "Based on the initial problem: '{{initial_user_prompt}}', the following thesis contributions: {{all_thesis_contents_formatted}}, and the following critiques: {{all_antithesis_contents_formatted}}, generate a single, unified, and improved solution. Resolve contradictions and incorporate valid critiques. Highlight areas where consensus could not be reached." Ensure placeholders are clearly defined. (GREEN)
-    *   `[ ] 2.1.2.3` Run seed script update and tests.
-*   `[ ] 2.1.3 [DB]` Create `dialectic_hitl_feedback` table for user feedback.
-    *   `[ ] 2.1.3.1 [TEST-UNIT]` Write migration test. (RED)
-    *   `[ ] 2.1.3.2` Define columns: `id` (UUID PK), `session_id` (UUID FK on delete cascade), `user_id` (UUID FK on delete cascade), `target_contribution_id` (UUID FK to `dialectic_contributions.id` on delete set null, nullable, for feedback on specific contribution), `feedback_type` (TEXT, e.g., "rating", "selection_for_synthesis", "flag_confusing"), `feedback_value_numeric` (INTEGER, nullable, e.g., rating 1-5), `feedback_value_text` (TEXT, nullable), `feedback_value_boolean` (BOOLEAN, nullable), `notes` (TEXT, nullable), `created_at`. (GREEN)
-    *   `[ ] 2.1.3.3` Run migration test.
-*   `[ ] 2.1.4 [RLS]` Define RLS for `dialectic_hitl_feedback` (user can CRUD their own feedback for sessions they own).
-    *   `[ ] 2.1.4.1 [TEST-INT]` Write RLS tests. (RED)
-    *   `[ ] 2.1.4.2` Implement RLS. (GREEN)
-    *   `[ ] 2.1.4.3 [TEST-INT]` Run RLS tests.
-*   `[ ] 2.1.5 [COMMIT]` feat(db,prompt): extend schema for Synthesis and HitL
-
-### 2.2 Backend Logic for Synthesis Stage & Basic HitL
-*   `[ ] 2.2.1 [BE]` `dialectic-service` Action: `generateSynthesisContributions` (internal, triggered after antithesis or by user for HitL-guided synthesis).
-    *   `[ ] 2.2.1.1 [TEST-INT]` Write tests. (RED)
-    *   `[ ] 2.2.1.2` Update `startSession` action in `dialectic-service` to fetch `active_synthesis_prompt_template_id` and store in `dialectic_sessions`.
-    *   `[ ] 2.2.1.3` Implement logic:
-        1.  Fetch session, its models, all 'thesis' and 'antithesis' contributions. Fetch `synthesis_prompt_template_id` from session, then the template content from `prompt_templates`. Fetch `initial_user_prompt` from project. Fetch relevant `dialectic_hitl_feedback` for the session (e.g., selected critiques, highly-rated thesis points).
-        2.  Verify status is `antithesis_complete` or a HitL trigger state (e.g., 'pending_synthesis_with_feedback'). Update to `generating_synthesis`. Log this.
-        3.  Format all thesis and antithesis content. **Incorporate HitL feedback**: if certain critiques were flagged as important or certain thesis points selected, ensure they are emphasized or specifically included in the context for the synthesis model.
-        4.  Render the synthesis prompt template using this comprehensive context. Update `dialectic_sessions.current_stage_seed_prompt` with this rendered prompt.
-        5.  Select one model (e.g., a high-capability default, or user-designated "synthesizer" if that feature is added later) to generate the synthesis. For now, use the first model in `dialectic_session_models` or a configurable default.
-        6.  Call `callUnifiedAIModel` with the selected model and the rendered synthesis prompt.
-        7.  Save result(s) in `dialectic_contributions` (stage 'synthesis', `actual_prompt_sent` = rendered prompt). Record errors if any.
-        8.  Update `dialectic_sessions.status` to `synthesis_complete`. Log this.
-        9.  (Phase 2 ends here for backend generation; next async call would be for Parenthesis in Phase 3).
-    *   `[ ] 2.2.1.4` (GREEN)
-    *   `[ ] 2.2.1.5 [REFACTOR]` Review (including testing how HitL feedback influences the prompt context).
-    *   `[ ] 2.2.1.6 [TEST-INT]` Run tests.
-*   `[ ] 2.2.2 [BE]` `dialectic-service` Action: `submitHitlFeedback`.
-    *   `[ ] 2.2.2.1 [TEST-INT]` Write tests. (RED)
-    *   `[ ] 2.2.2.2` Implement logic: Input `sessionId`, `targetContributionId` (optional), `feedbackType`, `feedbackValueNumeric`, `feedbackValueText`, `feedbackValueBoolean`, `notes`. Inserts into `dialectic_hitl_feedback`. Ensure user owns the session. (GREEN)
-    *   `[ ] 2.2.2.3 [REFACTOR]` Review.
-    *   `[ ] 2.2.2.4 [TEST-INT]` Run tests.
-*   `[ ] 2.2.3 [BE]` Sequence `getContributions` calls to follow the dialectic pattern once the user approves moving to the next step in the sequence.
-*   `[ ] 2.2.4 [COMMIT]` feat(be): implement Synthesis stage and HitL feedback logic
-
-### 2.3 API Client (`@paynless/api`) & Store (`@paynless/store`) Updates
-*   `[ ] 2.3.1 [API]` Update types in `interface.ts` to include `DialecticHitlFeedback` and reflect Synthesis stage in `DialecticContribution` and session status. Update `StartSessionPayload` if it needs to carry `synthesisPromptTemplateName`.
-*   `[ ] 2.3.2 [API]` Add `submitHitlFeedback(payload: SubmitFeedbackPayload): Promise<DialecticHitlFeedback>` method to `DialecticAPIInterface`.
-*   `[ ] 2.3.3 [API]` Implement in adapter.
-    *   `[ ] 2.3.3.1 [TEST-UNIT]` Write tests. (RED)
-    *   `[ ] 2.3.3.2` Implement. (GREEN)
-    *   `[ ] 2.3.3.3 [TEST-UNIT]` Run tests.
-*   `[ ] 2.3.4 [STORE]` Update `DialecticState` in `packages/store/src/interfaces/dialectic.ts` to include `currentProjectHitlFeedback: DialecticHitlFeedback[] | null` and potentially `isSubmittingFeedback: boolean`.
-*   `[ ] 2.3.5 [STORE]` Add Thunk/Action for `submitHitlFeedback`.
-    *    `[ ] 2.3.5.1 [TEST-UNIT]` Write tests. (RED)
-    *    `[ ] 2.3.5.2` Implement (handles pending/fulfilled/rejected, updates `currentProjectHitlFeedback` or refetches project details). (GREEN)
-    *    `[ ] 2.3.5.3 [TEST-UNIT]` Run tests.
-*   `[ ] 2.3.6 [STORE]` Ensure `fetchDialecticProjectDetails` thunk and `currentProjectDetails` in state correctly populate Synthesis contributions and any associated HitL feedback for display. Update relevant selectors/reducers.
-*   `[ ] 2.3.7 [COMMIT]` feat(api,store): update for Synthesis and HitL data
-
-### 2.4 UI Enhancements for Synthesis & Basic HitL
-*   `[ ] 2.4.1 [UI]` Update `DialecticSessionDetailsPage`:
-    *   `[ ] 2.4.1.1 [TEST-UNIT]` Write tests for new Synthesis view and HitL elements. (RED)
-    *   `[ ] 2.4.1.2` Add a "Synthesis" view/tab. This should be clearly part of a larger stage progression display.
-    *   `[ ] 2.4.1.3` Display 'synthesis' stage contributions, including model name, timestamp, content, cost.
-    *   `[ ] 2.4.1.4` In Antithesis view (and potentially Thesis view), add simple UI elements (e.g., star rating, "thumbs up/down", checkbox "prioritize for synthesis") next to contributions/critiques to allow users to submit `HitlFeedback`.
-        *   These UI elements dispatch `submitHitlFeedback` thunk.
-        *   Display existing feedback if available.
-    *   `[ ] 2.4.1.5` (Optional UI element for later, or if simple for Phase 2) Button "Regenerate Synthesis with my feedback" if `synthesis_complete`. This would require a new backend action like `regenerateSynthesis` which re-runs that stage using existing contributions and latest feedback. For now, feedback influences the *next automatic* synthesis.
-    *   `[ ] 2.4.1.6` Ensure a11y. (GREEN)
-    *   `[ ] 2.4.1.7 [TEST-UNIT]` Run tests.
-*   `[ ] 2.4.2 [UI]` Implement a basic **Stage Progression Indicator** component (e.g., a series of labeled steps: Thesis -> Antithesis -> Synthesis, highlighting the current/completed stages). This component would be used in `DialecticSessionDetailsPage`.
-    *   `[ ] 2.4.2.1 [TEST-UNIT]` Write tests. (RED)
-    *   `[ ] 2.4.2.2` Implement. Ensure a11y. (GREEN)
-    *   `[ ] 2.4.2.3 [TEST-UNIT]` Run tests.
-*   `[ ] 2.4.3 [REFACTOR]` Review UI components.
-*   `[ ] 2.4.4 [COMMIT]` feat(ui): display Synthesis, add basic HitL inputs, and stage progression indicator
-
-### 2.5 GitHub Integration Enhancements
-*   `[ ] 2.5.1 [BE]` Modify `generateSynthesisContributions` action in `dialectic-service`:
-    *   `[ ] 2.5.1.1` After saving Synthesis contribution to DB, if GitHub repo is configured:
-        *   Format content as Markdown.
-        *   File path: `{repo_root}/dialectic/{project_name_slug}/{session_id_short}/synthesis/{model_name_slug}_synthesis.md`.
-        *   Retrieve GitHub credentials securely.
-        *   Call `commitFileToGitHub`.
-*   `[ ] 2.5.2 [BE]` (PRD mentions "basic versioning/branching" - for Phase 2, ensure file naming or commit messages clearly indicate this is the output of the synthesis stage for the current session/iteration. True branching might be later).
-*   `[ ] 2.5.3 [COMMIT]` feat(be): save Synthesis outputs to GitHub using templated markdown
-
-### 2.6 Expanded Prompts Library & UX
-*   `[ ] 2.6.1 [PROMPT]` Research and add 2-3 prompt templates for non-developer roles (e.g., basic legal query analysis, marketing copy idea generation) for Thesis, Antithesis, and Synthesis stages. Seed these into `prompt_templates`. Ensure they have distinct names (e.g., `dialectic_synthesis_legal_v1`).
-    *   `[ ] 2.6.1.1 [TEST-UNIT]` Write tests for new seed data. (RED)
-    *   `[ ] 2.6.1.2` Implement. (GREEN)
-    *   `[ ] 2.6.1.3 [TEST-UNIT]` Run tests.
-*   `[ ] 2.6.2 [UI]` `StartDialecticSessionModal`:
-    *   `[ ] 2.6.2.1 [TEST-UNIT]` Write tests. (RED)
-    *   `[ ] 2.6.2.2` Allow users to select from available Thesis, Antithesis, and Synthesis prompt templates (filtered by `stage_association` and potentially new `domain` or `category` field in `prompt_templates` table).
-    *   `[ ] 2.6.2.3` Default to the "default_v1" templates if no selection is made. (GREEN)
-    *   `[ ] 2.6.2.4 [TEST-UNIT]` Run tests.
-*   `[ ] 2.6.3 [COMMIT]` feat(prompt,ui): expand prompt library and allow template selection for all active stages
-
-### 2.7 Finalizing Phase 2
-*   `[ ] 2.7.1 [TEST-E2E]` Update E2E tests for Phase 2:
-    *   User views Synthesis contributions.
-    *   User provides HitL feedback (e.g., rating a critique).
-    *   Verify the stage progression indicator updates correctly.
-    *   (Optional E2E) Verify Synthesis files on GitHub with correct paths and format.
-*   `[ ] 2.7.2 [DOCS]` Update documentation for new Synthesis and HitL features, and the expanded prompt library.
-*   `[ ] 2.7.3 [REFACTOR]` General review and refactor of Phase 2 code.
-*   `[ ] 2.7.4 [COMMIT]` feat: complete Phase 2 of AI Dialectic Engine
-*   `[ ] 2.7.5 [DEPLOY]` Phase 2 deployment checkpoint. Review deployment readiness.
-
----
-**Checkpoint Reminder for User:** After completing Section 2 / Phase 2:
-1.  Run all tests. Ensure they are integrated into CI/CD.
-2.  Build relevant packages/apps.
-3.  Restart dev servers and manually verify Phase 2 functionality.
-4.  Commit: `git commit -m "feat: AI Dialectic Engine Phase 2 complete (Synthesis & Basic HitL)"`
-5.  If ready, proceed with Phase 2 deployment.
----
-
-## Section 3: Phase 3 - Iterative Refinement & Full Dialectic (Adding Parenthesis & Paralysis Stages)
-
-**Phase 3 Value:** Implement the complete 5-stage DialeqAI cycle (Thesis -> Antithesis -> Synthesis -> Parenthesis -> Paralysis). Introduce automatic iteration management, convergence/divergence detection (basic), and smart termination logic. Enhance GitHub integration with more advanced options and provide initial IDE plugin considerations.
-
-**Phase 3 Objectives:**
-1.  Extend DB schema and backend for Parenthesis (refinement/formalization) and Paralysis (reflection/next steps) stages.
-2.  Implement backend orchestration for these new stages, ensuring data flows correctly from one stage to the next.
-3.  Develop logic for session iteration: after Paralysis, the system can loop back to Thesis (or a later stage like Synthesis) with refined inputs based on Paralysis output.
-4.  Introduce basic convergence/divergence detection (e.g., based on content similarity between iterations or explicit model statements in Paralysis) and smart termination (e.g., max iterations, user command, detected convergence).
-5.  Update API/Store for new stages, iteration management, and convergence status.
-6.  Enhance UI to display Parenthesis and Paralysis outputs, manage iterations, and show convergence indicators. UI should clearly show all 5 stages in the progression.
-7.  Advanced GitHub options: ensure outputs from all 5 stages are saved with appropriate naming (e.g., `.../4_parenthesis/...`, `.../5_paralysis/...`). If iterating, outputs for each iteration should be distinct (e.g., `.../iteration_1/1_thesis/...`, `.../iteration_2/1_thesis/...`).
-8.  Begin foundational work/design for IDE plugins (VS Code, JetBrains) - primarily analysis of API needs.
-10. Implement basic "Argument Mapping" visualization (a simple, clear visual flow of Thesis -> Antithesis links -> Synthesis -> Parenthesis -> Paralysis).
-11. Support for Evidence/Citation in Parenthesis stage: Prompts should encourage models to add citations, and the DB/UI should be ableto store/display them.
-12. (Experimental) Dynamic Model Routing: Allow different models (or model capabilities) to be prioritized for different stages based on catalog data (e.g., a highly analytical model for Parenthesis).
-
-**Estimated Duration (as per PRD):** 4-5 months
-
-**Starting Point:** Completion of Section 2 (Phase 2). Thesis, Antithesis, Synthesis, and basic HitL are functional.
-
-**Deliverables for Phase 3:**
-*   Fully functional 5-stage dialectic process (Thesis, Antithesis, Synthesis, Parenthesis, Paralysis).
-*   Automated iteration capabilities within a session, with outputs from each iteration distinctly stored/displayed.
-*   Basic mechanisms for detecting convergence and terminating sessions automatically or by user command.
-*   UI to visualize all 5 stages, manage iterations, and display convergence status/indicators.
-*   GitHub integration for all 5 stages, with clear separation for iterative outputs.
-*   A basic visual argument map.
-
----
-### 3.1 Schema, Prompts for Parenthesis, Paralysis, Iteration & Advanced Features
-*   `[ ] 3.1.1 [DB]` Update `dialectic_sessions` table:
-    *   `[ ] 3.1.1.1 [TEST-UNIT]` Write migration test. (RED)
-    *   `[ ] 3.1.1.2` Add `active_parenthesis_prompt_template_id` (UUID, FK to `prompt_templates.id`, nullable) and `active_paralysis_prompt_template_id` (UUID, FK to `prompt_templates.id`, nullable).
-    *   `[ ] 3.1.1.3` Add `max_iterations` (INTEGER, default 3, configurable by user), `current_iteration` (INTEGER, default 1).
-    *   `[ ] 3.1.1.4` Add `convergence_status` (TEXT, e.g., 'converged', 'diverged', 'max_iterations_reached', 'user_terminated', nullable).
-    *   `[ ] 3.1.1.6` Run migration test.
-*   `[ ] 3.1.2 [PROMPT]` Seed `prompt_templates` for Parenthesis and Paralysis stages.
-    *   `[ ] 3.1.2.1 [TEST-UNIT]` Write tests for new seed data. (RED)
-    *   `[ ] 3.1.2.2` Parenthesis template (e.g., `dialectic_parenthesis_refine_cite_v1`): "Given the synthesized solution: {{synthesis_content}}, refine it for clarity, accuracy, structure, and completeness. Ensure factual correctness. **If the problem domain or solution implies external knowledge, provide citations or references for key claims or data points.** Format citations clearly. Original problem: {{initial_user_prompt}}."
-    *   `[ ] 3.1.2.3` Paralysis template (e.g., `dialectic_paralysis_reflect_iterate_v1`): "Reflecting on the refined solution (Parenthesis): {{parenthesis_content}}. Consider the entire process: Initial Problem: {{initial_user_prompt}}; Key Thesis Points: {{all_thesis_summaries}}; Key Antithesis Critiques: {{all_antithesis_summaries}}; Synthesized Solution: {{synthesis_summary}}.
-        1.  Identify any remaining limitations, unaddressed critiques, or areas for significant improvement in the Parenthesis output.
-        2.  Assess the overall quality and completeness.
-        3.  **Explicitly recommend: Should another iteration be performed?** If yes, suggest specific focus areas or modifications to prompts for the next iteration (e.g., 'Re-run synthesis focusing on critique X', 'Generate new theses with an emphasis on Y'). If no, explain why the current solution is adequate or why further iteration is unlikely to yield significant benefit.
-        4.  What are the key takeaways or learning from this entire dialectic process?" (GREEN)
-    *   `[ ] 3.1.2.4 [TEST-UNIT]` Run tests.
-*   `[ ] 3.1.4 [DB]` Update `dialectic_contributions` table:
-    *   `[ ] 3.1.4.1 [TEST-UNIT]` Write migration test. (RED)
-    *   `[ ] 3.1.4.2` Add `iteration_number` (INTEGER, not nullable, default 1) to associate contribution with a specific iteration cycle within the session.
-    *   `[ ] 3.1.4.3` Add `citations` (JSONB, nullable, array of objects e.g., `[{text: "Source A", url: "link_to_source_a"}, {text: "Another reference"}]`) - primarily for Parenthesis stage. (GREEN)
-    *   `[ ] 3.1.4.4` Run migration test.
-*   `[ ] 3.1.5 [COMMIT]` feat(db,prompt): schema for full 5-stage cycle, iteration, citations
-
-### 3.2 Backend Logic for Parenthesis, Paralysis, Iteration & Advanced Orchestration
-*   `[ ] 3.2.1 [BE]` `dialectic-service` Actions: `generateParenthesisContribution`, `generateParalysisContribution`.
-    *   `[ ] 3.2.1.1 [TEST-INT]` Write tests for `generateParenthesisContribution`. (RED)
-    *   `[ ] 3.2.1.2` Implement `generateParenthesisContribution`: Input `sessionId`, `iterationNumber`. Fetches active Parenthesis prompt template. Uses latest 'synthesis' contribution from the current `iterationNumber` as primary input. Saves result as 'parenthesis' stage for current `iterationNumber`, including any parsed `citations`. Log status. (GREEN)
-    *   `[ ] 3.2.1.3 [TEST-INT]` Run tests for `generateParenthesisContribution`.
-    *   `[ ] 3.2.1.4 [TEST-INT]` Write tests for `generateParalysisContribution`. (RED)
-    *   `[ ] 3.2.1.5` Implement `generateParalysisContribution`: Input `sessionId`, `iterationNumber`. Fetches active Paralysis prompt template. Uses latest 'parenthesis' contribution and summaries of prior stage outputs (thesis, antithesis, synthesis) from current `iterationNumber` as input. Saves result as 'paralysis' stage for current `iterationNumber`. Log status. (GREEN)
-    *   `[ ] 3.2.1.6 [TEST-INT]` Run tests for `generateParalysisContribution`.
-    *   `[ ] 3.2.1.7` Ensure these actions are called sequentially after the previous stage completes (Synthesis -> Parenthesis -> Paralysis). Update `dialectic_sessions.current_stage_seed_prompt` for each stage.
-    *   `[ ] 3.2.1.8 [REFACTOR]` Review both actions.
-*   `[ ] 3.2.2 [BE]` Orchestration logic in `generateParalysisContribution's completion (for `sessionId`, `current_iteration`):
-    *   `[ ] 3.2.2.1 [TEST-INT]` Write tests for orchestration logic (convergence, termination, iteration). (RED)
-    *   `[ ] 3.2.2.2` **Convergence/Termination Detection:**
-        *   Parse Paralysis output (the `content` of the 'paralysis' `dialectic_contribution`) for explicit recommendation on iteration (e.g., looking for keywords like "another iteration recommended", "solution is adequate", "do not iterate").
-        *   If recommendation is to stop, or if `current_iteration >= max_iterations`:
-            *   Update `dialectic_sessions.status` to `session_complete`.
-            *   Set `dialectic_sessions.convergence_status` based on paralysis output (e.g., 'converged_by_recommendation', 'max_iterations_reached').
-            *   STOP further processing for this session. Log completion.
-        *   Else (recommendation is to iterate AND `current_iteration < max_iterations`):
-            *   Increment `dialectic_sessions.current_iteration`.
-            *   Extract suggested focus areas or prompt modifications from Paralysis output.
-            *   Construct the seed prompt for the next iteration's Thesis (or Synthesis, if design allows skipping). This might involve combining `initial_user_prompt` with the focus areas from Paralysis. Store this as `dialectic_sessions.current_stage_seed_prompt` for the new iteration.
-            *   Update `dialectic_sessions.status` to `pending_thesis` (or `pending_synthesis`). Log this.
-            *   The system will now wait for the user to trigger the stage via a frontend action. It does not automatically trigger `generateContributions`.
-    *   `[ ] 3.2.2.3` (GREEN)
-    *   `[ ] 3.2.2.4 [REFACTOR]` Review (including parsing paralysis output and iteration triggering).
-    *   `[ ] 3.2.2.5 [TEST-INT]` Run tests.
-*   `[ ] 3.2.3 [BE]` `dialectic-service` Action: `updateSessionParameters`.
-    *   `[ ] 3.2.3.1 [TEST-INT]` Write tests. (RED)
-    *   `[ ] 3.2.3.2` Input: `sessionId`, `maxIterations` (optional). Allows user to change these for an ongoing or future session.
-    *   `[ ] 3.2.3.3` Updates `dialectic_sessions` table, update all `active_..._prompt_template_id` fields in the session from the new structure's defaults. (GREEN)
-    *   `[ ] 3.2.3.4 [REFACTOR]` Review.
-    *   `[ ] 3.2.3.5 [TEST-INT]` Run tests.
-*   `[ ] 3.2.4 [BE]` (Experimental) Dynamic Model Routing for Stages:
-    *   `[ ] 3.2.4.1 [TEST-UNIT]` Write tests. (RED)
-    *   `[ ] 3.2.4.2` Add `preferred_model_for_stage` (JSONB, e.g., `{"parenthesis": "openai/gpt-4-turbo", "synthesis": "anthropic/claude-3-opus"}`) to `dialectic_sessions`. (DB change, ensure migration)
-    *   `[ ] 3.2.4.3` When executing `generate[StageName]Contribution`, if a preferred model is set for that stage, use it. Otherwise, fall back to the general list of session models. (GREEN)
-    *   `[ ] 3.2.4.4 [TEST-UNIT]` Run tests for this routing logic.
-*   `[ ] 3.2.5 [COMMIT]` feat(be): implement Parenthesis, Paralysis, iteration, convergence, dynamic model routing
-
-### 3.3 API/Store Updates for Full Cycle & Advanced Features
-*   `[ ] 3.3.1 [API]` Update types in `interface.ts`:
-    *   `DialecticSession`: add `maxIterations`, `currentIteration`, `convergenceStatus`, new prompt template IDs, `preferredModelForStage`.
-    *   `DialecticContribution`: add `iterationNumber`, `citations`.
-    *   Add `UpdateSessionParametersPayload`.
-*   `[ ] 3.3.2 [API]` Add API methods:
-    *   `updateSessionParameters(payload: UpdateSessionParametersPayload): Promise<DialecticSession>`
-*   `[ ] 3.3.3 [API]` Implement new methods in adapter.
-    *    `[ ] 3.3.3.1 [TEST-UNIT]` Write tests. (RED)
-    *    `[ ] 3.3.3.2` Implement. (GREEN)
-    *    `[ ] 3.3.3.3 [TEST-UNIT]` Run tests.
-*   `[ ] 3.3.5 [STORE]` Add Thunks/Actions/Reducers for `updateSessionParameters`.
-    *    `[ ] 3.3.5.1 [TEST-UNIT]` Write tests. (RED)
-    *    `[ ] 3.3.5.2` Implement. (GREEN)
-    *    `[ ] 3.3.5.3 [TEST-UNIT]` Run tests.
-*   `[ ] 3.3.6 [STORE]` Ensure `fetchDialecticProjectDetails` populates all new fields, including contributions from all iterations, properly associated.
-*   `[ ] 3.3.7 [COMMIT]` feat(api,store): support full 5-stage cycle, iteration params
-
-### 3.4 UI for Full Cycle, Iteration, Advanced Features
-*   `[ ] 3.4.1 [UI]` Update `DialecticSessionDetailsPage`:
-    *   `[ ] 3.4.1.1 [TEST-UNIT]` Write tests for new stage views, iteration controls, citation display. (RED)
-    *   `[ ] 3.4.1.2` Update Stage Progression Indicator to show all 5 stages (Thesis, Antithesis, Synthesis, Parenthesis, Paralysis).
-    *   `[ ] 3.4.1.3` Add "Parenthesis" and "Paralysis" views/tabs. Display contributions for the current iteration, including parsed `citations` in Parenthesis view (e.g., as a list of links or embedded references).
-    *   `[ ] 3.4.1.4` Display `current_iteration` / `max_iterations`.
-    *   `[ ] 3.4.1.5` Display `convergence_status` and overall session status (e.g., "Iteration 2/3 - Generating Parenthesis", "Session Complete - Converged").
-    *   `[ ] 3.4.1.6` Add controls for managing iterations:
-        *   If session is `session_complete`: Display final status.
-        *   If session is active and `paralysis_complete` for current iteration: Display paralysis recommendation. Button "Proceed to Next Iteration" (if not max_iterations and paralysis recommends it or user overrides). Button "Mark Session as Complete" (user termination).
-        *   Display contributions from previous iterations, perhaps in a collapsed view or via an iteration selector.
-    *   `[ ] 3.4.1.7` Ensure a11y. (GREEN)
-    *   `[ ] 3.4.1.8 [TEST-UNIT]` Run tests.
-*   `[ ] 3.4.2 [UI]` `StartDialecticSessionModal` (or a new "Session Settings" modal accessible from `DialecticProjectDetailsPage`):
-    *   `[ ] 3.4.2.1 [TEST-UNIT]` Write tests. (RED)
-    *   `[ ] 3.4.2.3` Input for `max_iterations`.
-    *   `[ ] 3.4.2.4` (Optional for Phase 3) UI to set preferred models for specific stages if dynamic routing is implemented. (GREEN)
-    *   `[ ] 3.4.2.5 [TEST-UNIT]` Run tests.
-*   `[ ] 3.4.3 [UI]` Basic Argument Mapping View Component:
-    *   `[ ] 3.4.3.1 [TEST-UNIT]` Write tests. (RED)
-    *   `[ ] 3.4.3.2` A new tab or section in `DialecticSessionDetailsPage`.
-    *   `[ ] 3.4.3.3` For the current iteration:
-        *   Display Thesis contributions as root nodes.
-        *   Antithesis contributions link to the Thesis they critique.
-        *   Synthesis contribution(s) link from the Theses and Antitheses they considered.
-        *   Parenthesis links from Synthesis.
-        *   Paralysis links from Parenthesis.
-        *   Use simple boxes and lines; no complex graphing library needed yet. Focus on clear flow. Ensure a11y. (GREEN)
-    *   `[ ] 3.4.3.4 [TEST-UNIT]` Run tests.
-*   `[ ] 3.4.4 [REFACTOR]` Review all new UI elements and logic.
-*   `[ ] 3.4.5 [COMMIT]` feat(ui): display full 5-stage cycle, iteration controls, basic argument map, citation display
-
-### 3.5 Advanced GitHub & IDE Foundation
-*   `[ ] 3.5.1 [BE]` GitHub Integration:
-    *   `[ ] 3.5.1.1` Ensure Parenthesis and Paralysis outputs are saved to GitHub by the respective backend actions (`generateParenthesisContribution`, `generateParalysisContribution`).
-        *   File paths:
-            *   **General Structure for all stages (Thesis, Antithesis, Synthesis, Parenthesis, Paralysis) within an iteration {N}:**
-            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_{N}/{stage_number}_{stage_name}/{model_name_slug}_{stage_suffix}.md`
-                *   Example Parenthesis: `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_{N}/4_parenthesis/{model_name_slug}_parenthesis.md`
-                *   Example Paralysis: `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_{N}/5_paralysis/{model_name_slug}_paralysis.md`
-            *   User feedback files: `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_{N}/{stage_number}_{stage_name}/user_feedback_{stage_name}.md`
-            *   **Documents Subfolders (for Hypothesis, Synthesis, Parenthesis, Paralysis):**
-            *   `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_{N}/{stage_number}_{stage_name}/documents/`
-                *   Synthesis Example: `.../3_synthesis/documents/{model_name_slug}_prd_synthesis.md`
-                *   Synthesis Example: `.../3_synthesis/documents/{model_name_slug}_business_case_synthesis.md`
-                *   Parenthesis Example: `.../4_parenthesis/documents/{model_name_slug}_implementation_plan_parenthesis.md`
-                *   Paralysis Documents (Canonical/Chosen by User):
-                    *   `.../5_paralysis/documents/chosen_implementation_plan.md`
-                    *   `.../5_paralysis/documents/project_checklist.csv` (or other PM tool formats)
-            *   Optional iteration summary: `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/session_{session_id_short}/iteration_{N}/iteration_summary.md`
-        *   Ensure Markdown templates include citation rendering for Parenthesis stage.
-    *   `[ ] 3.5.1.2` All stage outputs (Thesis, Antithesis, Synthesis, Parenthesis, Paralysis, including their `documents/` subfolders and user feedback files) should be consistently saved under the appropriate iteration-specific folders (`iteration_{N}`).
-    *   `[ ] 3.5.1.3` The `project_readme.md`, `Implementation/`, and `Complete/` folders are at the project level: `{repo_root}/{dialectic_outputs_base_dir_name}/{project_name_slug}/`.
-*   `[ ] 3.5.2 [IDE]` Foundational work for IDE plugins (VS Code, JetBrains - primarily design and API needs analysis for Phase 3):
-    *   `[ ] 3.5.2.1 [DOCS]` Define core IDE use cases:
-        *   Initiate a dialectic session from IDE (e.g., right-click on a code block or requirement file).
-        *   View session progress and results within an IDE panel.
-        *   Insert/apply outputs (e.g., code snippets from Parenthesis) directly into the editor.
-    *   `[ ] 3.5.2.2 [API]` Analyze and document any new API endpoints or modifications to existing ones needed for smooth IDE plugin interaction (e.g., streaming results for long generations, more granular status updates, context-specific prompt generation based on IDE selection). This is analysis, not implementation of new API endpoints unless trivial and essential for planning.
-*   `[ ] 3.5.3 [COMMIT]` feat(be,ide): GitHub outputs for all stages with iteration folders, IDE plugin groundwork analysis
-
-### 3.6 Finalizing Phase 3
-*   `[ ] 3.6.1 [TEST-E2E]` Write/Update E2E tests for the full 5-stage iterative workflow, including:
-    *   Session proceeding through multiple iterations.
-    *   Session terminating due to convergence or max iterations.
-    *   Viewing citations.
-    *   Viewing the basic argument map.
-*   `[ ] 3.6.2 [DOCS]` Update all user and developer documentation for the 5-stage process, iteration management, citation support, and argument mapping.
-*   `[ ] 3.6.3 [REFACTOR]` Perform a general review and refactor of all Phase 3 code.
-*   `[ ] 3.6.4 [COMMIT]` feat: complete Phase 3 of AI Dialectic Engine
-*   `[ ] 3.6.5 [DEPLOY]` Phase 3 deployment checkpoint. Review deployment readiness.
-
----
-**Checkpoint Reminder for User:** After Section 3 / Phase 3:
-1.  Run all tests. Build. Restart. Manually verify all 5 stages and iteration. Ensure tests are in CI/CD.
-2.  Commit: `git commit -m "feat: AI Dialectic Engine Phase 3 complete (Full 5-Stage Cycle & Iteration)"`
-3.  If ready, proceed with Phase 3 deployment.
----
-
-## Section 4: Phase 4 - Advanced Collaboration & Ecosystem (Ongoing)
-
-**Phase 4 Value:** Domain specialization, deeper Human-in-the-Loop (HitL) integration, ecosystem building, learning from dialectical patterns, and advanced tooling. This phase is ongoing and features will be prioritized based on learning and user feedback.
-
-**Phase 4 Objectives (High-Level from PRD, specific items to be broken down further in future planning):**
-1.  **Domain-Specific Configurations:** Create specialized DialeqAI setups for coding, legal, scientific research, etc. (e.g., pre-canned prompt libraries, model selections, workflow rules).
-2.  **Advanced HitL:** Allow user intervention at any stage (e.g., edit a model's contribution before it's used in the next stage), collaborative editing of outputs, and more granular feedback mechanisms that directly influence subsequent steps.
-3.  **Learning & Auto-Tuning:** System learns from successful dialectical patterns (user feedback, convergence rates, quality of output) to improve prompt generation, model selection for stages, or orchestration strategies. (Long-term research-oriented).
-4.  **Expanded Model Support:** Integrate more models, including open-source (e.g., via local Ollama or Hugging Face integrations if feasible) and potentially user-provided custom models (BYOM - Bring Your Own Model API keys/endpoints).
-5.  **Public API:** Offer a well-documented, versioned public API for third-party integrations to programmatically run dialectic sessions.
-6.  **Advanced Argument Mapping & Visualization:** Rich, interactive visualization of the dialectic flow, allowing users to explore connections, expand/collapse threads, and understand the reasoning evolution.
-7.  **Meta-Model Orchestration (Experimental):** Investigate using a dedicated AI model to manage the dialectic flow itself, deciding when to iterate, which models to use for which stage, or how to synthesize conflicting information based on context.
-8.  **Advanced Code-Specific Tools (If "Coding" Domain is prioritized):** Deeper integration for developers (e.g., generating unit tests for code produced in Parenthesis, suggesting refactors, linking dialectic discussions to specific code blocks or PRs).
-9.  **CLI Enhancements:** Develop a feature-rich CLI tool as described in PRDs (`aigc new`, `aigc models`, `aigc prompt`, `aigc status`, `aigc review`, `aigc resolve`, `aigc export`) for power users and automation.
-10. **Failure Mode Mitigation & UX:** Robust cost controls (hard limits), latency optimization (e.g., streaming partial results for long generations where possible), UX patterns that emphasize critical thinking and human oversight.
-11. **UGC Showcase & Community Prompts:** Platform for users to share successful prompt templates.
-
-**Estimated Duration:** Ongoing, iterative development.
-
-**Starting Point:** Completion of Section 3 (Phase 3). A fully functional 5-stage iterative dialectic engine is in place.
-
-**Deliverables for Phase 4 (Iterative & Ongoing, examples for first few sprints):**
-*   (Sprint 1-2) Enhanced CLI tool with key commands (`list-projects`, `create-project`, `start-session`, `get-session-status`).
-*   (Sprint 1-2) Initial Domain Specialization: "Software Development - Architecture Planning" tailored prompts.
-*   (Sprint 3-4) Advanced HitL: Allow user to edit a "Synthesis" output before it goes to "Parenthesis".
-*   (Sprint 3-4) Public API V1: Document and expose core endpoints for session creation and status retrieval with API key auth.
-*   (Ongoing) Incremental improvements to argument mapping, model support, cost controls, etc.
-*   (Ongoing) Periodic [DEPLOY] checkpoints as significant features are completed.
-
----
-### 4.1 Initial Focus for Phase 4 (Example Sprints/Epics)
-
-#### Epic 4.1.A: Robust CLI Tool (MVP)
-*   **Objective:** Provide a functional CLI for core dialectic operations.
-*   **Key Steps:**
-    *   `[ ] 4.1.A.1 [CLI]` Set up a new package for `@paynless/dialectic-cli` (e.g., using `oclif` or a similar Node.js CLI framework if not already done for other features).
-    *   `[ ] 4.1.A.2 [CLI]` Implement secure authentication for CLI (e.g., device flow, token-based, leveraging existing user auth).
-        *   `[ ] 4.1.A.2.1 [TEST-UNIT]` Write tests. (RED)
-        *   `[ ] 4.1.A.2.2` Implement. (GREEN)
-    *   `[ ] 4.1.A.3 [CLI]` Command: `dialectic-cli projects list` (Uses `@paynless/api` `listProjects`).
-    *   `[ ] 4.1.A.4 [CLI]` Command: `dialectic-cli projects create --name "<name>" --prompt "<initial_prompt>"` (Uses `createProject`).
-    *   `[ ] 4.1.A.5 [CLI]` Command: `dialectic-cli sessions start --project-id <id> --models "<model_id_1>,<model_id_2>" [--description "<desc>"] [--structure "<debate_structure_name_or_id>"]` (Uses `startSession`, may need to fetch available models/structures first).
-    *   `[ ] 4.1.A.6 [CLI]` Command: `dialectic-cli sessions status --session-id <id>` (Uses `getProjectDetails` and extracts relevant session status).
-    *   `[ ] 4.1.A.7 [CLI]` Command: `dialectic-cli sessions export --session-id <id> [--output-path <path>]` (Triggers GitHub export if configured, or allows local saving of all contributions as markdown).
-    *   `[ ] 4.1.A.8 [TEST-INT]` Comprehensive integration tests for all CLI commands against the API.
-    *   `[ ] 4.1.A.9 [DOCS]` User documentation for installing and using the CLI tool.
-    *   `[ ] 4.1.A.10 [COMMIT]` feat(cli): MVP for dialectic CLI tool
-
-#### Epic 4.1.B: Domain Specialization - "Software Architecture Planning"
-*   **Objective:** Create a tailored experience for using the Dialectic Engine for software architecture planning.
-*   **Key Steps:**
-    *   `[ ] 4.1.B.1 [PROMPT]` Research and define a set of 5 highly effective prompt templates (Thesis, Antithesis, Synthesis, Parenthesis, Paralysis) specifically for generating and critiquing software architecture proposals.
-        *   *Thesis Example:* "Given the following requirements: {{initial_user_prompt}}, propose a high-level software architecture. Detail key components, technologies, data flow, and deployment strategy. Justify your choices."
-        *   *Antithesis Example:* "Critique the proposed architecture: {{thesis_content}} based on requirements: {{initial_user_prompt}}. Focus on scalability, maintainability, security, cost, and potential bottlenecks. Offer specific alternative approaches for weak areas."
-    *   `[ ] 4.1.B.2 [DB]` Seed these new prompts into `prompt_templates`.
-        *   `[ ] 4.1.B.2.1 [TEST-UNIT]` Write tests. (RED)
-        *   `[ ] 4.1.B.2.2` Implement. (GREEN)
-    *   `[ ] 4.1.B.3 [DB]` Create a new entry "Software Architecture Planning" linking these 5 new prompt templates.
-        *   `[ ] 4.1.B.3.1 [TEST-UNIT]` Write tests. (RED)
-        *   `[ ] 4.1.B.3.2` Implement. (GREEN)
-    *   `[ ] 4.1.B.4 [UI]` Ensure this new structure is selectable in the UI when starting a session. Add a "Domain" or "Category" filter for debate structures if the list becomes long.
-        *   `[ ] 4.1.B.4.1 [TEST-UNIT]` Write tests. (RED)
-        *   `[ ] 4.1.B.4.2` Implement. (GREEN)
-    *   `[ ] 4.1.B.5 [DOCS]` Document this domain specialization and how to use it effectively.
-    *   `[ ] 4.1.B.6 [COMMIT]` feat(content): add "Software Architecture Planning" domain specialization
-
-#### Epic 4.1.C: Advanced HitL - Editing Contributions
-*   **Objective:** Allow users to directly edit the content of a specific stage's output before it is used as input for the subsequent stage.
-*   **Key Steps:**
-    *   `[ ] 4.1.C.1 [DB]` Add `edited_content` (TEXT, nullable) and `is_edited_by_user` (BOOLEAN, default false) to `dialectic_contributions` table.
-        *   `[ ] 4.1.C.1.1 [TEST-UNIT]` Write migration test. (RED)
-        *   `[ ] 4.1.C.1.2` Migration script. (GREEN)
-    *   `[ ] 4.1.C.2 [BE]` When an upstream stage (e.g., Parenthesis) fetches input from a downstream stage (e.g., Synthesis), it should prioritize using `edited_content` if `is_edited_by_user` is true, otherwise use `original_content` (which is the current `content` field). Modify `generateParenthesisContribution` etc. accordingly.
-        *   `[ ] 4.1.C.2.1 [TEST-INT]` Write tests. (RED)
-        *   `[ ] 4.1.C.2.2` Implement. (GREEN)
-    *   `[ ] 4.1.C.3 [BE]` `dialectic-service` Action: `editContributionContent`. Input: `contributionId`, `newContent`. Updates `edited_content` and sets `is_edited_by_user = true`. User must own the session.
-        *   `[ ] 4.1.C.3.1 [TEST-INT]` Write tests. (RED)
-        *   `[ ] 4.1.C.3.2` Implement. (GREEN)
-    *   `[ ] 4.1.C.4 [API]` Add `editContributionContent` to API client.
-        *   `[ ] 4.1.C.4.1 [TEST-UNIT]` Write tests. (RED)
-        *   `[ ] 4.1.C.4.2` Implement. (GREEN)
-    *   `[ ] 4.1.C.5 [STORE]` Add thunk/action for `editContributionContent`. Refetch project details or update specific contribution in state.
-        *   `[ ] 4.1.C.5.1 [TEST-UNIT]` Write tests. (RED)
-        *   `[ ] 4.1.C.5.2` Implement. (GREEN)
-    *   `[ ] 4.1.C.6 [UI]` In `DialecticSessionDetailsPage`, for each contribution display (e.g., Synthesis output):
-        *   `[ ] 4.1.C.6.1 [TEST-UNIT]` Write tests. (RED)
-        *   `[ ] 4.1.C.6.2` Display `edited_content` if available, otherwise `content`. Indicate if it has been user-edited.
-        *   `[ ] 4.1.C.6.3` Add an "Edit" button. Clicking it opens a modal/text area pre-filled with the current content (original or previously edited).
-        *   `[ ] 4.1.C.6.4` On save, dispatch `editContributionContent` thunk. (GREEN)
-    *   `[ ] 4.1.C.7 [UI]` Consider how to handle re-triggering subsequent stages after an edit. E.g., if Synthesis is edited, should Parenthesis automatically re-run? For now, user might need to manually trigger "Proceed to next stage" which would then use the edited content.
-    *   `[ ] 4.1.C.8 [REFACTOR]` Review.
-    *   `[ ] 4.1.C.9 [COMMIT]` feat(hitl): allow user editing of stage contributions
-
-#### Epic 4.1.D: Public API v1 (Read-Only & Session Start)
-*   **Objective:** Expose core functionalities via a documented public API.
-*   **Key Steps:**
-    *   `[ ] 4.1.D.1 [BE]` Design API key authentication mechanism for external users/services (e.g., new table `api_keys`, link to `user_id`, secure generation and storage).
-        *   `[ ] 4.1.D.1.1 [TEST-UNIT]` Write tests for DB and key generation. (RED)
-        *   `[ ] 4.1.D.1.2` Implement. (GREEN)
-    *   `[ ] 4.1.D.2 [BE]` Modify `dialectic-service` (or create new dedicated public API Edge Functions if separation is desired for security/rate-limiting):
-        *   `[ ] 4.1.D.2.1 [TEST-INT]` Write tests for public endpoints with API key auth. (RED)
-        *   `[ ] 4.1.D.2.2` Expose `listProjects`, `getProjectDetails`, `startSession`, `listModelCatalog`actions.
-        *   `[ ] 4.1.D.2.3` Ensure these endpoints check for a valid API key if user session is not present.
-        *   `[ ] 4.1.D.2.4` Apply appropriate rate limiting for API key access. (GREEN)
-    *   `[ ] 4.1.D.3 [DOCS]` Create OpenAPI (Swagger) V3 specification for these public endpoints. Document authentication, request/response schemas, rate limits. Host this documentation (e.g., using Supabase's built-in API docs if Edge Functions are standard, or a separate tool like Redocly).
-    *   `[ ] 4.1.D.4 [UI]` (Admin UI, separate from main app, or in user profile settings) Interface for users to generate/manage their API keys.
-        *   `[ ] 4.1.D.4.1 [TEST-UNIT]` Write tests. (RED)
-        *   `[ ] 4.1.D.4.2` Implement. (GREEN)
-    *   `[ ] 4.1.D.5 [REFACTOR]` Review public API implementation and security.
-    *   `[ ] 4.1.D.6 [COMMIT]` feat(api): Public API v1 for core dialectic operations
-
-#### Epic 4.1.E: Foundational Analytics & Monitoring Infrastructure
-*   **Objective:** Establish basic infrastructure for collecting and reviewing operational metrics and logs.
-*   **Key Steps:**
-    *   `[ ] 4.1.E.1 [CONFIG]` Identify a logging/monitoring solution compatible with Supabase (e.g., Supabase's built-in logging, or integration with a third-party service like BetterStack, Logflare, Datadog if project needs warrant).
-    *   `[ ] 4.1.E.2 [BE]` Ensure `dialectic-service` and other relevant backend functions emit structured logs for key events:
-        *   Project/Session creation.
-        *   Stage transitions (e.g., `pending_contribution` -> `generating_contribution` -> `complete_contribution`) using the next `stage` tag from `DialecticStage` and the `domain` tag selected by the user.
-        *   AI model calls (model used, tokens in/out, duration, cost, success/failure).
-        *   HitL interactions.
-        *   Errors and exceptions, with correlation IDs if possible.
-    *   `[ ] 4.1.E.3 [BE]` Define key metrics to track initially:
-        *   Number of active projects/sessions.
-        *   Average duration per stage.
-        *   Error rates per model/provider.
-        *   Total token consumption/cost per session/project.
-        *   Frequency of HitL feature usage.
-    *   `[ ] 4.1.E.4 [BE]` Set up basic dashboards or queries in the chosen logging/monitoring solution to visualize these key metrics.
-    *   `[ ] 4.1.E.5 [DOCS]` Document the logging strategy and how to access/interpret logs and metrics.
-    *   `[ ] 4.1.E.6 [COMMIT]` feat(ops): foundational analytics and monitoring infrastructure
-
----
-
-### Epic 5: Future Integrations to Consider
-
-Project & Task Management (beyond Jira):
-*   [ ] Asana: Very popular for task and project management.
-*   [ ] Monday.com: Highly visual and flexible work OS.
-*   [ ] ClickUp: Aims to be an all-in-one productivity platform.
-*   [ ] Wrike: Robust for enterprise project management.
-*   [ ] Trello: Kanban-style, simpler task management.
-*   [ ] Basecamp: Known for its focus on simplicity and remote team collaboration.
-*   [ ] Smartsheet: Spreadsheet-like interface with powerful PM features.
-Version Control & Dev Platforms (beyond GitHub):
-*   [ ] GitLab: Offers a complete DevOps platform.
-*   [ ] Bitbucket: Atlassian's Git solution, integrates well with Jira.
-Collaboration & Document Management (beyond what's listed):
-*   [ ] Confluence: Atlassian's wiki/documentation tool, often paired with Jira.
-*   [ ] Slack: Ubiquitous for team communication; could integrate for notifications or initiating dialectic processes.
-*   [ ] Zoho Projects / Zoho One: A comprehensive suite of business apps.
-Design & Whiteboarding (for early-stage hypothesis/ideation):
-*   [ ] Miro: Online collaborative whiteboard.
-*   [ ] Figma / FigJam: Design and whiteboarding.
-General Principles for Future-Proofing Integrations:
-*   [ ] Standardized Data Formats for Export/Import:
-*   [ ] Prioritize common formats like CSV, JSON, and Markdown. These are widely supported.
-*   [ ] For more complex data (like task dependencies), investigate if there's a common interchange format (though this is rare, often it's API-to-API).
-Well-Defined API for Your Engine:
-*   [ ] As planned for Phase 4 (Public API), having your own robust API is the most critical step. Other platforms will integrate with you via this API.
-*   [ ] Ensure the API can provide data in easily consumable formats (JSON primarily).
-Webhook Support:
-*   [ ] For your system to send updates to other platforms (e.g., "Paralysis complete, new checklist available"), implement outgoing webhooks.
-*   [ ] For your system to receive updates (e.g., task status changed in Jira), you'd consume webhooks from those platforms.
-Modular Integration Layer:
-*   [ ] When you start building specific integrations, try to create an abstraction layer. So, instead of code_that_talks_to_jira.ts, you might have task_management_adapter.ts with a JiraSpecificImplementation.ts. This makes adding AsanaSpecificImplementation.ts easier later.
-Authentication Strategy:
-*   [ ] OAuth 2.0 is the standard for user-authorized access to other platforms. For service-to-service, API keys or service accounts are common.
-Focus on Core Data, Not Just UI:
-*   [ ] The key for portability is the data. If the core dialectic outputs (prompts, responses, feedback, decisions, final documents) are well-structured and accessible via API or export, integrating the representation of that data into another tool's UI becomes a secondary problem.
-User-Driven Demand:
-*   [ ] While it's great to be proactive, let user demand guide which specific integrations you build out first after the foundational ones (like GitHub).
-*   [ ] By focusing on Markdown and structured JSON/CSV for your core outputs (as planned for Paralysis documents), and building a solid API, you'll be in a very good position for future portability and integrations without boxing yourself in now. The GitHub integration itself will teach you a lot about the patterns needed for other tools.
