@@ -42,6 +42,36 @@ describe('GenerateContributionButton', () => {
       generateContributions: mockGenerateContributions,
       isGeneratingContributions: false,
       generateContributionsError: null,
+      currentProjectDetail: {
+        id: 'test-project-id',
+        dialectic_sessions: [
+          {
+            id: 'test-session-id',
+            project_id: 'test-project-id',
+            current_iteration: 1,
+            status: 'pending_thesis',
+            dialectic_contributions: [],
+            active_thesis_prompt_template_id: null,
+            active_antithesis_prompt_template_id: null,
+            active_synthesis_prompt_template_id: null,
+            active_parenthesis_prompt_template_id: null,
+            active_paralysis_prompt_template_id: null,
+            formal_debate_structure_id: null,
+            session_description: 'desc',
+            current_stage_seed_prompt: null,
+            iteration_count: 1,
+            associated_chat_id: 'c1',
+            max_iterations: 1,
+            convergence_status: null,
+            preferred_model_for_stage: null,
+            created_at: 'now',
+            updated_at: 'now',
+            dialectic_session_models: [],
+          }
+        ],
+        user_id: 'u1', project_name: 'p1', initial_user_prompt: 'ipu', selected_domain_overlay_id: null, selected_domain_tag: null,
+        repo_url: null, status: 'active', created_at: 'now', updated_at: 'now',
+      },
       fetchAvailableDomainTags: vi.fn(),
       setSelectedDomainTag: vi.fn(),
       fetchAvailableDomainOverlays: vi.fn(),
@@ -76,9 +106,6 @@ describe('GenerateContributionButton', () => {
       projects: [],
       isLoadingProjects: false,
       projectsError: null,
-      currentProjectDetail: null,
-      isLoadingProjectDetail: false,
-      projectDetailError: null,
       modelCatalog: [],
       isLoadingModelCatalog: false,
       modelCatalogError: null,
@@ -130,7 +157,9 @@ describe('GenerateContributionButton', () => {
     expect(defaultProps.onGenerationStart).toHaveBeenCalledTimes(1);
     expect(mockGenerateContributions).toHaveBeenCalledWith({
       sessionId: 'test-session-id',
-      projectId: 'test-project-id'
+      projectId: 'test-project-id',
+      stageSlug: defaultProps.currentStage,
+      iterationNumber: 1
     });
 
     await waitFor(() => {

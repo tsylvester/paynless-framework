@@ -198,6 +198,19 @@ export interface DialecticStateValues {
   // States for generating contributions
   isGeneratingContributions: boolean;
   generateContributionsError: ApiError | null;
+
+  // States for submitting stage responses (as per plan 1.5.6.4)
+  isSubmittingStageResponses: boolean; 
+  submitStageResponsesError: ApiError | null;
+
+  // States for saving contribution edits (as per plan 1.5.6.5)
+  isSavingContributionEdit: boolean;
+  saveContributionEditError: ApiError | null;
+
+  // New context states
+  activeContextProjectId: string | null;
+  activeContextSessionId: string | null;
+  activeContextStageSlug: DialecticStage | null;
 }
 
 export interface ContributionCacheEntry {
@@ -240,10 +253,24 @@ export interface DialecticActions {
   resetSelectedModelId: () => void;
 
   // New action for fetching initial prompt file content
-  fetchInitialPromptContent: (resourceId: string) => Promise<void>;
+  fetchInitialPromptContent: (resourceIdOrPath: string) => Promise<void>; // Updated to accept path too
 
   // Action for generating contributions
-  generateContributions: (payload: { sessionId: string; projectId: string }) => Promise<ApiResponse<{ message: string; contributions?: DialecticContribution[] }>>;
+  generateContributions: (payload: { sessionId: string; projectId: string; stageSlug: DialecticStage; iterationNumber: number; }) => Promise<ApiResponse<{ message: string; contributions?: DialecticContribution[] }>>;
+  
+  // Actions for submitting stage responses and preparing next seed (plan 1.2.Y / 1.5.6.4)
+  submitStageResponsesAndPrepareNextSeed: (payload: SubmitStageResponsesPayload) => Promise<ApiResponse<SubmitStageResponsesResponse>>; // Assuming types from plan
+  resetSubmitStageResponsesError: () => void; // Added for plan
+
+  // Actions for saving contribution edits (plan 1.2.Y / 1.5.6.5)
+  saveContributionEdit: (payload: SaveContributionEditPayload) => Promise<ApiResponse<DialecticContribution>>; // Assuming types from plan
+  resetSaveContributionEditError: () => void; // Added for plan
+
+  // New context actions
+  setActiveContextProjectId: (id: string | null) => void;
+  setActiveContextSessionId: (id: string | null) => void;
+  setActiveContextStageSlug: (slug: DialecticStage | null) => void;
+  setActiveDialecticContext: (context: { projectId: string | null; sessionId: string | null; stageSlug: DialecticStage | null }) => void;
 
   _resetForTesting?: () => void;
 }
@@ -253,26 +280,27 @@ export type DialecticStore = DialecticStateValues & DialecticActions;
 export interface DialecticContribution {
     id: string;
     session_id: string;
-    session_model_id: string;
     user_id: string | null;
     stage: string;
     iteration_number: number;
-    actual_prompt_sent: string | null;
-    
+    model_id: string | null;
+    model_name: string | null;
+    prompt_template_id_used: string | null;
+    seed_prompt_url: string | null;
     content_storage_bucket: string | null;
     content_storage_path: string | null;
     content_mime_type: string | null;
     content_size_bytes: number | null;
-
+    edit_version: number;
+    is_latest_edit: boolean;
+    original_model_contribution_id: string | null;
     raw_response_storage_path: string | null;
-
+    target_contribution_id: string | null;
     tokens_used_input: number | null;
     tokens_used_output: number | null;
     processing_time_ms: number | null;
-
+    error: string | null;
     citations: { text: string; url?: string }[] | null;
-
-    parent_contribution_id: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -291,19 +319,28 @@ export interface DialecticApiClient {
 
   updateProjectDomainTag(payload: UpdateProjectDomainTagPayload): Promise<ApiResponse<DialecticProject>>;
 
-  generateContributions(payload: { sessionId: string }): Promise<ApiResponse<{ message: string; contributions?: DialecticContribution[] }>>;
+  generateContributions(payload: GenerateContributionsPayload): Promise<ApiResponse<GenerateContributionsResponse>>;
 
   deleteProject(payload: DeleteProjectPayload): Promise<ApiResponse<void>>;
 
-  // New API client methods
   cloneProject(payload: { projectId: string }): Promise<ApiResponse<DialecticProject>>;
   exportProject(payload: { projectId: string }): Promise<ApiResponse<{ export_url: string }>>;
 
   updateDialecticProjectInitialPrompt(payload: UpdateProjectInitialPromptPayload): Promise<ApiResponse<DialecticProject>>;
+
+  submitStageResponsesAndPrepareNextSeed(payload: SubmitStageResponsesPayload): Promise<ApiResponse<SubmitStageResponsesResponse>>;
+  updateContributionContent(payload: SaveContributionEditPayload): Promise<ApiResponse<DialecticContribution>>;
+
+  getIterationInitialPromptContent(payload: GetIterationInitialPromptPayload): Promise<ApiResponse<IterationInitialPromptData>>;
+
+  getProjectResourceContent(payload: GetProjectResourceContentPayload): Promise<ApiResponse<GetProjectResourceContentResponse>>;
 }
 
 export interface GenerateContributionsPayload {
   sessionId: string;
+  projectId: string;
+  stageSlug: DialecticStage;
+  iterationNumber: number;
 }
 
 export interface GenerateContributionsResponse {
@@ -358,12 +395,15 @@ export type DialecticServiceActionPayload = {
   payload: StartSessionPayload;
 } | {
   action: 'listProjects';
-  payload?: undefined; // Or a specific payload if filtering/pagination is added
+  payload?: undefined; 
 } | {
   action: 'getProjectDetails';
   payload: { projectId: string };
 } | {
   action: 'listModelCatalog';
+  payload?: undefined;
+} | {
+  action: 'listAvailableDomainTags';
   payload?: undefined;
 } | {
   action: 'listAvailableDomainOverlays';
@@ -373,10 +413,10 @@ export type DialecticServiceActionPayload = {
   payload: GetContributionContentSignedUrlPayload;
 } | {
   action: 'uploadProjectResourceFile';
-  payload: FormData; // Placeholder, refine if specific metadata is also in JSON part
+  payload: FormData; 
 } | {
   action: 'generateContributions';
-  payload: { sessionId: string };
+  payload: GenerateContributionsPayload;
 } | {
   action: 'cloneProject';
   payload: { projectId: string };
@@ -384,8 +424,23 @@ export type DialecticServiceActionPayload = {
   action: 'exportProject';
   payload: { projectId: string };
 } | {
+  action: 'updateProjectDomainTag';
+  payload: UpdateProjectDomainTagPayload;
+} | {
+  action: 'updateDialecticProjectInitialPrompt';
+  payload: UpdateProjectInitialPromptPayload;
+} | {
   action: 'getProjectResourceContent';
   payload: GetProjectResourceContentPayload;
+} | {
+  action: 'getIterationInitialPromptContent';
+  payload: GetIterationInitialPromptPayload;
+} | {
+  action: 'submitStageResponsesAndPrepareNextSeed';
+  payload: SubmitStageResponsesPayload;
+} | {
+  action: 'updateContributionContent';
+  payload: SaveContributionEditPayload;
 }
 
 export interface DialecticServiceResponsePayload {
@@ -411,4 +466,48 @@ export interface GetProjectResourceContentResponse {
   mimeType: string;
   content: string;
 }
-// End added types
+
+// Add new payload/response types if they are not already defined from the plan for submitStageResponsesAndPrepareNextSeed and saveContributionEdit
+// These are placeholders from the plan, ensure they exist or are defined if not already in this file
+export interface SubmitStageResponsesPayload { 
+    sessionId: string;
+    projectId: string;
+    stageSlug: DialecticStage;
+    currentIterationNumber: number;
+    responses: UserResponseInput[];
+}
+  
+export interface SubmitStageResponsesResponse { 
+    userFeedbackStoragePath: string;
+    nextStageSeedPromptStoragePath: string;
+    updatedSession: DialecticSession;
+    message?: string;
+}
+
+export interface SaveContributionEditPayload { 
+    originalContributionIdToEdit: string;
+    editedContentText: string;
+    projectId: string;
+    sessionId: string;
+}
+
+// START: New type definitions needed for 1.5.6 UI and 1.2.Y backend enhancements
+
+export interface GetIterationInitialPromptPayload {
+  sessionId: string;
+  iterationNumber: number;
+}
+
+export interface IterationInitialPromptData {
+  content: string; 
+  mimeType: string; 
+  storagePath: string;
+}
+
+export interface UserResponseInput { 
+  originalModelContributionId: string; 
+  responseText: string;
+}
+
+// END: New type definitions
+

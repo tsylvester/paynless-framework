@@ -7,7 +7,9 @@ import type {
     DomainOverlayDescriptor,
     DialecticSession,
     DialecticStage,
+    DialecticContribution,
 } from '@paynless/types';
+import { createSelector } from 'reselect';
 
 // Selector for the list of available domain tags
 export const selectAvailableDomainTags = (state: DialecticStateValues): DomainTagDescriptor[] => {
@@ -125,6 +127,33 @@ export const selectIsStartNewSessionModalOpen = (state: DialecticStateValues): b
 
 // Selector for selected model IDs for the new session modal
 export const selectSelectedModelIds = (state: DialecticStateValues): string[] => state.selectedModelIds || [];
+
+// Input selector for all contributions from the current project's sessions
+const selectAllContributionsFromCurrentProject = (state: DialecticStateValues): DialecticContribution[] => {
+  const currentProject = state.currentProjectDetail;
+  if (!currentProject || !currentProject.dialectic_sessions) {
+    return [];
+  }
+  return currentProject.dialectic_sessions.flatMap(session => session.dialectic_contributions || [] );
+};
+
+// Input selector for the contributionId parameter (passed from component props)
+const selectContributionIdParam = (_state: DialecticStateValues, contributionId: string): string => contributionId;
+
+// Memoized selector to get a specific contribution by its ID
+export const selectContributionById = createSelector(
+  [selectAllContributionsFromCurrentProject, selectContributionIdParam],
+  (allContributions, contributionId) => 
+    allContributions.find(contribution => contribution.id === contributionId)
+);
+
+// Selector for any error related to saving a contribution edit
+export const selectSaveContributionEditError = (state: DialecticStateValues) => state.saveContributionEditError;
+
+// Selectors for new context states
+export const selectActiveContextProjectId = (state: DialecticStateValues): string | null => state.activeContextProjectId;
+export const selectActiveContextSessionId = (state: DialecticStateValues): string | null => state.activeContextSessionId;
+export const selectActiveContextStageSlug = (state: DialecticStateValues): DialecticStage | null => state.activeContextStageSlug;
 
 // Example of how you might use these with the store hook directly in a component:
 // import { useDialecticStore } from './dialecticStore';

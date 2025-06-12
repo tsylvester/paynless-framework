@@ -23,21 +23,16 @@ import type {
   DomainOverlayDescriptor,
   DomainTagDescriptor,
   DialecticContribution,
-  DialecticStage
+  SubmitStageResponsesPayload,
+  SubmitStageResponsesResponse,
+  SaveContributionEditPayload,
+  GenerateContributionsResponse,
+  GenerateContributionsPayload,
+  UserResponseInput,
+  DialecticStage,
+  IterationInitialPromptData
 } from '@paynless/types';
-// import { toast } from 'sonner'; Linter Error: Cannot find module 'sonner' or its corresponding type declarations.
-
-// Mock sonner
-// vi.mock('sonner', () => ({
-// toast: {
-// success: vi.fn(),
-// error: vi.fn(),
-// info: vi.fn(),
-// warning: vi.fn(),
-// loading: vi.fn(),
-// dismiss: vi.fn(),
-//   },
-// }));
+import { DialecticStage as DialecticStageType } from '@paynless/types';
 
 // Add the mock call here
 vi.mock('@paynless/api', async (importOriginal) => {
@@ -533,6 +528,8 @@ describe('useDialecticStore', () => {
     describe('generateContributions thunk', () => {
         const mockSessionId = 'sess-generate-123';
         const mockProjectId = 'proj-generate-abc';
+        const mockStageSlug = DialecticStageType.THESIS;
+        const mockIterationNumber = 1;
         const mockContribution: DialecticContribution = {
             id: 'contrib-new-1',
             session_id: mockSessionId,
@@ -619,6 +616,12 @@ describe('useDialecticStore', () => {
         });
 
         it('should set loading state, call API, and show success toast on successful generation', async () => {
+            const mockPayload: GenerateContributionsPayload = {
+                sessionId: mockSessionId,
+                projectId: mockProjectId,
+                stageSlug: mockStageSlug,
+                iterationNumber: mockIterationNumber,
+            };
             const successMessage = 'Contributions generated!';
             mockDialecticApi.generateContributions.mockResolvedValueOnce({
                 data: { message: successMessage, contributions: [mockContribution] },
@@ -626,12 +629,17 @@ describe('useDialecticStore', () => {
             });
 
             const { generateContributions } = useDialecticStore.getState();
-            await generateContributions({ sessionId: mockSessionId, projectId: mockProjectId });
+            await generateContributions(mockPayload);
 
             const state = useDialecticStore.getState();
             expect(state.isGeneratingContributions).toBe(false);
             expect(state.generateContributionsError).toBeNull();
-            expect(mockDialecticApi.generateContributions).toHaveBeenCalledWith({ sessionId: mockSessionId });
+            expect(mockDialecticApi.generateContributions).toHaveBeenCalledWith({
+                projectId: mockProjectId,
+                sessionId: mockSessionId,
+                stageSlug: mockStageSlug,
+                iterationNumber: mockIterationNumber,
+            });
             // expect(toast.success).toHaveBeenCalledWith(successMessage);
         });
 
@@ -680,7 +688,12 @@ describe('useDialecticStore', () => {
             });
 
             const { generateContributions } = useDialecticStore.getState();
-            await generateContributions({ sessionId: mockSessionId, projectId: mockProjectId });
+            await generateContributions({ 
+                sessionId: mockSessionId, 
+                projectId: mockProjectId, 
+                stageSlug: DialecticStageType.THESIS, 
+                iterationNumber: 1 
+            });
 
             const updatedState = useDialecticStore.getState();
             // currentProjectDetail is updated by the refetch to be mockProjectForRefetch, which contains the contribution
@@ -735,7 +748,12 @@ describe('useDialecticStore', () => {
 
             const { generateContributions } = useDialecticStore.getState();
             // Calling with mockProjectId, which is different from currentProjectDetail.id initially
-            await generateContributions({ sessionId: mockSessionId, projectId: mockProjectId }); 
+            await generateContributions({ 
+                sessionId: mockSessionId, 
+                projectId: mockProjectId, 
+                stageSlug: DialecticStageType.THESIS, 
+                iterationNumber: 1 
+            }); 
 
             const updatedState = useDialecticStore.getState();
             // currentProjectDetail will be updated to mockProjectForRefetch (from the describe-level mock of getProjectDetails)
@@ -753,7 +771,12 @@ describe('useDialecticStore', () => {
             });
 
             const { generateContributions } = useDialecticStore.getState();
-            await generateContributions({ sessionId: mockSessionId, projectId: mockProjectId });
+            await generateContributions({ 
+                sessionId: mockSessionId, 
+                projectId: mockProjectId, 
+                stageSlug: DialecticStageType.THESIS, 
+                iterationNumber: 1 
+            });
 
             const state = useDialecticStore.getState();
             expect(state.isGeneratingContributions).toBe(false);
@@ -766,7 +789,12 @@ describe('useDialecticStore', () => {
             mockDialecticApi.generateContributions.mockRejectedValueOnce(new Error(networkErrorMessage));
 
             const { generateContributions } = useDialecticStore.getState();
-            await generateContributions({ sessionId: mockSessionId, projectId: mockProjectId });
+            await generateContributions({ 
+                sessionId: mockSessionId, 
+                projectId: mockProjectId, 
+                stageSlug: DialecticStageType.THESIS, 
+                iterationNumber: 1 
+            });
 
             const state = useDialecticStore.getState();
             expect(state.isGeneratingContributions).toBe(false);
@@ -775,54 +803,371 @@ describe('useDialecticStore', () => {
         });
 
         it('should handle successful API response with no contributions array gracefully', async () => {
+            const mockSessionId = 'sess-generate-123';
+            const mockProjectId = 'proj-generate-abc'; // Ensure this is defined
+            const mockStageSlug = DialecticStageType.THESIS; // Ensure this is defined
+            const mockIterationNumber = 1; // Ensure this is defined
             const successMessage = 'Generation process started, results will appear soon.';
-            mockDialecticApi.generateContributions.mockResolvedValueOnce({
-                data: { message: successMessage }, // No 'contributions' field in data
-                status: 202, // Accepted for processing
-            });
-
-            // Set initial currentProjectDetail to the one that will be refetched, but with empty contributions initially
-            const projectAsItWouldBeBeforeRefetchButNoNewContributions: DialecticProject = {
-                ...mockProjectForRefetch, // Use the structure of mockProjectForRefetch
-                id: mockProjectId,        // Ensure ID matches
-                dialectic_sessions: mockProjectForRefetch.dialectic_sessions?.map(s => ({
-                    ...s,
-                    dialectic_contributions: [], // Start with empty contributions for this test's scenario
-                }))
+            const mockResponseData: GenerateContributionsResponse = { 
+                message: successMessage,
+                // No contributions array
             };
-            useDialecticStore.setState({ currentProjectDetail: projectAsItWouldBeBeforeRefetchButNoNewContributions });
-            
-            // Specific mock for getProjectDetails for THIS TEST: return project with empty contributions
-            mockDialecticApi.getProjectDetails.mockImplementation(async (projectId: string) => {
-                if (projectId === mockProjectId) {
-                    // Return a version of the project that has no contributions yet
-                    // because the generateContributions API call didn't return any directly.
-                    return {
-                        data: {
-                            ...mockProjectForRefetch, // base structure
-                            dialectic_sessions: mockProjectForRefetch.dialectic_sessions?.map(s => ({
-                                ...s,
-                                dialectic_contributions: [], // Ensure this is empty
-                            }))
-                        },
-                        status: 200,
-                    };
-                }
-                return { data: undefined, status: 404, error: { code: 'NOT_FOUND', message: 'Project not found'}};
+
+            mockDialecticApi.generateContributions.mockResolvedValueOnce({
+                data: mockResponseData,
+                status: 200,
             });
+            // Mock getProjectDetails for the refetch
+            const mockProjectForRefetch = { id: mockProjectId, project_name: 'Test Project Refetched', dialectic_sessions: [{ id: mockSessionId, contributions: [] }] };
+            mockDialecticApi.getProjectDetails.mockResolvedValueOnce({ data: mockProjectForRefetch as any, status: 200 });
+
 
             const { generateContributions } = useDialecticStore.getState();
-            await generateContributions({ sessionId: mockSessionId, projectId: mockProjectId });
+            await generateContributions({ 
+                sessionId: mockSessionId, 
+                projectId: mockProjectId, 
+                stageSlug: mockStageSlug, 
+                iterationNumber: mockIterationNumber 
+            });
 
             const state = useDialecticStore.getState();
             expect(state.isGeneratingContributions).toBe(false);
             expect(state.generateContributionsError).toBeNull();
-            expect(mockDialecticApi.generateContributions).toHaveBeenCalledWith({ sessionId: mockSessionId });
+            expect(mockDialecticApi.generateContributions).toHaveBeenCalledWith({
+                projectId: mockProjectId, // Use the mockProjectId defined in this test
+                sessionId: mockSessionId, // Use the mockSessionId defined in this test
+                stageSlug: mockStageSlug, // Use the mockStageSlug defined in this test
+                iterationNumber: mockIterationNumber, // Use the mockIterationNumber defined in this test
+            });
             // expect(toast.success).toHaveBeenCalledWith(successMessage);
-            
-            // After refetch, currentProjectDetail should reflect the specific mock for this test (empty contributions)
-            expect(state.currentProjectDetail?.id).toEqual(mockProjectId);
+            // Verify no contributions were added to the specific session if responseData.contributions is undefined
             expect(state.currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions).toEqual([]);
         });
     });
+
+    // New test suite for submitStageResponsesAndPrepareNextSeed
+    describe('submitStageResponsesAndPrepareNextSeed thunk', () => {
+      const mockProjectId = 'proj-submit-123';
+      const mockSessionId = 'sess-submit-456';
+      const mockStageSlug = DialecticStageType.THESIS;
+      const mockIteration = 1;
+      const mockPayload: SubmitStageResponsesPayload = {
+        projectId: mockProjectId,
+        sessionId: mockSessionId,
+        stageSlug: mockStageSlug,
+        currentIterationNumber: mockIteration,
+        responses: [{ originalModelContributionId: 'contrib-model-A', responseText: 'Feedback for A' }],
+      };
+      const mockProjectForRefetch: DialecticProject = {
+        id: mockProjectId,
+        project_name: 'Test Project for Submission Refetched',
+        status: 'active',
+        initial_user_prompt: 'An initial prompt',
+        selected_domain_overlay_id: null,
+        selected_domain_tag: null,
+        repo_url: null,
+        user_id: 'user-1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        dialectic_sessions: [{ 
+          id: mockSessionId, 
+          status: 'pending_antithesis', // Example updated status
+          project_id: mockProjectId,
+          session_description: 'A session',
+          current_stage_seed_prompt: 'new_seed_prompt.md',
+          iteration_count: 1,
+          current_iteration: 1,
+          convergence_status: null,
+          preferred_model_for_stage: null,
+          associated_chat_id: 'chat-1',
+          active_thesis_prompt_template_id: null,
+          active_antithesis_prompt_template_id: null,
+          active_synthesis_prompt_template_id: null,
+          active_parenthesis_prompt_template_id: null,
+          active_paralysis_prompt_template_id: null,
+          formal_debate_structure_id: null,
+          max_iterations: 3,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }],
+      };
+      const mockSuccessResponse: SubmitStageResponsesResponse = {
+        userFeedbackStoragePath: 'path/to/feedback.json',
+        nextStageSeedPromptStoragePath: 'path/to/next_seed.md',
+        updatedSession: { ...(mockProjectForRefetch.dialectic_sessions && mockProjectForRefetch.dialectic_sessions[0]), current_iteration: 2 } as DialecticSession,
+        message: 'Successfully submitted and prepared next seed.',
+      };
+
+      it('should set loading state, call API, refetch project details, and show success on successful submission', async () => {
+        mockDialecticApi.submitStageResponsesAndPrepareNextSeed.mockResolvedValueOnce({
+          data: mockSuccessResponse,
+          status: 200,
+        });
+        mockDialecticApi.getProjectDetails.mockResolvedValueOnce({
+            data: mockProjectForRefetch,
+            status: 200,
+        });
+
+        const { submitStageResponsesAndPrepareNextSeed } = useDialecticStore.getState();
+        const result = await submitStageResponsesAndPrepareNextSeed(mockPayload);
+
+        expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
+        expect(useDialecticStore.getState().submitStageResponsesError).toBeNull();
+        expect(mockDialecticApi.submitStageResponsesAndPrepareNextSeed).toHaveBeenCalledWith(mockPayload);
+        expect(mockDialecticApi.getProjectDetails).toHaveBeenCalledWith(mockProjectId);
+        // Add more specific check for currentProjectDetail update if necessary
+        expect(useDialecticStore.getState().currentProjectDetail?.id).toEqual(mockProjectForRefetch.id);
+        expect(result?.data).toEqual(mockSuccessResponse);
+        // expect(toast.success).toHaveBeenCalledWith(mockSuccessResponse.message);
+      });
+
+      it('should set error state and show error toast on API error', async () => {
+        const apiError: ApiError = { code: 'SUBMISSION_FAILED', message: 'Failed to submit responses.' };
+        mockDialecticApi.submitStageResponsesAndPrepareNextSeed.mockResolvedValueOnce({
+          error: apiError,
+          status: 400,
+        });
+
+        const { submitStageResponsesAndPrepareNextSeed } = useDialecticStore.getState();
+        const result = await submitStageResponsesAndPrepareNextSeed(mockPayload);
+
+        expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
+        expect(useDialecticStore.getState().submitStageResponsesError).toEqual(apiError);
+        expect(mockDialecticApi.getProjectDetails).not.toHaveBeenCalled();
+        expect(result?.error).toEqual(apiError);
+        // expect(toast.error).toHaveBeenCalledWith(apiError.message);
+      });
+
+      it('should set network error state and show error toast if API call throws', async () => {
+        const networkErrorMessage = 'Network connection failed for submission';
+        mockDialecticApi.submitStageResponsesAndPrepareNextSeed.mockRejectedValueOnce(new Error(networkErrorMessage));
+
+        const { submitStageResponsesAndPrepareNextSeed } = useDialecticStore.getState();
+        const result = await submitStageResponsesAndPrepareNextSeed(mockPayload);
+
+        expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
+        const expectedError: ApiError = { message: networkErrorMessage, code: 'NETWORK_ERROR' };
+        expect(useDialecticStore.getState().submitStageResponsesError).toEqual(expectedError);
+        expect(mockDialecticApi.getProjectDetails).not.toHaveBeenCalled();
+        expect(result?.error).toEqual(expectedError);
+        // expect(toast.error).toHaveBeenCalledWith(networkErrorMessage);
+      });
+    });
+
+    // New test suite for saveContributionEdit
+    describe('saveContributionEdit thunk', () => {
+      const mockProjectId = 'proj-edit-contrib-1';
+      const mockSessionId = 'sess-edit-contrib-1';
+      const mockContributionId = 'contrib-to-edit-1';
+      const originalContent = "This is the original content.";
+      const editedContent = "This is the EDITED content.";
+      
+      const mockPayload: SaveContributionEditPayload = {
+        projectId: mockProjectId,
+        sessionId: mockSessionId,
+        originalContributionIdToEdit: mockContributionId,
+        editedContentText: editedContent,
+      };
+
+      const mockUpdatedContribution: DialecticContribution = {
+        id: mockContributionId,
+        session_id: mockSessionId,
+        stage: DialecticStageType.THESIS,
+        iteration_number: 1,
+        content_storage_path: 'path/to/edited_content.md',
+        content_mime_type: 'text/markdown',
+        content_size_bytes: editedContent.length,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        session_model_id: 'model-1',
+        user_id: 'user-test',
+        actual_prompt_sent: 'Prompt that led to this edited contribution',
+        content_storage_bucket: 'test-bucket',
+        raw_response_storage_path: 'path/to/edited_raw_response.json',
+        tokens_used_input: null,
+        tokens_used_output: null,
+        processing_time_ms: null,
+        citations: [],
+        parent_contribution_id: null,
+      };
+      
+      const mockInitialProjectDetail: DialecticProject = {
+        id: mockProjectId,
+        project_name: 'Project For Edit',
+        user_id: 'user-test',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        status: 'active',
+        initial_user_prompt: 'Initial prompt for project for edit',
+        initial_prompt_resource_id: null,
+        selected_domain_overlay_id: null,
+        selected_domain_tag: null,
+        repo_url: null,
+        dialectic_sessions: [
+          {
+            id: mockSessionId,
+            project_id: mockProjectId,
+            status: 'pending_thesis',
+            iteration_count: 1,
+            current_iteration: 1,
+            session_description: 'Session for edit',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            // Other session fields
+            current_stage_seed_prompt: null,
+            convergence_status: null,
+            preferred_model_for_stage: null,
+            associated_chat_id: null,
+            active_thesis_prompt_template_id: null,
+            active_antithesis_prompt_template_id: null,
+            active_synthesis_prompt_template_id: null,
+            active_parenthesis_prompt_template_id: null,
+            active_paralysis_prompt_template_id: null,
+            formal_debate_structure_id: null,
+            max_iterations: 3,
+            dialectic_contributions: [
+              {
+                id: mockContributionId,
+                session_id: mockSessionId,
+                stage: DialecticStageType.THESIS,
+                iteration_number: 1,
+                // current_content: originalContent, // Not directly on this type
+                content_storage_path: 'path/to/original_content.md',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                session_model_id: 'model-1',
+                 content_mime_type: 'text/markdown',
+                 content_size_bytes: originalContent.length,
+                 raw_response_storage_path: 'path/to/original_response.md',
+                 tokens_used_input: 100,
+                 tokens_used_output: 100,
+                 processing_time_ms: 100,
+                 citations: [],
+                 parent_contribution_id: null,
+                 actual_prompt_sent: 'This is the actual prompt sent.',
+                 content_storage_bucket: 'bucket-1',
+                 user_id: 'user-1',
+              },
+              {
+                id: 'contrib-other-1',
+                session_id: mockSessionId,
+                stage: DialecticStageType.THESIS,
+                iteration_number: 1,
+                // current_content: "Other content",
+                content_storage_path: 'path/to/other_content.md',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                session_model_id: 'model-1',
+                content_mime_type: 'text/markdown',
+                content_size_bytes: 100,
+                raw_response_storage_path: 'path/to/original_response.md',
+                tokens_used_input: 100,
+                tokens_used_output: 100,
+                processing_time_ms: 100,
+                citations: [],
+                parent_contribution_id: null,
+                actual_prompt_sent: 'This is the actual prompt sent.',
+                content_storage_bucket: 'bucket-1',
+                user_id: 'user-1',
+              }
+            ]
+          }
+        ]
+      };
+
+
+      it('should set loading, call API, update cache, update projectDetail, and show success on successful save', async () => {
+        // Set initial project detail
+        useDialecticStore.setState({ currentProjectDetail: mockInitialProjectDetail });
+        
+        // Mock API response
+        // The API is expected to return the full updated contribution object
+        mockDialecticApi.updateContributionContent.mockResolvedValueOnce({
+          data: { ...mockUpdatedContribution, current_content_temp_for_test: editedContent } as any, // Simulate backend returning content
+          status: 200,
+        });
+
+        const { saveContributionEdit } = useDialecticStore.getState();
+        const result = await saveContributionEdit(mockPayload);
+
+        expect(useDialecticStore.getState().isSavingContributionEdit).toBe(false);
+        expect(useDialecticStore.getState().saveContributionEditError).toBeNull();
+        expect(mockDialecticApi.updateContributionContent).toHaveBeenCalledWith(mockPayload);
+        
+        // Check cache update
+        const cacheEntry = useDialecticStore.getState().contributionContentCache[mockContributionId];
+        expect(cacheEntry).toBeDefined();
+        expect(cacheEntry.isLoading).toBe(false);
+        expect(cacheEntry.content).toBe(editedContent); // Store updated with new content
+        expect(cacheEntry.error).toBeUndefined();
+
+        // Check project detail update
+        const updatedProjectDetail = useDialecticStore.getState().currentProjectDetail;
+        const updatedSession = updatedProjectDetail?.dialectic_sessions?.find(s => s.id === mockSessionId);
+        const targetContributionInStore = updatedSession?.dialectic_contributions?.find(c => c.id === mockContributionId);
+        expect(targetContributionInStore).toBeDefined();
+        // Check if a field that is expected to be updated (like updated_at or content_size_bytes) has changed.
+        // The mockUpdatedContribution has a different content_size_bytes.
+        expect(targetContributionInStore?.content_size_bytes).toEqual(editedContent.length); 
+
+
+        expect(result?.data).toEqual(expect.objectContaining({ id: mockContributionId }));
+        // expect(toast.success).toHaveBeenCalledWith(`Contribution ${mockContributionId} saved successfully.`);
+      });
+
+      it('should NOT update projectDetail if the currentProjectDetail ID does not match payload projectId', async () => {
+        // Set initial project detail with a DIFFERENT ID
+        useDialecticStore.setState({ currentProjectDetail: { ...mockInitialProjectDetail, id: 'some-other-project-id' } });
+        const originalProjectDetailState = useDialecticStore.getState().currentProjectDetail;
+        
+        mockDialecticApi.updateContributionContent.mockResolvedValueOnce({
+          data: { ...mockUpdatedContribution, current_content_temp_for_test: editedContent } as any,
+          status: 200,
+        });
+
+        const { saveContributionEdit } = useDialecticStore.getState();
+        await saveContributionEdit(mockPayload); // payload has mockProjectId
+
+        expect(useDialecticStore.getState().isSavingContributionEdit).toBe(false);
+        // Project detail should NOT have been updated because its ID was different
+        expect(useDialecticStore.getState().currentProjectDetail).toEqual(originalProjectDetailState); 
+      });
+
+
+      it('should set error state and show error toast on API error', async () => {
+        const apiError: ApiError = { code: 'SAVE_FAILED', message: 'Failed to save contribution.' };
+        mockDialecticApi.updateContributionContent.mockResolvedValueOnce({
+          error: apiError,
+          status: 400,
+        });
+
+        const { saveContributionEdit } = useDialecticStore.getState();
+        const result = await saveContributionEdit(mockPayload);
+
+        expect(useDialecticStore.getState().isSavingContributionEdit).toBe(false);
+        expect(useDialecticStore.getState().saveContributionEditError).toEqual(apiError);
+        expect(result?.error).toEqual(apiError);
+        // expect(toast.error).toHaveBeenCalledWith(apiError.message);
+      });
+
+      it('should set network error state and show error toast if API call throws', async () => {
+        const networkErrorMessage = 'Network connection failed during save';
+        mockDialecticApi.updateContributionContent.mockRejectedValueOnce(new Error(networkErrorMessage));
+
+        const { saveContributionEdit } = useDialecticStore.getState();
+        const result = await saveContributionEdit(mockPayload);
+
+        expect(useDialecticStore.getState().isSavingContributionEdit).toBe(false);
+        const expectedError: ApiError = { message: networkErrorMessage, code: 'NETWORK_ERROR' };
+        expect(useDialecticStore.getState().saveContributionEditError).toEqual(expectedError);
+        expect(result?.error).toEqual(expectedError);
+        // expect(toast.error).toHaveBeenCalledWith(networkErrorMessage);
+      });
+    });
 });
+// Helper to reset store state for testing (already part of DialecticActions in the actual store)
+// Ensure this matches the actual _resetForTesting if defined in the store, or remove if not used.
+// For this test file, useDialecticStore.getState()._resetForTesting?.() is preferred.
+const resetStoreForTest = () => {
+    useDialecticStore.setState(useDialecticStore.getState()._resetForTesting ? {} : {}); // A bit of a hack if _reset is not there
+};

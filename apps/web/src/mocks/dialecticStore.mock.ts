@@ -8,6 +8,7 @@ import type {
   DialecticSession,
   DialecticProjectResource,
   DialecticStage,
+  ApiError,
 } from '@paynless/types';
 
 // 1. Define initial state values locally
@@ -45,6 +46,18 @@ const initialDialecticStateValues: DialecticStateValues = {
   uploadProjectResourceError: null,
   isStartNewSessionModalOpen: false,
   selectedModelIds: [],
+  initialPromptFileContent: null,
+  isLoadingInitialPromptFileContent: false,
+  initialPromptFileContentError: null,
+  activeContextProjectId: null,
+  activeContextSessionId: null,
+  activeContextStageSlug: null,
+  isGeneratingContributions: false,
+  generateContributionsError: null,
+  isSubmittingStageResponses: false,
+  submitStageResponsesError: null,
+  isSavingContributionEdit: false,
+  saveContributionEditError: null,
 };
 
 // 2. Define the internal state variable
@@ -85,6 +98,23 @@ const initializeInternalDialecticStoreState = (): DialecticStore => {
       newState.selectedModelIds = newSelectedIds;
     }),
     resetSelectedModelId: vi.fn(() => { newState.selectedModelIds = []; }),
+    fetchInitialPromptContent: vi.fn().mockResolvedValue(undefined as void),
+    setActiveContextStageSlug: vi.fn().mockResolvedValue(undefined as void),
+    generateContributions: vi.fn().mockResolvedValue(undefined as void),
+    submitStageResponsesAndPrepareNextSeed: vi.fn().mockResolvedValue(undefined as void),
+    resetSubmitStageResponsesError: vi.fn(() => { newState.submitStageResponsesError = null; }),
+    saveContributionEdit: vi.fn().mockResolvedValue(undefined as void),
+    resetGenerateContributionsError: vi.fn(() => { newState.generateContributionsError = null; }),
+    resetSaveContributionEditError: vi.fn(() => { newState.saveContributionEditError = null; }),
+    resetInitialPromptFileContentError: vi.fn(() => { newState.initialPromptFileContentError = null; }),
+    setProjectDetailError: vi.fn((error: ApiError | null) => { newState.projectDetailError = error; }),
+    setActiveContextProjectId: vi.fn((id: string | null) => { newState.activeContextProjectId = id; }),
+    setActiveContextSessionId: vi.fn((id: string | null) => { newState.activeContextSessionId = id; }),
+    setActiveDialecticContext: vi.fn((context: { projectId: string | null; sessionId: string | null; stageSlug: DialecticStage | null }) => {
+      newState.activeContextProjectId = context.projectId;
+      newState.activeContextSessionId = context.sessionId;
+      newState.activeContextStageSlug = context.stageSlug;
+    }),
     _resetForTesting: vi.fn(() => { internalMockDialecticStoreState = initializeInternalDialecticStoreState(); }),
   } as DialecticStore; // Cast to DialecticStore to satisfy type, setters modify 'newState' which becomes internalMockDialecticStoreState
   return newState;
@@ -99,7 +129,6 @@ export const getDialecticStoreState = (): DialecticStore => internalMockDialecti
 // 6. Mock Hook Logic
 export const mockedUseDialecticStoreHookLogic = <TResult,>(
   selector?: (state: DialecticStore) => TResult,
-  _equalityFn?: (a: TResult, b: TResult) => boolean // For zustand spyOn compatibility
 ): TResult | DialecticStore => {
   const state = getDialecticStoreState();
   return selector ? selector(state) : state;
@@ -145,3 +174,7 @@ export const getDialecticStoreActions = (): DialecticActions => {
 
 // Keep selectOverlay mock if it's a standalone mock not part of the store state directly
 export const selectOverlay = vi.fn();
+
+// Add missing selectors
+export const selectActiveContextSessionId = (state: DialecticStore): string | null => state.activeContextSessionId;
+export const selectActiveContextStageSlug = (state: DialecticStore): DialecticStage | null => state.activeContextStageSlug;

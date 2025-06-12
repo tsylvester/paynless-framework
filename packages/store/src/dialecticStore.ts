@@ -12,6 +12,10 @@ import type {
   DialecticProjectResource,
   UpdateProjectInitialPromptPayload,
   DialecticStage,
+  SubmitStageResponsesPayload,
+  SubmitStageResponsesResponse,
+  SaveContributionEditPayload,
+  DialecticContribution,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
@@ -75,6 +79,16 @@ export const initialDialecticStateValues: DialecticStateValues = {
   // States for generating contributions
   isGeneratingContributions: false,
   generateContributionsError: null,
+
+  isSubmittingStageResponses: false,
+  submitStageResponsesError: null,
+
+  isSavingContributionEdit: false,
+  saveContributionEditError: null,
+
+  activeContextProjectId: null,
+  activeContextSessionId: null,
+  activeContextStageSlug: null,
 };
 
 export const useDialecticStore = create<DialecticStore>((set, get) => ({
@@ -208,8 +222,17 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
         set({ currentProjectDetail: null, isLoadingProjectDetail: false, projectDetailError: response.error });
       } else {
         logger.info('[DialecticStore] Successfully fetched project details:', { projectId, project: response.data });
+        
+        const projectData = response.data;
+        if (projectData && projectData.dialectic_sessions) {
+          projectData.dialectic_sessions = projectData.dialectic_sessions.map(session => ({
+            ...session,
+            dialectic_contributions: session.dialectic_contributions || [], // Default to empty array
+          }));
+        }
+        
         set({
-          currentProjectDetail: response.data || null,
+          currentProjectDetail: projectData || null,
           isLoadingProjectDetail: false,
           projectDetailError: null,
         });
@@ -759,11 +782,14 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     set(initialDialecticStateValues);
   },
 
-  generateContributions: async (payload: { sessionId: string; projectId: string }) => {
+  generateContributions: async (payload: { sessionId: string; projectId: string; stageSlug: DialecticStage; iterationNumber: number; }) => {
     set({ isGeneratingContributions: true, generateContributionsError: null });
-    logger.info('[DialecticStore] Generating contributions...', { sessionId: payload.sessionId });
+    logger.info('[DialecticStore] Generating contributions...', { sessionId: payload.sessionId, stageSlug: payload.stageSlug, iteration: payload.iterationNumber });
     try {
-      const response = await api.dialectic().generateContributions({ sessionId: payload.sessionId });
+      // Ensure the API client method api.dialectic().generateContributions also expects this full payload.
+      // If not, the API client layer might need adjustment, or we adapt the payload here.
+      // Assuming the API client is updated or can handle this payload structure.
+      const response = await api.dialectic().generateContributions(payload);
       if (response.error) {
         logger.error('[DialecticStore] Error generating contributions:', { errorDetails: response.error, sessionId: payload.sessionId });
         set({ isGeneratingContributions: false, generateContributionsError: response.error });
@@ -785,6 +811,123 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       };
       logger.error('[DialecticStore] Network error generating contributions:', { errorDetails: networkError, sessionId: payload.sessionId });
       set({ isGeneratingContributions: false, generateContributionsError: networkError });
+      return { error: networkError, status: 0, data: undefined };
+    }
+  },
+
+  setSubmittingStageResponses: (isSubmitting: boolean) => set({ isSubmittingStageResponses: isSubmitting }),
+  setSubmitStageResponsesError: (error: ApiError | null) => set({ submitStageResponsesError: error }),
+
+  setSavingContributionEdit: (isSaving: boolean) => set({ isSavingContributionEdit: isSaving }),
+  setSaveContributionEditError: (error: ApiError | null) => set({ saveContributionEditError: error }),
+
+  setActiveContextProjectId: (id) => set({ activeContextProjectId: id }),
+  setActiveContextSessionId: (id) => set({ activeContextSessionId: id }),
+  setActiveContextStageSlug: (slug) => set({ activeContextStageSlug: slug }),
+  setActiveDialecticContext: (context) => set({
+    activeContextProjectId: context.projectId,
+    activeContextSessionId: context.sessionId,
+    activeContextStageSlug: context.stageSlug,
+  }),
+
+  // Add reset actions for submitStageResponsesError and saveContributionEditError
+  resetSubmitStageResponsesError: () => set({ submitStageResponsesError: null }),
+  resetSaveContributionEditError: () => set({ saveContributionEditError: null }),
+
+  submitStageResponsesAndPrepareNextSeed: async (payload: SubmitStageResponsesPayload): Promise<ApiResponse<SubmitStageResponsesResponse>> => {
+    set({ isSubmittingStageResponses: true, submitStageResponsesError: null });
+    logger.info('[DialecticStore] Submitting stage responses and preparing next seed...', { sessionId: payload.sessionId, stage: payload.stageSlug });
+    try {
+      const response = await api.dialectic().submitStageResponsesAndPrepareNextSeed(payload);
+      if (response.error) {
+        logger.error('[DialecticStore] Error submitting stage responses:', { errorDetails: response.error, sessionId: payload.sessionId });
+        set({ isSubmittingStageResponses: false, submitStageResponsesError: response.error });
+        return { error: response.error, status: response.status, data: undefined };
+      } else {
+        logger.info('[DialecticStore] Successfully submitted stage responses:', { responseData: response.data, sessionId: payload.sessionId });
+        set({ isSubmittingStageResponses: false, submitStageResponsesError: null });
+        
+        // Refetch project details to update UI with new session status and potentially new seed info
+        logger.info(`[DialecticStore] Stage responses submitted for session ${payload.sessionId}. Refetching project details for project ${payload.projectId}.`);
+        await get().fetchDialecticProjectDetails(payload.projectId);
+        
+        return { data: response.data, status: response.status };
+      }
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while submitting stage responses',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error submitting stage responses:', { errorDetails: networkError, sessionId: payload.sessionId });
+      set({ isSubmittingStageResponses: false, submitStageResponsesError: networkError });
+      return { error: networkError, status: 0, data: undefined };
+    }
+  },
+
+  saveContributionEdit: async (payload: SaveContributionEditPayload): Promise<ApiResponse<DialecticContribution>> => {
+    set({ isSavingContributionEdit: true, saveContributionEditError: null });
+    logger.info('[DialecticStore] Saving contribution edit...', { contributionId: payload.originalContributionIdToEdit });
+    try {
+      const response = await api.dialectic().updateContributionContent(payload);
+      if (response.error || !response.data) {
+        const errorDetail = response.error || { message: 'Failed to save contribution, no data returned.', code: 'API_ERROR' };
+        logger.error('[DialecticStore] Error saving contribution edit:', { errorDetails: errorDetail, contributionId: payload.originalContributionIdToEdit });
+        set({ isSavingContributionEdit: false, saveContributionEditError: errorDetail });
+        return { error: errorDetail, status: response.status || 0, data: undefined };
+      } else {
+        const updatedContribution = response.data;
+        logger.info('[DialecticStore] Successfully saved contribution edit:', { contributionId: updatedContribution.id });
+
+        const now = Date.now();
+        const expiresInMilliseconds = 14 * 60 * 1000; 
+        const currentCacheEntry = get().contributionContentCache[updatedContribution.id];
+        
+        const newCacheEntry = {
+          content: payload.editedContentText, // CORRECT: Use text from payload for cache
+          isLoading: false,
+          error: undefined,
+          signedUrl: currentCacheEntry?.signedUrl, 
+          expiry: now + expiresInMilliseconds, 
+          mimeType: currentCacheEntry?.mimeType, 
+          sizeBytes: payload.editedContentText?.length, 
+          lastRefreshed: now,
+        };
+
+        set(state => ({
+          isSavingContributionEdit: false,
+          saveContributionEditError: null,
+          contributionContentCache: {
+            ...state.contributionContentCache,
+            [updatedContribution.id]: newCacheEntry,
+          },
+          currentProjectDetail: state.currentProjectDetail && state.currentProjectDetail.id === payload.projectId
+            ? {
+                ...state.currentProjectDetail,
+                dialectic_sessions: state.currentProjectDetail.dialectic_sessions?.map(session =>
+                  session.id === payload.sessionId
+                    ? {
+                        ...session,
+                        dialectic_contributions: session.dialectic_contributions?.map(contrib =>
+                          contrib.id === updatedContribution.id
+                            ? { ...contrib, ...updatedContribution } 
+                            : contrib
+                        ),
+                      }
+                    : session
+                ),
+              }
+            : state.currentProjectDetail,
+        }));
+        
+        return { data: updatedContribution, status: response.status || 0 };
+      }
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while saving contribution edit',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error saving contribution edit:', { errorDetails: networkError, contributionId: payload.originalContributionIdToEdit });
+      set({ isSavingContributionEdit: false, saveContributionEditError: networkError });
       return { error: networkError, status: 0, data: undefined };
     }
   },

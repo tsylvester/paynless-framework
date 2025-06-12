@@ -17,7 +17,12 @@ import type {
     FetchOptions,
     GetProjectResourceContentPayload,
     GetProjectResourceContentResponse,
-    DialecticContribution
+    DialecticContribution,
+    SubmitStageResponsesPayload,
+    SubmitStageResponsesResponse,
+    GetIterationInitialPromptPayload,
+    IterationInitialPromptData,
+    SaveContributionEditPayload,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -448,10 +453,108 @@ export class DialecticApiClient {
     }
 
     async updateDialecticProjectInitialPrompt(payload: UpdateProjectInitialPromptPayload): Promise<ApiResponse<DialecticProject>> {
-        return this.apiClient.post<DialecticProject, { action: string; payload: UpdateProjectInitialPromptPayload }>(
-            'dialectic-service',
-            { action: 'updateProjectInitialPrompt', payload }
-        );
+        logger.info('Updating initial project prompt', { projectId: payload.projectId });
+        try {
+            const response = await this.apiClient.post<DialecticProject, { action: string; payload: UpdateProjectInitialPromptPayload }>(
+                'dialectic-service',
+                { action: 'updateProjectInitialPrompt', payload },
+            );
+            if (response.error) {
+                logger.error('Error updating project initial prompt:', { error: response.error, projectId: payload.projectId });
+            } else {
+                logger.info('Successfully updated project initial prompt', { projectId: response.data?.id });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in updateDialecticProjectInitialPrompt:', { errorMessage: message, errorObject: error, projectId: payload.projectId });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
+    }
+
+    async submitStageResponsesAndPrepareNextSeed(payload: SubmitStageResponsesPayload): Promise<ApiResponse<SubmitStageResponsesResponse>> {
+        logger.info('Submitting stage responses and preparing next seed', { sessionId: payload.sessionId, projectId: payload.projectId });
+        try {
+            const response = await this.apiClient.post<SubmitStageResponsesResponse, { action: string; payload: SubmitStageResponsesPayload }>(
+                'dialectic-service',
+                {
+                    action: 'submitStageResponsesAndPrepareNextSeed',
+                    payload,
+                },
+            );
+            if (response.error) {
+                logger.error('Error submitting stage responses:', { error: response.error, sessionId: payload.sessionId });
+            } else {
+                logger.info('Successfully submitted stage responses', { sessionId: payload.sessionId });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in submitStageResponsesAndPrepareNextSeed:', { errorMessage: message, errorObject: error, sessionId: payload.sessionId });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
+    }
+
+    async updateContributionContent(payload: SaveContributionEditPayload): Promise<ApiResponse<DialecticContribution>> {
+        logger.info('Updating contribution content', { contributionId: payload.originalContributionIdToEdit, sessionId: payload.sessionId });
+        try {
+            const response = await this.apiClient.post<DialecticContribution, { action: string; payload: SaveContributionEditPayload }>(
+                'dialectic-service',
+                {
+                    action: 'updateContributionContent',
+                    payload,
+                },
+            );
+            if (response.error) {
+                logger.error('Error updating contribution content:', { error: response.error, contributionId: payload.originalContributionIdToEdit });
+            } else {
+                logger.info('Successfully updated contribution content', { contributionId: response.data?.id });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in updateContributionContent:', { errorMessage: message, errorObject: error, contributionId: payload.originalContributionIdToEdit });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
+    }
+
+    async getIterationInitialPromptContent(payload: GetIterationInitialPromptPayload): Promise<ApiResponse<IterationInitialPromptData>> {
+        logger.info('Fetching iteration initial prompt content', { sessionId: payload.sessionId, iterationNumber: payload.iterationNumber });
+        try {
+            const response = await this.apiClient.post<IterationInitialPromptData, { action: string; payload: GetIterationInitialPromptPayload }>(
+                'dialectic-service',
+                {
+                    action: 'getIterationInitialPromptContent',
+                    payload,
+                },
+            );
+            if (response.error) {
+                logger.error('Error fetching iteration initial prompt content:', { error: response.error, sessionId: payload.sessionId });
+            } else {
+                logger.info('Successfully fetched iteration initial prompt content', { sessionId: payload.sessionId });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in getIterationInitialPromptContent:', { errorMessage: message, errorObject: error, sessionId: payload.sessionId });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
     }
 
     async getProjectResourceContent(

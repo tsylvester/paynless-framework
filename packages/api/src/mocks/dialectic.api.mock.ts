@@ -14,7 +14,15 @@ import type {
     DialecticProjectResource,
     UpdateProjectInitialPromptPayload,
     GenerateContributionsPayload,
-    GenerateContributionsResponse
+    GenerateContributionsResponse,
+    GetIterationInitialPromptPayload,
+    IterationInitialPromptData,
+    SubmitStageResponsesPayload,
+    SubmitStageResponsesResponse,
+    SaveContributionEditPayload,
+    DialecticContribution,
+    GetProjectResourceContentPayload,
+    GetProjectResourceContentResponse
 } from '@paynless/types'; 
 
 // --- Dialectic Client Mock Setup ---
@@ -34,6 +42,10 @@ export type MockDialecticApiClient = {
     exportProject: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<{ export_url: string }>>>>;
     updateDialecticProjectInitialPrompt: ReturnType<typeof vi.fn<[payload: UpdateProjectInitialPromptPayload], Promise<ApiResponse<DialecticProject>>>>;
     generateContributions: ReturnType<typeof vi.fn<[payload: GenerateContributionsPayload], Promise<ApiResponse<GenerateContributionsResponse>>>>;
+    getIterationInitialPromptContent: ReturnType<typeof vi.fn<[payload: GetIterationInitialPromptPayload], Promise<ApiResponse<IterationInitialPromptData>>>>;
+    submitStageResponsesAndPrepareNextSeed: ReturnType<typeof vi.fn<[payload: SubmitStageResponsesPayload], Promise<ApiResponse<SubmitStageResponsesResponse>>>>;
+    updateContributionContent: ReturnType<typeof vi.fn<[payload: SaveContributionEditPayload], Promise<ApiResponse<DialecticContribution>>>>;
+    getProjectResourceContent: ReturnType<typeof vi.fn<[payload: GetProjectResourceContentPayload], Promise<ApiResponse<GetProjectResourceContentResponse>>>>;
 };
 
 // Typed vi.fn() calls
@@ -53,6 +65,10 @@ export const mockDialecticClientInstance: MockDialecticApiClient = {
     exportProject: vi.fn<[string], Promise<ApiResponse<{ export_url: string }>>>(),
     updateDialecticProjectInitialPrompt: vi.fn<[UpdateProjectInitialPromptPayload], Promise<ApiResponse<DialecticProject>>>(),
     generateContributions: vi.fn<[GenerateContributionsPayload], Promise<ApiResponse<GenerateContributionsResponse>>>(),
+    getIterationInitialPromptContent: vi.fn<[GetIterationInitialPromptPayload], Promise<ApiResponse<IterationInitialPromptData>>>(),
+    submitStageResponsesAndPrepareNextSeed: vi.fn<[SubmitStageResponsesPayload], Promise<ApiResponse<SubmitStageResponsesResponse>>>(),
+    updateContributionContent: vi.fn<[SaveContributionEditPayload], Promise<ApiResponse<DialecticContribution>>>(),
+    getProjectResourceContent: vi.fn<[GetProjectResourceContentPayload], Promise<ApiResponse<GetProjectResourceContentResponse>>>(),
 };
 
 // Moved reset logic into its own function
@@ -73,6 +89,10 @@ export function resetMockDialecticClient(instance?: MockDialecticApiClient) {
   clientToReset.exportProject.mockReset();
   clientToReset.updateDialecticProjectInitialPrompt.mockReset();
   clientToReset.generateContributions.mockReset();
+  clientToReset.getIterationInitialPromptContent.mockReset();
+  clientToReset.submitStageResponsesAndPrepareNextSeed.mockReset();
+  clientToReset.updateContributionContent.mockReset();
+  clientToReset.getProjectResourceContent.mockReset();
 }
 
 /**

@@ -206,7 +206,11 @@ The implementation plan uses the following labels to categorize work steps:
 
 ---
 
-## Section 1: Phase 1 - Multi-Model Response & Basic Dialectic (Thesis & Antithesis)
+## Section 1: Phase 1 - Core Dialectic Cycle (5 Stages), Basic UI, and Backend Foundations
+
+**Goal:** Implement the foundational 5-stage dialectic process (Thesis, Antithesis, Synthesis, Parenthesis, Paralysis) with a basic, usable UI for a single user, single session, single iteration context. This phase focuses on getting the core loop working end-to-end.
+
+---
 
 **Phase 1 Value:** Enable users to submit a prompt to multiple AI models simultaneously and view their initial responses (Thesis). Introduce a basic critique stage where models review peer responses (Antithesis). Provide a basic user interface and GitHub integration for these initial outputs.
 
@@ -626,7 +630,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   `[ ] 1.2.1.3 [REFACTOR]` Review.
         *   `[✅] 1.2.1.4 [TEST-INT]` Run tests.
     *   Action: `startSession`
-        *   `[🚧] 1.2.1.5 [TEST-INT]` Write tests for `startSession` action (input: `projectId`, `selectedModelCatalogIds`, `sessionDescription` (optional), `thesisPromptTemplateName` (optional), `antithesisPromptTemplateName` (optional), `selected_domain_overlay_id` (optional string, used if initial prompts are domain-specific); output: created session object; auth). (RED - Partially complete: Key "Happy Path" test, tests for optional parameters (like `sessionDescription`, template names), and specific testing for `selected_domain_overlay_id` are missing (`// TODO` in file).)
+        *   `[🚧] 1.2.1.5 [TEST-INT]` Write tests for `startSession` action (input: `projectId`, `selectedModelCatalogIds`, `sessionDescription`, `selected_domain_overlay_id`; output: created session object; auth). (RED - Partially complete: Key "Happy Path" test, tests for optional parameters (like `sessionDescription`, template names), and specific testing for `selected_domain_overlay_id` are missing (`// TODO` in file).)
         *   `[ ] 1.2.1.6` Implement logic:
             1.  Verify project ownership.
             2.  Fetch `prompt_template.id` for thesis and antithesis from `prompt_templates` table using names.
@@ -958,67 +962,73 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅] 1.5.5.3` (GREEN)
     *   `[ ] 1.5.5.4 [REFACTOR]` Review.
     *   `[✅] 1.5.5.5 [TEST-UNIT]` Run tests.
-*   `[ ] 1.5.6 [UI]` **Refactor `DialecticSessionDetailsPage` for Enhanced Modularity, Interaction, and Alignment with Coding Standards** (route e.g., `/dialectic/:projectId/session/:sessionId`)
-    *   **Objective:** Overhaul the `DialecticSessionDetailsPage` to use independent, self-managing card components for session information, stage tabs, and contribution displays. Enable users to directly edit AI contributions and provide structured responses, with these inputs feeding into subsequent dialectic stages. This addresses departures from coding standards by promoting component reusability and clear separation of concerns.
-    *   `[ ] 1.5.6.1 [UI/REFACTOR]` **Overall `DialecticSessionDetailsPage` Structure** (`apps/web/src/pages/dialectic/[projectId]/session/[sessionId].tsx`)
-        *   `[ ] 1.5.6.1.1 [TEST-UNIT]` Update/Write tests for `DialecticSessionDetailsPage.tsx`. Verify it correctly integrates new child card components: `SessionInfoCard`, multiple `StageTabCard` instances (one per stage), and `SessionContributionsDisplayCard`. Ensure tests cover props passing from page to child components and basic layout rendering. (RED)
-        *   `[ ] 1.5.6.1.2` Modify `DialecticSessionDetailsPage.tsx` implementation:
-            *   Continues to extract `projectId` and `sessionId` from route parameters.
-            *   Dispatches `fetchDialecticProjectDetails(projectId)` on mount if project details (including the specific session) are not already loaded or are considered stale. Uses selectors to retrieve data.
-            *   Uses selectors like `selectProjectById(projectId)` and `selectSessionById(sessionId)` (or `selectSessionFromProject(project, sessionId)`).
-            *   Manages page-level state for the `activeStageSlug` (e.g., \"hypothesis\", \"antithesis\"), defaulting to the session's current stage slug or \"hypothesis\".
-            *   Renders a `SessionInfoCard` component at the top, passing `projectId` and `sessionId` as props.
-            *   Iterates through the defined dialectic stages applicable to the session (e.g., Thesis, Antithesis, Synthesis, Parenthesis, Paralysis, based on session type or progress). For each stage, it renders a `StageTabCard` component. Props passed to `StageTabCard` include `sessionId`, a `stageDefinition` object (e.g., `{ name: \"THESIS\", displayName: \"Thesis\", stageNumber: 1, slug: \"hypothesis\" }`), a boolean `isActiveStage` (true if this stage's slug matches `activeStageSlug`), and an `onSelectStage` callback function that updates the page's `activeStageSlug` state.
-            *   Renders a `SessionContributionsDisplayCard` component, passing `sessionId` and the current `activeStageSlug` as props.
-            *   Ensures overall page accessibility, including keyboard navigation for stage tabs and ARIA attributes where appropriate.
-        *   `[ ] 1.5.6.1.3 [TEST-UNIT]` Run tests for `DialecticSessionDetailsPage.tsx` to ensure correct integration and behavior. (GREEN)
-    *   `[ ] 1.5.6.2 [UI]` **NEW Create `SessionInfoCard` Component** (`apps/web/src/components/dialectic/SessionInfoCard.tsx`)
-        *   `[ ] 1.5.6.2.1 [TEST-UNIT]` Write unit tests for `SessionInfoCard.tsx`. Test rendering of session description, iteration count, status (derived from `projectId` and `sessionId` props via selectors) and specifically test the fetching and rendering logic for the iteration\'s "initial user prompt" (`projects/{projectId}/sessions/{sessionId}/iteration_{session.current_iteration_number}/0_seed_inputs/user_prompt.md`), including loading and error states. (RED)
-        *   `[ ] 1.5.6.2.2` Implement `SessionInfoCard.tsx`:
-            *   Accepts props: `projectId: string`, `sessionId: string`.
-            *   Uses store selectors (`selectSessionById(sessionId)`, `selectProjectById(projectId)`) to get session and project data.
-            *   Displays key session-level information: description, iteration count, status.
-            *   **Loads and displays the iteration\'s "initial user prompt":**
-                *   Constructs storage path: `projects/{projectId}/sessions/{sessionId}/iteration_{session.current_iteration_number}/0_seed_inputs/user_prompt.md`.
-                *   Uses a store thunk (e.g., `fetchFileContent`) to fetch content from Supabase Storage.
-                *   Renders the fetched Markdown content using the shared `MarkdownRenderer` component.
-                *   Implements appropriate loading (e.g., shimmer/spinner) and error (e.g., message) states while fetching the prompt content.
-            *   Ensure the component is accessible.
-        *   `[ ] 1.5.6.2.3 [TEST-UNIT]` Run `SessionInfoCard.tsx` unit tests. (GREEN)
-    *   `[ ] 1.5.6.3 [UI]` **NEW Create `StageTabCard` Component** (`apps/web/src/components/dialectic/StageTabCard.tsx`)
-        *   `[ ] 1.5.6.3.1 [TEST-UNIT]` Write unit tests for `StageTabCard.tsx`. Test with various `stageDefinition` props (e.g., for \"THESIS\" with `slug: "hypothesis"`), `isActiveStage` true/false, `sessionId` prop, and the `onSelectStage` callback invocation with the `slug`. Test visibility and interaction of the \"Generate Contributions\" button based on session status, active stage, and existence of the stage's seed prompt file. (RED)
-        *   `[ ] 1.5.6.3.2` Implement `StageTabCard.tsx`:
-            *   Accepts props: `sessionId: string`, `stageDefinition: { name: string, displayName: string, stageNumber: number, slug: string }`, `isActiveStage: boolean`, `onSelectStage: (stageSlug: string) => void`.
-            *   Uses `selectSessionById(sessionId)` selector.
-            *   Displays the `stageDefinition.displayName` (e.g., \"Thesis\").
-            *   Visually indicates if it\'s the `isActiveStage` (e.g., different background, border).
-            *   The entire card should be clickable, invoking `props.onSelectStage(stageDefinition.slug)`.
-            *   **\"Generate/Regenerate Contributions\" Button:**
-                *   This button is displayed if `isActiveStage` is true AND the session\'s current status permits generation for this `stageDefinition.slug` (e.g., for \"hypothesis\", if `session.status` is `pending_hypothesis` or if regeneration is allowed).
-                *   **Enablement also depends on the existence of the stage's seed prompt file**: `projects/{projectId}/sessions/{sessionId}/iteration_{session.iteration_number}/{stageDefinition.slug}/seed_prompt.md`. (Component checks this, possibly via a new selector or a lightweight HEAD request/metadata check thunk).
-                *   Button text: \"Generate [Stage Display Name] Contributions\" or \"Regenerate...\".
-                *   On click, dispatches the relevant backend action thunk (e.g., `generateContributions` from store, ensuring payload includes `sessionId`, `stageDefinition.slug`, `session.current_iteration_number`).
-                *   Manages its own loading state for this generation action (e.g., button disabled with a spinner, displays error message from the thunk if generation fails).
-                *   If contributions for this stage/iteration already exist (check store), button might change to "Regenerate..." or be disabled unless explicit regeneration is allowed.
-                *   If the user loads a stage that has incomplete preceding stages, warn the user that the stage is not ready, and advise them of the next stage to run first. 
-            *   Ensure the component (especially the button and clickable area) is accessible.
-        *   `[ ] 1.5.6.3.3 [TEST-UNIT]` Run `StageTabCard.tsx` unit tests. (GREEN)
-    *   `[ ] 1.5.6.4 [UI]` **NEW Create `SessionContributionsDisplayCard` Component** (`apps/web/src/components/dialectic/SessionContributionsDisplayCard.tsx`)
-        *   `[ ] 1.5.6.4.1 [TEST-UNIT]` Write unit tests for `SessionContributionsDisplayCard.tsx`. Test filtering of contributions based on `activeStageSlug` and `session.current_iteration_number`, ensuring only latest edits are shown per original contribution. Test layout of child `GeneratedContributionCard` components. Test the state management for responses (keyed by `original_model_contribution_id`) and the functionality of the \"Submit Responses for [Active Stage Name] & Prepare Next Stage\" button, including thunk dispatch with correct payload. (RED)
-        *   `[ ] 1.5.6.4.2` Implement `SessionContributionsDisplayCard.tsx`:
-            *   Accepts props: `sessionId: string`, `activeStageSlug: string`.
-            *   Uses `selectSessionById(sessionId)` and then filters its contributions:
-                *   Select contributions matching `activeStageSlug` and `session.current_iteration_number`.
-                *   For each unique `original_model_contribution_id` within these, select the one with `is_latest_edit=TRUE`.
-            *   Manages local component state for user responses to each displayed contribution: `stageResponses: { [originalModelContributionIdOrContributionId: string]: string }`. This state is updated by callbacks from child `GeneratedContributionCard` components.
-            *   Renders a flex-grid of `GeneratedContributionCard` components. For each latest contribution version, it passes its `contribution.id` (which is the ID of the latest edit row, or the original AI row if no edits), the `original_model_contribution_id` (or `contribution.id` if it's the first version) as `originalModelContributionIdForResponse`, the current `responseText` from `stageResponses` for that conceptual contribution, and an `onResponseChange` callback function.
-            *   **\"Submit Responses for [Active Stage Name] & Prepare Next Stage\" Button:**
-                *   This button becomes enabled when the user has provided some input in any `stageResponses` text area for the current stage OR if no responses are mandatory to proceed.
-                *   On click, it constructs the `responses` array for the thunk: `[{originalContributionId: string, responseText: string}]` using data from `stageResponses`.
-                *   Dispatches the `submitStageResponsesAndPrepareNextSeed` thunk with `sessionId`, `activeStageSlug`, `session.current_iteration_number`, and the constructed `responses` array.
-                *   Manages its own loading/error states for this submission. On successful submission, it should clear the `stageResponses` local state and provide user feedback (e.g., \"Responses submitted, next stage is being prepared.\"). The UI might then automatically switch to/enable the next stage tab.
-            *   Ensure accessibility of the grid and the submit button.
-        *   `[ ] 1.5.6.4.3 [TEST-UNIT]` Run `SessionContributionsDisplayCard.tsx` unit tests. (GREEN)
+*   `[🚧] 1.5.6 [UI]` **Refactor `DialecticSessionDetailsPage` for New Card-Based Layout (Post Initial `Tabs` Implementation):**
+    *   **Goal:** Transition from a simple tabbed view per stage to a more modular card-based UI where session overview, stage selection, and contribution display/interaction are handled by distinct child components. This will also facilitate the introduction of the "Initial User Prompt" for the iteration.
+    *   `[🚧] 1.5.6.1 [UI]` **Update `DialecticSessionDetailsPage` Component & Tests:**
+        *   `[✅] 1.5.6.1.1 [TEST-UNIT]` Update tests for `DialecticSessionDetailsPage`:
+            *   `[✅]` Mock new child components: `SessionInfoCard`, `StageTabCard`, `SessionContributionsDisplayCard`.
+            *   `[✅]` Verify rendering of child components.
+            *   `[✅]` Verify `activeStageSlug` state is initialized correctly (e.g., from `session.status` via a new helper `getStageSlugFromStatus` in `dialecticConfig.ts`).
+            *   `[✅]` Verify `activeStageSlug` updates on `StageTabCard` selection.
+            *   `[✅]` Verify correct props (e.g., `session`, `activeStageSlug`, `onSelectStage`) are passed to child components.
+            *   `[✅]` Verify `SessionContributionsDisplayCard` re-renders with new `activeStageSlug`.
+        *   `[✅] 1.5.6.1.2 [UI]` Modify `DialecticSessionDetailsPage.tsx`:
+            *   `[✅]` Remove old `Tabs`-based UI.
+            *   `[✅]` Integrate `SessionInfoCard`, `StageTabCard` (for each stage in `DIALECTIC_STAGES`), and `SessionContributionsDisplayCard`.
+            *   `[✅]` Manage `activeStageSlug` state, initializing from `session.status` using `getStageSlugFromStatus`.
+            *   `[✅]` Pass appropriate props to child components.
+            *   `[✅]` Ensure loading/error states are handled.
+        *   `[✅] 1.5.6.1.3 [CONFIG]` Create/Update `apps/web/src/config/dialecticConfig.ts`:
+            *   `[✅]` Export `DIALECTIC_STAGES`: an array of `DialecticStageDefinition` objects (e.g., `{ slug: DialecticStage.THESIS, displayName: 'Thesis', description: '...' }`). Ensure `slug` aligns with `DialecticStage` enum.
+            *   `[✅]` Export `getStageSlugFromStatus(status: string): DialecticStage | null` helper function.
+        *   `[ ] 1.5.6.1.4 [COMMIT]` feat(web): refactor DialecticSessionDetailsPage to card layout
+    *   `[🚧] 1.5.6.2 [UI]` **Create `SessionInfoCard` Component & Tests:**
+        *   `[✅] 1.5.6.2.1 [TEST-UNIT]` Write tests for `SessionInfoCard`:
+            *   `[✅]` Mock `useDialecticStore` and relevant selectors (`selectDialecticSessionById`, `selectInitialPromptContentForIteration`).
+            *   `[✅]` Verify rendering of session description, current iteration number, status.
+            *   `[✅]` Verify it fetches and displays the "Initial User Prompt" for the *current iteration* from Supabase Storage (e.g., `projects/{projectId}/sessions/{sessionId}/iteration_{N}/0_seed_inputs/user_prompt.md`). This involves:
+                *   `[✅]` Mocking the store thunk `fetchInitialPromptContent(sessionId, iterationNumber)`.
+                *   `[✅]` Verifying display of fetched Markdown content (via a mocked `MarkdownRenderer`).
+                *   `[✅]` Handling loading/error states for prompt fetching.
+        *   `[✅] 1.5.6.2.2 [UI]` Implement `SessionInfoCard.tsx` (`apps/web/src/components/dialectic/SessionInfoCard.tsx`):
+            *   `[✅]` Display session details.
+            *   `[✅]` Fetch and display the iteration-specific initial user prompt.
+        *   `[ ] 1.5.6.2.3 [COMMIT]` feat(web): implement SessionInfoCard and tests
+    *   `[🚧] 1.5.6.3 [UI]` **Create `StageTabCard` Component & Tests:** (This is effectively a "Stage Controller Card")
+        *   `[✅] 1.5.6.3.1 [TEST-UNIT]` Write tests for `StageTabCard`:
+            *   `[✅]` Props: `stage: DialecticStageDefinition`, `isActiveStage: boolean`, `onSelectStage: (slug: DialecticStage) => void`, `session: DialecticSession`.
+            *   `[✅]` Verify display of `stage.displayName`.
+            *   `[✅]` Verify active state styling/indicator.
+            *   `[✅]` Verify `onSelectStage(stage.slug)` is called on click.
+            *   `[✅]` **"Generate/Regenerate Contributions" Button Logic:**
+                *   `[✅]` Button visible and enabled if `isActiveStage` is true, `session.status` allows generation for this stage (e.g., not 'COMPLETED', or stage is current), AND the `seed_prompt.md` for *this specific stage and iteration* exists in storage (or a new store selector `selectStageSeedPromptExists(sessionId, iteration, stageSlug)` indicates this).
+                *   `[✅]` Button text: "Generate Contributions" or "Regenerate Contributions" based on whether contributions for this stage already exist.
+                *   `[✅]` On click, dispatches `generateContributions({ sessionId, stageSlug, iterationNumber })` thunk. (Assume `iterationNumber` is derived from `session.current_iteration_number`).
+                *   `[✅]` Mock `useDialecticStore` and the thunk. Verify correct payload.
+                *   `[✅]` Verify button loading/disabled state based on a store selector like `selectIsGeneratingContributionsForStage(stageSlug)`.
+                *   `[✅]` Verify error display if generation fails (e.g., using a selector `selectContributionGenerationErrorForStage(stageSlug)`).
+            *   `[✅]` **Prerequisite Stage Check (Visual Cue):**
+                *   `[✅]` If a stage (e.g., Antithesis) has prerequisites (e.g., Thesis must be 'COMPLETED' or have contributions), and those are not met for the current iteration, display a subtle warning or lock icon. (e.g., "Thesis stage must be completed first."). This uses `session.stage_progress` or similar.
+        *   `[✅] 1.5.6.3.2 [UI]` Implement `StageTabCard.tsx` (`apps/web/src/components/dialectic/StageTabCard.tsx`).
+        *   `[ ] 1.5.6.3.3 [COMMIT]` feat(web): implement StageTabCard and tests
+    *   `[🚧] 1.5.6.4 [UI]` **Create `SessionContributionsDisplayCard` Component & Tests:**
+        *   `[✅] 1.5.6.4.1 [TEST-UNIT]` Write tests for `SessionContributionsDisplayCard`:
+            *   `[✅]` Props: `session: DialecticSession`, `activeStageSlug: DialecticStage`.
+            *   `[✅]` Mock `useDialecticStore` and selectors like `selectContributionsForStageAndIteration`.
+            *   `[✅]` Verify it filters contributions from `session.contributions` to display only those matching `activeStageSlug` and `session.current_iteration_number`, showing the latest version of each (if versioning is present in `DialecticContribution` or handled by selector).
+            *   `[✅]` For each displayed contribution, render a `GeneratedContributionCard` (to be created in `1.5.7`). Mock this child component for now.
+            *   `[✅]` Verify props passed to `GeneratedContributionCard`.
+            *   `[✅]` **User Response Management (Simplified for now - text area per contribution):**
+                *   `[✅]` If `activeStageSlug` is one that expects user feedback (e.g., Thesis, Antithesis, Synthesis), allow input.
+                *   `[✅]` Manage local state for user responses (e.g., `Map<contributionId, string>`).
+                *   `[✅]` "Submit Responses & Prepare Next Stage" button:
+                    *   `[✅]` Visible if `activeStageSlug` allows feedback and `session.status` is appropriate.
+                    *   `[✅]` On click, dispatches `submitStageResponsesAndPrepareNextSeed({ sessionId, iterationNumber, stageSlug, responses: UserResponse[] })` thunk. `UserResponse` could be `{ contribution_id: string, feedback_text: string, approved: boolean (future) }`.
+                    *   `[✅]` Mock the thunk and verify payload.
+                    *   `[✅]` Verify loading/disabled state (`selectIsSubmittingResponses(stageSlug)`).
+                    *   `[✅]` Verify error display (`selectSubmitResponsesError(stageSlug)`).
+        *   `[✅] 1.5.6.4.2 [UI]` Implement `SessionContributionsDisplayCard.tsx` (`apps/web/src/components/dialectic/SessionContributionsDisplayCard.tsx`).
+        *   `[ ] 1.5.6.4.3 [COMMIT]` feat(web): implement SessionContributionsDisplayCard and tests
     *   `[ ] 1.5.6.5 [UI]` **NEW Create `GeneratedContributionCard` Component** (`apps/web/src/components/dialectic/GeneratedContributionCard.tsx`)
         *   `[ ] 1.5.6.5.1 [TEST-UNIT]` Write unit tests for `GeneratedContributionCard.tsx`. Test:
             *   Correct rendering of content (original vs. edited, including fetching from storage using `contributionId` prop and selector).

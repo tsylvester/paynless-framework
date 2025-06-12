@@ -29,11 +29,12 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
   const {
     generateContributions,
     isGeneratingContributions,
-    // generateContributionsError, // Error is handled via toast and callback
+    currentProjectDetail,
   } = useDialecticStore((state) => ({
     generateContributions: state.generateContributions,
     isGeneratingContributions: state.isGeneratingContributions,
     generateContributionsError: state.generateContributionsError,
+    currentProjectDetail: state.currentProjectDetail,
   }));
 
   const handleClick = async () => {
@@ -41,10 +42,23 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
       onGenerationStart();
     }
 
+    const activeSession = currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
+    if (!activeSession || typeof activeSession.current_iteration !== 'number') {
+      toast.error('Could not determine the current iteration number. Please ensure the session is active.');
+      if (onGenerationComplete) {
+        onGenerationComplete(false, undefined, { message: 'Missing session iteration data', code: 'CLIENT_SETUP_ERROR' });
+      }
+      return;
+    }
+    const currentIterationNumber = activeSession.current_iteration;
+
     try {
-      // The thunk in the store now expects { sessionId: string; projectId: string; }
-      // It handles the API call and subsequent project detail refetching.
-      const result = await generateContributions({ sessionId, projectId });
+      const result = await generateContributions({ 
+        sessionId, 
+        projectId, 
+        stageSlug: currentStage, 
+        iterationNumber: currentIterationNumber
+      });
 
       if (result && !result.error && result.data) {
         toast.success(`${currentStageFriendlyName} contributions generated successfully!`);
