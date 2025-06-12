@@ -630,8 +630,8 @@ The implementation plan uses the following labels to categorize work steps:
         *   `[ ] 1.2.1.3 [REFACTOR]` Review.
         *   `[✅] 1.2.1.4 [TEST-INT]` Run tests.
     *   Action: `startSession`
-        *   `[🚧] 1.2.1.5 [TEST-INT]` Write tests for `startSession` action (input: `projectId`, `selectedModelCatalogIds`, `sessionDescription`, `selected_domain_overlay_id`; output: created session object; auth). (RED - Partially complete: Key "Happy Path" test, tests for optional parameters (like `sessionDescription`, template names), and specific testing for `selected_domain_overlay_id` are missing (`// TODO` in file).)
-        *   `[ ] 1.2.1.6` Implement logic:
+        *   `[✅] 1.2.1.5 [TEST-INT]` Write tests for `startSession` action (input: `projectId`, `selectedModelCatalogIds`, `sessionDescription`, `selected_domain_overlay_id`; output: created session object; auth). (GREEN - Comprehensive tests covering happy paths, missing parameters, error conditions, `sessionDescription`, and `selected_domain_overlay_id` are implemented across `startSession.happy.test.ts`, `startSession.missing.test.ts`, and `startSession.errors.test.ts` and are passing.)
+        *   `[✅] 1.2.1.6` Implement logic:
             1.  Verify project ownership.
             2.  Fetch `prompt_template.id` for thesis and antithesis from `prompt_templates` table using names.
             3.  If `selected_domain_overlay_id` is provided in the payload, fetch its `overlay_values` to be used in prompt rendering for the relevant stage(s).
@@ -641,9 +641,9 @@ The implementation plan uses the following labels to categorize work steps:
             6.  Sets `dialectic_sessions.status` to `pending_thesis`.
             7.  Constructs `seed_prompt_url` for the session by rendering the chosen thesis prompt template with the project's `initial_user_prompt`. Store the combined user prompt, prompt template, and any provided template overlays into a file in the storage bucket using the file/folder schema and link it to the session record in `dialectic_sessions.seed_prompt_url`.
             8.  The `startSession` action concludes after successfully setting up the session. The generation of thesis contributions will be triggered by a separate user action from the frontend, which will then call the `generateContributions` action.
-        *   `[ ] 1.2.1.7` (GREEN)  
-        *   `[ ] 1.2.1.8 [REFACTOR]` Review.
-        *   `[ ] 1.2.1.9 [TEST-INT]` Run tests.
+        *   `[✅] 1.2.1.7` (GREEN)  
+        *   `[✅] 1.2.1.8 [REFACTOR]` Review.
+        *   `[✅] 1.2.1.9 [TEST-INT]` Run tests.
 *   `[✅] 1.2.2 [BE]` Helper: Prompt Rendering Utility
     *   `[✅] 1.2.2.1 [TEST-UNIT]` Write tests for a utility that takes a prompt template string (e.g., "Solve: {{problem}}") and a context object (e.g., `{ problem: "world hunger" }`) and returns the rendered prompt. (RED)
     *   `[✅] 1.2.2.2` Implement the prompt rendering utility (e.g., using a simple string replacement or a lightweight template engine). (GREEN)
@@ -962,9 +962,9 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅] 1.5.5.3` (GREEN)
     *   `[ ] 1.5.5.4 [REFACTOR]` Review.
     *   `[✅] 1.5.5.5 [TEST-UNIT]` Run tests.
-*   `[🚧] 1.5.6 [UI]` **Refactor `DialecticSessionDetailsPage` for New Card-Based Layout (Post Initial `Tabs` Implementation):**
+*   `[✅] 1.5.6 [UI]` **Refactor `DialecticSessionDetailsPage` for New Card-Based Layout (Post Initial `Tabs` Implementation):**
     *   **Goal:** Transition from a simple tabbed view per stage to a more modular card-based UI where session overview, stage selection, and contribution display/interaction are handled by distinct child components. This will also facilitate the introduction of the "Initial User Prompt" for the iteration.
-    *   `[🚧] 1.5.6.1 [UI]` **Update `DialecticSessionDetailsPage` Component & Tests:**
+    *   `[✅] 1.5.6.1 [UI]` **Update `DialecticSessionDetailsPage` Component & Tests:**
         *   `[✅] 1.5.6.1.1 [TEST-UNIT]` Update tests for `DialecticSessionDetailsPage`:
             *   `[✅]` Mock new child components: `SessionInfoCard`, `StageTabCard`, `SessionContributionsDisplayCard`.
             *   `[✅]` Verify rendering of child components.
@@ -981,8 +981,8 @@ The implementation plan uses the following labels to categorize work steps:
         *   `[✅] 1.5.6.1.3 [CONFIG]` Create/Update `apps/web/src/config/dialecticConfig.ts`:
             *   `[✅]` Export `DIALECTIC_STAGES`: an array of `DialecticStageDefinition` objects (e.g., `{ slug: DialecticStage.THESIS, displayName: 'Thesis', description: '...' }`). Ensure `slug` aligns with `DialecticStage` enum.
             *   `[✅]` Export `getStageSlugFromStatus(status: string): DialecticStage | null` helper function.
-        *   `[ ] 1.5.6.1.4 [COMMIT]` feat(web): refactor DialecticSessionDetailsPage to card layout
-    *   `[🚧] 1.5.6.2 [UI]` **Create `SessionInfoCard` Component & Tests:**
+        *   `[✅] 1.5.6.1.4 [COMMIT]` feat(web): refactor DialecticSessionDetailsPage to card layout
+    *   `[✅] 1.5.6.2 [UI]` **Create `SessionInfoCard` Component & Tests:**
         *   `[✅] 1.5.6.2.1 [TEST-UNIT]` Write tests for `SessionInfoCard`:
             *   `[✅]` Mock `useDialecticStore` and relevant selectors (`selectDialecticSessionById`, `selectInitialPromptContentForIteration`).
             *   `[✅]` Verify rendering of session description, current iteration number, status.
@@ -993,8 +993,8 @@ The implementation plan uses the following labels to categorize work steps:
         *   `[✅] 1.5.6.2.2 [UI]` Implement `SessionInfoCard.tsx` (`apps/web/src/components/dialectic/SessionInfoCard.tsx`):
             *   `[✅]` Display session details.
             *   `[✅]` Fetch and display the iteration-specific initial user prompt.
-        *   `[ ] 1.5.6.2.3 [COMMIT]` feat(web): implement SessionInfoCard and tests
-    *   `[🚧] 1.5.6.3 [UI]` **Create `StageTabCard` Component & Tests:** (This is effectively a "Stage Controller Card")
+        *   `[✅] 1.5.6.2.3 [COMMIT]` feat(web): implement SessionInfoCard and tests
+    *   `[✅] 1.5.6.3 [UI]` **Create `StageTabCard` Component & Tests:** (This is effectively a "Stage Controller Card")
         *   `[✅] 1.5.6.3.1 [TEST-UNIT]` Write tests for `StageTabCard`:
             *   `[✅]` Props: `stage: DialecticStageDefinition`, `isActiveStage: boolean`, `onSelectStage: (slug: DialecticStage) => void`, `session: DialecticSession`.
             *   `[✅]` Verify display of `stage.displayName`.
@@ -1010,8 +1010,8 @@ The implementation plan uses the following labels to categorize work steps:
             *   `[✅]` **Prerequisite Stage Check (Visual Cue):**
                 *   `[✅]` If a stage (e.g., Antithesis) has prerequisites (e.g., Thesis must be 'COMPLETED' or have contributions), and those are not met for the current iteration, display a subtle warning or lock icon. (e.g., "Thesis stage must be completed first."). This uses `session.stage_progress` or similar.
         *   `[✅] 1.5.6.3.2 [UI]` Implement `StageTabCard.tsx` (`apps/web/src/components/dialectic/StageTabCard.tsx`).
-        *   `[ ] 1.5.6.3.3 [COMMIT]` feat(web): implement StageTabCard and tests
-    *   `[🚧] 1.5.6.4 [UI]` **Create `SessionContributionsDisplayCard` Component & Tests:**
+        *   `[✅] 1.5.6.3.3 [COMMIT]` feat(web): implement StageTabCard and tests
+    *   `[✅] 1.5.6.4 [UI]` **Create `SessionContributionsDisplayCard` Component & Tests:**
         *   `[✅] 1.5.6.4.1 [TEST-UNIT]` Write tests for `SessionContributionsDisplayCard`:
             *   `[✅]` Props: `session: DialecticSession`, `activeStageSlug: DialecticStage`.
             *   `[✅]` Mock `useDialecticStore` and selectors like `selectContributionsForStageAndIteration`.
@@ -1028,17 +1028,17 @@ The implementation plan uses the following labels to categorize work steps:
                     *   `[✅]` Verify loading/disabled state (`selectIsSubmittingResponses(stageSlug)`).
                     *   `[✅]` Verify error display (`selectSubmitResponsesError(stageSlug)`).
         *   `[✅] 1.5.6.4.2 [UI]` Implement `SessionContributionsDisplayCard.tsx` (`apps/web/src/components/dialectic/SessionContributionsDisplayCard.tsx`).
-        *   `[ ] 1.5.6.4.3 [COMMIT]` feat(web): implement SessionContributionsDisplayCard and tests
-    *   `[ ] 1.5.6.5 [UI]` **NEW Create `GeneratedContributionCard` Component** (`apps/web/src/components/dialectic/GeneratedContributionCard.tsx`)
-        *   `[ ] 1.5.6.5.1 [TEST-UNIT]` Write unit tests for `GeneratedContributionCard.tsx`. Test:
+        *   `[✅] 1.5.6.4.3 [COMMIT]` feat(web): implement SessionContributionsDisplayCard and tests
+    *   `[✅] 1.5.6.5 [UI]` **NEW Create `GeneratedContributionCard` Component** (`apps/web/src/components/dialectic/GeneratedContributionCard.tsx`)
+        *   `[✅] 1.5.6.5.1 [TEST-UNIT]` Write unit tests for `GeneratedContributionCard.tsx`. Test:
             *   Correct rendering of content (original vs. edited, including fetching from storage using `contributionId` prop and selector).
             *   Uses selectors to get the full `contribution` object by ID.
             *   Toggle for edit mode (`isEditing` state).
-            *   Functionality of \"Save\" and \"Discard\" buttons for edits, including thunk dispatch for \"Save\" (`saveContributionEdit` with `originalContributionIdToEdit`).
+            *   Functionality of "Save" and "Discard" buttons for edits, including thunk dispatch for "Save" (`saveContributionEdit` with `originalContributionIdToEdit`).
             *   Integration and functionality of the `TextInputArea` for user responses.
             *   `onResponseChange` callback invocation with `originalModelContributionIdForResponse`.
-            *   Display of the guidance message. (RED)
-        *   `[ ] 1.5.6.5.2` Implement `GeneratedContributionCard.tsx`:
+            *   Display of the guidance message. (RED -> GREEN)
+        *   `[✅] 1.5.6.5.2` Implement `GeneratedContributionCard.tsx`:
             *   Accepts props: `contributionId: string` (ID of the specific contribution version to display, typically the latest), `originalModelContributionIdForResponse: string` (ID of the base AI contribution this response is for), `initialResponseText: string | undefined`, `onResponseChange: (originalModelContributionIdForResponse: string, responseText: string) => void`.
             *   Uses `selectContributionById(contributionId)` selector to get the `contribution` object.
             *   Manages its own local component state for:
@@ -1053,30 +1053,30 @@ The implementation plan uses the following labels to categorize work steps:
                 *   Renders `displayContent` (from store/cache) using the shared `MarkdownRenderer`. Shows loading/error state.
                 *   Clearly indicates if the displayed content is user-edited (e.g., a small badge or note, based on `contribution.edit_version > 1`).
             *   **Direct Editing Feature:**
-                *   \"Edit\" button:
+                *   "Edit" button:
                     *   Visible if not `isEditing`.
                     *   Sets `isEditing` to true.
                     *   Initializes `editedContentText` with the current `displayContent`.
                 *   If `isEditing` is true:
                     *   Render a `Textarea` (or `TextInputArea` in raw text mode) bound to `editedContentText`.
-                    *   \"Save\" button: Dispatches `saveContributionEdit` thunk with `originalContributionIdToEdit: contribution.original_model_contribution_id || contribution.id` and `editedContentText`. On success, sets `isEditing` to false. The component should re-render with the new latest version from the store.
-                    *   \"Discard\" button: Sets `isEditing` to false, discards changes by resetting `editedContentText` (no API call).
-                *   Displays a guiding message near the edit controls: \"Recommended for minor corrections or quick fixes. For substantive dialogue or building upon this idea, please use the response area below.\"
+                    *   "Save" button: Dispatches `saveContributionEdit` thunk with `originalContributionIdToEdit: contribution.original_model_contribution_id || contribution.id` and `editedContentText`. On success, sets `isEditing` to false. The component should re-render with the new latest version from the store.
+                    *   "Discard" button: Sets `isEditing` to false, discards changes by resetting `editedContentText` (no API call).
+                *   Displays a guiding message near the edit controls: "Recommended for minor corrections or quick fixes. For substantive dialogue or building upon this idea, please use the response area below."
             *   **User Response Area (Below Content/Edit section):**
                 *   Integrates a `TextInputArea` component (with raw text and markdown preview tabs).
-                *   The `TextInputArea`\'s `value` is controlled by `props.initialResponseText` (or internal state if preferred, synced with prop).
-                *   The `TextInputArea`\'s `onChange` callback invokes `props.onResponseChange(props.originalModelContributionIdForResponse, newResponseText)`.
+                *   The `TextInputArea`'s `value` is controlled by `props.initialResponseText` (or internal state if preferred, synced with prop).
+                *   The `TextInputArea`'s `onChange` callback invokes `props.onResponseChange(props.originalModelContributionIdForResponse, newResponseText)`.
             *   Ensure all interactive elements (buttons, text areas) are accessible.
-        *   `[ ] 1.5.6.5.3 [TEST-UNIT]` Run `GeneratedContributionCard.tsx` unit tests. (GREEN)
-    *   `[ ] 1.5.6.6 [REFACTOR]` Conduct a thorough review of the entire `DialecticSessionDetailsPage` and its new child components (`SessionInfoCard`, `StageTabCard`, `SessionContributionsDisplayCard`, `GeneratedContributionCard`). Focus areas:
+        *   `[✅] 1.5.6.5.3 [TEST-UNIT]` Run `GeneratedContributionCard.tsx` unit tests. (GREEN)
+    *   `[✅] 1.5.6.6 [REFACTOR]` Conduct a thorough review of the entire `DialecticSessionDetailsPage` and its new child components (`SessionInfoCard`, `StageTabCard`, `SessionContributionsDisplayCard`, `GeneratedContributionCard`). Focus areas:
         *   Confirm clear separation of concerns and well-defined responsibilities for each component.
         *   Optimize data flow from the Zustand store and minimize unnecessary prop drilling.
         *   Ensure a consistent and intuitive user experience for viewing content, editing contributions, and providing responses.
         *   Verify robust error handling and loading state management across all new components and their interactions with thunks.
         *   Check for adherence to accessibility best practices.
-    *   `[ ] 1.5.6.7 [COMMIT]` feat(ui): Refactor DialecticSessionDetailsPage with modular cards, implement contribution editing & user response capabilities.
+    *   `[✅] 1.5.6.7 [COMMIT]` feat(ui): Refactor DialecticSessionDetailsPage with modular cards, implement contribution editing & user response capabilities.
 *   `[✅] 1.5.7 [UI]` Add navigation link to `/dialectic` in the main app layout (e.g., sidebar, header).
-*   `[🚧] 1.5.8 [COMMIT]` feat(ui): add core pages and navigation for dialectic engine (This commit message will be superseded by `1.5.6.7` upon completion of the refactor).
+*   `[✅] 1.5.8 [COMMIT]` feat(ui): add core pages and navigation for dialectic engine (This commit message will be superseded by `1.5.6.7` upon completion of the refactor).
 
 ### Fixes for Dialectic flow
 *   [✅] 404 err on file upload for project creation

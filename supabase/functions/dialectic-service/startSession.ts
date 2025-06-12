@@ -2,14 +2,17 @@
 import { 
     StartSessionPayload, 
     StartSessionSuccessResponse, 
+    DialecticStage,
 } from "./dialectic.interface.ts";
 // import { createSupabaseClient } from "../_shared/auth.ts"; // No longer needed for direct auth here
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2"; // Added User
 import type { Database } from "../types_db.ts";
-import { logger } from "../_shared/logger.ts";
+import { logger as defaultLogger } from "../_shared/logger.ts"; // Renamed import for clarity
 import type { ILogger } from "../_shared/types.ts";
 import type { DialecticSession } from "./dialectic.interface.ts";
-console.log("startSession function started");
+import { uploadToStorage } from "../_shared/supabase_storage_utils.ts"; // Added for storing seed prompt
+
+const DIALECTIC_CONTRIBUTIONS_BUCKET = "dialectic-contributions"; // Defined bucket name
 
 // Define Dependencies Interface
 export interface StartSessionDeps {
@@ -22,8 +25,10 @@ export interface StartSessionDeps {
 const defaultStartSessionDeps: StartSessionDeps = {
   // createSupabaseClient: createSupabaseClient, // Removed
   randomUUID: () => crypto.randomUUID(),
-  logger: logger,
+  logger: defaultLogger, // Use renamed defaultLogger
 };
+
+const VALID_DIALECTIC_STAGES = Object.values(DialecticStage);
 
 export async function startSession(
   // req: Request, // For user authentication -> Removed
@@ -36,7 +41,8 @@ export async function startSession(
   // const { createSupabaseClient, randomUUID, logger } = deps; // createSupabaseClient removed from here
   const { randomUUID, logger } = deps;
 
-  logger.info(`startSession called with payload: ${JSON.stringify(payload)} for user ${user.id}`);
+  logger.info(`[startSession] Function started.`);
+  logger.info(`[startSession] Called with payload: ${JSON.stringify(payload)} for user ${user.id}`);
 
   // const { data: userSession, error: authError } = await createSupabaseClient(req).auth.getUser(); // Removed auth call
 
@@ -46,7 +52,18 @@ export async function startSession(
   // }
   // const userId = userSession.user.id; // Use user.id directly
   const userId = user.id;
-  logger.info(`[startSession] User ${userId} authenticated (passed to function).`);
+  // logger.info(`[startSession] User ${userId} authenticated (passed to function).`); // Redundant with above log
+
+  // Validate stageAssociation early
+  if (!VALID_DIALECTIC_STAGES.includes(payload.stageAssociation)) {
+    const message = `Invalid stageAssociation provided: ${payload.stageAssociation}. Allowed stages are: ${VALID_DIALECTIC_STAGES.join(", ")}.`;
+    logger.error("[startSession] Invalid stageAssociation in payload", {
+        projectId: payload.projectId,
+        userId: userId,
+        invalidStageAttempted: payload.stageAssociation,
+    });
+    return { error: { message, status: 400 } };
+  }
 
   let associatedChatIdToUse: string;
   if (payload.originatingChatId) {
@@ -77,27 +94,34 @@ export async function startSession(
 
   try {
     if (payload.promptTemplateId) {
-        logger.info(`[startSession] Using provided promptTemplateId: ${payload.promptTemplateId}`);
+        logger.info(`[startSession] Attempting to use provided promptTemplateId: ${payload.promptTemplateId}`);
         const { data: directPrompt, error: directPromptErr } = await dbClient
             .from('system_prompts')
             .select('id, prompt_text')
             .eq('id', payload.promptTemplateId)
             .eq('is_active', true)
             .single();
-        if (directPromptErr) throw new Error(`Error fetching prompt by direct ID ${payload.promptTemplateId}: ${directPromptErr.message}`);
-        if (!directPrompt) throw new Error(`No active prompt found for ID ${payload.promptTemplateId}`);
+        if (directPromptErr || !directPrompt) {
+          const message = `System prompt with ID '${payload.promptTemplateId}' not found or is inactive.`;
+          logger.error("[startSession] Error fetching system prompt by ID", { projectId: project.id, userId, stage: payload.stageAssociation, promptTemplateIdAttempted: payload.promptTemplateId, dbError: directPromptErr });
+          return { error: { message, status: 400 } };
+        }
         systemPromptId = directPrompt.id;
         systemPromptText = directPrompt.prompt_text;
+        logger.info(`[startSession] Successfully fetched system prompt using direct promptTemplateId: ${systemPromptId}`);
     } else if (payload.selectedDomainOverlayId) {
-      logger.info(`[startSession] Using provided selectedDomainOverlayId from payload: ${payload.selectedDomainOverlayId} to fetch system_prompt_id.`);
+      logger.info(`[startSession] Attempting to use provided selectedDomainOverlayId from payload: ${payload.selectedDomainOverlayId}`);
       const { data: overlay, error: overlayErr } = await dbClient
         .from('domain_specific_prompt_overlays')
         .select('system_prompt_id')
         .eq('id', payload.selectedDomainOverlayId)
         .single();
 
-      if (overlayErr) throw new Error(`Error fetching domain_specific_prompt_overlay using payload ID: ${overlayErr.message}`);
-      if (!overlay || !overlay.system_prompt_id) throw new Error(`Domain overlay ${payload.selectedDomainOverlayId} (from payload) not found or has no system_prompt_id.`);
+      if (overlayErr || !overlay || !overlay.system_prompt_id) {
+        const message = `Domain-specific prompt overlay with ID '${payload.selectedDomainOverlayId}' not found.`; // Test expects this msg
+        logger.error("[startSession] Error fetching domain specific prompt overlay by ID", { projectId: project.id, userId, stage: payload.stageAssociation, domainOverlayIdAttempted: payload.selectedDomainOverlayId, dbError: overlayErr });
+        return { error: { message, status: 400 } };
+      }
       
       logger.info(`[startSession] Fetched system_prompt_id: ${overlay.system_prompt_id} using payload overlay ID. Now fetching prompt text.`);
       const { data: promptFromOverlay, error: promptFromOverlayErr } = await dbClient
@@ -107,23 +131,30 @@ export async function startSession(
         .eq('is_active', true)
         .single();
       
-      if (promptFromOverlayErr) throw new Error(`Error fetching system prompt using ID from payload overlay (${overlay.system_prompt_id}): ${promptFromOverlayErr.message}`);
-      if (!promptFromOverlay) throw new Error(`No active system prompt found for ID ${overlay.system_prompt_id} (linked from payload overlay ${payload.selectedDomainOverlayId})`);
+      if (promptFromOverlayErr || !promptFromOverlay) {
+        const message = `System prompt with ID '${overlay.system_prompt_id}' (referenced by domain overlay '${payload.selectedDomainOverlayId}') not found or is inactive.`;
+        logger.error("[startSession] Error fetching system prompt by ID (via overlay)", { projectId: project.id, userId, stage: payload.stageAssociation, domainOverlayIdUsed: payload.selectedDomainOverlayId, systemPromptIdAttempted: overlay.system_prompt_id, dbError: promptFromOverlayErr });
+        return { error: { message, status: 400 } };
+      }
       
       systemPromptId = promptFromOverlay.id;
       systemPromptText = promptFromOverlay.prompt_text;
+      logger.info(`[startSession] Successfully fetched system prompt using payload's selectedDomainOverlayId: ${systemPromptId}`);
     } else if (project.selected_domain_overlay_id) {
-      logger.info(`[startSession] Fetching system_prompt_id from domain_specific_prompt_overlays for project's overlay ID: ${project.selected_domain_overlay_id}`);
+      logger.info(`[startSession] Attempting to use project's selected_domain_overlay_id: ${project.selected_domain_overlay_id}`);
       const { data: overlay, error: overlayErr } = await dbClient
         .from('domain_specific_prompt_overlays')
         .select('system_prompt_id')
         .eq('id', project.selected_domain_overlay_id)
         .single();
 
-      if (overlayErr) throw new Error(`Error fetching domain_specific_prompt_overlay: ${overlayErr.message}`);
-      if (!overlay || !overlay.system_prompt_id) throw new Error(`Domain overlay ${project.selected_domain_overlay_id} not found or has no system_prompt_id.`);
+      if (overlayErr || !overlay || !overlay.system_prompt_id) {
+        const message = `Domain-specific prompt overlay with ID '${project.selected_domain_overlay_id}' (from project settings) not found.`;
+        logger.error("[startSession] Error fetching domain specific prompt overlay by ID (from project)", { projectId: project.id, userId, stage: payload.stageAssociation, domainOverlayIdAttempted: project.selected_domain_overlay_id, dbError: overlayErr });
+        return { error: { message, status: 400 } };
+      }
       
-      logger.info(`[startSession] Fetched system_prompt_id: ${overlay.system_prompt_id}. Now fetching prompt text.`);
+      logger.info(`[startSession] Fetched system_prompt_id: ${overlay.system_prompt_id} using project's overlay ID. Now fetching prompt text.`);
       const { data: promptFromOverlay, error: promptFromOverlayErr } = await dbClient
         .from('system_prompts')
         .select('id, prompt_text')
@@ -131,15 +162,19 @@ export async function startSession(
         .eq('is_active', true)
         .single();
       
-      if (promptFromOverlayErr) throw new Error(`Error fetching system prompt using ID from overlay (${overlay.system_prompt_id}): ${promptFromOverlayErr.message}`);
-      if (!promptFromOverlay) throw new Error(`No active system prompt found for ID ${overlay.system_prompt_id} (linked from overlay ${project.selected_domain_overlay_id})`);
+      if (promptFromOverlayErr || !promptFromOverlay) {
+        const message = `System prompt with ID '${overlay.system_prompt_id}' (referenced by domain overlay '${project.selected_domain_overlay_id}') not found or is inactive.`;
+        logger.error("[startSession] Error fetching system prompt by ID (via project overlay)", { projectId: project.id, userId, stage: payload.stageAssociation, domainOverlayIdUsed: project.selected_domain_overlay_id, systemPromptIdAttempted: overlay.system_prompt_id, dbError: promptFromOverlayErr });
+        return { error: { message, status: 400 } };
+      }
       
       systemPromptId = promptFromOverlay.id;
       systemPromptText = promptFromOverlay.prompt_text;
+      logger.info(`[startSession] Successfully fetched system prompt using project's selected_domain_overlay_id: ${systemPromptId}`);
     } else {
       // Fallback or default logic if neither promptTemplateId nor selected_domain_overlay_id is present
       // This might involve fetching a generic default based on stageAssociation or other criteria
-      logger.info(`[startSession] No promptTemplateId or project.selected_domain_overlay_id. Fetching default prompt for stage: ${payload.stageAssociation}, context: ${project.selected_domain_tag || 'general'}`);
+      logger.info(`[startSession] No specific prompt ID or overlay ID provided. Fetching default prompt for stage: ${payload.stageAssociation}, context: ${project.selected_domain_tag || 'general'}`);
       const { data: defaultPrompt, error: defaultPromptErr } = await dbClient
         .from('system_prompts')
         .select('id, prompt_text')
@@ -149,11 +184,14 @@ export async function startSession(
         .eq('context', project.selected_domain_tag || 'general')
         .maybeSingle(); // Use maybeSingle as a default might not exist
       
-      if (defaultPromptErr) throw new Error(`Error fetching default prompt: ${defaultPromptErr.message}`);
-      if (!defaultPrompt) throw new Error(`No suitable default prompt found for stage '${payload.stageAssociation}' and context '${project.selected_domain_tag || 'general'}'`);
-      
+      if (defaultPromptErr || !defaultPrompt) {
+          const message = `No suitable default prompt found for stage '${payload.stageAssociation}' and context '${project.selected_domain_tag || 'general'}'.`;
+          logger.error("[startSession] Error fetching default system prompt", { projectId: project.id, userId, stage: payload.stageAssociation, contextAttempted: project.selected_domain_tag || 'general', dbError: defaultPromptErr });
+          return { error: { message, status: 400 } };
+      }
       systemPromptId = defaultPrompt.id;
       systemPromptText = defaultPrompt.prompt_text;
+      logger.info(`[startSession] Successfully fetched default system prompt: ${systemPromptId}`);
     }
     logger.info(`[startSession] System prompt ID ${systemPromptId} and text fetched.`);
 
@@ -166,16 +204,21 @@ export async function startSession(
   const sessionStage = payload.stageAssociation.toUpperCase() as Database["public"]["Enums"]["dialectic_stage_enum"]; // Ensure stage is uppercase and type-casted
   const sessionStatus = `pending_${payload.stageAssociation.toLowerCase()}`; // e.g. pending_thesis
 
-  // Construct a user-friendly session description
-  const friendlySessionDescription = `${project.project_name || 'Unnamed Project'} - ${payload.stageAssociation} (${project.selected_domain_tag || 'General'})`;
-  logger.info(`[startSession] Constructed friendly session description: "${friendlySessionDescription}"`);
+  let descriptionForDb: string;
+  if (payload.sessionDescription && payload.sessionDescription.trim() !== "") {
+      descriptionForDb = payload.sessionDescription.trim();
+      logger.info(`[startSession] Using provided sessionDescription: "${descriptionForDb}"`);
+  } else {
+      descriptionForDb = `${project.project_name || 'Unnamed Project'} - ${payload.stageAssociation} (${project.selected_domain_tag || 'General'})`;
+      logger.info(`[startSession] No sessionDescription provided or it was empty. Generated friendly session description: "${descriptionForDb}"`);
+  }
 
   logger.info(`[startSession] Inserting dialectic_sessions record for project ${project.id} with stage ${sessionStage} and status ${sessionStatus}`);
   const { data: sessionData, error: sessionInsertError } = await dbClient
     .from('dialectic_sessions')
     .insert({
       project_id: project.id,
-      session_description: friendlySessionDescription, // Use the friendly description
+      session_description: descriptionForDb, // Use determined description
       stage: sessionStage, // Using the new stage field
       status: sessionStatus, // Still using status for now, can be reviewed
       iteration_count: 1, 
@@ -186,18 +229,46 @@ export async function startSession(
     .single();
 
   if (sessionInsertError || !sessionData) {
-    logger.error("[startSession] Error inserting dialectic session:", { projectId: project.id, error: sessionInsertError });
-    return { error: { message: "Failed to create session.", details: sessionInsertError?.message, status: 500 } };
+    logger.error("[startSession] Database error during session insertion", { projectId: project.id, userId, stage: payload.stageAssociation, dbError: sessionInsertError });
+    return { error: { message: "Failed to insert dialectic session into database.", details: sessionInsertError?.message, status: 500 } }; // Adjusted message
   }
   // const newSessionId = sessionData.id; // sessionData is now the full session object
   logger.info(`[startSession] Session ${sessionData.id} created with stage ${sessionStage}.`);
 
   logger.info(`[startSession] Selected model IDs ${payload.selectedModelCatalogIds.join(', ')} stored in session ${sessionData.id}.`);
   
-  const initialStageSeedPrompt = `Rendered System Prompt for ${payload.stageAssociation}:\n${systemPromptText}\n\nInitial User Prompt (from project):\n${project.initial_user_prompt}`;
+  const initialStageSeedPromptText = `Rendered System Prompt for ${payload.stageAssociation}:\n${systemPromptText}\n\nInitial User Prompt (from project):\n${project.initial_user_prompt}`;
   
-  logger.info(`[startSession] Initial seed prompt for session ${sessionData.id} constructed. This will be used for the first contribution of stage ${payload.stageAssociation}.`);
+  logger.info(`[startSession] Initial seed prompt text for session ${sessionData.id} constructed.`);
 
+  // Store the initial seed prompt to Supabase Storage
+  const iterationNumber = 1; // For a new session, iteration is 1
+  const seedPromptStoragePath = `projects/${project.id}/sessions/${sessionData.id}/iteration_${iterationNumber}/${payload.stageAssociation.toLowerCase()}/seed_prompt.md`;
+  
+  try {
+    logger.info(`[startSession] Attempting to upload initial seed prompt to: ${seedPromptStoragePath}`);
+    const { error: uploadError } = await uploadToStorage(
+      dbClient, // Pass the Supabase client instance
+      DIALECTIC_CONTRIBUTIONS_BUCKET,
+      seedPromptStoragePath,
+      initialStageSeedPromptText,
+      { contentType: 'text/markdown', upsert: true }
+    );
+    if (uploadError) {
+      logger.warn(`[startSession] Failed to upload initial seed prompt to storage. Session creation will proceed, but this might cause issues later.`, { 
+        sessionId: sessionData.id, path: seedPromptStoragePath, error: uploadError.message 
+      });
+      // Not returning an error to the client for this, as session is already created.
+      // Downstream processes will need to handle a missing seed prompt if critical.
+    } else {
+      logger.info(`[startSession] Successfully uploaded initial seed prompt to: ${seedPromptStoragePath}`);
+    }
+  } catch (e) { // Catch any unexpected error from uploadToStorage itself
+    logger.warn(`[startSession] Unexpected error during initial seed prompt upload.`, { 
+        sessionId: sessionData.id, path: seedPromptStoragePath, error: (e instanceof Error ? e.message : String(e)) 
+    });
+  }
+  
   logger.info(`[startSession] Session ${sessionData.id} started successfully. Stage: ${sessionStage}, Status: ${sessionStatus}. Associated chat ID for /chat interactions: ${associatedChatIdToUse}.`);
 
   // Construct the DialecticSession object explicitly to match the interface
@@ -205,7 +276,7 @@ export async function startSession(
     id: sessionData.id,
     project_id: sessionData.project_id,
     session_description: sessionData.session_description,
-    current_stage_seed_prompt: initialStageSeedPrompt,
+    current_stage_seed_prompt: initialStageSeedPromptText, // Text is still useful in response
     iteration_count: sessionData.iteration_count, // This is 1 from DB insert
     status: sessionData.status, // e.g. pending_thesis
     associated_chat_id: sessionData.associated_chat_id,
