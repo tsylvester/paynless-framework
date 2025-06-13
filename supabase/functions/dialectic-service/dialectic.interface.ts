@@ -1,5 +1,7 @@
 import { ChatMessage } from "../_shared/types.ts"; 
-import type { Database } from "../types_db.ts";
+import type { Database, Tables, Json } from "../types_db.ts";
+import { uploadToStorage, downloadFromStorage } from "../_shared/supabase_storage_utils.ts";
+import type { ILogger } from "../_shared/types.ts";
 // Removed problematic import: import type { DialecticProject as PackageDialecticProject, ... } from "../../../../packages/types/src/dialectic.types.ts";
 
 // --- START: Redefined types based on packages/types/src/dialectic.types.ts ---
@@ -78,23 +80,12 @@ export interface DialecticSession {
   id: string;
   project_id: string;
   session_description: string | null;
-  current_stage_seed_prompt: string | null;
+  user_input_reference_url: string | null;
   iteration_count: number;
-  status: string;
+  selected_model_catalog_ids: string[] | null;
+  status: string | null;
   associated_chat_id: string | null;
-
-  active_thesis_prompt_template_id: string | null;
-  active_antithesis_prompt_template_id: string | null;
-  active_synthesis_prompt_template_id: string | null;
-  active_parenthesis_prompt_template_id: string | null;
-  active_paralysis_prompt_template_id: string | null;
-  
-  formal_debate_structure_id: string | null;
-  max_iterations: number;
-  current_iteration: number;
-  convergence_status: string | null;
-  preferred_model_for_stage: Record<string, string> | null;
-  
+  current_stage_id: string | null;
   created_at: string;
   updated_at: string;
 
@@ -110,7 +101,7 @@ export interface DialecticProject {
     initial_prompt_resource_id?: string | null;
     selected_domain_tag: string | null;
     selected_domain_overlay_id?: string | null;
-    repo_url: string | null;
+    repo_url: Json | null;
     status: string;
     created_at: string;
     updated_at: string;
@@ -152,10 +143,6 @@ export interface StartSessionPayload {
   sessionDescription?: string | null;
   selectedModelCatalogIds: string[];
   originatingChatId?: string | null;
-  stageAssociation: DialecticStage;
-  selectedDomainOverlayId?: string | null;
-  promptTemplateId?: string | null;
-  maxIterations?: number;
 }
 
 export type StartSessionSuccessResponse = DialecticSession;
@@ -182,7 +169,9 @@ export interface UnifiedAIResponse {
 
 export interface GenerateStageContributionsPayload {
   sessionId: string;
-  stage: string;
+  stageSlug: DialecticStage;
+  iterationNumber: number;
+  chatId?: string | null;
 }
 
 export interface GenerateStageContributionsSuccessResponse {
@@ -197,6 +186,18 @@ export interface GenerateStageContributionsSuccessResponse {
     message: string;
     details?: string;
   }[];
+}
+
+export interface FailedAttemptError {
+  modelId: string;
+  modelName?: string;
+  providerName?: string | null;
+  error: string;
+  details?: string;
+  code?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  processingTimeMs?: number;
 }
 
 export interface SelectedAiProvider {
@@ -324,11 +325,11 @@ export interface SaveContributionEditPayload {
 export interface DialecticFeedback {
   id: string;
   session_id: string;
-  contribution_id: string; // The ID of the contribution this feedback is for
+  contribution_id: string | null;
   user_id: string;
+  feedback_type: string; // e.g., 'text_response', 'rating_stars', 'thumb_reaction'
   feedback_value_text: string | null;
-  feedback_value_rating: number | null;
-  feedback_type: string; // e.g., 'refinement', 'critique', 'rating', 'note_for_next_stage'
+  feedback_value_structured: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -344,12 +345,28 @@ export interface SubmitStageResponsesPayload {
   currentStageSlug: DialecticStage;
   currentIterationNumber: number;
   responses: SubmitStageResponseItem[];
-  userConsolidatedNote?: string; // An overall note from the user for this stage's feedback
 }
 
 export interface SubmitStageResponsesResponse {
   message: string;
   updatedSession: DialecticSession;
   feedbackRecords: DialecticFeedback[];
-  nextStageSeedPromptPath: string;
+  nextStageSeedPromptPath: string | null;
+}
+
+// Add new types for handling artifact assembly rules
+export interface ArtifactSourceRule {
+  type: 'contribution' | 'feedback';
+  stage_slug: string;
+}
+
+export interface InputArtifactRules {
+  sources: ArtifactSourceRule[];
+}
+
+// Local response type definition to align with DB schema, avoiding interface mismatches.
+export interface SubmitStageResponsesDependencies {
+    uploadToStorage: typeof uploadToStorage;
+    downloadFromStorage: typeof downloadFromStorage;
+    logger: ILogger;
 }

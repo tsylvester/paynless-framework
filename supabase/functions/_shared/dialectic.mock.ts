@@ -12,8 +12,8 @@ import type {
     DialecticProjectResource,
     GenerateStageContributionsPayload, // Corrected name
     GenerateStageContributionsSuccessResponse, // Corrected name
-    SubmitStageResponsesAndPrepareNextSeedPayload, // Corrected name
-    SubmitStageResponsesAndPrepareNextSeedResponse, // Corrected name
+    SubmitStageResponsesPayload, 
+    SubmitStageResponsesResponse, 
     SaveContributionEditPayload,
     DialecticContribution,
     // DomainTagDescriptor is not from dialectic.interface.ts, used in ActionHandlers
@@ -28,7 +28,7 @@ import type {
 type CreateProjectFn = (payload: FormData | CreateProjectPayload) => Promise<DialecticProject>;
 type StartSessionFn = (payload: StartSessionPayload) => Promise<DialecticSession>;
 type GenerateContributionsFn = (payload: GenerateStageContributionsPayload) => Promise<GenerateStageContributionsSuccessResponse>;
-type SubmitStageResponsesFn = (payload: SubmitStageResponsesAndPrepareNextSeedPayload) => Promise<SubmitStageResponsesAndPrepareNextSeedResponse>;
+type SubmitStageResponsesFn = (payload: SubmitStageResponsesPayload) => Promise<SubmitStageResponsesResponse>;
 type SaveContributionEditFn = (payload: SaveContributionEditPayload) => Promise<DialecticContribution>;
 type GetProjectDetailsFn = (projectId: string) => Promise<DialecticProject | null>;
 type ListProjectsFn = () => Promise<DialecticProject[]>;
@@ -69,7 +69,7 @@ class _DialecticServiceDummyImpl implements IDialecticService {
     async createProject(_payload: FormData | CreateProjectPayload): Promise<DialecticProject> { return undefined as any; }
     async startSession(_payload: StartSessionPayload): Promise<DialecticSession> { return undefined as any; }
     async generateContributions(_payload: GenerateStageContributionsPayload): Promise<GenerateStageContributionsSuccessResponse> { return undefined as any; }
-    async submitStageResponses(_payload: SubmitStageResponsesAndPrepareNextSeedPayload): Promise<SubmitStageResponsesAndPrepareNextSeedResponse> { return undefined as any; }
+    async submitStageResponses(_payload: SubmitStageResponsesPayload): Promise<SubmitStageResponsesResponse> { return undefined as any; }
     async saveContributionEdit(_payload: SaveContributionEditPayload): Promise<DialecticContribution> { return undefined as any; }
     async getProjectDetails(_projectId: string): Promise<DialecticProject | null> { return undefined as any; }
     async listProjects(): Promise<DialecticProject[]> { return undefined as any; }
@@ -155,7 +155,7 @@ export function createMockDialecticService(): {
 // 6. Helper functions updated to modify the underlying service instance
 export const mockSubmitStageResponsesSuccess = (
     serviceInstance: _DialecticServiceDummyImpl, // Modify the actual instance
-    response: SubmitStageResponsesAndPrepareNextSeedResponse
+    response: SubmitStageResponsesResponse
 ) => {
     serviceInstance.submitStageResponses = () => Promise.resolve(response);
 };

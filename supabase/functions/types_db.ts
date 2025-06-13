@@ -195,6 +195,33 @@ export type Database = {
           },
         ]
       }
+      dialectic_artifact_types: {
+        Row: {
+          created_at: string
+          default_file_extension: string | null
+          description: string | null
+          id: string
+          mime_type: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          default_file_extension?: string | null
+          description?: string | null
+          id?: string
+          mime_type: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          default_file_extension?: string | null
+          description?: string | null
+          id?: string
+          mime_type?: string
+          name?: string
+        }
+        Relationships: []
+      }
       dialectic_contributions: {
         Row: {
           citations: Json | null
@@ -318,6 +345,41 @@ export type Database = {
           },
         ]
       }
+      dialectic_domains: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          parent_domain_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          parent_domain_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          parent_domain_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_domains_parent_domain_id_fkey"
+            columns: ["parent_domain_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_domains"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dialectic_feedback: {
         Row: {
           contribution_id: string | null
@@ -365,6 +427,48 @@ export type Database = {
             columns: ["session_id"]
             isOneToOne: false
             referencedRelation: "dialectic_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_process_templates: {
+        Row: {
+          created_at: string
+          description: string | null
+          domain_id: string
+          id: string
+          name: string
+          starting_stage_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          domain_id: string
+          id?: string
+          name: string
+          starting_stage_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          domain_id?: string
+          id?: string
+          name?: string
+          starting_stage_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_process_templates_domain_id_fkey"
+            columns: ["domain_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_domains"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_process_templates_starting_stage_id_fkey"
+            columns: ["starting_stage_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_stages"
             referencedColumns: ["id"]
           },
         ]
@@ -425,8 +529,9 @@ export type Database = {
           id: string
           initial_prompt_resource_id: string | null
           initial_user_prompt: string
+          process_template_id: string | null
           project_name: string
-          repo_url: string | null
+          repo_url: Json | null
           selected_domain_overlay_id: string | null
           selected_domain_tag: string | null
           status: string
@@ -439,8 +544,9 @@ export type Database = {
           id?: string
           initial_prompt_resource_id?: string | null
           initial_user_prompt: string
+          process_template_id?: string | null
           project_name: string
-          repo_url?: string | null
+          repo_url?: Json | null
           selected_domain_overlay_id?: string | null
           selected_domain_tag?: string | null
           status?: string
@@ -453,8 +559,9 @@ export type Database = {
           id?: string
           initial_prompt_resource_id?: string | null
           initial_user_prompt?: string
+          process_template_id?: string | null
           project_name?: string
-          repo_url?: string | null
+          repo_url?: Json | null
           selected_domain_overlay_id?: string | null
           selected_domain_tag?: string | null
           status?: string
@@ -463,6 +570,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "dialectic_projects_process_template_id_fkey"
+            columns: ["process_template_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_process_templates"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "fk_dialectic_projects_selected_domain_overlay"
             columns: ["selected_domain_overlay_id"]
@@ -483,12 +597,12 @@ export type Database = {
         Row: {
           associated_chat_id: string | null
           created_at: string
+          current_stage_id: string
           id: string
           iteration_count: number
           project_id: string
           selected_model_catalog_ids: string[] | null
           session_description: string | null
-          stage: Database["public"]["Enums"]["dialectic_stage_enum"]
           status: string
           updated_at: string
           user_input_reference_url: string | null
@@ -496,12 +610,12 @@ export type Database = {
         Insert: {
           associated_chat_id?: string | null
           created_at?: string
+          current_stage_id: string
           id?: string
           iteration_count?: number
           project_id: string
           selected_model_catalog_ids?: string[] | null
           session_description?: string | null
-          stage: Database["public"]["Enums"]["dialectic_stage_enum"]
           status?: string
           updated_at?: string
           user_input_reference_url?: string | null
@@ -509,17 +623,24 @@ export type Database = {
         Update: {
           associated_chat_id?: string | null
           created_at?: string
+          current_stage_id?: string
           id?: string
           iteration_count?: number
           project_id?: string
           selected_model_catalog_ids?: string[] | null
           session_description?: string | null
-          stage?: Database["public"]["Enums"]["dialectic_stage_enum"]
           status?: string
           updated_at?: string
           user_input_reference_url?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "dialectic_sessions_current_stage_id_fkey"
+            columns: ["current_stage_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_stages"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "fk_project"
             columns: ["project_id"]
@@ -529,11 +650,101 @@ export type Database = {
           },
         ]
       }
+      dialectic_stage_transitions: {
+        Row: {
+          condition_description: string | null
+          created_at: string
+          id: string
+          process_template_id: string
+          source_stage_id: string
+          target_stage_id: string
+        }
+        Insert: {
+          condition_description?: string | null
+          created_at?: string
+          id?: string
+          process_template_id: string
+          source_stage_id: string
+          target_stage_id: string
+        }
+        Update: {
+          condition_description?: string | null
+          created_at?: string
+          id?: string
+          process_template_id?: string
+          source_stage_id?: string
+          target_stage_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_stage_transitions_process_template_id_fkey"
+            columns: ["process_template_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_process_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_stage_transitions_source_stage_id_fkey"
+            columns: ["source_stage_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_stage_transitions_target_stage_id_fkey"
+            columns: ["target_stage_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_stages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_stages: {
+        Row: {
+          created_at: string
+          default_system_prompt_id: string | null
+          description: string | null
+          display_name: string
+          expected_output_artifacts: Json | null
+          id: string
+          input_artifact_rules: Json | null
+          slug: string
+        }
+        Insert: {
+          created_at?: string
+          default_system_prompt_id?: string | null
+          description?: string | null
+          display_name: string
+          expected_output_artifacts?: Json | null
+          id?: string
+          input_artifact_rules?: Json | null
+          slug: string
+        }
+        Update: {
+          created_at?: string
+          default_system_prompt_id?: string | null
+          description?: string | null
+          display_name?: string
+          expected_output_artifacts?: Json | null
+          id?: string
+          input_artifact_rules?: Json | null
+          slug?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_stages_default_system_prompt_id_fkey"
+            columns: ["default_system_prompt_id"]
+            isOneToOne: false
+            referencedRelation: "system_prompts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       domain_specific_prompt_overlays: {
         Row: {
           created_at: string
           description: string | null
-          domain_tag: string
+          domain_id: string
           id: string
           is_active: boolean
           overlay_values: Json
@@ -544,7 +755,7 @@ export type Database = {
         Insert: {
           created_at?: string
           description?: string | null
-          domain_tag: string
+          domain_id: string
           id?: string
           is_active?: boolean
           overlay_values: Json
@@ -555,7 +766,7 @@ export type Database = {
         Update: {
           created_at?: string
           description?: string | null
-          domain_tag?: string
+          domain_id?: string
           id?: string
           is_active?: boolean
           overlay_values?: Json
@@ -564,6 +775,13 @@ export type Database = {
           version?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "domain_specific_prompt_overlays_domain_id_fkey"
+            columns: ["domain_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_domains"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "domain_specific_prompt_overlays_system_prompt_id_fkey"
             columns: ["system_prompt_id"]
@@ -918,45 +1136,33 @@ export type Database = {
       }
       system_prompts: {
         Row: {
-          context: string | null
           created_at: string
           description: string | null
           id: string
           is_active: boolean
-          is_stage_default: boolean
           name: string
           prompt_text: string
-          stage_association: string | null
           updated_at: string
-          variables_required: Json | null
           version: number
         }
         Insert: {
-          context?: string | null
           created_at?: string
           description?: string | null
           id?: string
           is_active?: boolean
-          is_stage_default?: boolean
           name: string
           prompt_text: string
-          stage_association?: string | null
           updated_at?: string
-          variables_required?: Json | null
           version?: number
         }
         Update: {
-          context?: string | null
           created_at?: string
           description?: string | null
           id?: string
           is_active?: boolean
-          is_stage_default?: boolean
           name?: string
           prompt_text?: string
-          stage_association?: string | null
           updated_at?: string
-          variables_required?: Json | null
           version?: number
         }
         Relationships: []

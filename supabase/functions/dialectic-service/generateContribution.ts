@@ -5,9 +5,11 @@ import {
     SelectedAiProvider,
     DialecticContribution,
     UnifiedAIResponse,
-    CallUnifiedAIModelOptions
+    CallUnifiedAIModelOptions,
+    DialecticStage,
+    FailedAttemptError,
   } from "./dialectic.interface.ts";
-  import { uploadToStorage, getFileMetadata, deleteFromStorage } from "../_shared/supabase_storage_utils.ts";
+  import { uploadToStorage, getFileMetadata, deleteFromStorage, downloadFromStorage } from "../_shared/supabase_storage_utils.ts";
   import { getExtensionFromMimeType } from "../_shared/path_utils.ts";
   import type { Database } from "../types_db.ts";
   import { logger } from "../_shared/logger.ts";
@@ -23,6 +25,7 @@ import {
     uploadToStorage: typeof uploadToStorage;
     getFileMetadata: typeof getFileMetadata;
     deleteFromStorage: typeof deleteFromStorage;
+    downloadFromStorage: typeof downloadFromStorage;
     getExtensionFromMimeType: typeof getExtensionFromMimeType;
     logger: ILogger;
     randomUUID: () => string;
@@ -34,6 +37,7 @@ import {
     uploadToStorage: uploadToStorage,
     getFileMetadata: getFileMetadata,
     deleteFromStorage: deleteFromStorage,
+    downloadFromStorage: downloadFromStorage,
     getExtensionFromMimeType: getExtensionFromMimeType,
     logger: logger,
     randomUUID: crypto.randomUUID,
@@ -44,17 +48,16 @@ export async function generateStageContributions(
     payload: GenerateStageContributionsPayload,
     authToken: string, 
     partialDeps?: Partial<GenerateContributionsDeps> 
-  ): Promise<{ success: boolean; data?: GenerateStageContributionsSuccessResponse; error?: { message: string; status?: number; details?: string; code?: string } }> {
+  ): Promise<{ success: boolean; data?: GenerateStageContributionsSuccessResponse; error?: { message: string; status?: number; details?: string | FailedAttemptError[]; code?: string } }> {
     const deps = { ...defaultGenerateContributionsDeps, ...partialDeps };
-    const { logger, callUnifiedAIModel, uploadToStorage, getFileMetadata, deleteFromStorage, getExtensionFromMimeType, randomUUID } = deps;
+    const { logger, callUnifiedAIModel, uploadToStorage, getFileMetadata, deleteFromStorage, getExtensionFromMimeType, downloadFromStorage, randomUUID } = deps;
 
-    const { sessionId } = payload;
-    logger.info(`[generateStageContributions] Starting for session ID: ${sessionId}`);
-    const BUCKET_NAME = 'dialectic-contributions'; // Define bucket name
-    // const ASSUMED_CONTENT_TYPE = "text/markdown"; // No longer needed here as we use determinedContentType
+    const { sessionId, stageSlug, iterationNumber } = payload;
+    logger.info(`[generateStageContributions] Starting for session ID: ${sessionId}, stage: ${stageSlug}, iteration: ${iterationNumber}`);
+    const BUCKET_NAME = 'dialectic-contributions';
   
     try {
-      // 1. Fetch session details: project_id, initial_user_prompt, selected_domain_tag, and selected_model_catalog_ids
+      // 1. Fetch session details and project_id
       const { data: sessionDetails, error: sessionError } = await dbClient
         .from('dialectic_sessions')
         .select(
@@ -63,11 +66,7 @@ export async function generateStageContributions(
           project_id,
           status,
           associated_chat_id,
-          selected_model_catalog_ids, 
-          dialectic_projects (
-            initial_user_prompt,
-            selected_domain_tag
-          )
+          selected_model_catalog_ids
         `
         )
         .eq('id', sessionId)
@@ -77,31 +76,17 @@ export async function generateStageContributions(
         logger.error(`[generateStageContributions] Error fetching session ${sessionId}:`, { error: sessionError });
         return { success: false, error: { message: "Session not found or error fetching details.", status: 404, details: sessionError?.message } };
       }
-  
-      // Based on logs, dialectic_projects is returned as a single object for this query,
-      // despite types_db.ts suggesting an array. Use 'as unknown as' to bridge this.
-      const projectDetails = sessionDetails.dialectic_projects as unknown as { initial_user_prompt: string; selected_domain_tag: string | null } | null | undefined;
-  
-      logger.info(`[generateStageContributions] Fetched session details for ${sessionId}`, {
-        joinedProjectData: projectDetails,
-        numSelectedModels: sessionDetails.selected_model_catalog_ids?.length ?? 0
-      });
-  
-      if (sessionDetails.status !== 'pending_thesis') {
-        logger.warn(`[generateStageContributions] Session ${sessionId} is not in 'pending_thesis' status. Current status: ${sessionDetails.status}`);
-        return { success: false, error: { message: `Session is not in 'pending_thesis' status. Current status: ${sessionDetails.status}`, status: 400 } };
-      }
-  
-      // projectDetails is already the object we need, or null/undefined if not found.
-      if (!projectDetails) {
-          logger.error(`[generateStageContributions] Project details (from joined dialectic_projects table) not found for session ${sessionId}.`, { joinedData: sessionDetails.dialectic_projects });
-          return { success: false, error: { message: "Project details (from joined dialectic_projects table) not found for session.", status: 500 } };
-      }
       
-      const { initial_user_prompt, selected_domain_tag } = projectDetails;
-      if (!initial_user_prompt) {
-          logger.error(`[generateStageContributions] Initial user prompt is missing for session ${sessionId}`);
-          return { success: false, error: { message: "Initial user prompt is missing for session.", status: 500 } };
+      const projectId = sessionDetails.project_id;
+      if (!projectId) {
+        logger.error(`[generateStageContributions] Project ID is missing for session ${sessionId}.`);
+        return { success: false, error: { message: "Project ID is missing for session.", status: 500 } };
+      }
+
+      const expectedStatus = `pending_${stageSlug}`;
+      if (sessionDetails.status !== expectedStatus) {
+        logger.warn(`[generateStageContributions] Session ${sessionId} is not in '${expectedStatus}' status. Current status: ${sessionDetails.status}`);
+        return { success: false, error: { message: `Session is not in '${expectedStatus}' status. Current status: ${sessionDetails.status}`, status: 400 } };
       }
   
       const associatedChatId = sessionDetails.associated_chat_id;
@@ -109,6 +94,19 @@ export async function generateStageContributions(
           logger.error(`[generateStageContributions] Associated chat ID is missing for session ${sessionId}`);
           return { success: false, error: { message: "Associated chat ID is missing for session.", status: 500 } };
       }
+
+      // 2. Derive seed prompt path and fetch its content
+      const seedPromptPath = `projects/${projectId}/sessions/${sessionId}/iteration_${iterationNumber}/${stageSlug}/seed_prompt.md`;
+      logger.info(`[generateStageContributions] Fetching seed prompt from: ${seedPromptPath}`);
+
+      const { data: promptContentBuffer, error: promptDownloadError } = await downloadFromStorage(dbClient, BUCKET_NAME, seedPromptPath);
+
+      if (promptDownloadError || !promptContentBuffer) {
+        logger.error(`[generateStageContributions] Failed to download seed prompt from ${seedPromptPath}`, { error: promptDownloadError });
+        return { success: false, error: { message: "Could not retrieve the seed prompt for this stage.", status: 500, details: promptDownloadError?.message } };
+      }
+
+      const renderedPrompt = new TextDecoder().decode(promptContentBuffer);
   
       if (!sessionDetails.selected_model_catalog_ids || sessionDetails.selected_model_catalog_ids.length === 0) {
         logger.error(`[generateStageContributions] No models selected for session ${sessionId} (selected_model_catalog_ids is null or empty).`);
@@ -154,19 +152,17 @@ export async function generateStageContributions(
         const modelIdentifier = `${providerDetails.provider || 'Unknown Provider'} - ${providerDetails.name} (ProviderID: ${modelIdForCall}, API_ID: ${providerDetails.api_identifier})`;
         logger.info(`[generateStageContributions] Processing model: ${modelIdentifier} for session ${sessionId}`);
   
-        try {
-          // TODO: Implement proper prompt rendering using project's initial_user_prompt and selected_domain_tag
-          // For now, using initial_user_prompt directly.
-          const renderedPrompt = initial_user_prompt; 
-          logger.debug(`[generateStageContributions] Rendered prompt for ${modelIdentifier}:`, { prompt: renderedPrompt.substring(0, 100) + "..."});
+        let contentStoragePath = '';
+        let rawResponseStoragePath = '';
   
+        try {
+          logger.debug(`[generateStageContributions] Rendered prompt for ${modelIdentifier}:`, { prompt: renderedPrompt.substring(0, 100) + "..."});
   
           const aiResponse = await callUnifiedAIModel(
             modelIdForCall,
             renderedPrompt,
             associatedChatId,
             authToken,
-            // TODO: Pass system_prompt_id if available from session/project setup
           );
           logger.info(`[generateStageContributions] AI response received from ${modelIdentifier}`, { hasError: !!aiResponse.error, tokens: {in: aiResponse.inputTokens, out: aiResponse.outputTokens} });
   
@@ -188,13 +184,12 @@ export async function generateStageContributions(
           }
   
           const contributionContent = aiResponse.content;
-          // Use contentType from aiResponse, fallback to a default if not present
           const determinedContentType = aiResponse.contentType || "text/markdown";
           const fileExtension = getExtensionFromMimeType(determinedContentType);
           const contributionId = randomUUID();
   
-          const contentStoragePath = `projects/${sessionDetails.project_id}/sessions/${sessionId}/contributions/${contributionId}/thesis${fileExtension}`;
-          const rawResponseStoragePath = `projects/${sessionDetails.project_id}/sessions/${sessionId}/contributions/${contributionId}/raw_thesis_response.json`;
+          contentStoragePath = `projects/${projectId}/sessions/${sessionId}/contributions/${contributionId}/${stageSlug}${fileExtension}`;
+          rawResponseStoragePath = `projects/${projectId}/sessions/${sessionId}/contributions/${contributionId}/raw_${stageSlug}_response.json`;
   
           logger.info(`[generateStageContributions] Uploading content for ${modelIdentifier} to: ${contentStoragePath}`);
           const { error: contentUploadError } = await uploadToStorage(dbClient, BUCKET_NAME, contentStoragePath, contributionContent, { contentType: determinedContentType });
@@ -216,7 +211,6 @@ export async function generateStageContributions(
           const { error: rawResponseUploadError } = await uploadToStorage(dbClient, BUCKET_NAME, rawResponseStoragePath, JSON.stringify(aiResponse.rawProviderResponse || {}), { contentType: "application/json" });
           if (rawResponseUploadError) {
             logger.warn(`[generateStageContributions] Failed to upload raw AI response for ${modelIdentifier} to ${rawResponseStoragePath}:`, { error: rawResponseUploadError });
-            // Non-critical, log and continue, but maybe add to a "warnings" array in the future.
           } else {
               logger.info(`[generateStageContributions] Raw response uploaded successfully for ${modelIdentifier}`);
           }
@@ -239,53 +233,64 @@ export async function generateStageContributions(
           const { data: dbContribution, error: dbInsertError } = await dbClient
             .from('dialectic_contributions')
             .insert({
+              id: contributionId,
               session_id: sessionId,
               model_id: modelIdForCall, 
               model_name: providerDetails.name, 
               user_id: null,
-              parent_contribution_id: null,
-              stage: payload.stage, // Use dynamic stage from payload
-              content_storage_bucket: BUCKET_NAME, // Ensure the bucket name is included
+              stage: stageSlug,
+              iteration_number: iterationNumber,
+              seed_prompt_url: seedPromptPath,
+              content_storage_bucket: BUCKET_NAME,
               content_storage_path: contentStoragePath,
-              content_mime_type: determinedContentType, // Use the determinedContentType from aiResponse
+              content_mime_type: determinedContentType,
               raw_response_storage_path: rawResponseStoragePath,
-              tokens_used_input: aiResponse.inputTokens, // This should come from aiResponse.tokenUsage.prompt_tokens
-              tokens_used_output: aiResponse.outputTokens, // This should come from aiResponse.tokenUsage.completion_tokens
+              tokens_used_input: aiResponse.inputTokens,
+              tokens_used_output: aiResponse.outputTokens,
               content_size_bytes: contentSizeBytes,
               processing_time_ms: aiResponse.processingTimeMs,
-              // model_name, provider_name can be joined if needed later
+              edit_version: 1,
+              is_latest_edit: true,
+              original_model_contribution_id: null,
             })
             .select()
             .single();
   
           if (dbInsertError) {
             logger.error(`[generateStageContributions] Error inserting contribution to DB for ${modelIdentifier}:`, { error: dbInsertError });
-            // Attempt to delete orphaned storage files if DB insert fails
-            logger.warn(`[generateStageContributions] Attempting to clean up storage for failed DB insert for ${modelIdentifier}`);
-            await deleteFromStorage(dbClient, BUCKET_NAME, [contentStoragePath]).catch(e => logger.error(`Cleanup error for ${contentStoragePath}:`, {error: e}));
-            await deleteFromStorage(dbClient, BUCKET_NAME, [rawResponseStoragePath]).catch(e => logger.error(`Cleanup error for ${rawResponseStoragePath}:`, {error: e}));
-            failedContributionAttempts.push({
+            throw dbInsertError; 
+          }
+  
+          logger.info(`[generateStageContributions] Contribution inserted to DB successfully for ${modelIdentifier}`, { contributionId: dbContribution.id });
+          successfulContributions.push(dbContribution);
+  
+        } catch (error) {
+          const typedError = error as { code?: string; message: string; };
+          logger.warn(`[generateStageContributions] Running storage cleanup for failed attempt by ${modelIdentifier}`);
+          const filesToClean: string[] = [];
+          if (contentStoragePath) {
+            filesToClean.push(contentStoragePath);
+          }
+          if (rawResponseStoragePath) {
+            filesToClean.push(rawResponseStoragePath);
+          }
+          
+          if (filesToClean.length > 0) {
+            const { error: deleteError } = await deleteFromStorage(dbClient, BUCKET_NAME, filesToClean);
+            if (deleteError) {
+              logger.warn(`[generateStageContributions] Failed to clean up storage for ${modelIdentifier}. Files: ${filesToClean.join(', ')}`, { error: deleteError });
+            } else {
+              logger.info(`[generateStageContributions] Storage cleanup successful for ${modelIdentifier}.`, { deletedFiles: filesToClean });
+            }
+          }
+
+          failedContributionAttempts.push({
               modelId: modelIdForCall,
               modelName: providerDetails.name,
               providerName: providerDetails.provider,
               error: "Failed to insert contribution into database.",
-              details: dbInsertError.message,
-              code: dbInsertError.code || 'DB_INSERT_ERROR'
-            });
-            continue;
-          }
-          logger.info(`[generateStageContributions] Contribution inserted to DB successfully for ${modelIdentifier}`, { contributionId: dbContribution.id });
-          successfulContributions.push(dbContribution);
-  
-        } catch (modelProcessingError) {
-          logger.error(`[generateStageContributions] Unhandled error processing model ${modelIdentifier}:`, { error: modelProcessingError });
-          failedContributionAttempts.push({
-            modelId: modelIdForCall,
-            modelName: providerDetails.name,
-            providerName: providerDetails.provider,
-            error: "Unhandled error during model processing.",
-            details: modelProcessingError instanceof Error ? modelProcessingError.message : String(modelProcessingError),
-            code: 'MODEL_PROCESSING_ERROR'
+              details: typedError.message,
+              code: typedError.code || 'DB_INSERT_FAIL'
           });
         }
       } // End of for...of modelCatalogId loop
@@ -294,20 +299,22 @@ export async function generateStageContributions(
   
       if (successfulContributions.length === 0 && sessionDetails.selected_model_catalog_ids.length > 0) { // Check if models were supposed to run
         logger.error(`[generateStageContributions] All models failed to generate contributions for session ${sessionId}`, { errors: failedContributionAttempts });
-        // Return a generic error, but include details of all failures
-        const errorDetails = failedContributionAttempts.map(f => `Model (ID ${f.modelId}, Name: ${f.modelName || 'N/A'}): ${f.error} (${f.details || f.code})`).join('; ');
+        // Update session status to indicate failure
+        const failedStatus = `${stageSlug}_generation_failed`;
+        await dbClient.from('dialectic_sessions').update({ status: failedStatus }).eq('id', sessionId);
+
         return {
           success: false,
           error: {
             message: "All models failed to generate stage contributions.",
             status: 500,
-            details: errorDetails
+            details: failedContributionAttempts,
           }
         };
       }
   
       // If at least one contribution was successful
-      const finalStatus = failedContributionAttempts.length > 0 ? 'thesis_generation_partial' : 'thesis_generation_complete';
+      const finalStatus = failedContributionAttempts.length > 0 ? `${stageSlug}_generation_partial` : `${stageSlug}_generation_complete`;
       
       logger.info(`[generateStageContributions] Updating session ${sessionId} status to: ${finalStatus}`);
       const { error: sessionUpdateError } = await dbClient

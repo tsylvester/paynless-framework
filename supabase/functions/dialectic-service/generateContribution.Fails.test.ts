@@ -1,56 +1,73 @@
-import { assertEquals, assertExists, assertObjectMatch, assertRejects, assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
+import { assertEquals, assertExists, assertRejects, assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { spy, stub, type Stub, returnsNext } from "jsr:@std/testing@0.225.1/mock";
 import { generateStageContributions } from "./generateContribution.ts";
-import type { 
-    GenerateStageContributionsPayload, 
-    UnifiedAIResponse
+import { 
+    DialecticStage,
+    type GenerateStageContributionsPayload, 
+    type UnifiedAIResponse,
+    type FailedAttemptError
 } from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
 import type { 
     UploadStorageResult, 
-    DeleteStorageResult 
-} from "../_shared/supabase_storage_utils.ts"; // Import newly exported types
+    DeleteStorageResult,
+    DownloadStorageResult
+} from "../_shared/supabase_storage_utils.ts";
 
 
 Deno.test("generateStageContributions - Failure during content upload to storage", async () => {
     const mockAuthToken = "auth-token-upload-fail";
     const mockSessionId = "session-id-upload-fail";
     const mockProjectId = "project-id-upload-fail";
-    const mockChatId = "chat-id-upload-fail";
-    const mockInitialPrompt = "Prompt for upload fail";
     const mockModelProviderId = "mp-id-upload-fail";
-    const mockSessionModelId = "sm-id-upload-fail";
-    const mockApiIdentifier = "api-id-upload-fail";
-    const mockProviderName = "ProvUploadFail";
-    const mockModelName = "ModUploadFail";
     const mockContributionId = "uuid-upload-fail";
+    const mockSeedPrompt = "Prompt for upload fail";
 
-    const mockPayload: GenerateStageContributionsPayload = { sessionId: mockSessionId };
+    const mockPayload: GenerateStageContributionsPayload = { 
+        sessionId: mockSessionId,
+        stageSlug: DialecticStage.THESIS,
+        iterationNumber: 1,
+    };
 
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
 
-    const mockSessionSelectEqSingleSpy = spy(async () => await Promise.resolve({
-        data: { /* ... standard session data ... */ 
-            id: mockSessionId, project_id: mockProjectId, status: 'pending_thesis', associated_chat_id: mockChatId,
-            dialectic_projects: { initial_user_prompt: mockInitialPrompt, selected_domain_tag: null },
-            dialectic_session_models: [
-                { id: mockSessionModelId, model_id: mockModelProviderId, ai_providers: { id: mockModelProviderId, provider_name: mockProviderName, model_name: mockModelName, api_identifier: mockApiIdentifier } }
-            ]
-        },
-        error: null
+    // DB Mocks
+    const mockSessionSelectSpy = spy(() => ({ 
+        eq: spy(() => ({ 
+            single: spy(async () => await Promise.resolve({
+                data: {
+                    id: mockSessionId,
+                    project_id: mockProjectId,
+                    status: 'pending_thesis',
+                    selected_model_catalog_ids: [mockModelProviderId],
+                    associated_chat_id: "mock-chat-id-upload-fail",
+                },
+                error: null
+            }))
+        }))
     }));
-    const mockSessionSelectEqSpy = spy<[string, string], { single: Stub }>(() => ({ single: mockSessionSelectEqSingleSpy as Stub }));
-    const mockSessionSelectSpy = spy(() => ({ eq: mockSessionSelectEqSpy }));
+    
+    const mockAiProvidersSelectSpy = spy(() => ({
+        eq: spy(() => ({
+            single: spy(async () => await Promise.resolve({
+                data: { id: mockModelProviderId, provider: 'mockProvider', name: 'ProvUploadFail', api_identifier: 'api-id-upload-fail' }, error: null
+            }))
+        }))
+    }));
 
-    const mockDbClient: any = {
-        from: spy((tableName: string) => {
-            if (tableName === 'dialectic_sessions') return { select: mockSessionSelectSpy, update: spy(() => ({eq: spy(async () => Promise.resolve({error: null}))})) };
-            return { select: spy(), insert: spy(), update: spy() };
-        }),
-    };
+    const mockSessionUpdateSpy = spy(() => ({
+        eq: spy(async () => await Promise.resolve({ error: null }))
+    }));
+
+    const mockDbClientFromSpy = spy(returnsNext([
+        { select: mockSessionSelectSpy },
+        { select: mockAiProvidersSelectSpy },
+        { update: mockSessionUpdateSpy },
+    ]));
+    const mockDbClient: any = { from: mockDbClientFromSpy };
 
     const mockCallUnifiedAIModel = spy(async (): Promise<UnifiedAIResponse> => await Promise.resolve({
         content: "Some AI content", error: null, errorCode: null, inputTokens: 1, outputTokens: 1, cost: 0.0001, processingTimeMs: 10
@@ -62,9 +79,19 @@ Deno.test("generateStageContributions - Failure during content upload to storage
         return await Promise.resolve({ error: null, path }); // Allow raw response upload
     });
 
+    const mockDownloadFromStorage = spy(async (
+        _dbClient: any,
+        _bucket: string,
+        _path: string,
+    ): Promise<DownloadStorageResult> => await Promise.resolve({
+        data: new TextEncoder().encode(mockSeedPrompt).buffer as ArrayBuffer,
+        error: null,
+    }));
+    
     const mockDeps = {
-        callUnifiedAIModel: mockCallUnifiedAIModel,
-        uploadToStorage: mockUploadToStorage,
+        callUnifiedAIModel: mockCallUnifiedAIModel as any,
+        uploadToStorage: mockUploadToStorage as any,
+        downloadFromStorage: mockDownloadFromStorage,
         getFileMetadata: spy(async () => await Promise.resolve({ size: 0, error: null })), // Won't be called if upload fails
         deleteFromStorage: spy(async () => await Promise.resolve({ data: [], error: null })), // Cleanup might be called
         getExtensionFromMimeType: spy(() => ".md"),
@@ -78,7 +105,12 @@ Deno.test("generateStageContributions - Failure during content upload to storage
         assertEquals(result.success, false);
         assertExists(result.error);
         assertEquals(result.error?.message, "All models failed to generate stage contributions.");
-        assert(result.error?.details?.includes("Failed to upload contribution content."));
+        
+        const details = result.error?.details as unknown as FailedAttemptError[];
+        assert(Array.isArray(details));
+        assertEquals(details.length, 1);
+        assert(details[0].error.includes("Failed to upload contribution content."));
+        assertEquals(details[0].modelId, mockModelProviderId);
 
         assertEquals(mockDeps.callUnifiedAIModel.calls.length, 1);
         assertEquals(mockDeps.uploadToStorage.calls.length, 1); // Attempted content upload
@@ -96,57 +128,61 @@ Deno.test("generateStageContributions - Failure during raw response upload (shou
     const mockAuthToken = "auth-token-raw-upload-warn";
     const mockSessionId = "session-id-raw-upload-warn";
     const mockProjectId = "project-id-raw-upload-warn";
-    const mockChatId = "chat-id-raw-upload-warn";
-    const mockInitialPrompt = "Prompt for raw upload warn";
     const mockModelProviderId = "mp-id-raw-upload-warn";
-    const mockSessionModelId = "sm-id-raw-upload-warn";
-    const mockApiIdentifier = "api-id-raw-upload-warn";
-    const mockProviderName = "ProvRawWarn";
-    const mockModelName = "ModRawWarn";
     const mockContributionId = "uuid-raw-warn";
     const mockContent = "AI content for raw warn test";
     const mockFileSize = 123;
+    const mockSeedPrompt = "Prompt for raw upload warn";
 
-    const mockPayload: GenerateStageContributionsPayload = { sessionId: mockSessionId };
+    const mockPayload: GenerateStageContributionsPayload = { 
+        sessionId: mockSessionId,
+        stageSlug: DialecticStage.THESIS,
+        iterationNumber: 1,
+    };
 
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
 
     // DB Mocks
-    const mockSessionSelectEqSingleSpy = spy(async () => await Promise.resolve({
-        data: { /* ... standard session data ... */ 
-            id: mockSessionId, project_id: mockProjectId, status: 'pending_thesis', associated_chat_id: mockChatId,
-            dialectic_projects: { initial_user_prompt: mockInitialPrompt, selected_domain_tag: null },
-            dialectic_session_models: [
-                { id: mockSessionModelId, model_id: mockModelProviderId, ai_providers: { id: mockModelProviderId, provider_name: mockProviderName, model_name: mockModelName, api_identifier: mockApiIdentifier } }
-            ]
-        }, error: null
+    const mockSessionSelectSpy = spy(() => ({ 
+        eq: spy(() => ({ 
+            single: spy(async () => await Promise.resolve({
+                data: {
+                    id: mockSessionId,
+                    project_id: mockProjectId,
+                    status: 'pending_thesis',
+                    selected_model_catalog_ids: [mockModelProviderId],
+                    associated_chat_id: "mock-chat-id-raw-upload-warn",
+                }, error: null
+            }))
+        }))
     }));
-    const mockSessionSelectEqSpy = spy<[string, string], { single: Stub }>(() => ({ single: mockSessionSelectEqSingleSpy as Stub }));
-    const mockSessionSelectSpy = spy(() => ({ eq: mockSessionSelectEqSpy }));
 
-    let capturedInsertArg: any = null;
-    const mockContributionInsertSelectSingleSpy = spy(async () => await Promise.resolve({ data: { id: mockContributionId, ...capturedInsertArg }, error: null }));
-    const mockContributionInsertSelectSpy = spy(() => ({ single: mockContributionInsertSelectSingleSpy }));
-    const mockContributionInsertSpy = spy((data: any) => { capturedInsertArg = data; return { select: mockContributionInsertSelectSpy }; });
+    const mockAiProvidersSelectSpy = spy(() => ({
+        eq: spy(() => ({
+            single: spy(async () => await Promise.resolve({
+                data: { id: mockModelProviderId, provider: 'mockProvider', name: 'ProvRawWarn', api_identifier: 'api-id-raw-upload-warn' }, error: null
+            }))
+        }))
+    }));
+    
+    const mockContributionInsertSpy = spy(() => ({
+        select: spy(() => ({
+            single: spy(async () => await Promise.resolve({ data: { id: mockContributionId }, error: null }))
+        }))
+    }));
+    
+    const mockSessionUpdateSpy = spy(() => ({
+        eq: spy(async () => await Promise.resolve({ error: null }))
+    }));
 
-    const mockSessionUpdateEqSpy = spy<[string, string], Promise<{error: Error | null}>>(async () => await Promise.resolve({ error: null }));
-    const mockSessionUpdateSpy = spy<[Partial<Database['public']['Tables']['dialectic_sessions']['Update']>] , { eq: Stub }>(() => ({ eq: mockSessionUpdateEqSpy as Stub }));
-
-    const mockDbClientFromSpy = spy((tableName: string) => {
-        if (tableName === 'dialectic_sessions') {
-            // This needs to handle the initial select AND the final update.
-            // A more robust mock would inspect the operation (select vs update) or use call order.
-            // Crude approach: if update spy hasn't been called, it's a select, else it's an update.
-            if (mockSessionUpdateSpy.calls.length === 0) { 
-                return { select: mockSessionSelectSpy, update: mockSessionUpdateSpy }; 
-            }
-            return { update: mockSessionUpdateSpy, select: mockSessionSelectSpy }; 
-        }
-        if (tableName === 'dialectic_contributions') return { insert: mockContributionInsertSpy };
-        return { select: spy(), insert: spy(), update: spy() };
-    });
+    const mockDbClientFromSpy = spy(returnsNext([
+        { select: mockSessionSelectSpy },
+        { select: mockAiProvidersSelectSpy },
+        { insert: mockContributionInsertSpy },
+        { update: mockSessionUpdateSpy },
+    ]));
     const mockDbClient: any = { from: mockDbClientFromSpy };
 
     // Dependency Mocks
@@ -161,19 +197,44 @@ Deno.test("generateStageContributions - Failure during raw response upload (shou
         rawProviderResponse: {}
     }));
 
+    const mockUploadToStorage = spy(returnsNext([
+        // Call 1: Content upload succeeds
+        Promise.resolve({ error: null, path: `some/path/${mockContributionId}/thesis.md` }),
+        // Call 2: Raw response upload fails
+        Promise.resolve({ error: new Error("Simulated raw response upload failure"), path: null }),
+    ]));
+
+    const mockDownloadFromStorage = spy(async (
+        _dbClient: any,
+        _bucket: string,
+        _path: string,
+    ): Promise<DownloadStorageResult> => await Promise.resolve({
+        data: new TextEncoder().encode(mockSeedPrompt).buffer as ArrayBuffer,
+        error: null,
+    }));
+
+    const mockDeps = {
+        callUnifiedAIModel: mockCallUnifiedAIModel as any,
+        uploadToStorage: mockUploadToStorage as any,
+        downloadFromStorage: mockDownloadFromStorage,
+        getFileMetadata: spy(async (): Promise<{ size?: number; mimeType?: string; error: Error | null; }> => await Promise.resolve({ size: mockFileSize, mimeType: "text/markdown", error: null })),
+        deleteFromStorage: spy(async (): Promise<DeleteStorageResult> => await Promise.resolve({ data: [], error: null })),
+        getExtensionFromMimeType: spy((_mimeType: string): string => ".md"),
+        logger: logger,
+        randomUUID: spy(() => mockContributionId)
+    };
+
     try {
         const result = await generateStageContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
         
-        assertEquals(result.success, true); // Still returns success as contributions were made
-        assertExists(result.data);
-        assertEquals(result.data?.contributions?.length, 1);
-        assertEquals(result.data?.status, 'stage_generation_complete'); // Status reflects attempted update
+        assertEquals(result.success, true);
+        assertExists(result.data?.contributions);
+        assertEquals(result.data?.contributions?.[0].id, mockContributionId);
 
-        assertEquals(mockSessionUpdateSpy.calls.length, 1);
-        assert(localLoggerError.calls.some(call => 
-            typeof call.args[0] === 'string' && call.args[0].includes("CRITICAL: Failed to update session status for") &&
-            typeof call.args[0] === 'string' && call.args[0].includes("but contributions were made")
-        ));
+        assertEquals(mockUploadToStorage.calls.length, 2);
+        assertEquals(mockContributionInsertSpy.calls.length, 1);
+        
+        assert(localLoggerWarn.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes("Failed to upload raw AI response for")));
 
     } finally {
         localLoggerInfo.restore();
@@ -182,95 +243,217 @@ Deno.test("generateStageContributions - Failure during raw response upload (shou
     }
 });
 
-Deno.test("generateStageContributions - getFileMetadata fails or returns no size", async () => {
-    // ... (similar setup to happy path, but mockGetFileMetadata returns error or no size) ...
+Deno.test("generateStageContributions - getFileMetadata returns error (should proceed with size 0)", async () => {
     const mockAuthToken = "auth-token-meta-fail";
-    const mockSessionId = "session-id-meta-fail";
-    const mockProjectId = "project-id-meta-fail";
-    const mockChatId = "chat-id-meta-fail";
-    const mockInitialPrompt = "Prompt for meta fail";
-    const mockModelProviderId = "mp-id-meta-fail";
-    const mockSessionModelId = "sm-id-meta-fail";
-    const mockApiIdentifier = "api-id-meta-fail";
-    const mockProviderName = "ProvMetaFail";
-    const mockModelName = "ModMetaFail";
-    const mockContributionId = "uuid-meta-fail";
+    const mockSessionId = "session-id-meta-fail-err";
+    const mockProjectId = "project-id-meta-fail-err";
+    const mockModelProviderId = "mp-id-meta-fail-err";
+    const mockContributionId = "uuid-meta-fail-err";
     const mockContent = "AI content for meta fail test";
+    const mockSeedPrompt = "Prompt for meta fail";
 
-    const mockPayload: GenerateStageContributionsPayload = { sessionId: mockSessionId };
+    const mockPayload: GenerateStageContributionsPayload = { 
+        sessionId: mockSessionId,
+        stageSlug: DialecticStage.THESIS,
+        iterationNumber: 1,
+    };
 
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
 
     // DB Mocks
-    const mockSessionSelectEqSingleSpy = spy(async () => await Promise.resolve({ /* ... session data ... */ 
-        data: { id: mockSessionId, project_id: mockProjectId, status: 'pending_thesis', associated_chat_id: mockChatId,
-            dialectic_projects: { initial_user_prompt: mockInitialPrompt, selected_domain_tag: null },
-            dialectic_session_models: [
-                { id: mockSessionModelId, model_id: mockModelProviderId, ai_providers: { id: mockModelProviderId, provider_name: mockProviderName, model_name: mockModelName, api_identifier: mockApiIdentifier } }
-            ]
-        }, error: null
+    const mockSessionSelectSpy = spy(() => ({ 
+        eq: spy(() => ({ 
+            single: spy(async () => await Promise.resolve({
+                data: {
+                    id: mockSessionId,
+                    project_id: mockProjectId,
+                    status: 'pending_thesis',
+                    selected_model_catalog_ids: [mockModelProviderId],
+                    associated_chat_id: "mock-chat-id-meta-fail-err",
+                }, error: null
+            }))
+        }))
     }));
-    const mockSessionSelectEqSpy = spy<[string, string], { single: Stub }>(() => ({ single: mockSessionSelectEqSingleSpy as Stub }));
-    const mockSessionSelectSpy = spy(() => ({ eq: mockSessionSelectEqSpy }));
-
+    
+    const mockAiProvidersSelectSpy = spy(() => ({
+        eq: spy(() => ({
+            single: spy(async () => await Promise.resolve({
+                data: { id: mockModelProviderId, provider: 'mockProvider', name: 'ProvMetaFail', api_identifier: 'api-id-meta-fail' }, error: null
+            }))
+        }))
+    }));
+    
     let capturedInsertArg: any = null;
-    const mockContributionInsertSelectSingleSpy = spy(async () => await Promise.resolve({ data: { id: mockContributionId, ...capturedInsertArg }, error: null }));
-    const mockContributionInsertSelectSpy = spy(() => ({ single: mockContributionInsertSelectSingleSpy }));
-    const mockContributionInsertSpy = spy((data: any) => { capturedInsertArg = data; return { select: mockContributionInsertSelectSpy }; });
-
-    const mockSessionUpdateEqSpy = spy<[string, string], Promise<{error: Error | null}>>(async () => await Promise.resolve({ error: null }));
-    const mockSessionUpdateSpy = spy<[Partial<Database['public']['Tables']['dialectic_sessions']['Update']>] , { eq: Stub }>(() => ({ eq: mockSessionUpdateEqSpy as Stub }));
-
-    const mockDbClientFromSpy = spy((tableName: string) => {
-        if (tableName === 'dialectic_sessions') {
-             if (mockSessionUpdateSpy.calls.length === 0) { 
-                return { select: mockSessionSelectSpy, update: mockSessionUpdateSpy }; 
-            }
-            return { update: mockSessionUpdateSpy, select: mockSessionSelectSpy }; 
-        }
-        if (tableName === 'dialectic_contributions') return { insert: mockContributionInsertSpy };
-        return { select: spy(), insert: spy(), update: spy() };
+    const mockContributionInsertSpy = spy((data: any[]) => {
+        capturedInsertArg = data[0];
+        return {
+            select: spy(() => ({
+                single: spy(() => {
+                    const dataToReturn = { 
+                        id: mockContributionId, 
+                        ...capturedInsertArg,
+                        content_size_bytes: capturedInsertArg?.content_size_bytes ?? 0
+                    };
+                    return Promise.resolve({ data: dataToReturn, error: null });
+                })
+            }))
+        };
     });
+
+    const mockSessionUpdateSpy = spy(() => ({
+        eq: spy(async () => await Promise.resolve({ error: null }))
+    }));
+
+    const mockDbClientFromSpy = spy(returnsNext([
+        { select: mockSessionSelectSpy },
+        { select: mockAiProvidersSelectSpy },
+        { insert: mockContributionInsertSpy },
+        { update: mockSessionUpdateSpy },
+    ]));
     const mockDbClient: any = { from: mockDbClientFromSpy };
 
-    // Test two scenarios for getFileMetadata: 1. returns error, 2. returns no size
-    const mockGetFileMetadataError = spy(async () => await Promise.resolve({ error: new Error("Simulated metadata fetch error"), size: undefined }));
-    const mockGetFileMetadataNoSize = spy(async () => await Promise.resolve({ error: null, size: undefined }));
+    const mockDownloadFromStorage = spy(async (): Promise<DownloadStorageResult> => await Promise.resolve({
+        data: new TextEncoder().encode(mockSeedPrompt).buffer as ArrayBuffer,
+        error: null,
+    }));
 
-    const commonDeps = {
+    const mockGetFileMetadataError = spy(async () => await Promise.resolve({ error: new Error("Simulated metadata fetch error"), size: undefined }));
+
+    const deps = {
         callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => await Promise.resolve({
             content: mockContent, error: null, errorCode: null, inputTokens: 1, outputTokens: 1, cost: 0.0001, processingTimeMs: 10
-        })),
-        uploadToStorage: spy(async () => await Promise.resolve({ error: null, path: "dummy_path" })),
+        })) as any,
+        uploadToStorage: spy(async () => await Promise.resolve({ error: null, path: "dummy_path" })) as any,
+        downloadFromStorage: mockDownloadFromStorage,
+        getFileMetadata: mockGetFileMetadataError,
         deleteFromStorage: spy(async () => await Promise.resolve({ data: [], error: null })),
         getExtensionFromMimeType: spy(() => ".md"),
         logger: logger,
         randomUUID: spy(() => mockContributionId)
     };
 
-    // Scenario 1: getFileMetadata returns error
     try {
-        const resultError = await generateStageContributions(mockDbClient as any, mockPayload, mockAuthToken, { ...commonDeps, getFileMetadata: mockGetFileMetadataError });
-        assertEquals(resultError.success, true); // Should still succeed, size defaults to 0
+        const resultError = await generateStageContributions(mockDbClient as any, mockPayload, mockAuthToken, deps);
+        
+        assertEquals(resultError.success, true);
         assertExists(resultError.data?.contributions?.[0]);
         assertEquals(resultError.data?.contributions?.[0].content_size_bytes, 0);
+        assertEquals(mockGetFileMetadataError.calls.length, 1);
         assert(localLoggerWarn.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes("Could not get file metadata")));
+        const insertedContribution = mockContributionInsertSpy.calls[0].args[0] as any;
+        assertEquals(insertedContribution.content_size_bytes, 0);
     } finally {
-        mockGetFileMetadataError.calls = []; // Reset calls for spy
-        localLoggerWarn.calls = []; // Reset calls for spy
+        localLoggerInfo.restore();
+        localLoggerError.restore();
+        localLoggerWarn.restore();
     }
+});
+
+Deno.test("generateStageContributions - getFileMetadata returns no size (should proceed with size 0)", async () => {
+    const mockAuthToken = "auth-token-meta-fail";
+    const mockSessionId = "session-id-meta-fail-nosize";
+    const mockProjectId = "project-id-meta-fail-nosize";
+    const mockModelProviderId = "mp-id-meta-fail-nosize";
+    const mockContributionId = "uuid-meta-fail-nosize";
+    const mockContent = "AI content for meta fail test";
+    const mockSeedPrompt = "Prompt for meta fail";
+
+    const mockPayload: GenerateStageContributionsPayload = { 
+        sessionId: mockSessionId,
+        stageSlug: DialecticStage.THESIS,
+        iterationNumber: 1,
+    };
+
+    const localLoggerInfo = spy(logger, 'info');
+    const localLoggerError = spy(logger, 'error');
+    const localLoggerWarn = spy(logger, 'warn');
+
+    // DB Mocks
+    const mockSessionSelectSpy = spy(() => ({ 
+        eq: spy(() => ({ 
+            single: spy(async () => await Promise.resolve({
+                data: {
+                    id: mockSessionId,
+                    project_id: mockProjectId,
+                    status: 'pending_thesis',
+                    selected_model_catalog_ids: [mockModelProviderId],
+                    associated_chat_id: "mock-chat-id-meta-fail-nosize",
+                },
+                error: null
+            }))
+        }))
+    }));
     
-    // Scenario 2: getFileMetadata returns no size
+    const mockAiProvidersSelectSpy = spy(() => ({
+        eq: spy(() => ({
+            single: spy(async () => await Promise.resolve({
+                data: { id: mockModelProviderId, provider: 'mockProvider', name: 'ProvMetaFail', api_identifier: 'api-id-meta-fail' }, error: null
+            }))
+        }))
+    }));
+    
+    let capturedInsertArg: any = null;
+    const mockContributionInsertSpyNoSize = spy((data: any[]) => {
+        capturedInsertArg = data[0];
+        return {
+            select: spy(() => ({
+                single: spy(() => {
+                    const dataToReturn = { 
+                        id: mockContributionId, 
+                        ...capturedInsertArg,
+                        content_size_bytes: capturedInsertArg?.content_size_bytes ?? 0
+                    };
+                    return Promise.resolve({ data: dataToReturn, error: null });
+                })
+            }))
+        };
+    });
+
+    const mockSessionUpdateSpy = spy(() => ({
+        eq: spy(async () => await Promise.resolve({ error: null }))
+    }));
+
+    const mockDbClientFromSpyNoSize = spy(returnsNext([
+        { select: mockSessionSelectSpy },
+        { select: mockAiProvidersSelectSpy },
+        { insert: mockContributionInsertSpyNoSize },
+        { update: mockSessionUpdateSpy },
+    ]));
+    const mockDbClientNoSize: any = { from: mockDbClientFromSpyNoSize };
+    
+    const mockDownloadFromStorage = spy(async (): Promise<DownloadStorageResult> => await Promise.resolve({
+        data: new TextEncoder().encode(mockSeedPrompt).buffer as ArrayBuffer,
+        error: null,
+    }));
+
+    const mockGetFileMetadataSuccessNoSize = spy(async () => await Promise.resolve({ error: null, size: undefined }));
+
+    const deps = {
+        callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => await Promise.resolve({
+            content: mockContent, error: null, errorCode: null, inputTokens: 1, outputTokens: 1, cost: 0.0001, processingTimeMs: 10
+        })) as any,
+        uploadToStorage: spy(async () => await Promise.resolve({ error: null, path: "dummy_path" })),
+        downloadFromStorage: mockDownloadFromStorage,
+        getFileMetadata: mockGetFileMetadataSuccessNoSize,
+        deleteFromStorage: spy(async () => await Promise.resolve({ data: [], error: null })),
+        getExtensionFromMimeType: spy(() => ".md"),
+        logger: logger,
+        randomUUID: spy(() => mockContributionId)
+    };
+
     try {
-        const resultNoSize = await generateStageContributions(mockDbClient as any, mockPayload, mockAuthToken, { ...commonDeps, getFileMetadata: mockGetFileMetadataNoSize });
-        assertEquals(resultNoSize.success, true); // Should still succeed, size defaults to 0
+        const resultNoSize = await generateStageContributions(mockDbClientNoSize, mockPayload, mockAuthToken, deps);
+        
+        assertEquals(resultNoSize.success, true);
         assertExists(resultNoSize.data?.contributions?.[0]);
         assertEquals(resultNoSize.data?.contributions?.[0].content_size_bytes, 0);
+        assertEquals(mockGetFileMetadataSuccessNoSize.calls.length, 1);
         assert(localLoggerWarn.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes("Could not get file metadata")));
+        const insertedContribution = mockContributionInsertSpyNoSize.calls[0].args[0] as any;
+        assertEquals(insertedContribution.content_size_bytes, 0);
     } finally {
-        // Restore spies or reset calls if necessary for subsequent tests
         localLoggerInfo.restore();
         localLoggerError.restore();
         localLoggerWarn.restore();
@@ -278,89 +461,111 @@ Deno.test("generateStageContributions - getFileMetadata fails or returns no size
 });
 
 Deno.test("generateStageContributions - DB insertion for contribution fails (verify storage cleanup)", async () => {
-    // ... (similar setup to happy path, but mock DB insert fails) ...
     const mockAuthToken = "auth-token-db-insert-fail";
     const mockSessionId = "session-id-db-insert-fail";
     const mockProjectId = "project-id-db-insert-fail";
-    const mockChatId = "chat-id-db-insert-fail";
-    const mockInitialPrompt = "Prompt for DB insert fail";
     const mockModelProviderId = "mp-id-db-insert-fail";
-    const mockSessionModelId = "sm-id-db-insert-fail";
-    const mockApiIdentifier = "api-id-db-insert-fail";
-    const mockProviderName = "ProvDbFail";
-    const mockModelName = "ModDbFail";
     const mockContributionId = "uuid-db-fail";
     const mockContent = "AI content for DB fail";
+    const mockSeedPrompt = "Prompt for DB insert fail";
     const mockContentPath = `projects/${mockProjectId}/sessions/${mockSessionId}/contributions/${mockContributionId}/thesis.md`;
     const mockRawPath = `projects/${mockProjectId}/sessions/${mockSessionId}/contributions/${mockContributionId}/raw_thesis_response.json`;
 
-    const mockPayload: GenerateStageContributionsPayload = { sessionId: mockSessionId };
+    const mockPayload: GenerateStageContributionsPayload = { 
+        sessionId: mockSessionId,
+        stageSlug: DialecticStage.THESIS,
+        iterationNumber: 1,
+    };
 
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
 
-    const mockSessionSelectEqSingleSpy = spy(async () => await Promise.resolve({ /* ... session data ... */ 
-        data: { id: mockSessionId, project_id: mockProjectId, status: 'pending_thesis', associated_chat_id: mockChatId,
-            dialectic_projects: { initial_user_prompt: mockInitialPrompt, selected_domain_tag: null },
-            dialectic_session_models: [
-                { id: mockSessionModelId, model_id: mockModelProviderId, ai_providers: { id: mockModelProviderId, provider_name: mockProviderName, model_name: mockModelName, api_identifier: mockApiIdentifier } }
-            ]
-        }, error: null
+    const mockSessionSelectSpy = spy(() => ({ 
+        eq: spy(() => ({ 
+            single: spy(async () => await Promise.resolve({
+                data: {
+                    id: mockSessionId,
+                    project_id: mockProjectId,
+                    status: 'pending_thesis',
+                    selected_model_catalog_ids: [mockModelProviderId],
+                    associated_chat_id: "mock-chat-id-db-insert-fail",
+                }, error: null
+            }))
+        }))
     }));
-    const mockSessionSelectEqSpy = spy<[string, string], { single: Stub }>(() => ({ single: mockSessionSelectEqSingleSpy as Stub }));
-    const mockSessionSelectSpy = spy(() => ({ eq: mockSessionSelectEqSpy }));
-
-    const mockContributionInsertSpy = spy(() => ({
-        select: spy(() => ({
-            single: spy(async () => await Promise.resolve({ data: null, error: { message: "Simulated DB insert error", code: "DB_ERROR" } }))
+    
+    const mockAiProvidersSelectSpy = spy(() => ({
+        eq: spy(() => ({
+            single: spy(async () => await Promise.resolve({
+                data: { id: mockModelProviderId, provider: 'mockProvider', name: 'ProvDbFail', api_identifier: 'api-id-db-insert-fail' }, error: null
+            }))
         }))
     }));
 
-    const mockSessionUpdateEqSpy = spy<[string, string], Promise<{error: Error | null}>>(async () => await Promise.resolve({ error: null }));
-    const mockSessionUpdateSpy = spy<[Partial<Database['public']['Tables']['dialectic_sessions']['Update']>] , { eq: Stub }>(() => ({ eq: mockSessionUpdateEqSpy as Stub }));
+    const mockContributionInsertSpyDbFail = spy(() => ({
+        select: spy(() => ({
+            single: spy(async () => await Promise.resolve({ 
+                data: null, 
+                error: { message: 'Simulated DB insert failure', code: 'DB_INSERT_FAIL' }
+            }))
+        }))
+    }));
 
-    const mockDbClientFromSpy = spy((tableName: string) => {
-        if (tableName === 'dialectic_sessions') {
-            // This needs to handle the initial select AND the final update.
-            // A more robust mock would inspect the operation (select vs update) or use call order.
-            // Crude approach: if update spy hasn't been called, it's a select, else it's an update.
-            if (mockSessionUpdateSpy.calls.length === 0) { 
-                return { select: mockSessionSelectSpy, update: mockSessionUpdateSpy }; 
-            }
-            return { update: mockSessionUpdateSpy, select: mockSessionSelectSpy }; 
-        }
-        if (tableName === 'dialectic_contributions') return { insert: mockContributionInsertSpy };
-        return { select: spy(), insert: spy(), update: spy() };
-    });
-    const mockDbClient: any = { from: mockDbClientFromSpy };
+    const mockSessionUpdateSpy = spy(() => ({
+        eq: spy(async () => await Promise.resolve({ error: null }))
+    }));
+
+    const mockDbClientFromSpyDbFail = spy(returnsNext([
+        { select: mockSessionSelectSpy },
+        { select: mockAiProvidersSelectSpy },
+        { insert: mockContributionInsertSpyDbFail },
+        { update: mockSessionUpdateSpy },
+    ]));
+    const mockDbClientDbFail: any = { from: mockDbClientFromSpyDbFail };
+
+    const mockDownloadFromStorage = spy(async (): Promise<DownloadStorageResult> => await Promise.resolve({
+        data: new TextEncoder().encode(mockSeedPrompt).buffer as ArrayBuffer,
+        error: null,
+    }));
 
     const mockDeps = {
-        callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => await Promise.resolve({ content: mockContent, error: null, errorCode: null, inputTokens:1, outputTokens:1, cost:0.001, processingTimeMs:10, rawProviderResponse: {} })),
-        uploadToStorage: spy(async () => await Promise.resolve({ error: null, path: "dummy_path" })),
-        getFileMetadata: spy(async () => await Promise.resolve({ size: 0, error: null })),
+        callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => await Promise.resolve({ content: mockContent, error: null, errorCode: null, inputTokens:1, outputTokens:1, cost:0.001, processingTimeMs:10, rawProviderResponse: {} })) as any,
+        uploadToStorage: spy(returnsNext([
+             Promise.resolve({ error: null, path: mockContentPath }),
+             Promise.resolve({ error: null, path: mockRawPath }),
+        ])),
+        getFileMetadata: spy(async () => await Promise.resolve({ size: 100, mimeType: 'text/markdown', error: null })),
+        downloadFromStorage: mockDownloadFromStorage,
         deleteFromStorage: spy(async () => await Promise.resolve({ data: [], error: null })),
-        getExtensionFromMimeType: spy(() => ".md"),
+        getExtensionFromMimeType: spy((_mimeType: string): string => ".md"),
         logger: logger,
         randomUUID: spy(() => mockContributionId)
     };
 
     try {
-        const result = await generateStageContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
+        const result = await generateStageContributions(mockDbClientDbFail, mockPayload, mockAuthToken, mockDeps);
         
         assertEquals(result.success, false);
         assertExists(result.error);
         assertEquals(result.error?.message, "All models failed to generate stage contributions.");
-        assert(result.error?.details?.includes("Failed to insert contribution into database."));
+        
+        const details = result.error?.details as unknown as FailedAttemptError[];
+        assert(Array.isArray(details));
+        assertEquals(details.length, 1);
+        assert(details[0].error.includes("Failed to insert contribution into database."));
+        assertEquals(details[0].modelId, mockModelProviderId);
 
-        assertEquals(mockContributionInsertSpy.calls.length, 1);
-        assertEquals(mockDeps.deleteFromStorage.calls.length, 2); // Cleanup called for content and raw response
-        if (mockDeps.deleteFromStorage.calls.length === 2) {
-            assertObjectMatch(mockDeps.deleteFromStorage.calls[0].args[2] as string[], [mockContentPath]);
-            assertObjectMatch(mockDeps.deleteFromStorage.calls[1].args[2] as string[], [mockRawPath]);
-        }
-        assert(localLoggerError.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes("Error inserting contribution to DB for")));
-        assert(localLoggerWarn.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes("Attempting to clean up storage for failed DB insert")));
+        assertEquals(mockDeps.callUnifiedAIModel.calls.length, 1);
+        assertEquals(mockDeps.uploadToStorage.calls.length, 2); // Content + Raw
+        assertEquals(mockDeps.getFileMetadata.calls.length, 1);
+        
+        const deleteSpy = mockDeps.deleteFromStorage as unknown as Stub;
+        assertEquals(deleteSpy.calls.length, 1);
+        const deletedFiles = deleteSpy.calls[0].args[2] as string[];
+        assertEquals(deletedFiles.length, 2);
+        assert(deletedFiles.includes(mockContentPath), `Cleanup should include content path: ${mockContentPath}`);
+        assert(deletedFiles.includes(mockRawPath), `Cleanup should include raw path: ${mockRawPath}`);
 
     } finally {
         localLoggerInfo.restore();
@@ -370,66 +575,76 @@ Deno.test("generateStageContributions - DB insertion for contribution fails (ver
 });
 
 Deno.test("generateStageContributions - Final session status update fails (critical log)", async () => {
-    // ... (similar to happy path, but mock session update fails) ...
     const mockAuthToken = "auth-token-status-update-fail";
     const mockSessionId = "session-id-status-update-fail";
     const mockProjectId = "project-id-status-update-fail";
-    const mockChatId = "chat-id-status-update-fail";
-    const mockInitialPrompt = "Prompt for status update fail";
     const mockModelProviderId = "mp-id-status-update-fail";
-    const mockSessionModelId = "sm-id-status-update-fail";
-    const mockApiIdentifier = "api-id-status-update-fail";
-    const mockProviderName = "ProvStatusFail";
-    const mockModelName = "ModStatusFail";
     const mockContributionId = "uuid-status-fail";
     const mockContent = "AI content for status fail";
     const mockFileSize = 77;
+    const mockSeedPrompt = "Prompt for status update fail";
 
-    const mockPayload: GenerateStageContributionsPayload = { sessionId: mockSessionId };
+    const mockPayload: GenerateStageContributionsPayload = { 
+        sessionId: mockSessionId,
+        stageSlug: DialecticStage.THESIS,
+        iterationNumber: 1,
+    };
 
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
 
     // DB Mocks
-    const mockSessionSelectEqSingleSpy = spy(async () => await Promise.resolve({ /* ... session data ... */ 
-        data: { id: mockSessionId, project_id: mockProjectId, status: 'pending_thesis', associated_chat_id: mockChatId,
-            dialectic_projects: { initial_user_prompt: mockInitialPrompt, selected_domain_tag: null },
-            dialectic_session_models: [
-                { id: mockSessionModelId, model_id: mockModelProviderId, ai_providers: { id: mockModelProviderId, provider_name: mockProviderName, model_name: mockModelName, api_identifier: mockApiIdentifier } }
-            ]
-        }, error: null
+    const mockSessionSelectSpy = spy(() => ({ 
+        eq: spy(() => ({ 
+            single: spy(async () => await Promise.resolve({
+                data: {
+                    id: mockSessionId,
+                    project_id: mockProjectId,
+                    status: 'pending_thesis',
+                    selected_model_catalog_ids: [mockModelProviderId],
+                    associated_chat_id: "mock-chat-id-status-update-fail",
+                }, error: null
+            }))
+        }))
     }));
-    const mockSessionSelectEqSpy = spy<[string, string], { single: Stub }>(() => ({ single: mockSessionSelectEqSingleSpy as Stub }));
-    const mockSessionSelectSpy = spy(() => ({ eq: mockSessionSelectEqSpy }));
 
-    let capturedInsertArg: any = null;
-    const mockContributionInsertSelectSingleSpy = spy(async () => await Promise.resolve({ data: { id: mockContributionId, ...capturedInsertArg }, error: null }));
-    const mockContributionInsertSelectSpy = spy(() => ({ single: mockContributionInsertSelectSingleSpy }));
-    const mockContributionInsertSpy = spy((data: any) => { capturedInsertArg = data; return { select: mockContributionInsertSelectSpy }; });
+    const mockAiProvidersSelectSpy = spy(() => ({
+        eq: spy(() => ({
+            single: spy(async () => await Promise.resolve({
+                data: { id: mockModelProviderId, provider: 'mockProvider', name: 'ProvStatusFail', api_identifier: 'api-id-status-update-fail' }, error: null
+            }))
+        }))
+    }));
 
-    const mockSessionUpdateEqSpy = spy<[string, string], Promise<{error: Error | null}>>(async () => await Promise.resolve({ error: { message: "Simulated session update failure", code: "DB_UPDATE_FAIL"} })); // Key: Update fails
-    const mockSessionUpdateSpy = spy<[Partial<Database['public']['Tables']['dialectic_sessions']['Update']>] , { eq: Stub }>(() => ({ eq: mockSessionUpdateEqSpy as Stub }));
+    const mockContributionInsertSpy = spy(() => ({
+        select: spy(() => ({
+            single: spy(async () => await Promise.resolve({ data: { id: mockContributionId }, error: null }))
+        }))
+    }));
 
-    const mockDbClientFromSpy = spy((tableName: string) => {
-        if (tableName === 'dialectic_sessions') {
-            // This needs to handle the initial select AND the final update.
-            // A more robust mock would inspect the operation (select vs update) or use call order.
-            // Crude approach: if update spy hasn't been called, it's a select, else it's an update.
-            if (mockSessionUpdateSpy.calls.length === 0) { 
-                return { select: mockSessionSelectSpy, update: mockSessionUpdateSpy }; 
-            }
-            return { update: mockSessionUpdateSpy, select: mockSessionSelectSpy }; 
-        }
-        if (tableName === 'dialectic_contributions') return { insert: mockContributionInsertSpy };
-        return { select: spy(), insert: spy(), update: spy() };
-    });
+    const mockSessionUpdateSpy = spy(() => ({
+        eq: spy(async () => await Promise.resolve({ error: { message: "Simulated session update failure", code: "DB_UPDATE_FAIL"} })) // Key: Update fails
+    }));
+    
+    const mockDbClientFromSpy = spy(returnsNext([
+        { select: mockSessionSelectSpy },
+        { select: mockAiProvidersSelectSpy },
+        { insert: mockContributionInsertSpy },
+        { update: mockSessionUpdateSpy },
+    ]));
     const mockDbClient: any = { from: mockDbClientFromSpy };
-
+    
+    const mockDownloadFromStorage = spy(async (): Promise<DownloadStorageResult> => await Promise.resolve({
+        data: new TextEncoder().encode(mockSeedPrompt).buffer as ArrayBuffer,
+        error: null,
+    }));
+    
     const mockDeps = {
-        callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => await Promise.resolve({ content: mockContent, error: null, errorCode: null, inputTokens:1, outputTokens:1, cost:0.001, processingTimeMs:10, rawProviderResponse: {}})),
-        uploadToStorage: spy(async (): Promise<UploadStorageResult> => await Promise.resolve({ error: null, path: "dummy_path" })),
+        callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => await Promise.resolve({ content: mockContent, error: null, errorCode: null, inputTokens:1, outputTokens:1, cost:0.001, processingTimeMs:10, rawProviderResponse: {}})) as any,
+        uploadToStorage: spy(async (): Promise<UploadStorageResult> => await Promise.resolve({ error: null, path: "dummy_path" })) as any,
         getFileMetadata: spy(async (): Promise<{ size?: number; mimeType?: string; error: Error | null; }> => await Promise.resolve({ size: mockFileSize, mimeType: "text/markdown", error: null })),
+        downloadFromStorage: mockDownloadFromStorage,
         deleteFromStorage: spy(async (): Promise<DeleteStorageResult> => await Promise.resolve({ data: [], error: null })),
         getExtensionFromMimeType: spy((_mimeType: string): string => ".md"),
         logger: logger,
@@ -446,8 +661,7 @@ Deno.test("generateStageContributions - Final session status update fails (criti
 
         assertEquals(mockSessionUpdateSpy.calls.length, 1);
         assert(localLoggerError.calls.some(call => 
-            typeof call.args[0] === 'string' && call.args[0].includes("CRITICAL: Failed to update session status for") &&
-            typeof call.args[0] === 'string' && call.args[0].includes("but contributions were made")
+            typeof call.args[0] === 'string' && call.args[0].includes("CRITICAL: Failed to update session status for")
         ));
 
     } finally {

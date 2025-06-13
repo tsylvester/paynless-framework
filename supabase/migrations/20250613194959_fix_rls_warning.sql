@@ -1,10 +1,37 @@
+-- Fixes the rls_enabled_no_policy warning on the dialectic_feedback table.
+
+-- Policy 1: Users can manage their own feedback records.
+-- This allows any authenticated user to insert feedback for themselves,
+-- and to select, update, or delete feedback they have created.
+CREATE POLICY "Users can manage their own feedback"
+ON public.dialectic_feedback
+FOR ALL
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+-- Policy 2: Project owners can view all feedback within their projects.
+-- This allows the user who owns the parent project to see all feedback
+-- submitted for any session within that project, which is useful for overall analysis.
+CREATE POLICY "Project owners can view all feedback in their projects"
+ON public.dialectic_feedback
+FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM public.dialectic_sessions s
+    JOIN public.dialectic_projects p ON s.project_id = p.id
+    WHERE s.id = dialectic_feedback.session_id AND p.user_id = auth.uid()
+  )
+);
+
+-- Fix the function_search_path_mutable warning for save_contribution_edit_atomic
+-- Recreating the function with the explicit search path set.
 CREATE OR REPLACE FUNCTION public.save_contribution_edit_atomic(
     p_original_contribution_id UUID,
     p_session_id UUID,
     p_user_id UUID,
     p_stage TEXT,
     p_iteration_number INT,
-    -- p_actual_prompt_sent TEXT, -- REMOVED
     p_content_storage_bucket TEXT,
     p_content_storage_path TEXT,
     p_content_mime_type TEXT,
@@ -30,18 +57,17 @@ DECLARE
     new_contribution_id UUID;
 BEGIN
     -- Update the old contribution to no longer be the latest
-    UPDATE public.dialectic_contributions
+    UPDATE dialectic_contributions
     SET is_latest_edit = FALSE,
         updated_at = now()
     WHERE id = p_original_contribution_id;
 
     -- Insert the new edited contribution
-    INSERT INTO public.dialectic_contributions (
+    INSERT INTO dialectic_contributions (
         session_id,
         user_id,
         stage,
         iteration_number,
-        -- actual_prompt_sent, -- REMOVED
         content_storage_bucket,
         content_storage_path,
         content_mime_type,
@@ -66,7 +92,6 @@ BEGIN
         p_user_id,
         p_stage,
         p_iteration_number,
-        -- p_actual_prompt_sent, -- REMOVED
         p_content_storage_bucket,
         p_content_storage_path,
         p_content_mime_type,
@@ -95,4 +120,4 @@ EXCEPTION
         RAISE WARNING 'Error in save_contribution_edit_atomic: %', SQLERRM;
         RETURN NULL; -- Or re-raise the exception: RAISE;
 END;
-$$; 
+$$;

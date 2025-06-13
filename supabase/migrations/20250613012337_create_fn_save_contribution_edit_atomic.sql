@@ -24,6 +24,7 @@ CREATE OR REPLACE FUNCTION save_contribution_edit_atomic(
 )
 RETURNS UUID -- Returns the ID of the new contribution
 LANGUAGE plpgsql
+SET search_path = '' -- Explicitly set search_path to an empty string
 AS $$
 DECLARE
     new_contribution_id UUID;
