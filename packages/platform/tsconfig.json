@@ -9,7 +9,7 @@
     // Add specific lib entries if needed, e.g., for DOM types if manipulating window
     "lib": ["ESNext", "DOM"],
     // Specify types needed for testing environment
-    "types": ["node", "vitest/globals", "@testing-library/jest-dom"]
+    "types": ["node", "vitest/globals", "@testing-library/vitest-dom"]
   },
   "include": ["src/**/*"], // Restore original broad include
   "exclude": [

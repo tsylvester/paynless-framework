@@ -255,7 +255,7 @@ export async function coreTeardown() {
 export async function coreCreateAndSetupTestUser(
   profileProps?: Partial<{ role: "user" | "admin"; first_name: string }>,
   scope: 'global' | 'local' = 'local'
-): Promise<{ userId: string; userClient: SupabaseClient<Database> }> {
+): Promise<{ userId: string; userClient: SupabaseClient<Database>; jwt: string }> {
   if (!currentTestDeps || !supabaseAdminClient) {
     throw new Error(
       "Test dependencies or admin client not initialized. Call initializeTestDeps() first."
@@ -327,8 +327,7 @@ export async function coreCreateAndSetupTestUser(
     );
   }
 
-  // Generate a JWT for this user to create a client
-  const jwt = await coreGenerateTestUserJwt(userId, profileDataToUpsert.role);
+  const jwt = await coreGenerateTestUserJwt(userId, profileDataToUpsert.role as string);
 
   const userClient = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
     global: { headers: { Authorization: `Bearer ${jwt}` } },
@@ -339,7 +338,7 @@ export async function coreCreateAndSetupTestUser(
     },
   });
 
-  return { userId, userClient };
+  return { userId, userClient, jwt };
 }
 
 export async function coreGenerateTestUserJwt(userId: string, role: string = 'authenticated', app_metadata?: Record<string, unknown>): Promise<string> {
@@ -1008,6 +1007,7 @@ export async function coreInitializeTestStep(
   adminClient: SupabaseClient<Database>;
   anonClient: SupabaseClient<Database>;
   processedResources: ProcessedResourceInfo[];
+  primaryUserJwt: string;
 }> {
   if (executionScope === 'global') {
     undoActionsStack = [];
@@ -1021,7 +1021,7 @@ export async function coreInitializeTestStep(
   const processedResources: ProcessedResourceInfo[] = [];
   const userProfileProps: TestSetupConfig['userProfile'] = config.userProfile;
 
-  const { userId: primaryUserId, userClient: primaryUserClient } = await coreCreateAndSetupTestUser(userProfileProps, executionScope);
+  const { userId: primaryUserId, userClient: primaryUserClient, jwt: primaryUserJwt } = await coreCreateAndSetupTestUser(userProfileProps, executionScope);
   await coreEnsureTestUserAndWallet(primaryUserId, config.initialWalletBalance, executionScope);
 
   if (config.resources) {
@@ -1135,6 +1135,7 @@ export async function coreInitializeTestStep(
     adminClient: supabaseAdminClient,
     anonClient,
     processedResources,
+    primaryUserJwt,
   };
 }
 

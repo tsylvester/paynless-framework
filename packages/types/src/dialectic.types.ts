@@ -259,7 +259,7 @@ export interface DialecticActions {
   generateContributions: (payload: { sessionId: string; projectId: string; stageSlug: DialecticStage; iterationNumber: number; }) => Promise<ApiResponse<{ message: string; contributions?: DialecticContribution[] }>>;
   
   // Actions for submitting stage responses and preparing next seed (plan 1.2.Y / 1.5.6.4)
-  submitStageResponsesAndPrepareNextSeed: (payload: SubmitStageResponsesPayload) => Promise<ApiResponse<SubmitStageResponsesResponse>>; // Assuming types from plan
+  submitStageResponses: (payload: SubmitStageResponsesPayload) => Promise<ApiResponse<SubmitStageResponsesResponse>>; // Assuming types from plan
   resetSubmitStageResponsesError: () => void; // Added for plan
 
   // Actions for saving contribution edits (plan 1.2.Y / 1.5.6.5)
@@ -328,7 +328,7 @@ export interface DialecticApiClient {
 
   updateDialecticProjectInitialPrompt(payload: UpdateProjectInitialPromptPayload): Promise<ApiResponse<DialecticProject>>;
 
-  submitStageResponsesAndPrepareNextSeed(payload: SubmitStageResponsesPayload): Promise<ApiResponse<SubmitStageResponsesResponse>>;
+  submitStageResponses(payload: SubmitStageResponsesPayload): Promise<ApiResponse<SubmitStageResponsesResponse>>;
   updateContributionContent(payload: SaveContributionEditPayload): Promise<ApiResponse<DialecticContribution>>;
 
   getIterationInitialPromptContent(payload: GetIterationInitialPromptPayload): Promise<ApiResponse<IterationInitialPromptData>>;
@@ -436,7 +436,7 @@ export type DialecticServiceActionPayload = {
   action: 'getIterationInitialPromptContent';
   payload: GetIterationInitialPromptPayload;
 } | {
-  action: 'submitStageResponsesAndPrepareNextSeed';
+  action: 'submitStageResponses';
   payload: SubmitStageResponsesPayload;
 } | {
   action: 'updateContributionContent';
@@ -467,7 +467,7 @@ export interface GetProjectResourceContentResponse {
   content: string;
 }
 
-// Add new payload/response types if they are not already defined from the plan for submitStageResponsesAndPrepareNextSeed and saveContributionEdit
+// Add new payload/response types if they are not already defined from the plan for submitStageResponses and saveContributionEdit
 // These are placeholders from the plan, ensure they exist or are defined if not already in this file
 export interface SubmitStageResponsesPayload { 
     sessionId: string;

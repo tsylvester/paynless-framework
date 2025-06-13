@@ -101,7 +101,7 @@ const initializeInternalDialecticStoreState = (): DialecticStore => {
     fetchInitialPromptContent: vi.fn().mockResolvedValue(undefined as void),
     setActiveContextStageSlug: vi.fn().mockResolvedValue(undefined as void),
     generateContributions: vi.fn().mockResolvedValue(undefined as void),
-    submitStageResponsesAndPrepareNextSeed: vi.fn().mockResolvedValue(undefined as void),
+    submitStageResponses: vi.fn().mockResolvedValue(undefined as void),
     resetSubmitStageResponsesError: vi.fn(() => { newState.submitStageResponsesError = null; }),
     saveContributionEdit: vi.fn().mockResolvedValue(undefined as void),
     resetGenerateContributionsError: vi.fn(() => { newState.generateContributionsError = null; }),

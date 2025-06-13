@@ -202,13 +202,16 @@ export type Database = {
           content_size_bytes: number | null
           content_storage_bucket: string
           content_storage_path: string
+          contribution_type: string | null
           created_at: string
+          edit_version: number
           error: string | null
           id: string
+          is_latest_edit: boolean
           iteration_number: number
           model_id: string | null
           model_name: string | null
-          model_version_details: string | null
+          original_model_contribution_id: string | null
           processing_time_ms: number | null
           prompt_template_id_used: string | null
           raw_response_storage_path: string | null
@@ -219,6 +222,7 @@ export type Database = {
           tokens_used_input: number | null
           tokens_used_output: number | null
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           citations?: Json | null
@@ -226,13 +230,16 @@ export type Database = {
           content_size_bytes?: number | null
           content_storage_bucket?: string
           content_storage_path: string
+          contribution_type?: string | null
           created_at?: string
+          edit_version?: number
           error?: string | null
           id?: string
+          is_latest_edit?: boolean
           iteration_number?: number
           model_id?: string | null
           model_name?: string | null
-          model_version_details?: string | null
+          original_model_contribution_id?: string | null
           processing_time_ms?: number | null
           prompt_template_id_used?: string | null
           raw_response_storage_path?: string | null
@@ -243,6 +250,7 @@ export type Database = {
           tokens_used_input?: number | null
           tokens_used_output?: number | null
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           citations?: Json | null
@@ -250,13 +258,16 @@ export type Database = {
           content_size_bytes?: number | null
           content_storage_bucket?: string
           content_storage_path?: string
+          contribution_type?: string | null
           created_at?: string
+          edit_version?: number
           error?: string | null
           id?: string
+          is_latest_edit?: boolean
           iteration_number?: number
           model_id?: string | null
           model_name?: string | null
-          model_version_details?: string | null
+          original_model_contribution_id?: string | null
           processing_time_ms?: number | null
           prompt_template_id_used?: string | null
           raw_response_storage_path?: string | null
@@ -267,8 +278,16 @@ export type Database = {
           tokens_used_input?: number | null
           tokens_used_output?: number | null
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "dialectic_contributions_original_model_contribution_id_fkey"
+            columns: ["original_model_contribution_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_contributions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "dialectic_contributions_prompt_template_id_used_fkey"
             columns: ["prompt_template_id_used"]
@@ -295,6 +314,57 @@ export type Database = {
             columns: ["model_id"]
             isOneToOne: false
             referencedRelation: "ai_providers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_feedback: {
+        Row: {
+          contribution_id: string | null
+          created_at: string
+          feedback_type: string
+          feedback_value_structured: Json | null
+          feedback_value_text: string | null
+          id: string
+          session_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          contribution_id?: string | null
+          created_at?: string
+          feedback_type: string
+          feedback_value_structured?: Json | null
+          feedback_value_text?: string | null
+          id?: string
+          session_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          contribution_id?: string | null
+          created_at?: string
+          feedback_type?: string
+          feedback_value_structured?: Json | null
+          feedback_value_text?: string | null
+          id?: string
+          session_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_feedback_contribution_id_fkey"
+            columns: ["contribution_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_contributions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_feedback_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_sessions"
             referencedColumns: ["id"]
           },
         ]
@@ -1245,6 +1315,57 @@ export type Database = {
       }
       rollback_transaction: {
         Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      save_contribution_edit_atomic: {
+        Args:
+          | {
+              p_original_contribution_id: string
+              p_session_id: string
+              p_user_id: string
+              p_stage: string
+              p_iteration_number: number
+              p_actual_prompt_sent: string
+              p_content_storage_bucket: string
+              p_content_storage_path: string
+              p_content_mime_type: string
+              p_content_size_bytes: number
+              p_raw_response_storage_path: string
+              p_tokens_used_input: number
+              p_tokens_used_output: number
+              p_processing_time_ms: number
+              p_citations: Json
+              p_target_contribution_id: string
+              p_edit_version: number
+              p_is_latest_edit: boolean
+              p_original_model_contribution_id: string
+              p_error_details: string
+              p_model_id: string
+              p_contribution_type: string
+            }
+          | {
+              p_original_contribution_id: string
+              p_session_id: string
+              p_user_id: string
+              p_stage: string
+              p_iteration_number: number
+              p_content_storage_bucket: string
+              p_content_storage_path: string
+              p_content_mime_type: string
+              p_content_size_bytes: number
+              p_raw_response_storage_path: string
+              p_tokens_used_input: number
+              p_tokens_used_output: number
+              p_processing_time_ms: number
+              p_citations: Json
+              p_target_contribution_id: string
+              p_edit_version: number
+              p_is_latest_edit: boolean
+              p_original_model_contribution_id: string
+              p_error_details: string
+              p_model_id: string
+              p_contribution_type: string
+            }
         Returns: string
       }
     }

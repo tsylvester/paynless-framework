@@ -57,6 +57,12 @@ export interface DialecticContribution {
     parent_contribution_id: string | null; // Renamed from DB's target_contribution_id for packages/types alignment
     created_at: string;
     updated_at: string;
+
+    edit_version: number;
+    is_latest_edit: boolean;
+    original_model_contribution_id: string | null;
+    error: string | null;
+    contribution_type: string | null;
 }
 
 export interface DialecticSessionModel {
@@ -301,4 +307,49 @@ export interface GetProjectResourceContentResponse {
   content: string;
 }
 
+// Added for 1.2.Y.2
+export interface SaveContributionEditPayload {
+  originalContributionIdToEdit: string;
+  editedContentText: string;
+  // session_id is implied by the originalContributionIdToEdit and will be fetched
+}
+
+// DialecticContribution is used as the success response for SaveContributionEdit
+
+// Ensure this is the end of the file or before any other specific type groupings if necessary
+
 // Add other service-specific interfaces here if needed in the future
+
+// Added for submitStageResponsesAndPrepareNextSeed
+export interface DialecticFeedback {
+  id: string;
+  session_id: string;
+  contribution_id: string; // The ID of the contribution this feedback is for
+  user_id: string;
+  feedback_value_text: string | null;
+  feedback_value_rating: number | null;
+  feedback_type: string; // e.g., 'refinement', 'critique', 'rating', 'note_for_next_stage'
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubmitStageResponseItem {
+  originalContributionId: string;
+  responseText: string;
+  rating?: number;
+}
+
+export interface SubmitStageResponsesPayload {
+  sessionId: string;
+  currentStageSlug: DialecticStage;
+  currentIterationNumber: number;
+  responses: SubmitStageResponseItem[];
+  userConsolidatedNote?: string; // An overall note from the user for this stage's feedback
+}
+
+export interface SubmitStageResponsesResponse {
+  message: string;
+  updatedSession: DialecticSession;
+  feedbackRecords: DialecticFeedback[];
+  nextStageSeedPromptPath: string;
+}
