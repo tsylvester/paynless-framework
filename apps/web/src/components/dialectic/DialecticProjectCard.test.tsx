@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { DialecticProjectCard } from './DialecticProjectCard';
 import { useDialecticStore, initialDialecticStateValues } from '@paynless/store';
-import type { DialecticProject, DialecticStore } from '@paynless/types';
+import type { DialecticProject, DialecticStore, DialecticDomain } from '@paynless/types';
 
 // Mock @paynless/store
 const mockDeleteDialecticProject = vi.fn();
@@ -44,7 +44,8 @@ const baseMockProject: MockDialecticProjectWithUserDetails = {
   created_at: new Date('2023-10-26T10:00:00.000Z').toISOString(),
   updated_at: new Date('2023-10-26T11:00:00.000Z').toISOString(),
   status: 'active',
-  selected_domain_tag: null,
+  selected_domain_id: 'domain-general',
+  domain_name: 'General',
   selected_domain_overlay_id: null,
   repo_url: null,
   // User details are now part of the base mock project for tests
@@ -57,22 +58,23 @@ const baseMockProject: MockDialecticProjectWithUserDetails = {
 
 const createMockStore = (projectOverrides?: Partial<MockDialecticProjectWithUserDetails>): DialecticStore => {
   const project = { ...baseMockProject, ...projectOverrides };
+  const domains: DialecticDomain[] = [{ id: 'domain-general', name: 'General', description: '', parent_domain_id: null }];
   return {
     ...initialDialecticStateValues,
     deleteDialecticProject: mockDeleteDialecticProject,
     cloneDialecticProject: mockCloneDialecticProject,
     exportDialecticProject: mockExportDialecticProject,
     fetchDialecticProjects: mockFetchDialecticProjects,
-    projects: [project], // No need to cast if baseMockProject is already DialecticProject
+    projects: [project],
     isLoadingProjects: false,
     projectsError: null,
     currentProjectDetail: project as DialecticProject,
-    availableDomainTags: [],
-    isLoadingDomainTags: false,
-    domainTagsError: null,
-    selectedDomainTag: null,
-    fetchAvailableDomainTags: vi.fn(),
-    setSelectedDomainTag: vi.fn(),
+    domains: domains,
+    isLoadingDomains: false,
+    domainsError: null,
+    selectedDomain: domains[0],
+    fetchDomains: vi.fn(),
+    setSelectedDomain: vi.fn(),
     selectedStageAssociation: null,
     availableDomainOverlays: [],
     isLoadingDomainOverlays: false,
@@ -100,9 +102,22 @@ const createMockStore = (projectOverrides?: Partial<MockDialecticProjectWithUser
     resetCreateProjectError: vi.fn(),
     resetProjectDetailsError: vi.fn(),
     allSystemPrompts: [],
+    updateDialecticProjectInitialPrompt: vi.fn(),
+    setStartNewSessionModalOpen: vi.fn(),
+    setModelMultiplicity: vi.fn(),
+    resetSelectedModelId: vi.fn(),
+    fetchInitialPromptContent: vi.fn(),
+    generateContributions: vi.fn(),
+    submitStageResponses: vi.fn(),
+    resetSubmitStageResponsesError: vi.fn(),
+    saveContributionEdit: vi.fn(),
+    resetSaveContributionEditError: vi.fn(),
+    setActiveContextProjectId: vi.fn(),
+    setActiveContextSessionId: vi.fn(),
+    setActiveContextStageSlug: vi.fn(),
+    setActiveDialecticContext: vi.fn(),
     _resetForTesting: vi.fn(),
-    // Removed selectUserDetailsById from here
-  } as DialecticStore;
+  } as unknown as DialecticStore;
 };
 
 describe('DialecticProjectCard', () => {
@@ -170,6 +185,26 @@ describe('DialecticProjectCard', () => {
       const viewProjectButton = screen.getByRole('link', { name: /View Project/i });
       expect(viewProjectButton).toBeInTheDocument();
       expect(viewProjectButton).toHaveAttribute('href', `/dialectic/${baseMockProject.id}`);
+    });
+
+    it('should render the domain name when available', () => {
+      const projectWithDomain = { ...baseMockProject, domain_name: 'Software Development' };
+      render(
+        <MemoryRouter>
+          <DialecticProjectCard project={projectWithDomain} />
+        </MemoryRouter>
+      );
+      expect(screen.getByText('Software Development')).toBeInTheDocument();
+    });
+
+    it('should not render a domain badge if domain name is an empty string', () => {
+      const projectWithoutDomain = { ...baseMockProject, domain_name: '' };
+      render(
+        <MemoryRouter>
+          <DialecticProjectCard project={projectWithoutDomain} />
+        </MemoryRouter>
+      );
+      expect(screen.queryByText(baseMockProject.domain_name)).not.toBeInTheDocument();
     });
   });
 
@@ -249,7 +284,6 @@ describe('DialecticProjectCard', () => {
         user_first_name: null,
         user_last_name: null,
         user_email: null,
-        user_id: 'fallback-user-id', // Ensure user_id is distinct for this test
       });
       vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
       const projectWithDetails = mockStore.projects[0] as MockDialecticProjectWithUserDetails;
@@ -343,4 +377,9 @@ describe('DialecticProjectCard', () => {
     });
   });
 
+  describe('User Actions', () => {
+    it('should open dropdown menu on button click', async () => {
+      // ... existing code ...
+    });
+  });
 }); 

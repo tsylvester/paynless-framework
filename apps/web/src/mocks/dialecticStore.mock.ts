@@ -9,14 +9,15 @@ import type {
   DialecticProjectResource,
   DialecticStage,
   ApiError,
+  DialecticDomain,
 } from '@paynless/types';
 
 // 1. Define initial state values locally
 const initialDialecticStateValues: DialecticStateValues = {
-  availableDomainTags: [],
-  isLoadingDomainTags: false,
-  domainTagsError: null,
-  selectedDomainTag: null,
+  domains: [],
+  isLoadingDomains: false,
+  domainsError: null,
+  selectedDomain: null,
   selectedStageAssociation: null,
   availableDomainOverlays: [],
   isLoadingDomainOverlays: false,
@@ -69,8 +70,8 @@ const initializeInternalDialecticStoreState = (): DialecticStore => {
     ...initialDialecticStateValues,
 
     // Actions
-    fetchAvailableDomainTags: vi.fn().mockResolvedValue(undefined as void),
-    setSelectedDomainTag: vi.fn((tag: string | null) => { newState.selectedDomainTag = tag; }),
+    fetchDomains: vi.fn().mockResolvedValue(undefined as void),
+    setSelectedDomain: vi.fn((domain: DialecticDomain | null) => { newState.selectedDomain = domain; }),
     fetchAvailableDomainOverlays: vi.fn().mockResolvedValue(undefined as void),
     setSelectedStageAssociation: vi.fn((stage: DialecticStage | null) => { newState.selectedStageAssociation = stage; }),
     setSelectedDomainOverlayId: vi.fn((id: string | null) => { newState.selectedDomainOverlayId = id; }),
@@ -191,5 +192,16 @@ export const getDialecticStoreActions = (): DialecticActions => {
 export const selectOverlay = vi.fn();
 
 // Add missing selectors
+export const selectDomains = (state: DialecticStore): DialecticDomain[] | null => state.domains;
+export const selectCurrentProjectDetail = (state: DialecticStore): DialecticProject | null => state.currentProjectDetail;
+export const selectIsStartNewSessionModalOpen = (state: DialecticStore): boolean => state.isStartNewSessionModalOpen;
+export const selectIsStartingSession = (state: DialecticStore): boolean => state.isStartingSession;
+export const selectStartSessionError = (state: DialecticStore): ApiError | null => state.startSessionError;
+export const selectSelectedDomainOverlayId = (state: DialecticStore): string | null => state.selectedDomainOverlayId;
+export const selectAvailableDomainOverlays = (state: DialecticStore) => state.availableDomainOverlays;
+export const selectSelectedDomain = (state: DialecticStore): DialecticDomain | null => state.selectedDomain;
+export const selectSelectedStageAssociation = (state: DialecticStore): DialecticStage | null => state.selectedStageAssociation;
+export const selectSelectedModelIds = (state: DialecticStore): string[] | null => state.selectedModelIds;
+export const selectIsLoadingModelCatalog = (state: DialecticStore): boolean => state.isLoadingModelCatalog;
 export const selectActiveContextSessionId = (state: DialecticStore): string | null => state.activeContextSessionId;
 export const selectActiveContextStageSlug = (state: DialecticStore): DialecticStage | null => state.activeContextStageSlug;

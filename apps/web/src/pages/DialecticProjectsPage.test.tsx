@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 
 import { useDialecticStore, initialDialecticStateValues } from '@paynless/store';
-import type { DialecticStore, DialecticProject } from '@paynless/store';
+import type { DialecticStore, DialecticProject, DialecticDomain } from '@paynless/types';
 import { DialecticProjectsPage } from './DialecticProjectsPage';
 
 // Import actual components for type casting with vi.mocked
@@ -57,18 +57,19 @@ const MockedCreateNewDialecticProjectButton = vi.mocked(ActualCreateNewDialectic
 
 
 const createMockStoreState = (overrides: Partial<DialecticStore>): DialecticStore => {
+  const domains: DialecticDomain[] = [{ id: 'domain-general', name: 'General', description: '', parent_domain_id: null }];
   return {
     ...initialDialecticStateValues,
     projects: [],
     isLoadingProjects: false,
     projectsError: null,
     fetchDialecticProjects: mockFetchDialecticProjects,
-    availableDomainTags: [],
-    isLoadingDomainTags: false,
-    domainTagsError: null,
-    selectedDomainTag: null,
-    fetchAvailableDomainTags: vi.fn(),
-    setSelectedDomainTag: vi.fn(),
+    domains: domains,
+    isLoadingDomains: false,
+    domainsError: null,
+    selectedDomain: domains[0],
+    fetchDomains: vi.fn(),
+    setSelectedDomain: vi.fn(),
     currentProjectDetail: null,
     isLoadingProjectDetail: false,
     projectDetailError: null,
@@ -115,7 +116,7 @@ describe('DialecticProjectsPage', () => {
   });
 
   it('should render error state if projectsError is present', () => {
-    const error = { message: 'Failed to fetch projects' } as ApiError;
+    const error: ApiError = { message: 'Failed to fetch projects', code: '500' };
     const mockStore = createMockStoreState({ projectsError: error, isLoadingProjects: false });
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
 
@@ -156,8 +157,8 @@ describe('DialecticProjectsPage', () => {
 
   it('should render a list of project cards and a "Create New Project" button in header when projects exist', () => {
     const mockProjects: DialecticProject[] = [
-      { id: 'proj-1', userId: 'user-1', project_name: 'Project Alpha', initial_user_prompt: 'Prompt A', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), status: 'active', selectedDomainTag: null, user_domain_overlay_values: null, dialectic_sessions: [] },
-      { id: 'proj-2', userId: 'user-1', project_name: 'Project Beta', initial_user_prompt: 'Prompt B', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), status: 'active', selectedDomainTag: 'test-tag', user_domain_overlay_values: null, dialectic_sessions: [] },
+      { id: 'proj-1', user_id: 'user-1', project_name: 'Project Alpha', initial_user_prompt: 'Prompt A', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), status: 'active', selected_domain_id: 'domain-general', domain_name: 'General', selected_domain_overlay_id: null, repo_url: null },
+      { id: 'proj-2', user_id: 'user-1', project_name: 'Project Beta', initial_user_prompt: 'Prompt B', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), status: 'active', selected_domain_id: 'domain-tech', domain_name: 'Tech', selected_domain_overlay_id: null, repo_url: null },
     ];
     const mockStore = createMockStoreState({ projects: mockProjects, isLoadingProjects: false });
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
@@ -196,8 +197,8 @@ describe('DialecticProjectsPage', () => {
 // Define ApiError type locally if not easily importable for tests
 interface ApiError {
   message: string;
+  code: string;
   details?: any;
-  statusCode?: number;
 }
 // Ensure DialecticProject matches the actual type structure used by the component and card
 // The mockProjects above should align with this structure.

@@ -3,7 +3,6 @@ import type {
     DialecticProject, 
     AIModelCatalogEntry, 
     ApiError, 
-    DomainTagDescriptor,
     DomainOverlayDescriptor,
     DialecticSession,
     DialecticStage,
@@ -11,26 +10,6 @@ import type {
     DialecticDomain,
 } from '@paynless/types';
 import { createSelector } from 'reselect';
-
-// Selector for the list of available domain tags
-export const selectAvailableDomainTags = (state: DialecticStateValues): DomainTagDescriptor[] => {
-    // Check if availableDomainTags has a 'data' property (object form)
-    if (state.availableDomainTags && typeof state.availableDomainTags === 'object' && 'data' in state.availableDomainTags) {
-        // It can also be that data is null or undefined if the API returns that, so we default to []
-        return (state.availableDomainTags as { data: DomainTagDescriptor[] | null | undefined }).data || [];
-    }
-    // Otherwise, it should be DomainTagDescriptor[] already (or null/undefined, which we treat as empty)
-    return (state.availableDomainTags as DomainTagDescriptor[]) || [];
-};
-
-// Selector for the loading state of domain tags
-export const selectIsLoadingDomainTags = (state: DialecticStateValues): boolean => state.isLoadingDomainTags;
-
-// Selector for any error related to fetching domain tags
-export const selectDomainTagsError = (state: DialecticStateValues): ApiError | null => state.domainTagsError;
-
-// Selector for the currently selected domain tag
-export const selectSelectedDomainTag = (state: DialecticStateValues): string | null => state.selectedDomainTag;
 
 // Selectors for Domains
 export const selectDomains = (state: DialecticStateValues): DialecticDomain[] => state.domains ?? [];
@@ -50,17 +29,17 @@ export const selectCurrentStageForOverlaySelection = (state: DialecticStateValue
 // Selector for the available domain overlays
 export const selectAvailableDomainOverlays = (state: DialecticStateValues): DomainOverlayDescriptor[] => state.availableDomainOverlays ?? [];
 
-// Selector for overlay details filtered by domain tag and current stage
+// Selector for overlay details filtered by domain id and current stage
 export const selectOverlay = (
     state: DialecticStateValues,
-    domainTag: string | null
+    domainId: string | null
 ): DomainOverlayDescriptor[] => {
     const stage = state.selectedStageAssociation;
-    if (!domainTag || !stage || !state.availableDomainOverlays) {
+    if (!domainId || !stage || !state.availableDomainOverlays) {
         return [];
     }
     return state.availableDomainOverlays.filter(
-        (overlay) => overlay.domainTag === domainTag && overlay.stageAssociation === stage
+        (overlay) => overlay.domainId === domainId && overlay.stageAssociation === stage
     );
 };
 

@@ -15,12 +15,12 @@ import {
   DialecticProject, 
   AIModelCatalogEntry, 
   DomainOverlayDescriptor, 
-  DomainTagDescriptor, 
   DialecticActions, 
   DialecticSession, 
   DialecticStore,
   StartSessionPayload,
-  ApiResponse
+  ApiResponse,
+  DialecticDomain,
 } from '@paynless/types';
 import { toast } from 'sonner';
 
@@ -126,7 +126,30 @@ vi.mock('./AIModelSelector', () => ({
 
 // Mock DomainSelector
 vi.mock('./DomainSelector', () => ({
-  DomainSelector: vi.fn(() => <div data-testid="mock-domain-selector">Mock Domain Selector</div>),
+  DomainSelector: vi.fn(() => {
+    const { 
+      domains, 
+      isLoadingDomains, 
+      domainsError, 
+      fetchDomains,
+    } = useDialecticStore(
+      (state) => ({
+        domains: state.domains,
+        isLoadingDomains: state.isLoadingDomains,
+        domainsError: state.domainsError,
+        fetchDomains: state.fetchDomains,
+      })
+    );
+
+    React.useEffect(() => {
+      // Fetch domains if they are not already loaded
+      if (fetchDomains && !domains && !isLoadingDomains && !domainsError) {
+        fetchDomains();
+      }
+    }, [fetchDomains, domains, isLoadingDomains, domainsError]);
+    
+    return <div data-testid="mock-domain-selector">Mock Domain Selector</div>
+  }),
 }));
 
 const mockProject: DialecticProject = {
@@ -137,7 +160,8 @@ const mockProject: DialecticProject = {
   user_id: 'user-abc',
   initial_user_prompt: 'Initial user prompt',
   selected_domain_overlay_id: 'tag-1',
-  selected_domain_tag: 'general',
+  selected_domain_id: 'domain-general',
+  domain_name: 'General',
   repo_url: 'https://github.com/test/test',
   status: 'active',
   initial_prompt_resource_id: 'resource-123',
@@ -178,21 +202,16 @@ const mockModelCatalog: AIModelCatalogEntry[] = [
   },
 ];
 
-const mockAvailableDomainTags: DomainTagDescriptor[] = [
-    { id: 'tag-1', 
-      domainTag: 'general', 
-      description: 'A general discussion domain.', 
-      stageAssociation: 'thesis' },
-    { id: 'tag-2', 
-      domainTag: 'tech', 
-      description: 'Debate on technology topics.', 
-      stageAssociation: 'thesis' },
+const mockAvailableDomains: DialecticDomain[] = [
+  { id: 'domain-general', name: 'General', description: 'A general discussion domain.', parent_domain_id: null },
+  { id: 'domain-tech', name: 'Tech', description: 'Debate on technology topics.', parent_domain_id: null },
 ];
 
 const mockAvailableDomainOverlays: DomainOverlayDescriptor[] = [
-    { id: 'tag-1', 
-      description: 'Overlay for general debates.', 
-      domainTag: 'general', 
+    { id: 'tag-1',
+      description: 'Overlay for general debates.',
+      domainId: 'domain-general',
+      domainName: 'General',
       stageAssociation: 'thesis',
       overlay_values: 'Overlay for general debates.',
     },
@@ -214,8 +233,8 @@ describe('StartDialecticSessionModal', () => {
       selectedDomainOverlayId: null,
       selectedStageAssociation: null,
       availableDomainOverlays: mockAvailableDomainOverlays,
-      selectedDomainTag: 'general',
-      availableDomainTags: mockAvailableDomainTags,
+      selectedDomain: mockAvailableDomains[0],
+      domains: mockAvailableDomains,
       selectedModelIds: [],
     });
   });
@@ -292,11 +311,11 @@ describe('StartDialecticSessionModal', () => {
     setDialecticState({
       isStartNewSessionModalOpen: true,
       selectedDomainOverlayId: null,
-      selectedDomainTag: 'tech',
-      currentProjectDetail: { ...mockProject, selected_domain_overlay_id: null, selected_domain_tag: 'tech' } 
+      selectedDomain: mockAvailableDomains[1],
+      currentProjectDetail: { ...mockProject, selected_domain_overlay_id: null, selected_domain_id: mockAvailableDomains[1].id } 
     });
   
-    const techTagDescriptor = mockAvailableDomainTags.find(tag => tag.domainTag === 'tech');
+    const techTagDescriptor = mockAvailableDomains.find(tag => tag.id === 'domain-tech');
     expect(techTagDescriptor).toBeDefined();
   
     render(<StartDialecticSessionModal />);
@@ -318,8 +337,8 @@ describe('StartDialecticSessionModal', () => {
       isStartingSession: false,
       selectedStageAssociation: DialecticStage.THESIS,
       availableDomainOverlays: mockAvailableDomainOverlays,
-      availableDomainTags: mockAvailableDomainTags,
-      selectedDomainTag: mockAvailableDomainTags[0].domainTag,
+      domains: mockAvailableDomains,
+      selectedDomain: mockAvailableDomains[0],
       selectedDomainOverlayId: mockAvailableDomainOverlays[0].id,
       startSessionError: undefined,
     });
@@ -411,8 +430,8 @@ describe('StartDialecticSessionModal', () => {
       modelCatalog: mockModelCatalog,
       isLoadingModelCatalog: false,
       selectedModelIds: [mockModelCatalog[0].id], // Initialize with a selected model
-      availableDomainTags: mockAvailableDomainTags,
-      selectedDomainTag: mockAvailableDomainTags[0].domainTag,
+      domains: mockAvailableDomains,
+      selectedDomain: mockAvailableDomains[0],
       availableDomainOverlays: mockAvailableDomainOverlays,
       selectedDomainOverlayId: mockAvailableDomainOverlays[0].id,
       selectedStageAssociation: DialecticStage.THESIS,
@@ -520,8 +539,8 @@ describe('StartDialecticSessionModal', () => {
       isLoadingModelCatalog: false,
       modelCatalogError: undefined,
       availableDomainOverlays: mockAvailableDomainOverlays,
-      availableDomainTags: mockAvailableDomainTags,
-      selectedDomainTag: mockAvailableDomainTags[0].domainTag, // Use the domainTag string
+      domains: mockAvailableDomains,
+      selectedDomain: mockAvailableDomains[0],
       selectedModelIds: ['model-1'],
       isStartingSession: false,
       startSessionError: undefined,
@@ -571,10 +590,10 @@ describe('StartDialecticSessionModal', () => {
       isLoadingModelCatalog: false,
       modelCatalogError: undefined,
       availableDomainOverlays: mockAvailableDomainOverlays,
-      availableDomainTags: mockAvailableDomainTags,
+      domains: mockAvailableDomains,
       selectedDomainOverlayId: 'tag-1',
       selectedStageAssociation: DialecticStage.THESIS,
-      selectedDomainTag: mockAvailableDomainTags[0].domainTag,
+      selectedDomain: mockAvailableDomains[0],
       startSessionError: { message: errorMessage, code: '500' }
     });
 
@@ -622,7 +641,7 @@ describe('StartDialecticSessionModal', () => {
       currentProjectDetail: mockProject,
       selectedDomainOverlayId: 'tag-1',
       availableDomainOverlays: mockAvailableDomainOverlays,
-      availableDomainTags: mockAvailableDomainTags,
+      domains: mockAvailableDomains,
       selectedStageAssociation: DialecticStage.THESIS,
     });
     render(<StartDialecticSessionModal />);
@@ -642,9 +661,9 @@ describe('StartDialecticSessionModal', () => {
         currentProjectDetail: mockProject,
         selectedDomainOverlayId: 'tag-1',
         availableDomainOverlays: mockAvailableDomainOverlays,
-        availableDomainTags: mockAvailableDomainTags,
+        domains: mockAvailableDomains,
         modelCatalog: mockModelCatalog,
-        selectedDomainTag: mockAvailableDomainTags[0].domainTag, 
+        selectedDomain: mockAvailableDomains[0], 
         selectedStageAssociation: mockAvailableDomainOverlays[0].stageAssociation as DialecticStage,
     });
     
@@ -671,8 +690,8 @@ beforeAll(() => {
   // Ensure all expected actions are functions and potentially mocks
   // Customize this list based on actual actions in DialecticActions
   const expectedActions: Array<keyof DialecticActions> = [
-    'fetchAvailableDomainTags',
-    'setSelectedDomainTag',
+    'fetchDomains',
+    'setSelectedDomain',
     'fetchAvailableDomainOverlays',
     'setSelectedStageAssociation',
     'setSelectedDomainOverlayId',

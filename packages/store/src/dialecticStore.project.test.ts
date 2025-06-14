@@ -21,7 +21,7 @@ import type {
   DialecticSession,
   StartSessionPayload,
   DomainOverlayDescriptor,
-  DomainTagDescriptor,
+  DialecticDomain,
   UploadProjectResourceFilePayload,
   DialecticProjectResource,
   UpdateProjectInitialPromptPayload,
@@ -45,6 +45,7 @@ vi.mock('@paynless/api', async (importOriginal) => {
 
 // Import the shared mock setup - these are test utilities, not part of the mocked module itself.
 import { resetApiMock, getMockDialecticClient, type MockDialecticApiClient } from '@paynless/api/mocks';
+import { api } from '@paynless/api';
 
 describe('useDialecticStore', () => {
     let mockDialecticApi: MockDialecticApiClient;
@@ -58,9 +59,21 @@ describe('useDialecticStore', () => {
 
     describe('fetchDialecticProjects action', () => {
         it('should fetch and set projects on success', async () => {
-            const mockProjects: DialecticProject[] = [{ id: 'proj1', project_name: 'Test Project 1', user_id: 'user1', initial_user_prompt: 'prompt1', selected_domain_tag: null, repo_url: null, status: 'active', created_at: '2023-01-01T00:00:00Z', updated_at: '2023-01-01T00:00:00Z' } as DialecticProject];
+            const mockProjects: DialecticProject[] = [{ 
+                id: 'proj1', 
+                project_name: 'Test Project 1', 
+                user_id: 'user1', 
+                initial_user_prompt: 'prompt1', 
+                selected_domain_id: 'dom-1',
+                domain_name: 'Software Development',
+                selected_domain_overlay_id: null,
+                repo_url: null, 
+                status: 'active', 
+                created_at: '2023-01-01T00:00:00Z', 
+                updated_at: '2023-01-01T00:00:00Z' 
+            }];
             const mockResponse: ApiResponse<DialecticProject[]> = { data: mockProjects, status: 200 };
-            (mockDialecticApi.listProjects as Mock).mockResolvedValue(mockResponse);
+            (api.dialectic().listProjects as Mock).mockResolvedValue(mockResponse);
 
             const { fetchDialecticProjects } = useDialecticStore.getState();
             await fetchDialecticProjects();
@@ -69,12 +82,12 @@ describe('useDialecticStore', () => {
             expect(state.isLoadingProjects).toBe(false);
             expect(state.projects).toEqual(mockProjects);
             expect(state.projectsError).toBeNull();
-            expect(mockDialecticApi.listProjects).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().listProjects).toHaveBeenCalledTimes(1);
         });
 
         it('should set projects to an empty array if API returns success with no data', async () => {
             const mockResponse: ApiResponse<DialecticProject[]> = { data: undefined, status: 200 }; // Or data: null
-            (mockDialecticApi.listProjects as Mock).mockResolvedValue(mockResponse);
+            (api.dialectic().listProjects as Mock).mockResolvedValue(mockResponse);
 
             const { fetchDialecticProjects } = useDialecticStore.getState();
             await fetchDialecticProjects();
@@ -83,13 +96,13 @@ describe('useDialecticStore', () => {
             expect(state.isLoadingProjects).toBe(false);
             expect(state.projects).toEqual([]);
             expect(state.projectsError).toBeNull();
-            expect(mockDialecticApi.listProjects).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().listProjects).toHaveBeenCalledTimes(1);
         });
 
         it('should set error state if listProjects API returns an error', async () => {
             const mockError: ApiError = { code: 'API_FAIL', message: 'Failed to fetch projects' };
             const mockResponse: ApiResponse<DialecticProject[]> = { error: mockError, status: 500 };
-            (mockDialecticApi.listProjects as Mock).mockResolvedValue(mockResponse);
+            (api.dialectic().listProjects as Mock).mockResolvedValue(mockResponse);
 
             const { fetchDialecticProjects } = useDialecticStore.getState();
             await fetchDialecticProjects();
@@ -98,22 +111,22 @@ describe('useDialecticStore', () => {
             expect(state.isLoadingProjects).toBe(false);
             expect(state.projects).toEqual([]);
             expect(state.projectsError).toEqual(mockError);
-            expect(mockDialecticApi.listProjects).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().listProjects).toHaveBeenCalledTimes(1);
         });
 
         it('should set loading state during fetchProjects', async () => {
-            (mockDialecticApi.listProjects as Mock).mockReturnValue(new Promise(() => {})); 
+            (api.dialectic().listProjects as Mock).mockReturnValue(new Promise(() => {})); 
             const { fetchDialecticProjects } = useDialecticStore.getState();
             fetchDialecticProjects(); // Do not await
             const state = useDialecticStore.getState();
             expect(state.isLoadingProjects).toBe(true);
             expect(state.projectsError).toBeNull();
-            expect(mockDialecticApi.listProjects).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().listProjects).toHaveBeenCalledTimes(1);
         });
 
         it('should set network error state if listProjects API call throws', async () => {
             const networkErrorMessage = 'Connection Timeout';
-            (mockDialecticApi.listProjects as Mock).mockRejectedValue(new Error(networkErrorMessage));
+            (api.dialectic().listProjects as Mock).mockRejectedValue(new Error(networkErrorMessage));
 
             const { fetchDialecticProjects } = useDialecticStore.getState();
             await fetchDialecticProjects();
@@ -125,98 +138,60 @@ describe('useDialecticStore', () => {
                 message: networkErrorMessage,
                 code: 'NETWORK_ERROR',
             });
-            expect(mockDialecticApi.listProjects).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().listProjects).toHaveBeenCalledTimes(1);
         });
     });
 
     // New tests for createDialecticProject
     describe('createDialecticProject action', () => {
-        const projectPayload: CreateProjectPayload = { projectName: 'New Proj', initialUserPrompt: 'A prompt' };
+        const projectPayload: CreateProjectPayload = { 
+            projectName: 'New Proj', 
+            initialUserPrompt: 'A prompt',
+            selectedDomainId: 'dom-1',
+            selectedDomainOverlayId: 'overlay-1'
+        };
         const mockCreatedProject: DialecticProject = {
             id: 'newProjId',
             project_name: projectPayload.projectName,
             initial_user_prompt: projectPayload.initialUserPrompt,
-            selected_domain_tag: null,
-            selected_domain_overlay_id: null,
+            selected_domain_id: projectPayload.selectedDomainId,
+            domain_name: 'Software Development', // This would be set by the backend
+            selected_domain_overlay_id: projectPayload.selectedDomainOverlayId ?? null,
             user_id: 'user1',
             repo_url: null,
             status: 'active',
             created_at: '2023-01-01T00:00:00.000Z',
             updated_at: '2023-01-01T00:00:00.000Z'
-        } as DialecticProject;
+        };
 
         it('should create a project and refetch projects list on success', async () => {
             const { createDialecticProject } = useDialecticStore.getState();
             const mockResponse: ApiResponse<DialecticProject> = { data: mockCreatedProject, status: 201 };
-            (mockDialecticApi.createProject as Mock).mockResolvedValue(mockResponse);
+            (api.dialectic().createProject as Mock).mockResolvedValue(mockResponse);
             // Mock for listProjects, which is called after successful creation
-            (mockDialecticApi.listProjects as Mock).mockResolvedValue({ data: [mockCreatedProject], status: 200 });
+            (api.dialectic().listProjects as Mock).mockResolvedValue({ data: [mockCreatedProject], status: 200 });
 
             const result = await createDialecticProject(projectPayload);
 
             expect(result.data).toEqual(mockCreatedProject);
             expect(result.status).toBe(201);
-            expect(mockDialecticApi.createProject).toHaveBeenCalledWith(expect.any(FormData));
+            expect(api.dialectic().createProject).toHaveBeenCalledWith(expect.any(FormData));
             
-            const formData = (mockDialecticApi.createProject as Mock).mock.calls[0][0] as FormData;
+            const formData = (api.dialectic().createProject as Mock).mock.calls[0][0] as FormData;
             expect(formData.get('action')).toBe('createProject');
             expect(formData.get('projectName')).toBe(projectPayload.projectName);
-            expect(formData.get('initialUserPromptText')).toBe(projectPayload.initialUserPrompt);
-            expect(formData.get('selectedDomainTag')).toBeNull(); // Initial store state
-            expect(formData.get('selectedDomainOverlayId')).toBeNull(); // Initial store state
+            expect(formData.get('initialUserPromptText')).toBe(projectPayload.initialUserPrompt as string);
+            expect(formData.get('selectedDomainId')).toBe(projectPayload.selectedDomainId); 
+            expect(formData.get('selectedDomainOverlayId')).toBe(projectPayload.selectedDomainOverlayId as string);
             expect(formData.get('promptFile')).toBeNull();
 
-            expect(mockDialecticApi.listProjects).toHaveBeenCalledTimes(1);
-        });
-
-        it('should create a project with a specific selected_domain_tag and selected_domain_overlay_id and refetch', async () => {
-            const inputPayload: CreateProjectPayload = { projectName: 'Tagged Project', initialUserPrompt: 'A prompt for a tagged project' };
-            const testSelectedDomainTag = 'software_testing';
-            const testSelectedDomainOverlayId = 'overlay_abc';
-
-            // Set the store state for selectedDomainTag and selected_domain_overlay_id
-            useDialecticStore.getState().setSelectedDomainTag(testSelectedDomainTag);
-            useDialecticStore.getState().setSelectedDomainOverlayId(testSelectedDomainOverlayId);
-            
-            const mockCreatedTaggedProject: DialecticProject = {
-                id: 'newTaggedProjId',
-                project_name: inputPayload.projectName,
-                initial_user_prompt: inputPayload.initialUserPrompt,
-                selected_domain_tag: testSelectedDomainTag, 
-                selected_domain_overlay_id: testSelectedDomainOverlayId, 
-                user_id: 'user1',
-                repo_url: null,
-                status: 'active',
-                created_at: '2023-01-02T00:00:00.000Z',
-                updated_at: '2023-01-02T00:00:00.000Z'
-            } as DialecticProject;
-
-            const { createDialecticProject } = useDialecticStore.getState();
-            const mockResponse: ApiResponse<DialecticProject> = { data: mockCreatedTaggedProject, status: 201 };
-            (mockDialecticApi.createProject as Mock).mockResolvedValue(mockResponse);
-            (mockDialecticApi.listProjects as Mock).mockResolvedValue({ data: [mockCreatedTaggedProject], status: 200 });
-
-            const result = await createDialecticProject(inputPayload); 
-
-            expect(result.data).toEqual(mockCreatedTaggedProject);
-            expect(result.status).toBe(201);
-            expect(mockDialecticApi.createProject).toHaveBeenCalledWith(expect.any(FormData));
-
-            const formData = (mockDialecticApi.createProject as Mock).mock.calls[0][0] as FormData;
-            expect(formData.get('action')).toBe('createProject');
-            expect(formData.get('projectName')).toBe(inputPayload.projectName);
-            expect(formData.get('initialUserPromptText')).toBe(inputPayload.initialUserPrompt);
-            expect(formData.get('selectedDomainTag')).toBe(testSelectedDomainTag);
-            expect(formData.get('selectedDomainOverlayId')).toBe(testSelectedDomainOverlayId);
-            expect(formData.get('promptFile')).toBeNull();
-            
-            expect(mockDialecticApi.listProjects).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().listProjects).toHaveBeenCalledTimes(1);
         });
 
         it('should set error state if createProject API returns an error', async () => {
             const mockError: ApiError = { code: 'CREATE_FAIL', message: 'Failed to create' };
             const createResponse: ApiResponse<DialecticProject> = { error: mockError, status: 400 };
-            mockDialecticApi.createProject.mockResolvedValue(createResponse);
+            (api.dialectic().createProject as Mock).mockResolvedValue(createResponse);
 
             const { createDialecticProject } = useDialecticStore.getState();
             const result = await createDialecticProject(projectPayload);
@@ -225,11 +200,11 @@ describe('useDialecticStore', () => {
             expect(state.isCreatingProject).toBe(false);
             expect(state.createProjectError).toEqual(mockError);
             expect(result.error).toEqual(mockError);
-            expect(mockDialecticApi.listProjects).not.toHaveBeenCalled(); // Should not refetch on error
+            expect(api.dialectic().listProjects).not.toHaveBeenCalled(); // Should not refetch on error
         });
 
         it('should set loading state during createProject', async () => {
-            (mockDialecticApi.createProject as Mock).mockReturnValue(new Promise(() => {})); 
+            (api.dialectic().createProject as Mock).mockReturnValue(new Promise(() => {})); 
 
             const { createDialecticProject } = useDialecticStore.getState();
             // For this test, initial store state for tags is fine (null)
@@ -238,19 +213,19 @@ describe('useDialecticStore', () => {
             const state = useDialecticStore.getState();
             expect(state.isCreatingProject).toBe(true);
             expect(state.createProjectError).toBeNull();
-            expect(mockDialecticApi.createProject).toHaveBeenCalledWith(expect.any(FormData));
-            const formData = (mockDialecticApi.createProject as Mock).mock.calls[0][0] as FormData;
+            expect(api.dialectic().createProject).toHaveBeenCalledWith(expect.any(FormData));
+            const formData = (api.dialectic().createProject as Mock).mock.calls[0][0] as FormData;
             expect(formData.get('action')).toBe('createProject');
             expect(formData.get('projectName')).toBe(projectPayload.projectName);
-            expect(formData.get('initialUserPromptText')).toBe(projectPayload.initialUserPrompt);
-            expect(formData.get('selectedDomainTag')).toBeNull();
-            expect(formData.get('selectedDomainOverlayId')).toBeNull();
+            expect(formData.get('initialUserPromptText')).toBe(projectPayload.initialUserPrompt as string);
+            expect(formData.get('selectedDomainId')).toBe(projectPayload.selectedDomainId);
+            expect(formData.get('selectedDomainOverlayId')).toBe(projectPayload.selectedDomainOverlayId as string);
             expect(formData.get('promptFile')).toBeNull();
         });
 
         it('should set network error state if createProject API call throws and not refetch', async () => {
             const networkErrorMessage = 'Server Unreachable';
-            mockDialecticApi.createProject.mockRejectedValue(new Error(networkErrorMessage));
+            (api.dialectic().createProject as Mock).mockRejectedValue(new Error(networkErrorMessage));
 
             const { createDialecticProject } = useDialecticStore.getState();
             const result = await createDialecticProject(projectPayload);
@@ -268,7 +243,7 @@ describe('useDialecticStore', () => {
             });
             expect(result.data).toBeUndefined();
             // expect(result.status).toBe(0); // Status is not set for network errors in the new return type
-            expect(mockDialecticApi.listProjects).not.toHaveBeenCalled(); // Should not attempt to refetch
+            expect(api.dialectic().listProjects).not.toHaveBeenCalled(); // Should not attempt to refetch
         });
     });
 
@@ -278,19 +253,20 @@ describe('useDialecticStore', () => {
             id: projectId, 
             project_name: 'Detailed Project', 
             initial_user_prompt: 'Detail prompt',
-            selected_domain_tag: 'tech',
+            selected_domain_id: 'dom-1',
+            domain_name: 'Software Development',
             user_id: 'user1',
             repo_url: null,
             status: 'active',
             created_at: '2023-01-01T00:00:00.000Z',
             updated_at: '2023-01-01T00:00:00.000Z',
-            sessions: [],
+            dialectic_sessions: [],
             selected_domain_overlay_id: null,
         };
 
         it('should fetch and set project details on success', async () => {
             const mockResponse: ApiResponse<DialecticProject> = { data: mockProjectDetail, status: 200 };
-            mockDialecticApi.getProjectDetails.mockResolvedValue(mockResponse);
+            (api.dialectic().getProjectDetails as Mock).mockResolvedValue(mockResponse);
 
             const { fetchDialecticProjectDetails } = useDialecticStore.getState();
             await fetchDialecticProjectDetails(projectId);
@@ -299,13 +275,13 @@ describe('useDialecticStore', () => {
             expect(state.isLoadingProjectDetail).toBe(false);
             expect(state.currentProjectDetail).toEqual(mockProjectDetail);
             expect(state.projectDetailError).toBeNull();
-            expect(mockDialecticApi.getProjectDetails).toHaveBeenCalledWith(projectId);
+            expect(api.dialectic().getProjectDetails).toHaveBeenCalledWith(projectId);
         });
 
         it('should set error state if getProjectDetails API returns an error', async () => {
             const mockError: ApiError = { code: 'NOT_FOUND', message: 'Project not found' };
             const mockResponse: ApiResponse<DialecticProject> = { error: mockError, status: 404 };
-            mockDialecticApi.getProjectDetails.mockResolvedValue(mockResponse);
+            (api.dialectic().getProjectDetails as Mock).mockResolvedValue(mockResponse);
 
             const { fetchDialecticProjectDetails } = useDialecticStore.getState();
             await fetchDialecticProjectDetails(projectId);
@@ -318,7 +294,7 @@ describe('useDialecticStore', () => {
 
         it('should set network error state if getProjectDetails API call throws', async () => {
             const networkErrorMessage = 'Network issue fetching details';
-            mockDialecticApi.getProjectDetails.mockRejectedValue(new Error(networkErrorMessage));
+            (api.dialectic().getProjectDetails as Mock).mockRejectedValue(new Error(networkErrorMessage));
 
             const { fetchDialecticProjectDetails } = useDialecticStore.getState();
             await fetchDialecticProjectDetails(projectId);
@@ -330,7 +306,7 @@ describe('useDialecticStore', () => {
         });
 
         it('should set loading state during fetchDialecticProjectDetails', () => {
-            mockDialecticApi.getProjectDetails.mockReturnValue(new Promise(() => {}));
+            (api.dialectic().getProjectDetails as Mock).mockReturnValue(new Promise(() => {}));
             const { fetchDialecticProjectDetails } = useDialecticStore.getState();
             fetchDialecticProjectDetails(projectId);
             expect(useDialecticStore.getState().isLoadingProjectDetail).toBe(true);
@@ -368,12 +344,12 @@ describe('useDialecticStore', () => {
                 data: mockResourceResponse,
                 status: 201,
             };
-            (mockDialecticApi.uploadProjectResourceFile as Mock).mockResolvedValue(mockApiResponse);
+            (api.dialectic().uploadProjectResourceFile as Mock).mockResolvedValue(mockApiResponse);
 
             const { uploadProjectResourceFile } = useDialecticStore.getState();
             const result = await uploadProjectResourceFile(uploadPayload);
 
-            expect(mockDialecticApi.uploadProjectResourceFile).toHaveBeenCalledWith(uploadPayload);
+            expect(api.dialectic().uploadProjectResourceFile).toHaveBeenCalledWith(uploadPayload);
             expect(result).toEqual(mockApiResponse);
         });
 
@@ -383,23 +359,23 @@ describe('useDialecticStore', () => {
                 error: mockError,
                 status: 500,
             };
-            (mockDialecticApi.uploadProjectResourceFile as Mock).mockResolvedValue(mockApiResponse);
+            (api.dialectic().uploadProjectResourceFile as Mock).mockResolvedValue(mockApiResponse);
 
             const { uploadProjectResourceFile } = useDialecticStore.getState();
             const result = await uploadProjectResourceFile(uploadPayload);
 
-            expect(mockDialecticApi.uploadProjectResourceFile).toHaveBeenCalledWith(uploadPayload);
+            expect(api.dialectic().uploadProjectResourceFile).toHaveBeenCalledWith(uploadPayload);
             expect(result).toEqual(mockApiResponse);
         });
 
         it('should return network error if uploadProjectResourceFile API call throws', async () => {
             const networkErrorMessage = 'Network connection lost during upload';
-            (mockDialecticApi.uploadProjectResourceFile as Mock).mockRejectedValue(new Error(networkErrorMessage));
+            (api.dialectic().uploadProjectResourceFile as Mock).mockRejectedValue(new Error(networkErrorMessage));
 
             const { uploadProjectResourceFile } = useDialecticStore.getState();
             const result = await uploadProjectResourceFile(uploadPayload);
 
-            expect(mockDialecticApi.uploadProjectResourceFile).toHaveBeenCalledWith(uploadPayload);
+            expect(api.dialectic().uploadProjectResourceFile).toHaveBeenCalledWith(uploadPayload);
             expect(result).toEqual({
                 error: { message: networkErrorMessage, code: 'NETWORK_ERROR' },
                 status: 0,
@@ -447,15 +423,15 @@ describe('useDialecticStore', () => {
 
         it('should delete a project and remove it from the local state on success', async () => {
             const mockResponse: ApiResponse<void> = { data: undefined, status: 204 };
-            (mockDialecticApi.deleteProject as Mock).mockResolvedValue(mockResponse);
+            (api.dialectic().deleteProject as Mock).mockResolvedValue(mockResponse);
 
             const { deleteDialecticProject } = useDialecticStore.getState();
             const result = await deleteDialecticProject(projectIdToDelete);
 
             expect(result.status).toBe(204);
             expect(result.error).toBeUndefined();
-            expect(mockDialecticApi.deleteProject).toHaveBeenCalledWith({ projectId: projectIdToDelete });
-            expect(mockDialecticApi.deleteProject).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().deleteProject).toHaveBeenCalledWith({ projectId: projectIdToDelete });
+            expect(api.dialectic().deleteProject).toHaveBeenCalledTimes(1);
 
             const state = useDialecticStore.getState();
             expect(state.projects.find(p => p.id === projectIdToDelete)).toBeUndefined();
@@ -466,15 +442,15 @@ describe('useDialecticStore', () => {
         it('should not modify local state if API returns an error', async () => {
             const mockError: ApiError = { code: 'DELETE_FAIL', message: 'Failed to delete project' };
             const mockResponse: ApiResponse<void> = { error: mockError, status: 500 };
-            (mockDialecticApi.deleteProject as Mock).mockResolvedValue(mockResponse);
+            (api.dialectic().deleteProject as Mock).mockResolvedValue(mockResponse);
 
             const { deleteDialecticProject } = useDialecticStore.getState();
             const result = await deleteDialecticProject(projectIdToDelete);
 
             expect(result.error).toEqual(mockError);
             expect(result.status).toBe(500);
-            expect(mockDialecticApi.deleteProject).toHaveBeenCalledWith({ projectId: projectIdToDelete });
-            expect(mockDialecticApi.deleteProject).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().deleteProject).toHaveBeenCalledWith({ projectId: projectIdToDelete });
+            expect(api.dialectic().deleteProject).toHaveBeenCalledTimes(1);
 
             const state = useDialecticStore.getState();
             expect(state.projects).toEqual(initialProjects); // State should remain unchanged
@@ -483,15 +459,15 @@ describe('useDialecticStore', () => {
 
         it('should set network error state if deleteProject API call throws', async () => {
             const networkErrorMessage = 'Connection Lost';
-            (mockDialecticApi.deleteProject as Mock).mockRejectedValue(new Error(networkErrorMessage));
+            (api.dialectic().deleteProject as Mock).mockRejectedValue(new Error(networkErrorMessage));
 
             const { deleteDialecticProject } = useDialecticStore.getState();
             const result = await deleteDialecticProject(projectIdToDelete);
 
             expect(result.error).toEqual({ message: networkErrorMessage, code: 'NETWORK_ERROR' });
             expect(result.status).toBe(0);
-            expect(mockDialecticApi.deleteProject).toHaveBeenCalledWith({ projectId: projectIdToDelete });
-            expect(mockDialecticApi.deleteProject).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().deleteProject).toHaveBeenCalledWith({ projectId: projectIdToDelete });
+            expect(api.dialectic().deleteProject).toHaveBeenCalledTimes(1);
 
             const state = useDialecticStore.getState();
             expect(state.projects).toEqual(initialProjects);
@@ -504,7 +480,7 @@ describe('useDialecticStore', () => {
             useDialecticStore.setState({ projectsError: initialError });
             
             const mockResponse: ApiResponse<void> = { data: undefined, status: 204 };
-            (mockDialecticApi.deleteProject as Mock).mockResolvedValue(mockResponse);
+            (api.dialectic().deleteProject as Mock).mockResolvedValue(mockResponse);
 
             const { deleteDialecticProject } = useDialecticStore.getState();
             await deleteDialecticProject(projectIdToDelete);
@@ -512,7 +488,7 @@ describe('useDialecticStore', () => {
             const state = useDialecticStore.getState();
             expect(state.projectsError).toBeNull();
             expect(useDialecticStore.getState().projectsError).toBeNull();
-            expect(mockDialecticApi.deleteProject).toHaveBeenCalledWith({ projectId: projectIdToDelete });
+            expect(api.dialectic().deleteProject).toHaveBeenCalledWith({ projectId: projectIdToDelete });
         });
     });
 
@@ -535,20 +511,20 @@ describe('useDialecticStore', () => {
 
         it('should clone a project, refetch projects list, and update state on success', async () => {
             const mockCloneResponse: ApiResponse<DialecticProject> = { data: clonedProject, status: 201 };
-            (mockDialecticApi.cloneProject as Mock).mockResolvedValue(mockCloneResponse);
+            (api.dialectic().cloneProject as Mock).mockResolvedValue(mockCloneResponse);
             
             const updatedProjectList = [...initialProjects, clonedProject];
             const mockListResponse: ApiResponse<DialecticProject[]> = { data: updatedProjectList, status: 200 };
-            (mockDialecticApi.listProjects as Mock).mockResolvedValue(mockListResponse);
+            (api.dialectic().listProjects as Mock).mockResolvedValue(mockListResponse);
 
             const { cloneDialecticProject } = useDialecticStore.getState();
             const result = await cloneDialecticProject(projectIdToClone);
 
             expect(result.data).toEqual(clonedProject);
             expect(result.status).toBe(201);
-            expect(mockDialecticApi.cloneProject).toHaveBeenCalledWith({ projectId: projectIdToClone });
-            expect(mockDialecticApi.cloneProject).toHaveBeenCalledTimes(1);
-            expect(mockDialecticApi.listProjects).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().cloneProject).toHaveBeenCalledWith({ projectId: projectIdToClone });
+            expect(api.dialectic().cloneProject).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().listProjects).toHaveBeenCalledTimes(1);
 
             const state = useDialecticStore.getState();
             expect(state.isCloningProject).toBe(false);
@@ -557,7 +533,7 @@ describe('useDialecticStore', () => {
         });
 
         it('should set loading state during cloneProject', async () => {
-            (mockDialecticApi.cloneProject as Mock).mockReturnValue(new Promise(() => {})); // Keep it pending
+            (api.dialectic().cloneProject as Mock).mockReturnValue(new Promise(() => {})); // Keep it pending
 
             const { cloneDialecticProject } = useDialecticStore.getState();
             cloneDialecticProject(projectIdToClone); // Do not await
@@ -565,21 +541,21 @@ describe('useDialecticStore', () => {
             const state = useDialecticStore.getState();
             expect(state.isCloningProject).toBe(true);
             expect(state.cloneProjectError).toBeNull();
-            expect(mockDialecticApi.cloneProject).toHaveBeenCalledWith({ projectId: projectIdToClone });
+            expect(api.dialectic().cloneProject).toHaveBeenCalledWith({ projectId: projectIdToClone });
         });
 
         it('should set error state if cloneProject API returns an error and not refetch', async () => {
             const mockError: ApiError = { code: 'CLONE_FAIL', message: 'Failed to clone project' };
             const mockResponse: ApiResponse<DialecticProject> = { error: mockError, status: 500 };
-            (mockDialecticApi.cloneProject as Mock).mockResolvedValue(mockResponse);
+            (api.dialectic().cloneProject as Mock).mockResolvedValue(mockResponse);
 
             const { cloneDialecticProject } = useDialecticStore.getState();
             const result = await cloneDialecticProject(projectIdToClone);
 
             expect(result.error).toEqual(mockError);
             expect(result.status).toBe(500);
-            expect(mockDialecticApi.cloneProject).toHaveBeenCalledWith({ projectId: projectIdToClone });
-            expect(mockDialecticApi.listProjects).not.toHaveBeenCalled();
+            expect(api.dialectic().cloneProject).toHaveBeenCalledWith({ projectId: projectIdToClone });
+            expect(api.dialectic().listProjects).not.toHaveBeenCalled();
 
             const state = useDialecticStore.getState();
             expect(state.isCloningProject).toBe(false);
@@ -589,14 +565,14 @@ describe('useDialecticStore', () => {
 
         it('should set network error state if cloneProject API call throws and not refetch', async () => {
             const networkErrorMessage = 'Clone Server Offline';
-            (mockDialecticApi.cloneProject as Mock).mockRejectedValue(new Error(networkErrorMessage));
+            (api.dialectic().cloneProject as Mock).mockRejectedValue(new Error(networkErrorMessage));
 
             const { cloneDialecticProject } = useDialecticStore.getState();
             const result = await cloneDialecticProject(projectIdToClone);
             
             expect(result.error).toEqual({ message: networkErrorMessage, code: 'NETWORK_ERROR' });
-            expect(mockDialecticApi.cloneProject).toHaveBeenCalledWith({ projectId: projectIdToClone });
-            expect(mockDialecticApi.listProjects).not.toHaveBeenCalled();
+            expect(api.dialectic().cloneProject).toHaveBeenCalledWith({ projectId: projectIdToClone });
+            expect(api.dialectic().listProjects).not.toHaveBeenCalled();
 
             const state = useDialecticStore.getState();
             expect(state.isCloningProject).toBe(false);
@@ -619,15 +595,15 @@ describe('useDialecticStore', () => {
         it('should export a project and return data on success', async () => {
             // Assuming exportProject API returns some data, like a URL or file content
             const mockResponse: ApiResponse<{ export_url: string }> = { data: mockExportData, status: 200 };
-            (mockDialecticApi.exportProject as Mock).mockResolvedValue(mockResponse);
+            (api.dialectic().exportProject as Mock).mockResolvedValue(mockResponse);
 
             const { exportDialecticProject } = useDialecticStore.getState();
             const result = await exportDialecticProject(projectIdToExport);
 
             expect(result.data).toEqual(mockExportData);
             expect(result.status).toBe(200);
-            expect(mockDialecticApi.exportProject).toHaveBeenCalledWith({ projectId: projectIdToExport });
-            expect(mockDialecticApi.exportProject).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().exportProject).toHaveBeenCalledWith({ projectId: projectIdToExport });
+            expect(api.dialectic().exportProject).toHaveBeenCalledTimes(1);
 
             const state = useDialecticStore.getState();
             expect(state.isExportingProject).toBe(false);
@@ -635,7 +611,7 @@ describe('useDialecticStore', () => {
         });
 
         it('should set loading state during exportProject', async () => {
-            (mockDialecticApi.exportProject as Mock).mockReturnValue(new Promise(() => {})); // Keep it pending
+            (api.dialectic().exportProject as Mock).mockReturnValue(new Promise(() => {})); // Keep it pending
 
             const { exportDialecticProject } = useDialecticStore.getState();
             exportDialecticProject(projectIdToExport); // Do not await
@@ -643,20 +619,20 @@ describe('useDialecticStore', () => {
             const state = useDialecticStore.getState();
             expect(state.isExportingProject).toBe(true);
             expect(state.exportProjectError).toBeNull();
-            expect(mockDialecticApi.exportProject).toHaveBeenCalledWith({ projectId: projectIdToExport });
+            expect(api.dialectic().exportProject).toHaveBeenCalledWith({ projectId: projectIdToExport });
         });
 
         it('should set error state if exportProject API returns an error', async () => {
             const mockError: ApiError = { code: 'EXPORT_FAIL', message: 'Failed to export project' };
             const mockResponse: ApiResponse<{ export_url: string }> = { error: mockError, status: 500 };
-            (mockDialecticApi.exportProject as Mock).mockResolvedValue(mockResponse);
+            (api.dialectic().exportProject as Mock).mockResolvedValue(mockResponse);
 
             const { exportDialecticProject } = useDialecticStore.getState();
             const result = await exportDialecticProject(projectIdToExport);
 
             expect(result.error).toEqual(mockError);
             expect(result.status).toBe(500);
-            expect(mockDialecticApi.exportProject).toHaveBeenCalledWith({ projectId: projectIdToExport });
+            expect(api.dialectic().exportProject).toHaveBeenCalledWith({ projectId: projectIdToExport });
 
             const state = useDialecticStore.getState();
             expect(state.isExportingProject).toBe(false);
@@ -665,13 +641,13 @@ describe('useDialecticStore', () => {
 
         it('should set network error state if exportProject API call throws', async () => {
             const networkErrorMessage = 'Export Server Offline';
-            (mockDialecticApi.exportProject as Mock).mockRejectedValue(new Error(networkErrorMessage));
+            (api.dialectic().exportProject as Mock).mockRejectedValue(new Error(networkErrorMessage));
 
             const { exportDialecticProject } = useDialecticStore.getState();
             const result = await exportDialecticProject(projectIdToExport);
             
             expect(result.error).toEqual({ message: networkErrorMessage, code: 'NETWORK_ERROR' });
-            expect(mockDialecticApi.exportProject).toHaveBeenCalledWith({ projectId: projectIdToExport });
+            expect(api.dialectic().exportProject).toHaveBeenCalledWith({ projectId: projectIdToExport });
 
             const state = useDialecticStore.getState();
             expect(state.isExportingProject).toBe(false);
@@ -684,17 +660,18 @@ describe('useDialecticStore', () => {
         const oldInitialPrompt = 'Old initial prompt';
         const newInitialPrompt = 'New and improved initial prompt';
         const mockExistingProject: DialecticProject = {
-            id: projectId,
-            project_name: 'Test Project',
+            id: 'proj123',
+            project_name: 'Existing Project',
             initial_user_prompt: oldInitialPrompt,
             user_id: 'user1',
-            selected_domain_tag: null,
+            selected_domain_id: 'dom-1',
+            domain_name: 'Software Development',
             selected_domain_overlay_id: null,
             repo_url: null,
             status: 'active',
             created_at: '2023-01-01T00:00:00Z',
             updated_at: '2023-01-01T00:00:00Z',
-            sessions: [],
+            dialectic_sessions: [],
             resources: [],
         };
         const mockUpdatedProject: DialecticProject = {
@@ -717,14 +694,14 @@ describe('useDialecticStore', () => {
 
         it('should update project initial prompt, currentProjectDetail, and projects list on success', async () => {
             const mockResponse: ApiResponse<DialecticProject> = { data: mockUpdatedProject, status: 200 };
-            (mockDialecticApi.updateDialecticProjectInitialPrompt as Mock).mockResolvedValue(mockResponse);
+            (api.dialectic().updateDialecticProjectInitialPrompt as Mock).mockResolvedValue(mockResponse);
 
             const { updateDialecticProjectInitialPrompt } = useDialecticStore.getState();
             const result = await updateDialecticProjectInitialPrompt(payload);
 
             expect(result.data).toEqual(mockUpdatedProject);
             expect(result.status).toBe(200);
-            expect(mockDialecticApi.updateDialecticProjectInitialPrompt).toHaveBeenCalledWith(payload);
+            expect(api.dialectic().updateDialecticProjectInitialPrompt).toHaveBeenCalledWith(payload);
 
             const state = useDialecticStore.getState();
             expect(state.isUpdatingProjectPrompt).toBe(false);
@@ -739,7 +716,7 @@ describe('useDialecticStore', () => {
                 currentProjectDetail: { ...mockExistingProject, id: 'otherProject' }
             });
             const mockResponse: ApiResponse<DialecticProject> = { data: mockUpdatedProject, status: 200 };
-            (mockDialecticApi.updateDialecticProjectInitialPrompt as Mock).mockResolvedValue(mockResponse);
+            (api.dialectic().updateDialecticProjectInitialPrompt as Mock).mockResolvedValue(mockResponse);
 
             const { updateDialecticProjectInitialPrompt } = useDialecticStore.getState();
             await updateDialecticProjectInitialPrompt(payload);
@@ -749,11 +726,10 @@ describe('useDialecticStore', () => {
             expect(state.projects.find(p => p.id === projectId)).toEqual(mockUpdatedProject);
         });
 
-
         it('should set error state if API returns an error', async () => {
             const mockError: ApiError = { code: 'UPDATE_FAILED', message: 'Failed to update prompt' };
             const mockResponse: ApiResponse<DialecticProject> = { error: mockError, status: 500 };
-            (mockDialecticApi.updateDialecticProjectInitialPrompt as Mock).mockResolvedValue(mockResponse);
+            (api.dialectic().updateDialecticProjectInitialPrompt as Mock).mockResolvedValue(mockResponse);
 
             const { updateDialecticProjectInitialPrompt } = useDialecticStore.getState();
             const result = await updateDialecticProjectInitialPrompt(payload);
@@ -771,7 +747,7 @@ describe('useDialecticStore', () => {
 
         it('should set network error state if API call throws', async () => {
             const networkErrorMessage = 'Network connection failed';
-            (mockDialecticApi.updateDialecticProjectInitialPrompt as Mock).mockRejectedValue(new Error(networkErrorMessage));
+            (api.dialectic().updateDialecticProjectInitialPrompt as Mock).mockRejectedValue(new Error(networkErrorMessage));
 
             const { updateDialecticProjectInitialPrompt } = useDialecticStore.getState();
             const result = await updateDialecticProjectInitialPrompt(payload);
@@ -786,7 +762,7 @@ describe('useDialecticStore', () => {
         });
 
         it('should set loading state during the update operation', () => {
-            (mockDialecticApi.updateDialecticProjectInitialPrompt as Mock).mockReturnValue(new Promise(() => {})); // Pending promise
+            (api.dialectic().updateDialecticProjectInitialPrompt as Mock).mockReturnValue(new Promise(() => {})); // Pending promise
 
             const { updateDialecticProjectInitialPrompt } = useDialecticStore.getState();
             updateDialecticProjectInitialPrompt(payload); // Do not await
@@ -794,7 +770,7 @@ describe('useDialecticStore', () => {
             const state = useDialecticStore.getState();
             expect(state.isUpdatingProjectPrompt).toBe(true);
             expect(state.projectDetailError).toBeNull();
-            expect(mockDialecticApi.updateDialecticProjectInitialPrompt).toHaveBeenCalledWith(payload);
+            expect(api.dialectic().updateDialecticProjectInitialPrompt).toHaveBeenCalledWith(payload);
         });
     });
 });

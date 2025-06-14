@@ -3,67 +3,40 @@ import {
     it, 
     expect, 
     beforeEach, 
-    afterEach, 
     vi,
     type Mock
 } from 'vitest';
 import { 
     useDialecticStore, 
-    initialDialecticStateValues 
 } from './dialecticStore';
+import { DialecticStage } from '@paynless/types';
 import type { 
   ApiError, 
   ApiResponse, 
-  DialecticProject, 
-  CreateProjectPayload,
-  ContributionContentSignedUrlResponse,
-  AIModelCatalogEntry,
-  DialecticSession,
-  StartSessionPayload,
   DomainOverlayDescriptor,
-  DomainTagDescriptor,
+  DialecticDomain,
 } from '@paynless/types';
 
-// Add the mock call here
 vi.mock('@paynless/api', async (importOriginal) => {
     const original = await importOriginal() as Record<string, unknown>;
-    // Import the parts of the mock we need
     const { api } = await import('@paynless/api/mocks'); 
     
     return {
-        ...original, // Spread original to keep any non-mocked exports
-        api, // Provide the mocked api object
+        ...original,
+        api, 
         initializeApiClient: vi.fn(), 
-        // Provide a mock for initializeApiClient
-        // No need to re-import getMockDialecticClient or resetApiMock here as they are test utilities,
-        // not part of the @paynless/api module's public interface used by the store.
     };
 });
 
-// Import the shared mock setup - these are test utilities, not part of the mocked module itself.
-import { resetApiMock, getMockDialecticClient, type MockDialecticApiClient } from '@paynless/api/mocks';
+import { api } from '@paynless/api';
+import { resetApiMock } from '@paynless/api/mocks';
 
 describe('useDialecticStore', () => {
-    let mockDialecticApi: MockDialecticApiClient;
 
     beforeEach(() => {
-        resetApiMock(); // Resets all mocks defined in @paynless/api/mocks
-        mockDialecticApi = getMockDialecticClient(); // Get a reference to the dialectic specific mocks
+        resetApiMock(); 
         useDialecticStore.getState()._resetForTesting?.();
-        vi.clearAllMocks(); // resetApiMock should handle this for the api calls
-    });
-
-    describe('setSelectedDomainTag action', () => {
-        it('should update selectedDomainTag in the state', () => {
-            const { setSelectedDomainTag } = useDialecticStore.getState();
-            setSelectedDomainTag('new_domain');
-            let state = useDialecticStore.getState();
-            expect(state.selectedDomainTag).toBe('new_domain');
-
-            setSelectedDomainTag(null);
-            state = useDialecticStore.getState();
-            expect(state.selectedDomainTag).toBeNull();
-        });
+        vi.clearAllMocks();
     });
 
     describe('setSelectedDomainOverlayId action', () => {
@@ -81,80 +54,84 @@ describe('useDialecticStore', () => {
         });
     });
 
-    describe('fetchAvailableDomainTags action', () => {
-        it('should fetch and set domain tags on success', async () => {
-            const mockTags: DomainTagDescriptor[] = [
-                { id: 'tagA_id', domainTag: 'tagA', description: 'Tag A description', stageAssociation: 'thesis' },
-                { id: 'tagB_id', domainTag: 'tagB', description: null, stageAssociation: null }
-            ];
-            const mockResponse: ApiResponse<{ data: DomainTagDescriptor[] }> = { data: { data: mockTags }, status: 200 };
-            mockDialecticApi.listAvailableDomainTags.mockResolvedValue(mockResponse);
+    describe('fetchDomains action', () => {
+        const mockDomains: DialecticDomain[] = [
+            { id: 'dom1', name: 'Software Engineering', description: 'The application of engineering principles to software development.', parent_domain_id: null },
+            { id: 'dom2', name: 'Gardening', description: 'The practice of growing and cultivating plants as part of horticulture.', parent_domain_id: 'dom1' }
+        ];
 
-            const { fetchAvailableDomainTags } = useDialecticStore.getState();
-            await fetchAvailableDomainTags();
+        it('should fetch and set domains on success', async () => {
+            const mockResponse: ApiResponse<DialecticDomain[]> = { data: mockDomains, status: 200 };
+            (api.dialectic().listDomains as Mock).mockResolvedValue(mockResponse);
+
+            const { fetchDomains } = useDialecticStore.getState();
+            await fetchDomains();
 
             const state = useDialecticStore.getState();
-            expect(state.isLoadingDomainTags).toBe(false);
-            expect((state.availableDomainTags as { data: DomainTagDescriptor[] }).data).toEqual(mockTags);
-            expect(state.domainTagsError).toBeNull();
-            expect(mockDialecticApi.listAvailableDomainTags).toHaveBeenCalledTimes(1);
+            expect(state.isLoadingDomains).toBe(false);
+            expect(state.domains).toEqual(mockDomains);
+            expect(state.domainsError).toBeNull();
+            expect(api.dialectic().listDomains).toHaveBeenCalledTimes(1);
         });
 
         it('should set error state if API returns an error', async () => {
-            const mockError: ApiError = { code: 'API_FAIL', message: 'API failed' };
-            const mockResponse: ApiResponse<{ data: DomainTagDescriptor[] }> = { error: mockError, status: 500 };
-            mockDialecticApi.listAvailableDomainTags.mockResolvedValue(mockResponse);
+            const mockError: ApiError = { code: 'DOMAIN_API_FAIL', message: 'API failed for domains' };
+            const mockResponse: ApiResponse<DialecticDomain[]> = { error: mockError, status: 500 };
+            (api.dialectic().listDomains as Mock).mockResolvedValue(mockResponse);
 
-            const { fetchAvailableDomainTags } = useDialecticStore.getState();
-            await fetchAvailableDomainTags();
+            const { fetchDomains } = useDialecticStore.getState();
+            await fetchDomains();
 
             const state = useDialecticStore.getState();
-            expect(state.isLoadingDomainTags).toBe(false);
-            expect(state.availableDomainTags).toEqual([]);
-            expect(state.domainTagsError).toEqual(mockError);
-            expect(mockDialecticApi.listAvailableDomainTags).toHaveBeenCalledTimes(1);
+            expect(state.isLoadingDomains).toBe(false);
+            expect(state.domains).toEqual([]);
+            expect(state.domainsError).toEqual(mockError);
+            expect(api.dialectic().listDomains).toHaveBeenCalledTimes(1);
         });
 
         it('should set network error state if API call throws', async () => {
-            const networkErrorMessage = 'Network connection lost';
-            mockDialecticApi.listAvailableDomainTags.mockRejectedValue(new Error(networkErrorMessage));
+            const networkErrorMessage = 'Network is down';
+            (api.dialectic().listDomains as Mock).mockRejectedValue(new Error(networkErrorMessage));
 
-            const { fetchAvailableDomainTags } = useDialecticStore.getState();
-            await fetchAvailableDomainTags();
+            const { fetchDomains } = useDialecticStore.getState();
+            await fetchDomains();
 
             const state = useDialecticStore.getState();
-            expect(state.isLoadingDomainTags).toBe(false);
-            expect(state.availableDomainTags).toEqual([]);
-            expect(state.domainTagsError).toEqual({
+            expect(state.isLoadingDomains).toBe(false);
+            expect(state.domains).toEqual([]);
+            expect(state.domainsError).toEqual({
                 message: networkErrorMessage,
                 code: 'NETWORK_ERROR',
             });
-            expect(mockDialecticApi.listAvailableDomainTags).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().listDomains).toHaveBeenCalledTimes(1);
         });
+    });
 
-        it('should set loading state during fetch', async () => {
-            mockDialecticApi.listAvailableDomainTags.mockReturnValue(new Promise(() => {})); // Non-resolving promise
+    describe('setSelectedDomain action', () => {
+        it('should update selectedDomain in the state', () => {
+            const { setSelectedDomain } = useDialecticStore.getState();
+            const testDomain: DialecticDomain = { id: 'dom1', name: 'Test Domain', description: 'A domain for testing.', parent_domain_id: null };
+            
+            setSelectedDomain(testDomain);
+            let state = useDialecticStore.getState();
+            expect(state.selectedDomain).toEqual(testDomain);
 
-            const { fetchAvailableDomainTags } = useDialecticStore.getState();
-            fetchAvailableDomainTags(); // Do not await
-
-            const state = useDialecticStore.getState();
-            expect(state.isLoadingDomainTags).toBe(true);
-            expect(state.domainTagsError).toBeNull();
-            expect(mockDialecticApi.listAvailableDomainTags).toHaveBeenCalledTimes(1);
+            setSelectedDomain(null);
+            state = useDialecticStore.getState();
+            expect(state.selectedDomain).toBeNull();
         });
     });
 
     describe('fetchAvailableDomainOverlays action', () => {
-        const stageAssociation = 'thesis';
+        const stageAssociation = DialecticStage.THESIS;
         const mockOverlays: DomainOverlayDescriptor[] = [
-            { id: 'ov1', domainTag: 'Overlay 1', description: 'Desc 1', stageAssociation: 'thesis' },
-            { id: 'ov2', domainTag: 'Overlay 2', description: null, stageAssociation: 'thesis' },
+            { id: 'ov1', domainId: 'dom1', domainName: 'Software Development', description: 'Desc 1', stageAssociation: 'thesis', overlay_values: {} },
+            { id: 'ov2', domainId: 'dom1', domainName: 'Software Development', description: null, stageAssociation: 'thesis', overlay_values: {} },
         ];
 
         it('should fetch and set domain overlays on success', async () => {
             const mockResponse: ApiResponse<DomainOverlayDescriptor[]> = { data: mockOverlays, status: 200 };
-            mockDialecticApi.listAvailableDomainOverlays.mockResolvedValue(mockResponse);
+            (api.dialectic().listAvailableDomainOverlays as Mock).mockResolvedValue(mockResponse);
 
             const { fetchAvailableDomainOverlays } = useDialecticStore.getState();
             await fetchAvailableDomainOverlays(stageAssociation);
@@ -164,14 +141,14 @@ describe('useDialecticStore', () => {
             expect(state.availableDomainOverlays).toEqual(mockOverlays);
             expect(state.selectedStageAssociation).toBe(stageAssociation);
             expect(state.domainOverlaysError).toBeNull();
-            expect(mockDialecticApi.listAvailableDomainOverlays).toHaveBeenCalledTimes(1);
-            expect(mockDialecticApi.listAvailableDomainOverlays).toHaveBeenCalledWith({ stageAssociation });
+            expect(api.dialectic().listAvailableDomainOverlays).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().listAvailableDomainOverlays).toHaveBeenCalledWith({ stageAssociation });
         });
 
         it('should set error state if API returns an error', async () => {
             const mockError: ApiError = { code: 'OVERLAY_API_FAIL', message: 'API failed for overlays' };
             const mockResponse: ApiResponse<DomainOverlayDescriptor[]> = { error: mockError, status: 500 };
-            mockDialecticApi.listAvailableDomainOverlays.mockResolvedValue(mockResponse);
+            (api.dialectic().listAvailableDomainOverlays as Mock).mockResolvedValue(mockResponse);
 
             const { fetchAvailableDomainOverlays } = useDialecticStore.getState();
             await fetchAvailableDomainOverlays(stageAssociation);
@@ -181,12 +158,12 @@ describe('useDialecticStore', () => {
             expect(state.availableDomainOverlays).toEqual([]);
             expect(state.selectedStageAssociation).toBe(stageAssociation);
             expect(state.domainOverlaysError).toEqual(mockError);
-            expect(mockDialecticApi.listAvailableDomainOverlays).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().listAvailableDomainOverlays).toHaveBeenCalledTimes(1);
         });
 
         it('should set network error state if API call throws', async () => {
             const networkErrorMessage = 'Network down for overlays';
-            mockDialecticApi.listAvailableDomainOverlays.mockRejectedValue(new Error(networkErrorMessage));
+            (api.dialectic().listAvailableDomainOverlays as Mock).mockRejectedValue(new Error(networkErrorMessage));
 
             const { fetchAvailableDomainOverlays } = useDialecticStore.getState();
             await fetchAvailableDomainOverlays(stageAssociation);
@@ -199,11 +176,11 @@ describe('useDialecticStore', () => {
                 message: networkErrorMessage,
                 code: 'NETWORK_ERROR',
             });
-            expect(mockDialecticApi.listAvailableDomainOverlays).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().listAvailableDomainOverlays).toHaveBeenCalledTimes(1);
         });
 
         it('should set loading state during fetch', async () => {
-            mockDialecticApi.listAvailableDomainOverlays.mockReturnValue(new Promise(() => {})); // Non-resolving promise
+            (api.dialectic().listAvailableDomainOverlays as Mock).mockReturnValue(new Promise(() => {})); // Non-resolving promise
 
             const { fetchAvailableDomainOverlays } = useDialecticStore.getState();
             fetchAvailableDomainOverlays(stageAssociation); // Do not await
@@ -212,33 +189,28 @@ describe('useDialecticStore', () => {
             expect(state.isLoadingDomainOverlays).toBe(true);
             expect(state.selectedStageAssociation).toBe(stageAssociation);
             expect(state.domainOverlaysError).toBeNull();
-            expect(mockDialecticApi.listAvailableDomainOverlays).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().listAvailableDomainOverlays).toHaveBeenCalledTimes(1);
         });
          it('should clear previous overlays when starting a new fetch', async () => {
             useDialecticStore.setState({
-                availableDomainOverlays: [{ id: 'old1', domainTag: 'Old Overlay', description: 'Old desc', stageAssociation: 'old_stage' }],
+                availableDomainOverlays: [{ id: 'old1', domainId: 'dom_old', domainName: 'Old Domain', description: 'Old desc', stageAssociation: DialecticStage.SYNTHESIS, overlay_values: {} }],
                 isLoadingDomainOverlays: false,
                 domainOverlaysError: null,
-                selectedStageAssociation: 'old_stage'
+                selectedStageAssociation: DialecticStage.SYNTHESIS
             });
             
             const mockResponse: ApiResponse<DomainOverlayDescriptor[]> = { data: mockOverlays, status: 200 };
-            mockDialecticApi.listAvailableDomainOverlays.mockResolvedValue(mockResponse);
+            (api.dialectic().listAvailableDomainOverlays as Mock).mockResolvedValue(mockResponse);
 
             const { fetchAvailableDomainOverlays } = useDialecticStore.getState();
             
-            // Check state before the call
             const initialState = useDialecticStore.getState();
             expect(initialState.availableDomainOverlays!.length).toBe(1);
 
             const promise = fetchAvailableDomainOverlays(stageAssociation);
 
-            // Check state immediately after call (loading, overlays potentially cleared or kept based on implementation)
             const loadingState = useDialecticStore.getState();
             expect(loadingState.isLoadingDomainOverlays).toBe(true);
-            // Depending on implementation, availableOverlays might be cleared immediately or after the fetch.
-            // The store implementation keeps them until new ones are fetched.
-            // expect(loadingState.availableDomainOverlays.length).toBe(1); // Or 0 if cleared instantly
 
             await promise;
 
@@ -248,6 +220,4 @@ describe('useDialecticStore', () => {
             expect(finalState.selectedStageAssociation).toBe(stageAssociation);
         });
     });
-
-
 });

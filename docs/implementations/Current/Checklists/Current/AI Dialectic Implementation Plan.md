@@ -1254,13 +1254,13 @@ The implementation plan uses the following labels to categorize work steps:
         *   `[✅]` Modify the data returned by these functions to include both `selected_domain_id` from the project and the `name` from the joined domain table (e.g., as a new `domain_name` property).
     *   `[ ] 1.Z.2.6 [TEST-INT]` Update all related integration tests (`*.test.ts`) within `supabase/functions/dialectic-service/` to align with the new database schema, function payloads, and expected return data structures.
 
-*   `[ ] 1.Z.3 [API/REFACTOR]` **Phase 2: Shared Types and API Client Refactoring**
-    *   `[ ] 1.Z.3.1 [TYPES]` Update the `DialecticProject` type definition in `packages/types`:
-        *   `[ ]` Remove the `selected_domain_tag` property.
-        *   `[ ]` Add the `selected_domain_id: string` property.
-        *   `[ ]` Add the `domain_name: string` property to hold the joined name.
-    *   `[ ] 1.Z.3.2 [API]` Update `DialecticApiClient` interfaces and method payloads (e.g., `CreateProjectPayload`) in `@paynless/api` to use `selectedDomainId`.
-    *   `[ ] 1.Z.3.3 [TEST-UNIT]` Update all `dialectic.api.test.ts` unit tests and associated mocks to use the new types and payloads.
+*   `[✅] 1.Z.3 [API/REFACTOR]` **Phase 2: Shared Types and API Client Refactoring**
+    *   `[✅] 1.Z.3.1 [TYPES]` Update the `DialecticProject` type definition in `packages/types`:
+        *   `[✅]` Remove the `selected_domain_tag` property.
+        *   `[✅]` Add the `selected_domain_id: string` property.
+        *   `[✅]` Add the `domain_name: string` property to hold the joined name.
+    *   `[✅ ] 1.Z.3.2 [API]` Update `DialecticApiClient` interfaces and method payloads (e.g., `CreateProjectPayload`) in `@paynless/api` to use `selectedDomainId`.
+    *   `[✅] 1.Z.3.3 [TEST-UNIT]` Update all `dialectic.api.test.ts` unit tests and associated mocks to use the new types and payloads.
 
 *   `[ ] 1.Z.4 [STORE/REFACTOR]` **Phase 2: State Management Refactoring**
     *   `[ ] 1.Z.4.1 [STORE]` Update `DialecticStateValues` in `dialecticStore.ts`, replacing any state related to `selectedDomainTag` with state for `selectedDomainId`.

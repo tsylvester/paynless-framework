@@ -3,12 +3,11 @@
 import React, { useEffect, useMemo } from 'react';
 import {
     useDialecticStore,
-    selectSelectedDomainTag,
+    selectSelectedDomain,
     selectOverlay,
     selectSelectedDomainOverlayId,
     selectIsLoadingDomainOverlays,
     selectDomainOverlaysError,
-    selectAvailableDomainTags,
 } from '@paynless/store';
 import {
     Select,
@@ -19,21 +18,11 @@ import {
 } from '@/components/ui/select';
 import { logger } from '@paynless/utils';
 
-function snakeToSpacedTitleCase(str: string): string {
-    if (!str) return '';
-    return str
-        .toLowerCase()
-        .split('_')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ');
-}
-
 export function DomainOverlayDescriptionSelector({ testId }: { testId?: string }) {
-    const selectedDomainTag = useDialecticStore(selectSelectedDomainTag);
-    const availableDomainTags = useDialecticStore(selectAvailableDomainTags);
+    const selectedDomain = useDialecticStore(selectSelectedDomain);
     
-    const tagSpecificOverlays = useDialecticStore(
-        state => selectOverlay(state, selectedDomainTag) 
+    const domainSpecificOverlays = useDialecticStore(
+        state => selectOverlay(state, selectedDomain?.id || null) 
     );
 
     const selectedDomainOverlayId = useDialecticStore(selectSelectedDomainOverlayId);
@@ -42,33 +31,31 @@ export function DomainOverlayDescriptionSelector({ testId }: { testId?: string }
     const domainOverlaysError = useDialecticStore(selectDomainOverlaysError);
 
     const currentSelectedOverlayDetails = useMemo(() => {
-        if (!selectedDomainOverlayId || !tagSpecificOverlays) return null;
-        return tagSpecificOverlays.find(ov => ov.id === selectedDomainOverlayId) || null;
-    }, [selectedDomainOverlayId, tagSpecificOverlays]);
+        if (!selectedDomainOverlayId || !domainSpecificOverlays) return null;
+        return domainSpecificOverlays.find(ov => ov.id === selectedDomainOverlayId) || null;
+    }, [selectedDomainOverlayId, domainSpecificOverlays]);
 
-    const baseDomainTagDescription = useMemo(() => {
-        if (!selectedDomainTag || !availableDomainTags) return null;
-        const currentTagDescriptor = availableDomainTags.find(tag => tag.domainTag === selectedDomainTag);
-        return currentTagDescriptor?.description || null;
-    }, [selectedDomainTag, availableDomainTags]);
+    const baseDomainDescription = useMemo(() => {
+        return selectedDomain?.description || null;
+    }, [selectedDomain]);
 
     useEffect(() => {
-        if (tagSpecificOverlays && tagSpecificOverlays.length === 1) {
-            if (tagSpecificOverlays[0].id !== selectedDomainOverlayId) {
-                logger.info(`[DomainOverlayDescriptionSelector] Auto-selecting single overlay: ${tagSpecificOverlays[0].id}`);
-                setSelectedDomainOverlayId(tagSpecificOverlays[0].id);
+        if (domainSpecificOverlays && domainSpecificOverlays.length === 1) {
+            if (domainSpecificOverlays[0].id !== selectedDomainOverlayId) {
+                logger.info(`[DomainOverlayDescriptionSelector] Auto-selecting single overlay: ${domainSpecificOverlays[0].id}`);
+                setSelectedDomainOverlayId(domainSpecificOverlays[0].id);
             }
-        } else if (selectedDomainOverlayId && tagSpecificOverlays && !tagSpecificOverlays.find(ov => ov.id === selectedDomainOverlayId)) {
+        } else if (selectedDomainOverlayId && domainSpecificOverlays && !domainSpecificOverlays.find(ov => ov.id === selectedDomainOverlayId)) {
             logger.info(`[DomainOverlayDescriptionSelector] Clearing stale selectedDomainOverlayId: ${selectedDomainOverlayId}`);
             setSelectedDomainOverlayId(null);
         }
-    }, [tagSpecificOverlays, selectedDomainOverlayId, setSelectedDomainOverlayId]);
+    }, [domainSpecificOverlays, selectedDomainOverlayId, setSelectedDomainOverlayId]);
 
-    if (!selectedDomainTag) {
+    if (!selectedDomain) {
         return null;
     }
 
-    const descriptionToShow = currentSelectedOverlayDetails?.description || baseDomainTagDescription;
+    const descriptionToShow = currentSelectedOverlayDetails?.description || baseDomainDescription;
 
     return (
         <div className="mt-4 space-y-2" data-testid={testId}>
@@ -83,7 +70,7 @@ export function DomainOverlayDescriptionSelector({ testId }: { testId?: string }
                 </div>
             )}
 
-            {!isLoadingDomainOverlays && !domainOverlaysError && tagSpecificOverlays && tagSpecificOverlays.length > 1 && (
+            {!isLoadingDomainOverlays && !domainOverlaysError && domainSpecificOverlays && domainSpecificOverlays.length > 1 && (
                 <Select 
                     value={selectedDomainOverlayId || ""} 
                     onValueChange={(value) => setSelectedDomainOverlayId(value === "" ? null : value)}
@@ -92,7 +79,7 @@ export function DomainOverlayDescriptionSelector({ testId }: { testId?: string }
                         <SelectValue placeholder="Choose a specific configuration..." />
                     </SelectTrigger>
                     <SelectContent className="bg-background/90 backdrop-blur-md border-border">
-                        {tagSpecificOverlays.map((overlay) => (
+                        {domainSpecificOverlays.map((overlay) => (
                             <SelectItem key={overlay.id} value={overlay.id}>
                                 {overlay.description || `Configuration ID: ${overlay.id}`}
                             </SelectItem>
@@ -104,17 +91,17 @@ export function DomainOverlayDescriptionSelector({ testId }: { testId?: string }
             {descriptionToShow && (
                 <div className="p-3 border rounded-md bg-card text-card-foreground">
                     <h4 className="text-xs font-semibold tracking-wide uppercase text-muted-foreground">
-                        {currentSelectedOverlayDetails ? 'Selected Configuration Details:' : ''}
+                        {currentSelectedOverlayDetails ? 'Selected Configuration Details:' : 'Domain Overview:'}
                     </h4>
                     <p className="mt-1 text-sm">{descriptionToShow}</p>
                 </div>
             )}
             
             {!isLoadingDomainOverlays && !domainOverlaysError && 
-             (!tagSpecificOverlays || tagSpecificOverlays.length === 0) && 
+             (!domainSpecificOverlays || domainSpecificOverlays.length === 0) && 
              !descriptionToShow && (
                 <p className="text-sm text-muted-foreground">
-                    No specific configurations or overview available for {selectedDomainTag ? snakeToSpacedTitleCase(selectedDomainTag) : 'this domain'}.
+                    No specific configurations or overview available for {selectedDomain?.name || 'this domain'}.
                 </p>
             )}
         </div>

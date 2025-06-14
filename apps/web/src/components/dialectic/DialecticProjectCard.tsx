@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { DialecticProject } from '@paynless/types'; // Assuming types are available
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Trash2, Copy, FileUp } from 'lucide-react';
 import {
   AlertDialog,
@@ -97,6 +98,9 @@ export const DialecticProjectCard: React.FC<DialecticProjectCardProps> = ({ proj
               <CardDescription>
                 By: {creatorName}
               </CardDescription>
+              {project.domain_name && (
+                <Badge variant="outline" className="mt-2">{project.domain_name}</Badge>
+              )}
             </div>
             <div className="flex items-center space-x-1">
               <Button variant="ghost" size="icon" aria-label="Export project" onClick={handleExport}>

@@ -23,10 +23,6 @@ import { logger } from '@paynless/utils';
 
 
 export const initialDialecticStateValues: DialecticStateValues = {
-  availableDomainTags: [],
-  isLoadingDomainTags: false,
-  domainTagsError: null,
-  selectedDomainTag: null,
 
   domains: [],
   isLoadingDomains: false,
@@ -127,37 +123,9 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     }
   },
 
-  fetchAvailableDomainTags: async () => {
-    set({ isLoadingDomainTags: true, domainTagsError: null });
-    logger.info('[DialecticStore] Fetching available domain tags...');
-    try {
-      const response = await api.dialectic().listAvailableDomainTags();
-      
-      if (response.error) {
-        logger.error('[DialecticStore] Error fetching domain tags:', { errorDetails: response.error });
-        set({ availableDomainTags: [], isLoadingDomainTags: false, domainTagsError: response.error });
-      } else {
-        const descriptors = response.data || [];
-        logger.info('[DialecticStore] Successfully fetched domain tags:', { descriptors });
-        set({
-          availableDomainTags: descriptors,
-          isLoadingDomainTags: false,
-          domainTagsError: null,
-        });
-      }
-    } catch (error: unknown) {
-      const networkError: ApiError = {
-        message: error instanceof Error ? error.message : 'An unknown network error occurred while fetching domain tags',
-        code: 'NETWORK_ERROR',
-      };
-      logger.error('[DialecticStore] Network error fetching domain tags:', { errorDetails: networkError });
-      set({ availableDomainTags: [], isLoadingDomainTags: false, domainTagsError: networkError });
-    }
-  },
-
-  setSelectedDomainTag: (tag: string | null) => {
-    logger.info(`[DialecticStore] Setting selected domain tag to: ${tag}`);
-    set({ selectedDomainTag: tag });
+  setSelectedDomain: (domain: DialecticDomain | null) => {
+    logger.info(`[DialecticStore] Setting selected domain to: ${domain}`);
+    set({ selectedDomain: domain });
   },
 
   setSelectedDomainOverlayId: (id: string | null) => {
@@ -282,61 +250,48 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
 
   createDialecticProject: async (payload: CreateProjectPayload): Promise<ApiResponse<DialecticProject>> => {
     set({ isCreatingProject: true, createProjectError: null });
-    const { selectedDomainTag: currentSelectedDomainTag, selectedDomainOverlayId: currentSelectedDomainOverlayId } = get();
-
-    // Construct FormData
+    logger.info('[DialecticStore] Creating new dialectic project...', { payload: { ...payload, promptFile: 'File object omitted for logging' } });
+    
+    // The API client now expects FormData
     const formData = new FormData();
-    formData.append('action', 'createProject'); // Required by the backend router for FormData
     formData.append('projectName', payload.projectName);
-
-    const domainTagToUse = payload.selectedDomainTag || currentSelectedDomainTag;
-    const overlayIdToUse = payload.selectedDomainOverlayId || currentSelectedDomainOverlayId;
-
-    if (domainTagToUse) {
-      formData.append('selectedDomainTag', domainTagToUse);
+    formData.append('selectedDomainId', payload.selectedDomainId);
+    
+    if (payload.initialUserPrompt) {
+        formData.append('initialUserPromptText', payload.initialUserPrompt);
     }
-    if (overlayIdToUse) {
-      formData.append('selectedDomainOverlayId', overlayIdToUse);
+    if (payload.selectedDomainOverlayId) {
+        formData.append('selectedDomainOverlayId', payload.selectedDomainOverlayId);
     }
-
     if (payload.promptFile) {
-      formData.append('promptFile', payload.promptFile);
-      // If a file is provided, initialUserPrompt (text) might be ignored by the backend
-      // or used as a description. For now, we don't append initialUserPrompt if promptFile exists.
-    } else if (payload.initialUserPrompt) {
-      // Key is 'initialUserPromptText' for FormData to align with backend expectations
-      formData.append('initialUserPromptText', payload.initialUserPrompt);
+        formData.append('promptFile', payload.promptFile);
     }
-
-    logger.info('[DialecticStore] Creating dialectic project with FormData...', { 
-      projectName: payload.projectName, 
-      hasPromptFile: !!payload.promptFile,
-      initialUserPrompt: payload.initialUserPrompt,
-      selectedDomainTag: domainTagToUse,
-      selectedDomainOverlayId: overlayIdToUse
-    });
 
     try {
-      const response = await api.dialectic().createProject(formData);
-      if (response.error) {
-        logger.error('[DialecticStore] Error creating project:', { errorDetails: response.error });
-        set({ isCreatingProject: false, createProjectError: response.error });
-        return { error: response.error, status: response.status, data: undefined };
-      } else {
-        logger.info('[DialecticStore] Successfully created project:', { projectDetails: response.data });
-        set({ isCreatingProject: false, createProjectError: null });
-        // After successful creation, refetch the list of projects
-        await get().fetchDialecticProjects();
-        return { data: response.data, status: response.status };
-      }
+        const response = await api.dialectic().createProject(formData);
+
+        if (response.error) {
+            logger.error('[DialecticStore] Error creating project:', { errorDetails: response.error });
+            set({ isCreatingProject: false, createProjectError: response.error });
+        } else {
+            logger.info('[DialecticStore] Successfully created project:', { project: response.data });
+            // Add the new project to the start of the projects list
+            set(state => ({
+                projects: [response.data as DialecticProject, ...state.projects],
+                isCreatingProject: false,
+                createProjectError: null,
+                currentProjectDetail: response.data as DialecticProject, // Also set as current
+            }));
+        }
+        return response;
     } catch (error: unknown) {
-      const networkError: ApiError = {
-        message: error instanceof Error ? error.message : 'An unknown network error occurred while creating the project',
-        code: 'NETWORK_ERROR',
-      };
-      logger.error('[DialecticStore] Network error creating project:', { errorDetails: networkError });
-      set({ isCreatingProject: false, createProjectError: networkError });
-      return { error: networkError, status: 0, data: undefined };
+        const networkError: ApiError = {
+            message: error instanceof Error ? error.message : 'An unknown network error occurred',
+            code: 'NETWORK_ERROR',
+        };
+        logger.error('[DialecticStore] Network error creating project:', { errorDetails: networkError });
+        set({ isCreatingProject: false, createProjectError: networkError });
+        return { error: networkError, status: 0 };
     }
   },
 
@@ -942,11 +897,6 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       set({ isSavingContributionEdit: false, saveContributionEditError: networkError });
       return { data: undefined, error: networkError, status: 0 };
     }
-  },
-
-  setSelectedDomain: (domain: DialecticDomain | null) => {
-    logger.info(`[DialecticStore] Setting selected domain to: ${domain?.name ?? 'null'}`);
-    set({ selectedDomain: domain });
   },
 }));
 

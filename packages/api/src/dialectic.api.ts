@@ -9,7 +9,7 @@ import type {
     DialecticProjectResource,
     DomainTagDescriptor,
     DomainOverlayDescriptor,
-    UpdateProjectDomainTagPayload,
+    UpdateProjectDomainPayload,
     DeleteProjectPayload,
     DialecticServiceActionPayload,
     UpdateProjectInitialPromptPayload,
@@ -348,27 +348,27 @@ export class DialecticApiClient {
     }
 
     /**
-     * Updates the domain tag for a specific project.
+     * Updates the domain for a specific project.
      * Requires authentication.
      */
-    async updateProjectDomainTag(payload: UpdateProjectDomainTagPayload): Promise<ApiResponse<DialecticProject>> {
-        logger.info('Updating domain tag for project', { projectId: payload.projectId, newTag: payload.selectedDomainTag });
+    async updateProjectDomain(payload: UpdateProjectDomainPayload): Promise<ApiResponse<DialecticProject>> {
+        logger.info(`Updating domain for project ${payload.projectId}`);
 
         try {
-            const response = await this.apiClient.post<DialecticProject, { action: string; payload: UpdateProjectDomainTagPayload }> (
+            const response = await this.apiClient.post<DialecticProject, { action: string; payload: UpdateProjectDomainPayload }>(
                 'dialectic-service',
-                { action: 'updateProjectDomainTag', payload }
+                { action: 'updateProjectDomain', payload }
             );
 
             if (response.error) {
-                logger.error('Error updating project domain tag:', { error: response.error, projectId: payload.projectId });
+                logger.error('Error updating project domain:', { error: response.error, projectId: payload.projectId });
             } else {
-                logger.info('Successfully updated project domain tag', { projectId: response.data?.id });
+                logger.info('Successfully updated project domain', { projectId: response.data?.id });
             }
             return response;
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'A network error occurred';
-            logger.error('Network error in updateProjectDomainTag:', { errorMessage: message, errorObject: error });
+            logger.error('Network error in updateProjectDomain:', { errorMessage: message, errorObject: error });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },

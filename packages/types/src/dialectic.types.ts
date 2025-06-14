@@ -2,10 +2,10 @@ import { SystemPrompt } from './ai.types';
 import type { ApiError, ApiResponse } from './api.types';
 import type { Database } from '@paynless/db-types';
 
-// Define UpdateProjectDomainTagPayload before its use in DialecticApiClient
-export interface UpdateProjectDomainTagPayload {
+// Define UpdateProjectDomainPayload before its use in DialecticApiClient
+export interface UpdateProjectDomainPayload {
   projectId: string;
-  selectedDomainTag: string | null; // This will store the ID of the domain_specific_prompt_overlays record
+  selectedDomainId: string;
 }
 
 export interface DialecticProject {
@@ -14,8 +14,9 @@ export interface DialecticProject {
     project_name: string;
     initial_user_prompt?: string | null; // This will be empty if initial_prompt_resource_id is set
     initial_prompt_resource_id?: string | null; // FK to dialectic_contributions.id
+    selected_domain_id: string;
+    domain_name: string;
     selected_domain_overlay_id: string | null;
-    selected_domain_tag: string | null;
     repo_url: string | null;
     status: string;
     created_at: string;
@@ -27,8 +28,7 @@ export interface DialecticProject {
 export interface CreateProjectPayload {
     projectName: string;
     initialUserPrompt?: string | null;
-    domainId?: string | null;
-    selectedDomainTag?: string | null;
+    selectedDomainId: string;
     selectedDomainOverlayId?: string | null;
     promptTemplateId?: string | null;
     promptFile?: File | null;
@@ -151,11 +151,6 @@ export interface DialecticDomain {
 }
 
 export interface DialecticStateValues {
-  availableDomainTags: { data: DomainTagDescriptor[] } | DomainTagDescriptor[];
-  isLoadingDomainTags: boolean;
-  domainTagsError: ApiError | null;
-  selectedDomainTag: string | null;
-
   // New state for Domains
   domains: DialecticDomain[] | null;
   isLoadingDomains: boolean;
@@ -238,13 +233,11 @@ export interface ContributionCacheEntry {
 }
 
 export interface DialecticActions {
-  fetchAvailableDomainTags: () => Promise<void>;
-  setSelectedDomainTag: (tag: string | null) => void;
+  fetchDomains: () => Promise<void>;
+  setSelectedDomain: (domain: DialecticDomain | null) => void;
   fetchAvailableDomainOverlays: (stageAssociation: DialecticStage) => Promise<void>;
   setSelectedStageAssociation: (stage: DialecticStage | null) => void;
   setSelectedDomainOverlayId: (overlayId: string | null) => void;
-  fetchDomains: () => Promise<void>;
-  setSelectedDomain: (domain: DialecticDomain | null) => void;
   
   fetchDialecticProjects: () => Promise<void>;
   fetchDialecticProjectDetails: (projectId: string) => Promise<void>;
@@ -334,7 +327,7 @@ export interface DialecticApiClient {
 
   uploadProjectResourceFile(payload: UploadProjectResourceFilePayload): Promise<ApiResponse<DialecticProjectResource>>;
 
-  updateProjectDomainTag(payload: UpdateProjectDomainTagPayload): Promise<ApiResponse<DialecticProject>>;
+  updateProjectDomain(payload: UpdateProjectDomainPayload): Promise<ApiResponse<DialecticProject>>;
 
   generateContributions(payload: GenerateContributionsPayload): Promise<ApiResponse<GenerateContributionsResponse>>;
 
@@ -394,7 +387,8 @@ export interface UploadProjectResourceFilePayload {
 
 export interface DomainOverlayDescriptor {
   id: string; // Corresponds to domain_specific_prompt_overlays.id
-  domainTag: string;
+  domainId: string;
+  domainName: string;
   description: string | null;
   stageAssociation: string; // Corresponds to system_prompts.stage_association
   overlay_values: Record<string, unknown> | string | null;
@@ -420,9 +414,6 @@ export type DialecticServiceActionPayload = {
   action: 'listModelCatalog';
   payload?: undefined;
 } | {
-  action: 'listAvailableDomainTags';
-  payload?: undefined;
-} | {
   action: 'listDomains';
   payload?: undefined;
 } | {
@@ -444,8 +435,8 @@ export type DialecticServiceActionPayload = {
   action: 'exportProject';
   payload: { projectId: string };
 } | {
-  action: 'updateProjectDomainTag';
-  payload: UpdateProjectDomainTagPayload;
+  action: 'updateProjectDomain';
+  payload: UpdateProjectDomainPayload;
 } | {
   action: 'updateDialecticProjectInitialPrompt';
   payload: UpdateProjectInitialPromptPayload;

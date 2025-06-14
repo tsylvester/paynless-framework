@@ -105,9 +105,9 @@ export const DialecticProjectDetailsPage: React.FC = () => {
             </span>
           </h1>
           <span className="text-sm text-muted-foreground truncate" title={currentProjectDetail.id}>ID: {currentProjectDetail.id}</span>
-          {currentProjectDetail.selected_domain_tag && (
+          {currentProjectDetail.domain_name && (
             <Badge variant="outline" className="text-sm whitespace-nowrap">
-              {currentProjectDetail.selected_domain_tag}
+              {currentProjectDetail.domain_name}
             </Badge>
           )}
         </div>

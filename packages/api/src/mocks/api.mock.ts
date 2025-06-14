@@ -6,9 +6,7 @@ import {
   PaymentInitiationResult, 
   PurchaseRequest, 
 } from '@paynless/types';
-// Import types from the actual dialectic.api.ts to ensure consistency
 import { createMockAiApiClient, resetMockAiApiClient, type MockedAiApiClient } from './ai.api.mock'; // Import from sibling
-import { type MockDialecticApiClient, createMockDialecticClient, resetMockDialecticClient } from './dialectic.api.mock';
 
 // Define the type for the object returned by api.wallet()
 export type MockWalletApiClient = {
@@ -20,14 +18,10 @@ export type MockWalletApiClient = {
 // --- AI Client Mock Setup ---
 let mockAiClientInstance: MockedAiApiClient = createMockAiApiClient();
 
-// --- Dialectic Client Mock Setup ---
-let mockDialecticClientInstance: MockDialecticApiClient = createMockDialecticClient();
-
 // Define the type for the main mocked api object
 export type MockApi = {
   wallet: ReturnType<typeof vi.fn<[], MockWalletApiClient>>;
   ai: ReturnType<typeof vi.fn<[], MockedAiApiClient>>; // Added ai client
-  dialectic: ReturnType<typeof vi.fn<[], MockDialecticApiClient>>; // Added dialectic client
 };
 
 // Create the actual mock functions for the wallet client
@@ -41,7 +35,6 @@ const mockWalletClientInstance: MockWalletApiClient = {
 export const api: MockApi = {
   wallet: vi.fn(() => mockWalletClientInstance),
   ai: vi.fn(() => mockAiClientInstance), // Ensure api.ai() returns our mock AI client instance
-  dialectic: vi.fn(() => mockDialecticClientInstance), // Ensure api.dialectic() returns our mock Dialectic client instance
 };
 
 /**
@@ -58,18 +51,13 @@ export function resetApiMock() {
   mockAiClientInstance = createMockAiApiClient();
   resetMockAiApiClient(mockAiClientInstance); 
   
-  mockDialecticClientInstance = createMockDialecticClient();
-  resetMockDialecticClient(mockDialecticClientInstance);
-
   // Reset the main accessor mocks
   api.wallet.mockClear();
   api.ai.mockClear();
-  api.dialectic.mockClear();
 
   // Restore the default implementations to return the (potentially recreated) instances
   api.wallet.mockImplementation(() => mockWalletClientInstance);
   api.ai.mockImplementation(() => mockAiClientInstance);
-  api.dialectic.mockImplementation(() => mockDialecticClientInstance);
 }
 
 /**

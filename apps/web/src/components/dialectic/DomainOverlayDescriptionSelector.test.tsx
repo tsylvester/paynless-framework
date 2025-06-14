@@ -22,7 +22,7 @@ import {
     selectOverlay,
     useDialecticStore, // Import the state setter
 } from '@paynless/store';
-import { DialecticStage, type DialecticStateValues, type DomainOverlayDescriptor } from '@paynless/types';
+import { DialecticStage, type DialecticStateValues, type DomainOverlayDescriptor, DialecticDomain } from '@paynless/types';
 import { DomainOverlayDescriptionSelector } from './DomainOverlayDescriptionSelector';
 // Import the reset function from your central mock file
 import { resetDialecticStoreMock } from '../../mocks/dialecticStore.mock';
@@ -85,35 +85,36 @@ describe('DomainOverlayDescriptionSelector', () => {
         return { ...renderResult, component };
     };
 
-    const overlay1: DomainOverlayDescriptor = { id: 'ov1', domainTag: 'tech', description: 'Overlay Description 1', stageAssociation: DialecticStage.THESIS, overlay_values: {}, system_prompt_id: 'sp1' };
-    const overlay2: DomainOverlayDescriptor = { id: 'ov2', domainTag: 'tech', description: 'Overlay Description 2', stageAssociation: DialecticStage.THESIS, overlay_values: {}, system_prompt_id: 'sp2' };
-    const overlay3_no_desc: DomainOverlayDescriptor = { id: 'ov3', domainTag: 'tech', description: null, stageAssociation: DialecticStage.THESIS, overlay_values: {}, system_prompt_id: 'sp3' };
+    const mockDomain: DialecticDomain = { id: 'tech', name: 'Technology', description: 'All about tech', parent_domain_id: null };
+    const overlay1: DomainOverlayDescriptor = { id: 'ov1', domainId: 'tech', domainName: 'Technology', description: 'Overlay Description 1', stageAssociation: DialecticStage.THESIS, overlay_values: {}, system_prompt_id: 'sp1' };
+    const overlay2: DomainOverlayDescriptor = { id: 'ov2', domainId: 'tech', domainName: 'Technology', description: 'Overlay Description 2', stageAssociation: DialecticStage.THESIS, overlay_values: {}, system_prompt_id: 'sp2' };
+    const overlay3_no_desc: DomainOverlayDescriptor = { id: 'ov3', domainId: 'tech', domainName: 'Technology', description: null, stageAssociation: DialecticStage.THESIS, overlay_values: {}, system_prompt_id: 'sp3' };
 
-    it('should not render if selectedDomainTag is null', () => {
-        const { component } = setup({ selectedDomainTag: null }, 'no-render-test');
+    it('should not render if selectedDomain is null', () => {
+        const { component } = setup({ selectedDomain: null }, 'no-render-test');
         expect(component).not.toBeInTheDocument();
     });
 
     it('should render, but not show a combobox, if selectOverlayOutput is null', () => {
-        const { component } = setup({ selectedDomainTag: 'tech', selectOverlayOutput: null });
+        const { component } = setup({ selectedDomain: mockDomain, selectOverlayOutput: null });
         expect(component).toBeInTheDocument();
         expect(within(component!).queryByRole('combobox')).not.toBeInTheDocument();
     });
     
     it('should render, but not show a combobox, if selectOverlayOutput is empty', () => {
-        const { component } = setup({ selectedDomainTag: 'tech', selectOverlayOutput: [] });
+        const { component } = setup({ selectedDomain: mockDomain, selectOverlayOutput: [] });
         expect(component).toBeInTheDocument();
         expect(within(component!).queryByRole('combobox')).not.toBeInTheDocument();
     });
 
     it('should not render a combobox if selectOverlayOutput has only one item', () => {
-        const { component } = setup({ selectedDomainTag: 'tech', selectOverlayOutput: [overlay1] });
+        const { component } = setup({ selectedDomain: mockDomain, selectOverlayOutput: [overlay1] });
         expect(within(component!).queryByRole('combobox')).not.toBeInTheDocument();
     });
 
-    it('should render if selectedDomainTag is set and more than one overlay is available', async () => {
+    it('should render if selectedDomain is set and more than one overlay is available', async () => {
         const user = userEvent.setup();
-        const { component } = setup({ selectedDomainTag: 'tech', selectOverlayOutput: [overlay1, overlay2], selectedDomainOverlayId: null });
+        const { component } = setup({ selectedDomain: mockDomain, selectOverlayOutput: [overlay1, overlay2], selectedDomainOverlayId: null });
         
         const combobox = within(component!).getByRole('combobox');
         expect(combobox).toHaveTextContent('Choose a specific configuration...');
@@ -125,7 +126,7 @@ describe('DomainOverlayDescriptionSelector', () => {
 
     it('displays fallback text in list if description is null', async () => {
         const user = userEvent.setup();
-        const { component } = setup({ selectedDomainTag: 'tech', selectOverlayOutput: [overlay1, overlay3_no_desc], selectedDomainOverlayId: null });
+        const { component } = setup({ selectedDomain: mockDomain, selectOverlayOutput: [overlay1, overlay3_no_desc], selectedDomainOverlayId: null });
         
         await user.click(within(component!).getByRole('combobox'));
         expect(await screen.findByText('Overlay Description 1')).toBeInTheDocument();
@@ -135,7 +136,7 @@ describe('DomainOverlayDescriptionSelector', () => {
     it('calls setSelectedDomainOverlayId with the correct id on selection', async () => {
         const user = userEvent.setup();
         const { rerender, component } = setup({ 
-            selectedDomainTag: 'tech', 
+            selectedDomain: mockDomain, 
             selectOverlayOutput: [overlay1, overlay2],
             selectedDomainOverlayId: null 
         });
@@ -154,14 +155,14 @@ describe('DomainOverlayDescriptionSelector', () => {
     });
 
     it('reflects selectedDomainOverlayId from store on initial render', async () => {
-        const { component } = setup({ selectedDomainTag: 'tech', selectOverlayOutput: [overlay1, overlay2], selectedDomainOverlayId: overlay1.id });
+        const { component } = setup({ selectedDomain: mockDomain, selectOverlayOutput: [overlay1, overlay2], selectedDomainOverlayId: overlay1.id });
         expect(within(component!).getByRole('combobox')).toHaveTextContent('Overlay Description 1');
     });
 
     it('handles selection of an item with null description and shows fallback in trigger', async () => {
         const user = userEvent.setup();
         const { rerender, component } = setup({
-            selectedDomainTag: 'tech',
+            selectedDomain: mockDomain,
             selectOverlayOutput: [overlay1, overlay3_no_desc],
             selectedDomainOverlayId: null
         });

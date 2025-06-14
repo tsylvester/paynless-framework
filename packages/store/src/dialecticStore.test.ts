@@ -21,7 +21,6 @@ import type {
   DialecticSession,
   StartSessionPayload,
   DomainOverlayDescriptor,
-  DomainTagDescriptor,
   DialecticDomain,
 } from '@paynless/types';
 
@@ -55,11 +54,6 @@ describe('useDialecticStore', () => {
     describe('Initial State', () => {
         it('should initialize with default values', () => {
             const state = useDialecticStore.getState();
-            expect(state.availableDomainTags).toEqual(initialDialecticStateValues.availableDomainTags);
-            expect(state.isLoadingDomainTags).toBe(initialDialecticStateValues.isLoadingDomainTags);
-            expect(state.domainTagsError).toBe(initialDialecticStateValues.domainTagsError);
-            expect(state.selectedDomainTag).toBe(initialDialecticStateValues.selectedDomainTag);
-            
             expect(state.domains).toEqual(initialDialecticStateValues.domains);
             expect(state.isLoadingDomains).toBe(initialDialecticStateValues.isLoadingDomains);
             expect(state.domainsError).toBe(initialDialecticStateValues.domainsError);
@@ -130,6 +124,95 @@ describe('useDialecticStore', () => {
             expect(state.isLoadingDomains).toBe(false);
             expect(state.domains).toEqual([]);
             expect(state.domainsError).toEqual(mockError);
+        });
+    });
+
+    describe('createDialecticProject thunk', () => {
+        const mockProject: DialecticProject = {
+            id: 'proj-123',
+            project_name: 'Test Project',
+            selected_domain_id: 'domain-1',
+            domain_name: 'Software Development',
+            user_id: 'user-123',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            status: 'active',
+            initial_user_prompt: 'Test prompt',
+            initial_prompt_resource_id: null,
+            selected_domain_overlay_id: null,
+            repo_url: null,
+        };
+
+        const mockPayload: CreateProjectPayload = {
+            projectName: 'Test Project',
+            initialUserPrompt: 'Test prompt',
+            selectedDomainId: 'domain-1',
+        };
+
+        it('should create a project and update state on success', async () => {
+            const mockResponse: ApiResponse<DialecticProject> = {
+                data: mockProject,
+                status: 201,
+            };
+            (api.dialectic().createProject as Mock).mockResolvedValue(mockResponse);
+
+            const createProject = useDialecticStore.getState().createDialecticProject;
+            const result = await createProject(mockPayload);
+
+            const state = useDialecticStore.getState();
+            expect(state.isCreatingProject).toBe(false);
+            expect(state.projects).toEqual([mockProject]);
+            expect(state.currentProjectDetail).toEqual(mockProject);
+            expect(state.createProjectError).toBeNull();
+            expect(result.data).toEqual(mockProject);
+            
+            // Verify that api.dialectic().createProject was called with FormData
+            const createProjectCall = (api.dialectic().createProject as Mock).mock.calls[0][0];
+            expect(createProjectCall).toBeInstanceOf(FormData);
+            expect(createProjectCall.get('projectName')).toBe(mockPayload.projectName);
+            expect(createProjectCall.get('initialUserPromptText')).toBe(mockPayload.initialUserPrompt);
+            expect(createProjectCall.get('selectedDomainId')).toBe(mockPayload.selectedDomainId);
+        });
+
+        it('should handle API errors when creating a project', async () => {
+            const mockError: ApiError = { code: 'SERVER_ERROR', message: 'Failed to create' };
+            const mockResponse: ApiResponse<DialecticProject> = {
+                error: mockError,
+                status: 500,
+            };
+            (api.dialectic().createProject as Mock).mockResolvedValue(mockResponse);
+
+            const createProject = useDialecticStore.getState().createDialecticProject;
+            await createProject(mockPayload);
+
+            const state = useDialecticStore.getState();
+            expect(state.isCreatingProject).toBe(false);
+            expect(state.projects).toEqual([]);
+            expect(state.createProjectError).toEqual(mockError);
+        });
+
+        it('should handle creating a project with a file', async () => {
+            const mockFile = new File(['file content'], 'prompt.md', { type: 'text/markdown' });
+            const payloadWithFile: CreateProjectPayload = {
+                ...mockPayload,
+                promptFile: mockFile,
+            };
+            const mockResponse: ApiResponse<DialecticProject> = {
+                data: mockProject,
+                status: 201,
+            };
+            (api.dialectic().createProject as Mock).mockResolvedValue(mockResponse);
+
+            const createProject = useDialecticStore.getState().createDialecticProject;
+            await createProject(payloadWithFile);
+
+            const state = useDialecticStore.getState();
+            expect(state.isCreatingProject).toBe(false);
+
+            const createProjectCall = (api.dialectic().createProject as Mock).mock.calls[0][0];
+            expect(createProjectCall).toBeInstanceOf(FormData);
+            expect(createProjectCall.get('promptFile')).toBeInstanceOf(File);
+            expect((createProjectCall.get('promptFile') as File).name).toBe('prompt.md');
         });
     });
 

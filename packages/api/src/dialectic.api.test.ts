@@ -13,7 +13,7 @@ import {
     DialecticProjectResource, 
     UploadProjectResourceFilePayload, 
     DomainOverlayDescriptor, 
-    UpdateProjectDomainTagPayload,
+    UpdateProjectDomainPayload,
     DeleteProjectPayload,
     DialecticServiceActionPayload,
     GetContributionContentSignedUrlPayload,
@@ -51,8 +51,9 @@ const mockDialecticProject: DialecticProject = {
   user_id: 'user-abc',
   project_name: 'Test Project',
   initial_user_prompt: 'Test prompt',
+  selected_domain_id: 'dom-1',
+  domain_name: 'Software Development',
   selected_domain_overlay_id: null,
-  selected_domain_tag: null,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   repo_url: null,
@@ -86,8 +87,9 @@ const mockDialecticSession: DialecticSession = {
 const baseMockProject: Omit<DialecticProject, 'user_id' | 'created_at' | 'updated_at' | 'id'> & Partial<Pick<DialecticProject, 'id' | 'user_id' | 'created_at' | 'updated_at'>> = {
     project_name: "Test Project Base",
     initial_user_prompt: "Base prompt.",
+    selected_domain_id: "dom-1",
+    domain_name: 'Software Development',
     selected_domain_overlay_id: null,
-    selected_domain_tag: "software_development",
     repo_url: null,
     status: 'active',
 };
@@ -229,7 +231,7 @@ describe('DialecticApiClient', () => {
         const validPayload: CreateProjectPayload = {
             projectName: 'Test Project',
             initialUserPrompt: 'Test prompt',
-            selectedDomainTag: 'software_development',
+            selectedDomainId: 'dom-1',
         };
 
         // Helper to create FormData from CreateProjectPayload for tests
@@ -240,8 +242,8 @@ describe('DialecticApiClient', () => {
             if (payload.initialUserPrompt) {
                 formData.append('initialUserPromptText', payload.initialUserPrompt);
             }
-            if (payload.selectedDomainTag) {
-                formData.append('selectedDomainTag', payload.selectedDomainTag);
+            if (payload.selectedDomainId) {
+                formData.append('selectedDomainId', payload.selectedDomainId);
             }
             if (payload.selectedDomainOverlayId) {
                 formData.append('selectedDomainOverlayId', payload.selectedDomainOverlayId);
@@ -256,8 +258,9 @@ describe('DialecticApiClient', () => {
                 user_id: 'user-xyz',
                 project_name: validPayload.projectName,
                 initial_user_prompt: validPayload.initialUserPrompt,
+                selected_domain_id: validPayload.selectedDomainId,
+                domain_name: 'Software Development',
                 selected_domain_overlay_id: null,
-                selected_domain_tag: validPayload.selectedDomainTag || null,
                 repo_url: null,
                 status: 'active',
                 created_at: new Date().toISOString(),
@@ -281,7 +284,7 @@ describe('DialecticApiClient', () => {
             expect(sentFormData.get('action')).toEqual('createProject');
             expect(sentFormData.get('projectName')).toEqual(validPayload.projectName);
             expect(sentFormData.get('initialUserPromptText')).toEqual(validPayload.initialUserPrompt);
-            expect(sentFormData.get('selectedDomainTag')).toEqual(validPayload.selectedDomainTag);
+            expect(sentFormData.get('selectedDomainId')).toEqual(validPayload.selectedDomainId);
             expect(calls[0][2]).toBeUndefined(); // No options expected
         });
 
@@ -291,8 +294,9 @@ describe('DialecticApiClient', () => {
                 user_id: 'user-abc',
                 project_name: validPayload.projectName,
                 initial_user_prompt: validPayload.initialUserPrompt,
+                selected_domain_id: validPayload.selectedDomainId,
+                domain_name: 'Software Development',
                 selected_domain_overlay_id: null,
-                selected_domain_tag: validPayload.selectedDomainTag || null,
                 repo_url: null,
                 status: 'active',
                 created_at: new Date().toISOString(),
@@ -884,19 +888,16 @@ describe('DialecticApiClient', () => {
         });
     });
 
-    describe('updateProjectDomainTag', () => {
+    describe('updateProjectDomain', () => {
         const endpoint = 'dialectic-service';
-        const validPayload: UpdateProjectDomainTagPayload = {
-            projectId: 'proj-123',
-            selectedDomainTag: 'new-domain-tag',
-        };
-        const requestBody = { action: 'updateProjectDomainTag', payload: validPayload };
-
+        const projectId = 'proj-123';
+        const domainId = 'dom-2';
+        const payload: UpdateProjectDomainPayload = { projectId, selectedDomainId: domainId };
+        const requestBody = { action: 'updateProjectDomain', payload };
         const mockUpdatedProject: DialecticProject = {
-            ...mockDialecticProject, // Spread existing mock project
-            id: validPayload.projectId,
-            selected_domain_tag: validPayload.selectedDomainTag,
-            updated_at: new Date().toISOString(), // Typically updated
+            ...mockDialecticProject,
+            selected_domain_id: domainId,
+            domain_name: 'Finance', // Assuming this would be the name for dom-2
         };
 
         it('should call apiClient.post with the correct endpoint and body', async () => {
@@ -906,46 +907,46 @@ describe('DialecticApiClient', () => {
             };
             mockApiClientPost.mockResolvedValue(mockResponse);
 
-            await dialecticApiClient.updateProjectDomainTag(validPayload);
+            await dialecticApiClient.updateProjectDomain(payload);
 
             expect(mockApiClientPost).toHaveBeenCalledTimes(1);
             expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
         });
 
-        it('should return the updated project data on successful response', async () => {
+        it('should return the updated project on successful response', async () => {
             const mockResponse: ApiResponse<DialecticProject> = {
                 data: mockUpdatedProject,
                 status: 200,
             };
             mockApiClientPost.mockResolvedValue(mockResponse);
 
-            const result = await dialecticApiClient.updateProjectDomainTag(validPayload);
+            const result = await dialecticApiClient.updateProjectDomain(payload);
 
             expect(result.data).toEqual(mockUpdatedProject);
             expect(result.status).toBe(200);
             expect(result.error).toBeUndefined();
         });
 
-        it('should return the error object on failed update (e.g., project not found)', async () => {
-            const mockApiError: ApiErrorType = { code: 'NOT_FOUND', message: 'Project not found for domain tag update' };
+        it('should return the error object on failed response', async () => {
+            const mockApiError: ApiErrorType = { code: 'SERVER_ERROR', message: 'Failed to update domain' };
             const mockErrorResponse: ApiResponse<DialecticProject> = {
                 error: mockApiError,
-                status: 404,
+                status: 500,
             };
             mockApiClientPost.mockResolvedValue(mockErrorResponse);
 
-            const result = await dialecticApiClient.updateProjectDomainTag(validPayload);
+            const result = await dialecticApiClient.updateProjectDomain(payload);
 
             expect(result.error).toEqual(mockApiError);
-            expect(result.status).toBe(404);
+            expect(result.status).toBe(500);
             expect(result.data).toBeUndefined();
         });
 
         it('should return a network error if apiClient.post rejects', async () => {
-            const networkErrorMessage = 'Simulated network failure for updateProjectDomainTag';
+            const networkErrorMessage = 'Simulated network failure';
             mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            const result = await dialecticApiClient.updateProjectDomainTag(validPayload);
+            const result = await dialecticApiClient.updateProjectDomain(payload);
 
             expect(result.error).toEqual({
                 code: 'NETWORK_ERROR',
@@ -958,9 +959,7 @@ describe('DialecticApiClient', () => {
 
     describe('deleteProject', () => {
         const endpoint = 'dialectic-service';
-        const validPayload: DeleteProjectPayload = {
-            projectId: 'proj-to-delete-777',
-        };
+        const validPayload: DeleteProjectPayload = { projectId: 'proj-123' };
         const requestBody = { action: 'deleteProject', payload: validPayload };
 
         it('should call apiClient.post with the correct endpoint and body for deleteProject', async () => {

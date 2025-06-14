@@ -9,9 +9,8 @@ import {
   selectIsCreatingProject,
   selectCreateProjectError,
   selectSelectedDomain,
+  selectDomains,
 } from '@paynless/store';
-import { DialecticStage } from '@paynless/types';
-import type { DialecticProject, ApiError } from '@paynless/types';
 import { DomainSelector } from '@/components/dialectic/DomainSelector';
 
 import { Button } from '@/components/ui/button';
@@ -23,7 +22,7 @@ import { Loader2 } from 'lucide-react';
 import { TextInputArea } from '@/components/common/TextInputArea';
 import { usePlatform } from '@paynless/platform';
 import { platformEventEmitter, type PlatformEvents, type FileDropPayload } from '@paynless/platform';
-import { DomainOverlayDescriptionSelector } from './DomainOverlayDescriptionSelector';
+import type { CreateProjectPayload } from '@paynless/types';
 
 const createProjectFormSchema = z.object({
   projectName: z.string().min(3, 'Project name must be at least 3 characters').max(100),
@@ -36,7 +35,7 @@ interface CreateProjectThunkPayload {
   projectName: string;
   initialUserPromptText?: string;
   promptFile?: File | null;
-  domainId?: string | null;
+  selectedDomainId?: string | null;
   selectedDomainOverlayId?: string | null;
 }
 
@@ -58,9 +57,13 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
   containerClassName = 'max-w-3xl'
 }) => {
   const createDialecticProject = useDialecticStore((state) => state.createDialecticProject);
+  const uploadProjectResourceFile = useDialecticStore((state) => state.uploadProjectResourceFile);
   const isCreating = useDialecticStore(selectIsCreatingProject);
   const creationError = useDialecticStore(selectCreateProjectError);
   const selectedDomain = useDialecticStore(selectSelectedDomain);
+  const domains = useDialecticStore(selectDomains);
+  const fetchDomains = useDialecticStore((state) => state.fetchDomains);
+  const setSelectedDomain = useDialecticStore((state) => state.setSelectedDomain);
   const currentSelectedDomainOverlayId = useDialecticStore((state) => state.selectedDomainOverlayId);
   const resetCreateProjectError = useDialecticStore((state) => state.resetCreateProjectError);
 
@@ -205,7 +208,7 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
   }, [capabilities?.platform]);
 
   useEffect(() => {
-    if (capabilities?.platform === 'desktop' && platformEventEmitter && platformEventEmitter.on) {
+    if (capabilities?.platform === 'tauri' && platformEventEmitter && platformEventEmitter.on) {
       const handler = (eventPayload: unknown) => {
         const payload = eventPayload as Partial<FileDropPayload & { paths?: string[] }>;
         logger.info('Desktop file drop event received', { payload });
@@ -249,33 +252,72 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
     resetCreateProjectError(); 
   }, [defaultProjectName, defaultInitialPrompt, reset, resetCreateProjectError]);
 
+  useEffect(() => {
+    if (!domains || domains.length === 0) {
+      fetchDomains();
+    }
+  }, [domains, fetchDomains]);
+
+  useEffect(() => {
+    if ((!selectedDomain) && domains && domains.length > 0) {
+        const generalDomain = domains.find(d => d.name === 'General');
+        if (generalDomain) {
+            setSelectedDomain(generalDomain);
+        }
+    }
+  }, [selectedDomain, domains, setSelectedDomain]);
+
   const onSubmit = async (data: CreateProjectFormValues) => {
-    logger.info('Submitting Create Project form', { data });
-    
+    logger.info('Submitting form with data', data);
+
     const payload: CreateProjectThunkPayload = {
       projectName: data.projectName,
-      domainId: selectedDomain?.id,
+      initialUserPromptText: data.initialUserPrompt,
+      promptFile: promptFile,
+      selectedDomainId: selectedDomain?.id ?? null,
       selectedDomainOverlayId: currentSelectedDomainOverlayId,
     };
 
-    if (promptFile) {
-      payload.promptFile = promptFile;
-    } else {
-      payload.initialUserPromptText = data.initialUserPrompt;
+    if (!payload.selectedDomainId) {
+      logger.error("No domain selected. Cannot create project.");
+      // Optionally, set an error state to inform the user
+      return;
     }
 
-    const response = await createDialecticProject(payload);
+    const finalPayload: CreateProjectPayload = {
+      ...payload,
+      selectedDomainId: payload.selectedDomainId,
+    };
 
-    if (response && !response.error && response.data) {
-      logger.info('Project created successfully', { projectId: response.data.id });
-      reset();
-      setPromptFile(null);
-      setProjectNameManuallySet(false);
-      if (onProjectCreated) {
+    try {
+      const response = await createDialecticProject(finalPayload);
+
+      if (response.data && onProjectCreated) {
+        logger.info('Project created successfully', { projectId: response.data.id });
+        if (promptFile && response.data.id) {
+            try {
+                const uploadResponse = await uploadProjectResourceFile({
+                    projectId: response.data.id,
+                    file: promptFile,
+                    fileName: promptFile.name,
+                    fileSizeBytes: promptFile.size,
+                    fileType: promptFile.type,
+                    resourceDescription: "Initial prompt file uploaded during project creation."
+                });
+                if (uploadResponse.error) {
+                    logger.error("Failed to upload initial prompt file after project creation", { error: uploadResponse.error });
+                    // Optionally: Display a non-blocking toast notification to the user
+                }
+            } catch (uploadError) {
+                logger.error("Exception during initial prompt file upload", { error: uploadError });
+            }
+        }
         onProjectCreated(response.data.id, response.data.project_name);
+      } else {
+        logger.error('Project creation failed', { error: response?.error });
       }
-    } else {
-      logger.error('Project creation failed', { error: response?.error });
+    } catch (e) {
+      logger.error('Error submitting form', { error: e instanceof Error ? e.message : String(e) });
     }
   };
 

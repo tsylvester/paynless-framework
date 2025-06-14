@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-    selectAvailableDomainTags,
-    selectIsLoadingDomainTags,
-    selectDomainTagsError,
-    selectSelectedDomainTag,
     selectDomains,
     selectIsLoadingDomains,
     selectDomainsError,
@@ -30,31 +26,35 @@ import {
     selectContributionContentCache
 } from './dialecticStore.selectors';
 import { initialDialecticStateValues } from './dialecticStore';
-import type { DialecticStateValues, ApiError, DomainOverlayDescriptor, DialecticProject, AIModelCatalogEntry, DialecticDomain } from '@paynless/types';
+import type { 
+    DialecticStateValues, 
+    ApiError, 
+    DomainOverlayDescriptor, 
+    DialecticProject, 
+    AIModelCatalogEntry, 
+    DialecticDomain, 
+    DialecticStage 
+} from '@paynless/types';
 
 describe('Dialectic Store Selectors', () => {
     const mockOverlays: DomainOverlayDescriptor[] = [
-        { id: 'ov1', domainTag: 'Overlay 1', description: 'Desc 1', stageAssociation: 'thesis' },
-        { id: 'ov2', domainTag: 'Overlay 2', description: null, stageAssociation: 'thesis' },
+        { id: 'ov1', domainId: 'dom1', description: 'Desc 1', stageAssociation: 'thesis', domainName: 'Domain 1', overlay_values: {} },
+        { id: 'ov2', domainId: 'dom2', description: null, stageAssociation: 'thesis', domainName: 'Domain 2', overlay_values: {} },
     ];
     const mockOverlayError: ApiError = { code: 'OVERLAY_ERR', message: 'Test Overlay Error' };
     const mockDomains: DialecticDomain[] = [
-        { id: 'dom1', name: 'Domain 1', description: 'Test domain 1', tags: ['tag1'] },
-        { id: 'dom2', name: 'Domain 2', description: 'Test domain 2', tags: ['tag2'] },
+        { id: 'dom1', name: 'Domain 1', description: 'Test domain 1', parent_domain_id: null },
+        { id: 'dom2', name: 'Domain 2', description: 'Test domain 2', parent_domain_id: null },
     ];
     const mockDomainsError: ApiError = { code: 'DOMAIN_ERR', message: 'Test Domain Error' };
 
     const testState: DialecticStateValues = {
         ...initialDialecticStateValues,
-        availableDomainTags: [ { id: 'tag1', domainTag: 'Test Tag 1', description: null, stageAssociation: null } ],
-        isLoadingDomainTags: true,
-        domainTagsError: { code: 'ERR', message: 'Test Error' } as ApiError,
-        selectedDomainTag: 'tag1',
         domains: mockDomains,
         isLoadingDomains: true,
         domainsError: mockDomainsError,
         selectedDomain: mockDomains[0],
-        selectedStageAssociation: 'thesis',
+        selectedStageAssociation: 'thesis' as DialecticStage,
         availableDomainOverlays: mockOverlays,
         isLoadingDomainOverlays: true,
         domainOverlaysError: mockOverlayError,
@@ -63,38 +63,6 @@ describe('Dialectic Store Selectors', () => {
     const initialState: DialecticStateValues = {
         ...initialDialecticStateValues,
     };
-
-    it('selectAvailableDomainTags should return availableDomainTags from testState', () => {
-        expect(selectAvailableDomainTags(testState)).toEqual([ { id: 'tag1', domainTag: 'Test Tag 1', description: null, stageAssociation: null } ]);
-    });
-
-    it('selectAvailableDomainTags should return initial empty array from initialState', () => {
-        expect(selectAvailableDomainTags(initialState)).toEqual([]);
-    });
-
-    it('selectIsLoadingDomainTags should return isLoadingDomainTags from testState', () => {
-        expect(selectIsLoadingDomainTags(testState)).toBe(true);
-    });
-
-    it('selectIsLoadingDomainTags should return initial false from initialState', () => {
-        expect(selectIsLoadingDomainTags(initialState)).toBe(false);
-    });
-
-    it('selectDomainTagsError should return domainTagsError from testState', () => {
-        expect(selectDomainTagsError(testState)).toEqual({ code: 'ERR', message: 'Test Error' });
-    });
-
-    it('selectDomainTagsError should return initial null from initialState', () => {
-        expect(selectDomainTagsError(initialState)).toBeNull();
-    });
-
-    it('selectSelectedDomainTag should return selectedDomainTag from testState', () => {
-        expect(selectSelectedDomainTag(testState)).toBe('tag1');
-    });
-
-    it('selectSelectedDomainTag should return initial null from initialState', () => {
-        expect(selectSelectedDomainTag(initialState)).toBeNull();
-    });
 
     it('selectDomains should return domains from testState', () => {
         expect(selectDomains(testState)).toEqual(mockDomains);
@@ -164,54 +132,54 @@ describe('Dialectic Store Selectors', () => {
     describe('selectOverlay', () => {
         const overlayState: DialecticStateValues = {
             ...initialDialecticStateValues,
-            selectedStageAssociation: 'thesis',
+            selectedStageAssociation: 'thesis' as DialecticStage,
             availableDomainOverlays: [
-                { id: 'ov1', domainTag: 'tech', description: 'Tech Thesis Overlay 1', stageAssociation: 'thesis' },
-                { id: 'ov2', domainTag: 'tech', description: 'Tech Thesis Overlay 2', stageAssociation: 'thesis' },
-                { id: 'ov3', domainTag: 'health', description: 'Health Thesis Overlay', stageAssociation: 'thesis' },
-                { id: 'ov4', domainTag: 'tech', description: 'Tech Antithesis Overlay', stageAssociation: 'antithesis' },
+                { id: 'ov1', domainId: 'dom1', description: 'Tech Thesis Overlay 1', stageAssociation: 'thesis', domainName: 'Domain 1', overlay_values: {} },
+                { id: 'ov2', domainId: 'dom1', description: 'Tech Thesis Overlay 2', stageAssociation: 'thesis', domainName: 'Domain 1', overlay_values: {} },
+                { id: 'ov3', domainId: 'dom2', description: 'Health Thesis Overlay', stageAssociation: 'thesis', domainName: 'Domain 2', overlay_values: {} },
+                { id: 'ov4', domainId: 'dom1', description: 'Tech Antithesis Overlay', stageAssociation: 'antithesis', domainName: 'Domain 1', overlay_values: {} },
             ],
         };
 
-        it('should return overlays filtered by domainTag and selectedStageAssociation', () => {
-            const result = selectOverlay(overlayState, 'tech');
+        it('should return overlays filtered by domainId and selectedStageAssociation', () => {
+            const result = selectOverlay(overlayState, 'dom1');
             expect(result).toEqual([
-                { id: 'ov1', domainTag: 'tech', description: 'Tech Thesis Overlay 1', stageAssociation: 'thesis' },
-                { id: 'ov2', domainTag: 'tech', description: 'Tech Thesis Overlay 2', stageAssociation: 'thesis' },
+                { id: 'ov1', domainId: 'dom1', description: 'Tech Thesis Overlay 1', stageAssociation: 'thesis', domainName: 'Domain 1', overlay_values: {} },
+                { id: 'ov2', domainId: 'dom1', description: 'Tech Thesis Overlay 2', stageAssociation: 'thesis', domainName: 'Domain 1', overlay_values: {} },
             ]);
         });
 
-        it('should return an empty array if domainTag is null', () => {
+        it('should return an empty array if domainId is null', () => {
             const result = selectOverlay(overlayState, null);
             expect(result).toEqual([]);
         });
 
         it('should return an empty array if selectedStageAssociation is null', () => {
             const stateWithNullStage = { ...overlayState, selectedStageAssociation: null };
-            const result = selectOverlay(stateWithNullStage, 'tech');
+            const result = selectOverlay(stateWithNullStage, 'dom1');
             expect(result).toEqual([]);
         });
 
         it('should return an empty array if availableDomainOverlays is null', () => {
             const stateWithNullOverlays = { ...overlayState, availableDomainOverlays: null };
-            const result = selectOverlay(stateWithNullOverlays, 'tech');
+            const result = selectOverlay(stateWithNullOverlays, 'dom1');
             expect(result).toEqual([]);
         });
 
         it('should return an empty array if availableDomainOverlays is empty', () => {
             const stateWithEmptyOverlays = { ...overlayState, availableDomainOverlays: [] };
-            const result = selectOverlay(stateWithEmptyOverlays, 'tech');
+            const result = selectOverlay(stateWithEmptyOverlays, 'dom1');
             expect(result).toEqual([]);
         });
 
-        it('should return an empty array if no overlays match the domainTag', () => {
-            const result = selectOverlay(overlayState, 'finance');
+        it('should return an empty array if no overlays match the domainId', () => {
+            const result = selectOverlay(overlayState, 'dom3');
             expect(result).toEqual([]);
         });
 
-        it('should return an empty array if no overlays match the stageAssociation (even if domainTag matches)', () => {
-            const stateWithDifferentStageSelected = { ...overlayState, selectedStageAssociation: 'synthesis'};
-            const result = selectOverlay(stateWithDifferentStageSelected, 'tech'); // tech overlays exist, but for thesis/antithesis
+        it('should return an empty array if no overlays match the stageAssociation (even if domainId matches)', () => {
+            const stateWithDifferentStageSelected = { ...overlayState, selectedStageAssociation: 'synthesis' as DialecticStage};
+            const result = selectOverlay(stateWithDifferentStageSelected, 'dom1'); // dom1 overlays exist, but for thesis/antithesis
             expect(result).toEqual([]);
         });
     });

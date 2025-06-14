@@ -20,11 +20,11 @@ import {
   selectStartSessionError,
   selectSelectedDomainOverlayId,
   selectAvailableDomainOverlays,
-  selectSelectedDomainTag,
-  selectAvailableDomainTags,
+  selectSelectedDomain,
   selectSelectedStageAssociation,
   selectSelectedModelIds,
   selectIsLoadingModelCatalog,
+  selectDomains,
 } from '@paynless/store';
 import { toast } from 'sonner';
 import { DomainSelector } from './DomainSelector';
@@ -48,13 +48,13 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
   const {
     setStartNewSessionModalOpen,
     startDialecticSession,
-    setSelectedDomainTag,
+    setSelectedDomain,
     setSelectedDomainOverlayId,
     setSelectedStageAssociation,
   } = useDialecticStore((state) => ({
     setStartNewSessionModalOpen: state.setStartNewSessionModalOpen,
     startDialecticSession: state.startDialecticSession,
-    setSelectedDomainTag: state.setSelectedDomainTag,
+    setSelectedDomain: state.setSelectedDomain,
     setSelectedDomainOverlayId: state.setSelectedDomainOverlayId,
     setSelectedStageAssociation: state.setSelectedStageAssociation,
   }));
@@ -66,75 +66,32 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
   const selectedDomainOverlayDescriptor = useDialecticStore(selectSelectedDomainOverlayDescriptor);
   const isLoadingModelCatalog = useDialecticStore(selectIsLoadingModelCatalog);
 
-  const currentSelectedDomainTagFromStore = useDialecticStore(selectSelectedDomainTag);
-  const availableDomainTags = useDialecticStore(selectAvailableDomainTags);
+  const currentSelectedDomain = useDialecticStore(selectSelectedDomain);
 
   const currentSelectedStageFromStore = useDialecticStore(selectSelectedStageAssociation);
   const currentSelectedOverlayIdFromStore = useDialecticStore(selectSelectedDomainOverlayId);
 
   const currentDialecticStage = useDialecticStore(selectSelectedStageAssociation) as DialecticStage | undefined;
   const currentSelectedModelIds = useDialecticStore(selectSelectedModelIds) || [];
+  const domains = useDialecticStore(selectDomains);
 
   const [sessionDescription, setSessionDescription] = useState<string | object>('');
   const [hasUserEditedDescription, setHasUserEditedDescription] = useState(false);
 
-  const baseDomainTagDescription = useMemo(() => {
-    if (!currentSelectedDomainTagFromStore || !availableDomainTags) return null;
-    const currentTagDescriptor = availableDomainTags.find(tag => tag.domainTag === currentSelectedDomainTagFromStore);
-    return currentTagDescriptor?.description || null;
-  }, [currentSelectedDomainTagFromStore, availableDomainTags]);
+  const baseDomainDescription = useMemo(() => {
+    return currentSelectedDomain?.description || null;
+  }, [currentSelectedDomain]);
 
   useEffect(() => {
-    if (isModalOpen && currentProjectDetail && availableDomainTags && availableDomainTags.length > 0) {
-      let projectOverlayId = currentProjectDetail.selected_domain_overlay_id;
-      const projectDomainTag = currentProjectDetail.selected_domain_tag;
-      let targetDescriptor: DomainTagDescriptor | undefined = undefined;
-
-      if (projectOverlayId) {
-        targetDescriptor = availableDomainTags.find(d => d.id === projectOverlayId);
-      } else if (projectDomainTag) {
-        targetDescriptor = availableDomainTags.find(d => d.domainTag === projectDomainTag);
-        if (targetDescriptor) {
-          projectOverlayId = targetDescriptor.id;
+    if (isModalOpen && currentProjectDetail && domains) {
+      if (currentProjectDetail.selected_domain_id !== currentSelectedDomain?.id) {
+        const projectDomain = domains.find(d => d.id === currentProjectDetail.selected_domain_id);
+        if (projectDomain) {
+          setSelectedDomain(projectDomain);
         }
       }
-
-      if (targetDescriptor) {
-        const needsUpdate =
-          targetDescriptor.stageAssociation !== currentSelectedStageFromStore ||
-          targetDescriptor.domainTag !== currentSelectedDomainTagFromStore ||
-          projectOverlayId !== currentSelectedOverlayIdFromStore;
-
-        if (needsUpdate) {
-          if (targetDescriptor.stageAssociation && targetDescriptor.stageAssociation !== currentSelectedStageFromStore) {
-            setSelectedStageAssociation(targetDescriptor.stageAssociation as DialecticStage);
-          }
-          if (targetDescriptor.domainTag && targetDescriptor.domainTag !== currentSelectedDomainTagFromStore) {
-            setSelectedDomainTag(targetDescriptor.domainTag);
-          }
-          if (projectOverlayId !== currentSelectedOverlayIdFromStore) {
-            setSelectedDomainOverlayId(projectOverlayId || null);
-          }
-        }
-      } else if (!projectOverlayId && !projectDomainTag) {
-        if (currentSelectedDomainTagFromStore !== null) { setSelectedDomainTag(null); }
-        if (currentSelectedOverlayIdFromStore !== null) { setSelectedDomainOverlayId(null); }
-      }
-    } else if (isModalOpen && !currentProjectDetail) {
-      if (currentSelectedDomainTagFromStore !== null) { setSelectedDomainTag(null); }
-      if (currentSelectedOverlayIdFromStore !== null) { setSelectedDomainOverlayId(null); }
     }
-  }, [
-    isModalOpen,
-    currentProjectDetail,
-    availableDomainTags,
-    setSelectedStageAssociation,
-    setSelectedDomainTag,
-    setSelectedDomainOverlayId,
-    currentSelectedStageFromStore,
-    currentSelectedDomainTagFromStore,
-    currentSelectedOverlayIdFromStore
-  ]);
+  }, [isModalOpen, currentProjectDetail, domains, currentSelectedDomain, setSelectedDomain]);
 
   useEffect(() => {
     if (isModalOpen && !hasUserEditedDescription) {
@@ -142,15 +99,15 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
       if (ov !== undefined && ov !== null) {
         setSessionDescription(ov);
       } else {
-        setSessionDescription(selectedDomainOverlayDescriptor?.description || baseDomainTagDescription || '');
+        setSessionDescription(selectedDomainOverlayDescriptor?.description || baseDomainDescription || '');
       }
     }
-  }, [selectedDomainOverlayDescriptor, baseDomainTagDescription, isModalOpen, hasUserEditedDescription]);
+  }, [selectedDomainOverlayDescriptor, baseDomainDescription, isModalOpen, hasUserEditedDescription]);
 
   const resetFormAndClose = () => {
     setSessionDescription('');
     setHasUserEditedDescription(false);
-    setSelectedDomainTag(null);
+    setSelectedDomain(null);
     setSelectedDomainOverlayId(null);
     setSelectedStageAssociation(null);
     // Note: setSelectedModelCatalogIds([]) would be needed here for full reset if available
