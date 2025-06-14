@@ -713,8 +713,8 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅] 1.2.7.1 [TEST-INT]` Write tests (auth; output: list of user's projects). (RED)
     *   `[✅] 1.2.7.2` Implement. (GREEN)
     *   `[✅] 1.2.7.3 [TEST-INT]` Run tests.
-*   `[ ] 1.2.9 [DOCS]` Document the `dialectic-service` Edge Function, its actions, inputs, outputs, and error handling strategies in a relevant README (e.g., `supabase/functions/dialectic-service/README.md`).
-*   `[ ] 1.2.10 [COMMIT]` feat(be): implement dialectic-service edge function with core actions
+*   `[✅] 1.2.9 [DOCS]` Document the `dialectic-service` Edge Function, its actions, inputs, outputs, and error handling strategies in a relevant README (e.g., `supabase/functions/dialectic-service/README.md`).
+*   `[✅] 1.2.10 [COMMIT]` feat(be): implement dialectic-service edge function with core actions
 
 ### 1.2.Y [BE/DB/API/STORE/GITHUB] Backend for Enhanced Contribution Interaction (User Edits & Responses, and Next Stage Seeding)
 *   **Objective:** Implement backend logic to allow users to directly edit AI-generated contributions and provide structured textual responses to them. These user inputs will then be consolidated and used to form the seed prompt for the subsequent stage in the dialectic process, ensuring user guidance is deeply integrated. All new artifacts will be stored according to the established file/folder structure and included in GitHub exports.
