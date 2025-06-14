@@ -265,7 +265,7 @@ describe('SessionContributionsDisplayCard', () => {
       expect(submitButton).toBeEnabled();
     });
 
-    it('dispatches submitStageResponsesAndPrepareNextSeed with correct payload on click', async () => {
+    it('dispatches submitStageResponses with correct payload on click', async () => {
       // setupStore(DialecticStage.THESIS); // No longer needed here
       setupAndRender(DialecticStage.THESIS); // Use new helper
       const response1Text = 'Response for C1';
@@ -278,7 +278,7 @@ describe('SessionContributionsDisplayCard', () => {
       
       const store = getDialecticStoreState();
       await waitFor(() => {
-        expect(store.submitStageResponsesAndPrepareNextSeed).toHaveBeenCalledWith({
+        expect(store.submitStageResponses).toHaveBeenCalledWith({
           sessionId: mockSessionId,
           stageSlug: DialecticStage.THESIS, 
           currentIterationNumber: mockIterationNumber,
@@ -326,7 +326,7 @@ describe('SessionContributionsDisplayCard', () => {
     it('clears local responses and shows success feedback on successful submission', async () => {
         // setupStore(DialecticStage.THESIS); // No longer needed here
         const store = getDialecticStoreState(); // Get store for mocking function
-        store.submitStageResponsesAndPrepareNextSeed = vi.fn().mockResolvedValue({ success: true, message: "Responses submitted successfully." });
+        store.submitStageResponses = vi.fn().mockResolvedValue({ success: true, message: "Responses submitted successfully." });
         
         setupAndRender(DialecticStage.THESIS); // Use new helper
 

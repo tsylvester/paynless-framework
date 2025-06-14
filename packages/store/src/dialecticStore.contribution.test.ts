@@ -845,8 +845,8 @@ describe('useDialecticStore', () => {
         });
     });
 
-    // New test suite for submitStageResponsesAndPrepareNextSeed
-    describe('submitStageResponsesAndPrepareNextSeed thunk', () => {
+    // New test suite for submitStageResponses
+    describe('submitStageResponses thunk', () => {
       const mockProjectId = 'proj-submit-123';
       const mockSessionId = 'sess-submit-456';
       const mockStageSlug = DialecticStageType.THESIS;
@@ -899,7 +899,7 @@ describe('useDialecticStore', () => {
       };
 
       it('should set loading state, call API, refetch project details, and show success on successful submission', async () => {
-        mockDialecticApi.submitStageResponsesAndPrepareNextSeed.mockResolvedValueOnce({
+        mockDialecticApi.submitStageResponses.mockResolvedValueOnce({
           data: mockSuccessResponse,
           status: 200,
         });
@@ -908,12 +908,12 @@ describe('useDialecticStore', () => {
             status: 200,
         });
 
-        const { submitStageResponsesAndPrepareNextSeed } = useDialecticStore.getState();
-        const result = await submitStageResponsesAndPrepareNextSeed(mockPayload);
+        const { submitStageResponses } = useDialecticStore.getState();
+        const result = await submitStageResponses(mockPayload);
 
         expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
         expect(useDialecticStore.getState().submitStageResponsesError).toBeNull();
-        expect(mockDialecticApi.submitStageResponsesAndPrepareNextSeed).toHaveBeenCalledWith(mockPayload);
+        expect(mockDialecticApi.submitStageResponses).toHaveBeenCalledWith(mockPayload);
         expect(mockDialecticApi.getProjectDetails).toHaveBeenCalledWith(mockProjectId);
         // Add more specific check for currentProjectDetail update if necessary
         expect(useDialecticStore.getState().currentProjectDetail?.id).toEqual(mockProjectForRefetch.id);
@@ -923,13 +923,13 @@ describe('useDialecticStore', () => {
 
       it('should set error state and show error toast on API error', async () => {
         const apiError: ApiError = { code: 'SUBMISSION_FAILED', message: 'Failed to submit responses.' };
-        mockDialecticApi.submitStageResponsesAndPrepareNextSeed.mockResolvedValueOnce({
+        mockDialecticApi.submitStageResponses.mockResolvedValueOnce({
           error: apiError,
           status: 400,
         });
 
-        const { submitStageResponsesAndPrepareNextSeed } = useDialecticStore.getState();
-        const result = await submitStageResponsesAndPrepareNextSeed(mockPayload);
+        const { submitStageResponses } = useDialecticStore.getState();
+        const result = await submitStageResponses(mockPayload);
 
         expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
         expect(useDialecticStore.getState().submitStageResponsesError).toEqual(apiError);
@@ -940,10 +940,10 @@ describe('useDialecticStore', () => {
 
       it('should set network error state and show error toast if API call throws', async () => {
         const networkErrorMessage = 'Network connection failed for submission';
-        mockDialecticApi.submitStageResponsesAndPrepareNextSeed.mockRejectedValueOnce(new Error(networkErrorMessage));
+        mockDialecticApi.submitStageResponses.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-        const { submitStageResponsesAndPrepareNextSeed } = useDialecticStore.getState();
-        const result = await submitStageResponsesAndPrepareNextSeed(mockPayload);
+        const { submitStageResponses } = useDialecticStore.getState();
+        const result = await submitStageResponses(mockPayload);
 
         expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
         const expectedError: ApiError = { message: networkErrorMessage, code: 'NETWORK_ERROR' };

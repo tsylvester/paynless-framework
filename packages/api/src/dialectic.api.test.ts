@@ -1273,7 +1273,7 @@ describe('DialecticApiClient', () => {
         });
     });
 
-    describe('submitStageResponsesAndPrepareNextSeed', () => {
+    describe('submitStageResponses', () => {
         const endpoint = 'dialectic-service';
         const validPayload: SubmitStageResponsesPayload = {
             sessionId: 'sess-456',
@@ -1291,7 +1291,7 @@ describe('DialecticApiClient', () => {
                 },
             ],
         };
-        const requestBody = { action: 'submitStageResponsesAndPrepareNextSeed', payload: validPayload };
+        const requestBody = { action: 'submitStageResponses', payload: validPayload };
 
         const mockUpdatedSessionAfterFeedback: DialecticSession = {
             ...mockDialecticSession, // Spread existing mock session
@@ -1315,7 +1315,7 @@ describe('DialecticApiClient', () => {
             };
             mockApiClientPost.mockResolvedValue(mockResponse);
 
-            await dialecticApiClient.submitStageResponsesAndPrepareNextSeed(validPayload);
+            await dialecticApiClient.submitStageResponses(validPayload);
 
             expect(mockApiClientPost).toHaveBeenCalledTimes(1);
             expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
@@ -1328,7 +1328,7 @@ describe('DialecticApiClient', () => {
             };
             mockApiClientPost.mockResolvedValue(mockResponse);
 
-            const result = await dialecticApiClient.submitStageResponsesAndPrepareNextSeed(validPayload);
+            const result = await dialecticApiClient.submitStageResponses(validPayload);
 
             expect(result.data).toEqual(mockSubmitResponseData);
             expect(result.status).toBe(200);
@@ -1343,7 +1343,7 @@ describe('DialecticApiClient', () => {
             };
             mockApiClientPost.mockResolvedValue(mockErrorResponse);
 
-            const result = await dialecticApiClient.submitStageResponsesAndPrepareNextSeed(validPayload);
+            const result = await dialecticApiClient.submitStageResponses(validPayload);
 
             expect(result.error).toEqual(mockApiError);
             expect(result.status).toBe(404);
@@ -1351,10 +1351,10 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return a network error if apiClient.post rejects', async () => {
-            const networkErrorMessage = 'Simulated network failure for submitStageResponsesAndPrepareNextSeed';
+            const networkErrorMessage = 'Simulated network failure for submitStageResponses';
             mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            const result = await dialecticApiClient.submitStageResponsesAndPrepareNextSeed(validPayload);
+            const result = await dialecticApiClient.submitStageResponses(validPayload);
 
             expect(result.error).toEqual({
                 code: 'NETWORK_ERROR',

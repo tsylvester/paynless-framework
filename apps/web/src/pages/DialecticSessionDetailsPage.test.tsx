@@ -285,7 +285,7 @@ const createMockStore = (overrides: Partial<DialecticStore> = {}): DialecticStor
     fetchInitialPromptContent: vi.fn(),
     _resetForTesting: vi.fn(),
     generateContributions: vi.fn(),
-    submitStageResponsesAndPrepareNextSeed: vi.fn(),
+    submitStageResponses: vi.fn(),
     resetSubmitStageResponsesError: vi.fn(),
     saveContributionEdit: vi.fn(),
     resetSaveContributionEditError: vi.fn(),

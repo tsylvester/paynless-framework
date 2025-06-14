@@ -1198,7 +1198,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[x] 1.Y.1.4 [DB]` Create `dialectic_stage_transitions` table to define the graph of a process.
     *   `[x] 1.Y.1.5 [DB]` Create `dialectic_artifact_types` table for defining I/O.
 
-*   `[ ] 1.Y.2 [DB]` **Alter Existing Tables**
+*   `[X] 1.Y.2 [DB]` **Alter Existing Tables**
     *   `[x] 1.Y.2.1 [DB]` Add `process_template_id` to `dialectic_projects`.
     *   `[x] 1.Y.2.2 [DB]` Replace `domain_tag` with `domain_id` FK on `domain_specific_prompt_overlays`.
     *   `[x] 1.Y.2.3 [DB]` Deprecate and remove `stage_association` and related columns from `system_prompts`.

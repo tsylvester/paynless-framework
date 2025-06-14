@@ -476,13 +476,13 @@ export class DialecticApiClient {
         }
     }
 
-    async submitStageResponsesAndPrepareNextSeed(payload: SubmitStageResponsesPayload): Promise<ApiResponse<SubmitStageResponsesResponse>> {
+    async submitStageResponses(payload: SubmitStageResponsesPayload): Promise<ApiResponse<SubmitStageResponsesResponse>> {
         logger.info('Submitting stage responses and preparing next seed', { sessionId: payload.sessionId, projectId: payload.projectId });
         try {
             const response = await this.apiClient.post<SubmitStageResponsesResponse, { action: string; payload: SubmitStageResponsesPayload }>(
                 'dialectic-service',
                 {
-                    action: 'submitStageResponsesAndPrepareNextSeed',
+                    action: 'submitStageResponses',
                     payload,
                 },
             );
@@ -494,7 +494,7 @@ export class DialecticApiClient {
             return response;
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'A network error occurred';
-            logger.error('Network error in submitStageResponsesAndPrepareNextSeed:', { errorMessage: message, errorObject: error, sessionId: payload.sessionId });
+            logger.error('Network error in submitStageResponses:', { errorMessage: message, errorObject: error, sessionId: payload.sessionId });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },

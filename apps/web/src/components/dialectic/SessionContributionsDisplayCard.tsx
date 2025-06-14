@@ -32,7 +32,7 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
     sessionIdFromStore ? state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionIdFromStore) : undefined
   ) as DialecticSession | undefined;
 
-  const submitStageResponsesAndPrepareNextSeed = useDialecticStore(state => state.submitStageResponsesAndPrepareNextSeed);
+  const submitStageResponses = useDialecticStore(state => state.submitStageResponses);
   const isSubmitting = useDialecticStore(state => state.isSubmittingStageResponses);
   const submissionError = useDialecticStore(state => state.submitStageResponsesError as ApiError | null);
   const resetSubmitError = useDialecticStore(state => state.resetSubmitStageResponsesError);
@@ -123,7 +123,7 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
     }
 
     try {
-      const result = await submitStageResponsesAndPrepareNextSeed({
+      const result = await submitStageResponses({
         sessionId: sessionIdFromStore, // Use from store
         currentIterationNumber: session.current_iteration,
         responses: responsesToSubmit.map(r => ({

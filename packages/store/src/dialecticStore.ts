@@ -834,11 +834,11 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
   resetSubmitStageResponsesError: () => set({ submitStageResponsesError: null }),
   resetSaveContributionEditError: () => set({ saveContributionEditError: null }),
 
-  submitStageResponsesAndPrepareNextSeed: async (payload: SubmitStageResponsesPayload): Promise<ApiResponse<SubmitStageResponsesResponse>> => {
+  submitStageResponses: async (payload: SubmitStageResponsesPayload): Promise<ApiResponse<SubmitStageResponsesResponse>> => {
     set({ isSubmittingStageResponses: true, submitStageResponsesError: null });
     logger.info('[DialecticStore] Submitting stage responses and preparing next seed...', { sessionId: payload.sessionId, stage: payload.stageSlug });
     try {
-      const response = await api.dialectic().submitStageResponsesAndPrepareNextSeed(payload);
+      const response = await api.dialectic().submitStageResponses(payload);
       if (response.error) {
         logger.error('[DialecticStore] Error submitting stage responses:', { errorDetails: response.error, sessionId: payload.sessionId });
         set({ isSubmittingStageResponses: false, submitStageResponsesError: response.error });
