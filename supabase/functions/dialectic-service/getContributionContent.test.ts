@@ -3,38 +3,19 @@ import { describe, it, beforeEach, afterEach } from "https://deno.land/std@0.192
 import { spy, stub, type Stub } from "https://deno.land/std@0.192.0/testing/mock.ts";
 
 import { getContributionContentSignedUrlHandler } from './getContributionContent.ts';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { 
     createMockSupabaseClient, 
     type MockSupabaseDataConfig,
     type IMockSupabaseClient,
     type MockSupabaseClientSetup
 } from '../_shared/supabase.mock.ts';
+import type { ServiceError, GetUserFn, GetUserFnResult } from '../_shared/types.ts';
 
 // Mock interfaces from getContributionContent.ts
-interface User {
-  id: string;
-}
-
-interface SupabaseError {
-  message: string;
-  details?: string;
-  hint?: string;
-  code?: string;
-}
-
-interface GetUserFnResult {
-  data: { user: User | null };
-  error: SupabaseError | Error | null;
-}
-
-interface GetUserFn {
-  (): Promise<GetUserFnResult>;
-}
-
 interface CreateSignedUrlFnResult {
   signedUrl: string | null;
-  error: SupabaseError | Error | null;
+  error: ServiceError | Error | null;
 }
 
 interface CreateSignedUrlFn {
@@ -59,9 +40,16 @@ describe('getContributionContentSignedUrlHandler', () => {
 
   let mockSupabaseSetup: MockSupabaseClientSetup;
   let mockDbClient: IMockSupabaseClient;
+  const mockUser: User = {
+    id: 'test-user-id',
+    app_metadata: {},
+    user_metadata: {},
+    aud: 'authenticated',
+    created_at: new Date().toISOString(),
+  };
 
   beforeEach(async () => {
-    mockGetUser = async () => ({ data: { user: { id: 'test-user-id' } }, error: null });
+    mockGetUser = async () => ({ data: { user: mockUser }, error: null });
     mockCreateSignedUrl = async () => ({ signedUrl: 'test-signed-url', error: null });
 
     const defaultConfig: MockSupabaseDataConfig = {
@@ -203,7 +191,7 @@ describe('getContributionContentSignedUrlHandler', () => {
     if (mockSupabaseSetup && mockSupabaseSetup.clearAllStubs) mockSupabaseSetup.clearAllStubs();
     mockSupabaseSetup = createMockSupabaseClient('test-user-id', authConfig);
     mockDbClient = mockSupabaseSetup.client;
-    mockGetUser = async () => ({ data: { user: { id: 'test-user-id' } }, error: null }); 
+    mockGetUser = async () => ({ data: { user: mockUser }, error: null }); 
 
     const result = await getContributionContentSignedUrlHandler(
       mockGetUser,
@@ -246,7 +234,7 @@ describe('getContributionContentSignedUrlHandler', () => {
     if (mockSupabaseSetup && mockSupabaseSetup.clearAllStubs) mockSupabaseSetup.clearAllStubs();
     mockSupabaseSetup = createMockSupabaseClient('test-user-id', missingBucketConfig);
     mockDbClient = mockSupabaseSetup.client;
-    mockGetUser = async () => ({ data: { user: { id: 'test-user-id' } }, error: null });
+    mockGetUser = async () => ({ data: { user: mockUser }, error: null });
 
     const result = await getContributionContentSignedUrlHandler(
       mockGetUser,
@@ -285,7 +273,7 @@ describe('getContributionContentSignedUrlHandler', () => {
     if (mockSupabaseSetup && mockSupabaseSetup.clearAllStubs) mockSupabaseSetup.clearAllStubs();
     mockSupabaseSetup = createMockSupabaseClient('test-user-id', missingPathConfig);
     mockDbClient = mockSupabaseSetup.client;
-    mockGetUser = async () => ({ data: { user: { id: 'test-user-id' } }, error: null });
+    mockGetUser = async () => ({ data: { user: mockUser }, error: null });
 
     const result = await getContributionContentSignedUrlHandler(
       mockGetUser,
@@ -325,7 +313,7 @@ describe('getContributionContentSignedUrlHandler', () => {
     if (mockSupabaseSetup && mockSupabaseSetup.clearAllStubs) mockSupabaseSetup.clearAllStubs();
     mockSupabaseSetup = createMockSupabaseClient('test-user-id', signedUrlErrorConfig);
     mockDbClient = mockSupabaseSetup.client;
-    mockGetUser = async () => ({ data: { user: { id: 'test-user-id' } }, error: null });
+    mockGetUser = async () => ({ data: { user: mockUser }, error: null });
     
     const signedUrlGenerationError = { message: 'Signed URL generation failed' };
     mockCreateSignedUrl = async () => ({ signedUrl: null, error: signedUrlGenerationError });
@@ -372,7 +360,7 @@ describe('getContributionContentSignedUrlHandler', () => {
     if (mockSupabaseSetup && mockSupabaseSetup.clearAllStubs) mockSupabaseSetup.clearAllStubs();
     mockSupabaseSetup = createMockSupabaseClient('test-user-id', nullUrlConfig);
     mockDbClient = mockSupabaseSetup.client;
-    mockGetUser = async () => ({ data: { user: { id: 'test-user-id' } }, error: null });
+    mockGetUser = async () => ({ data: { user: mockUser }, error: null });
     mockCreateSignedUrl = async () => ({ signedUrl: null, error: null });
 
     const result = await getContributionContentSignedUrlHandler(
@@ -421,7 +409,7 @@ describe('getContributionContentSignedUrlHandler', () => {
     if (mockSupabaseSetup && mockSupabaseSetup.clearAllStubs) mockSupabaseSetup.clearAllStubs();
     mockSupabaseSetup = createMockSupabaseClient(testUserId, successConfig);
     mockDbClient = mockSupabaseSetup.client;
-    mockGetUser = async () => ({ data: { user: { id: testUserId } }, error: null });
+    mockGetUser = async () => ({ data: { user: { ...mockUser, id: testUserId } }, error: null });
     mockCreateSignedUrl = async (client, b, p, exp) => {
       assertEquals(b, bucket);
       assertEquals(p, path);
@@ -475,7 +463,7 @@ describe('getContributionContentSignedUrlHandler', () => {
     if (mockSupabaseSetup && mockSupabaseSetup.clearAllStubs) mockSupabaseSetup.clearAllStubs();
     mockSupabaseSetup = createMockSupabaseClient(testUserId, defaultMimeConfig);
     mockDbClient = mockSupabaseSetup.client;
-    mockGetUser = async () => ({ data: { user: { id: testUserId } }, error: null });
+    mockGetUser = async () => ({ data: { user: { ...mockUser, id: testUserId } }, error: null });
     mockCreateSignedUrl = async () => ({ signedUrl: expectedSignedUrl, error: null });
 
     const result = await getContributionContentSignedUrlHandler(

@@ -610,7 +610,7 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
     assertEquals(genContributionsSpy.calls.length, 0);
 
     // Case 2: Auth token, payload missing sessionId
-    const req_gc_2 = createJsonRequest("generateContributions", { stage: "thesis" }, "valid-token-for-mock");
+    const req_gc_2 = createJsonRequest("generateContributions", { someOtherProp: "test" }, "valid-token-for-mock");
     const response_gc_2 = await handleRequest(req_gc_2, mockAdminClient, mockHandlers);
     assertEquals(response_gc_2.status, 400); 
     const body_gc_2 = await response_gc_2.json();
@@ -622,7 +622,7 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
     mockHandlers = createMockHandlers({ generateStageContributions: genContributionsSpy }); 
     mockAdminClient = mockSupabaseClient(); 
     const goodToken_gc = "valid-token-for-mock";
-    const payload_gc_5 = { sessionId: "sess-xyz", stage: "thesis" }; 
+    const payload_gc_5 = { sessionId: "sess-xyz", iterationNumber: 1, stageSlug: "test-stage" }; 
     const req_gc_5 = createJsonRequest("generateContributions", payload_gc_5, goodToken_gc);
     const response_gc_5 = await handleRequest(req_gc_5, mockAdminClient, mockHandlers);
     
@@ -631,7 +631,7 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
     assertExists(capturedArgsGC);
     if(capturedArgsGC){
         assertEquals(capturedArgsGC[0], mockAdminClient); 
-        const expectedPayloadToHandler = { sessionId: payload_gc_5.sessionId, stage: "thesis" };
+        const expectedPayloadToHandler = { ...payload_gc_5 };
         assertEquals(capturedArgsGC[1], expectedPayloadToHandler); 
         assertEquals(capturedArgsGC[2], goodToken_gc); 
         assertExists(capturedArgsGC[3]); 
@@ -693,23 +693,23 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
     let capturedArgsClone: any[] | null = null;
     const cloneSpy = spy(async (...args: any[]) => { 
         capturedArgsClone = args;
-        // Explicitly create a structure that matches what CloneProjectResult seems to expect for its data field
         const mockProjectDataForCloneResult = {
             id: "proj-clone",
             user_id: mockUser.id,
             project_name: (args[2] as string) || "Cloned Project",
             initial_user_prompt: "Cloned prompt",
-            initial_prompt_resource_id: null, // from DialecticProject (optional)
-            selected_domain_tag: null, // from DialecticProject
-            selected_domain_overlay_id: null, // from DialecticProject (optional)
-            repo_url: null, // from DialecticProject
-            status: "active", // from DialecticProject
-            created_at: new Date().toISOString(), // from DialecticProject
-            updated_at: new Date().toISOString(), // from DialecticProject
-            sessions: [], // from DialecticProject (optional)
-            user_domain_overlay_values: {}, // The field linter expects for CloneProjectResult's data
+            initial_prompt_resource_id: null,
+            selected_domain_tag: null,
+            selected_domain_overlay_id: null,
+            repo_url: null,
+            status: "active",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            sessions: [],
+            process_template_id: null,
+            user_domain_overlay_values: {},
         };
-        return { data: mockProjectDataForCloneResult as any, error: null, status: 201 }; // Cast to any to bypass strict DialecticProject type for now
+        return { data: mockProjectDataForCloneResult as any, error: null, status: 201 };
     });
     mockHandlers = createMockHandlers({ cloneProject: cloneSpy });
 
@@ -883,7 +883,7 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
       }
     );
     mockHandlers = createMockHandlers({ getProjectResourceContent: mockGetProjectResourceContentHandler });
-    req = createJsonRequest("getProjectResourceContent", { resourceId: "" }, "valid-token-for-mock");
+    req = createJsonRequest("getProjectResourceContent", { resourceId: "", fileName: "any" }, "valid-token-for-mock");
     response = await handleRequest(req, mockAdminClient, mockHandlers);
     assertEquals(response.status, 400);
     body = await response.json();
@@ -894,19 +894,20 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
     const successResponseData: GetProjectResourceContentResponse = { fileName: "test.txt", mimeType: "text/plain", content: "content" };
     mockGetProjectResourceContentHandler = spy(
       async (payload, dbClient, user) => 
-        Promise.resolve({ data: successResponseData })
+        Promise.resolve({ data: successResponseData, status: 200 })
     );
     mockHandlers = createMockHandlers({ getProjectResourceContent: mockGetProjectResourceContentHandler });
-    req = createJsonRequest("getProjectResourceContent", { resourceId: "resValid123" }, "valid-token-for-mock");
+    req = createJsonRequest("getProjectResourceContent", { resourceId: "resValid123", fileName: "test.txt" }, "valid-token-for-mock");
     response = await handleRequest(req, mockAdminClient, mockHandlers);
     assertEquals(response.status, 200);
     body = await response.json();
-    assertEquals(body.fileName, "test.txt");
+    assertEquals(body.data.fileName, "test.txt");
     assertEquals(mockGetProjectResourceContentHandler.calls.length, 1);
     // Verify payload and user passed to handler
     if (mockGetProjectResourceContentHandler.calls.length > 0) {
       const handlerCall = mockGetProjectResourceContentHandler.calls[0];
       assertEquals((handlerCall.args[0] as GetProjectResourceContentPayload).resourceId, "resValid123");
+      assertEquals((handlerCall.args[0] as GetProjectResourceContentPayload).fileName, "test.txt");
       assertExists(handlerCall.args[1]); // dbClient
       assertExists(handlerCall.args[2]); // User
       assertEquals((handlerCall.args[2] as User).id, "mock-user-id");

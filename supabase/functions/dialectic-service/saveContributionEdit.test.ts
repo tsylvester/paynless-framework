@@ -70,7 +70,44 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
   });
 
   beforeEach(async () => {
-    // 1. Create a project for the current test user
+    // 1. Create a stage to be used by the template and session
+    const { data: stage, error: stageError } = await adminClient
+      .from('dialectic_stages')
+      .insert({
+        slug: 'thesis-stage',
+        display_name: 'Thesis',
+      })
+      .select()
+      .single();
+    if (stageError || !stage) throw new Error(`Failed to create stage: ${stageError?.message}`);
+    registerUndoAction({ type: 'DELETE_CREATED_ROW', tableName: 'dialectic_stages', criteria: { id: stage.id }, scope: 'local' });
+
+    // 2. Create a domain for the process template
+    const { data: domain, error: domainError } = await adminClient
+      .from('dialectic_domains')
+      .insert({
+        name: 'Test Domain for Edit',
+        description: 'A test domain.',
+      })
+      .select()
+      .single();
+    if (domainError || !domain) throw new Error(`Failed to create domain: ${domainError?.message}`);
+    registerUndoAction({ type: 'DELETE_CREATED_ROW', tableName: 'dialectic_domains', criteria: { id: domain.id }, scope: 'local' });
+
+    // 3. Create a process template for the project
+    const { data: template, error: templateError } = await adminClient
+      .from('dialectic_process_templates')
+      .insert({
+        name: 'Test Template for Edit',
+        domain_id: domain.id,
+        starting_stage_id: stage.id,
+      })
+      .select()
+      .single();
+    if (templateError || !template) throw new Error(`Failed to create process template: ${templateError?.message}`);
+    registerUndoAction({ type: 'DELETE_CREATED_ROW', tableName: 'dialectic_process_templates', criteria: { id: template.id }, scope: 'local' });
+
+    // 4. Create a project for the current test user, linking the template
     const { data: project, error: projectError } = await adminClient
       .from('dialectic_projects')
       .insert({
@@ -78,19 +115,20 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
         project_name: 'Test Project for Edit',
         initial_user_prompt: 'Initial prompt for edit test',
         status: 'active',
+        process_template_id: template.id,
       })
       .select()
       .single();
     if (projectError || !project) throw new Error(`Failed to create project: ${projectError?.message}`);
     registerUndoAction({ type: 'DELETE_CREATED_ROW', tableName: 'dialectic_projects', criteria: { id: project.id }, scope: 'local' });
 
-    // 2. Create a session for that project
+    // 5. Create a session for that project, linking the current stage
     const { data: session, error: sessionError } = await adminClient
       .from('dialectic_sessions')
       .insert({
         project_id: project.id,
         session_description: 'Test Session for Edit',
-        stage: 'THESIS', // Corrected case
+        current_stage_id: stage.id, // Use the real stage ID
         status: 'active',
       })
       .select()
@@ -98,13 +136,12 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
     if (sessionError || !session) throw new Error(`Failed to create session: ${sessionError?.message}`);
     registerUndoAction({ type: 'DELETE_CREATED_ROW', tableName: 'dialectic_sessions', criteria: { id: session.id }, scope: 'local' });
 
-    // 3. Create an initial AI contribution in that session
-    // @ts-ignore - Linter incorrectly flags user_id despite it being in DialecticContributionInsert
+    // 6. Create an initial AI contribution in that session
     const initialContributionData: DialecticContributionInsert = {
       session_id: session.id,
-      stage: 'thesis',
+      stage: 'THESIS', // This field is actually still required on contributions
       content_storage_path: `projects/${project.id}/sessions/${session.id}/it1/thesis/ai_initial.md`,
-      user_id: null,
+      user_id: null, // AI contribution has no user
       model_id: null,
       model_name: 'TestGPT-Mock',
       iteration_number: 1,
@@ -122,7 +159,8 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       original_model_contribution_id: null,
       error: null,
       prompt_template_id_used: null,
-      seed_prompt_url: null
+      seed_prompt_url: null,
+      contribution_type: 'model_generated',
     };
     const { data: aiContribution, error: contributionError } = await adminClient
       .from('dialectic_contributions')

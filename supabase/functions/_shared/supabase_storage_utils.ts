@@ -10,6 +10,12 @@ export interface UploadStorageResult {
   error: Error | null;
 }
 
+export interface DownloadStorageResult {
+  data: ArrayBuffer | null;
+  mimeType?: string;
+  error: Error | null;
+}
+
 export interface FileMetadataSuccess {
     size: number;
     mimeType: string;
@@ -88,7 +94,7 @@ export async function downloadFromStorage(
   supabase: SupabaseClient,
   bucket: string,
   path: string
-): Promise<{ data: ArrayBuffer | null; mimeType?: string; error: Error | null }> {
+): Promise<DownloadStorageResult> {
   try {
     const { data, error } = await supabase.storage.from(bucket).download(path);
 

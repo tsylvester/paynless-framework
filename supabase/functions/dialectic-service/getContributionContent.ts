@@ -3,33 +3,11 @@ import {
     ContributionWithNestedOwner,
   } from "./dialectic.interface.ts";
 import type { SupabaseClient } from '@supabase/supabase-js'; // Added import for SupabaseClient
-
-// --- START: Added for DI ---
-interface User {
-  id: string;
-  // Add other user properties if needed by the function
-}
-
-// Define a basic SupabaseError interface for more specific error typing
-interface SupabaseError {
-    message: string;
-    details?: string;
-    hint?: string;
-    code?: string;
-}
-
-interface GetUserFnResult {
-  data: { user: User | null };
-  error: SupabaseError | Error | null; // Allow for SupabaseError or generic Error
-}
-
-interface GetUserFn {
-  (): Promise<GetUserFnResult>;
-}
+import type { ServiceError, GetUserFn } from '../_shared/types.ts';
 
 interface CreateSignedUrlFnResult {
   signedUrl: string | null;
-  error: SupabaseError | Error | null; // Allow for SupabaseError or generic Error
+  error: ServiceError | Error | null; // Allow for ServiceError or generic Error
 }
 
 interface CreateSignedUrlFn {
@@ -39,10 +17,8 @@ interface CreateSignedUrlFn {
 interface Logger {
   warn: (message: string, context?: Record<string, unknown>) => void;
   error: (message: string, context?: Record<string, unknown>) => void;
-  // Add other log levels if used (info, debug, etc.)
 }
 
-// --- END: Added for DI ---
   
 console.log("getContributionContent function started");
   

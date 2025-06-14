@@ -1,9 +1,9 @@
-import { assert, assertEquals, assertRejects, assertExists, assertStrictEquals } from "jsr:@std/assert";
+import { assert, assertEquals, assertRejects, assertExists, assertStrictEquals, assertStringIncludes } from "jsr:@std/assert";
 import { describe, it, beforeAll, afterAll, beforeEach, afterEach } from "jsr:@std/testing/bdd";
 import { spy, stub, type Spy, assertSpyCall, assertSpyCalls, assertSpyCallAsync } from "jsr:@std/testing/mock";
 
 import { uploadToStorage, downloadFromStorage, deleteFromStorage, createSignedUrlForPath, getFileMetadata } from "./supabase_storage_utils.ts";
-import { createMockSupabaseClient, type IMockClientSpies, type MockSupabaseDataConfig, getStorageSpies } from "./supabase.mock.ts";
+import { createMockSupabaseClient, type IMockClientSpies, type MockSupabaseDataConfig, getStorageSpies, type MockSupabaseClientSetup } from "./supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@^2.43.4";
 
 describe("uploadToStorage", () => {
@@ -261,62 +261,95 @@ describe("deleteFromStorage", () => {
   const filePaths = ["path/to/file1.txt", "another/path/to/file2.png"];
 
   it("should delete files and return null error on success", async () => {
-    const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+    const bucketName = 'test-bucket-delete-success';
+    const pathsToDelete = ['path/to/file1.txt', 'another/path/to/file2.png'];
+    const mockFileObjects = pathsToDelete.map(name => ({ name, id: 'some-id', created_at: '', updated_at: '', last_accessed_at: '', metadata: {} }));
+
+    const { client, spies }: MockSupabaseClientSetup = createMockSupabaseClient(undefined, {
       storageMock: {
-        removeResult: async (_bucket: string, _paths: string[]) => {
-          return { data: null, error: null };
-        }
+        removeResult: { data: mockFileObjects, error: null }
       }
     });
-    client.storage.from(bucketName);
-    const storageSpies = getStorageSpies(client, bucketName);
 
-    const { error } = await deleteFromStorage(client as unknown as SupabaseClient, bucketName, filePaths);
+    const result = await deleteFromStorage(client as unknown as SupabaseClient, bucketName, pathsToDelete);
 
-    assertStrictEquals(error, null);
-    assertSpyCall(storageSpies.removeSpy, 0, {
-      args: [filePaths]
-    });
-    if (clear) clear();
+    assertStrictEquals(result.error, null);
+    assertSpyCall(spies.storage.from(bucketName).removeSpy, 0, { args: [pathsToDelete] });
   });
 
   it("should return an error if Supabase storage delete fails", async () => {
-    const supabaseError = new Error("Supabase delete failed");
-    const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+    const bucketName = 'test-bucket-delete-fail';
+    const pathsToDelete = ["path/to/failure.txt"];
+    const mockError = new Error("Supabase RLS delete policy violation.");
+
+    const { client, spies }: MockSupabaseClientSetup = createMockSupabaseClient(undefined, {
       storageMock: {
-        removeResult: async (_bucket: string, _paths: string[]) => {
-          return { data: null, error: supabaseError };
-        }
+        removeResult: { data: null, error: mockError }
       }
     });
-    client.storage.from(bucketName);
-    const storageSpies = getStorageSpies(client, bucketName);
 
-    const { error } = await deleteFromStorage(client as unknown as SupabaseClient, bucketName, filePaths);
+    const result = await deleteFromStorage(client as unknown as SupabaseClient, bucketName, pathsToDelete);
 
-    assertStrictEquals(error, supabaseError);
-    assertSpyCall(storageSpies.removeSpy, 0, { args: [filePaths] });
-    if (clear) clear();
+    assertExists(result.error);
+    assertEquals(result.error, mockError);
+    assertSpyCall(spies.storage.from(bucketName).removeSpy, 0, { args: [pathsToDelete] });
   });
 
   it("should return an error if the delete call itself throws an exception", async () => {
-    const exceptionError = new Error("Network issue during delete");
-    const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+    const bucketName = 'test-bucket-delete-exception';
+    const pathsToDelete = ["path/to/exception.txt"];
+    const mockError = new Error("Network connection failed during delete");
+
+    const { client, spies }: MockSupabaseClientSetup = createMockSupabaseClient(undefined, {
       storageMock: {
-        removeResult: async (_bucket: string, _paths: string[]) => {
-          throw exceptionError;
-        }
+        removeResult: () => { throw mockError; }
       }
     });
-    client.storage.from(bucketName);
-    const storageSpies = getStorageSpies(client, bucketName);
 
-    const { error } = await deleteFromStorage(client as unknown as SupabaseClient, bucketName, filePaths);
+    const result = await deleteFromStorage(client as unknown as SupabaseClient, bucketName, pathsToDelete);
 
-    assert(error instanceof Error);
-    assertEquals(error?.message, exceptionError.message);
-    assertSpyCall(storageSpies.removeSpy, 0, { args: [filePaths] });
-    if (clear) clear();
+    assertExists(result.error);
+    assertEquals(result.error, mockError);
+    assertSpyCall(spies.storage.from(bucketName).removeSpy, 0, { args: [pathsToDelete] });
+  });
+
+  it("should return an error if file count mismatches", async () => {
+    const bucketName = 'test-bucket-delete-mismatch';
+    const pathsToDelete = ["path/one.txt", "path/two.txt"];
+    
+    const mockFileObjects = [{ name: 'path/one.txt', id: 'some-id', created_at: '', updated_at: '', last_accessed_at: '', metadata: {} }];
+
+    const { client }: MockSupabaseClientSetup = createMockSupabaseClient(undefined, {
+      storageMock: {
+        removeResult: { data: mockFileObjects, error: null }
+      }
+    });
+
+    const result = await deleteFromStorage(client as unknown as SupabaseClient, bucketName, pathsToDelete);
+
+    assertExists(result.error);
+    assertStringIncludes(result.error!.message, "file count mismatch");
+  });
+
+  it("should return an error if file names mismatch", async () => {
+    const bucketName = 'test-bucket-delete-name-mismatch';
+    const pathsToDelete = ["path/one.txt", "path/two.txt"];
+    
+    const mockFileObjects = [
+      { name: 'path/one.txt', id: 'id1', created_at: '', updated_at: '', last_accessed_at: '', metadata: {} },
+      { name: 'path/DIFFERENT.txt', id: 'id2', created_at: '', updated_at: '', last_accessed_at: '', metadata: {} }
+    ];
+    
+    const { client }: MockSupabaseClientSetup = createMockSupabaseClient(undefined, {
+      storageMock: {
+        removeResult: { data: mockFileObjects, error: null }
+      }
+    });
+
+    const result = await deleteFromStorage(client as unknown as SupabaseClient, bucketName, pathsToDelete);
+
+    assertExists(result.error);
+    assertStringIncludes(result.error!.message, "not all input path names were found");
   });
 });
 
@@ -415,109 +448,133 @@ describe("getFileMetadata", () => {
   const fileName = "avatar.png";
 
   it("should return file metadata on success", async () => {
-    const mockMetadata = { name: fileName, id: "uuid-for-avatar", metadata: { size: 12345, mimetype: "image/png" } };
-    const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+    const bucketName = 'test-bucket-metadata';
+    const fullPath = 'public/images/avatar.png';
+    const directoryPath = 'public/images';
+    const mockMetadata = { size: 12345, mimetype: 'image/png' };
+
+    const mockFileList = [{
+      name: fileName,
+      id: 'some-uuid',
+      metadata: mockMetadata,
+      created_at: '2023-01-01T00:00:00.000Z',
+      last_accessed_at: '2023-01-01T00:00:00.000Z',
+      updated_at: '2023-01-01T00:00:00.000Z',
+    }];
+
+    const { client, spies }: MockSupabaseClientSetup = createMockSupabaseClient(undefined, {
       storageMock: {
-        listResult: async (_bucket: string, path?: string, _options?: object) => {
-          if (path === filePath) {
-            return { data: [mockMetadata], error: null };
-          }
-          return { data: [], error: null }; 
-        }
+        listResult: { data: mockFileList, error: null }
       }
     });
-    client.storage.from(bucketName);
-    const storageSpies = getStorageSpies(client, bucketName);
 
-    const { size, mimeType, error } = await getFileMetadata(client as unknown as SupabaseClient, bucketName, filePath);
+    const result = await getFileMetadata(client as unknown as SupabaseClient, bucketName, fullPath);
 
-    assertEquals(size, mockMetadata.metadata.size);
-    assertEquals(mimeType, mockMetadata.metadata.mimetype);
-    assertStrictEquals(error, null);
-    assertSpyCall(storageSpies.listSpy, 0, { args: [filePath, { limit: 1 }] });
-    if (clear) clear();
+    assertStrictEquals(result.error, null);
+    assertEquals(result.size, mockMetadata.size);
+    assertEquals(result.mimeType, mockMetadata.mimetype);
+    assertSpyCall(spies.storage.from(bucketName).listSpy, 0, { 
+      args: [directoryPath, { search: fileName, limit: 1 }] 
+    });
   });
 
   it("should return an error if Supabase client fails to list files", async () => {
-    const supabaseError = new Error("Supabase list failed");
-    const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+    const bucketName = 'test-bucket-metadata-fail';
+    const fullPath = 'public/images/avatar.png';
+    const mockError = new Error("Supabase list RLS error.");
+
+    const { client }: MockSupabaseClientSetup = createMockSupabaseClient(undefined, {
       storageMock: {
-        listResult: async (_bucket: string, _path?: string, _options?: object) => {
-          return { data: null, error: supabaseError };
-        }
+        listResult: { data: null, error: mockError }
       }
     });
-    client.storage.from(bucketName);
-    const storageSpies = getStorageSpies(client, bucketName);
 
-    const { size, mimeType, error } = await getFileMetadata(client as unknown as SupabaseClient, bucketName, filePath);
-
-    assertStrictEquals(size, undefined);
-    assertStrictEquals(mimeType, undefined);
-    assertStrictEquals(error, supabaseError);
-    assertSpyCall(storageSpies.listSpy, 0, { args: [filePath, { limit: 1 }] });
-    if (clear) clear();
+    const result = await getFileMetadata(client as unknown as SupabaseClient, bucketName, fullPath);
+    
+    assertExists(result.error);
+    assertEquals(result.error, mockError);
   });
 
   it("should return an error if file list is empty (file not found)", async () => {
-    const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+    const bucketName = 'test-bucket-metadata-notfound';
+    const fullPath = 'public/images/nonexistent.png';
+
+    const { client }: MockSupabaseClientSetup = createMockSupabaseClient(undefined, {
       storageMock: {
-        listResult: async (_bucket: string, _path?: string, _options?: object) => {
-          return { data: [], error: null };
-        }
+        listResult: { data: [], error: null } // Empty list
       }
     });
-    client.storage.from(bucketName);
-    const storageSpies = getStorageSpies(client, bucketName);
 
-    const { error } = await getFileMetadata(client as unknown as SupabaseClient, bucketName, filePath);
+    const result = await getFileMetadata(client as unknown as SupabaseClient, bucketName, fullPath);
 
-    assert(error instanceof Error);
-    assertEquals(error?.message, "File not found or no metadata returned.");
-    if (clear) clear();
+    assertExists(result.error);
+    assertStringIncludes(result.error!.message, 'File not found');
   });
 
-  it("should return an error if list returns data but not for the exact file", async () => {
-    const otherFileName = "other-file.txt";
-    const mockMetadata = { name: otherFileName, id: "uuid-for-other", metadata: { size: 500, mimetype: "text/plain" } };
-    const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+  it("should return an error if file object has incomplete metadata", async () => {
+    const bucketName = 'test-bucket-metadata-incomplete';
+    const fullPath = 'public/images/folder-as-file.png';
+
+    const mockFileList = [{
+      name: 'folder-as-file.png',
+      id: undefined, 
+      metadata: undefined 
+    }];
+
+    const { client }: MockSupabaseClientSetup = createMockSupabaseClient(undefined, {
       storageMock: {
-        listResult: async (_bucket: string, path?: string, _options?: object) => {
-          // Simulate list called with a folder path, returning a different file within that folder
-          if (path === filePath) { // still use filePath for the call
-            return { data: [mockMetadata], error: null };
-          }
-          return { data: [], error: null };
-        }
+        listResult: { data: mockFileList, error: null }
       }
     });
-    client.storage.from(bucketName);
-    const storageSpies = getStorageSpies(client, bucketName);
 
-    const { error } = await getFileMetadata(client as unknown as SupabaseClient, bucketName, filePath);
-
-    assert(error instanceof Error);
-    assertEquals(error?.message, `File metadata not found for the exact path "${filePath}" within list results.`);
-    if (clear) clear();
+    const result = await getFileMetadata(client as unknown as SupabaseClient, bucketName, fullPath);
+    
+    assertExists(result.error);
+    assertStringIncludes(result.error!.message, 'is not a file or lacks expected metadata');
   });
 
   it("should return an error if the list call itself throws an exception", async () => {
-    const exceptionError = new Error("Network issue during list");
-    const { client, clearAllStubs: clear } = createMockSupabaseClient(undefined, {
+    const bucketName = 'test-bucket-metadata-exception';
+    const fullPath = 'public/images/exception.png';
+    const mockError = new Error("Network connection failed during list");
+
+    const { client }: MockSupabaseClientSetup = createMockSupabaseClient(undefined, {
       storageMock: {
-        listResult: async (_bucket: string, _path?: string, _options?: object) => {
-          throw exceptionError;
-        }
+        listResult: () => { throw mockError; }
       }
     });
-    client.storage.from(bucketName);
-    const storageSpies = getStorageSpies(client, bucketName);
 
-    const { error } = await getFileMetadata(client as unknown as SupabaseClient, bucketName, filePath);
+    const result = await getFileMetadata(client as unknown as SupabaseClient, bucketName, fullPath);
 
-    assert(error instanceof Error);
-    assertEquals(error?.message, exceptionError.message);
-    assertSpyCall(storageSpies.listSpy, 0, { args: [filePath, { limit: 1 }] });
-    if (clear) clear();
+    assertExists(result.error);
+    assertEquals(result.error, mockError);
+  });
+
+  it("should handle paths without a directory", async () => {
+    const bucketName = 'test-bucket-metadata-root';
+    const fullPath = 'rootfile.txt';
+
+    const { client, spies }: MockSupabaseClientSetup = createMockSupabaseClient(undefined, {
+      storageMock: {
+        listResult: { data: [], error: null }
+      }
+    });
+
+    await getFileMetadata(client as unknown as SupabaseClient, bucketName, fullPath);
+    
+    assertSpyCall(spies.storage.from(bucketName).listSpy, 0, {
+      args: ['', { search: fullPath, limit: 1 }] // Expects directoryPath to be ''
+    });
+  });
+
+  it("should return an error for an invalid path", async () => {
+    const bucketName = 'test-bucket-metadata-invalid-path';
+    const fullPath = 'public/images/'; // Path ending in slash is invalid
+
+    const { client }: MockSupabaseClientSetup = createMockSupabaseClient();
+    const result = await getFileMetadata(client as unknown as SupabaseClient, bucketName, fullPath);
+
+    assertExists(result.error);
+    assertStringIncludes(result.error!.message, 'Invalid file path provided');
   });
 }); 

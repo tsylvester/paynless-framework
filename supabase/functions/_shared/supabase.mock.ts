@@ -194,7 +194,13 @@ export interface IMockClientSpies {
     error: Error | null;
   }
   
-  export interface IMockStorageListResponse { // New interface for list response
+  export interface IMockStorageListResponse {
+    data: { name: string; id?: string; updated_at?: string; created_at?: string; last_accessed_at?: string; metadata?: Record<string, any> }[] | null;
+    error: Error | null;
+  }
+  
+  // New response type specifically for the 'remove' operation, which returns FileObject[] on success.
+  export interface IMockStorageRemoveResponse {
     data: { name: string; id?: string; updated_at?: string; created_at?: string; last_accessed_at?: string; metadata?: Record<string, any> }[] | null;
     error: Error | null;
   }
@@ -210,7 +216,7 @@ export interface IMockClientSpies {
     upload: (path: string, body: unknown, options?: IMockStorageFileOptions) => Promise<IMockStorageUploadResponse>;
     download: (path: string) => Promise<IMockStorageDownloadResponse>;
     createSignedUrl: (path: string, expiresIn: number) => Promise<IMockStorageSignedUrlResponse>;
-    remove: (paths: string[]) => Promise<IMockStorageBasicResponse>;
+    remove: (paths: string[]) => Promise<IMockStorageRemoveResponse>;
     list: (path?: string, options?: { limit?: number; offset?: number; sortBy?: { column: string; order: string; }; search?: string; }) => Promise<IMockStorageListResponse>;
     // 2. Add 'copy' to IMockStorageBucketAPI
     copy: (fromPath: string, toPath: string) => Promise<IMockStorageCopyResponse>;
@@ -241,7 +247,7 @@ export interface IMockClientSpies {
         uploadResult?: IMockStorageUploadResponse | ((bucketId: string, path: string, body: unknown, options?: IMockStorageFileOptions) => Promise<IMockStorageUploadResponse>);
         downloadResult?: IMockStorageDownloadResponse | ((bucketId: string, path: string) => Promise<IMockStorageDownloadResponse>);
         createSignedUrlResult?: IMockStorageSignedUrlResponse | ((bucketId: string, path: string, expiresIn: number) => Promise<IMockStorageSignedUrlResponse>);
-        removeResult?: IMockStorageBasicResponse | ((bucketId: string, paths: string[]) => Promise<IMockStorageBasicResponse>);
+        removeResult?: IMockStorageRemoveResponse | ((bucketId: string, paths: string[]) => Promise<IMockStorageRemoveResponse>);
         listResult?: IMockStorageListResponse | ((bucketId: string, path?: string, options?: object) => Promise<IMockStorageListResponse>);
         // 4. Add 'copyResult' to MockSupabaseDataConfig.storageMock
         copyResult?: IMockStorageCopyResponse | ((bucketId: string, fromPath: string, toPath: string) => Promise<IMockStorageCopyResponse>);
@@ -603,7 +609,7 @@ class MockStorageBucketAPIImpl implements IMockStorageBucketAPI {
     public upload: (path: string, body: unknown, options?: IMockStorageFileOptions) => Promise<IMockStorageUploadResponse>;
     public download: (path: string) => Promise<IMockStorageDownloadResponse>;
     public createSignedUrl: (path: string, expiresIn: number) => Promise<IMockStorageSignedUrlResponse>;
-    public remove: (paths: string[]) => Promise<IMockStorageBasicResponse>;
+    public remove: (paths: string[]) => Promise<IMockStorageRemoveResponse>;
     public list: (path?: string, options?: { limit?: number; offset?: number; sortBy?: { column: string; order: string; }; search?: string; }) => Promise<IMockStorageListResponse>;
     public copy: (fromPath: string, toPath: string) => Promise<IMockStorageCopyResponse>;
     
@@ -613,7 +619,7 @@ class MockStorageBucketAPIImpl implements IMockStorageBucketAPI {
         this.upload = spy(this, 'performUploadInternal') as unknown as (path: string, body: unknown, options?: IMockStorageFileOptions) => Promise<IMockStorageUploadResponse>;
         this.download = spy(this, 'performDownloadInternal') as unknown as (path: string) => Promise<IMockStorageDownloadResponse>;
         this.createSignedUrl = spy(this, 'performCreateSignedUrlInternal') as unknown as (path: string, expiresIn: number) => Promise<IMockStorageSignedUrlResponse>;
-        this.remove = spy(this, 'performRemoveInternal') as unknown as (paths: string[]) => Promise<IMockStorageBasicResponse>;
+        this.remove = spy(this, 'performRemoveInternal') as unknown as (paths: string[]) => Promise<IMockStorageRemoveResponse>;
         this.list = spy(this, 'performListInternal') as unknown as (path?: string, options?: { limit?: number; offset?: number; sortBy?: { column: string; order: string; }; search?: string; }) => Promise<IMockStorageListResponse>;
         this.copy = spy(this, 'performCopyInternal') as unknown as (fromPath: string, toPath: string) => Promise<IMockStorageCopyResponse>;
     }
@@ -645,12 +651,12 @@ class MockStorageBucketAPIImpl implements IMockStorageBucketAPI {
         return { data: { signedUrl: `mocked://signed-url/${this.bucketId}/${path}?expires_in=${expiresIn}` }, error: null };
     }
 
-    public async performRemoveInternal(paths: string[]): Promise<IMockStorageBasicResponse> {
+    public async performRemoveInternal(paths: string[]): Promise<IMockStorageRemoveResponse> {
         console.log(`[MockStorageBucketAPI ${this.bucketId}] performRemoveInternal called with paths:`, paths);
         if (this.config.storageMock?.removeResult) {
             if (typeof this.config.storageMock.removeResult === 'function') {
                 try {
-                    return await (this.config.storageMock.removeResult as (bucketId: string, paths: string[]) => Promise<IMockStorageBasicResponse>)(this.bucketId, paths);
+                    return await (this.config.storageMock.removeResult as (bucketId: string, paths: string[]) => Promise<IMockStorageRemoveResponse>)(this.bucketId, paths);
                 } catch (e: unknown) {
                     const message = e instanceof Error ? e.message : 'Error executing removeResult hook';
                     console.error(`[MockStorageBucketAPI ${this.bucketId}] Error in removeResult hook:`, message);

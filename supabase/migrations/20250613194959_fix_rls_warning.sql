@@ -57,13 +57,13 @@ DECLARE
     new_contribution_id UUID;
 BEGIN
     -- Update the old contribution to no longer be the latest
-    UPDATE dialectic_contributions
+    UPDATE public.dialectic_contributions
     SET is_latest_edit = FALSE,
         updated_at = now()
     WHERE id = p_original_contribution_id;
 
     -- Insert the new edited contribution
-    INSERT INTO dialectic_contributions (
+    INSERT INTO public.dialectic_contributions (
         session_id,
         user_id,
         stage,
@@ -116,8 +116,7 @@ BEGIN
     RETURN new_contribution_id;
 EXCEPTION
     WHEN OTHERS THEN
-        -- Log the error
-        RAISE WARNING 'Error in save_contribution_edit_atomic: %', SQLERRM;
-        RETURN NULL; -- Or re-raise the exception: RAISE;
+        -- If any error occurs, return NULL. The calling code should handle this.
+        RETURN NULL;
 END;
 $$;

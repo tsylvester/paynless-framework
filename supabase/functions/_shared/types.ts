@@ -396,7 +396,7 @@ export type ChatMessageRole = 'system' | 'user' | 'assistant';
 export interface ServiceError {
   message: string;
   status?: number;
-  details?: string;
+  details?: string | Record<string, any>[];
   code?: string;
 }
 

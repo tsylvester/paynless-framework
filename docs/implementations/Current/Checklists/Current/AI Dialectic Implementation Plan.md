@@ -690,9 +690,9 @@ The implementation plan uses the following labels to categorize work steps:
 *   `[✅] 1.2.4.7 [BE]` Ensure `contentType` is not hardcoded and `getExtensionFromMimeType` is used for storage paths. (GREEN)
     *   `[✅] 1.2.4.7.1 [BE]` Create `path_utils.ts` with `getExtensionFromMimeType` function. (GREEN)
     *   `[✅] 1.2.4.7.2 [TEST-UNIT]` Create `path_utils.test.ts` and add unit tests for `getExtensionFromMimeType`. (GREEN for creation; test failures are separate issues for that utility)
-*   `[ ] 1.2.5 [BE]` `dialectic-service` Action: `generateContribution` (internal)
-    *   `[ ] 1.2.5.1 [TEST-INT]` Write tests (input: `sessionId`; auth: service role; verifies critiques are created against each thesis, and session status updated). (RED)
-    *   `[ ] 1.2.5.2` Implement logic:
+*   `[✅] 1.2.5 [BE]` `dialectic-service` Action: `generateContribution` (internal)
+    *   `[✅] 1.2.5.1 [TEST-INT]` Write tests (input: `sessionId`; auth: service role; verifies critiques are created against each thesis, and session status updated). (RED)
+    *   `[✅] 1.2.5.2` Implement logic:
         1.  Fetch session (including `associated_chat_id`), its models, all 'thesis' contributions for the current iteration, and `prompt_template_id` from session. Fetch `initial_user_prompt` from project. Fetch stage-appropriate prompt template content. Ensure user owns the project/session.
         2.  Verify the prior stage has completed and the user has indicated they wish to begin the next stage. Update to the default stage to the subsequent stage. Log this transition.
         3.  For each `session_model` representing an AI provider selected for this session:
@@ -702,21 +702,17 @@ The implementation plan uses the following labels to categorize work steps:
                 *   Save result in `dialectic_contributions` (stage 'antithesis', `target_contribution_id = thesis_contribution.id`, `actual_prompt_sent` = rendered critique prompt). Record errors if any.
         4.  Update `dialectic_sessions.status` to `antithesis_complete`. Log this transition.
         5.  This action concludes. The next stage (Synthesis) will be triggered by a separate user action.
-    *   `[ ] 1.2.5.3` (GREEN)
-    *   `[ ] 1.2.5.4 [REFACTOR]` Review logic and error handling.
-    *   `[ ] 1.2.5.5 [TEST-INT]` Run tests.
-*   `[ ] 1.2.6 [BE]` `dialectic-service` Action: `getProjectDetails`
-    *   `[ ] 1.2.6.1 [TEST-INT]` Write tests (input: `projectId`; auth; output: project, its sessions, their models, and all contributions, ordered correctly). (RED)
-    *   `[ ] 1.2.6.2` Implement using Supabase JS client to fetch nested data respecting RLS. (GREEN)
-    *   `[ ] 1.2.6.3 [TEST-INT]` Run tests.
+    *   `[✅] 1.2.5.3` (GREEN)
+    *   `[✅] 1.2.5.4 [REFACTOR]` Review logic and error handling.
+    *   `[✅] 1.2.5.5 [TEST-INT]` Run tests.
+*   `[✅] 1.2.6 [BE]` `dialectic-service` Action: `getProjectDetails`
+    *   `[✅] 1.2.6.1 [TEST-INT]` Write tests (input: `projectId`; auth; output: project, its sessions, their models, and all contributions, ordered correctly). (RED)
+    *   `[✅] 1.2.6.2` Implement using Supabase JS client to fetch nested data respecting RLS. (GREEN)
+    *   `[✅] 1.2.6.3 [TEST-INT]` Run tests.
 *   `[✅] 1.2.7 [BE]` `dialectic-service` Action: `listProjects`
     *   `[✅] 1.2.7.1 [TEST-INT]` Write tests (auth; output: list of user's projects). (RED)
     *   `[✅] 1.2.7.2` Implement. (GREEN)
     *   `[✅] 1.2.7.3 [TEST-INT]` Run tests.
-*   `[ ] 1.2.8 [BE]` `dialectic-service` Action: `listModelCatalog`
-    *   `[ ] 1.2.8.1 [TEST-INT]` Write tests (auth; output: list of active models from `ai_models_catalog`). (RED)
-    *   `[ ] 1.2.8.2` Implement. (GREEN)
-    *   `[ ] 1.2.8.3 [TEST-INT]` Run tests.
 *   `[ ] 1.2.9 [DOCS]` Document the `dialectic-service` Edge Function, its actions, inputs, outputs, and error handling strategies in a relevant README (e.g., `supabase/functions/dialectic-service/README.md`).
 *   `[ ] 1.2.10 [COMMIT]` feat(be): implement dialectic-service edge function with core actions
 

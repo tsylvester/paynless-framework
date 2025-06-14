@@ -169,8 +169,8 @@ export interface UnifiedAIResponse {
 
 export interface GenerateStageContributionsPayload {
   sessionId: string;
-  stageSlug: DialecticStage;
-  iterationNumber: number;
+  stageSlug?: DialecticStage;
+  iterationNumber?: number;
   chatId?: string | null;
 }
 
@@ -300,6 +300,7 @@ export enum DialecticStage {
 
 export interface GetProjectResourceContentPayload {
   resourceId: string;
+  fileName?: string;
 }
 
 export interface GetProjectResourceContentResponse {

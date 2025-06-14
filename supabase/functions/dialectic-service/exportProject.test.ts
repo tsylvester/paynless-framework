@@ -47,6 +47,7 @@ describe('Dialectic Service: exportProject Action', () => {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         user_domain_overlay_values: null,
+        process_template_id: 'proc-template-uuid-456',
     };
 
     const mockResourceToExport: Database['public']['Tables']['dialectic_project_resources']['Row'] = {
@@ -70,7 +71,7 @@ describe('Dialectic Service: exportProject Action', () => {
         session_description: 'Session to export',
         iteration_count: 1,
         selected_model_catalog_ids: null,
-        stage: "SYNTHESIS",
+        current_stage_id: 'stage-uuid-synthesis',
         status: 'synthesis_complete',
         associated_chat_id: null,
         user_input_reference_url: null,
@@ -96,11 +97,15 @@ describe('Dialectic Service: exportProject Action', () => {
         error: null,
         model_id: 'session-model-id',
         model_name: 'gpt-4',
-        model_version_details: null,
         stage: 'synthesis',
         target_contribution_id: null,
         prompt_template_id_used: null,
         seed_prompt_url: null,
+        contribution_type: 'model_generated',
+        edit_version: 1,
+        is_latest_edit: true,
+        original_model_contribution_id: null,
+        user_id: 'user-uuid',
     };
     const mockContributionContent = new TextEncoder().encode('# Contribution Content');
     const mockRawResponseContent = new TextEncoder().encode('{"raw": "response"}');

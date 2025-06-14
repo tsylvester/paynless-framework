@@ -27,6 +27,7 @@ describe('Dialectic Service: cloneProject Action', () => {
     status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     user_domain_overlay_values: null,
     initial_prompt_resource_id: null,
+    process_template_id: 'proc-template-uuid-123',
   };
 
   const mockOriginalResource: Database['public']['Tables']['dialectic_project_resources']['Row'] = {
@@ -43,7 +44,7 @@ describe('Dialectic Service: cloneProject Action', () => {
     status: 'synthesis_complete', associated_chat_id: null,
     created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     selected_model_catalog_ids: ['model-catalog-id-1'],
-    stage: 'THESIS',
+    current_stage_id: 'stage-uuid-thesis',
     user_input_reference_url: null,
   };
 
@@ -59,11 +60,15 @@ describe('Dialectic Service: cloneProject Action', () => {
     iteration_number: 1, citations: null, 
     stage: 'critique', 
     error: null, 
-    model_version_details: null, 
     prompt_template_id_used: null, 
     target_contribution_id: null,
     model_name: 'gpt-4',
     seed_prompt_url: null,
+    contribution_type: 'model_generated',
+    edit_version: 1,
+    is_latest_edit: true,
+    original_model_contribution_id: null,
+    user_id: 'user-uuid',
   };
 
   beforeEach(() => {
@@ -205,7 +210,8 @@ describe('Dialectic Service: cloneProject Action', () => {
         ...mockOriginalProject, 
         id: newGeneratedProjectId, 
         project_name: newProjectName, 
-        user_id: mockUser.id 
+        user_id: mockUser.id,
+        process_template_id: mockOriginalProject.process_template_id,
     };
 
     const dbConfig = prepareDatabaseConfig({
@@ -216,7 +222,7 @@ describe('Dialectic Service: cloneProject Action', () => {
         insertResults: {
             'dialectic_projects': { data: [clonedProjectData] }, // This is used by the improved select mock
             'dialectic_project_resources': { data: [{ ...mockOriginalResource, id: newGeneratedResourceId, project_id: newGeneratedProjectId, storage_path: `projects/${newGeneratedProjectId}/resources/${mockOriginalResource.file_name}` }] },
-            'dialectic_sessions': { data: [{ ...mockOriginalSession, id: newGeneratedSessionId, project_id: newGeneratedProjectId }] },
+            'dialectic_sessions': { data: [{ ...mockOriginalSession, id: newGeneratedSessionId, project_id: newGeneratedProjectId, current_stage_id: mockOriginalSession.current_stage_id }] },
             'dialectic_contributions': { data: [{ 
                 ...mockOriginalContribution, 
                 id: newGeneratedContributionId, 
