@@ -1,7 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
 import {
   DialecticServiceRequest,
-  UpdateProjectDomainTagPayload,
+  UpdateProjectDomainPayload,
   StartSessionPayload,
   GenerateStageContributionsPayload,
   GetProjectDetailsPayload,
@@ -12,7 +12,7 @@ import {
   DialecticContribution,
   DialecticProjectResource,
   DomainOverlayDescriptor,
-  UpdateProjectDomainTagSuccessData,
+  UpdateProjectDomainSuccessData,
   StartSessionSuccessResponse,
   GenerateStageContributionsSuccessResponse,
   UploadProjectResourceFileSuccessResponse,
@@ -39,11 +39,11 @@ import type {
   GetUserFn,
   ILogger
 } from '../_shared/types.ts';
-import type { DomainTagDescriptor } from "./listAvailableDomainTags.ts";
+import type { DomainDescriptor } from "./listAvailableDomains.ts";
 
 import { createProject } from "./createProject.ts";
-import { listAvailableDomainTags } from "./listAvailableDomainTags.ts";
-import { updateProjectDomainTag } from "./updateProjectDomainTag.ts";
+import { listAvailableDomains } from "./listAvailableDomains.ts";
+import { updateProjectDomain } from "./updateProjectDomain.ts";
 import { getProjectDetails } from "./getProjectDetails.ts";
 import { getContributionContentSignedUrlHandler } from "./getContributionContent.ts";
 import { startSession } from "./startSession.ts";
@@ -63,19 +63,19 @@ import { listDomains, type DialecticDomain } from './listDomains.ts';
 console.log("dialectic-service function started");
 
 // --- START: DI Helper Functions (AuthError replaced with ServiceError) ---
-interface IsValidDomainTagFn { (dbClient: SupabaseClient, domainTag: string): Promise<boolean>; }
+interface IsValidDomainFn { (dbClient: SupabaseClient, domainId: string): Promise<boolean>; }
 interface CreateSignedUrlFnResult { signedUrl: string | null; error: ServiceError | Error | null; }
 interface CreateSignedUrlFn { (client: SupabaseClient, bucket: string, path: string, expiresIn: number): Promise<CreateSignedUrlFnResult>; }
 
-export const isValidDomainTagDefaultFn: IsValidDomainTagFn = async (dbClient, domainTag) => {
-  if (domainTag === null) return true;
+export const isValidDomainDefaultFn: IsValidDomainFn = async (dbClient, domainId) => {
+  if (domainId === null) return true;
   const { data, error } = await dbClient
     .from('domain_specific_prompt_overlays')
-    .select('domain_tag')
-    .eq('domain_tag', domainTag)
+    .select('domain_id')
+    .eq('domain_id', domainId)
     .maybeSingle();
   if (error) {
-    logger.error('Error validating domain tag in isValidDomainTagDefaultFn', { error, domainTag });
+    logger.error('Error validating domain id in isValidDomainDefaultFn', { error, domainId });
     return false;
   }
   return !!data;
@@ -99,8 +99,8 @@ export const createSignedUrlDefaultFn: CreateSignedUrlFn = async (client, bucket
 // Define ActionHandlers interface
 export interface ActionHandlers {
   createProject: (payload: FormData, dbClient: SupabaseClient, user: User) => Promise<{ data?: DialecticProject; error?: ServiceError; status?: number }>;
-  listAvailableDomainTags: (dbClient: SupabaseClient, payload?: { stageAssociation?: DialecticStage }) => Promise<DomainTagDescriptor[] | { error: ServiceError }>;
-  updateProjectDomainTag: (getUserFn: GetUserFn, dbClient: SupabaseClient, isValidDomainTagFn: IsValidDomainTagFn, payload: UpdateProjectDomainTagPayload, logger: ILogger) => Promise<{ data?: UpdateProjectDomainTagSuccessData; error?: ServiceError }>;
+  listAvailableDomains: (dbClient: SupabaseClient, payload?: { stageAssociation?: DialecticStage }) => Promise<DomainDescriptor[] | { error: ServiceError }>;
+  updateProjectDomain: (getUserFn: GetUserFn, dbClient: SupabaseClient, payload: UpdateProjectDomainPayload, logger: ILogger) => Promise<{ data?: DialecticProject; error?: ServiceError }>;
   getProjectDetails: (payload: GetProjectDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: DialecticProject; error?: ServiceError; status?: number }>;
   getContributionContentSignedUrlHandler: (getUserFn: GetUserFn, dbClient: SupabaseClient, createSignedUrlFn: CreateSignedUrlFn, logger: ILogger, payload: { contributionId: string }) => Promise<{ data?: { signedUrl: string }; error?: ServiceError; status?: number }>;
   startSession: (user: User, dbClient: SupabaseClient, payload: StartSessionPayload, dependencies: { logger: ILogger }) => Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }>;
@@ -210,13 +210,13 @@ export async function handleRequest(
       let userForJson: User | null = null;
       // List actions that require user authentication for JSON payloads
       const actionsRequiringAuth = [
-        'listProjects', 'getProjectDetails', 'updateProjectDomainTag', 
+        'listProjects', 'getProjectDetails', 'updateProjectDomain', 
         'startSession', 'generateContributions', 'getContributionContentSignedUrl',
         'deleteProject', 'cloneProject', 'exportProject', 'getProjectResourceContent',
         'saveContributionEdit', 'submitStageResponses'
       ];
       const noAuthActions = [
-        "listAvailableDomainTags", 
+        "listAvailableDomains", 
         "listAvailableDomainOverlays",
         "listDomains"
       ];
@@ -231,8 +231,8 @@ export async function handleRequest(
       }
       if (noAuthActions.includes(action)) {
         switch (action) {
-          case "listAvailableDomainTags": {
-            const result = await handlers.listAvailableDomainTags(dbAdminClient, payload);
+          case "listAvailableDomains": {
+            const result = await handlers.listAvailableDomains(dbAdminClient, payload);
             if (result && 'error' in result) {
               return createErrorResponse(result.error.message, result.error.status, req, result.error);
             }
@@ -259,12 +259,12 @@ export async function handleRequest(
         case 'listDomains':
             result = await handlers.listDomains(dbAdminClient);
             break;
-        case 'listAvailableDomainTags': {
-          const listTagsOutcome = await handlers.listAvailableDomainTags(dbAdminClient, payload as { stageAssociation?: DialecticStage } | undefined);
-          if (listTagsOutcome && typeof listTagsOutcome === 'object' && 'error' in listTagsOutcome && listTagsOutcome.error) {
-            result = { error: listTagsOutcome.error };
+        case 'listAvailableDomains': {
+          const listDomainsOutcome = await handlers.listAvailableDomains(dbAdminClient, payload as { stageAssociation?: DialecticStage } | undefined);
+          if (listDomainsOutcome && typeof listDomainsOutcome === 'object' && 'error' in listDomainsOutcome && listDomainsOutcome.error) {
+            result = { error: listDomainsOutcome.error };
           } else {
-            result = { data: listTagsOutcome as DomainTagDescriptor[] };
+            result = { data: listDomainsOutcome as DomainDescriptor[] };
           }
           break;
         }
@@ -296,19 +296,18 @@ export async function handleRequest(
             }
           }
           break;
-        case 'updateProjectDomainTag':
+        case 'updateProjectDomain':
           if (!payload) {
-              result = { error: { message: "Payload is required for updateProjectDomainTag", status: 400, code: 'PAYLOAD_MISSING' } };
+              result = { error: { message: "Payload is required for updateProjectDomain", status: 400, code: 'PAYLOAD_MISSING' } };
           } else if (!userForJson) { // Should be caught by auth block if made mandatory for this action
-              return createErrorResponse("User authentication failed for updateProjectDomainTag.", 401, req, { message: "User authentication failed.", status: 401, code: 'USER_AUTH_FAILED' });
+              return createErrorResponse("User authentication failed for updateProjectDomain.", 401, req, { message: "User authentication failed.", status: 401, code: 'USER_AUTH_FAILED' });
           } else {
-              // updateProjectDomainTag still uses getUserFn internally, keeping as is for now unless refactoring its internal auth too.
+              // updateProjectDomain still uses getUserFn internally, keeping as is for now unless refactoring its internal auth too.
               // For now, the userForJson check above is a safeguard if we make it mandatory at this level.
-              result = await handlers.updateProjectDomainTag(
+              result = await handlers.updateProjectDomain(
                   getUserFnForRequest, // Kept as is, as handler expects getUserFn
                   dbAdminClient, 
-                  isValidDomainTagDefaultFn, 
-                  payload as unknown as UpdateProjectDomainTagPayload,
+                  payload as unknown as UpdateProjectDomainPayload,
                   logger
               );
           }
@@ -512,8 +511,8 @@ export async function handleRequest(
   if (result.error) {
     return createErrorResponse(result.error.message, result.error.status || 500, req, result.error);
   } else {
-    // For listAvailableDomainTags, if the handler returns an array directly, wrap it in a data object
-    if (action === 'listAvailableDomainTags' && Array.isArray(result.data)) {
+    // For listAvailableDomains, if the handler returns an array directly, wrap it in a data object
+    if (action === 'listAvailableDomains' && Array.isArray(result.data)) {
       return createSuccessResponse({ data: result.data, success: true }, result.status || 200, req);
     }
     // Default success response construction
@@ -526,9 +525,8 @@ const supabaseAdmin = createSupabaseAdminClient();
 // Create the actual handlers map
 const actualHandlers: ActionHandlers = {
   createProject,
-  listAvailableDomainTags,
-  updateProjectDomainTag: (getUserFn, dbClient, isValidDomainTagFn, payload, logger) => 
-    updateProjectDomainTag(getUserFn, dbClient, isValidDomainTagFn, payload, logger),
+  listAvailableDomains,
+  updateProjectDomain,
   getProjectDetails,
   getContributionContentSignedUrlHandler: (getUserFn, dbClient, createSignedUrlFn, logger, payload) =>
     getContributionContentSignedUrlHandler(getUserFn, dbClient, createSignedUrlFn, logger, payload),
@@ -556,4 +554,4 @@ serve(async (req: Request) => {
 });
 
 // For testing purposes, you might want to export your handlers if they are not already.
-// This is already done for createProject, listAvailableDomainTags etc. at the top.
+// This is already done for createProject, listAvailableDomains etc. at the top.

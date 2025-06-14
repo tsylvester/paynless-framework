@@ -53,7 +53,7 @@ describe("listAvailableDomainOverlays", () => {
     const mockDbResponseData = [
       {
         id: "overlay-uuid-1",
-        domain_tag: "tech_writing",
+        domain_id: "tech_writing",
         description: "Technical Writing Standards",
         overlay_values: { detail: "some tech details" },
         is_active: true,
@@ -61,7 +61,7 @@ describe("listAvailableDomainOverlays", () => {
       },
       {
         id: "overlay-uuid-2",
-        domain_tag: "legal_drafting",
+        domain_id: "legal_drafting",
         description: "Legal Document Templates",
         overlay_values: null,
         is_active: true,
@@ -81,12 +81,12 @@ describe("listAvailableDomainOverlays", () => {
 
     assertEquals(result.length, 2);
     assertEquals(result[0].id, "overlay-uuid-1");
-    assertEquals(result[0].domainTag, "tech_writing");
+    assertEquals(result[0].domainId, "tech_writing");
     assertEquals(result[0].description, "Technical Writing Standards");
     assertEquals(result[0].overlay_values, { detail: "some tech details" });
     assertEquals(result[0].stageAssociation, "thesis");
     assertEquals(result[1].id, "overlay-uuid-2");
-    assertEquals(result[1].domainTag, "legal_drafting");
+    assertEquals(result[1].domainId, "legal_drafting");
     assertEquals(result[1].overlay_values, null);
     assertEquals(result[1].stageAssociation, "thesis");
 
@@ -99,7 +99,7 @@ describe("listAvailableDomainOverlays", () => {
     assertEquals(fromSpy.calls.length, 1);
     assertEquals(fromSpy.calls[0].args[0], 'domain_specific_prompt_overlays');
     assertEquals(qbSpies.select.calls.length, 1);
-    assertEquals(qbSpies.select.calls[0].args[0], 'id, domain_tag, description, overlay_values, is_active, system_prompts!inner(stage_association, is_active)');
+    assertEquals(qbSpies.select.calls[0].args[0], 'id, domain_id, description, overlay_values, is_active, system_prompts!inner(stage_association, is_active)');
     const eqCalls = qbSpies.eq.calls.map((call: any) => call.args); 
     assertExists(eqCalls.find((args: any[]) => args[0] === 'system_prompts.stage_association' && args[1] === 'thesis'));
     assertExists(eqCalls.find((args: any[]) => args[0] === 'is_active' && args[1] === true));
@@ -153,8 +153,8 @@ describe("listAvailableDomainOverlays", () => {
 
   it("should return an empty array if DB returns data but system_prompts is null or empty (data integrity issue)", async () => {
     const mockDbResponseData = [
-      { id: "overlay-uuid-bad-1", domain_tag: "bad_data_null", description: "system_prompts is null", is_active: true, system_prompts: null },
-      { id: "overlay-uuid-bad-2", domain_tag: "bad_data_empty", description: "system_prompts is empty array", is_active: true, system_prompts: [] },
+      { id: "overlay-uuid-bad-1", domain_id: "bad_data_null", description: "system_prompts is null", is_active: true, system_prompts: null },
+      { id: "overlay-uuid-bad-2", domain_id: "bad_data_empty", description: "system_prompts is empty array", is_active: true, system_prompts: [] },
     ];
     initializeSupabaseMocks({
       genericMockResults: {

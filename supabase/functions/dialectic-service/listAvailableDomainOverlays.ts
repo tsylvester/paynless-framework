@@ -5,7 +5,7 @@ import type { Json } from '../types_db.ts'; // Import Json type for overlay_valu
 
 interface QueryResultItem {
   id: string;
-  domain_tag: string;
+  domain_id: string;
   description: string | null;
   overlay_values: Json; // Added field, using Json type from db_types
   is_active: boolean; // from domain_specific_prompt_overlays
@@ -30,7 +30,7 @@ export async function listAvailableDomainOverlays(
 
   const { data, error } = await supabaseClient
     .from('domain_specific_prompt_overlays')
-    .select('id, domain_tag, description, overlay_values, is_active, system_prompts!inner(stage_association, is_active)')
+    .select('id, domain_id, description, overlay_values, is_active, system_prompts!inner(stage_association, is_active)')
     .eq('is_active', true)
     .eq('system_prompts.is_active', true)
     .eq('system_prompts.stage_association', stageAssociation);
@@ -75,7 +75,7 @@ export async function listAvailableDomainOverlays(
 
     return {
       id: item.id,
-      domainTag: item.domain_tag,
+      domainId: item.domain_id,
       description: item.description,
       overlay_values: item.overlay_values as Record<string, unknown> | string | null, 
       stageAssociation: stageAssociation, // Use the input stageAssociation directly

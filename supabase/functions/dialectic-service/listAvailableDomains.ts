@@ -1,11 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../_shared/logger.ts';
 
-logger.info("[listAvailableDomainTags] Function started.");
+logger.info("[listAvailableDomains] Function started.");
 
-export interface DomainTagDescriptor {
+export interface DomainDescriptor {
   id: string; // Corresponds to domain_specific_prompt_overlays.id
-  domainTag: string;
+  domainId: string;
   description: string | null;
   stageAssociation: string | null;
 }
@@ -13,7 +13,7 @@ export interface DomainTagDescriptor {
 // Define a type for the raw item received from Supabase query
 interface SupabaseDomainOverlayItem {
   id: string;
-  domain_tag: string;
+  domain_id: string;
   description: string | null;
   // system_prompts is an object if a related system_prompt exists, or null.
   system_prompts: { stage_association: string | null; } | null; 
@@ -21,30 +21,30 @@ interface SupabaseDomainOverlayItem {
 
 // Define a type for the expected request body or query params if any
 // For this modification, we expect an optional stageAssociation in query params
-interface ListAvailableDomainTagsParams {
+interface ListAvailableDomainsParams {
   stageAssociation?: string;
 }
 
-export async function listAvailableDomainTags(
+export async function listAvailableDomains(
   dbClient: SupabaseClient, 
-  params?: ListAvailableDomainTagsParams // Accept params, which could come from query string
+  params?: ListAvailableDomainsParams // Accept params, which could come from query string
 ) {
-  logger.info("[listAvailableDomainTags] Attempting to fetch domain tag descriptors.", { params });
+  logger.info("[listAvailableDomains] Attempting to fetch domain tag descriptors.", { params });
   
   let query = dbClient
     .from('domain_specific_prompt_overlays')
     .select(`
       id,
-      domain_tag,
+      domain_id,
       description,
       system_prompts ( stage_association )
     `)
     .eq('is_active', true)
-    .neq('domain_tag', null);
+    .neq('domain_id', null);
 
   // If stageAssociation is provided in params, add it to the query
   if (params?.stageAssociation) {
-    logger.info(`[listAvailableDomainTags] Filtering by stageAssociation: ${params.stageAssociation}`);
+    logger.info(`[listAvailableDomains] Filtering by stageAssociation: ${params.stageAssociation}`);
     // Attempting to filter on the related table's column.
     // The string 'system_prompts.stage_association' is passed to PostgREST.
     // TypeScript's strictness with column names known at compile time can be an issue here.
@@ -54,7 +54,7 @@ export async function listAvailableDomainTags(
   const { data, error } = await query;
 
   if (error) {
-    logger.error("[listAvailableDomainTags] Error fetching domain tag descriptors from DB:", { 
+    logger.error("[listAvailableDomains] Error fetching domain tag descriptors from DB:", { 
       errorDetails: error.message, 
       errorCode: error.code, 
       errorHint: error.hint 
@@ -69,34 +69,34 @@ export async function listAvailableDomainTags(
     };
   }
 
-  logger.info("[listAvailableDomainTags] Raw data received from DB for descriptors:", { rawData: data });
+  logger.info("[listAvailableDomains] Raw data received from DB for descriptors:", { rawData: data });
 
   // Transform the data to the desired flat structure
-  const mappedDescriptors: DomainTagDescriptor[] = ((data as unknown as SupabaseDomainOverlayItem[]) || [])
+  const mappedDescriptors: DomainDescriptor[] = ((data as unknown as SupabaseDomainOverlayItem[]) || [])
     .map((item) => ({
       id: item.id,
-      domainTag: item.domain_tag,
+      domainId: item.domain_id,
       description: item.description,
       stageAssociation: item.system_prompts ? item.system_prompts.stage_association : null,
     }))
-    // Filter out any items where domain_tag might have been null (e.g., if DB constraint changes or for robustness)
-    .filter((descriptor): descriptor is DomainTagDescriptor & { domainTag: string } => descriptor.domainTag !== null);
+    // Filter out any items where domain_id might have been null (e.g., if DB constraint changes or for robustness)
+    .filter((descriptor): descriptor is DomainDescriptor & { domainId: string } => descriptor.domainId !== null);
 
-  // Deduplicate based on domainTag, keeping the first occurrence
-  const uniqueDescriptors: DomainTagDescriptor[] = [];
-  const seenDomainTags = new Set<string>();
+  // Deduplicate based on domain, keeping the first occurrence
+  const uniqueDescriptors: DomainDescriptor[] = [];
+  const seenDomainIds = new Set<string>();
 
   for (const descriptor of mappedDescriptors) {
-    if (!seenDomainTags.has(descriptor.domainTag)) {
+    if (!seenDomainIds.has(descriptor.domainId)) {
       uniqueDescriptors.push(descriptor);
-      seenDomainTags.add(descriptor.domainTag);
+      seenDomainIds.add(descriptor.domainId);
     }
   }
 
-  logger.info("[listAvailableDomainTags] Transformed and deduplicated descriptors:", { descriptors: uniqueDescriptors });
+  logger.info("[listAvailableDomains] Transformed and deduplicated descriptors:", { descriptors: uniqueDescriptors });
 
   // Log the exact object/array the function is about to return
-  logger.info("[listAvailableDomainTags] Attempting to return this directly:", { returnValue: uniqueDescriptors });
+  logger.info("[listAvailableDomains] Attempting to return this directly:", { returnValue: uniqueDescriptors });
 
   // Return the array of descriptors directly. The main router (index.ts) will wrap this in a Response.
   return uniqueDescriptors;

@@ -4,18 +4,17 @@ import {
     DialecticProject 
   } from "./dialectic.interface.ts";
   import { createSupabaseClient } from "../_shared/auth.ts"; // Renamed import
-  import { isValidDomainTag } from "../_shared/domain-utils.ts"; // Renamed import
-  
+
   console.log("createProject function started");
   
   // Define a type for the function signature of createSupabaseClient
   type CreateSupabaseClientFn = (req: Request) => SupabaseClient;
-  type IsValidDomainTagFn = (dbClient: SupabaseClient, domainTag: string) => Promise<boolean>;
+  type IsValidDomainIdFn = (dbClient: SupabaseClient, domainId: string) => Promise<boolean>;
 
   // Define an options interface for clarity
   export interface CreateProjectOptions {
     createSupabaseClient?: CreateSupabaseClientFn;
-    isValidDomainTag?: IsValidDomainTagFn; // Allow injecting isValidDomainTag
+    isValidDomainId?: IsValidDomainIdFn; // Allow injecting isValidDomainId
   }
 
 export async function createProject(
@@ -29,11 +28,11 @@ export async function createProject(
   try {
     const projectName = payload.get('projectName') as string | null;
     const initialUserPromptText = payload.get('initialUserPromptText') as string | null;
-    const selectedDomainTag = payload.get('selectedDomainTag') as string | null;
+    const selectedDomainId = payload.get('selectedDomainId') as string | null;
     const selected_domain_overlay_id = payload.get('selectedDomainOverlayId') as string | null;
     const promptFile = payload.get('promptFile') as File | null;
 
-    console.log({ projectName, initialUserPromptText, selectedDomainTag, selected_domain_overlay_id, promptFileExists: !!promptFile });
+    console.log({ projectName, initialUserPromptText, selectedDomainId, selected_domain_overlay_id, promptFileExists: !!promptFile });
 
     if (!projectName) {
       return { error: { message: "projectName is required", status: 400 } };
@@ -41,38 +40,38 @@ export async function createProject(
     if (!initialUserPromptText && !promptFile) {
       return { error: { message: "Either initialUserPromptText or a promptFile must be provided.", status: 400 } };
     }
-
-    if (selectedDomainTag) {
-      try {
-        const tagIsValid = await isValidDomainTag(dbAdminClient, selectedDomainTag);
-        if (!tagIsValid) {
-          return { error: { message: `Invalid selectedDomainTag: "${selectedDomainTag}"`, status: 400 } };
-        }
-      } catch (e) {
-        console.error("Error during domain tag validation:", e);
-        const details = e instanceof Error ? e.message : String(e);
-        return { error: { message: "Failed to create project", details, status: 500 } };
-      }
+    if (!selectedDomainId) {
+      return { error: { message: "selectedDomainId is required", status: 400 } };
     }
-  
+
     const { data: newProjectData, error: createError } = await dbAdminClient
       .from('dialectic_projects')
       .insert({
         user_id: user.id,
         project_name: projectName,
         initial_user_prompt: initialUserPromptText || "",
-        selected_domain_tag: selectedDomainTag,
+        selected_domain_id: selectedDomainId,
         selected_domain_overlay_id: selected_domain_overlay_id,
         status: 'new',
         initial_prompt_resource_id: null,
       })
-      .select()
+      .select(`
+        *,
+        domain:dialectic_domains (
+          name
+        )
+      `)
       .single();
 
     if (createError) {
       console.error("Error creating project (initial insert):", createError);
-      if (createError.code === '23503') {
-        return { error: { message: "Invalid selected_domain_overlay_id. The specified overlay does not exist.", details: createError.message, status: 400 } };
+      if (createError.code === '23503') { // foreign_key_violation
+        if (createError.message.includes('selected_domain_id')) {
+          return { error: { message: "Invalid selectedDomainId. The specified domain does not exist.", details: createError.message, status: 400 } };
+        }
+        if (createError.message.includes('selected_domain_overlay_id')) {
+          return { error: { message: "Invalid selected_domain_overlay_id. The specified overlay does not exist.", details: createError.message, status: 400 } };
+        }
       }
       return { error: { message: "Failed to create project", details: createError.details || createError.message, status: 500 } };
     }
@@ -137,7 +136,12 @@ export async function createProject(
           initial_user_prompt: "",
         })
         .eq('id', newProjectData.id)
-        .select()
+        .select(`
+          *,
+          domain:dialectic_domains (
+            name
+          )
+        `)
         .single();
 
       if (updateProjectError) {
@@ -156,7 +160,8 @@ export async function createProject(
       project_name: newProjectData.project_name,
       initial_user_prompt: newProjectData.initial_user_prompt,
       initial_prompt_resource_id: newProjectData.initial_prompt_resource_id,
-      selected_domain_tag: newProjectData.selected_domain_tag,
+      selected_domain_id: newProjectData.selected_domain_id,
+      domain_name: newProjectData.domain.name,
       selected_domain_overlay_id: newProjectData.selected_domain_overlay_id,
       repo_url: newProjectData.repo_url,
       status: newProjectData.status,

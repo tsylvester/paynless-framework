@@ -26,7 +26,7 @@ export async function listProjects(
 
   const { data: projectsData, error: projectsError } = await dbClient
     .from('dialectic_projects')
-    .select('*') // Select all columns for now, can be refined later if needed
+    .select('*, dialectic_domains(name)')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false }); // Optional: order by creation date
 

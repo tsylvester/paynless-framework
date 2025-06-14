@@ -213,10 +213,11 @@ describe("getProjectDetails", () => {
     assertEquals(result.error?.status, 500);
   });
 
-  type MockDbProjectData = Omit<DialecticProject, 'sessions' | 'contributions'> & {
+  type MockDbProjectData = Omit<DialecticProject, 'sessions' | 'contributions' | 'domain_name'> & {
     dialectic_sessions: (Omit<DialecticSession, 'contributions' | 'dialectic_contributions'> & {
         dialectic_contributions?: Partial<DialecticContribution>[] | null;
     })[] | null;
+    dialectic_domains: { name: string } | null;
   };
 
   it("should successfully fetch project details with sessions, models, and sorted contributions", async () => {
@@ -229,7 +230,7 @@ describe("getProjectDetails", () => {
       updated_at: new Date().toISOString(),
       repo_url: null,
       status: "active",
-      selected_domain_tag: "general",
+      selected_domain_id: "domain-id-general",
       dialectic_sessions: [
         {
           id: "session-1",
@@ -248,10 +249,14 @@ describe("getProjectDetails", () => {
             id: "contrib-2", 
             session_id: "session-1", 
             created_at: new Date(Date.now() + 1000).toISOString(), 
-            content_storage_bucket: "bucket", 
-            content_storage_path: "path2", 
-            content_mime_type: "text/plain", content_size_bytes: 100, iteration_number: 1 } as Partial<DialecticContribution>,
-            { id: "contrib-1", session_id: "session-1", created_at: new Date().toISOString(), content_storage_bucket: "bucket", content_storage_path: "path1", content_mime_type: "text/plain", content_size_bytes: 50, iteration_number: 1 } as Partial<DialecticContribution>,
+            stage: 'antithesis' 
+            },
+            { 
+            id: "contrib-1", 
+            session_id: "session-1", 
+            created_at: new Date().toISOString(), 
+            stage: 'thesis' 
+            },
           ],
         },
         {
@@ -283,6 +288,7 @@ describe("getProjectDetails", () => {
           dialectic_contributions: null, 
         },
       ],
+      dialectic_domains: { name: "General" }
     };
     
     if (debugStub) debugStub.restore();
@@ -351,7 +357,7 @@ describe("getProjectDetails", () => {
     assertEquals(fromSpy.calls[0].args[0], 'dialectic_projects');
     
     assertEquals(qbSpies.select.calls.length, 1);
-    const expectedSelect = "*, dialectic_sessions (*, dialectic_contributions (*) )";
+    const expectedSelect = "*, dialectic_domains ( name ), dialectic_sessions (*, dialectic_contributions (*) )";
     const actualSelect = qbSpies.select.calls[0].args[0]?.toString().replace(/\s+/g, ' ').trim();
     assertEquals(actualSelect, expectedSelect);
 
@@ -360,6 +366,8 @@ describe("getProjectDetails", () => {
     assertEquals(qbSpies.eq.calls[0].args[1], 'test-project-id');
     assertEquals(qbSpies.eq.calls[1].args[0], 'user_id');
     assertEquals(qbSpies.eq.calls[1].args[1], MOCK_USER_ID); 
+
+    assertEquals(resultData.dialectic_domains.name, "General");
   });
   
   it("should handle project with no sessions", async () => {
@@ -372,8 +380,9 @@ describe("getProjectDetails", () => {
       updated_at: new Date().toISOString(),
       repo_url: null,
       status: "active",
-      selected_domain_tag: "general",
+      selected_domain_id: "domain-id-general",
       dialectic_sessions: [], 
+      dialectic_domains: { name: "General" }
     };
 
     if (debugStub) debugStub.restore();
@@ -421,8 +430,9 @@ describe("getProjectDetails", () => {
       updated_at: new Date().toISOString(),
       repo_url: null,
       status: "active",
-      selected_domain_tag: "general",
+      selected_domain_id: "domain-id-general",
       dialectic_sessions: null,
+      dialectic_domains: { name: "General" }
     };
 
     if (debugStub) debugStub.restore();

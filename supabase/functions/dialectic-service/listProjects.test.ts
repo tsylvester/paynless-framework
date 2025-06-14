@@ -39,6 +39,9 @@ const getMockUser = (id: string): User => ({
 });
 
 type DialecticProjectRow = Database['public']['Tables']['dialectic_projects']['Row'];
+type DialecticProjectWithDomain = DialecticProjectRow & {
+  dialectic_domains: { name: string } | null;
+};
 
 // Helper to provide the DI override for auth
 const getTestAuthOptions = (client: IMockSupabaseClient): { createSupabaseClientOverride: (req: Request) => any } => ({
@@ -86,9 +89,9 @@ describe("listProjects", () => {
   });
 
   it("should return a list of projects for an authenticated user", async () => {
-    const mockProjectsData: DialecticProjectRow[] = [
-      { id: "proj-1", user_id: MOCK_USER_ID, project_name: "Project Alpha", created_at: new Date().toISOString(), initial_user_prompt: "prompt1", repo_url: null, selected_domain_tag: null, status: "active", updated_at: new Date().toISOString(), user_domain_overlay_values: {}, initial_prompt_resource_id: null, selected_domain_overlay_id: null, process_template_id: null },
-      { id: "proj-2", user_id: MOCK_USER_ID, project_name: "Project Beta", created_at: new Date(Date.now() - 100000).toISOString(), initial_user_prompt: "prompt2", repo_url:null, selected_domain_tag: null, status: "active", updated_at: new Date().toISOString(), user_domain_overlay_values: null, initial_prompt_resource_id: null, selected_domain_overlay_id: null, process_template_id: null },
+    const mockProjectsData: DialecticProjectWithDomain[] = [
+      { id: "proj-1", user_id: MOCK_USER_ID, project_name: "Project Alpha", created_at: new Date().toISOString(), initial_user_prompt: "prompt1", repo_url: null, selected_domain_id: "domain-1", status: "active", updated_at: new Date().toISOString(), user_domain_overlay_values: {}, initial_prompt_resource_id: null, selected_domain_overlay_id: null, process_template_id: null, dialectic_domains: { name: 'Domain A'} },
+      { id: "proj-2", user_id: MOCK_USER_ID, project_name: "Project Beta", created_at: new Date(Date.now() - 100000).toISOString(), initial_user_prompt: "prompt2", repo_url:null, selected_domain_id: "domain-2", status: "active", updated_at: new Date().toISOString(), user_domain_overlay_values: null, initial_prompt_resource_id: null, selected_domain_overlay_id: null, process_template_id: null, dialectic_domains: { name: 'Domain B'} },
     ];
 
     // Restore global stubs before re-initializing and re-stubbing locally
@@ -120,8 +123,10 @@ describe("listProjects", () => {
 
     assertExists(result.data);
     assertEquals(result.data?.length, 2);
-    assertEquals(result.data?.[0].id, "proj-1"); // Newest first due to mock data setup (proj-1 has current time)
-    assertEquals(result.data?.[1].id, "proj-2"); // Older
+    assertEquals(result.data?.[0].id, "proj-1");
+    assertEquals((result.data?.[0] as any).dialectic_domains.name, "Domain A");
+    assertEquals(result.data?.[1].id, "proj-2");
+    assertEquals((result.data?.[1] as any).dialectic_domains.name, "Domain B");
     assertEquals(result.error, undefined);
 
     const fromSpy = currentClientSpies.fromSpy;
@@ -133,7 +138,7 @@ describe("listProjects", () => {
     assertEquals(fromSpy.calls.length, 1);
     assertEquals(fromSpy.calls[0].args[0], 'dialectic_projects');
     assertEquals(qbSpies.select.calls.length, 1);
-    assertEquals(qbSpies.select.calls[0].args[0], '*');
+    assertEquals(qbSpies.select.calls[0].args[0], '*, dialectic_domains(name)');
     assertEquals(qbSpies.eq.calls.length, 1);
     assertEquals(qbSpies.eq.calls[0].args[0], 'user_id');
     assertEquals(qbSpies.eq.calls[0].args[1], MOCK_USER_ID);

@@ -7,11 +7,7 @@ import type { User } from "npm:@supabase/gotrue-js@^2.6.3";
 import type { FileObject } from "npm:@supabase/storage-js@^2.5.5";
 import { 
     createMockSupabaseClient, 
-    type IMockSupabaseClient, 
-    type IMockClientSpies,
     type MockSupabaseDataConfig,
-    type IMockStorageBucketAPI,
-    type IMockStorageBasicResponse,
     type MockQueryBuilderState
 } from '../_shared/supabase.mock.ts';
 
@@ -22,12 +18,23 @@ describe('Dialectic Service: cloneProject Action', () => {
   
   const mockOriginalProject: Database['public']['Tables']['dialectic_projects']['Row'] = {
     id: 'orig-project-uuid', user_id: 'user-uuid', project_name: 'Original Project',
-    initial_user_prompt: 'Original prompt', selected_domain_overlay_id: 'overlay-uuid',
-    selected_domain_tag: 'software_development', repo_url: 'http://github.com/original/repo',
+    initial_user_prompt: 'Original prompt',
+    selected_domain_id: 'domain-uuid-software',
+    repo_url: 'http://github.com/original/repo',
     status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     user_domain_overlay_values: null,
     initial_prompt_resource_id: null,
     process_template_id: 'proc-template-uuid-123',
+    selected_domain_overlay_id: null,
+  };
+
+  const mockSoftwareDomain: Database['public']['Tables']['dialectic_domains']['Row'] = {
+    id: 'domain-uuid-software',
+    name: 'Software Development',
+    description: 'Domains related to software engineering and development.',
+    parent_domain_id: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
   };
 
   const mockOriginalResource: Database['public']['Tables']['dialectic_project_resources']['Row'] = {
@@ -98,6 +105,7 @@ describe('Dialectic Service: cloneProject Action', () => {
         fetchResources?: any[], fetchResourcesError?: any,
         fetchSessions?: any[], fetchSessionsError?: any,
         fetchContributions?: any[], fetchContributionsError?: any,
+        fetchDomains?: any[], fetchDomainsError?: any,
         insertResults?: Record<string, {data?: any[], error?: any}>,
         deleteError?: Record<string, any> // For mocking delete errors
     } = {}): MockSupabaseDataConfig['genericMockResults'] => {
@@ -146,6 +154,9 @@ describe('Dialectic Service: cloneProject Action', () => {
     };
     genericMockResults['dialectic_contributions'] = {
         select: { data: params.fetchContributions !== undefined ? params.fetchContributions : [mockOriginalContribution], error: params.fetchContributionsError || null }
+    };
+    genericMockResults['dialectic_domains'] = {
+        select: { data: params.fetchDomains !== undefined ? params.fetchDomains : [mockSoftwareDomain], error: params.fetchDomainsError || null }
     };
 
     // INSERT mocks
@@ -211,6 +222,7 @@ describe('Dialectic Service: cloneProject Action', () => {
         id: newGeneratedProjectId, 
         project_name: newProjectName, 
         user_id: mockUser.id,
+        selected_domain_id: mockOriginalProject.selected_domain_id,
         process_template_id: mockOriginalProject.process_template_id,
     };
 
@@ -219,6 +231,7 @@ describe('Dialectic Service: cloneProject Action', () => {
         fetchResources: [mockOriginalResource],
         fetchSessions: [mockOriginalSession],
         fetchContributions: [mockOriginalContribution],
+        fetchDomains: [mockSoftwareDomain],
         insertResults: {
             'dialectic_projects': { data: [clonedProjectData] }, // This is used by the improved select mock
             'dialectic_project_resources': { data: [{ ...mockOriginalResource, id: newGeneratedResourceId, project_id: newGeneratedProjectId, storage_path: `projects/${newGeneratedProjectId}/resources/${mockOriginalResource.file_name}` }] },
@@ -231,6 +244,7 @@ describe('Dialectic Service: cloneProject Action', () => {
                 content_storage_path: `projects/${newGeneratedProjectId}/${newGeneratedSessionId}/${newGeneratedContributionId}.md`, 
                 raw_response_storage_path: `projects/${newGeneratedProjectId}/${newGeneratedSessionId}/${newGeneratedContributionId}_raw.json` 
             }] },
+            'dialectic_domains': { data: [{ ...mockSoftwareDomain }] }
         }
     });
     const storageConf = prepareStorageConfig();
@@ -258,6 +272,7 @@ describe('Dialectic Service: cloneProject Action', () => {
         assertEquals(clonedProject!.project_name, newProjectName);
         assertNotEquals(clonedProject!.id, originalProjectId);
         assertEquals(clonedProject!.initial_user_prompt, mockOriginalProject.initial_user_prompt);
+        assertEquals(clonedProject!.selected_domain_id, mockOriginalProject.selected_domain_id);
 
         // Assertions using testSpies
         const fromSpy = testSpies.fromSpy;
@@ -344,6 +359,7 @@ describe('Dialectic Service: cloneProject Action', () => {
         fetchResources: [mockOriginalResource],
         fetchSessions: [mockOriginalSession],
         fetchContributions: [mockOriginalContribution],
+        fetchDomains: [mockSoftwareDomain],
         insertResults: {
             'dialectic_projects': { data: [clonedProjectDataDefaultName] },
             'dialectic_project_resources': { data: [{ ...mockOriginalResource, id: newGeneratedResourceIdForDefaultTest, project_id: newGeneratedProjectId, storage_path: `projects/${newGeneratedProjectId}/resources/${mockOriginalResource.file_name}` }] },
@@ -356,6 +372,7 @@ describe('Dialectic Service: cloneProject Action', () => {
                 content_storage_path: `projects/${newGeneratedProjectId}/${newGeneratedSessionIdForDefaultTest}/${newGeneratedContributionIdForDefaultTest}.md`, 
                 raw_response_storage_path: `projects/${newGeneratedProjectId}/${newGeneratedSessionIdForDefaultTest}/${newGeneratedContributionIdForDefaultTest}_raw.json` 
             }] },
+            'dialectic_domains': { data: [{ ...mockSoftwareDomain }] }
         }
     });
     const storageConf = prepareStorageConfig();
@@ -381,6 +398,7 @@ describe('Dialectic Service: cloneProject Action', () => {
         assertEquals(error, null, "Error should be null on successful clone with default name");
         assertEquals(clonedProject!.project_name, defaultCloneName);
         assertEquals(clonedProject!.id, newGeneratedProjectId);
+        assertEquals(clonedProject!.selected_domain_id, mockOriginalProject.selected_domain_id);
 
         // Verify project insert
         const projectSelectBuilderSpiesDefault = testSpies.getLatestQueryBuilderSpies('dialectic_projects');
@@ -489,8 +507,22 @@ describe('Dialectic Service: cloneProject Action', () => {
     const dbConfig = prepareDatabaseConfig({
         fetchProject: mockOriginalProject,
         fetchResources: [mockOriginalResource], // Need this for the copy attempt
+        fetchSessions: [mockOriginalSession],
+        fetchContributions: [mockOriginalContribution],
+        fetchDomains: [mockSoftwareDomain],
         insertResults: {
-            'dialectic_projects': { data: [{ ...mockOriginalProject, id: newGeneratedProjectId, project_name: 'Test Clone Fail', user_id: mockUser.id }] }
+            'dialectic_projects': { data: [{ ...mockOriginalProject, id: newGeneratedProjectId, project_name: 'Test Clone Fail', user_id: mockUser.id }] },
+            'dialectic_project_resources': { data: [{ ...mockOriginalResource, id: newGeneratedProjectId, project_id: newGeneratedProjectId, storage_path: `projects/${newGeneratedProjectId}/resources/${mockOriginalResource.file_name}` }] },
+            'dialectic_sessions': { data: [{ ...mockOriginalSession, id: newGeneratedProjectId, project_id: newGeneratedProjectId }] },
+            'dialectic_contributions': { data: [{ 
+                ...mockOriginalContribution, 
+                id: newGeneratedProjectId, 
+                session_id: newGeneratedProjectId, 
+                model_id: mockOriginalContribution.model_id,
+                content_storage_path: `projects/${newGeneratedProjectId}/${newGeneratedProjectId}/${newGeneratedProjectId}.md`, 
+                raw_response_storage_path: `projects/${newGeneratedProjectId}/${newGeneratedProjectId}/${newGeneratedProjectId}_raw.json` 
+            }] },
+            'dialectic_domains': { data: [{ ...mockSoftwareDomain }] }
         },
         deleteError: { // This is to check if rollback (delete) is attempted
             'dialectic_projects': null // Simulate successful delete during rollback if called

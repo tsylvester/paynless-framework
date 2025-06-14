@@ -1225,56 +1225,58 @@ The implementation plan uses the following labels to categorize work steps:
 
 *   `[ ] 1.Y.6 [COMMIT]` feat(arch): implement flexible domain and process architecture
 
+### 1.Z [REFACTOR] Transition from 'selected_domain_tag' to 'selected_domain_id'
+
+*   **Objective:** To execute a direct, non-backwards-compatible refactoring within the development branch to replace the legacy `dialectic_projects.selected_domain_tag` (TEXT) field with the new, normalized `dialectic_projects.selected_domain_id` (UUID foreign key to `dialectic_domains.id`). This approach is chosen because the project is pre-release with no live user data to migrate, allowing for a faster and cleaner "rip and replace" strategy.
+
+*   `[✅] 1.Z.1 [DB]` **Phase 1: Database Schema Migration (The "Rip")**
+    *   `[✅] 1.Z.1.1 [DB]` Create a new Supabase migration file (`20250614144354_refactor_domain_handling.sql`).
+    *   `[✅] 1.Z.1.2 [DB]` In the migration script, alter the `dialectic_projects` table to:
+        *   Add the new `selected_domain_id` column as a `uuid`.
+        *   Add a foreign key constraint from `selected_domain_id` to `dialectic_domains(id)`.
+        *   Drop the old `selected_domain_tag` column.
+        *   Enforce a `NOT NULL` constraint on the new `selected_domain_id` column.
+    *   `[✅] 1.Z.1.3 [DB]` Apply the database migration to the local development environment.
+    *   `[✅] 1.Z.1.4 [DB]` Regenerate Supabase TypeScript types (`types_db.ts`) to reflect the new schema.
+
+*   `[ ] 1.Z.2 [BE/REFACTOR]` **Phase 2: Backend Codebase Refactoring (The "Replace")**
+    *   `[✅] 1.Z.2.1 [BE/REFACTOR]` Identify all usages of `selected_domain_tag` across the `supabase/functions` directory to create a clear list of files to modify.
+    *   `[✅] 1.Z.2.2 [BE/REFACTOR]` Rename `updateProjectDomainTag.ts` to `updateProjectDomain.ts`.
+        *   `[✅]` Update the function's logic and payload type to accept `selectedDomainId: string` instead of `selectedDomainTag: string`.
+        *   `[✅]` Update the corresponding test file name and its contents.
+    *   `[✅] 1.Z.2.3 [BE/REFACTOR]` Refactor `createProject.ts`:
+        *   `[✅]` Modify the `CreateProjectPayload` to expect `selectedDomainId` instead of `selectedDomainTag`.
+        *   `[✅]` Update the database insertion logic to populate the `selected_domain_id` column.
+    *   `[✅] 1.Z.2.4 [BE/REFACTOR]` Refactor `cloneProject.ts`:
+        *   `[✅]` Update the logic to correctly copy the `selected_domain_id` of the original project to the new project.
+    *   `[✅] 1.Z.2.5 [BE/REFACTOR]` Refactor read operations (`getProjectDetails`, `listProjects`, etc.):
+        *   `[✅]` Update Supabase queries to `JOIN` `dialectic_projects` with `dialectic_domains` on `dialectic_projects.selected_domain_id = dialectic_domains.id`.
+        *   `[✅]` Modify the data returned by these functions to include both `selected_domain_id` from the project and the `name` from the joined domain table (e.g., as a new `domain_name` property).
+    *   `[ ] 1.Z.2.6 [TEST-INT]` Update all related integration tests (`*.test.ts`) within `supabase/functions/dialectic-service/` to align with the new database schema, function payloads, and expected return data structures.
+
+*   `[ ] 1.Z.3 [API/REFACTOR]` **Phase 2: Shared Types and API Client Refactoring**
+    *   `[ ] 1.Z.3.1 [TYPES]` Update the `DialecticProject` type definition in `packages/types`:
+        *   `[ ]` Remove the `selected_domain_tag` property.
+        *   `[ ]` Add the `selected_domain_id: string` property.
+        *   `[ ]` Add the `domain_name: string` property to hold the joined name.
+    *   `[ ] 1.Z.3.2 [API]` Update `DialecticApiClient` interfaces and method payloads (e.g., `CreateProjectPayload`) in `@paynless/api` to use `selectedDomainId`.
+    *   `[ ] 1.Z.3.3 [TEST-UNIT]` Update all `dialectic.api.test.ts` unit tests and associated mocks to use the new types and payloads.
+
+*   `[ ] 1.Z.4 [STORE/REFACTOR]` **Phase 2: State Management Refactoring**
+    *   `[ ] 1.Z.4.1 [STORE]` Update `DialecticStateValues` in `dialecticStore.ts`, replacing any state related to `selectedDomainTag` with state for `selectedDomainId`.
+    *   `[ ] 1.Z.4.2 [STORE]` Refactor store thunks (`createDialecticProject`, etc.) and actions (`setSelectedDomainTag` -> `setSelectedDomainId`) to operate with the domain ID.
+    *   `[ ] 1.Z.4.3 [STORE]` Update store selectors to work with `selectedDomainId` and the refactored `DialecticProject` object structure.
+    *   `[ ] 1.Z.4.4 [TEST-UNIT]` Update all `dialecticStore.test.ts` and `dialecticStore.selectors.test.ts` tests to reflect the new state and logic.
+
+*   `[ ] 1.Z.5 [UI/REFACTOR]` **Phase 2: Frontend Component Refactoring**
+    *   `[ ] 1.Z.5.1 [UI]` Systematically fix all TypeScript errors that arise in the `apps/web` directory due to the type changes.
+    *   `[ ] 1.Z.5.2 [UI]` Update any component that displays the domain name (e.g., on the project details page) to use the new `domain_name` property from the project object in the store.
+    *   `[ ] 1.Z.5.3 [UI]` Update components that allow domain selection (e.g., `CreateDialecticProjectForm`, `StartDialecticSessionModal`) to ensure their selectors provide the `dialectic_domains.id` to the store actions.
+    *   `[ ] 1.Z.5.4 [TEST-UNIT]` Update all affected component unit tests to mock the new store state and test the updated component logic.
+
+*   `[ ] 1.Z.6 [TEST-E2E]` **Phase 3: Finalization and Verification**
+    *   `[ ] 1.Z.6.1 [TEST-E2E]` Execute the full suite of end-to-end tests to validate the entire project creation and management flow with the new domain handling logic.
+    *   `[ ] 1.Z.6.2 [DOCS]` Once all steps are complete, update all items in this `1.Z` section to `[✅]`.
+    *   `[ ] 1.Z.6.3 [COMMIT]` refactor(system): complete transition from selected_domain_tag to selected_domain_id
+
 {repo_root}/  (Root of the user's GitHub repository)
-└── {dialectic_outputs_base_dir_name}/ (Configurable, e.g., "ai_dialectic_sessions")
-    └── {project_name_slug}/
-        ├── project_readme.md      (High-level project description, goals, defined by user or initial setup)
-        ├── Implementation/          (User-managed folder for their current work-in-progress files related to this project)
-        │   └── ...
-        ├── Complete/                (User-managed folder for their completed work items for this project)
-        │   └── ...
-        └── session_{session_id_short}/  (Each distinct run of the dialectic process)
-            └── iteration_{N}/        (N being the iteration number, e.g., "iteration_1")
-                ├── 0_seed_inputs/
-                │   ├── user_prompt.md  (The specific prompt that kicked off this iteration)
-                │   └── system_settings.json          (Models, core prompt templates used for this iteration)
-                ├── 1_hypothesis/
-                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
-                │   ├── {model_name_slug}_hypothesis.md (Contains YAML frontmatter + AI response)
-                │   ├── ... (other models' hypothesis outputs)
-                │   ├── user_feedback_hypothesis.md   (User's feedback on this stage)
-                │   └── documents/                      (Optional refined documents, e.g., PRDs from each model)
-                │       └── {model_name_slug}_prd_hypothesis.md
-                │       └── ...
-                ├── 2_antithesis/
-                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
-                │   ├── {critiquer_model_slug}_critique_on_{original_model_slug}.md
-                │   ├── ...
-                │   └── user_feedback_antithesis.md
-                ├── 3_synthesis/
-                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
-                │   ├── {model_name_slug}_synthesis.md
-                │   ├── ...
-                │   ├── user_feedback_synthesis.md
-                │   └── documents/                      (Refined documents from each model, e.g., PRDs, business cases)
-                │       ├── {model_name_slug}_prd_synthesis.md
-                │       ├── {model_name_slug}_business_case_synthesis.md
-                │       └── ...
-                ├── 4_parenthesis/
-                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
-                │   ├── {model_name_slug}_parenthesis.md
-                │   ├── ...
-                │   ├── user_feedback_parenthesis.md
-                │   └── documents/                      (Detailed implementation plans from each model)
-                │       └── {model_name_slug}_implementation_plan_parenthesis.md
-                │       └── ...
-                ├── 5_paralysis/
-                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
-                │   ├── {model_name_slug}_paralysis.md
-                │   ├── ...
-                │   ├── user_feedback_paralysis.md
-                │   └── documents/                      (The user-selected/finalized canonical outputs)
-                │       ├── chosen_implementation_plan.md
-                │       ├── project_checklist.csv
-                │       └── ... (other formats like Jira importable CSV/JSON)
-                └── iteration_summary.md (Optional: An AI or user-generated summary of this iteration's key outcomes and learnings)

@@ -3,7 +3,7 @@ import {
     ContributionWithNestedOwner,
   } from "./dialectic.interface.ts";
 import type { SupabaseClient } from '@supabase/supabase-js'; // Added import for SupabaseClient
-import type { ServiceError, GetUserFn } from '../_shared/types.ts';
+import type { ServiceError, GetUserFn, ILogger } from '../_shared/types.ts';
 
 interface CreateSignedUrlFnResult {
   signedUrl: string | null;
@@ -14,11 +14,6 @@ interface CreateSignedUrlFn {
   (client: SupabaseClient, bucket: string, path: string, expiresIn: number): Promise<CreateSignedUrlFnResult>; 
 }
 
-interface Logger {
-  warn: (message: string, context?: Record<string, unknown>) => void;
-  error: (message: string, context?: Record<string, unknown>) => void;
-}
-
   
 console.log("getContributionContent function started");
   
@@ -27,7 +22,7 @@ export async function getContributionContentSignedUrlHandler(
     getUser: GetUserFn,
     dbClient: SupabaseClient, // Used SupabaseClient type
     createSignedUrl: CreateSignedUrlFn,
-    loggerInstance: Logger,
+    logger: ILogger,
     payload: { contributionId: string }
   ): Promise<{ data?: { signedUrl: string; mimeType: string; sizeBytes: number | null }; error?: { message: string; status?: number; details?: string, code?: string } }> {
     const { contributionId } = payload;
@@ -42,7 +37,7 @@ export async function getContributionContentSignedUrlHandler(
   
     if (userError || !user) {
       // logger.warn("User not authenticated for getContributionContentSignedUrl", { error: userError }); // Replaced
-      loggerInstance.warn("User not authenticated for getContributionContentSignedUrl", { error: userError });
+      logger.warn("User not authenticated for getContributionContentSignedUrl", { error: userError });
       return { error: { message: "User not authenticated", code: "AUTH_ERROR", status: 401 } };
     }
   
@@ -63,13 +58,13 @@ export async function getContributionContentSignedUrlHandler(
   
     if (contributionError) {
       // logger.error("Error fetching contribution details for signed URL:", { error: contributionError, contributionId }); // Replaced
-      loggerInstance.error("Error fetching contribution details for signed URL:", { error: contributionError, contributionId });
+      logger.error("Error fetching contribution details for signed URL:", { error: contributionError, contributionId });
       return { error: { message: "Failed to fetch contribution details.", details: contributionError.message, code: "DB_FETCH_ERROR", status: 500 } };
     }
   
     if (!contributionData) {
       // logger.warn("Contribution not found for signed URL", { contributionId }); // Replaced
-      loggerInstance.warn("Contribution not found for signed URL", { contributionId });
+      logger.warn("Contribution not found for signed URL", { contributionId });
       return { error: { message: "Contribution not found.", code: "NOT_FOUND", status: 404 } };
     }
   
@@ -78,13 +73,13 @@ export async function getContributionContentSignedUrlHandler(
   
     if (!projectOwnerUserId || projectOwnerUserId !== user.id) {
       // logger.warn("User not authorized to access this contribution for signed URL", { contributionId, userId: user.id, projectOwnerUserId }); // Replaced
-      loggerInstance.warn("User not authorized to access this contribution for signed URL", { contributionId, userId: user.id, projectOwnerUserId });
+      logger.warn("User not authorized to access this contribution for signed URL", { contributionId, userId: user.id, projectOwnerUserId });
       return { error: { message: "User not authorized to access this contribution.", code: "AUTH_FORBIDDEN", status: 403 } };
     }
   
     if (!typedContributionData.content_storage_bucket || !typedContributionData.content_storage_path) {
       // logger.error("Contribution is missing storage bucket or path information", { contributionId }); // Replaced
-      loggerInstance.error("Contribution is missing storage bucket or path information", { contributionId });
+      logger.error("Contribution is missing storage bucket or path information", { contributionId });
       return { error: { message: "Contribution is missing storage information.", code: "INTERNAL_ERROR", status: 500 } };
     }
   
@@ -103,7 +98,7 @@ export async function getContributionContentSignedUrlHandler(
   
     if (signedUrlError) {
       // logger.error("Error generating signed URL for contribution:", { error: signedUrlError, contributionId }); // Replaced
-      loggerInstance.error("Error generating signed URL for contribution:", { error: signedUrlError, contributionId });
+      logger.error("Error generating signed URL for contribution:", { error: signedUrlError, contributionId });
       // Check if signedUrlError has a message property before accessing it
       const details = typeof signedUrlError === 'object' && signedUrlError !== null && 'message' in signedUrlError ? (signedUrlError as Error).message : 'Unknown error';
       return { error: { message: "Failed to generate signed URL.", details: details, code: "STORAGE_ERROR", status: 500 } };
@@ -111,7 +106,7 @@ export async function getContributionContentSignedUrlHandler(
   
     if (!signedUrl) {
       // logger.error("Failed to generate signed URL, received null", { contributionId }); // Replaced
-      loggerInstance.error("Failed to generate signed URL, received null", { contributionId });
+      logger.error("Failed to generate signed URL, received null", { contributionId });
       return { error: { message: "Failed to generate signed URL, received null.", code: "STORAGE_ERROR", status: 500 } };
     }
   

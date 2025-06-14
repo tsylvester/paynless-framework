@@ -99,7 +99,9 @@ export interface DialecticProject {
     project_name: string;
     initial_user_prompt: string;
     initial_prompt_resource_id?: string | null;
-    selected_domain_tag: string | null;
+    selected_domain_id: string;
+    domain_name?: string; // Will be populated by JOINs
+    domain_description?: string; // Will be populated by JOINs
     selected_domain_overlay_id?: string | null;
     repo_url: Json | null;
     status: string;
@@ -118,19 +120,19 @@ export interface DialecticServiceRequest {
 export interface CreateProjectPayload {
   projectName: string;
   initialUserPrompt: string;
-  selectedDomainTag?: string | null;
+  selectedDomainId: string;
   selected_domain_overlay_id?: string | null;
 }
 
-export interface UpdateProjectDomainTagPayload {
+export interface UpdateProjectDomainPayload {
   projectId: string;
-  domainTag: string | null;
+  selectedDomainId: string;
 }
 
-export interface UpdateProjectDomainTagSuccessData {
+export interface UpdateProjectDomainSuccessData {
   id: string;
   project_name: string;
-  selected_domain_tag: string | null;
+  selected_domain_id: string;
   updated_at: string;
 }
 
@@ -258,7 +260,7 @@ export interface UploadProjectResourceFileSuccessResponse {
 
 export interface DomainOverlayDescriptor {
   id: string; // Corresponds to domain_specific_prompt_overlays.id
-  domainTag: string;
+  domainId: string;
   description: string | null;
   stageAssociation: string; // Corresponds to system_prompts.stage_association
   overlay_values: Record<string, unknown> | string | null;

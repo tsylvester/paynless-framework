@@ -7,7 +7,7 @@ import {
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { spy, stub, returnsNext, type Spy } from "https://deno.land/std@0.208.0/testing/mock.ts";
 import {
-  isValidDomainTagDefaultFn,
+  isValidDomainDefaultFn,
   createSignedUrlDefaultFn,
   handleRequest,
   type ActionHandlers,
@@ -20,7 +20,8 @@ import type {
   DialecticContribution, 
   DialecticProject, 
   GetProjectResourceContentPayload, 
-  GetProjectResourceContentResponse 
+  GetProjectResourceContentResponse, 
+  DialecticSession
 } from "./dialectic.interface.ts"; 
 
 // Mock SupabaseClient
@@ -59,17 +60,16 @@ const createMockAuthError = (message: string, status: number, code: string): Aut
 
 // Helper to create a mostly empty but type-compliant ActionHandlers mock
 const createMockHandlers = (overrides?: Partial<ActionHandlers>): ActionHandlers => {
-    const emptySpy = spy(async () => ({ error: { message: "Not implemented in mock", status: 501 } }));
+    const emptySpy = spy();
     return {
         createProject: overrides?.createProject || emptySpy,
-        listAvailableDomainTags: overrides?.listAvailableDomainTags || emptySpy,
-        updateProjectDomainTag: overrides?.updateProjectDomainTag || emptySpy,
+        listAvailableDomains: overrides?.listAvailableDomains || emptySpy,
+        updateProjectDomain: overrides?.updateProjectDomain || emptySpy,
         getProjectDetails: overrides?.getProjectDetails || emptySpy,
         getContributionContentSignedUrlHandler: overrides?.getContributionContentSignedUrlHandler || emptySpy,
         startSession: overrides?.startSession || emptySpy,
         generateStageContributions: overrides?.generateStageContributions || emptySpy,
         listProjects: overrides?.listProjects || emptySpy,
-        listDomains: overrides?.listDomains || emptySpy,
         uploadProjectResourceFileHandler: overrides?.uploadProjectResourceFileHandler || emptySpy,
         listAvailableDomainOverlays: overrides?.listAvailableDomainOverlays || emptySpy,
         deleteProject: overrides?.deleteProject || emptySpy,
@@ -80,28 +80,28 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers>): ActionHandlers
     } as ActionHandlers;
 };
 
-Deno.test("isValidDomainTagDefaultFn - Unit Tests", async (t) => {
-  await t.step("should return true if domainTag is null", async () => {
+Deno.test("isValidDomainDefaultFn - Unit Tests", async (t) => {
+  await t.step("should return true if domain is null", async () => {
     const client = mockSupabaseClient();
-    const result = await isValidDomainTagDefaultFn(client, null as unknown as string);
+    const result = await isValidDomainDefaultFn(client, null as unknown as string);
     assertEquals(result, true);
   });
 
-  await t.step("should return true if domain_tag exists", async () => {
+  await t.step("should return true if domain_id exists", async () => {
     const client = mockSupabaseClient({
       from: () => ({
         select: () => ({
           eq: () => ({
-            maybeSingle: async () => ({ data: { domain_tag: "test" }, error: null }),
+            maybeSingle: async () => ({ data: { domain_id: "test" }, error: null }),
           }),
         }),
       }),
     });
-    const result = await isValidDomainTagDefaultFn(client, "test");
+    const result = await isValidDomainDefaultFn(client, "test");
     assertEquals(result, true);
   });
 
-  await t.step("should return false if domain_tag does not exist", async () => {
+  await t.step("should return false if domain_id does not exist", async () => {
     const client = mockSupabaseClient({
       from: () => ({
         select: () => ({
@@ -111,7 +111,7 @@ Deno.test("isValidDomainTagDefaultFn - Unit Tests", async (t) => {
         }),
       }),
     });
-    const result = await isValidDomainTagDefaultFn(client, "nonexistent");
+    const result = await isValidDomainDefaultFn(client, "nonexistent");
     assertEquals(result, false);
   });
 
@@ -125,7 +125,7 @@ Deno.test("isValidDomainTagDefaultFn - Unit Tests", async (t) => {
         }),
       }),
     });
-    const result = await isValidDomainTagDefaultFn(client, "test");
+    const result = await isValidDomainDefaultFn(client, "test");
     assertEquals(result, false);
   });
 });
@@ -326,16 +326,16 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
   });
 
   // --- Application/json tests ---
-  await t.step("JSON: listAvailableDomainTags should call correct handler (no auth needed)", async () => {
+  await t.step("JSON: listAvailableDomains should call correct handler (no auth needed)", async () => {
     let capturedArgs: any[] | null = null;
     const listTagsSpy = spy(async (...args: any[]) => { 
         capturedArgs = args;
-        return [{ domain_tag: "test", description: "Mock Tag" }] as any[]; // Using any[] due to DomainTagDescriptor not being exported
+        return [{ id: '1', domainId: 'tech', description: 'Tech Stuff', stageAssociation: 'dev' }] as any[]; // Using any[] due to DomainDescriptor not being exported
     });
-    mockHandlers = createMockHandlers({ listAvailableDomainTags: listTagsSpy });
+    mockHandlers = createMockHandlers({ listAvailableDomains: listTagsSpy });
     mockAdminClient = mockSupabaseClient();
     const reqPayload = { stageAssociation: "thesis" };
-    const req = createJsonRequest("listAvailableDomainTags", reqPayload); 
+    const req = createJsonRequest("listAvailableDomains", reqPayload); 
     const response = await handleRequest(req, mockAdminClient, mockHandlers);
     assertEquals(response.status, 200);
     assertEquals(listTagsSpy.calls.length, 1);
@@ -357,27 +357,40 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
     assertEquals(listOverlaysSpy.calls.length, 0); 
   });
 
-  await t.step("JSON: updateProjectDomainTag requires auth; then payload", async () => {
-    const updateTagSpy = spy(async () => ({ data: { id: "proj-1" } as any, status: 200})); 
-    mockHandlers = createMockHandlers({ updateProjectDomainTag: updateTagSpy });
+  await t.step("JSON: updateProjectDomain requires auth; then payload", async () => {
+    const mockFullProject: DialecticProject = {
+      id: "proj-1",
+      user_id: "mock-user-id",
+      project_name: "Test Project",
+      initial_user_prompt: "Test prompt",
+      selected_domain_id: "new-id",
+      domain_name: "New Domain",
+      domain_description: "A new domain for testing",
+      repo_url: null,
+      status: "active",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    const updateDomainSpy = spy(async () => ({ data: mockFullProject }));
+    mockHandlers = createMockHandlers({ updateProjectDomain: updateDomainSpy as any });
     
     // Case 1: No auth token
     mockAdminClient = mockSupabaseClient();
-    const req_no_auth = createJsonRequest("updateProjectDomainTag"); 
+    const req_no_auth = createJsonRequest("updateProjectDomain"); 
     const response_no_auth = await handleRequest(req_no_auth, mockAdminClient, mockHandlers);
     assertEquals(response_no_auth.status, 401);
     const body_no_auth = await response_no_auth.json();
     assertEquals(body_no_auth.error, "User not authenticated");
-    assertEquals(updateTagSpy.calls.length, 0);
+    assertEquals(updateDomainSpy.calls.length, 0);
 
     // Case 2: Auth token present, but no payload
     mockAdminClient = mockSupabaseClient(); 
-    const req_no_payload = createJsonRequest("updateProjectDomainTag", undefined, "valid-token-for-mock");
+    const req_no_payload = createJsonRequest("updateProjectDomain", undefined, "valid-token-for-mock");
     const response_no_payload = await handleRequest(req_no_payload, mockAdminClient, mockHandlers);
     assertEquals(response_no_payload.status, 400);
     const body_no_payload = await response_no_payload.json();
-    assertEquals(body_no_payload.error, "Payload is required for updateProjectDomainTag");
-    assertEquals(updateTagSpy.calls.length, 0); 
+    assertEquals(body_no_payload.error, "Payload is required for updateProjectDomain");
+    assertEquals(updateDomainSpy.calls.length, 0); 
   });
   
    await t.step("JSON: deleteProject requires auth and projectId", async () => {
@@ -700,7 +713,7 @@ Deno.test("handleRequest - Routing and Dispatching", async (t) => {
             project_name: (args[2] as string) || "Cloned Project",
             initial_user_prompt: "Cloned prompt",
             initial_prompt_resource_id: null,
-            selected_domain_tag: null,
+            selected_domain_id: null,
             selected_domain_overlay_id: null,
             repo_url: null,
             status: "active",

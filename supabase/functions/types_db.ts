@@ -532,8 +532,8 @@ export type Database = {
           process_template_id: string | null
           project_name: string
           repo_url: Json | null
+          selected_domain_id: string
           selected_domain_overlay_id: string | null
-          selected_domain_tag: string | null
           status: string
           updated_at: string
           user_domain_overlay_values: Json | null
@@ -547,8 +547,8 @@ export type Database = {
           process_template_id?: string | null
           project_name: string
           repo_url?: Json | null
+          selected_domain_id: string
           selected_domain_overlay_id?: string | null
-          selected_domain_tag?: string | null
           status?: string
           updated_at?: string
           user_domain_overlay_values?: Json | null
@@ -562,8 +562,8 @@ export type Database = {
           process_template_id?: string | null
           project_name?: string
           repo_url?: Json | null
+          selected_domain_id?: string
           selected_domain_overlay_id?: string | null
-          selected_domain_tag?: string | null
           status?: string
           updated_at?: string
           user_domain_overlay_values?: Json | null
@@ -575,6 +575,13 @@ export type Database = {
             columns: ["process_template_id"]
             isOneToOne: false
             referencedRelation: "dialectic_process_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_projects_selected_domain_id_fkey"
+            columns: ["selected_domain_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_domains"
             referencedColumns: ["id"]
           },
           {

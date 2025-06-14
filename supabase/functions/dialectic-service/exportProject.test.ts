@@ -41,7 +41,7 @@ describe('Dialectic Service: exportProject Action', () => {
         initial_user_prompt: 'Export this prompt',
         initial_prompt_resource_id: null,
         selected_domain_overlay_id: null,
-        selected_domain_tag: null,
+        selected_domain_id: 'domain-id-1',
         repo_url: null,
         status: 'active',
         created_at: new Date().toISOString(),

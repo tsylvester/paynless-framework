@@ -24,7 +24,7 @@ Deno.test("generateStageContributions - Session not in 'pending_stage' status", 
             project_id: "any-project-id",
             status: 'completed', // Key for this test
             associated_chat_id: "any-chat-id",
-            dialectic_projects: { initial_user_prompt: "any-prompt", selected_domain_tag: null },
+            dialectic_projects: { initial_user_prompt: "any-prompt", selected_domain_id: null },
             dialectic_session_models: [{ /* minimal model data */
                 id: "sm-id", model_id: "m-id", 
                 ai_providers: { id: "m-id", provider_name: "p", model_name: "m", api_identifier: "api-id" }
@@ -164,7 +164,7 @@ Deno.test("generateStageContributions - Initial user prompt missing", async () =
             project_id: "any-project-id",
             status: 'pending_thesis',
             associated_chat_id: "any-chat-id",
-            dialectic_projects: { initial_user_prompt: null, selected_domain_tag: null }, // Key for this test
+            dialectic_projects: { initial_user_prompt: null, selected_domain_id: null }, // Key for this test
             dialectic_session_models: [{ id: "sm-id", model_id: "m-id", ai_providers: { id: "m-id", provider_name: "p", model_name: "m", api_identifier: "api-id" }}],
         },
         error: null,
@@ -224,7 +224,7 @@ Deno.test("generateStageContributions - Associated chat ID missing", async () =>
             project_id: "any-project-id",
             status: 'pending_thesis',
             associated_chat_id: null, // Key for this test
-            dialectic_projects: { initial_user_prompt: "Valid prompt", selected_domain_tag: null },
+            dialectic_projects: { initial_user_prompt: "Valid prompt", selected_domain_id: null },
             dialectic_session_models: [{ id: "sm-id", model_id: "m-id", ai_providers: { id: "m-id", provider_name: "p", model_name: "m", api_identifier: "api-id" }}],
         },
         error: null,

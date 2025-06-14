@@ -10,7 +10,7 @@ import {
     type IMockSupabaseClient,
     type MockSupabaseClientSetup
 } from '../_shared/supabase.mock.ts';
-import type { ServiceError, GetUserFn, GetUserFnResult } from '../_shared/types.ts';
+import type { ServiceError, GetUserFn, GetUserFnResult, ILogger, LogMetadata } from '../_shared/types.ts';
 
 // Mock interfaces from getContributionContent.ts
 interface CreateSignedUrlFnResult {
@@ -22,20 +22,19 @@ interface CreateSignedUrlFn {
   (client: SupabaseClient, bucket: string, path: string, expiresIn: number): Promise<CreateSignedUrlFnResult>;
 }
 
-interface Logger {
-  warn: (message: string, context?: Record<string, unknown>) => void;
-  error: (message: string, context?: Record<string, unknown>) => void;
-}
-
 describe('getContributionContentSignedUrlHandler', () => {
   let mockGetUser: GetUserFn;
   let mockCreateSignedUrl: CreateSignedUrlFn;
-  let mockLogger: Logger;
+  let mockLogger: ILogger;
+  let loggerDebugSpy: Stub;
+  let loggerInfoSpy: Stub;
   let loggerWarnSpy: Stub;
   let loggerErrorSpy: Stub;
   let loggerPlaceholder: { 
-      warn: (message: string, context?: Record<string, unknown>) => void; 
-      error: (message: string, context?: Record<string, unknown>) => void; 
+      debug: (message: string, context?: LogMetadata) => void;
+      info: (message: string, context?: LogMetadata) => void;
+      warn: (message: string, context?: LogMetadata) => void; 
+      error: (message: string | Error, context?: LogMetadata) => void; 
   };
 
   let mockSupabaseSetup: MockSupabaseClientSetup;
@@ -63,15 +62,16 @@ describe('getContributionContentSignedUrlHandler', () => {
     mockDbClient = mockSupabaseSetup.client;
 
     loggerPlaceholder = {
+        debug: () => {},
+        info: () => {},
         warn: () => {},
         error: () => {}
     };
+    loggerDebugSpy = stub(loggerPlaceholder, "debug");
+    loggerInfoSpy = stub(loggerPlaceholder, "info");
     loggerWarnSpy = stub(loggerPlaceholder, "warn"); 
     loggerErrorSpy = stub(loggerPlaceholder, "error");
-    mockLogger = {
-      warn: loggerPlaceholder.warn,
-      error: loggerPlaceholder.error,
-    };
+    mockLogger = loggerPlaceholder;
   });
 
   afterEach(() => {

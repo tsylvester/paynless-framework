@@ -267,7 +267,7 @@ Retrieves the content of a specific project resource file from Supabase Storage.
     }
     ```
 
-### `listAvailableDomainTags`
+### `listAvailableDomains`
 
 Lists available domain tags, optionally filtered by stage association.
 
@@ -275,16 +275,16 @@ Lists available domain tags, optionally filtered by stage association.
 -   **Request Body**:
     ```json
     {
-      "action": "listAvailableDomainTags",
+      "action": "listAvailableDomains",
       "payload": {
         "stageAssociation": "optional-stage-slug"
       }
     }
     ```
 -   **Success Response (`data` object)**:
-    -   An array of `DomainTagDescriptor` objects.
+    -   An array of `DomainDescriptor` objects.
 
-### `updateProjectDomainTag`
+### `updateProjectDomain`
 
 Updates the domain tag for a specific project.
 
@@ -292,10 +292,10 @@ Updates the domain tag for a specific project.
 -   **Request Body**:
     ```json
     {
-      "action": "updateProjectDomainTag",
+      "action": "updateProjectDomain",
       "payload": {
         "projectId": "uuid-of-the-project",
-        "domainTag": "new-domain-tag"
+        "domainId": "new-domain-id"
       }
     }
     ```

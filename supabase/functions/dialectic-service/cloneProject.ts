@@ -72,7 +72,7 @@ export async function cloneProject(
             project_name: actualNewProjectName,
             initial_user_prompt: originalProject.initial_user_prompt,
             process_template_id: originalProject.process_template_id,
-            selected_domain_tag: originalProject.selected_domain_tag ?? undefined,
+            selected_domain_id: originalProject.selected_domain_id,
             selected_domain_overlay_id: originalProject.selected_domain_overlay_id ?? undefined,
             user_domain_overlay_values: originalProject.user_domain_overlay_values ?? undefined,
             repo_url: originalProject.repo_url ?? undefined,

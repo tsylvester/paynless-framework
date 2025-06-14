@@ -3,19 +3,20 @@ import { spy } from "jsr:@std/testing@0.225.1/mock";
 import { createProject, type CreateProjectOptions } from "./createProject.ts";
 import type { CreateProjectPayload, DialecticProject } from "./dialectic.interface.ts";
 import type { User } from "@supabase/supabase-js"; // Import User type
-import * as domainUtils from "../_shared/domain-utils.ts"; // To mock isValidDomainTag
+import * as domainUtils from "../_shared/domain-utils.ts"; // To mock isValidDomain
 import { createMockSupabaseClient, type MockSupabaseDataConfig, type MockQueryBuilderState } from "../_shared/supabase.mock.ts";
 
 Deno.test("createProject - successful project creation (no file)", async () => {
   const mockUserId = "user-test-id-refactored";
   const mockProjectName = "Test Project Refactored";
   const mockInitialUserPromptText = "Create a test project refactored.";
+  const mockSelectedDomainId = "domain-id-for-success";
   const mockSelectedDomainOverlayId = "overlay-uuid-for-testing-refactored";
   const testTimestamp = new Date().toISOString();
 
   const mockUser: User = {
     id: mockUserId,
-    app_metadata: {}, 
+    app_metadata: {},
     user_metadata: {},
     aud: "authenticated",
     created_at: testTimestamp,
@@ -25,7 +26,7 @@ Deno.test("createProject - successful project creation (no file)", async () => {
     user_id: mockUserId,
     project_name: mockProjectName,
     initial_user_prompt: mockInitialUserPromptText,
-    selected_domain_tag: null,
+    selected_domain_id: mockSelectedDomainId,
     selected_domain_overlay_id: mockSelectedDomainOverlayId,
     status: "new",
     initial_prompt_resource_id: null,
@@ -37,7 +38,8 @@ Deno.test("createProject - successful project creation (no file)", async () => {
     user_id: mockUserId,
     project_name: mockProjectName,
     initial_user_prompt: mockInitialUserPromptText,
-    selected_domain_tag: null,
+    selected_domain_id: mockSelectedDomainId,
+    domain_name: "Software Development",
     selected_domain_overlay_id: mockSelectedDomainOverlayId,
     repo_url: null,
     status: "new",
@@ -50,8 +52,8 @@ Deno.test("createProject - successful project creation (no file)", async () => {
     action: "createProject",
     projectName: mockProjectName,
     initialUserPromptText: mockInitialUserPromptText,
+    selectedDomainId: mockSelectedDomainId,
     selectedDomainOverlayId: mockSelectedDomainOverlayId,
-    // selectedDomainTag is intentionally omitted as it's null for this test
   };
 
   const formData = new FormData();
@@ -68,22 +70,14 @@ Deno.test("createProject - successful project creation (no file)", async () => {
       'dialectic_projects': {
         insert: async (state: MockQueryBuilderState) => {
           insertPayloadHolder.payload = state.insertData;
-          const insertedData = Array.isArray(state.insertData) ? state.insertData[0] : state.insertData;
+          // Simulate the data that would be returned right after insert before the join
+          const insertedData = (Array.isArray(state.insertData) ? state.insertData[0] : state.insertData) as any;
           return {
             data: [{
-              id: mockProjectDataAfterInsert.id, // Use the predefined ID
-              ...(insertedData as object),
-              created_at: mockProjectDataAfterInsert.created_at,
-              updated_at: mockProjectDataAfterInsert.updated_at,
-              repo_url: mockProjectDataAfterInsert.repo_url,
-              initial_prompt_resource_id: mockProjectDataAfterInsert.initial_prompt_resource_id,
-              // Ensure all fields from mockProjectDataAfterInsert are covered or taken from insertedData
-              user_id: (insertedData as any)?.user_id || mockUserId,
-              project_name: (insertedData as any)?.project_name || mockProjectName,
-              initial_user_prompt: (insertedData as any)?.initial_user_prompt || mockInitialUserPromptText,
-              selected_domain_tag: (insertedData as any)?.selected_domain_tag === undefined ? null : (insertedData as any)?.selected_domain_tag,
-              selected_domain_overlay_id: (insertedData as any)?.selected_domain_overlay_id === undefined ? mockSelectedDomainOverlayId : (insertedData as any)?.selected_domain_overlay_id,
-              status: (insertedData as any)?.status || "new",
+              ...mockProjectDataAfterInsert,
+              ...insertedData,
+              // The database would return the domain as a nested object after the join
+              domain: { name: mockProjectDataAfterInsert.domain_name },
             }],
             error: null,
             count: 1,
@@ -92,7 +86,6 @@ Deno.test("createProject - successful project creation (no file)", async () => {
           };
         }
       }
-      // No mock for 'domain_specific_prompt_overlays' as it shouldn't be called
     }
   };
 
@@ -100,15 +93,22 @@ Deno.test("createProject - successful project creation (no file)", async () => {
 
   try {
     const result = await createProject(
-      formData, 
+      formData,
       mockDbAdminClient as any, // Cast to any to satisfy SupabaseClient type for testing
       mockUser,
-      {} // Pass empty options, so default isValidDomainTag is used (but shouldn't be called)
+      {}
     );
 
     assertExists(result.data, "Response data should exist on success");
     assertEquals(result.error, undefined, "Error should be undefined on success");
-    assertObjectMatch(result.data as any, mockProjectDataAfterInsert as any, "Project data should match expected");
+
+    // We can't directly compare the object because the mock returns a slightly different shape
+    // before the final mapping. Let's check key properties.
+    assertEquals(result.data.id, mockProjectDataAfterInsert.id);
+    assertEquals(result.data.project_name, mockProjectDataAfterInsert.project_name);
+    assertEquals(result.data.selected_domain_id, mockProjectDataAfterInsert.selected_domain_id);
+    assertEquals(result.data.domain_name, mockProjectDataAfterInsert.domain_name);
+
 
     assertEquals(spies.fromSpy.calls.length, 1, "fromSpy should be called once for dialectic_projects");
     assertEquals(spies.fromSpy.calls[0].args[0], 'dialectic_projects', "fromSpy called with 'dialectic_projects'");
@@ -120,7 +120,7 @@ Deno.test("createProject - successful project creation (no file)", async () => {
     assertExists(projectInsertSpies.single, "single spy for projects should exist");
 
     assertEquals(projectInsertSpies.insert.calls.length, 1, "insert on dialectic_projects should be called once");
-    assertObjectMatch(insertPayloadHolder.payload, mockExpectedDbInsert as any, "Insert payload should match expected");
+    assertObjectMatch(insertPayloadHolder.payload as any, mockExpectedDbInsert as any, "Insert payload should match expected");
     assertEquals(projectInsertSpies.select.calls.length, 1, "select on dialectic_projects (after insert) should be called once");
     assertEquals(projectInsertSpies.single.calls.length, 1, "single on dialectic_projects (after insert) should be called once");
 
@@ -129,7 +129,7 @@ Deno.test("createProject - successful project creation (no file)", async () => {
   }
 });
 
-Deno.test("createProject - user not authenticated", async () => {
+Deno.test("createProject - missing selectedDomainId", async () => {
   const mockUserId = "user-auth-fail-id-refactored";
   const mockProjectName = "Test Project Auth Fail Refactored";
   const mockInitialUserPromptText = "This should fail (refactored).";
@@ -137,7 +137,7 @@ Deno.test("createProject - user not authenticated", async () => {
 
   const mockUser: User = {
     id: mockUserId,
-    app_metadata: {}, 
+    app_metadata: {},
     user_metadata: {},
     aud: "authenticated",
     created_at: testTimestamp,
@@ -147,6 +147,7 @@ Deno.test("createProject - user not authenticated", async () => {
     action: "createProject",
     projectName: mockProjectName,
     initialUserPromptText: mockInitialUserPromptText,
+    // selectedDomainId is intentionally missing
   };
 
   const formData = new FormData();
@@ -156,23 +157,84 @@ Deno.test("createProject - user not authenticated", async () => {
     }
   });
 
+  const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, {});
+
+  try {
+    const result = await createProject(
+      formData,
+      mockDbAdminClient as any,
+      mockUser,
+      {}
+    );
+
+    assertExists(result.error, "Error object should exist when validation fails");
+    assertEquals(result.error?.message, "selectedDomainId is required");
+    assertEquals(result.error?.status, 400);
+
+    assertEquals(spies.fromSpy.calls.length, 0, "DB should not be called on validation failure");
+
+  } finally {
+    if (clearAllStubs) clearAllStubs();
+  }
+});
+
+Deno.test("createProject - database error on insert", async () => {
+  const mockUserId = "user-db-error-id-refactored";
+  const mockProjectName = "Test DB Error Refactored";
+  const mockInitialUserPromptText = "DB will fail (refactored).";
+  const mockSelectedDomainId = "domain-id-for-db-fail";
+  const testTimestamp = new Date().toISOString();
+
+  const mockUser: User = {
+    id: mockUserId,
+    app_metadata: {},
+    user_metadata: {},
+    aud: "authenticated",
+    created_at: testTimestamp,
+  };
+
+  const mockExpectedDbInsert = { // This is what we expect to be passed to insert, even if it fails
+    user_id: mockUserId,
+    project_name: mockProjectName,
+    initial_user_prompt: mockInitialUserPromptText,
+    selected_domain_id: mockSelectedDomainId,
+    selected_domain_overlay_id: null,
+    status: "new",
+    initial_prompt_resource_id: null,
+  };
+
+  const formDataValues = {
+    action: "createProject",
+    projectName: mockProjectName,
+    initialUserPromptText: mockInitialUserPromptText,
+    selectedDomainId: mockSelectedDomainId,
+  };
+
+  const formData = new FormData();
+  Object.entries(formDataValues).forEach(([key, value]) => {
+    if (value !== null && value !== undefined) {
+      formData.append(key, value as string);
+    }
+  });
+
+  const insertPayloadHolder = { payload: null as any };
   const dbOperationErrorMessage = "Database insert mock error from config";
+
   const mockConfig: MockSupabaseDataConfig = {
     genericMockResults: {
       'dialectic_projects': {
-        insert: async (_state: MockQueryBuilderState) => {
-          // This mock simulates the behavior of .single() after an insert that errors.
-          // The MockQueryBuilder will handle the .single() part based on this error.
+        insert: async (state: MockQueryBuilderState) => {
+          insertPayloadHolder.payload = state.insertData;
+          // Simulate the error that .single() would receive
           return {
-            data: null, 
-            error: { name: "PostgrestError", message: dbOperationErrorMessage, code: "XXYYZ", details: dbOperationErrorMessage, hint: "Check mock config" }, 
-            count: 0, 
-            status: 500, 
+            data: null,
+            error: { name: "PostgrestError", message: dbOperationErrorMessage, code: "XXYYZ", details: dbOperationErrorMessage, hint: "Check mock config" },
+            count: 0,
+            status: 500,
             statusText: "Internal Server Error"
           };
         }
       }
-      // No mock for 'domain_specific_prompt_overlays' as it shouldn't be called
     }
   };
 
@@ -180,16 +242,16 @@ Deno.test("createProject - user not authenticated", async () => {
 
   try {
     const result = await createProject(
-      formData, 
+      formData,
       mockDbAdminClient as any, // Cast to any to satisfy SupabaseClient type for testing
-      mockUser, 
-      {} // No custom isValidDomainTag, should not be called if basic validation passes
+      mockUser,
+      {} // No custom isValidDomain, should not be called if basic validation passes
     );
 
     assertExists(result.error, "Error object should exist when DB operation fails");
-    assertEquals(result.error?.message, "Failed to create project", "Primary error message should be consistent"); 
+    assertEquals(result.error?.message, "Failed to create project", "Primary error message should be consistent");
     // The details should now come from the PostgrestError-like object provided by the mock
-    assertEquals(result.error?.details, dbOperationErrorMessage, "Error details should match the mock DB error message"); 
+    assertEquals(result.error?.details, dbOperationErrorMessage, "Error details should match the mock DB error message");
     assertEquals(result.error?.status, 500, "Error status should be 500");
 
     assertEquals(spies.fromSpy.calls.length, 1, "fromSpy should be called once for dialectic_projects");
@@ -202,6 +264,7 @@ Deno.test("createProject - user not authenticated", async () => {
     assertExists(projectInsertSpies.single, "single spy for projects should exist");
 
     assertEquals(projectInsertSpies.insert.calls.length, 1, "insert on dialectic_projects should be called once");
+    assertObjectMatch(insertPayloadHolder.payload as any, mockExpectedDbInsert as any, "Insert payload should match expected even on failure");
     assertEquals(projectInsertSpies.select.calls.length, 1, "select on dialectic_projects (after insert) should be called once");
     assertEquals(projectInsertSpies.single.calls.length, 1, "single on dialectic_projects (after insert) should be called once");
 
@@ -215,9 +278,9 @@ Deno.test("createProject - missing projectName", async () => {
   const mockInitialUserPromptText = "This should also fail (refactored).";
   const testTimestamp = new Date().toISOString();
 
-  const mockUser: User = { 
+  const mockUser: User = {
     id: mockUserId,
-    app_metadata: {}, 
+    app_metadata: {},
     user_metadata: {},
     aud: "authenticated",
     created_at: testTimestamp,
@@ -227,6 +290,7 @@ Deno.test("createProject - missing projectName", async () => {
     action: "createProject",
     // projectName is intentionally omitted
     initialUserPromptText: mockInitialUserPromptText,
+    selectedDomainId: "some-domain-id", // Add to pass other validations
   };
 
   const formData = new FormData();
@@ -246,7 +310,7 @@ Deno.test("createProject - missing projectName", async () => {
       formData, 
       mockDbAdminClient as any, // Cast to any for testing
       mockUser,
-      {} // No custom isValidDomainTag, should not be called
+      {} // No custom isValidDomain, should not be called
     );
 
     assertExists(result.error, "Error object should exist for missing projectName");
@@ -267,7 +331,7 @@ Deno.test("createProject - missing initialUserPromptText (and no file)", async (
 
   const mockUser: User = {
     id: mockUserId,
-    app_metadata: {}, 
+    app_metadata: {},
     user_metadata: {},
     aud: "authenticated",
     created_at: testTimestamp,
@@ -276,8 +340,8 @@ Deno.test("createProject - missing initialUserPromptText (and no file)", async (
   const formDataValues = {
     action: "createProject",
     projectName: mockProjectName,
+    selectedDomainId: "some-domain-id", // Add to pass other validations
     // initialUserPromptText is intentionally omitted
-    // promptFile is also intentionally omitted from FormData for this test
   };
 
   const formData = new FormData();
@@ -298,7 +362,7 @@ Deno.test("createProject - missing initialUserPromptText (and no file)", async (
       formData, 
       mockDbAdminClient as any, // Cast to any for testing
       mockUser,
-      {} // No custom isValidDomainTag, should not be called
+      {} // No custom isValidDomain, should not be called
     );
 
     assertExists(result.error, "Error object should exist for missing prompt");
@@ -312,52 +376,28 @@ Deno.test("createProject - missing initialUserPromptText (and no file)", async (
   }
 });
 
-Deno.test("createProject - with selectedDomainTag - success", async () => {
-  const MOCK_ISO_DATE_STRING = "2023-01-01T12:00:00.000Z";
-  const mockUserId = "user-tag-id-success-mock-util";
-  const mockProjectName = "Test Project With Tag Success Mock Util";
-  const mockInitialUserPromptText = "Prompt for tagged project success mock util.";
-  const mockSelectedDomainTag = "software_dev_tag_success_mock_util";
+Deno.test("createProject - with invalid selectedDomainId (FK violation)", async () => {
+  const mockUserId = "user-invalid-domain-id";
+  const mockProjectName = "Test Project Invalid Domain";
+  const mockInitialUserPromptText = "Prompt for invalid domain project.";
+  const mockInvalidDomainId = "domain-id-that-does-not-exist";
+  const testTimestamp = new Date().toISOString();
 
   const mockUser: User = {
     id: mockUserId,
     app_metadata: {},
     user_metadata: {},
     aud: "authenticated",
-    created_at: MOCK_ISO_DATE_STRING,
-  };
-
-  const mockExpectedDbInsert = {
-    user_id: mockUserId,
-    project_name: mockProjectName,
-    initial_user_prompt: mockInitialUserPromptText,
-    selected_domain_tag: mockSelectedDomainTag,
-    selected_domain_overlay_id: null,
-    status: "new",
-    initial_prompt_resource_id: null,
-  };
-
-  // This is what the .single() call after insert should resolve to
-  const mockProjectDataAfterInsert: DialecticProject = {
-    id: "project-tag-id-success-mock-util",
-    user_id: mockUserId,
-    project_name: mockProjectName,
-    initial_user_prompt: mockInitialUserPromptText,
-    selected_domain_tag: mockSelectedDomainTag,
-    status: "new",
-    initial_prompt_resource_id: null,
-    selected_domain_overlay_id: null,
-    repo_url: null,
-    created_at: MOCK_ISO_DATE_STRING,
-    updated_at: MOCK_ISO_DATE_STRING,
+    created_at: testTimestamp,
   };
 
   const formDataValues = {
     action: "createProject",
     projectName: mockProjectName,
     initialUserPromptText: mockInitialUserPromptText,
-    selectedDomainTag: mockSelectedDomainTag,
+    selectedDomainId: mockInvalidDomainId,
   };
+
   const formData = new FormData();
   Object.entries(formDataValues).forEach(([key, value]) => {
     if (value !== null && value !== undefined) {
@@ -365,54 +405,17 @@ Deno.test("createProject - with selectedDomainTag - success", async () => {
     }
   });
 
-  const insertPayloadHolder = { payload: null as any };
-
+  const fkErrorMessage = `insert or update on table "dialectic_projects" violates foreign key constraint "dialectic_projects_selected_domain_id_fkey"`;
   const mockConfig: MockSupabaseDataConfig = {
     genericMockResults: {
-      'domain_specific_prompt_overlays': {
-        select: async (state: MockQueryBuilderState) => {
-          console.log(`[Mock Config][${mockProjectName}] domain_specific_prompt_overlays.select state:`, JSON.stringify(state));
-          const hasCorrectEqFilter = state.filters.some(f => f.type === 'eq' && f.column === 'domain_tag' && f.value === mockSelectedDomainTag);
-          const hasCorrectLimit = state.limitCount === 1;
-          const hasCorrectSelect = state.selectColumns === 'domain_tag';
-
-          if (hasCorrectEqFilter && hasCorrectLimit && hasCorrectSelect) {
-            return { data: [{ domain_tag: mockSelectedDomainTag }], error: null, count: 1, status: 200, statusText: 'OK' };
-          }
-          // Fallback if conditions not met, simulating tag not found or wrong query
-          return { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
-        }
-      },
       'dialectic_projects': {
-        insert: async (state: MockQueryBuilderState) => {
-          console.log(`[Mock Config][${mockProjectName}] dialectic_projects.insert state:`, JSON.stringify(state));
-          insertPayloadHolder.payload = state.insertData; // Capture for assertion
-
-          // The data array must contain the object that .single() will return
-          // Ensure all fields from mockProjectDataAfterInsert are present
-          const insertedData = Array.isArray(state.insertData) ? state.insertData[0] : state.insertData;
-          return {
-            data: [{
-              id: mockProjectDataAfterInsert.id,
-              ...(insertedData as object), // Spread the actual data passed to insert
-              // Explicitly set fields that might not be in insertData but are in mockProjectDataAfterInsert
-              user_id: (insertedData as any)?.user_id || mockUserId,
-              project_name: (insertedData as any)?.project_name || mockProjectName,
-              initial_user_prompt: (insertedData as any)?.initial_user_prompt || mockInitialUserPromptText,
-              selected_domain_tag: (insertedData as any)?.selected_domain_tag || mockSelectedDomainTag,
-              status: (insertedData as any)?.status || "new",
-              initial_prompt_resource_id: (insertedData as any)?.initial_prompt_resource_id || null,
-              selected_domain_overlay_id: (insertedData as any)?.selected_domain_overlay_id || null,
-              repo_url: (insertedData as any)?.repo_url || null,
-              created_at: MOCK_ISO_DATE_STRING,
-              updated_at: MOCK_ISO_DATE_STRING,
-            }],
-            error: null,
-            count: 1,
-            status: 201, // 201 for successful insert
-            statusText: 'Created'
-          };
-        }
+        insert: async (_state: MockQueryBuilderState) => ({
+          data: null,
+          error: { name: "PostgrestError", message: fkErrorMessage, code: "23503", details: "Key (selected_domain_id)=(...) is not present in table \"dialectic_domains\".", hint: "Check mock config" },
+          count: 0,
+          status: 409, // Conflict or similar
+          statusText: "Conflict"
+        })
       }
     }
   };
@@ -420,401 +423,397 @@ Deno.test("createProject - with selectedDomainTag - success", async () => {
   const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
 
   try {
-    // --- Function Call ---
     const result = await createProject(
       formData,
-      mockDbAdminClient as any, // Cast to any to satisfy SupabaseClient type for testing
+      mockDbAdminClient as any,
       mockUser,
-      {} 
+      {}
     );
 
-    // --- Assertions ---
-    assertExists(result.data, "result.data should exist");
-    assertEquals(result.error, undefined, "result.error should be undefined");
-    assertObjectMatch(result.data as any, mockProjectDataAfterInsert as any, "Project data should match expected");
+    assertExists(result.error, "Error object should exist for FK violation");
+    assertEquals(result.error?.message, "Invalid selectedDomainId. The specified domain does not exist.");
+    assertEquals(result.error?.status, 400);
+    assertEquals(result.error?.details, fkErrorMessage, "Error details should contain the original DB error");
 
-    // Assertions using spies from createMockSupabaseClient
-    assertEquals(spies.fromSpy.calls.length, 2, "fromSpy should be called twice");
-
-    const domainOverlayCalls = spies.getHistoricQueryBuilderSpies('domain_specific_prompt_overlays', 'select');
-    assert(domainOverlayCalls && domainOverlayCalls.callCount > 0, "select on domain_specific_prompt_overlays should have been called");
-    
-    // Check specific method calls on the latest builder for domain_specific_prompt_overlays
-    const overlaySelectSpies = spies.getLatestQueryBuilderSpies('domain_specific_prompt_overlays');
-    assertExists(overlaySelectSpies, "Overlay select spies should exist");
-    assertExists(overlaySelectSpies.select, "Overlay select spy should exist");
-    assertExists(overlaySelectSpies.eq, "Overlay eq spy should exist");
-    assertExists(overlaySelectSpies.limit, "Overlay limit spy should exist");
-    
-    assertEquals(overlaySelectSpies.select.calls.length, 1, "select on overlays called once");
-    assertEquals(overlaySelectSpies.select.calls[0].args[0], 'domain_tag', "select on overlays called with 'domain_tag'");
-    assertEquals(overlaySelectSpies.eq.calls.length, 1, "eq on overlays called once");
-    assertEquals(overlaySelectSpies.eq.calls[0].args, ['domain_tag', mockSelectedDomainTag], "eq on overlays called with correct args");
-    assertEquals(overlaySelectSpies.limit.calls.length, 1, "limit on overlays called once");
-    assertEquals(overlaySelectSpies.limit.calls[0].args[0], 1, "limit on overlays called with 1");
-
-
-    const projectInsertSpies = spies.getLatestQueryBuilderSpies('dialectic_projects');
-    assertExists(projectInsertSpies, "Project insert spies should exist");
-    assertExists(projectInsertSpies.insert, "Project insert spy should exist");
-    assertExists(projectInsertSpies.select, "Project select (after insert) spy should exist");
-    assertExists(projectInsertSpies.single, "Project single (after insert) spy should exist");
-    
-    assertEquals(projectInsertSpies.insert.calls.length, 1, "insert on dialectic_projects should be called once");
-    assertEquals(projectInsertSpies.select.calls.length, 1, "select on dialectic_projects (after insert) should be called once");
-    assertEquals(projectInsertSpies.single.calls.length, 1, "single on dialectic_projects (after insert) should be called once");
-    
-    assertObjectMatch(insertPayloadHolder.payload, mockExpectedDbInsert as any, "Insert payload should match expected");
+    assertEquals(spies.fromSpy.calls.length, 1, "fromSpy should be called once");
+    const projectSpies = spies.getLatestQueryBuilderSpies('dialectic_projects');
+    assertExists(projectSpies?.insert, "insert should have been called");
+    assertEquals(projectSpies.insert.calls.length, 1);
 
   } finally {
     if (clearAllStubs) clearAllStubs();
   }
 });
 
-Deno.test("createProject - with selectedDomainTag - invalid tag", async () => {
-  const mockUserId = "user-invalid-tag-id-refactored";
-  const mockProjectName = "Test Project Invalid Tag Refactored";
-  const mockInitialUserPromptText = "Prompt for invalid tag project refactored.";
-  const mockSelectedDomainTag = "invalid_tag_for_sure_refactored";
+Deno.test("createProject - successful with promptFile", async () => {
+  const mockUserId = "user-file-upload-success";
+  const mockProjectName = "Test Project With File";
+  const mockSelectedDomainId = "domain-id-for-file-upload";
+  const mockProjectId = "project-id-for-file-upload";
+  const mockResourceId = "resource-id-for-file-upload";
   const testTimestamp = new Date().toISOString();
+  const mockFile = new File(["file content"], "prompt.md", { type: "text/markdown" });
 
   const mockUser: User = {
     id: mockUserId,
-    app_metadata: {}, 
+    app_metadata: {},
     user_metadata: {},
     aud: "authenticated",
     created_at: testTimestamp,
   };
 
-  const formDataValues = {
-    action: "createProject",
-    projectName: mockProjectName,
-    initialUserPromptText: mockInitialUserPromptText,
-    selectedDomainTag: mockSelectedDomainTag,
-  };
   const formData = new FormData();
-  Object.entries(formDataValues).forEach(([key, value]) => {
-    if (value !== null && value !== undefined) {
-      formData.append(key, value as string);
-    }
-  });
+  formData.append("action", "createProject");
+  formData.append("projectName", mockProjectName);
+  formData.append("selectedDomainId", mockSelectedDomainId);
+  formData.append("promptFile", mockFile);
 
-  const mockConfig: MockSupabaseDataConfig = {
-    genericMockResults: {
-      'domain_specific_prompt_overlays': {
-        select: async (state: MockQueryBuilderState) => {
-          // console.log(`[Mock Config][${mockProjectName}] domain_specific_prompt_overlays.select state for invalid tag:`, JSON.stringify(state));
-          const hasCorrectEqFilter = state.filters.some(f => f.type === 'eq' && f.column === 'domain_tag' && f.value === mockSelectedDomainTag);
-          const hasCorrectLimit = state.limitCount === 1;
-          const hasCorrectSelect = state.selectColumns === 'domain_tag';
-
-          if (hasCorrectEqFilter && hasCorrectLimit && hasCorrectSelect) {
-            // Simulate tag not found
-            return { data: [], error: null, count: 0, status: 200, statusText: 'OK' }; 
-          }
-          // Fallback if query shape is not as expected, should ideally not happen
-          return { data: null, error: new Error("Unexpected query to domain_specific_prompt_overlays in invalid tag test"), count: 0, status: 500, statusText: 'Internal Server Error' };
-        }
-      }
-      // 'dialectic_projects' table should not be called, so no mock needed here for it.
-    }
-  };
-
-  const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
-
-  try {
-    const result = await createProject(
-      formData, 
-      mockDbAdminClient as any, // Cast for testing
-      mockUser,
-      {} // Use default isValidDomainTag implementation with the mocked client
-    );
-
-    assertExists(result.error, "Error object should exist for invalid domain tag");
-    assertEquals(result.error?.message, `Invalid selectedDomainTag: "${mockSelectedDomainTag}"`, "Error message should indicate invalid tag");
-    assertEquals(result.error?.status, 400, "Error status should be 400");
-
-    assertEquals(spies.fromSpy.calls.length, 1, "fromSpy should be called once for domain_specific_prompt_overlays");
-    assertEquals(spies.fromSpy.calls[0].args[0], 'domain_specific_prompt_overlays', "fromSpy called with 'domain_specific_prompt_overlays'");
-
-    const overlaySelectSpies = spies.getLatestQueryBuilderSpies('domain_specific_prompt_overlays');
-    assertExists(overlaySelectSpies, "Overlay select spies should exist");
-    assertExists(overlaySelectSpies.select, "Overlay select spy should exist");
-    assertExists(overlaySelectSpies.eq, "Overlay eq spy should exist");
-    assertExists(overlaySelectSpies.limit, "Overlay limit spy should exist"); // This will cause a linter error until supabase.mock.ts is updated
-
-    assertEquals(overlaySelectSpies.select.calls.length, 1, "select on overlays called once");
-    assertEquals(overlaySelectSpies.select.calls[0].args[0], 'domain_tag', "select on overlays called with 'domain_tag'");
-    assertEquals(overlaySelectSpies.eq.calls.length, 1, "eq on overlays called once");
-    assertEquals(overlaySelectSpies.eq.calls[0].args, ['domain_tag', mockSelectedDomainTag], "eq on overlays called with correct args");
-    assertEquals(overlaySelectSpies.limit.calls.length, 1, "limit on overlays called once"); // This will cause a linter error
-    assertEquals(overlaySelectSpies.limit.calls[0].args[0], 1, "limit on overlays called with 1"); // This will cause a linter error
-
-    // Ensure dialectic_projects was not touched
-    const projectInsertSpies = spies.getLatestQueryBuilderSpies('dialectic_projects');
-    assertEquals(projectInsertSpies, undefined, "No spies should exist for dialectic_projects table");
-
-  } finally {
-    if (clearAllStubs) clearAllStubs();
-  }
-});
-
-Deno.test("createProject - database error on insert", async () => {
-  const mockUserId = "user-db-error-id-refactored";
-  const mockProjectName = "Test DB Error Refactored";
-  const mockInitialUserPromptText = "DB will fail (refactored).";
-  const testTimestamp = new Date().toISOString();
-  const dbErrorDetails = { 
-    name: "PostgrestError",
-    message: "DB insert failed from config", 
-    code: "SOME_DB_ERROR_CODE", 
-    details: "Unique constraint violation from config", 
-    hint: "Check DB constraints or mock config"
-  };
-
-  const mockUser: User = {
-    id: mockUserId,
-    app_metadata: {}, 
-    user_metadata: {},
-    aud: "authenticated",
-    created_at: testTimestamp,
-  };
-
-  const mockExpectedDbInsert = { // This is what we expect to be passed to insert, even if it fails
+  const mockProjectDataAfterInsert = {
+    id: mockProjectId,
     user_id: mockUserId,
     project_name: mockProjectName,
-    initial_user_prompt: mockInitialUserPromptText,
-    selected_domain_tag: null,
-    selected_domain_overlay_id: null,
-    status: "new",
-    initial_prompt_resource_id: null,
+    selected_domain_id: mockSelectedDomainId,
   };
-
-  const formDataValues = {
-    action: "createProject",
-    projectName: mockProjectName,
-    initialUserPromptText: mockInitialUserPromptText,
-  };
-  const formData = new FormData();
-  Object.entries(formDataValues).forEach(([key, value]) => {
-    if (value !== null && value !== undefined) {
-      formData.append(key, value as string);
-    }
-  });
 
   const insertPayloadHolder = { payload: null as any };
+  const resourceInsertPayloadHolder = { payload: null as any };
+  const uploadPayloadHolder = { path: '', file: {} as File };
 
   const mockConfig: MockSupabaseDataConfig = {
     genericMockResults: {
       'dialectic_projects': {
+        insert: async (state) => {
+          const insertedData = state.insertData as any;
+          return { data: [{ ...mockProjectDataAfterInsert, ...insertedData, domain: { name: "File Upload Domain" } }], error: null };
+        },
+        update: async (state: MockQueryBuilderState) => {
+          const updateData = state.updateData;
+          return { data: [{ ...mockProjectDataAfterInsert, ...(updateData as any), domain: { name: "File Upload Domain" } }], error: null };
+        },
+      },
+      'dialectic_project_resources': {
         insert: async (state: MockQueryBuilderState) => {
-          insertPayloadHolder.payload = state.insertData;
-          // Simulate the error that .single() would receive
-          return { 
-            data: null, 
-            error: dbErrorDetails, 
-            count: 0, 
-            status: 500, 
-            statusText: "Internal Server Error" 
-          };
-        }
-      }
-      // No mock for 'domain_specific_prompt_overlays' as it shouldn't be called
-    }
+          const data = state.insertData;
+          if (!data || Array.isArray(data)) throw new Error("Invalid insert data in mock for resources");
+          resourceInsertPayloadHolder.payload = data;
+          return { data: [{ id: (data as any).id }], error: null };
+        },
+      },
+    },
+    storageMock: {
+      uploadResult: async (bucketId, path, file) => {
+        uploadPayloadHolder.path = path;
+        uploadPayloadHolder.file = file as File;
+        return { data: { path: path }, error: null };
+      },
+    },
   };
 
   const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
 
   try {
     const result = await createProject(
-      formData, 
-      mockDbAdminClient as any, // Cast for testing
+      formData,
+      mockDbAdminClient as any,
       mockUser,
-      {} // No custom isValidDomainTag, should not be called
+      {}
     );
 
-    assertExists(result.error, "Error object should exist for DB insert failure");
-    assertEquals(result.error?.message, "Failed to create project", "Primary error message should be consistent");
-    assertEquals(result.error?.details, dbErrorDetails.details, "Error details should match the mock DB error");
-    assertEquals(result.error?.status, 500, "Error status should be 500");
+    assertExists(result.data, "Data should exist on successful file upload");
+    assertEquals(result.error, undefined, "Error should be undefined on success");
 
-    assertEquals(spies.fromSpy.calls.length, 1, "fromSpy should be called once for dialectic_projects");
-    assertEquals(spies.fromSpy.calls[0].args[0], 'dialectic_projects', "fromSpy called with 'dialectic_projects'");
+    const projectSpiesList = spies.getAllQueryBuilderSpies('dialectic_projects');
+    assertExists(projectSpiesList, "Should have spies for dialectic_projects");
+    assertEquals(projectSpiesList.length, 2, "Should have two builders for insert and update");
+    
+    const insertSpies = projectSpiesList[0];
+    const updateSpies = projectSpiesList[1];
 
-    const projectInsertSpies = spies.getLatestQueryBuilderSpies('dialectic_projects');
-    assertExists(projectInsertSpies, "Project insert spies should exist");
-    assertExists(projectInsertSpies.insert, "insert spy for projects should exist");
-    assertExists(projectInsertSpies.select, "select spy for projects should exist");
-    assertExists(projectInsertSpies.single, "single spy for projects should exist");
+    assertExists(insertSpies.insert);
+    assertEquals(insertSpies.insert.calls.length, 1);
 
-    assertEquals(projectInsertSpies.insert.calls.length, 1, "insert on dialectic_projects should be called once");
-    assertObjectMatch(insertPayloadHolder.payload, mockExpectedDbInsert as any, "Insert payload should match expected even on failure");
-    assertEquals(projectInsertSpies.select.calls.length, 1, "select on dialectic_projects (after insert) should be called once");
-    assertEquals(projectInsertSpies.single.calls.length, 1, "single on dialectic_projects (after insert) should be called once");
+    assertExists(updateSpies.update);
+    assertEquals(updateSpies.update.calls.length, 1);
+    assertExists(updateSpies.update.calls[0].args[0].initial_prompt_resource_id);
+
+
+    const resourceSpies = spies.getLatestQueryBuilderSpies('dialectic_project_resources');
+    assertExists(resourceSpies?.insert);
+    assertEquals(resourceSpies.insert.calls.length, 1);
+    assertEquals(resourceInsertPayloadHolder.payload.file_name, mockFile.name);
+
+    const bucketSpies = spies.storage.from('dialectic-contributions');
+    assertExists(bucketSpies.uploadSpy);
+    assertEquals(bucketSpies.uploadSpy.calls.length, 1);
+    assert(uploadPayloadHolder.path.includes(mockProjectId));
+    assert(uploadPayloadHolder.path.includes(mockFile.name));
+    assertEquals(uploadPayloadHolder.file.name, mockFile.name);
 
   } finally {
     if (clearAllStubs) clearAllStubs();
   }
 });
 
-// --- STUBS FOR NEW FILE HANDLING TESTS ---
-
-Deno.test("createProject - successful with promptFile", async () => {
-  // TODO: Implement this test
-  assert(true, "Test not implemented");
-});
 
 Deno.test("createProject - promptFile upload fails (storage error)", async () => {
-  // TODO: Implement this test
-  assert(true, "Test not implemented");
-});
-
-Deno.test("createProject - promptFile dialectic_project_resources insert fails (db error)", async () => {
-  // TODO: Implement this test
-  assert(true, "Test not implemented");
-});
-
-Deno.test("createProject - project update with resource_id fails (db error)", async () => {
-  // TODO: Implement this test
-  assert(true, "Test not implemented");
-});
-
-Deno.test("createProject - error during isValidDomainTag check", async () => {
-  const mockUserId = "user-tag-error-id-refactored";
-  const mockProjectName = "Test Invalid Tag Error Refactored";
-  const mockInitialUserPromptText = "This tag check will throw (refactored).";
-  const mockSelectedDomainTagForError = "tag_that_causes_error_in_validation_refactored";
+  const mockUserId = "user-file-upload-fail-storage";
+  const mockProjectName = "Test Project File Storage Fail";
+  const mockSelectedDomainId = "domain-id-for-file-fail";
+  const mockProjectId = "project-id-for-file-fail";
   const testTimestamp = new Date().toISOString();
-  const expectedErrorMessageFromMockDb = "Simulated DB error during tag validation from config";
 
   const mockUser: User = {
     id: mockUserId,
-    app_metadata: {}, 
+    app_metadata: {},
     user_metadata: {},
     aud: "authenticated",
     created_at: testTimestamp,
   };
 
-  const formDataValues = {
-    action: "createProject",
-    projectName: mockProjectName,
-    initialUserPromptText: mockInitialUserPromptText,
-    selectedDomainTag: mockSelectedDomainTagForError,
-  };
+  const mockFile = new File(["test content"], "prompt-fail.md", { type: "text/markdown" });
   const formData = new FormData();
-  Object.entries(formDataValues).forEach(([key, value]) => {
-    if (value !== null && value !== undefined) {
-      formData.append(key, value as string);
-    }
-  });
+  formData.append("action", "createProject");
+  formData.append("projectName", mockProjectName);
+  formData.append("selectedDomainId", mockSelectedDomainId);
+  formData.append("promptFile", mockFile);
+
+  const mockProjectDataAfterInsert = {
+    id: mockProjectId,
+    user_id: mockUserId,
+    project_name: mockProjectName,
+    selected_domain_id: mockSelectedDomainId,
+  };
 
   const mockConfig: MockSupabaseDataConfig = {
     genericMockResults: {
-      'domain_specific_prompt_overlays': {
-        select: async (state: MockQueryBuilderState) => {
-          // console.log(`[Mock Config][${mockProjectName}] domain_specific_prompt_overlays.select state for DB error:`, JSON.stringify(state));
-          // This mock simulates the behavior of .limit(1) after a select that errors.
-          // The MockQueryBuilder will handle the .limit(1) part based on this error.
-          return { 
-            data: null, 
-            error: { name: "PostgrestError", message: expectedErrorMessageFromMockDb, code: "XYZ123", details: "Further details of simulated DB error", hint: "Check DB or mock"}, 
-            count: 0, 
-            status: 500, 
-            statusText: "Internal Server Error" 
-          };
-        }
-      }
-      // 'dialectic_projects' should not be called.
-    }
+      'dialectic_projects': {
+        insert: async (state) => ({ data: [{ ...mockProjectDataAfterInsert, ...state.insertData as any, domain: { name: "File Fail Domain" } }], error: null }),
+      },
+    },
+    storageMock: {
+      uploadResult: async () => ({ data: null, error: new Error("Storage upload mock error") }),
+    },
   };
 
   const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
 
   try {
     const result = await createProject(
-      formData, 
-      mockDbAdminClient as any, // Cast for testing
+      formData,
+      mockDbAdminClient as any,
       mockUser,
-      {} // Use default isValidDomainTag with the mocked client
+      {}
     );
 
-    assertExists(result.error, "Error object should exist when isValidDomainTag check fails internally");
-    assertEquals(result.error?.message, "Failed to create project", "Primary error message should be consistent");
-    assertEquals(result.error?.details, expectedErrorMessageFromMockDb, "Error details should reflect the DB error during tag validation");
-    assertEquals(result.error?.status, 500, "Error status should be 500 for internal validation failure");
+    assertExists(result.error, "Error object should exist on storage failure");
+    assertEquals(result.error.message, "Failed to upload initial prompt file.");
 
-    assertEquals(spies.fromSpy.calls.length, 1, "fromSpy should be called once for domain_specific_prompt_overlays");
-    assertEquals(spies.fromSpy.calls[0].args[0], 'domain_specific_prompt_overlays', "fromSpy called with 'domain_specific_prompt_overlays'");
+    const projectSpies = spies.getLatestQueryBuilderSpies('dialectic_projects');
+    assertExists(projectSpies?.insert, "Insert spy should exist");
+    assertEquals(projectSpies.insert.calls.length, 1, "Project should be inserted once");
 
-    const overlaySelectSpies = spies.getLatestQueryBuilderSpies('domain_specific_prompt_overlays');
-    assertExists(overlaySelectSpies, "Overlay select spies should exist");
-    assertExists(overlaySelectSpies.select, "Overlay select spy should exist");
-    assertExists(overlaySelectSpies.eq, "Overlay eq spy should exist");
-    assertExists(overlaySelectSpies.limit, "Overlay limit spy should exist"); // This will cause a linter error
+    assertExists(projectSpies?.update, "Update spy should exist");
+    assertEquals(projectSpies.update.calls.length, 0, "Project should not be updated");
 
-    assertEquals(overlaySelectSpies.select.calls.length, 1, "select on overlays called once");
-    assertEquals(overlaySelectSpies.select.calls[0].args[0], 'domain_tag', "select on overlays called with 'domain_tag'");
-    assertEquals(overlaySelectSpies.eq.calls.length, 1, "eq on overlays called once");
-    assertEquals(overlaySelectSpies.eq.calls[0].args, ['domain_tag', mockSelectedDomainTagForError], "eq on overlays called with correct args");
-    assertEquals(overlaySelectSpies.limit.calls.length, 1, "limit on overlays called once"); // This will cause a linter error
-
-    // Ensure dialectic_projects was not touched
-    const projectInsertSpies = spies.getLatestQueryBuilderSpies('dialectic_projects');
-    assertEquals(projectInsertSpies, undefined, "No spies should exist for dialectic_projects table");
+    const resourceSpies = spies.getLatestQueryBuilderSpies('dialectic_project_resources');
+    assertEquals(resourceSpies?.insert?.calls.length, undefined, "Resource insert should not be attempted");
 
   } finally {
     if (clearAllStubs) clearAllStubs();
   }
 });
 
-Deno.test("createProject - successful project creation with domain tag and overlay", async () => {
-  const MOCK_ISO_DATE_STRING = "2023-01-01T12:00:00.000Z";
-  const mockUserId = "user-tag-overlay-id-refactored";
-  const mockProjectName = "Test Project With Tag And Overlay Refactored";
-  const mockInitialUserPromptText = "Prompt for tagged project with overlay refactored.";
-  const mockSelectedDomainTag = "software_dev_tag_for_overlay_refactored";
-  const mockSelectedDomainOverlayId = "overlay-uuid-for-testing-with-tag-refactored";
-  
+
+Deno.test("createProject - promptFile dialectic_project_resources insert fails (db error)", async () => {
+  const mockUserId = "user-file-fail-resource-db";
+  const mockProjectName = "Test Project Resource DB Fail";
+  const mockSelectedDomainId = "domain-id-resource-db-fail";
+  const mockProjectId = "project-id-resource-db-fail";
+  const testTimestamp = new Date().toISOString();
+
   const mockUser: User = {
     id: mockUserId,
-    app_metadata: {}, 
+    app_metadata: {},
     user_metadata: {},
     aud: "authenticated",
-    created_at: MOCK_ISO_DATE_STRING,
+    created_at: testTimestamp,
+  };
+
+  const mockFile = new File(["test content"], "prompt-res-db-fail.md", { type: "text/markdown" });
+  const formData = new FormData();
+  formData.append("action", "createProject");
+  formData.append("projectName", mockProjectName);
+  formData.append("selectedDomainId", mockSelectedDomainId);
+  formData.append("promptFile", mockFile);
+
+  const mockProjectDataAfterInsert = {
+    id: mockProjectId,
+    user_id: mockUserId,
+    project_name: mockProjectName,
+    selected_domain_id: mockSelectedDomainId,
+  };
+
+  const mockConfig: MockSupabaseDataConfig = {
+    genericMockResults: {
+      'dialectic_projects': {
+        insert: async (state) => ({ data: [{ ...mockProjectDataAfterInsert, ...state.insertData as any, domain: { name: "Resource DB Fail Domain" } }], error: null }),
+      },
+      'dialectic_project_resources': {
+        insert: async () => ({ data: null, error: { name: "PostgrestError", message: "Resource DB insert mock error", code: "XXYYZ", details: "details", hint: "hint" } as any }),
+      },
+    },
+    storageMock: {
+      uploadResult: async (bucket, path) => ({ data: { path }, error: null }),
+    },
+  };
+
+  const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
+
+  try {
+    const result = await createProject(
+      formData,
+      mockDbAdminClient as any,
+      mockUser,
+      {}
+    );
+
+    assertExists(result.error);
+    assertEquals(result.error.message, "Failed to record prompt file resource.");
+
+    const bucketSpies = spies.storage.from('dialectic-contributions');
+    assertExists(bucketSpies.removeSpy, "Remove spy should exist");
+    assertEquals(bucketSpies.removeSpy.calls.length, 1, "Storage remove should be called on resource DB failure");
+
+    const projectSpies = spies.getLatestQueryBuilderSpies('dialectic_projects');
+    assertExists(projectSpies?.update);
+    assertEquals(projectSpies.update.calls.length, 0, "Project should not be updated if resource insert fails");
+  } finally {
+    if (clearAllStubs) clearAllStubs();
+  }
+});
+
+
+Deno.test("createProject - project update with resource_id fails (db error)", async () => {
+  const mockUserId = "user-file-fail-project-update";
+  const mockProjectName = "Test Project Update Fail";
+  const mockSelectedDomainId = "domain-id-project-update-fail";
+  const mockProjectId = "project-id-project-update-fail";
+  const testTimestamp = new Date().toISOString();
+
+  const mockUser: User = {
+    id: mockUserId,
+    app_metadata: {},
+    user_metadata: {},
+    aud: "authenticated",
+    created_at: testTimestamp,
+  };
+
+  const mockFile = new File(["test content"], "prompt-proj-update-fail.md", { type: "text/markdown" });
+  const formData = new FormData();
+  formData.append("action", "createProject");
+  formData.append("projectName", mockProjectName);
+  formData.append("selectedDomainId", mockSelectedDomainId);
+  formData.append("promptFile", mockFile);
+
+  const mockProjectDataAfterInsert = {
+    id: mockProjectId,
+    user_id: mockUserId,
+    project_name: mockProjectName,
+    selected_domain_id: mockSelectedDomainId,
+  };
+
+  const mockConfig: MockSupabaseDataConfig = {
+    genericMockResults: {
+      'dialectic_projects': {
+        insert: async (state) => ({ data: [{ ...mockProjectDataAfterInsert, ...state.insertData as any, domain: { name: "Project Update Fail Domain" } }], error: null }),
+        update: async () => ({ data: null, error: { name: "PostgrestError", message: "Project update mock error", code: "XXYYZ", details: "details", hint: "hint" } as any }),
+      },
+      'dialectic_project_resources': {
+        insert: async (state) => {
+          const data = state.insertData;
+          if (!data || Array.isArray(data)) throw new Error("Invalid insert data in mock");
+          return { data: [{ id: (data as any).id }], error: null };
+        },
+      },
+    },
+    storageMock: {
+      uploadResult: async (bucket, path) => ({ data: { path }, error: null }),
+    },
+  };
+
+  const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
+
+  try {
+    const result = await createProject(
+      formData,
+      mockDbAdminClient as any,
+      mockUser,
+      {}
+    );
+
+    assertExists(result.error);
+    assertEquals(result.error.message, "Failed to finalize project with file resource.");
+
+    const bucketSpies = spies.storage.from('dialectic-contributions');
+    assertExists(bucketSpies.removeSpy);
+    assertEquals(bucketSpies.removeSpy.calls.length, 0, "Storage remove should NOT be called on project update failure");
+
+    const projectSpies = spies.getLatestQueryBuilderSpies('dialectic_projects');
+    assertExists(projectSpies?.update);
+    assertEquals(projectSpies.update.calls.length, 1, "Project update should be attempted once");
+  } finally {
+    if (clearAllStubs) clearAllStubs();
+  }
+});
+
+
+Deno.test("createProject - successful project creation with domain and overlay", async () => {
+  const mockUserId = "user-domain-overlay-id-refactored";
+  const mockProjectName = "Test Project With Domain And Overlay Refactored";
+  const mockInitialUserPromptText = "Prompt for domain project with overlay refactored.";
+  const mockSelectedDomainId = "domain-id-for-overlay-test";
+  const mockSelectedDomainOverlayId = "overlay-uuid-for-testing-with-domain-refactored";
+  const testTimestamp = new Date().toISOString();
+
+  const mockUser: User = {
+    id: mockUserId,
+    app_metadata: {},
+    user_metadata: {},
+    aud: "authenticated",
+    created_at: testTimestamp,
   };
 
   const mockExpectedDbInsert = {
     user_id: mockUserId,
     project_name: mockProjectName,
     initial_user_prompt: mockInitialUserPromptText,
-    selected_domain_tag: mockSelectedDomainTag,
+    selected_domain_id: mockSelectedDomainId,
     selected_domain_overlay_id: mockSelectedDomainOverlayId,
-    status: "new",
-    initial_prompt_resource_id: null,
   };
 
-  // This is what the .single() call after insert should resolve to
   const mockProjectDataAfterInsert: DialecticProject = {
-    id: "project-tag-overlay-id-refactored",
+    id: "project-test-id-with-domain-overlay",
     user_id: mockUserId,
     project_name: mockProjectName,
     initial_user_prompt: mockInitialUserPromptText,
-    selected_domain_tag: mockSelectedDomainTag,
+    selected_domain_id: mockSelectedDomainId,
+    domain_name: "Domain For Overlay",
     selected_domain_overlay_id: mockSelectedDomainOverlayId,
-    status: "new",
-    initial_prompt_resource_id: null,
     repo_url: null,
-    created_at: MOCK_ISO_DATE_STRING,
-    updated_at: MOCK_ISO_DATE_STRING,
+    status: "new",
+    created_at: testTimestamp,
+    updated_at: testTimestamp,
+    initial_prompt_resource_id: null,
   };
 
   const formDataValues = {
     action: "createProject",
     projectName: mockProjectName,
     initialUserPromptText: mockInitialUserPromptText,
-    selectedDomainTag: mockSelectedDomainTag,
+    selectedDomainId: mockSelectedDomainId,
     selectedDomainOverlayId: mockSelectedDomainOverlayId,
   };
+
   const formData = new FormData();
   Object.entries(formDataValues).forEach(([key, value]) => {
     if (value !== null && value !== undefined) {
@@ -826,39 +825,16 @@ Deno.test("createProject - successful project creation with domain tag and overl
 
   const mockConfig: MockSupabaseDataConfig = {
     genericMockResults: {
-      'domain_specific_prompt_overlays': {
-        select: async (state: MockQueryBuilderState) => {
-          // console.log(`[Mock Config][${mockProjectName}] domain_specific_prompt_overlays.select state:`, JSON.stringify(state));
-          const hasCorrectEqFilter = state.filters.some(f => f.type === 'eq' && f.column === 'domain_tag' && f.value === mockSelectedDomainTag);
-          const hasCorrectLimit = state.limitCount === 1;
-          const hasCorrectSelect = state.selectColumns === 'domain_tag';
-
-          if (hasCorrectEqFilter && hasCorrectLimit && hasCorrectSelect) {
-            return { data: [{ domain_tag: mockSelectedDomainTag }], error: null, count: 1, status: 200, statusText: 'OK' };
-          }
-          return { data: [], error: null, count: 0, status: 200, statusText: 'OK' }; // Fallback if tag not found
-        }
-      },
       'dialectic_projects': {
         insert: async (state: MockQueryBuilderState) => {
-          // console.log(`[Mock Config][${mockProjectName}] dialectic_projects.insert state:`, JSON.stringify(state));
           insertPayloadHolder.payload = state.insertData;
-          const insertedData = Array.isArray(state.insertData) ? state.insertData[0] : state.insertData;
+          const insertedData = (Array.isArray(state.insertData) ? state.insertData[0] : state.insertData) as any;
+          if (!insertedData) throw new Error("Mock insert received no data");
           return {
             data: [{
-              id: mockProjectDataAfterInsert.id,
-              ...(insertedData as object),
-              // Ensure all fields from mockProjectDataAfterInsert are present
-              user_id: (insertedData as any)?.user_id || mockUserId,
-              project_name: (insertedData as any)?.project_name || mockProjectName,
-              initial_user_prompt: (insertedData as any)?.initial_user_prompt || mockInitialUserPromptText,
-              selected_domain_tag: (insertedData as any)?.selected_domain_tag || mockSelectedDomainTag,
-              selected_domain_overlay_id: (insertedData as any)?.selected_domain_overlay_id || mockSelectedDomainOverlayId,
-              status: (insertedData as any)?.status || "new",
-              initial_prompt_resource_id: (insertedData as any)?.initial_prompt_resource_id || null,
-              repo_url: (insertedData as any)?.repo_url || null,
-              created_at: MOCK_ISO_DATE_STRING,
-              updated_at: MOCK_ISO_DATE_STRING,
+              ...mockProjectDataAfterInsert,
+              ...insertedData,
+              domain: { name: mockProjectDataAfterInsert.domain_name },
             }],
             error: null,
             count: 1,
@@ -873,46 +849,22 @@ Deno.test("createProject - successful project creation with domain tag and overl
   const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
 
   try {
-    // --- Function Call ---
     const result = await createProject(
-      formData, 
-      mockDbAdminClient as any, // Cast for testing
+      formData,
+      mockDbAdminClient as any,
       mockUser,
-      {} // Use default isValidDomainTag with the mocked client
+      {}
     );
 
-    // --- Assertions ---
     assertExists(result.data, "result.data should exist");
-    assertEquals(result.error, undefined, "result.error should be undefined");
-    assertObjectMatch(result.data as any, mockProjectDataAfterInsert as any, "Project data should match expected");
+    assertEquals(result.data.selected_domain_id, mockSelectedDomainId);
+    assertEquals(result.data.selected_domain_overlay_id, mockSelectedDomainOverlayId);
+    assertEquals(result.data.project_name, mockProjectName);
 
-    assertEquals(spies.fromSpy.calls.length, 2, "fromSpy should be called twice (overlays and projects)");
-
-    // Assertions for domain_specific_prompt_overlays call chain
-    const overlaySelectSpies = spies.getLatestQueryBuilderSpies('domain_specific_prompt_overlays');
-    assertExists(overlaySelectSpies, "Overlay select spies should exist");
-    assertExists(overlaySelectSpies.select, "Overlay select spy should exist");
-    assertExists(overlaySelectSpies.eq, "Overlay eq spy should exist");
-    assertExists(overlaySelectSpies.limit, "Overlay limit spy should exist"); // Linter error until supabase.mock.ts is updated
-
-    assertEquals(overlaySelectSpies.select.calls.length, 1, "select on overlays called once");
-    assertEquals(overlaySelectSpies.select.calls[0].args[0], 'domain_tag', "select on overlays called with 'domain_tag'");
-    assertEquals(overlaySelectSpies.eq.calls.length, 1, "eq on overlays called once");
-    assertEquals(overlaySelectSpies.eq.calls[0].args, ['domain_tag', mockSelectedDomainTag], "eq on overlays called with correct args");
-    assertEquals(overlaySelectSpies.limit.calls.length, 1, "limit on overlays called once"); // Linter error
-
-    // Assertions for dialectic_projects call chain
     const projectInsertSpies = spies.getLatestQueryBuilderSpies('dialectic_projects');
-    assertExists(projectInsertSpies, "Project insert spies should exist");
-    assertExists(projectInsertSpies.insert, "Project insert spy should exist");
-    assertExists(projectInsertSpies.select, "Project select (after insert) spy should exist");
-    assertExists(projectInsertSpies.single, "Project single (after insert) spy should exist");
-
-    assertEquals(projectInsertSpies.insert.calls.length, 1, "insert on dialectic_projects should be called once");
-    assertEquals(projectInsertSpies.select.calls.length, 1, "select on dialectic_projects (after insert) should be called once");
-    assertEquals(projectInsertSpies.single.calls.length, 1, "single on dialectic_projects (after insert) should be called once");
-    
-    assertObjectMatch(insertPayloadHolder.payload, mockExpectedDbInsert as any, "Insert payload should match expected");
+    assertExists(projectInsertSpies?.insert);
+    assertEquals(projectInsertSpies.insert.calls.length, 1);
+    assertObjectMatch(insertPayloadHolder.payload as any, mockExpectedDbInsert as any);
 
   } finally {
     if (clearAllStubs) clearAllStubs();

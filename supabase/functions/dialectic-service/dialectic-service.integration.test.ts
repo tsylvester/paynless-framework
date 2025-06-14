@@ -75,7 +75,7 @@ describe("Edge Function: dialectic-service", () => {
     await coreCleanupTestResources('all');
   });
 
-  describe("Action: listAvailableDomainTags", () => {
+  describe("Action: listAvailableDomains", () => {
     describe("With existing domain tags", () => {
       beforeEach(async () => {
         // Setup the specific overlays needed for this test suite
@@ -601,7 +601,6 @@ describe("Edge Function: dialectic-service", () => {
     it("should generate thesis contributions, store them, and link to storage", async () => {
       const payload: GenerateStageContributionsPayload = {
         sessionId: testSessionId,
-        stage: "thesis",
       };
 
       // Using functions.invoke instead of fetch

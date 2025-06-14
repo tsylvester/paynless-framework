@@ -37,6 +37,7 @@ import {
       .from('dialectic_projects')
       .select(`
         *,
+        dialectic_domains ( name ),
         dialectic_sessions (*,
           dialectic_contributions (*)
         )
