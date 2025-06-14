@@ -75,36 +75,3 @@ export function createMockDialecticClient(): MockDialecticApiClient {
         listDomains: vi.fn<[], Promise<ApiResponse<DialecticDomain[]>>>(),
     };
 }
-
-// Keep a single instance for simplicity in existing tests that might rely on it.
-// DEPRECATED: This will be removed. Tests should get the client from the main api mock.
-export const mockDialecticClientInstance: MockDialecticApiClient = createMockDialecticClient();
-
-// Moved reset logic into its own function
-export function resetMockDialecticClient(instance: MockDialecticApiClient) {
-  // Now we can iterate over the keys to reset, making it more robust.
-  for (const key in instance) {
-      const prop = instance[key as keyof MockDialecticApiClient];
-      if (typeof prop === 'function' && 'mockReset' in prop) {
-          (prop as ReturnType<typeof vi.fn>).mockReset();
-      }
-  }
-}
-
-/**
- * Helper to get the current instance of the mock Dialectic client.
- * NOTE: For new tests, consider using `createMockDialecticClient` to avoid shared state.
- * DEPRECATED: This will be removed. Tests should get the client from the main api mock.
- */
-export const getMockDialecticClient = (): MockDialecticApiClient => mockDialecticClientInstance;
-
-/**
- * Helper to reset all mocks in the Dialectic client.
- * If you only need to reset the Dialectic client, prefer `resetMockDialecticClient`.
- * This is typically used in a global `beforeEach` or `afterEach`.
- * DEPRECATED: This will be removed. Tests should get the client from the main api mock.
- */
-export function resetAllDialecticMocks() {
-    resetMockDialecticClient(mockDialecticClientInstance);
-}
-

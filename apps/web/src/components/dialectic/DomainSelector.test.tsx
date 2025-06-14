@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 
-import { useDialecticStore, initialDialecticStateValues } from '@paynless/store';
-import type { DialecticDomain, DialecticStore, ApiError } from '@paynless/types';
+import { useDialecticStore, initialDialecticStateValues, selectCurrentProjectDetail } from '@paynless/store';
+import type { DialecticDomain, DialecticStore, ApiError, DialecticProject } from '@paynless/types';
 import { DomainSelector } from './DomainSelector';
 
 // Mock the @paynless/store
@@ -16,6 +16,7 @@ vi.mock('@paynless/store', async (importOriginal) => {
         selectIsLoadingDomains: actual.selectIsLoadingDomains,
         selectDomainsError: actual.selectDomainsError,
         selectSelectedDomain: actual.selectSelectedDomain,
+        selectCurrentProjectDetail: actual.selectCurrentProjectDetail,
     };
 });
 
@@ -147,5 +148,47 @@ describe('DomainSelector', () => {
         });
 
         expect(screen.getByRole('combobox')).toHaveTextContent(mockDomainA.name);
+    });
+
+    it('should pre-fill the domain based on project details', async () => {
+        const user = userEvent.setup();
+        const mockDomains: DialecticDomain[] = [mockDomainA, mockDomainB];
+        const mockProject: DialecticProject = { 
+            id: 'proj-1',
+            project_name: 'Test Project',
+            selected_domain_id: mockDomainB.id,
+            // ... other required DialecticProject properties
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            user_id: 'user-1',
+            initial_user_prompt: 'prompt',
+            selected_domain_overlay_id: null,
+            domain_name: 'Domain B',
+            repo_url: null,
+            status: 'active',
+            initial_prompt_resource_id: null,
+        };
+
+        const { rerender } = setup({
+            domains: mockDomains,
+            currentProjectDetail: mockProject,
+            selectedDomain: null, // Start with no domain selected
+        });
+
+        // The useEffect should trigger the selection
+        await waitFor(() => {
+            expect(mockSetSelectedDomain).toHaveBeenCalledWith(mockDomainB);
+        });
+
+        // To verify it's displayed, we update the store state as if the action was successful
+        const updatedStoreWithSelection = createMockStoreState({
+            domains: mockDomains,
+            currentProjectDetail: mockProject,
+            selectedDomain: mockDomainB,
+        });
+        vi.mocked(useDialecticStore).mockImplementation((selector) => selector(updatedStoreWithSelection));
+        rerender(<DomainSelector />);
+        
+        expect(screen.getByRole('combobox')).toHaveTextContent(mockDomainB.name);
     });
 }); 

@@ -1,21 +1,16 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { StageTabCard } from './StageTabCard';
-import { DialecticProject, DialecticSession, DialecticStage as DialecticStageEnum, DialecticStore, ContributionCacheEntry, ApiError } from '@paynless/types';
-import { DIALECTIC_STAGES, DialecticStageDefinition } from '@/config/dialecticConfig';
+import { 
+  DialecticProject, 
+  DialecticSession, 
+  DialecticStage,
+  DialecticStore,
+  ApiError,
+  ContributionCacheEntry,
+  DialecticContribution,
+} from '@paynless/types';
 import { vi } from 'vitest';
 import { initializeMockDialecticState, getDialecticStoreState } from '../../mocks/dialecticStore.mock';
-
-// Type for the internal state of a stage as used by the UI/store
-interface UiStageState {
-  status: string;
-  hasSeedPrompt: boolean;
-  iterations: Array<{ id: string; content?: string }>;
-  currentIterationIndex: number;
-  contributionCache: Record<string, ContributionCacheEntry>;
-  isGeneratingContributions: boolean;
-  generateContributionsError: ApiError | null;
-}
 
 vi.mock('@paynless/store', async (importOriginal) => {
   const actualStoreModule = await importOriginal<typeof import('@paynless/store')>();
@@ -26,353 +21,187 @@ vi.mock('@paynless/store', async (importOriginal) => {
   };
 });
 
-const baseMockProject: DialecticProject = {
+const mockStage: DialecticStage = {
+    id: 'stage-id-hypothesis',
+    display_name: 'Hypothesis',
+    slug: 'hypothesis',
+    description: 'Generate initial ideas.',
+    created_at: new Date().toISOString(),
+    default_system_prompt_id: null,
+    expected_output_artifacts: null,
+    input_artifact_rules: null,
+};
+
+const anotherMockStage: DialecticStage = {
+  id: 'stage-id-antithesis',
+  display_name: 'Antithesis',
+  slug: 'antithesis',
+  description: 'Critique initial ideas.',
+  created_at: new Date().toISOString(),
+  default_system_prompt_id: null,
+  expected_output_artifacts: null,
+  input_artifact_rules: null,
+};
+
+const mockSession: DialecticSession = {
+  id: 'ses-123',
+  project_id: 'proj-123',
+  session_description: 'Test session',
+  iteration_count: 1,
+  current_stage_id: mockStage.id,
+  status: 'pending_hypothesis',
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  selected_model_catalog_ids: ['model-1'],
+  user_input_reference_url: null,
+  associated_chat_id: null,
+  dialectic_contributions: [],
+};
+
+const mockProject: DialecticProject = {
   id: 'proj-123',
   user_id: 'user-123',
   project_name: 'Test Project',
-  initial_user_prompt: 'Initial prompt for testing',
   status: 'active',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
+  selected_domain_id: 'domain-1',
+  domain_name: 'Software',
   selected_domain_overlay_id: null,
-  selected_domain_tag: null,
+  initial_user_prompt: 'Test',
   repo_url: null,
-  initial_prompt_resource_id: null,
+  dialectic_sessions: [mockSession],
+  process_template_id: 'pt-1',
 };
-
-const baseMockSession = {
-  id: 'ses-123',
-  project_id: 'proj-123',
-  session_description: 'Test session summary',
-  current_stage_seed_prompt: null,
-  iteration_count: 1,
-  status: 'active',
-  associated_chat_id: null,
-  active_thesis_prompt_template_id: null,
-  active_antithesis_prompt_template_id: null,
-  active_synthesis_prompt_template_id: null,
-  active_parenthesis_prompt_template_id: null,
-  active_paralysis_prompt_template_id: null,
-  formal_debate_structure_id: null,
-  max_iterations: 3,
-  current_iteration: 1,
-  convergence_status: null,
-  preferred_model_for_stage: null,
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-  stageSlugs: [DialecticStageEnum.THESIS, DialecticStageEnum.ANTITHESIS, DialecticStageEnum.SYNTHESIS] as DialecticStageEnum[],
-  activeStageSlug: DialecticStageEnum.THESIS as DialecticStageEnum,
-  stages: {
-    [DialecticStageEnum.THESIS]: { status: 'pending_thesis', hasSeedPrompt: true, iterations: [], currentIterationIndex: 0, contributionCache: {}, isGeneratingContributions: false, generateContributionsError: null } as UiStageState,
-    [DialecticStageEnum.ANTITHESIS]: { status: 'pending_antithesis', hasSeedPrompt: false, iterations: [], currentIterationIndex: 0, contributionCache: {}, isGeneratingContributions: false, generateContributionsError: null } as UiStageState,
-    [DialecticStageEnum.SYNTHESIS]: { status: 'pending_synthesis', hasSeedPrompt: false, iterations: [], currentIterationIndex: 0, contributionCache: {}, isGeneratingContributions: false, generateContributionsError: null } as UiStageState,
-  } as Record<DialecticStageEnum, UiStageState>,
-};
-
-const thesisStageDef: DialecticStageDefinition = DIALECTIC_STAGES.find(s => s.slug === DialecticStageEnum.THESIS)!;
-const antithesisStageDef: DialecticStageDefinition = DIALECTIC_STAGES.find(s => s.slug === DialecticStageEnum.ANTITHESIS)!;
-const synthesisStageDef = DIALECTIC_STAGES.find(s => s.slug === DialecticStageEnum.SYNTHESIS)!;
 
 describe('StageTabCard', () => {
-  let currentPreparedStoreState: Partial<DialecticStore>;
 
-  const setupStore = (
-    stageSlugToTestActiveInContext: DialecticStageEnum,
-    stageSpecificStatus: string,
-    stageSpecificHasSeedPrompt = false,
-    isGenerating = false,
-    generateError: string | null = null,
-    activeSessionIdParam = baseMockSession.id,
-    overallSessionStatus?: string
-  ) => {
-    const M_PROJECT_ID = baseMockProject.id;
-    const M_SESSION_ID = activeSessionIdParam;
-    const M_STAGE_SLUG_ACTIVE_IN_CONTEXT = stageSlugToTestActiveInContext;
-
-    const specificStageData: UiStageState = {
-      status: stageSpecificStatus,
-      hasSeedPrompt: stageSpecificHasSeedPrompt,
-      iterations: [],
-      currentIterationIndex: 0,
-      contributionCache: {},
+  const setupStore = (session: DialecticSession | undefined, project: DialecticProject | undefined, activeStage: DialecticStage | null, isGenerating = false, generateError: ApiError | null = null, contributionCache: Record<string, ContributionCacheEntry> = {}) => {
+    const state: Partial<DialecticStore> = {
+      activeContextProjectId: project?.id ?? null,
+      activeContextSessionId: session?.id ?? null,
+      activeContextStageSlug: activeStage,
+      currentProjectDetail: project,
       isGeneratingContributions: isGenerating,
-      generateContributionsError: generateError ? ({ code: 'generation_failed', message: generateError } as ApiError) : null,
+      generateContributionsError: generateError,
+      contributionContentCache: contributionCache,
     };
-
-    const sessionForStoreState = {
-      ...baseMockSession,
-      id: M_SESSION_ID,
-      project_id: M_PROJECT_ID,
-      activeStageSlug: M_STAGE_SLUG_ACTIVE_IN_CONTEXT,
-      status: overallSessionStatus || stageSpecificStatus,
-      stages: {
-        ...baseMockSession.stages,
-        [stageSlugToTestActiveInContext]: specificStageData,
-      },
-    } as unknown as DialecticSession & { stages: Record<DialecticStageEnum, UiStageState>; activeStageSlug: DialecticStageEnum; stageSlugs: DialecticStageEnum[]; status: string };
-
-    const projectForStoreState: DialecticProject = {
-      ...baseMockProject,
-      id: M_PROJECT_ID,
-      dialectic_sessions: [sessionForStoreState as DialecticSession],
-    };
-
-    currentPreparedStoreState = {
-      projects: [projectForStoreState],
-      currentProjectDetail: projectForStoreState,
-      activeContextProjectId: M_PROJECT_ID,
-      activeContextSessionId: M_SESSION_ID,
-      activeContextStageSlug: M_STAGE_SLUG_ACTIVE_IN_CONTEXT,
-      availableDomainTags: [],
-      isLoadingDomainTags: false,
-      domainTagsError: null,
-      selectedDomainTag: null,
-      selectedStageAssociation: null,
-      availableDomainOverlays: null,
-      isLoadingDomainOverlays: false,
-      domainOverlaysError: null,
-      selectedDomainOverlayId: null,
-      isLoadingProjects: false,
-      projectsError: null,
-      isLoadingProjectDetail: false,
-      projectDetailError: null,
-      modelCatalog: [],
-      isLoadingModelCatalog: false,
-      modelCatalogError: null,
-      isCreatingProject: false,
-      createProjectError: null,
-      isStartingSession: false,
-      startSessionError: null,
-      contributionContentCache: {},
-      allSystemPrompts: null,
-      isCloningProject: false,
-      cloneProjectError: null,
-      isExportingProject: false,
-      exportProjectError: null,
-      isUpdatingProjectPrompt: false,
-      isUploadingProjectResource: false,
-      uploadProjectResourceError: null,
-      isStartNewSessionModalOpen: false,
-      selectedModelIds: [],
-      initialPromptFileContent: null,
-      isLoadingInitialPromptFileContent: false,
-      initialPromptFileContentError: null,
-      isGeneratingContributions: sessionForStoreState.stages[stageSlugToTestActiveInContext]?.isGeneratingContributions || false,
-      generateContributionsError: sessionForStoreState.stages[stageSlugToTestActiveInContext]?.generateContributionsError || null,
-      isSubmittingStageResponses: false,
-      submitStageResponsesError: null,
-      isSavingContributionEdit: false,
-      saveContributionEditError: null,
-    };
-    
-    initializeMockDialecticState(currentPreparedStoreState);
-
-    // Populate contributionContentCache if seed prompt is expected for the active card's stage
-    if (stageSpecificHasSeedPrompt && M_PROJECT_ID && M_SESSION_ID && sessionForStoreState.current_iteration) {
-      const seedPromptPath = `projects/${M_PROJECT_ID}/sessions/${M_SESSION_ID}/iteration_${sessionForStoreState.current_iteration}/${stageSlugToTestActiveInContext}/seed_prompt.md`;
-      currentPreparedStoreState.contributionContentCache = {
-        ...currentPreparedStoreState.contributionContentCache,
-        [seedPromptPath]: {
-          content: `Mock seed content for ${stageSlugToTestActiveInContext}`,
-          isLoading: false,
-          error: undefined,
-        } as ContributionCacheEntry
-      };
-      initializeMockDialecticState(currentPreparedStoreState); // Re-initialize with updated cache
-    }
+    initializeMockDialecticState(state);
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default setup for an active thesis card, ready to generate
-    setupStore(DialecticStageEnum.THESIS, 'pending_thesis', true, false, null, baseMockSession.id, 'pending_thesis');
+    // Set up default mocks for actions on the store state
+    const storeState = getDialecticStoreState();
+    storeState.setActiveDialecticContext = vi.fn();
+    storeState.generateContributions = vi.fn();
+    storeState.fetchInitialPromptContent = vi.fn();
   });
 
-  const renderComponent = (stageDefToRender: DialecticStageDefinition = thesisStageDef) => {
+  const renderComponent = (stage: DialecticStage, isActive: boolean) => {
     return render(
         <StageTabCard
-            stageDefinition={stageDefToRender}
+            stage={stage}
+            isActiveStage={isActive}
         />,
     );
   };
 
   it('renders display name and reflects active state', () => {
-    renderComponent(thesisStageDef);
-    expect(screen.getByText(thesisStageDef.displayName)).toBeInTheDocument();
-    expect(screen.getByTestId(`stage-tab-${thesisStageDef.slug}`)).toHaveClass('border-primary');
+    setupStore(mockSession, mockProject, mockStage);
+    renderComponent(mockStage, true);
+    expect(screen.getByText(mockStage.display_name)).toBeInTheDocument();
+    expect(screen.getByTestId(`stage-tab-${mockStage.slug}`)).toHaveClass('border-primary');
   });
 
-  it('calls setActiveContextStageSlug from the store when clicked', () => {
-    renderComponent(thesisStageDef);
-    fireEvent.click(screen.getByText(thesisStageDef.displayName));
-    expect(getDialecticStoreState().setActiveContextStageSlug).toHaveBeenCalledWith(thesisStageDef.slug);
+  it('reflects inactive state', () => {
+    setupStore(mockSession, mockProject, anotherMockStage);
+    renderComponent(mockStage, false);
+    expect(screen.getByText(mockStage.display_name)).toBeInTheDocument();
+    expect(screen.getByTestId(`stage-tab-${mockStage.slug}`)).not.toHaveClass('border-primary');
+  });
+
+  it('calls setActiveDialecticContext from the store when clicked', () => {
+    setupStore(mockSession, mockProject, mockStage);
+    const setActiveCtxFn = getDialecticStoreState().setActiveDialecticContext;
+
+    renderComponent(mockStage, true);
+    fireEvent.click(screen.getByTestId(`stage-tab-${mockStage.slug}`));
+    expect(setActiveCtxFn).toHaveBeenCalledWith({ projectId: mockProject.id, sessionId: mockSession.id, stageSlug: mockStage });
   });
 
   describe('Context Unavailable Message', () => {
-    it('shows context unavailable if activeContextProjectId is missing', () => {
-        const faultyStoreSetup: Partial<DialecticStore> = {
-            ...currentPreparedStoreState,
-            activeContextProjectId: null,
-            activeContextSessionId: baseMockSession.id,
-            activeContextStageSlug: thesisStageDef.slug,
-            currentProjectDetail: null,
-            projects: [],
-        };
-        initializeMockDialecticState(faultyStoreSetup);
-        renderComponent(thesisStageDef);
+    it('shows context unavailable if session is missing', () => {
+        setupStore(undefined, mockProject, mockStage);
+        renderComponent(mockStage, true);
         expect(screen.getByText(/Context unavailable/i)).toBeInTheDocument();
     });
   });
 
   describe('Generate Contributions Button', () => {
-    it('button is visible and enabled if card is active, stage needs generation, has seed, no errors/loading', () => {
-      // Ensure Thesis is active, has seed, and overall session status is pending_thesis
-      setupStore(DialecticStageEnum.THESIS, 'pending_thesis', true, false, null, baseMockSession.id, 'pending_thesis');
-      renderComponent(thesisStageDef);
-      const generateButton = screen.getByRole('button', { name: `Generate ${thesisStageDef.displayName}` });
+    const seedPromptPath = `projects/${mockProject.id}/sessions/${mockSession.id}/iteration_1/${mockStage.slug}/seed_prompt.md`;
+    
+    it('is visible and enabled if card is active and seed prompt exists', () => {
+      const cacheWithSeed = { [seedPromptPath]: { content: 'seed', isLoading: false } };
+      setupStore(mockSession, mockProject, mockStage, false, null, cacheWithSeed);
+      renderComponent(mockStage, true);
+      const generateButton = screen.getByRole('button', { name: `Generate ${mockStage.display_name}` });
       expect(generateButton).toBeInTheDocument();
       expect(generateButton).toBeEnabled();
     });
 
-    it('button is disabled if seed prompt does not exist for the current stage', () => {
-      setupStore(DialecticStageEnum.THESIS, 'pending_thesis', false);
-      renderComponent(thesisStageDef);
-      const generateButton = screen.getByRole('button', { name: `Generate ${thesisStageDef.displayName}` });
+    it('is visible but disabled if seed prompt is loading', () => {
+        const cacheWithLoadingSeed = { [seedPromptPath]: { content: undefined, isLoading: true } };
+        setupStore(mockSession, mockProject, mockStage, false, null, cacheWithLoadingSeed);
+        renderComponent(mockStage, true);
+        const generateButton = screen.getByRole('button', { name: `Generate ${mockStage.display_name}` });
+        expect(generateButton).toBeInTheDocument();
+        expect(generateButton).toBeDisabled();
+    });
+
+    it('is visible but disabled if seed prompt does not exist', () => {
+      setupStore(mockSession, mockProject, mockStage);
+      renderComponent(mockStage, true);
+      const generateButton = screen.getByRole('button', { name: `Generate ${mockStage.display_name}` });
       expect(generateButton).toBeInTheDocument();
       expect(generateButton).toBeDisabled();
     });
 
-    it('button is not visible if stage card is not active', () => {
-      setupStore(DialecticStageEnum.ANTITHESIS, 'pending_antithesis', true);
-      renderComponent(thesisStageDef);
-      const generateButton = screen.queryByRole('button', { name: `Generate ${thesisStageDef.displayName}` });
-      expect(generateButton).not.toBeInTheDocument();
+    it('is not visible if stage card is not active', () => {
+      const cacheWithSeed = { [seedPromptPath]: { content: 'seed', isLoading: false } };
+      setupStore(mockSession, mockProject, mockStage, false, null, cacheWithSeed);
+      renderComponent(mockStage, false);
+      expect(screen.queryByRole('button', { name: `Generate ${mockStage.display_name}` })).not.toBeInTheDocument();
     });
 
     it('dispatches generateContributions action with correct payload on click', () => {
-      // Ensure Thesis is active, has seed, and overall session status is pending_thesis for button to be enabled
-      setupStore(DialecticStageEnum.THESIS, 'pending_thesis', true, false, null, baseMockSession.id, 'pending_thesis');
-      renderComponent(thesisStageDef);
-      const generateButton = screen.getByRole('button', { name: `Generate ${thesisStageDef.displayName}` });
-      fireEvent.click(generateButton);
-      
-      const currentStore = getDialecticStoreState();
-      expect(currentStore.generateContributions).toHaveBeenCalledWith({
-        projectId: baseMockProject.id,
-        sessionId: baseMockSession.id,
-        stageSlug: thesisStageDef.slug,
-        iterationNumber: baseMockSession.current_iteration,
-      });
+        const cacheWithSeed = { [seedPromptPath]: { content: 'seed', isLoading: false } };
+        setupStore(mockSession, mockProject, mockStage, false, null, cacheWithSeed);
+        const generateFn = getDialecticStoreState().generateContributions;
+
+        renderComponent(mockStage, true);
+        const generateButton = screen.getByRole('button', { name: `Generate ${mockStage.display_name}` });
+        fireEvent.click(generateButton);
+
+        expect(generateFn).toHaveBeenCalledWith({
+            sessionId: mockSession.id,
+            projectId: mockProject.id,
+            stageSlug: mockStage.slug,
+            iterationNumber: mockSession.iteration_count,
+        });
     });
 
-    it('button shows loading state when isGeneratingContributions is true for the stage', () => {
-      setupStore(DialecticStageEnum.THESIS, 'pending_thesis', true, true);
-      renderComponent(thesisStageDef);
-      const generateButton = screen.getByRole('button', { name: /Generating.../i });
-      expect(generateButton).toBeDisabled();
+    it('shows "Regenerate" text if contributions for the stage already exist', () => {
+        const contribution = { stage: { id: mockStage.id } } as unknown as DialecticContribution;
+        const sessionWithContributions = { ...mockSession, dialectic_contributions: [contribution] };
+        const projectWithContributionSession = { ...mockProject, dialectic_sessions: [sessionWithContributions] };
+        const cacheWithSeed = { [seedPromptPath]: { content: 'seed', isLoading: false } };
+        setupStore(sessionWithContributions, projectWithContributionSession, mockStage, false, null, cacheWithSeed);
+
+        renderComponent(mockStage, true);
+        const regenerateButton = screen.getByRole('button', { name: `Regenerate ${mockStage.display_name}` });
+        expect(regenerateButton).toBeInTheDocument();
     });
 
-    it('displays error message if generateContributionsError is set for the stage', () => {
-      const errorMsg = 'AI failed to generate.';
-      setupStore(DialecticStageEnum.THESIS, 'pending_thesis', true, false, errorMsg);
-      renderComponent(thesisStageDef);
-      expect(screen.getByText(errorMsg)).toBeInTheDocument();
-    });
-
-    it('shows warning and disables generate if prerequisites not met for Synthesis', () => {
-      const M_SESSION_ID = 'ses-prereq-incomplete';
-      const projectForPrereq: DialecticProject = {
-        ...baseMockProject,
-        dialectic_sessions: [
-          {
-            ...baseMockSession,
-            id: M_SESSION_ID,
-            project_id: baseMockProject.id,
-            activeStageSlug: DialecticStageEnum.SYNTHESIS,
-            status: 'pending_antithesis', // Overall session status indicates antithesis is not complete
-            stages: {
-              ...baseMockSession.stages,
-              [DialecticStageEnum.THESIS]: { ...baseMockSession.stages[DialecticStageEnum.THESIS], status: 'thesis_complete' }, // Individual stage status
-              [DialecticStageEnum.ANTITHESIS]: { ...baseMockSession.stages[DialecticStageEnum.ANTITHESIS], status: 'pending_antithesis', hasSeedPrompt: true },
-              [DialecticStageEnum.SYNTHESIS]: { ...baseMockSession.stages[DialecticStageEnum.SYNTHESIS], status: 'pending_synthesis', hasSeedPrompt: true },
-            }
-          } as unknown as DialecticSession & { status: string }
-        ]
-      };
-      const prereqFaultyStoreState: Partial<DialecticStore> = {
-        ...currentPreparedStoreState,
-        projects: [projectForPrereq],
-        currentProjectDetail: projectForPrereq,
-        activeContextProjectId: baseMockProject.id,
-        activeContextSessionId: M_SESSION_ID,
-        activeContextStageSlug: DialecticStageEnum.SYNTHESIS,
-        isGeneratingContributions: false,
-        generateContributionsError: null,
-        contributionContentCache: {}, // Initialize, will be populated if needed by individual stage setup if we called setupStore
-      };
-      initializeMockDialecticState(prereqFaultyStoreState);
-
-      // For synthesis card, ensure its seed prompt is available if testing its generation button (though here it should be disabled by prereq)
-      const synthesisSeedPath = `projects/${baseMockProject.id}/sessions/${M_SESSION_ID}/iteration_${projectForPrereq.dialectic_sessions![0].current_iteration}/${DialecticStageEnum.SYNTHESIS}/seed_prompt.md`;
-      prereqFaultyStoreState.contributionContentCache = {
-        [synthesisSeedPath]: {
-          content: 'Mock seed for synthesis', isLoading: false, error: undefined 
-        } as ContributionCacheEntry
-      };
-      initializeMockDialecticState(prereqFaultyStoreState); // Re-initialize
-
-      renderComponent(synthesisStageDef);
-
-      expect(screen.getByText(new RegExp(`Please complete '${antithesisStageDef.displayName}' first.`, 'i'))).toBeInTheDocument();
-      const generateButton = screen.getByRole('button', { name: `Generate ${synthesisStageDef.displayName}` });
-      expect(generateButton).toBeDisabled();
-    });
-
-    it('does not show warning if prerequisites are met for Synthesis', () => {
-      const M_SESSION_ID = 'ses-prereq-complete';
-       const projectForPrereqOk: DialecticProject = {
-        ...baseMockProject,
-        dialectic_sessions: [
-          {
-            ...baseMockSession,
-            id: M_SESSION_ID,
-            project_id: baseMockProject.id,
-            activeStageSlug: DialecticStageEnum.SYNTHESIS,
-            status: 'antithesis_complete', // Overall session status indicates antithesis IS complete
-            stages: {
-              ...baseMockSession.stages,
-              [DialecticStageEnum.THESIS]: { ...baseMockSession.stages[DialecticStageEnum.THESIS], status: 'thesis_complete' },
-              [DialecticStageEnum.ANTITHESIS]: { ...baseMockSession.stages[DialecticStageEnum.ANTITHESIS], status: 'antithesis_complete' },
-              [DialecticStageEnum.SYNTHESIS]: { ...baseMockSession.stages[DialecticStageEnum.SYNTHESIS], status: 'pending_synthesis', hasSeedPrompt: true },
-            }
-          } as unknown as DialecticSession & { status: string }
-        ]
-      };
-      const prereqMetStoreState: Partial<DialecticStore> = {
-         ...currentPreparedStoreState,
-        projects: [projectForPrereqOk],
-        currentProjectDetail: projectForPrereqOk,
-        activeContextProjectId: baseMockProject.id,
-        activeContextSessionId: M_SESSION_ID,
-        activeContextStageSlug: DialecticStageEnum.SYNTHESIS,
-        isGeneratingContributions: false,
-        generateContributionsError: null,
-        contributionContentCache: {}, // Initialize
-      };
-      // For synthesis card, ensure its seed prompt is available as it's a condition for the button to be enabled
-      const synthesisSeedPath = `projects/${baseMockProject.id}/sessions/${M_SESSION_ID}/iteration_${projectForPrereqOk.dialectic_sessions![0].current_iteration}/${DialecticStageEnum.SYNTHESIS}/seed_prompt.md`;
-      prereqMetStoreState.contributionContentCache = {
-        [synthesisSeedPath]: {
-          content: 'Mock seed for synthesis', isLoading: false, error: undefined
-        } as ContributionCacheEntry
-      };
-      initializeMockDialecticState(prereqMetStoreState);
-
-      renderComponent(synthesisStageDef);
-
-      expect(screen.queryByText(new RegExp(`Please complete '${antithesisStageDef.displayName}' first.`, 'i'))).not.toBeInTheDocument();
-      const generateButton = screen.getByRole('button', { name: `Generate ${synthesisStageDef.displayName}` });
-      // expect(generateButton).toBeEnabled(); // Commented out as per plan, session.status 'antithesis_complete' makes canGenerateCurrentStage for SYNTHESIS false.
-    });
   });
 }); 

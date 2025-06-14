@@ -896,26 +896,11 @@ The implementation plan uses the following labels to categorize work steps:
         *   `[✅] 1.5.3.B.1 [TEST-UNIT]` Update tests for `CreateDialecticProjectPage`: (RED -> GREEN - Logic now within `TextInputArea`. `TextInputArea.test.tsx` covers file upload invocation and its internal `onFileLoad` which triggers the prop. `CreateDialecticProjectForm.test.tsx` verifies that its `handleFileLoadForPrompt` (passed as `onFileLoad` to the mock `TextInputArea`) is called correctly and updates form state.)
             *   Test presence and configuration of `FileUpload` component (from `apps/web/src/components/common/FileUpload.tsx`) to accept `.md` files. (Tests for paperclip and dropzone `FileUpload` instances are present - now part of `TextInputArea` and tested in `TextInputArea.test.tsx`. `CreateDialecticProjectForm.test.tsx` checks indicators that `showFileUpload` is true.)
             *   Test that the `onFileLoad(fileContent: string, file: File)` callback from `FileUpload` correctly populates the `initialUserPrompt` state managed by `TextInputArea`. (Tested via `handleFileLoadForPrompt` within `CreateDialecticProjectForm.tsx`, which is passed to `TextInputArea` and simulated in tests.)
-            *   Test that the `onUploadTrigger(file: File)` callback for `FileUpload` is prepared to call the `uploadProjectResourceFile` thunk *after* successful project creation if a file was used for the prompt. (Tested: `handleActualFileUpload` is called post-project creation in `CreateDialecticProjectForm.test.tsx`).
+            *   Test that the `onUploadTrigger(file: File)` callback for `FileUpload` is prepared to call the `uploadProjectResourceFile` thunk *after* successful project creation if a file was used for the prompt. (Tested: `handleActualFileUpload` is called post-project creation in `CreateDialecticProjectForm.test.tsx`.)
         *   `[✅] 1.5.3.B.2` Add the `FileUpload` component to `CreateDialecticProjectPage.tsx`. (GREEN - `TextInputArea` now provides this functionality and is used in `CreateDialecticProjectForm.tsx`. File attach button visibility across modes also fixed. Functionality confirmed by `TextInputArea.tsx` structure and its tests.)
             *   Configure it to accept `.md` files (e.g., `acceptedFileTypes=['.md', 'text/markdown']`).
             *   Implement the `onFileLoad` callback: take the loaded string content and update the component state that backs the `TextInputArea` for `initialUserPrompt`. Store the `File` object in component state if needed for the later `onUploadTrigger`. (`handleFileLoadForPrompt` in `CreateDialecticProjectForm.tsx` does this and is tested).
             *   Implement the `onUploadTrigger` callback placeholder logic as per plan: this function will be called by `FileUpload` if an upload action is initiated by it. For this page, the actual file upload to backend as a "project resource" occurs *after* the project is successfully created. (`handleDummyUploadTrigger` for direct calls from UI within `TextInputArea`, `handleActualFileUpload` for post-creation upload in `CreateDialecticProjectForm.tsx` - tested).
-                *   Logic:
-                    1. User selects file via `FileUpload`.
-    *   `[✅] 1.5.3.A [UI]` Refactor "Initial User Prompt" Input Field.
-        *   `[✅] 1.5.3.A.1 [TEST-UNIT]` Update tests for `CreateDialecticProjectPage`: assert `TextInputArea` from `apps/web/src/components/common/TextInputArea.tsx` is used for `initialUserPrompt`. (RED -> GREEN)
-        *   `[✅] 1.5.3.A.2` In `CreateDialecticProjectPage.tsx`, replace the current ShadCN `Textarea` for `initialUserPrompt` with the `TextInputArea` component. (GREEN)
-        *   `[✅] 1.5.3.A.3 [TEST-UNIT]` Verify `forwardRef` related errors (if any) are resolved and tests pass.
-    *   `[✅] 1.5.3.B [UI]` Integrate `FileUpload` Component for Initial User Prompt.
-        *   `[✅] 1.5.3.B.1 [TEST-UNIT]` Update tests for `CreateDialecticProjectPage`: (RED -> GREEN)
-            *   Test presence and configuration of `FileUpload` component (from `apps/web/src/components/common/FileUpload.tsx`) to accept `.md` files.
-            *   Test that the `onFileLoad(fileContent: string, file: File)` callback from `FileUpload` correctly populates the `initialUserPrompt` state managed by `TextInputArea`.
-            *   Test that the `onUploadTrigger(file: File)` callback for `FileUpload` is prepared to call the `uploadProjectResourceFile` thunk *after* successful project creation if a file was used for the prompt.
-        *   `[✅] 1.5.3.B.2` Add the `FileUpload` component to `CreateDialecticProjectPage.tsx`.
-            *   Configure it to accept `.md` files (e.g., `acceptedFileTypes=['.md', 'text/markdown']`).
-            *   Implement the `onFileLoad` callback: take the loaded string content and update the component state that backs the `TextInputArea` for `initialUserPrompt`. Store the `File` object in component state if needed for the later `onUploadTrigger`.
-            *   Implement the `onUploadTrigger` callback placeholder logic as per plan: this function will be called by `FileUpload` if an upload action is initiated by it. For this page, the actual file upload to backend as a "project resource" occurs *after* the project is successfully created.
                 *   Logic:
                     1. User selects file via `FileUpload`.
                     2. `onFileLoad` populates the `initialUserPrompt` `TextInputArea` and potentially stores the `File` object.
@@ -1219,9 +1204,9 @@ The implementation plan uses the following labels to categorize work steps:
         *   `[X]` Implement logic to use `input_artifact_rules` from the target `dialectic_stages` row to assemble the next seed prompt.
     *   `[X] 1.Y.4.2 [TEST-INT]` Update integration tests for `submitStageResponses` to mock and verify the new database-driven logic.
 
-*   `[ ] 1.Y.5 [UI/REFACTOR]` **Update UI Data Sources**
-    *   `[ ] 1.Y.5.1 [UI]` Modify `CreateDialecticProjectForm`'s "Domain" selector to be populated from the `dialectic_domains` table.
-    *   `[ ] 1.Y.5.2 [TEST-UNIT]` Update component tests for the "Domain" selector.
+*   `[✅] 1.Y.5 [UI/REFACTOR]` **Update UI Data Sources**
+    *   `[✅] 1.Y.5.1 [UI]` Modify `CreateDialecticProjectForm`'s "Domain" selector to be populated from the `dialectic_domains` table.
+    *   `[✅] 1.Y.5.2 [TEST-UNIT]` Update component tests for the "Domain" selector.
 
 *   `[ ] 1.Y.6 [COMMIT]` feat(arch): implement flexible domain and process architecture
 
@@ -1262,11 +1247,11 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅ ] 1.Z.3.2 [API]` Update `DialecticApiClient` interfaces and method payloads (e.g., `CreateProjectPayload`) in `@paynless/api` to use `selectedDomainId`.
     *   `[✅] 1.Z.3.3 [TEST-UNIT]` Update all `dialectic.api.test.ts` unit tests and associated mocks to use the new types and payloads.
 
-*   `[ ] 1.Z.4 [STORE/REFACTOR]` **Phase 2: State Management Refactoring**
-    *   `[ ] 1.Z.4.1 [STORE]` Update `DialecticStateValues` in `dialecticStore.ts`, replacing any state related to `selectedDomainTag` with state for `selectedDomainId`.
-    *   `[ ] 1.Z.4.2 [STORE]` Refactor store thunks (`createDialecticProject`, etc.) and actions (`setSelectedDomainTag` -> `setSelectedDomainId`) to operate with the domain ID.
-    *   `[ ] 1.Z.4.3 [STORE]` Update store selectors to work with `selectedDomainId` and the refactored `DialecticProject` object structure.
-    *   `[ ] 1.Z.4.4 [TEST-UNIT]` Update all `dialecticStore.test.ts` and `dialecticStore.selectors.test.ts` tests to reflect the new state and logic.
+*   `[✅] 1.Z.4 [STORE/REFACTOR]` **Phase 2: State Management Refactoring**
+    *   `[✅] 1.Z.4.1 [STORE]` Update `DialecticStateValues` in `dialecticStore.ts`, replacing any state related to `selectedDomainTag` with state for `selectedDomainId`.
+    *   `[✅] 1.Z.4.2 [STORE]` Refactor store thunks (`createDialecticProject`, etc.) and actions (`setSelectedDomainTag` -> `setSelectedDomainId`) to operate with the domain ID.
+    *   `[✅] 1.Z.4.3 [STORE]` Update store selectors to work with `selectedDomainId` and the refactored `DialecticProject` object structure.
+    *   `[✅] 1.Z.4.4 [TEST-UNIT]` Update all `dialecticStore.test.ts` and `dialecticStore.selectors.test.ts` tests to reflect the new state and logic.
 
 *   `[ ] 1.Z.5 [UI/REFACTOR]` **Phase 2: Frontend Component Refactoring**
     *   `[ ] 1.Z.5.1 [UI]` Systematically fix all TypeScript errors that arise in the `apps/web` directory due to the type changes.

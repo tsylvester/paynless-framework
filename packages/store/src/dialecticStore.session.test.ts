@@ -23,6 +23,7 @@ import type {
   DomainOverlayDescriptor,
   DomainTagDescriptor,
 } from '@paynless/types';
+import { api } from '@paynless/api';
 
 // Add the mock call here
 vi.mock('@paynless/api', async (importOriginal) => {
@@ -44,11 +45,11 @@ vi.mock('@paynless/api', async (importOriginal) => {
 import { resetApiMock, getMockDialecticClient, type MockDialecticApiClient } from '@paynless/api/mocks';
 
 describe('useDialecticStore', () => {
-    let mockDialecticApi: MockDialecticApiClient;
+    let mockDialecticApi: Mock<any, any>;
 
     beforeEach(() => {
         resetApiMock(); // Resets all mocks defined in @paynless/api/mocks
-        mockDialecticApi = getMockDialecticClient(); // Get a reference to the dialectic specific mocks
+        mockDialecticApi = api.dialectic as Mock<any, any>; // Get a reference to the dialectic specific mocks
         useDialecticStore.getState()._resetForTesting?.();
         vi.clearAllMocks(); // resetApiMock should handle this for the api calls
     });
@@ -62,32 +63,23 @@ describe('useDialecticStore', () => {
             id: 'sess-xyz', 
             project_id: startSessionPayload.projectId, 
             session_description: startSessionPayload.sessionDescription || null,
-            current_stage_seed_prompt: '',
+            user_input_reference_url: null,
             iteration_count: 1,
-            current_iteration: 1,
+            selected_model_catalog_ids: [],
             status: 'pending_thesis',
-            convergence_status: null,
-            preferred_model_for_stage: null,
             associated_chat_id: 'chat-123',
-            active_thesis_prompt_template_id: null,
-            active_antithesis_prompt_template_id: null,
-            active_synthesis_prompt_template_id: null,
-            active_parenthesis_prompt_template_id: null,
-            active_paralysis_prompt_template_id: null,
-            formal_debate_structure_id: null,
-            max_iterations: 3,
+            current_stage_id: 'some-stage-id',
             created_at: '2023-01-01T00:00:00.000Z',
             updated_at: '2023-01-01T00:00:00.000Z',
             dialectic_session_models: [],
-            dialectic_contributions: [],
         };
 
         it('should start a session and refetch project details if project_id is present in response', async () => {
             const mockResponse: ApiResponse<DialecticSession> = { data: mockSession, status: 201 };
-            mockDialecticApi.startSession.mockResolvedValue(mockResponse);
+            (api.dialectic().startSession as Mock).mockResolvedValue(mockResponse);
             const mockProject: DialecticProject = { id: startSessionPayload.projectId } as DialecticProject;
-            mockDialecticApi.getProjectDetails.mockResolvedValue({ data: mockProject, status: 200 });
-            mockDialecticApi.listProjects.mockResolvedValue({ data: [], status: 200 }); // Still mock for safety, but shouldn't be called
+            (api.dialectic().getProjectDetails as Mock).mockResolvedValue({ data: mockProject, status: 200 });
+            (api.dialectic().listProjects as Mock).mockResolvedValue({ data: [], status: 200 }); // Still mock for safety, but shouldn't be called
 
             const { startDialecticSession } = useDialecticStore.getState();
             const result = await startDialecticSession(startSessionPayload);
@@ -96,19 +88,19 @@ describe('useDialecticStore', () => {
             expect(state.isStartingSession).toBe(false);
             expect(state.startSessionError).toBeNull();
             expect(result.data).toEqual(mockSession);
-            expect(mockDialecticApi.startSession).toHaveBeenCalledWith(startSessionPayload);
-            expect(mockDialecticApi.getProjectDetails).toHaveBeenCalledWith(startSessionPayload.projectId);
-            expect(mockDialecticApi.listProjects).not.toHaveBeenCalled();
+            expect(api.dialectic().startSession).toHaveBeenCalledWith(startSessionPayload);
+            expect(api.dialectic().getProjectDetails).toHaveBeenCalledWith(startSessionPayload.projectId);
+            expect(api.dialectic().listProjects).not.toHaveBeenCalled();
         });
 
         it('should start a session and refetch project list if project_id is NOT present in response', async () => {
             const mockSessionWithoutProjectId: DialecticSession = { ...mockSession, project_id: null as any }; // or undefined
             const mockResponse: ApiResponse<DialecticSession> = { data: mockSessionWithoutProjectId, status: 201 };
-            mockDialecticApi.startSession.mockResolvedValue(mockResponse);
-            mockDialecticApi.listProjects.mockResolvedValue({ data: [], status: 200 });
+            (api.dialectic().startSession as Mock).mockResolvedValue(mockResponse);
+            (api.dialectic().listProjects as Mock).mockResolvedValue({ data: [], status: 200 });
             // Mock getProjectDetails for safety, but it shouldn't be called
             const mockProject: DialecticProject = { id: "anyID" } as DialecticProject;
-            mockDialecticApi.getProjectDetails.mockResolvedValue({ data: mockProject, status: 200 });
+            (api.dialectic().getProjectDetails as Mock).mockResolvedValue({ data: mockProject, status: 200 });
 
 
             const { startDialecticSession } = useDialecticStore.getState();
@@ -118,15 +110,15 @@ describe('useDialecticStore', () => {
             expect(state.isStartingSession).toBe(false);
             expect(state.startSessionError).toBeNull();
             expect(result.data).toEqual(mockSessionWithoutProjectId);
-            expect(mockDialecticApi.startSession).toHaveBeenCalledWith(startSessionPayload);
-            expect(mockDialecticApi.listProjects).toHaveBeenCalled();
-            expect(mockDialecticApi.getProjectDetails).not.toHaveBeenCalled();
+            expect(api.dialectic().startSession).toHaveBeenCalledWith(startSessionPayload);
+            expect(api.dialectic().listProjects).toHaveBeenCalled();
+            expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
         });
 
         it('should set error state if startSession API returns an error', async () => {
             const mockError: ApiError = { code: 'SESSION_ERROR', message: 'Failed to start session' };
             const mockResponse: ApiResponse<DialecticSession> = { error: mockError, status: 500 };
-            mockDialecticApi.startSession.mockResolvedValue(mockResponse);
+            (api.dialectic().startSession as Mock).mockResolvedValue(mockResponse);
 
             const { startDialecticSession } = useDialecticStore.getState();
             const result = await startDialecticSession(startSessionPayload);
@@ -139,7 +131,7 @@ describe('useDialecticStore', () => {
 
         it('should set network error state if startSession API call throws', async () => {
             const networkErrorMessage = 'Session service network error';
-            mockDialecticApi.startSession.mockRejectedValue(new Error(networkErrorMessage));
+            (api.dialectic().startSession as Mock).mockRejectedValue(new Error(networkErrorMessage));
 
             const { startDialecticSession } = useDialecticStore.getState();
             const result = await startDialecticSession(startSessionPayload);
@@ -151,7 +143,7 @@ describe('useDialecticStore', () => {
         });
 
         it('should set loading state during startDialecticSession', () => {
-            mockDialecticApi.startSession.mockReturnValue(new Promise(() => {}));
+            (api.dialectic().startSession as Mock).mockReturnValue(new Promise(() => {}));
             const { startDialecticSession } = useDialecticStore.getState();
             startDialecticSession(startSessionPayload);
             expect(useDialecticStore.getState().isStartingSession).toBe(true);
@@ -166,7 +158,7 @@ describe('useDialecticStore', () => {
                 { id: 'model2', provider_name: 'Anthropic', model_name: 'Claude 3', api_identifier: 'claude-3' } as AIModelCatalogEntry,
             ];
             const mockResponse: ApiResponse<AIModelCatalogEntry[]> = { data: mockCatalog, status: 200 };
-            mockDialecticApi.listModelCatalog.mockResolvedValue(mockResponse);
+            (api.dialectic().listModelCatalog as Mock).mockResolvedValue(mockResponse);
 
             const { fetchAIModelCatalog } = useDialecticStore.getState();
             await fetchAIModelCatalog();
@@ -175,13 +167,13 @@ describe('useDialecticStore', () => {
             expect(state.isLoadingModelCatalog).toBe(false);
             expect(state.modelCatalog).toEqual(mockCatalog);
             expect(state.modelCatalogError).toBeNull();
-            expect(mockDialecticApi.listModelCatalog).toHaveBeenCalledTimes(1);
+            expect(api.dialectic().listModelCatalog).toHaveBeenCalledTimes(1);
         });
 
         it('should set error state if listModelCatalog API returns an error', async () => {
             const mockError: ApiError = { code: 'CATALOG_ERROR', message: 'Failed to fetch model catalog' };
             const mockResponse: ApiResponse<AIModelCatalogEntry[]> = { error: mockError, status: 500 };
-            mockDialecticApi.listModelCatalog.mockResolvedValue(mockResponse);
+            (api.dialectic().listModelCatalog as Mock).mockResolvedValue(mockResponse);
 
             const { fetchAIModelCatalog } = useDialecticStore.getState();
             await fetchAIModelCatalog();
@@ -194,7 +186,7 @@ describe('useDialecticStore', () => {
 
         it('should set network error state if listModelCatalog API call throws', async () => {
             const networkErrorMessage = 'Catalog service unavailable';
-            mockDialecticApi.listModelCatalog.mockRejectedValue(new Error(networkErrorMessage));
+            (api.dialectic().listModelCatalog as Mock).mockRejectedValue(new Error(networkErrorMessage));
 
             const { fetchAIModelCatalog } = useDialecticStore.getState();
             await fetchAIModelCatalog();
@@ -206,7 +198,7 @@ describe('useDialecticStore', () => {
         });
 
         it('should set loading state during fetchAIModelCatalog', () => {
-            mockDialecticApi.listModelCatalog.mockReturnValue(new Promise(() => {}));
+            (api.dialectic().listModelCatalog as Mock).mockReturnValue(new Promise(() => {}));
             const { fetchAIModelCatalog } = useDialecticStore.getState();
             fetchAIModelCatalog(); // Do not await
             expect(useDialecticStore.getState().isLoadingModelCatalog).toBe(true);
@@ -220,14 +212,15 @@ describe('useDialecticStore', () => {
             
             // Initial fetch to populate some overlay data to ensure it's cleared
             useDialecticStore.setState({
-                availableDomainOverlays: [{ id: '1', domainTag: 'test', description: 'test', stageAssociation: 'thesis' }],
+                availableDomainOverlays: [{ id: '1', domainId: 'domain-1', domainName: 'Test Domain', description: 'test', stageAssociation: 'thesis', overlay_values: {} }],
                 domainOverlaysError: { code: 'ERROR', message: 'some error' },
                 isLoadingDomainOverlays: true,
             });
 
-            setSelectedStageAssociation('thesis');
+            const mockStage = { id: 'stage-1', slug: 'thesis' } as any;
+            setSelectedStageAssociation(mockStage);
             let state = useDialecticStore.getState();
-            expect(state.selectedStageAssociation).toBe('thesis');
+            expect(state.selectedStageAssociation).toEqual(mockStage);
             expect(state.availableDomainOverlays).toEqual([]);
             expect(state.domainOverlaysError).toBeNull();
             expect(state.isLoadingDomainOverlays).toBe(false);

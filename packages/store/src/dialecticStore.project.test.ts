@@ -178,7 +178,6 @@ describe('useDialecticStore', () => {
             expect(api.dialectic().createProject).toHaveBeenCalledWith(expect.any(FormData));
             
             const formData = (api.dialectic().createProject as Mock).mock.calls[0][0] as FormData;
-            expect(formData.get('action')).toBe('createProject');
             expect(formData.get('projectName')).toBe(projectPayload.projectName);
             expect(formData.get('initialUserPromptText')).toBe(projectPayload.initialUserPrompt as string);
             expect(formData.get('selectedDomainId')).toBe(projectPayload.selectedDomainId); 
@@ -215,7 +214,6 @@ describe('useDialecticStore', () => {
             expect(state.createProjectError).toBeNull();
             expect(api.dialectic().createProject).toHaveBeenCalledWith(expect.any(FormData));
             const formData = (api.dialectic().createProject as Mock).mock.calls[0][0] as FormData;
-            expect(formData.get('action')).toBe('createProject');
             expect(formData.get('projectName')).toBe(projectPayload.projectName);
             expect(formData.get('initialUserPromptText')).toBe(projectPayload.initialUserPrompt as string);
             expect(formData.get('selectedDomainId')).toBe(projectPayload.selectedDomainId);

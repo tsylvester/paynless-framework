@@ -24,6 +24,7 @@ import type {
     IterationInitialPromptData,
     SaveContributionEditPayload,
     DialecticDomain,
+    DialecticProcessTemplate,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -668,6 +669,30 @@ export class DialecticApiClient {
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'A network error occurred';
             logger.error('Network error in listDomains:', { errorMessage: message, errorObject: error });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
+    }
+
+    async fetchProcessTemplate(payload: { templateId: string }): Promise<ApiResponse<DialecticProcessTemplate>> {
+        logger.info('Fetching process template', { templateId: payload.templateId });
+        try {
+            const response = await this.apiClient.post<DialecticProcessTemplate, { action: string; payload: { templateId: string } }>(
+                'dialectic-service',
+                { action: 'fetchProcessTemplate', payload }
+            );
+            if (response.error) {
+                logger.error('Error fetching process template:', { error: response.error, templateId: payload.templateId });
+            } else {
+                logger.info('Successfully fetched process template', { templateId: payload.templateId });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in fetchProcessTemplate:', { errorMessage: message, errorObject: error, templateId: payload.templateId });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },

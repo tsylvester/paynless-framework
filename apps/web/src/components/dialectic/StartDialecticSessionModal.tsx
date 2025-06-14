@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { TextInputArea } from '@/components/common/TextInputArea';
 import { useDialecticStore } from '@paynless/store';
-import type { StartSessionPayload, DialecticProject, DomainOverlayDescriptor, DomainTagDescriptor } from '@paynless/types';
+import type { StartSessionPayload, DialecticProject, DomainOverlayDescriptor } from '@paynless/types';
 import { DialecticStage } from '@paynless/types';
 import {
   selectCurrentProjectDetail,
@@ -24,7 +24,6 @@ import {
   selectSelectedStageAssociation,
   selectSelectedModelIds,
   selectIsLoadingModelCatalog,
-  selectDomains,
 } from '@paynless/store';
 import { toast } from 'sonner';
 import { DomainSelector } from './DomainSelector';
@@ -68,12 +67,10 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
 
   const currentSelectedDomain = useDialecticStore(selectSelectedDomain);
 
-  const currentSelectedStageFromStore = useDialecticStore(selectSelectedStageAssociation);
   const currentSelectedOverlayIdFromStore = useDialecticStore(selectSelectedDomainOverlayId);
 
   const currentDialecticStage = useDialecticStore(selectSelectedStageAssociation) as DialecticStage | undefined;
   const currentSelectedModelIds = useDialecticStore(selectSelectedModelIds) || [];
-  const domains = useDialecticStore(selectDomains);
 
   const [sessionDescription, setSessionDescription] = useState<string | object>('');
   const [hasUserEditedDescription, setHasUserEditedDescription] = useState(false);
@@ -81,17 +78,6 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
   const baseDomainDescription = useMemo(() => {
     return currentSelectedDomain?.description || null;
   }, [currentSelectedDomain]);
-
-  useEffect(() => {
-    if (isModalOpen && currentProjectDetail && domains) {
-      if (currentProjectDetail.selected_domain_id !== currentSelectedDomain?.id) {
-        const projectDomain = domains.find(d => d.id === currentProjectDetail.selected_domain_id);
-        if (projectDomain) {
-          setSelectedDomain(projectDomain);
-        }
-      }
-    }
-  }, [isModalOpen, currentProjectDetail, domains, currentSelectedDomain, setSelectedDomain]);
 
   useEffect(() => {
     if (isModalOpen && !hasUserEditedDescription) {

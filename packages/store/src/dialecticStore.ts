@@ -134,7 +134,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
   },
 
   setSelectedStageAssociation: (stage: DialecticStage | null) => {
-    logger.info(`[DialecticStore] Setting selected stage association to: ${stage}`);
+    logger.info(`[DialecticStore] Setting selected stage association to: ${stage?.slug ?? 'null'}`);
     set({ 
       selectedStageAssociation: stage,
       // When stage selection changes, clear previously fetched overlays and any related errors
@@ -148,14 +148,15 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     set({
       isLoadingDomainOverlays: true,
       domainOverlaysError: null,
+      availableDomainOverlays: [],
       selectedStageAssociation: stageAssociation, 
     });
-    logger.info(`[DialecticStore] Fetching available domain overlays for stage: ${stageAssociation}`);
+    logger.info(`[DialecticStore] Fetching available domain overlays for stage: ${stageAssociation.slug}`);
     try {
-      const response = await api.dialectic().listAvailableDomainOverlays({ stageAssociation: stageAssociation as string });
+      const response = await api.dialectic().listAvailableDomainOverlays({ stageAssociation: stageAssociation.slug });
 
       if (response.error) {
-        logger.error('[DialecticStore] Error fetching domain overlays:', { stageAssociation, errorDetails: response.error });
+        logger.error('[DialecticStore] Error fetching domain overlays:', { stageAssociation: stageAssociation.slug, errorDetails: response.error });
         set({
           availableDomainOverlays: [],
           isLoadingDomainOverlays: false,
@@ -164,7 +165,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       } else {
         const descriptors = response.data || []; 
         logger.info('[DialecticStore] Raw descriptors received from API:', { descriptors }); 
-        logger.info('[DialecticStore] Successfully fetched domain overlays:', { stageAssociation, count: descriptors.length });
+        logger.info('[DialecticStore] Successfully fetched domain overlays:', { stageAssociation: stageAssociation.slug, count: descriptors.length });
         set({
           availableDomainOverlays: descriptors,
           isLoadingDomainOverlays: false,
@@ -176,7 +177,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
         message: error instanceof Error ? error.message : 'An unknown network error occurred while fetching domain overlays',
         code: 'NETWORK_ERROR',
       };
-      logger.error('[DialecticStore] Network error fetching domain overlays:', { stageAssociation, errorDetails: networkError });
+      logger.error('[DialecticStore] Network error fetching domain overlays:', { stageAssociation: stageAssociation.slug, errorDetails: networkError });
       set({
         availableDomainOverlays: [],
         isLoadingDomainOverlays: false,
@@ -276,6 +277,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
         } else {
             logger.info('[DialecticStore] Successfully created project:', { project: response.data });
             // Add the new project to the start of the projects list
+            get().fetchDialecticProjects();
             set(state => ({
                 projects: [response.data as DialecticProject, ...state.projects],
                 isCreatingProject: false,
@@ -770,7 +772,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     set(initialDialecticStateValues);
   },
 
-  generateContributions: async (payload: { sessionId: string; projectId: string; stageSlug: DialecticStage; iterationNumber: number; }) => {
+  generateContributions: async (payload: { sessionId: string; projectId: string; stageSlug: DialecticStage['slug']; iterationNumber: number; }) => {
     set({ isGeneratingContributions: true, generateContributionsError: null });
     logger.info('[DialecticStore] Generating contributions...', { sessionId: payload.sessionId, stageSlug: payload.stageSlug, iteration: payload.iterationNumber });
     try {

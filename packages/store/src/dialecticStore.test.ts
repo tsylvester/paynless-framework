@@ -155,6 +155,10 @@ describe('useDialecticStore', () => {
                 status: 201,
             };
             (api.dialectic().createProject as Mock).mockResolvedValue(mockResponse);
+            (api.dialectic().listProjects as Mock).mockResolvedValue({
+                data: [mockProject],
+                status: 200,
+            });
 
             const createProject = useDialecticStore.getState().createDialecticProject;
             const result = await createProject(mockPayload);
@@ -202,6 +206,10 @@ describe('useDialecticStore', () => {
                 status: 201,
             };
             (api.dialectic().createProject as Mock).mockResolvedValue(mockResponse);
+            (api.dialectic().listProjects as Mock).mockResolvedValue({
+                data: [mockProject],
+                status: 200,
+            });
 
             const createProject = useDialecticStore.getState().createDialecticProject;
             await createProject(payloadWithFile);

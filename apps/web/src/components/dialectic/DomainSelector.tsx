@@ -7,8 +7,9 @@ import {
     selectIsLoadingDomains,
     selectDomainsError,
     selectSelectedDomain,
+    selectCurrentProjectDetail,
 } from '@paynless/store';
-import type { DialecticDomain } from '@paynless/types';
+import type { DialecticDomain, DialecticProject } from '@paynless/types';
 
 import {
     Select,
@@ -27,6 +28,7 @@ export function DomainSelector() {
     const isLoading = useDialecticStore(selectIsLoadingDomains);
     const error = useDialecticStore(selectDomainsError);
     const selectedDomain = useDialecticStore(selectSelectedDomain);
+    const currentProjectDetail = useDialecticStore(selectCurrentProjectDetail) as DialecticProject | null;
 
     useEffect(() => {
         logger.info('[DomainSelector] Component mounted, fetching domains if needed.');
@@ -34,6 +36,15 @@ export function DomainSelector() {
             fetchDomains();
         }
     }, [fetchDomains, domains.length]);
+
+    useEffect(() => {
+        if (currentProjectDetail && domains.length > 0) {
+            const projectDomain = domains.find(d => d.id === currentProjectDetail.selected_domain_id);
+            if (projectDomain && projectDomain.id !== selectedDomain?.id) {
+                setSelectedDomain(projectDomain);
+            }
+        }
+    }, [currentProjectDetail, domains, setSelectedDomain, selectedDomain]);
 
     const handleValueChange = (selectedDomainId: string) => {
         const domain = domains.find(d => d.id === selectedDomainId) || null;

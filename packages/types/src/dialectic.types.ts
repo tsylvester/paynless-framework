@@ -8,6 +8,16 @@ export interface UpdateProjectDomainPayload {
   selectedDomainId: string;
 }
 
+export type DialecticStage = Database['public']['Tables']['dialectic_stages']['Row'];
+
+export type DialecticStageTransition = Database['public']['Tables']['dialectic_stage_transitions']['Row'];
+
+export type DialecticProcessTemplate = Database['public']['Tables']['dialectic_process_templates']['Row'] & {
+  stages?: DialecticStage[];
+  transitions?: DialecticStageTransition[];
+};
+
+
 export interface DialecticProject {
     id: string;
     user_id: string;
@@ -23,6 +33,7 @@ export interface DialecticProject {
     updated_at: string;
     dialectic_sessions?: DialecticSession[];
     resources?: DialecticProjectResource[];
+    process_template_id?: string | null;
 }
 
 export interface CreateProjectPayload {
@@ -43,42 +54,27 @@ export interface GetContributionContentSignedUrlPayload {
 }
 
 export interface StartSessionPayload {
-    projectId: string;
-    sessionDescription?: string | null;
-    selectedModelCatalogIds: string[];
-    originatingChatId?: string | null;
-    stageAssociation: DialecticStage;
-    selectedDomainOverlayId?: string | null;
-    promptTemplateId?: string | null;
-    maxIterations?: number;
+  projectId: string;
+  sessionDescription?: string | null;
+  selectedModelCatalogIds: string[];
+  originatingChatId?: string | null;
 }
 
 export interface DialecticSession {
-    id: string;
-    project_id: string;
-    session_description: string | null;
-    current_stage_seed_prompt: string | null;
-    iteration_count: number;
-    status: string;
-    associated_chat_id: string | null;
+  id: string;
+  project_id: string;
+  session_description: string | null;
+  user_input_reference_url: string | null;
+  iteration_count: number;
+  selected_model_catalog_ids: string[] | null;
+  status: string | null;
+  associated_chat_id: string | null;
+  current_stage_id: string | null;
+  created_at: string;
+  updated_at: string;
 
-    active_thesis_prompt_template_id: string | null;
-    active_antithesis_prompt_template_id: string | null;
-    active_synthesis_prompt_template_id: string | null;
-    active_parenthesis_prompt_template_id: string | null;
-    active_paralysis_prompt_template_id: string | null;
-    
-    formal_debate_structure_id: string | null;
-    max_iterations: number;
-    current_iteration: number;
-    convergence_status: string | null;
-    preferred_model_for_stage: Record<string, string> | null;
-    
-    created_at: string;
-    updated_at: string;
-
-    dialectic_session_models?: DialecticSessionModel[];
-    dialectic_contributions?: DialecticContribution[];
+  dialectic_session_models?: DialecticSessionModel[];
+  dialectic_contributions?: DialecticContribution[];
 }
 
 export interface DialecticSessionModel {
@@ -134,21 +130,14 @@ export interface DomainTagDescriptor {
   stageAssociation: string | null;
 }
 
-// Define the new DialecticStage enum
-export enum DialecticStage {
-  THESIS = 'thesis',
-  ANTITHESIS = 'antithesis',
-  SYNTHESIS = 'synthesis',
-  PARENTHESIS = 'parenthesis',
-  PARALYSIS = 'paralysis',
-}
-
 export interface DialecticDomain {
   id: string;
   name: string;
   description: string | null;
   parent_domain_id: string | null;
 }
+
+
 
 export interface DialecticStateValues {
   // New state for Domains
@@ -265,14 +254,14 @@ export interface DialecticActions {
   fetchInitialPromptContent: (resourceIdOrPath: string) => Promise<void>; // Updated to accept path too
 
   // Action for generating contributions
-  generateContributions: (payload: { sessionId: string; projectId: string; stageSlug: DialecticStage; iterationNumber: number; }) => Promise<ApiResponse<{ message: string; contributions?: DialecticContribution[] }>>;
+  generateContributions: (payload: { sessionId: string; projectId: string; stageSlug: DialecticStage['slug']; iterationNumber: number; }) => Promise<ApiResponse<{ message: string; contributions?: DialecticContribution[] }>>;
   
   // Actions for submitting stage responses and preparing next seed (plan 1.2.Y / 1.5.6.4)
-  submitStageResponses: (payload: SubmitStageResponsesPayload) => Promise<ApiResponse<SubmitStageResponsesResponse>>; // Assuming types from plan
+  submitStageResponses: (payload: SubmitStageResponsesPayload) => Promise<ApiResponse<SubmitStageResponsesResponse>>;
   resetSubmitStageResponsesError: () => void; // Added for plan
 
   // Actions for saving contribution edits (plan 1.2.Y / 1.5.6.5)
-  saveContributionEdit: (payload: SaveContributionEditPayload) => Promise<ApiResponse<DialecticContribution>>; // Assuming types from plan
+  saveContributionEdit: (payload: SaveContributionEditPayload) => Promise<ApiResponse<DialecticContribution>>;
   resetSaveContributionEditError: () => void; // Added for plan
 
   // New context actions
@@ -290,7 +279,7 @@ export interface DialecticContribution {
     id: string;
     session_id: string;
     user_id: string | null;
-    stage: string;
+    stage: DialecticStage;
     iteration_number: number;
     model_id: string | null;
     model_name: string | null;
@@ -324,6 +313,7 @@ export interface DialecticApiClient {
   listModelCatalog(): Promise<ApiResponse<AIModelCatalogEntry[]>>;
   getContributionContentSignedUrl(contributionId: string): Promise<ApiResponse<ContributionContentSignedUrlResponse | null>>;
   listDomains(): Promise<ApiResponse<DialecticDomain[]>>;
+  fetchProcessTemplate(templateId: string): Promise<ApiResponse<DialecticProcessTemplate>>;
 
   uploadProjectResourceFile(payload: UploadProjectResourceFilePayload): Promise<ApiResponse<DialecticProjectResource>>;
 
@@ -349,7 +339,7 @@ export interface DialecticApiClient {
 export interface GenerateContributionsPayload {
   sessionId: string;
   projectId: string;
-  stageSlug: DialecticStage;
+  stageSlug: DialecticStage['slug'];
   iterationNumber: number;
 }
 
@@ -418,10 +408,13 @@ export type DialecticServiceActionPayload = {
   payload?: undefined;
 } | {
   action: 'listAvailableDomainOverlays';
-  payload: { stageAssociation: string };
+  payload: { stageAssociation: DialecticStage };
 } | {
   action: 'getContributionContentSignedUrl';
   payload: GetContributionContentSignedUrlPayload;
+} | {
+  action: 'fetchProcessTemplate';
+  payload: { templateId: string };
 } | {
   action: 'uploadProjectResourceFile';
   payload: FormData; 
@@ -483,7 +476,7 @@ export interface GetProjectResourceContentResponse {
 export interface SubmitStageResponsesPayload { 
     sessionId: string;
     projectId: string;
-    stageSlug: DialecticStage;
+    stageSlug: DialecticStage['slug'];
     currentIterationNumber: number;
     responses: UserResponseInput[];
 }
@@ -500,6 +493,8 @@ export interface SaveContributionEditPayload {
     editedContentText: string;
     projectId: string;
     sessionId: string;
+    originalModelContributionId: string; 
+    responseText: string;
 }
 
 // START: New type definitions needed for 1.5.6 UI and 1.2.Y backend enhancements
