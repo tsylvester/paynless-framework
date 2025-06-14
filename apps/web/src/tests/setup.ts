@@ -4,6 +4,22 @@ import { vi, beforeEach, afterEach, afterAll } from 'vitest';
 import { createMockSupabaseClient } from '../../../../packages/api/src/mocks/supabase.mock.ts'; 
 import { cleanup } from '@testing-library/react';
 
+// Polyfill for PointerEvent
+if (typeof window !== 'undefined' && !window.PointerEvent) {
+    class PointerEvent extends MouseEvent {}
+    window.PointerEvent = PointerEvent as unknown as typeof window.PointerEvent;
+}
+// JSDOM doesn't implement PointerEvent methods, so we need to mock them.
+if (typeof Element.prototype.setPointerCapture === 'undefined') {
+  Element.prototype.setPointerCapture = vi.fn();
+}
+if (typeof Element.prototype.releasePointerCapture === 'undefined') {
+  Element.prototype.releasePointerCapture = vi.fn();
+}
+if (typeof Element.prototype.hasPointerCapture === 'undefined') {
+  Element.prototype.hasPointerCapture = vi.fn(() => false);
+}
+
 // Mock ResizeObserver
 const ResizeObserverMock = vi.fn(() => ({
   observe: vi.fn(),

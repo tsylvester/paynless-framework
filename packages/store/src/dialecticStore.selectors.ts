@@ -8,6 +8,7 @@ import type {
     DialecticSession,
     DialecticStage,
     DialecticContribution,
+    DialecticDomain,
 } from '@paynless/types';
 import { createSelector } from 'reselect';
 
@@ -30,6 +31,12 @@ export const selectDomainTagsError = (state: DialecticStateValues): ApiError | n
 
 // Selector for the currently selected domain tag
 export const selectSelectedDomainTag = (state: DialecticStateValues): string | null => state.selectedDomainTag;
+
+// Selectors for Domains
+export const selectDomains = (state: DialecticStateValues): DialecticDomain[] => state.domains ?? [];
+export const selectIsLoadingDomains = (state: DialecticStateValues): boolean => state.isLoadingDomains;
+export const selectDomainsError = (state: DialecticStateValues): ApiError | null => state.domainsError;
+export const selectSelectedDomain = (state: DialecticStateValues): DialecticDomain | null => state.selectedDomain;
 
 // Selector for the selected domain overlay ID
 export const selectSelectedDomainOverlayId = (state: DialecticStateValues): string | null => state.selectedDomainOverlayId;

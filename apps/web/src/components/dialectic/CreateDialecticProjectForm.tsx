@@ -8,8 +8,7 @@ import {
   useDialecticStore, 
   selectIsCreatingProject,
   selectCreateProjectError,
-  selectSelectedDomainTag,
-  selectSelectedStageAssociation,
+  selectSelectedDomain,
 } from '@paynless/store';
 import { DialecticStage } from '@paynless/types';
 import type { DialecticProject, ApiError } from '@paynless/types';
@@ -37,7 +36,7 @@ interface CreateProjectThunkPayload {
   projectName: string;
   initialUserPromptText?: string;
   promptFile?: File | null;
-  selectedDomainTag?: string | null;
+  domainId?: string | null;
   selectedDomainOverlayId?: string | null;
 }
 
@@ -61,12 +60,9 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
   const createDialecticProject = useDialecticStore((state) => state.createDialecticProject);
   const isCreating = useDialecticStore(selectIsCreatingProject);
   const creationError = useDialecticStore(selectCreateProjectError);
-  const selectedDomainTag = useDialecticStore(selectSelectedDomainTag);
+  const selectedDomain = useDialecticStore(selectSelectedDomain);
   const currentSelectedDomainOverlayId = useDialecticStore((state) => state.selectedDomainOverlayId);
   const resetCreateProjectError = useDialecticStore((state) => state.resetCreateProjectError);
-  const setSelectedStageAssociation = useDialecticStore((state) => state.setSelectedStageAssociation);
-  const fetchAvailableDomainOverlays = useDialecticStore((state) => state.fetchAvailableDomainOverlays);
-  const currentSelectedStage = useDialecticStore(selectSelectedStageAssociation);
 
   const [promptFile, setPromptFile] = useState<File | null>(null);
   const [projectNameManuallySet, setProjectNameManuallySet] = useState<boolean>(false);
@@ -244,18 +240,6 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
   }, [creationError, resetCreateProjectError]);
 
   useEffect(() => {
-    if (enableDomainSelection && currentSelectedStage !== DialecticStage.THESIS) {
-      setSelectedStageAssociation(DialecticStage.THESIS);
-    }
-  }, [enableDomainSelection, currentSelectedStage, setSelectedStageAssociation]);
-
-  useEffect(() => {
-    if (enableDomainSelection && currentSelectedStage) {
-      fetchAvailableDomainOverlays(currentSelectedStage);
-    }
-  }, [enableDomainSelection, currentSelectedStage, fetchAvailableDomainOverlays]);
-
-  useEffect(() => {
     reset({
       projectName: defaultProjectName,
       initialUserPrompt: defaultInitialPrompt,
@@ -266,64 +250,43 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
   }, [defaultProjectName, defaultInitialPrompt, reset, resetCreateProjectError]);
 
   const onSubmit = async (data: CreateProjectFormValues) => {
-    resetCreateProjectError(); 
-
-    const thunkPayload: CreateProjectThunkPayload = {
+    logger.info('Submitting Create Project form', { data });
+    
+    const payload: CreateProjectThunkPayload = {
       projectName: data.projectName,
-      initialUserPromptText: data.initialUserPrompt, 
-      promptFile: promptFile, 
-      selectedDomainTag: enableDomainSelection ? selectedDomainTag : null,
-      selectedDomainOverlayId: enableDomainSelection ? currentSelectedDomainOverlayId : null,
+      domainId: selectedDomain?.id,
+      selectedDomainOverlayId: currentSelectedDomainOverlayId,
     };
 
-    logger.info('Submitting create project form with payload:', { 
-      projectName: thunkPayload.projectName, 
-      hasInitialUserPromptText: !!thunkPayload.initialUserPromptText,
-      promptFileName: thunkPayload.promptFile?.name,
-      promptFileSize: thunkPayload.promptFile?.size,
-      selectedDomainTag: thunkPayload.selectedDomainTag,
-      selectedDomainOverlayId: thunkPayload.selectedDomainOverlayId,
-    });
+    if (promptFile) {
+      payload.promptFile = promptFile;
+    } else {
+      payload.initialUserPromptText = data.initialUserPrompt;
+    }
 
-    try {
-      const result = await createDialecticProject(thunkPayload);
+    const response = await createDialecticProject(payload);
 
-      if (result.data) { 
-        const newProject = result.data as DialecticProject;
-        logger.info('Project created successfully', { projectId: newProject.id, projectName: newProject.project_name });
-        
-        if (onProjectCreated) {
-          onProjectCreated(newProject.id, newProject.project_name);
-        }
-      } else if (result.error) {
-        const error = result.error as ApiError;
-        logger.error('Project creation failed in onSubmit', { 
-          message: error?.message,
-          details: error?.details 
-        });
+    if (response && !response.error && response.data) {
+      logger.info('Project created successfully', { projectId: response.data.id });
+      reset();
+      setPromptFile(null);
+      setProjectNameManuallySet(false);
+      if (onProjectCreated) {
+        onProjectCreated(response.data.id, response.data.project_name);
       }
-    } catch (e) {
-      const errorLogDetails = e instanceof Error 
-        ? { message: e.message, name: e.name, stack: e.stack } 
-        : { rawError: String(e) };
-      logger.error("An unexpected error occurred during project creation submission (outer catch)", errorLogDetails);
+    } else {
+      logger.error('Project creation failed', { error: response?.error });
     }
   };
 
   return (
     <Card className={containerClassName}> 
       <CardHeader>
-        <CardTitle className="text-2xl flex items-center gap-2">
-          <span>Create New</span>
-          {enableDomainSelection ? (
-            <DomainSelector />
-          ) : (
-            <span>Dialectic</span>
-          )}
-          <span>Project</span>
+        <CardTitle>
+          Create New Project
         </CardTitle>
         <CardDescription>
-          <DomainOverlayDescriptionSelector />
+          Start by giving your project a name and defining the initial problem statement.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -336,13 +299,13 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
           )}
           
           <div className="space-y-2">
-            <Label htmlFor="projectName">Project Name</Label>
+            <Label htmlFor="project-name">Project Name</Label>
             <Controller
               name="projectName"
               control={control}
               render={({ field }) => (
                 <input
-                  id="projectName"
+                  id="project-name"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   placeholder="E.g., Q4 Product Strategy (auto-fills from prompt or file name)"
                   {...field}
@@ -362,13 +325,20 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
             {errors.projectName && <p className="text-sm text-destructive data-testid='project-name-error'">{errors.projectName.message}</p>}
           </div>
 
+          {enableDomainSelection && (
+            <div className="space-y-2">
+              <Label>Domain</Label>
+              <DomainSelector />
+            </div>
+          )}
+
           <div className="space-y-2 relative"> 
             <Controller
               name="initialUserPrompt"
               control={control}
               render={({ field }) => (
                 <TextInputArea
-                  id="initialUserPrompt"
+                  id="initial-user-prompt"
                   label="Initial User Prompt / Problem Statement"
                   placeholder="Describe the core problem, question, or topic... or load from a .md file."
                   value={field.value}

@@ -23,6 +23,9 @@ importers:
       '@testing-library/react':
         specifier: ^16.3.0
         version: 16.3.0(@testing-library/dom@10.4.0)(@types/react-dom@18.3.7(@types/react@18.3.21))(@types/react@18.3.21)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@vitest/coverage-v8':
+        specifier: 1.6.1
+        version: 1.6.1(vitest@1.6.1(@types/node@22.15.17)(@vitest/ui@1.6.1)(jsdom@26.1.0))
       '@vitest/ui':
         specifier: ^1.6.1
         version: 1.6.1(vitest@1.6.1)
@@ -9312,6 +9315,25 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@vitest/coverage-v8@1.6.1(vitest@1.6.1(@types/node@22.15.17)(@vitest/ui@1.6.1)(jsdom@26.1.0))':
+    dependencies:
+      '@ampproject/remapping': 2.3.0
+      '@bcoe/v8-coverage': 0.2.3
+      debug: 4.4.1
+      istanbul-lib-coverage: 3.2.2
+      istanbul-lib-report: 3.0.1
+      istanbul-lib-source-maps: 5.0.6
+      istanbul-reports: 3.1.7
+      magic-string: 0.30.17
+      magicast: 0.3.5
+      picocolors: 1.1.1
+      std-env: 3.9.0
+      strip-literal: 2.1.1
+      test-exclude: 6.0.0
+      vitest: 1.6.1(@types/node@22.15.17)(@vitest/ui@1.6.1)(jsdom@26.1.0)
+    transitivePeerDependencies:
+      - supports-color
+
   '@vitest/expect@1.6.1':
     dependencies:
       '@vitest/spy': 1.6.1
@@ -10201,7 +10223,7 @@ snapshots:
       ajv: 6.12.6
       chalk: 4.1.2
       cross-spawn: 7.0.6
-      debug: 4.4.0
+      debug: 4.4.1
       doctrine: 3.0.0
       escape-string-regexp: 4.0.0
       eslint-scope: 7.2.2
@@ -12893,7 +12915,7 @@ snapshots:
   vite-node@1.6.1(@types/node@20.17.46):
     dependencies:
       cac: 6.7.14
-      debug: 4.4.0
+      debug: 4.4.1
       pathe: 1.1.2
       picocolors: 1.1.1
       vite: 5.4.19(@types/node@20.17.46)
@@ -12911,7 +12933,7 @@ snapshots:
   vite-node@1.6.1(@types/node@22.15.17):
     dependencies:
       cac: 6.7.14
-      debug: 4.4.0
+      debug: 4.4.1
       pathe: 1.1.2
       picocolors: 1.1.1
       vite: 5.4.19(@types/node@22.15.17)

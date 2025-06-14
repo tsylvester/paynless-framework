@@ -28,7 +28,7 @@ function snakeToSpacedTitleCase(str: string): string {
         .join(' ');
 }
 
-export function DomainOverlayDescriptionSelector() {
+export function DomainOverlayDescriptionSelector({ testId }: { testId?: string }) {
     const selectedDomainTag = useDialecticStore(selectSelectedDomainTag);
     const availableDomainTags = useDialecticStore(selectAvailableDomainTags);
     
@@ -71,7 +71,7 @@ export function DomainOverlayDescriptionSelector() {
     const descriptionToShow = currentSelectedOverlayDetails?.description || baseDomainTagDescription;
 
     return (
-        <div className="mt-4 space-y-2">
+        <div className="mt-4 space-y-2" data-testid={testId}>
             {isLoadingDomainOverlays && (
                  <div className="p-3 border rounded-md bg-card text-card-foreground">
                     <p className="text-sm text-muted-foreground">Loading specific configurations...</p>

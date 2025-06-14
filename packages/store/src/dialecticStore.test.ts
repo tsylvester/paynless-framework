@@ -22,6 +22,7 @@ import type {
   StartSessionPayload,
   DomainOverlayDescriptor,
   DomainTagDescriptor,
+  DialecticDomain,
 } from '@paynless/types';
 
 // Add the mock call here
@@ -41,16 +42,14 @@ vi.mock('@paynless/api', async (importOriginal) => {
 });
 
 // Import the shared mock setup - these are test utilities, not part of the mocked module itself.
-import { resetApiMock, getMockDialecticClient, type MockDialecticApiClient } from '@paynless/api/mocks';
+import { api } from '@paynless/api';
+import { resetApiMock } from '@paynless/api/mocks';
 
 describe('useDialecticStore', () => {
-    let mockDialecticApi: MockDialecticApiClient;
-
     beforeEach(() => {
-        resetApiMock(); // Resets all mocks defined in @paynless/api/mocks
-        mockDialecticApi = getMockDialecticClient(); // Get a reference to the dialectic specific mocks
+        resetApiMock();
         useDialecticStore.getState()._resetForTesting?.();
-        vi.clearAllMocks(); // resetApiMock should handle this for the api calls
+        vi.clearAllMocks();
     });
 
     describe('Initial State', () => {
@@ -61,6 +60,10 @@ describe('useDialecticStore', () => {
             expect(state.domainTagsError).toBe(initialDialecticStateValues.domainTagsError);
             expect(state.selectedDomainTag).toBe(initialDialecticStateValues.selectedDomainTag);
             
+            expect(state.domains).toEqual(initialDialecticStateValues.domains);
+            expect(state.isLoadingDomains).toBe(initialDialecticStateValues.isLoadingDomains);
+            expect(state.domainsError).toBe(initialDialecticStateValues.domainsError);
+
             // Check new initial state for Domain Overlays
             expect(state.selectedStageAssociation).toBe(initialDialecticStateValues.selectedStageAssociation);
             expect(state.availableDomainOverlays).toEqual(initialDialecticStateValues.availableDomainOverlays);
@@ -87,6 +90,46 @@ describe('useDialecticStore', () => {
             expect(state.startSessionError).toBe(initialDialecticStateValues.startSessionError);
 
             expect(state.contributionContentCache).toEqual(initialDialecticStateValues.contributionContentCache);
+        });
+    });
+
+    describe('fetchDomains thunk', () => {
+        const mockDomains: DialecticDomain[] = [
+            { id: '1', name: 'Software Development', description: 'All about code', parent_domain_id: null },
+            { id: '2', name: 'Finance', description: 'All about money', parent_domain_id: null },
+        ];
+
+        it('should fetch domains and update state on success', async () => {
+            const mockResponse: ApiResponse<DialecticDomain[]> = {
+                data: mockDomains,
+                status: 200,
+            };
+            (api.dialectic().listDomains as Mock).mockResolvedValue(mockResponse);
+
+            const fetchDomains = useDialecticStore.getState().fetchDomains;
+            await fetchDomains();
+
+            const state = useDialecticStore.getState();
+            expect(state.isLoadingDomains).toBe(false);
+            expect(state.domains).toEqual(mockDomains);
+            expect(state.domainsError).toBeNull();
+        });
+
+        it('should handle API errors when fetching domains', async () => {
+            const mockError: ApiError = { code: 'SERVER_ERROR', message: 'Failed to fetch' };
+            const mockResponse: ApiResponse<DialecticDomain[]> = {
+                error: mockError,
+                status: 500,
+            };
+            (api.dialectic().listDomains as Mock).mockResolvedValue(mockResponse);
+
+            const fetchDomains = useDialecticStore.getState().fetchDomains;
+            await fetchDomains();
+
+            const state = useDialecticStore.getState();
+            expect(state.isLoadingDomains).toBe(false);
+            expect(state.domains).toEqual([]);
+            expect(state.domainsError).toEqual(mockError);
         });
     });
 

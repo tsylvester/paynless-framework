@@ -58,6 +58,7 @@ import { getProjectResourceContent } from "./getProjectResourceContent.ts";
 import { saveContributionEdit } from './saveContributionEdit.ts';
 import { submitStageResponses } from './submitStageResponses.ts';
 import { uploadToStorage, downloadFromStorage } from '../_shared/supabase_storage_utils.ts';
+import { listDomains, type DialecticDomain } from './listDomains.ts';
 
 console.log("dialectic-service function started");
 
@@ -113,6 +114,7 @@ export interface ActionHandlers {
   getProjectResourceContent: (payload: GetProjectResourceContentPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetProjectResourceContentResponse; error?: ServiceError; status?: number }>;
   saveContributionEdit: (payload: SaveContributionEditPayload, dbClient: SupabaseClient, user: User, logger: ILogger) => Promise<{ data?: DialecticContribution; error?: ServiceError; status?: number }>;
   submitStageResponses: (payload: SubmitStageResponsesPayload, dbClient: SupabaseClient, user: User, dependencies: SubmitStageResponsesDependencies) => Promise<{ data?: SubmitStageResponsesResponse; error?: ServiceError; status?: number }>;
+  listDomains: (dbClient: SupabaseClient) => Promise<{ data?: DialecticDomain[]; error?: ServiceError }>;
 }
 
 export async function handleRequest(
@@ -213,7 +215,12 @@ export async function handleRequest(
         'deleteProject', 'cloneProject', 'exportProject', 'getProjectResourceContent',
         'saveContributionEdit', 'submitStageResponses'
       ];
-
+      const noAuthActions = [
+        "listAvailableDomainTags", 
+        "listAvailableDomainOverlays",
+        "listDomains"
+      ];
+        
       if (actionsRequiringAuth.includes(action)) {
         const { data: userData, error: userError } = await getUserFnForRequest();
         if (userError || !userData?.user) {
@@ -222,8 +229,36 @@ export async function handleRequest(
         }
         userForJson = userData.user;
       }
+      if (noAuthActions.includes(action)) {
+        switch (action) {
+          case "listAvailableDomainTags": {
+            const result = await handlers.listAvailableDomainTags(dbAdminClient, payload);
+            if (result && 'error' in result) {
+              return createErrorResponse(result.error.message, result.error.status, req, result.error);
+            }
+            return createSuccessResponse(result, 200, req);
+          }
+          case "listAvailableDomainOverlays": {
+            if (!payload || typeof (payload as unknown as ListAvailableDomainOverlaysPayload).stageAssociation !== 'string') {
+              return createErrorResponse("Payload with 'stageAssociation' (string) is required for listAvailableDomainOverlays", 400, req, { code: 'INVALID_PAYLOAD' });
+            }
+            const result = await handlers.listAvailableDomainOverlays((payload as unknown as ListAvailableDomainOverlaysPayload).stageAssociation as DialecticStage, dbAdminClient);
+            return createSuccessResponse(result, 200, req);
+          }
+          case "listDomains": {
+            const { data, error } = await handlers.listDomains(dbAdminClient);
+            if (error) {
+              return createErrorResponse(error.message, error.status, req, error);
+            }
+            return createSuccessResponse(data, 200, req);
+          }
+        }
+      }
 
       switch (action) {
+        case 'listDomains':
+            result = await handlers.listDomains(dbAdminClient);
+            break;
         case 'listAvailableDomainTags': {
           const listTagsOutcome = await handlers.listAvailableDomainTags(dbAdminClient, payload as { stageAssociation?: DialecticStage } | undefined);
           if (listTagsOutcome && typeof listTagsOutcome === 'object' && 'error' in listTagsOutcome && listTagsOutcome.error) {
@@ -454,6 +489,7 @@ export async function handleRequest(
           logger.warn('Unknown action for application/json', { action });
           result = { error: { message: `Unknown action '${action}' for application/json.`, status: 400, code: 'INVALID_JSON_ACTION' } };
       }
+
     } else {
       logger.warn('Unsupported request method or content type', { method: req.method, contentType });
       result = { 
@@ -511,7 +547,8 @@ const actualHandlers: ActionHandlers = {
   getProjectResourceContent,
   saveContributionEdit,
   submitStageResponses: (payload, dbClient, user, dependencies) =>
-    submitStageResponses(payload, dbClient, user, dependencies)
+    submitStageResponses(payload, dbClient, user, dependencies),
+  listDomains: (dbClient) => listDomains(dbClient)
 };
 
 serve(async (req: Request) => {

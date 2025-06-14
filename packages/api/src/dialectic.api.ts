@@ -23,6 +23,7 @@ import type {
     GetIterationInitialPromptPayload,
     IterationInitialPromptData,
     SaveContributionEditPayload,
+    DialecticDomain,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -503,25 +504,40 @@ export class DialecticApiClient {
         }
     }
 
-    async updateContributionContent(payload: SaveContributionEditPayload): Promise<ApiResponse<DialecticContribution>> {
-        logger.info('Updating contribution content', { contributionId: payload.originalContributionIdToEdit, sessionId: payload.sessionId });
+    async saveContributionEdit(
+        payload: SaveContributionEditPayload
+    ): Promise<ApiResponse<DialecticContribution>> {
+        logger.info('Saving user edit for contribution', {
+            contributionId: payload.originalContributionIdToEdit,
+        });
+
         try {
-            const response = await this.apiClient.post<DialecticContribution, { action: string; payload: SaveContributionEditPayload }>(
-                'dialectic-service',
-                {
-                    action: 'updateContributionContent',
-                    payload,
-                },
-            );
+            const response = await this.apiClient.post<
+                DialecticContribution,
+                DialecticServiceActionPayload
+            >('dialectic-service', {
+                action: 'saveContributionEdit',
+                payload,
+            });
+
             if (response.error) {
-                logger.error('Error updating contribution content:', { error: response.error, contributionId: payload.originalContributionIdToEdit });
+                logger.error('Error saving contribution edit:', {
+                    error: response.error,
+                    contributionId: payload.originalContributionIdToEdit,
+                });
             } else {
-                logger.info('Successfully updated contribution content', { contributionId: response.data?.id });
+                logger.info('Successfully saved contribution edit', {
+                    newContributionId: response.data?.id,
+                });
             }
             return response;
         } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : 'A network error occurred';
-            logger.error('Network error in updateContributionContent:', { errorMessage: message, errorObject: error, contributionId: payload.originalContributionIdToEdit });
+            const message =
+                error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in saveContributionEdit:', {
+                errorMessage: message,
+                errorObject: error,
+            });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },
@@ -622,6 +638,36 @@ export class DialecticApiClient {
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'A network error occurred';
             logger.error('Network error in generateContributions:', { errorMessage: message, errorObject: error, sessionId: payload.sessionId });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
+    }
+
+    /**
+     * Fetches the list of all available dialectic domains.
+     * This endpoint is public and does not require authentication.
+     */
+    async listDomains(): Promise<ApiResponse<DialecticDomain[]>> {
+        logger.info('Fetching all dialectic domains');
+
+        try {
+            const response = await this.apiClient.post<DialecticDomain[], { action: string }>(
+                'dialectic-service',
+                { action: 'listDomains' }
+            );
+
+            if (response.error) {
+                logger.error('Error fetching dialectic domains:', { error: response.error });
+            } else {
+                logger.info(`Fetched ${response.data?.length ?? 0} dialectic domains`);
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in listDomains:', { errorMessage: message, errorObject: error });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },

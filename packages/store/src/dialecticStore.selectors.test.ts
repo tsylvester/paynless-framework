@@ -4,6 +4,10 @@ import {
     selectIsLoadingDomainTags,
     selectDomainTagsError,
     selectSelectedDomainTag,
+    selectDomains,
+    selectIsLoadingDomains,
+    selectDomainsError,
+    selectSelectedDomain,
     selectSelectedStageAssociation,
     selectAvailableDomainOverlays,
     selectIsLoadingDomainOverlays,
@@ -26,7 +30,7 @@ import {
     selectContributionContentCache
 } from './dialecticStore.selectors';
 import { initialDialecticStateValues } from './dialecticStore';
-import type { DialecticStateValues, ApiError, DomainOverlayDescriptor, DialecticProject, AIModelCatalogEntry } from '@paynless/types';
+import type { DialecticStateValues, ApiError, DomainOverlayDescriptor, DialecticProject, AIModelCatalogEntry, DialecticDomain } from '@paynless/types';
 
 describe('Dialectic Store Selectors', () => {
     const mockOverlays: DomainOverlayDescriptor[] = [
@@ -34,6 +38,11 @@ describe('Dialectic Store Selectors', () => {
         { id: 'ov2', domainTag: 'Overlay 2', description: null, stageAssociation: 'thesis' },
     ];
     const mockOverlayError: ApiError = { code: 'OVERLAY_ERR', message: 'Test Overlay Error' };
+    const mockDomains: DialecticDomain[] = [
+        { id: 'dom1', name: 'Domain 1', description: 'Test domain 1', tags: ['tag1'] },
+        { id: 'dom2', name: 'Domain 2', description: 'Test domain 2', tags: ['tag2'] },
+    ];
+    const mockDomainsError: ApiError = { code: 'DOMAIN_ERR', message: 'Test Domain Error' };
 
     const testState: DialecticStateValues = {
         ...initialDialecticStateValues,
@@ -41,6 +50,10 @@ describe('Dialectic Store Selectors', () => {
         isLoadingDomainTags: true,
         domainTagsError: { code: 'ERR', message: 'Test Error' } as ApiError,
         selectedDomainTag: 'tag1',
+        domains: mockDomains,
+        isLoadingDomains: true,
+        domainsError: mockDomainsError,
+        selectedDomain: mockDomains[0],
         selectedStageAssociation: 'thesis',
         availableDomainOverlays: mockOverlays,
         isLoadingDomainOverlays: true,
@@ -81,6 +94,38 @@ describe('Dialectic Store Selectors', () => {
 
     it('selectSelectedDomainTag should return initial null from initialState', () => {
         expect(selectSelectedDomainTag(initialState)).toBeNull();
+    });
+
+    it('selectDomains should return domains from testState', () => {
+        expect(selectDomains(testState)).toEqual(mockDomains);
+    });
+
+    it('selectDomains should return initial empty array from initialState', () => {
+        expect(selectDomains(initialState)).toEqual([]);
+    });
+
+    it('selectIsLoadingDomains should return isLoadingDomains from testState', () => {
+        expect(selectIsLoadingDomains(testState)).toBe(true);
+    });
+
+    it('selectIsLoadingDomains should return initial false from initialState', () => {
+        expect(selectIsLoadingDomains(initialState)).toBe(false);
+    });
+
+    it('selectDomainsError should return domainsError from testState', () => {
+        expect(selectDomainsError(testState)).toEqual(mockDomainsError);
+    });
+
+    it('selectDomainsError should return initial null from initialState', () => {
+        expect(selectDomainsError(initialState)).toBeNull();
+    });
+
+    it('selectSelectedDomain should return selectedDomain from testState', () => {
+        expect(selectSelectedDomain(testState)).toEqual(mockDomains[0]);
+    });
+
+    it('selectSelectedDomain should return initial null from initialState', () => {
+        expect(selectSelectedDomain(initialState)).toBeNull();
     });
 
     it('selectSelectedStageAssociation should return selectedStageAssociation from testState', () => {

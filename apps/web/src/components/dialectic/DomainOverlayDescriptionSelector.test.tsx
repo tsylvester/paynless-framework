@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 
 // Import type of the mock module for safer explicit mocking
@@ -19,16 +19,13 @@ vi.mock('@paynless/store', async () => {
 
 // Imports from @paynless/store will now come from the mock
 import { 
-    useDialecticStore, 
-    selectOverlay, // This is now vi.fn() from the mock
-    // selectSelectedDomainTag, // Actual selector via the mock - not directly used in tests, covered by useDialecticStore mock
-    // selectSelectedDomainOverlayId, // Actual selector via the mock - not directly used in tests, covered by useDialecticStore mock
-    initialDialecticStateValues // Actual initial state via the mock
+    selectOverlay,
+    useDialecticStore, // Import the state setter
 } from '@paynless/store';
-import type { DialecticStateValues, DialecticStore, DomainOverlayDescriptor } from '@paynless/types';
+import { DialecticStage, type DialecticStateValues, type DomainOverlayDescriptor } from '@paynless/types';
 import { DomainOverlayDescriptionSelector } from './DomainOverlayDescriptionSelector';
 // Import the reset function from your central mock file
-import { resetDialecticStoreMocks } from '../../mocks/dialecticStore.mock'; // Corrected path
+import { resetDialecticStoreMock } from '../../mocks/dialecticStore.mock';
 
 // Mock the logger (remains unchanged)
 vi.mock('@paynless/utils', async (importOriginal) => {
@@ -53,137 +50,72 @@ describe('DomainOverlayDescriptionSelector', () => {
     const originalReleasePointerCapture = HTMLElement.prototype.releasePointerCapture;
 
     beforeEach(() => {
-        resetDialecticStoreMocks(); // Reset centralized mocks
+        resetDialecticStoreMock(); // Reset centralized mocks
         mockSetSelectedDomainOverlayId.mockClear(); // Clear local action mock
 
         // Mock HTMLElement properties
         HTMLElement.prototype.scrollIntoView = vi.fn();
-        HTMLElement.prototype.hasPointerCapture = vi.fn((_pointerId) => false); // _pointerId is intentionally unused
-        HTMLElement.prototype.releasePointerCapture = vi.fn((_pointerId) => {}); // _pointerId is intentionally unused
+        HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+        HTMLElement.prototype.releasePointerCapture = vi.fn(() => {});
     });
 
     afterEach(() => {
+        cleanup();
         HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
         HTMLElement.prototype.hasPointerCapture = originalHasPointerCapture;
         HTMLElement.prototype.releasePointerCapture = originalReleasePointerCapture;
-        cleanup();
     });
 
     // Simplified setup function
-    const setup = (testSpecificState: Partial<DialecticStateValues> & { selectOverlayOutput?: DomainOverlayDescriptor[] | null }) => {
+    const setup = (testSpecificState: Partial<DialecticStateValues> & { selectOverlayOutput?: DomainOverlayDescriptor[] | null }, testId = "domain-overlay-selector") => {
         const { selectOverlayOutput = [], ...stateOverrides } = testSpecificState;
 
-        // Configure the mock return value for the selectOverlay selector (which is a vi.fn() from the central mock)
+        // Configure the mock return value for the selectOverlay selector
         vi.mocked(selectOverlay).mockReturnValue(selectOverlayOutput || []);
 
-        // Create a mock store state for this specific test run
-        // This state will be provided to the actual selectors (selectSelectedDomainTag, etc.)
-        const mockStoreForTest: DialecticStore = {
-            ...initialDialecticStateValues,
-            // Apply test-specific state overrides
-            selectedDomainTag: stateOverrides.selectedDomainTag !== undefined ? stateOverrides.selectedDomainTag : null,
-            selectedDomainOverlayId: stateOverrides.selectedDomainOverlayId !== undefined ? stateOverrides.selectedDomainOverlayId : null,
-            selectedStageAssociation: stateOverrides.selectedStageAssociation !== undefined ? stateOverrides.selectedStageAssociation : null,
-            availableDomainOverlays: stateOverrides.availableDomainOverlays !== undefined ? stateOverrides.availableDomainOverlays : [],
-            // Include other state properties from DialecticStateValues with defaults if not overridden
-            contributionContentCache: stateOverrides.contributionContentCache || {},
-            availableDomainTags: stateOverrides.availableDomainTags || [],
-            isLoadingDomainTags: stateOverrides.isLoadingDomainTags || false,
-            domainTagsError: stateOverrides.domainTagsError || null,
-            projects: stateOverrides.projects || [],
-            isLoadingProjects: stateOverrides.isLoadingProjects || false,
-            projectsError: stateOverrides.projectsError || null,
-            currentProjectDetail: stateOverrides.currentProjectDetail || null,
-            isLoadingProjectDetail: stateOverrides.isLoadingProjectDetail || false,
-            projectDetailError: stateOverrides.projectDetailError || null,
-            modelCatalog: stateOverrides.modelCatalog || [],
-            isLoadingModelCatalog: stateOverrides.isLoadingModelCatalog || false,
-            modelCatalogError: stateOverrides.modelCatalogError || null,
-            isCreatingProject: stateOverrides.isCreatingProject || false,
-            createProjectError: stateOverrides.createProjectError || null,
-            isStartingSession: stateOverrides.isStartingSession || false,
-            startSessionError: stateOverrides.startSessionError || null,
+        // Use the imported setter to configure the store's state for this test
+        useDialecticStore.setState({
+            ...stateOverrides,
+            setSelectedDomainOverlayId: mockSetSelectedDomainOverlayId, // Ensure the action mock is in the state
+        });
+        
+        const renderResult = render(<DomainOverlayDescriptionSelector testId={testId} />);
+        const component = screen.queryByTestId(testId);
 
-            // Include the action used by the component
-            setSelectedDomainOverlayId: mockSetSelectedDomainOverlayId,
-            
-            // Add other actions from DialecticActions as vi.fn() to satisfy DialecticStore type
-            // Aligned with apps/web/src/mocks/dialecticStore.mock.ts
-            fetchContributionContent: vi.fn(),
-            fetchAvailableDomainTags: vi.fn(),
-            setSelectedDomainTag: vi.fn(),
-            fetchDialecticProjects: vi.fn(),
-            fetchDialecticProjectDetails: vi.fn(),
-            fetchAIModelCatalog: vi.fn(),
-            createDialecticProject: vi.fn(),
-            startDialecticSession: vi.fn(),
-            uploadProjectResourceFile: vi.fn(),
-            resetCreateProjectError: vi.fn(),
-            resetProjectDetailsError: vi.fn(),
-            // Assuming DialecticStore might have these from previous edits, if not, they can be removed if they cause type errors
-            fetchAvailableDomainOverlays: vi.fn(),
-            setSelectedStageAssociation: vi.fn(), 
-            _resetForTesting: vi.fn(), // if part of the type, else remove
-        };
-
-        // Mock the useDialecticStore implementation for this test
-        // Define the typed mock implementation to avoid JSX parsing issues with generics
-        const mockImplementationForTest = <TResult,>(selectorFn: (state: DialecticStore) => TResult): TResult => selectorFn(mockStoreForTest);
-        vi.mocked(useDialecticStore).mockImplementation(mockImplementationForTest);
-
-        return render(<DomainOverlayDescriptionSelector />);
+        return { ...renderResult, component };
     };
 
-    const overlay1: DomainOverlayDescriptor = { id: 'ov1', domainTag: 'tech', description: 'Overlay Description 1', stageAssociation: 'thesis' };
-    const overlay2: DomainOverlayDescriptor = { id: 'ov2', domainTag: 'tech', description: 'Overlay Description 2', stageAssociation: 'thesis' };
-    const overlay3_no_desc: DomainOverlayDescriptor = { id: 'ov3', domainTag: 'tech', description: null, stageAssociation: 'thesis' };
-
+    const overlay1: DomainOverlayDescriptor = { id: 'ov1', domainTag: 'tech', description: 'Overlay Description 1', stageAssociation: DialecticStage.THESIS, overlay_values: {}, system_prompt_id: 'sp1' };
+    const overlay2: DomainOverlayDescriptor = { id: 'ov2', domainTag: 'tech', description: 'Overlay Description 2', stageAssociation: DialecticStage.THESIS, overlay_values: {}, system_prompt_id: 'sp2' };
+    const overlay3_no_desc: DomainOverlayDescriptor = { id: 'ov3', domainTag: 'tech', description: null, stageAssociation: DialecticStage.THESIS, overlay_values: {}, system_prompt_id: 'sp3' };
 
     it('should not render if selectedDomainTag is null', () => {
-        setup({ 
-            selectedDomainTag: null, 
-            selectOverlayOutput: [overlay1, overlay2], 
-            selectedStageAssociation: 'thesis' 
-        });
-        expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+        const { component } = setup({ selectedDomainTag: null }, 'no-render-test');
+        expect(component).not.toBeInTheDocument();
     });
 
-    it('should not render if selectOverlayOutput is null or empty', () => {
-        setup({ 
-            selectedDomainTag: 'tech', 
-            selectOverlayOutput: null, 
-            selectedStageAssociation: 'thesis' 
-        });
-        expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
-        
-        setup({ 
-            selectedDomainTag: 'tech', 
-            selectOverlayOutput: [], 
-            selectedStageAssociation: 'thesis' 
-        });
-        expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    it('should render, but not show a combobox, if selectOverlayOutput is null', () => {
+        const { component } = setup({ selectedDomainTag: 'tech', selectOverlayOutput: null });
+        expect(component).toBeInTheDocument();
+        expect(within(component!).queryByRole('combobox')).not.toBeInTheDocument();
+    });
+    
+    it('should render, but not show a combobox, if selectOverlayOutput is empty', () => {
+        const { component } = setup({ selectedDomainTag: 'tech', selectOverlayOutput: [] });
+        expect(component).toBeInTheDocument();
+        expect(within(component!).queryByRole('combobox')).not.toBeInTheDocument();
     });
 
-    it('should not render if selectOverlayOutput has only one item', () => {
-        setup({ 
-            selectedDomainTag: 'tech', 
-            selectOverlayOutput: [overlay1], 
-            selectedStageAssociation: 'thesis' 
-        });
-        expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    it('should not render a combobox if selectOverlayOutput has only one item', () => {
+        const { component } = setup({ selectedDomainTag: 'tech', selectOverlayOutput: [overlay1] });
+        expect(within(component!).queryByRole('combobox')).not.toBeInTheDocument();
     });
 
     it('should render if selectedDomainTag is set and more than one overlay is available', async () => {
         const user = userEvent.setup();
-        setup({ 
-            selectedDomainTag: 'tech', 
-            selectedStageAssociation: 'thesis', 
-            selectOverlayOutput: [overlay1, overlay2], 
-            selectedDomainOverlayId: null 
-        });
+        const { component } = setup({ selectedDomainTag: 'tech', selectOverlayOutput: [overlay1, overlay2], selectedDomainOverlayId: null });
         
-        const combobox = screen.getByRole('combobox');
-        expect(combobox).toBeInTheDocument();
+        const combobox = within(component!).getByRole('combobox');
         expect(combobox).toHaveTextContent('Choose a specific configuration...');
         
         await user.click(combobox);
@@ -191,186 +123,59 @@ describe('DomainOverlayDescriptionSelector', () => {
         expect(await screen.findByText('Overlay Description 2')).toBeInTheDocument();
     });
 
-    it('displays fallback text if description is null', async () => {
+    it('displays fallback text in list if description is null', async () => {
         const user = userEvent.setup();
-        setup({ 
-            selectedDomainTag: 'tech', 
-            selectedStageAssociation: 'thesis', 
-            selectOverlayOutput: [overlay1, overlay3_no_desc], 
-            selectedDomainOverlayId: null 
-        });
-        await user.click(screen.getByRole('combobox'));
-        expect(await screen.findByText('Configuration ID: ov3')).toBeInTheDocument();
+        const { component } = setup({ selectedDomainTag: 'tech', selectOverlayOutput: [overlay1, overlay3_no_desc], selectedDomainOverlayId: null });
+        
+        await user.click(within(component!).getByRole('combobox'));
+        expect(await screen.findByText('Overlay Description 1')).toBeInTheDocument();
+        expect(await screen.findByText(/Configuration ID: ov3/)).toBeInTheDocument();
     });
 
     it('calls setSelectedDomainOverlayId with the correct id on selection', async () => {
         const user = userEvent.setup();
-        // Get rerender from setup
-        const { rerender } = setup({ 
+        const { rerender, component } = setup({ 
             selectedDomainTag: 'tech', 
-            selectedStageAssociation: 'thesis', 
-            selectOverlayOutput: [overlay1, overlay2], 
+            selectOverlayOutput: [overlay1, overlay2],
             selectedDomainOverlayId: null 
         });
-        
-        await user.click(screen.getByRole('combobox'));
-        const option2 = await screen.findByText('Overlay Description 2');
-        await user.click(option2);
+
+        await user.click(within(component!).getByRole('combobox'));
+        await user.click(await screen.findByText('Overlay Description 2'));
+
+        expect(mockSetSelectedDomainOverlayId).toHaveBeenCalledWith(overlay2.id);
+
+        useDialecticStore.setState({ selectedDomainOverlayId: overlay2.id });
+        rerender(<DomainOverlayDescriptionSelector testId="domain-overlay-selector"/>);
 
         await waitFor(() => {
-            expect(mockSetSelectedDomainOverlayId).toHaveBeenCalledWith(overlay2.id);
+            expect(within(component!).getByRole('combobox')).toHaveTextContent('Overlay Description 2');
         });
-
-        // Update store mock for rerender to reflect the selection
-        const newMockStoreStateForRerender: DialecticStore = {
-            ...initialDialecticStateValues,
-            selectedDomainTag: 'tech',
-            selectedStageAssociation: 'thesis',
-            selectedDomainOverlayId: overlay2.id, // Reflect the selection
-            availableDomainOverlays: [overlay1, overlay2], 
-            // Fill in other necessary state properties and actions as in other tests
-            setSelectedDomainOverlayId: mockSetSelectedDomainOverlayId,
-            fetchContributionContent: vi.fn(),
-            fetchAvailableDomainTags: vi.fn(),
-            setSelectedDomainTag: vi.fn(),
-            fetchDialecticProjects: vi.fn(),
-            fetchDialecticProjectDetails: vi.fn(),
-            fetchAIModelCatalog: vi.fn(),
-            createDialecticProject: vi.fn(),
-            startDialecticSession: vi.fn(),
-            uploadProjectResourceFile: vi.fn(),
-            resetCreateProjectError: vi.fn(),
-            resetProjectDetailsError: vi.fn(),
-            fetchAvailableDomainOverlays: vi.fn(),
-            setSelectedStageAssociation: vi.fn(), 
-            _resetForTesting: vi.fn(),
-        };
-
-        vi.mocked(selectOverlay).mockReturnValue([overlay1, overlay2]);
-        const mockImplementationForRerender = <TResult,>(selectorFn: (state: DialecticStore) => TResult): TResult => selectorFn(newMockStoreStateForRerender);
-        vi.mocked(useDialecticStore).mockImplementation(mockImplementationForRerender);
-
-        rerender(<DomainOverlayDescriptionSelector />);
-
-        // After selection and rerender, the trigger should display the selected item's text
-        expect(screen.getByRole('combobox')).toHaveTextContent('Overlay Description 2');
     });
 
-    it('reflects selectedDomainOverlayId from store on initial render', () => {
-        setup({ 
-            selectedDomainTag: 'tech', 
-            selectedStageAssociation: 'thesis', 
-            selectOverlayOutput: [overlay1, overlay2], 
-            selectedDomainOverlayId: overlay1.id 
-        });
-        expect(screen.getByRole('combobox')).toHaveTextContent('Overlay Description 1');
+    it('reflects selectedDomainOverlayId from store on initial render', async () => {
+        const { component } = setup({ selectedDomainTag: 'tech', selectOverlayOutput: [overlay1, overlay2], selectedDomainOverlayId: overlay1.id });
+        expect(within(component!).getByRole('combobox')).toHaveTextContent('Overlay Description 1');
     });
 
-    it('handles selection of an item with null description (shows Default Overlay in trigger)', async () => {
+    it('handles selection of an item with null description and shows fallback in trigger', async () => {
         const user = userEvent.setup();
-        const { rerender } = setup({ 
-            selectedDomainTag: 'tech', 
-            selectedStageAssociation: 'thesis', 
-            selectOverlayOutput: [overlay1, overlay3_no_desc], 
-            selectedDomainOverlayId: null 
-        });
-        
-        await user.click(screen.getByRole('combobox'));
-        const option3 = await screen.findByText('Configuration ID: ov3');
-        await user.click(option3);
-
-        await waitFor(() => {
-            expect(mockSetSelectedDomainOverlayId).toHaveBeenCalledWith(overlay3_no_desc.id);
-        });
-
-        // Update store mock for rerender
-        const newMockStoreStateForRerender: DialecticStore = {
-            ...initialDialecticStateValues,
+        const { rerender, component } = setup({
             selectedDomainTag: 'tech',
-            selectedStageAssociation: 'thesis',
-            selectedDomainOverlayId: overlay3_no_desc.id,
-            availableDomainOverlays: [overlay1, overlay3_no_desc], // ensure this is available for selectOverlay if it were real
-             // Include all actions to satisfy DialecticStore type
-            setSelectedDomainOverlayId: mockSetSelectedDomainOverlayId,
-            fetchContributionContent: vi.fn(),
-            fetchAvailableDomainTags: vi.fn(),
-            setSelectedDomainTag: vi.fn(),
-            fetchDialecticProjects: vi.fn(),
-            fetchDialecticProjectDetails: vi.fn(),
-            fetchAIModelCatalog: vi.fn(),
-            createDialecticProject: vi.fn(),
-            startDialecticSession: vi.fn(),
-            uploadProjectResourceFile: vi.fn(),
-            resetCreateProjectError: vi.fn(),
-            resetProjectDetailsError: vi.fn(),
-            fetchAvailableDomainOverlays: vi.fn(),
-            setSelectedStageAssociation: vi.fn(), 
-            _resetForTesting: vi.fn(),
-        };
-        
-        // Configure the selectOverlay mock for the new state
-        vi.mocked(selectOverlay).mockReturnValue([overlay1, overlay3_no_desc]); // Or filter as needed if selectOverlay logic was complex
-        
-        // Define the typed mock implementation for the rerender scenario
-        const mockImplementationForRerender = <TResult,>(selectorFn: (state: DialecticStore) => TResult): TResult => selectorFn(newMockStoreStateForRerender);
-        vi.mocked(useDialecticStore).mockImplementation(mockImplementationForRerender);
-        
-        rerender(<DomainOverlayDescriptionSelector />);
-
-        expect(screen.getByRole('combobox')).toHaveTextContent('Configuration ID: ov3');
-    });
-
-    it('handles selection of an item with null description (shows Configuration ID: ov3 in trigger)', async () => {
-        const user = userEvent.setup();
-        const { rerender } = setup({ 
-            selectedDomainTag: 'tech', 
-            selectedStageAssociation: 'thesis', 
-            selectOverlayOutput: [overlay1, overlay3_no_desc], 
-            selectedDomainOverlayId: null 
+            selectOverlayOutput: [overlay1, overlay3_no_desc],
+            selectedDomainOverlayId: null
         });
-        
-        await user.click(screen.getByRole('combobox'));
-        const option3 = await screen.findByText('Configuration ID: ov3');
-        await user.click(option3);
 
+        await user.click(within(component!).getByRole('combobox'));
+        await user.click(await screen.findByText(/Configuration ID: ov3/));
+
+        expect(mockSetSelectedDomainOverlayId).toHaveBeenCalledWith(overlay3_no_desc.id);
+
+        useDialecticStore.setState({ selectedDomainOverlayId: overlay3_no_desc.id });
+        rerender(<DomainOverlayDescriptionSelector testId="domain-overlay-selector" />);
+        
         await waitFor(() => {
-            expect(mockSetSelectedDomainOverlayId).toHaveBeenCalledWith(overlay3_no_desc.id);
+            expect(within(component!).getByRole('combobox')).toHaveTextContent('Configuration ID: ov3');
         });
-
-        // Update store mock for rerender
-        const newMockStoreStateForRerender: DialecticStore = {
-            ...initialDialecticStateValues,
-            selectedDomainTag: 'tech',
-            selectedStageAssociation: 'thesis',
-            selectedDomainOverlayId: overlay3_no_desc.id,
-            availableDomainOverlays: [overlay1, overlay3_no_desc], // ensure this is available for selectOverlay if it were real
-             // Include all actions to satisfy DialecticStore type
-            setSelectedDomainOverlayId: mockSetSelectedDomainOverlayId,
-            fetchContributionContent: vi.fn(),
-            fetchAvailableDomainTags: vi.fn(),
-            setSelectedDomainTag: vi.fn(),
-            fetchDialecticProjects: vi.fn(),
-            fetchDialecticProjectDetails: vi.fn(),
-            fetchAIModelCatalog: vi.fn(),
-            createDialecticProject: vi.fn(),
-            startDialecticSession: vi.fn(),
-            uploadProjectResourceFile: vi.fn(),
-            resetCreateProjectError: vi.fn(),
-            resetProjectDetailsError: vi.fn(),
-            fetchAvailableDomainOverlays: vi.fn(),
-            setSelectedStageAssociation: vi.fn(), 
-            _resetForTesting: vi.fn(),
-        };
-        
-        // Configure the selectOverlay mock for the new state
-        vi.mocked(selectOverlay).mockReturnValue([overlay1, overlay3_no_desc]); // Or filter as needed if selectOverlay logic was complex
-        
-        // Define the typed mock implementation for the rerender scenario
-        const mockImplementationForRerender = <TResult,>(selectorFn: (state: DialecticStore) => TResult): TResult => selectorFn(newMockStoreStateForRerender);
-        vi.mocked(useDialecticStore).mockImplementation(mockImplementationForRerender);
-        
-        rerender(<DomainOverlayDescriptionSelector />);
-
-        expect(screen.getByRole('combobox')).toHaveTextContent('Configuration ID: ov3');
     });
 }); 

@@ -27,6 +27,7 @@ export interface DialecticProject {
 export interface CreateProjectPayload {
     projectName: string;
     initialUserPrompt?: string | null;
+    domainId?: string | null;
     selectedDomainTag?: string | null;
     selectedDomainOverlayId?: string | null;
     promptTemplateId?: string | null;
@@ -142,11 +143,24 @@ export enum DialecticStage {
   PARALYSIS = 'paralysis',
 }
 
+export interface DialecticDomain {
+  id: string;
+  name: string;
+  description: string | null;
+  parent_domain_id: string | null;
+}
+
 export interface DialecticStateValues {
   availableDomainTags: { data: DomainTagDescriptor[] } | DomainTagDescriptor[];
   isLoadingDomainTags: boolean;
   domainTagsError: ApiError | null;
   selectedDomainTag: string | null;
+
+  // New state for Domains
+  domains: DialecticDomain[] | null;
+  isLoadingDomains: boolean;
+  domainsError: ApiError | null;
+  selectedDomain: DialecticDomain | null;
 
   // New state for Domain Overlays
   selectedStageAssociation: DialecticStage | null;
@@ -229,6 +243,8 @@ export interface DialecticActions {
   fetchAvailableDomainOverlays: (stageAssociation: DialecticStage) => Promise<void>;
   setSelectedStageAssociation: (stage: DialecticStage | null) => void;
   setSelectedDomainOverlayId: (overlayId: string | null) => void;
+  fetchDomains: () => Promise<void>;
+  setSelectedDomain: (domain: DialecticDomain | null) => void;
   
   fetchDialecticProjects: () => Promise<void>;
   fetchDialecticProjectDetails: (projectId: string) => Promise<void>;
@@ -314,6 +330,7 @@ export interface DialecticApiClient {
   startSession(payload: StartSessionPayload): Promise<ApiResponse<DialecticSession>>;
   listModelCatalog(): Promise<ApiResponse<AIModelCatalogEntry[]>>;
   getContributionContentSignedUrl(contributionId: string): Promise<ApiResponse<ContributionContentSignedUrlResponse | null>>;
+  listDomains(): Promise<ApiResponse<DialecticDomain[]>>;
 
   uploadProjectResourceFile(payload: UploadProjectResourceFilePayload): Promise<ApiResponse<DialecticProjectResource>>;
 
@@ -329,7 +346,7 @@ export interface DialecticApiClient {
   updateDialecticProjectInitialPrompt(payload: UpdateProjectInitialPromptPayload): Promise<ApiResponse<DialecticProject>>;
 
   submitStageResponses(payload: SubmitStageResponsesPayload): Promise<ApiResponse<SubmitStageResponsesResponse>>;
-  updateContributionContent(payload: SaveContributionEditPayload): Promise<ApiResponse<DialecticContribution>>;
+  saveContributionEdit(payload: SaveContributionEditPayload): Promise<ApiResponse<DialecticContribution>>;
 
   getIterationInitialPromptContent(payload: GetIterationInitialPromptPayload): Promise<ApiResponse<IterationInitialPromptData>>;
 
@@ -406,6 +423,9 @@ export type DialecticServiceActionPayload = {
   action: 'listAvailableDomainTags';
   payload?: undefined;
 } | {
+  action: 'listDomains';
+  payload?: undefined;
+} | {
   action: 'listAvailableDomainOverlays';
   payload: { stageAssociation: string };
 } | {
@@ -439,7 +459,7 @@ export type DialecticServiceActionPayload = {
   action: 'submitStageResponses';
   payload: SubmitStageResponsesPayload;
 } | {
-  action: 'updateContributionContent';
+  action: 'saveContributionEdit';
   payload: SaveContributionEditPayload;
 }
 

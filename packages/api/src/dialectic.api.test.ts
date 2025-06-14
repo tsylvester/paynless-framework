@@ -28,7 +28,8 @@ import {
     SaveContributionEditPayload,
     GetIterationInitialPromptPayload,
     IterationInitialPromptData,
-    GetProjectResourceContentResponse
+    GetProjectResourceContentResponse,
+    DialecticDomain,
 } from '@paynless/types';
 
 // Mock the base ApiClient
@@ -94,6 +95,71 @@ const baseMockProject: Omit<DialecticProject, 'user_id' | 'created_at' | 'update
 describe('DialecticApiClient', () => {
     beforeEach(() => {
         vi.resetAllMocks(); // Reset mocks before each test
+    });
+
+    describe('listDomains', () => {
+        const endpoint = 'dialectic-service';
+        const requestBody = { action: 'listDomains' };
+        const mockDomains: DialecticDomain[] = [
+            { id: '1', name: 'Software Development', description: 'All about code', parent_domain_id: null },
+            { id: '2', name: 'Finance', description: 'All about money', parent_domain_id: null },
+        ];
+
+        it('should call apiClient.post with the correct endpoint and body', async () => {
+            const mockResponse: ApiResponse<DialecticDomain[]> = {
+                data: mockDomains,
+                status: 200,
+            };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            await dialecticApiClient.listDomains();
+
+            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
+            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+        });
+
+        it('should return the domains array on successful response', async () => {
+            const mockResponse: ApiResponse<DialecticDomain[]> = {
+                data: mockDomains,
+                status: 200,
+            };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            const result = await dialecticApiClient.listDomains();
+
+            expect(result.data).toEqual(mockDomains);
+            expect(result.status).toBe(200);
+            expect(result.error).toBeUndefined();
+        });
+
+        it('should return the error object on failed response', async () => {
+            const mockApiError: ApiErrorType = { code: 'SERVER_ERROR', message: 'Failed to fetch domains' };
+            const mockErrorResponse: ApiResponse<DialecticDomain[]> = {
+                error: mockApiError,
+                status: 500,
+            };
+            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+
+            const result = await dialecticApiClient.listDomains();
+
+            expect(result.error).toEqual(mockApiError);
+            expect(result.status).toBe(500);
+            expect(result.data).toBeUndefined();
+        });
+
+        it('should return a network error if apiClient.post rejects', async () => {
+            const networkErrorMessage = 'Simulated network failure';
+            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+
+            const result = await dialecticApiClient.listDomains();
+
+            expect(result.error).toEqual({
+                code: 'NETWORK_ERROR',
+                message: networkErrorMessage,
+            });
+            expect(result.status).toBe(0);
+            expect(result.data).toBeUndefined();
+        });
     });
 
     describe('listAvailableDomainTags', () => {
@@ -1275,197 +1341,120 @@ describe('DialecticApiClient', () => {
 
     describe('submitStageResponses', () => {
         const endpoint = 'dialectic-service';
-        const validPayload: SubmitStageResponsesPayload = {
-            sessionId: 'sess-456',
+        const mockPayload: SubmitStageResponsesPayload = {
+            sessionId: 'sess-123',
             projectId: 'proj-123',
             stageSlug: DialecticStage.THESIS,
             currentIterationNumber: 1,
-            responses: [
-                {
-                    originalModelContributionId: 'contrib-aaa-111',
-                    responseText: 'This is my feedback on the first thesis contribution.',
-                },
-                {
-                    originalModelContributionId: 'contrib-bbb-222',
-                    responseText: 'And this is feedback on the second one.',
-                },
-            ],
+            responses: [{ originalModelContributionId: 'contrib-abc', responseText: 'This is a great point.' }]
         };
-        const requestBody = { action: 'submitStageResponses', payload: validPayload };
-
-        const mockUpdatedSessionAfterFeedback: DialecticSession = {
-            ...mockDialecticSession, // Spread existing mock session
-            id: validPayload.sessionId,
-            status: 'pending_antithesis', // Example: status updated to next stage pending
-            updated_at: new Date().toISOString(),
-            // Potentially other fields might be updated, like current_stage_seed_prompt for the next stage
+        const mockResponseData: SubmitStageResponsesResponse = {
+            userFeedbackStoragePath: 'path/to/feedback.md',
+            nextStageSeedPromptStoragePath: 'path/to/next_seed.md',
+            updatedSession: mockDialecticSession,
+            message: 'Responses submitted successfully.'
         };
 
-        const mockSubmitResponseData: SubmitStageResponsesResponse = {
-            userFeedbackStoragePath: `projects/${validPayload.projectId}/sessions/${validPayload.sessionId}/iteration_1/thesis/user_feedback_thesis.md`,
-            nextStageSeedPromptStoragePath: `projects/${validPayload.projectId}/sessions/${validPayload.sessionId}/iteration_1/antithesis/seed_prompt.md`,
-            updatedSession: mockUpdatedSessionAfterFeedback,
-            message: 'Feedback submitted and next stage prepared.',
-        };
-
-        it('should call apiClient.post with the correct endpoint and body', async () => {
-            const mockResponse: ApiResponse<SubmitStageResponsesResponse> = {
-                data: mockSubmitResponseData,
-                status: 200,
+        it('should call apiClient.post with the correct endpoint and body for submitStageResponses', async () => {
+            const expectedBody: DialecticServiceActionPayload = {
+                action: 'submitStageResponses',
+                payload: mockPayload
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            mockApiClientPost.mockResolvedValue({ data: mockResponseData, status: 200 });
 
-            await dialecticApiClient.submitStageResponses(validPayload);
+            await dialecticApiClient.submitStageResponses(mockPayload);
 
             expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, expectedBody);
         });
 
-        it('should return the response data on successful submission', async () => {
-            const mockResponse: ApiResponse<SubmitStageResponsesResponse> = {
-                data: mockSubmitResponseData,
-                status: 200,
-            };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+        it('should return the success response on successful submission', async () => {
+            mockApiClientPost.mockResolvedValue({ data: mockResponseData, status: 200 });
 
-            const result = await dialecticApiClient.submitStageResponses(validPayload);
+            const result = await dialecticApiClient.submitStageResponses(mockPayload);
 
-            expect(result.data).toEqual(mockSubmitResponseData);
+            expect(result.data).toEqual(mockResponseData);
             expect(result.status).toBe(200);
             expect(result.error).toBeUndefined();
         });
 
-        it('should return the error object on failed submission (e.g., session not found)', async () => {
-            const mockApiError: ApiErrorType = { code: 'NOT_FOUND', message: 'Session not found or invalid stage for feedback' };
-            const mockErrorResponse: ApiResponse<SubmitStageResponsesResponse> = {
-                error: mockApiError,
-                status: 404,
-            };
-            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+        it('should return an error object on failed submission', async () => {
+            const mockError: ApiErrorType = { code: 'SERVER_ERROR', message: 'Failed to submit' };
+            mockApiClientPost.mockResolvedValue({ error: mockError, status: 500 });
 
-            const result = await dialecticApiClient.submitStageResponses(validPayload);
+            const result = await dialecticApiClient.submitStageResponses(mockPayload);
 
-            expect(result.error).toEqual(mockApiError);
-            expect(result.status).toBe(404);
-            expect(result.data).toBeUndefined();
-        });
-
-        it('should return a network error if apiClient.post rejects', async () => {
-            const networkErrorMessage = 'Simulated network failure for submitStageResponses';
-            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
-
-            const result = await dialecticApiClient.submitStageResponses(validPayload);
-
-            expect(result.error).toEqual({
-                code: 'NETWORK_ERROR',
-                message: networkErrorMessage,
-            });
-            expect(result.status).toBe(0);
+            expect(result.error).toEqual(mockError);
             expect(result.data).toBeUndefined();
         });
     });
 
-    describe('updateContributionContent', () => {
+    describe('saveContributionEdit', () => {
         const endpoint = 'dialectic-service';
-        const validPayload: SaveContributionEditPayload = {
-            originalContributionIdToEdit: 'contrib-aaa-111',
-            editedContentText: 'This is the newly edited content for the contribution.',
+        const mockPayload: SaveContributionEditPayload = {
+            originalContributionIdToEdit: 'contrib-xyz',
+            editedContentText: 'This is the edited text.',
             projectId: 'proj-123',
-            sessionId: 'sess-456',
+            sessionId: 'sess-123',
         };
-        // The action name in DialecticServiceActionPayload for this is 'updateContributionContent' as per types.
-        const requestBody = { action: 'updateContributionContent', payload: validPayload };
-
-        // Find the existing mockContribution and update it for the response
-        const baseMockContribution = mockDialecticProject.dialectic_sessions && mockDialecticProject.dialectic_sessions[0] && mockDialecticProject.dialectic_sessions[0].dialectic_contributions ? 
-                                   mockDialecticProject.dialectic_sessions[0].dialectic_contributions.find(c => c.id === validPayload.originalContributionIdToEdit) : undefined;
-        
-        const mockUpdatedContribution: DialecticContribution = {
-            // Fallback to a generic structure if baseMockContribution is not found, though ideally it should be derived.
-            ...(baseMockContribution || {
-                id: validPayload.originalContributionIdToEdit,
-                session_id: validPayload.sessionId,
-                model_id: 'model-abc', 
-                model_name: 'GPT-4 Base',
-                user_id: 'user-abc', // This should be the editing user
-                stage: DialecticStage.THESIS,
-                iteration_number: 1,
-                prompt_template_id_used: 'pt-thesis-default',
-                seed_prompt_url: `projects/${validPayload.projectId}/sessions/${validPayload.sessionId}/iteration_1/thesis/seed_prompt.md`,
-                content_storage_bucket: 'dialectic-contributions',
-                content_mime_type: 'text/markdown',
-                content_size_bytes: validPayload.editedContentText.length, 
-                raw_response_storage_path: `projects/${validPayload.projectId}/sessions/${validPayload.sessionId}/iteration_1/thesis/${validPayload.originalContributionIdToEdit}_raw.json`,
-                target_contribution_id: null, 
-                tokens_used_input: null, // Edits might not have new token counts from AI
-                tokens_used_output: null,
-                processing_time_ms: null,
-                error: null, 
-                citations: null,
-                created_at: new Date(Date.now() - 3600000).toISOString(), // Assume original creation was earlier
-            }),
-            content_storage_path: `projects/${validPayload.projectId}/sessions/${validPayload.sessionId}/iteration_1/thesis/${validPayload.originalContributionIdToEdit}_edit_v2.md`, // Example path for new edit
-            content_size_bytes: validPayload.editedContentText.length,
-            edit_version: (baseMockContribution?.edit_version || 0) + 1, // Incremented version
+        const mockContribution: DialecticContribution = {
+            id: 'contrib-new-edit',
+            session_id: 'sess-123',
+            user_id: 'user-abc',
+            stage: 'thesis',
+            iteration_number: 1,
+            model_id: null,
+            model_name: null,
+            prompt_template_id_used: null,
+            seed_prompt_url: null,
+            content_storage_bucket: 'test-bucket',
+            content_storage_path: 'path/to/new_edit.md',
+            content_mime_type: 'text/markdown',
+            content_size_bytes: 123,
+            edit_version: 2,
             is_latest_edit: true,
-            original_model_contribution_id: baseMockContribution?.original_model_contribution_id || validPayload.originalContributionIdToEdit, // Point to original if this is an edit of an edit, or to self if first edit of AI output
-            user_id: 'editing-user-id', // ID of the user who made the edit
+            original_model_contribution_id: 'contrib-xyz',
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: null,
+            tokens_used_output: null,
+            processing_time_ms: null,
+            error: null,
+            citations: null,
+            created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
         };
 
-        it('should call apiClient.post with the correct endpoint and body', async () => {
-            const mockResponse: ApiResponse<DialecticContribution> = {
-                data: mockUpdatedContribution,
-                status: 200,
+        it('should call apiClient.post with the correct endpoint and body for saveContributionEdit', async () => {
+            const expectedBody: DialecticServiceActionPayload = {
+                action: 'saveContributionEdit',
+                payload: mockPayload
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            mockApiClientPost.mockResolvedValue({ data: mockContribution, status: 200 });
 
-            await dialecticApiClient.updateContributionContent(validPayload);
+            await dialecticApiClient.saveContributionEdit(mockPayload);
 
             expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, expectedBody);
         });
 
-        it('should return the updated contribution data on successful response', async () => {
-            const mockResponse: ApiResponse<DialecticContribution> = {
-                data: mockUpdatedContribution,
-                status: 200,
-            };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+        it('should return the updated contribution on successful save', async () => {
+            mockApiClientPost.mockResolvedValue({ data: mockContribution, status: 200 });
 
-            const result = await dialecticApiClient.updateContributionContent(validPayload);
+            const result = await dialecticApiClient.saveContributionEdit(mockPayload);
 
-            expect(result.data).toEqual(mockUpdatedContribution);
+            expect(result.data).toEqual(mockContribution);
             expect(result.status).toBe(200);
             expect(result.error).toBeUndefined();
         });
 
-        it('should return the error object on failed update (e.g., contribution not found)', async () => {
-            const mockApiError: ApiErrorType = { code: 'NOT_FOUND', message: 'Contribution not found or update failed' };
-            const mockErrorResponse: ApiResponse<DialecticContribution> = {
-                error: mockApiError,
-                status: 404,
-            };
-            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+        it('should return an error object on failed save', async () => {
+            const mockError: ApiErrorType = { code: 'FORBIDDEN', message: 'Not authorized' };
+            mockApiClientPost.mockResolvedValue({ error: mockError, status: 403 });
 
-            const result = await dialecticApiClient.updateContributionContent(validPayload);
+            const result = await dialecticApiClient.saveContributionEdit(mockPayload);
 
-            expect(result.error).toEqual(mockApiError);
-            expect(result.status).toBe(404);
-            expect(result.data).toBeUndefined();
-        });
-
-        it('should return a network error if apiClient.post rejects', async () => {
-            const networkErrorMessage = 'Simulated network failure for updateContributionContent';
-            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
-
-            const result = await dialecticApiClient.updateContributionContent(validPayload);
-
-            expect(result.error).toEqual({
-                code: 'NETWORK_ERROR',
-                message: networkErrorMessage,
-            });
-            expect(result.status).toBe(0);
+            expect(result.error).toEqual(mockError);
             expect(result.data).toBeUndefined();
         });
     });

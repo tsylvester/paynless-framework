@@ -69,6 +69,7 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers>): ActionHandlers
         startSession: overrides?.startSession || emptySpy,
         generateStageContributions: overrides?.generateStageContributions || emptySpy,
         listProjects: overrides?.listProjects || emptySpy,
+        listDomains: overrides?.listDomains || emptySpy,
         uploadProjectResourceFileHandler: overrides?.uploadProjectResourceFileHandler || emptySpy,
         listAvailableDomainOverlays: overrides?.listAvailableDomainOverlays || emptySpy,
         deleteProject: overrides?.deleteProject || emptySpy,

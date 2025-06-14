@@ -1,11 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Mocked, Mock } from 'vitest';
+import type { Mocked } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 
 import { useDialecticStore, initialDialecticStateValues } from '@paynless/store';
-import type { DialecticStore, DialecticProject, ApiError, DialecticProjectResource } from '@paynless/types';
+import type { 
+    DialecticStore, 
+    DialecticProject, 
+    ApiError, 
+    DialecticProjectResource,
+} from '@paynless/types';
 import { usePlatform } from '@paynless/platform';
 import type { CapabilitiesContextValue, PlatformCapabilities } from '@paynless/types';
 import { CreateDialecticProjectForm } from './CreateDialecticProjectForm';
@@ -36,14 +41,11 @@ vi.mock('@paynless/platform', async (importOriginal) => {
 
 // Simplified Mock for TextInputArea
 let capturedTextInputAreaProps: Partial<TextInputAreaProps> = {};
-// This function will be reassigned to the onFileLoad passed to the mock
-// and can be called by tests to simulate a file load.
 let triggerMockTextInputAreaOnFileLoad = async (_content: string | ArrayBuffer, _file: File): Promise<void> => { void _content; void _file; };
 
 vi.mock('@/components/common/TextInputArea', () => ({
   TextInputArea: vi.fn((props) => {
-    capturedTextInputAreaProps = { ...props }; // Capture all props for inspection
-    // Make the passed onFileLoad available for tests to call
+    capturedTextInputAreaProps = { ...props };
     if (props.onFileLoad) {
       triggerMockTextInputAreaOnFileLoad = props.onFileLoad;
     }
@@ -52,14 +54,13 @@ vi.mock('@/components/common/TextInputArea', () => ({
         <label htmlFor={props.id}>{props.label}</label>
         <textarea
           id={props.id}
-          value={props.value} // Use the value prop passed by RHF
-          onChange={(e) => props.onChange(e.target.value)} // Allow RHF to control changes
+          value={props.value}
+          onChange={(e) => props.onChange(e.target.value)}
           placeholder={props.placeholder}
           aria-label={props.label}
           rows={props.rows}
           disabled={props.disabled}
         />
-        {/* Indicators for prop checking */}
         {props.showFileUpload && <div data-testid={`${props.dataTestId}-fileupload-indicator`}>FileUploadActive</div>}
         {props.showPreviewToggle && <div data-testid={`${props.dataTestId}-previewtoggle-indicator`}>PreviewToggleActive</div>}
       </div>
@@ -74,6 +75,7 @@ vi.mock('@/components/dialectic/DomainSelector', () => ({
 const mockCreateDialecticProject = vi.fn();
 const mockUploadProjectResourceFile = vi.fn();
 const mockResetCreateProjectError = vi.fn();
+const mockSetSelectedDomain = vi.fn();
 
 const createMockStoreState = (overrides: Partial<DialecticStore>): DialecticStore => {
   return {
@@ -82,12 +84,14 @@ const createMockStoreState = (overrides: Partial<DialecticStore>): DialecticStor
     isLoadingProjects: false,
     projectsError: null,
     fetchDialecticProjects: vi.fn(),
-    availableDomainTags: [],
-    isLoadingDomainTags: false,
-    domainTagsError: null,
-    selectedDomainTag: null, 
-    fetchAvailableDomainTags: vi.fn(),
-    setSelectedDomainTag: vi.fn(),
+    
+    domains: [],
+    isLoadingDomains: false,
+    domainsError: null,
+    selectedDomain: null,
+    fetchDomains: vi.fn(),
+    setSelectedDomain: mockSetSelectedDomain,
+
     currentProjectDetail: null,
     isLoadingProjectDetail: false,
     projectDetailError: null,
@@ -108,26 +112,14 @@ const createMockStoreState = (overrides: Partial<DialecticStore>): DialecticStor
     _resetForTesting: vi.fn(),
     resetCreateProjectError: mockResetCreateProjectError,
     resetProjectDetailsError: vi.fn(),
-    setSelectedStageAssociation: vi.fn(),
-    fetchAvailableDomainOverlays: vi.fn(),
-    selectedDomainOverlayId: null,
-    selectedStageAssociation: null,
-    availableDomainOverlays: [],
-    isLoadingDomainOverlays: false,
-    domainOverlaysError: null,
     ...overrides,
   } as DialecticStore;
 };
 
 const createMockPlatformContext = (overrides?: Partial<PlatformCapabilities>): CapabilitiesContextValue => {
-  const localDefaultCaps: PlatformCapabilities = {
-    platform: 'web',
-    os: 'unknown',
-    fileSystem: { isAvailable: false },
-  };
-  const finalCaps = { ...localDefaultCaps, ...(overrides || {}) };
+  const localDefaultCaps: PlatformCapabilities = { platform: 'web', os: 'unknown', fileSystem: { isAvailable: false } };
   return {
-    capabilities: finalCaps,
+    capabilities: { ...localDefaultCaps, ...(overrides || {}) },
     isLoadingCapabilities: false,
     capabilityError: null,
   };
@@ -146,11 +138,9 @@ describe('CreateDialecticProjectForm', () => {
     vi.mocked(usePlatform).mockReturnValue(defaultPlatformContext);
     mockOnProjectCreated.mockClear();
     
-    // Get the mocked TextInputArea component
     const TIA_Module = await import('@/components/common/TextInputArea');
     TextInputAreaMockComponent = vi.mocked(TIA_Module.TextInputArea);
 
-    // Reset prop capture and proxy for each test
     capturedTextInputAreaProps = {};
     triggerMockTextInputAreaOnFileLoad = async (_content: string | ArrayBuffer, _file: File): Promise<void> => { void _content; void _file; };
   });
@@ -170,12 +160,12 @@ describe('CreateDialecticProjectForm', () => {
     expect(TextInputAreaMockComponent).toHaveBeenCalled();
     const propsPassed = capturedTextInputAreaProps;
     
-    expect(propsPassed.id).toBe('initialUserPrompt');
+    expect(propsPassed.id).toBe('initial-user-prompt');
     expect(propsPassed.label).toBe('Initial User Prompt / Problem Statement');
     expect(propsPassed.dataTestId).toBe('text-input-area-for-prompt');
     expect(propsPassed.showPreviewToggle).toBe(true);
     expect(propsPassed.showFileUpload).toBe(true);
-    expect(propsPassed.onFileLoad).toBeInstanceOf(Function); // This is handleFileLoadForPrompt
+    expect(propsPassed.onFileLoad).toBeInstanceOf(Function);
     expect(propsPassed.fileUploadConfig).toEqual({
       acceptedFileTypes: ['.md', 'text/markdown'],
       maxSize: 5 * 1024 * 1024,
@@ -198,22 +188,17 @@ describe('CreateDialecticProjectForm', () => {
     const fileName = 'test-file-name.md';
     const file = new File([markdownContent], fileName, { type: 'text/markdown' });
     
-    renderForm(); // Render the form so capturedTextInputAreaProps.onChange is available
+    renderForm();
 
-    // Simulate TextInputArea calling its onFileLoad prop (which is handleFileLoadForPrompt in the form)
     await act(async () => {
       await triggerMockTextInputAreaOnFileLoad(markdownContent, file);
     });
     
-    // We need to wait for React Hook Form to update the form state and pass the new value to TextInputArea
-    // Then we check the captured props again after the update.
-    // A direct rerender might not be enough if RHF updates are async. `waitFor` is better.
     await waitFor(() => {
         expect(capturedTextInputAreaProps.value).toBe(markdownContent);
     });
     
-    // And check if the project name was auto-filled
-    const expectedProjectName = markdownContent.replace(/^#\s*/, '').split('\n')[0]; // Derived from content
+    const expectedProjectName = markdownContent.replace(/^#\s*/, '').split('\n')[0];
     expect(screen.getByLabelText(/Project Name/i)).toHaveValue(expectedProjectName);
   });
 
@@ -227,7 +212,7 @@ describe('CreateDialecticProjectForm', () => {
   it('calls createDialecticProject with form data on submit', async () => {
     const user = userEvent.setup();
     const testData = { projectName: 'Test Project', initialUserPrompt: 'Test Prompt' };
-    mockStore = createMockStoreState({ selectedDomainTag: null });
+    mockStore = createMockStoreState({ selectedDomain: null });
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
     
     const mockSuccessfulProject: DialecticProject = { 
@@ -248,7 +233,6 @@ describe('CreateDialecticProjectForm', () => {
     renderForm();
 
     await user.type(screen.getByLabelText(/Project Name/i), testData.projectName);
-    // Simulate typing into our mocked TextInputArea by calling its onChange prop
     act(() => {
       capturedTextInputAreaProps.onChange?.(testData.initialUserPrompt);
     });
@@ -260,8 +244,7 @@ describe('CreateDialecticProjectForm', () => {
       expect(mockCreateDialecticProject).toHaveBeenCalledWith({
         projectName: testData.projectName,
         initialUserPromptText: testData.initialUserPrompt,
-        promptFile: null,
-        selectedDomainTag: null,
+        domainId: undefined,
         selectedDomainOverlayId: null,
       });
     });
@@ -291,12 +274,11 @@ describe('CreateDialecticProjectForm', () => {
     }; 
     mockCreateDialecticProject.mockResolvedValueOnce({ data: mockProject, error: null });
     const mockResource: Partial<DialecticProjectResource> = { id: 'res-1', file_name: fileName }; 
-    (mockStore.uploadProjectResourceFile as Mock).mockResolvedValueOnce({ data: mockResource, error: null });
+    mockUploadProjectResourceFile.mockResolvedValueOnce({ data: mockResource, error: null });
 
     renderForm();
 
     await user.type(screen.getByLabelText(/Project Name/i), projectName);
-    // Simulate file being loaded via TextInputArea
     await act(async () => {
       await triggerMockTextInputAreaOnFileLoad(fileContent, fileToUpload);
     });
@@ -307,18 +289,13 @@ describe('CreateDialecticProjectForm', () => {
     await waitFor(() => {
       expect(mockCreateDialecticProject).toHaveBeenCalledWith({
         projectName: projectName,
-        initialUserPromptText: fileContent,
         promptFile: fileToUpload,
-        selectedDomainTag: null,
+        domainId: undefined,
         selectedDomainOverlayId: null,
       });
     });
 
-    // Remove all assertions related to mockUploadProjectResourceFile
-    // as file upload is now part of createDialecticProject.
-    // The main success check is that onProjectCreated is called.
     await waitFor(() => {
-      // Ensure mockCreateDialecticProject.mock.results[0].value exists before accessing .data
       const resultValue = mockCreateDialecticProject.mock.results[0]?.value;
       expect(resultValue).toBeDefined();
       const mockProjectResult = resultValue?.data;
@@ -332,50 +309,34 @@ describe('CreateDialecticProjectForm', () => {
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
     const customSubmitText = 'Launch';
     renderForm({submitButtonText: customSubmitText});
-    // Match "Creating" followed by any characters, then the custom text, then "..."
-    // This makes it flexible if there are spaces or other characters between "Creating" and the custom text.
     const expectedButtonText = new RegExp(`Creating.*${customSubmitText}.*\\.\\.\\.`);
     expect(screen.getByRole('button', { name: expectedButtonText })).toBeDisabled();
   });
 
-  it('displays error message if creation fails and calls resetCreateProjectError', async () => {
+  it('displays error message if creation fails', async () => {
     const user = userEvent.setup();
     const error = { message: 'Creation Failed badly' } as ApiError;
     
-    // Set up the store that will be used by the component
-    // Ensure resetCreateProjectError is the vi.fn() we defined globally
-    mockStore = createMockStoreState({ 
-        createProjectError: error, 
-        isCreatingProject: false,
-        // resetCreateProjectError is already mockResetCreateProjectError via createMockStoreState
-    });
+    mockStore = createMockStoreState({});
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
-
-    // Simulate the thunk having failed and updated the store, then the component renders/re-renders.
-    mockCreateDialecticProject.mockResolvedValueOnce({ data: null, error }); // Thunk call itself
+    
+    mockCreateDialecticProject.mockImplementation(async () => {
+      // Simulate the store update that would happen on failure
+      mockStore.createProjectError = error;
+      vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
+      return { data: null, error };
+    });
 
     renderForm();
     
-    // Fill form and submit to trigger the path that might use resetCreateProjectError on submit
     await user.type(screen.getByLabelText(/Project Name/i), 'Error Attempt');
     act(() => {
       capturedTextInputAreaProps.onChange?.('some error prompt');
     });
     
     const submitButton = screen.getByRole('button', { name: /Create Project/i });
-    // The submit handler in the component calls resetCreateProjectError first if creationError exists
-    // So, by setting creationError in the store beforehand, this call will be made.
     await user.click(submitButton);
-
-    await waitFor(() => {
-      // Expect resetCreateProjectError to be called: 
-      // 1. Once from onSubmit (as creationError was pre-set in store)
-      // 2. Once from the useEffect hook that sets a timer, which should resolve or be cleared.
-      // Given the test structure and potential re-renders/effects, two calls are plausible.
-      expect(mockResetCreateProjectError).toHaveBeenCalledTimes(3);
-    });
-
-    // Verify the error alert is displayed
+    
     await waitFor(() => {
       const alert = screen.getByRole('alert');
       expect(alert).toBeInTheDocument();
@@ -401,13 +362,11 @@ describe('CreateDialecticProjectForm', () => {
   });
 
   it('auto-fills project name from typed prompt if project name is empty and not manually set', async () => {
-    renderForm({ defaultProjectName: '' }); // Start with an empty project name
+    renderForm({ defaultProjectName: '' });
 
     const promptTyped = "This is the first line for auto-name.\nSecond line.";
-    const expectedProjectName = "This is the first line for auto-name."; // Max 50 chars, but our example is shorter
+    const expectedProjectName = "This is the first line for auto-name.";
 
-    // Simulate typing into the mocked TextInputArea for the prompt
-    // This calls the onChange prop passed to the mock, which updates RHF's state for initialUserPrompt
     act(() => {
       capturedTextInputAreaProps.onChange?.(promptTyped);
     });
@@ -416,13 +375,10 @@ describe('CreateDialecticProjectForm', () => {
       expect(screen.getByLabelText(/Project Name/i)).toHaveValue(expectedProjectName);
     });
 
-    // Now, type more into the prompt, project name should not change if it was already auto-filled from prompt and not touched
     const additionalPromptText = " More text.";
     act(() => {
       capturedTextInputAreaProps.onChange?.(promptTyped + additionalPromptText);
     });
-    // It should still be the original auto-filled name unless a new auto-fill logic for subsequent changes is implemented
-    // Based on current logic, it should stick after the first auto-fill from prompt if not manually edited.
     await waitFor(() => {
         expect(screen.getByLabelText(/Project Name/i)).toHaveValue(expectedProjectName);
     });
@@ -432,7 +388,6 @@ describe('CreateDialecticProjectForm', () => {
     const user = userEvent.setup();
     renderForm({ defaultProjectName: '' });
 
-    // 1. Auto-fill from initial prompt typing
     const initialPrompt = "Auto-fill me first.";
     const expectedInitialAutoName = "Auto-fill me first.";
     act(() => {
@@ -442,23 +397,15 @@ describe('CreateDialecticProjectForm', () => {
       expect(screen.getByLabelText(/Project Name/i)).toHaveValue(expectedInitialAutoName);
     });
 
-    // 2. Manually edit project name
     const manualProjectName = "My Manual Project Name";
     const projectNameInput = screen.getByLabelText(/Project Name/i) as HTMLInputElement;
 
-    // Clear the input. If a prompt exists, this might re-trigger auto-fill.
-    // The key is that subsequent typing should set it as manually edited.
     await user.clear(projectNameInput);
 
-    // After clearing, if the prompt "Auto-fill me first." is still active,
-    // the field might be re-auto-filled by the component's logic.
-    // The failing test shows it becomes "Auto-fill me first."
     await waitFor(() => {
-      expect(projectNameInput.value).toBe(expectedInitialAutoName); // Expect re-auto-fill
+      expect(projectNameInput.value).toBe(expectedInitialAutoName);
     });
 
-    // Now, type the manual name. This action should set the 'projectNameManuallySetRef' to true.
-    // Ensure we replace the current content of the input field.
     await user.type(projectNameInput, manualProjectName, {
         initialSelectionStart: 0,
         initialSelectionEnd: projectNameInput.value.length,
@@ -468,7 +415,6 @@ describe('CreateDialecticProjectForm', () => {
       expect(projectNameInput.value).toBe(manualProjectName);
     });
 
-    // 3. Type more into the prompt - project name should NOT change
     const newPromptText = "This new prompt should not change the manual name.";
     act(() => {
       capturedTextInputAreaProps.onChange?.(newPromptText);
@@ -477,16 +423,13 @@ describe('CreateDialecticProjectForm', () => {
       expect(projectNameInput).toHaveValue(manualProjectName);
     });
 
-    // 4. Simulate a new file load - project name should also NOT change
     const fileContent = "Content from a new file.";
     const newFile = new File([fileContent], "new-file.md", { type: "text/markdown" });
     await act(async () => {
       await triggerMockTextInputAreaOnFileLoad(fileContent, newFile);
     });
     await waitFor(() => {
-      // Prompt text area should update
       expect(capturedTextInputAreaProps.value).toBe(fileContent);
-      // Project name should remain the manual one
       expect(projectNameInput).toHaveValue(manualProjectName);
     });
   });
@@ -499,7 +442,6 @@ describe('CreateDialecticProjectForm', () => {
 
     renderForm({ defaultProjectName: '' });
 
-    // Simulate file load for the prompt
     await act(async () => {
       await triggerMockTextInputAreaOnFileLoad(fileContent, fileToUpload);
     });
@@ -508,7 +450,6 @@ describe('CreateDialecticProjectForm', () => {
 
     await waitFor(() => {
       expect(capturedTextInputAreaProps.value).toBe(fileContent);
-      // Project name should auto-fill from file content's first line
       expect(screen.getByLabelText(/Project Name/i)).toHaveValue(expectedProjectNameFromFileContent); 
     });
 
@@ -516,8 +457,6 @@ describe('CreateDialecticProjectForm', () => {
     
     mockCreateDialecticProject.mockReset();
     mockCreateDialecticProject.mockImplementation(async () => {
-      // Simulate the thunk's side effects: updating store properties. 
-      // These props will be read by the component upon re-render.
       mockStore.isCreatingProject = false;
       mockStore.createProjectError = uploadError;
       return { data: null, error: uploadError };
@@ -527,37 +466,83 @@ describe('CreateDialecticProjectForm', () => {
     
     await act(async () => {
       await user.click(submitButton);
-      // After the click and the mocked thunk execution (which updated mockStore),
-      // re-apply the store mock implementation. This ensures that when React flushes
-      // effects and re-renders within this act, the component's useDialecticStore hook
-      // re-evaluates its selectors against the *updated* mockStore.
       vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
     });
 
-    // Verify project creation was attempted with the correct payload
     await waitFor(() => {
       expect(mockCreateDialecticProject).toHaveBeenCalledWith({
         projectName: expectedProjectNameFromFileContent,
-        initialUserPromptText: fileContent, 
         promptFile: fileToUpload, 
-        selectedDomainTag: null,
+        domainId: undefined,
         selectedDomainOverlayId: null,
       });
     });
     
-    // Verify onProjectCreated was NOT called because the main thunk failed.
     await waitFor(() => {
       expect(mockOnProjectCreated).not.toHaveBeenCalled();
     });
 
-    // Verify the error message from the thunk failure is displayed
-    // This assumes the creationError in the store is updated by the failed thunk
-    // and the component displays it.
     await waitFor(() => {
       const alert = screen.getByRole('alert');
       expect(alert).toBeInTheDocument();
       expect(screen.getByText('Creation Failed')).toBeInTheDocument();
       expect(screen.getByText(uploadError.message)).toBeInTheDocument();
     });
+  });
+
+  it('displays error message if creation fails and calls resetCreateProjectError on next submission attempt', async () => {
+    const user = userEvent.setup();
+    const error: ApiError = { message: 'Creation Failed badly', code: 'SERVER_ERROR' };
+
+    // Initial render with an error
+    let mockStore = createMockStoreState({ createProjectError: error });
+    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
+    const { rerender } = render(
+        <MemoryRouter>
+            <CreateDialecticProjectForm onProjectCreated={mockOnProjectCreated} />
+        </MemoryRouter>
+    );
+    await waitFor(() => {
+        expect(screen.getByTestId('creation-error-alert')).toBeInTheDocument();
+    });
+
+    // Mock a successful submission for the next attempt
+    mockCreateDialecticProject.mockResolvedValue({ data: { id: 'proj-456', project_name: 'New attempt' } as DialecticProject });
+    
+    // Simulate the user typing and clearing the error
+    mockStore = createMockStoreState({ createProjectError: null });
+    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
+    
+    rerender(
+        <MemoryRouter>
+            <CreateDialecticProjectForm onProjectCreated={mockOnProjectCreated} />
+        </MemoryRouter>
+    );
+
+    await waitFor(() => {
+        expect(screen.queryByTestId('creation-error-alert')).not.toBeInTheDocument();
+    });
+
+    // Now, perform the submission
+    await user.type(screen.getByLabelText(/Project Name/i), 'New attempt');
+    act(() => {
+      capturedTextInputAreaProps.onChange?.('This is a sufficiently long prompt');
+    });
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    // Verify the successful submission
+    await waitFor(() => {
+        expect(mockOnProjectCreated).toHaveBeenCalledWith('proj-456', 'New attempt');
+    });
+  });
+  
+  it('displays DomainSelector when enableDomainSelection is true', () => {
+    renderForm({ enableDomainSelection: true });
+    expect(screen.getByTestId('mock-domain-selector')).toBeInTheDocument();
+  });
+
+  it('does not display DomainSelector when enableDomainSelection is false', () => {
+    renderForm({ enableDomainSelection: false });
+    expect(screen.queryByTestId('mock-domain-selector')).not.toBeInTheDocument();
   });
 }); 

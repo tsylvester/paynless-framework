@@ -331,12 +331,12 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅] 1.0.3.D.1.2` Update the `DomainSelector` component's implementation to reflect this logic. (GREEN)
     *   `[✅] 1.0.3.D.1.3` Run unit tests for `DomainSelector`. (GREEN)
 *   `[✅] 1.0.3.D.2 [UI]` **NEW** Create `DomainOverlayDescriptionSelector` UI Component.
-    *   `[ ] 1.0.3.D.2.1 [TEST-UNIT]` Write unit tests for the `DomainOverlayDescriptionSelector` component. (RED)
+    *   `[✅] 1.0.3.D.2.1 [TEST-UNIT]` Write unit tests for the `DomainOverlayDescriptionSelector` component. (GREEN)
         *   It displays `description`s (and their associated `id`s) for the currently selected `domainTag` and stage, using the `selectedOverlay(selectedDomainTag)` selector.
         *   If multiple options exist for the stage and domainTag, the user can choose which specific option they want from the `DomainOverlayDescriptionSelector` component. 
         *   On selection, it dispatches `setSelectedDomainOverlayId(selectedOverlayId)`.
     *   `[✅] 1.0.3.D.2.2` Implement the `DomainOverlayDescriptionSelector` component. (GREEN)
-    *   `[ ] 1.0.3.D.2.3 [TEST-UNIT]` Run tests.
+    *   `[✅] 1.0.3.D.2.3 [TEST-UNIT]` Run tests. (GREEN)
 *   `[✅] 1.0.4 [RLS]` Define RLS for `system_prompts`.
     *   `[✅] 1.0.4.1 [TEST-INT]` RLS tests written and passing. (GREEN)
     *   `[✅] 1.0.4.2` Implemented RLS: Authenticated users can read active prompts (via `authenticated` role). Write/update operations restricted to `service_role` (e.g., for migrations, seed data scripts). Future admin role functionality deferred. (GREEN)
@@ -797,14 +797,14 @@ The implementation plan uses the following labels to categorize work steps:
         *   When saving new AI contributions, the `seed_prompt_url` field in `dialectic_contributions` is set to this path.
         *   New AI contributions are saved with `edit_version = 1`, `is_latest_edit = TRUE`, `original_model_contribution_id = NULL` (or points to self).
     *   `[✅] 1.2.Y.4.2 [TEST-INT]` Update/Write integration tests for these generation actions to ensure they correctly use the seed prompt fetched from the specified storage path.
-*   `[ ] 1.2.Y.5 [API/STORE]` Add/Update API Client Methods and Store Thunks:
-    *   `[ ] 1.2.Y.5.1 [API]` Define necessary request/response types (e.g., `SaveContributionEditPayload`, `SaveContributionEditResponse`, `SubmitStageResponsesPayload`, `SubmitStageResponsesResponse`) in `packages/types/src/dialectic.types.ts`.
-    *   `[ ] 1.2.Y.5.2 [API]` Add `saveContributionEdit(payload: SaveContributionEditPayload): Promise<ApiResponse<DialecticContribution>>` and `submitStageResponses(payload: SubmitStageResponsesPayload): Promise<ApiResponse<SubmitStageResponsesResponse>>` to `DialecticAPIInterface`.
-    *   `[ ] 1.2.Y.5.3 [TEST-UNIT]` Write unit tests for these new API adapter methods in `packages/api/src/dialectic.api.test.ts`.
-    *   `[ ] 1.2.Y.5.4` Implement the new adapter methods in `packages/api/src/dialectic.api.ts`.
-    *   `[ ] 1.2.Y.5.5 [STORE]` Define new state properties in `DialecticStateValues` if needed (e.g., for loading/error states of these new actions).
-    *   `[ ] 1.2.Y.5.6 [STORE]` Implement new async thunks in `dialecticStore.ts` for `saveContributionEdit` and `submitStageResponses`. Ensure they call the API, handle loading states, manage errors, and update the `currentProjectDetail.sessions[...].contributions` and session status appropriately (e.g., by refetching or strategically merging new/updated contribution data).
-    *   `[ ] 1.2.Y.5.7 [TEST-UNIT]` Write unit tests for these new store thunks and any associated reducer logic.
+*   `[✅] 1.2.Y.5 [API/STORE]` Add/Update API Client Methods and Store Thunks:
+    *   `[✅] 1.2.Y.5.1 [API]` Define necessary request/response types (e.g., `SaveContributionEditPayload`, `SaveContributionEditResponse`, `SubmitStageResponsesPayload`, `SubmitStageResponsesResponse`) in `packages/types/src/dialectic.types.ts`.
+    *   `[✅] 1.2.Y.5.2 [API]` Add `saveContributionEdit(payload: SaveContributionEditPayload): Promise<ApiResponse<DialecticContribution>>` and `submitStageResponses(payload: SubmitStageResponsesPayload): Promise<ApiResponse<SubmitStageResponsesResponse>>` to `DialecticAPIInterface`.
+    *   `[✅] 1.2.Y.5.3 [TEST-UNIT]` Write unit tests for these new API adapter methods in `packages/api/src/dialectic.api.test.ts`.
+    *   `[✅] 1.2.Y.5.4` Implement the new adapter methods in `packages/api/src/dialectic.api.ts`.
+    *   `[✅] 1.2.Y.5.5 [STORE]` Define new state properties in `DialecticStateValues` if needed (e.g., for loading/error states of these new actions).
+    *   `[✅] 1.2.Y.5.6 [STORE]` Implement new async thunks in `dialecticStore.ts` for `saveContributionEdit` and `submitStageResponses`. Ensure they call the API, handle loading states, manage errors, and update the `currentProjectDetail.sessions[...].contributions` and session status appropriately (e.g., by refetching or strategically merging new/updated contribution data).
+    *   `[✅] 1.2.Y.5.7 [TEST-UNIT]` Write unit tests for these new store thunks and any associated reducer logic.
 *   `[ ] 1.2.Y.6 [GITHUB]` Update GitHub Export Logic (Referencing Sections `1.6`, `2.5`, `3.5` for context and full file path structure):
     *   `[ ] 1.2.Y.6.1` When exporting AI-generated contribution files (e.g., `{repo_root}/.../{project_name_slug}/session_{session_id_short}/iteration_{N}/{stage_number}_{stage_slug}/{model_name_slug}_{stage_suffix}.md`):
         *   The content for the exported file must be from the `dialectic_contributions` row that has `is_latest_edit = TRUE` for that specific model's contribution line in that stage/iteration.

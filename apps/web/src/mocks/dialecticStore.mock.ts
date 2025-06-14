@@ -134,8 +134,23 @@ export const mockedUseDialecticStoreHookLogic = <TResult,>(
   return selector ? selector(state) : state;
 };
 (mockedUseDialecticStoreHookLogic as unknown as Record<string, unknown>)['getState'] = getDialecticStoreState;
+(mockedUseDialecticStoreHookLogic as unknown as Record<string, unknown>)['setState'] = (
+    newValues: Partial<DialecticStore> | ((state: DialecticStore) => Partial<DialecticStore>),
+    replace = false,
+  ) => {
+    const state = getDialecticStoreState();
+    const resolvedNewValues = typeof newValues === 'function' ? newValues(state) : newValues;
+  
+    if (replace) {
+      // For replacement, we'd need a more complex implementation to reset to initial + apply new values,
+      // but for most test cases, merging is sufficient.
+      Object.assign(internalMockDialecticStoreState, { ...initialDialecticStateValues, ...resolvedNewValues });
+    } else {
+      Object.assign(internalMockDialecticStoreState, resolvedNewValues);
+    }
+};
 
-// 7. Export the mock hook itself
+// 7. Export the mock hook itself and other utilities
 export const useDialecticStore = mockedUseDialecticStoreHookLogic;
 
 // 8. State Helper for tests to set values
