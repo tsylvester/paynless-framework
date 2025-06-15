@@ -2,7 +2,7 @@ import { assertEquals, assertExists, assertObjectMatch, assertRejects, assert } 
 import { spy, stub, type Stub, returnsNext } from "jsr:@std/testing@0.225.1/mock";
 import { generateStageContributions } from "./generateContribution.ts";
 import { 
-    DialecticStage,
+    type DialecticStage,
     type GenerateStageContributionsPayload, 
     type GenerateStageContributionsSuccessResponse,
     type DialecticContribution,
@@ -20,6 +20,28 @@ import type {
 import * as pathUtilsModule from "../_shared/path_utils.ts";
 import { createMockSupabaseClient, type MockSupabaseClientSetup } from "../_shared/supabase.mock.ts";
 
+const mockThesisStage: DialecticStage = {
+    id: 'stage-thesis',
+    slug: 'thesis',
+    display_name: 'Thesis',
+    description: 'The first stage',
+    created_at: new Date().toISOString(),
+    default_system_prompt_id: 'prompt-1',
+    expected_output_artifacts: {},
+    input_artifact_rules: {}
+};
+
+const mockSynthesisStage: DialecticStage = {
+    id: 'stage-synthesis',
+    slug: 'synthesis',
+    display_name: 'Synthesis',
+    description: 'The final stage',
+    created_at: new Date().toISOString(),
+    default_system_prompt_id: 'prompt-3',
+    expected_output_artifacts: {},
+    input_artifact_rules: {}
+};
+
 // Removed global logger spies:
 // const loggerSpyInfo = spy(logger, 'info');
 // const loggerSpyError = spy(logger, 'error');
@@ -35,7 +57,7 @@ Deno.test("generateStageContributions - Happy Path (Single Model, Synthesis Stag
     const mockProjectId = "test-project-id";
     const mockChatId = "test-chat-id";
     const mockIterationNumber = 1;
-    const mockStageSlug = DialecticStage.SYNTHESIS;
+    const mockStageSlug = mockSynthesisStage;
     const mockSeedPrompt = "This is the seed prompt for the synthesis stage.";
     const mockModelProviderId = "test-ai-provider-id";
     const mockApiIdentifier = "test-api-identifier";
@@ -46,9 +68,9 @@ Deno.test("generateStageContributions - Happy Path (Single Model, Synthesis Stag
     const mockContentType = "text/markdown";
     const mockFileExtension = ".md";
 
-    const mockSeedPromptPath = `projects/${mockProjectId}/sessions/${mockSessionId}/iteration_${mockIterationNumber}/${mockStageSlug}/seed_prompt.md`;
-    const mockContentStoragePath = `projects/${mockProjectId}/sessions/${mockSessionId}/contributions/${mockContributionId}/${mockStageSlug}${mockFileExtension}`;
-    const mockRawResponseStoragePath = `projects/${mockProjectId}/sessions/${mockSessionId}/contributions/${mockContributionId}/raw_${mockStageSlug}_response.json`;
+    const mockSeedPromptPath = `projects/${mockProjectId}/sessions/${mockSessionId}/iteration_${mockIterationNumber}/${mockStageSlug.slug}/seed_prompt.md`;
+    const mockContentStoragePath = `projects/${mockProjectId}/sessions/${mockSessionId}/contributions/${mockContributionId}/${mockStageSlug.slug}${mockFileExtension}`;
+    const mockRawResponseStoragePath = `projects/${mockProjectId}/sessions/${mockSessionId}/contributions/${mockContributionId}/raw_${mockStageSlug.slug}_response.json`;
     const mockFileSize = 100;
 
     const mockPayload: GenerateStageContributionsPayload = {
@@ -65,12 +87,12 @@ Deno.test("generateStageContributions - Happy Path (Single Model, Synthesis Stag
                     data: [{
                         id: mockSessionId,
                         project_id: mockProjectId,
-                        status: `pending_${mockStageSlug}`,
+                        status: `pending_${mockStageSlug.slug}`,
                         associated_chat_id: mockChatId,
                         selected_model_catalog_ids: [mockModelProviderId],
                     }],
                 },
-                update: { data: [{ id: mockSessionId, status: `${mockStageSlug}_generation_complete` }] }
+                update: { data: [{ id: mockSessionId, status: `${mockStageSlug.slug}_generation_complete` }] }
             },
             'ai_providers': {
                 select: {
@@ -121,14 +143,14 @@ Deno.test("generateStageContributions - Happy Path (Single Model, Synthesis Stag
         assertExists(result.data);
         assertEquals(result.data.contributions.length, 1);
         assertEquals(result.data.contributions[0].id, mockContributionId);
-        assertEquals(result.data.status, `${mockStageSlug}_generation_complete`);
+        assertEquals(result.data.status, `${mockStageSlug.slug}_generation_complete`);
 
         const contributionInsertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_contributions', 'insert');
         assertEquals(contributionInsertSpy?.callCount, 1);
         const insertedData = contributionInsertSpy?.callsArgs[0][0] as unknown as Database['public']['Tables']['dialectic_contributions']['Insert'];
         assertObjectMatch(insertedData, {
             seed_prompt_url: mockSeedPromptPath,
-            stage: mockStageSlug,
+            stage: mockStageSlug.slug,
             iteration_number: mockIterationNumber,
             edit_version: 1,
             is_latest_edit: true,
@@ -137,7 +159,7 @@ Deno.test("generateStageContributions - Happy Path (Single Model, Synthesis Stag
 
         const sessionUpdateSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_sessions', 'update');
         assertEquals(sessionUpdateSpy?.callCount, 1);
-        assertObjectMatch(sessionUpdateSpy?.callsArgs[0][0] as any, { status: `${mockStageSlug}_generation_complete` });
+        assertObjectMatch(sessionUpdateSpy?.callsArgs[0][0] as any, { status: `${mockStageSlug.slug}_generation_complete` });
 
     } finally {
         localLoggerInfo.restore();
@@ -183,7 +205,7 @@ Deno.test("generateStageContributions - Multiple Models (some success, some fail
 
     const mockPayload: GenerateStageContributionsPayload = {
         sessionId: mockSessionId,
-        stageSlug: DialecticStage.THESIS,
+        stageSlug: mockThesisStage,
         iterationNumber: 1,
         chatId: mockChatId,
     };
@@ -298,7 +320,7 @@ Deno.test("generateStageContributions - All Models Fail", async () => {
 
     const mockPayload: GenerateStageContributionsPayload = {
         sessionId: mockSessionId,
-        stageSlug: DialecticStage.THESIS,
+        stageSlug: mockThesisStage,
         iterationNumber: 1,
         chatId: mockChatId,
     };

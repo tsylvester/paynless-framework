@@ -2,7 +2,7 @@ import { assertEquals, assertExists, assertRejects, assert } from "https://deno.
 import { spy, stub, type Stub, returnsNext } from "jsr:@std/testing@0.225.1/mock";
 import { generateStageContributions } from "./generateContribution.ts";
 import { 
-    DialecticStage,
+    type DialecticStage,
     type GenerateStageContributionsPayload, 
     type UnifiedAIResponse,
     type FailedAttemptError
@@ -15,6 +15,16 @@ import type {
     DownloadStorageResult
 } from "../_shared/supabase_storage_utils.ts";
 
+const mockStage: DialecticStage = {
+    id: 'stage-thesis',
+    slug: 'thesis',
+    display_name: 'Thesis',
+    description: 'The first stage',
+    created_at: new Date().toISOString(),
+    default_system_prompt_id: 'prompt-1',
+    expected_output_artifacts: {},
+    input_artifact_rules: {}
+};
 
 Deno.test("generateStageContributions - Failure during content upload to storage", async () => {
     const mockAuthToken = "auth-token-upload-fail";
@@ -26,7 +36,7 @@ Deno.test("generateStageContributions - Failure during content upload to storage
 
     const mockPayload: GenerateStageContributionsPayload = { 
         sessionId: mockSessionId,
-        stageSlug: DialecticStage.THESIS,
+        stageSlug: mockStage.slug,
         iterationNumber: 1,
     };
 
@@ -136,7 +146,7 @@ Deno.test("generateStageContributions - Failure during raw response upload (shou
 
     const mockPayload: GenerateStageContributionsPayload = { 
         sessionId: mockSessionId,
-        stageSlug: DialecticStage.THESIS,
+        stageSlug: mockStage.slug,
         iterationNumber: 1,
     };
 
@@ -254,7 +264,7 @@ Deno.test("generateStageContributions - getFileMetadata returns error (should pr
 
     const mockPayload: GenerateStageContributionsPayload = { 
         sessionId: mockSessionId,
-        stageSlug: DialecticStage.THESIS,
+        stageSlug: mockStage.slug,
         iterationNumber: 1,
     };
 
@@ -362,7 +372,7 @@ Deno.test("generateStageContributions - getFileMetadata returns no size (should 
 
     const mockPayload: GenerateStageContributionsPayload = { 
         sessionId: mockSessionId,
-        stageSlug: DialecticStage.THESIS,
+        stageSlug: mockStage.slug,
         iterationNumber: 1,
     };
 
@@ -473,7 +483,7 @@ Deno.test("generateStageContributions - DB insertion for contribution fails (ver
 
     const mockPayload: GenerateStageContributionsPayload = { 
         sessionId: mockSessionId,
-        stageSlug: DialecticStage.THESIS,
+        stageSlug: mockStage.slug,
         iterationNumber: 1,
     };
 
@@ -586,7 +596,7 @@ Deno.test("generateStageContributions - Final session status update fails (criti
 
     const mockPayload: GenerateStageContributionsPayload = { 
         sessionId: mockSessionId,
-        stageSlug: DialecticStage.THESIS,
+        stageSlug: mockStage.slug,
         iterationNumber: 1,
     };
 

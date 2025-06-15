@@ -1,5 +1,5 @@
 import { assertEquals, assertExists, assert, assertStringIncludes } from "https://deno.land/std@0.218.2/testing/asserts.ts";
-import { spy, type Spy, returnsNext, stub } from "https://deno.land/std@0.218.2/testing/mock.ts";
+import { spy } from "https://deno.land/std@0.218.2/testing/mock.ts";
 import { User, type SupabaseClient } from 'npm:@supabase/supabase-js@^2';
 
 // Import shared mock utilities
@@ -7,29 +7,14 @@ import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
 } from '../_shared/supabase.mock.ts';
-import { createMockDialecticService, type IDialecticService } from '../_shared/dialectic.mock.ts'; // Corrected import for IDialecticService
-import type { ServiceError } from '../_shared/types.ts';
-import type { ILogger } from '../_shared/types.ts';
-
-// Import functions to create clients from the shared auth.ts
-import { createSupabaseClient, createSupabaseAdminClient } from '../_shared/auth.ts';
-
 import {
-  DialecticStage,
-  type DialecticSession,
-  type DialecticContribution,
+  type DialecticStage,
   type SubmitStageResponsesPayload,
-  type SubmitStageResponsesResponse,
-  type DialecticFeedback, // Added for feedback record assertions
-  type DialecticProject,
 } from './dialectic.interface.ts';
 
 // Import the specific action handler we are testing
 import { submitStageResponses } from './submitStageResponses.ts';
-import * as storageUtils from '../_shared/supabase_storage_utils.ts';
 import { logger } from "../_shared/logger.ts";
-
-const TEST_STORAGE_BUCKET = Deno.env.get('CONTENT_STORAGE_BUCKET') || 'dialectic-contributions';
 
 Deno.test('submitStageResponses', async (t) => {
   const testUserId = crypto.randomUUID();
@@ -41,29 +26,47 @@ Deno.test('submitStageResponses', async (t) => {
   const testProcessTemplateId = crypto.randomUUID();
   const testThesisStageId = crypto.randomUUID();
   const testAntithesisStageId = crypto.randomUUID();
+  const testParalysisStageId = crypto.randomUUID();
   const mockUser = { id: testUserId } as User;
 
-  const mockThesisStage = {
+  const mockThesisStage: DialecticStage = {
       id: testThesisStageId,
-      slug: DialecticStage.THESIS,
+      slug: 'thesis',
       display_name: 'Thesis',
       default_system_prompt_id: 'prompt-id-thesis',
       input_artifact_rules: {},
+      created_at: new Date().toISOString(),
+      description: null,
+      expected_output_artifacts: {},
   };
 
-  const mockAntithesisStage = {
+  const mockAntithesisStage: DialecticStage = {
       id: testAntithesisStageId,
-      slug: DialecticStage.ANTITHESIS,
+      slug: 'antithesis',
       display_name: 'Antithesis',
       default_system_prompt_id: testSystemPromptId, // This is the one we'll fetch
       input_artifact_rules: { sources: [{ type: 'contribution', stage_slug: 'thesis' }, { type: 'feedback', stage_slug: 'thesis'}] },
+      created_at: new Date().toISOString(),
+      description: null,
+      expected_output_artifacts: {},
+  };
+
+  const mockParalysisStage: DialecticStage = {
+    id: testParalysisStageId,
+    slug: 'paralysis',
+    display_name: 'Paralysis',
+    default_system_prompt_id: testSystemPromptId,
+    input_artifact_rules: {},
+    created_at: new Date().toISOString(),
+    description: null,
+    expected_output_artifacts: {},
   };
 
   await t.step('1.1 Successfully processes responses and transitions to the next stage based on DB', async () => {
     const systemSettingsContent = JSON.stringify({ user_objective: "A test objective" });
     const systemSettingsPath = `projects/${testProjectId}/sessions/${testSessionId}/iteration_1/0_seed_inputs/system_settings.json`;
     const priorStageFeedbackContent = "This is some mock feedback from the prior thesis stage.";
-    const priorStageFeedbackPath = `projects/${testProjectId}/sessions/${testSessionId}/iteration_1/${DialecticStage.THESIS}/user_feedback_${DialecticStage.THESIS}.md`;
+    const priorStageFeedbackPath = `projects/${testProjectId}/sessions/${testSessionId}/iteration_1/${mockThesisStage.slug}/user_feedback_${mockThesisStage.slug}.md`;
     
     const mockUploadToStorage = spy((client: SupabaseClient, bucket: string, path: string, content: any, options: any) => {
         return Promise.resolve({ path: path as string, error: null });
@@ -88,7 +91,7 @@ Deno.test('submitStageResponses', async (t) => {
     // 1.1.1 Arrange: Setup payload, mock DB data, and stub return values
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
-      currentStageSlug: DialecticStage.THESIS,
+      currentStageSlug: mockThesisStage.slug,
       currentIterationNumber: 1,
       responses: [
         { originalContributionId: testContributionId1, responseText: "Response to first contribution" },
@@ -104,7 +107,7 @@ Deno.test('submitStageResponses', async (t) => {
             project: { id: testProjectId, user_id: testUserId, process_template_id: testProcessTemplateId },
             stage: mockThesisStage
           }] },
-          update: { data: [{ id: testSessionId, status: `pending_${DialecticStage.ANTITHESIS}` }] },
+          update: { data: [{ id: testSessionId, status: `pending_${mockAntithesisStage.slug}` }] },
         },
         dialectic_feedback: {
           insert: { data: mockPayload.responses.map(r => ({ ...r, id: crypto.randomUUID(), session_id: testSessionId, user_id: testUserId })) }
@@ -153,7 +156,7 @@ Deno.test('submitStageResponses', async (t) => {
 
     // 1.1.9. Updates dialectic_sessions table correctly
     assertExists(data.updatedSession?.status);
-    assert(data.updatedSession.status.includes(`pending_${DialecticStage.ANTITHESIS}`), "Session status should be updated to pending_antithesis");
+    assert(data.updatedSession.status.includes(`pending_${mockAntithesisStage.slug}`), "Session status should be updated to pending_antithesis");
     
     // 1.1.2 & 1.1.3. Creates dialectic_feedback records
     assertEquals(data.feedbackRecords.length, 2, "Expected two feedback records to be created");
@@ -188,13 +191,13 @@ Deno.test('submitStageResponses', async (t) => {
       );
     }
 
-    assert(data?.nextStageSeedPromptPath?.includes(DialecticStage.ANTITHESIS), "Next stage seed path should be for antithesis");
+    assert(data?.nextStageSeedPromptPath?.includes(mockAntithesisStage.slug), "Next stage seed path should be for antithesis");
   });
 
   await t.step('1.2 Successfully processes responses for the final stage (no next transition)', async () => {
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
-      currentStageSlug: DialecticStage.SYNTHESIS, // Assume this is the last stage for this test
+      currentStageSlug: mockParalysisStage.slug, // Assume this is the last stage for this test
       currentIterationNumber: 1,
       responses: [
         { originalContributionId: testContributionId1, responseText: "Final feedback on synthesis" },
@@ -203,7 +206,7 @@ Deno.test('submitStageResponses', async (t) => {
 
     const mockFinalStage = {
         id: crypto.randomUUID(),
-        slug: DialecticStage.SYNTHESIS,
+        slug: mockParalysisStage.slug,
         display_name: 'Synthesis',
         default_system_prompt_id: null,
         input_artifact_rules: {}
@@ -261,30 +264,27 @@ Deno.test('submitStageResponses', async (t) => {
     assertEquals(data.nextStageSeedPromptPath, null, "Next stage seed path should be null as the process is complete");
   });
 
-  await t.step('2.1 Fails if the user is not authenticated (JWT missing)', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: DialecticStage.THESIS, currentIterationNumber: 1, responses: [{originalContributionId: 'id', responseText: 'text'}] };
-    const mockDbConfig: MockSupabaseDataConfig = {
-      genericMockResults: {
-        dialectic_sessions: {
-          select: { data: [{ 
-            id: testSessionId, 
-            project: { id: testProjectId, user_id: 'any-user-id' },
-            stage: mockThesisStage
-          }] }
-        },
-      }
-    };
-    const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, null as any, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})) });
+  await t.step('2.1 Fails if the user is not authenticated', async () => {
+    // 2.1.1 Arrange
+    const mockPayload: SubmitStageResponsesPayload = { sessionId: crypto.randomUUID(), currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [{ originalContributionId: 'id', responseText: 'text'}] };
+    const mockSupabase = createMockSupabaseClient(testUserId, {});
 
-    assertEquals(status, 500);
-    assertStringIncludes(error?.message || '', 'An unexpected error occurred.');
+    // 2.1.2 Act
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, null as unknown as User, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})) });
+
+    // 2.1.3 Assert
+    assertEquals(status, 401);
+    assertExists(error);
+    assertEquals(data, undefined);
+    assertStringIncludes(error.message, 'User not authenticated');
   });
 
-  await t.step('2.2 Fails if authenticated user does not have permission for the session', async () => {
+  await t.step('2.2 Fails if the user does not own the project', async () => {
+    // 2.2.1 Arrange
+    const otherUserId = crypto.randomUUID();
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
-      currentStageSlug: DialecticStage.THESIS,
+      currentStageSlug: mockThesisStage.slug,
       currentIterationNumber: 1,
       responses: [{ originalContributionId: 'id', responseText: 'text' }]
     };
@@ -292,7 +292,7 @@ Deno.test('submitStageResponses', async (t) => {
       genericMockResults: {
         dialectic_sessions: { select: { data: [{ 
             id: testSessionId,
-            project: { id: testProjectId, user_id: 'a-different-user-id' }, // Different user
+            project: { id: testProjectId, user_id: otherUserId }, // Different user
             stage: mockThesisStage
         }] } },
       }
@@ -307,7 +307,7 @@ Deno.test('submitStageResponses', async (t) => {
   });
 
   await t.step('3.1 Fails with appropriate error for missing sessionId', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { currentStageSlug: DialecticStage.THESIS, currentIterationNumber: 1, responses: [{ originalContributionId: 'id', responseText: 'text'}] } as any;
+    const mockPayload: SubmitStageResponsesPayload = { currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [{ originalContributionId: 'id', responseText: 'text'}] } as any;
     const mockSupabase = createMockSupabaseClient(testUserId, {});
     const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})) });
     
@@ -317,7 +317,7 @@ Deno.test('submitStageResponses', async (t) => {
   });
 
   await t.step('3.2 Fails if sessionId does not correspond to an existing session', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: crypto.randomUUID(), currentStageSlug: DialecticStage.THESIS, currentIterationNumber: 1, responses: [{ originalContributionId: 'id', responseText: 'text'}] };
+    const mockPayload: SubmitStageResponsesPayload = { sessionId: crypto.randomUUID(), currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [{ originalContributionId: 'id', responseText: 'text'}] };
     const mockDbConfig: MockSupabaseDataConfig = {
       genericMockResults: {
         dialectic_sessions: { select: { data: null, error: { message: "Not found", code: "PGRST116" } as any } }
@@ -334,17 +334,62 @@ Deno.test('submitStageResponses', async (t) => {
   });
 
   await t.step('3.3 Fails for missing or invalid currentStageSlug', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: 'invalid-stage' as any, currentIterationNumber: 1, responses: [{ originalContributionId: 'id', responseText: 'text'}] };
-    const mockSupabase = createMockSupabaseClient(testUserId, {});
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})) });
-    
+    // 3.3.1 Arrange
+    const mockPayload: SubmitStageResponsesPayload = {
+      sessionId: testSessionId,
+      currentStageSlug: 'invalid-stage', // Deliberately wrong slug
+      currentIterationNumber: 1,
+      responses: [{ originalContributionId: 'id', responseText: 'text' }],
+    };
+
+    // This mock MUST return a session, so the function can then check
+    // for the slug mismatch. The error isn't "not found", it's "bad request".
+    const mockDbConfig: MockSupabaseDataConfig = {
+      genericMockResults: {
+        dialectic_sessions: {
+          select: {
+            data: [{
+              id: testSessionId,
+              project: {
+                id: testProjectId,
+                user_id: testUserId,
+                process_template_id: testProcessTemplateId,
+              },
+              stage: mockThesisStage, // Correct stage is 'thesis'
+            }],
+            error: null,
+          },
+        },
+      },
+    };
+
+    const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
+    const mockDependencies = {
+        logger,
+        uploadToStorage: async () => { throw new Error('should not be called'); },
+        downloadFromStorage: async () => { throw new Error('should not be called'); },
+    };
+
+    // 3.3.2 Act
+    const { data, error, status } = await submitStageResponses(
+      mockPayload,
+      mockSupabase.client as unknown as SupabaseClient,
+      mockUser,
+      mockDependencies,
+    );
+
+    // 3.3.3 Assert
     assertEquals(status, 400);
     assertExists(error);
-    assertStringIncludes(error.message, "Invalid currentStageSlug");
+    assert(
+      error.message.includes('Mismatched stage slug'),
+      `Expected error message to include 'Mismatched stage slug', but got: "${error.message}"`,
+    );
+    assertEquals(data, undefined);
   });
 
   await t.step('3.4 Fails for missing currentIterationNumber', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: DialecticStage.THESIS, responses: [{ originalContributionId: 'id', responseText: 'text'}] } as any;
+    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, responses: [{ originalContributionId: 'id', responseText: 'text'}] } as any;
     const mockSupabase = createMockSupabaseClient(testUserId, {});
     const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})) });
     
@@ -354,7 +399,7 @@ Deno.test('submitStageResponses', async (t) => {
   });
 
   await t.step('3.5 Fails if responses array is empty or not provided', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: DialecticStage.THESIS, currentIterationNumber: 1, responses: [] };
+    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [] };
     const mockSupabase = createMockSupabaseClient(testUserId, {});
     const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})) });
     
@@ -364,7 +409,7 @@ Deno.test('submitStageResponses', async (t) => {
   });
 
   await t.step('3.6 Fails if items in responses array miss originalContributionId or responseText', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: DialecticStage.THESIS, currentIterationNumber: 1, responses: [{ originalContributionId: testContributionId1 } as any] };
+    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [{ originalContributionId: testContributionId1 } as any] };
     const mockSupabase = createMockSupabaseClient(testUserId, {});
     const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})) });
     
@@ -374,7 +419,7 @@ Deno.test('submitStageResponses', async (t) => {
   });
 
   await t.step('3.7 Fails if an originalContributionId in a response is not found or not linked to the session', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: DialecticStage.THESIS, currentIterationNumber: 1, responses: [{ originalContributionId: 'non-existent-id', responseText: 'text' }] };
+    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [{ originalContributionId: 'non-existent-id', responseText: 'text' }] };
     const mockDbConfig: MockSupabaseDataConfig = {
       genericMockResults: {
         dialectic_sessions: { select: { data: [{ 
@@ -395,7 +440,7 @@ Deno.test('submitStageResponses', async (t) => {
   });
 
   await t.step('4.1 Handles failure when fetching the current DialecticSession', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: DialecticStage.THESIS, currentIterationNumber: 1, responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
+    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
     const mockDbConfig: MockSupabaseDataConfig = {
       genericMockResults: {
         dialectic_sessions: { select: { data: null, error: { message: "DB connection failed" } as any } }
@@ -410,7 +455,7 @@ Deno.test('submitStageResponses', async (t) => {
   });
 
   await t.step('4.2 Handles failure when inserting records into dialectic_feedback', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: DialecticStage.THESIS, currentIterationNumber: 1, responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
+    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
     const mockDbConfig: MockSupabaseDataConfig = {
       genericMockResults: {
         dialectic_sessions: { select: { data: [{ 
@@ -431,7 +476,7 @@ Deno.test('submitStageResponses', async (t) => {
   });
 
   await t.step('4.3 Handles failure when fetching system prompt for the next stage', async () => {
-     const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: DialecticStage.THESIS, currentIterationNumber: 1, responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
+     const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
      const mockDbConfig: MockSupabaseDataConfig = {
          genericMockResults: {
             dialectic_sessions: { select: { data: [{ 
@@ -456,7 +501,7 @@ Deno.test('submitStageResponses', async (t) => {
   });
 
   await t.step('4.4 Handles failure when fetching context/previous contributions', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: DialecticStage.THESIS, currentIterationNumber: 1, responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
+    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
     const mockDbConfig: MockSupabaseDataConfig = {
         genericMockResults: {
             dialectic_sessions: { select: { data: [{ 
@@ -490,13 +535,13 @@ Deno.test('submitStageResponses', async (t) => {
   await t.step('4.5 Handles failure when updating the DialecticSession at the end', async () => {
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
-      currentStageSlug: DialecticStage.PARALYSIS, // Final stage, so it will attempt the final update
+      currentStageSlug: mockParalysisStage.slug, // Final stage, so it will attempt the final update
       currentIterationNumber: 1,
       responses: [{ originalContributionId: testContributionId1, responseText: "text" }],
     };
     const mockFinalStage = {
         id: crypto.randomUUID(),
-        slug: DialecticStage.PARALYSIS,
+        slug: mockParalysisStage.slug,
         display_name: 'Paralysis',
         default_system_prompt_id: null,
         input_artifact_rules: {}
@@ -541,7 +586,7 @@ Deno.test('submitStageResponses', async (t) => {
   await t.step('5.1 Handles failure when uploading the consolidated user feedback file', async () => {
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
-      currentStageSlug: DialecticStage.THESIS,
+      currentStageSlug: mockThesisStage.slug,
       currentIterationNumber: 1,
       responses: [{ originalContributionId: testContributionId1, responseText: "Response text" }],
     };
@@ -581,7 +626,7 @@ Deno.test('submitStageResponses', async (t) => {
   await t.step('5.2 Handles failure when uploading the rendered seed prompt for the next stage', async () => {
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
-      currentStageSlug: DialecticStage.THESIS,
+      currentStageSlug: mockThesisStage.slug,
       currentIterationNumber: 1,
       responses: [{ originalContributionId: testContributionId1, responseText: "Response text" }],
     };
@@ -653,7 +698,7 @@ Deno.test('submitStageResponses', async (t) => {
 
     const mockPayload: SubmitStageResponsesPayload = {
         sessionId: testSessionId,
-        currentStageSlug: DialecticStage.THESIS,
+        currentStageSlug: mockThesisStage.slug,
         currentIterationNumber: 1,
         responses: [{ originalContributionId: testContributionId1, responseText: "Response text" }],
     };
@@ -701,13 +746,13 @@ Deno.test('submitStageResponses', async (t) => {
   await t.step('6.2 Successfully finalizes the session after the last stage (PARALYSIS)', async () => {
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
-      currentStageSlug: DialecticStage.PARALYSIS,
+      currentStageSlug: mockParalysisStage.slug,
       currentIterationNumber: 1,
       responses: [{ originalContributionId: testContributionId1, responseText: "text" }],
     };
     const mockFinalStage = {
         id: crypto.randomUUID(),
-        slug: DialecticStage.PARALYSIS,
+        slug: mockParalysisStage.slug,
         display_name: 'Paralysis',
         default_system_prompt_id: null,
         input_artifact_rules: {}
@@ -754,7 +799,7 @@ Deno.test('submitStageResponses', async (t) => {
   await t.step('6.3 Handles case where system prompt template for the next stage is not found', async () => {
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
-      currentStageSlug: DialecticStage.THESIS,
+      currentStageSlug: mockThesisStage.slug,
       currentIterationNumber: 1,
       responses: [{ originalContributionId: testContributionId1, responseText: "Response text" }],
     };
@@ -788,7 +833,7 @@ Deno.test('submitStageResponses', async (t) => {
   });
 
   await t.step('6.4 Handles case where no AI contributions (context) are found for current stage', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: DialecticStage.THESIS, currentIterationNumber: 1, responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
+    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
     const mockDbConfig: MockSupabaseDataConfig = {
         genericMockResults: {
             dialectic_sessions: { 
@@ -797,7 +842,7 @@ Deno.test('submitStageResponses', async (t) => {
                   project: { id: testProjectId, user_id: testUserId, process_template_id: testProcessTemplateId },
                   stage: mockThesisStage
               }] },
-              update: { data: [{ id: testSessionId, status: `pending_${DialecticStage.ANTITHESIS}` }] }
+              update: { data: [{ id: testSessionId, status: `pending_${mockAntithesisStage.slug}` }] }
             },
             dialectic_feedback: { insert: { data: [{id: crypto.randomUUID()}] } },
             system_prompts: { select: { data: [{ id: testSystemPromptId, prompt_text: "Next prompt with {{prior_stage_ai_outputs}}" }] } },

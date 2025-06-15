@@ -5,7 +5,6 @@ import type { ServiceError } from '../_shared/types.ts';
 import type { Database, Tables } from '../types_db.ts';
 import {
   SubmitStageResponsesPayload,
-  DialecticStage,
   type DialecticContribution,
   type InputArtifactRules,
   type ArtifactSourceRule,
@@ -14,9 +13,7 @@ import {
   type DialecticSession,
   type DialecticFeedback,
 } from './dialectic.interface.ts';
-import { logger } from '../_shared/logger.ts';
 import {
-  uploadToStorage,
   downloadFromStorage,
 } from '../_shared/supabase_storage_utils.ts';
 import { renderPrompt } from '../_shared/prompt-renderer.ts';
@@ -217,6 +214,13 @@ export async function submitStageResponses(
     { payload },
   );
 
+  if (!user) {
+    return {
+      error: { message: 'User not authenticated.' },
+      status: 401,
+    };
+  }
+
   const { sessionId, currentStageSlug, currentIterationNumber, responses } =
     payload;
 
@@ -229,9 +233,6 @@ export async function submitStageResponses(
   }
   if (!currentIterationNumber && currentIterationNumber !== 0) {
       return { error: { message: 'Invalid payload. Missing currentIterationNumber.' }, status: 400 };
-  }
-  if (!Object.values(DialecticStage).includes(currentStageSlug)) {
-      return { error: { message: `Invalid currentStageSlug: ${currentStageSlug}` }, status: 400 };
   }
   if (!responses || responses.length === 0) {
       return { error: { message: 'Invalid payload. responses array must be provided and cannot be empty.' }, status: 400 };
@@ -256,12 +257,17 @@ export async function submitStageResponses(
       .eq('id', sessionId)
       .single();
 
-    if (sessionError || !sessionData) {
+    if (sessionError) {
       logger.error('Error fetching session', { error: sessionError });
       return {
-        error: { message: 'Session not found or error fetching it.' },
+        error: { message: 'Session not found or error fetching it.', code: 'SESSION_NOT_FOUND' },
         status: 404,
       };
+    }
+    
+    if (!sessionData) {
+      // This case is for when the query executes but finds no matching session.
+      return { error: { message: `Session not found: ${sessionId}`, code: 'SESSION_NOT_FOUND' }, status: 404 };
     }
     
     const project = sessionData.project;
@@ -276,10 +282,25 @@ export async function submitStageResponses(
     }
 
     if (!stage) {
-      logger.error('Error fetching current stage for session', { sessionId });
+      // This is an inconsistent state, as a session should always have a stage.
+      // It might happen with bad data or if the stage relation fails.
+      return { 
+        error: { 
+          message: `Could not determine current stage for session: ${sessionId}`, 
+          code: 'STAGE_NOT_FOUND' 
+        }, 
+        status: 500
+      };
+    }
+
+    // Validate that the payload's stage slug matches the DB's stage slug for the session
+    if (stage.slug !== currentStageSlug) {
       return {
-        error: { message: 'Could not determine current stage for session.' },
-        status: 500,
+        error: {
+          message: `Mismatched stage slug. The session is currently at stage '${stage.slug}', but the payload specified '${currentStageSlug}'.`,
+          code: 'MISMATCHED_STAGE_SLUG',
+        },
+        status: 400,
       };
     }
 
@@ -291,13 +312,6 @@ export async function submitStageResponses(
         },
         status: 403,
       };
-    }
-
-    // Validate that the payload's stage slug matches the DB's stage slug for the session
-    if (stage.slug !== currentStageSlug) {
-      logger.warn(
-        `Payload stage slug "${currentStageSlug}" does not match session's current stage slug "${stage.slug}". Proceeding with DB version.`,
-      );
     }
 
     // 2. Store Individual User Responses in dialectic_feedback
@@ -385,9 +399,8 @@ export async function submitStageResponses(
 
     if (project.process_template_id) {
       const { data: transition, error: transitionError } = await dbClient
-        // Linter may not recognize this table if its type cache is stale. Casting as a workaround.
-        .from('dialectic_stage_transitions' as any)
-        .select('target_stage:dialectic_stages(*)')
+        .from('dialectic_stage_transitions')
+        .select('target_stage:dialectic_stages!target_stage_id(*)')
         .eq('process_template_id', project.process_template_id)
         .eq('source_stage_id', stage.id)
         .maybeSingle();
@@ -402,10 +415,8 @@ export async function submitStageResponses(
         };
       }
       
-      // The linter may incorrectly infer the result type. Casting to `any` as a workaround.
-      const typedTransition = transition as any;
-      if (typedTransition?.target_stage) {
-        nextStage = typedTransition.target_stage;
+      if (transition?.target_stage) {
+        nextStage = transition.target_stage as Database['public']['Tables']['dialectic_stages']['Row'];
       }
     } else {
       logger.warn(
@@ -442,13 +453,13 @@ export async function submitStageResponses(
           );
           priorStageContributions = assembledArtifacts.contributionsContent;
           priorStageFeedback = assembledArtifacts.feedbackContent;
-        } catch (assemblyError: any) {
+        } catch (assemblyError: unknown) {
           logger.error('Error assembling artifacts for next stage', {
             error: assemblyError,
           });
           return {
             error: {
-              message: assemblyError.message || 'Failed to assemble required inputs for the next stage.',
+              message: assemblyError instanceof Error ? assemblyError.message : 'Failed to assemble required inputs for the next stage.',
             },
             status: 500,
           };
@@ -556,7 +567,7 @@ export async function submitStageResponses(
 
     // 5. Update Session Status
     // Linter may be using an outdated schema for the session table. Casting as a workaround.
-    const updatePayload: any = {
+    const updatePayload: { updated_at: string; current_stage_id?: string; status?: string } = {
       updated_at: new Date().toISOString(),
     };
 
@@ -599,15 +610,15 @@ export async function submitStageResponses(
       },
       status: 200,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Unexpected error in submitStageResponses', {
-      error: error.toString(),
-      stack: error.stack,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
     });
     return {
       error: {
         message: 'An unexpected error occurred.',
-        details: error.message,
+        details: error instanceof Error ? error.message : 'Unknown error',
       },
       status: 500,
     };

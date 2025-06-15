@@ -52,10 +52,13 @@ export async function generateStageContributions(
     const deps = { ...defaultGenerateContributionsDeps, ...partialDeps };
     const { logger, callUnifiedAIModel, uploadToStorage, getFileMetadata, deleteFromStorage, getExtensionFromMimeType, downloadFromStorage, randomUUID } = deps;
 
-    const { sessionId, iterationNumber } = payload;
-    const stage = payload.stageSlug || DialecticStage.THESIS;
+    const { sessionId, iterationNumber, stageSlug } = payload;
+    if (!stageSlug) {
+      return { success: false, error: { message: "stageSlug is required in the payload.", status: 400 } };
+    }
+    const stage = stageSlug;
 
-    logger.info(`[generateStageContributions] Starting for session ID: ${sessionId}, stage: ${stage}, iteration: ${iterationNumber}`);
+    logger.info(`[generateStageContributions] Starting for session ID: ${sessionId}, stage: ${stage.slug}, iteration: ${iterationNumber}`);
     const BUCKET_NAME = 'dialectic-contributions';
   
     try {
@@ -85,7 +88,7 @@ export async function generateStageContributions(
         return { success: false, error: { message: "Project ID is missing for session.", status: 500 } };
       }
 
-      const expectedStatus = `pending_${stage}`;
+      const expectedStatus = `pending_${stage.slug}`;
       if (sessionDetails.status !== expectedStatus) {
         logger.warn(`[generateStageContributions] Session ${sessionId} is not in '${expectedStatus}' status. Current status: ${sessionDetails.status}`);
         return { success: false, error: { message: `Session is not in '${expectedStatus}' status. Current status: ${sessionDetails.status}`, status: 400 } };
@@ -98,7 +101,7 @@ export async function generateStageContributions(
       }
 
       // 2. Derive seed prompt path and fetch its content
-      const seedPromptPath = `projects/${projectId}/sessions/${sessionId}/iteration_${iterationNumber}/${stage}/seed_prompt.md`;
+      const seedPromptPath = `projects/${projectId}/sessions/${sessionId}/iteration_${iterationNumber}/${stage.slug}/seed_prompt.md`;
       logger.info(`[generateStageContributions] Fetching seed prompt from: ${seedPromptPath}`);
 
       const { data: promptContentBuffer, error: promptDownloadError } = await downloadFromStorage(dbClient, BUCKET_NAME, seedPromptPath);
@@ -190,8 +193,8 @@ export async function generateStageContributions(
           const fileExtension = getExtensionFromMimeType(determinedContentType);
           const contributionId = randomUUID();
   
-          contentStoragePath = `projects/${projectId}/sessions/${sessionId}/contributions/${contributionId}/${stage}${fileExtension}`;
-          rawResponseStoragePath = `projects/${projectId}/sessions/${sessionId}/contributions/${contributionId}/raw_${stage}_response.json`;
+          contentStoragePath = `projects/${projectId}/sessions/${sessionId}/contributions/${contributionId}/${stage.slug}${fileExtension}`;
+          rawResponseStoragePath = `projects/${projectId}/sessions/${sessionId}/contributions/${contributionId}/raw_${stage.slug}_response.json`;
   
           logger.info(`[generateStageContributions] Uploading content for ${modelIdentifier} to: ${contentStoragePath}`);
           const { error: contentUploadError } = await uploadToStorage(dbClient, BUCKET_NAME, contentStoragePath, contributionContent, { contentType: determinedContentType });
@@ -240,7 +243,7 @@ export async function generateStageContributions(
               model_id: modelIdForCall, 
               model_name: providerDetails.name, 
               user_id: null,
-              stage: stage,
+              stage: stage.slug,
               iteration_number: iterationNumber,
               seed_prompt_url: seedPromptPath,
               content_storage_bucket: BUCKET_NAME,
@@ -302,7 +305,7 @@ export async function generateStageContributions(
       if (successfulContributions.length === 0 && sessionDetails.selected_model_catalog_ids.length > 0) { // Check if models were supposed to run
         logger.error(`[generateStageContributions] All models failed to generate contributions for session ${sessionId}`, { errors: failedContributionAttempts });
         // Update session status to indicate failure
-        const failedStatus = `${stage}_generation_failed`;
+        const failedStatus = `${stage.slug}_generation_failed`;
         await dbClient.from('dialectic_sessions').update({ status: failedStatus }).eq('id', sessionId);
 
         return {
@@ -316,7 +319,7 @@ export async function generateStageContributions(
       }
   
       // If at least one contribution was successful
-      const finalStatus = failedContributionAttempts.length > 0 ? `${stage}_generation_partial` : `${stage}_generation_complete`;
+      const finalStatus = failedContributionAttempts.length > 0 ? `${stage.slug}_generation_partial` : `${stage.slug}_generation_complete`;
       
       logger.info(`[generateStageContributions] Updating session ${sessionId} status to: ${finalStatus}`);
       const { error: sessionUpdateError } = await dbClient
@@ -339,7 +342,12 @@ export async function generateStageContributions(
           : `Stage generation fully complete for session ${sessionId}.`,
         sessionId: sessionId,
         status: finalStatus,
-        contributions: successfulContributions as unknown as DialecticContribution[],
+        contributions: successfulContributions.map(c => ({
+          ...c,
+          parent_contribution_id: c.target_contribution_id,
+          stage: c.stage || '', 
+          citations: c.citations ? (c.citations as any[]).map(cit => ({ text: cit.text, url: cit.url })) : null,
+        })) as any as DialecticContribution[],
         errors: failedContributionAttempts.length > 0 ? failedContributionAttempts.map(f => ({
             modelId: f.modelId, 
             modelName: f.modelName, // Propagated from failedContributionAttempts

@@ -152,6 +152,17 @@ vi.mock('./DomainSelector', () => ({
   }),
 }));
 
+const mockThesisStage: DialecticStage = {
+    id: 's1',
+    slug: 'thesis',
+    display_name: 'Thesis',
+    description: 'Mock thesis stage',
+    created_at: new Date().toISOString(),
+    default_system_prompt_id: 'sp-1',
+    input_artifact_rules: null,
+    expected_output_artifacts: null,
+};
+
 const mockProject: DialecticProject = {
   id: 'project-123',
   project_name: 'Test Project',
@@ -335,7 +346,7 @@ describe('StartDialecticSessionModal', () => {
       modelCatalog: mockModelCatalog,
       modelCatalogError: undefined,
       isStartingSession: false,
-      selectedStageAssociation: DialecticStage.THESIS,
+      selectedStageAssociation: mockThesisStage,
       availableDomainOverlays: mockAvailableDomainOverlays,
       domains: mockAvailableDomains,
       selectedDomain: mockAvailableDomains[0],
@@ -422,7 +433,7 @@ describe('StartDialecticSessionModal', () => {
   it('should successfully start a session', async () => {
     const user = userEvent.setup();
     const onSessionStartedMock = vi.fn();
-    const mockSessionDescription = 'Test session description';
+    const mockSessionDescription = `Session for ${mockAvailableDomains[0].name} using overlay: ${mockAvailableDomainOverlays[0].description}`;
 
     initializeMockDialecticState({
       isStartNewSessionModalOpen: true,
@@ -434,7 +445,7 @@ describe('StartDialecticSessionModal', () => {
       selectedDomain: mockAvailableDomains[0],
       availableDomainOverlays: mockAvailableDomainOverlays,
       selectedDomainOverlayId: mockAvailableDomainOverlays[0].id,
-      selectedStageAssociation: DialecticStage.THESIS,
+      selectedStageAssociation: mockThesisStage,
       isStartingSession: false,
       startSessionError: undefined,
     });
@@ -444,36 +455,27 @@ describe('StartDialecticSessionModal', () => {
     // ----> ADD THIS ASSERTION <----
     expect(vi.isMockFunction(actions.startDialecticSession)).toBe(true); 
 
-    // Restore original mock implementation
-    (actions.startDialecticSession as Mock).mockImplementation(async (payload: StartSessionPayload): Promise<ApiResponse<DialecticSession>> => {
-      return {
-        data: {
-          id: 'session-456',
-          project_id: payload.projectId,
-          session_description: payload.sessionDescription,
-          current_stage_seed_prompt: null,
-          iteration_count: 0,
-          status: 'active',
-          associated_chat_id: null,
-          active_thesis_prompt_template_id: null,
-          active_antithesis_prompt_template_id: null,
-          active_synthesis_prompt_template_id: null,
-          active_parenthesis_prompt_template_id: null,
-          active_paralysis_prompt_template_id: null,
-          formal_debate_structure_id: null,
-          max_iterations: payload.maxIterations || 10,
-          current_iteration: 0,
-          convergence_status: null,
-          preferred_model_for_stage: {},
-          dialectic_session_models: [],
-          dialectic_contributions: [],
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        } as DialecticSession,
-        error: undefined,
-        status: 200
-      };
-    });
+    // Simulate successful session start
+    const mockSession: DialecticSession = {
+      id: 'session-1',
+      project_id: mockProject.id,
+      session_description: mockSessionDescription,
+      iteration_count: 1,
+      status: 'active',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_input_reference_url: null,
+      selected_model_catalog_ids: [mockModelCatalog[0].id],
+      current_stage_id: 's1',
+      associated_chat_id: null,
+    };
+
+    // Make sure the mock function resolves with a valid ApiResponse
+    (actions.startDialecticSession as Mock).mockResolvedValue({
+      data: mockSession,
+      error: undefined,
+      status: 200
+    } as ApiResponse<DialecticSession>);
 
     // No need for act/setDialecticState/rerender for model selection anymore
     render(<StartDialecticSessionModal onSessionStarted={onSessionStartedMock} />);
@@ -514,15 +516,13 @@ describe('StartDialecticSessionModal', () => {
         projectId: mockProject.id,
         selectedModelCatalogIds: [mockModelCatalog[0].id],
         sessionDescription: mockSessionDescription,
-        stageAssociation: DialecticStage.THESIS,
-        selectedDomainOverlayId: mockAvailableDomainOverlays[0].id,
       }));
     });
 
     await waitFor(() => {
-      expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('Session started successfully: session-456'));
+      expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('Session started successfully: session-1'));
     });
-    expect(onSessionStartedMock).toHaveBeenCalledWith('session-456');
+    expect(onSessionStartedMock).toHaveBeenCalledWith('session-1');
   });
   
   it('should display error toast if starting session fails', async () => {
@@ -534,7 +534,7 @@ describe('StartDialecticSessionModal', () => {
       isStartNewSessionModalOpen: true,
       currentProjectDetail: mockProject,
       selectedDomainOverlayId: mockAvailableDomainOverlays[0].id, // Use the ID from the mock overlay
-      selectedStageAssociation: DialecticStage.THESIS,
+      selectedStageAssociation: mockThesisStage,
       modelCatalog: mockModelCatalog,
       isLoadingModelCatalog: false,
       modelCatalogError: undefined,
@@ -592,7 +592,7 @@ describe('StartDialecticSessionModal', () => {
       availableDomainOverlays: mockAvailableDomainOverlays,
       domains: mockAvailableDomains,
       selectedDomainOverlayId: 'tag-1',
-      selectedStageAssociation: DialecticStage.THESIS,
+      selectedStageAssociation: mockThesisStage,
       selectedDomain: mockAvailableDomains[0],
       startSessionError: { message: errorMessage, code: '500' }
     });
@@ -642,7 +642,7 @@ describe('StartDialecticSessionModal', () => {
       selectedDomainOverlayId: 'tag-1',
       availableDomainOverlays: mockAvailableDomainOverlays,
       domains: mockAvailableDomains,
-      selectedStageAssociation: DialecticStage.THESIS,
+      selectedStageAssociation: mockThesisStage,
     });
     render(<StartDialecticSessionModal />);
 
@@ -664,7 +664,7 @@ describe('StartDialecticSessionModal', () => {
         domains: mockAvailableDomains,
         modelCatalog: mockModelCatalog,
         selectedDomain: mockAvailableDomains[0], 
-        selectedStageAssociation: mockAvailableDomainOverlays[0].stageAssociation as DialecticStage,
+        selectedStageAssociation: mockThesisStage,
     });
     
     render(<StartDialecticSessionModal />);

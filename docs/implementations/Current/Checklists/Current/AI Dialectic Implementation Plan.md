@@ -1265,3 +1265,55 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 1.Z.6.3 [COMMIT]` refactor(system): complete transition from selected_domain_tag to selected_domain_id
 
 {repo_root}/  (Root of the user's GitHub repository)
+└── {dialectic_outputs_base_dir_name}/ (Configurable, e.g., "ai_dialectic_sessions")
+    └── {project_name_slug}/
+        ├── project_readme.md      (High-level project description, goals, defined by user or initial setup)
+        ├── Implementation/          (User-managed folder for their current work-in-progress files related to this project)
+        │   └── ...
+        ├── Complete/                (User-managed folder for their completed work items for this project)
+        │   └── ...
+        └── session_{session_id_short}/  (Each distinct run of the dialectic process)
+            └── iteration_{N}/        (N being the iteration number, e.g., "iteration_1")
+                ├── 0_seed_inputs/
+                │   ├── user_prompt.md  (The specific prompt that kicked off this iteration)
+                │   └── system_settings.json          (Models, core prompt templates used for this iteration)
+                ├── 1_hypothesis/
+                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
+                │   ├── {model_name_slug}_hypothesis.md (Contains YAML frontmatter + AI response)
+                │   ├── ... (other models' hypothesis outputs)
+                │   ├── user_feedback_hypothesis.md   (User's feedback on this stage)
+                │   └── documents/                      (Optional refined documents, e.g., PRDs from each model)
+                │       └── {model_name_slug}_prd_hypothesis.md
+                │       └── ...
+                ├── 2_antithesis/
+                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
+                │   ├── {critiquer_model_slug}_critique_on_{original_model_slug}.md
+                │   ├── ...
+                │   └── user_feedback_antithesis.md
+                ├── 3_synthesis/
+                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
+                │   ├── {model_name_slug}_synthesis.md
+                │   ├── ...
+                │   ├── user_feedback_synthesis.md
+                │   └── documents/                      (Refined documents from each model, e.g., PRDs, business cases)
+                │       ├── {model_name_slug}_prd_synthesis.md
+                │       ├── {model_name_slug}_business_case_synthesis.md
+                │       └── ...
+                ├── 4_parenthesis/
+                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
+                │   ├── {model_name_slug}_parenthesis.md
+                │   ├── ...
+                │   ├── user_feedback_parenthesis.md
+                │   └── documents/                      (Detailed implementation plans from each model)
+                │       └── {model_name_slug}_implementation_plan_parenthesis.md
+                │       └── ...
+                ├── 5_paralysis/
+                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
+                │   ├── {model_name_slug}_paralysis.md
+                │   ├── ...
+                │   ├── user_feedback_paralysis.md
+                │   └── documents/                      (The user-selected/finalized canonical outputs)
+                │       ├── chosen_implementation_plan.md
+                │       ├── project_checklist.csv
+                │       └── ... (other formats like Jira importable CSV/JSON)
+                └── iteration_summary.md (Optional: An AI or user-generated summary of this iteration's key outcomes and learnings)

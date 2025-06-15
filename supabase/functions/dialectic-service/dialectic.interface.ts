@@ -169,9 +169,11 @@ export interface UnifiedAIResponse {
   rawProviderResponse?: Record<string, unknown>; 
 }
 
+export type DialecticStage = Database['public']['Tables']['dialectic_stages']['Row'];
+
 export interface GenerateStageContributionsPayload {
   sessionId: string;
-  stageSlug?: DialecticStage;
+  stageSlug?: DialecticStage['slug'];
   iterationNumber?: number;
   chatId?: string | null;
 }
@@ -292,14 +294,6 @@ export interface ExportProjectSuccessResponse {
   export_url: string;
 }
 
-export enum DialecticStage {
-  THESIS = 'thesis',
-  ANTITHESIS = 'antithesis',
-  SYNTHESIS = 'synthesis',
-  PARENTHESIS = 'parenthesis',
-  PARALYSIS = 'paralysis',
-}
-
 export interface GetProjectResourceContentPayload {
   resourceId: string;
   fileName?: string;
@@ -345,7 +339,7 @@ export interface SubmitStageResponseItem {
 
 export interface SubmitStageResponsesPayload {
   sessionId: string;
-  currentStageSlug: DialecticStage;
+  currentStageSlug: DialecticStage['slug'];
   currentIterationNumber: number;
   responses: SubmitStageResponseItem[];
 }
@@ -373,3 +367,5 @@ export interface SubmitStageResponsesDependencies {
     downloadFromStorage: typeof downloadFromStorage;
     logger: ILogger;
 }
+
+export type DialecticStageTransition = Database['public']['Tables']['dialectic_stage_transitions']['Row'];

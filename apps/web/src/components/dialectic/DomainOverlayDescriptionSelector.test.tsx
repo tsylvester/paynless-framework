@@ -22,7 +22,7 @@ import {
     selectOverlay,
     useDialecticStore, // Import the state setter
 } from '@paynless/store';
-import { DialecticStage, type DialecticStateValues, type DomainOverlayDescriptor, DialecticDomain } from '@paynless/types';
+import { type DialecticStateValues, type DomainOverlayDescriptor, DialecticDomain } from '@paynless/types';
 import { DomainOverlayDescriptionSelector } from './DomainOverlayDescriptionSelector';
 // Import the reset function from your central mock file
 import { resetDialecticStoreMock } from '../../mocks/dialecticStore.mock';
@@ -86,9 +86,9 @@ describe('DomainOverlayDescriptionSelector', () => {
     };
 
     const mockDomain: DialecticDomain = { id: 'tech', name: 'Technology', description: 'All about tech', parent_domain_id: null };
-    const overlay1: DomainOverlayDescriptor = { id: 'ov1', domainId: 'tech', domainName: 'Technology', description: 'Overlay Description 1', stageAssociation: DialecticStage.THESIS, overlay_values: {}, system_prompt_id: 'sp1' };
-    const overlay2: DomainOverlayDescriptor = { id: 'ov2', domainId: 'tech', domainName: 'Technology', description: 'Overlay Description 2', stageAssociation: DialecticStage.THESIS, overlay_values: {}, system_prompt_id: 'sp2' };
-    const overlay3_no_desc: DomainOverlayDescriptor = { id: 'ov3', domainId: 'tech', domainName: 'Technology', description: null, stageAssociation: DialecticStage.THESIS, overlay_values: {}, system_prompt_id: 'sp3' };
+    const overlay1: DomainOverlayDescriptor = { id: 'ov1', domainId: 'tech', domainName: 'Technology', description: 'Overlay Description 1', stageAssociation: 'thesis', overlay_values: {}, system_prompt_id: 'sp1' };
+    const overlay2: DomainOverlayDescriptor = { id: 'ov2', domainId: 'tech', domainName: 'Technology', description: 'Overlay Description 2', stageAssociation: 'thesis', overlay_values: {}, system_prompt_id: 'sp2' };
+    const overlay3_no_desc: DomainOverlayDescriptor = { id: 'ov3', domainId: 'tech', domainName: 'Technology', description: null, stageAssociation: 'thesis', overlay_values: {}, system_prompt_id: 'sp3' };
 
     it('should not render if selectedDomain is null', () => {
         const { component } = setup({ selectedDomain: null }, 'no-render-test');
