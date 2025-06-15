@@ -7,7 +7,7 @@ import type {
     StartSessionPayload, 
     DialecticSession, 
     AIModelCatalogEntry,
-    DomainTagDescriptor,
+    DomainDescriptor,
     UpdateProjectDomainPayload,
     DomainOverlayDescriptor,
     UploadProjectResourceFilePayload,
@@ -24,11 +24,12 @@ import type {
     GetProjectResourceContentPayload,
     GetProjectResourceContentResponse,
     DialecticDomain,
+    DialecticProcessTemplate,
 } from '@paynless/types'; 
 
 // --- Dialectic Client Mock Setup ---
 export type MockDialecticApiClient = {
-    listAvailableDomainTags: ReturnType<typeof vi.fn<[], Promise<ApiResponse<{ data: DomainTagDescriptor[] }>>>>;
+    listAvailableDomains: ReturnType<typeof vi.fn<[], Promise<ApiResponse<{ data: DomainDescriptor[] }>>>>;
     listAvailableDomainOverlays: ReturnType<typeof vi.fn<[payload: { stageAssociation: string }], Promise<ApiResponse<DomainOverlayDescriptor[]>>>>;
     createProject: ReturnType<typeof vi.fn<[payload: CreateProjectPayload], Promise<ApiResponse<DialecticProject>>>>;
     listProjects: ReturnType<typeof vi.fn<[], Promise<ApiResponse<DialecticProject[]>>>>;
@@ -48,12 +49,13 @@ export type MockDialecticApiClient = {
     saveContributionEdit: ReturnType<typeof vi.fn<[payload: SaveContributionEditPayload], Promise<ApiResponse<DialecticContribution>>>>;
     getProjectResourceContent: ReturnType<typeof vi.fn<[payload: GetProjectResourceContentPayload], Promise<ApiResponse<GetProjectResourceContentResponse>>>>;
     listDomains: ReturnType<typeof vi.fn<[], Promise<ApiResponse<DialecticDomain[]>>>>;
+    fetchProcessTemplate: ReturnType<typeof vi.fn<[templateId: string], Promise<ApiResponse<DialecticProcessTemplate>>>>;
 };
 
 // Factory function to create a new mock instance
 export function createMockDialecticClient(): MockDialecticApiClient {
     return {
-        listAvailableDomainTags: vi.fn<[], Promise<ApiResponse<{ data: DomainTagDescriptor[] }>>>(),
+        listAvailableDomains: vi.fn<[], Promise<ApiResponse<{ data: DomainDescriptor[] }>>>(),
         listAvailableDomainOverlays: vi.fn<[{ stageAssociation: string }], Promise<ApiResponse<DomainOverlayDescriptor[]>>>(),
         createProject: vi.fn<[CreateProjectPayload], Promise<ApiResponse<DialecticProject>>>(),
         listProjects: vi.fn<[], Promise<ApiResponse<DialecticProject[]>>>(),
@@ -73,5 +75,15 @@ export function createMockDialecticClient(): MockDialecticApiClient {
         saveContributionEdit: vi.fn<[SaveContributionEditPayload], Promise<ApiResponse<DialecticContribution>>>(),
         getProjectResourceContent: vi.fn<[GetProjectResourceContentPayload], Promise<ApiResponse<GetProjectResourceContentResponse>>>(),
         listDomains: vi.fn<[], Promise<ApiResponse<DialecticDomain[]>>>(),
+        fetchProcessTemplate: vi.fn<[string], Promise<ApiResponse<DialecticProcessTemplate>>>(),
     };
+}
+
+export function resetMockDialecticClient(instance: MockDialecticApiClient) {
+    for (const key in instance) {
+        const prop = instance[key as keyof MockDialecticApiClient];
+        if (typeof prop === 'function' && 'mockReset' in prop) {
+            (prop as ReturnType<typeof vi.fn>).mockReset();
+        }
+    }
 }

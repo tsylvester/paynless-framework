@@ -7,7 +7,7 @@ import type {
     DialecticSession,
     AIModelCatalogEntry,
     DialecticProjectResource,
-    DomainTagDescriptor,
+    DomainDescriptor,
     DomainOverlayDescriptor,
     UpdateProjectDomainPayload,
     DeleteProjectPayload,
@@ -44,33 +44,33 @@ export class DialecticApiClient {
      * Can be filtered by stageAssociation.
      * This endpoint is public and does not require authentication.
      */
-    async listAvailableDomainTags(params?: { stageAssociation?: string }): Promise<ApiResponse<DomainTagDescriptor[]>> {
-        logger.info('Fetching available domain tags for dialectic projects', { params });
+    async listAvailableDomains(params?: { stageAssociation?: string }): Promise<ApiResponse<DomainDescriptor[]>> {
+        logger.info('Fetching available domains for dialectic projects', { params });
         
         try {
             // The Edge Function expects the parameters in the body for a POST request.
             // We will send the action and an optional payload containing stageAssociation.
             const requestBody: { action: string; payload?: { stageAssociation?: string } } = {
-                action: 'listAvailableDomainTags',
+                action: 'listAvailableDomains',
             };
             if (params?.stageAssociation) {
                 requestBody.payload = { stageAssociation: params.stageAssociation };
             }
 
-            const response = await this.apiClient.post<DomainTagDescriptor[], typeof requestBody>(
+            const response = await this.apiClient.post<DomainDescriptor[], typeof requestBody>(
                 'dialectic-service', 
                 requestBody 
             );
 
             if (response.error) {
-                logger.error('Error fetching available domain tags:', { error: response.error, params });
+                logger.error('Error fetching available domains:', { error: response.error, params });
             } else {
-                logger.info(`Fetched ${response.data?.length ?? 0} available domain tags`, { params });
+                logger.info(`Fetched ${response.data?.length ?? 0} available domains`, { params });
             }
             return response;
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'A network error occurred';
-            logger.error('Network error in listAvailableDomainTags:', { errorMessage: message, errorObject: error, params });
+            logger.error('Network error in listAvailableDomains:', { errorMessage: message, errorObject: error, params });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },
@@ -314,7 +314,7 @@ export class DialecticApiClient {
      * Creates a new dialectic project.
      * The payload is FormData, which should include an 'action' field set to 'createProject',
      * 'projectName', and optionally 'initialUserPromptText' or 'promptFile',
-     * 'selectedDomainTag', and 'selected_domain_overlay_id'.
+     * 'selectedDomain', and 'selectedDomainOverlayId'.
      * Requires authentication.
      */
     async createProject(payload: FormData): Promise<ApiResponse<DialecticProject>> {

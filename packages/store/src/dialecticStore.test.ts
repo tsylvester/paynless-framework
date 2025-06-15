@@ -22,6 +22,7 @@ import type {
   StartSessionPayload,
   DomainOverlayDescriptor,
   DialecticDomain,
+  DialecticProcessTemplate,
 } from '@paynless/types';
 
 // Add the mock call here
@@ -42,7 +43,7 @@ vi.mock('@paynless/api', async (importOriginal) => {
 
 // Import the shared mock setup - these are test utilities, not part of the mocked module itself.
 import { api } from '@paynless/api';
-import { resetApiMock } from '@paynless/api/mocks';
+import { resetApiMock, getMockDialecticClient } from '@paynless/api/mocks';
 
 describe('useDialecticStore', () => {
     beforeEach(() => {
@@ -84,6 +85,51 @@ describe('useDialecticStore', () => {
             expect(state.startSessionError).toBe(initialDialecticStateValues.startSessionError);
 
             expect(state.contributionContentCache).toEqual(initialDialecticStateValues.contributionContentCache);
+        });
+    });
+
+    describe('fetchProcessTemplate thunk', () => {
+        const mockTemplate: DialecticProcessTemplate = {
+            id: 'pt1',
+            name: 'Standard Dialectic',
+            description: 'A standard template',
+            created_at: new Date().toISOString(),
+            domain_id: 'dom-123',
+            starting_stage_id: 'stage-1',
+            stages: [],
+        };
+
+        it('should fetch a process template and update state on success', async () => {
+            const mockResponse: ApiResponse<DialecticProcessTemplate> = {
+                data: mockTemplate,
+                status: 200,
+            };
+            getMockDialecticClient().fetchProcessTemplate.mockResolvedValue(mockResponse);
+
+            const { fetchProcessTemplate } = useDialecticStore.getState();
+            await fetchProcessTemplate('pt1');
+
+            const state = useDialecticStore.getState();
+            expect(state.isLoadingProcessTemplate).toBe(false);
+            expect(state.currentProcessTemplate).toEqual(mockTemplate);
+            expect(state.processTemplateError).toBeNull();
+        });
+
+        it('should handle API errors when fetching a process template', async () => {
+            const mockError: ApiError = { code: 'NOT_FOUND', message: 'Template not found' };
+            const mockResponse: ApiResponse<DialecticProcessTemplate> = {
+                error: mockError,
+                status: 404,
+            };
+            getMockDialecticClient().fetchProcessTemplate.mockResolvedValue(mockResponse);
+
+            const { fetchProcessTemplate } = useDialecticStore.getState();
+            await fetchProcessTemplate('pt-nonexistent');
+
+            const state = useDialecticStore.getState();
+            expect(state.isLoadingProcessTemplate).toBe(false);
+            expect(state.currentProcessTemplate).toBeNull();
+            expect(state.processTemplateError).toEqual(mockError);
         });
     });
 

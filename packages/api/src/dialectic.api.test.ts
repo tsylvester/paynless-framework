@@ -202,9 +202,9 @@ describe('DialecticApiClient', () => {
         });
     });
 
-    describe('listAvailableDomainTags', () => {
+    describe('listAvailableDomains', () => {
         const endpoint = 'dialectic-service';
-        const requestBody = { action: 'listAvailableDomainTags' };
+        const requestBody = { action: 'listAvailableDomains' };
 
         it('should call apiClient.post with the correct endpoint, body', async () => {
             const mockResponse: ApiResponse<string[]> = {
@@ -213,7 +213,7 @@ describe('DialecticApiClient', () => {
             };
             mockApiClientPost.mockResolvedValue(mockResponse);
 
-            await dialecticApiClient.listAvailableDomainTags();
+            await dialecticApiClient.listAvailableDomains();
 
             expect(mockApiClientPost).toHaveBeenCalledTimes(1);
             expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
@@ -227,7 +227,7 @@ describe('DialecticApiClient', () => {
             };
             mockApiClientPost.mockResolvedValue(mockResponse);
 
-            const result = await dialecticApiClient.listAvailableDomainTags();
+            const result = await dialecticApiClient.listAvailableDomains();
 
             expect(result.data).toEqual(mockTags);
             expect(result.status).toBe(200);
@@ -242,7 +242,7 @@ describe('DialecticApiClient', () => {
             };
             mockApiClientPost.mockResolvedValue(mockErrorResponse);
 
-            const result = await dialecticApiClient.listAvailableDomainTags();
+            const result = await dialecticApiClient.listAvailableDomains();
 
             expect(result.error).toEqual(mockApiError);
             expect(result.status).toBe(500);
@@ -253,7 +253,7 @@ describe('DialecticApiClient', () => {
             const networkErrorMessage = 'Simulated network failure';
             mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            const result = await dialecticApiClient.listAvailableDomainTags();
+            const result = await dialecticApiClient.listAvailableDomains();
 
             expect(result.error).toEqual({
                 code: 'NETWORK_ERROR',
@@ -1147,7 +1147,7 @@ describe('DialecticApiClient', () => {
         const validPayload: GenerateContributionsPayload = {
             sessionId: 'sess-456',
             projectId: 'proj-123',
-            stageSlug: mockStageObject,
+            stageSlug: mockStageObject.slug,
             iterationNumber: 1,
         };
         const requestBody = { action: 'generateContributions', payload: validPayload };
@@ -1325,7 +1325,7 @@ describe('DialecticApiClient', () => {
         const validPayload: SubmitStageResponsesPayload = {
             sessionId: 'sess-123',
             projectId: 'proj-123',
-            stageSlug: mockStageObject,
+            stageSlug: mockStageObject.slug,
             currentIterationNumber: 1,
             responses: [{ originalModelContributionId: 'contrib-abc', responseText: 'This is a great point.' }]
         };

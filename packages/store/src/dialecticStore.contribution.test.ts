@@ -21,7 +21,7 @@ import type {
   DialecticSession,
   StartSessionPayload,
   DomainOverlayDescriptor,
-  DomainTagDescriptor,
+  DomainDescriptor,
   DialecticContribution,
   SubmitStageResponsesPayload,
   SubmitStageResponsesResponse,

@@ -23,7 +23,10 @@ import {
     selectCreateProjectError,
     selectIsStartingSession,
     selectStartSessionError,
-    selectContributionContentCache
+    selectContributionContentCache,
+    selectCurrentProcessTemplate,
+    selectIsLoadingProcessTemplate,
+    selectProcessTemplateError
 } from './dialecticStore.selectors';
 import { initialDialecticStateValues } from './dialecticStore';
 import type { 
@@ -33,8 +36,27 @@ import type {
     DialecticProject, 
     AIModelCatalogEntry, 
     DialecticDomain, 
-    DialecticStage 
+    DialecticStage,
+    DialecticProcessTemplate
 } from '@paynless/types';
+
+const mockThesisStage: DialecticStage = {
+    id: 's1',
+    slug: 'thesis',
+    display_name: 'Thesis',
+    description: 'Mock thesis stage',
+    created_at: new Date().toISOString(),
+    default_system_prompt_id: 'sp-1',
+    input_artifact_rules: null,
+    expected_output_artifacts: null,
+};
+
+const mockSynthesisStage: DialecticStage = {
+    ...mockThesisStage,
+    id: 's3',
+    slug: 'synthesis',
+    display_name: 'Synthesis',
+};
 
 describe('Dialectic Store Selectors', () => {
     const mockOverlays: DomainOverlayDescriptor[] = [
@@ -47,6 +69,15 @@ describe('Dialectic Store Selectors', () => {
         { id: 'dom2', name: 'Domain 2', description: 'Test domain 2', parent_domain_id: null },
     ];
     const mockDomainsError: ApiError = { code: 'DOMAIN_ERR', message: 'Test Domain Error' };
+    const mockProcessTemplate: DialecticProcessTemplate = {
+        id: 'pt-1',
+        name: 'Test Template',
+        description: 'A test template',
+        domain_id: 'dom1',
+        created_at: new Date().toISOString(),
+        starting_stage_id: 's1'
+    };
+    const mockProcessTemplateError: ApiError = { code: 'TEMPLATE_ERR', message: 'Test Template Error' };
 
     const testState: DialecticStateValues = {
         ...initialDialecticStateValues,
@@ -54,10 +85,13 @@ describe('Dialectic Store Selectors', () => {
         isLoadingDomains: true,
         domainsError: mockDomainsError,
         selectedDomain: mockDomains[0],
-        selectedStageAssociation: 'thesis' as DialecticStage,
+        selectedStageAssociation: mockThesisStage,
         availableDomainOverlays: mockOverlays,
         isLoadingDomainOverlays: true,
         domainOverlaysError: mockOverlayError,
+        currentProcessTemplate: mockProcessTemplate,
+        isLoadingProcessTemplate: true,
+        processTemplateError: mockProcessTemplateError,
     };
 
     const initialState: DialecticStateValues = {
@@ -97,7 +131,7 @@ describe('Dialectic Store Selectors', () => {
     });
 
     it('selectSelectedStageAssociation should return selectedStageAssociation from testState', () => {
-        expect(selectSelectedStageAssociation(testState)).toBe('thesis');
+        expect(selectSelectedStageAssociation(testState)).toEqual(mockThesisStage);
     });
 
     it('selectSelectedStageAssociation should return initial null from initialState', () => {
@@ -132,7 +166,7 @@ describe('Dialectic Store Selectors', () => {
     describe('selectOverlay', () => {
         const overlayState: DialecticStateValues = {
             ...initialDialecticStateValues,
-            selectedStageAssociation: 'thesis' as DialecticStage,
+            selectedStageAssociation: mockThesisStage,
             availableDomainOverlays: [
                 { id: 'ov1', domainId: 'dom1', description: 'Tech Thesis Overlay 1', stageAssociation: 'thesis', domainName: 'Domain 1', overlay_values: {} },
                 { id: 'ov2', domainId: 'dom1', description: 'Tech Thesis Overlay 2', stageAssociation: 'thesis', domainName: 'Domain 1', overlay_values: {} },
@@ -178,7 +212,7 @@ describe('Dialectic Store Selectors', () => {
         });
 
         it('should return an empty array if no overlays match the stageAssociation (even if domainId matches)', () => {
-            const stateWithDifferentStageSelected = { ...overlayState, selectedStageAssociation: 'synthesis' as DialecticStage};
+            const stateWithDifferentStageSelected = { ...overlayState, selectedStageAssociation: mockSynthesisStage};
             const result = selectOverlay(stateWithDifferentStageSelected, 'dom1'); // dom1 overlays exist, but for thesis/antithesis
             expect(result).toEqual([]);
         });
@@ -269,8 +303,23 @@ describe('Dialectic Store Selectors', () => {
     });
 
     it('selectContributionContentCache should return contributionContentCache from testState and initial', () => {
-        testState.contributionContentCache = { 'contrib1': { isLoading: false } };
+        testState.contributionContentCache = { 'c1': { isLoading: false } };
         expect(selectContributionContentCache(testState)).toEqual(testState.contributionContentCache);
         expect(selectContributionContentCache(initialState)).toEqual(initialDialecticStateValues.contributionContentCache);
+    });
+
+    it('selectCurrentProcessTemplate should return process template from testState and initial', () => {
+        expect(selectCurrentProcessTemplate(testState)).toEqual(mockProcessTemplate);
+        expect(selectCurrentProcessTemplate(initialState)).toBeNull();
+    });
+
+    it('selectIsLoadingProcessTemplate should return isLoading from testState and initial', () => {
+        expect(selectIsLoadingProcessTemplate(testState)).toBe(true);
+        expect(selectIsLoadingProcessTemplate(initialState)).toBe(false);
+    });
+
+    it('selectProcessTemplateError should return error from testState and initial', () => {
+        expect(selectProcessTemplateError(testState)).toEqual(mockProcessTemplateError);
+        expect(selectProcessTemplateError(initialState)).toBeNull();
     });
 }); 

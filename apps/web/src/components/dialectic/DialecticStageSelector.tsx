@@ -1,62 +1,98 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useDialecticStore } from '@paynless/store'; // Import the store
-import { selectSelectedStageAssociation } from '@paynless/store'; 
-import { DialecticStage } from '@paynless/types'; // Import the DialecticStage enum
-
-// Helper function to capitalize string
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+import { useDialecticStore } from '@paynless/store';
+import {
+  selectActiveContextStageSlug,
+  selectCurrentProjectDetail,
+  selectCurrentProcessTemplate,
+  selectIsLoadingProcessTemplate,
+} from '@paynless/store';
+import { Skeleton } from '@/components/ui/skeleton';
+import { DialecticStage } from '@paynless/types';
 
 interface DialecticStageSelectorProps {
   disabled?: boolean;
 }
 
-export const DialecticStageSelector: React.FC<DialecticStageSelectorProps> = ({
-  disabled,
-}) => {
-  // Get current stage and setter action from the store
-  const currentStage = useDialecticStore(selectSelectedStageAssociation) as DialecticStage | undefined | null; // Store can return null
-  // It's safer to get actions directly from the store object to avoid re-renders if the action identity changes.
-  // However, if setSelectedStageAssociation is a stable selector for the action, this is fine.
-  // For this example, let's assume it's a direct action from the store hook result for setters.
-  const setStage = useDialecticStore((state) => state.setSelectedStageAssociation);
+export const DialecticStageSelector: React.FC<DialecticStageSelectorProps> = ({ disabled }) => {
+  const project = useDialecticStore(selectCurrentProjectDetail);
+  const currentStage = useDialecticStore(selectActiveContextStageSlug);
+  const processTemplate = useDialecticStore(selectCurrentProcessTemplate);
+  const isLoadingTemplate = useDialecticStore(selectIsLoadingProcessTemplate);
+  const fetchProcessTemplate = useDialecticStore((state) => state.fetchProcessTemplate);
+  const setActiveDialecticContext = useDialecticStore((state) => state.setActiveDialecticContext);
 
-  // Add this useEffect to set the default stage in the store if not already set
   useEffect(() => {
-    if (currentStage === null || currentStage === undefined) {
-      setStage(DialecticStage.THESIS);
+    if (project?.process_template_id && !processTemplate && !isLoadingTemplate) {
+      fetchProcessTemplate(project.process_template_id);
     }
-  }, [currentStage, setStage]); // Dependencies: run if currentStage or setStage changes
+  }, [project, processTemplate, fetchProcessTemplate, isLoadingTemplate]);
 
-  // Default to THESIS if currentStage is null or undefined
-  const stageToDisplay = currentStage || DialecticStage.THESIS;
+  const availableStages = useMemo((): DialecticStage[] => {
+    if (!currentStage || !processTemplate?.stages || !processTemplate.transitions) {
+      return [];
+    }
 
-  const handleStageChange = (newStageValue: string) => {
-    // Convert string value from SelectItem back to DialecticStage enum key if needed,
-    // or ensure SelectItem value is directly the enum value.
-    // For simplicity, assuming onValueChange gives us the enum value directly if item values are set to enum values.
-    setStage(newStageValue as DialecticStage);
-    // The modal's specific logic (like setHasUserEditedDescription) will be handled by the modal
-    // reacting to store changes if necessary.
+    const { stages, transitions } = processTemplate;
+    
+    // Build a map of predecessors (reversed graph)
+    const predecessors = new Map<string, string[]>();
+    for (const transition of transitions) {
+      if (!predecessors.has(transition.target_stage_id)) {
+        predecessors.set(transition.target_stage_id, []);
+      }
+      predecessors.get(transition.target_stage_id)!.push(transition.source_stage_id);
+    }
+
+    // BFS to find all predecessors
+    const visited = new Set<string>();
+    const queue: string[] = [currentStage.id];
+    
+    while (queue.length > 0) {
+      const stageId = queue.shift()!;
+      if (!visited.has(stageId)) {
+        visited.add(stageId);
+        const preds = predecessors.get(stageId) || [];
+        for (const predId of preds) {
+          if (!visited.has(predId)) {
+            queue.push(predId);
+          }
+        }
+      }
+    }
+    
+    // The current stage is always available
+    visited.add(currentStage.id);
+    
+    return stages.filter(stage => visited.has(stage.id));
+  }, [currentStage, processTemplate]);
+
+  const handleStageChange = (stageId: string) => {
+    const selectedStage = processTemplate?.stages?.find((s) => s.id === stageId);
+    if (selectedStage) {
+      setActiveDialecticContext({ stageSlug: selectedStage, projectId: null, sessionId: null });
+    }
   };
+
+  if (isLoadingTemplate) {
+    return <Skeleton className="h-9 w-48" data-testid="loading-skeleton" />;
+  }
 
   return (
     <Select
-      value={stageToDisplay} // Enum values are strings, e.g., "thesis"
-      onValueChange={handleStageChange} // handleStageChange now expects DialecticStage
-      disabled={disabled}
+      value={currentStage?.id || ''}
+      onValueChange={handleStageChange}
+      disabled={disabled || availableStages.length <= 1}
     >
-      <SelectTrigger id="dialecticStage" aria-label="Dialectic Stage">
-        <SelectValue placeholder="Select a stage...">
-          {/* Capitalize the enum value for display */}
-          {stageToDisplay ? `${capitalize(stageToDisplay)} Stage` : 'Select a stage...'}
+      <SelectTrigger className="w-fit">
+        <SelectValue placeholder="No active stage...">
+          {currentStage?.display_name}
         </SelectValue>
       </SelectTrigger>
-      <SelectContent className='bg-background/80 backdrop-blur-sm'>
-        {/* Iterate over enum values */}
-        {Object.values(DialecticStage).map(stage => (
-          <SelectItem key={stage} value={stage} className="capitalize">
-            {capitalize(stage)} Stage
+      <SelectContent>
+        {availableStages.map((stage) => (
+          <SelectItem key={stage.id} value={stage.id}>
+            {stage.display_name}
           </SelectItem>
         ))}
       </SelectContent>

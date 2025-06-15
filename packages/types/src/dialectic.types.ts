@@ -123,11 +123,11 @@ export type PromptTemplate = Omit<SystemPromptsRow, 'variables_required'> & {
   variables_required?: Record<string, PromptTemplateVariable['type']> | PromptTemplateVariable[];
 };
 
-export interface DomainTagDescriptor {
+export interface DomainDescriptor {
   id: string; // Corresponds to domain_specific_prompt_overlays.id
-  domainTag: string;
+  domain_name: string;
   description: string | null;
-  stageAssociation: string | null;
+  stage_association: string | null;
 }
 
 export interface DialecticDomain {
@@ -193,6 +193,11 @@ export interface DialecticStateValues {
   isLoadingInitialPromptFileContent: boolean;
   initialPromptFileContentError: ApiError | null;
 
+  // New state for process templates
+  currentProcessTemplate: DialecticProcessTemplate | null;
+  isLoadingProcessTemplate: boolean;
+  processTemplateError: ApiError | null;
+
   // States for generating contributions
   isGeneratingContributions: boolean;
   generateContributionsError: ApiError | null;
@@ -250,6 +255,9 @@ export interface DialecticActions {
   setModelMultiplicity: (modelId: string, count: number) => void;
   resetSelectedModelId: () => void;
 
+  // New action for fetching process templates
+  fetchProcessTemplate: (templateId: string) => Promise<void>;
+
   // New action for fetching initial prompt file content
   fetchInitialPromptContent: (resourceIdOrPath: string) => Promise<void>; // Updated to accept path too
 
@@ -304,7 +312,7 @@ export interface DialecticContribution {
 }
 
 export interface DialecticApiClient {
-  listAvailableDomainTags(): Promise<ApiResponse<{ data: DomainTagDescriptor[] }>>;
+  listAvailableDomains(): Promise<ApiResponse<{ data: DomainDescriptor[] }>>;
   listAvailableDomainOverlays(payload: { stageAssociation: string }): Promise<ApiResponse<DomainOverlayDescriptor[]>>;
   createProject(payload: FormData): Promise<ApiResponse<DialecticProject>>;
   listProjects(): Promise<ApiResponse<DialecticProject[]>>;

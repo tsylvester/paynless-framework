@@ -39,7 +39,7 @@ export const selectOverlay = (
         return [];
     }
     return state.availableDomainOverlays.filter(
-        (overlay) => overlay.domainId === domainId && overlay.stageAssociation === stage
+        (overlay) => overlay.domainId === domainId && overlay.stageAssociation === stage.slug
     );
 };
 
@@ -141,9 +141,7 @@ export const selectActiveContextProjectId = (state: DialecticStateValues): strin
 export const selectActiveContextSessionId = (state: DialecticStateValues): string | null => state.activeContextSessionId;
 export const selectActiveContextStageSlug = (state: DialecticStateValues): DialecticStage | null => state.activeContextStageSlug;
 
-// Example of how you might use these with the store hook directly in a component:
-// import { useDialecticStore } from './dialecticStore';
-// const availableTags = useDialecticStore(selectAvailableDomainTags);
-// const isLoading = useDialecticStore(selectIsLoadingDomainTags);
-// const error = useDialecticStore(selectDomainTagsError);
-// const selectedTag = useDialecticStore(selectSelectedDomainTag); 
+// Selectors for Process Template
+export const selectCurrentProcessTemplate = (state: DialecticStateValues) => state.currentProcessTemplate;
+export const selectIsLoadingProcessTemplate = (state: DialecticStateValues) => state.isLoadingProcessTemplate;
+export const selectProcessTemplateError = (state: DialecticStateValues) => state.processTemplateError;

@@ -33,9 +33,9 @@ const apiClient = new ApiClient(
 
 The `DialecticApiClient` provides the following methods:
 
-#### `listAvailableDomainTags(): Promise<ApiResponse<string[]>>`
-Fetches the list of available domain tags that can be associated with dialectic projects. This endpoint is public.
--   **Returns:** A promise that resolves to an `ApiResponse` containing an array of strings (domain tags).
+#### `listAvailableDomains(): Promise<ApiResponse<string[]>>`
+Fetches the list of available domains that can be associated with dialectic projects. This endpoint is public.
+-   **Returns:** A promise that resolves to an `ApiResponse` containing an array of strings (domains).
 
 #### `createProject(payload: CreateProjectPayload): Promise<ApiResponse<DialecticProject>>`
 Creates a new dialectic project.
@@ -71,7 +71,7 @@ Fetches a short-lived signed URL to access the content of a specific dialectic c
 
 ### Interaction with `dialectic-service`
 
-All methods in the `DialecticApiClient` make authenticated (unless specified otherwise, like `listAvailableDomainTags`) POST requests to the `dialectic-service` Supabase Edge Function. The specific action to be performed by the Edge Function is sent in the request body, along with any necessary payload.
+All methods in the `DialecticApiClient` make authenticated (unless specified otherwise, like `listAvailableDomains`) POST requests to the `dialectic-service` Supabase Edge Function. The specific action to be performed by the Edge Function is sent in the request body, along with any necessary payload.
 
 For example, calling `apiClient.dialectic.createProject({ projectName: 'Test', initialUserPrompt: 'Test prompt' })` would result in a POST request to the `/functions/v1/dialectic-service` endpoint with a body similar to:
 

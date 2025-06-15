@@ -78,6 +78,11 @@ export const initialDialecticStateValues: DialecticStateValues = {
   isLoadingInitialPromptFileContent: false,
   initialPromptFileContentError: null,
 
+  // New state for process templates
+  currentProcessTemplate: null,
+  isLoadingProcessTemplate: false,
+  processTemplateError: null,
+
   // States for generating contributions
   isGeneratingContributions: false,
   generateContributionsError: null,
@@ -249,9 +254,35 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     }
   },
 
+  fetchProcessTemplate: async (templateId: string) => {
+    set({ isLoadingProcessTemplate: true, processTemplateError: null });
+    logger.info(`[DialecticStore] Fetching process template with ID: ${templateId}`);
+    try {
+      const response = await api.dialectic().fetchProcessTemplate({ templateId });
+      if (response.error) {
+        logger.error('[DialecticStore] Error fetching process template:', { templateId, errorDetails: response.error });
+        set({ currentProcessTemplate: null, isLoadingProcessTemplate: false, processTemplateError: response.error });
+      } else {
+        logger.info('[DialecticStore] Successfully fetched process template:', { templateId, template: response.data });
+        set({
+          currentProcessTemplate: response.data || null,
+          isLoadingProcessTemplate: false,
+          processTemplateError: null,
+        });
+      }
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while fetching the process template',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error fetching process template:', { templateId, errorDetails: networkError });
+      set({ currentProcessTemplate: null, isLoadingProcessTemplate: false, processTemplateError: networkError });
+    }
+  },
+
   createDialecticProject: async (payload: CreateProjectPayload): Promise<ApiResponse<DialecticProject>> => {
     set({ isCreatingProject: true, createProjectError: null });
-    logger.info('[DialecticStore] Creating new dialectic project...', { payload: { ...payload, promptFile: 'File object omitted for logging' } });
+    logger.info('[DialecticStore] Creating new dialectic project with payload:', { payload });
     
     // The API client now expects FormData
     const formData = new FormData();

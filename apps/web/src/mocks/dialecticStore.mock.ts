@@ -29,6 +29,9 @@ const initialDialecticStateValues: DialecticStateValues = {
   currentProjectDetail: null,
   isLoadingProjectDetail: false,
   projectDetailError: null,
+  currentProcessTemplate: null,
+  isLoadingProcessTemplate: false,
+  processTemplateError: null,
   modelCatalog: [],
   isLoadingModelCatalog: false,
   modelCatalogError: null,
@@ -77,6 +80,7 @@ const initializeInternalDialecticStoreState = (): DialecticStore => {
     setSelectedDomainOverlayId: vi.fn((id: string | null) => { newState.selectedDomainOverlayId = id; }),
     fetchDialecticProjects: vi.fn().mockResolvedValue(undefined as void),
     fetchDialecticProjectDetails: vi.fn().mockResolvedValue(undefined as void),
+    fetchProcessTemplate: vi.fn().mockResolvedValue(undefined as void),
     createDialecticProject: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 } as ApiResponse<DialecticProject>),
     startDialecticSession: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 } as ApiResponse<DialecticSession>),
     fetchAIModelCatalog: vi.fn().mockResolvedValue(undefined as void),
@@ -207,3 +211,5 @@ export const selectActiveContextSessionId = (state: DialecticStore): string | nu
 export const selectActiveContextStageSlug = (state: DialecticStore): DialecticStage | null => state.activeContextStageSlug;
 export const selectIsLoadingProjectDetail = (state: DialecticStore): boolean => state.isLoadingProjectDetail;
 export const selectProjectDetailError = (state: DialecticStore): ApiError | null => state.projectDetailError;
+export const selectCurrentProcessTemplate = (state: DialecticStore) => state.currentProcessTemplate;
+export const selectIsLoadingProcessTemplate = (state: DialecticStore) => state.isLoadingProcessTemplate;

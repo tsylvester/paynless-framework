@@ -1,15 +1,24 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DialecticStageSelector } from './DialecticStageSelector';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { 
+  DialecticStateValues,
+  DialecticProject, 
+  DialecticProcessTemplate, 
+  DialecticStage, 
+  DialecticStageTransition,
+  DialecticDomain
+} from '@paynless/types';
+import { setDialecticState, resetDialecticStoreMock, getDialecticStoreState } from '@/mocks/dialecticStore.mock';
 
-// Polyfill for PointerEvents (copied from ChatContextSelector.test.tsx)
+// Polyfill for PointerEvents
 if (typeof window !== 'undefined') {
     class MockPointerEvent extends Event {
         button: number;
         ctrlKey: boolean;
         pointerType: string;
-        pointerId: number;
+        pointerId: number; 
 
         constructor(type: string, props: PointerEventInit) {
             super(type, props);
@@ -19,140 +28,144 @@ if (typeof window !== 'undefined') {
             this.pointerId = props.pointerId || 0;
         }
     }
-    // @ts-expect-error // window.PointerEvent is read-only
+    // @ts-expect-error window.PointerEvent is read-only
     window.PointerEvent = MockPointerEvent;
-
-    if (!HTMLElement.prototype.hasPointerCapture) {
-        HTMLElement.prototype.hasPointerCapture = (pointerId: number) => {
-            if (process.env['NODE_ENV'] === 'test') {
-                console.log(`[Test Polyfill] hasPointerCapture: ${pointerId}`);
-            }
-            return false; 
-        };
-    }
-    if (!HTMLElement.prototype.releasePointerCapture) {
-        HTMLElement.prototype.releasePointerCapture = (pointerId: number) => {
-            if (process.env['NODE_ENV'] === 'test') {
-                console.log(`[Test Polyfill] releasePointerCapture: ${pointerId}`);
-            }
-        };
-    }
-    if (!HTMLElement.prototype.setPointerCapture) {
-        HTMLElement.prototype.setPointerCapture = (pointerId: number) => {
-            if (process.env['NODE_ENV'] === 'test') {
-                console.log(`[Test Polyfill] setPointerCapture: ${pointerId}`);
-            }
-        };
-    }
 }
 
-// Import the entire module that will be mocked
-import * as PaynlessStoreModule from '@paynless/store';
+// Mock the store to use the centralized mock implementation
+vi.mock('@paynless/store', () => import('@/mocks/dialecticStore.mock'));
 
-// Import the mock implementation logic and state helpers
-import { mockedUseDialecticStoreHookLogic, resetDialecticStoreMock, setDialecticStateValues, getDialecticStoreState } from '../../mocks/dialecticStore.mock';
+// #region Mock Data
+const mockThesisStage: DialecticStage = { id: 's1', slug: 'thesis', display_name: 'Thesis Stage', created_at: new Date().toISOString(), default_system_prompt_id: 'sp1', description: 'd', expected_output_artifacts: null, input_artifact_rules: null };
+const mockAntithesisStage: DialecticStage = { ...mockThesisStage, id: 's2', slug: 'antithesis', display_name: 'Antithesis Stage' };
+const mockSynthesisStage: DialecticStage = { ...mockThesisStage, id: 's3', slug: 'synthesis', display_name: 'Synthesis Stage' };
 
-import { DialecticStage } from '@paynless/types';
-import type { DialecticStore } from '@paynless/types';
+const mockTransitions: DialecticStageTransition[] = [
+  { id: 't1', process_template_id: 'pt1', source_stage_id: 's1', target_stage_id: 's2', created_at: new Date().toISOString(), condition_description: null },
+  { id: 't2', process_template_id: 'pt1', source_stage_id: 's2', target_stage_id: 's3', created_at: new Date().toISOString(), condition_description: null },
+];
 
-// Mock @paynless/store: This factory replaces the actual exports from '@paynless/store'
-vi.mock('@paynless/store', async (importOriginal) => {
-  const actualStoreModule = await importOriginal<typeof import('@paynless/store')>();
-  return {
-    // Ensure all named exports used by the component are explicitly provided.
-    // DialecticStageSelector uses: useDialecticStore, selectSelectedStageAssociation
-    selectSelectedStageAssociation: actualStoreModule.selectSelectedStageAssociation,
-    useDialecticStore: vi.fn(), // This is the crucial mock
-  };
-});
+const mockStages: DialecticStage[] = [mockThesisStage, mockAntithesisStage, mockSynthesisStage];
 
-// Mock logger
-vi.mock('@paynless/utils', () => ({
-  logger: {
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  },
-}));
+const mockProcessTemplate: DialecticProcessTemplate = {
+  id: 'pt1',
+  domain_id: 'd1',
+  starting_stage_id: 's1',
+  name: 'Test Template',
+  description: 'A test process template',
+  created_at: new Date().toISOString(),
+  stages: mockStages,
+  transitions: mockTransitions,
+};
+
+const mockProject: DialecticProject = {
+  id: 'p1',
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  process_template_id: 'pt1',
+  user_id: 'u1',
+  dialectic_sessions: [],
+  initial_user_prompt: 'Test prompt',
+  project_name: 'Test Project',
+  selected_domain_id: 'd1',
+  domain_name: 'Test Domain',
+  selected_domain_overlay_id: null,
+  repo_url: null,
+  status: 'active',
+};
+
+const mockDomain: DialecticDomain = {
+  id: 'd1',
+  name: 'Test Domain',
+  description: 'A test domain',
+  parent_domain_id: null,
+};
+// #endregion
+
+const setupStore = (initialState: Partial<DialecticStateValues> = {}) => {
+  // Establish a baseline state for the tests, merging any overrides
+  setDialecticState({
+    currentProjectDetail: mockProject,
+    currentProcessTemplate: mockProcessTemplate,
+    activeContextStageSlug: mockSynthesisStage,
+    isLoadingProcessTemplate: false,
+    selectedDomain: mockDomain,
+    ...initialState,
+  });
+
+  return { state: getDialecticStoreState() };
+};
 
 describe('DialecticStageSelector', () => {
   const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
-  let storeStateForAssertions: DialecticStore;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    // Reset the mock store's state before each test to ensure isolation
     resetDialecticStoreMock();
-
-    // Use the imported module namespace to access the mocked function.
-    // This ensures we are targeting the 'useDialecticStore' that Vitest has replaced.
-    vi.mocked(PaynlessStoreModule.useDialecticStore).mockImplementation(mockedUseDialecticStoreHookLogic);
-    
-    storeStateForAssertions = getDialecticStoreState();
     HTMLElement.prototype.scrollIntoView = vi.fn();
   });
 
   afterEach(() => {
+    cleanup();
     HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
   });
 
-  const setup = (initialStoreStateValues?: Partial<DialecticStore>, props: Partial<React.ComponentProps<typeof DialecticStageSelector>> = {}) => {
-    if (initialStoreStateValues) {
-      setDialecticStateValues(initialStoreStateValues);
-    }
-    return render(<DialecticStageSelector {...props} />);
-  };
-
-  it('renders with "Thesis Stage" selected by default and sets it in the store', async () => {
-    setup({ selectedStageAssociation: null });
-    expect(screen.getByRole('combobox')).toHaveTextContent('Thesis Stage');
+  it('renders the current stage name in the trigger', async () => {
+    setupStore();
+    render(<DialecticStageSelector />);
+    const trigger = screen.getByRole('combobox');
     await waitFor(() => {
-      expect(getDialecticStoreState().setSelectedStageAssociation).toHaveBeenCalledWith(DialecticStage.THESIS);
+        expect(trigger).toHaveTextContent('Synthesis Stage');
     });
-    expect(getDialecticStoreState().selectedStageAssociation).toBe(DialecticStage.THESIS);
   });
 
-  it('displays the currently selected stage from the store', () => {
-    setup({ selectedStageAssociation: DialecticStage.ANTITHESIS });
-    expect(screen.getByRole('combobox')).toHaveTextContent('Antithesis Stage');
+  it('fetches the process template if not available', () => {
+    const { state } = setupStore({ currentProcessTemplate: null, isLoadingProcessTemplate: false });
+    render(<DialecticStageSelector />);
+    expect(state.fetchProcessTemplate).toHaveBeenCalledWith('pt1');
   });
 
-  it('allows selecting a different stage and calls setSelectedStageAssociation', async () => {
+  it('renders a skeleton while loading the template', () => {
+    setupStore({ isLoadingProcessTemplate: true, currentProcessTemplate: null });
+    render(<DialecticStageSelector />);
+    expect(screen.getByTestId('loading-skeleton')).toBeInTheDocument();
+  });
+
+  it('displays the current stage and its predecessors in the dropdown', async () => {
+    setupStore({ activeContextStageSlug: mockSynthesisStage });
+    render(<DialecticStageSelector />);
     const user = userEvent.setup();
-    setDialecticStateValues({ selectedStageAssociation: DialecticStage.THESIS });
-    setup();
+    await user.click(screen.getByRole('combobox'));
+    
+    await screen.findByText('Thesis Stage');
+    expect(screen.getByText('Antithesis Stage')).toBeInTheDocument();
+    expect(screen.getAllByText('Synthesis Stage').length).toBeGreaterThan(0);
 
-    const combobox = screen.getByRole('combobox');
-    expect(combobox).toHaveTextContent('Thesis Stage');
+    const items = screen.getAllByRole('option');
+    expect(items).toHaveLength(3);
+  });
 
-    await user.click(combobox);
-    const antithesisOption = await screen.findByRole('option', { name: 'Antithesis Stage' });
-    await user.click(antithesisOption);
-
-    await waitFor(() => {
-      expect(getDialecticStoreState().setSelectedStageAssociation).toHaveBeenCalledWith(DialecticStage.ANTITHESIS);
-    });
-    expect(getDialecticStoreState().selectedStageAssociation).toBe(DialecticStage.ANTITHESIS);
+  it('calls setActiveDialecticContext when a previous stage is selected', async () => {
+    const { state } = setupStore();
+    render(<DialecticStageSelector />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('combobox'));
+    
+    const thesisOption = await screen.findByText('Thesis Stage');
+    await user.click(thesisOption);
+    
+    expect(state.setActiveDialecticContext).toHaveBeenCalledWith({ stageSlug: mockThesisStage, projectId: null, sessionId: null });
   });
 
   it('is disabled when the disabled prop is true', () => {
-    setup({ selectedStageAssociation: DialecticStage.THESIS }, { disabled: true });
+    setupStore(); // still need to setup the store state
+    render(<DialecticStageSelector disabled />);
     expect(screen.getByRole('combobox')).toBeDisabled();
   });
 
-  it('renders all DialecticStage options in the dropdown', async () => {
-    const user = userEvent.setup();
-    setDialecticStateValues({ selectedStageAssociation: DialecticStage.THESIS });
-    setup();
-    
-    const combobox = screen.getByRole('combobox');
-    await user.click(combobox);
-
-    await waitFor(async () => {
-      for (const stage of Object.values(DialecticStage)) {
-        const stageName = stage.charAt(0).toUpperCase() + stage.slice(1);
-        expect(await screen.findByRole('option', { name: `${stageName} Stage` })).toBeInTheDocument();
-      }
-    });
+  it('is disabled if there is only one available stage (the current one)', () => {
+    setupStore({ activeContextStageSlug: mockThesisStage });
+    render(<DialecticStageSelector />);
+    expect(screen.getByRole('combobox')).toBeDisabled();
   });
 }); 
