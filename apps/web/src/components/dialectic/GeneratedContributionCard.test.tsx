@@ -38,7 +38,7 @@ const originalModelContributionIdForResponse = mockContributionId_v1; // Edits p
 const mockAIContribution: DialecticContribution = {
   id: mockContributionId_v1,
   session_id: 'sess-gcc-1',
-  stage: DialecticStage.THESIS,
+  stage: 'THESIS' as any, // TODO: Use a proper mock stage object if details are needed
   iteration_number: 1,
   original_model_contribution_id: mockContributionId_v1, // Points to self
   is_latest_edit: true,
@@ -50,13 +50,13 @@ const mockAIContribution: DialecticContribution = {
   content_mime_type: 'text/markdown',
   content_size_bytes: 100,
   // ... other required fields
-  session_model_id: 'sm-gcc-1', actual_prompt_sent: 'prompt-gcc', created_at: 'now', updated_at: 'now',
+  actual_prompt_sent: 'prompt-gcc', created_at: 'now', updated_at: 'now',
 };
 
 const mockUserEditContribution: DialecticContribution = {
   id: mockContributionId_v2_edit,
   session_id: 'sess-gcc-1',
-  stage: DialecticStage.THESIS,
+  stage: 'THESIS' as any, // TODO: Use a proper mock stage object if details are needed
   iteration_number: 1,
   original_model_contribution_id: mockContributionId_v1, // Points to AI version
   is_latest_edit: true,
@@ -68,7 +68,7 @@ const mockUserEditContribution: DialecticContribution = {
   content_mime_type: 'text/markdown',
   content_size_bytes: 120,
   // ... other required fields
-  session_model_id: 'sm-gcc-1', actual_prompt_sent: 'prompt-gcc', created_at: 'now', updated_at: 'now',
+  actual_prompt_sent: 'prompt-gcc', created_at: 'now', updated_at: 'now',
 };
 
 const aiContent = "# AI Content\nOriginal thoughts.";
@@ -108,8 +108,10 @@ describe('GeneratedContributionCard', () => {
         user_id: 'u1',
         project_name: 'p1',
         initial_user_prompt: 'ipu',
+        initial_prompt_resource_id: null,
+        selected_domain_id: 'd1',
+        domain_name: 'Software Development',
         selected_domain_overlay_id: null,
-        selected_domain_tag: null,
         repo_url: null,
         status: 'active',
         created_at: 'now',
@@ -124,16 +126,16 @@ describe('GeneratedContributionCard', () => {
       isLoadingProjects: false, projectsError: null, projects: [],
       isLoadingProjectDetail: false, projectDetailError: null, 
       modelCatalog: [], isLoadingModelCatalog: false, modelCatalogError: null,
-      availableDomainTags: [], isLoadingDomainTags: false, domainTagsError: null, selectedDomainTag: null,
+      availableDomains: [], isLoadingDomains: false, domainsError: null, selectedDomainId: null,
       availableDomainOverlays: [], isLoadingDomainOverlays: false, domainOverlaysError: null, selectedDomainOverlayId: null,
       isGeneratingContributions: false, generateContributionsError: null,
       isSubmittingStageResponses: false, submitStageResponsesError: null,
       fetchContributionContent: vi.fn(), // Default mock for actions
       saveContributionEdit: vi.fn(),
       // ... other state and actions ...
-    };
+    } as any;
 
-    const effectiveState = { ...baseState, ...mockDialecticActions, ...(storeOverrides || {}) }; // Spread mockDialecticActions here
+    const effectiveState = { ...baseState, ...(storeOverrides || {}) }; // Spread mockDialecticActions here
     initializeMockDialecticState(effectiveState as DialecticStore);
   };
 
@@ -146,7 +148,7 @@ describe('GeneratedContributionCard', () => {
       <GeneratedContributionCard 
         contributionId={contributionToRender.id} 
         originalModelContributionIdForResponse={originalModelContributionIdForResponse}
-        initialResponseText={initialResponse}
+        initialResponseText={initialResponse || ''}
         onResponseChange={onResponseChangeMock}
       />
     );

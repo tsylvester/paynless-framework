@@ -56,7 +56,7 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
       const result = await generateContributions({ 
         sessionId, 
         projectId, 
-        stageSlug: currentStage, 
+        stageSlug: currentStage.slug, 
         iterationNumber: currentIterationNumber
       });
 

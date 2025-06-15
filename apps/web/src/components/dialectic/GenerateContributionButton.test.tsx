@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { toast } from 'sonner'; // Import the mocked toast
 import { GenerateContributionButton } from './GenerateContributionButton';
 import { useDialecticStore } from '@paynless/store';
-import { DialecticStage, DialecticContribution, ApiError } from '@paynless/types';
+import { DialecticStage, DialecticContribution, ApiError, Json } from '@paynless/types';
 
 // Mock the store
 const mockGenerateContributions = vi.fn();
@@ -26,11 +26,22 @@ vi.mock('sonner', () => ({
 
 const mockedUseDialecticStore = useDialecticStore as typeof useDialecticStore & ReturnType<typeof vi.fn>;
 
+const mockThesisStage: DialecticStage = {
+  id: 'stage-1',
+  slug: 'thesis',
+  display_name: 'Thesis',
+  description: 'Initial hypothesis generation',
+  default_system_prompt_id: 'prompt-1',
+  input_artifact_rules: {},
+  expected_output_artifacts: {},
+  created_at: new Date().toISOString(),
+};
+
 describe('GenerateContributionButton', () => {
   const defaultProps = {
     sessionId: 'test-session-id',
     projectId: 'test-project-id',
-    currentStage: DialecticStage.THESIS,
+    currentStage: mockThesisStage,
     currentStageFriendlyName: 'Thesis',
     onGenerationStart: vi.fn(),
     onGenerationComplete: vi.fn(),
@@ -69,11 +80,21 @@ describe('GenerateContributionButton', () => {
             dialectic_session_models: [],
           }
         ],
-        user_id: 'u1', project_name: 'p1', initial_user_prompt: 'ipu', selected_domain_overlay_id: null, selected_domain_tag: null,
-        repo_url: null, status: 'active', created_at: 'now', updated_at: 'now',
+        user_id: 'u1', 
+        project_name: 'p1', 
+        initial_user_prompt: 'ipu', 
+        initial_prompt_resource_id: null,
+        selected_domain_id: 'd1',
+        domain_name: 'Software Development',
+        selected_domain_overlay_id: null,
+        repo_url: null, 
+        status: 'active', 
+        created_at: 'now', 
+        updated_at: 'now',
+        dialectic_project_resources: [],
       },
-      fetchAvailableDomainTags: vi.fn(),
-      setSelectedDomainTag: vi.fn(),
+      fetchAvailableDomains: vi.fn(),
+      setSelectedDomainId: vi.fn(),
       fetchAvailableDomainOverlays: vi.fn(),
       setSelectedStageAssociation: vi.fn(),
       setSelectedDomainOverlayId: vi.fn(),
@@ -94,10 +115,10 @@ describe('GenerateContributionButton', () => {
       setModelMultiplicity: vi.fn(),
       resetSelectedModelId: vi.fn(),
       fetchInitialPromptContent: vi.fn(),
-      availableDomainTags: [],
-      isLoadingDomainTags: false,
-      domainTagsError: null,
-      selectedDomainTag: null,
+      availableDomains: [],
+      isLoadingDomains: false,
+      domainsError: null,
+      selectedDomainId: null,
       selectedStageAssociation: null,
       availableDomainOverlays: [],
       isLoadingDomainOverlays: false,
@@ -158,7 +179,7 @@ describe('GenerateContributionButton', () => {
     expect(mockGenerateContributions).toHaveBeenCalledWith({
       sessionId: 'test-session-id',
       projectId: 'test-project-id',
-      stageSlug: defaultProps.currentStage,
+      stageSlug: defaultProps.currentStage.slug,
       iterationNumber: 1
     });
 

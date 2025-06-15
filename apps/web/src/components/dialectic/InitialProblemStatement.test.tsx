@@ -54,8 +54,8 @@ vi.mock('@/components/common/TextInputArea', () => ({
 
 let mockLocalStorageStore: Record<string, string> = {};
 
-const createMockStoreState = (overrides: Partial<DialecticStore> = {}): DialecticStore => {
-  const baseState: DialecticStore = {
+const createMockStoreState = (overrides: Partial<DialecticStore> = {}) => {
+  const baseState = {
     ...initialDialecticStateValues,
     currentProjectDetail: null,
     updateDialecticProjectInitialPrompt: mockUpdateDialecticProjectInitialPrompt,
@@ -63,12 +63,12 @@ const createMockStoreState = (overrides: Partial<DialecticStore> = {}): Dialecti
     isLoadingProjects: false,
     projectsError: null,
     fetchDialecticProjects: vi.fn(),
-    availableDomainTags: { data: [] },
-    isLoadingDomainTags: false,
-    domainTagsError: null,
-    selectedDomainTag: null,
-    fetchAvailableDomainTags: vi.fn(),
-    setSelectedDomainTag: vi.fn(),
+    availableDomains: [],
+    isLoadingDomains: false,
+    domainsError: null,
+    selectedDomainId: null,
+    fetchAvailableDomains: vi.fn(),
+    setSelectedDomainId: vi.fn(),
     isLoadingProjectDetail: false,
     projectDetailError: null,
     fetchDialecticProjectDetails: vi.fn(),
@@ -111,7 +111,7 @@ const createMockStoreState = (overrides: Partial<DialecticStore> = {}): Dialecti
     _resetForTesting: vi.fn(),
     ...overrides,
   };
-  return baseState;
+  return baseState as any;
 };
 
 const mockLocalStorage = {
@@ -140,7 +140,16 @@ describe('InitialProblemStatement', () => {
             id: testProjectId,
             project_name: 'Test Project',
             initial_user_prompt: initialStorePromptText,
-            user_id: 'user-1', selected_domain_overlay_id: null, selected_domain_tag: null, repo_url: null, status: 'active', created_at: 'date', updated_at: 'date',
+            user_id: 'user-1',
+            selected_domain_id: 'dom-1',
+            domain_name: 'Software Development',
+            selected_domain_overlay_id: null,
+            repo_url: null,
+            status: 'active',
+            created_at: 'date',
+            updated_at: 'date',
+            dialectic_sessions: [],
+            initial_prompt_resource_id: null,
         } as DialecticProject,
     });
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(defaultMockState));
@@ -166,12 +175,15 @@ describe('InitialProblemStatement', () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         initial_user_prompt: undefined as any, // This makes actualInitialPrompt undefined, triggering skeletons.
         user_id: 'user-1',
+        selected_domain_id: 'dom-1',
+        domain_name: 'Software Development',
         selected_domain_overlay_id: null,
-        selected_domain_tag: null,
         repo_url: null,
         status: 'active',
         created_at: 'date',
         updated_at: 'date',
+        dialectic_sessions: [],
+        initial_prompt_resource_id: null,
         // sessions and resources are optional in DialecticProject type
       } as DialecticProject,
     });

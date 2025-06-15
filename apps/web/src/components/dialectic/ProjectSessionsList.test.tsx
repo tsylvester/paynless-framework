@@ -14,7 +14,7 @@ vi.mock('@paynless/store', async (importOriginal) => {
     useDialecticStore: vi.fn(),
     // Mock selectors used by ProjectSessionsList
     selectCurrentProjectId: vi.fn(state => state.currentProjectDetail?.id),
-    selectCurrentProjectSessions: vi.fn(state => state.currentProjectDetail?.sessions || []),
+    selectCurrentProjectSessions: vi.fn(state => state.currentProjectDetail?.dialectic_sessions || []),
     selectCurrentProjectDetail: vi.fn(state => state.currentProjectDetail),
   };
 });
@@ -28,20 +28,20 @@ vi.mock('react-router-dom', async (importOriginal) => {
   };
 });
 
-const createMockStoreState = (overrides: Partial<DialecticStore> = {}): DialecticStore => {
-  const baseState: DialecticStore = {
+const createMockStoreState = (overrides: Partial<DialecticStore> = {}) => {
+  const baseState = {
     ...initialDialecticStateValues,
     currentProjectDetail: null, // This will be primary for ProjectSessionsList
     projects: [],
     isLoadingProjects: false,
     projectsError: null,
     fetchDialecticProjects: vi.fn(),
-    availableDomainTags: { data: [] },
-    isLoadingDomainTags: false,
-    domainTagsError: null,
-    selectedDomainTag: null,
-    fetchAvailableDomainTags: vi.fn(),
-    setSelectedDomainTag: vi.fn(),
+    availableDomains: [],
+    isLoadingDomains: false,
+    domainsError: null,
+    selectedDomainId: null,
+    fetchAvailableDomains: vi.fn(),
+    setSelectedDomainId: vi.fn(),
     isLoadingProjectDetail: false,
     projectDetailError: null,
     fetchDialecticProjectDetails: vi.fn(),
@@ -85,7 +85,7 @@ const createMockStoreState = (overrides: Partial<DialecticStore> = {}): Dialecti
     _resetForTesting: vi.fn(),
     ...overrides,
   };
-  return baseState;
+  return baseState as any;
 };
 
 const mockOnStartNewSession = vi.fn();
@@ -101,13 +101,15 @@ describe('ProjectSessionsList', () => {
         project_name: 'Session List Project',
         initial_user_prompt: 'Prompt',
         user_id: 'user-1',
+        selected_domain_id: 'dom-1',
+        domain_name: 'Software Development',
         selected_domain_overlay_id: null,
-        selected_domain_tag: null,
         repo_url: null,
         status: 'active',
         created_at: 'date',
         updated_at: 'date',
-        sessions: [],
+        dialectic_sessions: [],
+        initial_prompt_resource_id: null,
       } as DialecticProject,
     });
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(defaultMockStore));
@@ -143,21 +145,29 @@ describe('ProjectSessionsList', () => {
       id: 'session-1',
       project_id: testProjectId,
       session_description: 'Alpha Session Description',
-      current_stage_seed_prompt: 'Alpha seed prompt',
       iteration_count: 2,
       status: 'synthesis_complete',
       created_at: new Date(2023, 0, 15, 10, 30).toISOString(),
       updated_at: new Date().toISOString(),
+      user_input_reference_url: null,
+      selected_model_catalog_ids: [],
+      associated_chat_id: 'chat-alpha',
+      current_stage_id: 'stage-3', // Corresponds to synthesis
+      current_stage_seed_prompt: 'Alpha seed prompt',
     } as DialecticSession,
     {
       id: 'session-2',
       project_id: testProjectId,
       session_description: 'Beta Session - No Seed',
-      current_stage_seed_prompt: null,
       iteration_count: 0,
       status: 'pending_thesis',
       created_at: new Date(2023, 1, 20, 14, 0).toISOString(),
       updated_at: new Date().toISOString(),
+      user_input_reference_url: null,
+      selected_model_catalog_ids: [],
+      associated_chat_id: 'chat-beta',
+      current_stage_id: 'stage-1', // Corresponds to thesis
+      current_stage_seed_prompt: null,
     } as DialecticSession,
   ];
 
@@ -167,8 +177,16 @@ describe('ProjectSessionsList', () => {
         id: testProjectId,
         project_name: 'Session List Project',
         initial_user_prompt: 'Prompt',
-        user_id: 'user-1', selected_domain_overlay_id: null, selected_domain_tag: null, repo_url: null, status: 'active', created_at: 'date', updated_at: 'date',
-        sessions: mockSessionsData,
+        user_id: 'user-1',
+        selected_domain_id: 'dom-1',
+        domain_name: 'Software Development',
+        selected_domain_overlay_id: null,
+        repo_url: null,
+        status: 'active',
+        created_at: 'date',
+        updated_at: 'date',
+        dialectic_sessions: mockSessionsData,
+        initial_prompt_resource_id: null,
       } as DialecticProject,
     });
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(stateWithSessions));

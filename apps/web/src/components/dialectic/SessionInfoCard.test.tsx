@@ -54,9 +54,11 @@ const mockProject: DialecticProject = {
   project_name: 'Test Project Name',
   initial_user_prompt: 'This is the main project prompt.', // Project's initial prompt
   dialectic_sessions: [mockSession],
-  // ... other required project fields
+  selected_domain_id: 'd1',
+  domain_name: 'Software Development',
   selected_domain_overlay_id: null,
-  selected_domain_tag: null,
+  initial_prompt_resource_id: null,
+  process_template_id: 'pt1',
   repo_url: null,
   status: 'active',
   created_at: '2023-01-01T08:00:00Z',
@@ -79,10 +81,6 @@ describe('SessionInfoCard', () => {
       activeContextSessionId: mockSessionId,
       projects: [mockProject],
       // ...any other defaults from your initialDialecticStateValues in the mock file...
-      availableDomainTags: [],
-      isLoadingDomainTags: false,
-      domainTagsError: null,
-      selectedDomainTag: null,
       selectedStageAssociation: null,
       availableDomainOverlays: [],
       isLoadingDomainOverlays: false,
@@ -90,6 +88,10 @@ describe('SessionInfoCard', () => {
       selectedDomainOverlayId: null,
       isLoadingProjects: false,
       projectsError: null,
+      availableDomains: [],
+      isLoadingDomains: false,
+      domainsError: null,
+      selectedDomainId: null,
       isLoadingProjectDetail: false,
       projectDetailError: null,
       modelCatalog: [],
@@ -132,8 +134,8 @@ describe('SessionInfoCard', () => {
   it('renders basic session information correctly', () => {
     renderComponent();
     expect(screen.getByText(mockSession.session_description!)).toBeInTheDocument();
-    expect(screen.getByText(new RegExp(`Iteration: ${mockSession.current_iteration}`))).toBeInTheDocument();
-    expect(screen.getByText(new RegExp(mockSession.status, 'i'))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`Iteration: ${(mockSession as any).current_iteration}`))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(mockSession.status!, 'i'))).toBeInTheDocument();
     // Also check project name as context, using a regex to handle whitespace
     expect(screen.getByText(new RegExp(`Project:\\s*${mockProject.project_name}`))).toBeInTheDocument();
   });

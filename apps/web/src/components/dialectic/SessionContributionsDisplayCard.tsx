@@ -4,8 +4,7 @@ import {
   selectActiveContextSessionId, 
   selectActiveContextStageSlug 
 } from '@paynless/store';
-import { DialecticSession, DialecticContribution, ApiError } from '@paynless/types';
-import { DIALECTIC_STAGES } from '@/config/dialecticConfig';
+import { DialecticContribution, ApiError } from '@paynless/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -26,11 +25,12 @@ interface StageResponse {
 export const SessionContributionsDisplayCard: React.FC<SessionContributionsDisplayCardProps> = () => {
   // Get context from store
   const sessionIdFromStore = useDialecticStore(selectActiveContextSessionId);
-  const activeStageSlugFromStore = useDialecticStore(selectActiveContextStageSlug);
+  const activeStageFromStore = useDialecticStore(selectActiveContextStageSlug);
 
+  const project = useDialecticStore(state => state.currentProjectDetail);
   const session = useDialecticStore(state => 
-    sessionIdFromStore ? state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionIdFromStore) : undefined
-  ) as DialecticSession | undefined;
+    sessionIdFromStore ? project?.dialectic_sessions?.find(s => s.id === sessionIdFromStore) : undefined
+  );
 
   const submitStageResponses = useDialecticStore(state => state.submitStageResponses);
   const isSubmitting = useDialecticStore(state => state.isSubmittingStageResponses);
@@ -46,13 +46,13 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
     if (submissionError) {
         resetSubmitError?.();
     }
-  }, [activeStageSlugFromStore, resetSubmitError, submissionError]); // Depend on activeStageSlugFromStore
+  }, [activeStageFromStore, resetSubmitError, submissionError]); // Depend on activeStageSlugFromStore
 
   const displayedContributions = useMemo(() => {
-    if (!session?.dialectic_contributions || !session.current_iteration || !activeStageSlugFromStore) return [];
+    if (!session?.dialectic_contributions || !session.iteration_count || !activeStageFromStore) return [];
 
     const contributionsForStageAndIteration = session.dialectic_contributions.filter(
-      c => c.stage === activeStageSlugFromStore && c.iteration_number === session.current_iteration
+      c => c.stage.slug === activeStageFromStore.slug && c.iteration_number === session.iteration_count
     );
 
     const latestEditsMap = new Map<string, DialecticContribution>();
@@ -96,7 +96,7 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
     
     return finalContributions.sort((a,b) => (a.model_name || '').localeCompare(b.model_name || ''));
 
-  }, [session, activeStageSlugFromStore]); // Depend on session (derived from sessionIdFromStore) and activeStageSlugFromStore
+  }, [session, activeStageFromStore]); // Depend on session (derived from sessionIdFromStore) and activeStageSlugFromStore
 
   const handleResponseChange = (originalModelContributionId: string, responseText: string) => {
     setStageResponses(prev => ({ ...prev, [originalModelContributionId]: responseText }));
@@ -107,7 +107,7 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
   };
 
   const handleSubmitResponses = async () => {
-    if (!session || !session.current_iteration || !sessionIdFromStore || !activeStageSlugFromStore) return;
+    if (!session || !session.iteration_count || !sessionIdFromStore || !activeStageFromStore) return;
     setSubmissionSuccessMessage(null);
     if (submissionError) {
         resetSubmitError?.();
@@ -125,13 +125,13 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
     try {
       const result = await submitStageResponses({
         sessionId: sessionIdFromStore, // Use from store
-        currentIterationNumber: session.current_iteration,
+        currentIterationNumber: session.iteration_count,
         responses: responsesToSubmit.map(r => ({
           originalModelContributionId: r.originalContributionId,
           responseText: r.responseText,
         })),
         projectId: session.project_id,
-        stageSlug: activeStageSlugFromStore,
+        stageSlug: activeStageFromStore.slug,
       });
       if ((result as unknown as { success: boolean })?.success || !(result as unknown as { error: ApiError })?.error) {
         setSubmissionSuccessMessage('Responses submitted successfully. The next stage is being prepared.');
@@ -152,11 +152,11 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
   };
 
   const activeStageDisplayName =
-    DIALECTIC_STAGES.find(s => s.slug === activeStageSlugFromStore)?.displayName || activeStageSlugFromStore || 'Current Stage';
+    activeStageFromStore?.display_name || 'Current Stage';
 
   const canSubmit = Object.values(stageResponses).some(text => text.trim() !== '') && !isSubmitting;
 
-  if (!sessionIdFromStore || !activeStageSlugFromStore) {
+  if (!sessionIdFromStore || !activeStageFromStore) {
     return (
         <Card className="mt-4">
             <CardHeader><CardTitle>Loading Contributions...</CardTitle></CardHeader>
@@ -182,12 +182,12 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
         {displayedContributions.length === 0 && (
           <>
             <p className="text-muted-foreground italic">No contributions found for this stage yet.</p>
-          <GenerateContributionButton
-            sessionId={sessionIdFromStore}
-            projectId={session.project_id}
-            currentStage={activeStageSlugFromStore}
-            currentStageFriendlyName={activeStageDisplayName}
-          />
+            <GenerateContributionButton
+              sessionId={sessionIdFromStore}
+              projectId={session.project_id}
+              currentStage={activeStageFromStore}
+              currentStageFriendlyName={activeStageDisplayName}
+            />
           </>
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -222,7 +222,7 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
             disabled={!canSubmit || isSubmitting}
             className="w-full"
           >
-            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} 
+            {isSubmitting && <Loader2 data-testid="loader" className="mr-2 h-4 w-4 animate-spin" />} 
             {isSubmitting ? 'Submitting...' : `Submit Responses for ${activeStageDisplayName} & Prepare Next Stage`}
           </Button>
         </CardFooter>

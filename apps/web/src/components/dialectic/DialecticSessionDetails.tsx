@@ -62,7 +62,7 @@ export const DialecticSessionDetails: React.FC = () => {
     return <div className="p-4">Project details not found or not loaded yet.</div>;
   }
 
-  const session = projectDetail.sessions?.find((s: DialecticSession) => s.id === sessionId);
+  const session = projectDetail.dialectic_sessions?.find((s: DialecticSession) => s.id === sessionId);
 
   if (!session) {
     return <div className="p-4">Session not found in this project.</div>;
@@ -70,10 +70,13 @@ export const DialecticSessionDetails: React.FC = () => {
 
   const contributionsByStage: Record<string, DialecticContribution[]> = {};
   session.dialectic_contributions?.forEach((contrib: DialecticContribution) => {
-    if (!contributionsByStage[contrib.stage]) {
-      contributionsByStage[contrib.stage] = [];
+    const stageSlug = contrib.stage?.slug;
+    if (stageSlug) {
+      if (!contributionsByStage[stageSlug]) {
+        contributionsByStage[stageSlug] = [];
+      }
+      contributionsByStage[stageSlug].push(contrib);
     }
-    contributionsByStage[contrib.stage].push(contrib);
   });
 
   const stageOrder = ['thesis', 'antithesis', 'synthesis', 'parenthesis', 'paralysis'];

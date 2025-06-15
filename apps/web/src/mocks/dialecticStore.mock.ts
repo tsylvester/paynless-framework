@@ -205,3 +205,5 @@ export const selectSelectedModelIds = (state: DialecticStore): string[] | null =
 export const selectIsLoadingModelCatalog = (state: DialecticStore): boolean => state.isLoadingModelCatalog;
 export const selectActiveContextSessionId = (state: DialecticStore): string | null => state.activeContextSessionId;
 export const selectActiveContextStageSlug = (state: DialecticStore): DialecticStage | null => state.activeContextStageSlug;
+export const selectIsLoadingProjectDetail = (state: DialecticStore): boolean => state.isLoadingProjectDetail;
+export const selectProjectDetailError = (state: DialecticStore): ApiError | null => state.projectDetailError;

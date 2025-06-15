@@ -25,13 +25,9 @@ const mockSystemPrompts: SystemPrompt[] = [
     prompt_text: 'Hello {{name}}, your project is {{initial_user_prompt}}. The original thesis was: {{original_content}}. Missing: {{missing_var}}',
     is_active: true,
     version: 1,
-    variables_required: { name: 'string', initial_user_prompt: 'string', original_content: 'string', missing_var: 'string' },
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    stage_association: 'thesis',
     description: 'A test template',
-    is_stage_default: true,
-    context: 'testing'
   },
 ];
 
@@ -40,12 +36,15 @@ const mockProject: DialecticProject = {
   user_id: 'user1',
   project_name: 'Test Project',
   initial_user_prompt: 'Solve world hunger',
+  initial_prompt_resource_id: null,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   status: 'active',
-  selected_domain_tag: 'test_domain',
+  selected_domain_id: 'dom-1',
+  domain_name: 'test_domain',
+  selected_domain_overlay_id: null,
   repo_url: 'https://github.com/test/test',
-  sessions: [
+  dialectic_sessions: [
     {
         id: 'sess1',
         project_id: 'proj1',
@@ -54,22 +53,23 @@ const mockProject: DialecticProject = {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         session_description: 'Test session',
-        current_stage_seed_prompt: 'Test prompt',
         associated_chat_id: 'chat1',
-        active_thesis_prompt_template_id: 'template1',
-        active_antithesis_prompt_template_id: 'template2',
-        active_synthesis_prompt_template_id: 'template3',
-        active_parenthesis_prompt_template_id: 'template4',
-        active_paralysis_prompt_template_id: 'template5',
-        max_iterations: 10,
+        user_input_reference_url: null,
+        selected_model_catalog_ids: [],
+        current_stage_id: 'stage-1',
         dialectic_contributions: [
             {
                 id: 'contrib1',
                 session_id: 'sess1',
                 user_id: 'model1',
-                contribution_type: 'thesis',
-                content: 'My great thesis content',
+                stage: 'thesis',
+                iteration_number: 1,
                 model_id: 'gpt-4',
+                model_name: 'GPT-4',
+                prompt_template_id_used: '1',
+                seed_prompt_url: 'path/to/seed.md',
+                target_contribution_id: null,
+                error: null,
                 tokens_used_input: 100,
                 tokens_used_output: 200,
                 processing_time_ms: 1000,
@@ -79,15 +79,13 @@ const mockProject: DialecticProject = {
                 content_storage_path: 'path/thesis.md',
                 content_mime_type: 'text/markdown',
                 raw_response_storage_path: 'path/raw.json',
-                session_model_id: 'gpt-4',
-                stage: 'thesis',
-                iteration_number: 1,
-                actual_prompt_sent: 'original_prompt',
                 content_size_bytes: 1000,
                 citations: [],
-                parent_contribution_id: null,
-            } as DialecticContribution,
-        ]
+                is_latest_edit: true,
+                edit_version: 1,
+                original_model_contribution_id: 'contrib1',
+            },
+        ] as any
     }
   ]
 };
