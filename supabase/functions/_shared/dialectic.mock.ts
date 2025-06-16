@@ -10,8 +10,8 @@ import type {
     DomainOverlayDescriptor,
     UploadProjectResourceFilePayload,
     DialecticProjectResource,
-    GenerateStageContributionsPayload, // Corrected name
-    GenerateStageContributionsSuccessResponse, // Corrected name
+    GenerateContributionsPayload, // Corrected name
+    GenerateContributionsSuccessResponse, // Corrected name
     SubmitStageResponsesPayload, 
     SubmitStageResponsesResponse, 
     SaveContributionEditPayload,
@@ -27,7 +27,7 @@ import type {
 // 1. Define Function Signature Types
 type CreateProjectFn = (payload: FormData | CreateProjectPayload) => Promise<DialecticProject>;
 type StartSessionFn = (payload: StartSessionPayload) => Promise<DialecticSession>;
-type GenerateContributionsFn = (payload: GenerateStageContributionsPayload) => Promise<GenerateStageContributionsSuccessResponse>;
+type GenerateContributionsFn = (payload: GenerateContributionsPayload) => Promise<GenerateContributionsSuccessResponse>;
 type SubmitStageResponsesFn = (payload: SubmitStageResponsesPayload) => Promise<SubmitStageResponsesResponse>;
 type SaveContributionEditFn = (payload: SaveContributionEditPayload) => Promise<DialecticContribution>;
 type GetProjectDetailsFn = (projectId: string) => Promise<DialecticProject | null>;
@@ -68,7 +68,7 @@ export interface IDialecticService {
 class _DialecticServiceDummyImpl implements IDialecticService {
     async createProject(_payload: FormData | CreateProjectPayload): Promise<DialecticProject> { return undefined as any; }
     async startSession(_payload: StartSessionPayload): Promise<DialecticSession> { return undefined as any; }
-    async generateContributions(_payload: GenerateStageContributionsPayload): Promise<GenerateStageContributionsSuccessResponse> { return undefined as any; }
+    async generateContributions(_payload: GenerateContributionsPayload): Promise<GenerateContributionsSuccessResponse> { return undefined as any; }
     async submitStageResponses(_payload: SubmitStageResponsesPayload): Promise<SubmitStageResponsesResponse> { return undefined as any; }
     async saveContributionEdit(_payload: SaveContributionEditPayload): Promise<DialecticContribution> { return undefined as any; }
     async getProjectDetails(_projectId: string): Promise<DialecticProject | null> { return undefined as any; }

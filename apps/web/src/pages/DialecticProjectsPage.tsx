@@ -19,7 +19,7 @@ export const DialecticProjectsPage: React.FC = () => {
 
   useEffect(() => {
     fetchDialecticProjects();
-  }, [fetchDialecticProjects]);
+  }, []);
 
   if (isLoading) {
     return (

@@ -2,6 +2,7 @@
 import type { Database } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
 import type { SupabaseClient, User } from "npm:@supabase/supabase-js@2"; // Added User
+import type { DialecticProject } from "./dialectic.interface.ts";
 
 console.log("listProjects function started");
 
@@ -14,7 +15,7 @@ export async function listProjects(
   user: User, // Added user
   dbClient: SupabaseClient // Changed type from typeof supabaseAdmin
   // options?: ListProjectsOptions // Removed options
-): Promise<{ data?: Database['public']['Tables']['dialectic_projects']['Row'][]; error?: { message: string; status?: number; code?: string; details?: string } }> {
+): Promise<{ data?: DialecticProject[]; error?: { message: string; status?: number; code?: string; details?: string } }> {
   // const effectiveCreateSupabaseClient = options?.createSupabaseClientOverride || createSupabaseClient; // Removed
   // const supabaseUserClient = effectiveCreateSupabaseClient(req); // Removed
   // const { data: { user }, error: userError } = await supabaseUserClient.auth.getUser(); // Removed
@@ -36,6 +37,12 @@ export async function listProjects(
     return { error: { message: "Failed to fetch projects", details: projectsError.message, status: 500, code: "DB_ERROR" } };
   }
 
-  return { data: projectsData || [] }; // Return empty array if projectsData is null (no projects found)
+  const projectsWithDomainName = projectsData?.map(p => ({
+    ...p,
+    dialectic_domains: undefined, // remove the nested object
+    domain_name: p.dialectic_domains?.name || null,
+  })) || [];
+
+  return { data: projectsWithDomainName as DialecticProject[] };
 }
   

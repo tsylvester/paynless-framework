@@ -16,19 +16,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 export const DialecticProjectDetailsPage: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const {
-    fetchDialecticProjectDetails,
-    currentProjectDetail,
-    isLoadingProjectDetail,
-    projectDetailError,
-    setStartNewSessionModalOpen,
-  } = useDialecticStore((state) => ({
-    fetchDialecticProjectDetails: state.fetchDialecticProjectDetails,
-    currentProjectDetail: selectCurrentProjectDetail(state),
-    isLoadingProjectDetail: selectIsLoadingProjectDetail(state),
-    projectDetailError: state.projectDetailError,
-    setStartNewSessionModalOpen: state.setStartNewSessionModalOpen,
-  }));
+
+  // Optimized selectors for Zustand store
+  const fetchDialecticProjectDetails = useDialecticStore((state) => state.fetchDialecticProjectDetails);
+  const currentProjectDetail = useDialecticStore(selectCurrentProjectDetail);
+  const isLoadingProjectDetail = useDialecticStore(selectIsLoadingProjectDetail);
+  const projectDetailError = useDialecticStore((state) => state.projectDetailError);
+  const setStartNewSessionModalOpen = useDialecticStore((state) => state.setStartNewSessionModalOpen);
 
   useEffect(() => {
     if (projectId) {
@@ -37,7 +31,7 @@ export const DialecticProjectDetailsPage: React.FC = () => {
       console.error("No project ID found in URL");
       navigate('/dialectic');
     }
-  }, [projectId, fetchDialecticProjectDetails, navigate]);
+  }, [projectId, fetchDialecticProjectDetails]);
 
   const handleStartNewSession = () => {
     setStartNewSessionModalOpen(true);

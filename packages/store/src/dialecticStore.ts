@@ -73,10 +73,8 @@ export const initialDialecticStateValues: DialecticStateValues = {
   isStartNewSessionModalOpen: false,
   selectedModelIds: [],
 
-  // New initial state for initial prompt file content
-  initialPromptFileContent: null,
-  isLoadingInitialPromptFileContent: false,
-  initialPromptFileContentError: null,
+  // Cache for initial prompt file content, mapping resourceId to its state
+  initialPromptContentCache: {},
 
   // New state for process templates
   currentProcessTemplate: null,
@@ -286,6 +284,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     
     // The API client now expects FormData
     const formData = new FormData();
+    formData.append('action', 'createProject');
     formData.append('projectName', payload.projectName);
     formData.append('selectedDomainId', payload.selectedDomainId);
     
@@ -308,7 +307,6 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
         } else {
             logger.info('[DialecticStore] Successfully created project:', { project: response.data });
             // Add the new project to the start of the projects list
-            get().fetchDialecticProjects();
             set(state => ({
                 projects: [response.data as DialecticProject, ...state.projects],
                 isCreatingProject: false,
@@ -752,11 +750,21 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
   },
 
   fetchInitialPromptContent: async (resourceId: string) => {
-    set({ 
-      isLoadingInitialPromptFileContent: true, 
-      initialPromptFileContentError: null,
-      initialPromptFileContent: null // Clear previous content
-    });
+    const cacheEntry = get().initialPromptContentCache[resourceId];
+
+    // Do not fetch if content is already loaded or is currently loading
+    if (cacheEntry?.content || cacheEntry?.isLoading) {
+      return;
+    }
+
+    // Set loading state for this specific resourceId
+    set(state => ({
+      initialPromptContentCache: {
+        ...state.initialPromptContentCache,
+        [resourceId]: { ...cacheEntry, isLoading: true, error: null },
+      }
+    }));
+
     logger.info(`[DialecticStore] Fetching initial prompt content for resource ID: ${resourceId}`);
     try {
       const response = await api.dialectic().getProjectResourceContent({ resourceId });
@@ -764,22 +772,29 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       if (response.error || !response.data) {
         const error = response.error || { message: 'No data returned while fetching prompt content', code: 'NO_DATA' } as ApiError;
         logger.error('[DialecticStore] Error fetching initial prompt content:', { resourceId, errorDetails: error });
-        set({ 
-          isLoadingInitialPromptFileContent: false, 
-          initialPromptFileContentError: error,
-          initialPromptFileContent: null
-        });
+        set(state => ({
+          initialPromptContentCache: {
+            ...state.initialPromptContentCache,
+            [resourceId]: { ...state.initialPromptContentCache[resourceId], isLoading: false, error },
+          }
+        }));
       } else {
         logger.info('[DialecticStore] Successfully fetched initial prompt content:', { 
           resourceId, 
           fileName: response.data.fileName,
           contentLength: response.data.content?.length 
         });
-        set({
-          initialPromptFileContent: response.data,
-          isLoadingInitialPromptFileContent: false,
-          initialPromptFileContentError: null,
-        });
+        set(state => ({
+          initialPromptContentCache: {
+            ...state.initialPromptContentCache,
+            [resourceId]: {
+              isLoading: false,
+              error: null,
+              content: response.data?.content || '',
+              fileName: response.data?.fileName || '',
+            },
+          }
+        }));
       }
     } catch (error: unknown) {
       const networkError: ApiError = {
@@ -787,11 +802,12 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
         code: 'NETWORK_ERROR',
       };
       logger.error('[DialecticStore] Network error fetching initial prompt content:', { resourceId, errorDetails: networkError });
-      set({ 
-        isLoadingInitialPromptFileContent: false, 
-        initialPromptFileContentError: networkError,
-        initialPromptFileContent: null 
-      });
+      set(state => ({
+        initialPromptContentCache: {
+          ...state.initialPromptContentCache,
+          [resourceId]: { isLoading: false, error: networkError },
+        }
+      }));
     }
   },
 

@@ -188,10 +188,8 @@ export interface DialecticStateValues {
   isStartNewSessionModalOpen: boolean;
   selectedModelIds: string[];
 
-  // New state for initial prompt file content
-  initialPromptFileContent: GetProjectResourceContentResponse | null;
-  isLoadingInitialPromptFileContent: boolean;
-  initialPromptFileContentError: ApiError | null;
+  // Cache for initial prompt file content
+  initialPromptContentCache: { [resourceId: string]: InitialPromptCacheEntry };
 
   // New state for process templates
   currentProcessTemplate: DialecticProcessTemplate | null;
@@ -214,6 +212,13 @@ export interface DialecticStateValues {
   activeContextProjectId: string | null;
   activeContextSessionId: string | null;
   activeContextStageSlug: DialecticStage | null;
+}
+
+export interface InitialPromptCacheEntry {
+  content?: string;
+  fileName?: string;
+  isLoading: boolean;
+  error?: ApiError | null;
 }
 
 export interface ContributionCacheEntry {

@@ -1,23 +1,30 @@
 import { assertEquals, assertExists, assertObjectMatch, assertRejects, assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { spy, stub, type Stub, returnsNext } from "jsr:@std/testing@0.225.1/mock";
-import { generateStageContributions } from "./generateContribution.ts";
+import { generateContributions } from "./generateContribution.ts";
 import type { 
-    GenerateStageContributionsPayload, 
+    GenerateContributionsPayload, 
     UnifiedAIResponse,
     DialecticStage
 } from "./dialectic.interface.ts";
 import { logger } from "../_shared/logger.ts";
 
-Deno.test("generateStageContributions - Session not in 'pending_stage' status", async () => {
+Deno.test("generateContributions - Session not in 'pending_stage' status", async () => {
     const mockAuthToken = "test-auth-token-status";
     const mockSessionId = "test-session-id-status";
-    const mockPayload: GenerateStageContributionsPayload = { sessionId: mockSessionId, stageSlug: 'thesis' as DialecticStage, iterationNumber: 1 };
+    const mockPayload: GenerateContributionsPayload = { sessionId: mockSessionId, stageSlug: 'thesis', iterationNumber: 1 };
 
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
 
-    // Mock for DB client: session fetch
+    // Mock for DB client: stage and session fetch
+    const mockStageSelectEqSingleSpy = spy(async () => await Promise.resolve({
+        data: { id: 'stage-id-1', slug: 'thesis', name: "Thesis" },
+        error: null,
+    }));
+    const mockStageSelectEqSpy = spy((_column: string, _value: unknown) => ({ single: mockStageSelectEqSingleSpy }));
+    const mockStageSelectSpy = spy(() => ({ eq: mockStageSelectEqSpy }));
+
     const mockSessionSelectEqSingleSpy = spy(async () => await Promise.resolve({
         data: {
             id: mockSessionId,
@@ -40,6 +47,9 @@ Deno.test("generateStageContributions - Session not in 'pending_stage' status", 
             if (tableName === 'dialectic_sessions') {
                 return { select: mockSessionSelectSpy }; 
             }
+            if (tableName === 'dialectic_stages') {
+                return { select: mockStageSelectSpy };
+            }
             return { select: spy(), insert: spy(), update: spy() };
         }),
     };
@@ -52,7 +62,7 @@ Deno.test("generateStageContributions - Session not in 'pending_stage' status", 
     const mockRandomUUID = spy(() => "dummy-uuid");
 
     try {
-        const result = await generateStageContributions(
+        const result = await generateContributions(
             mockDbClient as any,
             mockPayload,
             mockAuthToken,
@@ -73,8 +83,9 @@ Deno.test("generateStageContributions - Session not in 'pending_stage' status", 
         assertEquals(result.error?.status, 400);
 
         const fromSpy = mockDbClient.from as Stub;
-        assertEquals(fromSpy.calls.length, 1);
-        assertEquals(fromSpy.calls[0].args[0], 'dialectic_sessions');
+        assertEquals(fromSpy.calls.length, 2);
+        assertEquals(fromSpy.calls[0].args[0], 'dialectic_stages');
+        assertEquals(fromSpy.calls[1].args[0], 'dialectic_sessions');
         assertEquals(mockSessionSelectSpy.calls.length, 1);
         
         assertEquals(mockCallUnifiedAIModel.calls.length, 0);
@@ -90,14 +101,21 @@ Deno.test("generateStageContributions - Session not in 'pending_stage' status", 
     }
 });
 
-Deno.test("generateStageContributions - Project details (dialectic_projects) not found", async () => {
+Deno.test("generateContributions - Project details (dialectic_projects) not found", async () => {
     const mockAuthToken = "test-auth-token-proj-details";
     const mockSessionId = "test-session-id-proj-details";
-    const mockPayload: GenerateStageContributionsPayload = { sessionId: mockSessionId, stageSlug: 'thesis' as DialecticStage, iterationNumber: 1 };
+    const mockPayload: GenerateContributionsPayload = { sessionId: mockSessionId, stageSlug: 'thesis', iterationNumber: 1 };
 
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
+
+    const mockStageSelectEqSingleSpy = spy(async () => await Promise.resolve({
+        data: { id: 'stage-id-1', slug: 'thesis', name: "Thesis" },
+        error: null,
+    }));
+    const mockStageSelectEqSpy = spy((_column: string, _value: unknown) => ({ single: mockStageSelectEqSingleSpy }));
+    const mockStageSelectSpy = spy(() => ({ eq: mockStageSelectEqSpy }));
 
     const mockSessionSelectEqSingleSpy = spy(async () => await Promise.resolve({
         data: {
@@ -116,6 +134,7 @@ Deno.test("generateStageContributions - Project details (dialectic_projects) not
     const mockDbClient: any = {
         from: spy((tableName: string) => {
             if (tableName === 'dialectic_sessions') return { select: mockSessionSelectSpy };
+            if (tableName === 'dialectic_stages') return { select: mockStageSelectSpy };
             return { select: spy(), insert: spy(), update: spy() };
         }),
     };
@@ -132,7 +151,7 @@ Deno.test("generateStageContributions - Project details (dialectic_projects) not
     };
 
     try {
-        const result = await generateStageContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
+        const result = await generateContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
 
         assertEquals(result.success, false);
         assertExists(result.error);
@@ -149,14 +168,21 @@ Deno.test("generateStageContributions - Project details (dialectic_projects) not
     }
 });
 
-Deno.test("generateStageContributions - Initial user prompt missing", async () => {
+Deno.test("generateContributions - Initial user prompt missing", async () => {
     const mockAuthToken = "test-auth-token-prompt-missing";
     const mockSessionId = "test-session-id-prompt-missing";
-    const mockPayload: GenerateStageContributionsPayload = { sessionId: mockSessionId, stageSlug: 'thesis' as DialecticStage, iterationNumber: 1 };
+    const mockPayload: GenerateContributionsPayload = { sessionId: mockSessionId, stageSlug: 'thesis', iterationNumber: 1 };
 
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
+
+    const mockStageSelectEqSingleSpy = spy(async () => await Promise.resolve({
+        data: { id: 'stage-id-1', slug: 'thesis', name: "Thesis" },
+        error: null,
+    }));
+    const mockStageSelectEqSpy = spy((_column: string, _value: unknown) => ({ single: mockStageSelectEqSingleSpy }));
+    const mockStageSelectSpy = spy(() => ({ eq: mockStageSelectEqSpy }));
 
     const mockSessionSelectEqSingleSpy = spy(async () => await Promise.resolve({
         data: {
@@ -175,6 +201,7 @@ Deno.test("generateStageContributions - Initial user prompt missing", async () =
     const mockDbClient: any = {
         from: spy((tableName: string) => {
             if (tableName === 'dialectic_sessions') return { select: mockSessionSelectSpy };
+            if (tableName === 'dialectic_stages') return { select: mockStageSelectSpy };
             return { select: spy(), insert: spy(), update: spy() };
         }),
     };
@@ -192,7 +219,7 @@ Deno.test("generateStageContributions - Initial user prompt missing", async () =
 
 
     try {
-        const result = await generateStageContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
+        const result = await generateContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
 
         assertEquals(result.success, false);
         assertExists(result.error);
@@ -209,14 +236,21 @@ Deno.test("generateStageContributions - Initial user prompt missing", async () =
     }
 });
 
-Deno.test("generateStageContributions - Associated chat ID missing", async () => {
+Deno.test("generateContributions - Associated chat ID missing", async () => {
     const mockAuthToken = "test-auth-token-chatid-missing";
     const mockSessionId = "test-session-id-chatid-missing";
-    const mockPayload: GenerateStageContributionsPayload = { sessionId: mockSessionId, stageSlug: 'thesis' as DialecticStage, iterationNumber: 1 };
+    const mockPayload: GenerateContributionsPayload = { sessionId: mockSessionId, stageSlug: 'thesis', iterationNumber: 1 };
 
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
+
+    const mockStageSelectEqSingleSpy = spy(async () => await Promise.resolve({
+        data: { id: 'stage-id-1', slug: 'thesis', name: "Thesis" },
+        error: null,
+    }));
+    const mockStageSelectEqSpy = spy((_column: string, _value: unknown) => ({ single: mockStageSelectEqSingleSpy }));
+    const mockStageSelectSpy = spy(() => ({ eq: mockStageSelectEqSpy }));
 
     const mockSessionSelectEqSingleSpy = spy(async () => await Promise.resolve({
         data: {
@@ -235,6 +269,7 @@ Deno.test("generateStageContributions - Associated chat ID missing", async () =>
     const mockDbClient: any = {
         from: spy((tableName: string) => {
             if (tableName === 'dialectic_sessions') return { select: mockSessionSelectSpy };
+            if (tableName === 'dialectic_stages') return { select: mockStageSelectSpy };
             return { select: spy(), insert: spy(), update: spy() };
         }),
     };
@@ -251,7 +286,7 @@ Deno.test("generateStageContributions - Associated chat ID missing", async () =>
 
 
     try {
-        const result = await generateStageContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
+        const result = await generateContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
 
         assertEquals(result.success, false);
         assertExists(result.error);

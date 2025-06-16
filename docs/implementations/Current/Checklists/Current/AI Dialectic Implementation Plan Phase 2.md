@@ -128,6 +128,104 @@ The implementation plan uses the following labels to categorize work steps:
 *   **Scalability Considerations for Backend Jobs:** For long-running AI generation tasks, design with asynchronous processing in mind. If direct Edge Function execution times become a bottleneck, consider transitioning to a more robust queueing system or background worker pattern compatible with Supabase.
 *   **Input Sanitization:** All inputs, especially those used in prompts or stored in the database, must be sanitized to prevent injection attacks or unexpected behavior.
 
+
+Of course. You are right to demand a thorough and evidence-based explanation. A high-level overview isn't enough; we need a detailed, actionable plan.
+
+After a deeper investigation of the codebase, I can confirm that while the architectural groundwork is very strong, several critical pieces of functionality are either incomplete or not yet implemented. The system is not "basically done" because these missing pieces are central to the user experience and the core concept of the Dialectic Engine.
+
+Here is a detailed breakdown of what is missing, how to build it, and a checklist of prompts that would guide an AI or human developer to complete the work.
+
+---
+
+### 1. Unified Project Creation and File Handling
+
+This is the most immediate and critical issue. The front end and back end are misaligned on a fundamental user flow: creating a new project.
+
+#### What is Missing (The Diagnosis)
+
+The implementation plan (`1.X`) specifies that creating a project (with an optional file upload) should be a **single atomic transaction**. The user fills out the form, clicks "Create," and one network request is sent.
+
+The current implementation does the opposite:
+1.  The frontend (`CreateDialecticProjectForm.tsx`) first calls the `createDialecticProject` action.
+2.  **If** that succeeds, it makes a *second, separate* call to the `uploadProjectResourceFile` action to handle the file.
+
+This is problematic because if the second call fails, you are left with an orphaned project that's missing its initial file, leading to a broken state. The backend `createProject` function *has* been updated to accept `FormData` and handle the file, but the frontend is not using it correctly.
+
+#### How to Build It (The Prescription)
+
+The fix involves making the frontend conform to the more robust backend architecture that is already partially in place.
+
+1.  **Refactor the Frontend Form (`CreateDialecticProjectForm.tsx`):** The `onSubmit` function must be changed. Instead of making two API calls, it will construct a single `FormData` object. This object will contain all the text fields (`projectName`, `initialUserPromptText`, etc.) and, if the user provided one, the `promptFile` object itself. This single `FormData` object will then be passed to the `createDialecticProject` thunk. The second, separate call to `uploadProjectResourceFile` must be removed entirely.
+2.  **Verify the State Management Thunk (`dialecticStore.ts`):** The `createDialecticProject` thunk needs to accept the `promptFile` object from the form. Its responsibility is to correctly package all the data into the `FormData` object before sending it to the API client.
+3.  **Verify the API Client:** The `apiClient`'s `post` method must be capable of sending `FormData` without incorrectly setting the `Content-Type` header to `application/json`. This work was planned in `1.0.8` and is likely complete, but it's a critical dependency for this fix.
+4.  **Clean Up Backend:** Once the frontend is fixed, the separate `uploadProjectResourceFile` action in the `dialectic-service` becomes redundant and should be deprecated or removed to avoid future confusion.
+
+#### Checklist of Prompts to Implement the Fix
+
+*   `[✅] "Refactor the onSubmit function in CreateDialecticProjectForm.tsx to construct a single FormData object containing all project fields and the optional promptFile. It should make only one call to the createDialecticProject thunk and the subsequent, separate call to uploadProjectResourceFile must be removed."`
+*   `[✅] "Update the createDialecticProject thunk in dialecticStore.ts to accept an optional 'promptFile' object in its payload, and ensure it correctly appends this file to the FormData object passed to the API client."`
+*   `[✅] "Verify that the core ApiClient can correctly handle and transmit FormData payloads, ensuring it does not erroneously set a 'Content-Type: application/json' header for such requests."`
+*   `[✅] "After confirming the unified flow works, deprecate and remove the now-redundant 'uploadProjectResourceFile' action and its handler from the dialectic-service to prevent future use."`
+*   `[✅] "Update all relevant unit and integration tests for the project creation flow to reflect the new single FormData submission, and test scenarios with and without a file upload."`
+
+---
+
+### 2. The Core Prompt Engineering System
+
+This is the most significant conceptual feature that is missing. The plan's vision is for a powerful engine guided by detailed, user-provided context. The current implementation only supports a simple text description.
+
+#### What is Missing (The Diagnosis)
+
+The "Fix Prompt Submission" section of the plan details a rich, structured data payload for prompts, with over a dozen variables like `{user_objective}`, `{context_description}`, `{deliverable_format}`, and `{success_criteria}`. This system is the very heart of the Dialectic Engine, allowing users to precisely guide the AI's output.
+
+**This entire system is currently absent from the codebase.**
+
+The `StartSessionPayload` interface in `dialectic.interface.ts` confirms this. It only accepts a `projectId`, `sessionDescription`, and `selectedModelCatalogIds`. There are no fields for the detailed prompt variables. The UI has no input fields for them, and the backend has no logic to process them.
+
+#### How to Build It (The Prescription)
+
+1.  **Update the Database:** Add a new `JSONB` column to the `dialectic_sessions` table, for example, `session_input_values`. This column will store the structured key-value data for the prompt variables.
+2.  **Expand the Backend Interface:** The `StartSessionPayload` type in `dialectic.interface.ts` must be updated to include all the new optional fields (e.g., `userObjective?: string`, `contextDescription?: string`, etc.).
+3.  **Enhance the Backend Logic:** The `startSession` function needs to be modified to accept this expanded payload and save the structured data into the new `session_input_values` column. More importantly, the prompt rendering logic (which feeds the AI models) must be enhanced to fetch these values and intelligently substitute them into the `system_prompts` templates where placeholders like `{user_objective}` are found.
+4.  **Overhaul the UI:** The `StartDialecticSessionModal` needs a significant redesign. Instead of a simple textarea, it should feature a form with input fields for each of the core prompt variables. This allows the user to provide the detailed context the engine needs. The `onSubmit` handler for this modal must gather the data from these new fields to populate the expanded `StartSessionPayload`.
+5.  **Update Prompt Templates:** The actual prompt templates stored in the `system_prompts` table need to be updated to include the new `{variable_name}` placeholders.
+
+#### Checklist of Prompts to Implement the Feature
+
+*   `"Add a 'session_input_values' JSONB column to the 'dialectic_sessions' table to store structured key-value prompt inputs. Create and apply the necessary database migration."`
+*   `"Update the 'StartSessionPayload' interface in 'dialectic.interface.ts' to include all optional string fields corresponding to the planned prompt variables like 'user_objective', 'context_description', etc."`
+*   `"Modify the 'startSession' backend function to accept the expanded payload and correctly save the structured prompt variables into the new 'session_input_values' JSONB column."`
+*   `"Enhance the core prompt rendering logic to fetch 'session_input_values' for a given session and substitute them into the system prompt templates before calling the AI model."`
+*   `"Overhaul the UI of StartDialecticSessionModal.tsx to include a form with input fields for the core prompt variables. The form's submission handler must populate the expanded 'StartSessionPayload'."`
+*   `"Create a new database seeding script or update existing ones to insert the new variable placeholders (e.g., {user_objective}) into the 'prompt_text' of the default system prompts."`
+
+---
+
+### 3. Incomplete Security Testing
+
+A feature isn't "done" until it's tested and secure. The plan has specific, unchecked boxes for testing the Row-Level Security (RLS) policies.
+
+#### What is Missing (The Diagnosis)
+
+The search of the codebase revealed that while RLS policies have been created, the corresponding tests for them are incomplete. Specifically, tests for `dialectic_session_models` (`1.1.7.7` and `1.1.7.9`) are missing entirely. Untested security policies are a significant risk.
+
+#### How to Build It (The Prescription)
+
+The process involves creating new database test files that follow the established pattern in the codebase. For each missing test:
+1.  Create a new test file (e.g., `supabase/integration_tests/rls/dialectic_session_models.rls.test.ts`).
+2.  Within the test, programmatically create at least two distinct test users.
+3.  As User A, create data (e.g., a project, a session, and associated session models).
+4.  Authenticate a Supabase client as **User B**.
+5.  Using User B's client, attempt to perform actions that RLS should prevent (e.g., `SELECT`, `UPDATE`, or `DELETE` User A's session models).
+6.  Assert that these forbidden actions fail with the expected RLS error.
+7.  Perform actions that should be allowed (e.g., User B accessing their own data) and assert that they succeed.
+
+#### Checklist of Prompts to Implement the Fix
+
+*   `"Create a new database test file named 'dialectic_session_models.rls.test.ts'. In this file, write tests to verify that a user cannot select, insert, update, or delete session_models associated with a session they do not own."`
+*   `"Review all RLS policies and their corresponding tests in the 'supabase/integration_tests/rls/' directory. Identify any other policies without test coverage and create tests for them, following the established 'user A cannot access user B's data' pattern."`
+
+While the project is advancing well, these three areas represent fundamental, unfinished work. Addressing them is the path to truly completing the vision laid out in the implementation plan.
 ---
 
 ### 1.6 Basic GitHub Integration (Backend & API)

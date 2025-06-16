@@ -155,7 +155,7 @@ Initiates a new dialectic session for a project.
 -   **Success Response (`data` object)**:
     -   The newly created `DialecticSession` object.
 
-### `generateStageContributions`
+### `generateContributions`
 
 Triggers the generation of AI-powered contributions for a specific stage of a dialectic process.
 
@@ -163,7 +163,7 @@ Triggers the generation of AI-powered contributions for a specific stage of a di
 -   **Request Body**:
     ```json
     {
-      "action": "generateStageContributions",
+      "action": "generateContributions",
       "payload": {
         "sessionId": "uuid-of-the-dialectic-session",
         "iterationNumber": 1,

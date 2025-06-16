@@ -1,27 +1,21 @@
 // deno-lint-ignore-file no-explicit-any
+import { createClient } from 'npm:@supabase/supabase-js@^2.43.4';
 import {
   DialecticServiceRequest,
   UpdateProjectDomainPayload,
   StartSessionPayload,
-  GenerateStageContributionsPayload,
+  GenerateContributionsPayload,
   GetProjectDetailsPayload,
-  ListAvailableDomainOverlaysPayload,
-  DialecticStage,
   DialecticProject,
-  DialecticSession,
   DialecticContribution,
-  DialecticProjectResource,
   DomainOverlayDescriptor,
-  UpdateProjectDomainSuccessData,
   StartSessionSuccessResponse,
-  GenerateStageContributionsSuccessResponse,
-  UploadProjectResourceFileSuccessResponse,
+  GenerateContributionsSuccessResponse,
   GetProjectResourceContentPayload,
   GetProjectResourceContentResponse,
   SaveContributionEditPayload,
   SubmitStageResponsesPayload,
   SubmitStageResponsesResponse,
-  DialecticFeedback,
   SubmitStageResponsesDependencies
 } from "./dialectic.interface.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
@@ -30,7 +24,6 @@ import {
   createErrorResponse,
   createSuccessResponse,
 } from "../_shared/cors-headers.ts";
-import { createSupabaseAdminClient } from "../_shared/auth.ts";
 import { logger, Logger } from "../_shared/logger.ts";
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js';
 import type {
@@ -47,7 +40,7 @@ import { updateProjectDomain } from "./updateProjectDomain.ts";
 import { getProjectDetails } from "./getProjectDetails.ts";
 import { getContributionContentSignedUrlHandler } from "./getContributionContent.ts";
 import { startSession } from "./startSession.ts";
-import { generateStageContributions } from "./generateContribution.ts";
+import { generateContributions } from "./generateContribution.ts";
 import { listProjects } from "./listProjects.ts";
 import { uploadProjectResourceFileHandler, type UploadProjectResourceFileResult } from "./uploadProjectResourceFile.ts";
 import { listAvailableDomainOverlays } from "./listAvailableDomainOverlays.ts";
@@ -61,6 +54,15 @@ import { uploadToStorage, downloadFromStorage } from '../_shared/supabase_storag
 import { listDomains, type DialecticDomain } from './listDomains.ts';
 
 console.log("dialectic-service function started");
+
+export interface DialecticServiceDependencies {
+  dbClient: SupabaseClient;
+  userClient: SupabaseClient;
+  handlers: ActionHandlers;
+  logger: ILogger;
+  getUserFn: GetUserFn;
+  authToken?: string | null;
+}
 
 // --- START: DI Helper Functions (AuthError replaced with ServiceError) ---
 interface IsValidDomainFn { (dbClient: SupabaseClient, domainId: string): Promise<boolean>; }
@@ -99,15 +101,15 @@ export const createSignedUrlDefaultFn: CreateSignedUrlFn = async (client, bucket
 // Define ActionHandlers interface
 export interface ActionHandlers {
   createProject: (payload: FormData, dbClient: SupabaseClient, user: User) => Promise<{ data?: DialecticProject; error?: ServiceError; status?: number }>;
-  listAvailableDomains: (dbClient: SupabaseClient, payload?: { stageAssociation?: DialecticStage }) => Promise<DomainDescriptor[] | { error: ServiceError }>;
+  listAvailableDomains: (dbClient: SupabaseClient, payload?: { stageAssociation?: string }) => Promise<DomainDescriptor[] | { error: ServiceError }>;
   updateProjectDomain: (getUserFn: GetUserFn, dbClient: SupabaseClient, payload: UpdateProjectDomainPayload, logger: ILogger) => Promise<{ data?: DialecticProject; error?: ServiceError }>;
   getProjectDetails: (payload: GetProjectDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: DialecticProject; error?: ServiceError; status?: number }>;
   getContributionContentSignedUrlHandler: (getUserFn: GetUserFn, dbClient: SupabaseClient, createSignedUrlFn: CreateSignedUrlFn, logger: ILogger, payload: { contributionId: string }) => Promise<{ data?: { signedUrl: string }; error?: ServiceError; status?: number }>;
   startSession: (user: User, dbClient: SupabaseClient, payload: StartSessionPayload, dependencies: { logger: ILogger }) => Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }>;
-  generateStageContributions: (dbClient: SupabaseClient, payload: GenerateStageContributionsPayload, authToken: string, dependencies: { logger: ILogger }) => Promise<{ success: boolean; data?: GenerateStageContributionsSuccessResponse; error?: ServiceError }>;
+  generateContributions: (dbClient: SupabaseClient, payload: GenerateContributionsPayload, authToken: string, dependencies: { logger: ILogger }) => Promise<{ success: boolean; data?: GenerateContributionsSuccessResponse; error?: ServiceError }>;
   listProjects: (user: User, dbClient: SupabaseClient) => Promise<{ data?: DialecticProject[]; error?: ServiceError; status?: number }>;
   uploadProjectResourceFileHandler: (payload: FormData, dbClient: SupabaseClient, user: User, logger: Logger) => Promise<UploadProjectResourceFileResult>;
-  listAvailableDomainOverlays: (stageAssociation: DialecticStage, dbClient: SupabaseClient) => Promise<DomainOverlayDescriptor[]>;
+  listAvailableDomainOverlays: (stageAssociation: string, dbClient: SupabaseClient) => Promise<DomainOverlayDescriptor[]>;
   deleteProject: (dbClient: SupabaseClient, payload: { projectId: string }, userId: string) => Promise<{data?: null, error?: { message: string; details?: string | undefined; }, status?: number}>;
   cloneProject: (dbClient: SupabaseClient, originalProjectId: string, newProjectName: string | undefined, cloningUserId: string) => Promise<CloneProjectResult>;
   exportProject: (dbClient: SupabaseClient, projectId: string, userId: string) => Promise<{ data?: { export_url: string }; error?: ServiceError; status?: number }>;
@@ -118,109 +120,82 @@ export interface ActionHandlers {
 }
 
 export async function handleRequest(
-  req: Request, 
-  dbAdminClient: SupabaseClient,
-  handlers: ActionHandlers
+  req: Request,
+  handlers: ActionHandlers,
+  userClient: SupabaseClient,
+  adminClient: SupabaseClient
 ): Promise<Response> {
   const preflightResponse = handleCorsPreflightRequest(req);
   if (preflightResponse) {
     return preflightResponse;
   }
 
-  let authToken: string | null = null;
   const authHeader = req.headers.get("Authorization");
+  let authToken: string | null = null;
   if (authHeader && authHeader.startsWith("Bearer ")) {
-      authToken = authHeader.substring(7);
+    authToken = authHeader.substring(7);
   }
 
   const getUserFnForRequest: GetUserFn = async (): Promise<GetUserFnResult> => {
-      if (!authToken) {
-          return { data: { user: null }, error: { message: "User not authenticated", status: 401, code: 'AUTH_TOKEN_MISSING' } };
-      }
-      const { data: { user }, error } = await dbAdminClient.auth.getUser(authToken);
-      let serviceError: ServiceError | null = null;
-      if (error) {
-          serviceError = { 
-              message: error.message, 
-              status: error.status, 
-              code: error.name || 'AUTH_ERROR' 
-          };
-      }
-      return { data: { user: user as User | null }, error: serviceError };
+    if (!authHeader) {
+      return { data: { user: null }, error: { message: "User not authenticated", status: 401, code: 'AUTH_TOKEN_MISSING' } };
+    }
+    const { data: { user }, error } = await userClient.auth.getUser();
+    if (error) {
+      return { data: { user: null }, error: { message: error.message, status: error.status || 500, code: error.name || 'AUTH_ERROR' } };
+    }
+    return { data: { user: user as User | null }, error: null };
   };
-
-  let result: {
-    success?: boolean;
-    data?: unknown;
-    error?: ServiceError;
-    status?: number;
-  };
-  let action: string | null = null;
 
   try {
     const contentType = req.headers.get("content-type");
 
     if (req.method === 'POST' && contentType?.startsWith("multipart/form-data")) {
       const formData = await req.formData();
-      action = formData.get('action') as string | null;
-      
+      const action = formData.get('action') as string | null;
       logger.info('Multipart POST request received', { actionFromFormData: action });
 
-      let userForMultipart: User | null = null;
-      if (action === 'createProject' || action === 'uploadProjectResourceFile') {
-        const { data: userData, error: userError } = await getUserFnForRequest();
-        if (userError || !userData?.user) {
-          const err = userError || { message: "User not authenticated for this multipart action.", status: 401, code: 'USER_AUTH_FAILED' };
-          return createErrorResponse(err.message, err.status || 401, req, err);
-        }
-        userForMultipart = userData.user;
+      const { data: userData, error: userError } = await getUserFnForRequest();
+      if (userError || !userData?.user) {
+        const err = userError || { message: "User not authenticated for this multipart action.", status: 401, code: 'USER_AUTH_FAILED' };
+        return createErrorResponse(err.message, err.status || 401, req, err);
       }
+      const userForMultipart = userData.user;
 
       switch (action) {
-        case 'createProject':
-          if (!userForMultipart) { 
-            // This case should ideally not be reached if auth check above is comprehensive
-            return createErrorResponse("User authentication failed for createProject.", 401, req, { message: "User authentication failed.", status: 401, code: 'USER_AUTH_FAILED' });
+        case 'createProject': {
+          const { data, error, status } = await handlers.createProject(formData, adminClient, userForMultipart);
+          if (error) {
+            return createErrorResponse(error.message, status || 500, req, error);
           }
-          result = await handlers.createProject(formData, dbAdminClient, userForMultipart);
-          break;
-        case 'uploadProjectResourceFile':
-          if (!userForMultipart) {
-            // This case should ideally not be reached
-            return createErrorResponse("User authentication failed for uploadProjectResourceFile.", 401, req, { message: "User authentication failed.", status: 401, code: 'USER_AUTH_FAILED' });
+          return createSuccessResponse(data, status || 201, req);
+        }
+        case 'uploadProjectResourceFile': {
+          const result = await handlers.uploadProjectResourceFileHandler(formData, adminClient, userForMultipart, logger);
+          if (result.error) {
+            return createErrorResponse(result.error.message, result.error.status || 500, req, result.error);
           }
-          result = await handlers.uploadProjectResourceFileHandler(formData, dbAdminClient, userForMultipart, logger);
-          break;
-        default:
-          logger.warn('Unknown action for multipart/form-data', { action });
-          result = { 
-            error: { 
-              message: `Unknown action '${action}' for multipart/form-data.`, 
-              status: 400, 
-              code: 'INVALID_MULTIPART_ACTION' 
-            } 
-          };
+          return createSuccessResponse(result.data, 200, req);
+        }
+        default: {
+          const errorMessage = `Unknown action '${action}' for multipart/form-data.`;
+          logger.warn(errorMessage, { action });
+          return createErrorResponse(errorMessage, 400, req, { message: errorMessage, status: 400, code: 'INVALID_MULTIPART_ACTION' });
+        }
       }
     } else if (contentType?.startsWith("application/json")) {
       const requestBody: DialecticServiceRequest = await req.json();
-      action = requestBody.action;
-      const { payload } = requestBody;
-      logger.info('JSON request received', { action, payloadExists: !!payload });
+      const action = requestBody.action;
+      logger.info('JSON request received', { action, payloadExists: 'payload' in requestBody });
 
-      let userForJson: User | null = null;
-      // List actions that require user authentication for JSON payloads
       const actionsRequiringAuth = [
         'listProjects', 'getProjectDetails', 'updateProjectDomain', 
         'startSession', 'generateContributions', 'getContributionContentSignedUrl',
         'deleteProject', 'cloneProject', 'exportProject', 'getProjectResourceContent',
         'saveContributionEdit', 'submitStageResponses'
       ];
-      const noAuthActions = [
-        "listAvailableDomains", 
-        "listAvailableDomainOverlays",
-        "listDomains"
-      ];
-        
+
+      let userForJson: User | null = null;
       if (actionsRequiringAuth.includes(action)) {
         const { data: userData, error: userError } = await getUserFnForRequest();
         if (userError || !userData?.user) {
@@ -229,329 +204,229 @@ export async function handleRequest(
         }
         userForJson = userData.user;
       }
-      if (noAuthActions.includes(action)) {
-        switch (action) {
-          case "listAvailableDomains": {
-            const result = await handlers.listAvailableDomains(dbAdminClient, payload);
-            if (result && 'error' in result) {
-              return createErrorResponse(result.error.message, result.error.status, req, result.error);
-            }
-            return createSuccessResponse(result, 200, req);
+
+      // Route to the appropriate handler
+      switch (requestBody.action) {
+        // --- Unauthenticated Actions ---
+        case "listAvailableDomains": {
+          const result = await handlers.listAvailableDomains(adminClient, requestBody.payload);
+          if (result && 'error' in result) {
+            return createErrorResponse(result.error.message, result.error.status, req, result.error);
           }
-          case "listAvailableDomainOverlays": {
-            if (!payload || typeof (payload as unknown as ListAvailableDomainOverlaysPayload).stageAssociation !== 'string') {
-              return createErrorResponse("Payload with 'stageAssociation' (string) is required for listAvailableDomainOverlays", 400, req, { code: 'INVALID_PAYLOAD' });
-            }
-            const result = await handlers.listAvailableDomainOverlays((payload as unknown as ListAvailableDomainOverlaysPayload).stageAssociation as DialecticStage, dbAdminClient);
-            return createSuccessResponse(result, 200, req);
+          return createSuccessResponse(result, 200, req);
+        }
+        case "listAvailableDomainOverlays": {
+          if (!requestBody.payload || typeof requestBody.payload.stageAssociation !== 'string') {
+            return createErrorResponse("stageAssociation is required.", 400, req, { message: "stageAssociation is required.", status: 400 });
           }
-          case "listDomains": {
-            const { data, error } = await handlers.listDomains(dbAdminClient);
+          const data = await handlers.listAvailableDomainOverlays(requestBody.payload.stageAssociation, adminClient);
+          return createSuccessResponse(data, 200, req);
+        }
+        case "listDomains": {
+            const { data, error } = await handlers.listDomains(adminClient);
             if (error) {
               return createErrorResponse(error.message, error.status, req, error);
             }
             return createSuccessResponse(data, 200, req);
+        }
+
+        // --- Authenticated Actions ---
+        case "listProjects": {
+          const { data, error, status } = await handlers.listProjects(userForJson!, userClient);
+          if (error) {
+            return createErrorResponse(error.message, status || 500, req, error);
           }
+          return createSuccessResponse(data, 200, req);
+        }
+        case "getProjectDetails": {
+          if (!requestBody.payload || !requestBody.payload.projectId) {
+            return createErrorResponse("projectId is required.", 400, req, { message: "projectId is required.", status: 400 });
+          }
+          const { data, error, status } = await handlers.getProjectDetails(requestBody.payload, adminClient, userForJson!);
+          if (error) {
+            return createErrorResponse(error.message, status || 500, req, error);
+          }
+          return createSuccessResponse(data, 200, req);
+        }
+        case "updateProjectDomain": {
+          const payload = requestBody.payload as UpdateProjectDomainPayload;
+          if (!payload || !payload.projectId || !payload.selectedDomainId) {
+            return createErrorResponse("projectId and domainId are required.", 400, req, { message: "projectId and domainId are required.", status: 400 });
+          }
+          const { data, error } = await handlers.updateProjectDomain(getUserFnForRequest, adminClient, payload, logger);
+          if (error) {
+            return createErrorResponse(error.message, error.status, req, error);
+          }
+          return createSuccessResponse(data, 200, req);
+        }
+        case "startSession": {
+          const payload = requestBody.payload as StartSessionPayload;
+          if (!payload || !payload.projectId) {
+            return createErrorResponse("projectId is required.", 400, req, { message: "projectId is required.", status: 400 });
+          }
+          const { data, error } = await handlers.startSession(userForJson!, adminClient, payload, { logger });
+          if (error) {
+            return createErrorResponse(error.message, error.status, req, error);
+          }
+          return createSuccessResponse(data, 200, req);
+        }
+        case "generateContributions": {
+          const payload = requestBody.payload as GenerateContributionsPayload;
+           if (!payload || !payload.sessionId) {
+            return createErrorResponse("sessionId is required for generateContributions.", 400, req, { message: "sessionId is required for generateContributions.", status: 400 });
+          }
+          const { success, data, error } = await handlers.generateContributions(adminClient, payload, authToken!, { logger });
+          if (!success || error) {
+            return createErrorResponse(error?.message || "Generation failed", error?.status || 500, req, error);
+          }
+          return createSuccessResponse(data, 202, req);
+        }
+        case "getContributionContentSignedUrl": {
+          const payload = requestBody.payload as { contributionId: string };
+          if (!payload || !payload.contributionId) {
+            return createErrorResponse("contributionId is required.", 400, req, { message: "contributionId is required.", status: 400 });
+          }
+          const { data, error, status } = await handlers.getContributionContentSignedUrlHandler(getUserFnForRequest, adminClient, createSignedUrlDefaultFn, logger, payload);
+          if (error) {
+            return createErrorResponse(error.message, status, req, error);
+          }
+          return createSuccessResponse(data, 200, req);
+        }
+        case "deleteProject": {
+          const payload = requestBody.payload as { projectId: string };
+          if (!payload || !payload.projectId) {
+            return createErrorResponse("projectId is required for deleteProject.", 400, req, { message: "projectId is required for deleteProject.", status: 400 });
+          }
+          const { data, error, status } = await handlers.deleteProject(adminClient, payload, userForJson!.id);
+          if (error) {
+            return createErrorResponse(error.message, status || 500, req, error);
+          }
+          return createSuccessResponse(data, status || 204, req);
+        }
+        case "cloneProject": {
+          const payload = requestBody.payload as { projectId: string, newProjectName?: string };
+          if (!payload || !payload.projectId) {
+              return createErrorResponse("projectId is required for cloneProject.", 400, req, { message: "projectId is required for cloneProject.", status: 400 });
+          }
+          const { data, error } = await handlers.cloneProject(adminClient, payload.projectId, payload.newProjectName, userForJson!.id);
+          if (error) {
+              return createErrorResponse(error.message, 500, req, error);
+          }
+          return createSuccessResponse(data, 201, req);
+        }
+        case "exportProject": {
+          const payload = requestBody.payload as { projectId: string };
+          if (!payload || !payload.projectId) {
+            return createErrorResponse("projectId is required for exportProject.", 400, req, { message: "projectId is required for exportProject.", status: 400 });
+          }
+          const { data, error, status } = await handlers.exportProject(adminClient, payload.projectId, userForJson!.id);
+          if (error) {
+            return createErrorResponse(error.message, status || 500, req, error);
+          }
+          return createSuccessResponse(data, status || 200, req);
+        }
+        case "getProjectResourceContent": {
+          const payload = requestBody.payload as GetProjectResourceContentPayload;
+          if (!payload || !payload.resourceId) {
+            return createErrorResponse("resourceId is required.", 400, req, { message: "resourceId is required.", status: 400 });
+          }
+          const { data, error, status } = await handlers.getProjectResourceContent(payload, adminClient, userForJson!);
+          if (error) {
+            return createErrorResponse(error.message, status || 500, req, error);
+          }
+          return createSuccessResponse(data, 200, req);
+        }
+        case "saveContributionEdit": {
+          const payload = requestBody.payload as SaveContributionEditPayload;
+          if (!payload || !payload.originalContributionIdToEdit || !payload.editedContentText) {
+            return createErrorResponse("originalContributionIdToEdit and editedContentText are required.", 400, req, { message: "contributionId and content are required.", status: 400 });
+          }
+          const { data, error, status } = await handlers.saveContributionEdit(payload, adminClient, userForJson!, logger);
+          if (error) {
+            return createErrorResponse(error.message, status || 500, req, error);
+          }
+          return createSuccessResponse(data, status || 200, req);
+        }
+        case "submitStageResponses": {
+          const payload = requestBody.payload as SubmitStageResponsesPayload;
+          if (!payload || !payload.sessionId || !payload.responses) {
+            return createErrorResponse("sessionId and responses are required.", 400, req, { message: "sessionId and responses are required.", status: 400 });
+          }
+          const { data, error, status } = await handlers.submitStageResponses(payload, adminClient, userForJson!, { logger, uploadToStorage, downloadFromStorage});
+          if (error) {
+            return createErrorResponse(error.message, status || 500, req, error);
+          }
+          return createSuccessResponse(data, status || 200, req);
+        }
+        default: {
+          const errorMessage = `Unknown action for application/json.`;
+          logger.warn(errorMessage, { action: (requestBody as { action?: string }).action });
+          return createErrorResponse(errorMessage, 400, req, { message: errorMessage, status: 400, code: 'INVALID_JSON_ACTION' });
         }
       }
-
-      switch (action) {
-        case 'listDomains':
-            result = await handlers.listDomains(dbAdminClient);
-            break;
-        case 'listAvailableDomains': {
-          const listDomainsOutcome = await handlers.listAvailableDomains(dbAdminClient, payload as { stageAssociation?: DialecticStage } | undefined);
-          if (listDomainsOutcome && typeof listDomainsOutcome === 'object' && 'error' in listDomainsOutcome && listDomainsOutcome.error) {
-            result = { error: listDomainsOutcome.error };
-          } else {
-            result = { data: listDomainsOutcome as DomainDescriptor[] };
-          }
-          break;
-        }
-        case 'listAvailableDomainOverlays':
-          if (!payload || typeof (payload as unknown as ListAvailableDomainOverlaysPayload).stageAssociation !== 'string') {
-            result = { 
-              error: { 
-                message: "Payload with 'stageAssociation' (string) is required for listAvailableDomainOverlays", 
-                status: 400, 
-                code: 'INVALID_PAYLOAD' 
-              } 
-            };
-          } else {
-            try {
-              const descriptors = await handlers.listAvailableDomainOverlays(
-                (payload as unknown as ListAvailableDomainOverlaysPayload).stageAssociation as DialecticStage,
-                dbAdminClient
-              );
-              result = { data: descriptors, success: true };
-            } catch (e) {
-              logger.error('Error in listAvailableDomainOverlays action', { error: e });
-              let serviceErr: ServiceError;
-              if (e && typeof e === 'object' && 'message' in e && 'status' in e) {
-                serviceErr = e as ServiceError;
-              } else {
-                serviceErr = { message: 'Internal server error processing listAvailableDomainOverlays', status: 500, code: 'INTERNAL_ERROR' };
-              }
-              result = { error: serviceErr };
-            }
-          }
-          break;
-        case 'updateProjectDomain':
-          if (!payload) {
-              result = { error: { message: "Payload is required for updateProjectDomain", status: 400, code: 'PAYLOAD_MISSING' } };
-          } else if (!userForJson) { // Should be caught by auth block if made mandatory for this action
-              return createErrorResponse("User authentication failed for updateProjectDomain.", 401, req, { message: "User authentication failed.", status: 401, code: 'USER_AUTH_FAILED' });
-          } else {
-              // updateProjectDomain still uses getUserFn internally, keeping as is for now unless refactoring its internal auth too.
-              // For now, the userForJson check above is a safeguard if we make it mandatory at this level.
-              result = await handlers.updateProjectDomain(
-                  getUserFnForRequest, // Kept as is, as handler expects getUserFn
-                  dbAdminClient, 
-                  payload as unknown as UpdateProjectDomainPayload,
-                  logger
-              );
-          }
-          break;
-        case 'startSession':
-          if (!payload) {
-              result = { error: { message: "Payload is required for startSession", status: 400, code: 'PAYLOAD_MISSING' } };
-          } else if (!userForJson) {
-              // This case should ideally not be reached due to actionsRequiringAuth check
-              return createErrorResponse("User authentication failed for startSession.", 401, req, { message: "User authentication failed.", status: 401, code: 'USER_AUTH_FAILED' });
-          } else {
-              result = await handlers.startSession(userForJson, dbAdminClient, payload as unknown as StartSessionPayload, { logger });
-          }
-          break;
-        case 'generateContributions':
-          if (!userForJson) { /* This case is for type-safety, should be handled by the auth check above */
-            return createErrorResponse("User not authenticated for generateContributions.", 401, req);
-          }
-          if (!authToken) { // Also ensure authToken is present for passing down
-            return createErrorResponse("Auth token is missing for generateContributions.", 401, req);
-          }
-          if (!payload || typeof (payload as unknown as GenerateStageContributionsPayload).sessionId !== 'string') {
-            result = { 
-              error: { 
-                message: "Payload with 'sessionId' (string) is required for generateContributions", 
-                status: 400, 
-                code: 'INVALID_PAYLOAD' 
-              } 
-            };
-          } else {
-            const { sessionId, iterationNumber, stageSlug } = payload as unknown as GenerateStageContributionsPayload;
-            result = await handlers.generateStageContributions(
-              dbAdminClient,
-              { sessionId, iterationNumber, stageSlug },
-              authToken,
-              { logger }
-            );
-          }
-          break;
-        case 'getContributionContentSignedUrl':
-          if (!userForJson) { /* ... */ }
-          if (!payload || typeof (payload as Partial<{ contributionId: string }>).contributionId !== 'string') {
-            result = { error: { message: "Invalid payload for getContributionContentSignedUrl. Expected { contributionId: string }", status: 400, code: 'INVALID_PAYLOAD' } };
-          } else {
-            result = await handlers.getContributionContentSignedUrlHandler(
-              getUserFnForRequest, // Kept as is
-              dbAdminClient, 
-              createSignedUrlDefaultFn, 
-              logger,
-              payload as { contributionId: string }
-            );
-          }
-          break;
-        case 'listProjects':
-          if (!userForJson) { 
-            // This case should ideally not be reached if auth check above is comprehensive
-            return createErrorResponse("User authentication failed for listProjects.", 401, req, { message: "User authentication failed for listProjects.", status: 401, code: 'USER_AUTH_FAILED' });
-          }
-          result = await handlers.listProjects(userForJson, dbAdminClient);
-          break;
-        case 'getProjectDetails':
-          if (!payload || !("projectId" in payload) || typeof payload.projectId !== 'string') { 
-              result = { error: { message: "Invalid or missing projectId in payload for getProjectDetails action.", status: 400, code: 'INVALID_PAYLOAD' } };
-          } else if (!userForJson) {
-            return createErrorResponse("User authentication failed for getProjectDetails.", 401, req, { message: "User authentication failed for getProjectDetails.", status: 401, code: 'USER_AUTH_FAILED' });
-          } else {
-              result = await handlers.getProjectDetails(payload as unknown as GetProjectDetailsPayload, dbAdminClient, userForJson);
-          }
-          break;
-        case 'getProjectResourceContent':
-          if (!userForJson) { /* This case is for type-safety, should be handled by the auth check above */
-            return createErrorResponse("User not authenticated for getProjectResourceContent.", 401, req);
-          }
-          if (!payload || typeof (payload as unknown as GetProjectResourceContentPayload).resourceId !== 'string') {
-            result = { 
-              error: { 
-                message: "Invalid or missing 'resourceId' (string) in payload for getProjectResourceContent action.", 
-                status: 400, 
-                code: 'INVALID_PAYLOAD' 
-              } 
-            };
-          } else {
-            const { resourceId, fileName } = payload as unknown as GetProjectResourceContentPayload;
-            result = await handlers.getProjectResourceContent(
-              { resourceId, fileName },
-              dbAdminClient,
-              userForJson
-            );
-          }
-          break;
-        case 'deleteProject': { 
-          if (!userForJson) { // Check if userForJson (which should hold the authenticated user) is available
-            return createErrorResponse("User not authenticated for deleteProject.", 401, req, { message: "User not authenticated for deleteProject.", status: 401, code: 'USER_AUTH_FAILED' });
-          } else if (!payload || typeof (payload as Partial<{ projectId: string }>).projectId !== 'string') {
-            result = { error: { message: "Invalid payload for deleteProject. Expected { projectId: string }", status: 400, code: 'INVALID_PAYLOAD' } };
-          } else {
-            const projectId = (payload as { projectId: string }).projectId;
-            const deleteHandlerResponse = await handlers.deleteProject(
-              dbAdminClient, 
-              { projectId }, 
-              userForJson.id // Pass userForJson.id
-            );
-            if (deleteHandlerResponse.error) {
-              result = { 
-                error: { 
-                  message: deleteHandlerResponse.error.message,
-                  details: deleteHandlerResponse.error.details,
-                  status: deleteHandlerResponse.status, 
-                  code: 'DELETE_PROJECT_FAILED' 
-                }
-              };
-            } else {
-              result = { data: deleteHandlerResponse.data, status: deleteHandlerResponse.status, success: true };
-            }
-          }
-          break;
-        }
-        case 'cloneProject': { 
-          if (!userForJson) { // Check if userForJson is available
-            return createErrorResponse("User not authenticated for cloneProject.", 401, req, { message: "User not authenticated for cloneProject.", status: 401, code: 'USER_AUTH_FAILED' });
-          } else if (!payload || typeof (payload as Partial<{ projectId: string; newProjectName?: string }>).projectId !== 'string') {
-             result = { error: { message: "Invalid payload for cloneProject. Expected { projectId: string, newProjectName?: string }", status: 400, code: 'INVALID_PAYLOAD' } };
-          } else {
-            const clonePayload = payload as { projectId: string; newProjectName?: string };
-            const cloneHandlerResponse = await handlers.cloneProject(
-              dbAdminClient, 
-              clonePayload.projectId,
-              clonePayload.newProjectName,
-              userForJson.id // Pass userForJson.id
-            );
-            if (cloneHandlerResponse.error) {
-              let status = 500;
-              if (cloneHandlerResponse.error.message.toLowerCase().includes('not found')) {
-                status = 404;
-              }
-              result = { 
-                error: { 
-                  message: cloneHandlerResponse.error.message,
-                  details: cloneHandlerResponse.error.details as string | undefined, 
-                  status: status, 
-                  code: cloneHandlerResponse.error.code || 'CLONE_PROJECT_FAILED'
-                }
-              };
-            } else {
-              result = { data: cloneHandlerResponse.data, status: 201, success: true }; 
-            }
-          }
-          break;
-        }
-        case 'exportProject': { 
-          if (!userForJson) { // Check if userForJson is available
-            return createErrorResponse("User not authenticated for exportProject.", 401, req, { message: "User not authenticated for exportProject.", status: 401, code: 'USER_AUTH_FAILED' });
-          } else if (!payload || typeof (payload as Partial<{ projectId: string }>).projectId !== 'string') {
-             result = { error: { message: "Invalid payload for exportProject. Expected { projectId: string }", status: 400, code: 'INVALID_PAYLOAD' } };
-          } else {
-            const projectId = (payload as { projectId: string }).projectId;
-            result = await handlers.exportProject(
-              dbAdminClient, 
-              projectId,
-              userForJson.id // Pass userForJson.id
-           );
-          }
-          break;
-        }
-        case 'saveContributionEdit':
-          if (!userForJson) { /* This case is for type-safety, should be handled by the auth check above */
-            return createErrorResponse("User authentication failed for saveContributionEdit.", 401, req, { message: "User authentication failed.", status: 401, code: 'USER_AUTH_FAILED' });
-          }
-          result = await handlers.saveContributionEdit(payload as unknown as SaveContributionEditPayload, dbAdminClient, userForJson, logger);
-          break;
-        case 'submitStageResponses':
-          if (!userForJson) {
-            return createErrorResponse("User authentication required for submitStageResponses.", 401, req);
-          }
-          result = await handlers.submitStageResponses(payload as unknown as SubmitStageResponsesPayload, dbAdminClient, userForJson, { uploadToStorage, downloadFromStorage, logger });
-          break;
-        default:
-          logger.warn('Unknown action for application/json', { action });
-          result = { error: { message: `Unknown action '${action}' for application/json.`, status: 400, code: 'INVALID_JSON_ACTION' } };
-      }
-
     } else {
-      logger.warn('Unsupported request method or content type', { method: req.method, contentType });
-      result = { 
-        error: { 
-          message: "Unsupported request method or content type. Please use POST with application/json or multipart/form-data.", 
-          status: 415, 
-          code: 'UNSUPPORTED_MEDIA_TYPE' 
-        } 
-      };
+      return createErrorResponse(
+        `Unsupported Content-Type: ${req.headers.get("content-type")}`,
+        415,
+        req,
+        { message: `Unsupported Content-Type: ${req.headers.get("content-type")}`, status: 415, code: 'UNSUPPORTED_CONTENT_TYPE' }
+      );
     }
-  } catch (error) {
-    logger.error("Unhandled error in dialectic-service function", { error });
-    if (error && typeof error === 'object' && 'status' in error && 'message' in error) {
-        result = { error: error as ServiceError };
-    } else {
-        result = { error: { message: error instanceof Error ? error.message : "An unexpected error occurred.", status: 500, code: 'UNHANDLED_EXCEPTION' } };
-    }
-  }
-
-  if (result.error) {
-    return createErrorResponse(result.error.message, result.error.status || 500, req, result.error);
-  } else {
-    // For listAvailableDomains, if the handler returns an array directly, wrap it in a data object
-    if (action === 'listAvailableDomains' && Array.isArray(result.data)) {
-      return createSuccessResponse({ data: result.data, success: true }, result.status || 200, req);
-    }
-    // Default success response construction
-    return createSuccessResponse({ data: result.data, success: result.success === undefined ? true : result.success }, result.status || 200, req);
+  } catch (e) {
+    const error = e as Error;
+    logger.error("A critical error occurred in the main request handler:", {
+      errorMessage: error.message,
+      stack: error.stack,
+      cause: (error as unknown as { cause: unknown }).cause
+    });
+    return createErrorResponse("An internal server error occurred.", 500, req, { message: error.message, status: 500, code: 'UNHANDLED_EXCEPTION' });
   }
 }
 
-const supabaseAdmin = createSupabaseAdminClient();
-
-// Create the actual handlers map
-const actualHandlers: ActionHandlers = {
+const handlers: ActionHandlers = {
   createProject,
   listAvailableDomains,
   updateProjectDomain,
   getProjectDetails,
-  getContributionContentSignedUrlHandler: (getUserFn, dbClient, createSignedUrlFn, logger, payload) =>
-    getContributionContentSignedUrlHandler(getUserFn, dbClient, createSignedUrlFn, logger, payload),
-  startSession: (user, dbClient, payload, dependencies) => 
-    startSession(user, dbClient, payload, dependencies),
-  generateStageContributions: (dbClient, payload, authToken, dependencies) =>
-    generateStageContributions(dbClient, payload, authToken, dependencies),
+  getContributionContentSignedUrlHandler,
+  startSession,
+  generateContributions,
   listProjects,
-  uploadProjectResourceFileHandler: (payload, dbClient, user, logger) => 
-    uploadProjectResourceFileHandler(payload, dbClient, user, logger),
-  listAvailableDomainOverlays: (stageAssociation, dbClient) => 
-    listAvailableDomainOverlays(stageAssociation, dbClient),
+  uploadProjectResourceFileHandler,
+  listAvailableDomainOverlays,
   deleteProject,
   cloneProject,
   exportProject,
   getProjectResourceContent,
   saveContributionEdit,
-  submitStageResponses: (payload, dbClient, user, dependencies) =>
-    submitStageResponses(payload, dbClient, user, dependencies),
-  listDomains: (dbClient) => listDomains(dbClient)
+  submitStageResponses,
+  listDomains,
 };
 
-serve(async (req: Request) => {
-  return await handleRequest(req, supabaseAdmin, actualHandlers);
-});
+serve(async (req) => {
+  const preflightResponse = handleCorsPreflightRequest(req);
+  if (preflightResponse) {
+    return preflightResponse;
+  }
 
-// For testing purposes, you might want to export your handlers if they are not already.
-// This is already done for createProject, listAvailableDomains etc. at the top.
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
+    logger.error("Missing critical Supabase environment variables.");
+    return createErrorResponse("Server configuration error.", 500, req, { message: "Server configuration error.", status: 500, code: 'CONFIG_ERROR' });
+  }
+
+  const authHeader = req.headers.get("Authorization");
+
+  const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { ...(authHeader ? { Authorization: authHeader } : {}) } },
+  });
+
+  const adminClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  return await handleRequest(req, handlers, userClient, adminClient);
+});

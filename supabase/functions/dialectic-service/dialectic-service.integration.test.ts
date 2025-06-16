@@ -28,7 +28,7 @@ import {
   TestResourceRequirement,
   registerUndoAction,
 } from "../_shared/_integration.test.utils.ts";
-import type { DialecticServiceRequest, GenerateStageContributionsPayload, StartSessionPayload } from "./dialectic.interface.ts";
+import type { DialecticServiceRequest, GenerateContributionsPayload, StartSessionPayload } from "./dialectic.interface.ts";
 
 const TEST_DOMAIN_TAG_1 = "software_development";
 const TEST_DOMAIN_TAG_2 = "technical_writing";
@@ -351,7 +351,7 @@ describe("Edge Function: dialectic-service", () => {
     });
   });
 
-  describe("'generateStageContributions' action", () => {
+  describe("'generateContributions' action", () => {
     let testPrimaryUserId: string;
     let testPrimaryUserClient: SupabaseClient<Database>;
     let testUserAuthToken: string;
@@ -599,7 +599,7 @@ describe("Edge Function: dialectic-service", () => {
     });
 
     it("should generate thesis contributions, store them, and link to storage", async () => {
-      const payload: GenerateStageContributionsPayload = {
+      const payload: GenerateContributionsPayload = {
         sessionId: testSessionId,
       };
 
@@ -648,7 +648,7 @@ describe("Edge Function: dialectic-service", () => {
       expect(invokeError, `generateContributions error: ${invokeError ? invokeError.message : 'Unknown error'}`).to.be.null;
       expect(responseData, "generateContributions data should exist").to.exist;
       
-      // responseData is GenerateStageContributionsSuccessResponse: { message, contributions, updatedStatus }
+      // responseData is GenerateContributionsSuccessResponse: { message, contributions, updatedStatus }
       // No 'success' field or outer 'data' field in responseData itself after invoke.
       expect(responseData.message).to.contain("successfully processed"); // Adjusted to new message
       assertExists(responseData.contributions, "Contributions array is missing from response data");

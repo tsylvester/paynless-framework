@@ -329,7 +329,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   On selection, it dispatches `setSelectedDomainTag(selectedTag)` and `setSelectedDomainOverlayId(null)` (to reset any previous description-specific choice).
         *   It should also check if the selected tag has only one possible overlay detail (e.g., by checking if `selectedOverlay(selectedDomainTag)` returns a single item). If so, it should also dispatch `setSelectedDomainOverlayId` with that single overlay's ID.
     *   `[✅] 1.0.3.D.1.2` Update the `DomainSelector` component's implementation to reflect this logic. (GREEN)
-    *   `[✅] 1.0.3.D.1.3` Run unit tests for `DomainSelector`. (GREEN)
+    *   `[✅] 1.0.3.D.1.3 [TEST-UNIT]` Run unit tests for `DomainSelector`. (GREEN)
 *   `[✅] 1.0.3.D.2 [UI]` **NEW** Create `DomainOverlayDescriptionSelector` UI Component.
     *   `[✅] 1.0.3.D.2.1 [TEST-UNIT]` Write unit tests for the `DomainOverlayDescriptionSelector` component. (GREEN)
         *   It displays `description`s (and their associated `id`s) for the currently selected `domainTag` and stage, using the `selectedOverlay(selectedDomainTag)` selector.
@@ -1253,11 +1253,11 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅] 1.Z.4.3 [STORE]` Update store selectors to work with `selectedDomainId` and the refactored `DialecticProject` object structure.
     *   `[✅] 1.Z.4.4 [TEST-UNIT]` Update all `dialecticStore.test.ts` and `dialecticStore.selectors.test.ts` tests to reflect the new state and logic.
 
-*   `[ ] 1.Z.5 [UI/REFACTOR]` **Phase 2: Frontend Component Refactoring**
-    *   `[ ] 1.Z.5.1 [UI]` Systematically fix all TypeScript errors that arise in the `apps/web` directory due to the type changes.
-    *   `[ ] 1.Z.5.2 [UI]` Update any component that displays the domain name (e.g., on the project details page) to use the new `domain_name` property from the project object in the store.
-    *   `[ ] 1.Z.5.3 [UI]` Update components that allow domain selection (e.g., `CreateDialecticProjectForm`, `StartDialecticSessionModal`) to ensure their selectors provide the `dialectic_domains.id` to the store actions.
-    *   `[ ] 1.Z.5.4 [TEST-UNIT]` Update all affected component unit tests to mock the new store state and test the updated component logic.
+*   `[✅] 1.Z.5 [UI/REFACTOR]` **Phase 2: Frontend Component Refactoring**
+    *   `[✅] 1.Z.5.1 [UI]` Systematically fix all TypeScript errors that arise in the `apps/web` directory due to the type changes.
+    *   `[✅] 1.Z.5.2 [UI]` Update any component that displays the domain name (e.g., on the project details page) to use the new `domain_name` property from the project object in the store.
+    *   `[✅] 1.Z.5.3 [UI]` Update components that allow domain selection (e.g., `CreateDialecticProjectForm`, `StartDialecticSessionModal`) to ensure their selectors provide the `dialectic_domains.id` to the store actions.
+    *   `[✅] 1.Z.5.4 [TEST-UNIT]` Update all affected component unit tests to mock the new store state and test the updated component logic.
 
 *   `[ ] 1.Z.6 [TEST-E2E]` **Phase 3: Finalization and Verification**
     *   `[ ] 1.Z.6.1 [TEST-E2E]` Execute the full suite of end-to-end tests to validate the entire project creation and management flow with the new domain handling logic.
@@ -1317,3 +1317,4 @@ The implementation plan uses the following labels to categorize work steps:
                 │       ├── project_checklist.csv
                 │       └── ... (other formats like Jira importable CSV/JSON)
                 └── iteration_summary.md (Optional: An AI or user-generated summary of this iteration's key outcomes and learnings)
+                

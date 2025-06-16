@@ -31,14 +31,6 @@ const createProjectFormSchema = z.object({
 
 type CreateProjectFormValues = z.infer<typeof createProjectFormSchema>;
 
-interface CreateProjectThunkPayload {
-  projectName: string;
-  initialUserPromptText?: string;
-  promptFile?: File | null;
-  selectedDomainId?: string | null;
-  selectedDomainOverlayId?: string | null;
-}
-
 interface CreateDialecticProjectFormProps {
   onProjectCreated?: (projectId: string, projectName?: string) => void;
   defaultProjectName?: string;
@@ -57,7 +49,6 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
   containerClassName = 'max-w-3xl'
 }) => {
   const createDialecticProject = useDialecticStore((state) => state.createDialecticProject);
-  const uploadProjectResourceFile = useDialecticStore((state) => state.uploadProjectResourceFile);
   const isCreating = useDialecticStore(selectIsCreatingProject);
   const creationError = useDialecticStore(selectCreateProjectError);
   const selectedDomain = useDialecticStore(selectSelectedDomain);
@@ -270,48 +261,27 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
   const onSubmit = async (data: CreateProjectFormValues) => {
     logger.info('Submitting form with data', data);
 
-    const payload: CreateProjectThunkPayload = {
-      projectName: data.projectName,
-      initialUserPromptText: data.initialUserPrompt,
-      promptFile: promptFile,
-      selectedDomainId: selectedDomain?.id ?? null,
-      selectedDomainOverlayId: currentSelectedDomainOverlayId,
-    };
+    const selectedDomainId = selectedDomain?.id;
 
-    if (!payload.selectedDomainId) {
+    if (!selectedDomainId) {
       logger.error("No domain selected. Cannot create project.");
       // Optionally, set an error state to inform the user
       return;
     }
 
-    const finalPayload: CreateProjectPayload = {
-      ...payload,
-      selectedDomainId: payload.selectedDomainId,
+    const payload: CreateProjectPayload = {
+      projectName: data.projectName,
+      initialUserPrompt: data.initialUserPrompt,
+      promptFile: promptFile,
+      selectedDomainId: selectedDomainId,
+      selectedDomainOverlayId: currentSelectedDomainOverlayId,
     };
 
     try {
-      const response = await createDialecticProject(finalPayload);
+      const response = await createDialecticProject(payload);
 
       if (response.data && onProjectCreated) {
         logger.info('Project created successfully', { projectId: response.data.id });
-        if (promptFile && response.data.id) {
-            try {
-                const uploadResponse = await uploadProjectResourceFile({
-                    projectId: response.data.id,
-                    file: promptFile,
-                    fileName: promptFile.name,
-                    fileSizeBytes: promptFile.size,
-                    fileType: promptFile.type,
-                    resourceDescription: "Initial prompt file uploaded during project creation."
-                });
-                if (uploadResponse.error) {
-                    logger.error("Failed to upload initial prompt file after project creation", { error: uploadResponse.error });
-                    // Optionally: Display a non-blocking toast notification to the user
-                }
-            } catch (uploadError) {
-                logger.error("Exception during initial prompt file upload", { error: uploadError });
-            }
-        }
         onProjectCreated(response.data.id, response.data.project_name);
       } else {
         logger.error('Project creation failed', { error: response?.error });

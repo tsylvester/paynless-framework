@@ -3,7 +3,6 @@ import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { 
     DialecticProject 
   } from "./dialectic.interface.ts";
-  import { createSupabaseClient } from "../_shared/auth.ts"; // Renamed import
 
   console.log("createProject function started");
   

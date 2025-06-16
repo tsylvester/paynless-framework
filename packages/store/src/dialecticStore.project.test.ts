@@ -164,12 +164,10 @@ describe('useDialecticStore', () => {
             updated_at: '2023-01-01T00:00:00.000Z'
         };
 
-        it('should create a project and refetch projects list on success', async () => {
+        it('should create a project and add it to the local state on success', async () => {
             const { createDialecticProject } = useDialecticStore.getState();
             const mockResponse: ApiResponse<DialecticProject> = { data: mockCreatedProject, status: 201 };
             (api.dialectic().createProject as Mock).mockResolvedValue(mockResponse);
-            // Mock for listProjects, which is called after successful creation
-            (api.dialectic().listProjects as Mock).mockResolvedValue({ data: [mockCreatedProject], status: 200 });
 
             const result = await createDialecticProject(projectPayload);
 
@@ -184,7 +182,11 @@ describe('useDialecticStore', () => {
             expect(formData.get('selectedDomainOverlayId')).toBe(projectPayload.selectedDomainOverlayId as string);
             expect(formData.get('promptFile')).toBeNull();
 
-            expect(api.dialectic().listProjects).toHaveBeenCalledTimes(1);
+            // Verify that the new project is added to the state
+            const state = useDialecticStore.getState();
+            expect(state.projects).toContainEqual(mockCreatedProject);
+            // Verify that the refetch is NOT called
+            expect(api.dialectic().listProjects).not.toHaveBeenCalled();
         });
 
         it('should set error state if createProject API returns an error', async () => {

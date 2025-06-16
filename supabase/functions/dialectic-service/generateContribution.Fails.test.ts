@@ -1,9 +1,9 @@
 import { assertEquals, assertExists, assertRejects, assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { spy, stub, type Stub, returnsNext } from "jsr:@std/testing@0.225.1/mock";
-import { generateStageContributions } from "./generateContribution.ts";
+import { generateContributions } from "./generateContribution.ts";
 import { 
     type DialecticStage,
-    type GenerateStageContributionsPayload, 
+    type GenerateContributionsPayload, 
     type UnifiedAIResponse,
     type FailedAttemptError
 } from "./dialectic.interface.ts";
@@ -26,7 +26,7 @@ const mockStage: DialecticStage = {
     input_artifact_rules: {}
 };
 
-Deno.test("generateStageContributions - Failure during content upload to storage", async () => {
+Deno.test("generateContributions - Failure during content upload to storage", async () => {
     const mockAuthToken = "auth-token-upload-fail";
     const mockSessionId = "session-id-upload-fail";
     const mockProjectId = "project-id-upload-fail";
@@ -34,7 +34,7 @@ Deno.test("generateStageContributions - Failure during content upload to storage
     const mockContributionId = "uuid-upload-fail";
     const mockSeedPrompt = "Prompt for upload fail";
 
-    const mockPayload: GenerateStageContributionsPayload = { 
+    const mockPayload: GenerateContributionsPayload = { 
         sessionId: mockSessionId,
         stageSlug: mockStage.slug,
         iterationNumber: 1,
@@ -45,6 +45,12 @@ Deno.test("generateStageContributions - Failure during content upload to storage
     const localLoggerWarn = spy(logger, 'warn');
 
     // DB Mocks
+    const mockStageSelectSpy = spy(() => ({
+        eq: spy(() => ({
+            single: spy(async () => await Promise.resolve({ data: mockStage, error: null }))
+        }))
+    }));
+
     const mockSessionSelectSpy = spy(() => ({ 
         eq: spy(() => ({ 
             single: spy(async () => await Promise.resolve({
@@ -72,12 +78,14 @@ Deno.test("generateStageContributions - Failure during content upload to storage
         eq: spy(async () => await Promise.resolve({ error: null }))
     }));
 
-    const mockDbClientFromSpy = spy(returnsNext([
-        { select: mockSessionSelectSpy },
-        { select: mockAiProvidersSelectSpy },
-        { update: mockSessionUpdateSpy },
-    ]));
-    const mockDbClient: any = { from: mockDbClientFromSpy };
+    const mockDbClient = {
+        from: spy((tableName: string) => {
+            if (tableName === 'dialectic_stages') return { select: mockStageSelectSpy };
+            if (tableName === 'dialectic_sessions') return { select: mockSessionSelectSpy, update: mockSessionUpdateSpy };
+            if (tableName === 'ai_providers') return { select: mockAiProvidersSelectSpy };
+            return { select: spy(), insert: spy(), update: spy() };
+        }),
+    };
 
     const mockCallUnifiedAIModel = spy(async (): Promise<UnifiedAIResponse> => await Promise.resolve({
         content: "Some AI content", error: null, errorCode: null, inputTokens: 1, outputTokens: 1, cost: 0.0001, processingTimeMs: 10
@@ -110,7 +118,7 @@ Deno.test("generateStageContributions - Failure during content upload to storage
     };
 
     try {
-        const result = await generateStageContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
+        const result = await generateContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
         
         assertEquals(result.success, false);
         assertExists(result.error);
@@ -134,7 +142,7 @@ Deno.test("generateStageContributions - Failure during content upload to storage
     }
 });
 
-Deno.test("generateStageContributions - Failure during raw response upload (should warn, contribution proceeds)", async () => {
+Deno.test("generateContributions - Failure during raw response upload (should warn, contribution proceeds)", async () => {
     const mockAuthToken = "auth-token-raw-upload-warn";
     const mockSessionId = "session-id-raw-upload-warn";
     const mockProjectId = "project-id-raw-upload-warn";
@@ -144,7 +152,7 @@ Deno.test("generateStageContributions - Failure during raw response upload (shou
     const mockFileSize = 123;
     const mockSeedPrompt = "Prompt for raw upload warn";
 
-    const mockPayload: GenerateStageContributionsPayload = { 
+    const mockPayload: GenerateContributionsPayload = { 
         sessionId: mockSessionId,
         stageSlug: mockStage.slug,
         iterationNumber: 1,
@@ -155,6 +163,12 @@ Deno.test("generateStageContributions - Failure during raw response upload (shou
     const localLoggerWarn = spy(logger, 'warn');
 
     // DB Mocks
+    const mockStageSelectSpy = spy(() => ({
+        eq: spy(() => ({
+            single: spy(async () => await Promise.resolve({ data: mockStage, error: null }))
+        }))
+    }));
+
     const mockSessionSelectSpy = spy(() => ({ 
         eq: spy(() => ({ 
             single: spy(async () => await Promise.resolve({
@@ -187,13 +201,15 @@ Deno.test("generateStageContributions - Failure during raw response upload (shou
         eq: spy(async () => await Promise.resolve({ error: null }))
     }));
 
-    const mockDbClientFromSpy = spy(returnsNext([
-        { select: mockSessionSelectSpy },
-        { select: mockAiProvidersSelectSpy },
-        { insert: mockContributionInsertSpy },
-        { update: mockSessionUpdateSpy },
-    ]));
-    const mockDbClient: any = { from: mockDbClientFromSpy };
+    const mockDbClient = {
+        from: spy((tableName: string) => {
+            if (tableName === 'dialectic_stages') return { select: mockStageSelectSpy };
+            if (tableName === 'dialectic_sessions') return { select: mockSessionSelectSpy, update: mockSessionUpdateSpy };
+            if (tableName === 'ai_providers') return { select: mockAiProvidersSelectSpy };
+            if (tableName === 'dialectic_contributions') return { insert: mockContributionInsertSpy };
+            return { select: spy(), insert: spy(), update: spy() };
+        }),
+    };
 
     // Dependency Mocks
     const mockCallUnifiedAIModel = spy(async (): Promise<UnifiedAIResponse> => await Promise.resolve({
@@ -235,7 +251,7 @@ Deno.test("generateStageContributions - Failure during raw response upload (shou
     };
 
     try {
-        const result = await generateStageContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
+        const result = await generateContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
         
         assertEquals(result.success, true);
         assertExists(result.data?.contributions);
@@ -253,7 +269,7 @@ Deno.test("generateStageContributions - Failure during raw response upload (shou
     }
 });
 
-Deno.test("generateStageContributions - getFileMetadata returns error (should proceed with size 0)", async () => {
+Deno.test("generateContributions - getFileMetadata returns error (should proceed with size 0)", async () => {
     const mockAuthToken = "auth-token-meta-fail";
     const mockSessionId = "session-id-meta-fail-err";
     const mockProjectId = "project-id-meta-fail-err";
@@ -262,7 +278,7 @@ Deno.test("generateStageContributions - getFileMetadata returns error (should pr
     const mockContent = "AI content for meta fail test";
     const mockSeedPrompt = "Prompt for meta fail";
 
-    const mockPayload: GenerateStageContributionsPayload = { 
+    const mockPayload: GenerateContributionsPayload = { 
         sessionId: mockSessionId,
         stageSlug: mockStage.slug,
         iterationNumber: 1,
@@ -273,6 +289,12 @@ Deno.test("generateStageContributions - getFileMetadata returns error (should pr
     const localLoggerWarn = spy(logger, 'warn');
 
     // DB Mocks
+    const mockStageSelectSpy = spy(() => ({
+        eq: spy(() => ({
+            single: spy(async () => await Promise.resolve({ data: mockStage, error: null }))
+        }))
+    }));
+
     const mockSessionSelectSpy = spy(() => ({ 
         eq: spy(() => ({ 
             single: spy(async () => await Promise.resolve({
@@ -316,13 +338,15 @@ Deno.test("generateStageContributions - getFileMetadata returns error (should pr
         eq: spy(async () => await Promise.resolve({ error: null }))
     }));
 
-    const mockDbClientFromSpy = spy(returnsNext([
-        { select: mockSessionSelectSpy },
-        { select: mockAiProvidersSelectSpy },
-        { insert: mockContributionInsertSpy },
-        { update: mockSessionUpdateSpy },
-    ]));
-    const mockDbClient: any = { from: mockDbClientFromSpy };
+    const mockDbClient = {
+        from: spy((tableName: string) => {
+            if (tableName === 'dialectic_stages') return { select: mockStageSelectSpy };
+            if (tableName === 'dialectic_sessions') return { select: mockSessionSelectSpy, update: mockSessionUpdateSpy };
+            if (tableName === 'ai_providers') return { select: mockAiProvidersSelectSpy };
+            if (tableName === 'dialectic_contributions') return { insert: mockContributionInsertSpy };
+            return { select: spy(), insert: spy(), update: spy() };
+        }),
+    };
 
     const mockDownloadFromStorage = spy(async (): Promise<DownloadStorageResult> => await Promise.resolve({
         data: new TextEncoder().encode(mockSeedPrompt).buffer as ArrayBuffer,
@@ -345,7 +369,7 @@ Deno.test("generateStageContributions - getFileMetadata returns error (should pr
     };
 
     try {
-        const resultError = await generateStageContributions(mockDbClient as any, mockPayload, mockAuthToken, deps);
+        const resultError = await generateContributions(mockDbClient as any, mockPayload, mockAuthToken, deps);
         
         assertEquals(resultError.success, true);
         assertExists(resultError.data?.contributions?.[0]);
@@ -361,7 +385,7 @@ Deno.test("generateStageContributions - getFileMetadata returns error (should pr
     }
 });
 
-Deno.test("generateStageContributions - getFileMetadata returns no size (should proceed with size 0)", async () => {
+Deno.test("generateContributions - getFileMetadata returns no size (should proceed with size 0)", async () => {
     const mockAuthToken = "auth-token-meta-fail";
     const mockSessionId = "session-id-meta-fail-nosize";
     const mockProjectId = "project-id-meta-fail-nosize";
@@ -370,7 +394,7 @@ Deno.test("generateStageContributions - getFileMetadata returns no size (should 
     const mockContent = "AI content for meta fail test";
     const mockSeedPrompt = "Prompt for meta fail";
 
-    const mockPayload: GenerateStageContributionsPayload = { 
+    const mockPayload: GenerateContributionsPayload = { 
         sessionId: mockSessionId,
         stageSlug: mockStage.slug,
         iterationNumber: 1,
@@ -381,6 +405,12 @@ Deno.test("generateStageContributions - getFileMetadata returns no size (should 
     const localLoggerWarn = spy(logger, 'warn');
 
     // DB Mocks
+    const mockStageSelectSpy = spy(() => ({
+        eq: spy(() => ({
+            single: spy(async () => await Promise.resolve({ data: mockStage, error: null }))
+        }))
+    }));
+
     const mockSessionSelectSpy = spy(() => ({ 
         eq: spy(() => ({ 
             single: spy(async () => await Promise.resolve({
@@ -425,13 +455,15 @@ Deno.test("generateStageContributions - getFileMetadata returns no size (should 
         eq: spy(async () => await Promise.resolve({ error: null }))
     }));
 
-    const mockDbClientFromSpyNoSize = spy(returnsNext([
-        { select: mockSessionSelectSpy },
-        { select: mockAiProvidersSelectSpy },
-        { insert: mockContributionInsertSpyNoSize },
-        { update: mockSessionUpdateSpy },
-    ]));
-    const mockDbClientNoSize: any = { from: mockDbClientFromSpyNoSize };
+    const mockDbClient = {
+        from: spy((tableName: string) => {
+            if (tableName === 'dialectic_stages') return { select: mockStageSelectSpy };
+            if (tableName === 'dialectic_sessions') return { select: mockSessionSelectSpy, update: mockSessionUpdateSpy };
+            if (tableName === 'ai_providers') return { select: mockAiProvidersSelectSpy };
+            if (tableName === 'dialectic_contributions') return { insert: mockContributionInsertSpyNoSize };
+            return { select: spy(), insert: spy(), update: spy() };
+        }),
+    };
     
     const mockDownloadFromStorage = spy(async (): Promise<DownloadStorageResult> => await Promise.resolve({
         data: new TextEncoder().encode(mockSeedPrompt).buffer as ArrayBuffer,
@@ -454,7 +486,7 @@ Deno.test("generateStageContributions - getFileMetadata returns no size (should 
     };
 
     try {
-        const resultNoSize = await generateStageContributions(mockDbClientNoSize, mockPayload, mockAuthToken, deps);
+        const resultNoSize = await generateContributions(mockDbClient as any, mockPayload, mockAuthToken, deps);
         
         assertEquals(resultNoSize.success, true);
         assertExists(resultNoSize.data?.contributions?.[0]);
@@ -470,7 +502,7 @@ Deno.test("generateStageContributions - getFileMetadata returns no size (should 
     }
 });
 
-Deno.test("generateStageContributions - DB insertion for contribution fails (verify storage cleanup)", async () => {
+Deno.test("generateContributions - DB insertion for contribution fails (verify storage cleanup)", async () => {
     const mockAuthToken = "auth-token-db-insert-fail";
     const mockSessionId = "session-id-db-insert-fail";
     const mockProjectId = "project-id-db-insert-fail";
@@ -481,7 +513,7 @@ Deno.test("generateStageContributions - DB insertion for contribution fails (ver
     const mockContentPath = `projects/${mockProjectId}/sessions/${mockSessionId}/contributions/${mockContributionId}/thesis.md`;
     const mockRawPath = `projects/${mockProjectId}/sessions/${mockSessionId}/contributions/${mockContributionId}/raw_thesis_response.json`;
 
-    const mockPayload: GenerateStageContributionsPayload = { 
+    const mockPayload: GenerateContributionsPayload = { 
         sessionId: mockSessionId,
         stageSlug: mockStage.slug,
         iterationNumber: 1,
@@ -490,6 +522,12 @@ Deno.test("generateStageContributions - DB insertion for contribution fails (ver
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
+
+    const mockStageSelectSpy = spy(() => ({
+        eq: spy(() => ({
+            single: spy(async () => await Promise.resolve({ data: mockStage, error: null }))
+        }))
+    }));
 
     const mockSessionSelectSpy = spy(() => ({ 
         eq: spy(() => ({ 
@@ -526,13 +564,15 @@ Deno.test("generateStageContributions - DB insertion for contribution fails (ver
         eq: spy(async () => await Promise.resolve({ error: null }))
     }));
 
-    const mockDbClientFromSpyDbFail = spy(returnsNext([
-        { select: mockSessionSelectSpy },
-        { select: mockAiProvidersSelectSpy },
-        { insert: mockContributionInsertSpyDbFail },
-        { update: mockSessionUpdateSpy },
-    ]));
-    const mockDbClientDbFail: any = { from: mockDbClientFromSpyDbFail };
+    const mockDbClient = {
+        from: spy((tableName: string) => {
+            if (tableName === 'dialectic_stages') return { select: mockStageSelectSpy };
+            if (tableName === 'dialectic_sessions') return { select: mockSessionSelectSpy, update: mockSessionUpdateSpy };
+            if (tableName === 'ai_providers') return { select: mockAiProvidersSelectSpy };
+            if (tableName === 'dialectic_contributions') return { insert: mockContributionInsertSpyDbFail };
+            return { select: spy(), insert: spy(), update: spy() };
+        }),
+    };
 
     const mockDownloadFromStorage = spy(async (): Promise<DownloadStorageResult> => await Promise.resolve({
         data: new TextEncoder().encode(mockSeedPrompt).buffer as ArrayBuffer,
@@ -554,7 +594,7 @@ Deno.test("generateStageContributions - DB insertion for contribution fails (ver
     };
 
     try {
-        const result = await generateStageContributions(mockDbClientDbFail, mockPayload, mockAuthToken, mockDeps);
+        const result = await generateContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
         
         assertEquals(result.success, false);
         assertExists(result.error);
@@ -584,7 +624,7 @@ Deno.test("generateStageContributions - DB insertion for contribution fails (ver
     }
 });
 
-Deno.test("generateStageContributions - Final session status update fails (critical log)", async () => {
+Deno.test("generateContributions - Final session status update fails (critical log)", async () => {
     const mockAuthToken = "auth-token-status-update-fail";
     const mockSessionId = "session-id-status-update-fail";
     const mockProjectId = "project-id-status-update-fail";
@@ -594,7 +634,7 @@ Deno.test("generateStageContributions - Final session status update fails (criti
     const mockFileSize = 77;
     const mockSeedPrompt = "Prompt for status update fail";
 
-    const mockPayload: GenerateStageContributionsPayload = { 
+    const mockPayload: GenerateContributionsPayload = { 
         sessionId: mockSessionId,
         stageSlug: mockStage.slug,
         iterationNumber: 1,
@@ -605,6 +645,12 @@ Deno.test("generateStageContributions - Final session status update fails (criti
     const localLoggerWarn = spy(logger, 'warn');
 
     // DB Mocks
+    const mockStageSelectSpy = spy(() => ({
+        eq: spy(() => ({
+            single: spy(async () => await Promise.resolve({ data: mockStage, error: null }))
+        }))
+    }));
+
     const mockSessionSelectSpy = spy(() => ({ 
         eq: spy(() => ({ 
             single: spy(async () => await Promise.resolve({
@@ -637,13 +683,15 @@ Deno.test("generateStageContributions - Final session status update fails (criti
         eq: spy(async () => await Promise.resolve({ error: { message: "Simulated session update failure", code: "DB_UPDATE_FAIL"} })) // Key: Update fails
     }));
     
-    const mockDbClientFromSpy = spy(returnsNext([
-        { select: mockSessionSelectSpy },
-        { select: mockAiProvidersSelectSpy },
-        { insert: mockContributionInsertSpy },
-        { update: mockSessionUpdateSpy },
-    ]));
-    const mockDbClient: any = { from: mockDbClientFromSpy };
+    const mockDbClient = {
+        from: spy((tableName: string) => {
+            if (tableName === 'dialectic_stages') return { select: mockStageSelectSpy };
+            if (tableName === 'dialectic_sessions') return { select: mockSessionSelectSpy, update: mockSessionUpdateSpy };
+            if (tableName === 'ai_providers') return { select: mockAiProvidersSelectSpy };
+            if (tableName === 'dialectic_contributions') return { insert: mockContributionInsertSpy };
+            return { select: spy(), insert: spy(), update: spy() };
+        }),
+    };
     
     const mockDownloadFromStorage = spy(async (): Promise<DownloadStorageResult> => await Promise.resolve({
         data: new TextEncoder().encode(mockSeedPrompt).buffer as ArrayBuffer,
@@ -662,7 +710,7 @@ Deno.test("generateStageContributions - Final session status update fails (criti
     };
 
     try {
-        const result = await generateStageContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
+        const result = await generateContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
         
         assertEquals(result.success, true); // Still returns success as contributions were made
         assertExists(result.data);

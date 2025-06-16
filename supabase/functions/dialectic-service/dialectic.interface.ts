@@ -1,12 +1,7 @@
 import { ChatMessage } from "../_shared/types.ts"; 
-import type { Database, Tables, Json } from "../types_db.ts";
+import type { Database, Json } from "../types_db.ts";
 import { uploadToStorage, downloadFromStorage } from "../_shared/supabase_storage_utils.ts";
 import type { ILogger } from "../_shared/types.ts";
-// Removed problematic import: import type { DialecticProject as PackageDialecticProject, ... } from "../../../../packages/types/src/dialectic.types.ts";
-
-// --- START: Redefined types based on packages/types/src/dialectic.types.ts ---
-// These are simplified here for the backend interface. 
-// The backend will construct data matching the richer frontend types from packages/types.
 
 export interface AIModelCatalogEntry {
     id: string;
@@ -112,10 +107,48 @@ export interface DialecticProject {
 
 // --- END: Redefined types ---
 
-export interface DialecticServiceRequest {
-    action: string;
-    payload?: Record<string, unknown>; 
-}
+// --- START: Discriminated Union for Type-Safe Service Requests ---
+// Define each action as a type with a literal `action` and a specific `payload`.
+// This allows TypeScript to infer the payload type based on the action string.
+
+// Actions with NO payload
+type ListProjectsAction = { action: 'listProjects' };
+type ListAvailableDomainsAction = { action: 'listAvailableDomains', payload?: { stageAssociation?: string } }; // Optional payload
+type ListDomainsAction = { action: 'listDomains' };
+
+// Actions WITH a payload
+type UpdateProjectDomainAction = { action: 'updateProjectDomain', payload: UpdateProjectDomainPayload };
+type GetProjectDetailsAction = { action: 'getProjectDetails', payload: GetProjectDetailsPayload };
+type StartSessionAction = { action: 'startSession', payload: StartSessionPayload };
+type GenerateContributionsAction = { action: 'generateContributions', payload: GenerateContributionsPayload };
+type GetContributionContentSignedUrlAction = { action: 'getContributionContentSignedUrl', payload: GetContributionContentSignedUrlPayload };
+type DeleteProjectAction = { action: 'deleteProject', payload: DeleteProjectPayload };
+type CloneProjectAction = { action: 'cloneProject', payload: CloneProjectPayload };
+type ExportProjectAction = { action: 'exportProject', payload: ExportProjectPayload };
+type GetProjectResourceContentAction = { action: 'getProjectResourceContent', payload: GetProjectResourceContentPayload };
+type SaveContributionEditAction = { action: 'saveContributionEdit', payload: SaveContributionEditPayload };
+type SubmitStageResponsesAction = { action: 'submitStageResponses', payload: SubmitStageResponsesPayload };
+type ListAvailableDomainOverlaysAction = { action: 'listAvailableDomainOverlays', payload: ListAvailableDomainOverlaysPayload };
+
+// The main union type for all possible JSON requests to the service.
+export type DialecticServiceRequest =
+  | ListProjectsAction
+  | ListAvailableDomainsAction
+  | ListDomainsAction
+  | UpdateProjectDomainAction
+  | GetProjectDetailsAction
+  | StartSessionAction
+  | GenerateContributionsAction
+  | GetContributionContentSignedUrlAction
+  | DeleteProjectAction
+  | CloneProjectAction
+  | ExportProjectAction
+  | GetProjectResourceContentAction
+  | SaveContributionEditAction
+  | SubmitStageResponsesAction
+  | ListAvailableDomainOverlaysAction;
+
+// --- END: Discriminated Union ---
 
 export interface CreateProjectPayload {
   projectName: string;
@@ -171,14 +204,14 @@ export interface UnifiedAIResponse {
 
 export type DialecticStage = Database['public']['Tables']['dialectic_stages']['Row'];
 
-export interface GenerateStageContributionsPayload {
+export interface GenerateContributionsPayload {
   sessionId: string;
   stageSlug?: DialecticStage['slug'];
   iterationNumber?: number;
   chatId?: string | null;
 }
 
-export interface GenerateStageContributionsSuccessResponse {
+export interface GenerateContributionsSuccessResponse {
   message: string;
   sessionId: string;
   status: string; 
@@ -282,12 +315,18 @@ export interface GetContributionContentSignedUrlPayload {
 }
 
 export interface CloneProjectPayload {
+  projectId: string;
+  newProjectName?: string;
 }
 
 export interface CloneProjectSuccessResponse {
+  id: string;
+  project_name: string;
+  created_at: string;
 }
 
 export interface ExportProjectPayload {
+  projectId: string;
 }
 
 export interface ExportProjectSuccessResponse {

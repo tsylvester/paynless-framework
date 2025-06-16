@@ -1,10 +1,10 @@
 import { assertEquals, assertExists, assertObjectMatch, assertRejects, assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { spy, stub, type Stub, returnsNext } from "jsr:@std/testing@0.225.1/mock";
-import { generateStageContributions } from "./generateContribution.ts";
+import { generateContributions } from "./generateContribution.ts";
 import { 
     type DialecticStage,
-    type GenerateStageContributionsPayload, 
-    type GenerateStageContributionsSuccessResponse,
+    type GenerateContributionsPayload, 
+    type GenerateContributionsSuccessResponse,
     type DialecticContribution,
     type CallUnifiedAIModelOptions,
     type UnifiedAIResponse,
@@ -47,7 +47,7 @@ const mockSynthesisStage: DialecticStage = {
 // const loggerSpyError = spy(logger, 'error');
 // const loggerSpyWarn = spy(logger, 'warn');
 
-Deno.test("generateStageContributions - Happy Path (Single Model, Synthesis Stage)", async () => {
+Deno.test("generateContributions - Happy Path (Single Model, Synthesis Stage)", async () => {
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
@@ -73,15 +73,20 @@ Deno.test("generateStageContributions - Happy Path (Single Model, Synthesis Stag
     const mockRawResponseStoragePath = `projects/${mockProjectId}/sessions/${mockSessionId}/contributions/${mockContributionId}/raw_${mockStageSlug.slug}_response.json`;
     const mockFileSize = 100;
 
-    const mockPayload: GenerateStageContributionsPayload = {
+    const mockPayload: GenerateContributionsPayload = {
         sessionId: mockSessionId,
-        stageSlug: mockStageSlug,
+        stageSlug: mockStageSlug.slug,
         iterationNumber: mockIterationNumber,
         chatId: mockChatId,
     };
 
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(mockChatId, {
         genericMockResults: {
+            'dialectic_stages': {
+                select: {
+                    data: [mockSynthesisStage],
+                }
+            },
             'dialectic_sessions': {
                 select: {
                     data: [{
@@ -123,7 +128,7 @@ Deno.test("generateStageContributions - Happy Path (Single Model, Synthesis Stag
     const mockGetFileMetadata = spy(async () => await Promise.resolve({ size: mockFileSize, mimeType: "text/markdown", error: null }));
 
     try {
-        const result = await generateStageContributions(
+        const result = await generateContributions(
             mockSupabase.client as any,
             mockPayload,
             mockAuthToken,
@@ -169,7 +174,7 @@ Deno.test("generateStageContributions - Happy Path (Single Model, Synthesis Stag
     }
 });
 
-Deno.test("generateStageContributions - Multiple Models (some success, some fail)", async () => {
+Deno.test("generateContributions - Multiple Models (some success, some fail)", async () => {
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
@@ -203,15 +208,20 @@ Deno.test("generateStageContributions - Multiple Models (some success, some fail
 
     const mockFileExtension = ".md"; // Assume same extension for simplicity
 
-    const mockPayload: GenerateStageContributionsPayload = {
+    const mockPayload: GenerateContributionsPayload = {
         sessionId: mockSessionId,
-        stageSlug: mockThesisStage,
+        stageSlug: mockThesisStage.slug,
         iterationNumber: 1,
         chatId: mockChatId,
     };
 
     const mockSupabase = createMockSupabaseClient(mockChatId, {
         genericMockResults: {
+            'dialectic_stages': {
+                select: {
+                    data: [mockThesisStage],
+                }
+            },
             'dialectic_sessions': {
                 select: {
                     data: [{
@@ -270,7 +280,7 @@ Deno.test("generateStageContributions - Multiple Models (some success, some fail
     );
     
     try {
-        const result = await generateStageContributions(
+        const result = await generateContributions(
             mockSupabase.client as any,
             mockPayload,
             mockAuthToken,
@@ -301,7 +311,7 @@ Deno.test("generateStageContributions - Multiple Models (some success, some fail
     }
 });
 
-Deno.test("generateStageContributions - All Models Fail", async () => {
+Deno.test("generateContributions - All Models Fail", async () => {
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
@@ -318,15 +328,20 @@ Deno.test("generateStageContributions - All Models Fail", async () => {
         fail_upload: { id: "model-id-3-upload-fail", name: "Model3-Upload-Fail", provider: "Provider3", apiId: "api-3-upload-fail", contributionId: "contrib-uuid-3-upload-fail" },
     };
 
-    const mockPayload: GenerateStageContributionsPayload = {
+    const mockPayload: GenerateContributionsPayload = {
         sessionId: mockSessionId,
-        stageSlug: mockThesisStage,
+        stageSlug: mockThesisStage.slug,
         iterationNumber: 1,
         chatId: mockChatId,
     };
 
     const mockSupabase = createMockSupabaseClient(mockChatId, {
         genericMockResults: {
+            'dialectic_stages': {
+                select: {
+                    data: [mockThesisStage],
+                }
+            },
             'dialectic_sessions': {
                 select: { data: [{ id: mockSessionId, project_id: mockProjectId, status: 'pending_thesis', associated_chat_id: mockChatId, selected_model_catalog_ids: Object.values(mockModels).map(m => m.id) }] },
                 update: { data: null, error: new Error("Simulated final status update failure") }
@@ -363,7 +378,7 @@ Deno.test("generateStageContributions - All Models Fail", async () => {
     const uuidSpy = spy(returnsNext(Object.values(mockModels).map(m => m.contributionId)));
 
     try {
-        const result = await generateStageContributions(
+        const result = await generateContributions(
             mockSupabase.client as any,
             mockPayload,
             mockAuthToken,

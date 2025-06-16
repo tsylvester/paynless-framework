@@ -40,7 +40,7 @@ Fetches the list of available domains that can be associated with dialectic proj
 #### `createProject(payload: CreateProjectPayload): Promise<ApiResponse<DialecticProject>>`
 Creates a new dialectic project.
 -   **Parameters:**
-    -   `payload: CreateProjectPayload`: An object containing details for the new project, such as `projectName`, `initialUserPrompt`, and optionally `selected_domain_tag`.
+    -   `payload: CreateProjectPayload`: An object containing details for the new project, such as `projectName`, `initialUserPrompt`, and optionally `selected_domain_id`.
 -   **Returns:** A promise that resolves to an `ApiResponse` containing the created `DialecticProject` object.
 
 #### `listProjects(): Promise<ApiResponse<DialecticProject[]>>`

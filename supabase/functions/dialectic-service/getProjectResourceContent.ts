@@ -85,12 +85,16 @@ export async function getProjectResourceContent(
     const content = await fileBlob.text();
     logger.info(`[getProjectResourceContent] Successfully fetched and read content for resourceId: ${resourceId}`);
 
+    const responseData: GetProjectResourceContentResponse = {
+      fileName: resource.file_name,
+      mimeType: resource.mime_type,
+      content: content,
+    };
+
+    logger.info(`[getProjectResourceContent] Preparing to return response data.`, { responseData });
+
     return {
-      data: {
-        fileName: resource.file_name,
-        mimeType: resource.mime_type,
-        content: content,
-      },
+      data: responseData,
     };
 
   } catch (e: unknown) {

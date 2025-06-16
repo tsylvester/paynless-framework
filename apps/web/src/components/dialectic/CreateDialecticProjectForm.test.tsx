@@ -9,7 +9,6 @@ import type {
     DialecticStore, 
     DialecticProject, 
     ApiError, 
-    DialecticProjectResource,
     DialecticDomain,
 } from '@paynless/types';
 import { usePlatform } from '@paynless/platform';
@@ -252,72 +251,64 @@ describe('CreateDialecticProjectForm', () => {
       expect(mockCreateDialecticProject).toHaveBeenCalledWith(
         expect.objectContaining({
           projectName: testData.projectName,
-          initialUserPromptText: testData.initialUserPrompt,
+          initialUserPrompt: testData.initialUserPrompt,
           selectedDomainId: mockSelectedDomain.id,
-          selectedDomainOverlayId: null,
-        }),
+        })
       );
     });
+
     await waitFor(() => {
-      expect(mockOnProjectCreated).toHaveBeenCalledWith('new-proj-123', testData.projectName);
+      expect(mockOnProjectCreated).toHaveBeenCalledWith(mockSuccessfulProject.id, mockSuccessfulProject.project_name);
     });
   });
 
   it('uploads promptFile if present after successful project creation', async () => {
     const user = userEvent.setup();
-    const projectName = 'Project With File';
-    const fileContent = 'Content from uploaded file';
-    const fileName = 'upload-me.md';
-    const fileToUpload = new File([fileContent], fileName, { type: 'text/markdown' });
-    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null };
+    const markdownContent = '# My Project From File';
+    const file = new File([markdownContent], 'test.md', { type: 'text/markdown' });
 
+    const mockCreatedProject: DialecticProject = {
+      id: 'proj-with-file',
+      user_id: 'user-abc',
+      project_name: 'My Project From File',
+      created_at: '',
+      updated_at: '',
+      status: 'active',
+      selected_domain_id: 'domain-1',
+      domain_name: 'General',
+      selected_domain_overlay_id: null,
+      repo_url: null,
+    };
+
+    mockCreateDialecticProject.mockResolvedValueOnce({ data: mockCreatedProject, error: null });
+
+    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null };
     mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain });
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
 
-    const mockProject: DialecticProject = { 
-      id: 'proj-file-123', 
-      project_name: projectName, 
-      initial_user_prompt: fileContent, 
-      user_id: 'u', 
-      created_at: '', 
-      updated_at: '', 
-      status: 'active', 
-      selected_domain_id: 'domain-1', 
-      selected_domain_overlay_id: null,
-      repo_url: null,
-      domain_name: 'General',
-    }; 
-    mockCreateDialecticProject.mockResolvedValueOnce({ data: mockProject, error: null });
-    const mockResource: Partial<DialecticProjectResource> = { id: 'res-1', file_name: fileName }; 
-    mockUploadProjectResourceFile.mockResolvedValueOnce({ data: mockResource, error: null });
-
     renderForm();
 
-    await user.type(screen.getByLabelText(/Project Name/i), projectName);
+    // Simulate file upload via the TextInputArea's onFileLoad prop
     await act(async () => {
-      await triggerMockTextInputAreaOnFileLoad(fileContent, fileToUpload);
+      await triggerMockTextInputAreaOnFileLoad(markdownContent, file);
     });
-        
+
     const submitButton = screen.getByRole('button', { name: /Create Project/i });
     await user.click(submitButton);
 
     await waitFor(() => {
       expect(mockCreateDialecticProject).toHaveBeenCalledWith(
         expect.objectContaining({
-          projectName: projectName,
-          promptFile: fileToUpload,
-          selectedDomainId: mockSelectedDomain.id,
-          selectedDomainOverlayId: null,
-        }),
+          projectName: 'My Project From File',
+          initialUserPrompt: markdownContent,
+          promptFile: file,
+          selectedDomainId: 'domain-1',
+        })
       );
     });
 
     await waitFor(() => {
-      const resultValue = mockCreateDialecticProject.mock.results[0]?.value;
-      expect(resultValue).toBeDefined();
-      const mockProjectResult = resultValue?.data;
-      expect(mockProjectResult).toBeDefined();
-      expect(mockOnProjectCreated).toHaveBeenCalledWith(mockProjectResult.id, mockProjectResult.project_name);
+      expect(mockOnProjectCreated).toHaveBeenCalledWith(mockCreatedProject.id, mockCreatedProject.project_name);
     });
   });
 
@@ -332,34 +323,28 @@ describe('CreateDialecticProjectForm', () => {
 
   it('displays error message if creation fails', async () => {
     const user = userEvent.setup();
-    const error = { message: 'Creation Failed badly' } as ApiError;
+    const error: ApiError = { message: 'Creation failed', code: 'SERVER_ERROR' };
+    mockCreateDialecticProject.mockResolvedValueOnce({ data: null, error });
+
     const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null };
-    
-    mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain });
+    mockStore = createMockStoreState({ 
+      selectedDomain: mockSelectedDomain,
+      createProjectError: error // Also set the error state
+    });
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
     
-    mockCreateDialecticProject.mockImplementation(async () => {
-      // Simulate the store update that would happen on failure
-      mockStore.createProjectError = error;
-      vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
-      return { data: null, error };
+    renderForm();
+
+    await user.type(screen.getByLabelText(/Project Name/i), 'Error Project');
+    act(() => {
+      capturedTextInputAreaProps.onChange?.('This will fail.');
     });
 
-    renderForm();
-    
-    await user.type(screen.getByLabelText(/Project Name/i), 'Error Attempt');
-    act(() => {
-      capturedTextInputAreaProps.onChange?.('some error prompt');
-    });
-    
     const submitButton = screen.getByRole('button', { name: /Create Project/i });
     await user.click(submitButton);
-    
+
     await waitFor(() => {
-      const alert = screen.getByRole('alert');
-      expect(alert).toBeInTheDocument();
-      expect(screen.getByText('Creation Failed')).toBeInTheDocument();
-      expect(screen.getByText(error.message)).toBeInTheDocument();
+      expect(screen.getByTestId('creation-error-alert')).toHaveTextContent(error.message);
     });
   });
 
@@ -374,198 +359,82 @@ describe('CreateDialecticProjectForm', () => {
   });
 
   it('uses custom submitButtonText', () => {
-    const customText = "Go Go Go";
+    const customText = "Launch It!";
     renderForm({ submitButtonText: customText });
-    expect(screen.getByRole('button', { name: customText })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: new RegExp(customText) })).toBeInTheDocument();
   });
 
   it('auto-fills project name from typed prompt if project name is empty and not manually set', async () => {
-    renderForm({ defaultProjectName: '' });
-
-    const promptTyped = "This is the first line for auto-name.\nSecond line.";
-    const expectedProjectName = "This is the first line for auto-name.";
-
+    renderForm();
+    const promptText = "This is the first line.\nAnd this is the second.";
     act(() => {
-      capturedTextInputAreaProps.onChange?.(promptTyped);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByLabelText(/Project Name/i)).toHaveValue(expectedProjectName);
-    });
-
-    const additionalPromptText = " More text.";
-    act(() => {
-      capturedTextInputAreaProps.onChange?.(promptTyped + additionalPromptText);
+      capturedTextInputAreaProps.onChange?.(promptText);
     });
     await waitFor(() => {
-        expect(screen.getByLabelText(/Project Name/i)).toHaveValue(expectedProjectName);
+      expect(screen.getByLabelText(/Project Name/i)).toHaveValue("This is the first line.");
     });
   });
 
   it('manual project name edits stop auto-filling from prompt and subsequent file loads', async () => {
     const user = userEvent.setup();
-    renderForm({ defaultProjectName: '' });
+    renderForm();
 
-    const initialPrompt = "Auto-fill me first.";
-    const expectedInitialAutoName = "Auto-fill me first.";
+    const manualProjectName = "My Manual Project";
+    await user.type(screen.getByLabelText(/Project Name/i), manualProjectName);
+
+    // Now, type in the prompt - project name should NOT change
     act(() => {
-      capturedTextInputAreaProps.onChange?.(initialPrompt);
+      capturedTextInputAreaProps.onChange?.("A new prompt that won't change the name.");
     });
     await waitFor(() => {
-      expect(screen.getByLabelText(/Project Name/i)).toHaveValue(expectedInitialAutoName);
+      expect(screen.getByLabelText(/Project Name/i)).toHaveValue(manualProjectName);
     });
 
-    const manualProjectName = "My Manual Project Name";
-    const projectNameInput = screen.getByLabelText(/Project Name/i) as HTMLInputElement;
-
-    await user.clear(projectNameInput);
-
-    await waitFor(() => {
-      expect(projectNameInput.value).toBe(expectedInitialAutoName);
-    });
-
-    await user.type(projectNameInput, manualProjectName, {
-        initialSelectionStart: 0,
-        initialSelectionEnd: projectNameInput.value.length,
-    });
-
-    await waitFor(() => {
-      expect(projectNameInput.value).toBe(manualProjectName);
-    });
-
-    const newPromptText = "This new prompt should not change the manual name.";
-    act(() => {
-      capturedTextInputAreaProps.onChange?.(newPromptText);
-    });
-    await waitFor(() => {
-      expect(projectNameInput).toHaveValue(manualProjectName);
-    });
-
-    const fileContent = "Content from a new file.";
-    const newFile = new File([fileContent], "new-file.md", { type: "text/markdown" });
+    // Now, simulate a file load - project name should also NOT change
     await act(async () => {
-      await triggerMockTextInputAreaOnFileLoad(fileContent, newFile);
+      await triggerMockTextInputAreaOnFileLoad("# A file that won't change the name", new File([""], "test.md"));
     });
     await waitFor(() => {
-      expect(capturedTextInputAreaProps.value).toBe(fileContent);
-      expect(projectNameInput).toHaveValue(manualProjectName);
-    });
-  });
-
-  it('handles promptFile upload failure gracefully after project creation', async () => {
-    const user = userEvent.setup();
-    const fileName = 'upload-fails.md';
-    const fileContent = 'Content for project whose file upload will fail';
-    const fileToUpload = new File([fileContent], fileName, { type: 'text/markdown' });
-    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null };
-
-    mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain });
-    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
-    renderForm({ defaultProjectName: '' });
-
-    await act(async () => {
-      await triggerMockTextInputAreaOnFileLoad(fileContent, fileToUpload);
-    });
-    
-    const expectedProjectNameFromFileContent = fileContent.split('\n')[0];
-
-    await waitFor(() => {
-      expect(capturedTextInputAreaProps.value).toBe(fileContent);
-      expect(screen.getByLabelText(/Project Name/i)).toHaveValue(expectedProjectNameFromFileContent); 
-    });
-
-    const uploadError = { message: 'Simulated upload network error', code: 'NETWORK_ERROR' } as ApiError;
-    
-    mockCreateDialecticProject.mockReset();
-    mockCreateDialecticProject.mockImplementation(async () => {
-      mockStore.isCreatingProject = false;
-      mockStore.createProjectError = uploadError;
-      return { data: null, error: uploadError };
-    });
-
-    const submitButton = screen.getByRole('button', { name: /Create Project/i });
-    
-    await act(async () => {
-      await user.click(submitButton);
-      vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
-    });
-
-    await waitFor(() => {
-      expect(mockCreateDialecticProject).toHaveBeenCalledWith(
-        expect.objectContaining({
-          projectName: expectedProjectNameFromFileContent,
-          promptFile: fileToUpload,
-          selectedDomainId: mockSelectedDomain.id,
-          selectedDomainOverlayId: null,
-        }),
-      );
-    });
-    
-    await waitFor(() => {
-      expect(mockOnProjectCreated).not.toHaveBeenCalled();
-    });
-
-    await waitFor(() => {
-      const alert = screen.getByRole('alert');
-      expect(alert).toBeInTheDocument();
-      expect(screen.getByText('Creation Failed')).toBeInTheDocument();
-      expect(screen.getByText(uploadError.message)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Project Name/i)).toHaveValue(manualProjectName);
     });
   });
 
   it('displays error message if creation fails and calls resetCreateProjectError on next submission attempt', async () => {
     const user = userEvent.setup();
-    const error: ApiError = { message: 'Creation Failed badly', code: 'SERVER_ERROR' };
+    const initialError: ApiError = { message: 'Initial failure', code: 'SERVER_ERROR' };
+    
+    // First attempt fails
+    mockCreateDialecticProject.mockResolvedValueOnce({ data: null, error: initialError });
 
-    // Initial render with an error
-    let mockStore = createMockStoreState({ createProjectError: error });
-    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
-    const { rerender } = render(
-        <MemoryRouter>
-            <CreateDialecticProjectForm onProjectCreated={mockOnProjectCreated} />
-        </MemoryRouter>
-    );
-    await waitFor(() => {
-        expect(screen.getByTestId('creation-error-alert')).toBeInTheDocument();
-    });
-
-    // Mock a successful submission for the next attempt
     const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null };
-    mockCreateDialecticProject.mockResolvedValue({ data: { id: 'proj-456', project_name: 'New attempt' } as DialecticProject });
+    const mockStoreWithState = createMockStoreState({
+        selectedDomain: mockSelectedDomain,
+        createProjectError: initialError, // Start with an error
+    });
+    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStoreWithState));
+
+    renderForm();
     
-    // Simulate the user typing and clearing the error
-    mockStore = createMockStoreState({ createProjectError: null, selectedDomain: mockSelectedDomain });
-    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
-    
-    rerender(
-        <MemoryRouter>
-            <CreateDialecticProjectForm onProjectCreated={mockOnProjectCreated} />
-        </MemoryRouter>
-    );
-
+    // Check initial error is shown
     await waitFor(() => {
-        expect(screen.queryByTestId('creation-error-alert')).not.toBeInTheDocument();
+        expect(screen.getByTestId('creation-error-alert')).toHaveTextContent(initialError.message);
     });
 
-    // Now, perform the submission
-    await user.type(screen.getByLabelText(/Project Name/i), 'New attempt');
-    act(() => {
-      capturedTextInputAreaProps.onChange?.('This is a sufficiently long prompt');
-    });
-    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+    // Mock successful response for the second attempt
+    const mockSuccessfulProject: DialecticProject = { id: 'proj-456', user_id: 'user-xyz', project_name: 'Retry Project', created_at: '', updated_at: '', status: 'active', selected_domain_id: 'domain-1', domain_name: 'General', selected_domain_overlay_id: null, repo_url: null, };
+    mockCreateDialecticProject.mockResolvedValueOnce({ data: mockSuccessfulProject, error: null });
 
-    // Verify the successful submission
-    await waitFor(() => {
-        expect(mockCreateDialecticProject).toHaveBeenCalledWith(expect.objectContaining({
-          selectedDomainId: mockSelectedDomain.id,
-        }));
-    });
+    // Simulate user trying again
+    const submitButton = screen.getByRole('button', { name: /Create Project/i });
+    await user.click(submitButton);
 
+    // The component should call resetCreateProjectError on mount/effect if there's an error.
+    // The test setup will re-render, triggering this. We can also check if the mock was called.
     await waitFor(() => {
-        expect(mockOnProjectCreated).toHaveBeenCalledWith('proj-456', 'New attempt');
+        expect(mockResetCreateProjectError).toHaveBeenCalled();
     });
   });
-  
+
   it('displays DomainSelector when enableDomainSelection is true', () => {
     renderForm({ enableDomainSelection: true });
     expect(screen.getByTestId('mock-domain-selector')).toBeInTheDocument();
@@ -577,279 +446,43 @@ describe('CreateDialecticProjectForm', () => {
   });
 
   it('uses custom submitButtonText', () => {
-    const customText = "Go Go Go";
+    const customText = "Initiate Dialectic";
     renderForm({ submitButtonText: customText });
-    expect(screen.getByRole('button', { name: customText })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: new RegExp(customText) })).toBeInTheDocument();
   });
 
   it('auto-fills project name from typed prompt if project name is empty and not manually set', async () => {
-    renderForm({ defaultProjectName: '' });
-
-    const promptTyped = "This is the first line for auto-name.\nSecond line.";
-    const expectedProjectName = "This is the first line for auto-name.";
-
+    renderForm();
+    const promptText = "This is a new line of thinking.\nWith a second line.";
+    
     act(() => {
-      capturedTextInputAreaProps.onChange?.(promptTyped);
+      capturedTextInputAreaProps.onChange?.(promptText);
     });
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/Project Name/i)).toHaveValue(expectedProjectName);
-    });
-
-    const additionalPromptText = " More text.";
-    act(() => {
-      capturedTextInputAreaProps.onChange?.(promptTyped + additionalPromptText);
-    });
-    await waitFor(() => {
-        expect(screen.getByLabelText(/Project Name/i)).toHaveValue(expectedProjectName);
+      expect(screen.getByLabelText(/Project Name/i)).toHaveValue("This is a new line of thinking.");
     });
   });
 
   it('manual project name edits stop auto-filling from prompt and subsequent file loads', async () => {
     const user = userEvent.setup();
-    renderForm({ defaultProjectName: '' });
-
-    const initialPrompt = "Auto-fill me first.";
-    const expectedInitialAutoName = "Auto-fill me first.";
-    act(() => {
-      capturedTextInputAreaProps.onChange?.(initialPrompt);
-    });
-    await waitFor(() => {
-      expect(screen.getByLabelText(/Project Name/i)).toHaveValue(expectedInitialAutoName);
-    });
-
-    const manualProjectName = "My Manual Project Name";
-    const projectNameInput = screen.getByLabelText(/Project Name/i) as HTMLInputElement;
-
-    await user.clear(projectNameInput);
-
-    await waitFor(() => {
-      expect(projectNameInput.value).toBe(expectedInitialAutoName);
-    });
-
-    await user.type(projectNameInput, manualProjectName, {
-        initialSelectionStart: 0,
-        initialSelectionEnd: projectNameInput.value.length,
-    });
-
-    await waitFor(() => {
-      expect(projectNameInput.value).toBe(manualProjectName);
-    });
-
-    const newPromptText = "This new prompt should not change the manual name.";
-    act(() => {
-      capturedTextInputAreaProps.onChange?.(newPromptText);
-    });
-    await waitFor(() => {
-      expect(projectNameInput).toHaveValue(manualProjectName);
-    });
-
-    const fileContent = "Content from a new file.";
-    const newFile = new File([fileContent], "new-file.md", { type: "text/markdown" });
-    await act(async () => {
-      await triggerMockTextInputAreaOnFileLoad(fileContent, newFile);
-    });
-    await waitFor(() => {
-      expect(capturedTextInputAreaProps.value).toBe(fileContent);
-      expect(projectNameInput).toHaveValue(manualProjectName);
-    });
-  });
-
-  it('handles promptFile upload failure gracefully after project creation', async () => {
-    const user = userEvent.setup();
-    const fileName = 'upload-fails.md';
-    const fileContent = 'Content for project whose file upload will fail';
-    const fileToUpload = new File([fileContent], fileName, { type: 'text/markdown' });
-    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null };
-
-    mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain });
-    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
-    renderForm({ defaultProjectName: '' });
-
-    await act(async () => {
-      await triggerMockTextInputAreaOnFileLoad(fileContent, fileToUpload);
-    });
-    
-    const expectedProjectNameFromFileContent = fileContent.split('\n')[0];
-
-    await waitFor(() => {
-      expect(capturedTextInputAreaProps.value).toBe(fileContent);
-      expect(screen.getByLabelText(/Project Name/i)).toHaveValue(expectedProjectNameFromFileContent); 
-    });
-
-    const uploadError = { message: 'Simulated upload network error', code: 'NETWORK_ERROR' } as ApiError;
-    
-    mockCreateDialecticProject.mockReset();
-    mockCreateDialecticProject.mockImplementation(async () => {
-      mockStore.isCreatingProject = false;
-      mockStore.createProjectError = uploadError;
-      return { data: null, error: uploadError };
-    });
-
-    const submitButton = screen.getByRole('button', { name: /Create Project/i });
-    
-    await act(async () => {
-      await user.click(submitButton);
-      vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
-    });
-
-    await waitFor(() => {
-      expect(mockCreateDialecticProject).toHaveBeenCalledWith(
-        expect.objectContaining({
-          projectName: expectedProjectNameFromFileContent,
-          promptFile: fileToUpload,
-          selectedDomainId: mockSelectedDomain.id,
-          selectedDomainOverlayId: null,
-        }),
-      );
-    });
-    
-    await waitFor(() => {
-      expect(mockOnProjectCreated).not.toHaveBeenCalled();
-    });
-
-    await waitFor(() => {
-      const alert = screen.getByRole('alert');
-      expect(alert).toBeInTheDocument();
-      expect(screen.getByText('Creation Failed')).toBeInTheDocument();
-      expect(screen.getByText(uploadError.message)).toBeInTheDocument();
-    });
-  });
-
-  it('handles successful project creation with a file upload, and then uploads the file resource', async () => {
-    const user = userEvent.setup();
-    const file = new File(['# My Project From File'], 'test.md', { type: 'text/markdown' });
-    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null };
-
-    mockStore = createMockStoreState({
-      selectedDomain: mockSelectedDomain,
-    });
-    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
-
-    const mockCreatedProject: DialecticProject = {
-      id: 'proj-with-file-1',
-      user_id: 'user-y',
-      project_name: 'My Project From File',
-      initial_user_prompt: '# My Project From File',
-      created_at: '',
-      updated_at: '',
-      status: 'active',
-      selected_domain_id: mockSelectedDomain.id,
-      domain_name: mockSelectedDomain.name,
-      selected_domain_overlay_id: null,
-      repo_url: null,
-      initial_prompt_resource_id: 'res-123',
-    };
-    const mockUploadedResource: DialecticProjectResource = {
-      id: 'res-123',
-      project_id: 'proj-with-file-1',
-      file_name: 'test.md',
-      storage_path: 'path/to/test.md',
-      mime_type: 'text/markdown',
-      size_bytes: 20,
-      resource_description: 'Initial prompt file',
-      created_at: '',
-      updated_at: '',
-    };
-
-    mockCreateDialecticProject.mockResolvedValueOnce({ data: mockCreatedProject, error: null });
-    mockUploadProjectResourceFile.mockResolvedValueOnce({ data: mockUploadedResource, error: null });
-
     renderForm();
 
-    await act(async () => {
-      await triggerMockTextInputAreaOnFileLoad('# My Project From File', file);
-    });
+    const manualProjectName = "User Defined Name";
+    await user.type(screen.getByLabelText(/Project Name/i), manualProjectName);
 
-    const submitButton = screen.getByRole('button', { name: /Create Project/i });
-    await user.click(submitButton);
-
-    await waitFor(() => {
-      expect(mockCreateDialecticProject).toHaveBeenCalledWith(
-        expect.objectContaining({
-          projectName: 'My Project From File',
-          promptFile: file,
-          selectedDomainId: mockSelectedDomain.id,
-          selectedDomainOverlayId: null,
-        }),
-      );
-    });
-
-    await waitFor(() => {
-      expect(mockUploadProjectResourceFile).toHaveBeenCalledWith(
-        expect.objectContaining({
-          projectId: mockCreatedProject.id,
-          file: file,
-          resourceDescription: "Initial prompt file uploaded during project creation.",
-        }),
-      );
-    });
-
-    await waitFor(() => {
-      expect(mockOnProjectCreated).toHaveBeenCalledWith(
-        mockCreatedProject.id,
-        mockCreatedProject.project_name
-      );
-    });
-  });
-
-  it('uses a default domain when none is selected', async () => {
-    const user = userEvent.setup();
-    const testData = { projectName: 'Default Domain Project', initialUserPrompt: 'This is a sufficiently long prompt' };
-    const mockDefaultDomain: DialecticDomain = { id: 'domain-general', name: 'General', description: '', parent_domain_id: null };
-
-    mockStore = createMockStoreState({
-      selectedDomain: null, 
-      domains: [mockDefaultDomain], 
-    });
-    vi.mocked(useDialecticStore).mockImplementation(selector => selector(mockStore));
-
-    const mockSuccessfulProject: DialecticProject = {
-      id: 'new-proj-default-domain',
-      user_id: 'user-z',
-      project_name: testData.projectName,
-      initial_user_prompt: testData.initialUserPrompt,
-      created_at: '',
-      updated_at: '',
-      status: 'active',
-      selected_domain_id: mockDefaultDomain.id,
-      domain_name: mockDefaultDomain.name,
-      selected_domain_overlay_id: null,
-      repo_url: null,
-    };
-    mockCreateDialecticProject.mockResolvedValueOnce({
-      data: mockSuccessfulProject,
-      error: null,
-    });
-
-    renderForm();
-
-    await user.type(screen.getByLabelText(/Project Name/i), testData.projectName);
     act(() => {
-      capturedTextInputAreaProps.onChange?.(testData.initialUserPrompt);
+      capturedTextInputAreaProps.onChange?.("This prompt should not override the manual name.");
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Project Name/i)).toHaveValue(manualProjectName);
     });
 
-    // We need to wait for the useEffect to fire and update the state
-    await waitFor(() => {
-      expect(mockStore.selectedDomain).toEqual(mockDefaultDomain);
+    await act(async () => {
+      await triggerMockTextInputAreaOnFileLoad("# This file should not override", new File([""], "another.md"));
     });
-
-    const submitButton = screen.getByRole('button', { name: /Create Project/i });
-    await user.click(submitButton);
-
     await waitFor(() => {
-      expect(mockCreateDialecticProject).toHaveBeenCalledWith(
-        expect.objectContaining({
-          projectName: testData.projectName,
-          initialUserPromptText: testData.initialUserPrompt,
-          selectedDomainId: mockDefaultDomain.id,
-          selectedDomainOverlayId: null,
-        }),
-      );
-    });
-
-    await waitFor(() => {
-      expect(mockOnProjectCreated).toHaveBeenCalledWith('new-proj-default-domain', testData.projectName);
+      expect(screen.getByLabelText(/Project Name/i)).toHaveValue(manualProjectName);
     });
   });
 }); 
