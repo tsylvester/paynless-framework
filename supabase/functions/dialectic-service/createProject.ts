@@ -43,6 +43,21 @@ export async function createProject(
       return { error: { message: "selectedDomainId is required", status: 400 } };
     }
 
+    // Step 1: Find the default process template for the selected domain
+    const { data: association, error: associationError } = await dbAdminClient
+      .from('domain_process_associations')
+      .select('process_template_id')
+      .eq('domain_id', selectedDomainId)
+      .eq('is_default_for_domain', true)
+      .single();
+
+    if (associationError || !association) {
+      console.error(`Error finding default process for domain ${selectedDomainId}:`, associationError);
+      return { error: { message: "Could not find a default process template for the selected domain.", status: 400 } };
+    }
+
+    const defaultProcessTemplateId = association.process_template_id;
+
     const { data: newProjectData, error: createError } = await dbAdminClient
       .from('dialectic_projects')
       .insert({
@@ -51,6 +66,7 @@ export async function createProject(
         initial_user_prompt: initialUserPromptText || "",
         selected_domain_id: selectedDomainId,
         selected_domain_overlay_id: selected_domain_overlay_id,
+        process_template_id: defaultProcessTemplateId,
         status: 'new',
         initial_prompt_resource_id: null,
       })
@@ -139,6 +155,9 @@ export async function createProject(
           *,
           domain:dialectic_domains (
             name
+          ),
+          process_template:dialectic_process_templates (
+            *
           )
         `)
         .single();
@@ -153,6 +172,30 @@ export async function createProject(
        Object.assign(newProjectData, updatedProjectData);
     }
     
+    // This part of the logic assumes that if the project was just created and not updated,
+    // the process_template relationship might not be populated. We'll fetch it if needed.
+    if (!newProjectData.process_template) {
+       const { data: finalProjectData, error: finalFetchError } = await dbAdminClient
+        .from('dialectic_projects')
+        .select(`
+          *,
+          domain:dialectic_domains (
+            name
+          ),
+          process_template:dialectic_process_templates (
+            *
+          )
+        `)
+        .eq('id', newProjectData.id)
+        .single();
+      
+      if(finalFetchError || !finalProjectData) {
+         console.error("Error fetching final project data with process_template:", finalFetchError);
+         return { error: { message: "Failed to fetch project details after creation.", status: 500 } };
+      }
+      Object.assign(newProjectData, finalProjectData);
+    }
+    
     const responseData: DialecticProject = {
       id: newProjectData.id,
       user_id: newProjectData.user_id,
@@ -161,6 +204,7 @@ export async function createProject(
       initial_prompt_resource_id: newProjectData.initial_prompt_resource_id,
       selected_domain_id: newProjectData.selected_domain_id,
       domain_name: newProjectData.domain.name,
+      process_template: newProjectData.process_template,
       selected_domain_overlay_id: newProjectData.selected_domain_overlay_id,
       repo_url: newProjectData.repo_url,
       status: newProjectData.status,

@@ -9,7 +9,8 @@ import {
     GetProjectDetailsPayload, 
     DialecticSession, 
     DialecticSessionModel, 
-    AIModelCatalogEntry 
+    AIModelCatalogEntry,
+    DialecticProcessTemplate
 } from "./dialectic.interface.ts";
 import type { User } from "npm:@supabase/gotrue-js@^2.6.3";
 
@@ -213,11 +214,13 @@ describe("getProjectDetails", () => {
     assertEquals(result.error?.status, 500);
   });
 
-  type MockDbProjectData = Omit<DialecticProject, 'sessions' | 'contributions' | 'domain_name'> & {
+  type MockDbProjectData = Omit<DialecticProject, 'sessions' | 'contributions' | 'domain_name' | 'process_template'> & {
     dialectic_sessions: (Omit<DialecticSession, 'contributions' | 'dialectic_contributions'> & {
         dialectic_contributions?: Partial<DialecticContribution>[] | null;
     })[] | null;
     dialectic_domains: { name: string } | null;
+    dialectic_process_templates: Partial<DialecticProcessTemplate> | null;
+    process_template_id: string | null;
   };
 
   it("should successfully fetch project details with sessions, models, and sorted contributions", async () => {
@@ -288,7 +291,9 @@ describe("getProjectDetails", () => {
           dialectic_contributions: null, 
         },
       ],
-      dialectic_domains: { name: "General" }
+      dialectic_domains: { name: "General" },
+      dialectic_process_templates: { id: "proc-template-1", name: "Default Template" },
+      process_template_id: "proc-template-1",
     };
     
     if (debugStub) debugStub.restore();
@@ -357,7 +362,7 @@ describe("getProjectDetails", () => {
     assertEquals(fromSpy.calls[0].args[0], 'dialectic_projects');
     
     assertEquals(qbSpies.select.calls.length, 1);
-    const expectedSelect = "*, dialectic_domains ( name ), dialectic_sessions (*, dialectic_contributions (*) )";
+    const expectedSelect = "*, dialectic_domains ( name ), dialectic_process_templates ( * ), dialectic_sessions (*, dialectic_contributions (*) )";
     const actualSelect = qbSpies.select.calls[0].args[0]?.toString().replace(/\s+/g, ' ').trim();
     assertEquals(actualSelect, expectedSelect);
 
@@ -368,6 +373,8 @@ describe("getProjectDetails", () => {
     assertEquals(qbSpies.eq.calls[1].args[1], MOCK_USER_ID); 
 
     assertEquals(resultData.dialectic_domains.name, "General");
+    assertExists(resultData.dialectic_process_templates);
+    assertEquals(resultData.dialectic_process_templates.name, "Default Template");
   });
   
   it("should handle project with no sessions", async () => {
@@ -382,7 +389,9 @@ describe("getProjectDetails", () => {
       status: "active",
       selected_domain_id: "domain-id-general",
       dialectic_sessions: [], 
-      dialectic_domains: { name: "General" }
+      dialectic_domains: { name: "General" },
+      dialectic_process_templates: { id: "proc-template-1", name: "Default Template" },
+      process_template_id: "proc-template-1",
     };
 
     if (debugStub) debugStub.restore();
@@ -432,7 +441,9 @@ describe("getProjectDetails", () => {
       status: "active",
       selected_domain_id: "domain-id-general",
       dialectic_sessions: null,
-      dialectic_domains: { name: "General" }
+      dialectic_domains: { name: "General" },
+      dialectic_process_templates: { id: "proc-template-1", name: "Default Template" },
+      process_template_id: "proc-template-1",
     };
 
     if (debugStub) debugStub.restore();

@@ -67,8 +67,6 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
 
   const currentSelectedDomain = useDialecticStore(selectSelectedDomain);
 
-  const currentSelectedOverlayIdFromStore = useDialecticStore(selectSelectedDomainOverlayId);
-
   const currentDialecticStage = useDialecticStore(selectSelectedStageAssociation) as DialecticStage | undefined;
   const currentSelectedModelIds = useDialecticStore(selectSelectedModelIds) || [];
 
@@ -142,11 +140,6 @@ export const StartDialecticSessionModal: React.FC<StartDialecticSessionModalProp
       projectId: currentProjectDetail.id,
       selectedModelCatalogIds: currentSelectedModelIds,
       sessionDescription: sessionDescriptionForPayload,
-      stageAssociation: currentDialecticStage as DialecticStage,
-      promptTemplateId: (selectedDomainOverlayDescriptor?.system_prompt_id && selectedDomainOverlayDescriptor.system_prompt_id !== "NEEDS_IMPLEMENTATION_SELECT_PROMPT_ID_FOR_STAGE") 
-                        ? selectedDomainOverlayDescriptor.system_prompt_id 
-                        : undefined,
-      selectedDomainOverlayId: currentSelectedOverlayIdFromStore || undefined,
     };
 
     const result = await startDialecticSession(payload);

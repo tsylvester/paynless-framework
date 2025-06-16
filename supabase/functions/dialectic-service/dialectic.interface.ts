@@ -88,6 +88,8 @@ export interface DialecticSession {
   dialectic_contributions?: DialecticContribution[];
 }
 
+export type DialecticProcessTemplate = Database['public']['Tables']['dialectic_process_templates']['Row'];
+
 export interface DialecticProject {
     id: string;
     user_id: string;
@@ -97,6 +99,7 @@ export interface DialecticProject {
     selected_domain_id: string;
     domain_name?: string; // Will be populated by JOINs
     domain_description?: string; // Will be populated by JOINs
+    process_template?: DialecticProcessTemplate | null;
     selected_domain_overlay_id?: string | null;
     repo_url: Json | null;
     status: string;
@@ -129,6 +132,7 @@ type GetProjectResourceContentAction = { action: 'getProjectResourceContent', pa
 type SaveContributionEditAction = { action: 'saveContributionEdit', payload: SaveContributionEditPayload };
 type SubmitStageResponsesAction = { action: 'submitStageResponses', payload: SubmitStageResponsesPayload };
 type ListAvailableDomainOverlaysAction = { action: 'listAvailableDomainOverlays', payload: ListAvailableDomainOverlaysPayload };
+type FetchProcessTemplateAction = { action: 'fetchProcessTemplate', payload: FetchProcessTemplatePayload };
 
 // The main union type for all possible JSON requests to the service.
 export type DialecticServiceRequest =
@@ -146,7 +150,8 @@ export type DialecticServiceRequest =
   | GetProjectResourceContentAction
   | SaveContributionEditAction
   | SubmitStageResponsesAction
-  | ListAvailableDomainOverlaysAction;
+  | ListAvailableDomainOverlaysAction
+  | FetchProcessTemplateAction;
 
 // --- END: Discriminated Union ---
 
@@ -408,3 +413,7 @@ export interface SubmitStageResponsesDependencies {
 }
 
 export type DialecticStageTransition = Database['public']['Tables']['dialectic_stage_transitions']['Row'];
+
+export interface FetchProcessTemplatePayload {
+  templateId: string;
+}

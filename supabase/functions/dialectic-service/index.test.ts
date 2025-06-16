@@ -95,6 +95,7 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers>): ActionHandlers
         saveContributionEdit: overrides?.saveContributionEdit || (() => Promise.resolve({ data: {} as any, status: 200 })),
         submitStageResponses: overrides?.submitStageResponses || (() => Promise.resolve({ data: {} as any, status: 200 })),
         listDomains: overrides?.listDomains || (() => Promise.resolve({ data: [] })),
+        fetchProcessTemplate: overrides?.fetchProcessTemplate || (() => Promise.resolve({ data: {} as any, status: 200 })),
         ...overrides,
     } as ActionHandlers;
 };
@@ -1094,5 +1095,65 @@ withSupabaseEnv("handleRequest - getProjectResourceContent", async (t) => {
         const body = await response.json();
         assertEquals(body.error, error.message);
         assertEquals(getSpy.calls.length, 1);
+    });
+});
+
+withSupabaseEnv("handleRequest - fetchProcessTemplate", async (t) => {
+    const templateId = 'template-123';
+    const mockTemplate = { id: templateId, name: "Test Template", stages: [], transitions: [] };
+
+    await t.step("should call fetchProcessTemplate and return 200 on success", async () => {
+        const fetchSpy = spy(() => Promise.resolve({ data: mockTemplate, status: 200 }));
+        const mockHandlers = createMockHandlers({ fetchProcessTemplate: fetchSpy as any });
+        
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+        
+        const req = createJsonRequest("fetchProcessTemplate", { templateId }, mockToken);
+        const response = await handleRequest(req, mockHandlers, mockUserClient as any, mockAdminClient as any);
+        
+        assertEquals(response.status, 200);
+        const body = await response.json();
+        assertEquals(body.id, templateId);
+        assertEquals(fetchSpy.calls.length, 1);
+    });
+
+    await t.step("should return 404 if template is not found", async () => {
+        const error: ServiceError = { message: "Not Found", status: 404, code: "NOT_FOUND" };
+        const fetchSpy = spy(() => Promise.resolve({ error, status: 404 }));
+        const mockHandlers = createMockHandlers({ fetchProcessTemplate: fetchSpy as any });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+        
+        const req = createJsonRequest("fetchProcessTemplate", { templateId: 'not-found' }, mockToken);
+        const response = await handleRequest(req, mockHandlers, mockUserClient as any, mockAdminClient as any);
+        
+        assertEquals(response.status, 404);
+        const body = await response.json();
+        assertEquals(body.error, error.message);
+        assertEquals(fetchSpy.calls.length, 1);
+    });
+
+    await t.step("should return 401 if not authenticated", async () => {
+        const fetchSpy = spy(() => Promise.resolve({ data: mockTemplate, status: 200 }));
+        const mockHandlers = createMockHandlers({ fetchProcessTemplate: fetchSpy as any });
+
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: null }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+        
+        const req = createJsonRequest("fetchProcessTemplate", { templateId }); // No token
+        const response = await handleRequest(req, mockHandlers, mockUserClient as any, mockAdminClient as any);
+
+        assertEquals(response.status, 401);
+        assertEquals(fetchSpy.calls.length, 0);
     });
 }); 

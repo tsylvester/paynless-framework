@@ -127,7 +127,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
   },
 
   setSelectedDomain: (domain: DialecticDomain | null) => {
-    logger.info(`[DialecticStore] Setting selected domain to: ${domain}`);
+    logger.info('[DialecticStore] Setting selected domain', { domain });
     set({ selectedDomain: domain });
   },
 

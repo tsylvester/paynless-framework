@@ -435,7 +435,6 @@ export type Database = {
         Row: {
           created_at: string
           description: string | null
-          domain_id: string
           id: string
           name: string
           starting_stage_id: string | null
@@ -443,7 +442,6 @@ export type Database = {
         Insert: {
           created_at?: string
           description?: string | null
-          domain_id: string
           id?: string
           name: string
           starting_stage_id?: string | null
@@ -451,19 +449,11 @@ export type Database = {
         Update: {
           created_at?: string
           description?: string | null
-          domain_id?: string
           id?: string
           name?: string
           starting_stage_id?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "dialectic_process_templates_domain_id_fkey"
-            columns: ["domain_id"]
-            isOneToOne: false
-            referencedRelation: "dialectic_domains"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "dialectic_process_templates_starting_stage_id_fkey"
             columns: ["starting_stage_id"]
@@ -743,6 +733,48 @@ export type Database = {
             columns: ["default_system_prompt_id"]
             isOneToOne: false
             referencedRelation: "system_prompts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      domain_process_associations: {
+        Row: {
+          created_at: string
+          domain_id: string
+          id: string
+          is_default_for_domain: boolean
+          process_template_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          domain_id: string
+          id?: string
+          is_default_for_domain?: boolean
+          process_template_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          domain_id?: string
+          id?: string
+          is_default_for_domain?: boolean
+          process_template_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "domain_process_associations_domain_id_fkey"
+            columns: ["domain_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_domains"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "domain_process_associations_process_template_id_fkey"
+            columns: ["process_template_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_process_templates"
             referencedColumns: ["id"]
           },
         ]

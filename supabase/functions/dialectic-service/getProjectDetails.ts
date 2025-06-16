@@ -38,6 +38,7 @@ import {
       .select(`
         *,
         dialectic_domains ( name ),
+        dialectic_process_templates ( * ),
         dialectic_sessions (*,
           dialectic_contributions (*)
         )

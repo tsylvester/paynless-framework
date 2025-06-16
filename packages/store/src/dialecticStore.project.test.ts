@@ -70,7 +70,15 @@ describe('useDialecticStore', () => {
                 repo_url: null, 
                 status: 'active', 
                 created_at: '2023-01-01T00:00:00Z', 
-                updated_at: '2023-01-01T00:00:00Z' 
+                updated_at: '2023-01-01T00:00:00Z',
+                process_template: {
+                    id: 'pt-1',
+                    name: 'Standard Process',
+                    description: 'A standard process template',
+                    created_at: '2023-01-01T00:00:00Z',
+                    starting_stage_id: 'stage-1',
+                    domain_id: 'dom-1'
+                }
             }];
             const mockResponse: ApiResponse<DialecticProject[]> = { data: mockProjects, status: 200 };
             (api.dialectic().listProjects as Mock).mockResolvedValue(mockResponse);
@@ -161,7 +169,15 @@ describe('useDialecticStore', () => {
             repo_url: null,
             status: 'active',
             created_at: '2023-01-01T00:00:00.000Z',
-            updated_at: '2023-01-01T00:00:00.000Z'
+            updated_at: '2023-01-01T00:00:00.000Z',
+            process_template: {
+                id: 'pt-1',
+                name: 'Standard Process',
+                description: 'A standard process template',
+                created_at: '2023-01-01T00:00:00Z',
+                starting_stage_id: 'stage-1',
+                domain_id: 'dom-1'
+            }
         };
 
         it('should create a project and add it to the local state on success', async () => {
@@ -248,23 +264,30 @@ describe('useDialecticStore', () => {
     });
 
     describe('fetchDialecticProjectDetails action', () => {
-        const projectId = 'proj-detail-123';
-        const mockProjectDetail: DialecticProject = { 
-            id: projectId, 
-            project_name: 'Detailed Project', 
-            initial_user_prompt: 'Detail prompt',
+        const projectId = 'proj-detail-1';
+        const mockProjectDetail: DialecticProject = {
+            id: projectId,
+            project_name: 'Detailed Project',
+            user_id: 'user1',
+            initial_user_prompt: 'A very detailed prompt',
             selected_domain_id: 'dom-1',
             domain_name: 'Software Development',
-            user_id: 'user1',
+            selected_domain_overlay_id: null,
             repo_url: null,
             status: 'active',
-            created_at: '2023-01-01T00:00:00.000Z',
-            updated_at: '2023-01-01T00:00:00.000Z',
-            dialectic_sessions: [],
-            selected_domain_overlay_id: null,
+            created_at: '2023-01-01T00:00:00Z',
+            updated_at: '2023-01-01T00:00:00Z',
+            process_template: { // This is the key nested object to test
+                id: 'pt-1',
+                name: 'Standard Process',
+                description: 'A standard process template',
+                created_at: '2023-01-01T00:00:00Z',
+                starting_stage_id: 'stage-1',
+                domain_id: 'dom-1'
+            }
         };
 
-        it('should fetch and set project details on success', async () => {
+        it('should fetch and set the current project detail on success', async () => {
             const mockResponse: ApiResponse<DialecticProject> = { data: mockProjectDetail, status: 200 };
             (api.dialectic().getProjectDetails as Mock).mockResolvedValue(mockResponse);
 
@@ -292,26 +315,32 @@ describe('useDialecticStore', () => {
             expect(state.projectDetailError).toEqual(mockError);
         });
 
-        it('should set network error state if getProjectDetails API call throws', async () => {
-            const networkErrorMessage = 'Network issue fetching details';
-            (api.dialectic().getProjectDetails as Mock).mockRejectedValue(new Error(networkErrorMessage));
+        it('should set loading state during fetch', async () => {
+            (api.dialectic().getProjectDetails as Mock).mockReturnValue(new Promise(() => {}));
 
             const { fetchDialecticProjectDetails } = useDialecticStore.getState();
-            await fetchDialecticProjectDetails(projectId);
+            fetchDialecticProjectDetails(projectId); // Do not await
 
+            const state = useDialecticStore.getState();
+            expect(state.isLoadingProjectDetail).toBe(true);
+            expect(state.projectDetailError).toBeNull();
+        });
+        
+        it('should set network error if getProjectDetails API call throws', async () => {
+            const networkErrorMessage = 'Server Down';
+            (api.dialectic().getProjectDetails as Mock).mockRejectedValue(new Error(networkErrorMessage));
+      
+            const { fetchDialecticProjectDetails } = useDialecticStore.getState();
+            await fetchDialecticProjectDetails(projectId);
+      
             const state = useDialecticStore.getState();
             expect(state.isLoadingProjectDetail).toBe(false);
             expect(state.currentProjectDetail).toBeNull();
-            expect(state.projectDetailError).toEqual({ message: networkErrorMessage, code: 'NETWORK_ERROR' });
-        });
-
-        it('should set loading state during fetchDialecticProjectDetails', () => {
-            (api.dialectic().getProjectDetails as Mock).mockReturnValue(new Promise(() => {}));
-            const { fetchDialecticProjectDetails } = useDialecticStore.getState();
-            fetchDialecticProjectDetails(projectId);
-            expect(useDialecticStore.getState().isLoadingProjectDetail).toBe(true);
-            expect(useDialecticStore.getState().projectDetailError).toBeNull();
-        });
+            expect(state.projectDetailError).toEqual({
+              message: networkErrorMessage,
+              code: 'NETWORK_ERROR',
+            });
+          });
     });
 
     describe('uploadProjectResourceFile action', () => {
@@ -673,6 +702,14 @@ describe('useDialecticStore', () => {
             updated_at: '2023-01-01T00:00:00Z',
             dialectic_sessions: [],
             resources: [],
+            process_template: {
+                id: 'pt-1',
+                name: 'Standard Process',
+                description: 'A standard process template',
+                created_at: '2023-01-01T00:00:00Z',
+                starting_stage_id: 'stage-1',
+                domain_id: 'dom-1'
+            }
         };
         const mockUpdatedProject: DialecticProject = {
             ...mockExistingProject,

@@ -25,7 +25,7 @@ export interface DialecticProject {
     initial_user_prompt?: string | null; // This will be empty if initial_prompt_resource_id is set
     initial_prompt_resource_id?: string | null; // FK to dialectic_contributions.id
     selected_domain_id: string;
-    domain_name: string;
+    dialectic_domains: { name: string } | null;
     selected_domain_overlay_id: string | null;
     repo_url: string | null;
     status: string;
@@ -33,7 +33,7 @@ export interface DialecticProject {
     updated_at: string;
     dialectic_sessions?: DialecticSession[];
     resources?: DialecticProjectResource[];
-    process_template_id?: string | null;
+    dialectic_process_templates: DialecticProcessTemplate | null;
 }
 
 export interface CreateProjectPayload {
@@ -58,6 +58,7 @@ export interface StartSessionPayload {
   sessionDescription?: string | null;
   selectedModelCatalogIds: string[];
   originatingChatId?: string | null;
+  stageSlug?: string;
 }
 
 export interface DialecticSession {
@@ -211,7 +212,7 @@ export interface DialecticStateValues {
   // New context states
   activeContextProjectId: string | null;
   activeContextSessionId: string | null;
-  activeContextStageSlug: DialecticStage | null;
+  activeContextStage: DialecticStage | null;
 }
 
 export interface InitialPromptCacheEntry {
@@ -280,8 +281,8 @@ export interface DialecticActions {
   // New context actions
   setActiveContextProjectId: (id: string | null) => void;
   setActiveContextSessionId: (id: string | null) => void;
-  setActiveContextStageSlug: (slug: DialecticStage | null) => void;
-  setActiveDialecticContext: (context: { projectId: string | null; sessionId: string | null; stageSlug: DialecticStage | null }) => void;
+  setActiveContextStage: (stage: DialecticStage | null) => void;
+  setActiveDialecticContext: (context: { projectId: string | null; sessionId: string | null; stage: DialecticStage | null }) => void;
 
   _resetForTesting?: () => void;
 }

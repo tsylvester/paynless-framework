@@ -16,7 +16,9 @@ import {
   SaveContributionEditPayload,
   SubmitStageResponsesPayload,
   SubmitStageResponsesResponse,
-  SubmitStageResponsesDependencies
+  SubmitStageResponsesDependencies,
+  FetchProcessTemplatePayload,
+  DialecticProcessTemplate,
 } from "./dialectic.interface.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import {
@@ -52,6 +54,7 @@ import { saveContributionEdit } from './saveContributionEdit.ts';
 import { submitStageResponses } from './submitStageResponses.ts';
 import { uploadToStorage, downloadFromStorage } from '../_shared/supabase_storage_utils.ts';
 import { listDomains, type DialecticDomain } from './listDomains.ts';
+import { fetchProcessTemplate } from './fetchProcessTemplate.ts';
 
 console.log("dialectic-service function started");
 
@@ -117,6 +120,7 @@ export interface ActionHandlers {
   saveContributionEdit: (payload: SaveContributionEditPayload, dbClient: SupabaseClient, user: User, logger: ILogger) => Promise<{ data?: DialecticContribution; error?: ServiceError; status?: number }>;
   submitStageResponses: (payload: SubmitStageResponsesPayload, dbClient: SupabaseClient, user: User, dependencies: SubmitStageResponsesDependencies) => Promise<{ data?: SubmitStageResponsesResponse; error?: ServiceError; status?: number }>;
   listDomains: (dbClient: SupabaseClient) => Promise<{ data?: DialecticDomain[]; error?: ServiceError }>;
+  fetchProcessTemplate: (dbClient: SupabaseClient, payload: FetchProcessTemplatePayload) => Promise<{ data?: DialecticProcessTemplate; error?: ServiceError; status?: number }>;
 }
 
 export async function handleRequest(
@@ -192,7 +196,7 @@ export async function handleRequest(
         'listProjects', 'getProjectDetails', 'updateProjectDomain', 
         'startSession', 'generateContributions', 'getContributionContentSignedUrl',
         'deleteProject', 'cloneProject', 'exportProject', 'getProjectResourceContent',
-        'saveContributionEdit', 'submitStageResponses'
+        'saveContributionEdit', 'submitStageResponses', 'fetchProcessTemplate'
       ];
 
       let userForJson: User | null = null;
@@ -228,6 +232,13 @@ export async function handleRequest(
               return createErrorResponse(error.message, error.status, req, error);
             }
             return createSuccessResponse(data, 200, req);
+        }
+        case "fetchProcessTemplate": {
+          const { data, error, status } = await handlers.fetchProcessTemplate(userClient, requestBody.payload as FetchProcessTemplatePayload);
+          if (error) {
+            return createErrorResponse(error.message, status || 500, req, error);
+          }
+          return createSuccessResponse(data, status || 200, req);
         }
 
         // --- Authenticated Actions ---
@@ -401,6 +412,7 @@ const handlers: ActionHandlers = {
   saveContributionEdit,
   submitStageResponses,
   listDomains,
+  fetchProcessTemplate,
 };
 
 serve(async (req) => {
