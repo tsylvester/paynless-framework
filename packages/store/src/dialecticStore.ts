@@ -645,7 +645,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     }
   },
 
-  exportDialecticProject: async (projectId: string, projectName = 'project_export'): Promise<ApiResponse<{ export_url: string }>> => {
+  exportDialecticProject: async (projectId: string): Promise<ApiResponse<{ export_url: string }>> => {
     set({ isExportingProject: true, exportProjectError: null });
     logger.info(`[DialecticStore] Exporting project with ID: ${projectId}`);
     try {
@@ -656,31 +656,8 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       } else {
         logger.info('[DialecticStore] Successfully requested project export:', { projectId, exportDetails: response.data });
         set({ isExportingProject: false, exportProjectError: null });
-        
-        if (response.data?.export_url) {
-          const exportUrl = response.data.export_url;
-          try {
-            const url = new URL(exportUrl);
-            const pathSegments = url.pathname.split('/');
-            // Use the actual filename from the URL if available, otherwise use the provided projectName or default
-            const suggestedFilename = pathSegments.pop() || `${projectName.replace(/\s+/g, '_')}.zip`;
-
-            const link = document.createElement('a');
-            link.href = exportUrl;
-            link.setAttribute('download', suggestedFilename);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            logger.info(`[DialecticStore] Download initiated for project ${projectId} as ${suggestedFilename}`);
-          } catch (downloadError) {
-            logger.error('[DialecticStore] Failed to initiate download from export URL:', { projectId, exportUrl, downloadError });
-            // Optionally set an error state specific to the download initiation failing
-            // For example: set({ exportProjectError: { message: 'Failed to start download.', code: 'DOWNLOAD_INITIATION_FAILED'} });
-          }
-        } else {
-          logger.warn('[DialecticStore] Export successful but no export_url received in response data.');
-          // set({ exportProjectError: { message: 'Export completed, but no download link was provided.', code: 'MISSING_EXPORT_URL'} });
-        }
+        // Depending on the backend, the export might be a URL to a file or the file itself.
+        // The component calling this will handle the response.data.export_url
       }
       return response;
     } catch (error: unknown) {
@@ -690,7 +667,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       };
       logger.error('[DialecticStore] Network error exporting project:', { projectId, errorDetails: networkError });
       set({ isExportingProject: false, exportProjectError: networkError });
-      return { error: networkError, status: 0 };
+      return { error: networkError, status: 503 };
     }
   },
 

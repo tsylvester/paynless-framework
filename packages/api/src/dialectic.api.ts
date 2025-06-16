@@ -449,7 +449,7 @@ export class DialecticApiClient {
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },
-                status: 0,
+                status: 503,
             };
         }
     }

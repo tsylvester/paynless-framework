@@ -251,20 +251,42 @@ describe('Dialectic Service: exportProject Action', () => {
         assertEquals(zipWriterCloseSpy.calls.length, 1, "ZipWriter.close should be called once");
         
         // Assertions for client's storage method calls
-        const contributionsStorageSpies = testSpies.storage.from('dialectic-contributions');
-        assertEquals(contributionsStorageSpies.uploadSpy.calls.length, 1);
-        const uploadArgs = contributionsStorageSpies.uploadSpy.calls[0].args;
+        const exportStorageSpies = testSpies.storage.from(mockResourceToExport.storage_bucket);
+        assertEquals(exportStorageSpies.uploadSpy.calls.length, 1);
+        const uploadArgs = exportStorageSpies.uploadSpy.calls[0].args;
         assert(uploadArgs[0].startsWith(`project_exports/${projectIdToExport}/project_export_project-to-export_`), "Storage path for zip is incorrect");
         assert(uploadArgs[1] instanceof Blob, "Content for upload should be a Blob");
         assertEquals((uploadArgs[2] as any).contentType, "application/zip");
 
 
-        assertEquals(contributionsStorageSpies.createSignedUrlSpy.calls.length, 1);
-        const signedUrlArgs = contributionsStorageSpies.createSignedUrlSpy.calls[0].args;
+        assertEquals(exportStorageSpies.createSignedUrlSpy.calls.length, 1);
+        const signedUrlArgs = exportStorageSpies.createSignedUrlSpy.calls[0].args;
         assertEquals(signedUrlArgs[0], mockUploadedPath); // path from uploadToStorage result (which is mockUploadedPath here)
         assertEquals(signedUrlArgs[1], 3600); // expiresIn
 
         clearAllStubs?.(); 
+    });
+
+    it('should return 400 if bucket name cannot be determined (no resources)', async () => {
+        const dbMockConfig: MockSupabaseDataConfig['genericMockResults'] = {
+            'dialectic_projects': { select: { data: [mockProjectToExport], error: null, count: 1 }},
+            // No resources are returned for this project
+            'dialectic_project_resources': { select: { data: [], error: null, count: 0 }},
+            'dialectic_sessions': { select: { data: [], error: null, count: 0 }}
+        };
+        const { client: testClient, clearAllStubs } = createMockSupabaseClient(mockUser.id, { genericMockResults: dbMockConfig });
+        
+        const result = await exportProject(testClient as any, projectIdToExport, mockUser.id);
+
+        assertExists(result.error);
+        assertEquals(result.error?.status, 400);
+        assertEquals(result.error?.code, 'EXPORT_BUCKET_NOT_FOUND');
+        assertEquals(result.data, undefined);
+
+        // Ensure we didn't try to upload anything
+        assertEquals(zipWriterCloseSpy.calls.length, 0);
+
+        clearAllStubs?.();
     });
 
     it('should return 404 if project does not exist for export', async () => {
@@ -331,7 +353,7 @@ describe('Dialectic Service: exportProject Action', () => {
         // Setup for successful DB reads
         const dbMockConfig: MockSupabaseDataConfig['genericMockResults'] = {
             'dialectic_projects': { select: { data: [mockProjectToExport], error: null, count: 1 }},
-            'dialectic_project_resources': { select: { data: [], error: null, count: 0 }}, // Keep it simple
+            'dialectic_project_resources': { select: { data: [mockResourceToExport], error: null, count: 1 }}, // Must have a resource to get bucket name
             'dialectic_sessions': { select: { data: [], error: null, count: 0 }}
         };
 
@@ -353,7 +375,7 @@ describe('Dialectic Service: exportProject Action', () => {
         assertEquals(result.error?.details, uploadError.message);
         assertEquals(result.data, undefined);
         
-        const contributionsStorageSpies = testSpies.storage.from('dialectic-contributions');
+        const contributionsStorageSpies = testSpies.storage.from(mockResourceToExport.storage_bucket);
         assertEquals(contributionsStorageSpies.uploadSpy.calls.length, 1); // It was attempted
         assertEquals(contributionsStorageSpies.createSignedUrlSpy.calls.length, 0); // Should not be called if upload fails
         clearAllStubs?.();
@@ -362,7 +384,7 @@ describe('Dialectic Service: exportProject Action', () => {
     it('should return 500 if creating signed URL fails', async () => {
         const dbMockConfig: MockSupabaseDataConfig['genericMockResults'] = {
             'dialectic_projects': { select: { data: [mockProjectToExport], error: null, count: 1 }},
-            'dialectic_project_resources': { select: { data: [], error: null, count: 0 }},
+            'dialectic_project_resources': { select: { data: [mockResourceToExport], error: null, count: 1 }}, // Must have a resource to get bucket name
             'dialectic_sessions': { select: { data: [], error: null, count: 0 }}
         };
         
@@ -386,7 +408,7 @@ describe('Dialectic Service: exportProject Action', () => {
         assertEquals(result.error?.details, signedUrlError.message);
         assertEquals(result.data, undefined);
 
-        const contributionsStorageSpies = testSpies.storage.from('dialectic-contributions');
+        const contributionsStorageSpies = testSpies.storage.from(mockResourceToExport.storage_bucket);
         assertEquals(contributionsStorageSpies.uploadSpy.calls.length, 1); 
         assertEquals(contributionsStorageSpies.createSignedUrlSpy.calls.length, 1);
 
@@ -442,13 +464,13 @@ describe('Dialectic Service: exportProject Action', () => {
         assertEquals(resourceFileCall, undefined, "Failed resource file should not be added to zip");
 
         // Assertions for client's storage method calls
-        const contributionsStorageSpies = testSpies.storage.from('dialectic-contributions');
-        assertEquals(contributionsStorageSpies.uploadSpy.calls.length, 1);
-        const uploadArgs = contributionsStorageSpies.uploadSpy.calls[0].args;
+        const exportStorageSpies = testSpies.storage.from(mockResourceToExport.storage_bucket);
+        assertEquals(exportStorageSpies.uploadSpy.calls.length, 1);
+        const uploadArgs = exportStorageSpies.uploadSpy.calls[0].args;
         assert(uploadArgs[0].startsWith(`project_exports/${projectIdToExport}/project_export_project-to-export_`), "Storage path for zip is incorrect");
 
-        assertEquals(contributionsStorageSpies.createSignedUrlSpy.calls.length, 1);
-        const signedUrlArgs = contributionsStorageSpies.createSignedUrlSpy.calls[0].args;
+        assertEquals(exportStorageSpies.createSignedUrlSpy.calls.length, 1);
+        const signedUrlArgs = exportStorageSpies.createSignedUrlSpy.calls[0].args;
         assertEquals(signedUrlArgs[0], mockUploadedPath); 
 
         clearAllStubs?.();

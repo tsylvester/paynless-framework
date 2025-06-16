@@ -1136,7 +1136,7 @@ describe('DialecticApiClient', () => {
                 code: 'NETWORK_ERROR',
                 message: networkErrorMessage,
             });
-            expect(result.status).toBe(0);
+            expect(result.status).toBe(503);
             expect(result.data).toBeUndefined();
         });
     });

@@ -3,6 +3,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 interface UploadStorageOptions {
   contentType: string;
   upsert?: boolean;
+  contentDisposition?: string;
 }
 
 export interface UploadStorageResult {
@@ -63,6 +64,7 @@ export async function uploadToStorage(
       .upload(path, content, {
         contentType: options.contentType,
         upsert: options.upsert || false,
+        ...(options.contentDisposition && { contentDisposition: options.contentDisposition }),
       });
 
     if (uploadErrorObj) {

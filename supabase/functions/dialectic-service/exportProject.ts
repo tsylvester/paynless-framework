@@ -1,4 +1,10 @@
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@^2.39.7";
+import { 
+    DialecticProject, 
+    DialecticProjectResource, 
+    DialecticSession, 
+    DialecticContribution 
+} from "./dialectic.interface.ts";
 import { Database } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
 // import { PassthroughStream } from "https://deno.land/std@0.208.0/streams/passthrough_stream.ts"; // Not needed with zip.js Blob output
@@ -12,7 +18,6 @@ import { uploadToStorage, createSignedUrlForPath } from "../_shared/supabase_sto
 import type { ServiceError } from "../_shared/types.ts";
 
 // --- START: Constants ---
-const BUCKET_NAME = "dialectic-contributions";
 const SIGNED_URL_EXPIRES_IN = 3600; // 1 hour
 // --- END: Constants ---
 
@@ -30,18 +35,11 @@ function slugify(text: string): string {
 }
 // --- END: Helper Functions ---
 
-type Project = Database['public']['Tables']['dialectic_projects']['Row'];
-type ProjectResource = Database['public']['Tables']['dialectic_project_resources']['Row'];
-type Session = Database['public']['Tables']['dialectic_sessions']['Row'];
-type Contribution = Database['public']['Tables']['dialectic_contributions']['Row'];
-// type DialecticSessionModel = Database['public']['Tables']['dialectic_session_models']['Row']; // Not directly used in current export
-// type DialecticPrompt = Database['public']['Tables']['dialectic_prompts']['Row']; // Not directly used in current export
-
 interface ProjectManifest {
-    project: Project;
-    resources: ProjectResource[];
-    sessions: Array<Session & {
-        contributions: Contribution[];
+    project: DialecticProject;
+    resources: DialecticProjectResource[];
+    sessions: Array<DialecticSession & {
+        contributions: DialecticContribution[];
         // models: DialecticSessionModel[]; // Future: export models
         // prompts: DialecticPrompt[]; // Future: export prompts
     }>;
@@ -93,6 +91,21 @@ export async function exportProject(
             // Non-fatal, proceed with export but log the error
         }
 
+        // Determine the export bucket from project resources. This is a hard requirement.
+        const exportBucketName = resources?.[0]?.storage_bucket;
+
+        if (!exportBucketName) {
+            logger.error('Could not determine storage bucket for export. Project must have at least one resource with a valid storage_bucket.', { projectId });
+            return { 
+                error: { 
+                    message: 'Cannot determine project storage bucket for export.', 
+                    status: 400, // Bad Request, as the project state is not sufficient for this operation
+                    code: 'EXPORT_BUCKET_NOT_FOUND',
+                    details: 'The project must have at least one resource file to determine the storage location for the export.'
+                } 
+            };
+        }
+
         const { data: sessionsData, error: sessionsError } = await supabaseClient
             .from('dialectic_sessions')
             .select('*')
@@ -105,7 +118,7 @@ export async function exportProject(
 
         const manifest: ProjectManifest = {
             project,
-            resources: resources || [],
+            resources: resources?.map(r => ({ ...r, status: 'active' })) || [],
             sessions: [],
         };
 
@@ -113,7 +126,7 @@ export async function exportProject(
             for (const session of sessionsData) {
                 const { data: contributions, error: contributionsError } = await supabaseClient
                     .from('dialectic_contributions')
-                    .select('*')
+                    .select('*, parent_contribution_id:target_contribution_id')
                     .eq('session_id', session.id);
 
                 if (contributionsError) {
@@ -124,7 +137,11 @@ export async function exportProject(
                 // TODO: Fetch session models and prompts in the future
                 manifest.sessions.push({
                     ...session,
-                    contributions: contributions || [],
+                    contributions: contributions?.map(c => ({ 
+                        ...c, 
+                        actual_prompt_sent: null,
+                        citations: c.citations as { text: string; url?: string }[] | null 
+                    })) || [],
                 });
             }
         }
@@ -141,9 +158,13 @@ export async function exportProject(
         if (manifest.resources) {
             for (const resource of manifest.resources) {
                 if (resource.storage_path && resource.file_name) {
+                    if (!resource.storage_bucket) {
+                        logger.warn('Project resource is missing storage_bucket. Skipping file.', { resourceId: resource.id });
+                        continue;
+                    }
                     try {
                         const { data: fileBlob, error: downloadError } = await supabaseClient.storage
-                            .from(resource.storage_bucket || 'dialectic-contributions') // Fallback bucket
+                            .from(resource.storage_bucket)
                             .download(resource.storage_path);
 
                         if (downloadError) {
@@ -165,48 +186,56 @@ export async function exportProject(
                 for (const contribution of session.contributions) {
                     // Add content file
                     if (contribution.content_storage_path && contribution.id) {
-                        try {
-                            const { data: contentBlob, error: downloadError } = await supabaseClient.storage
-                                .from(contribution.content_storage_bucket || 'dialectic-contributions') // Fallback bucket
-                                .download(contribution.content_storage_path);
-                            if (downloadError) {
-                                logger.warn('Failed to download contribution content for export. Skipping file.', { details: downloadError, contributionId: contribution.id, path: contribution.content_storage_path });
-                            } else if (contentBlob) {
-                                // Infer extension from mime_type or path, default to .md
-                                let extension = '.md';
-                                if (contribution.content_mime_type) {
-                                    const typeParts = contribution.content_mime_type.split('/');
-                                    if (typeParts.length === 2 && typeParts[1]) {
-                                        extension = `.${typeParts[1].split('+')[0]}`; // e.g. text/markdown -> .markdown, application/json -> .json
+                        if (!contribution.content_storage_bucket) {
+                            logger.warn('Failed to download contribution content for export (missing bucket). Skipping file.', { contributionId: contribution.id, path: contribution.content_storage_path });
+                        } else {
+                            try {
+                                const { data: contentBlob, error: downloadError } = await supabaseClient.storage
+                                    .from(contribution.content_storage_bucket)
+                                    .download(contribution.content_storage_path);
+                                if (downloadError) {
+                                    logger.warn('Failed to download contribution content for export. Skipping file.', { details: downloadError, contributionId: contribution.id, path: contribution.content_storage_path });
+                                } else if (contentBlob) {
+                                    // Infer extension from mime_type or path, default to .md
+                                    let extension = '.md';
+                                    if (contribution.content_mime_type) {
+                                        const typeParts = contribution.content_mime_type.split('/');
+                                        if (typeParts.length === 2 && typeParts[1]) {
+                                            extension = `.${typeParts[1].split('+')[0]}`; // e.g. text/markdown -> .markdown, application/json -> .json
+                                        }
+                                    } else if (contribution.content_storage_path) {
+                                        const pathParts = contribution.content_storage_path.split('.');
+                                        if (pathParts.length > 1) extension = `.${pathParts.pop()}`;
                                     }
-                                } else if (contribution.content_storage_path) {
-                                    const pathParts = contribution.content_storage_path.split('.');
-                                    if (pathParts.length > 1) extension = `.${pathParts.pop()}`;
+                                    const contentFileName = `${contribution.id}_content${extension}`;
+                                    await zipWriter.add(`sessions/${session.id}/contributions/${contentFileName}`, new BlobReader(contentBlob));
+                                    logger.info('Added contribution content to zip.', { projectId, sessionId: session.id, contributionId: contribution.id, fileName: contentFileName });
                                 }
-                                const contentFileName = `${contribution.id}_content${extension}`;
-                                await zipWriter.add(`sessions/${session.id}/contributions/${contentFileName}`, new BlobReader(contentBlob));
-                                logger.info('Added contribution content to zip.', { projectId, sessionId: session.id, contributionId: contribution.id, fileName: contentFileName });
+                            } catch (err) {
+                                logger.error('Catastrophic error downloading contribution content. Skipping file.', { error: err, contributionId: contribution.id, path: contribution.content_storage_path });
                             }
-                        } catch (err) {
-                            logger.error('Catastrophic error downloading contribution content. Skipping file.', { error: err, contributionId: contribution.id, path: contribution.content_storage_path });
                         }
                     }
 
                     // Add raw response file
                     if (contribution.raw_response_storage_path && contribution.id) {
-                         try {
-                            const { data: rawResponseBlob, error: downloadError } = await supabaseClient.storage
-                                .from(contribution.content_storage_bucket || 'dialectic-contributions') // Assuming same bucket as content
-                                .download(contribution.raw_response_storage_path);
-                            if (downloadError) {
-                                logger.warn('Failed to download contribution raw response for export. Skipping file.', { details: downloadError, contributionId: contribution.id, path: contribution.raw_response_storage_path });
-                            } else if (rawResponseBlob) {
-                                const rawResponseFileName = `${contribution.id}_raw.json`; // Assuming json
-                                await zipWriter.add(`sessions/${session.id}/contributions/${rawResponseFileName}`, new BlobReader(rawResponseBlob));
-                                logger.info('Added contribution raw response to zip.', { projectId, sessionId: session.id, contributionId: contribution.id, fileName: rawResponseFileName });
+                         if (!contribution.content_storage_bucket) {
+                            logger.warn('Failed to download contribution raw response for export (missing bucket). Skipping file.', { contributionId: contribution.id, path: contribution.raw_response_storage_path });
+                         } else {
+                            try {
+                                const { data: rawResponseBlob, error: downloadError } = await supabaseClient.storage
+                                    .from(contribution.content_storage_bucket) // Assuming same bucket as content
+                                    .download(contribution.raw_response_storage_path);
+                                if (downloadError) {
+                                    logger.warn('Failed to download contribution raw response for export. Skipping file.', { details: downloadError, contributionId: contribution.id, path: contribution.raw_response_storage_path });
+                                } else if (rawResponseBlob) {
+                                    const rawResponseFileName = `${contribution.id}_raw.json`; // Assuming json
+                                    await zipWriter.add(`sessions/${session.id}/contributions/${rawResponseFileName}`, new BlobReader(rawResponseBlob));
+                                    logger.info('Added contribution raw response to zip.', { projectId, sessionId: session.id, contributionId: contribution.id, fileName: rawResponseFileName });
+                                }
+                            } catch (err) {
+                                 logger.error('Catastrophic error downloading contribution raw response. Skipping file.', { error: err, contributionId: contribution.id, path: contribution.raw_response_storage_path });
                             }
-                        } catch (err) {
-                             logger.error('Catastrophic error downloading contribution raw response. Skipping file.', { error: err, contributionId: contribution.id, path: contribution.raw_response_storage_path });
                         }
                     }
                 }
@@ -222,14 +251,18 @@ export async function exportProject(
         const exportFileName = `project_export_${projectNameSlug}_${timestamp}.zip`;
         const storagePath = `project_exports/${projectId}/${exportFileName}`; // Store in a subfolder for clarity
 
-        logger.info('Attempting to upload export zip to storage.', { bucket: BUCKET_NAME, path: storagePath });
+        logger.info('Attempting to upload export zip to storage.', { bucket: exportBucketName, path: storagePath });
         const { path: uploadedPath, error: uploadError } = await uploadToStorage(
             supabaseClient, // Using the passed client, which should have user context for RLS if storage policies require it.
                             // If strict admin write is needed, this should be supabaseAdmin. For now, assume user client is okay.
-            BUCKET_NAME,
+            exportBucketName,
             storagePath,
             zipBlob,
-            { contentType: "application/zip", upsert: false } // upsert: false to avoid accidental overwrites if somehow path collides
+            { 
+                contentType: "application/zip", 
+                upsert: false,
+                contentDisposition: `attachment; filename="${exportFileName}"`
+            } // upsert: false to avoid accidental overwrites if somehow path collides
         );
 
         if (uploadError || !uploadedPath) {
@@ -247,7 +280,7 @@ export async function exportProject(
 
         const { signedUrl, error: signedUrlError } = await createSignedUrlForPath(
             supabaseClient, // Same client context as upload
-            BUCKET_NAME,
+            exportBucketName,
             uploadedPath,
             SIGNED_URL_EXPIRES_IN
         );
