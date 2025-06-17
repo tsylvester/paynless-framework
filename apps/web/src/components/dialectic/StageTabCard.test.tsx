@@ -1,4 +1,6 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { StageTabCard } from './StageTabCard';
 import { 
   DialecticProject, 
@@ -8,8 +10,9 @@ import {
   ApiError,
   ContributionCacheEntry,
   DialecticContribution,
+  DialecticProjectResource,
 } from '@paynless/types';
-import { vi } from 'vitest';
+import { useDialecticStore } from '@paynless/store';
 import { initializeMockDialecticState, getDialecticStoreState } from '../../mocks/dialecticStore.mock';
 
 vi.mock('@paynless/store', async (importOriginal) => {
@@ -74,9 +77,26 @@ const mockProject: DialecticProject = {
   process_template_id: 'pt-1',
 };
 
+const mockSeedPromptResource: DialecticProjectResource = {
+    id: 'res-seed-123',
+    project_id: mockProject.id,
+    resource_description: JSON.stringify({
+        type: 'seed_prompt',
+        session_id: mockSession.id,
+        stage_slug: mockStage.slug,
+        iteration: mockSession.iteration_count
+    }),
+    file_name: 'seed.md',
+    file_type: 'text/markdown',
+    file_size: 123,
+    storage_path: 'path/to/seed.md',
+    created_at: 'now',
+    updated_at: 'now'
+};
+
 describe('StageTabCard', () => {
 
-  const setupStore = (session: DialecticSession | undefined, project: DialecticProject | undefined, activeStage: DialecticStage | null, isGenerating = false, generateError: ApiError | null = null, contributionCache: Record<string, ContributionCacheEntry> = {}) => {
+  const setupStore = (session: DialecticSession | undefined, project: DialecticProject | undefined, activeStage: DialecticStage | null, isGenerating = false, generateError: ApiError | null = null, contributionCache: Record<string, ContributionCacheEntry> = {}, overrides?: Partial<DialecticStateValues>) => {
     const state: Partial<DialecticStore> = {
       activeContextProjectId: project?.id ?? null,
       activeContextSessionId: session?.id ?? null,
@@ -85,6 +105,7 @@ describe('StageTabCard', () => {
       isGeneratingContributions: isGenerating,
       generateContributionsError: generateError,
       contributionContentCache: contributionCache,
+      ...overrides,
     };
     initializeMockDialecticState(state);
   };
@@ -98,110 +119,148 @@ describe('StageTabCard', () => {
     storeState.fetchInitialPromptContent = vi.fn();
   });
 
-  const renderComponent = (stage: DialecticStage, isActive: boolean) => {
-    return render(
-        <StageTabCard
-            stage={stage}
-            isActiveStage={isActive}
-        />,
-    );
+  const renderComponent = (stage: DialecticStage, isActive: boolean, overrides?: Partial<DialecticStateValues>) => {
+    setupStore(mockSession, mockProject, stage, false, null, {}, overrides);
+    render(<StageTabCard stage={stage} isActiveStage={isActive} />);
   };
 
   it('renders display name and reflects active state', () => {
-    setupStore(mockSession, mockProject, mockStage);
     renderComponent(mockStage, true);
+    const card = screen.getByTestId(`stage-tab-${mockStage.slug}`);
+    expect(card).toHaveClass('border-primary');
     expect(screen.getByText(mockStage.display_name)).toBeInTheDocument();
-    expect(screen.getByTestId(`stage-tab-${mockStage.slug}`)).toHaveClass('border-primary');
   });
 
   it('reflects inactive state', () => {
-    setupStore(mockSession, mockProject, anotherMockStage);
     renderComponent(mockStage, false);
-    expect(screen.getByText(mockStage.display_name)).toBeInTheDocument();
-    expect(screen.getByTestId(`stage-tab-${mockStage.slug}`)).not.toHaveClass('border-primary');
+    const card = screen.getByTestId(`stage-tab-${mockStage.slug}`);
+    expect(card).not.toHaveClass('border-primary');
   });
 
   it('calls setActiveDialecticContext from the store when clicked', () => {
-    setupStore(mockSession, mockProject, mockStage);
-    const setActiveCtxFn = getDialecticStoreState().setActiveDialecticContext;
-
     renderComponent(mockStage, true);
     fireEvent.click(screen.getByTestId(`stage-tab-${mockStage.slug}`));
-    expect(setActiveCtxFn).toHaveBeenCalledWith({ projectId: mockProject.id, sessionId: mockSession.id, stageSlug: mockStage });
+    expect(getDialecticStoreState().setActiveDialecticContext).toHaveBeenCalledWith({ projectId: mockProject.id, sessionId: mockSession.id, stage: mockStage });
   });
 
   describe('Context Unavailable Message', () => {
     it('shows context unavailable if session is missing', () => {
-        setupStore(undefined, mockProject, mockStage);
-        renderComponent(mockStage, true);
-        expect(screen.getByText(/Context unavailable/i)).toBeInTheDocument();
+        renderComponent(mockStage, true, { activeContextSessionId: undefined });
+        expect(screen.getByText('Context unavailable')).toBeInTheDocument();
     });
   });
 
   describe('Generate Contributions Button', () => {
-    const seedPromptPath = `projects/${mockProject.id}/sessions/${mockSession.id}/iteration_1/${mockStage.slug}/seed_prompt.md`;
-    
-    it('is visible and enabled if card is active and seed prompt exists', () => {
-      const cacheWithSeed = { [seedPromptPath]: { content: 'seed', isLoading: false } };
-      setupStore(mockSession, mockProject, mockStage, false, null, cacheWithSeed);
-      renderComponent(mockStage, true);
-      const generateButton = screen.getByRole('button', { name: `Generate ${mockStage.display_name}` });
-      expect(generateButton).toBeInTheDocument();
-      expect(generateButton).toBeEnabled();
+    it('is visible and enabled if card is active and seed prompt exists', async () => {
+      renderComponent(mockStage, true, {
+        currentProjectDetail: {
+          ...mockProject,
+          resources: [mockSeedPromptResource]
+        },
+        initialPromptContentCache: {
+          [mockSeedPromptResource.id]: { content: 'Seed prompt content', isLoading: false, error: null }
+        }
+      });
+      await waitFor(() => {
+        const generateButton = screen.getByRole('button', { name: `Generate ${mockStage.display_name}` });
+        expect(generateButton).toBeInTheDocument();
+        expect(generateButton).toBeEnabled();
+      });
     });
 
-    it('is visible but disabled if seed prompt is loading', () => {
-        const cacheWithLoadingSeed = { [seedPromptPath]: { content: undefined, isLoading: true } };
-        setupStore(mockSession, mockProject, mockStage, false, null, cacheWithLoadingSeed);
-        renderComponent(mockStage, true);
+    it('is visible but disabled if seed prompt is loading', async () => {
+      renderComponent(mockStage, true, {
+        currentProjectDetail: {
+          ...mockProject,
+          resources: [mockSeedPromptResource]
+        },
+        initialPromptContentCache: {
+          [mockSeedPromptResource.id]: { isLoading: true }
+        }
+      });
+      await waitFor(() => {
         const generateButton = screen.getByRole('button', { name: `Generate ${mockStage.display_name}` });
         expect(generateButton).toBeInTheDocument();
         expect(generateButton).toBeDisabled();
+      });
     });
 
-    it('is visible but disabled if seed prompt does not exist', () => {
-      setupStore(mockSession, mockProject, mockStage);
-      renderComponent(mockStage, true);
-      const generateButton = screen.getByRole('button', { name: `Generate ${mockStage.display_name}` });
-      expect(generateButton).toBeInTheDocument();
-      expect(generateButton).toBeDisabled();
+    it('is visible but disabled if seed prompt does not exist', async () => {
+      renderComponent(mockStage, true, {
+        currentProjectDetail: {
+          ...mockProject,
+          resources: []
+        },
+        initialPromptContentCache: {}
+      });
+      await waitFor(() => {
+        const generateButton = screen.getByRole('button', { name: `Generate ${mockStage.display_name}` });
+        expect(generateButton).toBeInTheDocument();
+        expect(generateButton).toBeDisabled();
+      });
     });
 
     it('is not visible if stage card is not active', () => {
-      const cacheWithSeed = { [seedPromptPath]: { content: 'seed', isLoading: false } };
-      setupStore(mockSession, mockProject, mockStage, false, null, cacheWithSeed);
       renderComponent(mockStage, false);
-      expect(screen.queryByRole('button', { name: `Generate ${mockStage.display_name}` })).not.toBeInTheDocument();
+      const generateButton = screen.queryByRole('button', { name: /Generate/ });
+      expect(generateButton).not.toBeInTheDocument();
     });
 
-    it('dispatches generateContributions action with correct payload on click', () => {
-        const cacheWithSeed = { [seedPromptPath]: { content: 'seed', isLoading: false } };
-        setupStore(mockSession, mockProject, mockStage, false, null, cacheWithSeed);
-        const generateFn = getDialecticStoreState().generateContributions;
+    it('dispatches generateContributions action with correct payload on click', async () => {
+      renderComponent(mockStage, true, {
+        currentProjectDetail: {
+          ...mockProject,
+          resources: [mockSeedPromptResource]
+        },
+        initialPromptContentCache: {
+          [mockSeedPromptResource.id]: { content: 'Seed prompt here', isLoading: false, error: null }
+        }
+      });
 
-        renderComponent(mockStage, true);
+      await waitFor(async () => {
         const generateButton = screen.getByRole('button', { name: `Generate ${mockStage.display_name}` });
+        expect(generateButton).toBeEnabled();
         fireEvent.click(generateButton);
 
-        expect(generateFn).toHaveBeenCalledWith({
-            sessionId: mockSession.id,
-            projectId: mockProject.id,
-            stageSlug: mockStage.slug,
-            iterationNumber: mockSession.iteration_count,
+        expect(getDialecticStoreState().generateContributions).toHaveBeenCalledWith({
+          sessionId: mockSession.id,
+          projectId: mockProject.id,
+          stageSlug: mockStage.slug,
+          iterationNumber: mockSession.iteration_count,
         });
+      });
     });
 
-    it('shows "Regenerate" text if contributions for the stage already exist', () => {
-        const contribution = { stage: { id: mockStage.id } } as unknown as DialecticContribution;
-        const sessionWithContributions = { ...mockSession, dialectic_contributions: [contribution] };
-        const projectWithContributionSession = { ...mockProject, dialectic_sessions: [sessionWithContributions] };
-        const cacheWithSeed = { [seedPromptPath]: { content: 'seed', isLoading: false } };
-        setupStore(sessionWithContributions, projectWithContributionSession, mockStage, false, null, cacheWithSeed);
+    it('shows "Regenerate" text if contributions for the stage already exist', async () => {
+      const contribution: DialecticContribution = {
+        id: 'c-1',
+        session_id: mockSession.id,
+        stage: mockStage,
+        iteration: 1,
+        content: 'some contribution',
+        created_at: 'now',
+        model_id: 'm-1',
+        parent_contribution_id: null,
+        is_pinned: false,
+        project_id: mockProject.id
+      };
 
-        renderComponent(mockStage, true);
+      const sessionWithContributions = { ...mockSession, dialectic_contributions: [contribution] };
+      renderComponent(mockStage, true, {
+        currentProjectDetail: {
+          ...mockProject,
+          dialectic_sessions: [sessionWithContributions],
+          resources: [mockSeedPromptResource]
+        },
+        initialPromptContentCache: {
+          [mockSeedPromptResource.id]: { content: 'Seed prompt here', isLoading: false, error: null }
+        }
+      });
+
+      await waitFor(() => {
         const regenerateButton = screen.getByRole('button', { name: `Regenerate ${mockStage.display_name}` });
         expect(regenerateButton).toBeInTheDocument();
+      });
     });
-
   });
 }); 

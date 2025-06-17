@@ -17,13 +17,12 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
     const mockUserId = "user-happy-path-id";
     const mockProjectId = "project-happy-path-id";
     const mockPayload: DeleteProjectPayload = { projectId: mockProjectId };
-    const projectFolderPath = `projects/${mockProjectId}`;
 
-    const mockFileList = [
-        { name: 'file1.md', id: 'file1-id' },
-        { name: 'folder1/file2.txt', id: 'file2-id' },
+    const mockResources = [
+        { storage_bucket: 'dialectic-contributions', storage_path: `projects/${mockProjectId}/file1.md` },
+        { storage_bucket: 'dialectic-contributions', storage_path: `projects/${mockProjectId}/folder1/file2.txt` },
     ];
-    const filesToRemove = mockFileList.map(f => `${projectFolderPath}/${f.name}`);
+    const filesToRemove = mockResources.map(r => r.storage_path);
 
     // 1. Mock the DB calls
     const mockProjectsSelect = spy(async (state: any) => {
@@ -31,6 +30,13 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
             return { data: [{ id: mockProjectId, user_id: mockUserId }], error: null, count: 1, status: 200, statusText: "OK" };
         }
         return { data: null, error: { name: "PGRST116", message: "Not found" }, count: 0, status: 404, statusText: "Not Found" };
+    });
+    
+    const mockResourcesSelect = spy(async (state: any) => {
+        if (state.filters.some((f: any) => f.column === 'project_id' && f.value === mockProjectId)) {
+            return { data: mockResources, error: null, count: mockResources.length, status: 200, statusText: "OK" };
+        }
+        return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
     });
 
     const mockProjectsDelete = spy(async (state: any) => {
@@ -44,17 +50,13 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
     const mockAdminDbConfig: MockSupabaseDataConfig = {
         genericMockResults: {
             dialectic_projects: { select: mockProjectsSelect, delete: mockProjectsDelete },
+            dialectic_project_resources: { select: mockResourcesSelect },
         },
         storageMock: {
-            listResult: async (_bucketId, path, _options) => {
-                if (path === projectFolderPath) {
-                    return { data: mockFileList, error: null };
-                }
-                return { data: [], error: null };
-            },
-            removeResult: async (_bucketId, paths) => {
-                if (JSON.stringify(paths.sort()) === JSON.stringify(filesToRemove.sort())) {
-                    return { data: [{ bucket: 'dialectic-contributions', name: 'mocked-removal' }], error: null };
+            removeResult: async (bucketId, paths) => {
+                // Basic check to see if the paths to remove match what's expected
+                if (bucketId === 'dialectic-contributions' && paths.every(p => filesToRemove.includes(p))) {
+                    return { data: [{ bucket: bucketId, name: 'mocked-removal' }], error: null };
                 }
                 return { data: null, error: new Error("Mocked removal failed: paths did not match.") };
             },
@@ -65,7 +67,7 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
     
     // Ensure the storage spies are created by calling from()
     adminDbClient.storage.from('dialectic-contributions'); 
-    const { listSpy, removeSpy } = getStorageSpies(adminDbClient, 'dialectic-contributions');
+    const { removeSpy } = getStorageSpies(adminDbClient, 'dialectic-contributions');
 
     // 3. Run the function
     const response = await deleteProject(adminDbClient as any, mockPayload, mockUserId);
@@ -76,17 +78,18 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
 
     // Assert DB calls
     assertEquals(mockProjectsSelect.calls.length, 1, "Project select should be called once for ownership check");
+    assertEquals(mockResourcesSelect.calls.length, 1, "Resources select should be called once");
     assertEquals(mockProjectsDelete.calls.length, 1, "Project delete should be called once");
 
     // Assert Storage calls
-    assertExists(listSpy, "The list spy for the storage bucket should exist.");
-    assertEquals(listSpy.calls.length, 1, "Storage list should be called once");
-    assertEquals(listSpy.calls[0].args[0], projectFolderPath, "Storage list should be called with the correct folder path");
-    
     assertExists(removeSpy, "The remove spy for the storage bucket should exist.");
-    assertEquals(removeSpy.calls.length, 1, "Storage remove should be called once");
+    // It will be called for each resource
+    assertEquals(removeSpy.calls.length, mockResources.length, "Storage remove should be called for each resource");
+    
+    // Check that each call to remove was for one of the expected files
+    const removedPaths = removeSpy.calls.map(call => call.args[0][0]); // Get the path from each call
     assertEquals(
-        JSON.stringify(removeSpy.calls[0].args[0].sort()),
+        JSON.stringify(removedPaths.sort()),
         JSON.stringify(filesToRemove.sort()),
         "Storage remove was not called with the correct file paths"
     );

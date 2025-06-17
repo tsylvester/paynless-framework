@@ -39,48 +39,45 @@ export async function deleteProject(
       return { error: {message: 'User is not authorized to delete this project.'}, status: 403 };
     }
 
-    // New logic: Delete the entire project folder from storage
-    const projectFolderPath = `projects/${projectId}`;
-    console.log(`Listing files in folder: ${projectFolderPath} for deletion.`);
+    // 1. Get all project resources to clean up from storage
+    const { data: resources, error: resourceError } = await supabaseClient
+        .from('dialectic_project_resources')
+        .select('storage_bucket, storage_path')
+        .eq('project_id', projectId);
 
-    const { data: fileList, error: listError } = await supabaseClient.storage
-      .from('dialectic-contributions') // Assuming this is the correct bucket
-      .list(projectFolderPath, {
-        limit: 1000, // Adjust limit as needed, consider pagination for very large projects
-        offset: 0,
-        sortBy: { column: 'name', order: 'asc' },
-      });
-
-    if (listError) {
-      console.error(`Error listing files for project deletion: ${listError.message}`);
-      // Non-fatal, proceed to delete the project record from the DB anyway.
-      // The files will be orphaned, but the project will be gone from the UI.
+    if (resourceError) {
+        console.error(`Could not fetch project resources for project ${projectId}. Deletion aborted. Error: ${resourceError.message}`);
+        return { error: { message: "Could not clean up project resources, aborting deletion.", details: resourceError.message }, status: 500 };
     }
 
-    if (fileList && fileList.length > 0) {
-      const filesToRemove = fileList.map((file) => `${projectFolderPath}/${file.name}`);
-      // Also remove the folder itself if it's empty after removing files,
-      // or if the API needs an explicit folder marker. Often, removing all files effectively removes the folder.
-      // For Supabase, removing all objects within a path is sufficient.
-      
-      console.log(`Found ${filesToRemove.length} files to remove.`);
-      
-      const { error: removeError } = await supabaseClient.storage
-        .from('dialectic-contributions')
-        .remove(filesToRemove);
-      
-      if (removeError) {
-        console.error(`Error removing files from storage: ${removeError.message}`);
-        // Non-fatal, proceed to delete the project record from the DB.
-      } else {
-        console.log(`Successfully removed files for project: ${projectId}`);
-      }
+    // 2. Loop through and delete each storage object
+    if (resources && resources.length > 0) {
+        console.log(`Found ${resources.length} project resources to remove from storage.`);
+        const removalPromises = resources.map(resource => {
+            if (resource.storage_bucket && resource.storage_path) {
+                console.log(`Queueing removal of ${resource.storage_path} from bucket ${resource.storage_bucket}`);
+                return supabaseClient.storage.from(resource.storage_bucket).remove([resource.storage_path]);
+            }
+            return Promise.resolve({ data: null, error: null }); // Return a resolved promise for resources with no storage path
+        });
+
+        const results = await Promise.all(removalPromises);
+
+        const removalErrors = results.filter(res => res.error);
+        if (removalErrors.length > 0) {
+            console.error(`${removalErrors.length} errors occurred during storage cleanup for project ${projectId}.`);
+            removalErrors.forEach(err => console.error(err.error));
+            // Still proceed to delete the DB record. The errors are logged for observability.
+        } else {
+            console.log(`Successfully removed all storage objects for project ${projectId}.`);
+        }
     } else {
-      console.log(`No files found in storage for project: ${projectId}. Nothing to remove.`);
+        console.log(`No project resources found in database for project ${projectId}. No storage cleanup needed.`);
     }
 
-    // 5. Delete the project record from dialectic_projects table
-    // RLS should allow this if user_id matches. Cascading deletes are configured in DB.
+    // 3. Delete the project record from the database.
+    // The database is set up with cascading deletes, so this will clean up
+    // dialectic_sessions, dialectic_contributions, and dialectic_project_resources.
     const { error: deleteError } = await supabaseClient
       .from('dialectic_projects')
       .delete()

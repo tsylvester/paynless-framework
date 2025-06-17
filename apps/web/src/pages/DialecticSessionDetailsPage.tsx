@@ -4,13 +4,12 @@ import { useDialecticStore } from '@paynless/store';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { DialecticSession, DialecticProject, DialecticStage } from '@paynless/types';
+import { DialecticSession, DialecticProject } from '@paynless/types';
 
 // New Component Imports
 import { SessionInfoCard } from '../components/dialectic/SessionInfoCard';
 import { StageTabCard } from '../components/dialectic/StageTabCard';
 import { SessionContributionsDisplayCard } from '../components/dialectic/SessionContributionsDisplayCard';
-import { DialecticStageSelector } from '@/components/dialectic/DialecticStageSelector';
 
 export const DialecticSessionDetailsPage: React.FC = () => {
   const { projectId: projectIdFromParams, sessionId: sessionIdFromParams } = useParams<{ projectId: string; sessionId: string }>();
@@ -26,14 +25,15 @@ export const DialecticSessionDetailsPage: React.FC = () => {
   
   const isLoadingProject = useDialecticStore(state => state.isLoadingProjectDetail);
   const projectError = useDialecticStore(state => state.projectDetailError);
-  const activeStageSlug = useDialecticStore(state => state.activeContextStageSlug);
+  const activeStage = useDialecticStore(state => state.activeContextStage);
+  const currentProcessTemplate = useDialecticStore(state => state.currentProcessTemplate);
   
   const session = useMemo(() => 
     projectFromStore?.dialectic_sessions?.find((s: DialecticSession) => s.id === sessionIdFromParams),
     [projectFromStore, sessionIdFromParams]
   );
 
-  const stagesForCurrentProcess: DialecticStage[] = useMemo(() => Object.values(DialecticStageSelector), []);
+  const stagesForCurrentProcess = useMemo(() => currentProcessTemplate?.stages || [], [currentProcessTemplate]);
 
   useEffect(() => {
     if (projectIdFromParams && (!projectFromStore || projectFromStore.id !== projectIdFromParams) && !isLoadingProject) {
@@ -42,23 +42,24 @@ export const DialecticSessionDetailsPage: React.FC = () => {
   }, [fetchDialecticProjectDetailsAction, projectIdFromParams, projectFromStore, isLoadingProject]);
 
   useEffect(() => {
-    const currentStage = stagesForCurrentProcess.find(s => s.slug === session?.current_stage_id) || null;
-    
+    // The store now determines the active stage when the process template is loaded.
+    // This effect syncs the project/session/stage from the page context into the global store context.
     setActiveDialecticContextAction({
       projectId: projectIdFromParams || null,
       sessionId: sessionIdFromParams || null,
-      stageSlug: currentStage,
+      stage: activeStage, // Use the stage object from the store
     });
     
     return () => {
-      setActiveDialecticContextAction({ projectId: null, sessionId: null, stageSlug: null });
+      setActiveDialecticContextAction({ projectId: null, sessionId: null, stage: null });
     };
   }, [
     projectIdFromParams,
     sessionIdFromParams,
     session,
     setActiveDialecticContextAction,
-    stagesForCurrentProcess
+    stagesForCurrentProcess,
+    activeStage,
   ]);
 
   if (isLoadingProject && !projectFromStore) {
@@ -110,23 +111,23 @@ export const DialecticSessionDetailsPage: React.FC = () => {
 
   return (
     <div className="container mx-auto p-4" role="main">
-      <SessionInfoCard />
+      <SessionInfoCard session={session} />
 
       <div className="flex space-x-2 my-4 overflow-x-auto pb-2" role="tablist" aria-label="Dialectic Stages">
         {stagesForCurrentProcess.map(stage => (
           <StageTabCard
             key={stage.id}
             stage={stage}
-            isActiveStage={activeStageSlug?.slug === stage.slug}
+            isActiveStage={activeStage?.id === stage.id}
           />
         ))}
       </div>
 
-      {activeStageSlug && (
-        <SessionContributionsDisplayCard />
+      {activeStage && (
+        <SessionContributionsDisplayCard session={session} activeStage={activeStage} />
       )}
 
-      {!activeStageSlug && stagesForCurrentProcess.length > 0 && !isLoadingProject && (
+      {!activeStage && stagesForCurrentProcess.length > 0 && !isLoadingProject && (
         <Alert className="mt-4">
           <AlertTitle>Select a Stage</AlertTitle>
           <AlertDescription>Please select a dialectic stage to view its contributions.</AlertDescription>

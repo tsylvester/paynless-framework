@@ -1,49 +1,67 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDialecticStore } from '@paynless/store';
 import {
   selectCurrentProjectDetail,
   selectIsLoadingProjectDetail,
+  selectProjectDetailError,
+  selectActiveContextStage,
 } from '@paynless/store';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, PlayCircle, Layers } from 'lucide-react';
 import { InitialProblemStatement } from '@/components/dialectic/InitialProblemStatement';
 import { ProjectSessionsList } from '@/components/dialectic/ProjectSessionsList';
-import { StartDialecticSessionModal } from '@/components/dialectic/StartDialecticSessionModal';
+import { toast } from 'sonner';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { AlertTriangle } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
-export const DialecticProjectDetailsPage: React.FC = () => {
+export function DialecticProjectDetailsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
 
-  // Optimized selectors for Zustand store
-  const fetchDialecticProjectDetails = useDialecticStore((state) => state.fetchDialecticProjectDetails);
-  const currentProjectDetail = useDialecticStore(selectCurrentProjectDetail);
-  const isLoadingProjectDetail = useDialecticStore(selectIsLoadingProjectDetail);
-  const projectDetailError = useDialecticStore((state) => state.projectDetailError);
-  const setStartNewSessionModalOpen = useDialecticStore((state) => state.setStartNewSessionModalOpen);
+  const { fetchDialecticProjectDetails, startDialecticSession } = useDialecticStore((state) => ({
+    fetchDialecticProjectDetails: state.fetchDialecticProjectDetails,
+    startDialecticSession: state.startDialecticSession,
+  }));
+  
+  const project = useDialecticStore(selectCurrentProjectDetail);
+  const isLoading = useDialecticStore(selectIsLoadingProjectDetail);
+  const error = useDialecticStore(selectProjectDetailError);
+  const initialStage = useDialecticStore(selectActiveContextStage);
 
   useEffect(() => {
     if (projectId) {
       fetchDialecticProjectDetails(projectId);
-    } else {
-      console.error("No project ID found in URL");
-      navigate('/dialectic');
     }
   }, [projectId, fetchDialecticProjectDetails]);
 
-  const handleStartNewSession = () => {
-    setStartNewSessionModalOpen(true);
-  };
+  const handleStartNewSession = async () => {
+    if (!projectId) {
+      toast.error("Cannot start a session without a project ID.");
+      return;
+    }
+    if (!initialStage) {
+      toast.error("Initial stage for the project has not been determined yet. Please wait a moment and try again.");
+      return;
+    }
+    const result = await startDialecticSession({
+      projectId,
+      selectedModelCatalogIds: [], // Models will be selected later
+      stageSlug: initialStage.slug,
+    });
 
-  const handleSessionStarted = (sessionId: string) => {
-    if (projectId) {
-      navigate(`/dialectic/${projectId}/session/${sessionId}`);
+    const newSession = result.data;
+    if (newSession && newSession.id) {
+      toast.success(`New session started: ${newSession.id}`);
+      navigate(`/dialectic/${projectId}/session/${newSession.id}`);
+    } else {
+      toast.error(result.error?.message || "Failed to start a new session.");
     }
   };
 
-  if (isLoadingProjectDetail) {
+  if (isLoading) {
     return (
       <div className="container mx-auto p-6 space-y-8">
         <Skeleton className="h-10 w-1/4" />
@@ -54,30 +72,24 @@ export const DialecticProjectDetailsPage: React.FC = () => {
     );
   }
 
-  if (projectDetailError) {
+  if (error) {
     return (
-      <div className="container mx-auto p-6 text-center">
-        <h1 className="text-2xl font-bold text-destructive">Error Loading Project</h1>
-        <p>{projectDetailError.message || "Could not fetch project details."}</p>
-        <Button onClick={() => navigate('/dialectic')} className="mt-4">Go to Projects</Button>
+      <div className="container mx-auto p-4">
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>
+            {error.message || 'An unexpected error occurred while fetching project details.'}
+          </AlertDescription>
+        </Alert>
       </div>
     );
   }
 
-  if (!currentProjectDetail) {
+  if (!project) {
     return (
-        <div className="container mx-auto p-6 text-center">
-            <p>No project data available. It might be loading or the project ID is invalid.</p>
-            <Button onClick={() => navigate('/dialectic')} className="mt-4">Go to Projects</Button>
-        </div>
-    );
-  }
-
-  if (projectId !== currentProjectDetail.id) {
-    return (
-      <div className="container mx-auto p-6 text-center">
-        <p>Loading project data...</p> 
-        <Skeleton className="h-10 w-1/4 mt-2" />
+      <div className="container mx-auto p-4">
+        <p>Project not found.</p>
       </div>
     );
   }
@@ -94,14 +106,14 @@ export const DialecticProjectDetailsPage: React.FC = () => {
           </div>
           <h1 className="text-xl md:text-2xl font-semibold flex items-center mr-2 shrink-0">
             <Layers className="mr-2 h-6 w-6 text-primary shrink-0" /> 
-            <span className="truncate" title={currentProjectDetail.project_name}>
-              {currentProjectDetail.project_name}
+            <span className="truncate" title={project.project_name}>
+              {project.project_name}
             </span>
           </h1>
-          <span className="text-sm text-muted-foreground truncate" title={currentProjectDetail.id}>ID: {currentProjectDetail.id}</span>
-          {currentProjectDetail.domain_name && (
+          <span className="text-sm text-muted-foreground truncate" title={project.id}>ID: {project.id}</span>
+          {project.dialectic_domains?.name && (
             <Badge variant="outline" className="text-sm whitespace-nowrap">
-              {currentProjectDetail.domain_name}
+              {project.dialectic_domains.name}
             </Badge>
           )}
         </div>
@@ -116,10 +128,6 @@ export const DialecticProjectDetailsPage: React.FC = () => {
       <InitialProblemStatement />
       
       <ProjectSessionsList onStartNewSession={handleStartNewSession} />
-
-      <StartDialecticSessionModal 
-        onSessionStarted={handleSessionStarted} 
-      />
     </div>
   );
-}; 
+} 

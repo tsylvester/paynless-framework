@@ -1,286 +1,180 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { MemoryRouter, Routes, Route, useParams } from 'react-router-dom';
-
-import { useDialecticStore, initialDialecticStateValues } from '@paynless/store';
-import type {
-  DialecticStore,
-  DialecticProject,
-  ApiError,
-} from '@paynless/types';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { DialecticProjectDetailsPage } from './DialecticProjectDetailsPage';
+import { setDialecticState, resetDialecticStoreMock, getDialecticStoreState } from '../mocks/dialecticStore.mock';
+import type { DialecticProject, ApiError, DialecticSession, DialecticStage, DialecticProcessTemplate } from '@paynless/types';
 
-// Mock @paynless/store
-vi.mock('@paynless/store', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@paynless/store')>();
-  return {
-    ...actual,
-    useDialecticStore: vi.fn(),
-    selectCurrentProjectId: vi.fn(state => state.currentProjectDetail?.id),
-    selectCurrentProjectInitialPrompt: vi.fn(state => state.currentProjectDetail?.initial_user_prompt),
-    selectCurrentProjectSessions: vi.fn(state => state.currentProjectDetail?.sessions || []),
-    selectIsStartNewSessionModalOpen: vi.fn(state => state.isStartNewSessionModalOpen),
-  };
-});
-
-// Mock useParams from react-router-dom
-vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>();
-  return {
-    ...actual,
-    useParams: vi.fn(),
-    Link: vi.fn(({ to, children }) => <a href={to as string}>{children}</a>),
-    useNavigate: vi.fn(() => vi.fn()),
-  };
-});
-
-// Mock child components to simplify page testing and avoid their internal logic/API calls
+// Mock child components
 vi.mock('@/components/dialectic/InitialProblemStatement', () => ({
-  InitialProblemStatement: vi.fn(() => <div data-testid="editable-initial-problem-statement-mock"></div>),
+  InitialProblemStatement: () => <div data-testid="initial-problem-statement-mock" />,
 }));
-
 vi.mock('@/components/dialectic/ProjectSessionsList', () => ({
-  ProjectSessionsList: vi.fn(({ onStartNewSession }) => (
+  ProjectSessionsList: ({ onStartNewSession }: { onStartNewSession: () => void }) => (
     <div data-testid="project-sessions-list-mock">
-      <button onClick={onStartNewSession}>Trigger Session Modal From List</button>
+      <button onClick={onStartNewSession}>Trigger Session From List</button>
     </div>
-  )),
-}));
-
-vi.mock('@/components/dialectic/StartDialecticSessionModal', () => ({
-  StartDialecticSessionModal: vi.fn(
-    () => <div data-testid="start-dialectic-session-modal-mock"></div>,
   ),
 }));
 
-const mockFetchDialecticProjectDetails = vi.fn();
-const mockSetStartNewSessionModalOpen = vi.fn();
+// Use the centralized mock for the store
+vi.mock('@paynless/store', () => import('../mocks/dialecticStore.mock'));
 
-const createMockStoreState = (overrides: Partial<DialecticStore>): DialecticStore => {
-  const baseState = {
-    ...initialDialecticStateValues,
-    projects: [],
-    isLoadingProjects: false,
-    projectsError: null,
-    fetchDialecticProjects: vi.fn(),
-    currentProjectDetail: null,
-    isLoadingProjectDetail: false,
-    projectDetailError: null,
-    fetchDialecticProjectDetails: mockFetchDialecticProjectDetails,
-    modelCatalog: [],
-    isLoadingModelCatalog: false,
-    modelCatalogError: null,
-    fetchAIModelCatalog: vi.fn(),
-    isCreatingProject: false,
-    createProjectError: null,
-    createDialecticProject: vi.fn(),
-    isStartingSession: false,
-    startSessionError: null,
-    startDialecticSession: vi.fn(),
-    contributionContentCache: {},
-    fetchContributionContent: vi.fn(),
-    setStartNewSessionModalOpen: mockSetStartNewSessionModalOpen,
-    isStartNewSessionModalOpen: false,
-    resetCreateProjectError: vi.fn(),
-    resetProjectDetailsError: vi.fn(),
-    updateDialecticProjectInitialPrompt: vi.fn(),
-    uploadProjectResourceFile: vi.fn(),
-    isUpdatingProjectPrompt: false,
-    isUploadingProjectResource: false,
-    uploadProjectResourceError: null,
-    allSystemPrompts: null,
-    availableDomains: [],
-    isLoadingDomains: false,
-    domainsError: null,
-    selectedDomainId: null,
-    setSelectedDomainId: vi.fn(),
-    fetchAvailableDomains: vi.fn(),
-    isCloningProject: false,
-    cloneProjectError: null,
-    isExportingProject: false,
-    exportProjectError: null,
-    exportDialecticProject: vi.fn(),
-    cloneDialecticProject: vi.fn(),
-    deleteDialecticProject: vi.fn(),
-    selectedStageAssociation: null,
-    availableDomainOverlays: null,
-    isLoadingDomainOverlays: false,
-    domainOverlaysError: null,
-    selectedDomainOverlayId: null,
-    setSelectedStageAssociation: vi.fn(),
-    fetchAvailableDomainOverlays: vi.fn(),
-    setSelectedDomainOverlayId: vi.fn(),
-    _resetForTesting: vi.fn(),
-  };
-  return { ...baseState, ...overrides } as DialecticStore;
+const mockProjectId = 'project-123';
+
+const mockInitialStage: DialecticStage = {
+    id: 'stage-1',
+    created_at: new Date().toISOString(),
+    slug: 'hypothesis-generation',
+    display_name: 'Hypothesis Generation',
+    description: 'Generate initial hypotheses.',
+    input_artifact_rules: {},
+    expected_output_artifacts: {},
+    default_system_prompt_id: 'sp-1',
 };
 
-const renderWithRouter = (
-  ui: React.ReactElement,
-  {
-    route = '/',
-    path = '/',
-    initialEntries = [route],
-  }: { route?: string; path?: string; initialEntries?: string[] } = {},
-) => {
+const mockProcessTemplate: Omit<DialecticProcessTemplate, 'stages' | 'transitions'> & { stages: DialecticStage[] } = {
+  id: 'pt-1',
+  name: 'Standard Dialectic',
+  description: 'A standard process',
+  created_at: 'now',
+  stages: [mockInitialStage],
+  starting_stage_id: 'stage-1',
+};
+
+const mockProject: DialecticProject = {
+  id: mockProjectId,
+  user_id: 'user-123',
+  project_name: 'Detailed Project Name',
+  initial_user_prompt: 'The initial prompt.',
+  selected_domain_id: 'domain-1',
+  dialectic_domains: { name: 'Software Engineering' },
+  selected_domain_overlay_id: 'overlay-1',
+  repo_url: null,
+  status: 'active',
+  created_at: '2023-01-01T00:00:00Z',
+  updated_at: '2023-01-01T00:00:00Z',
+  dialectic_sessions: [],
+  resources: [],
+  process_template_id: 'pt-1',
+  dialectic_process_templates: mockProcessTemplate as DialecticProcessTemplate,
+};
+
+const mockSession: DialecticSession = {
+    id: 'ses-abc',
+    project_id: mockProjectId,
+    session_description: 'A session for testing.',
+    user_input_reference_url: null,
+    iteration_count: 1,
+    selected_model_catalog_ids: [],
+    status: 'active',
+    associated_chat_id: null,
+    current_stage_id: 'stage-1',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+};
+
+const renderWithRouter = (route: string) => {
   return render(
-    <MemoryRouter initialEntries={initialEntries}>
+    <MemoryRouter initialEntries={[route]}>
       <Routes>
-        <Route path={path} element={ui} />
+        <Route path="/dialectic/:projectId" element={<DialecticProjectDetailsPage />} />
+        <Route path="/dialectic/:projectId/session/:sessionId" element={<div>Session Page</div>} />
+        <Route path="/dialectic" element={<div>Projects List</div>} />
       </Routes>
     </MemoryRouter>
   );
 };
 
 describe('DialecticProjectDetailsPage', () => {
-  const testProjectId = 'project-123';
-
   beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(useParams).mockReturnValue({ projectId: testProjectId });
-    const mockStore = createMockStoreState({});
-    vi.mocked(useDialecticStore).mockImplementation((selectorOrFn) => {
-      if (typeof selectorOrFn === 'function') {
-        return selectorOrFn(mockStore);
-      }
-      return mockStore;
-    });
+    resetDialecticStoreMock();
   });
 
   it('calls fetchDialecticProjectDetails with projectId on mount and shows loading skeletons', () => {
-    const mockStore = createMockStoreState({ isLoadingProjectDetail: true, currentProjectDetail: null });
-    vi.mocked(useDialecticStore).mockImplementation(selector => selector(mockStore));
-
-    const { container } = renderWithRouter(<DialecticProjectDetailsPage />, { 
-        route: `/dialectic/${testProjectId}`,
-        path: '/dialectic/:projectId' 
-    });
-
-    expect(mockFetchDialecticProjectDetails).toHaveBeenCalledWith(testProjectId);
-    const skeletons = container.querySelectorAll('.animate-pulse');
-    expect(skeletons.length).toBeGreaterThan(0);
-    expect(skeletons.length).toBe(4);
+    setDialecticState({ isLoadingProjectDetail: true });
+    const { container } = renderWithRouter(`/dialectic/${mockProjectId}`);
+    const store = getDialecticStoreState();
+    expect(store.fetchDialecticProjectDetails).toHaveBeenCalledWith(mockProjectId);
+    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
   });
 
   it('displays error message if projectDetailError is present', () => {
-    const error = { message: 'Failed to load project' } as ApiError;
-    const mockStore = createMockStoreState({ projectDetailError: error, isLoadingProjectDetail: false });
-    vi.mocked(useDialecticStore).mockImplementation(selector => selector(mockStore));
-
-    renderWithRouter(<DialecticProjectDetailsPage />, {
-        route: `/dialectic/${testProjectId}`,
-        path: '/dialectic/:projectId'
-    });
-    expect(screen.getByRole('heading', { name: /Error Loading Project/i })).toBeInTheDocument();
+    const error: ApiError = { message: 'Failed to load project', code: '404' };
+    setDialecticState({ projectDetailError: error });
+    renderWithRouter(`/dialectic/${mockProjectId}`);
+    expect(screen.getByText('Error')).toBeInTheDocument();
     expect(screen.getByText(error.message)).toBeInTheDocument();
   });
 
-  it('displays message if no projectDetail and not loading/error, and projectId does not match', () => {
-    const mockStore = createMockStoreState({ 
-        currentProjectDetail: { id: 'other-project-id' } as DialecticProject,
-        isLoadingProjectDetail: false, 
-        projectDetailError: null 
-    });
-    vi.mocked(useParams).mockReturnValue({ projectId: testProjectId });
-    vi.mocked(useDialecticStore).mockImplementation(selector => selector(mockStore));
-
-    renderWithRouter(<DialecticProjectDetailsPage />, {
-        route: `/dialectic/${testProjectId}`,
-        path: '/dialectic/:projectId'
-    });
-    expect(screen.getByText(/Loading project data.../i)).toBeInTheDocument();
+  it('displays "Project not found" message if no project is loaded and not loading', () => {
+    setDialecticState({ currentProjectDetail: null, isLoadingProjectDetail: false });
+    renderWithRouter(`/dialectic/non-existent-id`);
+    expect(screen.getByText(/Project not found/i)).toBeInTheDocument();
   });
 
-  it('displays fallback message if no projectDetail and not loading/error, and projectId matches (edge case)', () => {
-    const mockStore = createMockStoreState({ 
-      currentProjectDetail: null,
-      isLoadingProjectDetail: false, 
-      projectDetailError: null 
-    });
-    vi.mocked(useParams).mockReturnValue({ projectId: testProjectId });
-    vi.mocked(useDialecticStore).mockImplementation(selector => selector(mockStore));
-
-    renderWithRouter(<DialecticProjectDetailsPage />, {
-        route: `/dialectic/${testProjectId}`,
-        path: '/dialectic/:projectId'
-    });
-    expect(screen.getByText(/No project data available. It might be loading or the project ID is invalid./i)).toBeInTheDocument();
-  });
-
-  it('displays project details and child component mocks when project data is loaded', () => {
-    const mockProject: DialecticProject = {
-      id: testProjectId,
-      user_id: 'user-1',
-      project_name: 'Detailed Project Name',
-      initial_user_prompt: 'An initial prompt for the project.',
-      selected_domain_overlay_id: null,
-      selected_domain_id: 'domain-1',
-      domain_name: 'Generic',
-      repo_url: null,
-      status: 'active',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      dialectic_sessions: [],
-      resources: [],
-    };
-    const mockStore = createMockStoreState({
-      currentProjectDetail: mockProject,
-      isLoadingProjectDetail: false,
-      projectDetailError: null,
-    });
-    vi.mocked(useDialecticStore).mockImplementation(selector => selector(mockStore));
-    vi.mocked(useParams).mockReturnValue({ projectId: testProjectId });
-
-    renderWithRouter(<DialecticProjectDetailsPage />, {
-      route: `/dialectic/${testProjectId}`,
-      path: '/dialectic/:projectId',
-    });
-
+  it('displays project details and child components when project data is loaded', () => {
+    setDialecticState({ currentProjectDetail: mockProject, isLoadingProjectDetail: false });
+    renderWithRouter(`/dialectic/${mockProjectId}`);
     expect(screen.getByRole('heading', { name: /Detailed Project Name/i })).toBeInTheDocument();
-    expect(screen.getByText('Generic')).toBeInTheDocument();
-    expect(
-      screen.getByTestId('editable-initial-problem-statement-mock'),
-    ).toBeInTheDocument();
+    expect(screen.getByText(mockProject.dialectic_domains!.name)).toBeInTheDocument();
+    expect(screen.getByTestId('initial-problem-statement-mock')).toBeInTheDocument();
     expect(screen.getByTestId('project-sessions-list-mock')).toBeInTheDocument();
-
-    const mainStartSessionButton = screen.getByRole('button', {
-      name: /Start New Session/i,
-    });
-    expect(mainStartSessionButton).toBeInTheDocument();
   });
 
-  it('calls setStartNewSessionModalOpen with true when "Start New Session" button is clicked', async () => {
-    const mockProject: DialecticProject = {
-      id: testProjectId,
-      user_id: 'user-1',
-      project_name: 'Test Project',
-      initial_user_prompt: 'Test',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      status: 'active',
-      selected_domain_id: 'domain-1',
-      domain_name: 'Generic',
-      selected_domain_overlay_id: null,
-      repo_url: null,
-      dialectic_sessions: [],
-      resources: [],
-    };
-    const mockStore = createMockStoreState({ 
-        currentProjectDetail: mockProject, 
-        isLoadingProjectDetail: false,
-        isStartNewSessionModalOpen: false,
+  it('calls startDialecticSession with correct parameters when "Start New Session" button is clicked', async () => {
+    setDialecticState({
+        currentProjectDetail: mockProject,
+        activeContextStage: mockInitialStage,
     });
-    vi.mocked(useDialecticStore).mockImplementation(selector => selector(mockStore));
-    vi.mocked(useParams).mockReturnValue({ projectId: testProjectId });
+    const store = getDialecticStoreState();
+    (store.startDialecticSession as Mock).mockResolvedValue({ data: mockSession, error: null });
 
-    renderWithRouter(<DialecticProjectDetailsPage />, {
-        route: `/dialectic/${testProjectId}`,
-        path: '/dialectic/:projectId'
-    });
-
+    renderWithRouter(`/dialectic/${mockProjectId}`);
     const startSessionButton = screen.getByRole('button', { name: /Start New Session/i });
     fireEvent.click(startSessionButton);
+    
+    await waitFor(() => {
+        expect(store.startDialecticSession).toHaveBeenCalledWith({
+            projectId: mockProjectId,
+            selectedModelCatalogIds: [],
+            stageSlug: mockInitialStage.slug,
+        });
+    });
+  });
 
-    expect(mockSetStartNewSessionModalOpen).toHaveBeenCalledWith(true);
+  it('navigates to the new session page on successful session start', async () => {
+    setDialecticState({
+        currentProjectDetail: mockProject,
+        activeContextStage: mockInitialStage,
+    });
+    const store = getDialecticStoreState();
+    (store.startDialecticSession as Mock).mockResolvedValue({ data: mockSession, error: null });
+
+    const { container } = renderWithRouter(`/dialectic/${mockProjectId}`);
+    const startSessionButton = screen.getByRole('button', { name: /Start New Session/i });
+    fireEvent.click(startSessionButton);
+    
+    await waitFor(() => {
+      expect(container.innerHTML).toContain('Session Page');
+    });
+  });
+
+  it('navigates to the new session page when triggered from sessions list', async () => {
+    setDialecticState({
+        currentProjectDetail: mockProject,
+        activeContextStage: mockInitialStage,
+    });
+    const store = getDialecticStoreState();
+    (store.startDialecticSession as Mock).mockResolvedValue({ data: mockSession, error: null });
+
+    const { container } = renderWithRouter(`/dialectic/${mockProjectId}`);
+    const startSessionButton = screen.getByRole('button', { name: /Trigger Session From List/i });
+    fireEvent.click(startSessionButton);
+    
+    await waitFor(() => {
+      expect(store.startDialecticSession).toHaveBeenCalled();
+      expect(container.innerHTML).toContain('Session Page');
+    });
   });
 }); 

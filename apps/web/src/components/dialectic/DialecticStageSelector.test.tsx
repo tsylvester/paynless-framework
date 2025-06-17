@@ -63,6 +63,7 @@ const mockProject: DialecticProject = {
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   process_template_id: 'pt1',
+  dialectic_process_templates: mockProcessTemplate,
   user_id: 'u1',
   dialectic_sessions: [],
   initial_user_prompt: 'Test prompt',
@@ -87,7 +88,7 @@ const setupStore = (initialState: Partial<DialecticStateValues> = {}) => {
   setDialecticState({
     currentProjectDetail: mockProject,
     currentProcessTemplate: mockProcessTemplate,
-    activeContextStageSlug: mockSynthesisStage,
+    activeContextStage: mockSynthesisStage,
     isLoadingProcessTemplate: false,
     selectedDomain: mockDomain,
     ...initialState,
@@ -132,7 +133,7 @@ describe('DialecticStageSelector', () => {
   });
 
   it('displays the current stage and its predecessors in the dropdown', async () => {
-    setupStore({ activeContextStageSlug: mockSynthesisStage });
+    setupStore({ activeContextStage: mockSynthesisStage });
     render(<DialecticStageSelector />);
     const user = userEvent.setup();
     await user.click(screen.getByRole('combobox'));
@@ -154,7 +155,7 @@ describe('DialecticStageSelector', () => {
     const thesisOption = await screen.findByText('Thesis Stage');
     await user.click(thesisOption);
     
-    expect(state.setActiveDialecticContext).toHaveBeenCalledWith({ stageSlug: mockThesisStage, projectId: null, sessionId: null });
+    expect(state.setActiveContextStage).toHaveBeenCalledWith(mockThesisStage);
   });
 
   it('is disabled when the disabled prop is true', () => {
@@ -164,7 +165,7 @@ describe('DialecticStageSelector', () => {
   });
 
   it('is disabled if there is only one available stage (the current one)', () => {
-    setupStore({ activeContextStageSlug: mockThesisStage });
+    setupStore({ activeContextStage: mockThesisStage });
     render(<DialecticStageSelector />);
     expect(screen.getByRole('combobox')).toBeDisabled();
   });

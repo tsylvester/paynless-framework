@@ -39,7 +39,7 @@ import {
         *,
         dialectic_domains ( name ),
         dialectic_process_templates ( * ),
-        dialectic_project_resources (*),
+        resources:dialectic_project_resources!dialectic_project_resources_project_id_fkey (*),
         dialectic_sessions (*,
           dialectic_contributions (*)
         )

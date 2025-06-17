@@ -180,7 +180,9 @@ describe('SessionContributionsDisplayCard', () => {
       resetSubmitStageResponsesError: mockResetSubmitStageResponsesError,
     });
 
-    render(<SessionContributionsDisplayCard />);
+    const activeSession = project?.dialectic_sessions?.find(s => s.id === activeSessionId);
+
+    render(<SessionContributionsDisplayCard session={activeSession} activeStage={activeStage} />);
   };
 
   beforeEach(() => {

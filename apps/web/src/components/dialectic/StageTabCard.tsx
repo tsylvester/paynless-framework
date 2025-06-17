@@ -26,20 +26,33 @@ export const StageTabCard: React.FC<StageTabCardProps> = ({
 
   const currentIteration = session?.iteration_count;
 
-  const seedPromptPath = projectId && sessionId && currentIteration ? 
-    `projects/${projectId}/sessions/${sessionId}/iteration_${currentIteration}/${stage.slug}/seed_prompt.md` : null;
+  // Find the seed prompt resource ID
+  const projectResources = useDialecticStore(state => state.currentProjectDetail?.resources) || [];
+  const seedPromptResource = projectResources.find(r => {
+    if (!r.resource_description) return false;
+    try {
+      const desc = JSON.parse(r.resource_description);
+      return desc.type === 'seed_prompt' &&
+             desc.session_id === sessionId &&
+             desc.stage_slug === stage.slug &&
+             desc.iteration === currentIteration;
+    } catch (e) {
+      return false;
+    }
+  });
+  const seedPromptResourceId = seedPromptResource?.id;
 
   const seedPromptCacheEntry = useDialecticStore(state => 
-    seedPromptPath ? state.contributionContentCache?.[seedPromptPath] : undefined
-  ) as ContributionCacheEntry | undefined;
+    seedPromptResourceId ? state.initialPromptContentCache?.[seedPromptResourceId] : undefined
+  );
 
   const fetchSeedPromptContent = useDialecticStore(state => state.fetchInitialPromptContent);
 
   useEffect(() => {
-    if (seedPromptPath && (!seedPromptCacheEntry || (!seedPromptCacheEntry.content && !seedPromptCacheEntry.isLoading && !seedPromptCacheEntry.error))) {
-        fetchSeedPromptContent(seedPromptPath);
+    if (seedPromptResourceId && (!seedPromptCacheEntry || (!seedPromptCacheEntry.content && !seedPromptCacheEntry.isLoading && !seedPromptCacheEntry.error))) {
+        fetchSeedPromptContent(seedPromptResourceId);
     }
-  }, [seedPromptPath, seedPromptCacheEntry, fetchSeedPromptContent]);
+  }, [seedPromptResourceId, seedPromptCacheEntry, fetchSeedPromptContent]);
 
   const generateContributions = useDialecticStore(state => state.generateContributions);
   const isGenerating = useDialecticStore(state => state.isGeneratingContributions);
@@ -79,7 +92,7 @@ export const StageTabCard: React.FC<StageTabCardProps> = ({
   };
 
   const handleCardClick = () => {
-    setActiveDialecticContext({ projectId, sessionId, stageSlug: stage });
+    setActiveDialecticContext({ projectId, sessionId, stage: stage });
   };
 
   return (

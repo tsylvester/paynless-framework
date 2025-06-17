@@ -366,13 +366,14 @@ describe("getProjectDetails", () => {
         *,
         dialectic_domains ( name ),
         dialectic_process_templates ( * ),
-        dialectic_project_resources (*),
+        resources:dialectic_project_resources!dialectic_project_resources_project_id_fkey (*),
         dialectic_sessions (*,
           dialectic_contributions (*)
         )
-      `;
-    const actualSelect = qbSpies.select.calls[0].args[0]?.toString().replace(/\s+/g, ' ').trim();
-    assertEquals(actualSelect, expectedSelect.replace(/\s+/g, ' ').trim());
+      `.trim().replace(/\s+/g, ' ');
+      
+    const actualSelect = (qbSpies.select.calls[0].args[0] as string).trim().replace(/\s+/g, ' ');
+    assertEquals(actualSelect, expectedSelect);
 
     assertEquals(qbSpies.eq.calls.length, 2);
     assertEquals(qbSpies.eq.calls[0].args[0], 'id');

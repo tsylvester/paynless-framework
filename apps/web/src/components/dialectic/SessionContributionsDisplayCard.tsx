@@ -2,9 +2,9 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   useDialecticStore, 
   selectActiveContextSessionId, 
-  selectActiveContextStageSlug 
+  selectActiveContextStage 
 } from '@paynless/store';
-import { DialecticContribution, ApiError } from '@paynless/types';
+import { DialecticContribution, ApiError, DialecticSession, DialecticStage } from '@paynless/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -14,7 +14,8 @@ import { toast } from 'sonner';
 import { GenerateContributionButton } from './GenerateContributionButton';
 
 interface SessionContributionsDisplayCardProps {
-  // Props removed: sessionId, activeStageSlug
+  session: DialecticSession | undefined;
+  activeStage: DialecticStage | null;
 }
 
 interface StageResponse {
@@ -22,15 +23,10 @@ interface StageResponse {
   responseText: string;
 }
 
-export const SessionContributionsDisplayCard: React.FC<SessionContributionsDisplayCardProps> = () => {
-  // Get context from store
-  const sessionIdFromStore = useDialecticStore(selectActiveContextSessionId);
-  const activeStageFromStore = useDialecticStore(selectActiveContextStageSlug);
-
+export const SessionContributionsDisplayCard: React.FC<SessionContributionsDisplayCardProps> = ({ session, activeStage }) => {
   const project = useDialecticStore(state => state.currentProjectDetail);
-  const session = useDialecticStore(state => 
-    sessionIdFromStore ? project?.dialectic_sessions?.find(s => s.id === sessionIdFromStore) : undefined
-  );
+  const sessionIdFromStore = useDialecticStore(selectActiveContextSessionId);
+  const activeStageFromStore = useDialecticStore(selectActiveContextStage);
 
   const submitStageResponses = useDialecticStore(state => state.submitStageResponses);
   const isSubmitting = useDialecticStore(state => state.isSubmittingStageResponses);
@@ -46,13 +42,13 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
     if (submissionError) {
         resetSubmitError?.();
     }
-  }, [activeStageFromStore, resetSubmitError, submissionError]); // Depend on activeStageSlugFromStore
+  }, [activeStage, resetSubmitError, submissionError]);
 
   const displayedContributions = useMemo(() => {
-    if (!session?.dialectic_contributions || !session.iteration_count || !activeStageFromStore) return [];
+    if (!session?.dialectic_contributions || !session.iteration_count || !activeStage) return [];
 
     const contributionsForStageAndIteration = session.dialectic_contributions.filter(
-      c => c.stage.slug === activeStageFromStore.slug && c.iteration_number === session.iteration_count
+      c => c.stage.slug === activeStage.slug && c.iteration_number === session.iteration_count
     );
 
     const latestEditsMap = new Map<string, DialecticContribution>();
@@ -96,7 +92,7 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
     
     return finalContributions.sort((a,b) => (a.model_name || '').localeCompare(b.model_name || ''));
 
-  }, [session, activeStageFromStore]); // Depend on session (derived from sessionIdFromStore) and activeStageSlugFromStore
+  }, [session, activeStage]);
 
   const handleResponseChange = (originalModelContributionId: string, responseText: string) => {
     setStageResponses(prev => ({ ...prev, [originalModelContributionId]: responseText }));
@@ -107,7 +103,7 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
   };
 
   const handleSubmitResponses = async () => {
-    if (!session || !session.iteration_count || !sessionIdFromStore || !activeStageFromStore) return;
+    if (!session || !session.iteration_count || !activeStage) return;
     setSubmissionSuccessMessage(null);
     if (submissionError) {
         resetSubmitError?.();
@@ -124,14 +120,14 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
 
     try {
       const result = await submitStageResponses({
-        sessionId: sessionIdFromStore, // Use from store
+        sessionId: session.id,
         currentIterationNumber: session.iteration_count,
         responses: responsesToSubmit.map(r => ({
           originalModelContributionId: r.originalContributionId,
           responseText: r.responseText,
         })),
         projectId: session.project_id,
-        stageSlug: activeStageFromStore.slug,
+        stageSlug: activeStage.slug,
       });
       if ((result as unknown as { success: boolean })?.success || !(result as unknown as { error: ApiError })?.error) {
         setSubmissionSuccessMessage('Responses submitted successfully. The next stage is being prepared.');
@@ -152,11 +148,11 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
   };
 
   const activeStageDisplayName =
-    activeStageFromStore?.display_name || 'Current Stage';
+    activeStage?.display_name || 'Current Stage';
 
   const canSubmit = Object.values(stageResponses).some(text => text.trim() !== '') && !isSubmitting;
 
-  if (!sessionIdFromStore || !activeStageFromStore) {
+  if (!session || !activeStage) {
     return (
         <Card className="mt-4">
             <CardHeader><CardTitle>Loading Contributions...</CardTitle></CardHeader>
@@ -183,9 +179,9 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
           <>
             <p className="text-muted-foreground italic">No contributions found for this stage yet.</p>
             <GenerateContributionButton
-              sessionId={sessionIdFromStore}
+              sessionId={session.id}
               projectId={session.project_id}
-              currentStage={activeStageFromStore}
+              currentStage={activeStage}
               currentStageFriendlyName={activeStageDisplayName}
             />
           </>
@@ -211,7 +207,6 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
                 </Alert>
             )}
             {submissionSuccessMessage && (
-                // Changed variant to default as success is not standard for ShadCN Alert
                 <Alert variant="default" className="border-green-500/50 text-green-700 dark:border-green-500/60 dark:text-green-400 bg-green-50/50 dark:bg-green-900/30">
                     <AlertTitle>Success</AlertTitle>
                     <AlertDescription>{submissionSuccessMessage}</AlertDescription>

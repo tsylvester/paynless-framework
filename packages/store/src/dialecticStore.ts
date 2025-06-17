@@ -70,7 +70,6 @@ export const initialDialecticStateValues: DialecticStateValues = {
   isUpdatingProjectPrompt: false,
   isUploadingProjectResource: false,
   uploadProjectResourceError: null,
-  isStartNewSessionModalOpen: false,
   selectedModelIds: [],
 
   // Cache for initial prompt file content, mapping resourceId to its state
@@ -93,7 +92,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
 
   activeContextProjectId: null,
   activeContextSessionId: null,
-  activeContextStageSlug: null,
+  activeContextStage: null,
 };
 
 export const useDialecticStore = create<DialecticStore>((set, get) => ({
@@ -241,6 +240,13 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
           isLoadingProjectDetail: false,
           projectDetailError: null,
         });
+        
+        if (projectData?.process_template_id) {
+          logger.info(`[DialecticStore] Project has process template ID. Fetching template...`, { templateId: projectData.process_template_id });
+          await get().fetchProcessTemplate(projectData.process_template_id);
+        } else {
+            logger.warn(`[DialecticStore] Project details fetched, but no process template ID found.`);
+        }
       }
     } catch (error: unknown) {
       const networkError: ApiError = {
@@ -254,19 +260,63 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
 
   fetchProcessTemplate: async (templateId: string) => {
     set({ isLoadingProcessTemplate: true, processTemplateError: null });
-    logger.info(`[DialecticStore] Fetching process template with ID: ${templateId}`);
+    logger.info(`[DialecticStore] Fetching process template...`, { templateId });
     try {
       const response = await api.dialectic().fetchProcessTemplate({ templateId });
       if (response.error) {
-        logger.error('[DialecticStore] Error fetching process template:', { templateId, errorDetails: response.error });
-        set({ currentProcessTemplate: null, isLoadingProcessTemplate: false, processTemplateError: response.error });
+        logger.error(`[DialecticStore] Error fetching process template`, { templateId, error: response.error });
+        set({ isLoadingProcessTemplate: false, processTemplateError: response.error });
       } else {
-        logger.info('[DialecticStore] Successfully fetched process template:', { templateId, template: response.data });
+        logger.info(`[DialecticStore] Successfully fetched process template`, { templateId, template: response.data });
         set({
-          currentProcessTemplate: response.data || null,
           isLoadingProcessTemplate: false,
-          processTemplateError: null,
+          currentProcessTemplate: response.data || null,
         });
+
+        const { currentProjectDetail } = get();
+        const template = response.data;
+
+        if (!currentProjectDetail || !template?.stages) {
+          logger.warn('[DialecticStore] Cannot determine active stage without project details or template stages.');
+          return;
+        }
+
+        const latestSession = (currentProjectDetail.dialectic_sessions || [])
+          .slice() // Create a shallow copy before sorting
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
+        let stageToSet: DialecticStage | undefined = undefined;
+
+        if (latestSession && latestSession.current_stage_id) {
+          // Case: An active session exists. Set stage from the session.
+          stageToSet = template.stages.find(s => s.id === latestSession.current_stage_id);
+          if (stageToSet) {
+            logger.info(`[DialecticStore] Active session found. Setting stage to: ${stageToSet.slug}`);
+          } else {
+            logger.warn(`[DialecticStore] Could not find stage with ID ${latestSession.current_stage_id} in the template.`);
+          }
+        } else {
+          // Case: No sessions. Use the template's starting stage.
+          if (template.starting_stage_id) {
+            stageToSet = template.stages.find(s => s.id === template.starting_stage_id);
+            if (stageToSet) {
+              logger.info(`[DialecticStore] No active session. Setting initial stage to: ${stageToSet.slug}`);
+            } else {
+               logger.warn(`[DialecticStore] Could not find starting stage with ID ${template.starting_stage_id} in the template.`);
+            }
+          }
+        }
+
+        if (stageToSet) {
+          set({ activeContextStage: stageToSet });
+        } else if (!get().activeContextStage) {
+          // Fallback: if no stage could be determined and none is set, set to the first stage in the template
+          const firstStage = template.stages[0];
+          if (firstStage) {
+            logger.info(`[DialecticStore] Fallback: setting stage to the first available stage: ${firstStage.slug}`);
+            set({ activeContextStage: firstStage });
+          }
+        }
       }
     } catch (error: unknown) {
       const networkError: ApiError = {
@@ -701,9 +751,9 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     }
   },
 
-  setStartNewSessionModalOpen: (isOpen: boolean) => {
-    logger.info(`[DialecticStore] Setting StartNewSessionModal open state to: ${isOpen}`);
-    set({ isStartNewSessionModalOpen: isOpen });
+  setSelectedModelIds: (modelIds: string[]) => {
+    logger.info('[DialecticStore] Setting selected model IDs.', { modelIds });
+    set({ selectedModelIds: modelIds });
   },
 
   setModelMultiplicity: (modelId: string, count: number) => {
@@ -782,7 +832,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       set(state => ({
         initialPromptContentCache: {
           ...state.initialPromptContentCache,
-          [resourceId]: { isLoading: false, error: networkError },
+          [resourceId]: { isLoading: false, error: networkError, content: '' },
         }
       }));
     }
@@ -835,14 +885,17 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
   setSavingContributionEdit: (isSaving: boolean) => set({ isSavingContributionEdit: isSaving }),
   setSaveContributionEditError: (error: ApiError | null) => set({ saveContributionEditError: error }),
 
-  setActiveContextProjectId: (id) => set({ activeContextProjectId: id }),
-  setActiveContextSessionId: (id) => set({ activeContextSessionId: id }),
-  setActiveContextStageSlug: (slug) => set({ activeContextStageSlug: slug }),
-  setActiveDialecticContext: (context) => set({
-    activeContextProjectId: context.projectId,
-    activeContextSessionId: context.sessionId,
-    activeContextStageSlug: context.stageSlug,
-  }),
+  setActiveContextProjectId: (id: string | null) => set({ activeContextProjectId: id }),
+  setActiveContextSessionId: (id: string | null) => set({ activeContextSessionId: id }),
+  setActiveContextStage: (stage: DialecticStage | null) => set({ activeContextStage: stage }),
+
+  setActiveDialecticContext: (context: { projectId: string | null; sessionId: string | null; stage: DialecticStage | null }) => {
+    set({
+      activeContextProjectId: context.projectId,
+      activeContextSessionId: context.sessionId,
+      activeContextStage: context.stage,
+    });
+  },
 
   // Add reset actions for submitStageResponsesError and saveContributionEditError
   resetSubmitStageResponsesError: () => set({ submitStageResponsesError: null }),

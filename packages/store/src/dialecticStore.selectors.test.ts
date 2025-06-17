@@ -26,7 +26,17 @@ import {
     selectContributionContentCache,
     selectCurrentProcessTemplate,
     selectIsLoadingProcessTemplate,
-    selectProcessTemplateError
+    selectProcessTemplateError,
+    selectCurrentProjectInitialPrompt,
+    selectCurrentProjectSessions,
+    selectIsUpdatingProjectPrompt,
+    selectCurrentProjectId,
+    selectSelectedModelIds,
+    selectContributionById,
+    selectSaveContributionEditError,
+    selectActiveContextProjectId,
+    selectActiveContextSessionId,
+    selectActiveContextStage
 } from './dialecticStore.selectors';
 import { initialDialecticStateValues } from './dialecticStore';
 import type { 
@@ -37,7 +47,9 @@ import type {
     AIModelCatalogEntry, 
     DialecticDomain, 
     DialecticStage,
-    DialecticProcessTemplate
+    DialecticProcessTemplate,
+    DialecticSession,
+    DialecticContribution,
 } from '@paynless/types';
 
 const mockThesisStage: DialecticStage = {
@@ -78,6 +90,44 @@ describe('Dialectic Store Selectors', () => {
         starting_stage_id: 's1'
     };
     const mockProcessTemplateError: ApiError = { code: 'TEMPLATE_ERR', message: 'Test Template Error' };
+    const mockSaveContributionError: ApiError = { code: 'SAVE_ERR', message: 'Test Save Error' };
+
+    const mockSessions: DialecticSession[] = [
+        {
+            id: 'session-1',
+            project_id: 'projDetail1',
+            session_description: 'Session One',
+            iteration_count: 1,
+            selected_model_catalog_ids: ['model-1'],
+            status: 'active',
+            associated_chat_id: 'chat-1',
+            current_stage_id: 's1',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            user_input_reference_url: null,
+            dialectic_contributions: [
+                { id: 'c1', session_id: 'session-1' } as DialecticContribution,
+            ]
+        }
+    ];
+
+    const mockProjectDetail: DialecticProject = {
+        id: 'projDetail1',
+        user_id: 'user1',
+        project_name: 'Detailed Project',
+        initial_user_prompt: 'Initial Prompt Text',
+        selected_domain_id: 'domain1',
+        dialectic_domains: { name: 'Tech' },
+        selected_domain_overlay_id: 'overlay1',
+        repo_url: null,
+        status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        dialectic_sessions: mockSessions,
+        resources: [],
+        process_template_id: 'pt1',
+        dialectic_process_templates: mockProcessTemplate,
+    };
 
     const testState: DialecticStateValues = {
         ...initialDialecticStateValues,
@@ -92,6 +142,13 @@ describe('Dialectic Store Selectors', () => {
         currentProcessTemplate: mockProcessTemplate,
         isLoadingProcessTemplate: true,
         processTemplateError: mockProcessTemplateError,
+        isUpdatingProjectPrompt: true,
+        selectedModelIds: ['model-1', 'model-2'],
+        saveContributionEditError: mockSaveContributionError,
+        activeContextProjectId: 'projDetail1',
+        activeContextSessionId: 'session-1',
+        activeContextStage: mockThesisStage,
+        currentProjectDetail: mockProjectDetail,
     };
 
     const initialState: DialecticStateValues = {
@@ -243,8 +300,7 @@ describe('Dialectic Store Selectors', () => {
     });
 
     it('selectCurrentProjectDetail should return currentProjectDetail from testState and initial', () => {
-        testState.currentProjectDetail = { id: 'projDetail1' } as DialecticProject;
-        expect(selectCurrentProjectDetail(testState)).toEqual(testState.currentProjectDetail);
+        expect(selectCurrentProjectDetail(testState)).toEqual(mockProjectDetail);
         expect(selectCurrentProjectDetail(initialState)).toBe(initialDialecticStateValues.currentProjectDetail);
     });
 
@@ -321,5 +377,69 @@ describe('Dialectic Store Selectors', () => {
     it('selectProcessTemplateError should return error from testState and initial', () => {
         expect(selectProcessTemplateError(testState)).toEqual(mockProcessTemplateError);
         expect(selectProcessTemplateError(initialState)).toBeNull();
+    });
+
+    it('selectCurrentProjectInitialPrompt should return the initial prompt from the current project', () => {
+        expect(selectCurrentProjectInitialPrompt(testState)).toBe('Initial Prompt Text');
+        expect(selectCurrentProjectInitialPrompt(initialState)).toBeUndefined();
+    });
+
+    it('selectCurrentProjectSessions should return sessions from the current project', () => {
+        expect(selectCurrentProjectSessions(testState)).toEqual(mockSessions);
+        expect(selectCurrentProjectSessions(initialState)).toBeUndefined();
+    });
+
+    it('selectIsUpdatingProjectPrompt should return the update status', () => {
+        expect(selectIsUpdatingProjectPrompt(testState)).toBe(true);
+        expect(selectIsUpdatingProjectPrompt(initialState)).toBe(false);
+    });
+
+    it('selectCurrentProjectId should return the ID from the current project', () => {
+        expect(selectCurrentProjectId(testState)).toBe('projDetail1');
+        expect(selectCurrentProjectId(initialState)).toBeUndefined();
+    });
+
+    it('selectSelectedModelIds should return the array of selected model IDs', () => {
+        expect(selectSelectedModelIds(testState)).toEqual(['model-1', 'model-2']);
+        expect(selectSelectedModelIds(initialState)).toEqual([]);
+    });
+
+    describe('selectContributionById', () => {
+        it('should return the correct contribution when found', () => {
+            const result = selectContributionById(testState, 'c1');
+            expect(result).toBeDefined();
+            expect(result?.id).toBe('c1');
+        });
+
+        it('should return undefined if the contribution is not found', () => {
+            const result = selectContributionById(testState, 'c-nonexistent');
+            expect(result).toBeUndefined();
+        });
+
+        it('should return undefined if there are no sessions', () => {
+            const stateWithoutSessions = { ...testState, currentProjectDetail: { ...testState.currentProjectDetail, dialectic_sessions: [] } as DialecticProject };
+            const result = selectContributionById(stateWithoutSessions, 'c1');
+            expect(result).toBeUndefined();
+        });
+    });
+
+    it('selectSaveContributionEditError should return the save error', () => {
+        expect(selectSaveContributionEditError(testState)).toEqual(mockSaveContributionError);
+        expect(selectSaveContributionEditError(initialState)).toBeNull();
+    });
+
+    it('selectActiveContextProjectId should return the active project ID', () => {
+        expect(selectActiveContextProjectId(testState)).toBe('projDetail1');
+        expect(selectActiveContextProjectId(initialState)).toBeNull();
+    });
+
+    it('selectActiveContextSessionId should return the active session ID', () => {
+        expect(selectActiveContextSessionId(testState)).toBe('session-1');
+        expect(selectActiveContextSessionId(initialState)).toBeNull();
+    });
+
+    it('selectActiveContextStage should return the active stage', () => {
+        expect(selectActiveContextStage(testState)).toEqual(mockThesisStage);
+        expect(selectActiveContextStage(initialState)).toBeNull();
     });
 }); 

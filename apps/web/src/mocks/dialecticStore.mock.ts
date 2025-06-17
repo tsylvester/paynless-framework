@@ -2,7 +2,6 @@ import { vi } from 'vitest';
 import type {
   DialecticStateValues,
   DialecticStore,
-  DialecticActions,
   DialecticProject,
   ApiResponse,
   DialecticSession,
@@ -10,7 +9,27 @@ import type {
   DialecticStage,
   ApiError,
   DialecticDomain,
+  DialecticContribution,
+  DialecticActions,
+  DomainOverlayDescriptor,
+  DialecticProcessTemplate,
+  GenerateContributionsResponse,
+  SubmitStageResponsesResponse,
 } from '@paynless/types';
+
+const mockSession: DialecticSession = {
+  id: 'ses-1',
+  project_id: 'proj-1',
+  session_description: 'Mock Session',
+  user_input_reference_url: null,
+  iteration_count: 1,
+  selected_model_catalog_ids: [],
+  status: 'active',
+  associated_chat_id: null,
+  current_stage_id: 'stage-1',
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+};
 
 // 1. Define initial state values locally
 const initialDialecticStateValues: DialecticStateValues = {
@@ -48,14 +67,11 @@ const initialDialecticStateValues: DialecticStateValues = {
   isUpdatingProjectPrompt: false,
   isUploadingProjectResource: false,
   uploadProjectResourceError: null,
-  isStartNewSessionModalOpen: false,
   selectedModelIds: [],
-  initialPromptFileContent: null,
-  isLoadingInitialPromptFileContent: false,
-  initialPromptFileContentError: null,
+  initialPromptContentCache: {},
   activeContextProjectId: null,
   activeContextSessionId: null,
-  activeContextStageSlug: null,
+  activeContextStage: null,
   isGeneratingContributions: false,
   generateContributionsError: null,
   isSubmittingStageResponses: false,
@@ -69,15 +85,15 @@ let internalMockDialecticStoreState: DialecticStore;
 
 // 3. Create the initialization function
 const initializeInternalDialecticStoreState = (): DialecticStore => {
-  const newState = {
+  const newState: DialecticStore = {
     ...initialDialecticStateValues,
 
     // Actions
     fetchDomains: vi.fn().mockResolvedValue(undefined as void),
-    setSelectedDomain: vi.fn((domain: DialecticDomain | null) => { newState.selectedDomain = domain; }),
+    setSelectedDomain: vi.fn((domain: DialecticDomain | null) => { (newState as DialecticStateValues).selectedDomain = domain; }),
     fetchAvailableDomainOverlays: vi.fn().mockResolvedValue(undefined as void),
-    setSelectedStageAssociation: vi.fn((stage: DialecticStage | null) => { newState.selectedStageAssociation = stage; }),
-    setSelectedDomainOverlayId: vi.fn((id: string | null) => { newState.selectedDomainOverlayId = id; }),
+    setSelectedStageAssociation: vi.fn((stage: DialecticStage | null) => { (newState as DialecticStateValues).selectedStageAssociation = stage; }),
+    setSelectedDomainOverlayId: vi.fn((id: string | null) => { (newState as DialecticStateValues).selectedDomainOverlayId = id; }),
     fetchDialecticProjects: vi.fn().mockResolvedValue(undefined as void),
     fetchDialecticProjectDetails: vi.fn().mockResolvedValue(undefined as void),
     fetchProcessTemplate: vi.fn().mockResolvedValue(undefined as void),
@@ -86,42 +102,39 @@ const initializeInternalDialecticStoreState = (): DialecticStore => {
     fetchAIModelCatalog: vi.fn().mockResolvedValue(undefined as void),
     fetchContributionContent: vi.fn().mockResolvedValue(undefined as void),
     uploadProjectResourceFile: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 } as ApiResponse<DialecticProjectResource>),
-    resetCreateProjectError: vi.fn(() => { newState.createProjectError = null; }),
-    resetProjectDetailsError: vi.fn(() => { newState.projectDetailError = null; }),
+    resetCreateProjectError: vi.fn(() => { (newState as DialecticStateValues).createProjectError = null; }),
+    resetProjectDetailsError: vi.fn(() => { (newState as DialecticStateValues).projectDetailError = null; }),
     deleteDialecticProject: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 } as ApiResponse<void>),
     cloneDialecticProject: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 } as ApiResponse<DialecticProject>),
     exportDialecticProject: vi.fn().mockResolvedValue({ data: { export_url: '' }, error: undefined, status: 200 } as ApiResponse<{ export_url: string }>),
     updateDialecticProjectInitialPrompt: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 } as ApiResponse<DialecticProject>),
-    setStartNewSessionModalOpen: vi.fn((isOpen: boolean) => { newState.isStartNewSessionModalOpen = isOpen; }),
+    setSelectedModelIds: vi.fn((ids: string[]) => { (newState as DialecticStateValues).selectedModelIds = ids; }),
     setModelMultiplicity: vi.fn((modelId: string, count: number) => {
-      const currentSelectedIds = newState.selectedModelIds || [];
+      const currentSelectedIds = (newState as DialecticStateValues).selectedModelIds || [];
       const filteredIds = currentSelectedIds.filter((id) => id !== modelId);
       const newSelectedIds = [...filteredIds];
       for (let i = 0; i < count; i++) {
         newSelectedIds.push(modelId);
       }
-      newState.selectedModelIds = newSelectedIds;
+      (newState as DialecticStateValues).selectedModelIds = newSelectedIds;
     }),
-    resetSelectedModelId: vi.fn(() => { newState.selectedModelIds = []; }),
+    resetSelectedModelId: vi.fn(() => { (newState as DialecticStateValues).selectedModelIds = []; }),
     fetchInitialPromptContent: vi.fn().mockResolvedValue(undefined as void),
-    setActiveContextStageSlug: vi.fn().mockResolvedValue(undefined as void),
-    generateContributions: vi.fn().mockResolvedValue(undefined as void),
-    submitStageResponses: vi.fn().mockResolvedValue(undefined as void),
-    resetSubmitStageResponsesError: vi.fn(() => { newState.submitStageResponsesError = null; }),
-    saveContributionEdit: vi.fn().mockResolvedValue(undefined as void),
-    resetGenerateContributionsError: vi.fn(() => { newState.generateContributionsError = null; }),
-    resetSaveContributionEditError: vi.fn(() => { newState.saveContributionEditError = null; }),
-    resetInitialPromptFileContentError: vi.fn(() => { newState.initialPromptFileContentError = null; }),
-    setProjectDetailError: vi.fn((error: ApiError | null) => { newState.projectDetailError = error; }),
-    setActiveContextProjectId: vi.fn((id: string | null) => { newState.activeContextProjectId = id; }),
-    setActiveContextSessionId: vi.fn((id: string | null) => { newState.activeContextSessionId = id; }),
-    setActiveDialecticContext: vi.fn((context: { projectId: string | null; sessionId: string | null; stageSlug: DialecticStage | null }) => {
-      newState.activeContextProjectId = context.projectId;
-      newState.activeContextSessionId = context.sessionId;
-      newState.activeContextStageSlug = context.stageSlug;
+    generateContributions: vi.fn().mockResolvedValue({ data: { message: 'ok', contributions: [] }, error: undefined, status: 200 } as ApiResponse<GenerateContributionsResponse>),
+    submitStageResponses: vi.fn().mockResolvedValue({ data: { message: 'ok', userFeedbackStoragePath: '/path', nextStageSeedPromptStoragePath: '/path', updatedSession: mockSession }, error: undefined, status: 200 } as ApiResponse<SubmitStageResponsesResponse>),
+    resetSubmitStageResponsesError: vi.fn(() => { (newState as DialecticStateValues).submitStageResponsesError = null; }),
+    saveContributionEdit: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 } as ApiResponse<DialecticContribution>),
+    resetSaveContributionEditError: vi.fn(() => { (newState as DialecticStateValues).saveContributionEditError = null; }),
+    setActiveContextProjectId: vi.fn((id: string | null) => { (newState as DialecticStateValues).activeContextProjectId = id; }),
+    setActiveContextSessionId: vi.fn((id: string | null) => { (newState as DialecticStateValues).activeContextSessionId = id; }),
+    setActiveContextStage: vi.fn((stage: DialecticStage | null) => { (newState as DialecticStateValues).activeContextStage = stage; }),
+    setActiveDialecticContext: vi.fn((context: { projectId: string | null; sessionId: string | null; stage: DialecticStage | null }) => {
+      (newState as DialecticStateValues).activeContextProjectId = context.projectId;
+      (newState as DialecticStateValues).activeContextSessionId = context.sessionId;
+      (newState as DialecticStateValues).activeContextStage = context.stage;
     }),
     _resetForTesting: vi.fn(() => { internalMockDialecticStoreState = initializeInternalDialecticStoreState(); }),
-  } as DialecticStore; // Cast to DialecticStore to satisfy type, setters modify 'newState' which becomes internalMockDialecticStoreState
+  };
   return newState;
 };
 
@@ -198,18 +211,30 @@ export const selectOverlay = vi.fn();
 // Add missing selectors
 export const selectDomains = (state: DialecticStore): DialecticDomain[] | null => state.domains;
 export const selectCurrentProjectDetail = (state: DialecticStore): DialecticProject | null => state.currentProjectDetail;
-export const selectIsStartNewSessionModalOpen = (state: DialecticStore): boolean => state.isStartNewSessionModalOpen;
 export const selectIsStartingSession = (state: DialecticStore): boolean => state.isStartingSession;
 export const selectStartSessionError = (state: DialecticStore): ApiError | null => state.startSessionError;
 export const selectSelectedDomainOverlayId = (state: DialecticStore): string | null => state.selectedDomainOverlayId;
-export const selectAvailableDomainOverlays = (state: DialecticStore) => state.availableDomainOverlays;
+export const selectAvailableDomainOverlays = (state: DialecticStore): DomainOverlayDescriptor[] | null => state.availableDomainOverlays;
 export const selectSelectedDomain = (state: DialecticStore): DialecticDomain | null => state.selectedDomain;
 export const selectSelectedStageAssociation = (state: DialecticStore): DialecticStage | null => state.selectedStageAssociation;
-export const selectSelectedModelIds = (state: DialecticStore): string[] | null => state.selectedModelIds;
+export const selectSelectedModelIds = (state: DialecticStore): string[] => state.selectedModelIds;
 export const selectIsLoadingModelCatalog = (state: DialecticStore): boolean => state.isLoadingModelCatalog;
 export const selectActiveContextSessionId = (state: DialecticStore): string | null => state.activeContextSessionId;
-export const selectActiveContextStageSlug = (state: DialecticStore): DialecticStage | null => state.activeContextStageSlug;
+export const selectActiveContextStage = (state: DialecticStore): DialecticStage | null => state.activeContextStage;
 export const selectIsLoadingProjectDetail = (state: DialecticStore): boolean => state.isLoadingProjectDetail;
 export const selectProjectDetailError = (state: DialecticStore): ApiError | null => state.projectDetailError;
-export const selectCurrentProcessTemplate = (state: DialecticStore) => state.currentProcessTemplate;
-export const selectIsLoadingProcessTemplate = (state: DialecticStore) => state.isLoadingProcessTemplate;
+export const selectCurrentProcessTemplate = (state: DialecticStore): DialecticProcessTemplate | null => state.currentProcessTemplate;
+export const selectIsLoadingProcessTemplate = (state: DialecticStore): boolean => state.isLoadingProcessTemplate;
+
+export const selectContributionById = (state: DialecticStore, contributionId: string): DialecticContribution | undefined => {
+  const project = state.currentProjectDetail;
+  if (!project || !project.dialectic_sessions) return undefined;
+
+  for (const session of project.dialectic_sessions) {
+    const contribution = session.dialectic_contributions?.find(c => c.id === contributionId);
+    if (contribution) {
+      return contribution;
+    }
+  }
+  return undefined;
+};

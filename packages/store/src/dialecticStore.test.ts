@@ -265,34 +265,7 @@ describe('useDialecticStore', () => {
 
             const createProjectCall = (api.dialectic().createProject as Mock).mock.calls[0][0];
             expect(createProjectCall).toBeInstanceOf(FormData);
-            expect(createProjectCall.get('promptFile')).toBeInstanceOf(File);
-            expect((createProjectCall.get('promptFile') as File).name).toBe('prompt.md');
-        });
-    });
-
-    describe('setStartNewSessionModalOpen action', () => {
-        it('should have isStartNewSessionModalOpen as false initially', () => {
-            const state = useDialecticStore.getState();
-            expect(state.isStartNewSessionModalOpen).toBe(false);
-        });
-
-        it('should set isStartNewSessionModalOpen to true', () => {
-            const { setStartNewSessionModalOpen } = useDialecticStore.getState();
-            setStartNewSessionModalOpen(true);
-            const state = useDialecticStore.getState();
-            expect(state.isStartNewSessionModalOpen).toBe(true);
-        });
-
-        it('should set isStartNewSessionModalOpen to false after being true', () => {
-            const { setStartNewSessionModalOpen } = useDialecticStore.getState();
-            // Set to true first
-            setStartNewSessionModalOpen(true);
-            expect(useDialecticStore.getState().isStartNewSessionModalOpen).toBe(true);
-
-            // Then set to false
-            setStartNewSessionModalOpen(false);
-            const state = useDialecticStore.getState();
-            expect(state.isStartNewSessionModalOpen).toBe(false);
+            expect(createProjectCall.get('promptFile')).toBe(mockFile);
         });
     });
 }); 

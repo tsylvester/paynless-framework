@@ -6,6 +6,7 @@ import {
   DialecticSession,
   DialecticContribution,
   DialecticStage,
+  DialecticProcessTemplate,
 } from '@paynless/types';
 import { 
   initializeMockDialecticState, 
@@ -25,13 +26,13 @@ vi.mock('react-router-dom', async (importOriginal) => {
 // Mock the store at the top level to use our centralized mock
 vi.mock('@paynless/store', () => import('@/mocks/dialecticStore.mock'));
 
-// Mock ContributionCard
-vi.mock('./ContributionCard', () => ({
-    ContributionCard: vi.fn(({ title, contributionId }) => (
-      <div data-testid={`contribution-card-${contributionId}`} data-title={title}>
-        Contribution: {title} (ID: {contributionId})
-      </div>
-    )),
+// Mock GeneratedContributionCard which is the actual component being rendered
+vi.mock('./GeneratedContributionCard', () => ({
+  GeneratedContributionCard: vi.fn(({ contributionId }) => (
+    <div data-testid={`generated-contribution-card-${contributionId}`}>
+      Generated Contribution: {contributionId}
+    </div>
+  )),
 }));
 
 const mockProjectId = 'proj-123';
@@ -74,6 +75,13 @@ const mockThesisStage: DialecticStage = {
   description: 'Thesis stage',
   expected_output_artifacts: [],
   input_artifact_rules: [],
+  domain_id: 'some-domain-id',
+  is_active: true,
+  stage_order: 1,
+  display_name_short: 'Thesis',
+  parent_stage_id: null,
+  updated_at: new Date().toISOString(),
+  user_id: 'user-xyz',
 };
 
 const mockAntithesisStage: DialecticStage = {
@@ -85,6 +93,39 @@ const mockAntithesisStage: DialecticStage = {
   description: 'Antithesis stage',
   expected_output_artifacts: [],
   input_artifact_rules: [],
+  domain_id: 'some-domain-id',
+  is_active: true,
+  stage_order: 2,
+  display_name_short: 'Anti',
+  parent_stage_id: 'stage-thesis',
+  updated_at: new Date().toISOString(),
+  user_id: 'user-xyz',
+};
+
+const mockProcessTemplate: DialecticProcessTemplate = {
+  id: 'proc-tpl-1',
+  template_name: 'Standard Dialectic',
+  description: 'A standard Thesis-Antithesis process',
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  user_id: 'user-xyz',
+  is_active: true,
+  stages: [mockThesisStage, mockAntithesisStage],
+  transitions: [
+    {
+      id: 'trans-1',
+      process_template_id: 'proc-tpl-1',
+      source_stage_id: mockThesisStage.id,
+      target_stage_id: mockAntithesisStage.id,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      description: 'From Thesis to Antithesis',
+      is_active: true,
+      automation_trigger_condition: 'on_completion',
+      user_id: 'user-xyz',
+    }
+  ],
+  domain_id: null
 };
 
 const mockSession: DialecticSession = {
@@ -240,21 +281,32 @@ describe('DialecticSessionDetails', () => {
 
   it('renders session details and contributions correctly', () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
-    initializeMockDialecticState({ currentProjectDetail: mockFullProject });
+    initializeMockDialecticState({ 
+      currentProjectDetail: mockFullProject,
+      currentProcessTemplate: mockProcessTemplate,
+      activeContextStage: mockThesisStage,
+    });
 
     render(<DialecticSessionDetails />);
 
-    expect(screen.getByText(`Session: ${mockSession.session_description}`)).toBeInTheDocument();
-    expect(screen.getByText(/Status: thesis_complete | Iteration: 1/)).toBeInTheDocument();
-    expect(screen.getByText(/Convergence: pending/)).toBeInTheDocument();
-
-    // Check for contributions grouped by stage
-    expect(screen.getByRole('heading', { name: /^Thesis$/i })).toBeInTheDocument();
-    expect(screen.getByTestId('contribution-card-contrib-1')).toBeInTheDocument();
-    expect(screen.getByTestId('contribution-card-contrib-2')).toBeInTheDocument();
+    // Check for session info in SessionInfoCard
+    expect(screen.getByText(mockSession.session_description)).toBeInTheDocument();
     
-    expect(screen.getByRole('heading', { name: /^Antithesis$/i })).toBeInTheDocument();
-    expect(screen.getByTestId('contribution-card-contrib-3')).toBeInTheDocument();
+    // The text is split across elements, so we get the container and check its content.
+    const descriptionElement = screen.getByText(mockSession.session_description).nextElementSibling;
+    expect(descriptionElement).toHaveTextContent(/Status:\s*thesis_complete/);
+    expect(descriptionElement).toHaveTextContent(/Iteration:\s*1/);
+
+    // Check for stage tabs
+    expect(screen.getByText(mockThesisStage.display_name)).toBeInTheDocument();
+    expect(screen.getByText(mockAntithesisStage.display_name)).toBeInTheDocument();
+
+    // Check for contributions of the active stage using the new mock
+    expect(screen.getByTestId('generated-contribution-card-contrib-1')).toBeInTheDocument();
+    expect(screen.getByTestId('generated-contribution-card-contrib-2')).toBeInTheDocument();
+
+    // Ensure contributions from other stages are not rendered
+    expect(screen.queryByTestId('generated-contribution-card-contrib-3')).not.toBeInTheDocument();
   });
 
   it('renders "No contributions" message if session has no contributions', () => {
@@ -268,6 +320,8 @@ describe('DialecticSessionDetails', () => {
         ...mockFullProject,
         dialectic_sessions: [sessionWithoutContributions],
       },
+      currentProcessTemplate: mockProcessTemplate,
+      activeContextStage: mockThesisStage,
     });
     
     render(<DialecticSessionDetails />);

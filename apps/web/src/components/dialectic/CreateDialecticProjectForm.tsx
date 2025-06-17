@@ -14,7 +14,7 @@ import {
 import { DomainSelector } from '@/components/dialectic/DomainSelector';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
@@ -295,11 +295,14 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
     <Card className={containerClassName}> 
       <CardHeader>
         <CardTitle>
-          Create New Project
+          {enableDomainSelection && (
+            <div className="flex flex-row items-center gap-2">
+              <span>Create</span>
+              <DomainSelector /> 
+              <span>Project</span>
+            </div>
+          )} 
         </CardTitle>
-        <CardDescription>
-          Start by giving your project a name and defining the initial problem statement.
-        </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <CardContent className="space-y-6">
@@ -336,13 +339,6 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
             />
             {errors.projectName && <p className="text-sm text-destructive data-testid='project-name-error'">{errors.projectName.message}</p>}
           </div>
-
-          {enableDomainSelection && (
-            <div className="space-y-2">
-              <Label>Domain</Label>
-              <DomainSelector />
-            </div>
-          )}
 
           <div className="space-y-2 relative"> 
             <Controller

@@ -340,68 +340,70 @@ While the project is advancing well, these three areas represent fundamental, un
 
 ---
 
-*   `[ ] 2.A.1 [DB]` **Phase 1: Refactor Database Schema for Domain-to-Process Flexibility**
-    *   `[ ] 2.A.1.1 [DB]` **Decouple Processes from Domains:** Alter the `dialectic_process_templates` table to make processes domain-agnostic.
-        *   `[ ] 2.A.1.1.2 [DB]` Create a new Supabase migration script to `ALTER TABLE dialectic_process_templates DROP COLUMN domain_id;`. (GREEN)
-        *   `[ ] 2.A.1.1.3 [TEST-UNIT]` Run the migration and the corresponding test to confirm.
-    *   `[ ] 2.A.1.2 [DB]` **Create Domain-Process Linking Table:** Introduce a new table to manage the many-to-many relationship.
-        *   `[ ] 2.A.1.2.2 [DB]` Create a new Supabase migration script to create the `domain_process_associations` table with the following columns:
+*   `[✅] 2.A.1 [DB]` **Phase 1: Refactor Database Schema for Domain-to-Process Flexibility**
+    *   `[✅] 2.A.1.1 [DB]` **Decouple Processes from Domains:** Alter the `dialectic_process_templates` table to make processes domain-agnostic.
+        *   `[✅] 2.A.1.1.2 [DB]` Create a new Supabase migration script to `ALTER TABLE dialectic_process_templates DROP COLUMN domain_id;`. (GREEN)
+        *   `[✅] 2.A.1.1.3 [TEST-UNIT]` Run the migration and the corresponding test to confirm.
+    *   `[✅] 2.A.1.2 [DB]` **Create Domain-Process Linking Table:** Introduce a new table to manage the many-to-many relationship.
+        *   `[✅] 2.A.1.2.2 [DB]` Create a new Supabase migration script to create the `domain_process_associations` table with the following columns:
             *   `id` (UUID, Primary Key)
             *   `domain_id` (UUID, NOT NULL, FK to `dialectic_domains.id` ON DELETE CASCADE)
             *   `process_template_id` (UUID, NOT NULL, FK to `dialectic_process_templates.id` ON DELETE CASCADE)
             *   `is_default_for_domain` (BOOLEAN, NOT NULL, default `false`)
-        *   `[ ] 2.A.1.2.3 [DB]` In the same migration script, add a UNIQUE INDEX to enforce that a domain can only have one default process. The index should be on `domain_id` but only for rows where `is_default_for_domain` is `true`.
+        *   `[✅] 2.A.1.2.3 [DB]` In the same migration script, add a UNIQUE INDEX to enforce that a domain can only have one default process. The index should be on `domain_id` but only for rows where `is_default_for_domain` is `true`.
             *   SQL Example: `CREATE UNIQUE INDEX one_default_process_per_domain_idx ON domain_process_associations (domain_id) WHERE (is_default_for_domain = true);`
-        *   `[ ] 2.A.1.2.4 [TEST-UNIT]` Run the migration and the corresponding test to confirm. (GREEN)
-    *   `[ ] 2.A.1.3 [RLS]` **Define RLS for `domain_process_associations`:**
-        *   `[ ] 2.A.1.3.2 [RLS]` Implement the RLS policy (e.g., `CREATE POLICY "Allow authenticated read access" ON domain_process_associations FOR SELECT TO authenticated USING (true);`). (GREEN)
-    *   `[ ] 2.A.1.4 [DB]` **Seed the New Linking Table:**
-        *   `[ ] 2.A.1.4.2 [DB]` Create a new migration script to `INSERT` data into `domain_process_associations`. This script should associate the existing domains with their relevant process templates and set `is_default_for_domain = true` for the primary process of each domain. (GREEN)
-        *   `[ ] 2.A.1.4.3 [TEST-UNIT]` Run the seed migration.
-    *   `[ ] 2.A.1.5 [DB]` **Regenerate Database Types:** Run the command to update `types_db.ts` to reflect all schema changes.
+        *   `[✅] 2.A.1.2.4 [TEST-UNIT]` Run the migration and the corresponding test to confirm. (GREEN)
+    *   `[✅] 2.A.1.3 [RLS]` **Define RLS for `domain_process_associations`:**
+        *   `[✅] 2.A.1.3.2 [RLS]` Implement the RLS policy (e.g., `CREATE POLICY "Allow authenticated read access" ON domain_process_associations FOR SELECT TO authenticated USING (true);`). (GREEN)
+    *   `[✅] 2.A.1.4 [DB]` **Seed the New Linking Table:**
+        *   `[✅] 2.A.1.4.2 [DB]` Create a new migration script to `INSERT` data into `domain_process_associations`. This script should associate the existing domains with their relevant process templates and set `is_default_for_domain = true` for the primary process of each domain. (GREEN)
+        *   `[✅] 2.A.1.4.3 [TEST-UNIT]` Run the seed migration.
+    *   `[✅] 2.A.1.5 [DB]` **Regenerate Database Types:** Run the command to update `types_db.ts` to reflect all schema changes.
 
-*   `[ ] 2.A.2 [BE]` **Phase 2: Update Backend Logic for Project Initialization**
-    *   `[ ] 2.A.2.1 [BE]` **Refactor `createProject` Action:** Modify the backend function to automatically set the default process template.
-        *   `[ ] 2.A.2.1.1 [TEST-INT]` Update the integration tests for `createProject`. The tests should now verify that when a project is created with a `selected_domain_id`, the correct default `process_template_id` is automatically fetched and saved to the new project row. (RED)
-        *   `[ ] 2.A.2.1.2 [BE]` Modify the implementation of the `createProject` function in `supabase/functions/dialectic-service/`.
+*   `[✅] 2.A.2 [BE]` **Phase 2: Update Backend Logic for Project Initialization**
+    *   `[✅] 2.A.2.1 [BE]` **Refactor `createProject` Action:** Modify the backend function to automatically set the default process template.
+        *   `[✅] 2.A.2.1.1 [TEST-INT]` Update the integration tests for `createProject`. The tests should now verify that when a project is created with a `selected_domain_id`, the correct default `process_template_id` is automatically fetched and saved to the new project row. (RED)
+        *   `[✅] 2.A.2.1.2 [BE]` Modify the implementation of the `createProject` function in `supabase/functions/dialectic-service/`.
             *   The function should receive the `selected_domain_id` from the client payload.
             *   It will query the new `domain_process_associations` table to find the `process_template_id` where `domain_id` matches and `is_default_for_domain` is `true`.
             *   It will then use this retrieved ID to populate the `process_template_id` field when creating the new row in `dialectic_projects`.
             *   If no default is found, it should handle the error gracefully (e.g., return a 400 error or use a system-wide fallback).
-        *   `[ ] 2.A.2.1.3 [TEST-INT]` Run the updated integration tests. (GREEN)
-    *   `[ ] 2.A.2.2 [BE]` **Refactor `getProjectDetails` Action:** Ensure the full process template information is sent to the client.
-        *   `[ ] 2.A.2.2.1 [TEST-INT]` Update integration tests for `getProjectDetails` to assert that the returned project object now contains a nested `process_template` object with its details (id, name, description, etc.). (RED)
-        *   `[ ] 2.A.2.2.2 [BE]` Modify the implementation of `getProjectDetails` to `JOIN` `dialectic_projects` with `dialectic_process_templates` on `dialectic_projects.process_template_id`. The query should be structured to return the process template data as a nested object. (GREEN)
-        *   `[ ] 2.A.2.2.3 [TEST-INT]` Run the updated integration tests.
+        *   `[✅] 2.A.2.1.3 [TEST-INT]` Run the updated integration tests. (GREEN)
+    *   `[✅] 2.A.2.2 [BE]` **Refactor `getProjectDetails` Action:** Ensure the full process template information is sent to the client.
+        *   `[✅] 2.A.2.2.1 [TEST-INT]` Update integration tests for `getProjectDetails` to assert that the returned project object now contains a nested `process_template` object with its details (id, name, description, etc.). (RED)
+        *   `[✅] 2.A.2.2.2 [BE]` Modify the implementation of `getProjectDetails` to `JOIN` `dialectic_projects` with `dialectic_process_templates` on `dialectic_projects.process_template_id`. The query should be structured to return the process template data as a nested object. (GREEN)
+        *   `[✅] 2.A.2.2.3 [TEST-INT]` Run the updated integration tests.
 
-*   `[ ] 2.A.3 [API/STORE]` **Phase 3: Propagate State Through the API and Store**
-    *   `[ ] 2.A.3.1 [API]` **Update Shared Types:**
-        *   `[ ] 2.A.3.1.1 [TYPES]` In `packages/types/src/dialectic.types.ts`, update the `DialecticProject` type to include the nested `processTemplate` object (e.g., `processTemplate: DialecticProcessTemplate | null;`).
-        *   `[ ] 2.A.3.1.2 [API]` Ensure the `DialecticAPIInterface` and its implementation reflect this change in the return type for methods like `getProjectDetails` and `createProject`.
-    *   `[ ] 2.A.3.2 [STORE]` **Update State Management:**
-        *   `[ ] 2.A.3.2.1 [TEST-UNIT]` Update tests for the `dialecticStore` to reflect the new `DialecticProject` structure in the `currentProjectDetail` state. (RED)
-        *   `[ ] 2.A.3.2.2 [STORE]` Update the `fetchDialecticProjectDetails` thunk to correctly handle the new API response and update the `currentProjectDetail` in the store.
-        *   `[ ] 2.A.3.2.3 [STORE]` Update or create selectors to easily access the nested process data, e.g., `selectCurrentProjectProcessTemplate()`, `selectCurrentProjectDomain()`.
-        *   `[ ] 2.A.3.2.4 [TEST-UNIT]` Run the store tests. (GREEN)
+*   `[✅] 2.A.3 [API/STORE]` **Phase 3: Propagate State Through the API and Store**
+    *   `[✅] 2.A.3.1 [API]` **Update Shared Types:**
+        *   `[✅] 2.A.3.1.1 [TYPES]` In `packages/types/src/dialectic.types.ts`, update the `DialecticProject` type to include the nested `processTemplate` object (e.g., `processTemplate: DialecticProcessTemplate | null;`).
+        *   `[✅] 2.A.3.1.2 [API]` Ensure the `DialecticAPIInterface` and its implementation reflect this change in the return type for methods like `getProjectDetails` and `createProject`.
+    *   `[✅] 2.A.3.2 [STORE]` **Update State Management:**
+        *   `[✅] 2.A.3.2.1 [TEST-UNIT]` Update tests for the `dialecticStore` to reflect the new `DialecticProject` structure in the `currentProjectDetail` state. (RED)
+        *   `[✅] 2.A.3.2.2 [STORE]` Update the `fetchDialecticProjectDetails` thunk to correctly handle the new API response and update the `currentProjectDetail` in the store.
+        *   `[✅] 2.A.3.2.3 [STORE]` Update or create selectors to easily access the nested process data, e.g., `selectCurrentProjectProcessTemplate()`, `selectCurrentProjectDomain()`.
+        *   `[✅] 2.A.3.2.4 [TEST-UNIT]` Run the store tests. (GREEN)
 
-*   `[ ] 2.A.4 [UI]` **Phase 4: Fix Frontend State Initialization**
-    *   `[ ] 2.A.4.1 [UI]` **Refactor `StartDialecticSessionModal`:** Make the modal aware of the active project's context.
-        *   `[ ] 2.A.4.1.1 [TEST-UNIT]` Write/update unit tests for `StartDialecticSessionModal`. (RED)
+*   `[✅] 2.A.4 [UI]` **Phase 4: Fix Frontend State Initialization**
+    *   `[✅] 2.A.4.1 [UI]` **Refactor `StartDialecticSessionModal`:** Make the modal aware of the active project's context.
+        *   `[✅] 2.A.4.1.1 [TEST-UNIT]` Write/update unit tests for `StartDialecticSessionModal`. (RED)
             *   The tests should mock the `dialecticStore` with a `currentProjectDetail` object that has a `selected_domain_id` and a `process_template_id`.
-            *   Assert that upon mounting, the `DomainSelector` and `ProcessSelector` (or `DialecticStageSelector`) components are rendered with the correct initial values derived from the store.
-            *   Assert that `useEffect` is called to synchronize the state.
-        *   `[ ] 2.A.4.1.2 [UI]` In `StartDialecticSessionModal.tsx`, implement a `useEffect` hook.
-            *   This hook will run when the modal mounts.
-            *   Inside the hook, use selectors to get `currentProjectDetail` from the `dialecticStore`.
-            *   If `currentProjectDetail` exists, dispatch actions to set the local or store state for the modal's selections, e.g., `setSelectedDomain(currentProjectDetail.selected_domain_id)` and `setSelectedProcess(currentProjectDetail.process_template_id)`.
-            *   The `DomainSelector` and `ProcessSelector` components should now be controlled by this state, ensuring they display the correct values from the project by default.
-        *   `[ ] 2.A.4.1.3 [TEST-UNIT]` Run the updated component tests. (GREEN)
-    *   `[ ] 2.A.4.2 [UI]` **Refactor `startSession` Action:** Ensure the frontend sends the correct data when starting a session.
-        *   `[ ] 2.A.4.2.1 [TEST-UNIT]` Update tests for the `startSession` thunk and the modal's submit handler. (RED)
-        *   `[ ] 2.A.4.2.2 [UI]` The `startSession` payload should be populated from the modal's (now correctly initialized) state. The `StartSessionPayload` should include `projectId`, `selectedModelCatalogIds`, and potentially an overridden `process_template_id` if the user is allowed to change it from the project default.
-        *   `[ ] 2.A.4.2.3 [TEST-UNIT]` Run tests to confirm the correct payload is sent. (GREEN)
-
-*   `[ ] 2.A.5 [COMMIT]` `feat(arch): implement flexible domain-process architecture and fix state propagation`
+            *   Assert that upon mounting, the `DomainSelector` and `ProcessSelector` (or `DialecticStageSelector`) components are rendered with the correct initial values.
+        *   `[✅] 2.A.4.1.2 [IMPL]` Implement a `useEffect` hook in `StartDialecticSessionModal` that triggers when the modal is opened.
+            *   This hook should check for a `currentProjectDetail` and, if present, dispatch actions to set the `selectedDomain` and `selectedProcessTemplate` in the store.
+        *   `[✅] 2.A.4.1.3 [TEST-UNIT]` Run the store tests. (GREEN)
+    *   `[✅] 2.A.4.2 [API]` **Fix `fetchProcessTemplate` Server-Side Bug:** Correct the database query logic in the `fetchProcessTemplate` edge function.
+        *   `[✅] 2.A.4.2.1 [IMPL]` Update the function to first query `dialectic_stage_transitions` for the given `process_template_id`.
+        *   `[✅] 2.A.4.2.2 [IMPL]` Collect all unique `source_stage_id` and `target_stage_id` values from the transitions.
+        *   `[✅] 2.A.4.2.3 [IMPL]` Query the `dialectic_stages` table using the collected set of stage IDs.
+        *   `[✅] 2.A.4.2.4 [TEST-INTEGRATION]` Manually test the project creation and session initiation flow to confirm the fix. (GREEN)
+    *   `[✅] 2.A.4.3 [TEST-UNIT]` **Add Unit Test for `fetchProcessTemplate`:** Create a new test file to validate the edge function's logic.
+        *   `[✅] 2.A.4.3.1 [IMPL]` Create `fetchProcessTemplate.test.ts` with tests for success, missing ID, and not-found scenarios.
+        *   `[✅] 2.A.4.3.2 [IMPL]` Use the shared `supabase.mock.ts` to provide mock data via the `genericMockResults` config.
+        *   `[✅] 2.A.4.3.3 [TEST-UNIT]` Run the new test file to ensure all tests pass. (GREEN)
+    *   `[✅] 2.A.5 [COMMIT]` Commit all changes with the message: `fix(dialectic): resolve state propagation and server-side bugs for process templates`.
+        *   `[✅] 2.A.5.1 [COMMIT]` Commit the fix to `fetchProcessTemplate.ts`.
+        *   `[✅] 2.A.5.2 [COMMIT]` Commit the new test file `fetchProcessTemplate.test.ts`.
 
 ### 2.1 Database Schema & Prompt Template Enhancements for Synthesis & HitL
 *   `[ ] 2.1.1 [DB]` Update `dialectic_sessions` table:

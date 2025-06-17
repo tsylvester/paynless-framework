@@ -68,16 +68,19 @@ export const selectIsLoadingProjectDetail = (state: DialecticStateValues): boole
 export const selectProjectDetailError = (state: DialecticStateValues): ApiError | null => state.projectDetailError;
 
 // Selector for the current project initial prompt
-export const selectCurrentProjectInitialPrompt = (state: DialecticStateValues): string | undefined | null=> 
-  state.currentProjectDetail?.initial_user_prompt;
+export const selectCurrentProjectInitialPrompt = createSelector(
+    [selectCurrentProjectDetail],
+    (project) => project?.initial_user_prompt,
+);
 
 // Selector for the current project sessions
-export const selectCurrentProjectSessions = (state: DialecticStateValues): DialecticSession[] | undefined => 
-  state.currentProjectDetail?.dialectic_sessions;
+export const selectCurrentProjectSessions = createSelector(
+  [selectCurrentProjectDetail],
+  (project) => project?.dialectic_sessions
+);
 
 // Selector for the project prompt update status
-export const selectIsUpdatingProjectPrompt = (state: DialecticStateValues): boolean => 
-  state.isUpdatingProjectPrompt;
+export const selectIsUpdatingProjectPrompt = (state: DialecticStateValues): boolean => state.isUpdatingProjectPrompt;
 
 // Selector for the model catalog
 export const selectModelCatalog = (state: DialecticStateValues): AIModelCatalogEntry[] => state.modelCatalog;
@@ -107,10 +110,6 @@ export const selectContributionContentCache = (state: DialecticStateValues) => s
 export const selectCurrentProjectId = (state: DialecticStateValues): string | undefined => 
   state.currentProjectDetail?.id;
 
-// Selector for the start new session modal status
-export const selectIsStartNewSessionModalOpen = (state: DialecticStateValues): boolean => 
-  state.isStartNewSessionModalOpen;
-
 // Selector for selected model IDs for the new session modal
 export const selectSelectedModelIds = (state: DialecticStateValues): string[] => state.selectedModelIds || [];
 
@@ -128,18 +127,32 @@ const selectContributionIdParam = (_state: DialecticStateValues, contributionId:
 
 // Memoized selector to get a specific contribution by its ID
 export const selectContributionById = createSelector(
-  [selectAllContributionsFromCurrentProject, selectContributionIdParam],
-  (allContributions, contributionId) => 
-    allContributions.find(contribution => contribution.id === contributionId)
+    [selectCurrentProjectSessions, (_, contributionId: string) => contributionId],
+    (sessions, contributionId) => {
+        if (!sessions) {
+            return undefined;
+        }
+        for (const session of sessions) {
+            const contribution = session.dialectic_contributions?.find(c => c.id === contributionId);
+            if (contribution) {
+                return contribution;
+            }
+        }
+        return undefined;
+    }
 );
 
 // Selector for any error related to saving a contribution edit
-export const selectSaveContributionEditError = (state: DialecticStateValues) => state.saveContributionEditError;
+export const selectSaveContributionEditError = (state: DialecticStateValues): ApiError | null => state.saveContributionEditError;
 
 // Selectors for new context states
 export const selectActiveContextProjectId = (state: DialecticStateValues): string | null => state.activeContextProjectId;
 export const selectActiveContextSessionId = (state: DialecticStateValues): string | null => state.activeContextSessionId;
-export const selectActiveContextStageSlug = (state: DialecticStateValues): DialecticStage | null => state.activeContextStageSlug;
+/**
+ * @deprecated Use selectActiveContextStage instead.
+ */
+export const selectActiveContextStageSlug = (state: DialecticStateValues): DialecticStage | null => state.activeContextStage;
+export const selectActiveContextStage = (state: DialecticStateValues): DialecticStage | null => state.activeContextStage;
 
 // Selectors for Process Template
 export const selectCurrentProcessTemplate = (state: DialecticStateValues) => state.currentProcessTemplate;

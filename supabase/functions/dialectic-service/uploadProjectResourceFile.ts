@@ -115,7 +115,6 @@ export async function uploadAndRegisterResource(
     mime_type: mimeType || "application/octet-stream",
     size_bytes: fileContent.size,
     resource_description: resourceDescription,
-    status: "active",
   };
 
   logger.info("Attempting to insert resource record into database", { data: resourceToInsert });

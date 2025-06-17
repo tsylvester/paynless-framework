@@ -12,6 +12,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Terminal } from 'lucide-react';
 import { DialecticContribution, DialecticSession, DialecticStore } from '@paynless/types';
+import { StageTabCard } from './StageTabCard';
+import { SessionInfoCard } from './SessionInfoCard';
+import { SessionContributionsDisplayCard } from './SessionContributionsDisplayCard';
 
 // Helper to get model name from session_model_id
 const getModelNameFromContribution = (contribution: DialecticContribution, session: DialecticSession | undefined): string => {
@@ -31,6 +34,8 @@ export const DialecticSessionDetails: React.FC = () => {
   const isLoading = useDialecticStore(selectIsLoadingProjectDetail);
   const error = useDialecticStore(selectProjectDetailError);
   const fetchProjectDetails = useDialecticStore((s: DialecticStore) => s.fetchDialecticProjectDetails);
+  const currentProcessTemplate = useDialecticStore(s => s.currentProcessTemplate);
+  const activeContextStage = useDialecticStore(s => s.activeContextStage);
 
   useEffect(() => {
     if (projectId && (!projectDetail || projectDetail.id !== projectId)) {
@@ -68,6 +73,18 @@ export const DialecticSessionDetails: React.FC = () => {
     return <div className="p-4">Session not found in this project.</div>;
   }
 
+  if (!currentProcessTemplate?.stages) {
+    return (
+        <Alert variant="destructive" className="m-4">
+            <Terminal className="h-4 w-4" />
+            <AlertTitle>Configuration Error</AlertTitle>
+            <AlertDescription>Dialectic stages are not configured. Please check the application setup.</AlertDescription>
+        </Alert>
+    );
+  }
+  
+  const stageOrder = currentProcessTemplate.stages;
+
   const contributionsByStage: Record<string, DialecticContribution[]> = {};
   session.dialectic_contributions?.forEach((contrib: DialecticContribution) => {
     const stageSlug = contrib.stage?.slug;
@@ -79,47 +96,23 @@ export const DialecticSessionDetails: React.FC = () => {
     }
   });
 
-  const stageOrder = ['thesis', 'antithesis', 'synthesis', 'parenthesis', 'paralysis'];
-
   return (
     <div className="p-4 space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Session: {session.session_description || sessionId}</CardTitle>
-          <CardDescription>
-            Status: {session.status} | Iteration: {session.iteration_count}
-            {session.convergence_status && ` | Convergence: ${session.convergence_status}`}
-          </CardDescription>
-        </CardHeader>
-        {session.current_stage_seed_prompt && (
-            <CardContent>
-                <h4 className="text-sm font-semibold mb-1">Current Stage Seed Prompt:</h4>
-                <pre className="text-xs bg-muted p-2 rounded whitespace-pre-wrap">
-                    {session.current_stage_seed_prompt}
-                </pre>
-            </CardContent>
-        )}
-      </Card>
+      <SessionInfoCard session={session} />
 
-      {stageOrder.map((stageName) => {
-        const contributions = contributionsByStage[stageName];
-        if (!contributions || contributions.length === 0) return null;
-
-        return (
-          <div key={stageName}>
-            <h2 className="text-2xl font-semibold mb-3 capitalize">{stageName}</h2>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {contributions.map((contrib: DialecticContribution) => (
-                <ContributionCard
-                  key={contrib.id}
-                  contributionId={contrib.id}
-                  title={`${getModelNameFromContribution(contrib, session)}`}
-                />
-              ))}
-            </div>
-          </div>
-        );
-      })}
+      <div className="flex space-x-2 overflow-x-auto pb-4">
+        {stageOrder.map((stage) => (
+          <StageTabCard
+            key={stage.id}
+            stage={stage}
+            isActiveStage={activeContextStage?.id === stage.id}
+          />
+        ))}
+      </div>
+      
+      {activeContextStage && (
+        <SessionContributionsDisplayCard session={session} activeStage={activeContextStage} />
+      )}
 
       {Object.keys(contributionsByStage).length === 0 && (
         <p>No contributions found for this session yet.</p>

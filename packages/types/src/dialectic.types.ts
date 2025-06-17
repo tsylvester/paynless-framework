@@ -268,7 +268,7 @@ export interface DialecticActions {
   fetchInitialPromptContent: (resourceId: string) => Promise<void>;
 
   // Action for generating contributions
-  generateContributions: (sessionId: string, stageId: string) => Promise<ApiResponse<DialecticContribution[]>>;
+  generateContributions: (payload: GenerateContributionsPayload) => Promise<ApiResponse<GenerateContributionsResponse>>;
   
   // Actions for submitting stage responses and preparing next seed (plan 1.2.Y / 1.5.6.4)
   submitStageResponses: (payload: SubmitStageResponsesPayload) => Promise<ApiResponse<SubmitStageResponsesResponse>>;

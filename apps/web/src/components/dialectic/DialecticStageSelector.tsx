@@ -2,7 +2,7 @@ import React, { useEffect, useMemo } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useDialecticStore } from '@paynless/store';
 import {
-  selectActiveContextStageSlug,
+  selectActiveContextStage,
   selectCurrentProjectDetail,
   selectCurrentProcessTemplate,
   selectIsLoadingProcessTemplate,
@@ -16,15 +16,15 @@ interface DialecticStageSelectorProps {
 
 export const DialecticStageSelector: React.FC<DialecticStageSelectorProps> = ({ disabled }) => {
   const project = useDialecticStore(selectCurrentProjectDetail);
-  const currentStage = useDialecticStore(selectActiveContextStageSlug);
+  const currentStage = useDialecticStore(selectActiveContextStage);
   const processTemplate = useDialecticStore(selectCurrentProcessTemplate);
   const isLoadingTemplate = useDialecticStore(selectIsLoadingProcessTemplate);
   const fetchProcessTemplate = useDialecticStore((state) => state.fetchProcessTemplate);
-  const setActiveDialecticContext = useDialecticStore((state) => state.setActiveDialecticContext);
+  const setActiveContextStage = useDialecticStore((state) => state.setActiveContextStage);
 
   useEffect(() => {
-    if (project?.process_template_id && !processTemplate && !isLoadingTemplate) {
-      fetchProcessTemplate(project.process_template_id);
+    if (project?.dialectic_process_templates && !processTemplate && !isLoadingTemplate) {
+      fetchProcessTemplate(project.dialectic_process_templates.id);
     }
   }, [project, processTemplate, fetchProcessTemplate, isLoadingTemplate]);
 
@@ -70,7 +70,7 @@ export const DialecticStageSelector: React.FC<DialecticStageSelectorProps> = ({ 
   const handleStageChange = (stageId: string) => {
     const selectedStage = processTemplate?.stages?.find((s) => s.id === stageId);
     if (selectedStage) {
-      setActiveDialecticContext({ stageSlug: selectedStage, projectId: null, sessionId: null });
+      setActiveContextStage(selectedStage);
     }
   };
 
