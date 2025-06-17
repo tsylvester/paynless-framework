@@ -2,25 +2,20 @@
 import { assertEquals, assertExists, assertObjectMatch, assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { spy, stub, returnsNext } from "jsr:@std/testing@0.225.1/mock";
 import { startSession, type StartSessionDeps } from "./startSession.ts";
-import type { StartSessionPayload, StartSessionSuccessResponse } from "./dialectic.interface.ts";
+import type { StartSessionPayload, StartSessionSuccessResponse, DialecticProjectResource } from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
-import * as sharedLogger from "../_shared/logger.ts";
-import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
-
+import { createMockSupabaseClient, getMockUser } from "../_shared/supabase.mock.ts";
+import * as promptAssembler from "../_shared/prompt-assembler.ts";
+import * as resourceUploader from "./uploadProjectResourceFile.ts";
 
 Deno.test("startSession - Happy Path (with explicit sessionDescription)", async () => {
-    const mockUser: User = {
-        id: "user-happy-path-id",
-        app_metadata: {},
-        user_metadata: {},
-        aud: "authenticated",
-        created_at: new Date().toISOString(),
-    };
+    const mockUser = getMockUser("user-happy-path-id");
     const mockProjectId = "project-happy-path-id";
     const mockProcessTemplateId = "proc-template-happy-path";
     const mockInitialStageId = "stage-initial-happy-path";
-    const mockInitialStageName = "hypothesis";
+    const mockInitialStageName = "Hypothesis Stage";
+    const mockInitialStageSlug = "hypothesis-stage";
     const mockSystemPromptId = "system-prompt-happy-path";
     const mockSystemPromptText = "This is the initial system prompt for the happy path.";
     const mockNewSessionId = "session-happy-path-id";
@@ -33,84 +28,89 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
         sessionDescription: mockExplicitSessionDescription
     };
 
-    const mockAdminDbClientSetup = createMockSupabaseClient("db-admin-happy-path", {
+    const assemblerStub = stub(promptAssembler.PromptAssembler.prototype, "assemble", () => {
+        return Promise.resolve("Assembled prompt content");
+    });
+
+    const mockResource: DialecticProjectResource = {
+        id: "res-123",
+        project_id: mockProjectId,
+        user_id: mockUser.id,
+        file_name: 'seed_prompt.md',
+        storage_bucket: 'prompt-seeds',
+        storage_path: 'some/path',
+        mime_type: 'text/markdown',
+        size_bytes: 123,
+        resource_description: "Initial prompt for the session",
+        status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+    };
+
+    let wasUploaderCalled = false;
+    const mockUploadAndRegisterResource = () => {
+        wasUploaderCalled = true;
+        return Promise.resolve({ data: mockResource, error: undefined });
+    };
+
+    const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
         genericMockResults: {
             dialectic_projects: {
-                select: async (state) => {
-                    if (state.filters.some(f => f.column === 'id' && f.value === mockProjectId) &&
-                        state.filters.some(f => f.column === 'user_id' && f.value === mockUser.id)) {
-                        return {
-                            data: [{
-                                id: mockProjectId,
-                                user_id: mockUser.id,
-                                project_name: "Happy Project",
-                                initial_user_prompt: "Let's be happy.",
-                                process_template_id: mockProcessTemplateId,
-                            }],
-                            error: null,
-                        };
-                    }
-                    return { data: null, error: new Error("Project not found") };
-                }
+                select: async () => ({
+                    data: [{
+                        id: mockProjectId,
+                        user_id: mockUser.id,
+                        project_name: "Happy Project",
+                        initial_user_prompt: "Let's be happy.",
+                        process_template_id: mockProcessTemplateId,
+                        dialectic_domains: { name: 'General' },
+                        selected_domain_id: 'd-1'
+                    }], error: null, status: 200, statusText: 'ok'
+                })
             },
             dialectic_stage_transitions: {
-                select: async (state) => {
-                    if (state.filters.some(f => f.column === 'process_template_id' && f.value === mockProcessTemplateId) &&
-                        state.filters.some(f => f.column === 'is_entry_point' && f.value === true)) {
-                        return {
-                            data: [{
-                                dialectic_stages: {
-                                    id: mockInitialStageId,
-                                    stage_name: mockInitialStageName,
-                                    system_prompts: [{ id: mockSystemPromptId, prompt_text: mockSystemPromptText }]
-                                }
-                            }],
-                            error: null,
-                        };
-                    }
-                    return { data: null, error: new Error("Initial stage not found") };
-                }
+                select: async () => ({
+                    data: [{
+                        dialectic_stages: {
+                            id: mockInitialStageId,
+                            display_name: mockInitialStageName,
+                            system_prompts: [{ id: mockSystemPromptId, prompt_text: mockSystemPromptText }]
+                        }
+                    }], error: null, status: 200, statusText: 'ok'
+                })
+            },
+            dialectic_stages: {
+                select: async () => ({
+                    data: [{ id: mockInitialStageId, slug: mockInitialStageSlug, display_name: mockInitialStageName }],
+                    error: null, status: 200, statusText: 'ok'
+                })
+            },
+            domain_specific_prompt_overlays: {
+                select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' })
             },
             dialectic_sessions: {
-                insert: async (state) => {
-                    const insertPayload = state.insertData as Record<string, unknown>;
-                    if (insertPayload.project_id === mockProjectId && insertPayload.current_stage_id === mockInitialStageId) {
-                        return {
-                            data: [{
-                                id: mockNewSessionId,
-                                project_id: mockProjectId,
-                                session_description: mockExplicitSessionDescription,
-                                status: `pending_${mockInitialStageName}`,
-                                iteration_count: 1,
-                                associated_chat_id: mockNewChatId,
-                                current_stage_id: mockInitialStageId,
-                                selected_model_catalog_ids: payload.selectedModelCatalogIds,
-                                created_at: new Date().toISOString(),
-                                updated_at: new Date().toISOString(),
-                                user_input_reference_url: null
-                            }],
-                            error: null,
-                        };
-                    }
-                    return { data: null, error: new Error("Session insert failed") };
-                }
+                insert: async () => ({
+                    data: [{
+                        id: mockNewSessionId, project_id: mockProjectId, session_description: mockExplicitSessionDescription,
+                        status: `pending_${mockInitialStageName}`, iteration_count: 1, associated_chat_id: mockNewChatId,
+                        current_stage_id: mockInitialStageId, selected_model_catalog_ids: payload.selectedModelCatalogIds,
+                    }], error: null, status: 201, statusText: 'ok'
+                })
             },
         },
-        storageMock: {
-             uploadResult: async () => ({ data: { path: 'mock/path' }, error: null }),
-        }
     });
 
     const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
     const mockRandomUUIDFn = spy(() => mockNewChatId);
-    const loggerInfoFn = spy(); const loggerErrorFn = spy();
-    const mockLogger = { info: loggerInfoFn, warn: spy(), error: loggerErrorFn, debug: spy() } as any;
-    
-    const envGetStub = stub(Deno.env, "get", returnsNext(["dialectic-contributions"]));
+    const mockLogger = { info: spy(), warn: spy(), error: spy(), debug: spy() } as any;
 
     try {
-        const result = await startSession(mockUser, adminDbClient, payload, { logger: mockLogger, randomUUID: mockRandomUUIDFn });
-        
+        const result = await startSession(mockUser, adminDbClient, payload, { 
+            logger: mockLogger, 
+            randomUUID: mockRandomUUIDFn,
+            uploadAndRegisterResource: mockUploadAndRegisterResource as any
+        });
+
         assertExists(result.data, `Session start failed: ${result.error?.message}`);
         assertEquals(result.error, undefined, "Error should be undefined on happy path");
 
@@ -118,37 +118,25 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
             id: mockNewSessionId,
             project_id: mockProjectId,
             session_description: mockExplicitSessionDescription,
-            status: `pending_${mockInitialStageName}`,
             current_stage_id: mockInitialStageId,
         };
         assertObjectMatch(result.data, expectedResponse as any);
-
-        // Cannot effectively spy on imported uploadToStorage without more complex mocking.
-        // We are trusting that if the function returns success, the upload was at least attempted.
-        // The mock ensures it doesn't fail.
-        const infoCalls = loggerInfoFn.calls;
-        assert(infoCalls.some(c => (c.args[0] as string).includes("Successfully uploaded seed prompt")), "Expected log message for successful upload was not found.");
+        assertEquals(wasUploaderCalled, true, "The mock uploader should have been called.");
 
     } finally {
-        mockAdminDbClientSetup.clearAllStubs?.();
-        envGetStub.restore();
+        assemblerStub.restore();
     }
 });
 
 
 Deno.test("startSession - Happy Path (without explicit sessionDescription, defaults are used)", async () => {
-    const mockUser: User = {
-        id: "user-default-desc-id",
-        app_metadata: {},
-        user_metadata: {},
-        aud: "authenticated",
-        created_at: new Date().toISOString(),
-    };
+    const mockUser = getMockUser("user-default-desc-id");
     const mockProjectId = "project-default-desc-id";
     const mockProjectName = "Default Description Project";
     const mockProcessTemplateId = "proc-template-default-desc";
     const mockInitialStageId = "stage-initial-default-desc";
-    const mockInitialStageName = "hypothesis";
+    const mockInitialStageName = "Hypothesis";
+    const mockInitialStageSlug = "hypothesis-slug";
     const mockSystemPromptId = "system-prompt-default-desc";
     const mockNewSessionId = "session-default-desc-id";
     const mockNewChatId = "chat-default-desc-id";
@@ -158,74 +146,91 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
         selectedModelCatalogIds: ["model-1"],
     };
 
-    const mockAdminDbClientSetup = createMockSupabaseClient("db-admin-default-desc", {
+    const assemblerStub = stub(promptAssembler.PromptAssembler.prototype, "assemble", () => {
+        return Promise.resolve("Assembled prompt content");
+    });
+
+    const mockResource: DialecticProjectResource = {
+        id: "res-123",
+        project_id: mockProjectId,
+        user_id: mockUser.id,
+        file_name: 'seed_prompt.md',
+        storage_bucket: 'prompt-seeds',
+        storage_path: 'some/path',
+        mime_type: 'text/markdown',
+        size_bytes: 123,
+        resource_description: "Initial prompt for the session",
+        status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+    };
+    
+    let wasUploaderCalled = false;
+    const mockUploadAndRegisterResource = () => {
+        wasUploaderCalled = true;
+        return Promise.resolve({ data: mockResource, error: undefined });
+    };
+
+    const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
         genericMockResults: {
             dialectic_projects: {
                 select: async () => ({
                     data: [{
-                        id: mockProjectId,
-                        user_id: mockUser.id,
-                        project_name: mockProjectName,
-                        initial_user_prompt: "Default prompt",
-                        process_template_id: mockProcessTemplateId,
-                    }],
-                    error: null,
+                        id: mockProjectId, user_id: mockUser.id, project_name: mockProjectName,
+                        initial_user_prompt: "Default prompt", process_template_id: mockProcessTemplateId,
+                        dialectic_domains: { name: 'General' }, selected_domain_id: 'd-1'
+                    }], error: null, status: 200, statusText: 'ok'
                 })
             },
             dialectic_stage_transitions: {
                 select: async () => ({
                     data: [{
                         dialectic_stages: {
-                            id: mockInitialStageId,
-                            stage_name: mockInitialStageName,
+                            id: mockInitialStageId, display_name: mockInitialStageName,
                             system_prompts: [{ id: mockSystemPromptId, prompt_text: "Default prompt text." }]
                         }
-                    }],
-                    error: null,
+                    }], error: null, status: 200, statusText: 'ok'
                 })
             },
+            dialectic_stages: {
+                select: async () => ({
+                    data: [{ id: mockInitialStageId, slug: mockInitialStageSlug, display_name: mockInitialStageName }],
+                    error: null, status: 200, statusText: 'ok'
+                })
+            },
+            domain_specific_prompt_overlays: {
+                select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' })
+            },
             dialectic_sessions: {
-                insert: async (state) => {
-                    const insertPayload = state.insertData as Record<string, unknown>;
-                    const expectedDefaultDescription = `${mockProjectName} - New Session`;
-                    if (insertPayload.session_description === expectedDefaultDescription) {
-                        return {
-                            data: [{
-                                id: mockNewSessionId,
-                                project_id: mockProjectId,
-                                session_description: expectedDefaultDescription,
-                                status: `pending_${mockInitialStageName}`,
-                                iteration_count: 1,
-                                associated_chat_id: mockNewChatId,
-                                current_stage_id: mockInitialStageId,
-                                selected_model_catalog_ids: payload.selectedModelCatalogIds
-                            }],
-                            error: null,
-                        };
-                    }
-                    return { data: null, error: new Error("Session insert failed, description mismatch") };
-                }
+                insert: async () => ({
+                     data: [{
+                        id: mockNewSessionId, project_id: mockProjectId,
+                        session_description: `${mockProjectName} - New Session`,
+                        status: `pending_${mockInitialStageName}`, iteration_count: 1, associated_chat_id: mockNewChatId,
+                        current_stage_id: mockInitialStageId, selected_model_catalog_ids: payload.selectedModelCatalogIds
+                    }], error: null, status: 201, statusText: 'ok'
+                })
             },
         },
-        storageMock: {
-            uploadResult: async () => ({ data: { path: "some/path" }, error: null })
-        }
     });
 
     const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
     const mockRandomUUIDFn = spy(() => mockNewChatId);
     const mockLogger = { info: spy(), warn: spy(), error: spy(), debug: spy() } as any;
-    const envGetStub = stub(Deno.env, "get", returnsNext(["dialectic-contributions"]));
-
+    
     try {
-        const result = await startSession(mockUser, adminDbClient, payload, { logger: mockLogger, randomUUID: mockRandomUUIDFn });
-        
+        const result = await startSession(mockUser, adminDbClient, payload, { 
+            logger: mockLogger, 
+            randomUUID: mockRandomUUIDFn,
+            uploadAndRegisterResource: mockUploadAndRegisterResource as any
+        });
+
         assertExists(result.data);
         assertEquals(result.error, undefined);
         assertEquals(result.data.session_description, `${mockProjectName} - New Session`);
+        assertEquals(wasUploaderCalled, true, "The mock uploader should have been called.");
     } finally {
-        mockAdminDbClientSetup.clearAllStubs?.();
-        envGetStub.restore();
+        assemblerStub.restore();
     }
 });
 

@@ -242,6 +242,16 @@ export interface IMockClientSpies {
       rpcResults?: {
           [functionName: string]: { data?: object | object[] | null; error?: Error | null } | (() => Promise<{ data?: object | object[] | null; error?: Error | null }>);
       };
+      storageConfig?: {
+        [bucketId: string]: {
+            list?: (path: string, options: any) => Promise<IMockStorageListResponse>;
+            remove?: (paths: string[]) => Promise<IMockStorageRemoveResponse>;
+            upload?: (path: string, body: unknown, options?: IMockStorageFileOptions) => Promise<IMockStorageUploadResponse>;
+            download?: (path: string) => Promise<IMockStorageDownloadResponse>;
+            createSignedUrl?: (path: string, expiresIn: number) => Promise<IMockStorageSignedUrlResponse>;
+            copy?: (fromPath: string, toPath: string) => Promise<IMockStorageCopyResponse>;
+        }
+      };
       storageMock?: { 
         defaultBucket?: string; 
         uploadResult?: IMockStorageUploadResponse | ((bucketId: string, path: string, body: unknown, options?: IMockStorageFileOptions) => Promise<IMockStorageUploadResponse>);
@@ -1164,5 +1174,32 @@ export function getStorageSpies(mockSupabaseClient: IMockSupabaseClient, bucketI
     removeSpy: bucketApiInstance.remove as Spy<MockStorageBucketAPIImpl['performRemoveInternal']>,
     listSpy: bucketApiInstance.list as Spy<MockStorageBucketAPIImpl['performListInternal']>,
     copySpy: bucketApiInstance.copy as Spy<MockStorageBucketAPIImpl['performCopyInternal']>,
+  };
+}
+
+export function getMockUser(id: string): User {
+  return {
+    id,
+    app_metadata: { provider: "email" },
+    user_metadata: { name: "Test User" },
+    aud: "authenticated",
+    confirmation_sent_at: new Date().toISOString(),
+    recovery_sent_at: "",
+    email_change_sent_at: "",
+    new_email: "",
+    new_phone: "",
+    invited_at: "",
+    action_link: "",
+    email: `${id}@example.com`,
+    phone: "",
+    created_at: new Date().toISOString(),
+    confirmed_at: new Date().toISOString(),
+    email_confirmed_at: new Date().toISOString(),
+    phone_confirmed_at: "",
+    last_sign_in_at: new Date().toISOString(),
+    role: "authenticated",
+    updated_at: new Date().toISOString(),
+    identities: [],
+    factors: [],
   };
 }

@@ -60,7 +60,7 @@ export function renderPrompt(
         : JSON.stringify(value);
       
       const escapedKey = escapeRegExp(key);
-      const regex = new RegExp(`{{\\s*${escapedKey}\\s*}}`, 'g'); 
+      const regex = new RegExp(`{\\s*${escapedKey}\\s*}`, 'g'); 
       renderedText = renderedText.replace(regex, stringValue);
     }
   }

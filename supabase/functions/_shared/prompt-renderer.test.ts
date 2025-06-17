@@ -1,6 +1,5 @@
 // @deno-types="npm:@types/chai@4.3.1"
-import { expect } from "https://deno.land/x/expect@v0.3.0/mod.ts";
-import { describe, it } from "https://deno.land/std@0.208.0/testing/bdd.ts";
+import { assertEquals } from "https://deno.land/std@0.208.0/testing/asserts.ts";
 import { Json } from "../types_db.ts"; // Assuming Json type is useful here
 import { renderPrompt } from "./prompt-renderer.ts"; // Function to be created
 
@@ -14,11 +13,11 @@ interface PromptRenderTestCase {
   expectedError?: string;
 }
 
-describe("Prompt Rendering Utility", () => {
+Deno.test("Prompt Rendering Utility", async (t) => {
   const testCases: PromptRenderTestCase[] = [
     {
       name: "Basic variable substitution from dynamic context",
-      basePromptText: "Hello {{name}}! Welcome to {{place}}.",
+      basePromptText: "Hello {name}! Welcome to {place}.",
       dynamicContextVariables: { name: "World", place: "Earth" },
       systemDefaultOverlayValues: null,
       userProjectOverlayValues: null,
@@ -26,7 +25,7 @@ describe("Prompt Rendering Utility", () => {
     },
     {
       name: "Simple system overlay",
-      basePromptText: "System setting: {{setting_a}}.",
+      basePromptText: "System setting: {setting_a}.",
       dynamicContextVariables: {},
       systemDefaultOverlayValues: { setting_a: "SystemValueA" },
       userProjectOverlayValues: null,
@@ -34,7 +33,7 @@ describe("Prompt Rendering Utility", () => {
     },
     {
       name: "Simple user overlay",
-      basePromptText: "User preference: {{pref_b}}.",
+      basePromptText: "User preference: {pref_b}.",
       dynamicContextVariables: {},
       systemDefaultOverlayValues: null,
       userProjectOverlayValues: { pref_b: "UserValueB" },
@@ -42,7 +41,7 @@ describe("Prompt Rendering Utility", () => {
     },
     {
       name: "Overlay merge - user overrides system",
-      basePromptText: "Conflict: {{item}}, UniqueSystem: {{sys_only}}, UniqueUser: {{usr_only}}.",
+      basePromptText: "Conflict: {item}, UniqueSystem: {sys_only}, UniqueUser: {usr_only}.",
       dynamicContextVariables: {},
       systemDefaultOverlayValues: { item: "SysItem", sys_only: "SystemOnlyValue" },
       userProjectOverlayValues: { item: "UsrItem", usr_only: "UserOnlyValue" },
@@ -50,7 +49,7 @@ describe("Prompt Rendering Utility", () => {
     },
     {
       name: "Variable in base prompt, value from system overlay",
-      basePromptText: "Base needs {{var_from_sys}}.",
+      basePromptText: "Base needs {var_from_sys}.",
       dynamicContextVariables: {},
       systemDefaultOverlayValues: { var_from_sys: "ValueFromSystem" },
       userProjectOverlayValues: null,
@@ -58,7 +57,7 @@ describe("Prompt Rendering Utility", () => {
     },
     {
       name: "Variable in base prompt, value from user overlay",
-      basePromptText: "Base needs {{var_from_usr}}.",
+      basePromptText: "Base needs {var_from_usr}.",
       dynamicContextVariables: {},
       systemDefaultOverlayValues: { var_from_usr: "ShouldBeOverridden" },
       userProjectOverlayValues: { var_from_usr: "ValueFromUser" },
@@ -66,7 +65,7 @@ describe("Prompt Rendering Utility", () => {
     },
     {
       name: "Dynamic context overrides overlays",
-      basePromptText: "Priority: {{important_var}}.",
+      basePromptText: "Priority: {important_var}.",
       dynamicContextVariables: { important_var: "DynamicValue" },
       systemDefaultOverlayValues: { important_var: "SystemValue" },
       userProjectOverlayValues: { important_var: "UserValue" },
@@ -74,15 +73,15 @@ describe("Prompt Rendering Utility", () => {
     },
     {
       name: "Missing variable remains as placeholder",
-      basePromptText: "Data: {{present_var}}, {{missing_var}}.",
+      basePromptText: "Data: {present_var}, {missing_var}.",
       dynamicContextVariables: { present_var: "Exists" },
       systemDefaultOverlayValues: null,
       userProjectOverlayValues: null,
-      expectedOutput: "Data: Exists, {{missing_var}}.",
+      expectedOutput: "Data: Exists, {missing_var}.",
     },
     {
       name: "Whitespace in placeholders is handled",
-      basePromptText: "Hello {{ name }}. Value: {{ value_test }}. End.",
+      basePromptText: "Hello { name }. Value: { value_test }. End.",
       dynamicContextVariables: { name: "Spaced World", value_test: "Trimmed" },
       systemDefaultOverlayValues: null,
       userProjectOverlayValues: null,
@@ -90,7 +89,7 @@ describe("Prompt Rendering Utility", () => {
     },
     {
       name: "Handles object/array values by JSON stringifying them",
-      basePromptText: "Object: {{my_object}}, Array: {{my_array}}",
+      basePromptText: "Object: {my_object}, Array: {my_array}",
       dynamicContextVariables: {
         my_object: { key: "value", num: 123 },
         my_array: [1, "test", true]
@@ -113,11 +112,11 @@ describe("Prompt Rendering Utility", () => {
     },
     {
       name: "All sources are null or empty",
-      basePromptText: "Static with {{placeholder}}.",
+      basePromptText: "Static with {placeholder}.",
       dynamicContextVariables: {},
       systemDefaultOverlayValues: null,
       userProjectOverlayValues: {},
-      expectedOutput: "Static with {{placeholder}}.",
+      expectedOutput: "Static with {placeholder}.",
     }
     // Future tests:
     // - Nested variables in overlays (e.g. system_overlay: { details: { title: "SysTitle" } }, prompt: {{details.title}} - current simple replace won't handle this)
@@ -125,23 +124,14 @@ describe("Prompt Rendering Utility", () => {
   ];
 
   for (const tc of testCases) {
-    it(tc.name, () => {
-      if (tc.expectedError) {
-        expect(() => renderPrompt(
-          tc.basePromptText,
-          tc.dynamicContextVariables,
-          tc.systemDefaultOverlayValues,
-          tc.userProjectOverlayValues
-        )).to.throw(tc.expectedError);
-      } else {
-        const result = renderPrompt(
-          tc.basePromptText,
-          tc.dynamicContextVariables,
-          tc.systemDefaultOverlayValues,
-          tc.userProjectOverlayValues
-        );
-        expect(result).to.equal(tc.expectedOutput);
-      }
+    await t.step(tc.name, () => {
+      const result = renderPrompt(
+        tc.basePromptText,
+        tc.dynamicContextVariables,
+        tc.systemDefaultOverlayValues,
+        tc.userProjectOverlayValues
+      );
+      assertEquals(result, tc.expectedOutput);
     });
   }
 }); 

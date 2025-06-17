@@ -1,7 +1,12 @@
-import { ChatMessage } from "../_shared/types.ts"; 
-import type { Database, Json } from "../types_db.ts";
-import { uploadToStorage, downloadFromStorage } from "../_shared/supabase_storage_utils.ts";
-import type { ILogger } from "../_shared/types.ts";
+import { type ChatMessage, type ILogger, type ServiceError } from '../_shared/types.ts';
+import type { Database, Json } from '../types_db.ts';
+import {
+  downloadFromStorage,
+  uploadToStorage,
+} from '../_shared/supabase_storage_utils.ts';
+import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
+import type { Logger } from '../_shared/logger.ts';
+
 
 export interface AIModelCatalogEntry {
     id: string;
@@ -183,6 +188,7 @@ export interface StartSessionPayload {
   sessionDescription?: string | null;
   selectedModelCatalogIds: string[];
   originatingChatId?: string | null;
+  stageSlug?: string;
 }
 
 export type StartSessionSuccessResponse = DialecticSession;
@@ -405,11 +411,21 @@ export interface InputArtifactRules {
   sources: ArtifactSourceRule[];
 }
 
+export interface UploadProjectResourceFileResult {
+  data?: DialecticProjectResource;
+  error?: {
+    message: string;
+    details?: string;
+    status: number;
+  };
+}
+
 // Local response type definition to align with DB schema, avoiding interface mismatches.
 export interface SubmitStageResponsesDependencies {
     uploadToStorage: typeof uploadToStorage;
     downloadFromStorage: typeof downloadFromStorage;
     logger: ILogger;
+    uploadAndRegisterResource: UploadAndRegisterResourceFn;
 }
 
 export type DialecticStageTransition = Database['public']['Tables']['dialectic_stage_transitions']['Row'];
@@ -417,3 +433,17 @@ export type DialecticStageTransition = Database['public']['Tables']['dialectic_s
 export interface FetchProcessTemplatePayload {
   templateId: string;
 }
+
+export type UploadAndRegisterResourceFn = (
+  dbClient: SupabaseClient,
+  user: User,
+  logger: Logger,
+  projectId: string,
+  fileContent: Blob,
+  fileName: string,
+  mimeType: string,
+  resourceDescription: string,
+) => Promise<{
+  data?: DialecticProjectResource;
+  error?: { message: string; details?: string; status: number };
+}>;

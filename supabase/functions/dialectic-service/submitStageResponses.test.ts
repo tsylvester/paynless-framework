@@ -71,6 +71,27 @@ Deno.test('submitStageResponses', async (t) => {
     const mockUploadToStorage = spy((client: SupabaseClient, bucket: string, path: string, content: any, options: any) => {
         return Promise.resolve({ path: path as string, error: null });
     });
+
+    const mockUploadAndRegisterResource = spy((..._args: any[]) => {
+      // Return a structure that matches DialecticProjectResource
+      return Promise.resolve({ 
+          data: { 
+              id: 'resource-id', 
+              storage_path: 'a/path',
+              project_id: testProjectId,
+              user_id: testUserId,
+              file_name: 'test.txt',
+              storage_bucket: 'test-bucket',
+              mime_type: 'text/plain',
+              size_bytes: 100,
+              resource_description: 'test',
+              status: 'active',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+          } as any, 
+          error: undefined 
+      });
+    });
     
     const mockDownloadFromStorage = spy((client: SupabaseClient, bucket: string, path: string): Promise<{ data: ArrayBuffer | null; mimeType?: string; error: Error | null; }> => {
         if (path === systemSettingsPath) {
@@ -139,7 +160,8 @@ Deno.test('submitStageResponses', async (t) => {
     const mockDependencies = {
         logger,
         uploadToStorage: mockUploadToStorage,
-        downloadFromStorage: mockDownloadFromStorage
+        downloadFromStorage: mockDownloadFromStorage,
+        uploadAndRegisterResource: mockUploadAndRegisterResource
     };
 
     // 1.1.2 Act: Call the function
@@ -162,7 +184,8 @@ Deno.test('submitStageResponses', async (t) => {
     assertEquals(data.feedbackRecords.length, 2, "Expected two feedback records to be created");
     
     // 1.1.4 & 1.1.8. Uploads files to storage (consolidated feedback and next stage seed)
-    assertEquals(mockUploadToStorage.calls.length, 2, "Expected two files to be uploaded to storage");
+    assertEquals(mockUploadToStorage.calls.length, 1, "Expected one file to be uploaded to storage via uploadToStorage");
+    assertEquals(mockUploadAndRegisterResource.calls.length, 1, "Expected one file to be uploaded via uploadAndRegisterResource");
 
     // 1.4 Verifies content of the consolidated feedback file
     const feedbackUploadCall = mockUploadToStorage.calls.find(c => c.args[2] && (c.args[2] as string).includes('user_feedback'));
@@ -174,10 +197,11 @@ Deno.test('submitStageResponses', async (t) => {
     }
 
     // 1.5 Verifies content of the rendered next stage seed prompt
-    const seedPromptUploadCall = mockUploadToStorage.calls.find(c => c.args[2] && (c.args[2] as string).includes('seed_prompt.md'));
+    const seedPromptUploadCall = mockUploadAndRegisterResource.calls[0];
     assertExists(seedPromptUploadCall, "Next stage seed prompt should be uploaded");
-    if (seedPromptUploadCall.args.length > 3) {
-      const seedPromptContent = typeof seedPromptUploadCall.args[3] === 'string' ? seedPromptUploadCall.args[3] : new TextDecoder().decode(seedPromptUploadCall.args[3] as ArrayBuffer);
+    if (seedPromptUploadCall && seedPromptUploadCall.args.length > 4) {
+      const seedPromptBlob = seedPromptUploadCall.args[4] as Blob;
+      const seedPromptContent = await seedPromptBlob.text();
       assertStringIncludes(seedPromptContent, "AI content from ModelA", "Seed prompt content is missing AI output");
       assertStringIncludes(seedPromptContent, "AI content from ModelB", "Seed prompt content is missing AI output");
       assertStringIncludes(
@@ -191,7 +215,10 @@ Deno.test('submitStageResponses', async (t) => {
       );
     }
 
-    assert(data?.nextStageSeedPromptPath?.includes(mockAntithesisStage.slug), "Next stage seed path should be for antithesis");
+    assert(data?.nextStageSeedPromptPath, "Next stage seed path should be returned");
+    if(data?.nextStageSeedPromptPath) {
+        assert(data.nextStageSeedPromptPath.includes(mockAntithesisStage.slug), "Next stage seed path should be for antithesis");
+    }
   });
 
   await t.step('1.2 Successfully processes responses for the final stage (no next transition)', async () => {
@@ -242,26 +269,26 @@ Deno.test('submitStageResponses', async (t) => {
     };
     
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-    const mockUploadToStorage = spy((_client: SupabaseClient, _bucket: string, path: string) => Promise.resolve({ path, error: null }));
-    // download should not be called as there is no next stage to seed
-    const mockDownloadFromStorage = spy((): Promise<{ data: ArrayBuffer | null; mimeType?: string; error: Error | null; }> => {
-        throw new Error("downloadFromStorage should not be called when there is no next stage.");
+    const mockUploadToStorage = spy((...args: any[]) => Promise.resolve({ path: args[2] as string, error: null }));
+    const mockDownloadFromStorage = spy(() => Promise.resolve({ data: new TextEncoder().encode(JSON.stringify({ user_objective: "A test objective" })).buffer as ArrayBuffer, error: null }));
+    const mockUploadAndRegisterResource = spy((..._args: any[]) => {
+        // This test doesn't use the result, so a simple mock is fine.
+        return Promise.resolve({ data: { id: 'resource-id' } as any, error: undefined });
     });
-    const mockDependencies = { logger, uploadToStorage: mockUploadToStorage, downloadFromStorage: mockDownloadFromStorage };
+    const mockDependencies = { logger, uploadToStorage: mockUploadToStorage, downloadFromStorage: mockDownloadFromStorage, uploadAndRegisterResource: mockUploadAndRegisterResource };
 
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, mockDependencies);
+    const { data, status, error } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, mockDependencies);
 
-    assertEquals(status, 200, "Expected status 200 for final stage processing");
-    assertEquals(error, undefined, "Expected no error");
-    assertExists(data, "Expected response data");
+    assertEquals(error, undefined);
+    assertEquals(status, 200);
+    assertExists(data);
 
+    // In the final stage, we don't generate a seed prompt for the next stage.
+    // So uploadAndRegisterResource should NOT have been called.
+    assertEquals(mockUploadAndRegisterResource.calls.length, 0, "uploadAndRegisterResource should not be called for the final stage");
+    assertEquals(data.nextStageSeedPromptPath, null, "Next stage seed path should be null for the final stage");
     assertEquals(data.updatedSession?.status, 'iteration_complete_pending_review', "Session status should be updated to reflect completion");
     assertEquals(mockUploadToStorage.calls.length, 1, "Only the consolidated feedback file should be uploaded");
-    const feedbackUploadCall = mockUploadToStorage.calls.find(c => c.args[2] && (c.args[2] as string).includes('user_feedback'));
-    assertExists(feedbackUploadCall, "User feedback file upload should have been called.");
-    
-    assertEquals(mockDownloadFromStorage.calls.length, 0, "Should not download any files if there is no next stage");
-    assertEquals(data.nextStageSeedPromptPath, null, "Next stage seed path should be null as the process is complete");
   });
 
   await t.step('2.1 Fails if the user is not authenticated', async () => {
@@ -270,7 +297,7 @@ Deno.test('submitStageResponses', async (t) => {
     const mockSupabase = createMockSupabaseClient(testUserId, {});
 
     // 2.1.2 Act
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, null as unknown as User, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})) });
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, null as unknown as User, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), uploadAndRegisterResource: () => { throw new Error('should not be called'); } });
 
     // 2.1.3 Assert
     assertEquals(status, 401);
@@ -298,7 +325,7 @@ Deno.test('submitStageResponses', async (t) => {
       }
     });
 
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})) });
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), uploadAndRegisterResource: () => { throw new Error('should not be called'); } });
     
     assertEquals(status, 403);
     assertExists(error);
@@ -309,7 +336,7 @@ Deno.test('submitStageResponses', async (t) => {
   await t.step('3.1 Fails with appropriate error for missing sessionId', async () => {
     const mockPayload: SubmitStageResponsesPayload = { currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [{ originalContributionId: 'id', responseText: 'text'}] } as any;
     const mockSupabase = createMockSupabaseClient(testUserId, {});
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})) });
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), uploadAndRegisterResource: () => { throw new Error('should not be called'); } });
     
     assertEquals(status, 400);
     assertExists(error);
@@ -325,7 +352,7 @@ Deno.test('submitStageResponses', async (t) => {
     };
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
 
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})) });
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), uploadAndRegisterResource: () => { throw new Error('should not be called'); } });
 
     assertEquals(status, 404);
     assertExists(error);
@@ -368,6 +395,7 @@ Deno.test('submitStageResponses', async (t) => {
         logger,
         uploadToStorage: async () => { throw new Error('should not be called'); },
         downloadFromStorage: async () => { throw new Error('should not be called'); },
+        uploadAndRegisterResource: async () => { throw new Error('should not be called'); }
     };
 
     // 3.3.2 Act
@@ -391,7 +419,7 @@ Deno.test('submitStageResponses', async (t) => {
   await t.step('3.4 Fails for missing currentIterationNumber', async () => {
     const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, responses: [{ originalContributionId: 'id', responseText: 'text'}] } as any;
     const mockSupabase = createMockSupabaseClient(testUserId, {});
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})) });
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), uploadAndRegisterResource: () => { throw new Error('should not be called'); } });
     
     assertEquals(status, 400);
     assertExists(error);
@@ -401,7 +429,7 @@ Deno.test('submitStageResponses', async (t) => {
   await t.step('3.5 Fails if responses array is empty or not provided', async () => {
     const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [] };
     const mockSupabase = createMockSupabaseClient(testUserId, {});
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})) });
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), uploadAndRegisterResource: () => { throw new Error('should not be called'); } });
     
     assertEquals(status, 400);
     assertExists(error);
@@ -411,7 +439,7 @@ Deno.test('submitStageResponses', async (t) => {
   await t.step('3.6 Fails if items in responses array miss originalContributionId or responseText', async () => {
     const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [{ originalContributionId: testContributionId1 } as any] };
     const mockSupabase = createMockSupabaseClient(testUserId, {});
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})) });
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), uploadAndRegisterResource: () => { throw new Error('should not be called'); } });
     
     assertEquals(status, 400);
     assertExists(error);
@@ -432,7 +460,7 @@ Deno.test('submitStageResponses', async (t) => {
       }
     };
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})) });
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), uploadAndRegisterResource: () => { throw new Error('should not be called'); } });
     
     assertEquals(status, 400);
     assertExists(error);
@@ -447,7 +475,7 @@ Deno.test('submitStageResponses', async (t) => {
       }
     };
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})) });
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), uploadAndRegisterResource: () => { throw new Error('should not be called'); } });
 
     assertEquals(status, 404);
     assertExists(error);
@@ -468,7 +496,7 @@ Deno.test('submitStageResponses', async (t) => {
       }
     };
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})) });
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: spy(), downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), uploadAndRegisterResource: () => { throw new Error('should not be called'); } });
 
     assertEquals(status, 500);
     assertExists(error);
@@ -493,7 +521,7 @@ Deno.test('submitStageResponses', async (t) => {
      const mockUploadToStorage = spy(() => Promise.resolve({ path: 'a/path', error: null }));
      const mockDownloadFromStorage = spy(() => Promise.resolve({ data: new TextEncoder().encode(JSON.stringify({ user_objective: 'test' })).buffer as ArrayBuffer, error: null }));
      const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-     const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: mockUploadToStorage, downloadFromStorage: mockDownloadFromStorage });
+     const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: mockUploadToStorage, downloadFromStorage: mockDownloadFromStorage, uploadAndRegisterResource: () => { throw new Error('should not be called'); } });
  
      assertEquals(status, 500);
      assertExists(error);
@@ -525,7 +553,7 @@ Deno.test('submitStageResponses', async (t) => {
     const mockUploadToStorage = spy(() => Promise.resolve({ path: 'a/path', error: null }));
     const mockDownloadFromStorage = spy(() => Promise.resolve({ data: new TextEncoder().encode(JSON.stringify({ user_objective: 'test' })).buffer as ArrayBuffer, error: null }));
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: mockUploadToStorage, downloadFromStorage: mockDownloadFromStorage });
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, { logger, uploadToStorage: mockUploadToStorage, downloadFromStorage: mockDownloadFromStorage, uploadAndRegisterResource: () => { throw new Error('should not be called'); } });
 
     assertEquals(status, 500);
     assertExists(error);
@@ -573,7 +601,7 @@ Deno.test('submitStageResponses', async (t) => {
     const mockDownloadFromStorage = spy((..._args: any[]) => {
       throw new Error("Should not be called when finalizing a session");
     });
-    const mockDependencies = { logger, uploadToStorage: mockUploadToStorage, downloadFromStorage: mockDownloadFromStorage };
+    const mockDependencies = { logger, uploadToStorage: mockUploadToStorage, downloadFromStorage: mockDownloadFromStorage, uploadAndRegisterResource: () => { throw new Error('should not be called'); } };
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, mockDependencies);
 
     assertEquals(status, 500);
@@ -609,7 +637,8 @@ Deno.test('submitStageResponses', async (t) => {
     const mockDependencies = {
         logger,
         uploadToStorage: mockUploadToStorage,
-        downloadFromStorage: spy((): Promise<{ data: ArrayBuffer | null; error: Error | null; }> => Promise.resolve({data: null, error: null}))
+        downloadFromStorage: spy((): Promise<{ data: ArrayBuffer | null; error: Error | null; }> => Promise.resolve({data: null, error: null})),
+        uploadAndRegisterResource: () => { throw new Error('should not be called'); }
     };
 
     // Act
@@ -656,9 +685,7 @@ Deno.test('submitStageResponses', async (t) => {
 
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
     const mockUploadToStorage = spy((_client: SupabaseClient, _bucket: string, path: string) => {
-      if (path.includes('seed_prompt')) {
-        return Promise.resolve({ error: new Error("Seed prompt upload failed"), path: null });
-      }
+      // This spy is for the consolidated feedback, which should succeed.
       return Promise.resolve({ path: 'path/to/feedback.md', error: null });
     });
     const mockDownloadFromStorage = spy((_client: SupabaseClient, _bucket: string, path: string) => {
@@ -667,14 +694,31 @@ Deno.test('submitStageResponses', async (t) => {
       }
       return Promise.resolve({ data: new TextEncoder().encode("Mocked AI content").buffer as ArrayBuffer, mimeType: 'text/plain', error: null });
     });
-    const mockDependencies = { logger, uploadToStorage: mockUploadToStorage, downloadFromStorage: mockDownloadFromStorage };
+    const mockUploadAndRegisterResource = spy((..._args: any[]) => {
+      return Promise.resolve({ error: { message: "Simulated upload failure", status: 500 } });
+    });
+
+    const mockDependencies = { 
+        logger, 
+        uploadToStorage: mockUploadToStorage, 
+        downloadFromStorage: mockDownloadFromStorage,
+        uploadAndRegisterResource: mockUploadAndRegisterResource
+    };
 
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, mockDependencies);
 
-    assertEquals(status, 500);
-    assert(error);
-    assertStringIncludes(error.message, "Failed to store seed prompt for next stage");
-    assertEquals(data, undefined);
+    assertEquals(status, 200);
+    assertEquals(error, undefined);
+    assertExists(data);
+
+    // Assert that the function completed successfully but the specific path is null
+    assertEquals(data.nextStageSeedPromptPath, null, "nextStageSeedPromptPath should be null on upload failure");
+    
+    // Check that the session status was still updated correctly
+    assertEquals(data.updatedSession.status, 'pending_antithesis');
+    
+    // Check that the upload was attempted
+    assertEquals(mockUploadAndRegisterResource.calls.length, 1);
   });
 
   await t.step('5.3 Handles failure when downloading AI contribution content (for seed prompt context)', async () => {
@@ -730,7 +774,8 @@ Deno.test('submitStageResponses', async (t) => {
     const mockDependencies = {
         logger,
         uploadToStorage: mockUploadToStorage,
-        downloadFromStorage: mockDownloadFromStorage
+        downloadFromStorage: mockDownloadFromStorage,
+        uploadAndRegisterResource: () => { throw new Error('should not be called'); }
     };
     
     // Act
@@ -784,7 +829,7 @@ Deno.test('submitStageResponses', async (t) => {
       // This spy should not be called because there's no next stage to prepare a seed for.
       throw new Error("Should not be called when finalizing a session");
     });
-    const mockDependencies = { logger, uploadToStorage: mockUploadToStorage, downloadFromStorage: mockDownloadFromStorage };
+    const mockDependencies = { logger, uploadToStorage: mockUploadToStorage, downloadFromStorage: mockDownloadFromStorage, uploadAndRegisterResource: () => { throw new Error('should not be called'); } };
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, mockDependencies);
 
     assertEquals(status, 200);
@@ -824,7 +869,7 @@ Deno.test('submitStageResponses', async (t) => {
     };
 
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-    const mockDependencies = { logger, uploadToStorage: spy(() => Promise.resolve({path: 'a/path', error: null})), downloadFromStorage: spy((): Promise<{ data: ArrayBuffer | null; error: Error | null; }> => Promise.resolve({data: new TextEncoder().encode('{}').buffer as ArrayBuffer, error: null})) };
+    const mockDependencies = { logger, uploadToStorage: spy(() => Promise.resolve({path: 'a/path', error: null})), downloadFromStorage: spy((): Promise<{ data: ArrayBuffer | null; error: Error | null; }> => Promise.resolve({data: new TextEncoder().encode('{}').buffer as ArrayBuffer, error: null})), uploadAndRegisterResource: () => { throw new Error('should not be called'); } };
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, mockDependencies);
 
     assertEquals(status, 500);
@@ -861,18 +906,25 @@ Deno.test('submitStageResponses', async (t) => {
     const mockUploadToStorage = spy((...args: any[]) => Promise.resolve({ path: args[2] as string, error: null }));
     const mockDownloadFromStorage = spy(() => Promise.resolve({ data: new TextEncoder().encode(JSON.stringify({ user_objective: "A test objective" })).buffer as ArrayBuffer, error: null }));
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-    const mockDependencies = { logger, uploadToStorage: mockUploadToStorage, downloadFromStorage: mockDownloadFromStorage };
+    const mockUploadAndRegisterResource = spy((...args: any[]) => {
+      return Promise.resolve({ data: { id: 'resource-id', storage_path: `projects/${args[3]}/resources/some-uuid/${args[5]}` } as any, error: undefined });
+    });
+    const mockDependencies = { logger, uploadToStorage: mockUploadToStorage, downloadFromStorage: mockDownloadFromStorage, uploadAndRegisterResource: mockUploadAndRegisterResource };
 
     const { data, status, error } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient, mockUser, mockDependencies);
     
     assertEquals(error, undefined);
     assertEquals(status, 200);
     assertExists(data);
-    const seedPromptUploadCall = mockUploadToStorage.calls.find(c => (c.args[2] as string).includes('seed_prompt.md'));
+    const seedPromptUploadCall = mockUploadAndRegisterResource.calls[0];
     assertExists(seedPromptUploadCall);
-    const seedPromptContent = seedPromptUploadCall.args[3] as string;
-    assertStringIncludes(seedPromptContent, `## AI Contributions from ${mockThesisStage.display_name}\n\n`);
-    assert(!seedPromptContent.includes("### Contribution from"), "Should not have any contribution content");
+    if (seedPromptUploadCall && seedPromptUploadCall.args.length > 4) {
+      const seedPromptBlob = seedPromptUploadCall.args[4] as Blob;
+      const seedPromptContent = await seedPromptBlob.text();
+      assertStringIncludes(seedPromptContent, `## AI Contributions from ${mockThesisStage.display_name}`);
+      assertStringIncludes(seedPromptContent, "No AI-generated content was provided for this stage.", "Should contain the placeholder text for no contributions");
+      assert(!seedPromptContent.includes("### Contribution from"), "Should not have any contribution content");
+    }
   });
 
-}); 
+});

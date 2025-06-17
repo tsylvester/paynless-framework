@@ -33,6 +33,7 @@ export interface DialecticProject {
     updated_at: string;
     dialectic_sessions?: DialecticSession[];
     resources?: DialecticProjectResource[];
+    process_template_id?: string | null;
     dialectic_process_templates: DialecticProcessTemplate | null;
 }
 
@@ -186,11 +187,10 @@ export interface DialecticStateValues {
   isUpdatingProjectPrompt: boolean;
   isUploadingProjectResource: boolean;
   uploadProjectResourceError: ApiError | null;
-  isStartNewSessionModalOpen: boolean;
   selectedModelIds: string[];
 
   // Cache for initial prompt file content
-  initialPromptContentCache: { [resourceId: string]: InitialPromptCacheEntry };
+  initialPromptContentCache: { [resourceId: string]: { content: string; isLoading: boolean; error: ApiError | null } };
 
   // New state for process templates
   currentProcessTemplate: DialecticProcessTemplate | null;
@@ -257,7 +257,7 @@ export interface DialecticActions {
   cloneDialecticProject: (projectId: string) => Promise<ApiResponse<DialecticProject>>;
   exportDialecticProject: (projectId: string) => Promise<ApiResponse<{ export_url: string }>>;
   updateDialecticProjectInitialPrompt: (payload: UpdateProjectInitialPromptPayload) => Promise<ApiResponse<DialecticProject>>;
-  setStartNewSessionModalOpen: (isOpen: boolean) => void;
+  setSelectedModelIds: (modelIds: string[]) => void;
   setModelMultiplicity: (modelId: string, count: number) => void;
   resetSelectedModelId: () => void;
 
@@ -265,10 +265,10 @@ export interface DialecticActions {
   fetchProcessTemplate: (templateId: string) => Promise<void>;
 
   // New action for fetching initial prompt file content
-  fetchInitialPromptContent: (resourceIdOrPath: string) => Promise<void>; // Updated to accept path too
+  fetchInitialPromptContent: (resourceId: string) => Promise<void>;
 
   // Action for generating contributions
-  generateContributions: (payload: { sessionId: string; projectId: string; stageSlug: DialecticStage['slug']; iterationNumber: number; }) => Promise<ApiResponse<{ message: string; contributions?: DialecticContribution[] }>>;
+  generateContributions: (sessionId: string, stageId: string) => Promise<ApiResponse<DialecticContribution[]>>;
   
   // Actions for submitting stage responses and preparing next seed (plan 1.2.Y / 1.5.6.4)
   submitStageResponses: (payload: SubmitStageResponsesPayload) => Promise<ApiResponse<SubmitStageResponsesResponse>>;

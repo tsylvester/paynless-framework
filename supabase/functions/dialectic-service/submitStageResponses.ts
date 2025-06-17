@@ -15,8 +15,10 @@ import {
 } from './dialectic.interface.ts';
 import {
   downloadFromStorage,
+  uploadToStorage,
 } from '../_shared/supabase_storage_utils.ts';
 import { renderPrompt } from '../_shared/prompt-renderer.ts';
+import type { Logger } from '../_shared/logger.ts';
 
 // Get storage bucket from environment variables, with a fallback for safety.
 const STORAGE_BUCKET = Deno.env.get('CONTENT_STORAGE_BUCKET') || 'dialectic-contributions';
@@ -171,7 +173,7 @@ async function fetchAndAssembleArtifacts(
           }
         }
       } else {
-        contributionsContent += `## AI Contributions from ${displayName}\n\n`;
+        contributionsContent += `## AI Contributions from ${displayName}\n\nNo AI-generated content was provided for this stage.\n\n`;
       }
     } else if (rule.type === 'feedback') {
       if (!feedbackContent) {
@@ -208,7 +210,12 @@ export async function submitStageResponses(
   error?: ServiceError;
   status?: number;
 }> {
-  const { logger, uploadToStorage, downloadFromStorage } = dependencies;
+  const {
+    logger,
+    uploadToStorage,
+    downloadFromStorage,
+    uploadAndRegisterResource,
+  } = dependencies;
   logger.info(
     `[submitStageResponses] Received payload for session: ${payload.sessionId}`,
     { payload },
@@ -226,21 +233,21 @@ export async function submitStageResponses(
 
   // Basic payload validation
   if (!sessionId) {
-      return { error: { message: 'Invalid payload. Missing sessionId.' }, status: 400 };
+    return { error: { message: 'Invalid payload. Missing sessionId.' }, status: 400 };
   }
   if (!currentStageSlug) {
-      return { error: { message: 'Invalid payload. Missing currentStageSlug.' }, status: 400 };
+    return { error: { message: 'Invalid payload. Missing currentStageSlug.' }, status: 400 };
   }
   if (!currentIterationNumber && currentIterationNumber !== 0) {
-      return { error: { message: 'Invalid payload. Missing currentIterationNumber.' }, status: 400 };
+    return { error: { message: 'Invalid payload. Missing currentIterationNumber.' }, status: 400 };
   }
   if (!responses || responses.length === 0) {
-      return { error: { message: 'Invalid payload. responses array must be provided and cannot be empty.' }, status: 400 };
+    return { error: { message: 'Invalid payload. responses array must be provided and cannot be empty.' }, status: 400 };
   }
   for (const response of responses) {
-      if (!response.originalContributionId || !response.responseText) {
-          return { error: { message: 'Invalid item in responses array. Missing originalContributionId or responseText.' }, status: 400 };
-      }
+    if (!response.originalContributionId || !response.responseText) {
+      return { error: { message: 'Invalid item in responses array. Missing originalContributionId or responseText.' }, status: 400 };
+    }
   }
 
   try {
@@ -541,27 +548,43 @@ export async function submitStageResponses(
       );
 
       // 4.5 Store the fully constructed prompt
-      nextStageSeedPath =
-        `projects/${project.id}/sessions/${sessionId}/iteration_${currentIterationNumber}/${nextStage.slug}/seed_prompt.md`;
-      const { error: uploadSeedPromptError } = await uploadToStorage(
-        dbClient,
-        STORAGE_BUCKET,
-        nextStageSeedPath,
-        renderedPrompt,
-        { contentType: 'text/markdown', upsert: true },
+      const nextStageSeedPrompt = renderPrompt(
+        systemPromptNextStage.prompt_text,
+        promptContext,
       );
 
-      if (uploadSeedPromptError) {
-        logger.error('Failed to upload seed prompt for next stage', {
-          error: uploadSeedPromptError,
-        });
-        return {
-          error: {
-            message: 'Failed to store seed prompt for next stage.',
-            details: uploadSeedPromptError.message,
-          },
-          status: 500,
-        };
+      // D. UPLOAD THE SEED PROMPT FOR THE NEXT STAGE
+      const resourceDescription = JSON.stringify({
+          type: "seed_prompt",
+          stage_id: nextStage.id,
+          session_id: sessionData.id,
+          iteration: currentIterationNumber,
+          stage_slug: nextStage.slug
+      });
+  
+      const { error: uploadError } = await dependencies.uploadAndRegisterResource(
+          dbClient,
+          user,
+          logger as Logger,
+          project.id,
+          new Blob([nextStageSeedPrompt], { type: 'text/markdown' }),
+          'seed_prompt.md',
+          'text/markdown',
+          resourceDescription
+      );
+  
+      if (uploadError) {
+          logger.error(
+              `[submitStageResponses] Failed to upload and register seed prompt for next stage. This may leave the session in an inconsistent state.`,
+              { error: uploadError.message }
+          );
+          // We do not rethrow or return an error here, as the primary operations of saving the
+          // user's feedback and updating the session status have already succeeded.
+          // The flow can continue, and this error can be addressed separately if needed.
+      } else {
+        // Since we are no longer using the old method, we can set this path for the response.
+        // A better approach in the future might be to return the created resource object itself.
+        nextStageSeedPath = `projects/${project.id}/sessions/${sessionId}/iteration_${currentIterationNumber}/${nextStage.slug}/seed_prompt.md`;
       }
     }
 

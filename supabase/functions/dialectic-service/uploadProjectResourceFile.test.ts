@@ -560,66 +560,86 @@ Deno.test('uploadProjectResourceFileHandler - DB insert for resource returns no 
     }
 });
 
-Deno.test('uploadProjectResourceFileHandler - default resource description if not provided', async () => {
-    const currentTestUserId = 'user-default-desc';
-    const testProjectId = 'project-default-desc';
-    const testFileName = 'file_with_default_desc.dat';
-    const testFileSize = 50;
-    const testMimeType = 'application/octet-stream';
-    const generatedResourceId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
-    const mockUserForTest: User = { id: currentTestUserId, aud: 'authenticated', email: 'test@example.com', created_at: new Date().toISOString(), app_metadata: {}, user_metadata: {}, role: 'authenticated' };
+Deno.test(
+  "uploadProjectResourceFileHandler - default resource description if not provided",
+  async (t) => {
+    const currentTestUserId = "user-default-desc";
+    const testProjectId = "project-default-desc";
+    const mockFile = new File(["content"], "file_with_default_desc.dat", { type: 'application/octet-stream', });
+    Object.defineProperty(mockFile, 'size', { value: 50, configurable: true });
 
-    const mockExpectedResourceData: DialecticProjectResource = {
-        id: generatedResourceId,
-        project_id: testProjectId,
-        user_id: currentTestUserId,
-        file_name: testFileName,
-        storage_bucket: 'dialectic-contributions',
-        storage_path: `projects/${testProjectId}/resources/${generatedResourceId}/${testFileName}`,
-        mime_type: testMimeType,
-        size_bytes: testFileSize,
-        resource_description: `Resource file: ${testFileName}`, // Expected default
-        status: "active",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-    };
+    const formData = new FormData();
+    formData.append("projectId", testProjectId);
+    formData.append("resourceFile", mockFile);
+    // No resourceDescription is provided, so the handler should create a default one.
+
+    const generatedResourceId = "a1b2c3d4-e5f6-7890-1234-567890abcdef";
 
     const mockSupabaseConfig: MockSupabaseDataConfig = {
-        mockUser: mockUserForTest,
-        genericMockResults: {
-            'dialectic_projects': {
-                select: async () => ({ data: [{ id: testProjectId, user_id: currentTestUserId }], error: null, count: 1, status: 200, statusText: 'OK' }),
-            },
-            'dialectic_project_resources': {
-                insert: async (state: MockQueryBuilderState) => {
-                     const insertedData = state.insertData as DialecticProjectResource;
-                     if (insertedData?.resource_description === `Resource file: ${testFileName}`) {
-                        return { data: [{...mockExpectedResourceData, created_at: new Date().toISOString(), updated_at: new Date().toISOString()}], error: null, count: 1, status: 201, statusText: 'Created' };
-                     }
-                     return {data: null, error: {name: "PostgrestError", message: "resource_description mismatch", code:"ASSERT", details:"", hint:""}, status: 400, statusText:"Bad Request"};
-                }
-            }
+      genericMockResults: {
+        dialectic_projects: {
+          select: async () => ({
+            data: [{ id: testProjectId, user_id: currentTestUserId }],
+            error: null,
+            count: 1,
+            status: 200,
+            statusText: "OK",
+          }),
         },
-        storageMock: {
-            defaultBucket: 'dialectic-contributions',
-            uploadResult: async (_b: string, p: string) => ({ data: { path: p }, error: null })
-        }
+        dialectic_project_resources: {
+          insert: async (state: MockQueryBuilderState) => {
+            const resourceToInsert = state.insertData as DialecticProjectResource;
+            // The core of this test: assert the default description was created.
+            assertEquals(resourceToInsert.resource_description, `User uploaded file: ${mockFile.name}`);
+            
+            // Return a successful insertion response
+            return { data: [resourceToInsert], error: null, count: 1, status: 201, statusText: "Created" };
+          },
+        },
+      },
+      storageMock: {
+        defaultBucket: "dialectic-contributions",
+        uploadResult: async (): Promise<IMockStorageUploadResponse> => ({
+          data: {
+            path:
+              `projects/${testProjectId}/resources/${generatedResourceId}/${mockFile.name}`,
+          },
+          error: null,
+        }),
+      },
     };
 
-    const { client: mockDbClient, clearAllStubs } = createMockSupabaseClient(currentTestUserId, mockSupabaseConfig);
-    const formData = createMockFormData({ name: testFileName, type: testMimeType, content: 'binary data'.repeat(5), size: testFileSize }, testProjectId, undefined /* no description */);
-    
-    const originalCryptoRandomUUID = crypto.randomUUID;
-    globalThis.crypto.randomUUID = () => generatedResourceId;
-
+    stub(crypto, "randomUUID", () => generatedResourceId as any);
+    let mockSetup: MockSupabaseClientSetup | undefined;
     try {
-        const result = await uploadProjectResourceFileHandler(formData, mockDbClient as any, mockUserForTest, testLoggerInstance);
+        mockSetup = createMockSupabaseClient(currentTestUserId, mockSupabaseConfig as any);
+        const { client: mockDbClient } = mockSetup;
         
-        assertExists(result.data, 'Expected data for successful upload with default description');
-        assertEquals(result.error, undefined, `Unexpected error: ${result.error?.message}`);
-        assertEquals(result.data?.resource_description, `Resource file: ${testFileName}`);
+        const mockUserForTest: User = { 
+            id: currentTestUserId, 
+            aud: 'authenticated', 
+            role: 'authenticated', 
+            email: 'test@example.com', 
+            created_at: new Date().toISOString(), 
+            app_metadata: {}, 
+            user_metadata: {} 
+        };
+
+        const result = await uploadProjectResourceFileHandler(
+            formData,
+            mockDbClient as any, 
+            mockUserForTest, 
+            testLoggerInstance,
+        );
+
+        assertEquals(result.error, undefined, "Expected no error on successful upload");
+        assertExists(result.data, "Expected data for successful upload with default description");
+        assertEquals(result.data?.resource_description, `User uploaded file: ${mockFile.name}`);
     } finally {
-        globalThis.crypto.randomUUID = originalCryptoRandomUUID;
-        if (clearAllStubs) clearAllStubs();
+        restore();
+        if (mockSetup && mockSetup.clearAllStubs) {
+            mockSetup.clearAllStubs();
+        }
     }
-});
+  },
+);

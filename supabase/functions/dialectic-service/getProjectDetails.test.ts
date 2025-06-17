@@ -362,9 +362,17 @@ describe("getProjectDetails", () => {
     assertEquals(fromSpy.calls[0].args[0], 'dialectic_projects');
     
     assertEquals(qbSpies.select.calls.length, 1);
-    const expectedSelect = "*, dialectic_domains ( name ), dialectic_process_templates ( * ), dialectic_sessions (*, dialectic_contributions (*) )";
+    const expectedSelect = `
+        *,
+        dialectic_domains ( name ),
+        dialectic_process_templates ( * ),
+        dialectic_project_resources (*),
+        dialectic_sessions (*,
+          dialectic_contributions (*)
+        )
+      `;
     const actualSelect = qbSpies.select.calls[0].args[0]?.toString().replace(/\s+/g, ' ').trim();
-    assertEquals(actualSelect, expectedSelect);
+    assertEquals(actualSelect, expectedSelect.replace(/\s+/g, ' ').trim());
 
     assertEquals(qbSpies.eq.calls.length, 2);
     assertEquals(qbSpies.eq.calls[0].args[0], 'id');

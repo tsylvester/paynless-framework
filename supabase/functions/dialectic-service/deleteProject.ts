@@ -39,88 +39,44 @@ export async function deleteProject(
       return { error: {message: 'User is not authorized to delete this project.'}, status: 403 };
     }
 
-    const pathsToClean: { bucket: string, paths: string[] }[] = [];
+    // New logic: Delete the entire project folder from storage
+    const projectFolderPath = `projects/${projectId}`;
+    console.log(`Listing files in folder: ${projectFolderPath} for deletion.`);
 
-    // 2. Collect contribution storage paths
-    // First, get all session IDs for the project
-    const { data: sessions, error: sessionsError } = await supabaseClient
-      .from('dialectic_sessions')
-      .select('id')
-      .eq('project_id', projectId);
+    const { data: fileList, error: listError } = await supabaseClient.storage
+      .from('dialectic-contributions') // Assuming this is the correct bucket
+      .list(projectFolderPath, {
+        limit: 1000, // Adjust limit as needed, consider pagination for very large projects
+        offset: 0,
+        sortBy: { column: 'name', order: 'asc' },
+      });
 
-    if (sessionsError) {
-      console.error('Error fetching sessions for project deletion:', sessionsError);
-      // Non-fatal, proceed to delete project record, storage cleanup might be partial
-    } else if (sessions && sessions.length > 0) {
-      const sessionIds = sessions.map(s => s.id);
+    if (listError) {
+      console.error(`Error listing files for project deletion: ${listError.message}`);
+      // Non-fatal, proceed to delete the project record from the DB anyway.
+      // The files will be orphaned, but the project will be gone from the UI.
+    }
 
-      const { data: contributions, error: contributionsError } = await supabaseClient
-        .from('dialectic_contributions')
-        .select('id, session_id, content_storage_path, raw_response_storage_path, content_storage_bucket')
-        .in('session_id', sessionIds);
-
-      if (contributionsError) {
-        console.error('Error fetching contributions for project deletion:', contributionsError);
-        // Non-fatal, proceed to delete project record, storage cleanup might be partial
-      } else if (contributions && contributions.length > 0) {
-        const contributionPathsByBucket: Record<string, string[]> = {};
-        contributions.forEach(c => {
-          const bucket = c.content_storage_bucket;
-          if (bucket) {
-            if (!contributionPathsByBucket[bucket]) {
-              contributionPathsByBucket[bucket] = [];
-            }
-            if (c.content_storage_path) contributionPathsByBucket[bucket].push(c.content_storage_path);
-            if (c.raw_response_storage_path) contributionPathsByBucket[bucket].push(c.raw_response_storage_path);
-          } else if (c.content_storage_path || c.raw_response_storage_path) {
-            console.warn(`Contribution ${c.id} has storage paths but no defined storage bucket. Skipping cleanup for these paths.`);
-          }
-        });
-        for (const bucket in contributionPathsByBucket) {
-          if (contributionPathsByBucket[bucket].length > 0) {
-            pathsToClean.push({ bucket, paths: contributionPathsByBucket[bucket] });
-          }
-        }
+    if (fileList && fileList.length > 0) {
+      const filesToRemove = fileList.map((file) => `${projectFolderPath}/${file.name}`);
+      // Also remove the folder itself if it's empty after removing files,
+      // or if the API needs an explicit folder marker. Often, removing all files effectively removes the folder.
+      // For Supabase, removing all objects within a path is sufficient.
+      
+      console.log(`Found ${filesToRemove.length} files to remove.`);
+      
+      const { error: removeError } = await supabaseClient.storage
+        .from('dialectic-contributions')
+        .remove(filesToRemove);
+      
+      if (removeError) {
+        console.error(`Error removing files from storage: ${removeError.message}`);
+        // Non-fatal, proceed to delete the project record from the DB.
+      } else {
+        console.log(`Successfully removed files for project: ${projectId}`);
       }
-    }
-    
-    // 3. Collect project resource storage paths
-    const { data: projectResources, error: projectResourcesError } = await supabaseClient
-      .from('dialectic_project_resources')
-      .select('storage_path, storage_bucket')
-      .eq('project_id', projectId);
-
-    if (projectResourcesError) {
-      console.error('Error fetching project resources for deletion:', projectResourcesError);
-      // Non-fatal, proceed to delete project record
-    }
-
-    if (projectResources && projectResources.length > 0) {
-        const resourcePathsByBucket: Record<string, string[]> = {};
-        projectResources.forEach(pr => {
-            if (pr.storage_path && pr.storage_bucket) {
-                if (!resourcePathsByBucket[pr.storage_bucket]) {
-                    resourcePathsByBucket[pr.storage_bucket] = [];
-                }
-                resourcePathsByBucket[pr.storage_bucket].push(pr.storage_path);
-            }
-        });
-        for (const bucket in resourcePathsByBucket) {
-            pathsToClean.push({ bucket, paths: resourcePathsByBucket[bucket] });
-        }
-    }
-
-    // 4. Call storage-cleanup-service for each bucket
-    for (const { bucket, paths } of pathsToClean) {
-        if (paths.length > 0) {
-            const { error: cleanupError } = await supabaseClient.functions.invoke('storage-cleanup-service', {
-                body: { bucket, paths },
-            });
-            if (cleanupError) {
-                console.error(`Error cleaning storage for bucket ${bucket}:`, cleanupError);
-                // Non-fatal, log and continue with project deletion from DB
-            }
-        }
+    } else {
+      console.log(`No files found in storage for project: ${projectId}. Nothing to remove.`);
     }
 
     // 5. Delete the project record from dialectic_projects table
