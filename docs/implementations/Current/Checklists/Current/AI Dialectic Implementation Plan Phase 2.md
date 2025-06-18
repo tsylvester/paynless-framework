@@ -228,6 +228,15 @@ The process involves creating new database test files that follow the establishe
 While the project is advancing well, these three areas represent fundamental, unfinished work. Addressing them is the path to truly completing the vision laid out in the implementation plan.
 ---
 
+*   [ ] Fix MarkdownRenderer so that it properly shows UL & OL 
+*   [ ] Use TextInputArea on SessionInfoCard so users can edit & save their prompt 
+*   [ ] When overlays are not provided, the assembler should omit the section. 
+*   [ ] Add better explanation of stages on StageTabCard
+*   [ ] Add model selector to StageTabCard to set models for that stage
+*   [ ] Remove Generate Thesis Contributions button from Contributions Display component 
+*   [ ] When Contributions already exist, change "Generate {Stage}" to "Regenerate {Stage}"
+*   [ ] Add "Begin Next Stage" button to Contributions tab to signal it's time to move on. 
+
 ### 1.6 Basic GitHub Integration (Backend & API)
 *   `[ ] 1.6.1 [CONFIG]` Add new environment variables if needed for GitHub App/PAT specifically for Dialectic outputs, or confirm existing ones are sufficient and securely stored (e.g., in Supabase Vault).
 *   `[ ] 1.6.2 [BE]` `dialectic-service` Action: `configureGitHubRepo`

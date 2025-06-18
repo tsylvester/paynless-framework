@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { useDialecticStore, selectActiveContextProjectId, selectActiveContextSessionId } from '@paynless/store';
+import { useDialecticStore } from '@paynless/store';
 import { DialecticProject, DialecticSession } from '@paynless/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -65,17 +65,13 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = ({ session }) => 
     <Card className="mb-6" aria-labelledby={`session-info-title-${session.id}`}>
       <CardHeader>
         <CardTitle id={`session-info-title-${session.id}`} className="text-xl">
-          {session.session_description || 'Session Information'}
-        </CardTitle>
-        <CardDescription>
-          Project: {project.project_name} | 
-          Status: <Badge variant={session.status?.includes('error') ? 'destructive' : 'secondary'}>{session.status || 'N/A'}</Badge> | 
+          {session.session_description || 'Session Information'} | 
+          <Badge variant={session.status?.includes('error') ? 'destructive' : 'secondary'}>{session.status || 'N/A'}</Badge> | 
           Iteration: {session.iteration_count}
-        </CardDescription>
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="mt-2">
-          <h4 className="text-sm font-semibold text-muted-foreground mb-1">Iteration User Prompt:</h4>
           {iterationPromptCacheEntry?.isLoading && (
             <div data-testid="iteration-prompt-loading">
               <Skeleton className="h-4 w-1/4 mb-2" />

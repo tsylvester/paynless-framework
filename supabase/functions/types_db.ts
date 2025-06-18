@@ -225,17 +225,15 @@ export type Database = {
       dialectic_contributions: {
         Row: {
           citations: Json | null
-          content_mime_type: string
-          content_size_bytes: number | null
-          content_storage_bucket: string
-          content_storage_path: string
           contribution_type: string | null
           created_at: string
           edit_version: number
           error: string | null
+          file_name: string | null
           id: string
           is_latest_edit: boolean
           iteration_number: number
+          mime_type: string
           model_id: string | null
           model_name: string | null
           original_model_contribution_id: string | null
@@ -244,7 +242,10 @@ export type Database = {
           raw_response_storage_path: string | null
           seed_prompt_url: string | null
           session_id: string
+          size_bytes: number | null
           stage: string
+          storage_bucket: string
+          storage_path: string
           target_contribution_id: string | null
           tokens_used_input: number | null
           tokens_used_output: number | null
@@ -253,17 +254,15 @@ export type Database = {
         }
         Insert: {
           citations?: Json | null
-          content_mime_type?: string
-          content_size_bytes?: number | null
-          content_storage_bucket?: string
-          content_storage_path: string
           contribution_type?: string | null
           created_at?: string
           edit_version?: number
           error?: string | null
+          file_name?: string | null
           id?: string
           is_latest_edit?: boolean
           iteration_number?: number
+          mime_type?: string
           model_id?: string | null
           model_name?: string | null
           original_model_contribution_id?: string | null
@@ -272,7 +271,10 @@ export type Database = {
           raw_response_storage_path?: string | null
           seed_prompt_url?: string | null
           session_id: string
+          size_bytes?: number | null
           stage: string
+          storage_bucket?: string
+          storage_path: string
           target_contribution_id?: string | null
           tokens_used_input?: number | null
           tokens_used_output?: number | null
@@ -281,17 +283,15 @@ export type Database = {
         }
         Update: {
           citations?: Json | null
-          content_mime_type?: string
-          content_size_bytes?: number | null
-          content_storage_bucket?: string
-          content_storage_path?: string
           contribution_type?: string | null
           created_at?: string
           edit_version?: number
           error?: string | null
+          file_name?: string | null
           id?: string
           is_latest_edit?: boolean
           iteration_number?: number
+          mime_type?: string
           model_id?: string | null
           model_name?: string | null
           original_model_contribution_id?: string | null
@@ -300,7 +300,10 @@ export type Database = {
           raw_response_storage_path?: string | null
           seed_prompt_url?: string | null
           session_id?: string
+          size_bytes?: number | null
           stage?: string
+          storage_bucket?: string
+          storage_path?: string
           target_contribution_id?: string | null
           tokens_used_input?: number | null
           tokens_used_output?: number | null
@@ -470,7 +473,7 @@ export type Database = {
           id: string
           mime_type: string
           project_id: string
-          resource_description: string | null
+          resource_description: Json | null
           size_bytes: number
           storage_bucket: string
           storage_path: string
@@ -483,7 +486,7 @@ export type Database = {
           id?: string
           mime_type: string
           project_id: string
-          resource_description?: string | null
+          resource_description?: Json | null
           size_bytes: number
           storage_bucket?: string
           storage_path: string
@@ -496,7 +499,7 @@ export type Database = {
           id?: string
           mime_type?: string
           project_id?: string
-          resource_description?: string | null
+          resource_description?: Json | null
           size_bytes?: number
           storage_bucket?: string
           storage_path?: string
