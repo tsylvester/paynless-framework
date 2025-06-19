@@ -255,9 +255,13 @@ describe('SessionContributionsDisplayCard', () => {
     expect(screen.queryByTestId('generate-contributions-button-mock')).not.toBeInTheDocument();
   });
 
-  it('does NOT render the GenerateContributionButton when contributions already exist for the stage', () => {
-    setup(mockProject, 'sess-1', mockThesisStage);
-    expect(screen.queryByTestId('generate-contributions-button-mock')).not.toBeInTheDocument();
+  it('displays a "Stage Not Ready" message and no contributions when the stage is not ready', () => {
+    setup(mockProject, 'sess-1', mockThesisStage, undefined, false); // Explicitly set isStageReadyOverride to false
+
+    expect(screen.getByText('Stage Not Ready')).toBeInTheDocument(); // AlertTitle
+    expect(screen.getByText(/Stage not ready. Contributions cannot be generated or displayed/i)).toBeInTheDocument(); // AlertDescription
+    expect(screen.queryByTestId(/generated-contribution-card-/)).not.toBeInTheDocument(); // No contribution cards
+    expect(screen.queryByRole('button', { name: /Submit Responses/i })).not.toBeInTheDocument(); // No submit button
   });
 
   it('manages local state for user responses correctly', () => {

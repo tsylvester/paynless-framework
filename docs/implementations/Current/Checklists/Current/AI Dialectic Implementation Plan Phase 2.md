@@ -228,14 +228,200 @@ The process involves creating new database test files that follow the establishe
 While the project is advancing well, these three areas represent fundamental, unfinished work. Addressing them is the path to truly completing the vision laid out in the implementation plan.
 ---
 
-*   [ ] Fix MarkdownRenderer so that it properly shows UL & OL 
-*   [ ] Use TextInputArea on SessionInfoCard so users can edit & save their prompt 
-*   [ ] When overlays are not provided, the assembler should omit the section. 
-*   [ ] Add better explanation of stages on StageTabCard
+*   [X] Fix MarkdownRenderer so that it properly shows UL & OL 
+*   [X] Add better explanation of stages on StageTabCard
 *   [ ] Add model selector to StageTabCard to set models for that stage
 *   [ ] Remove Generate Thesis Contributions button from Contributions Display component 
 *   [ ] When Contributions already exist, change "Generate {Stage}" to "Regenerate {Stage}"
 *   [ ] Add "Begin Next Stage" button to Contributions tab to signal it's time to move on. 
+*   [ ] (Too complex for now) Use TextInputArea on SessionInfoCard so users can edit & save their prompt 
+*   [ ] (Too complex for now) When overlays are not provided, the assembler should omit the section. 
+
+Okay, I've read the `AI Dialectic Implementation Plan Phase 2.md` document and will propose a new section that transposes our discussion about stage readiness into the existing plan's format and sequence.
+
+Here's the proposed new section:
+
+---
+
+### Section 2.B: UI/Store Refinement for Stage Readiness Display
+
+**Objective:** To implement a clear and consistent way for UI components to determine if a specific stage (for a given session and iteration) is "ready" (i.e., its seed prompt has been successfully generated and stored), and to update relevant UI components to reflect this readiness state, particularly for controlling the "Generate Contributions" button and displaying warnings.
+
+---
+
+*   `[ ] 2.B.1 [STORE]` **Create `selectIsStageReadyForSessionIteration` Selector**
+    *   `[✅] 2.B.1.1 [TEST-UNIT]` In `packages/store/src/dialecticStore.selectors.test.ts`, write unit tests for a new selector `selectIsStageReadyForSessionIteration`. (RED)
+        *   Test scenarios:
+            *   Project, session, stage, and matching seed prompt resource exist: returns `true`.
+            *   No project/session/stage: returns `false`.
+            *   No `project.resources`: returns `false`.
+            *   `project.resources` exist, but no resource has a `resource_description` parseable to JSON: returns `false`.
+            *   A resource's `resource_description` is valid JSON but `desc.type` is not `'seed_prompt'`: returns `false`.
+            *   A `seed_prompt` resource exists, but its `desc.session_id` does not match the provided `sessionId`: returns `false`.
+            *   A `seed_prompt` resource exists with matching `session_id`, but `desc.stage_slug` does not match `stageSlug`: returns `false`.
+            *   A `seed_prompt` resource exists with matching `session_id` and `stage_slug`, but `desc.iteration` does not match `iterationNumber`: returns `false`.
+            *   All conditions met: returns `true`.
+    *   `[✅] 2.B.1.2 [STORE]` In `packages/store/src/dialecticStore.selectors.ts`, implement `selectIsStageReadyForSessionIteration(state: DialecticState, projectId: string, sessionId: string, stageSlug: string, iterationNumber: number): boolean`.
+        *   The selector will:
+            *   Find the `currentProjectDetail` by `projectId`.
+            *   Find the `session` within the project by `sessionId`.
+            *   Iterate through `project.resources`.
+            *   For each resource, safely parse `resource_description` (if it's a string and looks like JSON).
+            *   Return `true` if a resource is found where the parsed description has:
+                *   `type === 'seed_prompt'`
+                *   `session_id === sessionId`
+                *   `stage_slug === stageSlug`
+                *   `iteration === iterationNumber`
+            *   Otherwise, return `false`.
+        *   (GREEN)
+    *   `[✅] 2.B.1.3 [TEST-UNIT]` Run selector tests.
+*   `[✅] 2.B.2 [UI]` **Refactor `StageTabCard.tsx` for Readiness**
+    *   `[✅] 2.B.2.1 [TEST-UNIT]` Update unit tests for `StageTabCard.tsx`. (RED)
+        *   Mock the `useDialecticStore` to return `true` or `false` from `selectIsStageReadyForSessionIteration` (called with the card's `stage.slug`, current `session.id`, and `session.iteration_count`).
+        *   Assert that `GenerateContributionButton` `disabled` prop is `true` when `isStageReady` is `false`.
+        *   Assert that `GenerateContributionButton` text is "Stage Not Ready" when `isStageReady` is `false` and `isActiveStage` is `true`.
+        *   Assert that `GenerateContributionButton` text is "Generate Contributions" (or similar) when `isStageReady` is `true` and `isActiveStage` is `true`.
+    *   `[✅] 2.B.2.2 [UI]` In `StageTabCard.tsx`:
+        *   Use `const isStageReady = useDialecticStore(state => selectIsStageReadyForSessionIteration(state, project.id, session.id, stage.slug, session.iteration_count));` (ensure `project` and `session` are available in scope).
+        *   Modify `GenerateContributionButton`:
+            *   `disabled={!isStageReady || !isActiveStage}` (Button is disabled if stage is not ready OR if it's not the active stage tab).
+            *   Button text: `{(isStageReady || !isActiveStage) ? 'Generate Contributions' : 'Stage Not Ready'}` (or more nuanced logic if `!isActiveStage` should also say something else or be disabled differently). Consider that the button should primarily reflect readiness for the *active* stage. The most important change is to disable and show "Stage Not Ready" if `!isStageReady && isActiveStage`. For non-active stages, it's already disabled due to `!isActiveStage`.
+            *   Revised logic for button:
+                *   `const buttonDisabled = !isActiveStage || (isActiveStage && (!isStageReady || isSeedPromptLoading));` // Updated to include isSeedPromptLoading
+                *   `const buttonText = isActiveStage && !isStageReady ? "Stage Not Ready" : stage.display_name;` // Updated to use stage.display_name for GenerateContributionButton to handle prefix
+                *   Pass these to `GenerateContributionButton`.
+        *   (GREEN)
+    *   `[✅] 2.B.2.3 [TEST-UNIT]` Run `StageTabCard.tsx` tests.
+*   `[✅] 2.B.3 [UI]` **Refactor `SessionInfoCard.tsx` for Readiness**
+    *   `[✅] 2.B.3.1 [TEST-UNIT]` Update unit tests for `SessionInfoCard.tsx`. (RED)
+        *   Mock `useDialecticStore` to return `true` or `false` from `selectIsStageReadyForSessionIteration` (called with `activeStage.slug`, current `session.id`, and `session.iteration_count`).
+        *   Assert that a warning message "Stage not ready. Please complete prior stages..." is displayed when `isStageReady` is `false`.
+        *   Assert that the main content (prompt display, etc.) is hidden or modified when `isStageReady` is `false`.
+    *   `[✅] 2.B.3.2 [UI]` In `SessionInfoCard.tsx`:
+        *   Get the active stage: `const activeStage = useDialecticStore(selectActiveContextStage);`
+        *   Use `const isStageReady = useDialecticStore(state => selectIsStageReadyForSessionIteration(state, project.id, session.id, activeStage.slug, session.iteration_count));` (ensure `project`, `session`, `activeStage` are available).
+        *   If `!isStageReady`:
+            *   Display a warning component (e.g., `<Alert variant="warning">Stage not ready. Please complete prior stages or ensure the seed prompt for this stage and iteration is available.</Alert>`).
+            *   Conditionally render the rest of the card's content based on `isStageReady`.
+        *   (GREEN)
+    *   `[✅] 2.B.3.3 [TEST-UNIT]` Run `SessionInfoCard.tsx` tests.
+*   `[✅] 2.B.4 [UI]` **Refactor `SessionContributionsDisplayCard.tsx` for Readiness**
+    *   `[✅] 2.B.4.1 [TEST-UNIT]` Update unit tests for `SessionContributionsDisplayCard.tsx`. (RED)
+    *   `[✅] 2.B.4.2 [UI]` In `SessionContributionsDisplayCard.tsx`:
+    *   `[✅] 2.B.4.3 [TEST-UNIT]` Run `SessionContributionsDisplayCard.tsx` tests.
+*   `[✅] 2.B.5 [REFACTOR]` Review all changes for consistency and correctness.
+*   `[✅] 2.B.6 [COMMIT]` feat(store,ui): implement stage readiness selector and update relevant components
+
+---
+
+## Section 2.X: Architectural Refactoring for Unified File Management
+
+**Overarching Principle:** To refactor the codebase to use a single, intelligent, and authoritative `FileManagerService`. This service will abstract away all details of path construction and database registration, providing a simple, declarative API for other backend services. The file structure it creates within the `CONTENT_STORAGE_BUCKET` will be the canonical source of truth, matching the required export format precisely.
+
+---
+
+### 2.X.1 Foundational Components: The `FileManagerService`
+
+*   `[✅] 2.X.1.1 [BE/ARCH]` **Define Core `FileManagerService` Interfaces**
+    *   `[✅] 2.X.1.1.1` In a new file, `supabase/functions/_shared/types/file_manager.types.ts`, define the core interfaces.
+    *   `[✅] 2.X.1.1.2` Define `FileType`: A string literal union of all possible file types the system can generate. This is the key to driving all logic.
+        *   `'project_readme' | 'user_prompt' | 'system_settings' | 'seed_prompt' | 'model_contribution' | 'user_feedback' | 'contribution_document' | 'general_resource'`
+    *   `[✅] 2.X.1.1.3` Define `PathContext`: The input for the path constructor.
+        *   `{ projectId: string, fileType: FileType, sessionId?: string, iteration?: number, stageSlug?: string, modelSlug?: string, originalFileName: string }`
+    *   `[✅] 2.X.1.1.4` Define `UploadContext`: The input for the main upload function.
+        *   `{ pathContext: PathContext, fileContent: Buffer | ArrayBuffer | string, mimeType: string, sizeBytes: number, userId: string, description?: string, customMetadata?: Record<string, any> }`
+    *   `[✅] 2.X.1.1.5` Define `FileRecord`: The return type, a union of `dialectic_project_resources` and `dialectic_contributions` DB types.
+*   `[✅] 2.X.1.2 [BE]` **Implement Path Constructor Utility**
+    *   `[✅] 2.X.1.2.1` Create new file `supabase/functions/_shared/utils/path_constructor.ts`.
+    *   `[✅] 2.X.1.2.2` Implement `constructStoragePath(context: PathContext): string`. This will be a pure function containing a `switch (context.fileType)` statement.
+    *   `[✅] 2.X.1.2.3` Each `case` will meticulously build the path string exactly as defined in the `AI Dialectic Implementation Plan.md` file structure diagram. All slugs (project name, model name) will be sanitized.
+    *   Example case: `case 'seed_prompt': return \`projects/${context.projectId}/sessions/${context.sessionId}/iteration_${context.iteration}/${context.stageSlug}/seed_prompt.md\`;`
+    *   `[✅] 2.X.1.2.4 [TEST-UNIT]` Create `path_constructor.test.ts`. Write a unit test for every single `FileType`, asserting that the output path is exactly correct. (RED)
+    *   `[✅] 2.X.1.2.5` Finalize implementation of `constructStoragePath`. (GREEN)
+*   `[✅] 2.X.1.3 [DB/DOCS]` **Clarify File Database Table Roles**
+    *   `[✅] 2.X.1.3.1 [DOCS]` In the `FileManagerService` documentation (`2.X.5.1`), formally document the responsibility of each table:
+        *   `dialectic_project_resources`: Stores metadata for files that are general project assets or application-generated inputs to a process. This includes `project_readme`, `user_prompt`, `system_settings`, `seed_prompt`, `user_feedback`, and `general_resource`.
+        *   `dialectic_contributions`: Stores metadata exclusively for files that are the direct output of an AI model. This includes `model_contribution` and `contribution_document`.
+*   `[✅] 2.X.1.4 [DB]` **Verify Database Schemas**
+    *   `[✅] 2.X.1.4.1 [DB]` Verify `dialectic_project_resources` has columns: `id (uuid)`, `project_id (uuid)`, `user_id (uuid)`, `storage_bucket (text)`, `storage_path (text)`, `file_name (text)`, `mime_type (text)`, `size_bytes (int8)`, `resource_description (text)`.
+    *   `[✅] 2.X.1.4.2 [DB]` Verify `dialectic_contributions` has columns: `id (uuid)`, `session_id (uuid)`, `user_id (uuid)`, `stage (text)`, `iteration_number (int4)`, `model_name (text)`, `storage_bucket (text)`, `storage_path (text)`, `file_name (text)`, `mime_type (text)`, `size_bytes (int8)`.
+    *   `[✅] 2.X.1.4.3 [DB]` If columns are missing or incorrectly named, create a new database migration to add/rename them to match this specification precisely.
+*   `[✅] 2.X.1.5 [BE/ARCH]` **Implement the `FileManagerService`**
+    *   `[✅] 2.X.1.5.1 [CONFIG]` The service will read the `CONTENT_STORAGE_BUCKET` name from an environment variable. It must throw an error on instantiation if the variable is not set.
+    *   `[✅] 2.X.1.5.2 [BE]` Create a new file `supabase/functions/_shared/services/file_manager.ts`.
+    *   `[✅] 2.X.1.5.3 [BE]` It will contain one primary method: `uploadAndRegisterFile(context: UploadContext): Promise<FileRecord>`.
+    *   `[✅] 2.X.1.5.4 [TEST-UNIT]` Create `file_manager.test.ts`. Write a comprehensive suite of unit tests using the existing `supabase.mock.ts`. Test every logical branch: successful resource uploads, successful contribution uploads, storage failures, database insert failures (and the subsequent file cleanup attempt). (RED)
+    *   `[✅] 2.X.1.5.5 [BE]` Implement the `FileManagerService` to make the tests pass. (GREEN)
+        *   `[✅]` The service uses the `constructStoragePath` utility to get the file path.
+        *   `[✅]` It determines the target table (`dialectic_project_resources` or `dialectic_contributions`) based on the `FileType`.
+        *   `[✅]` It first uploads the file to Supabase Storage.
+        *   `[✅]` If the upload succeeds, it inserts a corresponding record into the correct database table.
+        *   `[✅]` If the database insert fails, it attempts to `remove()` the orphaned file from storage before returning the error.
+*   `[✅] 2.X.1.6 [COMMIT]` feat(be,db): implement foundational FileManagerService and path constructor
+
+### 2.X.2 Refactoring Core `dialectic-service` Actions
+
+*   `[✅] 2.X.2.1 [BE/REFACTOR]` **Refactor `startSession.ts`**
+    *   `[✅] 2.X.2.1.1 [TEST-INT]` Update `startSession.test.ts`. Remove mocks for `uploadAndRegisterResource`. Add mocks for `FileManagerService` and assert it's called correctly for `user_prompt` and `system_settings`. (RED)
+    *   `[✅] 2.X.2.1.2` In `startSession.ts`, remove all calls to `uploadAndRegisterResource`.
+    *   `[✅] 2.X.2.1.3` After creating the session record, call `fileManager.uploadAndRegisterFile` twice:
+        *   Once for the `user_prompt`, providing the correct `PathContext` and the user prompt content.
+        *   Once for the `system_settings`, providing the correct `PathContext` and the serialized session settings.
+    *   `[✅] 2.X.2.1.4` Ensure the returned file IDs are linked to the session record if required by the schema. (GREEN)
+*   `[ ] 2.X.2.2 [BE/REFACTOR]` **Refactor `submitStageResponses.ts`**
+    *   `[ ] 2.X.2.2.1 [TEST-INT]` Update `submitStageResponses.test.ts`. Mock `FileManagerService`. Assert it's called to save the `user_feedback` and the next stage's `seed_prompt`. (RED)
+    *   `[ ] 2.X.2.2.2` In `submitStageResponses.ts`, remove old file saving logic.
+    *   `[ ] 2.X.2.2.3` Call `fileManager.uploadAndRegisterFile` to save the consolidated user feedback markdown file. `fileType: 'user_feedback'`.
+    *   `[ ] 2.X.2.2.4` After assembling the prompt for the next stage, call `fileManager.uploadAndRegisterFile` to save it. `fileType: 'seed_prompt'`. (GREEN)
+*   `[ ] 2.X.2.3 [BE/REFACTOR]` **Refactor Contribution Generation Logic (e.g., in `generateContributions.ts`)**
+    *   `[ ] 2.X.2.3.1 [TEST-INT]` Update integration tests for AI contribution generation. Mock `FileManagerService` and assert it's called for each `model_contribution` with the correct context. (RED)
+    *   `[ ] 2.X.2.3.2` In the function that handles a successful response from `callUnifiedAIModel`, replace existing file saving logic with a call to `fileManager.uploadAndRegisterFile`.
+    *   `[ ] 2.X.2.3.3` The `PathContext` must include `fileType: 'model_contribution'`, the correct `stageSlug`, and the `modelSlug`. This will save the file and register it in the `dialectic_contributions` table. (GREEN)
+*   `[ ] 2.X.2.4 [COMMIT]` refactor(be): refactor dialectic-service actions to use FileManagerService
+*   [ ] Refactor cloneProject to use new file management logic, ensure all files are copied to the new project, and all rows are created for all files
+*   [ ] Refactor deleteProject to use new file management logic, ensure all files are deleted from storage, and all rows are deleted from the database
+*   [ ] Refactor exportProject to use new file management logic, ensure all files are saved into the correct file tree structure and zipped into the export file. 
+
+### 2.X.3 Deprecation and Code Cleanup
+
+*   `[ ] 2.X.3.1 [BE/REFACTOR]` **Deprecate `uploadProjectResourceFile.ts`**
+    *   `[ ] 2.X.3.1.1` Delete the file `supabase/functions/dialectic-service/uploadProjectResourceFile.ts`.
+    *   `[ ] 2.X.3.1.2` In `supabase/functions/dialectic-service/index.ts`, remove the `'uploadProjectResourceFile'` case from the action handler.
+*   `[ ] 2.X.3.2 [API/REFACTOR]` **Update API Client**
+    *   `[ ] 2.X.3.2.1` In `packages/types/src/dialectic.types.ts`, remove `uploadProjectResourceFile` from the `DialecticAPIInterface`.
+    *   `[ ] 2.X.3.2.2` In `packages/api/src/dialectic.api.ts`, remove the implementation of `uploadProjectResourceFile`.
+    *   `[ ] 2.X.3.2.3` Remove the corresponding mocks from `packages/api/src/mocks.ts`.
+*   `[ ] 2.X.3.3 [STORE/REFACTOR]` **Update State Management**
+    *   `[ ] 2.X.3.3.1` In `packages/store/src/dialecticStore.ts`, delete the `uploadProjectResourceFile` thunk.
+*   `[ ] 2.X.3.4 [UI/REFACTOR]` **Refactor Project Creation Form**
+    *   `[ ] 2.X.3.4.1` This step is a verification. The refactoring of `createProject` in Phase 1 (`1.X`) already transitions the UI away from a separate file upload call. Verify that `CreateDialecticProjectForm.tsx`'s `onSubmit` handler now calls the `createProject` thunk with `FormData`, and that no subsequent, separate file upload call exists.
+*   `[ ] 2.X.3.5 [TEST-E2E]` **Update All Tests**
+    *   `[ ] 2.X.3.5.1` Search the entire codebase for any remaining references to `uploadProjectResourceFile` (especially in tests) and remove or refactor them.
+*   [ ] Search the entire codebase for references to deprecated files and functions and update them to use the new method. 
+*   [ ] This task is not complete until all references to the old functions are updated so that the codebase no longer refers to the old functions anywhere 
+        * Except the implementation  plan documents which document how the system was built, including details on refactorings and deprecated logic
+*   `[ ] 2.X.3.6 [COMMIT]` refactor(system): deprecate and remove legacy uploadProjectResourceFile function
+
+### 2.X.4 Finalization and Documentation
+
+*   `[ ] 2.X.4.1 [BE/REFACTOR]` **Refactor `createProject.ts`**
+    *   `[ ] 2.X.4.1.1` As per the `1.X` plan, the `createProject` action is the entry point for project creation, including an optional file upload. This step is to fully implement that backend logic using the new `FileManagerService`.
+    *   `[ ] 2.X.4.1.2 [TEST-INT]` Write/update integration tests for `createProject` that post `FormData`. Test one case with a file and one without. Assert that `FileManagerService` is called correctly when a file is present. (RED)
+    *   `[ ] 2.X.4.1.3` The `createProject` handler will parse the `FormData`. If a file is attached, it will call `fileManager.uploadAndRegisterFile` with `fileType: 'general_resource'`.
+    *   `[ ] 2.X.4.1.4` The ID of the created resource record will be saved in the `dialectic_projects.initial_prompt_resource_id` column. (GREEN)
+*   `[ ] 2.X.4.2 [DOCS]` **Document the New Service**
+    *   `[ ] 2.X.4.2.1` Create `supabase/functions/_shared/services/file_manager.md`.
+    *   `[ ] 2.X.4.2.2` Fully document the service's purpose, its public methods (`uploadAndRegisterFile`, `getFileSignedUrl`), and the structures of `PathContext` and `UploadContext`. Include an example call.
+    *   `[ ] 2.X.4.2.3` In the `dialectic-service` README, add a section on "File & File Handling" that explains the new architecture and directs developers to use the `FileManagerService`.
+*   `[ ] 2.X.4.3 [TEST-E2E]` **Full System Verification**
+    *   `[ ] 2.X.4.3.1` Manually test or run E2E tests for the full project lifecycle:
+        1.  Create a project (with a file upload).
+        2.  Start a session.
+        3.  Generate Thesis contributions.
+        4.  Submit feedback.
+    *   `[ ] 2.X.4.3.2` After testing, inspect the Supabase Storage bucket using the file browser. Verify that the directory structure and file names are 100% correct according to the architectural specification.
+*   `[ ] 2.X.4.4 [COMMIT]` feat(system): complete architectural refactor for unified file management
+
 
 ### 1.6 Basic GitHub Integration (Backend & API)
 *   `[ ] 1.6.1 [CONFIG]` Add new environment variables if needed for GitHub App/PAT specifically for Dialectic outputs, or confirm existing ones are sufficient and securely stored (e.g., in Supabase Vault).

@@ -45,13 +45,14 @@ const baseMockProject: MockDialecticProjectWithUserDetails = {
   updated_at: new Date('2023-10-26T11:00:00.000Z').toISOString(),
   status: 'active',
   selected_domain_id: 'domain-general',
-  domain_name: 'General',
+  dialectic_domains: { name: 'General' },
   selected_domain_overlay_id: null,
   repo_url: null,
   // User details are now part of the base mock project for tests
   user_first_name: 'DefaultFirstName', // Provide some defaults
   user_last_name: 'DefaultLastName',
   user_email: 'default@example.com',
+  dialectic_process_templates: null,
 };
 
 // Removed mockSelectUserDetailsById
@@ -204,7 +205,7 @@ describe('DialecticProjectCard', () => {
           <DialecticProjectCard project={projectWithoutDomain} />
         </MemoryRouter>
       );
-      expect(screen.queryByText(baseMockProject.domain_name)).not.toBeInTheDocument();
+      expect(screen.queryByText(baseMockProject.dialectic_domains.name)).not.toBeInTheDocument();
     });
   });
 

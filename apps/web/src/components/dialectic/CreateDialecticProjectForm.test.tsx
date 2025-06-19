@@ -231,9 +231,10 @@ describe('CreateDialecticProjectForm', () => {
       updated_at: '',
       status: 'active',
       selected_domain_id: 'domain-1',
-      domain_name: 'General',
       selected_domain_overlay_id: null,
       repo_url: null,
+      dialectic_domains: { name: 'General' },
+      dialectic_process_templates: null,
     };
     mockCreateDialecticProject.mockResolvedValueOnce({ data: mockSuccessfulProject, error: null });
     
@@ -275,9 +276,10 @@ describe('CreateDialecticProjectForm', () => {
       updated_at: '',
       status: 'active',
       selected_domain_id: 'domain-1',
-      domain_name: 'General',
       selected_domain_overlay_id: null,
       repo_url: null,
+      dialectic_domains: { name: 'General' },
+      dialectic_process_templates: null,
     };
 
     mockCreateDialecticProject.mockResolvedValueOnce({ data: mockCreatedProject, error: null });
@@ -421,7 +423,7 @@ describe('CreateDialecticProjectForm', () => {
     });
 
     // Mock successful response for the second attempt
-    const mockSuccessfulProject: DialecticProject = { id: 'proj-456', user_id: 'user-xyz', project_name: 'Retry Project', created_at: '', updated_at: '', status: 'active', selected_domain_id: 'domain-1', domain_name: 'General', selected_domain_overlay_id: null, repo_url: null, };
+    const mockSuccessfulProject: DialecticProject = { id: 'proj-456', user_id: 'user-xyz', project_name: 'Retry Project', created_at: '', updated_at: '', status: 'active', selected_domain_id: 'domain-1', dialectic_domains: { name: 'General' }, selected_domain_overlay_id: null, repo_url: null, dialectic_process_templates: null };
     mockCreateDialecticProject.mockResolvedValueOnce({ data: mockSuccessfulProject, error: null });
 
     // Simulate user trying again

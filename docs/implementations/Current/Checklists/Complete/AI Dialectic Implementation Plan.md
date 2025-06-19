@@ -1276,6 +1276,14 @@ The implementation plan uses the following labels to categorize work steps:
             └── iteration_{N}/        (N being the iteration number, e.g., "iteration_1")
                 ├── 0_seed_inputs/
                 │   ├── user_prompt.md  (The specific prompt that kicked off this iteration)
+                │   ├── general_resource (all optional)
+                │   │    ├── `{deployment_context}` (where/how the solution will be implemented), 
+                │   │    ├── `{domain_standards}` (domain-specific quality standards and best practices), 
+                │   │    ├── `{success_criteria}` (measurable outcomes that define success), 
+                │   │    ├── `{constraint_boundaries}` (non-negotiable requirements and limitations), 
+                │   │    ├── `{stakeholder_considerations}` (who will be affected and how),
+                │   │    ├── `{reference_documents}` (user-provided reference materials and existing assets), 
+                │   │    └── `{compliance_requirements}` (regulatory, legal, or organizational compliance mandates)
                 │   └── system_settings.json          (Models, core prompt templates used for this iteration)
                 ├── 1_hypothesis/
                 │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)

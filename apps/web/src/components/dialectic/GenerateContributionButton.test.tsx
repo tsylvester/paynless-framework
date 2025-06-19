@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { toast } from 'sonner'; // Import the mocked toast
 import { GenerateContributionButton } from './GenerateContributionButton';
 import { useDialecticStore } from '@paynless/store';
-import { DialecticStage, DialecticContribution, ApiError, Json } from '@paynless/types';
+import { DialecticStage, DialecticContribution, ApiError } from '@paynless/types';
 
 // Mock the store
 const mockGenerateContributions = vi.fn();
@@ -149,7 +149,7 @@ describe('GenerateContributionButton', () => {
       isLoadingInitialPromptFileContent: false,
       initialPromptFileContentError: null,
       ...(overrides || {}),
-    } as unknown as ReturnType<typeof useDialecticStore>; // Cast to the store type
+    } as ReturnType<typeof useDialecticStore>; // Cast to the store type
   };
 
   beforeEach(() => {
@@ -162,11 +162,38 @@ describe('GenerateContributionButton', () => {
 
   it('renders the button with the correct label', () => {
     render(<GenerateContributionButton {...defaultProps} />);
-    expect(screen.getByRole('button', { name: /Generate Thesis Contributions/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Generate Thesis/i })).toBeInTheDocument();
   });
 
   it('calls generateContributions and onGenerationStart/Complete on click for successful generation', async () => {
-    const mockContributions: DialecticContribution[] = [{ id: 'c1' } as DialecticContribution];
+    const mockContributions: DialecticContribution[] = [{ 
+      id: 'c1', 
+      session_id: 
+      'test-session-id', 
+      user_id: 'u1', 
+      stage: mockThesisStage, 
+      iteration_number: 1, 
+      created_at: 'now', 
+      updated_at: 'now', 
+      model_id: 'm1', 
+      model_name: 'GPT-4', 
+      content_storage_path: 'path/c1', 
+      content_storage_bucket: 'b', 
+      content_mime_type: 'text/plain', 
+      content_size_bytes: 100, 
+      edit_version: 1, 
+      prompt_template_id_used: 'p', 
+      raw_response_storage_path: 'p', 
+      seed_prompt_url: 'p', 
+      target_contribution_id: null, 
+      tokens_used_input: 1, 
+      tokens_used_output: 1, 
+      processing_time_ms: 1, 
+      error: null, 
+      citations: null, 
+      is_latest_edit: true, 
+      original_model_contribution_id: 'c1' 
+    }];
     mockGenerateContributions.mockResolvedValue({
       data: { message: 'Success', contributions: mockContributions },
       error: null
@@ -228,14 +255,17 @@ describe('GenerateContributionButton', () => {
   });
 
   it('handles API error response without a message field correctly', async () => {
-    const apiError = { code: 'SOME_ERROR' } as ApiError;
-    mockGenerateContributions.mockResolvedValue({ data: null, error: apiError });
+    mockGenerateContributions.mockImplementation(async () => ({ 
+      data: null, 
+      error: { code: 'SOME_ERROR', message: undefined } as unknown as ApiError 
+    }));
+
     render(<GenerateContributionButton {...defaultProps} />);
     fireEvent.click(screen.getByRole('button'));
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith('Failed to generate thesis contributions.');
     });
-    expect(defaultProps.onGenerationComplete).toHaveBeenCalledWith(false, undefined, apiError);
+    expect(defaultProps.onGenerationComplete).toHaveBeenCalledWith(false, undefined, { code: 'SOME_ERROR', message: undefined });
   });
 
   it('handles unexpected exception during thunk execution', async () => {

@@ -4,7 +4,7 @@ import { useDialecticStore } from '@paynless/store';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { DialecticSession, DialecticProject } from '@paynless/types';
+import { DialecticSession, DialecticProject, DialecticStage } from '@paynless/types';
 
 // New Component Imports
 import { SessionInfoCard } from '../components/dialectic/SessionInfoCard';
@@ -61,6 +61,14 @@ export const DialecticSessionDetailsPage: React.FC = () => {
     stagesForCurrentProcess,
     activeStage,
   ]);
+
+  const handleStageCardClick = (selectedStage: DialecticStage) => {
+    setActiveDialecticContextAction({
+      projectId: projectIdFromParams || null,
+      sessionId: sessionIdFromParams || null,
+      stage: selectedStage,
+    });
+  };
 
   if (isLoadingProject && !projectFromStore) {
     return (
@@ -119,6 +127,7 @@ export const DialecticSessionDetailsPage: React.FC = () => {
             key={stage.id}
             stage={stage}
             isActiveStage={activeStage?.id === stage.id}
+            onCardClick={handleStageCardClick}
           />
         ))}
       </div>

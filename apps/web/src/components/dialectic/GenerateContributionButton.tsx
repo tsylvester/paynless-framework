@@ -37,20 +37,24 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
     currentProjectDetail: state.currentProjectDetail,
   }));
 
+  const activeSession = currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
+  const contributionsForStageAndIterationExist = activeSession?.dialectic_contributions?.some(
+    c => c.stage.id === currentStage.id && c.iteration_number === activeSession.iteration_count
+  );
+
   const handleClick = async () => {
     if (onGenerationStart) {
       onGenerationStart();
     }
 
-    const activeSession = currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
-    if (!activeSession || typeof activeSession.current_iteration !== 'number') {
+    if (!activeSession || typeof activeSession.iteration_count !== 'number') {
       toast.error('Could not determine the current iteration number. Please ensure the session is active.');
       if (onGenerationComplete) {
         onGenerationComplete(false, undefined, { message: 'Missing session iteration data', code: 'CLIENT_SETUP_ERROR' });
       }
       return;
     }
-    const currentIterationNumber = activeSession.current_iteration;
+    const currentIterationNumber = activeSession.iteration_count;
 
     try {
       const result = await generateContributions({ 
@@ -87,12 +91,16 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
       onClick={handleClick}
       disabled={disabled || isGeneratingContributions}
       className={className}
-      data-testid={`generate-${currentStage}-button`}
+      data-testid={`generate-${currentStage.slug}-button`}
     >
       {isGeneratingContributions ? (
         <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
+      ) : currentStageFriendlyName === "Stage Not Ready" ? (
+        "Stage Not Ready"
+      ) : contributionsForStageAndIterationExist ? (
+        `Regenerate ${currentStageFriendlyName}`
       ) : (
-        `Generate ${currentStageFriendlyName} Contributions`
+        `Generate ${currentStageFriendlyName}`
       )}
     </Button>
   );
