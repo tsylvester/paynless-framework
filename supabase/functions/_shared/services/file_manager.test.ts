@@ -21,7 +21,7 @@ Deno.test('FileManagerService', async (t) => {
   const beforeEach = (config: MockSupabaseDataConfig = {}) => {
     // Stub Deno.env.get to control the bucket name for tests
     envStub = stub(Deno.env, 'get', (key: string) => {
-      if (key === 'CONTENT_STORAGE_BUCKET') {
+      if (key === 'SUPABASE_CONTENT_STORAGE_BUCKET') {
         return 'test-bucket'
       }
       return Deno.env.get(key)
@@ -77,7 +77,7 @@ Deno.test('FileManagerService', async (t) => {
         beforeEach()
         await fileManager.uploadAndRegisterFile(baseUploadContext)
         const storageFromSpy = setup.spies.storage.from('test-bucket').uploadSpy
-        assertExists(storageFromSpy.calls[0])
+        assertExists(storageFromSpy!.calls[0])
       } finally {
         afterEach()
       }
@@ -209,7 +209,7 @@ Deno.test('FileManagerService', async (t) => {
         assertExists(error)
         assertEquals(record, null)
         assertEquals(error.message, 'Database insert failed: DB insert failed')
-        assertEquals(removeSpy.calls.length, 1)
+        assertEquals(removeSpy!.calls.length, 1)
       } finally {
         afterEach()
       }

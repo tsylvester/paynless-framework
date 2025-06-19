@@ -1597,10 +1597,10 @@ export type Database = {
               p_user_id: string
               p_stage: string
               p_iteration_number: number
-              p_content_storage_bucket: string
-              p_content_storage_path: string
-              p_content_mime_type: string
-              p_content_size_bytes: number
+              p_storage_bucket: string
+              p_storage_path: string
+              p_mime_type: string
+              p_size_bytes: number
               p_raw_response_storage_path: string
               p_tokens_used_input: number
               p_tokens_used_output: number

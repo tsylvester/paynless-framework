@@ -2,6 +2,7 @@ import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts'
 import type {
   Database,
 } from '../../types_db.ts'
+import type { ServiceError } from '../types.ts';
 
 /**
  * A union of all possible file types the system can manage.
@@ -51,3 +52,11 @@ export interface UploadContext {
 export type FileRecord =
   | Database['public']['Tables']['dialectic_project_resources']['Row']
   | Database['public']['Tables']['dialectic_contributions']['Row'] 
+  
+export type FileManagerResponse = 
+  | { record: FileRecord; error: null }
+  | { record: null; error: ServiceError };
+  
+export interface IFileManager {
+  uploadAndRegisterFile(context: UploadContext): Promise<FileManagerResponse>;
+} 

@@ -8,9 +8,13 @@ import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import * as sharedLogger from "../_shared/logger.ts";
 import { createMockSupabaseClient, getMockUser } from "../_shared/supabase.mock.ts";
 import * as promptAssembler from "../_shared/prompt-assembler.ts";
-import * as resourceUploader from "./uploadProjectResourceFile.ts";
+import { FileManagerService } from '../_shared/services/file_manager.ts';
 
 const MOCK_USER = getMockUser("user-id");
+const MOCK_FILE_MANAGER = {
+    uploadAndRegisterFile: () => Promise.resolve({ record: null, error: null }),
+} as unknown as FileManagerService;
+stub(MOCK_FILE_MANAGER, "uploadAndRegisterFile");
 
 Deno.test("startSession - Error: Project not found", async () => {
     const payload: StartSessionPayload = { projectId: "non-existent-project-id", selectedModelCatalogIds: ["model-abc"] };
@@ -21,7 +25,7 @@ Deno.test("startSession - Error: Project not found", async () => {
             }
         }
     });
-    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any });
+    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
     assertEquals(result.error?.message, "Project not found or access denied.");
     assertEquals(result.error?.status, 404);
@@ -42,7 +46,7 @@ Deno.test("startSession - Error: Project is missing a process_template_id", asyn
             }
         }
     });
-    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any });
+    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
     assertEquals(result.error?.message, "Project is not configured with a process template.");
     assertEquals(result.error?.status, 400);
@@ -66,7 +70,7 @@ Deno.test("startSession - Error: No entry point stage found for the process temp
             }
         }
     });
-    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any });
+    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
     assertEquals(result.error?.message, "Failed to determine initial process stage.");
     assertEquals(result.error?.status, 500);
@@ -92,7 +96,7 @@ Deno.test("startSession - Error: Initial stage has no associated system prompt",
             }
         }
     });
-    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any });
+    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
     assertEquals(result.error?.message, "Configuration error: Initial stage 'hypothesis' is missing a default prompt.");
     assertEquals(result.error?.status, 500);
@@ -110,7 +114,7 @@ Deno.test("startSession - Error: Database error on session insertion", async () 
             dialectic_sessions: { insert: async () => ({ data: null, error: { message: "DB insert error" } as any, status: 500, statusText: 'error' }) }
         }
     });
-    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any });
+    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
     assertEquals(result.error?.message, "Failed to create the session.");
     assertEquals(result.error?.status, 500);
@@ -125,13 +129,16 @@ Deno.test("startSession - Error: Fails to upload seed prompt and cleans up sessi
         return Promise.resolve("Assembled prompt content");
     });
 
-    let wasUploaderCalled = false;
-    const mockUploadAndRegisterResource = () => {
-        wasUploaderCalled = true;
-        return Promise.resolve({ 
-            error: { message: "Upload failed", status: 500, details: "test details" } 
-        });
-    };
+    const mockFileManager = {
+        uploadAndRegisterFile: () => Promise.resolve({ record: null, error: null }),
+    } as unknown as FileManagerService;
+
+    const fmStub = stub(mockFileManager, "uploadAndRegisterFile", returnsNext([
+        Promise.resolve({ 
+            record: null,
+            error: { name: 'UploadError', message: "Upload failed", status: 500, details: "test details" } 
+        })
+    ]));
 
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
@@ -140,7 +147,7 @@ Deno.test("startSession - Error: Fails to upload seed prompt and cleans up sessi
             dialectic_stages: { select: async () => ({ data: [{ id: 'stage-1', slug: 'hypothesis' }], error: null, status: 200, statusText: 'ok' }) },
             domain_specific_prompt_overlays: { select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' }) },
             dialectic_sessions: {
-                insert: async () => ({ data: [{ id: mockNewSessionId, project_id: 'p', current_stage_id: 's', iteration_count: 1 }], error: null, status: 201, statusText: 'created' }),
+                insert: async () => ({ data: [{ id: mockNewSessionId, project_id: 'p', current_stage_id: 's', iteration_count: 1, selected_model_catalog_ids: ['model-abc'] }], error: null, status: 201, statusText: 'created' }),
                 delete: async () => ({ data: null, error: null, status: 204, statusText: 'no content' }) // Mock the cleanup delete
             }
         },
@@ -159,18 +166,18 @@ Deno.test("startSession - Error: Fails to upload seed prompt and cleans up sessi
             payload, 
             { 
                 logger: { info: spy(), error: spy() } as any,
-                uploadAndRegisterResource: mockUploadAndRegisterResource as any
+                fileManager: mockFileManager
             }
         );
         
         assertExists(result.error);
-        assertEquals(result.error?.message, "Failed to create initial seed prompt.");
+        assertEquals(result.error?.message, "Failed to save user prompt: Upload failed");
         assertEquals(result.error?.status, 500);
 
         const deleteSpy = mockAdminDbClientSetup.spies.getHistoricQueryBuilderSpies('dialectic_sessions', 'delete');
         assert(deleteSpy, "The .delete() method should have been spied on.");
         assertEquals(deleteSpy.callCount, 1, "The .delete() method should have been called once for cleanup.");
-        assertEquals(wasUploaderCalled, true, "The mock uploader should have been called.");
+        assertEquals(fmStub.calls.length, 1, "The file manager should have been called.");
     } finally {
         assembleStub.restore();
     }

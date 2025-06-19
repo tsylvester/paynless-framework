@@ -1,7 +1,7 @@
 export interface ContentReference {
-  content_storage_bucket: string;
-  content_storage_path: string;
-  content_mime_type: string;
-  content_size_bytes: number;
+  storage_bucket: string;
+  storage_path: string;
+  mime_type: string;
+  size_bytes: number;
   raw_response_storage_path?: string | null; // Optional, as per plan
 } 

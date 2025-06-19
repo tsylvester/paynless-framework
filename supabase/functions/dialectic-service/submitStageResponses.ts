@@ -2,7 +2,7 @@
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
 import type { ILogger } from '../_shared/types.ts';
 import type { ServiceError } from '../_shared/types.ts';
-import type { Database, Tables } from '../types_db.ts';
+import type { Database, Tables, Json } from '../types_db.ts';
 import {
   SubmitStageResponsesPayload,
   type DialecticContribution,
@@ -12,16 +12,18 @@ import {
   type SubmitStageResponsesResponse,
   type DialecticSession,
   type DialecticFeedback,
+  type DialecticStage,
+  type DialecticProject,
 } from './dialectic.interface.ts';
 import {
   downloadFromStorage,
-  uploadToStorage,
 } from '../_shared/supabase_storage_utils.ts';
+import type { PathContext } from '../_shared/types/file_manager.types.ts';
 import { renderPrompt } from '../_shared/prompt-renderer.ts';
-import type { Logger } from '../_shared/logger.ts';
+import type { IFileManager } from '../_shared/types/file_manager.types.ts';
 
 // Get storage bucket from environment variables, with a fallback for safety.
-const STORAGE_BUCKET = Deno.env.get('CONTENT_STORAGE_BUCKET') || 'dialectic-contributions';
+const STORAGE_BUCKET = Deno.env.get('SUPABASE_CONTENT_STORAGE_BUCKET');
 
 /**
  * Maps a raw database feedback record to the structured DialecticFeedback interface.
@@ -29,6 +31,19 @@ const STORAGE_BUCKET = Deno.env.get('CONTENT_STORAGE_BUCKET') || 'dialectic-cont
 function mapDbFeedbackToInterface(
   dbFeedback: Tables<'dialectic_feedback'>,
 ): DialecticFeedback {
+  let feedback_value_structured: Record<string, unknown> | null = null;
+  const rawFeedbackValue = dbFeedback.feedback_value_structured;
+
+  // Validate that the Json type is a non-array object before assigning.
+  // A shallow copy is used to create a new, correctly typed object.
+  if (
+    rawFeedbackValue &&
+    typeof rawFeedbackValue === 'object' &&
+    !Array.isArray(rawFeedbackValue)
+  ) {
+    feedback_value_structured = { ...rawFeedbackValue };
+  }
+
   return {
     id: dbFeedback.id,
     session_id: dbFeedback.session_id,
@@ -36,36 +51,9 @@ function mapDbFeedbackToInterface(
     user_id: dbFeedback.user_id,
     feedback_type: dbFeedback.feedback_type,
     feedback_value_text: dbFeedback.feedback_value_text,
-    feedback_value_structured: dbFeedback.feedback_value_structured as Record<
-      string,
-      unknown
-    > | null,
+    feedback_value_structured,
     created_at: dbFeedback.created_at,
     updated_at: dbFeedback.updated_at,
-  };
-}
-
-/**
- * Maps a raw database session record to the structured DialecticSession interface.
- * Note: This creates a "flat" session object without nested relations, which is
- * sufficient for this function's response.
- */
-function mapDbSessionToInterface(
-  dbSession: Tables<'dialectic_sessions'>,
-): DialecticSession {
-  return {
-    id: dbSession.id,
-    project_id: dbSession.project_id,
-    session_description: dbSession.session_description,
-    user_input_reference_url: dbSession.user_input_reference_url,
-    iteration_count: dbSession.iteration_count,
-    selected_model_catalog_ids: dbSession.selected_model_catalog_ids,
-    status: dbSession.status,
-    associated_chat_id: dbSession.associated_chat_id,
-    current_stage_id: dbSession.current_stage_id,
-    created_at: dbSession.created_at,
-    updated_at: dbSession.updated_at,
-    // Nested properties are not populated here as they are not needed for this response.
   };
 }
 
@@ -90,6 +78,9 @@ async function fetchAndAssembleArtifacts(
   contributionsContent: string;
   feedbackContent: string;
 }> {
+  if (!STORAGE_BUCKET) {
+    throw new Error('SUPABASE_CONTENT_STORAGE_BUCKET environment variable is not set.');
+  }
   const { downloadFromStorage, logger } = dependencies;
   const { projectId, sessionId, iterationNumber } = context;
 
@@ -126,7 +117,7 @@ async function fetchAndAssembleArtifacts(
       const { data: aiContributions, error: aiContribError } = await dbClient
         .from('dialectic_contributions')
         .select<string, DialecticContribution>(
-          'id, content_storage_path, content_storage_bucket, model_name',
+          'id, storage_path, storage_bucket, model_name',
         )
         .eq('session_id', sessionId)
         .eq('iteration_number', iterationNumber)
@@ -148,13 +139,13 @@ async function fetchAndAssembleArtifacts(
           `### Contributions from ${displayName} Stage\n\n`;
         for (const contrib of aiContributions) {
           if (
-            contrib.content_storage_path && contrib.content_storage_bucket
+            contrib.storage_path && contrib.storage_bucket
           ) {
             const { data: content, error: downloadError } =
               await downloadFromStorage(
                 dbClient,
-                contrib.content_storage_bucket,
-                contrib.content_storage_path,
+                contrib.storage_bucket,
+                contrib.storage_path,
               );
             if (content && !downloadError) {
               contributionsContent +=
@@ -164,7 +155,7 @@ async function fetchAndAssembleArtifacts(
             } else {
               logger.error(
                 `Failed to download content for contribution ${contrib.id} for prompt assembly.`,
-                { path: contrib.content_storage_path, error: downloadError },
+                { path: contrib.storage_path, error: downloadError },
               );
               throw new Error(
                 `Failed to download content for prompt assembly for contribution ${contrib.id}`,
@@ -200,450 +191,490 @@ async function fetchAndAssembleArtifacts(
   return { contributionsContent, feedbackContent };
 }
 
+function parseInputArtifactRules(data: Json | null): InputArtifactRules {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('Rules must be a JSON object.');
+  }
+
+  if (!('sources' in data) || !Array.isArray(data.sources)) {
+    throw new Error('Rules object must contain a "sources" array.');
+  }
+
+  const sources: (Json | undefined)[] = data.sources;
+
+  const parsedSources: ArtifactSourceRule[] = sources.map(
+    (source: Json | undefined, index: number): ArtifactSourceRule => {
+      if (source === null || typeof source !== 'object' || Array.isArray(source)) {
+        throw new Error(`Source at index ${index} must be a JSON object.`);
+      }
+
+      if (!('type' in source) || !('stage_slug' in source)) {
+        throw new Error(
+          `Source at index ${index} must contain "type" and "stage_slug" properties.`,
+        );
+      }
+      
+      const { type, stage_slug } = source;
+
+      if (
+        typeof type !== 'string' ||
+        (type !== 'contribution' && type !== 'feedback')
+      ) {
+        throw new Error(
+          `Source at index ${index} has an invalid or missing "type".`,
+        );
+      }
+
+      if (typeof stage_slug !== 'string') {
+        throw new Error(
+          `Source at index ${index} has an invalid or missing "stage_slug".`,
+        );
+      }
+      
+      const newSource: ArtifactSourceRule = {
+        type: type,
+        stage_slug: stage_slug,
+      };
+      
+      return newSource;
+    },
+  );
+
+  const finalRules: InputArtifactRules = {
+    sources: parsedSources,
+  };
+
+  return finalRules;
+}
+
+async function prepareNextStageSeedPrompt(
+  session: DialecticSession & { project: DialecticProject; stage: DialecticStage },
+  nextStage: DialecticStage,
+  dependencies: {
+    logger: ILogger;
+    downloadFromStorage: (
+      client: SupabaseClient,
+      bucket: string,
+      path: string,
+    ) => Promise<{
+      data: ArrayBuffer | null;
+      mimeType?: string;
+      error: Error | null;
+    }>;
+    dbClient: SupabaseClient<Database>;
+  },
+): Promise<{ prompt: string; path: PathContext }> {
+  const { logger, downloadFromStorage, dbClient } = dependencies;
+  const { project, id: sessionId, iteration_count: iterationNumber } = session;
+
+  // 1. Parse and validate the artifact rules for the next stage
+  let rules: InputArtifactRules;
+  try {
+    rules = parseInputArtifactRules(nextStage.input_artifact_rules);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Unknown error';
+    throw new Error(
+      `Configuration error: Invalid artifact rules for next stage '${
+        nextStage.slug
+      }': ${message}`,
+    );
+  }
+
+  const { contributionsContent, feedbackContent } =
+    await fetchAndAssembleArtifacts(
+      rules,
+      dbClient,
+      { downloadFromStorage, logger },
+      {
+        projectId: project.id,
+        sessionId,
+        iterationNumber,
+      },
+    );
+
+  // 2. Get the prompt template for the next stage
+  if (!nextStage.default_system_prompt_id) {
+    throw new Error(
+      `Configuration error: Next stage '${nextStage.display_name}' has no default system prompt.`,
+    );
+  }
+
+  const { data: systemPromptRecord, error: systemPromptError } = await dbClient
+    .from('system_prompts')
+    .select('prompt_text')
+    .eq('id', nextStage.default_system_prompt_id)
+    .single();
+
+  if (systemPromptError || !systemPromptRecord) {
+    logger.error(
+      `Failed to retrieve system prompt template for next stage: ${nextStage.slug}`,
+      { error: systemPromptError },
+    );
+    throw new Error('Failed to retrieve system prompt template for next stage.');
+  }
+
+  // 3. Fetch domain overlay if it exists
+  let domainOverlayValues: Json | null = null;
+  if (project.selected_domain_overlay_id) {
+    const { data: overlayData, error: overlayError } = await dbClient
+      .from('domain_specific_prompt_overlays')
+      .select('overlay_values')
+      .eq('id', project.selected_domain_overlay_id)
+      .single();
+
+    if (overlayError) {
+      logger.warn(
+        'Failed to fetch domain specific prompt overlay, continuing without it.',
+        { error: overlayError },
+      );
+    } else {
+      domainOverlayValues = overlayData.overlay_values;
+    }
+  }
+
+  // 4. Render the prompt
+  const renderedPrompt = renderPrompt(
+    systemPromptRecord.prompt_text,
+    {
+      user_objective: project.project_name,
+      context_description: project.initial_user_prompt,
+      prior_stage_ai_outputs: contributionsContent,
+      prior_stage_user_feedback: feedbackContent,
+    },
+    domainOverlayValues,
+    null, // userProjectOverlayValues is not supported yet
+  );
+
+  const path: PathContext = {
+    projectId: project.id,
+    fileType: 'seed_prompt',
+    sessionId: sessionId,
+    iteration: iterationNumber,
+    stageSlug: nextStage.slug,
+    originalFileName: `seed_prompt_${nextStage.slug}.md`,
+  };
+
+  return { prompt: renderedPrompt, path };
+}
+
+async function storeAndSummarizeUserFeedback(
+  dbClient: SupabaseClient<Database>,
+  user: User,
+  payload: SubmitStageResponsesPayload,
+  dependencies: { fileManager: IFileManager },
+  projectId: string,
+): Promise<{
+  data?: {
+    feedbackRecords: DialecticFeedback[];
+    consolidatedFeedbackPath?: string;
+  };
+  error?: ServiceError;
+}> {
+  const { sessionId, currentStageSlug, currentIterationNumber, responses } =
+    payload;
+
+  // Insert feedback records into the database
+  const feedbackToInsert = responses.map((r) => ({
+    session_id: sessionId,
+    user_id: user.id,
+    contribution_id: r.originalContributionId,
+    feedback_type: 'text_response', // Assuming text response for now
+    feedback_value_text: r.responseText,
+  }));
+
+  const { data: insertedFeedback, error: insertError } = await dbClient
+    .from('dialectic_feedback')
+    .insert(feedbackToInsert)
+    .select();
+
+  if (insertError) {
+    return {
+      error: {
+        message: 'Failed to insert user feedback records.',
+        details: JSON.stringify(insertError),
+      },
+    };
+  }
+
+  // Consolidate feedback into a markdown file and upload
+  const consolidatedContent = responses
+    .map((r) => `> ${r.responseText}`)
+    .join('\n\n---\n\n');
+  const pathContext: PathContext = {
+    projectId: projectId,
+    sessionId,
+    iteration: currentIterationNumber,
+    stageSlug: currentStageSlug,
+    fileType: 'user_feedback',
+    originalFileName: `user_feedback_${currentStageSlug}.md`,
+  };
+
+  const uploadResponse = await dependencies.fileManager.uploadAndRegisterFile({
+    pathContext,
+    fileContent: consolidatedContent,
+    userId: user.id,
+    mimeType: 'text/markdown',
+    sizeBytes: new TextEncoder().encode(consolidatedContent).length,
+  });
+
+  if (uploadResponse.error) {
+    return {
+      error: {
+        message: 'Failed to upload consolidated user feedback.',
+        details: JSON.stringify(uploadResponse.error),
+      },
+    };
+  }
+
+  return {
+    data: {
+      feedbackRecords: insertedFeedback.map(mapDbFeedbackToInterface),
+      consolidatedFeedbackPath: uploadResponse.record?.storage_path,
+    },
+  };
+}
+
 export async function submitStageResponses(
   payload: SubmitStageResponsesPayload,
   dbClient: SupabaseClient<Database>,
-  user: User,
+  user: User | null,
   dependencies: SubmitStageResponsesDependencies,
 ): Promise<{
   data?: SubmitStageResponsesResponse;
   error?: ServiceError;
   status?: number;
 }> {
+  const { logger, fileManager, downloadFromStorage } = dependencies;
   const {
-    logger,
-    uploadToStorage,
-    downloadFromStorage,
-    uploadAndRegisterResource,
-  } = dependencies;
+    sessionId,
+    currentStageSlug,
+    currentIterationNumber,
+    responses,
+  } = payload;
   logger.info(
-    `[submitStageResponses] Received payload for session: ${payload.sessionId}`,
+    `[submitStageResponses] Received payload for session: ${sessionId}`,
     { payload },
   );
 
+  // --- 1. Authentication and Validation ---
   if (!user) {
+    return { error: { message: 'User not authenticated.' }, status: 401 };
+  }
+
+  if (
+    !sessionId || !currentStageSlug || !currentIterationNumber || !responses ||
+    responses.length === 0
+  ) {
     return {
-      error: { message: 'User not authenticated.' },
-      status: 401,
+      error: { message: 'Invalid payload: missing required fields.' },
+      status: 400,
     };
   }
-
-  const { sessionId, currentStageSlug, currentIterationNumber, responses } =
-    payload;
-
-  // Basic payload validation
-  if (!sessionId) {
-    return { error: { message: 'Invalid payload. Missing sessionId.' }, status: 400 };
-  }
-  if (!currentStageSlug) {
-    return { error: { message: 'Invalid payload. Missing currentStageSlug.' }, status: 400 };
-  }
-  if (!currentIterationNumber && currentIterationNumber !== 0) {
-    return { error: { message: 'Invalid payload. Missing currentIterationNumber.' }, status: 400 };
-  }
-  if (!responses || responses.length === 0) {
-    return { error: { message: 'Invalid payload. responses array must be provided and cannot be empty.' }, status: 400 };
-  }
-  for (const response of responses) {
-    if (!response.originalContributionId || !response.responseText) {
-      return { error: { message: 'Invalid item in responses array. Missing originalContributionId or responseText.' }, status: 400 };
-    }
-  }
-
-  try {
-    // 1. Fetch Session and Project Data, then verify user ownership
-    const { data: sessionData, error: sessionError } = await dbClient
-      .from('dialectic_sessions')
-      .select(
-        `
-        *,
-        project:dialectic_projects(*),
-        stage:dialectic_stages(*)
-      `,
-      )
-      .eq('id', sessionId)
-      .single();
-
-    if (sessionError) {
-      logger.error('Error fetching session', { error: sessionError });
+  for (const r of responses) {
+    if (!r.originalContributionId || !r.responseText) {
       return {
-        error: { message: 'Session not found or error fetching it.', code: 'SESSION_NOT_FOUND' },
-        status: 404,
-      };
-    }
-    
-    if (!sessionData) {
-      // This case is for when the query executes but finds no matching session.
-      return { error: { message: `Session not found: ${sessionId}`, code: 'SESSION_NOT_FOUND' }, status: 404 };
-    }
-    
-    const project = sessionData.project;
-    const stage = sessionData.stage;
-
-    if (!project) {
-      logger.error('Error fetching project for session', { sessionId });
-      return {
-        error: { message: 'Project not found for the session.' },
-        status: 404,
-      };
-    }
-
-    if (!stage) {
-      // This is an inconsistent state, as a session should always have a stage.
-      // It might happen with bad data or if the stage relation fails.
-      return { 
-        error: { 
-          message: `Could not determine current stage for session: ${sessionId}`, 
-          code: 'STAGE_NOT_FOUND' 
-        }, 
-        status: 500
-      };
-    }
-
-    // Validate that the payload's stage slug matches the DB's stage slug for the session
-    if (stage.slug !== currentStageSlug) {
-      return {
-        error: {
-          message: `Mismatched stage slug. The session is currently at stage '${stage.slug}', but the payload specified '${currentStageSlug}'.`,
-          code: 'MISMATCHED_STAGE_SLUG',
-        },
+        error: { message: 'Invalid response item: missing fields.' },
         status: 400,
       };
     }
+  }
 
-    if (project.user_id !== user.id) {
-      return {
-        error: {
-          message:
-            'User does not own the project associated with this session.',
-        },
-        status: 403,
-      };
-    }
+  // --- 2. Fetch Session and Verify Ownership ---
+  const { data: sessionData, error: sessionError } = await dbClient
+    .from('dialectic_sessions')
+    .select('*, project:dialectic_projects(*), stage:dialectic_stages!current_stage_id(*)')
+    .eq('id', sessionId)
+    .single();
 
-    // 2. Store Individual User Responses in dialectic_feedback
-    const feedbackRecordsToInsert = responses.map((response) => {
-        return {
-            session_id: sessionId,
-            contribution_id: response.originalContributionId,
-            user_id: user.id,
-            feedback_type: 'text_response',
-            feedback_value_text: response.responseText,
-        };
+  if (sessionError || !sessionData || !sessionData.project || !sessionData.stage) {
+    logger.error('Failed to fetch session or project, or access denied.', {
+      error: sessionError,
     });
-
-    let createdFeedbackRecords: Tables<'dialectic_feedback'>[] = [];
-    if (feedbackRecordsToInsert.length > 0) {
-        const { data: insertedData, error: feedbackInsertError } = await dbClient
-            .from('dialectic_feedback')
-            .insert(feedbackRecordsToInsert)
-            .select();
-
-        if (feedbackInsertError) {
-            logger.error('Error inserting feedback', {
-              error: feedbackInsertError,
-            });
-            return {
-              error: {
-                message: 'Failed to store user responses.',
-                details: feedbackInsertError.message,
-              },
-              status: 500,
-            };
-        }
-        createdFeedbackRecords = insertedData;
-    }
-
-    // 3. Concatenate and Store user_feedback_{stage}.md
-    let concatenatedFeedbackMarkdown =
-      `## User Feedback for ${stage.display_name} - Iteration ${currentIterationNumber}\n\n`;
-    for (const response of responses) {
-      const { data: contributionContext, error: contributionError } = await dbClient
-        .from('dialectic_contributions')
-        .select('model_name, id, session_id')
-        .eq('id', response.originalContributionId)
-        .single();
-
-      if (contributionError || !contributionContext || contributionContext.session_id !== sessionId) {
-          logger.error('Invalid originalContributionId or not linked to session', { contributionId: response.originalContributionId, sessionId });
-          return { error: { message: `Invalid originalContributionId: ${response.originalContributionId}. It was not found or does not belong to the session.` }, status: 400 };
-      }
-      const modelName =
-        contributionContext?.model_name ||
-        `Contribution ID: ${contributionContext?.id || response.originalContributionId}`;
-      concatenatedFeedbackMarkdown +=
-        `### Response to Contribution by ${modelName}\n\n${response.responseText}\n\n---\n`;
-    }
-
-    const userFeedbackFilePath =
-      `projects/${project.id}/sessions/${sessionId}/iteration_${currentIterationNumber}/${stage.slug}/user_feedback_${stage.slug}.md`;
-    const { error: uploadUserFeedbackError } = await uploadToStorage(
-      dbClient,
-      STORAGE_BUCKET,
-      userFeedbackFilePath,
-      concatenatedFeedbackMarkdown,
-      { contentType: 'text/markdown', upsert: true },
-    );
-
-    if (uploadUserFeedbackError) {
-      logger.error('Error uploading user feedback file', {
-        error: uploadUserFeedbackError,
-      });
-      return {
-        error: {
-          message: 'Failed to store consolidated user feedback.',
-          details: uploadUserFeedbackError.message,
-        },
-        status: 500,
-      };
-    }
-
-    // 4. Prepare and Store Seed Input for Next Stage using new architecture
-    let nextStageSeedPath: string | null = null;
-    let nextStage:
-      | Database['public']['Tables']['dialectic_stages']['Row']
-      | null = null;
-
-    if (project.process_template_id) {
-      const { data: transition, error: transitionError } = await dbClient
-        .from('dialectic_stage_transitions')
-        .select('target_stage:dialectic_stages!target_stage_id(*)')
-        .eq('process_template_id', project.process_template_id)
-        .eq('source_stage_id', stage.id)
-        .maybeSingle();
-
-      if (transitionError) {
-        logger.error('Error fetching next stage transition', {
-          error: transitionError,
-        });
-        return {
-          error: { message: 'Could not determine next stage.' },
-          status: 500,
-        };
-      }
-      
-      if (transition?.target_stage) {
-        nextStage = transition.target_stage as Database['public']['Tables']['dialectic_stages']['Row'];
-      }
-    } else {
-      logger.warn(
-        'Project is missing process_template_id, cannot determine next stage.',
-        { projectId: project.id },
-      );
-    }
-
-    if (nextStage) {
-      // Logic for preparing seed prompt based on `input_artifact_rules`.
-      const inputRules = nextStage.input_artifact_rules as
-        | InputArtifactRules
-        | null;
-      logger.info('Assembling next stage seed prompt based on rules', {
-        nextStage: nextStage.slug,
-        rules: inputRules,
-      });
-
-      // 4.1 Assemble artifacts from previous stages based on the rules.
-      let priorStageContributions = '';
-      let priorStageFeedback = '';
-
-      if (inputRules && inputRules.sources.length > 0) {
-        try {
-          const assembledArtifacts = await fetchAndAssembleArtifacts(
-            inputRules,
-            dbClient,
-            { downloadFromStorage, logger },
-            {
-              projectId: project.id,
-              sessionId,
-              iterationNumber: currentIterationNumber,
-            },
-          );
-          priorStageContributions = assembledArtifacts.contributionsContent;
-          priorStageFeedback = assembledArtifacts.feedbackContent;
-        } catch (assemblyError: unknown) {
-          logger.error('Error assembling artifacts for next stage', {
-            error: assemblyError,
-          });
-          return {
-            error: {
-              message: assemblyError instanceof Error ? assemblyError.message : 'Failed to assemble required inputs for the next stage.',
-            },
-            status: 500,
-          };
-        }
-      } else {
-        logger.warn(
-          `No input_artifact_rules found for stage ${nextStage.slug}. Seed prompt may be incomplete.`,
-        );
-      }
-
-      // 4.2 Fetch system_settings.json for the iteration
-      const systemSettingsPath =
-        `projects/${project.id}/sessions/${sessionId}/iteration_${currentIterationNumber}/0_seed_inputs/system_settings.json`;
-      const { data: systemSettingsContent, error: systemSettingsError } =
-        await downloadFromStorage(dbClient, STORAGE_BUCKET, systemSettingsPath);
-      if (systemSettingsError || !systemSettingsContent) {
-        logger.error('Failed to download system settings', {
-          error: systemSettingsError,
-        });
-        return {
-          error: {
-            message: 'Failed to retrieve system settings for next stage.',
-          },
-          status: 500,
-        };
-      }
-      const systemSettings = JSON.parse(
-        new TextDecoder().decode(systemSettingsContent),
-      );
-
-      // 4.3 Fetch system prompt template for next stage from dialectic_stages table
-      const systemPromptIdForNextStage = nextStage.default_system_prompt_id;
-
-      if (!systemPromptIdForNextStage) {
-        logger.error(
-          `Default system prompt ID for next stage '${nextStage.slug}' not found in dialectic_stages table.`,
-        );
-        return {
-          error: {
-            message:
-              `Configuration missing for system prompt of stage: ${nextStage.display_name}.`,
-          },
-          status: 500,
-        };
-      }
-
-      const { data: systemPromptNextStage, error: spError } = await dbClient
-        .from('system_prompts')
-        .select('*')
-        .eq('id', systemPromptIdForNextStage)
-        .single();
-
-      if (spError || !systemPromptNextStage) {
-        logger.error('Failed to fetch system prompt for next stage', {
-          error: spError,
-        });
-        return {
-          error: {
-            message:
-              'Failed to retrieve system prompt template for next stage.',
-          },
-          status: 500,
-        };
-      }
-
-      // 4.4 Render the prompt for the next stage using the assembled artifacts
-      const promptContext = {
-        prior_stage_ai_outputs: priorStageContributions,
-        prior_stage_user_feedback: priorStageFeedback,
-        // Feedback from the *current* stage is now explicitly named.
-        // The prompt template must be updated to use this variable if it needs it.
-        current_stage_user_feedback: concatenatedFeedbackMarkdown,
-        ...systemSettings, // Assuming systemSettings has other variables like user_objective, etc.
-      };
-
-      const renderedPrompt = renderPrompt(
-        systemPromptNextStage.prompt_text,
-        promptContext,
-      );
-
-      // 4.5 Store the fully constructed prompt
-      const nextStageSeedPrompt = renderPrompt(
-        systemPromptNextStage.prompt_text,
-        promptContext,
-      );
-
-      // D. UPLOAD THE SEED PROMPT FOR THE NEXT STAGE
-      const resourceDescription = JSON.stringify({
-          type: "seed_prompt",
-          stage_id: nextStage.id,
-          session_id: sessionData.id,
-          iteration: currentIterationNumber,
-          stage_slug: nextStage.slug
-      });
-  
-      const { error: uploadError } = await dependencies.uploadAndRegisterResource(
-          dbClient,
-          user,
-          logger as Logger,
-          project.id,
-          new Blob([nextStageSeedPrompt], { type: 'text/markdown' }),
-          'seed_prompt.md',
-          'text/markdown',
-          resourceDescription
-      );
-  
-      if (uploadError) {
-          logger.error(
-              `[submitStageResponses] Failed to upload and register seed prompt for next stage. This may leave the session in an inconsistent state.`,
-              { error: uploadError.message }
-          );
-          // We do not rethrow or return an error here, as the primary operations of saving the
-          // user's feedback and updating the session status have already succeeded.
-          // The flow can continue, and this error can be addressed separately if needed.
-      } else {
-        // Since we are no longer using the old method, we can set this path for the response.
-        // A better approach in the future might be to return the created resource object itself.
-        nextStageSeedPath = `projects/${project.id}/sessions/${sessionId}/iteration_${currentIterationNumber}/${nextStage.slug}/seed_prompt.md`;
-      }
-    }
-
-    // 5. Update Session Status
-    // Linter may be using an outdated schema for the session table. Casting as a workaround.
-    const updatePayload: { updated_at: string; current_stage_id?: string; status?: string } = {
-      updated_at: new Date().toISOString(),
+    return {
+      error: { message: 'Session not found or access denied.' },
+      status: 404,
     };
+  }
+  if (sessionData.project.user_id !== user.id) {
+    return { error: { message: 'User does not own the project.' }, status: 403 };
+  }
+  if (sessionData.stage.slug !== currentStageSlug) {
+    return { error: { message: 'Stage slug mismatch.' }, status: 400 };
+  }
 
-    if (nextStage) {
-      updatePayload.current_stage_id = nextStage.id;
-      updatePayload.status = `pending_${nextStage.slug}`;
-    } else {
-      updatePayload.status = 'iteration_complete_pending_review';
+  // --- 3. Validate Contribution IDs ---
+  for (const response of responses) {
+    const { data: contribution, error: contribError } = await dbClient
+      .from('dialectic_contributions')
+      .select('id, session_id')
+      .eq('id', response.originalContributionId)
+      .single();
+    if (contribError || !contribution || contribution.session_id !== sessionId) {
+      logger.error(
+        `Invalid originalContributionId: ${response.originalContributionId}`,
+        { error: contribError },
+      );
+      return {
+        error: { message: `Invalid contribution ID: ${response.originalContributionId}` },
+        status: 400,
+      };
     }
+  }
 
-    const { data: updatedSessionData, error: sessionUpdateError } =
-      await dbClient
-        .from('dialectic_sessions')
-        .update(updatePayload)
-        .eq('id', sessionId)
-        .select()
-        .single();
+  // --- 4. Store Feedback ---
+  const { data: feedbackData, error: feedbackError } =
+    await storeAndSummarizeUserFeedback(dbClient, user, payload, {
+      fileManager,
+    }, sessionData.project.id);
 
-    if (sessionUpdateError) {
-      logger.error('Error updating session status', {
-        error: sessionUpdateError,
-      });
-      // This is potentially a critical error if the session state is not advanced.
+  if (feedbackError) {
+    logger.error('Failed to store consolidated user feedback.', {
+      error: feedbackError.details,
+    });
+    return { error: feedbackError, status: 500 };
+  }
+
+  const { feedbackRecords } = feedbackData!;
+
+  // --- 5. Determine Next Stage ---
+  if (!sessionData.project.process_template_id) {
+    return {
+      error: { message: 'Project is not associated with a process template.' },
+      status: 400,
+    };
+  }
+  const { data: transition, error: transitionError } = await dbClient
+    .from('dialectic_stage_transitions')
+    .select('target_stage:dialectic_stages!target_stage_id(*)')
+    .eq('process_template_id', sessionData.project.process_template_id)
+    .eq('source_stage_id', sessionData.stage.id)
+    .maybeSingle();
+
+  if (transitionError) {
+    return {
+      error: { message: 'Failed to look up stage transition.', details: JSON.stringify(transitionError) },
+      status: 500,
+    };
+  }
+
+  const nextStage = transition?.target_stage as DialecticStage | undefined;
+  if (!nextStage) {
+    // This is the final stage.
+    const { data: updated, error: updateError } = await dbClient
+      .from('dialectic_sessions')
+      .update({ status: 'completed', updated_at: new Date().toISOString() })
+      .eq('id', sessionId)
+      .select()
+      .single();
+
+    if (updateError) {
       return {
         error: {
-          message: 'Failed to update session status at completion.',
-          details: sessionUpdateError.message,
+          message: 'Failed to update session status at completion',
+          details: JSON.stringify(updateError),
         },
         status: 500,
       };
     }
-
-    // 6. Return Response
     return {
       data: {
-        message: 'Responses submitted and next stage prepared successfully.',
-        updatedSession: mapDbSessionToInterface(updatedSessionData),
-        nextStageSeedPromptPath: nextStageSeedPath || null,
-        feedbackRecords: createdFeedbackRecords.map(mapDbFeedbackToInterface),
+        message: 'Session completed successfully.',
+        feedbackRecords,
+        nextStageSeedPromptPath: null,
+        updatedSession: updated,
       },
       status: 200,
     };
-  } catch (error: unknown) {
-    logger.error('Unexpected error in submitStageResponses', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
+  }
+
+  logger.info(`Transitioning from ${currentStageSlug} to ${nextStage.slug}`);
+
+  // --- 6. Prepare and Store Next Stage Seed Prompt ---
+  let nextStageSeedPromptPath: string | undefined;
+  try {
+    // Manually construct the correctly-typed object for prompt preparation.
+    if (!sessionData.project.process_template_id) {
+      // This check is repeated for safety but the earlier one should catch it.
+      throw new Error('Project is not associated with a process template.');
+    }
+    const { data: templateData, error: templateError } = await dbClient
+      .from('dialectic_process_templates')
+      .select('*')
+      .eq('id', sessionData.project.process_template_id)
+      .single();
+
+    if (templateError || !templateData) {
+      throw new Error(
+        `Failed to fetch process template: ${templateError?.message || 'Not found'}`,
+      );
+    }
+
+    const sessionForPrompting = {
+      ...sessionData,
+      project: {
+        ...sessionData.project,
+        process_template: templateData,
+      },
+      stage: sessionData.stage,
+    };
+
+    const { prompt, path } = await prepareNextStageSeedPrompt(
+      sessionForPrompting,
+      nextStage,
+      { logger, downloadFromStorage, dbClient },
+    );
+    const uploadResponse = await fileManager.uploadAndRegisterFile({
+      pathContext: path,
+      fileContent: prompt,
+      userId: user.id,
+      mimeType: 'text/markdown',
+      sizeBytes: new TextEncoder().encode(prompt).length,
     });
+    if (uploadResponse.error) throw uploadResponse.error;
+    nextStageSeedPromptPath = uploadResponse.record?.storage_path;
+  } catch (err) {
+    const errorMessage = (err && typeof err === 'object' && 'message' in err)
+      ? (err as { message: string }).message
+      : String(err);
+    logger.error(
+      `Failed to prepare or save seed prompt for next stage: ${nextStage.slug}`,
+      { error: err },
+    );
     return {
       error: {
-        message: 'An unexpected error occurred.',
-        details: error instanceof Error ? error.message : 'Unknown error',
+        message: 'Failed to prepare the next stage.',
+        details: errorMessage,
       },
       status: 500,
     };
   }
+
+  // --- 7. Update Session ---
+  const { data: updatedSession, error: updateError } = await dbClient
+    .from('dialectic_sessions')
+    .update({
+      updated_at: new Date().toISOString(),
+      current_stage_id: nextStage.id,
+      status: `pending_${nextStage.slug}`,
+    })
+    .eq('id', sessionId)
+    .select()
+    .single();
+
+  if (updateError) {
+    return {
+      error: { message: 'Failed to update session for next stage.', details: JSON.stringify(updateError) },
+      status: 500,
+    };
+  }
+
+  return {
+    data: {
+      message: `Transitioned to ${nextStage.slug}`,
+      feedbackRecords,
+      nextStageSeedPromptPath: nextStageSeedPromptPath ?? null,
+      updatedSession,
+    },
+    status: 200,
+  };
 } 

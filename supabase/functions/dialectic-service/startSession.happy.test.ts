@@ -7,7 +7,7 @@ import type { Database } from "../types_db.ts";
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import { createMockSupabaseClient, getMockUser } from "../_shared/supabase.mock.ts";
 import * as promptAssembler from "../_shared/prompt-assembler.ts";
-import * as resourceUploader from "./uploadProjectResourceFile.ts";
+import { FileManagerService } from "../_shared/services/file_manager.ts";
 
 Deno.test("startSession - Happy Path (with explicit sessionDescription)", async () => {
     const mockUser = getMockUser("user-happy-path-id");
@@ -36,22 +36,26 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
         id: "res-123",
         project_id: mockProjectId,
         user_id: mockUser.id,
-        file_name: 'seed_prompt.md',
-        storage_bucket: 'prompt-seeds',
-        storage_path: 'some/path',
+        file_name: 'user_prompt.md',
+        storage_bucket: 'dialectic-resources',
+        storage_path: 'some/path/user_prompt.md',
         mime_type: 'text/markdown',
         size_bytes: 123,
-        resource_description: "Initial prompt for the session",
+        resource_description: "Initial user prompt for the session",
         status: 'active',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
     };
 
-    let wasUploaderCalled = false;
-    const mockUploadAndRegisterResource = () => {
-        wasUploaderCalled = true;
-        return Promise.resolve({ data: mockResource, error: undefined });
-    };
+    const mockFileManager = {
+        uploadAndRegisterFile: () => Promise.resolve({ record: null, error: null }),
+    } as unknown as FileManagerService;
+
+    const fmStub = stub(mockFileManager, "uploadAndRegisterFile", returnsNext([
+        Promise.resolve({ record: mockResource, error: null }), // For user_prompt
+        Promise.resolve({ record: { ...mockResource, id: "res-456", file_name: 'system_settings.json' }, error: null }), // for system_settings
+        Promise.resolve({ record: { ...mockResource, id: "res-789", file_name: 'seed_prompt.md' }, error: null }), // for seed_prompt
+    ]));
 
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
         genericMockResults: {
@@ -97,6 +101,12 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
                     }], error: null, status: 201, statusText: 'ok'
                 })
             },
+            ai_model_catalog: {
+                select: async () => ({
+                    data: [{ provider: 'test-provider', model_name: 'test-model' }],
+                    error: null, status: 200, statusText: 'ok'
+                })
+            }
         },
     });
 
@@ -108,7 +118,7 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
         const result = await startSession(mockUser, adminDbClient, payload, { 
             logger: mockLogger, 
             randomUUID: mockRandomUUIDFn,
-            uploadAndRegisterResource: mockUploadAndRegisterResource as any
+            fileManager: mockFileManager
         });
 
         assertExists(result.data, `Session start failed: ${result.error?.message}`);
@@ -119,9 +129,10 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
             project_id: mockProjectId,
             session_description: mockExplicitSessionDescription,
             current_stage_id: mockInitialStageId,
+            user_input_reference_url: mockResource.storage_path
         };
         assertObjectMatch(result.data, expectedResponse as any);
-        assertEquals(wasUploaderCalled, true, "The mock uploader should have been called.");
+        assertEquals(fmStub.calls.length, 2, "The file manager should have been called twice.");
 
     } finally {
         assemblerStub.restore();
@@ -151,25 +162,29 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
     });
 
     const mockResource: DialecticProjectResource = {
-        id: "res-123",
+        id: "res-456",
         project_id: mockProjectId,
         user_id: mockUser.id,
-        file_name: 'seed_prompt.md',
-        storage_bucket: 'prompt-seeds',
-        storage_path: 'some/path',
+        file_name: 'user_prompt.md',
+        storage_bucket: 'dialectic-resources',
+        storage_path: 'some/other/path/user_prompt.md',
         mime_type: 'text/markdown',
-        size_bytes: 123,
-        resource_description: "Initial prompt for the session",
+        size_bytes: 456,
+        resource_description: "Default user prompt for the session",
         status: 'active',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
     };
     
-    let wasUploaderCalled = false;
-    const mockUploadAndRegisterResource = () => {
-        wasUploaderCalled = true;
-        return Promise.resolve({ data: mockResource, error: undefined });
-    };
+    const mockFileManager = {
+        uploadAndRegisterFile: () => Promise.resolve({ record: null, error: null }),
+    } as unknown as FileManagerService;
+    
+    const fmStub = stub(mockFileManager, "uploadAndRegisterFile", returnsNext([
+        Promise.resolve({ record: mockResource, error: null }), // For user_prompt
+        Promise.resolve({ record: { ...mockResource, id: "res-456", file_name: 'system_settings.json' }, error: null }), // for system_settings
+        Promise.resolve({ record: { ...mockResource, id: "res-789", file_name: 'seed_prompt.md' }, error: null }), // for seed_prompt
+    ]));
 
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
         genericMockResults: {
@@ -211,6 +226,12 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
                     }], error: null, status: 201, statusText: 'ok'
                 })
             },
+            ai_model_catalog: {
+                select: async () => ({
+                    data: [{ provider: 'test-provider', model_name: 'test-model' }],
+                    error: null, status: 200, statusText: 'ok'
+                })
+            }
         },
     });
 
@@ -222,13 +243,13 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
         const result = await startSession(mockUser, adminDbClient, payload, { 
             logger: mockLogger, 
             randomUUID: mockRandomUUIDFn,
-            uploadAndRegisterResource: mockUploadAndRegisterResource as any
+            fileManager: mockFileManager
         });
 
         assertExists(result.data);
         assertEquals(result.error, undefined);
         assertEquals(result.data.session_description, `${mockProjectName} - New Session`);
-        assertEquals(wasUploaderCalled, true, "The mock uploader should have been called.");
+        assertEquals(fmStub.calls.length, 2, "The file manager should have been called twice.");
     } finally {
         assemblerStub.restore();
     }

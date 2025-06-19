@@ -74,7 +74,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
     const { data: stage, error: stageError } = await adminClient
       .from('dialectic_stages')
       .insert({
-        slug: 'thesis-stage',
+        slug: `thesis-stage-${crypto.randomUUID()}`,
         display_name: 'Thesis',
       })
       .select()
@@ -86,7 +86,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
     const { data: domain, error: domainError } = await adminClient
       .from('dialectic_domains')
       .insert({
-        name: 'Test Domain for Edit',
+        name: `Test Domain for Edit - ${crypto.randomUUID()}`,
         description: 'A test domain.',
       })
       .select()
@@ -99,13 +99,24 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       .from('dialectic_process_templates')
       .insert({
         name: 'Test Template for Edit',
-        domain_id: domain.id,
         starting_stage_id: stage.id,
       })
       .select()
       .single();
     if (templateError || !template) throw new Error(`Failed to create process template: ${templateError?.message}`);
     registerUndoAction({ type: 'DELETE_CREATED_ROW', tableName: 'dialectic_process_templates', criteria: { id: template.id }, scope: 'local' });
+
+    // 3.5. Associate domain with template
+    const { data: association, error: associationError } = await adminClient
+        .from('domain_process_associations')
+        .insert({
+            domain_id: domain.id,
+            process_template_id: template.id,
+        })
+        .select()
+        .single();
+    if (associationError || !association) throw new Error(`Failed to associate domain and template: ${associationError?.message}`);
+    registerUndoAction({ type: 'DELETE_CREATED_ROW', tableName: 'domain_process_associations', criteria: { id: association.id }, scope: 'local' });
 
     // 4. Create a project for the current test user, linking the template
     const { data: project, error: projectError } = await adminClient
@@ -116,6 +127,8 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
         initial_user_prompt: 'Initial prompt for edit test',
         status: 'active',
         process_template_id: template.id,
+        selected_domain_id: domain.id,
+        selected_domain_overlay_id: null,
       })
       .select()
       .single();
@@ -140,14 +153,14 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
     const initialContributionData: DialecticContributionInsert = {
       session_id: session.id,
       stage: 'THESIS', // This field is actually still required on contributions
-      content_storage_path: `projects/${project.id}/sessions/${session.id}/it1/thesis/ai_initial.md`,
+      storage_path: `projects/${project.id}/sessions/${session.id}/it1/thesis/ai_initial.md`,
       user_id: null, // AI contribution has no user
       model_id: null,
       model_name: 'TestGPT-Mock',
       iteration_number: 1,
-      content_storage_bucket: 'dialectic_contributions_content',
-      content_mime_type: 'text/markdown',
-      content_size_bytes: 20,
+      storage_bucket: 'dialectic_contributions_content',
+      mime_type: 'text/markdown',
+      size_bytes: 20,
       raw_response_storage_path: null,
       tokens_used_input: null,
       tokens_used_output: null,
@@ -186,7 +199,6 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
     const originalAIContributionId = testData.aiContributionId;
     const editedContent = 'This is the edited version of the AI content.';
     
-    // Use the stored primaryUserJwt directly
     if (!primaryUserJwt) throw new Error("Test user JWT not available.");
 
     const requestPayload: { action: string; payload: SaveContributionEditPayload } = {
@@ -206,23 +218,20 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       body: JSON.stringify(requestPayload),
     });
 
-    const responseBody = await response.json();
+    const rawResponseText = await response.text();
+    const responseBody = JSON.parse(rawResponseText) as DialecticContribution; // Assuming responseBody is the contribution
 
-    expect(response.status).toBe(201); // Expecting CREATED status
-    expect(responseBody.error).toBeUndefined();
-    expect(responseBody.data).toBeDefined();
-    const editedContribution = responseBody.data as DialecticContribution;
+    expect(response.status).toBe(201);
 
     // 1. Verify new contribution record
-    expect(editedContribution.id).not.toBe(originalAIContributionId);
-    expect(editedContribution.stage).toBe(testData.initialAiContribution.stage);
-    // @ts-ignore - Linter incorrectly flags edit_version if DialecticContribution interface is correct
-    expect(editedContribution.edit_version).toBe(testData.initialAiContribution.edit_version + 1);
-    expect(editedContribution.is_latest_edit).toBe(true);
+    expect(responseBody.id).not.toBe(originalAIContributionId);
+    expect(responseBody.stage).toBe(testData.initialAiContribution.stage);
+    expect(responseBody.edit_version).toBe(testData.initialAiContribution.edit_version + 1);
+    expect(responseBody.is_latest_edit).toBe(true);
     // original_model_contribution_id for an edit of a direct AI contribution should be the AI contribution's ID
-    expect(editedContribution.original_model_contribution_id).toBe(originalAIContributionId);
-    expect(editedContribution.user_id).toBe(primaryUserId);
-    expect(editedContribution.content_storage_path).toMatch(/edits\/.+\/\d+_edit.md/); // Matches placeholder path structure
+    expect(responseBody.original_model_contribution_id).toBe(originalAIContributionId);
+    expect(responseBody.user_id).toBe(primaryUserId);
+    expect(responseBody.storage_path).toMatch(/edits\/.+\/\d+_edit.md/); // Matches placeholder path structure
 
     // 2. Verify old (original AI) contribution record is updated
     const { data: originalAfterEditData, error: fetchOriginalError } = await adminClient
@@ -235,7 +244,6 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
     expect(originalAfterEditData).toBeDefined();
     // Cast to DialecticContributionSql to help TS understand the shape of originalAfterEditData
     const originalAfterEdit = originalAfterEditData as DialecticContributionSql;
-    // @ts-ignore - Linter incorrectly flags is_latest_edit if DialecticContributionSql is correct
     expect(originalAfterEdit.is_latest_edit).toBe(false);
   });
 
@@ -262,10 +270,13 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       body: JSON.stringify(requestPayload),
     });
 
-    const responseBody = await response.json();
+    // Removed console.log statements
+    const rawResponseText404 = await response.text();
+    const responseBody = JSON.parse(rawResponseText404);
 
-    expect(response.status).toBe(403);
-    expect(responseBody.error).toBe('Not authorized to edit this contribution.');
+    expect(response.status).toBe(404); // Expect 404 because RLS makes it "not found"
+    expect(responseBody.error).toBeDefined();
+    expect(responseBody.error).toBe('Original contribution not found.'); // Corrected assertion
   });
 
   it('should return 404 when trying to edit a non-existent contribution', async () => {
@@ -291,10 +302,12 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       body: JSON.stringify(requestPayload),
     });
 
-    const responseBody = await response.json();
+    const rawTextForNonExistent = await response.text();
+    const responseBodyNonExistent = JSON.parse(rawTextForNonExistent);
 
-    expect(response.status).toBe(404);
-    expect(responseBody.error).toBe('Original contribution not found.');
+    expect(response.status).toBe(404); 
+    expect(responseBodyNonExistent.error).toBeDefined();
+    expect(responseBodyNonExistent.error).toBe('Original contribution not found.');
   });
 
   it('should return 400 if originalContributionIdToEdit is missing', async () => {
@@ -393,13 +406,15 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${primaryUserJwt}` },
       body: JSON.stringify(firstEditPayload),
     });
-    const firstEditResponseBody = await firstEditResponse.json();
+
+    // Removed console.log statements
+    const rawTextFirstEditInMulti = await firstEditResponse.text();
+    const firstEditResponseBody = JSON.parse(rawTextFirstEditInMulti);
 
     expect(firstEditResponse.status).toBe(201);
-    expect(firstEditResponseBody.error).toBeUndefined();
-    const version2Contribution = firstEditResponseBody.data as DialecticContribution;
+    const version2Contribution = firstEditResponseBody as DialecticContribution;
+
     expect(version2Contribution.id).not.toBe(originalAIContributionId);
-    // @ts-ignore - Linter incorrectly flags edit_version if DialecticContribution interface is correct
     expect(version2Contribution.edit_version).toBe(testData.initialAiContribution.edit_version + 1);
     expect(version2Contribution.is_latest_edit).toBe(true);
     expect(version2Contribution.original_model_contribution_id).toBe(originalAIContributionId);
@@ -420,16 +435,16 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${primaryUserJwt}` },
       body: JSON.stringify(secondEditPayload),
     });
-    const secondEditResponseBody = await secondEditResponse.json();
+    // Using JSON.parse(await response.text()) for consistency
+    const rawTextSecondEdit = await secondEditResponse.text();
+    const secondEditResponseBody = JSON.parse(rawTextSecondEdit);
     
     expect(secondEditResponse.status).toBe(201);
-    expect(secondEditResponseBody.error).toBeUndefined();
-    const version3Contribution = secondEditResponseBody.data as DialecticContribution;
+    const version3Contribution = secondEditResponseBody as DialecticContribution;
 
     // 3. Verify Version 3 properties
     expect(version3Contribution.id).not.toBe(version2Contribution.id);
     expect(version3Contribution.stage).toBe(testData.initialAiContribution.stage);
-    // @ts-ignore - Linter incorrectly flags edit_version if DialecticContribution interface is correct
     expect(version3Contribution.edit_version).toBe(version2Contribution.edit_version + 1); // Which is initial.edit_version + 2
     expect(version3Contribution.is_latest_edit).toBe(true);
     // Crucially, original_model_contribution_id should still point to the very first AI contribution
@@ -444,9 +459,8 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       .eq('id', version2Contribution.id)
       .single();
     expect(fetchV2Error).toBeNull();
-    const version2AfterEdit = version2AfterEditData as DialecticContributionSql;
-    // @ts-ignore - Linter incorrectly flags is_latest_edit if DialecticContributionSql is correct
-    expect(version2AfterEdit.is_latest_edit).toBe(false);
+    const originalAfterSecondEdit = version2AfterEditData as DialecticContributionSql;
+    expect(originalAfterSecondEdit.is_latest_edit).toBe(false);
 
     // 5. Verify Version 1 (original AI contribution) is_latest_edit is also false
     const { data: version1AfterEditData, error: fetchV1Error } = await adminClient
@@ -455,8 +469,9 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       .eq('id', originalAIContributionId)
       .single();
     expect(fetchV1Error).toBeNull();
-    // @ts-ignore - Linter incorrectly flags is_latest_edit if DialecticContributionSql is correct
-    expect(version1AfterEditData!.is_latest_edit).toBe(false); // Added non-null assertion as select is specific
+    const firstEditAfterSecondEdit = version1AfterEditData!.is_latest_edit === false ? version1AfterEditData as DialecticContributionSql : null;
+    expect(firstEditAfterSecondEdit).toBeDefined();
+    expect(firstEditAfterSecondEdit!.is_latest_edit).toBe(false);
   });
 
   // TODO: Consider adding concurrency tests if important for multi-user scenarios.

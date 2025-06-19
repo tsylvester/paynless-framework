@@ -4,7 +4,7 @@ import type {
   Database,
   TablesInsert,
 } from '../../types_db.ts'
-import type { FileRecord, UploadContext } from '../types/file_manager.types.ts'
+import type { FileManagerResponse, UploadContext } from '../types/file_manager.types.ts'
 
 /**
  * Determines the target database table based on the file type.
@@ -33,9 +33,9 @@ export class FileManagerService {
 
   constructor(supabaseClient: SupabaseClient<Database>) {
     this.supabase = supabaseClient
-    const bucket = Deno.env.get('CONTENT_STORAGE_BUCKET')
+    const bucket = Deno.env.get('SUPABASE_CONTENT_STORAGE_BUCKET')
     if (!bucket) {
-      throw new Error('CONTENT_STORAGE_BUCKET environment variable is not set.')
+      throw new Error('SUPABASE_CONTENT_STORAGE_BUCKET environment variable is not set.')
     }
     this.storageBucket = bucket
   }
@@ -49,7 +49,7 @@ export class FileManagerService {
    */
   async uploadAndRegisterFile(
     context: UploadContext,
-  ): Promise<{ record: FileRecord | null; error: Error | null }> {
+  ): Promise<FileManagerResponse> {
     const filePath = constructStoragePath(context.pathContext)
 
     // 1. Upload file to Storage
@@ -63,7 +63,7 @@ export class FileManagerService {
     if (uploadError) {
       return {
         record: null,
-        error: new Error(`Storage upload failed: ${uploadError.message}`),
+        error: { message: `Storage upload failed: ${uploadError.message}`},
       }
     }
 
@@ -121,11 +121,11 @@ export class FileManagerService {
       await this.supabase.storage.from(this.storageBucket).remove([filePath])
       return {
         record: null,
-        error: new Error(`Database insert failed: ${insertError.message}`),
+        error: { message: `Database insert failed: ${insertError.message}` },
       }
     }
 
-    return { record: newRecord as FileRecord, error: null }
+    return { record: newRecord, error: null }
   }
 
   /**

@@ -281,7 +281,7 @@ export async function coreCreateAndSetupTestUser(
 
   // Upsert a corresponding user_profile
   const profileDataToUpsert: Database['public']['Tables']['user_profiles']['Insert'] = {
-    id: userId, // userId is a string, satisfying the non-optional 'id' for insert/upsert
+    id: userId,
     role: profileProps?.role || "user",
     first_name: profileProps?.first_name || `TestUser-${userId.substring(0, 8)}`,
     // other non-nullable fields with no defaults must be specified here or have DB defaults
@@ -327,7 +327,8 @@ export async function coreCreateAndSetupTestUser(
     );
   }
 
-  const jwt = await coreGenerateTestUserJwt(userId, profileDataToUpsert.role as string);
+  // Always generate JWT with 'authenticated' role for RLS purposes
+  const jwt = await coreGenerateTestUserJwt(userId, 'authenticated');
 
   const userClient = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
     global: { headers: { Authorization: `Bearer ${jwt}` } },

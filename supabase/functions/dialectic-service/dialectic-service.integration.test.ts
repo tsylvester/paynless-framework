@@ -676,12 +676,12 @@ describe("Edge Function: dialectic-service", () => {
         assertExists(contribution.id, "Contribution ID is missing in DB record");
         // assertEquals(contribution.session_model_id, testSessionModelId, "Contribution not linked to the correct session_model_id"); // Old assertion
         expect(createdSessionModelIds).to.include(contribution.session_model_id, "Contribution in DB not linked to a known session_model_id for this session.");
-        assertExists(contribution.content_storage_path, "content_storage_path is missing");
+        assertExists(contribution.storage_path, "storage_path is missing");
         // Storage path check needs project_id, which is testProjectId
-        assert(contribution.content_storage_path.startsWith(`projects/${testProjectId}/sessions/${testSessionId}/`), `Content storage path '${contribution.content_storage_path}' incorrect for project ${testProjectId} and session ${testSessionId}`);
-        // assertEquals(contribution.content_storage_bucket, "dialectic-contributions", "Storage bucket is incorrect"); // Bucket name is not in this table
-        // assertEquals(contribution.content_mime_type, "text/markdown", "MIME type is incorrect for thesis content"); // MIME type is not in this table
-        assert(contribution.content_size_bytes && contribution.content_size_bytes > 0, "Content size should be greater than 0");
+        assert(contribution.storage_path.startsWith(`projects/${testProjectId}/sessions/${testSessionId}/`), `Content storage path '${contribution.storage_path}' incorrect for project ${testProjectId} and session ${testSessionId}`);
+        // assertEquals(contribution.storage_bucket, "dialectic-contributions", "Storage bucket is incorrect"); // Bucket name is not in this table
+        // assertEquals(contribution.mime_type, "text/markdown", "MIME type is incorrect for thesis content"); // MIME type is not in this table
+        assert(contribution.size_bytes && contribution.size_bytes > 0, "Content size should be greater than 0");
 
         if (contribution.raw_response_storage_path) {
           assert(contribution.raw_response_storage_path.startsWith(`projects/${testProjectId}/sessions/${testSessionId}/`), "Raw response storage path is incorrect");
@@ -1274,10 +1274,10 @@ describe("Edge Function: dialectic-service", () => {
           session_id: testSessionId,
           session_model_id: testSessionModelId, // Use the created session_model_id
           stage: "thesis",
-          content_storage_bucket: testBucketName,
-          content_storage_path: testStoragePath,
-          content_mime_type: testMimeType,
-          content_size_bytes: testFileSize,
+          storage_bucket: testBucketName,
+          storage_path: testStoragePath,
+          mime_type: testMimeType,
+          size_bytes: testFileSize,
         })
         .select('id')
         .single();

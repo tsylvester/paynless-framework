@@ -1,11 +1,11 @@
-import { type ChatMessage, type ILogger, type ServiceError } from '../_shared/types.ts';
+import { type ChatMessage, type ILogger } from '../_shared/types.ts';
 import type { Database, Json } from '../types_db.ts';
 import {
   downloadFromStorage,
-  uploadToStorage,
 } from '../_shared/supabase_storage_utils.ts';
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
 import type { Logger } from '../_shared/logger.ts';
+import type { IFileManager } from '../_shared/types/file_manager.types.ts';
 
 
 export interface AIModelCatalogEntry {
@@ -43,10 +43,10 @@ export interface DialecticContribution {
     iteration_number: number;
     actual_prompt_sent: string | null;
     
-    content_storage_bucket: string | null; // Aligns with packages/types nullability
-    content_storage_path: string | null;   // Aligns with packages/types nullability
-    content_mime_type: string | null;    // Aligns with packages/types nullability
-    content_size_bytes: number | null;
+    storage_bucket: string | null; // Aligns with packages/types nullability
+    storage_path: string | null;   // Aligns with packages/types nullability
+    mime_type: string | null;    // Aligns with packages/types nullability
+    size_bytes: number | null;
 
     raw_response_storage_path: string | null;
 
@@ -256,10 +256,10 @@ export interface SelectedAiProvider {
 }
 
 export interface ContributionWithNestedOwner {
-  content_storage_bucket: string | null;
-  content_storage_path: string | null;
-  content_mime_type: string | null;
-  content_size_bytes: number | null;
+  storage_bucket: string | null;
+  storage_path: string | null;
+  mime_type: string | null;
+  size_bytes: number | null;
   dialectic_sessions: {
     project_id: string | null;
     dialectic_projects: {
@@ -392,6 +392,7 @@ export interface SubmitStageResponsesPayload {
   currentStageSlug: DialecticStage['slug'];
   currentIterationNumber: number;
   responses: SubmitStageResponseItem[];
+  fileManager: IFileManager;
 }
 
 export interface SubmitStageResponsesResponse {
@@ -422,10 +423,9 @@ export interface UploadProjectResourceFileResult {
 
 // Local response type definition to align with DB schema, avoiding interface mismatches.
 export interface SubmitStageResponsesDependencies {
-    uploadToStorage: typeof uploadToStorage;
     downloadFromStorage: typeof downloadFromStorage;
     logger: ILogger;
-    uploadAndRegisterResource: UploadAndRegisterResourceFn;
+    fileManager: IFileManager;
 }
 
 export type DialecticStageTransition = Database['public']['Tables']['dialectic_stage_transitions']['Row'];

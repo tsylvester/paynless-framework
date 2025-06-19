@@ -3,12 +3,73 @@
 import {
     createClient,
     type SupabaseClient,
-  } from "npm:@supabase/supabase-js@^2.43.4";
-  import type { User } from "npm:@supabase/gotrue-js@^2.6.3";
-  // Revert to deno.land/std for spy/stub to diagnose callCount issue
-  import { spy, stub, type Spy } from "https://deno.land/std@0.190.0/testing/mock.ts";
-  import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
+    AuthError as SupabaseAuthError,
+    type Session,
+    type UserResponse as SupabaseUserResponse,
+    type AuthError,
+    type User,
+} from "npm:@supabase/supabase-js@^2.43.4";
+import { 
+    // AuthError as GoTrueAuthError -- Avoid using this directly if SupabaseAuthError is preferred
+} from "npm:@supabase/gotrue-js@^2.6.3";
+import type { Database } from "../types_db.ts";
+// Revert to deno.land/std for spy/stub to diagnose callCount issue
+import { spy, stub, type Spy, type Stub } from "https://deno.land/std@0.190.0/testing/mock.ts";
+import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
+import type {
+    FileObject,
+    TransformOptions,
+    SearchOptions,
+    FileOptions,
+    // FileBody is not exported, so we use 'any' below
+} from "npm:@supabase/storage-js@^2.5.5"; 
 
+// deno-lint-ignore no-explicit-any
+type FileBody = any; // Define FileBody as any for mock purposes - moved to top level after imports
+
+export type MockPGRSTError = { name: string; message: string; code: string; details?: string; hint?: string };
+
+export class PostgrestError extends Error {
+    readonly code: string;
+    readonly details?: string;
+    readonly hint?: string;
+
+    constructor({ message, code, details, hint }: { message: string; code: string; details?: string; hint?: string; }) {
+        super(message);
+        this.name = 'PostgrestError';
+        this.code = code;
+        this.details = details;
+        this.hint = hint;
+    }
+}
+
+export type MockResolveQueryResult = { 
+    data: unknown[] | object | null;
+    error: Error | MockPGRSTError | null; 
+    count: number | null; 
+    status: number; 
+    statusText: string; 
+};  
+
+interface SupabaseAuthAdminApi {
+    admin: {
+      createUser(args: {
+        email: string;
+        password: string;
+        email_confirm?: boolean;
+        [key: string]: unknown;
+      }): Promise<{ data: { user: User | null }; error: Error | null }>;
+      listUsers(params?: {
+          page?: number;
+          perPage?: number;
+      }): Promise<{ data: { users: User[]; aud?: string; }; error: Error | null; }>;
+      deleteUser(id: string): Promise<{ data: { user: User | null }; error: Error | null }>;
+    };
+  }
+
+  declare module "npm:@supabase/gotrue-js@^2.6.3" {
+    interface GoTrueClient extends SupabaseAuthAdminApi {}
+  }
 
   // --- Interfaces for Mock Supabase Client (for testing) ---
 export interface IMockQueryBuilder {
@@ -49,86 +110,174 @@ export interface IMockQueryBuilder {
   range: (from: number, to: number, options?: { referencedTable?: string }) => IMockQueryBuilder;
 
   // Terminators
-  single: () => Promise<{ data: object | null; error: Error | null; count: number | null; status: number; statusText: string; }>;
-  maybeSingle: () => Promise<{ data: object | null; error: Error | null; count: number | null; status: number; statusText: string; }>;
+  single: () => Promise<MockResolveQueryResult>;
+  maybeSingle: () => Promise<MockResolveQueryResult>;
   then: (
-    onfulfilled?: ((value: { data: unknown[] | null; error: Error | null; count: number | null; status: number; statusText: string; }) => unknown | PromiseLike<unknown>) | null | undefined, 
+    onfulfilled?: ((value: MockResolveQueryResult) => unknown | PromiseLike<unknown>) | null | undefined, 
     onrejected?: ((reason: unknown) => unknown | PromiseLike<unknown>) | null | undefined
   ) => Promise<unknown>; 
   returns: () => IMockQueryBuilder;
-  methodSpies: { [key: string]: Spy<(...args: unknown[]) => unknown> };
+  methodSpies: { [key: string]: Spy };
+  url: URL;
+  headers: Record<string, string>;
+  likeAllOf: (column: string, patterns: string[]) => IMockQueryBuilder;
+  likeAnyOf: (column: string, patterns: string[]) => IMockQueryBuilder;
+  ilikeAllOf: (column: string, patterns: string[]) => IMockQueryBuilder;
+  ilikeAnyOf: (column: string, patterns: string[]) => IMockQueryBuilder;
+  csv: () => Promise<string>;
+  abortSignal: (signal: AbortSignal) => IMockQueryBuilder;
+  geojson: () => Promise<any>;
+  explain: (options?: any) => Promise<any>;
+  rollback: () => IMockQueryBuilder;
 }
 
 export interface IMockSupabaseAuth {
-  getUser: () => Promise<{ data: { user: User | null }; error: Error | null }>;
-  getUserSpy: Spy<any, any[], Promise<{ data: { user: User | null }; error: Error | null }>>;
+  getUser: () => Promise<SupabaseUserResponse>;
+  getUserSpy: Spy;
+  getAllQueryBuilderSpies: (tableName: string) => Array<AllQueryBuilderSpyMethods> | undefined;
+  getHistoricQueryBuilderSpies: (tableName: string, methodName: string) => { callCount: number; callsArgs: unknown[][] } | undefined;
 }
+
+export interface IMockRealtimeAPI {
+    on: (event: string, callback: (data: unknown) => void) => void;
+    subscribe: (channel: string, callback: (data: unknown) => void) => void;
+    unsubscribe: (channel: string) => void;
+    channel: (channel: string) => IMockRealtimeChannelAPI;
+}
+
+export interface IMockRealtimeChannelAPI {
+    on: (event: string, callback: (data: unknown) => void) => void;
+    subscribe: (channel: string, callback: (data: unknown) => void) => void;
+    unsubscribe: (channel: string) => void;
+}
+
+export interface IMockRestAPI {
+    get: (url: string) => Promise<{ data: unknown | null; error: Error | null }>;
+    post: (url: string, body: unknown) => Promise<{ data: unknown | null; error: Error | null }>;
+    put: (url: string, body: unknown) => Promise<{ data: unknown | null; error: Error | null }>;
+    delete: (url: string) => Promise<{ data: unknown | null; error: Error | null }>;
+}
+
+export interface IMockFunctionsAPI {
+    invoke: (name: string, params?: object) => Promise<{ data: unknown | null; error: Error | null }>;
+}
+
 
 export interface IMockSupabaseClient {
   from: (tableName: string) => IMockQueryBuilder;
-  auth: IMockSupabaseAuth; 
-  rpc: (name: string, params?: object, options?: { head?: boolean, count?: 'exact' | 'planned' | 'estimated' }) => Promise<{ data: unknown | null; error: Error | null; count: number | null; status: number; statusText: string; }>;
+  auth: IMockSupabaseAuth;
+  rpc: (
+    name: string,
+    params?: object,
+    options?: {
+      head?: boolean;
+      count?: 'exact' | 'planned' | 'estimated';
+    },
+  ) => Promise<{
+    data: unknown | null;
+    error: Error | null;
+    count: number | null;
+    status: number;
+    statusText: string;
+  }>;
   storage: IMockStorageAPI;
   getLatestBuilder(tableName: string): IMockQueryBuilder | undefined;
-  getHistoricBuildersForTable(tableName: string): IMockQueryBuilder[] | undefined;
+  getHistoricBuildersForTable(
+    tableName: string,
+  ): IMockQueryBuilder[] | undefined;
   clearAllTrackedBuilders(): void;
-  getStorageBucketApiInstance(bucketId: string): IMockStorageBucketAPI | undefined;
-  getSpiesForTableQueryMethod: (tableName: string, methodName: keyof IMockQueryBuilder, callIndex?: number) => Spy | undefined;
+  getStorageBucketApiInstance(
+    bucketId: string,
+  ): IMockStorageBucketAPI | undefined;
+  getSpiesForTableQueryMethod: (
+    tableName: string,
+    methodName: keyof IMockQueryBuilder,
+    callIndex?: number,
+  ) => Spy | undefined;
+  getAllBuildersUsed(): IMockQueryBuilder[];
+  getTablesWithHistoricBuilders(): string[];
+  getAllStorageBucketApiInstances(): MockStorageBucketAPIImpl[];
+  clearAllTrackedStorageAPIs(): void;
+  supabaseUrl: string;
+  supabaseKey: string;  
+  realtimeUrl: string;
+  authUrl: string;
+  storageUrl: string;
+  functionsUrl: string;
+  realtime: IMockRealtimeAPI;
+  rest: IMockRestAPI;
+  storageKey: string;
+  headers: Record<string, string>;
+  functions: IMockFunctionsAPI;
+  schema(schema: 'public' | 'storage' | 'graphql_public' | (string & Record<string, unknown>)): this;
+  channel(channel: string): IMockRealtimeChannelAPI;
+  getChannels(): IMockRealtimeChannelAPI[];
+  removeChannel(channel: IMockRealtimeChannelAPI): void;
+  removeAllChannels(): void;
+  _getAccessToken(): Promise<string | null>;
+  _initSupabaseAuthClient(): void;
+  _initSupabaseRealtimeClient(): void;  
+  _handleTokenChanged(event: string, session: unknown): void;
+  _initAuthEvents(): void;
+  _initRealtimeClient(): void;
+  _listenForAuthEvents(): void;
 }
 
 // Helper type for the comprehensive set of spied query builder methods
 export type AllQueryBuilderSpyMethods = {
-  select?: Spy<IMockQueryBuilder['select']>;
-  insert?: Spy<IMockQueryBuilder['insert']>;
-  update?: Spy<IMockQueryBuilder['update']>;
-  delete?: Spy<IMockQueryBuilder['delete']>;
-  upsert?: Spy<IMockQueryBuilder['upsert']>;
-  eq?: Spy<IMockQueryBuilder['eq']>;
-  neq?: Spy<IMockQueryBuilder['neq']>;
-  gt?: Spy<IMockQueryBuilder['gt']>;
-  gte?: Spy<IMockQueryBuilder['gte']>;
-  lt?: Spy<IMockQueryBuilder['lt']>;
-  lte?: Spy<IMockQueryBuilder['lte']>;
-  like?: Spy<IMockQueryBuilder['like']>;
-  ilike?: Spy<IMockQueryBuilder['ilike']>;
-  is?: Spy<IMockQueryBuilder['is']>;
-  in?: Spy<IMockQueryBuilder['in']>;
-  contains?: Spy<IMockQueryBuilder['contains']>;
-  containedBy?: Spy<IMockQueryBuilder['containedBy']>;
-  rangeGt?: Spy<IMockQueryBuilder['rangeGt']>;
-  rangeGte?: Spy<IMockQueryBuilder['rangeGte']>;
-  rangeLt?: Spy<IMockQueryBuilder['rangeLt']>;
-  rangeLte?: Spy<IMockQueryBuilder['rangeLte']>;
-  rangeAdjacent?: Spy<IMockQueryBuilder['rangeAdjacent']>;
-  overlaps?: Spy<IMockQueryBuilder['overlaps']>;
-  textSearch?: Spy<IMockQueryBuilder['textSearch']>;
-  match?: Spy<IMockQueryBuilder['match']>;
-  or?: Spy<IMockQueryBuilder['or']>;
-  filter?: Spy<IMockQueryBuilder['filter']>;
-  not?: Spy<IMockQueryBuilder['not']>;
-  order?: Spy<IMockQueryBuilder['order']>;
-  limit?: Spy<IMockQueryBuilder['limit']>;
-  range?: Spy<IMockQueryBuilder['range']>;
-  single?: Spy<IMockQueryBuilder['single']>;
-  maybeSingle?: Spy<IMockQueryBuilder['maybeSingle']>;
-  then?: Spy<IMockQueryBuilder['then']>;
-  returns?: Spy<IMockQueryBuilder['returns']>; 
+  select?: Spy;
+  insert?: Spy;
+  update?: Spy;
+  delete?: Spy;
+  upsert?: Spy;
+  eq?: Spy;
+  neq?: Spy;
+  gt?: Spy;
+  gte?: Spy;
+  lt?: Spy;
+  lte?: Spy;
+  like?: Spy;
+  ilike?: Spy;
+  is?: Spy;
+  in?: Spy;
+  contains?: Spy;
+  containedBy?: Spy;
+  rangeGt?: Spy;
+  rangeGte?: Spy;
+  rangeLt?: Spy;
+  rangeLte?: Spy;
+  rangeAdjacent?: Spy;
+  overlaps?: Spy;
+  textSearch?: Spy;
+  match?: Spy;
+  or?: Spy;
+  filter?: Spy;
+  not?: Spy;
+  order?: Spy;
+  limit?: Spy;
+  range?: Spy;
+  single?: Spy;
+  maybeSingle?: Spy;
+  then?: Spy;
+  returns?: Spy; 
 };
 
 export interface IMockClientSpies {
   auth: {
-    getUserSpy: Spy<IMockSupabaseAuth['getUser']>;
+    getUserSpy: Spy;
+    getSessionSpy: Spy; // Added getSessionSpy
   };
-  rpcSpy: Spy<IMockSupabaseClient['rpc']>;
-  fromSpy: Spy<IMockSupabaseClient['from']>;
-  storage: {
+  rpcSpy: Spy;
+  fromSpy: Spy; // Spy for client.from()
+  storageFromSpy: Spy; // Added spy for client.storage.from()
+  storage: { // This remains for accessing individual bucket method spies
     from: (bucketId: string) => {
-      uploadSpy: Spy<IMockStorageBucketAPI['upload']>;
-      downloadSpy: Spy<IMockStorageBucketAPI['download']>;
-      createSignedUrlSpy: Spy<IMockStorageBucketAPI['createSignedUrl']>;
-      removeSpy: Spy<IMockStorageBucketAPI['remove']>;
-      listSpy: Spy<IMockStorageBucketAPI['list']>;
-      copySpy: Spy<IMockStorageBucketAPI['copy']>;
+      uploadSpy?: Spy;
+      downloadSpy?: Spy;
+      createSignedUrlSpy?: Spy;
+      removeSpy?: Spy;
+      listSpy?: Spy;
+      copySpy?: Spy;
     };
   };
   getLatestQueryBuilderSpies: (tableName: string) => AllQueryBuilderSpyMethods | undefined;
@@ -137,9 +286,29 @@ export interface IMockClientSpies {
 }
 
   export interface MockSupabaseClientSetup {
-    client: IMockSupabaseClient;
-    spies: IMockClientSpies;
+    client: SupabaseClient<Database>;
+    clientSpies: IMockClientSpies;
+    mockStorageBucketAPIs: Map<string, MockStorageBucketAPIImpl>; // Added to expose the map
+    cleanup: () => void;
+    get historicBuildersByTable(): ReadonlyMap<string, MockQueryBuilder[]>;
     clearAllStubs?: () => void;
+    getLatestBuilder(tableName: string): IMockQueryBuilder | undefined;
+    getHistoricBuildersForTable(
+      tableName: string,
+    ): IMockQueryBuilder[] | undefined;
+    clearAllTrackedBuilders(): void;
+    getStorageBucketApiInstance(
+      bucketId: string,
+    ): IMockStorageBucketAPI | undefined;
+    getSpiesForTableQueryMethod: (
+      tableName: string,
+      methodName: keyof IMockQueryBuilder,
+      callIndex?: number,
+    ) => Spy | undefined;
+    getAllBuildersUsed(): IMockQueryBuilder[];
+    getTablesWithHistoricBuilders(): string[];
+    getAllStorageBucketApiInstances(): MockStorageBucketAPIImpl[];
+    clearAllTrackedStorageAPIs(): void;
   }
   
 
@@ -168,6 +337,7 @@ export interface IMockClientSpies {
     contentType?: string;
     upsert?: boolean;
     // Add other storage options as needed, e.g., cacheControl
+    copy: (fromPath: string, toPath: string) => Promise<IMockStorageCopyResponse>;
   }
   
   export interface IMockStorageUploadData {
@@ -195,13 +365,13 @@ export interface IMockClientSpies {
   }
   
   export interface IMockStorageListResponse {
-    data: { name: string; id?: string; updated_at?: string; created_at?: string; last_accessed_at?: string; metadata?: Record<string, any> }[] | null;
+    data: { name: string; id?: string; updated_at?: string; created_at?: string; last_accessed_at?: string; metadata?: Record<string, unknown> }[] | null;
     error: Error | null;
   }
   
   // New response type specifically for the 'remove' operation, which returns FileObject[] on success.
   export interface IMockStorageRemoveResponse {
-    data: { name: string; id?: string; updated_at?: string; created_at?: string; last_accessed_at?: string; metadata?: Record<string, any> }[] | null;
+    data: { name: string; id?: string; updated_at?: string; created_at?: string; last_accessed_at?: string; metadata?: Record<string, unknown> }[] | null;
     error: Error | null;
   }
   
@@ -213,13 +383,60 @@ export interface IMockClientSpies {
   
   // Interface for the API of a specific bucket (e.g., client.storage.from('avatars'))
   export interface IMockStorageBucketAPI {
-    upload: (path: string, body: unknown, options?: IMockStorageFileOptions) => Promise<IMockStorageUploadResponse>;
-    download: (path: string) => Promise<IMockStorageDownloadResponse>;
-    createSignedUrl: (path: string, expiresIn: number) => Promise<IMockStorageSignedUrlResponse>;
-    remove: (paths: string[]) => Promise<IMockStorageRemoveResponse>;
-    list: (path?: string, options?: { limit?: number; offset?: number; sortBy?: { column: string; order: string; }; search?: string; }) => Promise<IMockStorageListResponse>;
-    // 2. Add 'copy' to IMockStorageBucketAPI
-    copy: (fromPath: string, toPath: string) => Promise<IMockStorageCopyResponse>;
+    upload: (path: string, body: FileBody, options?: FileOptions) => Promise<{ data: { path: string; } | null; error: Error | null; }>;
+    download: (path: string, options?: TransformOptions) => Promise<{ data: Blob | null; error: Error | null; }>;
+    createSignedUrl: (path: string, expiresIn: number, options?: { download?: string | boolean; transform?: TransformOptions }) => Promise<{ data: { signedUrl: string; } | null; error: Error | null; }>;
+    remove: (paths: string[]) => Promise<{ data: FileObject[] | null; error: Error | null; }>;
+    list: (path?: string, options?: SearchOptions, parameters?: { headers?: HeadersInit, signal?: AbortSignal }) => Promise<{ data: FileObject[] | null; error: Error | null; }>;
+    copy: (fromPath: string, toPath: string, options?: { destinationBucket?: string }) => Promise<{ data: { path: string; } | null; error: Error | null; }>;
+    move: (fromPath: string, toPath: string) => Promise<{ data: { message: string; } | null; error: Error | null; }>;
+    update: (path: string, body: FileBody, options?: FileOptions) => Promise<{ data: { path: string; } | null; error: Error | null; }>;
+    createSignedUrls: (paths: string[], expiresIn: number, options?: { download?: boolean }) => Promise<{ data: ({ signedUrl: string; path: string; error: string | null; })[] | null; error: Error | null; }>;
+    getPublicUrl: (path: string, options?: { download?: string | boolean; transform?: TransformOptions }) => { data: { publicUrl: string; }; };    
+    
+    // Properties from StorageFileApi
+    url: string;
+    headers: Record<string, string>;
+    fetch: typeof globalThis.fetch; 
+
+    // Other Methods from StorageFileApi
+    // deno-lint-ignore no-explicit-any
+    uploadToSignedUrl: (path: string, token: string, body: FileBody, options?: FileOptions) => Promise<{ data: { path: string; } | null; error: Error | null; }>;
+    // deno-lint-ignore no-explicit-any
+    createSignedUploadUrl: (path: string) => Promise<{ data: { signedURL: string; path: string; } | null; error: Error | null; }>; 
+    // deno-lint-ignore no-explicit-any
+    uploadOrUpdate: (path: string, body: FileBody, options?: FileOptions) => Promise<{ data: { path: string; } | null; error: Error | null; }>; 
+    // deno-lint-ignore no-explicit-any
+    emptyBucket: () => Promise<{ data: { message: string; } | null; error: Error | null; }>;
+    // deno-lint-ignore no-explicit-any
+    disableBucketCORS: () => Promise<{ data: { message: string; } | null; error: Error | null; }>;
+    // deno-lint-ignore no-explicit-any
+    enableBucketCORS: () => Promise<{ data: { message: string; } | null; error: Error | null; }>;
+    // deno-lint-ignore no-explicit-any
+    info: () => Promise<{ data: any | null; error: Error | null; }>; 
+    // deno-lint-ignore no-explicit-any
+    exists: (path: string) => Promise<{ data: boolean | null; error: Error | null; }>; 
+    // deno-lint-ignore no-explicit-any
+    encodeMetadata: (metadata: Record<string, any>) => string;
+    // deno-lint-ignore no-explicit-any
+    toBase64: (data: string | ArrayBuffer) => string;
+    _getFinalPath: (path: string) => string;
+    _removeEmptyFolders: (path: string) => string;
+    // deno-lint-ignore no-explicit-any
+    transformOptsToQueryString: (options: any) => string;
+
+    // Internal perform methods - these are what spies will target if needed for assertion outside the main methods
+    // These could also be private to the implementation if spies are managed differently
+    performUploadInternal: (path: string, body: FileBody, options?: FileOptions) => Promise<{ data: { path: string } | null; error: Error | null; }>;
+    performDownloadInternal: (path: string, options?: TransformOptions) => Promise<{ data: Blob | null; error: Error | null; }>;
+    performCreateSignedUrlInternal: (path: string, expiresIn: number, options?: { download?: string | boolean; transform?: TransformOptions }) => Promise<{ data: { signedUrl: string } | null; error: Error | null; }>;
+    performRemoveInternal: (paths: string[]) => Promise<{ data: FileObject[] | null; error: Error | null; }>;
+    performListInternal: (path?: string, options?: SearchOptions, parameters?: { headers?: HeadersInit, signal?: AbortSignal }) => Promise<{ data: FileObject[] | null; error: Error | null; }>;
+    performCopyInternal: (fromPath: string, toPath: string, options?: { destinationBucket?: string }) => Promise<{ data: { path: string } | null; error: Error | null; }>;
+    performMoveInternal: (fromPath: string, toPath: string) => Promise<{ data: { message: string } | null; error: Error | null; }>;
+    performUpdateInternal: (path: string, body: FileBody, options?: FileOptions) => Promise<{ data: { path: string } | null; error: Error | null; }>;
+    performCreateSignedUrlsInternal: (paths: string[], expiresIn: number, options?: { download?: boolean }) => Promise<{ data: ({ signedUrl: string; path: string; error: string | null; })[] | null; error: Error | null; }>;
+    performGetPublicUrlInternal: (path: string, options?: { download?: string | boolean; transform?: TransformOptions }) => { data: { publicUrl: string; }; };
   }
   
   // Interface for the top-level storage API (e.g., client.storage)
@@ -229,27 +446,31 @@ export interface IMockClientSpies {
   // --- END: Storage Mock Types ---
   
   export interface MockSupabaseDataConfig {
-      getUserResult?: { data: { user: User | null }; error: Error | null }; 
+      getUserResult?: SupabaseUserResponse;
       genericMockResults?: {
           [tableName: string]: {
-              select?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-              insert?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-              update?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-              upsert?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-              delete?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
+              select?: Partial<MockResolveQueryResult> | ((state: MockQueryBuilderState) => Promise<Partial<MockResolveQueryResult>>);
+              insert?: Partial<MockResolveQueryResult> | ((state: MockQueryBuilderState) => Promise<Partial<MockResolveQueryResult>>);
+              update?: Partial<MockResolveQueryResult> | ((state: MockQueryBuilderState) => Promise<Partial<MockResolveQueryResult>>);
+              upsert?: Partial<MockResolveQueryResult> | ((state: MockQueryBuilderState) => Promise<Partial<MockResolveQueryResult>>);
+              delete?: Partial<MockResolveQueryResult> | ((state: MockQueryBuilderState) => Promise<Partial<MockResolveQueryResult>>);
           };
       };
       rpcResults?: {
           [functionName: string]: { data?: object | object[] | null; error?: Error | null } | (() => Promise<{ data?: object | object[] | null; error?: Error | null }>);
       };
-      storageConfig?: {
+      storageConfig?: { // This is where bucket-specific mock functions are defined
         [bucketId: string]: {
-            list?: (path: string, options: any) => Promise<IMockStorageListResponse>;
-            remove?: (paths: string[]) => Promise<IMockStorageRemoveResponse>;
-            upload?: (path: string, body: unknown, options?: IMockStorageFileOptions) => Promise<IMockStorageUploadResponse>;
-            download?: (path: string) => Promise<IMockStorageDownloadResponse>;
-            createSignedUrl?: (path: string, expiresIn: number) => Promise<IMockStorageSignedUrlResponse>;
-            copy?: (fromPath: string, toPath: string) => Promise<IMockStorageCopyResponse>;
+            list?: (path?: string | undefined, options?: SearchOptions, parameters?: { headers?: HeadersInit, signal?: AbortSignal }) => Promise<{ data: FileObject[] | null; error: Error | null; }>; // Changed return to use FileObject[]
+            remove?: (paths: string[]) => Promise<{ data: FileObject[] | null; error: Error | null; }>; // Changed return to use FileObject[]
+            upload?: (path: string, body: FileBody, options?: FileOptions) => Promise<IMockStorageUploadResponse>; 
+            download?: (path: string, options?: TransformOptions) => Promise<IMockStorageDownloadResponse>; 
+            createSignedUrl?: (path: string, expiresIn: number, options?: { download?: string | boolean; transform?: TransformOptions }) => Promise<IMockStorageSignedUrlResponse>; 
+            copy?: (fromPath: string, toPath: string, options?: { destinationBucket?: string }) => Promise<IMockStorageCopyResponse>; 
+            move?: (fromPath: string, toPath: string) => Promise<{ data: { message: string } | null; error: Error | null }>;
+            update?: (path: string, body: FileBody, options?: FileOptions) => Promise<{ data: { path: string } | null; error: Error | null }>; 
+            createSignedUrls?: (paths: string[], expiresIn: number, options?: { download?: boolean }) => Promise<{ data: ({ signedUrl: string; path: string; error: string | null; })[] | null; error: Error | null; }>;
+            getPublicUrl?: (path: string, options?: { download?: string | boolean; transform?: TransformOptions }) => { data: { publicUrl: string; }; };
         }
       };
       storageMock?: { 
@@ -266,16 +487,6 @@ export interface IMockClientSpies {
       simulateAuthError?: Error | null;
   }
   
-  export type MockPGRSTError = { name: string; message: string; code: string; details?: string; hint?: string };
-  
-  export type MockResolveQueryResult = { 
-      data: unknown[] | null;
-      error: Error | MockPGRSTError | null; 
-      count: number | null; 
-      status: number; 
-      statusText: string; 
-  };  
-
   // Environment variable check
   const envSupabaseUrl = Deno.env.get("SUPABASE_URL");
   const envServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -341,9 +552,11 @@ export interface IMockClientSpies {
   
 // --- MockQueryBuilder Implementation ---
 class MockQueryBuilder implements IMockQueryBuilder {
-    public methodSpies: { [key: string]: Spy<(...args: unknown[]) => unknown> } = {};
+    public methodSpies: { [key: string]: Spy } = {};
     private _state: MockQueryBuilderState;
     private _genericMockResultsConfig?: MockSupabaseDataConfig['genericMockResults'];
+    public url: URL;
+    public headers: Record<string, string>;
 
     constructor(
         tableName: string,
@@ -360,46 +573,78 @@ class MockQueryBuilder implements IMockQueryBuilder {
             upsertData: null,
         };
         this._genericMockResultsConfig = config;
+        this.url = new URL(`http://localhost/rest/v1/${tableName}`);
+        this.headers = {};
         this._initializeSpies();
     }
 
     // Define methods from IMockQueryBuilder directly
     // These will be wrapped by spies in _initializeSpies
-    select(columns?: string): IMockQueryBuilder { return this._executeMethodLogic('select', [columns]) as IMockQueryBuilder; }
-    insert(data: unknown[] | object): IMockQueryBuilder { return this._executeMethodLogic('insert', [data]) as IMockQueryBuilder; }
-    update(data: object): IMockQueryBuilder { return this._executeMethodLogic('update', [data]) as IMockQueryBuilder; }
-    delete(): IMockQueryBuilder { return this._executeMethodLogic('delete', []) as IMockQueryBuilder; }
-    upsert(data: unknown[] | object, options?: { onConflict?: string, ignoreDuplicates?: boolean }): IMockQueryBuilder { return this._executeMethodLogic('upsert', [data, options]) as IMockQueryBuilder; }
-    eq(column: string, value: unknown): IMockQueryBuilder { return this._executeMethodLogic('eq', [column, value]) as IMockQueryBuilder; }
-    neq(column: string, value: unknown): IMockQueryBuilder { return this._executeMethodLogic('neq', [column, value]) as IMockQueryBuilder; }
-    gt(column: string, value: unknown): IMockQueryBuilder { return this._executeMethodLogic('gt', [column, value]) as IMockQueryBuilder; }
-    gte(column: string, value: unknown): IMockQueryBuilder { return this._executeMethodLogic('gte', [column, value]) as IMockQueryBuilder; }
-    lt(column: string, value: unknown): IMockQueryBuilder { return this._executeMethodLogic('lt', [column, value]) as IMockQueryBuilder; }
-    lte(column: string, value: unknown): IMockQueryBuilder { return this._executeMethodLogic('lte', [column, value]) as IMockQueryBuilder; }
-    like(column: string, pattern: string): IMockQueryBuilder { return this._executeMethodLogic('like', [column, pattern]) as IMockQueryBuilder; }
-    ilike(column: string, pattern: string): IMockQueryBuilder { return this._executeMethodLogic('ilike', [column, pattern]) as IMockQueryBuilder; }
-    is(column: string, value: 'null' | 'not null' | 'true' | 'false'): IMockQueryBuilder { return this._executeMethodLogic('is', [column, value]) as IMockQueryBuilder; }
-    in(column: string, values: unknown[]): IMockQueryBuilder { return this._executeMethodLogic('in', [column, values]) as IMockQueryBuilder; }
-    contains(column: string, value: string | string[] | object): IMockQueryBuilder { return this._executeMethodLogic('contains', [column, value]) as IMockQueryBuilder; }
-    containedBy(column: string, value: string | string[] | object): IMockQueryBuilder { return this._executeMethodLogic('containedBy', [column, value]) as IMockQueryBuilder; }
-    rangeGt(column: string, rangeVal: string): IMockQueryBuilder { return this._executeMethodLogic('rangeGt', [column, rangeVal]) as IMockQueryBuilder; }
-    rangeGte(column: string, rangeVal: string): IMockQueryBuilder { return this._executeMethodLogic('rangeGte', [column, rangeVal]) as IMockQueryBuilder; }
-    rangeLt(column: string, rangeVal: string): IMockQueryBuilder { return this._executeMethodLogic('rangeLt', [column, rangeVal]) as IMockQueryBuilder; }
-    rangeLte(column: string, rangeVal: string): IMockQueryBuilder { return this._executeMethodLogic('rangeLte', [column, rangeVal]) as IMockQueryBuilder; }
-    rangeAdjacent(column: string, rangeVal: string): IMockQueryBuilder { return this._executeMethodLogic('rangeAdjacent', [column, rangeVal]) as IMockQueryBuilder; }
-    overlaps(column: string, value: string | string[]): IMockQueryBuilder { return this._executeMethodLogic('overlaps', [column, value]) as IMockQueryBuilder; }
-    textSearch(column: string, query: string, options?: { config?: string, type?: 'plain' | 'phrase' | 'websearch' }): IMockQueryBuilder { return this._executeMethodLogic('textSearch', [column, query, options]) as IMockQueryBuilder; }
-    match(query: object): IMockQueryBuilder { return this._executeMethodLogic('match', [query]) as IMockQueryBuilder; }
-    or(filters: string, options?: { referencedTable?: string }): IMockQueryBuilder { return this._executeMethodLogic('or', [filters, options]) as IMockQueryBuilder; }
-    filter(column: string, operator: string, value: unknown): IMockQueryBuilder { return this._executeMethodLogic('filter', [column, operator, value]) as IMockQueryBuilder; }
-    not(column: string, operator: string, value: unknown): IMockQueryBuilder { return this._executeMethodLogic('not', [column, operator, value]) as IMockQueryBuilder; }
-    order(column: string, options?: { ascending?: boolean, nullsFirst?: boolean, referencedTable?: string }): IMockQueryBuilder { return this._executeMethodLogic('order', [column, options]) as IMockQueryBuilder; }
-    limit(count: number, options?: { referencedTable?: string }): IMockQueryBuilder { return this._executeMethodLogic('limit', [count, options]) as IMockQueryBuilder; }
-    range(from: number, to: number, options?: { referencedTable?: string }): IMockQueryBuilder { return this._executeMethodLogic('range', [from, to, options]) as IMockQueryBuilder; }
-    returns(): IMockQueryBuilder { return this._executeMethodLogic('returns', []) as IMockQueryBuilder; }
+    select(columns?: string): IMockQueryBuilder { return this._executeMethodLogic('select', [columns]); }
+    insert(data: unknown[] | object): IMockQueryBuilder { return this._executeMethodLogic('insert', [data]); }
+    update(data: object): IMockQueryBuilder { return this._executeMethodLogic('update', [data]); }
+    delete(): IMockQueryBuilder { return this._executeMethodLogic('delete', []); }
+    upsert(data: unknown[] | object, options?: { onConflict?: string, ignoreDuplicates?: boolean }): IMockQueryBuilder { return this._executeMethodLogic('upsert', [data, options]); }
+    eq(column: string, value: unknown): IMockQueryBuilder { return this._executeMethodLogic('eq', [column, value]); }
+    neq(column: string, value: unknown): IMockQueryBuilder { return this._executeMethodLogic('neq', [column, value]); }
+    gt(column: string, value: unknown): IMockQueryBuilder { return this._executeMethodLogic('gt', [column, value]); }
+    gte(column: string, value: unknown): IMockQueryBuilder { return this._executeMethodLogic('gte', [column, value]); }
+    lt(column: string, value: unknown): IMockQueryBuilder { return this._executeMethodLogic('lt', [column, value]); }
+    lte(column: string, value: unknown): IMockQueryBuilder { return this._executeMethodLogic('lte', [column, value]); }
+    like(column: string, pattern: string): IMockQueryBuilder { return this._executeMethodLogic('like', [column, pattern]); }
+    ilike(column: string, pattern: string): IMockQueryBuilder { return this._executeMethodLogic('ilike', [column, pattern]); }
+    is(column: string, value: 'null' | 'not null' | 'true' | 'false'): IMockQueryBuilder { return this._executeMethodLogic('is', [column, value]); }
+    in(column: string, values: unknown[]): IMockQueryBuilder { return this._executeMethodLogic('in', [column, values]); }
+    contains(column: string, value: string | string[] | object): IMockQueryBuilder { return this._executeMethodLogic('contains', [column, value]); }
+    containedBy(column: string, value: string | string[] | object): IMockQueryBuilder { return this._executeMethodLogic('containedBy', [column, value]); }
+    rangeGt(column: string, rangeVal: string): IMockQueryBuilder { return this._executeMethodLogic('rangeGt', [column, rangeVal]); }
+    rangeGte(column: string, rangeVal: string): IMockQueryBuilder { return this._executeMethodLogic('rangeGte', [column, rangeVal]); }
+    rangeLt(column: string, rangeVal: string): IMockQueryBuilder { return this._executeMethodLogic('rangeLt', [column, rangeVal]); }
+    rangeLte(column: string, rangeVal: string): IMockQueryBuilder { return this._executeMethodLogic('rangeLte', [column, rangeVal]); }
+    rangeAdjacent(column: string, rangeVal: string): IMockQueryBuilder { return this._executeMethodLogic('rangeAdjacent', [column, rangeVal]); }
+    overlaps(column: string, value: string | string[]): IMockQueryBuilder { return this._executeMethodLogic('overlaps', [column, value]); }
+    textSearch(column: string, query: string, options?: { config?: string, type?: 'plain' | 'phrase' | 'websearch' }): IMockQueryBuilder { return this._executeMethodLogic('textSearch', [column, query, options]); }
+    match(query: object): IMockQueryBuilder { return this._executeMethodLogic('match', [query]); }
+    or(filters: string, options?: { referencedTable?: string }): IMockQueryBuilder { return this._executeMethodLogic('or', [filters, options]); }
+    filter(column: string, operator: string, value: unknown): IMockQueryBuilder { return this._executeMethodLogic('filter', [column, operator, value]); }
+    not(column: string, operator: string, value: unknown): IMockQueryBuilder { return this._executeMethodLogic('not', [column, operator, value]); }
+    order(column: string, options?: { ascending?: boolean, nullsFirst?: boolean, referencedTable?: string }): IMockQueryBuilder { return this._executeMethodLogic('order', [column, options]); }
+    limit(count: number, options?: { referencedTable?: string }): IMockQueryBuilder { return this._executeMethodLogic('limit', [count, options]); }
+    range(from: number, to: number, options?: { referencedTable?: string }): IMockQueryBuilder { return this._executeMethodLogic('range', [from, to, options]); }
+    returns(): IMockQueryBuilder { return this._executeMethodLogic('returns', []); }
+    likeAllOf(column: string, patterns: string[]): IMockQueryBuilder { return this._executeMethodLogic('likeAllOf', [column, patterns]); }
+    likeAnyOf(column: string, patterns: string[]): IMockQueryBuilder { return this._executeMethodLogic('likeAnyOf', [column, patterns]); }
+    ilikeAllOf(column: string, patterns: string[]): IMockQueryBuilder { return this._executeMethodLogic('ilikeAllOf', [column, patterns]); }
+    ilikeAnyOf(column: string, patterns: string[]): IMockQueryBuilder { return this._executeMethodLogic('ilikeAnyOf', [column, patterns]); }
+    csv(): Promise<string> {
+        this._executeMethodLogic('csv', []);
+        return Promise.resolve(""); // Return a dummy CSV string
+    }
+    abortSignal(signal: AbortSignal): IMockQueryBuilder {
+        this._executeMethodLogic('abortSignal', [signal]);
+        return this;
+    }
+    geojson(): Promise<any> {
+        this._executeMethodLogic('geojson', []);
+        return Promise.resolve({});
+    }
+    explain(options?: any): Promise<any> {
+        this._executeMethodLogic('explain', [options]);
+        return Promise.resolve({});
+    }
+    rollback(): IMockQueryBuilder {
+        this._executeMethodLogic('rollback', []);
+        return this;
+    }
 
-    single(): Promise<MockResolveQueryResult> { return this._executeMethodLogic('single', []) as Promise<MockResolveQueryResult>; }
-    maybeSingle(): Promise<MockResolveQueryResult> { return this._executeMethodLogic('maybeSingle', []) as Promise<MockResolveQueryResult>; }
+    single(): Promise<MockResolveQueryResult> {
+        this._executeMethodLogic('single', []);
+        return this._resolveQuery(true, false);
+    }
+    maybeSingle(): Promise<MockResolveQueryResult> {
+        this._executeMethodLogic('maybeSingle', []);
+        return this._resolveQuery(false, true);
+    }
     then(
         onfulfilled?: ((value: MockResolveQueryResult) => unknown | PromiseLike<unknown>) | null | undefined,
         onrejected?: ((reason: unknown) => unknown | PromiseLike<unknown>) | null | undefined
@@ -411,63 +656,153 @@ class MockQueryBuilder implements IMockQueryBuilder {
     }
 
     private _initializeSpies() {
-        const methodsToSpy: (keyof IMockQueryBuilder)[] = [
+        const methodsToSpy: (keyof MockQueryBuilder)[] = [
             'select', 'insert', 'update', 'delete', 'upsert',
             'eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'like', 'ilike', 'is', 'in',
             'contains', 'containedBy', 'rangeGt', 'rangeGte', 'rangeLt', 'rangeLte',
             'rangeAdjacent', 'overlaps', 'textSearch', 'match', 'or', 'filter', 'not',
-            'order', 'limit', 'range', 'single', 'maybeSingle', 'then', 'returns'
+            'order', 'limit', 'range', 'single', 'maybeSingle', 'then', 'returns',
+            'likeAllOf', 'likeAnyOf', 'ilikeAllOf', 'ilikeAnyOf', 'csv',
+            'abortSignal', 'geojson', 'explain', 'rollback'
         ];
 
         for (const methodName of methodsToSpy) {
-            if (typeof this[methodName as keyof this] === 'function') {
-                this.methodSpies[methodName] = spy(this, methodName as keyof MockQueryBuilder) as unknown as Spy<(...args: unknown[]) => unknown>;
+            if (typeof this[methodName] === 'function') {
+                this.methodSpies[methodName] = spy(this, methodName);
             } else {
                 console.warn(`[MockQueryBuilder] Method ${methodName} is not a function on the instance, cannot spy.`);
             }
         }
     }
 
-    private _executeMethodLogic(methodName: keyof IMockQueryBuilder, args: unknown[]): IMockQueryBuilder | Promise<MockResolveQueryResult> {
+    private _executeMethodLogic(methodName: string, args: unknown[]): IMockQueryBuilder {
         console.log(`[Mock QB ${this._state.tableName}] .${methodName}(${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(', ')}) called`);
-        switch(methodName as string) {
-            case 'select': 
-                // If current operation is a mutation, select just specifies return shape
-                if (!['insert', 'update', 'upsert'].includes(this._state.operation)) {
-                    this._state.operation = 'select'; 
+        switch(methodName) {
+            case 'select': {
+                const [columns] = args;
+                if (typeof columns === 'string' || typeof columns === 'undefined') {
+                    if (!['insert', 'update', 'upsert'].includes(this._state.operation)) {
+                        this._state.operation = 'select'; 
+                    }
+                    this._state.selectColumns = columns || '*';
                 }
-                this._state.selectColumns = typeof args[0] === 'string' || args[0] === undefined ? (args[0] as string | undefined) || '*' : '*'; 
                 return this;
-            case 'insert': this._state.operation = 'insert'; this._state.insertData = args[0] as (object | unknown[]); return this;
-            case 'update': this._state.operation = 'update'; this._state.updateData = args[0] as object; return this;
-            case 'delete': this._state.operation = 'delete'; return this;
-            case 'upsert': 
-                this._state.operation = 'upsert'; 
-                this._state.upsertData = args[0] as (object | unknown[]); 
-                this._state.upsertOptions = args[1] as { onConflict?: string, ignoreDuplicates?: boolean } | undefined;
+            }
+            case 'insert': {
+                const [data] = args;
+                if (data && typeof data === 'object') {
+                    this._state.operation = 'insert'; this._state.insertData = data;
+                }
                 return this;
-            case 'eq': this._state.filters.push({ column: args[0] as string, value: args[1], type: 'eq' }); return this;
-            case 'neq': this._state.filters.push({ column: args[0] as string, value: args[1], type: 'neq' }); return this;
-            case 'gt': this._state.filters.push({ column: args[0] as string, value: args[1], type: 'gt' }); return this;
-            case 'gte': this._state.filters.push({ column: args[0] as string, value: args[1], type: 'gte' }); return this;
-            case 'lt': this._state.filters.push({ column: args[0] as string, value: args[1], type: 'lt' }); return this;
-            case 'lte': this._state.filters.push({ column: args[0] as string, value: args[1], type: 'lte' }); return this;
-            case 'like': this._state.filters.push({ column: args[0] as string, value: args[1] as string, type: 'like' }); return this;
-            case 'ilike': this._state.filters.push({ column: args[0] as string, value: args[1] as string, type: 'ilike' }); return this;
-            case 'is': this._state.filters.push({ column: args[0] as string, value: args[1] as 'null' | 'not null' | 'true' | 'false', type: 'is' }); return this;
-            case 'in': this._state.filters.push({ column: args[0] as string, value: args[1] as unknown[], type: 'in' }); return this;
-            case 'contains': this._state.filters.push({ column: args[0] as string, value: args[1] as string | string[] | object, type: 'contains' }); return this;
-            case 'containedBy': this._state.filters.push({ column: args[0] as string, value: args[1] as string | string[] | object, type: 'containedBy' }); return this;
-            case 'match': this._state.matchQuery = args[0] as object; return this;
-            case 'or': this._state.filters.push({ filters: args[0] as string, type: 'or', referencedTable: (args[1] as { referencedTable?: string } | undefined)?.referencedTable }); return this;
-            case 'filter': this._state.filters.push({ column: args[0] as string, operator: args[1] as string, value: args[2], type: 'filter' }); return this;
-            case 'not': this._state.filters.push({ column: args[0] as string, operator: args[1] as string, value: args[2], type: 'not' }); return this;
-            case 'order': this._state.orderBy = { column: args[0] as string, options: args[1] as { ascending?: boolean; nullsFirst?: boolean; referencedTable?: string } | undefined }; return this;
-            case 'limit': this._state.limitCount = args[0] as number; return this;
-            case 'range': this._state.rangeFrom = args[0] as number; this._state.rangeTo = args[1] as number; return this;
-            case 'single': return this._resolveQuery(true, false);
-            case 'maybeSingle': return this._resolveQuery(false, true);
-            case 'returns': return this;
+            }
+            case 'update':{
+                const [data] = args;
+                if (data && typeof data === 'object' && !Array.isArray(data)) {
+                    this._state.operation = 'update'; this._state.updateData = data;
+                }
+                return this;
+            }
+            case 'delete': 
+                this._state.operation = 'delete'; 
+                return this;
+            case 'upsert': {
+                const [data, options] = args;
+                if (data && typeof data === 'object') {
+                    this._state.operation = 'upsert'; 
+                    this._state.upsertData = data; 
+                    if (options && typeof options === 'object' && options !== null) {
+                        this._state.upsertOptions = { 
+                            onConflict: 'onConflict' in options ? String(options.onConflict) : undefined,
+                            ignoreDuplicates: 'ignoreDuplicates' in options ? Boolean(options.ignoreDuplicates) : undefined,
+                         };
+                    }
+                }
+                return this;
+            }
+            case 'eq': case 'neq': case 'gt': case 'gte': case 'lt': case 'lte': case 'like': case 'ilike': {
+                const [column, value] = args;
+                if (typeof column === 'string') {
+                    this._state.filters.push({ column, value, type: methodName });
+                }
+                return this;
+            }
+            case 'is': {
+                const [column, value] = args;
+                if (typeof column === 'string' && (value === 'null' || value === 'not null' || value === 'true' || value === 'false')) {
+                    this._state.filters.push({ column, value, type: 'is' });
+                }
+                return this;
+            }
+            case 'in': case 'contains': case 'containedBy': case 'overlaps': {
+                const [column, value] = args;
+                if (typeof column === 'string') {
+                    this._state.filters.push({ column, value, type: methodName });
+                }
+                return this;
+            }
+            case 'match': {
+                const [query] = args;
+                if (query && typeof query === 'object' && !Array.isArray(query)) {
+                    this._state.matchQuery = query;
+                }
+                return this;
+            }
+            case 'or': {
+                const [filters, options] = args;
+                if (typeof filters === 'string') {
+                    let referencedTable: string | undefined;
+                    if (options && typeof options === 'object' && options !== null && 'referencedTable' in options && typeof options.referencedTable === 'string') {
+                        referencedTable = options.referencedTable;
+                    }
+                    this._state.filters.push({ filters, type: 'or', referencedTable });
+                }
+                return this;
+            }
+            case 'filter': case 'not': {
+                const [column, operator, value] = args;
+                if (typeof column === 'string' && typeof operator === 'string') {
+                    this._state.filters.push({ column, operator, value, type: methodName });
+                }
+                return this;
+            }
+            case 'order': {
+                const [column, options] = args;
+                if (typeof column === 'string') {
+                    let orderOptions: { ascending?: boolean, nullsFirst?: boolean, referencedTable?: string } | undefined;
+                    if (options && typeof options === 'object' && options !== null) {
+                        orderOptions = {};
+                        if ('ascending' in options && typeof options.ascending === 'boolean') {
+                            orderOptions.ascending = options.ascending;
+                        }
+                        if ('nullsFirst' in options && typeof options.nullsFirst === 'boolean') {
+                            orderOptions.nullsFirst = options.nullsFirst;
+                        }
+                        if ('referencedTable' in options && typeof options.referencedTable === 'string') {
+                            orderOptions.referencedTable = options.referencedTable;
+                        }
+                    }
+                    this._state.orderBy = { column, options: orderOptions };
+                }
+                return this;
+            }
+            case 'limit': {
+                const [count] = args;
+                if (typeof count === 'number') {
+                    this._state.limitCount = count;
+                }
+                return this;
+            }
+            case 'range': {
+                const [from, to] = args;
+                if (typeof from === 'number' && typeof to === 'number') {
+                    this._state.rangeFrom = from; this._state.rangeTo = to;
+                }
+                return this;
+            }
+            case 'single': 
+            case 'maybeSingle': 
+            case 'returns': 
+                return this;
             default: {
                 console.warn(`[Mock QB ${this._state.tableName}] Method .${methodName} not explicitly in switch. Returning 'this'.`);
                 return this;
@@ -486,7 +821,8 @@ class MockQueryBuilder implements IMockQueryBuilder {
             console.log(`[Mock QB ${this._state.tableName}] Using function config for ${this._state.operation}`);
             try {
                 // The mock function is responsible for returning the complete MockResolveQueryResult structure
-                result = await (operationConfig as (state: MockQueryBuilderState) => Promise<MockResolveQueryResult>)(this._state);
+                const partialResult = await operationConfig(this._state);
+                result = { ...result, ...partialResult };
             } catch (e) {
                 console.error(`[Mock QB ${this._state.tableName}] Error executing mock function for ${this._state.operation}:`, e);
                 result = { 
@@ -499,13 +835,7 @@ class MockQueryBuilder implements IMockQueryBuilder {
             }
         } else if (typeof operationConfig === 'object' && operationConfig !== null) {
             console.log(`[Mock QB ${this._state.tableName}] Using object config for ${this._state.operation}`);
-            result = { // Ensure all parts of MockResolveQueryResult are provided
-                data: operationConfig.data !== undefined ? operationConfig.data : null,
-                error: operationConfig.error !== undefined ? operationConfig.error : null,
-                count: operationConfig.count !== undefined ? operationConfig.count : null,
-                status: operationConfig.status !== undefined ? operationConfig.status : 200,
-                statusText: operationConfig.statusText !== undefined ? operationConfig.statusText : 'OK'
-            };
+            result = { ...result, ...operationConfig };
         } else {
             // Default behavior if no specific mock is found for the operation
             console.warn(`[Mock QB ${this._state.tableName}] No specific mock found for operation ${this._state.operation}. Returning default empty success.`);
@@ -515,30 +845,27 @@ class MockQueryBuilder implements IMockQueryBuilder {
         // Simulate PostgREST behavior for .single() and .maybeSingle()
         // This shaping happens *after* the mock result is obtained.
         if (isSingle) {
-            if (result.data && result.data.length === 1) {
-                result.data = result.data[0] as unknown[] | null; // Correctly assign the single object
-            } else if (result.data && result.data.length > 1) {
+            if (result.data && Array.isArray(result.data) && result.data.length === 1) {
+                result.data = result.data[0]; // Correctly assign the single object
+            } else if (result.data && Array.isArray(result.data) && result.data.length > 1) {
                 if (!result.error) { // Only set if no error is already provided by the mock config
-                    result.error = new Error('Query returned more than one row') as Error & MockPGRSTError;
-                    (result.error as MockPGRSTError).code = 'PGRST116';
+                    result.error = new PostgrestError({ message: 'Query returned more than one row', code: 'PGRST116' });
                     result.status = 406;
                 }
                 result.data = null; // Data becomes null if error or multiple rows
             } else { // 0 rows or data was null initially
                 if (!result.error) { // Only set if no error is already provided by the mock config
-                    result.error = new Error('Query returned no rows') as Error & MockPGRSTError;
-                    (result.error as MockPGRSTError).code = 'PGRST116';
+                    result.error = new PostgrestError({ message: 'Query returned no rows', code: 'PGRST116' });
                     result.status = 406;
                 }
                 result.data = null; // Data becomes/stays null if error or 0 rows
             }
         } else if (isMaybeSingle) {
-            if (result.data && result.data.length === 1) {
-                result.data = result.data[0] as unknown[] | null; // Correctly assign the single object
-            } else if (result.data && result.data.length > 1) {
+            if (result.data && Array.isArray(result.data) && result.data.length === 1) {
+                result.data = result.data[0]; // Correctly assign the single object
+            } else if (result.data && Array.isArray(result.data) && result.data.length > 1) {
                 if (!result.error) { // Only set if no error is already provided by the mock config
-                    result.error = new Error('Query returned more than one row') as Error & MockPGRSTError;
-                    (result.error as MockPGRSTError).code = 'PGRST116'; 
+                    result.error = new PostgrestError({ message: 'Query returned more than one row', code: 'PGRST116' });
                     result.status = 406;
                 }
                 result.data = null; // Data becomes null if error or multiple rows
@@ -549,13 +876,21 @@ class MockQueryBuilder implements IMockQueryBuilder {
         }
 
         if (result.error && !(result.error instanceof Error)) {
-            const errObj = result.error as { message: string, name?: string, code?: string, details?: string, hint?: string };
-            result.error = new Error(errObj.message) as Error & MockPGRSTError;
-            if (errObj.name) (result.error as MockPGRSTError).name = errObj.name;
-            if (errObj.code) (result.error as MockPGRSTError).code = errObj.code;
-            if (errObj.details) (result.error as MockPGRSTError).details = errObj.details;
-            if (errObj.hint) (result.error as MockPGRSTError).hint = errObj.hint;
-            if (result.status >= 200 && result.status < 300) result.status = (result.error as MockPGRSTError).code === 'PGRST116' ? 406 : 500; 
+            const errObj = result.error;
+            const newError = new PostgrestError({
+                message: errObj.message,
+                code: errObj.code,
+                details: errObj.details,
+                hint: errObj.hint,
+            });
+            result.error = newError;
+            if (result.status >= 200 && result.status < 300) {
+                result.status = newError.code === 'PGRST116' ? 406 : 500;
+            }
+        } else if (result.error instanceof PostgrestError) {
+             if (result.status >= 200 && result.status < 300) {
+                result.status = result.error.code === 'PGRST116' ? 406 : 500;
+            }
         }
         
         console.log(`[Mock QB ${this._state.tableName}] Final resolved query result (before returning from _resolveQuery):`, JSON.stringify(result));
@@ -564,205 +899,406 @@ class MockQueryBuilder implements IMockQueryBuilder {
 }
 
 // --- MockSupabaseAuth Implementation ---
-class MockSupabaseAuth implements IMockSupabaseAuth {
-    // Use the adjusted Spy type from IMockSupabaseAuth for getUserSpy
-    public readonly getUserSpy: IMockSupabaseAuth['getUserSpy'];
+class MockSupabaseAuth {
     private _config: MockSupabaseDataConfig;
     private _currentTestUserId?: string;
 
     constructor(config: MockSupabaseDataConfig, currentTestUserId?: string) {
         this._config = config;
         this._currentTestUserId = currentTestUserId;
-        // Cast the spy to the specific type defined in the interface
-        this.getUserSpy = spy(this, 'getUser') as IMockSupabaseAuth['getUserSpy'];
     }
 
-    async getUser(): Promise<{ data: { user: User | null }; error: Error | null }> {
+    // Method returns Promise<SupabaseUserResponse>
+    async getUser(): Promise<SupabaseUserResponse> { // Changed return type
         console.log("[Mock Supabase Auth] getUser called.");
         if (this._config.simulateAuthError) {
-            return { data: { user: null }, error: this._config.simulateAuthError };
+            let errorToReturn: SupabaseAuthError;
+            if (this._config.simulateAuthError instanceof SupabaseAuthError) {
+                errorToReturn = this._config.simulateAuthError;
+            } else { // Assuming it's a generic Error
+                const message = this._config.simulateAuthError.message || 'Simulated auth error for getUser';
+                // SupabaseAuthError constructor takes message and optional status or other error
+                if ('status' in this._config.simulateAuthError && typeof (this._config.simulateAuthError as any).status === 'number') {
+                    errorToReturn = new SupabaseAuthError(message, (this._config.simulateAuthError as any).status);
+                } else {
+                    errorToReturn = new SupabaseAuthError(message);
+                }
+            }
+            return { data: { user: null }, error: errorToReturn }; // This matches a part of SupabaseUserResponse union
         }
 
-        // Prioritize explicitly provided mockUser in config, even if null
-        if (Object.prototype.hasOwnProperty.call(this._config, 'mockUser')) { // Check if mockUser key is present in config
-            // If mockUser is explicitly set to null in config, return unauthenticated state
+        if (Object.prototype.hasOwnProperty.call(this._config, 'mockUser')) {
             if (this._config.mockUser === null) {
-                return Promise.resolve({ data: { user: null }, error: null });
+                // Variant: No user, No error - THIS IS THE PROBLEMATIC STATE for SupabaseUserResponse
+                // According to SupabaseUserResponse, if error is null, user must be User.
+                // If user is null, there must be an AuthError.
+                // So, if we want to simulate "no user", we should also simulate an auth error.
+                return { 
+                    data: { user: null }, 
+                    error: new SupabaseAuthError("Mock: User not found or no active session.", 401) // Simulate a common auth error for no user
+                }; 
             }
-            // If mockUser is an object, use it (potentially overriding id with currentTestUserId if provided)
+            // If mockUser is an object, a user exists.
             if (typeof this._config.mockUser === 'object' && this._config.mockUser !== null) {
-                 const baseUser = { ...this._config.mockUser };
-                 if (this._currentTestUserId) { // currentTestUserId can override the id in mockUser if both are present
-                     baseUser.id = this._currentTestUserId;
-                 }
-                 return Promise.resolve({ data: { user: baseUser as User }, error: null });
+                const userId = this._currentTestUserId || this._config.mockUser.id || 'default-mock-user-id';
+                const baseUser = getMockUser(userId); 
+                const finalUser: User = { ...baseUser, ...this._config.mockUser };
+                // This matches {data: {user: User}, error: null}
+                return { data: { user: finalUser }, error: null }; 
             }
         }
 
-        // Fallback to currentTestUserId or a default mock user if mockUser is not explicitly in config
-        const userIdToReturn = this._currentTestUserId || "mock-user-id"; // Default if no currentTestUserId
-        const userToReturn = {
-            id: userIdToReturn,
-            aud: "authenticated",
-            role: "authenticated",
-            email: `${userIdToReturn}@example.com` 
-        };
+        // Fallback: Default user, No error
+        const userIdToReturn = this._currentTestUserId || "mock-user-id";
+        const userToReturn = getMockUser(userIdToReturn);
+        // This matches {data: {user: User}, error: null}
+        return { data: { user: userToReturn }, error: null }; 
+    }
 
-        return Promise.resolve({ data: { user: userToReturn as User }, error: null });
+    // Method returns Promise<{ data: { session: Session | null }; error: SupabaseAuthError | null; }>
+    async getMockedSessionResult(): Promise<{ data: { session: Session; }; error: null; } | { data: { session: null; }; error: AuthError; } | { data: { session: null; }; error: null; }> {
+        console.log("[Mock Supabase Auth] getMockedSessionResult called for getSession stub.");
+        if (this._config.simulateAuthError) {
+            const errorMessage = typeof this._config.simulateAuthError === 'string' 
+                ? this._config.simulateAuthError 
+                : (this._config.simulateAuthError as Error).message || 'Simulated auth error for getSession';
+            
+            let errorToReturn: SupabaseAuthError;
+            if (this._config.simulateAuthError instanceof SupabaseAuthError) {
+                errorToReturn = this._config.simulateAuthError;
+            } else {
+                 const errorStatus = (this._config.simulateAuthError as SupabaseAuthError)?.status;
+                 if (typeof errorStatus === 'number') {
+                    errorToReturn = new SupabaseAuthError(errorMessage, errorStatus);
+                 } else {
+                    errorToReturn = new SupabaseAuthError(errorMessage);
+                 }
+            }
+            // This matches { data: { session: null; }; error: AuthError; }
+            return { data: { session: null }, error: errorToReturn };
+        }
+
+        let userForSession: User | null = null; // Declare userForSession here
+        if (Object.prototype.hasOwnProperty.call(this._config, 'mockUser')) {
+            if (this._config.mockUser === null) {
+                // No user means no session
+                userForSession = null;
+            }
+            if (typeof this._config.mockUser === 'object' && this._config.mockUser !== null) {
+                const userId = this._currentTestUserId || this._config.mockUser.id || 'default-mock-user-id';
+                const baseUser = getMockUser(userId);
+                userForSession = { ...baseUser, ...this._config.mockUser };
+            }
+        } else { 
+            const userIdToReturn = this._currentTestUserId || "mock-user-id";
+            userForSession = getMockUser(userIdToReturn);
+        }
+
+        if (!userForSession) {
+             // This matches { data: { session: null; }; error: null; }
+             return { data: { session: null }, error: null };
+        }
+
+        const mockSession: Session = { 
+            access_token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXN1YiIsImVtYWlsIjoiZXhhbXBsZUB0ZXN0LmNvbSJ9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+            refresh_token: 'mock-refresh', 
+            user: userForSession, 
+            token_type: 'bearer', 
+            expires_in: 3600, 
+            expires_at: Math.floor((Date.now() / 1000) + 3600),
+            provider_token: null,
+            provider_refresh_token: null,
+        };
+        // This matches { data: { session: Session; }; error: null; }
+        return { data: { session: mockSession }, error: null };
     }
 }
 
 // --- START: MockStorageBucketAPI Implementation ---
-class MockStorageBucketAPIImpl implements IMockStorageBucketAPI {
-    private bucketId: string;
+/** Defines the mock implementation for Supabase Storage Bucket API operations. */
+export class MockStorageBucketAPIImpl implements IMockStorageBucketAPI {
+    public bucketId: string;
     private config: MockSupabaseDataConfig;
-    public upload: (path: string, body: unknown, options?: IMockStorageFileOptions) => Promise<IMockStorageUploadResponse>;
-    public download: (path: string) => Promise<IMockStorageDownloadResponse>;
-    public createSignedUrl: (path: string, expiresIn: number) => Promise<IMockStorageSignedUrlResponse>;
-    public remove: (paths: string[]) => Promise<IMockStorageRemoveResponse>;
-    public list: (path?: string, options?: { limit?: number; offset?: number; sortBy?: { column: string; order: string; }; search?: string; }) => Promise<IMockStorageListResponse>;
-    public copy: (fromPath: string, toPath: string) => Promise<IMockStorageCopyResponse>;
-    
-    constructor(bucketId: string, config: MockSupabaseDataConfig) {
+    private realSupabaseClientForFallback: SupabaseClient<Database> | null = null;
+
+    // Spies for test assertions - these are the actual Spy properties
+    public readonly copy: Spy<this['performCopyInternal']>;
+    public readonly download: Spy<this['performDownloadInternal']>;
+    public readonly getPublicUrl: Spy<this['performGetPublicUrlInternal']>;
+    public readonly list: Spy<this['performListInternal']>;
+    public readonly move: Spy<this['performMoveInternal']>;
+    public readonly remove: Spy<this['performRemoveInternal']>;
+    public readonly createSignedUrl: Spy<this['performCreateSignedUrlInternal']>;
+    public readonly createSignedUrls: Spy<this['performCreateSignedUrlsInternal']>;
+    public readonly upload: Spy<this['performUploadInternal']>;
+    public readonly update: Spy<this['performUpdateInternal']>;
+    public readonly _getFinalPath: (path: string) => string = (path: string) => path;
+    public readonly _removeEmptyFolders: (path: string) => string = (path: string) => path;
+    public readonly transformOptsToQueryString: (options: any) => string = (options: any) => "";
+
+    // Properties from StorageFileApi that are not spies (or are more complex)
+    public url: string;
+    public headers: Record<string, string>;
+    public fetch: typeof globalThis.fetch; 
+
+    constructor(bucketId: string, config: MockSupabaseDataConfig, realSupabaseClientForFallback?: SupabaseClient<Database>) {
         this.bucketId = bucketId;
         this.config = config;
-        this.upload = spy(this, 'performUploadInternal') as unknown as (path: string, body: unknown, options?: IMockStorageFileOptions) => Promise<IMockStorageUploadResponse>;
-        this.download = spy(this, 'performDownloadInternal') as unknown as (path: string) => Promise<IMockStorageDownloadResponse>;
-        this.createSignedUrl = spy(this, 'performCreateSignedUrlInternal') as unknown as (path: string, expiresIn: number) => Promise<IMockStorageSignedUrlResponse>;
-        this.remove = spy(this, 'performRemoveInternal') as unknown as (paths: string[]) => Promise<IMockStorageRemoveResponse>;
-        this.list = spy(this, 'performListInternal') as unknown as (path?: string, options?: { limit?: number; offset?: number; sortBy?: { column: string; order: string; }; search?: string; }) => Promise<IMockStorageListResponse>;
-        this.copy = spy(this, 'performCopyInternal') as unknown as (fromPath: string, toPath: string) => Promise<IMockStorageCopyResponse>;
+        this.realSupabaseClientForFallback = realSupabaseClientForFallback || null;
+        // Use a generic mock URL structure, as supabaseUrl is protected
+        this.url = `http://localhost:54321/storage/v1/object/public/${bucketId}`; 
+        this.headers = {}; 
+        this.fetch = globalThis.fetch; 
+
+        console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Initialized. Fallback client: ${!!this.realSupabaseClientForFallback}`);
+
+        // Initialize spies by binding the internal "perform" methods
+        this.copy = spy(this.performCopyInternal.bind(this));
+        this.download = spy(this.performDownloadInternal.bind(this));
+        this.getPublicUrl = spy(this.performGetPublicUrlInternal.bind(this));
+        this.list = spy(this.performListInternal.bind(this));
+        this.move = spy(this.performMoveInternal.bind(this));
+        this.remove = spy(this.performRemoveInternal.bind(this));
+        this.createSignedUrl = spy(this.performCreateSignedUrlInternal.bind(this));
+        this.createSignedUrls = spy(this.performCreateSignedUrlsInternal.bind(this));
+        this.upload = spy(this.performUploadInternal.bind(this));
+        this.update = spy(this.performUpdateInternal.bind(this));
     }
 
-    public async performUploadInternal(path: string, body: unknown, options?: IMockStorageFileOptions): Promise<IMockStorageUploadResponse> {
-        if (typeof this.config.storageMock?.uploadResult === 'function') {
-            return this.config.storageMock.uploadResult(this.bucketId, path, body, options);
-        } else if (this.config.storageMock?.uploadResult) {
-            return this.config.storageMock.uploadResult;
+    // --- COPY ---
+    public async performCopyInternal(fromPath: string, toPath: string, options?: { destinationBucket?: string }): Promise<{ data: { path: string } | null; error: Error | null; }> {
+        console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performCopyInternal FROM: ${fromPath} TO: ${toPath}`);
+        const funcConfig = this.config.storageConfig?.[this.bucketId]?.copy;
+        if (funcConfig) {
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured copy function.`);
+            return funcConfig(fromPath, toPath, options);
         }
-        return { data: { path: path }, error: null }; 
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for copy. Returning default success.`);
+        return { data: { path: toPath }, error: null };
     }
 
-    public async performDownloadInternal(path: string): Promise<IMockStorageDownloadResponse> {
-        if (typeof this.config.storageMock?.downloadResult === 'function') {
-            return this.config.storageMock.downloadResult(this.bucketId, path);
-        } else if (this.config.storageMock?.downloadResult) {
-            return this.config.storageMock.downloadResult;
+
+    // --- DOWNLOAD ---
+    public async performDownloadInternal(path: string, options?: TransformOptions): Promise<{ data: Blob | null; error: Error | null; }> {
+        console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performDownloadInternal PATH: ${path}`);
+        const funcConfig = this.config.storageConfig?.[this.bucketId]?.download;
+        if (funcConfig) {
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured download function.`);
+            return funcConfig(path, options);
         }
-        return { data: null, error: null };
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for download. Returning default empty blob success.`);
+        return { data: new Blob(["mock content for " + path]), error: null };
     }
 
-    public async performCreateSignedUrlInternal(path: string, expiresIn: number): Promise<IMockStorageSignedUrlResponse> {
-        if (typeof this.config.storageMock?.createSignedUrlResult === 'function') {
-            return this.config.storageMock.createSignedUrlResult(this.bucketId, path, expiresIn);
-        } else if (this.config.storageMock?.createSignedUrlResult) {
-            return this.config.storageMock.createSignedUrlResult;
+    // --- GET PUBLIC URL ---
+    public performGetPublicUrlInternal(path: string, options?: { download?: string | boolean; transform?: TransformOptions }): { data: { publicUrl: string; }; } {
+        console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performGetPublicUrlInternal PATH: ${path}`);
+        const funcConfig = this.config.storageConfig?.[this.bucketId]?.getPublicUrl;
+        if (funcConfig) {
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured getPublicUrl function.`);
+            return funcConfig(path, options);
         }
-        return { data: { signedUrl: `mocked://signed-url/${this.bucketId}/${path}?expires_in=${expiresIn}` }, error: null };
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for getPublicUrl. Returning default success.`);
+        return { data: { publicUrl: `http://mock.storage.com/${this.bucketId}/${path}` } };
     }
 
-    public async performRemoveInternal(paths: string[]): Promise<IMockStorageRemoveResponse> {
-        console.log(`[MockStorageBucketAPI ${this.bucketId}] performRemoveInternal called with paths:`, paths);
-        if (this.config.storageMock?.removeResult) {
-            if (typeof this.config.storageMock.removeResult === 'function') {
-                try {
-                    return await (this.config.storageMock.removeResult as (bucketId: string, paths: string[]) => Promise<IMockStorageRemoveResponse>)(this.bucketId, paths);
-                } catch (e: unknown) {
-                    const message = e instanceof Error ? e.message : 'Error executing removeResult hook';
-                    console.error(`[MockStorageBucketAPI ${this.bucketId}] Error in removeResult hook:`, message);
-                    return { data: null, error: new Error(message) };
-                }
-            } else {
-                return this.config.storageMock.removeResult;
-            }
-        }
-        console.warn(`[MockStorageBucketAPI ${this.bucketId}] No removeResult configured for paths: ${paths.join(', ')}. Returning default success.`);
-        return { data: null, error: null };
-    }
 
-    public async performListInternal(path?: string, options?: { limit?: number; offset?: number; sortBy?: { column: string; order: string; }; search?: string; }): Promise<IMockStorageListResponse> {
-        console.log(`[MockStorageBucketAPI ${this.bucketId}] performListInternal called with path: ${path}, options:`, options);
-        if (this.config.storageMock?.listResult) {
-            if (typeof this.config.storageMock.listResult === 'function') {
-                try {
-                    return await (this.config.storageMock.listResult as (bucketId: string, path?: string, options?: object) => Promise<IMockStorageListResponse>)(this.bucketId, path, options);
-                } catch (e: unknown) {
-                    const message = e instanceof Error ? e.message : 'Error executing listResult hook';
-                    console.error(`[MockStorageBucketAPI ${this.bucketId}] Error in listResult hook:`, message);
-                    return { data: null, error: new Error(message) };
-                }
-            } else {
-                return this.config.storageMock.listResult;
-            }
+    // --- LIST ---
+    public async performListInternal(path?: string, options?: SearchOptions, parameters?: { headers?: HeadersInit, signal?: AbortSignal }): Promise<{ data: FileObject[] | null; error: Error | null; }> {
+        console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performListInternal PATH: ${path}`);
+        const funcConfig = this.config.storageConfig?.[this.bucketId]?.list;
+        if (funcConfig) {
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured list function.`);
+            return funcConfig(path, options, parameters);
         }
-        console.warn(`[MockStorageBucketAPI ${this.bucketId}] No listResult configured for path: ${path}. Returning default empty array.`);
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for list. Returning default empty success.`);
         return { data: [], error: null };
     }
 
-    public async performCopyInternal(fromPath: string, toPath: string): Promise<IMockStorageCopyResponse> {
-        console.log(`[MockStorage] Copying from ${this.bucketId}/${fromPath} to ${this.bucketId}/${toPath}`);
-        if (this.config.storageMock?.copyResult) {
-            if (typeof this.config.storageMock.copyResult === 'function') {
-                return await this.config.storageMock.copyResult(this.bucketId, fromPath, toPath);
-            }
-            return this.config.storageMock.copyResult;
+    // --- MOVE ---
+    public async performMoveInternal(fromPath: string, toPath: string): Promise<{ data: { message: string } | null; error: Error | null; }> {
+        console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performMoveInternal FROM: ${fromPath} TO: ${toPath}`);
+        const funcConfig = this.config.storageConfig?.[this.bucketId]?.move;
+        if (funcConfig) {
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured move function.`);
+            return funcConfig(fromPath, toPath);
         }
-        // Default mock behavior if no specific result is configured
-        if (fromPath === "FAIL_COPY") { // Example failure condition
-            return { data: null, error: new Error("Mock: Forced copy failure") };
-        }
-        return { data: { path: toPath }, error: null };
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for move. Returning default success.`);
+        return { data: { message: "Successfully moved" }, error: null };
     }
+
+    // --- REMOVE ---
+    public async performRemoveInternal(paths: string[]): Promise<{ data: FileObject[] | null; error: Error | null; }> {
+        console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performRemoveInternal PATHS: ${paths.join(', ')}`);
+        const funcConfig = this.config.storageConfig?.[this.bucketId]?.remove;
+        if (funcConfig) {
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured remove function.`);
+            return funcConfig(paths);
+        }
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for remove. Returning default empty success.`);
+        return { data: [], error: null };
+    }
+
+    // --- CREATE SIGNED URL ---
+    public async performCreateSignedUrlInternal(path: string, expiresIn: number, options?: { download?: string | boolean; transform?: TransformOptions }): Promise<{ data: { signedUrl: string } | null; error: Error | null; }> {
+        console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performCreateSignedUrlInternal PATH: ${path}`);
+        const funcConfig = this.config.storageConfig?.[this.bucketId]?.createSignedUrl;
+        if (funcConfig) {
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured createSignedUrl function.`);
+            return funcConfig(path, expiresIn, options);
+        }
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for createSignedUrl. Returning default success.`);
+        return { data: { signedUrl: `http://mock.storage.com/${this.bucketId}/${path}?signed=true` }, error: null };
+    }
+
+    // --- CREATE SIGNED URLS ---
+    public async performCreateSignedUrlsInternal(paths: string[], expiresIn: number, options?: { download?: boolean }): Promise<{ data: ({ signedUrl: string; path: string; error: string | null; })[] | null; error: Error | null; }> {
+        console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performCreateSignedUrlsInternal PATHS: ${paths.join(', ')}`);
+        const funcConfig = this.config.storageConfig?.[this.bucketId]?.createSignedUrls;
+        if (funcConfig) {
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured createSignedUrls function.`);
+            return funcConfig(paths, expiresIn, options);
+        }
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for createSignedUrls. Returning default success.`);
+        const signedUrlsData = paths.map(p => ({ signedUrl: `http://mock.storage.com/${this.bucketId}/${p}?signed=true`, path: p, error: null }));
+        return { data: signedUrlsData, error: null };
+    }
+
+    // --- UPLOAD ---
+    public async performUploadInternal(path: string, body: FileBody, options?: FileOptions): Promise<{ data: { path: string } | null; error: Error | null; }> { 
+        console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performUploadInternal PATH: ${path}`);
+        const funcConfig = this.config.storageConfig?.[this.bucketId]?.upload;
+        if (funcConfig) {
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured upload function.`);
+            return funcConfig(path, body, options);
+        }
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for upload. Returning default success.`);
+        return { data: { path: path }, error: null };
+    }
+
+    // --- UPDATE ---
+    public async performUpdateInternal(path: string, body: FileBody, options?: FileOptions): Promise<{ data: { path: string } | null; error: Error | null; }> { 
+        console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performUpdateInternal PATH: ${path}`);
+        const funcConfig = this.config.storageConfig?.[this.bucketId]?.update;
+        if (funcConfig) {
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured update function.`);
+            return funcConfig(path, body, options);
+        }
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for update. Returning default success.`);
+        return { data: { path: path }, error: null };
+    }
+
+    // Method to get a spy for a specific method, might be useful if not all spies are predefined
+    getSpy<K extends keyof this>(methodName: K): Spy | undefined { 
+        const prop = this[methodName];
+        if (prop && typeof prop === 'function' && 'calls' in prop) {
+            return prop as unknown as Spy;
+        }
+        return undefined;
+    }
+
+    // --- Implementations for other StorageFileApi methods ---
+    // These are not spied by default but are part of the interface for compatibility
+    // deno-lint-ignore no-explicit-any
+    async uploadToSignedUrl(path: string, token: string, body: FileBody, options?: FileOptions): Promise<{ data: { path: string; } | null; error: Error | null; }> { 
+        console.warn("MockStorageBucketAPIImpl.uploadToSignedUrl not spied, calling perform logic if any or default", path, token, options); 
+        // Potentially, these could also have perform...Internal methods if complex mocking or spying is needed
+        return { data: { path }, error: new Error("Not implemented (mock)") }; 
+    }
+    // deno-lint-ignore no-explicit-any
+    async createSignedUploadUrl(path: string): Promise<{ data: { signedURL: string; path: string; } | null; error: Error | null; }> { 
+        console.warn("MockStorageBucketAPIImpl.createSignedUploadUrl not spied", path); 
+        return { data: { signedURL: `http://mockupload.com/${this.bucketId}/${path}`, path }, error: null }; 
+    }
+    // deno-lint-ignore no-explicit-any
+    async uploadOrUpdate(path: string, body: FileBody, options?: FileOptions): Promise<{ data: { path: string; } | null; error: Error | null; }> { 
+        console.warn("MockStorageBucketAPIImpl.uploadOrUpdate not spied", path, options); 
+        return this.performUploadInternal(path, body, {...options, upsert: true }); // Example delegation
+    }
+    // deno-lint-ignore no-explicit-any
+    async emptyBucket(): Promise<{ data: { message: string; } | null; error: Error | null; }> { 
+        console.warn("MockStorageBucketAPIImpl.emptyBucket not spied"); 
+        return { data: { message: "Bucket emptied (mock)" }, error: null }; 
+    }
+    // deno-lint-ignore no-explicit-any
+    async disableBucketCORS(): Promise<{ data: { message: string; } | null; error: Error | null; }> { 
+        console.warn("MockStorageBucketAPIImpl.disableBucketCORS not spied"); 
+        return { data: { message: "CORS disabled (mock)" }, error: null }; 
+    }
+    // deno-lint-ignore no-explicit-any
+    async enableBucketCORS(): Promise<{ data: { message: string; } | null; error: Error | null; }> { 
+        console.warn("MockStorageBucketAPIImpl.enableBucketCORS not spied"); 
+        return { data: { message: "CORS enabled (mock)" }, error: null }; 
+    }
+    // deno-lint-ignore no-explicit-any
+    async info(): Promise<{ data: any | null; error: Error | null; }> { 
+        console.warn("MockStorageBucketAPIImpl.info not spied"); 
+        return { data: { id: this.bucketId, name: this.bucketId, public: false }, error: null }; 
+    }
+    // deno-lint-ignore no-explicit-any
+    async exists(path: string): Promise<{ data: boolean | null; error: Error | null; }> { 
+        console.warn("MockStorageBucketAPIImpl.exists not spied", path); 
+        return { data: false, error: null }; // Default mock behavior
+    }
+    // deno-lint-ignore no-explicit-any
+    encodeMetadata(metadata: Record<string, any>): string { 
+        console.warn("MockStorageBucketAPIImpl.encodeMetadata not spied", metadata); 
+        return btoa(JSON.stringify(metadata)); 
+    }
+    // deno-lint-ignore no-explicit-any
+    toBase64(data: string | ArrayBuffer): string { 
+        console.warn("MockStorageBucketAPIImpl.toBase64 not spied"); 
+        if (typeof data === 'string') return btoa(data);
+        // Basic ArrayBuffer to base64, proper handling is more complex
+        const bytes = new Uint8Array(data);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
+    }
+
+    // --- Internal "perform" methods for core mock logic, targeted by spies ---
+    // ... existing code ...
 }
-// --- END: MockStorageBucketAPI Implementation ---
-
-class MockSupabaseClient implements IMockSupabaseClient {
-    public readonly auth: MockSupabaseAuth;
-    public readonly storage: IMockStorageAPI; // Implement this
-    public readonly rpcSpy: Spy<IMockSupabaseClient['rpc']>;
-    public readonly fromSpy: Spy<IMockSupabaseClient['from']>;
-    private _config: MockSupabaseDataConfig;
-    private _latestBuilders: Map<string, MockQueryBuilder> = new Map();
-    private _historicBuildersByTable: Map<string, MockQueryBuilder[]> = new Map();
-    private _mockStorageBucketAPIs: Map<string, MockStorageBucketAPIImpl> = new Map();
 
 
-    constructor(config: MockSupabaseDataConfig, auth: MockSupabaseAuth) {
-        this._config = config;
-        this.auth = auth;
-        this.rpcSpy = spy(this, 'rpc') as unknown as Spy<IMockSupabaseClient['rpc']>;
-        this.fromSpy = spy(this, 'from') as unknown as Spy<IMockSupabaseClient['from']>;
+// --- Refactored createMockSupabaseClient (Phase 3) ---
+/** Creates a mocked Supabase client instance for unit testing (Revised & Extended) */
+export function createMockSupabaseClient(
+    currentTestUserId?: string,
+    config: MockSupabaseDataConfig = {}
+): MockSupabaseClientSetup {
+    console.log(`[Mock Supabase] Creating mock client. TestUserId: ${currentTestUserId || 'N/A (will use default or config)'}`);
 
-        // Initialize storage
-        this.storage = {
-            from: (bucketId: string): IMockStorageBucketAPI => {
-                console.log(`[Mock Supabase Client] storage.from('${bucketId}') called`);
-                if (!this._mockStorageBucketAPIs.has(bucketId)) {
-                    this._mockStorageBucketAPIs.set(bucketId, new MockStorageBucketAPIImpl(bucketId, this._config));
-                }
-                return this._mockStorageBucketAPIs.get(bucketId)!;
-            }
-            // listBuckets: spy(async () => { ... }) // if implementing listBuckets
-        };
-    }
-
-    from(tableName: string): IMockQueryBuilder { 
-        console.log(`[Mock Supabase Client] from('${tableName}') called`);
-        const builder = new MockQueryBuilder(tableName, 'select', this._config.genericMockResults);
-        this._latestBuilders.set(tableName, builder);
-
-        // Store for historic tracking
-        if (!this._historicBuildersByTable.has(tableName)) {
-            this._historicBuildersByTable.set(tableName, []);
+    const client = createClient<Database>('http://localhost:54321', 'test-key', {
+        auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+            detectSessionInUrl: false
         }
-        this._historicBuildersByTable.get(tableName)!.push(builder);
+    });
+
+    const latestBuilders: Map<string, MockQueryBuilder> = new Map();
+    const historicBuildersByTable: Map<string, MockQueryBuilder[]> = new Map();
+    const mockStorageBucketAPIs: Map<string, MockStorageBucketAPIImpl> = new Map();
+
+    const fromSpy = stub(client, 'from', (tableName: string): MockQueryBuilder => {
+        console.log(`[Mock Supabase Client] from('${tableName}') called`);
+        const builder = new MockQueryBuilder(tableName, 'select', config.genericMockResults);
+        latestBuilders.set(tableName, builder);
+
+        if (!historicBuildersByTable.has(tableName)) {
+            historicBuildersByTable.set(tableName, []);
+        }
+        historicBuildersByTable.get(tableName)!.push(builder);
         
         return builder;
-    }
+    });
 
-    async rpc(name: string, params?: object, options?: { head?: boolean, count?: 'exact' | 'planned' | 'estimated' }): Promise<{ data: unknown | null; error: Error | null; count: number | null; status: number; statusText: string; }> {
-        console.log(`[Mock Supabase Client] rpc('${name}', ${JSON.stringify(params)}, ${JSON.stringify(options)}) called`);
-        const rpcConfig = this._config.rpcResults?.[name];
+    const rpcSpy = stub(client, 'rpc', async (name: string, params?: object) => {
+        console.log(`[Mock Supabase Client] rpc('${name}', ${JSON.stringify(params)}) called`);
+        const rpcConfig = config.rpcResults?.[name];
         if (typeof rpcConfig === 'function') {
             const result = await rpcConfig();
             return { data: result.data ?? null, error: result.error ?? null, count: null, status: result.error ? 500 : 200, statusText: result.error ? 'Error' : 'OK' };
@@ -770,48 +1306,133 @@ class MockSupabaseClient implements IMockSupabaseClient {
             return { data: rpcConfig.data ?? null, error: rpcConfig.error ?? null, count: null, status: rpcConfig.error ? 500 : 200, statusText: rpcConfig.error ? 'Error' : 'OK' };
         }
         return { data: null, error: new Error(`RPC function ${name} not mocked.`), count: null, status: 404, statusText: 'Not Found' };
-    }
+    });
 
-    public getLatestBuilder(tableName: string): MockQueryBuilder | undefined { 
-        return this._latestBuilders.get(tableName);
-    }
+    const mockAuthHelper: MockSupabaseAuth = new MockSupabaseAuth(config, currentTestUserId);
+    
+    // Stub for client.auth.getUser() - directly uses GoTrueUserResponse type from helper
+    const getUserSpy = stub(client.auth, 'getUser', () => mockAuthHelper.getUser()); 
 
-    public getAllBuildersUsed(): MockQueryBuilder[] { 
-        // This method's utility might need re-evaluation if _latestBuilders only stores one per table.
-        // For now, its usage in clearAllStubs might be okay if stubs are per-instance.
-        return Array.from(this._latestBuilders.values());
-    }
+    // Stub for client.auth.getSession() - directly uses the specific session response type from helper
+    const getSessionSpy = stub(client.auth, 'getSession', () => mockAuthHelper.getMockedSessionResult());
 
-    public getHistoricBuildersForTable(tableName: string): MockQueryBuilder[] {
-        return this._historicBuildersByTable.get(tableName) || [];
-    }
+    // --- Storage Mocking Strategy ---
+    // Log the client.storage object itself before trying to stub its 'from' method
+    console.log("[DEBUG] client.storage before stubbing .from:", client.storage);
+    
+    const storageFromSpy = stub(client.storage, 'from', (bucketId: string): MockStorageBucketAPIImpl => {
+        console.log(`[Mock Supabase Client] storage.from('${bucketId}') called - returning full mock bucket API.`);
 
-    // New helper method to get all table names that have historic builders
-    public getTablesWithHistoricBuilders(): string[] {
-        return Array.from(this._historicBuildersByTable.keys());
-    }
+        if (!mockStorageBucketAPIs.has(bucketId)) {
+            mockStorageBucketAPIs.set(bucketId, new MockStorageBucketAPIImpl(bucketId, config));
+        }
+        const mockBucketApiToReturn = mockStorageBucketAPIs.get(bucketId)!;
+        // Ensure the spy is on the *instance* of the mock being returned
+        // This was a previous bug, ensuring it's fixed:
+        // No, this is handled by performCopyInternal directly now.
+        return mockBucketApiToReturn; 
+    });
 
-    // New helper method to get all created storage bucket API instances
-    public getAllStorageBucketApiInstances(): MockStorageBucketAPIImpl[] {
-        return Array.from(this._mockStorageBucketAPIs.values());
+    // ---->>>> NEW DIAGNOSTIC CALL <<<<----
+    try {
+        console.log("[DEBUG] Attempting client.storage.from('test-bucket-immediately-after-stub')");
+        client.storage.from('test-bucket-immediately-after-stub');
+    } catch (e) {
+        console.error("[DEBUG] Error calling client.storage.from immediately after stubbing:", e);
     }
+    // ---->>>> END NEW DIAGNOSTIC CALL <<<<----
 
-    public clearAllTrackedBuilders(): void {
-        this._latestBuilders.clear();
-        this._historicBuildersByTable.clear();
+    const clientSpies: IMockClientSpies = {
+        auth: {
+            getUserSpy: getUserSpy,
+            getSessionSpy: getSessionSpy, // Populate getSessionSpy
+        },
+        rpcSpy: rpcSpy,
+        fromSpy: fromSpy, // This is client.from()
+        storageFromSpy: storageFromSpy, // Populate storageFromSpy (client.storage.from())
+        storage: {
+            from: (bucketId: string) => {
+                const bucketAPI = mockStorageBucketAPIs.get(bucketId);
+                if (!bucketAPI) {
+                    console.warn(`[Mock Supabase Spies] Storage bucket API not found for ${bucketId} when creating spies.`);
+                    return {
+                        uploadSpy: undefined,
+                        downloadSpy: undefined,
+                        createSignedUrlSpy: undefined,
+                        removeSpy: undefined,
+                        listSpy: undefined,
+                        copySpy: undefined,
+                    };
+                }
+                return {
+                    uploadSpy: bucketAPI.upload,
+                    downloadSpy: bucketAPI.download,
+                    createSignedUrlSpy: bucketAPI.createSignedUrl,
+                    removeSpy: bucketAPI.remove,
+                    listSpy: bucketAPI.list,
+                    copySpy: bucketAPI.copy,
+                };
+            }
+        },
+        getLatestQueryBuilderSpies: (tableName: string) => {
+            const builder = latestBuilders.get(tableName);
+            return builder?.methodSpies || undefined;
+        },
+        getAllQueryBuilderSpies: (tableName: string) => {
+            const historicBuilders = historicBuildersByTable.get(tableName);
+            if (!historicBuilders || historicBuilders.length === 0) {
+                return undefined;
+            }
+            return historicBuilders.map(builder =>
+                builder.methodSpies
+            );
+        },
+        getHistoricQueryBuilderSpies: (tableName: string, methodName: string): { callCount: number; callsArgs: unknown[][] } | undefined => {
+            const historicBuilders = historicBuildersByTable.get(tableName);
+            if (!historicBuilders || historicBuilders.length === 0) {
+                return { callCount: 0, callsArgs: [] };
+            }
+
+            let totalCallCount = 0;
+            const allCallsArgs: unknown[][] = [];
+
+            historicBuilders.forEach((builder) => {
+                const methodSpy = builder.methodSpies[methodName];
+
+                if (methodSpy && methodSpy.calls) { 
+
+                    const currentSpyCallCount = methodSpy.calls.length;
+
+                    if (currentSpyCallCount > 0) {
+                        totalCallCount += currentSpyCallCount;
+                        methodSpy.calls.forEach(call => {
+                            if (call && call.args) { 
+                                allCallsArgs.push(call.args);
+                            }
+                        });
+                    }
+                }
+            });
+            if (allCallsArgs.length > 0) {
+              console.log("[Mock Supabase Spies] Call args for spy:", allCallsArgs);
+            }
+            return { callCount: totalCallCount, callsArgs: allCallsArgs };
+        }
+    };
+
+    const clearAllTrackedBuilders = () => {
+        latestBuilders.clear();
+        historicBuildersByTable.clear();
         console.log('[MockSupabaseClient] Cleared all tracked query builders.');
-    }
-     public clearAllTrackedStorageAPIs(): void { // New method
-        this._mockStorageBucketAPIs.clear();
+    };
+
+    const clearAllTrackedStorageAPIs = () => {
+        mockStorageBucketAPIs.clear();
         console.log('[MockSupabaseClient] Cleared all tracked storage bucket APIs.');
-    }
+    };
 
-    public getStorageBucketApiInstance(bucketId: string): IMockStorageBucketAPI | undefined {
-        return this._mockStorageBucketAPIs.get(bucketId);
-    }
-
-    public getSpiesForTableQueryMethod(tableName: string, methodName: keyof IMockQueryBuilder, callIndex = -1): Spy | undefined {
-        const historicBuilders = this.getHistoricBuildersForTable(tableName);
+    const getSpiesForTableQueryMethod = (tableName: string, methodName: keyof IMockQueryBuilder, callIndex = -1): Spy | undefined => {
+        const historicBuilders = historicBuildersByTable.get(tableName) || [];
         if (!historicBuilders || historicBuilders.length === 0) {
             console.warn(`[MockSupabaseClient getSpiesForTableQueryMethod] No historic builders found for table: ${tableName}`);
             return undefined;
@@ -820,7 +1441,6 @@ class MockSupabaseClient implements IMockSupabaseClient {
         let targetBuilder: IMockQueryBuilder | undefined;
 
         if (callIndex === -1) {
-            // Default to the latest builder instance for this table if callIndex is -1
             targetBuilder = historicBuilders[historicBuilders.length - 1];
         } else if (callIndex >= 0 && callIndex < historicBuilders.length) {
             targetBuilder = historicBuilders[callIndex];
@@ -839,153 +1459,82 @@ class MockSupabaseClient implements IMockSupabaseClient {
             console.warn(`[MockSupabaseClient getSpiesForTableQueryMethod] Spy for method '${String(methodName)}' not found on builder for table '${tableName}'. Available spies: ${Object.keys(targetBuilder.methodSpies).join(', ')}`);
         }
         return spy;
-    }
-}
-
-// --- Refactored createMockSupabaseClient (Phase 3) ---
-/** Creates a mocked Supabase client instance for unit testing (Revised & Extended) */
-export function createMockSupabaseClient(
-    currentTestUserId?: string,
-    config: MockSupabaseDataConfig = {}
-): MockSupabaseClientSetup {
-    console.log(`[Mock Supabase] Creating mock client. TestUserId: ${currentTestUserId || 'N/A (will use default or config)'}`);
-
-    const mockAuth = new MockSupabaseAuth(config, currentTestUserId);
-    const mockClientInstance = new MockSupabaseClient(config, mockAuth);
-
-    const clientSpies: IMockClientSpies = {
-        auth: {
-            getUserSpy: mockAuth.getUserSpy,
-        },
-        rpcSpy: mockClientInstance.rpcSpy,
-        fromSpy: mockClientInstance.fromSpy,
-        storage: { 
-            from: (bucketId: string) => {
-                const bucketAPI = mockClientInstance.storage.from(bucketId) as MockStorageBucketAPIImpl | undefined;
-                if (!bucketAPI) {
-                    // This case should ideally not happen if 'from' is called on existing buckets
-                    // or if getStorageBucketApiInstance auto-creates. For now, throw or return undefined spies.
-                    console.warn(`[Mock Supabase Spies] Storage bucket API not found for ${bucketId} when creating spies.`);
-                    // Return an object with undefined spies or throw an error
-                    return {
-                        uploadSpy: undefined as any, downloadSpy: undefined as any, createSignedUrlSpy: undefined as any,
-                        removeSpy: undefined as any, listSpy: undefined as any, copySpy: undefined as any,
-                    };
-                }
-                return {
-                    uploadSpy: bucketAPI.upload as Spy<IMockStorageBucketAPI['upload']>,
-                    downloadSpy: bucketAPI.download as Spy<IMockStorageBucketAPI['download']>,
-                    createSignedUrlSpy: bucketAPI.createSignedUrl as Spy<IMockStorageBucketAPI['createSignedUrl']>,
-                    removeSpy: bucketAPI.remove as Spy<IMockStorageBucketAPI['remove']>,
-                    listSpy: bucketAPI.list as Spy<IMockStorageBucketAPI['list']>,
-                    copySpy: bucketAPI.copy as Spy<IMockStorageBucketAPI['copy']>,
-                };
-            }
-        },
-        getLatestQueryBuilderSpies: (tableName: string) => {
-            const builder = mockClientInstance.getLatestBuilder(tableName);
-            return builder?.methodSpies as AllQueryBuilderSpyMethods | undefined;
-        },
-        getAllQueryBuilderSpies: (tableName: string) => {
-            const historicBuilders = mockClientInstance.getHistoricBuildersForTable(tableName);
-            if (!historicBuilders || historicBuilders.length === 0) {
-                return undefined;
-            }
-            return historicBuilders.map(builder =>
-                builder.methodSpies as AllQueryBuilderSpyMethods
-            );
-        },
-        getHistoricQueryBuilderSpies: (tableName: string, methodName: string): { callCount: number; callsArgs: unknown[][] } | undefined => {
-            const historicBuilders = mockClientInstance.getHistoricBuildersForTable(tableName);
-            if (!historicBuilders || historicBuilders.length === 0) {
-                return { callCount: 0, callsArgs: [] };
-            }
-
-            let totalCallCount = 0;
-            const allCallsArgs: unknown[][] = [];
-
-            historicBuilders.forEach((builder, index) => {
-                const methodSpy = builder.methodSpies[methodName];
-
-                if (methodSpy && methodSpy.calls) { // Ensure methodSpy and methodSpy.calls exist
-
-                    const currentSpyCallCount = methodSpy.calls.length;
-
-                    if (currentSpyCallCount > 0) {
-                        totalCallCount += currentSpyCallCount;
-                        methodSpy.calls.forEach(call => {
-                            if (call && call.args) { 
-                                allCallsArgs.push(call.args);
-                            }
-                        });
-                    }
-                }
-            });
-            return { callCount: totalCallCount, callsArgs: allCallsArgs };
-        }
     };
 
     const clearAllStubs = () => {
-        const spiesToRestore: Array<Spy<any, any[], any> | undefined> = [
-            clientSpies.auth.getUserSpy as Spy<any, any[], any> | undefined,
-            clientSpies.rpcSpy as Spy<any, any[], any> | undefined,
-            clientSpies.fromSpy as Spy<any, any[], any> | undefined,
-        ];
+        if (fromSpy && fromSpy.restore) fromSpy.restore();
+        if (rpcSpy && rpcSpy.restore) rpcSpy.restore();
+        if (getUserSpy && getUserSpy.restore) getUserSpy.restore();
+        if (getSessionSpy && getSessionSpy.restore) getSessionSpy.restore();
+        if (storageFromSpy && storageFromSpy.restore) storageFromSpy.restore();
 
-        spiesToRestore.forEach(s => {
-            if (s && typeof s.restore === 'function' && !s.restored) {
-                try {
-                    s.restore();
-                } catch (e) {
-                    console.warn(`[MockSupabaseClientSetup] Failed to restore client spy:`, (e as Error).message);
-                }
+        // It is crucial to also restore any stubs created on the realBucketApi instances
+        // As these are created dynamically, we need to iterate over them.
+        for (const bucketApi of mockStorageBucketAPIs.values()) {
+            // Assuming we stubbed 'copy' and 'remove'. Add any other stubbed methods here.
+            const copySpy = bucketApi.copy;
+            if (copySpy && copySpy.restore) {
+                copySpy.restore();
             }
-        });
+            const removeSpy = bucketApi.remove;
+            if (removeSpy && removeSpy.restore) {
+                removeSpy.restore();
+            }
+        }
 
-        const client = mockClientInstance as unknown as MockSupabaseClient;
-
-        // Iterate through all historic builders for all tables and restore their spies
-        client.getTablesWithHistoricBuilders().forEach(tableName => {
-            client.getHistoricBuildersForTable(tableName).forEach(builder => {
-                Object.values(builder.methodSpies).forEach(spyInstance => {
-                    const s = spyInstance as Spy<any, any[], any>;
-                    if (s && typeof s.restore === 'function' && !s.restored) {
-                        try {
-                            s.restore();
-                        } catch (e) {
-                            console.warn(`[MockSupabaseClientSetup] Failed to restore builder spy for table ${tableName} method:`, (e as Error).message);
-                        }
-                    }
-                });
-            });
-        });
-
-        // Iterate through all storage bucket API instances and restore their method spies
-        client.getAllStorageBucketApiInstances().forEach(bucketApiInstance => {
-            const methodsToRestore: Array<keyof IMockStorageBucketAPI> = ['upload', 'download', 'createSignedUrl', 'remove', 'list', 'copy'];
-            methodsToRestore.forEach(methodName => {
-                const spiedMethod = bucketApiInstance[methodName] as unknown as Spy<any,any[],any>;
-                if (spiedMethod && typeof spiedMethod.restore === 'function' && !spiedMethod.restored) {
-                    try {
-                        spiedMethod.restore();
-                    } catch (e) {
-                        // It's possible the method was never called, so the spy might not be fully "active"
-                        // Or it might be a legitimate issue during restoration.
-                        // console.warn(`[MockSupabaseClientSetup] Failed to restore storage spy ${methodName} for bucket ${(bucketApiInstance as any).bucketId}:`, (e as Error).message);
-                    }
-                }
-            });
-        });
-        
-        mockClientInstance.clearAllTrackedBuilders();
-        mockClientInstance.clearAllTrackedStorageAPIs();
-
+        clearAllTrackedBuilders();
+        clearAllTrackedStorageAPIs();
     };
 
+    // --- Return the client, all spies, and cleanup function ---
     return {
-        client: mockClientInstance as unknown as IMockSupabaseClient,
-        spies: clientSpies,
-        clearAllStubs,
+        client: client,
+        clientSpies: clientSpies,
+        mockStorageBucketAPIs: mockStorageBucketAPIs, // Expose the map
+        cleanup: () => {
+            console.log("[MockSupabaseClient] Cleanup called. Restoring all stubs.");
+            // Restore all general client spies
+            getUserSpy.restore();
+            getSessionSpy.restore();
+            rpcSpy.restore();
+            fromSpy.restore(); // for client.from()
+            storageFromSpy.restore(); // for client.storage.from()
+            
+            // Clear internal tracking
+            latestBuilders.clear();
+            historicBuildersByTable.clear();
+            // mockStorageBucketAPIs.clear(); // We might not want to clear this here if tests need to inspect it after cleanup
+            console.log("[MockSupabaseClient] All general stubs restored and tracking cleared.");
+        },
+        get historicBuildersByTable(): ReadonlyMap<string, MockQueryBuilder[]> {
+            return historicBuildersByTable;
+        },
+        getLatestBuilder: (tableName: string) => latestBuilders.get(tableName),
+        getHistoricBuildersForTable: (tableName: string) => historicBuildersByTable.get(tableName) || [],
+        clearAllTrackedBuilders: () => {
+            latestBuilders.clear();
+            historicBuildersByTable.clear();
+            console.log("[MockSupabaseClient] Cleared all tracked query builders.");
+        },
+        clearAllTrackedStorageAPIs: () => {
+            mockStorageBucketAPIs.clear(); // Provide a specific method to clear this if needed
+            console.log("[MockSupabaseClient] Cleared all tracked storage bucket APIs.");
+        },
+        getStorageBucketApiInstance: (bucketId: string): MockStorageBucketAPIImpl => {
+            return mockStorageBucketAPIs.get(bucketId)!;
+        },
+        getSpiesForTableQueryMethod: (tableName: string, methodName: string): Spy | undefined => {
+            return latestBuilders.get(tableName)?.getSpy(methodName as keyof MockQueryBuilder);
+        },
+        getAllBuildersUsed: (): MockQueryBuilder[] => {
+            return Array.from(latestBuilders.values());
+        },
+        getTablesWithHistoricBuilders: (): string[] => {
+            return Array.from(historicBuildersByTable.keys());
+        },
+        getAllStorageBucketApiInstances: (): MockStorageBucketAPIImpl[] => {
+            return Array.from(mockStorageBucketAPIs.values());
+        },
     };
 }
 
@@ -1009,7 +1558,7 @@ export function createMockChannel(topic: string): MockChannel {
             if (callback) setTimeout(() => callback('SUBSCRIBED'), 0);
             return mockChannel;
         }),
-        unsubscribe: spy(async () => 'ok' as const),
+        unsubscribe: spy(() => Promise.resolve('ok')),
         topic: topic,
     };
     return mockChannel;
@@ -1020,12 +1569,16 @@ export function createMockChannel(topic: string): MockChannel {
 // Retaining for context if some tests use this pattern.
 
 interface MockResponseConfig {
-    response: Response | Promise<Response>;
+    response: Response;
     jsonData?: unknown;
 }
 
 let fetchResponses: Array<Response | Promise<Response> | MockResponseConfig> = [];
 let originalFetch: typeof fetch | undefined = undefined;
+
+function isPromise(p: unknown): p is Promise<unknown> {
+    return p instanceof Promise;
+}
 
 export function mockFetch(
     config: Response | Promise<Response> | MockResponseConfig | Array<Response | Promise<Response> | MockResponseConfig>
@@ -1035,25 +1588,28 @@ export function mockFetch(
     }
     fetchResponses = Array.isArray(config) ? config : [config];
     
-    globalThis.fetch = spy(async (url: string | URL, options?: RequestInit): Promise<Response> => {
-        console.log(`[Mock Fetch] Called: ${url.toString()}`, options);
+    globalThis.fetch = spy((input: RequestInfo | URL, _options?: RequestInit): Promise<Response> => {
+        console.log(`[Mock Fetch] Called: ${input.toString()}`, _options);
         if (fetchResponses.length === 0) {
             throw new Error("Mock fetch called but no mock responses remaining.");
         }
+        
         const nextResponseConfig = fetchResponses.shift()!;
-        if (nextResponseConfig instanceof Response || typeof (nextResponseConfig as Promise<Response>).then === 'function') {
-            return nextResponseConfig as Response | Promise<Response>;
+        
+        if (nextResponseConfig instanceof Response || isPromise(nextResponseConfig)) {
+            return Promise.resolve(nextResponseConfig);
         }
-        const mockConfig = nextResponseConfig as MockResponseConfig;
+
+        const mockConfig = nextResponseConfig;
         if (mockConfig.jsonData) {
             // Create a response with JSON data
-            return new Response(JSON.stringify(mockConfig.jsonData), {
-                status: (mockConfig.response as Response).status || 200,
-                headers: (mockConfig.response as Response).headers || new Headers({ 'Content-Type': 'application/json' }),
-            });
+            return Promise.resolve(new Response(JSON.stringify(mockConfig.jsonData), {
+                status: mockConfig.response.status || 200,
+                headers: mockConfig.response.headers || new Headers({ 'Content-Type': 'application/json' }),
+            }));
         }
-        return mockConfig.response;
-    }) as typeof fetch;
+        return Promise.resolve(mockConfig.response);
+    });
 }
 
 export function restoreFetch() {
@@ -1087,20 +1643,20 @@ export function withMockEnv(envVars: Record<string, string>, testFn: () => Promi
 }
 
 // Utility to stub global fetch for a test scope and return its spy
-export function stubFetchForTestScope(): { spy: Spy<unknown, [string | URL, (RequestInit | undefined)?], Promise<Response>>, stub: any } {
-    const fetchSpy = spy(async (_url: string | URL, _options?: RequestInit): Promise<Response> => {
+export function stubFetchForTestScope(): { spy: Spy, stub: Stub } {
+    const fetchSpy = spy((_url: RequestInfo | URL, _options?: RequestInit): Promise<Response> => {
         console.warn("[Fetch Stub] fetch called but no specific mock response provided for this call. Returning default empty 200 OK.");
-        return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        return Promise.resolve(new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     });
-    const fetchStubInstance = stub(globalThis, "fetch", fetchSpy as (...args: unknown[]) => Promise<Response>);
+    const fetchStubInstance = stub(globalThis, "fetch", fetchSpy);
     return { spy: fetchSpy, stub: fetchStubInstance };
 }
 
 // Helper to create a Supabase client with Service Role for admin tasks
 // This was removed in user's previous changes but is needed for createUser/cleanupUser
-function getServiceRoleAdminClient(): SupabaseClient {
+function getServiceRoleAdminClient(): SupabaseClient<Database> {
     const { url, serviceRoleKey } = getSupabaseEnvVars();
-    return createClient(url, serviceRoleKey, {
+    return createClient<Database>(url, serviceRoleKey, {
         auth: {
             persistSession: false,
             autoRefreshToken: false,
@@ -1113,7 +1669,7 @@ function getServiceRoleAdminClient(): SupabaseClient {
 export async function createUser(email: string, password: string): Promise<{ user: User | undefined; error: Error | null }> {
     const supabaseAdmin = getServiceRoleAdminClient();
     console.log(`Creating user: ${email}`);
-    const { data, error } = await (supabaseAdmin.auth as unknown as { admin: { createUser: (args: { email: string; password: string; email_confirm?: boolean; [key: string]: unknown; }) => Promise<{ data: { user: User | null; }; error: Error | null; }> } }).admin.createUser({
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
         email: email,
         password: password,
         email_confirm: true, // Automatically confirm email for testing
@@ -1132,7 +1688,7 @@ export async function cleanupUser(email: string, adminClient?: SupabaseClient): 
     console.log(`Attempting to clean up user: ${email}`);
 
     // Find user by email first
-    const { data: listData, error: listError } = await (supabaseAdmin.auth as unknown as { admin: { listUsers: (params?: { page?: number; perPage?: number; }) => Promise<{ data: { users: User[]; aud?: string; }; error: Error | null; }> } }).admin.listUsers();
+    const { data: listData, error: listError } = await supabaseAdmin.auth.admin.listUsers();
 
     if (listError) {
         console.error(`Error listing users to find ${email} for cleanup:`, listError);
@@ -1149,7 +1705,7 @@ export async function cleanupUser(email: string, adminClient?: SupabaseClient): 
     console.log(`Found user ID ${userId} for ${email}. Proceeding with deletion.`);
 
     // Cast auth to any for deleteUser
-    const { error: deleteError } = await (supabaseAdmin.auth as unknown as { admin: { deleteUser: (id: string) => Promise<{ data: Record<string, never>; error: Error | null; }> } }).admin.deleteUser(userId);
+    const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
 
     if (deleteError) {
         console.error(`Error deleting user ${email} (ID: ${userId}):`, deleteError);
@@ -1160,46 +1716,52 @@ export async function cleanupUser(email: string, adminClient?: SupabaseClient): 
 
 // Helper to create spies for storage bucket methods for test assertions
 export function getStorageSpies(mockSupabaseClient: IMockSupabaseClient, bucketId: string) {
-  const clientWithDetails = mockSupabaseClient as unknown as MockSupabaseClient; // Cast to access internal details
-  const bucketApiInstance = clientWithDetails.getStorageBucketApiInstance(bucketId) as MockStorageBucketAPIImpl | undefined;
+   const bucketApiInstance = mockSupabaseClient.getStorageBucketApiInstance(bucketId);
 
   if (!bucketApiInstance) {
     throw new Error(`[getStorageSpies] MockStorageBucketAPIImpl instance not found for bucketId: ${bucketId}. Ensure storage.from('${bucketId}') was called.`);
   }
 
   return {
-    uploadSpy: bucketApiInstance.upload as Spy<MockStorageBucketAPIImpl['performUploadInternal']>,
-    downloadSpy: bucketApiInstance.download as Spy<MockStorageBucketAPIImpl['performDownloadInternal']>,
-    createSignedUrlSpy: bucketApiInstance.createSignedUrl as Spy<MockStorageBucketAPIImpl['performCreateSignedUrlInternal']>,
-    removeSpy: bucketApiInstance.remove as Spy<MockStorageBucketAPIImpl['performRemoveInternal']>,
-    listSpy: bucketApiInstance.list as Spy<MockStorageBucketAPIImpl['performListInternal']>,
-    copySpy: bucketApiInstance.copy as Spy<MockStorageBucketAPIImpl['performCopyInternal']>,
+    uploadSpy: bucketApiInstance.upload,
+    downloadSpy: bucketApiInstance.download,
+    createSignedUrlSpy: bucketApiInstance.createSignedUrl,
+    removeSpy: bucketApiInstance.remove,
+    listSpy: bucketApiInstance.list,
+    copySpy: bucketApiInstance.copy,
   };
 }
 
-export function getMockUser(id: string): User {
-  return {
-    id,
-    app_metadata: { provider: "email" },
-    user_metadata: { name: "Test User" },
-    aud: "authenticated",
-    confirmation_sent_at: new Date().toISOString(),
-    recovery_sent_at: "",
-    email_change_sent_at: "",
-    new_email: "",
-    new_phone: "",
-    invited_at: "",
-    action_link: "",
-    email: `${id}@example.com`,
-    phone: "",
-    created_at: new Date().toISOString(),
-    confirmed_at: new Date().toISOString(),
-    email_confirmed_at: new Date().toISOString(),
-    phone_confirmed_at: "",
-    last_sign_in_at: new Date().toISOString(),
-    role: "authenticated",
-    updated_at: new Date().toISOString(),
-    identities: [],
-    factors: [],
-  };
+// Helper to get a default mock user (can be customized)
+// Moved this definition before MockSupabaseAuth
+export function getMockUser(userId = 'default-user-id', overrides: Partial<User> = {}): User {
+    const baseUser: User = { // Ensure all required User fields are present
+        id: userId,
+        app_metadata: { provider: 'email', providers: ['email'] }, // Add providers for completeness
+        user_metadata: { name: "Test User" },
+        aud: 'authenticated',
+        confirmation_sent_at: new Date().toISOString(),
+        recovery_sent_at: undefined, // Use undefined for optional fields if not set
+        email_change_sent_at: undefined,
+        new_email: undefined,
+        new_phone: undefined,
+        invited_at: undefined,
+        action_link: undefined,
+        email: `${userId}@example.com`,
+        phone: undefined,
+        created_at: new Date().toISOString(),
+        confirmed_at: new Date().toISOString(),
+        email_confirmed_at: new Date().toISOString(),
+        phone_confirmed_at: undefined,
+        last_sign_in_at: new Date().toISOString(),
+        role: undefined, // role can be undefined
+        updated_at: new Date().toISOString(),
+        identities: [],
+        factors: undefined, // factors can be undefined
+        is_anonymous: false, // Add is_anonymous
+    };
+    return {
+        ...baseUser,
+        ...overrides,
+    };
 }
