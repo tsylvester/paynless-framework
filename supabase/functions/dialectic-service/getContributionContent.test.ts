@@ -1,16 +1,16 @@
 import { assertEquals, assertExists, assertObjectMatch } from "https://deno.land/std@0.192.0/testing/asserts.ts";
 import { describe, it, beforeEach, afterEach } from "https://deno.land/std@0.192.0/testing/bdd.ts";
-import { spy, stub, type Stub } from "https://deno.land/std@0.192.0/testing/mock.ts";
+import { stub, type Stub } from "https://deno.land/std@0.192.0/testing/mock.ts";
 
 import { getContributionContentSignedUrlHandler } from './getContributionContent.ts';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { 
     createMockSupabaseClient, 
     type MockSupabaseDataConfig,
-    type IMockSupabaseClient,
-    type MockSupabaseClientSetup
+    type MockSupabaseClientSetup,
 } from '../_shared/supabase.mock.ts';
-import type { ServiceError, GetUserFn, GetUserFnResult, ILogger, LogMetadata } from '../_shared/types.ts';
+import type { ServiceError, GetUserFn, ILogger, LogMetadata } from '../_shared/types.ts';
+import type { Database } from '../types_db.ts';
 
 // Mock interfaces from getContributionContent.ts
 interface CreateSignedUrlFnResult {
@@ -26,8 +26,6 @@ describe('getContributionContentSignedUrlHandler', () => {
   let mockGetUser: GetUserFn;
   let mockCreateSignedUrl: CreateSignedUrlFn;
   let mockLogger: ILogger;
-  let loggerDebugSpy: Stub;
-  let loggerInfoSpy: Stub;
   let loggerWarnSpy: Stub;
   let loggerErrorSpy: Stub;
   let loggerPlaceholder: { 
@@ -38,7 +36,7 @@ describe('getContributionContentSignedUrlHandler', () => {
   };
 
   let mockSupabaseSetup: MockSupabaseClientSetup;
-  let mockDbClient: IMockSupabaseClient;
+  let mockDbClient: SupabaseClient<Database>;
   const mockUser: User = {
     id: 'test-user-id',
     app_metadata: {},
@@ -67,8 +65,6 @@ describe('getContributionContentSignedUrlHandler', () => {
         warn: () => {},
         error: () => {}
     };
-    loggerDebugSpy = stub(loggerPlaceholder, "debug");
-    loggerInfoSpy = stub(loggerPlaceholder, "info");
     loggerWarnSpy = stub(loggerPlaceholder, "warn"); 
     loggerErrorSpy = stub(loggerPlaceholder, "error");
     mockLogger = loggerPlaceholder;
@@ -83,7 +79,7 @@ describe('getContributionContentSignedUrlHandler', () => {
   it('should return an error if contributionId is not provided', async () => {
     const result = await getContributionContentSignedUrlHandler(
       mockGetUser,
-      mockDbClient as unknown as SupabaseClient,
+      mockDbClient,
       mockCreateSignedUrl,
       mockLogger,
       { contributionId: '' }
@@ -98,7 +94,7 @@ describe('getContributionContentSignedUrlHandler', () => {
     mockGetUser = async () => ({ data: { user: null }, error: { message: 'Auth error' } });
     const result = await getContributionContentSignedUrlHandler(
       mockGetUser,
-      mockDbClient as unknown as SupabaseClient,
+      mockDbClient,
       mockCreateSignedUrl,
       mockLogger,
       { contributionId: 'test-contrib-id' }
@@ -112,7 +108,7 @@ describe('getContributionContentSignedUrlHandler', () => {
   });
 
   it('should return an error if fetching contribution details fails', async () => {
-    const dbError = { name: 'DatabaseError', message: 'DB error', code: 'PGRST116', details: 'details', hint: 'hint' };
+    const dbError = Object.assign(new Error('DB error'), { name: 'DatabaseError', code: 'PGRST116', details: 'details', hint: 'hint' });
     const configWithError: MockSupabaseDataConfig = {
         genericMockResults: {
             dialectic_contributions: {
@@ -126,7 +122,7 @@ describe('getContributionContentSignedUrlHandler', () => {
 
     const result = await getContributionContentSignedUrlHandler(
       mockGetUser,
-      mockDbClient as unknown as SupabaseClient,
+      mockDbClient,
       mockCreateSignedUrl,
       mockLogger,
       { contributionId: 'test-contrib-id' }
@@ -154,7 +150,7 @@ describe('getContributionContentSignedUrlHandler', () => {
 
     const result = await getContributionContentSignedUrlHandler(
       mockGetUser,
-      mockDbClient as unknown as SupabaseClient,
+      mockDbClient,
       mockCreateSignedUrl,
       mockLogger,
       { contributionId: 'non-existent-id' }
@@ -170,10 +166,10 @@ describe('getContributionContentSignedUrlHandler', () => {
   it('should return an error if user is not authorized to access the contribution', async () => {
     const contributionData = {
       id: 'contrib-id-unauthorized',
-      content_storage_bucket: 'bucket',
-      content_storage_path: 'path',
-      content_mime_type: 'text/plain',
-      content_size_bytes: 100,
+      storage_bucket: 'bucket',
+      storage_path: 'path',
+      mime_type: 'text/plain',
+      size_bytes: 100,
       dialectic_sessions: {
         project_id: 'proj-1',
         dialectic_projects: {
@@ -195,7 +191,7 @@ describe('getContributionContentSignedUrlHandler', () => {
 
     const result = await getContributionContentSignedUrlHandler(
       mockGetUser,
-      mockDbClient as unknown as SupabaseClient,
+      mockDbClient,
       mockCreateSignedUrl,
       mockLogger,
       { contributionId: 'contrib-id-unauthorized' }
@@ -216,9 +212,9 @@ describe('getContributionContentSignedUrlHandler', () => {
   it('should return an error if contribution is missing storage information (bucket)', async () => {
     const contributionData = {
       id: 'contrib-id-missing-bucket',
-      content_storage_path: 'path/to/file.txt',
-      content_mime_type: 'text/plain',
-      content_size_bytes: 12345,
+      storage_path: 'path/to/file.txt',
+      mime_type: 'text/plain',
+      size_bytes: 12345,
       dialectic_sessions: {
         project_id: 'proj-1',
         dialectic_projects: { user_id: 'test-user-id' }
@@ -238,7 +234,7 @@ describe('getContributionContentSignedUrlHandler', () => {
 
     const result = await getContributionContentSignedUrlHandler(
       mockGetUser,
-      mockDbClient as unknown as SupabaseClient,
+      mockDbClient,
       mockCreateSignedUrl,
       mockLogger,
       { contributionId: 'contrib-id-missing-bucket' }
@@ -255,9 +251,9 @@ describe('getContributionContentSignedUrlHandler', () => {
   it('should return an error if contribution is missing storage information (path)', async () => {
     const contributionData = {
       id: 'contrib-id-missing-path',
-      content_storage_bucket: 'test-bucket',
-      content_mime_type: 'text/plain',
-      content_size_bytes: 12345,
+      storage_bucket: 'test-bucket',
+      mime_type: 'text/plain',
+      size_bytes: 12345,
       dialectic_sessions: {
         project_id: 'proj-1',
         dialectic_projects: { user_id: 'test-user-id' }
@@ -277,7 +273,7 @@ describe('getContributionContentSignedUrlHandler', () => {
 
     const result = await getContributionContentSignedUrlHandler(
       mockGetUser,
-      mockDbClient as unknown as SupabaseClient,
+      mockDbClient,
       mockCreateSignedUrl,
       mockLogger,
       { contributionId: 'contrib-id-missing-path' }
@@ -294,10 +290,10 @@ describe('getContributionContentSignedUrlHandler', () => {
   it('should return an error if createSignedUrl fails', async () => {
     const contributionData = {
       id: 'contrib-id-signed-url-error',
-      content_storage_bucket: 'test-bucket',
-      content_storage_path: 'path/to/file.txt',
-      content_mime_type: 'text/plain',
-      content_size_bytes: 12345,
+      storage_bucket: 'test-bucket',
+      storage_path: 'path/to/file.txt',
+      mime_type: 'text/plain',
+      size_bytes: 12345,
       dialectic_sessions: {
         project_id: 'proj-1',
         dialectic_projects: { user_id: 'test-user-id' }
@@ -320,7 +316,7 @@ describe('getContributionContentSignedUrlHandler', () => {
 
     const result = await getContributionContentSignedUrlHandler(
       mockGetUser,
-      mockDbClient as unknown as SupabaseClient,
+      mockDbClient,
       mockCreateSignedUrl,
       mockLogger,
       { contributionId: 'contrib-id-signed-url-error' }
@@ -341,10 +337,10 @@ describe('getContributionContentSignedUrlHandler', () => {
   it('should return an error if createSignedUrl returns null for signedUrl (and no error object)', async () => {
     const contributionData = {
       id: 'contrib-id-null-url',
-      content_storage_bucket: 'test-bucket',
-      content_storage_path: 'path/to/file.txt',
-      content_mime_type: 'text/plain',
-      content_size_bytes: 12345,
+      storage_bucket: 'test-bucket',
+      storage_path: 'path/to/file.txt',
+      mime_type: 'text/plain',
+      size_bytes: 12345,
       dialectic_sessions: {
         project_id: 'proj-1',
         dialectic_projects: { user_id: 'test-user-id' }
@@ -390,10 +386,10 @@ describe('getContributionContentSignedUrlHandler', () => {
 
     const contributionData = {
       id: contributionId,
-      content_storage_bucket: bucket,
-      content_storage_path: path,
-      content_mime_type: expectedMimeType,
-      content_size_bytes: expectedSizeBytes,
+      storage_bucket: bucket,
+      storage_path: path,
+      mime_type: expectedMimeType,
+      size_bytes: expectedSizeBytes,
       dialectic_sessions: {
         project_id: 'proj-success',
         dialectic_projects: { user_id: testUserId }
@@ -444,10 +440,10 @@ describe('getContributionContentSignedUrlHandler', () => {
 
     const contributionData = {
       id: contributionId,
-      content_storage_bucket: bucket,
-      content_storage_path: path,
-      content_mime_type: null,
-      content_size_bytes: expectedSizeBytes,
+      storage_bucket: bucket,
+      storage_path: path,
+      mime_type: null,
+      size_bytes: expectedSizeBytes,
       dialectic_sessions: {
         project_id: 'proj-default-mime',
         dialectic_projects: { user_id: testUserId }

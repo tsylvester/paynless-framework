@@ -326,7 +326,7 @@ Deno.test("generateContributions - getFileMetadata returns error (should proceed
                     const dataToReturn = { 
                         id: mockContributionId, 
                         ...capturedInsertArg,
-                        content_size_bytes: capturedInsertArg?.content_size_bytes ?? 0
+                        size_bytes: capturedInsertArg?.size_bytes ?? 0
                     };
                     return Promise.resolve({ data: dataToReturn, error: null });
                 })
@@ -373,11 +373,11 @@ Deno.test("generateContributions - getFileMetadata returns error (should proceed
         
         assertEquals(resultError.success, true);
         assertExists(resultError.data?.contributions?.[0]);
-        assertEquals(resultError.data?.contributions?.[0].content_size_bytes, 0);
+        assertEquals(resultError.data?.contributions?.[0].size_bytes, 0);
         assertEquals(mockGetFileMetadataError.calls.length, 1);
         assert(localLoggerWarn.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes("Could not get file metadata")));
         const insertedContribution = mockContributionInsertSpy.calls[0].args[0] as any;
-        assertEquals(insertedContribution.content_size_bytes, 0);
+        assertEquals(insertedContribution.size_bytes, 0);
     } finally {
         localLoggerInfo.restore();
         localLoggerError.restore();
@@ -443,7 +443,7 @@ Deno.test("generateContributions - getFileMetadata returns no size (should proce
                     const dataToReturn = { 
                         id: mockContributionId, 
                         ...capturedInsertArg,
-                        content_size_bytes: capturedInsertArg?.content_size_bytes ?? 0
+                        size_bytes: capturedInsertArg?.size_bytes ?? 0
                     };
                     return Promise.resolve({ data: dataToReturn, error: null });
                 })
@@ -490,11 +490,11 @@ Deno.test("generateContributions - getFileMetadata returns no size (should proce
         
         assertEquals(resultNoSize.success, true);
         assertExists(resultNoSize.data?.contributions?.[0]);
-        assertEquals(resultNoSize.data?.contributions?.[0].content_size_bytes, 0);
+        assertEquals(resultNoSize.data?.contributions?.[0].size_bytes, 0);
         assertEquals(mockGetFileMetadataSuccessNoSize.calls.length, 1);
         assert(localLoggerWarn.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes("Could not get file metadata")));
         const insertedContribution = mockContributionInsertSpyNoSize.calls[0].args[0] as any;
-        assertEquals(insertedContribution.content_size_bytes, 0);
+        assertEquals(insertedContribution.size_bytes, 0);
     } finally {
         localLoggerInfo.restore();
         localLoggerError.restore();

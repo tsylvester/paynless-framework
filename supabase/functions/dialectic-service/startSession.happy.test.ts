@@ -52,8 +52,6 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
     } as unknown as FileManagerService;
 
     const fmStub = stub(mockFileManager, "uploadAndRegisterFile", returnsNext([
-        Promise.resolve({ record: mockResource, error: null }), // For user_prompt
-        Promise.resolve({ record: { ...mockResource, id: "res-456", file_name: 'system_settings.json' }, error: null }), // for system_settings
         Promise.resolve({ record: { ...mockResource, id: "res-789", file_name: 'seed_prompt.md' }, error: null }), // for seed_prompt
     ]));
 
@@ -129,13 +127,14 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
             project_id: mockProjectId,
             session_description: mockExplicitSessionDescription,
             current_stage_id: mockInitialStageId,
-            user_input_reference_url: mockResource.storage_path
+            // user_input_reference_url: mockResource.storage_path // This is no longer directly returned or set this way
         };
         assertObjectMatch(result.data, expectedResponse as any);
-        assertEquals(fmStub.calls.length, 2, "The file manager should have been called twice.");
+        assertEquals(fmStub.calls.length, 1, "The file manager should have been called once.");
 
     } finally {
         assemblerStub.restore();
+        fmStub.restore();
     }
 });
 
@@ -151,6 +150,7 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
     const mockSystemPromptId = "system-prompt-default-desc";
     const mockNewSessionId = "session-default-desc-id";
     const mockNewChatId = "chat-default-desc-id";
+    const expectedDefaultDescription = `Session for ${mockProjectName} - ${mockInitialStageName}`;
 
     const payload: StartSessionPayload = {
         projectId: mockProjectId,
@@ -181,9 +181,7 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
     } as unknown as FileManagerService;
     
     const fmStub = stub(mockFileManager, "uploadAndRegisterFile", returnsNext([
-        Promise.resolve({ record: mockResource, error: null }), // For user_prompt
-        Promise.resolve({ record: { ...mockResource, id: "res-456", file_name: 'system_settings.json' }, error: null }), // for system_settings
-        Promise.resolve({ record: { ...mockResource, id: "res-789", file_name: 'seed_prompt.md' }, error: null }), // for seed_prompt
+        Promise.resolve({ record: { ...mockResource, id: "res-seed", file_name: 'seed_prompt.md' }, error: null }), // for seed_prompt
     ]));
 
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
@@ -218,11 +216,15 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
             },
             dialectic_sessions: {
                 insert: async () => ({
-                     data: [{
-                        id: mockNewSessionId, project_id: mockProjectId,
-                        session_description: `${mockProjectName} - New Session`,
-                        status: `pending_${mockInitialStageName}`, iteration_count: 1, associated_chat_id: mockNewChatId,
-                        current_stage_id: mockInitialStageId, selected_model_catalog_ids: payload.selectedModelCatalogIds
+                    data: [{
+                        id: mockNewSessionId, 
+                        project_id: mockProjectId, 
+                        session_description: expectedDefaultDescription,
+                        status: `pending_${mockInitialStageName}`, 
+                        iteration_count: 1, 
+                        associated_chat_id: mockNewChatId,
+                        current_stage_id: mockInitialStageId, 
+                        selected_model_catalog_ids: payload.selectedModelCatalogIds,
                     }], error: null, status: 201, statusText: 'ok'
                 })
             },
@@ -246,12 +248,20 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
             fileManager: mockFileManager
         });
 
-        assertExists(result.data);
-        assertEquals(result.error, undefined);
-        assertEquals(result.data.session_description, `${mockProjectName} - New Session`);
-        assertEquals(fmStub.calls.length, 2, "The file manager should have been called twice.");
+        assertExists(result.data, `Session start failed: ${result.error?.message}`);
+        assertEquals(result.error, undefined, "Error should be undefined on happy path");
+
+        const expectedResponse: Partial<StartSessionSuccessResponse> = {
+            id: mockNewSessionId,
+            project_id: mockProjectId,
+            session_description: expectedDefaultDescription,
+            current_stage_id: mockInitialStageId,
+        };
+        assertObjectMatch(result.data, expectedResponse as any);
+        assertEquals(fmStub.calls.length, 1, "The file manager should have been called once for default description test.");
     } finally {
         assemblerStub.restore();
+        fmStub.restore();
     }
 });
 

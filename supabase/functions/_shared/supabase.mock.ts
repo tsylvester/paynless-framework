@@ -14,7 +14,7 @@ import {
 } from "npm:@supabase/gotrue-js@^2.6.3";
 import type { Database } from "../types_db.ts";
 // Revert to deno.land/std for spy/stub to diagnose callCount issue
-import { spy, stub, type Spy, type Stub } from "https://deno.land/std@0.190.0/testing/mock.ts";
+import { spy, stub, type Spy, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
 import type {
     FileObject,
@@ -49,6 +49,7 @@ export type MockResolveQueryResult = {
     count: number | null; 
     status: number; 
     statusText: string; 
+    
 };  
 
 interface SupabaseAuthAdminApi {
@@ -78,6 +79,9 @@ export interface IMockQueryBuilder {
   update: (data: object) => IMockQueryBuilder;
   delete: () => IMockQueryBuilder;
   upsert: (data: unknown[] | object, options?: { onConflict?: string, ignoreDuplicates?: boolean }) => IMockQueryBuilder;
+  is: (column: string, value: string | boolean | null) => IMockQueryBuilder; // <-- MODIFIED
+  in: (column: string, values: readonly unknown[]) => IMockQueryBuilder;
+  ilike: (column: string, pattern: string) => IMockQueryBuilder;
 
   // Filtering
   eq: (column: string, value: unknown) => IMockQueryBuilder;
@@ -87,9 +91,6 @@ export interface IMockQueryBuilder {
   lt: (column: string, value: unknown) => IMockQueryBuilder;
   lte: (column: string, value: unknown) => IMockQueryBuilder;
   like: (column: string, pattern: string) => IMockQueryBuilder;
-  ilike: (column: string, pattern: string) => IMockQueryBuilder;
-  is: (column: string, value: 'null' | 'not null' | 'true' | 'false') => IMockQueryBuilder;
-  in: (column: string, values: unknown[]) => IMockQueryBuilder;
   contains: (column: string, value: string | string[] | object) => IMockQueryBuilder;
   containedBy: (column: string, value: string | string[] | object) => IMockQueryBuilder;
   rangeGt: (column: string, range: string) => IMockQueryBuilder;
@@ -110,13 +111,13 @@ export interface IMockQueryBuilder {
   range: (from: number, to: number, options?: { referencedTable?: string }) => IMockQueryBuilder;
 
   // Terminators
-  single: () => Promise<MockResolveQueryResult>;
-  maybeSingle: () => Promise<MockResolveQueryResult>;
+  single: () => IMockQueryBuilder; // <<< MODIFIED LINE 105
+  maybeSingle: () => IMockQueryBuilder; // <<< MODIFIED LINE 106
   then: (
     onfulfilled?: ((value: MockResolveQueryResult) => unknown | PromiseLike<unknown>) | null | undefined, 
     onrejected?: ((reason: unknown) => unknown | PromiseLike<unknown>) | null | undefined
   ) => Promise<unknown>; 
-  returns: () => IMockQueryBuilder;
+returns: () => IMockQueryBuilder;
   methodSpies: { [key: string]: Spy };
   url: URL;
   headers: Record<string, string>;
@@ -129,6 +130,15 @@ export interface IMockQueryBuilder {
   geojson: () => Promise<any>;
   explain: (options?: any) => Promise<any>;
   rollback: () => IMockQueryBuilder;
+  throwOnError?: boolean;
+  setHeader?: (name: string, value: string) => IMockQueryBuilder;
+  overrideTypes?: (types: Record<string, string> | string) => IMockQueryBuilder;
+  getSpy?: (methodName: keyof IMockQueryBuilder) => Spy | undefined;
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD';
+  shouldThrowOnError?: boolean;
+  fetch?: typeof globalThis.fetch;
+  isMaybeSingleQuery?: boolean; // To represent the state for maybeSingle
+  isMaybeSingle?: () => Promise<MockResolveQueryResult>;
 }
 
 export interface IMockSupabaseAuth {
@@ -557,6 +567,30 @@ class MockQueryBuilder implements IMockQueryBuilder {
     private _genericMockResultsConfig?: MockSupabaseDataConfig['genericMockResults'];
     public url: URL;
     public headers: Record<string, string>;
+    public throwOnError?: boolean;
+    public getSpy(methodName: keyof IMockQueryBuilder): Spy | undefined {
+        return this.methodSpies[methodName as string];
+    }
+    // Add these method implementations to the class
+    public setHeader(name: string, value: string): IMockQueryBuilder {
+        this.headers[name] = value;
+        // If you want setHeader calls to be spied like filter methods:
+        this._executeMethodLogic('setHeader', [name, value]); 
+        return this;
+    }
+
+    public overrideTypes(types: Record<string, string> | string): IMockQueryBuilder {
+        console.log(`[MockQueryBuilder ${this._state.tableName}] overrideTypes called with:`, types);
+        // If you want overrideTypes calls to be spied:
+        this._executeMethodLogic('overrideTypes', [types]);
+        return this;
+    }
+    public method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD';
+    public shouldThrowOnError?: boolean;
+    public fetch?: typeof globalThis.fetch;
+    public isMaybeSingleQuery?: boolean;
+    public isMaybeSingle?: () => Promise<MockResolveQueryResult>;
+
 
     constructor(
         tableName: string,
@@ -576,6 +610,22 @@ class MockQueryBuilder implements IMockQueryBuilder {
         this.url = new URL(`http://localhost/rest/v1/${tableName}`);
         this.headers = {};
         this._initializeSpies();
+        this.fetch = globalThis.fetch; // Default fetch
+        this.shouldThrowOnError = false; // Default
+        this._setMethodFromOperation(initialOperation); // Helper to set method
+        this.isMaybeSingleQuery = false; // Default
+        
+    }
+
+    private _setMethodFromOperation(operation: 'select' | 'insert' | 'update' | 'delete' | 'upsert') {
+        switch (operation) {
+            case 'select': this.method = 'GET'; break;
+            case 'insert': this.method = 'POST'; break; // Typically POST
+            case 'update': this.method = 'PATCH'; break; // Typically PATCH
+            case 'delete': this.method = 'DELETE'; break;
+            case 'upsert': this.method = 'POST'; break; // Typically POST with 'Prefer: resolution=merge-duplicates'
+            default: this.method = 'GET';
+        }
     }
 
     // Define methods from IMockQueryBuilder directly
@@ -593,8 +643,8 @@ class MockQueryBuilder implements IMockQueryBuilder {
     lte(column: string, value: unknown): IMockQueryBuilder { return this._executeMethodLogic('lte', [column, value]); }
     like(column: string, pattern: string): IMockQueryBuilder { return this._executeMethodLogic('like', [column, pattern]); }
     ilike(column: string, pattern: string): IMockQueryBuilder { return this._executeMethodLogic('ilike', [column, pattern]); }
-    is(column: string, value: 'null' | 'not null' | 'true' | 'false'): IMockQueryBuilder { return this._executeMethodLogic('is', [column, value]); }
-    in(column: string, values: unknown[]): IMockQueryBuilder { return this._executeMethodLogic('in', [column, values]); }
+    is(column: string, value: string | boolean | null): IMockQueryBuilder { return this._executeMethodLogic('is', [column, value]); }
+    in(column: string, values: readonly unknown[]): IMockQueryBuilder { return this._executeMethodLogic('in', [column, values]); }
     contains(column: string, value: string | string[] | object): IMockQueryBuilder { return this._executeMethodLogic('contains', [column, value]); }
     containedBy(column: string, value: string | string[] | object): IMockQueryBuilder { return this._executeMethodLogic('containedBy', [column, value]); }
     rangeGt(column: string, rangeVal: string): IMockQueryBuilder { return this._executeMethodLogic('rangeGt', [column, rangeVal]); }
@@ -637,20 +687,39 @@ class MockQueryBuilder implements IMockQueryBuilder {
         return this;
     }
 
-    single(): Promise<MockResolveQueryResult> {
+    single(): IMockQueryBuilder { // <<< MODIFIED SIGNATURE
         this._executeMethodLogic('single', []);
-        return this._resolveQuery(true, false);
+        // You'll need to ensure _resolveQuery or then() can know this was called.
+        // One way is to set a flag, e.g., on this._state or a new member:
+        // this._state.isSingleQuery = true; // Or similar mechanism
+        // this._state.isMaybeSingleQuery = false;
+        (this as any)._isSingleCall = true; // Add a temporary flag or manage state properly
+        (this as any)._isMaybeSingleCall = false;
+        return this; // <<< MODIFIED RETURN
     }
-    maybeSingle(): Promise<MockResolveQueryResult> {
+    maybeSingle(): IMockQueryBuilder { // <<< MODIFIED SIGNATURE
         this._executeMethodLogic('maybeSingle', []);
-        return this._resolveQuery(false, true);
+        // Set a flag similar to single()
+        // this._state.isMaybeSingleQuery = true;
+        // this._state.isSingleQuery = false;
+        (this as any)._isSingleCall = false;
+        (this as any)._isMaybeSingleCall = true; // Add a temporary flag or manage state properly
+        return this; // <<< MODIFIED RETURN
     }
     then(
         onfulfilled?: ((value: MockResolveQueryResult) => unknown | PromiseLike<unknown>) | null | undefined,
         onrejected?: ((reason: unknown) => unknown | PromiseLike<unknown>) | null | undefined
     ): Promise<unknown> { 
         console.log(`[Mock QB ${this._state.tableName}] Direct .then() called.`);
-        const promise = this._resolveQuery(); // Returns Promise<MockResolveQueryResult>
+        // Determine if single() or maybeSingle() was called before then()
+        const isSingle = (this as any)._isSingleCall === true;
+        const isMaybeSingle = (this as any)._isMaybeSingleCall === true;
+        
+        // Reset flags for subsequent calls if necessary
+        (this as any)._isSingleCall = false;
+        (this as any)._isMaybeSingleCall = false;
+
+        const promise = this._resolveQuery(isSingle, isMaybeSingle); // Pass flags to _resolveQuery
         
         return promise.then(onfulfilled, onrejected);
     }
@@ -728,7 +797,8 @@ class MockQueryBuilder implements IMockQueryBuilder {
             }
             case 'is': {
                 const [column, value] = args;
-                if (typeof column === 'string' && (value === 'null' || value === 'not null' || value === 'true' || value === 'false')) {
+                // MODIFIED condition to accept string, boolean, or null for value
+                if (typeof column === 'string' && (typeof value === 'string' || typeof value === 'boolean' || value === null)) { 
                     this._state.filters.push({ column, value, type: 'is' });
                 }
                 return this;
@@ -1037,10 +1107,11 @@ export class MockStorageBucketAPIImpl implements IMockStorageBucketAPI {
     public readonly transformOptsToQueryString: (options: any) => string = (options: any) => "";
 
     // Properties from StorageFileApi that are not spies (or are more complex)
-    public url: string;
-    public headers: Record<string, string>;
-    public fetch: typeof globalThis.fetch; 
+    public readonly url: string; // Already public readonly in your version, good.
+    public readonly headers: Record<string, string>; // Ensure public readonly
+    public readonly fetch: typeof globalThis.fetch; // Ensure public readonly
 
+    // And also for the methods you added:
     constructor(bucketId: string, config: MockSupabaseDataConfig, realSupabaseClientForFallback?: SupabaseClient<Database>) {
         this.bucketId = bucketId;
         this.config = config;
@@ -1283,7 +1354,7 @@ export function createMockSupabaseClient(
     const historicBuildersByTable: Map<string, MockQueryBuilder[]> = new Map();
     const mockStorageBucketAPIs: Map<string, MockStorageBucketAPIImpl> = new Map();
 
-    const fromSpy = stub(client, 'from', (tableName: string): MockQueryBuilder => {
+    const fromSpy = stub(client, 'from', ((tableName: string): MockQueryBuilder => {
         console.log(`[Mock Supabase Client] from('${tableName}') called`);
         const builder = new MockQueryBuilder(tableName, 'select', config.genericMockResults);
         latestBuilders.set(tableName, builder);
@@ -1294,7 +1365,7 @@ export function createMockSupabaseClient(
         historicBuildersByTable.get(tableName)!.push(builder);
         
         return builder;
-    });
+    }) as any); // <<< ADDED 'as any' HERE
 
     const rpcSpy = stub(client, 'rpc', async (name: string, params?: object) => {
         console.log(`[Mock Supabase Client] rpc('${name}', ${JSON.stringify(params)}) called`);
@@ -1320,19 +1391,16 @@ export function createMockSupabaseClient(
     // Log the client.storage object itself before trying to stub its 'from' method
     console.log("[DEBUG] client.storage before stubbing .from:", client.storage);
     
-    const storageFromSpy = stub(client.storage, 'from', (bucketId: string): MockStorageBucketAPIImpl => {
+    const storageFromSpy = stub(client.storage, 'from', ((bucketId: string): IMockStorageBucketAPI => { 
         console.log(`[Mock Supabase Client] storage.from('${bucketId}') called - returning full mock bucket API.`);
 
         if (!mockStorageBucketAPIs.has(bucketId)) {
             mockStorageBucketAPIs.set(bucketId, new MockStorageBucketAPIImpl(bucketId, config));
         }
         const mockBucketApiToReturn = mockStorageBucketAPIs.get(bucketId)!;
-        // Ensure the spy is on the *instance* of the mock being returned
-        // This was a previous bug, ensuring it's fixed:
-        // No, this is handled by performCopyInternal directly now.
         return mockBucketApiToReturn; 
-    });
-
+    }) as any); // <<< ADDED 'as any' HERE
+    
     // ---->>>> NEW DIAGNOSTIC CALL <<<<----
     try {
         console.log("[DEBUG] Attempting client.storage.from('test-bucket-immediately-after-stub')");
@@ -1524,7 +1592,7 @@ export function createMockSupabaseClient(
             return mockStorageBucketAPIs.get(bucketId)!;
         },
         getSpiesForTableQueryMethod: (tableName: string, methodName: string): Spy | undefined => {
-            return latestBuilders.get(tableName)?.getSpy(methodName as keyof MockQueryBuilder);
+            return latestBuilders.get(tableName)?.getSpy(methodName as keyof IMockQueryBuilder);
         },
         getAllBuildersUsed: (): MockQueryBuilder[] => {
             return Array.from(latestBuilders.values());

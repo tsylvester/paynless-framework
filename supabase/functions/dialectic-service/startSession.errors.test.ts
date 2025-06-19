@@ -111,16 +111,19 @@ Deno.test("startSession - Error: Database error on session insertion", async () 
             dialectic_stage_transitions: { select: async () => ({ data: [{ dialectic_stages: { id: "stage-1", display_name: "hypothesis", system_prompts: [{ id: "p-1", prompt_text: "t" }] } }], error: null, status: 200, statusText: 'ok' }) },
             dialectic_stages: { select: async () => ({ data: [{ id: 'stage-1', slug: 'hypothesis' }], error: null, status: 200, statusText: 'ok' }) },
             domain_specific_prompt_overlays: { select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' }) },
-            dialectic_sessions: { insert: async () => ({ data: null, error: { message: "DB insert error" } as any, status: 500, statusText: 'error' }) }
+            dialectic_sessions: {
+                insert: async () => ({ data: null, error: { name: 'PostgrestError', message: "Simulated DB error"} as any }),
+                delete: async () => ({ data: null, error: null, status: 204, statusText: 'no content' })
+            }
         }
     });
     const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
-    assertEquals(result.error?.message, "Failed to create the session.");
+    assertEquals(result.error?.message, "Failed to create new session.");
     assertEquals(result.error?.status, 500);
 });
 
-Deno.test("startSession - Error: Fails to upload seed prompt and cleans up session", async () => {
+Deno.test("startSession - Error: Fails to upload user prompt and cleans up session", async () => {
     const mockProjectId = "project-upload-fail";
     const mockNewSessionId = "session-to-be-deleted";
     const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelCatalogIds: ["model-abc"] };
@@ -134,51 +137,54 @@ Deno.test("startSession - Error: Fails to upload seed prompt and cleans up sessi
     } as unknown as FileManagerService;
 
     const fmStub = stub(mockFileManager, "uploadAndRegisterFile", returnsNext([
+        // First call (user_prompt) fails
         Promise.resolve({ 
             record: null,
-            error: { name: 'UploadError', message: "Upload failed", status: 500, details: "test details" } 
-        })
+            error: { name: 'UploadError', message: "Upload failed for user prompt", status: 500, details: "test details" } 
+        }),
+        // Subsequent calls (system_settings, seed_prompt) would also be mocked if reached, but the first failure stops it.
+        Promise.resolve({ record: {id: 'res-settings'} as any, error: null }), 
+        Promise.resolve({ record: {id: 'res-seed'} as any, error: null })   
     ]));
+
+    const spiedSessionDeleteFn = spy(async () => ({ data: null, error: null, status: 204, statusText: 'no content' }));
 
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
-            dialectic_projects: { select: async () => ({ data: [{ id: mockProjectId, user_id: MOCK_USER.id, process_template_id: "proc-template-ok", project_name: 'test', initial_user_prompt: 'test', dialectic_domains: { name: 'test' }, selected_domain_id: 'd-1' }], error: null, status: 200, statusText: 'ok' }) },
+            dialectic_projects: { select: async () => ({ data: [{ id: mockProjectId, user_id: MOCK_USER.id, project_name: 'test', initial_user_prompt: 'test', dialectic_domains: { name: 'test' }, selected_domain_id: 'd-1', process_template_id: "proc-template-ok" }], error: null, status: 200, statusText: 'ok' }) },
             dialectic_stage_transitions: { select: async () => ({ data: [{ dialectic_stages: { id: "stage-1", display_name: "hypothesis", system_prompts: [{ id: "p-1", prompt_text: "t" }] } }], error: null, status: 200, statusText: 'ok' }) },
-            dialectic_stages: { select: async () => ({ data: [{ id: 'stage-1', slug: 'hypothesis' }], error: null, status: 200, statusText: 'ok' }) },
+            dialectic_stages: { select: async () => ({ data: [{ id: 'stage-1', slug: 'hypothesis', display_name: "Hypothesis Stage" }], error: null, status: 200, statusText: 'ok' }) },
             domain_specific_prompt_overlays: { select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' }) },
             dialectic_sessions: {
-                insert: async () => ({ data: [{ id: mockNewSessionId, project_id: 'p', current_stage_id: 's', iteration_count: 1, selected_model_catalog_ids: ['model-abc'] }], error: null, status: 201, statusText: 'created' }),
-                delete: async () => ({ data: null, error: null, status: 204, statusText: 'no content' }) // Mock the cleanup delete
+                insert: async () => ({ data: [{ id: mockNewSessionId, project_id: mockProjectId, current_stage_id: 'stage-1', iteration_count: 1, selected_model_catalog_ids: ['model-abc'] }], error: null, status: 201, statusText: 'created' }),
+                delete: spiedSessionDeleteFn // Use the spied function here
             }
         },
-        storageConfig: {
-            "prompt-seeds": {
-                upload: async () => ({ data: null, error: { message: 'Storage RAGE' } as any }),
-                download: async () => ({ data: new Blob(['prompt']), error: null })
-            }
-        }
+        // No storageConfig needed here as FileManagerService is fully stubbed for this test path
     });
     
+    const mockLogger = { info: spy(), error: spy(), warn: spy() } as any;
+
     try {
         const result = await startSession(
             MOCK_USER, 
             mockAdminDbClientSetup.client as any, 
             payload, 
             { 
-                logger: { info: spy(), error: spy() } as any,
-                fileManager: mockFileManager
+                logger: mockLogger,
+                fileManager: mockFileManager,
+                randomUUID: () => mockNewSessionId // Ensure consistent session ID for predictability
             }
         );
         
         assertExists(result.error);
-        assertEquals(result.error?.message, "Failed to save user prompt: Upload failed");
+        assertEquals(result.error?.message, "Upload failed for user prompt");
         assertEquals(result.error?.status, 500);
 
-        const deleteSpy = mockAdminDbClientSetup.spies.getHistoricQueryBuilderSpies('dialectic_sessions', 'delete');
-        assert(deleteSpy, "The .delete() method should have been spied on.");
-        assertEquals(deleteSpy.callCount, 1, "The .delete() method should have been called once for cleanup.");
-        assertEquals(fmStub.calls.length, 1, "The file manager should have been called.");
+        assertEquals(spiedSessionDeleteFn.calls.length, 1, "Session delete should have been called once for cleanup.");
+        assertEquals(fmStub.calls.length, 1, "The file manager's uploadAndRegisterFile should have been called once (for the failing user_prompt).");
     } finally {
         assembleStub.restore();
+        fmStub.restore(); // Restore the fileManager stub as well
     }
 });

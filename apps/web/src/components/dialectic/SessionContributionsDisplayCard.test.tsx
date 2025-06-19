@@ -12,17 +12,13 @@ vi.mock('./GeneratedContributionCard', () => ({
   )),
 }));
 
-vi.mock('./GenerateContributionButton', () => ({
-  GenerateContributionButton: vi.fn(() => (
-    <div data-testid="generate-contributions-button-mock">Mock GenerateContributionsButton</div>
-  )),
-}));
-
 // Then mock libraries/aliased paths
 vi.mock('@paynless/store', async () => {
-  const actualMock = await vi.importActual('../../mocks/dialecticStore.mock');
+  // Import the actual mock module
+  const actualDialecticStoreMock = await vi.importActual<typeof import('../../mocks/dialecticStore.mock')>('../../mocks/dialecticStore.mock');
   return {
-    ...(actualMock as Record<string, unknown>),
+    __esModule: true, // Required for ES modules when using await vi.importActual
+    ...actualDialecticStoreMock, // Spread all exports from the mock, including the vi.fn() for the selector
   };
 });
 
@@ -35,14 +31,12 @@ import {
   DialecticStage,
   ApiError,
   DialecticStateValues,
-  DialecticActions,
   ApiResponse,
-  SubmitStageResponsesPayload,
   SubmitStageResponsesResponse,
 } from '@paynless/types';
-import { vi, beforeEach, describe, it, expect } from 'vitest';
+import { vi, beforeEach, describe, it, expect, type MockInstance } from 'vitest';
 import { initializeMockDialecticState, getDialecticStoreState } from '../../mocks/dialecticStore.mock';
-import { useDialecticStore } from '@paynless/store';
+import { useDialecticStore, selectIsStageReadyForSessionIteration as actualSelectIsStageReady } from '@paynless/store';
 
 const mockThesisStage: DialecticStage = {
     id: 's1',
@@ -68,9 +62,9 @@ const mockAntithesisStage: DialecticStage = {
 
 describe('SessionContributionsDisplayCard', () => {
   const mockSubmitStageResponses = vi.fn(
-    (_payload: SubmitStageResponsesPayload): Promise<ApiResponse<SubmitStageResponsesResponse>> => {
+    (): Promise<ApiResponse<SubmitStageResponsesResponse>> => {
       const updatedSession: DialecticSession = {
-        ...(mockSession as DialecticSession),
+        ...mockSession,
         status: 'antithesis_pending',
         current_stage_id: mockAntithesisStage.id,
       };
@@ -146,7 +140,16 @@ describe('SessionContributionsDisplayCard', () => {
     project_name: 'p1',
     initial_user_prompt: 'ipu',
     selected_domain_id: 'd1',
-    domain_name: 'Software Development',
+    dialectic_domains: {
+      name: 'Software Development',
+    },
+    dialectic_process_templates: {
+      created_at: '2023-01-01T09:00:00Z',
+      description: 'pt-1',
+      id: 'pt-1',
+      name: 'pt-1',
+      starting_stage_id: 's1',
+    },
     process_template_id: 'pt-1',
     dialectic_sessions: [mockSession],
     selected_domain_overlay_id: null,
@@ -161,24 +164,32 @@ describe('SessionContributionsDisplayCard', () => {
     project: DialecticProject | null,
     activeSessionId: string | null,
     activeStage: DialecticStage | null,
-    overrides?: Partial<DialecticStateValues>
+    overrides?: Partial<DialecticStateValues>,
+    isStageReadyOverride: boolean = true
   ) => {
     const initialState: DialecticStateValues = {
       ...getDialecticStoreState(),
       currentProjectDetail: project,
       activeContextSessionId: activeSessionId,
-      activeContextStageSlug: activeStage, // Note: activeContextStageSlug holds the full stage object
+      activeContextStage: activeStage,
       isSubmittingStageResponses: false,
       submitStageResponsesError: null,
       ...overrides,
     };
 
     initializeMockDialecticState(initialState);
-    (useDialecticStore as unknown as { setState: (state: Partial<DialecticActions>) => void }).setState({
+    useDialecticStore.setState({
       submitStageResponses: mockSubmitStageResponses,
       setActiveDialecticContext: mockSetActiveDialecticContext,
       resetSubmitStageResponsesError: mockResetSubmitStageResponsesError,
     });
+
+    // Cast through 'unknown' to MockInstance for TypeScript
+    const mockedSelectIsStageReady = actualSelectIsStageReady as unknown as MockInstance<
+        [DialecticStateValues, string, string, string, number],
+        boolean
+    >; 
+    mockedSelectIsStageReady.mockReturnValue(isStageReadyOverride);
 
     const activeSession = project?.dialectic_sessions?.find(s => s.id === activeSessionId);
 
@@ -187,24 +198,61 @@ describe('SessionContributionsDisplayCard', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Ensure selectIsStageReadyForSessionIteration is reset for each test if not overridden in setup
+    (actualSelectIsStageReady as unknown as MockInstance<[DialecticStateValues, string, string, string, number], boolean>).mockClear();
+
   });
 
   it('renders contributions for the active stage only', () => {
-    setup(mockProject, 'sess-1', mockThesisStage);
+    setup(mockProject, 'sess-1', mockThesisStage); // isStageReadyOverride defaults to true
     expect(screen.getByTestId('generated-contribution-card-c1')).toBeInTheDocument();
     expect(screen.queryByTestId('generated-contribution-card-c2')).not.toBeInTheDocument();
   });
 
-  it('displays a message when there are no contributions for the active stage', () => {
+  it('displays correct elements when stage is ready but there are no contributions for the active stage', () => {
     const mockSynthesisStage: DialecticStage = { ...mockThesisStage, id: 's3', slug: 'synthesis', display_name: 'Synthesis' };
-    setup(mockProject, 'sess-1', mockSynthesisStage);
-    expect(screen.getByText(/No contributions found for this stage yet/i)).toBeInTheDocument();
+    const projectWithNoSynthContributions: DialecticProject = {
+      ...mockProject,
+      dialectic_sessions: mockProject.dialectic_sessions ? mockProject.dialectic_sessions.map(s => {
+        if (s.id === 'sess-1') {
+          return {
+            ...s,
+            // Ensure no contributions for synthesis stage in iteration 1
+            dialectic_contributions: s.dialectic_contributions?.filter(
+              c => !(c.stage.slug === mockSynthesisStage.slug && c.iteration_number === s.iteration_count)
+            ) || []
+          };
+        }
+        return s;
+      }) : []
+    };
+    setup(projectWithNoSynthContributions, 'sess-1', mockSynthesisStage, undefined, true);
+    
+    expect(screen.getByText(`Contributions for: ${mockSynthesisStage.display_name}`)).toBeInTheDocument();
+    expect(screen.getByText(/Review the AI-generated contributions for this stage./i)).toBeInTheDocument(); // CardDescription
+    expect(screen.queryByTestId(/generated-contribution-card-/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Submit Responses/i })).not.toBeInTheDocument();
   });
   
-  it('renders the GenerateContributionButton when no contributions exist for the stage', () => {
+  it('does NOT render the GenerateContributionButton when no contributions exist for the stage', () => {
     const mockSynthesisStage: DialecticStage = { ...mockThesisStage, id: 's3', slug: 'synthesis', display_name: 'Synthesis' };
-    setup(mockProject, 'sess-1', mockSynthesisStage);
-    expect(screen.getByTestId('generate-contributions-button-mock')).toBeInTheDocument();
+    // Similar setup: ensure no contributions for this stage
+     const projectWithNoSynthContributions: DialecticProject = {
+      ...mockProject,
+      dialectic_sessions: mockProject.dialectic_sessions ? mockProject.dialectic_sessions.map(s => {
+        if (s.id === 'sess-1') {
+          return {
+            ...s,
+            dialectic_contributions: s.dialectic_contributions?.filter(
+              c => !(c.stage.slug === mockSynthesisStage.slug && c.iteration_number === s.iteration_count)
+            ) || []
+          };
+        }
+        return s;
+      }) : []
+    };
+    setup(projectWithNoSynthContributions, 'sess-1', mockSynthesisStage, undefined, true);
+    expect(screen.queryByTestId('generate-contributions-button-mock')).not.toBeInTheDocument();
   });
 
   it('does NOT render the GenerateContributionButton when contributions already exist for the stage', () => {
@@ -214,7 +262,7 @@ describe('SessionContributionsDisplayCard', () => {
 
   it('manages local state for user responses correctly', () => {
     setup(mockProject, 'sess-1', mockThesisStage);
-    const textarea = screen.getByTestId('response-textarea-c1') as HTMLTextAreaElement;
+    const textarea: HTMLTextAreaElement = screen.getByTestId('response-textarea-c1');
     
     expect(textarea.value).toBe('');
     fireEvent.change(textarea, { target: { value: 'This is a test response.' } });

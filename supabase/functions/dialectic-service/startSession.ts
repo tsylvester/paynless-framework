@@ -7,7 +7,7 @@ import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import type { Database, Json } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
 import type { ILogger } from "../_shared/types.ts";
-import { PromptAssembler, type ProjectContext, type StageContext } from "../_shared/prompt-assembler.ts";
+import { PromptAssembler, type ProjectContext, type StageContext, type SessionContext } from "../_shared/prompt-assembler.ts";
 import { FileManagerService } from "../_shared/services/file_manager.ts";
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts';
 
@@ -15,7 +15,7 @@ async function getInitialPromptContent(
     dbClient: SupabaseClient<Database>,
     project: ProjectContext,
     logger: ILogger
-): Promise<{ content?: string; storagePath?: string; error?: string }> {
+): Promise<{ content?: string; storagePath?: string; error?: string } | undefined> {
     if (project.initial_user_prompt) {
         logger.info(`[getInitialPromptContent] Using direct initial_user_prompt for project ${project.id}.`);
         return { content: project.initial_user_prompt };
@@ -69,9 +69,8 @@ export async function startSession(
 
     const { data: project, error: projectError } = await dbClient
         .from('dialectic_projects')
-        .select('*, dialectic_domains ( name )')
+        .select('*, dialectic_domains ( id, name, description )')
         .eq('id', projectId)
-        .eq('user_id', userId)
         .single();
 
     if (projectError || !project) {
@@ -198,8 +197,7 @@ export async function startSession(
         .eq('domain_id', project.selected_domain_id);
     
     if (overlaysError) {
-        log.error("[startSession] Could not fetch domain-specific overlays.", { systemPromptId: defaultSystemPrompt.id, domainId: project.selected_domain_id, dbError: overlaysError });
-        return { error: { message: "Failed to load domain-specific prompt configuration.", status: 500 } };
+        log.warn(`[startSession] Could not fetch overlays for prompt ${defaultSystemPrompt.id} and domain ${project.selected_domain_id}. Proceeding without.`, { dbError: overlaysError });
     }
 
     log.info(`[startSession] Determined initial stage: '${initialStageName}' (ID: ${initialStageId})`);
@@ -207,210 +205,119 @@ export async function startSession(
     const associatedChatId = originatingChatId || randomUUID();
     const descriptionForDb = sessionDescription?.trim() || `${project.project_name || 'Unnamed Project'} - New Session`;
 
-    // We create the session first to get its ID for the assembler context
-    const { data: newSession, error: sessionInsertError } = await dbClient
+    // Prepare prompt assembly context
+    const projectContext: ProjectContext = {
+        ...project,
+        dialectic_domains: project.dialectic_domains ? { name: project.dialectic_domains.name } : { name: 'General' },
+    };
+
+    const stageContext: StageContext = {
+        ...fullStageData,
+        system_prompts: { prompt_text: defaultSystemPrompt.prompt_text },
+        domain_specific_prompt_overlays: overlaysError ? [] : (overlays || []).map(o => ({ overlay_values: o.overlay_values as Json })),
+    };
+    
+    const initialPrompt = await getInitialPromptContent(dbClient, projectContext, log);
+
+    if (!initialPrompt) {
+        log.error(`[startSession] Failed to get initial prompt details for project ${project.id}`);
+        return { error: { message: "Failed to retrieve initial prompt details.", status: 500 } };
+    }
+    if (initialPrompt.error || typeof initialPrompt.content !== 'string') {
+        log.error(`[startSession] Failed to get initial prompt content for project ${project.id}`, { error: initialPrompt.error });
+        return { error: { message: initialPrompt.error || "Failed to retrieve initial prompt content.", status: 500 } };
+    }
+
+    const assembler = new PromptAssembler(dbClient);
+
+    // Create a temporary SessionContext for the assembler, as the full session record isn't created yet.
+    // Or, create the session record earlier if assembler needs its actual ID.
+    // For now, using a partial context if assembler can handle it, or we create session first.
+
+    // Create the session record first, so its ID and other details can be used by the assembler
+    const sessionId = randomUUID();
+    const initialSessionStatus = `pending_${initialStageName.replace(/\s+/g, '_').toLowerCase()}`;
+
+    const { data: newSessionRecord, error: sessionInsertError } = await dbClient
         .from('dialectic_sessions')
         .insert({
-            project_id: project.id,
-            session_description: descriptionForDb,
+            id: sessionId,
+            project_id: projectId,
             current_stage_id: initialStageId,
-            status: `pending_${initialStageName.replace(/\s+/g, '_').toLowerCase()}`, // Create a slug-like status
+            status: initialSessionStatus,
             iteration_count: 1,
-            associated_chat_id: associatedChatId,
-            selected_model_catalog_ids: selectedModelCatalogIds,
+            selected_model_catalog_ids: selectedModelCatalogIds ?? [],
+            session_description: sessionDescription ?? `Session for ${project.project_name} - ${initialStageName}`,
+            associated_chat_id: originatingChatId,
         })
         .select()
         .single();
+
+    if (sessionInsertError || !newSessionRecord) {
+        log.error("[startSession] Error inserting new session:", { dbError: sessionInsertError });
+        return { error: { message: "Failed to create new session.", status: 500, details: sessionInsertError.message } };
+    }
+    log.info(`[startSession] New session ${newSessionRecord.id} created.`);
+
+    // Now that newSessionRecord exists, create the SessionContext for the assembler
+    const sessionContextForAssembler: SessionContext = {
+        ...newSessionRecord, 
+    };
+
+    const assembledSeedPrompt = await assembler.assemble(
+        projectContext, 
+        sessionContextForAssembler, 
+        stageContext, 
+        initialPrompt.content
+    );
+
+    if (!assembledSeedPrompt) {
+        log.error(`[startSession] PromptAssembler failed to assemble seed prompt for project ${project.id}, stage ${stageContext.slug}`);
+        // Attempt to cleanup session if assembler fails after session creation
+        await dbClient.from('dialectic_sessions').delete().eq('id', newSessionRecord.id);
+        log.info(`[startSession] Cleaned up session ${newSessionRecord.id} due to prompt assembly failure.`);
+        return { error: { message: "Failed to assemble initial seed prompt for the session.", status: 500 } };
+    }
     
-    if (sessionInsertError || !newSession) {
-        log.error("[startSession] Database error during session insertion", { projectId, userId, dbError: sessionInsertError });
-        return { error: { message: "Failed to create the session.", details: sessionInsertError?.message, status: 500 } };
-    }
-
-    // Get the initial prompt content (either from text or file)
-    const { content: initialPromptContent, storagePath, error: promptContentError } = await getInitialPromptContent(dbClient, project, log);
-    if (promptContentError) {
-         log.error("[startSession] Failed to get initial prompt content. Cleaning up session.", { sessionId: newSession.id, error: promptContentError });
-         await dbClient.from('dialectic_sessions').delete().eq('id', newSession.id);
-         return { error: { message: `Failed to prepare session: ${promptContentError}`, status: 500 } };
-    }
-
-    if (storagePath) {
-        // If there's a storage path, we need to copy the file for the new session
-        // This functionality will be added to FileManagerService later.
-        // For now, we'll re-upload the content we just downloaded.
-        // This part needs to be implemented properly with a copy function.
-        log.warn(`[startSession] File copy from storagePath not implemented in FileManagerService yet. Re-uploading content for now.`);
-    }
-
-    // Save the user prompt for the session using the file manager
-    const userPromptContent = initialPromptContent || 'No prompt provided';
-    const userPromptBuffer = Buffer.from(new TextEncoder().encode(userPromptContent));
-    const { record: userPromptRecord, error: userPromptError } = await fileManager.uploadAndRegisterFile({
+    // 3. Save the Assembled Seed Prompt (the actual prompt sent to the first model)
+    // This is distinct from the initial user prompt and system settings.
+    const seedPromptBuffer = Buffer.from(assembledSeedPrompt, 'utf-8');
+    const seedPromptUploadResult = await fileManager.uploadAndRegisterFile({
         pathContext: {
             projectId: project.id,
-            fileType: 'user_prompt',
-            sessionId: newSession.id,
+            fileType: 'seed_prompt', 
+            sessionId: newSessionRecord.id,
             iteration: 1,
-            stageSlug: fullStageData.slug,
-            originalFileName: project.initial_prompt_resource_id ? 'user_prompt.md' : 'user_prompt.txt',
+            stageSlug: stageContext.slug,
+            originalFileName: `${stageContext.slug}_seed_prompt.md`,
         },
-        fileContent: userPromptBuffer,
-        mimeType: project.initial_prompt_resource_id ? 'text/markdown' : 'text/plain',
-        sizeBytes: userPromptBuffer.byteLength,
-        userId: user.id,
-        description: 'Initial user prompt for the session.',
-    });
-    
-    if (userPromptError || !userPromptRecord) {
-        log.error("[startSession] Failed to save user prompt via FileManagerService. Cleaning up session.", { sessionId: newSession.id, error: userPromptError });
-        await dbClient.from('dialectic_sessions').delete().eq('id', newSession.id);
-        return { error: { message: `Failed to save user prompt: ${userPromptError?.message}`, status: 500 } };
-    }
-    
-    log.info(`[startSession] User prompt saved with resource ID: ${userPromptRecord.id}`);
-
-
-    // Assemble the prompt using our new utility
-    const assembler = new PromptAssembler(dbClient);
-    const stageContext: StageContext = {
-      ...fullStageData,
-      domain_specific_prompt_overlays: overlays?.map(o => ({ overlay_values: o.overlay_values as Json })) ?? [],
-      system_prompts: defaultSystemPrompt ? { prompt_text: defaultSystemPrompt.prompt_text } : null
-    }
-
-    // Prepare system settings for saving
-    const systemSettings = {
-        session_id: newSession.id,
-        project_id: project.id,
-        domain: project.dialectic_domains?.name,
-        process_template_id: project.process_template_id,
-        initial_stage: {
-            id: fullStageData.id,
-            name: fullStageData.display_name,
-            slug: fullStageData.slug,
-        },
-        selected_models: selectedModelCatalogIds,
-        session_description: newSession.session_description,
-    };
-    const systemSettingsContent = JSON.stringify(systemSettings, null, 2);
-    const systemSettingsBuffer = Buffer.from(new TextEncoder().encode(systemSettingsContent));
-
-    // Save system settings using the file manager
-    const { record: systemSettingsRecord, error: systemSettingsError } = await fileManager.uploadAndRegisterFile({
-        pathContext: {
-            projectId: project.id,
-            fileType: 'system_settings',
-            sessionId: newSession.id,
-            iteration: 1,
-            stageSlug: fullStageData.slug,
-            originalFileName: 'system_settings.json',
-        },
-        fileContent: systemSettingsBuffer,
-        mimeType: 'application/json',
-        sizeBytes: systemSettingsBuffer.byteLength,
-        userId: user.id,
-        description: 'System settings for the session.',
+        fileContent: seedPromptBuffer,
+        mimeType: 'text/markdown',
+        sizeBytes: seedPromptBuffer.byteLength,
+        userId: userId,
+        description: `Assembled seed prompt for session ${newSessionRecord.id}, stage ${stageContext.slug}`,
     });
 
-    if (systemSettingsError || !systemSettingsRecord) {
-        log.error("[startSession] Failed to save system settings via FileManagerService. Cleaning up session.", { sessionId: newSession.id, error: systemSettingsError });
-        await dbClient.from('dialectic_sessions').delete().eq('id', newSession.id);
-        // Also clean up the user prompt file that was already created
-        await dbClient.from('dialectic_project_resources').delete().eq('id', userPromptRecord.id);
-        return { error: { message: `Failed to save system settings: ${systemSettingsError?.message}`, status: 500 } };
+    if (seedPromptUploadResult.error || !seedPromptUploadResult.record) {
+        log.error('[startSession] Failed to save assembled seed prompt using FileManagerService.', { error: seedPromptUploadResult.error });
+        // Attempt to clean up session, user prompt, and system settings files
+        log.info(`[startSession] Attempting to clean up session ${newSessionRecord.id} and files due to seed prompt save failure.`);
+        await dbClient.from('dialectic_sessions').delete().eq('id', newSessionRecord.id);
+        // Potentially delete userPromptResourceId and systemSettingsResourceId from storage
+        return { error: { message: seedPromptUploadResult.error?.message || 'Failed to save assembled seed prompt for the session.', status: 500 } };
     }
-
-    log.info(`[startSession] System settings saved with resource ID: ${systemSettingsRecord.id}`);
-
-
-    const savedSeedPromptResourceIds: string[] = [];
-
-    for (const modelId of selectedModelCatalogIds) {
-        const {data: modelInfo, error: modelError} = await dbClient.from('ai_providers').select('api_identifier').eq('id', modelId).single();
-        if(modelError || !modelInfo) {
-            log.warn(`[startSession] Could not find model info for ID ${modelId}. Skipping seed prompt generation for this model.`);
-            continue;
-        }
-
-        const assembledPrompt = await assembler.assemble(
-            { ...project, initial_user_prompt: initialPromptContent || '' },
-            newSession,
-            stageContext,
-            initialPromptContent || '',
-        );
-
-        const seedPromptBuffer = Buffer.from(new TextEncoder().encode(assembledPrompt));
-
-        const { record: seedPromptRecord, error: seedPromptError } = await fileManager.uploadAndRegisterFile({
-            pathContext: {
-                projectId: project.id,
-                fileType: 'seed_prompt',
-                sessionId: newSession.id,
-                iteration: 1,
-                stageSlug: fullStageData.slug,
-                modelSlug: modelInfo.api_identifier,
-                originalFileName: `seed_prompt_${modelInfo.api_identifier}.md`,
-            },
-            fileContent: seedPromptBuffer,
-            mimeType: 'text/markdown',
-            sizeBytes: seedPromptBuffer.byteLength,
-            userId: user.id,
-            description: `Seed prompt for model ${modelInfo.api_identifier} in stage ${fullStageData.slug}.`,
-        });
-
-        if(seedPromptError || !seedPromptRecord) {
-            log.error(`[startSession] Failed to save seed prompt for model ${modelInfo.api_identifier}. Continuing, but this model may fail.`, { sessionId: newSession.id, error: seedPromptError });
-            // Don't kill the whole session, just log the error and move on.
-        } else {
-            savedSeedPromptResourceIds.push(seedPromptRecord.id);
-            log.info(`[startSession] Saved seed prompt for model ${modelInfo.api_identifier} with resource ID ${seedPromptRecord.id}`);
-        }
-    }
+    const seedPromptResourceId = seedPromptUploadResult.record.id;
+    log.info(`[startSession] Assembled seed prompt saved with resource ID: ${seedPromptResourceId}`);
 
 
-    // Update the session with the created resource IDs
-    const { error: sessionUpdateError } = await dbClient
-        .from('dialectic_sessions')
-        .update({
-            user_input_reference_url: userPromptRecord.storage_path,
-            system_settings_reference_url: systemSettingsRecord.storage_path,
-            seed_prompt_reference_urls: savedSeedPromptResourceIds.map(id => fileManager.getFileSignedUrl(id, 'dialectic_contributions')),
-        })
-        .eq('id', newSession.id);
+    // No longer updating dialectic_sessions with user_input_reference_url here as per user feedback.
+    // The relevant resources can be found via dialectic_project_resources table using projectId/sessionId.
 
-    if (sessionUpdateError) {
-        // This is a critical failure, as the session is now in an inconsistent state.
-        // Manual cleanup might be required. Log everything.
-        log.error("[startSession] CRITICAL: Failed to update session with resource IDs after creating files.", {
-            sessionId: newSession.id,
-            userPromptResourceId: userPromptRecord.id,
-            systemSettingsResourceId: systemSettingsRecord.id,
-            seedPromptResourceIds: savedSeedPromptResourceIds,
-            dbError: sessionUpdateError
-        });
-        // We don't delete the session here, as the files are already in storage and the records exist.
-        // Returning an error to the user is the best we can do.
-        return { error: { message: `Failed to finalize session setup. Please contact support. Session ID: ${newSession.id}`, status: 500 } };
-    }
+    log.info(`[startSession] Session ${newSessionRecord.id} successfully set up with all resources created.`);
 
+    // Construct the success response - which is the DialecticSession record itself
+    const successResponse: StartSessionSuccessResponse = newSessionRecord;
 
-    log.info(`[startSession] Successfully created session ${newSession.id} and all initial resources.`);
-    
-    return {
-        data: {
-            id: newSession.id,
-            project_id: newSession.project_id,
-            status: newSession.status,
-            created_at: newSession.created_at,
-            current_stage_id: newSession.current_stage_id,
-            iteration_count: newSession.iteration_count,
-            selected_model_catalog_ids: newSession.selected_model_catalog_ids,
-            associated_chat_id: newSession.associated_chat_id,
-            user_input_reference_url: userPromptRecord.storage_path,
-            session_description: newSession.session_description,
-            updated_at: newSession.updated_at,
-        }
-    };
+    return { data: successResponse };
 }
   

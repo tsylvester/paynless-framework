@@ -168,19 +168,19 @@ BEGIN
     
     -- Seed Dialectic Stages (The 5 core stages of the default process) one by one
     INSERT INTO public.dialectic_stages (slug, display_name, description) VALUES
-        ('thesis', 'Thesis', 'Generate initial, diverse solutions to the prompt.')
+        ('thesis', 'Concept', 'Generate initial, diverse solutions to the prompt.')
     RETURNING id INTO thesis_stage_id;
     INSERT INTO public.dialectic_stages (slug, display_name, description) VALUES
-        ('antithesis', 'Antithesis', 'Critique the generated solutions from the Thesis stage.')
+        ('antithesis', 'Criticism', 'Critique the generated solutions from the Thesis stage.')
     RETURNING id INTO antithesis_stage_id;
     INSERT INTO public.dialectic_stages (slug, display_name, description) VALUES
-        ('synthesis', 'Synthesis', 'Combine the original ideas and critiques into a single, refined version.')
+        ('synthesis', 'Improvement', 'Combine the original ideas and critiques into a single, refined version.')
     RETURNING id INTO synthesis_stage_id;
     INSERT INTO public.dialectic_stages (slug, display_name, description) VALUES
-        ('parenthesis', 'Parenthesis', 'Formalize the synthesized solution into a detailed, executable plan.')
+        ('parenthesis', 'Organization', 'Formalize the synthesized solution into a detailed, executable plan.')
     RETURNING id INTO parenthesis_stage_id;
     INSERT INTO public.dialectic_stages (slug, display_name, description) VALUES
-        ('paralysis', 'Paralysis', 'Reflect on the plan and decide on the next steps (implement, refine, or restart).')
+        ('paralysis', 'Finalization', 'Finalize the solution into a production-ready implementation plan.')
     RETURNING id INTO paralysis_stage_id;
 
     -- Seed a default Process Template for Software Development

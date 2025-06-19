@@ -36,7 +36,8 @@ import {
     selectSaveContributionEditError,
     selectActiveContextProjectId,
     selectActiveContextSessionId,
-    selectActiveContextStage
+    selectActiveContextStage,
+    selectIsStageReadyForSessionIteration
 } from './dialecticStore.selectors';
 import { initialDialecticStateValues } from './dialecticStore';
 import type { 
@@ -50,6 +51,7 @@ import type {
     DialecticProcessTemplate,
     DialecticSession,
     DialecticContribution,
+    DialecticProjectResource,
 } from '@paynless/types';
 
 const mockThesisStage: DialecticStage = {
@@ -85,7 +87,6 @@ describe('Dialectic Store Selectors', () => {
         id: 'pt-1',
         name: 'Test Template',
         description: 'A test template',
-        domain_id: 'dom1',
         created_at: new Date().toISOString(),
         starting_stage_id: 's1'
     };
@@ -441,5 +442,228 @@ describe('Dialectic Store Selectors', () => {
     it('selectActiveContextStage should return the active stage', () => {
         expect(selectActiveContextStage(testState)).toEqual(mockThesisStage);
         expect(selectActiveContextStage(initialState)).toBeNull();
+    });
+});
+
+describe('selectIsStageReadyForSessionIteration', () => {
+    const projectId = 'proj-1';
+    const sessionId = 'session-1';
+    const stageSlug = 'thesis';
+    const iterationNumber = 1;
+
+    const mockSeedPromptResource: DialecticProjectResource = {
+        id: 'resource-1',
+        project_id: projectId,
+        storage_path: 'path/to/seed_prompt.md',
+        file_name: 'seed_prompt.md',
+        mime_type: 'text/markdown',
+        size_bytes: 100,
+        resource_description: JSON.stringify({
+            type: 'seed_prompt',
+            session_id: sessionId,
+            stage_slug: stageSlug,
+            iteration: iterationNumber,
+        }),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+    const projectWithResource: DialecticProject = {
+        id: projectId,
+        user_id: 'user-1',
+        project_name: 'Test Project',
+        initial_user_prompt: 'Test prompt',
+        selected_domain_id: 'dom-1',
+        dialectic_domains: { name: 'Generic' }, // Simplified for this test
+        selected_domain_overlay_id: null,
+        repo_url: null,
+        status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        dialectic_sessions: [{ id: sessionId, iteration_count: iterationNumber } as DialecticSession], // Simplified
+        resources: [mockSeedPromptResource],
+        process_template_id: 'pt-1',
+        dialectic_process_templates: { id: 'pt-1' } as DialecticProcessTemplate, // Simplified
+    };
+
+    it('should return true if project, session, stage, and matching seed prompt resource exist', () => {
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            currentProjectDetail: projectWithResource,
+        };
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(true);
+    });
+
+    it('should return false if currentProjectDetail is null', () => {
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            currentProjectDetail: null,
+        };
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
+    });
+
+    it('should return false if project.resources is null', () => {
+        const projectWithoutResources: DialecticProject = {
+            ...projectWithResource,
+            resources: null as any, // Testing null case
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            currentProjectDetail: projectWithoutResources,
+        };
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
+    });
+    
+    it('should return false if project.resources is empty', () => {
+        const projectWithEmptyResources: DialecticProject = {
+            ...projectWithResource,
+            resources: [], 
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            currentProjectDetail: projectWithEmptyResources,
+        };
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
+    });
+
+    it('should return false if resource_description is not parseable JSON', () => {
+        const resourceWithUnparseableDesc: DialecticProjectResource = {
+            ...mockSeedPromptResource,
+            project_id: projectId,
+            resource_description: 'not json',
+        };
+        const projectWithBadResource: DialecticProject = {
+            ...projectWithResource,
+            resources: [resourceWithUnparseableDesc],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            currentProjectDetail: projectWithBadResource,
+        };
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
+    });
+
+    it('should return false if resource_description is null', () => {
+        const resourceWithNullDesc: DialecticProjectResource = {
+            ...mockSeedPromptResource,
+            project_id: projectId,
+            resource_description: null as any,
+        };
+        const projectWithNullDescResource: DialecticProject = {
+            ...projectWithResource,
+            resources: [resourceWithNullDesc],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            currentProjectDetail: projectWithNullDescResource,
+        };
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
+    });
+    
+    it('should return false if parsed desc.type is not "seed_prompt"', () => {
+        const resourceWithWrongType: DialecticProjectResource = {
+            ...mockSeedPromptResource,
+            project_id: projectId,
+            resource_description: JSON.stringify({ type: 'not_seed_prompt' }),
+        };
+        const projectWithWrongTypeResource: DialecticProject = {
+            ...projectWithResource,
+            resources: [resourceWithWrongType],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            currentProjectDetail: projectWithWrongTypeResource,
+        };
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
+    });
+
+    it('should return false if desc.session_id does not match', () => {
+        const resourceWithWrongSession: DialecticProjectResource = {
+            ...mockSeedPromptResource,
+            project_id: projectId,
+            resource_description: JSON.stringify({ ...JSON.parse(mockSeedPromptResource.resource_description!), session_id: 'wrong-session' }),
+        };
+        const projectWithWrongSessionResource: DialecticProject = {
+            ...projectWithResource,
+            resources: [resourceWithWrongSession],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            currentProjectDetail: projectWithWrongSessionResource,
+        };
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
+    });
+
+    it('should return false if desc.stage_slug does not match', () => {
+        const resourceWithWrongStage: DialecticProjectResource = {
+            ...mockSeedPromptResource,
+            project_id: projectId,
+            resource_description: JSON.stringify({ ...JSON.parse(mockSeedPromptResource.resource_description!), stage_slug: 'wrong-stage' }),
+        };
+        const projectWithWrongStageResource: DialecticProject = {
+            ...projectWithResource,
+            resources: [resourceWithWrongStage],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            currentProjectDetail: projectWithWrongStageResource,
+        };
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
+    });
+
+    it('should return false if desc.iteration does not match', () => {
+        const resourceWithWrongIteration: DialecticProjectResource = {
+            ...mockSeedPromptResource,
+            project_id: projectId,
+            resource_description: JSON.stringify({ ...JSON.parse(mockSeedPromptResource.resource_description!), iteration: iterationNumber + 1 }),
+        };
+        const projectWithWrongIterationResource: DialecticProject = {
+            ...projectWithResource,
+            resources: [resourceWithWrongIteration],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            currentProjectDetail: projectWithWrongIterationResource,
+        };
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(false);
+    });
+    
+    it('should return false if project has no sessions', () => {
+        const projectWithNoSessions: DialecticProject = {
+            ...projectWithResource,
+            dialectic_sessions: [],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            currentProjectDetail: projectWithNoSessions,
+        };
+        // This test might seem redundant given the true case requires a session,
+        // but it ensures robustness if the selector logic changes.
+        // The current plan implies the selector doesn't directly use session from project.dialectic_sessions
+        // but it's good to be aware if that changes.
+        // For now, based on the plan, the selector only looks at project.resources and currentProjectDetail.
+        // The sessionId parameter is used to match against resource_description.
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(true);
+        // Correcting the expectation based on the idea that the project and its resources are the primary source of truth.
+        // If the `sessionId` passed to the selector matches a `resource_description`'s `session_id`, it should still find it.
+        // The `dialectic_sessions` array on the project isn't directly queried by the selector according to the plan.
+    });
+
+    it('should return true even if multiple resources exist, as long as one matches', () => {
+        const otherResource: DialecticProjectResource = {
+            ...mockSeedPromptResource,
+            project_id: projectId,
+            id: 'resource-2',
+            resource_description: JSON.stringify({ type: 'other_type' }),
+        };
+        const projectWithMultipleResources: DialecticProject = {
+            ...projectWithResource,
+            resources: [otherResource, mockSeedPromptResource],
+        };
+        const state: DialecticStateValues = {
+            ...initialDialecticStateValues,
+            currentProjectDetail: projectWithMultipleResources,
+        };
+        expect(selectIsStageReadyForSessionIteration(state, projectId, sessionId, stageSlug, iterationNumber)).toBe(true);
     });
 }); 

@@ -4,7 +4,6 @@ import type {
     AIModelCatalogEntry, 
     ApiError, 
     DomainOverlayDescriptor,
-    DialecticSession,
     DialecticStage,
     DialecticContribution,
     DialecticDomain,
@@ -114,7 +113,7 @@ export const selectCurrentProjectId = (state: DialecticStateValues): string | un
 export const selectSelectedModelIds = (state: DialecticStateValues): string[] => state.selectedModelIds || [];
 
 // Input selector for all contributions from the current project's sessions
-const selectAllContributionsFromCurrentProject = (state: DialecticStateValues): DialecticContribution[] => {
+export const selectAllContributionsFromCurrentProject = (state: DialecticStateValues): DialecticContribution[] => {
   const currentProject = state.currentProjectDetail;
   if (!currentProject || !currentProject.dialectic_sessions) {
     return [];
@@ -123,7 +122,7 @@ const selectAllContributionsFromCurrentProject = (state: DialecticStateValues): 
 };
 
 // Input selector for the contributionId parameter (passed from component props)
-const selectContributionIdParam = (_state: DialecticStateValues, contributionId: string): string => contributionId;
+export const selectContributionIdParam = (_state: DialecticStateValues, contributionId: string): string => contributionId;
 
 // Memoized selector to get a specific contribution by its ID
 export const selectContributionById = createSelector(
@@ -154,7 +153,54 @@ export const selectActiveContextSessionId = (state: DialecticStateValues): strin
 export const selectActiveContextStageSlug = (state: DialecticStateValues): DialecticStage | null => state.activeContextStage;
 export const selectActiveContextStage = (state: DialecticStateValues): DialecticStage | null => state.activeContextStage;
 
+// Memoized selector to get a specific session by its ID from the current project
+export const selectSessionById = createSelector(
+  [selectCurrentProjectSessions, (_, sessionId: string) => sessionId],
+  (sessions, sessionId) => sessions?.find(s => s.id === sessionId)
+);
+
 // Selectors for Process Template
 export const selectCurrentProcessTemplate = (state: DialecticStateValues) => state.currentProcessTemplate;
 export const selectIsLoadingProcessTemplate = (state: DialecticStateValues) => state.isLoadingProcessTemplate;
 export const selectProcessTemplateError = (state: DialecticStateValues) => state.processTemplateError;
+
+// Memoized selector to get a specific stage by its ID from the current process template
+export const selectStageById = createSelector(
+    [selectCurrentProcessTemplate, (_, stageId: string) => stageId],
+    (processTemplate, stageId) => processTemplate?.stages?.find(s => s.id === stageId)
+);
+
+export const selectIsStageReadyForSessionIteration = (
+    state: DialecticStateValues,
+    projectId: string, // This parameter is for ensuring we are looking at the correct project, though currentProjectDetail is already specific
+    sessionId: string,
+    stageSlug: string,
+    iterationNumber: number
+): boolean => {
+    const project = state.currentProjectDetail;
+
+    if (!project || project.id !== projectId || !project.resources || project.resources.length === 0) {
+        return false;
+    }
+
+    for (const resource of project.resources) {
+        if (typeof resource.resource_description === 'string') {
+            try {
+                const description = JSON.parse(resource.resource_description);
+                if (
+                    description.type === 'seed_prompt' &&
+                    description.session_id === sessionId &&
+                    description.stage_slug === stageSlug &&
+                    description.iteration === iterationNumber
+                ) {
+                    return true;
+                }
+            } catch (error) {
+                // Invalid JSON, ignore this resource
+                // console.warn('Failed to parse resource_description:', error, resource.resource_description);
+            }
+        }
+    }
+
+    return false;
+};

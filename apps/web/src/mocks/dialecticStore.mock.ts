@@ -7,12 +7,9 @@ import type {
   DialecticSession,
   DialecticProjectResource,
   DialecticStage,
-  ApiError,
   DialecticDomain,
   DialecticContribution,
   DialecticActions,
-  DomainOverlayDescriptor,
-  DialecticProcessTemplate,
   GenerateContributionsResponse,
   SubmitStageResponsesResponse,
 } from '@paynless/types';
@@ -176,19 +173,29 @@ export const setDialecticStateValues = (newValues: Partial<DialecticStateValues>
   // Directly assign to internalMockDialecticStoreState properties
   // This ensures that the state object identity is maintained if tests hold a reference to it,
   // while still updating its contents.
-  for (const key in newValues) {
-    if (Object.prototype.hasOwnProperty.call(newValues, key)) {
-      (internalMockDialecticStoreState as unknown as Record<string, unknown>)[key] = (newValues as unknown as Record<string, unknown>)[key];
-    }
-  }
+  Object.assign(internalMockDialecticStoreState, newValues);
 };
 
 // Legacy initialize function for tests - now primarily uses setDialecticStateValues
 // This will reset the state and apply partial new state if provided.
-export const initializeMockDialecticState = (initialState?: Partial<DialecticStateValues>) => {
-  internalMockDialecticStoreState = initializeInternalDialecticStoreState(); // Full reset
-  if (initialState) {
-    setDialecticStateValues(initialState);
+export const initializeMockDialecticState = (initialStateUpdates?: Partial<DialecticStateValues>) => {
+  // 1. Get a fresh, complete initial state structure with all vi.fn() mocks reset
+  const freshInitialStateWithMocks = initializeInternalDialecticStoreState();
+
+  // 2. Clear all existing enumerable properties from the current internalMockDialecticStoreState.
+  //    This is important to remove any old data while keeping the object reference.
+  (Object.keys(internalMockDialecticStoreState) as Array<keyof DialecticStore>).forEach(key => {
+    delete internalMockDialecticStoreState[key];
+  });
+
+  // 3. Copy all properties (values and mock functions) from the fresh initial state
+  //    into the existing internalMockDialecticStoreState object.
+  Object.assign(internalMockDialecticStoreState, freshInitialStateWithMocks);
+
+  // 4. Apply any specific updates provided for this particular test initialization
+  if (initialStateUpdates) {
+    // setDialecticStateValues correctly mutates internalMockDialecticStoreState
+    setDialecticStateValues(initialStateUpdates);
   }
 };
 
@@ -208,33 +215,43 @@ export const getDialecticStoreActions = (): DialecticActions => {
 // Keep selectOverlay mock if it's a standalone mock not part of the store state directly
 export const selectOverlay = vi.fn();
 
-// Add missing selectors
-export const selectDomains = (state: DialecticStore): DialecticDomain[] | null => state.domains;
-export const selectCurrentProjectDetail = (state: DialecticStore): DialecticProject | null => state.currentProjectDetail;
-export const selectIsStartingSession = (state: DialecticStore): boolean => state.isStartingSession;
-export const selectStartSessionError = (state: DialecticStore): ApiError | null => state.startSessionError;
-export const selectSelectedDomainOverlayId = (state: DialecticStore): string | null => state.selectedDomainOverlayId;
-export const selectAvailableDomainOverlays = (state: DialecticStore): DomainOverlayDescriptor[] | null => state.availableDomainOverlays;
-export const selectSelectedDomain = (state: DialecticStore): DialecticDomain | null => state.selectedDomain;
-export const selectSelectedStageAssociation = (state: DialecticStore): DialecticStage | null => state.selectedStageAssociation;
-export const selectSelectedModelIds = (state: DialecticStore): string[] => state.selectedModelIds;
-export const selectIsLoadingModelCatalog = (state: DialecticStore): boolean => state.isLoadingModelCatalog;
-export const selectActiveContextSessionId = (state: DialecticStore): string | null => state.activeContextSessionId;
-export const selectActiveContextStage = (state: DialecticStore): DialecticStage | null => state.activeContextStage;
-export const selectIsLoadingProjectDetail = (state: DialecticStore): boolean => state.isLoadingProjectDetail;
-export const selectProjectDetailError = (state: DialecticStore): ApiError | null => state.projectDetailError;
-export const selectCurrentProcessTemplate = (state: DialecticStore): DialecticProcessTemplate | null => state.currentProcessTemplate;
-export const selectIsLoadingProcessTemplate = (state: DialecticStore): boolean => state.isLoadingProcessTemplate;
+// Add the required selector previously missing
+export const selectIsStageReadyForSessionIteration = vi.fn<
+  [DialecticStateValues, string, string, string, number],
+  boolean
+>().mockReturnValue(false); // Default to false, tests can override
 
-export const selectContributionById = (state: DialecticStore, contributionId: string): DialecticContribution | undefined => {
-  const project = state.currentProjectDetail;
-  if (!project || !project.dialectic_sessions) return undefined;
+// Old implementation for reference or potential default mock logic if needed:
+// export const selectIsStageReadyForSessionIteration = (
+//     state: DialecticStateValues,
+//     projectId: string,
+//     sessionId: string,
+//     stageSlug: string,
+//     iterationNumber: number
+// ): boolean => {
+//     const project = state.currentProjectDetail;
 
-  for (const session of project.dialectic_sessions) {
-    const contribution = session.dialectic_contributions?.find(c => c.id === contributionId);
-    if (contribution) {
-      return contribution;
-    }
-  }
-  return undefined;
-};
+//     if (!project || project.id !== projectId || !project.resources || project.resources.length === 0) {
+//         return false;
+//     }
+
+//     for (const resource of project.resources) {
+//         if (resource.resource_description && typeof resource.resource_description === 'string') {
+//             try {
+//                 const description = JSON.parse(resource.resource_description);
+//                 if (
+//                     description.type === 'seed_prompt' &&
+//                     description.session_id === sessionId &&
+//                     description.stage_slug === stageSlug &&
+//                     description.iteration === iterationNumber
+//                 ) {
+//                     return true;
+//                 }
+//             } catch (error) {
+//                 // Invalid JSON, ignore this resource
+//                 // console.warn('Failed to parse resource_description in mock selector:', error, resource.resource_description);
+//             }
+//         }
+//     }
+//     return false;
+// };

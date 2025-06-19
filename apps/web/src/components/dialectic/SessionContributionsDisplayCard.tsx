@@ -1,8 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   useDialecticStore, 
-  selectActiveContextSessionId, 
-  selectActiveContextStage 
+  selectIsStageReadyForSessionIteration
 } from '@paynless/store';
 import { DialecticContribution, ApiError, DialecticSession, DialecticStage } from '@paynless/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,8 +10,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { GeneratedContributionCard } from './GeneratedContributionCard';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { GenerateContributionButton } from './GenerateContributionButton';
-
 interface SessionContributionsDisplayCardProps {
   session: DialecticSession | undefined;
   activeStage: DialecticStage | null;
@@ -25,13 +22,22 @@ interface StageResponse {
 
 export const SessionContributionsDisplayCard: React.FC<SessionContributionsDisplayCardProps> = ({ session, activeStage }) => {
   const project = useDialecticStore(state => state.currentProjectDetail);
-  const sessionIdFromStore = useDialecticStore(selectActiveContextSessionId);
-  const activeStageFromStore = useDialecticStore(selectActiveContextStage);
-
+  
   const submitStageResponses = useDialecticStore(state => state.submitStageResponses);
   const isSubmitting = useDialecticStore(state => state.isSubmittingStageResponses);
-  const submissionError = useDialecticStore(state => state.submitStageResponsesError as ApiError | null);
+  const submissionError: ApiError | null = useDialecticStore(state => state.submitStageResponsesError || null);
   const resetSubmitError = useDialecticStore(state => state.resetSubmitStageResponsesError);
+
+  const isStageReady = useDialecticStore(state =>
+    project && session && activeStage ?
+    selectIsStageReadyForSessionIteration(
+        state,
+        project.id,
+        session.id,
+        activeStage.slug, 
+        session.iteration_count
+    ) : false
+  );
 
   const [stageResponses, setStageResponses] = useState<Record<string, string>>({});
   const [submissionSuccessMessage, setSubmissionSuccessMessage] = useState<string | null>(null);
@@ -129,41 +135,65 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
         projectId: session.project_id,
         stageSlug: activeStage.slug,
       });
-      if ((result as unknown as { success: boolean })?.success || !(result as unknown as { error: ApiError })?.error) {
+      if (result?.data || !result.error) {
         setSubmissionSuccessMessage('Responses submitted successfully. The next stage is being prepared.');
         toast.success("Responses Submitted", { description: "The next stage is being prepared." });
         setStageResponses({});
       } else {
-        const errorPayload = result as unknown as { error: ApiError };
-        if (errorPayload?.error?.message) {
-             toast.error("Submission Failed", { description: errorPayload.error.message });
+        if (result.error?.message) {
+             toast.error("Submission Failed", { description: result.error.message });
         } else {
             toast.error("Submission Failed", { description: "An unexpected error occurred." });
         }
       }
     } catch (e: unknown) {
       console.error("Error submitting stage responses:", e);
-      toast.error("Submission Error", { description: (e as Error).message || "An unexpected client-side error occurred." });
+      let errorMessage = "An unexpected client-side error occurred.";
+      if (
+        typeof e === 'object' &&
+        e !== null &&
+        'message' in e &&
+        typeof e.message === 'string'
+      ) {
+        errorMessage = e.message;
+      } else if (e instanceof Error) {
+        errorMessage = e.message;
+      }
+      toast.error("Submission Error", { description: errorMessage });
     }
   };
 
   const activeStageDisplayName =
     activeStage?.display_name || 'Current Stage';
 
-  const canSubmit = Object.values(stageResponses).some(text => text.trim() !== '') && !isSubmitting;
-
-  if (!session || !activeStage) {
+  if (!project || !session || !activeStage) {
     return (
         <Card className="mt-4">
             <CardHeader><CardTitle>Loading Contributions...</CardTitle></CardHeader>
-            <CardContent><p>Waiting for active session and stage context...</p></CardContent>
+            <CardContent><p>Waiting for project, active session, and stage context...</p></CardContent>
         </Card>
     );
   }
 
-  if (!session) {
-    return <Card className="mt-4"><CardContent><p>Loading session details for contributions...</p></CardContent></Card>;
+  if (!isStageReady) {
+    return (
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle>Contributions for: {activeStageDisplayName}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Alert variant="default">
+            <AlertTitle>Stage Not Ready</AlertTitle>
+            <AlertDescription>
+              Stage not ready. Contributions cannot be generated or displayed until prior stages are complete and the seed prompt for this stage and iteration is available.
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+    );
   }
+
+  const canSubmit = Object.values(stageResponses).some(text => text.trim() !== '') && !isSubmitting;
 
   return (
     <Card className="mt-4">
@@ -175,17 +205,6 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {displayedContributions.length === 0 && (
-          <>
-            <p className="text-muted-foreground italic">No contributions found for this stage yet.</p>
-            <GenerateContributionButton
-              sessionId={session.id}
-              projectId={session.project_id}
-              currentStage={activeStage}
-              currentStageFriendlyName={activeStageDisplayName}
-            />
-          </>
-        )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {displayedContributions.map(contrib => (
             <GeneratedContributionCard

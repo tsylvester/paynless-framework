@@ -1,64 +1,77 @@
-import React, { useEffect } from 'react';
-import { useDialecticStore } from '@paynless/store';
-import type { DialecticSession, ContributionCacheEntry, ApiError, DialecticStage, DialecticContribution } from '@paynless/types';
-import { Button } from '@/components/ui/button';
+import React from 'react';
+import type { DialecticStage } from '@paynless/types';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
-import { Loader2 } from 'lucide-react'; // For spinner
+import { 
+  useDialecticStore, 
+  selectSessionById, 
+  selectActiveContextSessionId, 
+  selectCurrentProjectDetail, 
+  selectIsStageReadyForSessionIteration
+} from '@paynless/store';
+import { useMemo } from 'react';
+import { GenerateContributionButton } from './GenerateContributionButton';
 
 interface StageTabCardProps {
   stage: DialecticStage;
   isActiveStage: boolean;
+  onCardClick: (stage: DialecticStage) => void;
 }
 
 export const StageTabCard: React.FC<StageTabCardProps> = ({ 
   stage, 
   isActiveStage,
+  onCardClick,
 }) => {
-  // Get context from store
-  const projectId = useDialecticStore(state => state.activeContextProjectId);
-  const sessionId = useDialecticStore(state => state.activeContextSessionId);
-  const setActiveDialecticContext = useDialecticStore(state => state.setActiveDialecticContext);
-  const session = useDialecticStore(state => 
-    sessionId ? state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId) : undefined
-  ) as DialecticSession | undefined;
+  // --- Data Fetching from Store ---
+  const store = useDialecticStore(); // Full store state for selectors that need it directly
+  const activeSessionId = useDialecticStore(selectActiveContextSessionId);
+  // Use a stable reference for project if possible, or ensure selectors re-run correctly
+  const project = useDialecticStore(selectCurrentProjectDetail); 
+  const session = useMemo(() => activeSessionId ? selectSessionById(store, activeSessionId) : undefined, [store, activeSessionId]);
+  const initialPromptContentCache = useDialecticStore(state => state.initialPromptContentCache); // Get cache directly from state
 
-  const currentIteration = session?.iteration_count;
+  const isStageReady = useDialecticStore(state => {
+    // Ensure project and session from the state are used for consistency with the selector call
+    const currentProjectFromState = selectCurrentProjectDetail(state);
+    const currentSessionFromState = activeSessionId ? selectSessionById(state, activeSessionId) : undefined;
 
-  // Find the seed prompt resource ID
-  const projectResources = useDialecticStore(state => state.currentProjectDetail?.resources) || [];
-  const seedPromptResource = projectResources.find(r => {
-    if (!r.resource_description) return false;
-    try {
-      const desc = JSON.parse(r.resource_description);
-      return desc.type === 'seed_prompt' &&
-             desc.session_id === sessionId &&
-             desc.stage_slug === stage.slug &&
-             desc.iteration === currentIteration;
-    } catch (e) {
+    if (!currentProjectFromState || !currentSessionFromState) {
       return false;
     }
+    return selectIsStageReadyForSessionIteration(
+      state, 
+      currentProjectFromState.id, 
+      currentSessionFromState.id, 
+      stage.slug, 
+      currentSessionFromState.iteration_count
+    );
   });
-  const seedPromptResourceId = seedPromptResource?.id;
 
-  const seedPromptCacheEntry = useDialecticStore(state => 
-    seedPromptResourceId ? state.initialPromptContentCache?.[seedPromptResourceId] : undefined
-  );
-
-  const fetchSeedPromptContent = useDialecticStore(state => state.fetchInitialPromptContent);
-
-  useEffect(() => {
-    if (seedPromptResourceId && (!seedPromptCacheEntry || (!seedPromptCacheEntry.content && !seedPromptCacheEntry.isLoading && !seedPromptCacheEntry.error))) {
-        fetchSeedPromptContent(seedPromptResourceId);
+  let isSeedPromptLoading = false;
+  if (project && session && project.resources && isStageReady) {
+    const targetResource = project.resources.find(resource => {
+      if (typeof resource.resource_description === 'string') {
+        try {
+          const desc = JSON.parse(resource.resource_description) as { type: string; session_id: string; stage_slug: string; iteration: number };
+          return (
+            desc.type === 'seed_prompt' &&
+            desc.session_id === session.id &&
+            desc.stage_slug === stage.slug &&
+            desc.iteration === session.iteration_count
+          );
+        } catch (e) {
+          return false;
+        }
+      }
+      return false;
+    });
+    if (targetResource && initialPromptContentCache && initialPromptContentCache[targetResource.id]) {
+      isSeedPromptLoading = initialPromptContentCache[targetResource.id].isLoading;
     }
-  }, [seedPromptResourceId, seedPromptCacheEntry, fetchSeedPromptContent]);
+  }
 
-  const generateContributions = useDialecticStore(state => state.generateContributions);
-  const isGenerating = useDialecticStore(state => state.isGeneratingContributions);
-  const generateError = useDialecticStore(state => state.generateContributionsError) as ApiError | null;
-
-  if (!session || !projectId || !currentIteration) {
+  if (!project || !session) { // Ensure project is also checked here
     return (
       <Card className={cn("w-48 min-h-[120px] flex flex-col justify-center items-center opacity-50 cursor-not-allowed", isActiveStage ? "border-2 border-primary" : "border")}>
         <CardHeader className="pb-2 pt-3 px-3">
@@ -71,29 +84,21 @@ export const StageTabCard: React.FC<StageTabCardProps> = ({
     );
   }
 
-  const seedPromptExists = !!(seedPromptCacheEntry?.content && !seedPromptCacheEntry.isLoading && !seedPromptCacheEntry.error);
-  const seedPromptLoading = seedPromptCacheEntry?.isLoading;
-
-  const contributionsForStageExist = session.dialectic_contributions?.some((c: DialecticContribution) => c.stage.id === stage.id);
-  
-  const showGenerateButton = isActiveStage;
-  const generateButtonDisabled = isGenerating || !seedPromptExists || seedPromptLoading;
-
-  const handleGenerateClick = (e: React.MouseEvent) => {
-    e.stopPropagation(); 
-    if (!generateButtonDisabled && projectId && sessionId && currentIteration) {
-      generateContributions({
-        sessionId: sessionId,
-        projectId: projectId,
-        stageSlug: stage.slug,
-        iterationNumber: currentIteration,
-      });
-    }
-  };
+  const contributionsForStageExist = session.dialectic_contributions?.some(c => c.stage.id === stage.id);
 
   const handleCardClick = () => {
-    setActiveDialecticContext({ projectId, sessionId, stage: stage });
+    onCardClick(stage);
   };
+
+  // Logic from plan 2.B.2.2 - updated
+  const finalButtonDisabled = !isActiveStage || (isActiveStage && (!isStageReady || isSeedPromptLoading));
+  let textForButtonPropValue: string;
+
+  if (isActiveStage && !isStageReady) {
+    textForButtonPropValue = "Stage Not Ready";
+  } else {
+    textForButtonPropValue = stage.display_name; // GenerateContributionButton will prepend Generate/Regenerate
+  }
 
   return (
     <Card 
@@ -112,37 +117,24 @@ export const StageTabCard: React.FC<StageTabCardProps> = ({
         <CardTitle className="text-base text-center">{stage.display_name}</CardTitle>
       </CardHeader>
       <CardContent className="flex-grow flex flex-col justify-center items-center text-center px-2 pb-2">
+        {stage.description && (
+          <p className="text-xs text-muted-foreground">{stage.description}</p>
+        )}
         {contributionsForStageExist && (
           <p className="text-xs text-green-600">Completed</p>
         )}
-        {isActiveStage && seedPromptCacheEntry?.error && (
-             <Alert variant="destructive" className="text-xs p-2 mb-1">
-                <AlertTitle className="text-xs">Prompt Load Error</AlertTitle>
-                <AlertDescription>{seedPromptCacheEntry.error}</AlertDescription>
-            </Alert>
-        )}
-         {isActiveStage && seedPromptLoading && (
-            <p className="text-xs text-muted-foreground">Loading seed prompt...</p>
-        )}
       </CardContent>
-      {showGenerateButton && (
-        <CardFooter className="p-2 border-t">
-          <Button 
-            size="sm" 
-            className="w-full text-xs" 
-            onClick={handleGenerateClick} 
-            disabled={generateButtonDisabled}
-          >
-            {isGenerating && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
-            {isGenerating ? 'Generating...' : contributionsForStageExist ? `Regenerate ${stage.display_name}`: `Generate ${stage.display_name}`}
-          </Button>
+      {isActiveStage && (
+        <CardFooter className="p-2 border-t flex-shrink-0">
+          <GenerateContributionButton 
+            currentStageFriendlyName={textForButtonPropValue}
+            currentStage={stage}
+            sessionId={session.id}
+            projectId={project.id} // project is guaranteed non-null here by the check above
+            disabled={finalButtonDisabled}
+            className="w-full"
+          />
         </CardFooter>
-      )}
-      {isActiveStage && generateError && (
-        <Alert variant="destructive" className="text-xs m-2 p-2">
-            <AlertTitle className="text-xs mb-0.5">Generation Error</AlertTitle>
-            <AlertDescription>{generateError.message || 'An unknown error occurred.'}</AlertDescription>
-        </Alert>
       )}
     </Card>
   );

@@ -44,10 +44,10 @@ export async function getContributionContentSignedUrlHandler(
     const { data: contributionData, error: contributionError } = await dbClient
       .from('dialectic_contributions')
       .select(`
-        content_storage_bucket,
-        content_storage_path,
-        content_mime_type,
-        content_size_bytes,
+        storage_bucket,
+        storage_path,
+        mime_type,
+        size_bytes,
         dialectic_sessions (
           project_id,
           dialectic_projects ( user_id )
@@ -77,7 +77,7 @@ export async function getContributionContentSignedUrlHandler(
       return { error: { message: "User not authorized to access this contribution.", code: "AUTH_FORBIDDEN", status: 403 } };
     }
   
-    if (!typedContributionData.content_storage_bucket || !typedContributionData.content_storage_path) {
+    if (!typedContributionData.storage_bucket || !typedContributionData.storage_path) {
       // logger.error("Contribution is missing storage bucket or path information", { contributionId }); // Replaced
       logger.error("Contribution is missing storage bucket or path information", { contributionId });
       return { error: { message: "Contribution is missing storage information.", code: "INTERNAL_ERROR", status: 500 } };
@@ -85,14 +85,14 @@ export async function getContributionContentSignedUrlHandler(
   
     // const { signedUrl, error: signedUrlError } = await createSignedUrlForPath( // Replaced
     //   dbClient,
-    //   typedContributionData.content_storage_bucket,
-    //   typedContributionData.content_storage_path,
+    //   typedContributionData.storage_bucket,
+    //   typedContributionData.storage_path,
     //   60 * 5 // 5 minutes expiry
     // );
     const { signedUrl, error: signedUrlError } = await createSignedUrl(
       dbClient, 
-      typedContributionData.content_storage_bucket,
-      typedContributionData.content_storage_path,
+      typedContributionData.storage_bucket,
+      typedContributionData.storage_path,
       60 * 5 // 5 minutes expiry
     );
   
@@ -113,8 +113,8 @@ export async function getContributionContentSignedUrlHandler(
     return {
       data: {
         signedUrl: signedUrl,
-        mimeType: typedContributionData.content_mime_type || 'application/octet-stream',
-        sizeBytes: typedContributionData.content_size_bytes
+        mimeType: typedContributionData.mime_type || 'application/octet-stream',
+        sizeBytes: typedContributionData.size_bytes
       }
     };
   }
