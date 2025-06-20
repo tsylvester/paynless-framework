@@ -86,7 +86,7 @@ Deno.test('submitStageResponses', async (t) => {
     // 2.1.2 Act
     const { status, error, data } = await submitStageResponses(
       mockPayload,
-      mockSupabase.client,
+      mockSupabase.client as any,
       null, // No user
       { logger, downloadFromStorage: spy((_client, _bucket, _path) => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() },
     );
@@ -121,7 +121,7 @@ Deno.test('submitStageResponses', async (t) => {
       }
     });
 
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
     
     assertEquals(status, 403);
     assertExists(error);

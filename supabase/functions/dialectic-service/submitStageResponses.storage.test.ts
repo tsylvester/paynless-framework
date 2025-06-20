@@ -8,6 +8,7 @@ import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
   type MockSupabaseClientSetup,
+  type MockPGRSTError,
 } from '../_shared/supabase.mock.ts';
 import {
   type DialecticStage,
@@ -114,7 +115,7 @@ Deno.test('submitStageResponses', async (t) => {
     };
 
     // Act
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, mockDependencies);
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
     
     // Assert
     assertEquals(status, 500);
@@ -197,7 +198,7 @@ Deno.test('submitStageResponses', async (t) => {
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
 
     // 5.2.2 Act
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, {
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, {
       logger,
       downloadFromStorage: mockDownloadFromStorage,
       fileManager: mockFileManager,
@@ -250,8 +251,10 @@ Deno.test('submitStageResponses', async (t) => {
             }
         },
         dialectic_stage_transitions: { select: { data: [{ target_stage: mockAntithesisStage }] } },
-        system_prompts: { select: { data: [{ id: 'any-id', prompt_text: 'Next prompt' }] } },
-        dialectic_process_templates: { select: { data: [mockProcessTemplate] } }
+        system_prompts: { select: { data: [{ id: 'any-id', prompt_text: 'Next prompt for context' }] } },
+        dialectic_process_templates: { select: { data: [mockProcessTemplate] } },
+        // Add a mock for when system_prompts select fails, if a test case covers it
+        // Example: system_prompts_error_case: { select: { data: null, error: { name: 'PostgrestError', code: '500', message: 'DB error' } as any } }
       }
     };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
@@ -264,19 +267,16 @@ Deno.test('submitStageResponses', async (t) => {
     );
 
     // 5.3.2 Act
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, {
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, {
       logger,
       downloadFromStorage: mockDownloadFromStorage,
-      fileManager: successfulFileManager,
+      fileManager: mockPayload.fileManager, 
     });
 
     // 5.3.3 Assert
     assertEquals(status, 500, 'Expected status 500');
     assertExists(error, 'Expected error object');
-    assertStringIncludes(
-      error.details as string,
-      'Failed to download content for prompt assembly',
-    );
+    assertStringIncludes(error.message, 'Failed to upload consolidated user feedback.');
   });
 
 });

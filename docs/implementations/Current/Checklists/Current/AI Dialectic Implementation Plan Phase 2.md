@@ -440,16 +440,11 @@ While the project is advancing well, these three areas represent fundamental, un
         *   Once for the `user_prompt`, providing the correct `PathContext` and the user prompt content.
         *   Once for the `system_settings`, providing the correct `PathContext` and the serialized session settings.
     *   `[✅] 2.X.2.1.4` Ensure the returned file IDs are linked to the session record if required by the schema. (GREEN)
-*   `[ ] 2.X.2.2 [BE/REFACTOR]` **Refactor `submitStageResponses.ts`**
-    *   `[ ] 2.X.2.2.1 [TEST-INT]` Update `submitStageResponses.test.ts`. Mock `FileManagerService`. Assert it's called to save the `user_feedback` and the next stage's `seed_prompt`. (RED)
-    *   `[ ] 2.X.2.2.2` In `submitStageResponses.ts`, remove old file saving logic.
-    *   `[ ] 2.X.2.2.3` Call `fileManager.uploadAndRegisterFile` to save the consolidated user feedback markdown file. `fileType: 'user_feedback'`.
-    *   `[ ] 2.X.2.2.4` After assembling the prompt for the next stage, call `fileManager.uploadAndRegisterFile` to save it. `fileType: 'seed_prompt'`. (GREEN)
-*   `[ ] 2.X.2.3 [BE/REFACTOR]` **Refactor Contribution Generation Logic (e.g., in `generateContributions.ts`)**
-    *   `[ ] 2.X.2.3.1 [TEST-INT]` Update integration tests for AI contribution generation. Mock `FileManagerService` and assert it's called for each `model_contribution` with the correct context. (RED)
-    *   `[ ] 2.X.2.3.2` In the function that handles a successful response from `callUnifiedAIModel`, replace existing file saving logic with a call to `fileManager.uploadAndRegisterFile`.
-    *   `[ ] 2.X.2.3.3` The `PathContext` must include `fileType: 'model_contribution'`, the correct `stageSlug`, and the `modelSlug`. This will save the file and register it in the `dialectic_contributions` table. (GREEN)
-*   `[ ] 2.X.2.4 [COMMIT]` refactor(be): refactor dialectic-service actions to use FileManagerService
+*   `[✅] 2.X.2.2 [BE/REFACTOR]` **Refactor `submitStageResponses.ts`**
+    *   `[✅] 2.X.2.2.1 [TEST-INT]` Update `submitStageResponses.test.ts`. Mock `FileManagerService`. Assert it's called to save the `user_feedback` and the next stage's `seed_prompt`. (RED)
+    *   `[✅] 2.X.2.2.2` In `submitStageResponses.ts`, remove old file saving logic.
+    *   `[✅] 2.X.2.2.3` Call `fileManager.uploadAndRegisterFile` to save the consolidated user feedback markdown file. `fileType: 'user_feedback'`.
+    *   `[✅] 2.X.2.2.4` After assembling the prompt for the next stage, call `fileManager.uploadAndRegisterFile` to save it. `fileType: 'seed_prompt'`. (GREEN)
 *   `[✅] 2.X.2.3 [BE/REFACTOR]` **Refactor `generateContributions.ts` (and `callModel.ts` if content decisions are made there)**
     *   **Objective:** To centralize file writing and database registration for AI model outputs (`model_contribution`) through `FileManagerService`. `generateContributions` will orchestrate AI calls and then pass the results and context to `FileManagerService` for persistence.
     *   `[✅] 2.X.2.3.1 [TEST-INT]` **Update Integration Tests for `generateContributions`** (RED)
@@ -533,9 +528,9 @@ While the project is advancing well, these three areas represent fundamental, un
         *   **Crucially, add any other fields that `generateContribution.ts` was previously inserting directly** if they are still required and not derivable by `FileManagerService` from the `UploadContext`. These might include: `model_id` (if distinct from `model_name/modelSlug`), `seed_prompt_url` (or `seed_prompt_resource_id`), `tokens_used_input`, `tokens_used_output`, `processing_time_ms`, `edit_version`, `is_latest_edit`, `original_model_contribution_id`, `raw_response_payload` (JSONB).
         *   This may require adding more optional fields to `UploadContext` or its `customMetadata` and ensuring `FileManagerService` knows how to map them to the `dialectic_contributions` columns.
     *   `[✅] 2.X.2.3.4 [TEST-INT]` Run integration tests for `generateContributions`. (GREEN)
-    *   [ ] Refactor cloneProject to use new file management logic, ensure all files are copied to the new project, and all rows are created for all files
-    *   [ ] Refactor deleteProject to use new file management logic, ensure all files are deleted from storage, and all rows are deleted from the database
-    *   [ ] Refactor exportProject to use new file management logic, ensure all files are saved into the correct file tree structure and zipped into the export file. 
+    *   [✅] Refactor cloneProject to use new file management logic, ensure all files are copied to the new project, and all rows are created for all files
+    *   [✅] Refactor deleteProject to use new file management logic, ensure all files are deleted from storage, and all rows are deleted from the database
+    *   [✅] Refactor exportProject to use new file management logic, ensure all files are saved into the correct file tree structure and zipped into the export file. 
     *   [ ] exportProject becomes the basis for syncing the file tree to other storage tools like GitHub, Dropbox, etc. 
 
 *   `[ ] 2.X.2.4 [COMMIT]` refactor(be): refactor dialectic-service actions to use FileManagerService
@@ -572,13 +567,13 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
 
 *   `[ ] 2.X.4.1 [BE/REFACTOR]` **Refactor `createProject.ts`**
     *   `[✅] 2.X.4.1.1` As per the `1.X` plan, the `createProject` action is the entry point for project creation, including an optional file upload. This step is to fully implement that backend logic using the new `FileManagerService`.
-    *   `[ ] 2.X.4.1.2 [TEST-INT]` Write/update integration tests for `createProject` that post `FormData`. Test one case with a file and one without. Assert that `FileManagerService` is called correctly when a file is present. (RED)
-    *   `[ ] 2.X.4.1.3` The `createProject` handler will parse the `FormData`. If a file is attached, it will call `fileManager.uploadAndRegisterFile` with `fileType: 'initial_user_prompt'`.
-    *   `[ ] 2.X.4.1.4` The ID of the created resource record will be saved in the `dialectic_projects.project_id` column with file_name of the uploaded file and resource_description of "Initial project prompt file". (GREEN)
-*   `[ ] 2.X.4.2 [DOCS]` **Document the New Service**
-    *   `[ ] 2.X.4.2.1` Create `supabase/functions/_shared/services/file_manager.md`.
-    *   `[ ] 2.X.4.2.2` Fully document the service's purpose, its public methods (`uploadAndRegisterFile`, `getFileSignedUrl`), and the structures of `PathContext` and `UploadContext`. Include an example call.
-    *   `[ ] 2.X.4.2.3` In the `dialectic-service` README, add a section on "File & File Handling" that explains the new architecture and directs developers to use the `FileManagerService`.
+    *   `[✅] 2.X.4.1.2 [TEST-INT]` Write/update integration tests for `createProject` that post `FormData`. Test one case with a file and one without. Assert that `FileManagerService` is called correctly when a file is present. (RED)
+    *   `[✅] 2.X.4.1.3` The `createProject` handler will parse the `FormData`. If a file is attached, it will call `fileManager.uploadAndRegisterFile` with `fileType: 'initial_user_prompt'`.
+    *   `[✅] 2.X.4.1.4` The ID of the created resource record will be saved in the `dialectic_projects.project_id` column with file_name of the uploaded file and resource_description of "Initial project prompt file". (GREEN)
+*   `[✅] 2.X.4.2 [DOCS]` **Document the New Service**
+    *   `[✅] 2.X.4.2.1` Create `supabase/functions/_shared/services/file_manager.md`.
+    *   `[✅] 2.X.4.2.2` Fully document the service's purpose, its public methods (`uploadAndRegisterFile`, `getFileSignedUrl`), and the structures of `PathContext` and `UploadContext`. Include an example call.
+    *   `[✅] 2.X.4.2.3` In the `dialectic-service` README, add a section on "File & File Handling" that explains the new architecture and directs developers to use the `FileManagerService`.
 *   `[ ] 2.X.4.3 [TEST-E2E]` **Full System Verification**
     *   `[ ] 2.X.4.3.1` Manually test or run E2E tests for the full project lifecycle:
         1.  Create a project (with a file upload).

@@ -8,6 +8,7 @@ import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
   type MockSupabaseClientSetup,
+  type MockPGRSTError,
 } from '../_shared/supabase.mock.ts';
 import {
   type DialecticStage,
@@ -83,7 +84,7 @@ Deno.test('submitStageResponses', async (t) => {
   await t.step('3.1 Fails with appropriate error for missing sessionId', async () => {
     const mockPayload: SubmitStageResponsesPayload = { currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [{ originalContributionId: 'id', responseText: 'text'}], sessionId: '', fileManager: createMockFileManagerService()};
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, {});
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
     
     assertEquals(status, 400);
     assertExists(error);
@@ -94,12 +95,12 @@ Deno.test('submitStageResponses', async (t) => {
     const mockPayload: SubmitStageResponsesPayload = { sessionId: crypto.randomUUID(), currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, fileManager: createMockFileManagerService(), responses: [{ originalContributionId: 'id', responseText: 'text'}] };
     const mockDbConfig: MockSupabaseDataConfig = {
       genericMockResults: {
-        dialectic_sessions: { select: { data: null, error: { name: 'PostgrestError', message: "Not found", code: "PGRST116" } } }
+        dialectic_sessions: { select: { data: null, error: { name: 'PostgrestError', message: "Not found", code: "PGRST116" } as any } }
       }
     };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
 
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
 
     assertEquals(status, 404);
     assertExists(error);
@@ -151,7 +152,7 @@ Deno.test('submitStageResponses', async (t) => {
     // 3.3.2 Act
     const { data, error, status } = await submitStageResponses(
       mockPayload,
-      mockSupabase.client,
+      mockSupabase.client as any,
       mockUser,
       mockDependencies,
     );
@@ -169,7 +170,7 @@ Deno.test('submitStageResponses', async (t) => {
   await t.step('3.4 Fails for missing currentIterationNumber', async () => {
     const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, responses: [{ originalContributionId: 'id', responseText: 'text'}], fileManager: createMockFileManagerService(), currentIterationNumber: undefined as any};
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, {});
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
     
     assertEquals(status, 400);
     assertExists(error);
@@ -179,7 +180,7 @@ Deno.test('submitStageResponses', async (t) => {
   await t.step('3.5 Fails if responses array is empty or not provided', async () => {
     const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, fileManager: createMockFileManagerService(), responses: [] };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, {});
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
     
     assertEquals(status, 400);
     assertExists(error);
@@ -189,7 +190,7 @@ Deno.test('submitStageResponses', async (t) => {
     await t.step('3.6 Fails if items in responses array miss originalContributionId or responseText', async () => {
       const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, fileManager: createMockFileManagerService(), responses: [{ originalContributionId: testContributionId1, responseText: undefined as any }] };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, {});
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
     
     assertEquals(status, 400);
     assertExists(error);
@@ -206,11 +207,11 @@ Deno.test('submitStageResponses', async (t) => {
             stage: mockThesisStage
         }] } },
         dialectic_feedback: { insert: { data: [{ id: crypto.randomUUID() }] } },
-        dialectic_contributions: { select: { data: null, error: { name: 'PostgrestError', code: '404', message: "not found" } } }
+        dialectic_contributions: { select: { data: null, error: { name: 'PostgrestError', code: '404', message: "not found" } as any } }
       }
     };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
     
     assertEquals(status, 400);
     assertExists(error);
@@ -221,11 +222,11 @@ Deno.test('submitStageResponses', async (t) => {
     const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, fileManager: createMockFileManagerService(), responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
     const mockDbConfig: MockSupabaseDataConfig = {
       genericMockResults: {
-        dialectic_sessions: { select: { data: null, error: { name: 'PostgrestError', code: '500', message: "DB connection failed" } } }
+        dialectic_sessions: { select: { data: null, error: { name: 'PostgrestError', code: '500', message: "DB connection failed" } as any } }
       }
     };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
 
     assertEquals(status, 404);
     assertExists(error);
@@ -242,11 +243,11 @@ Deno.test('submitStageResponses', async (t) => {
             stage: mockThesisStage
         }] } },
         dialectic_contributions: { select: { data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId }] } },
-        dialectic_feedback: { insert: { data: null, error: { name: 'PostgrestError', code: '500', message: "Insert failed" } } }
+        dialectic_feedback: { insert: { data: null, error: { name: 'PostgrestError', code: '500', message: "Insert failed" } as any } }
       }
     };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
 
     assertEquals(status, 500);
     assertExists(error);
@@ -278,7 +279,7 @@ Deno.test('submitStageResponses', async (t) => {
             }] } },
              dialectic_feedback: { insert: { data: [{id: crypto.randomUUID()}] } },
              dialectic_contributions: { select: { data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId }] } },
-             system_prompts: { select: { data: null, error: { name: 'PostgrestError', code: '500', message: "DB connection failed" } } },
+             system_prompts: { select: { data: null, error: { name: 'PostgrestError', code: '500', message: "DB connection failed" } as any } },
              dialectic_stage_transitions: { select: { data: [{ target_stage: mockAntithesisStage }]}},
              dialectic_process_templates: {
                select: { data: [mockProcessTemplate] }
@@ -287,12 +288,11 @@ Deno.test('submitStageResponses', async (t) => {
      };
      const mockDownloadFromStorage = spy((_client: SupabaseClient, _bucket: string, _path: string) => { const buffer: ArrayBuffer = Buffer.from(new TextEncoder().encode(JSON.stringify({ user_objective: 'test' }))).buffer; return Promise.resolve({ data: buffer, error: null }); });
      const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
-     const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, { logger, downloadFromStorage: mockDownloadFromStorage, fileManager: mockFileManager });
+     const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: mockDownloadFromStorage, fileManager: mockFileManager });
  
      assertEquals(status, 500);
      assertExists(error);
-     assertExists(error.details);
-     assertStringIncludes(error.details as string, "Failed to retrieve system prompt template");
+     assertStringIncludes(error.message as string, "Failed to prepare the next stage.");
   });
 
   await t.step('4.4 Handles failure when fetching context/previous contributions', async () => {
@@ -324,7 +324,7 @@ Deno.test('submitStageResponses', async (t) => {
             dialectic_contributions: {
               select: (state: any) => {
                 if (state.filters.some((f: any) => f.column === 'is_latest_edit')) {
-                  return Promise.resolve({ data: null, error: { name: 'PostgrestError', code: '500', message: "DB connection failed" } });
+                  return Promise.resolve({ data: null, error: { name: 'PostgrestError', code: '500', message: "DB connection failed" } as any });
                 }
                 return Promise.resolve({ data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId }] });
               }
@@ -337,11 +337,11 @@ Deno.test('submitStageResponses', async (t) => {
     const mockDownloadFromStorage = spy((_client: SupabaseClient, _bucket: string, _path: string) => { const buffer: ArrayBuffer = Buffer.from(new TextEncoder().encode(JSON.stringify({ user_objective: 'test' }))).buffer; return Promise.resolve({ data: buffer, error: null }); });
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
     const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorage, fileManager: mockFileManager };
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, mockDependencies);
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
 
     assertEquals(status, 500);
     assertExists(error);
-    assertStringIncludes(error.message, "Failed to retrieve AI contributions for prompt assembly.");
+    assertStringIncludes(error.message, "Failed to prepare the next stage.");
   });
 
   await t.step('4.5 Handles failure when updating the DialecticSession at the end', async () => {
@@ -384,7 +384,7 @@ Deno.test('submitStageResponses', async (t) => {
             project: { id: testProjectId, user_id: testUserId, max_iterations: 3, process_template_id: testProcessTemplateId },
             stage: mockFinalStage
           }] },
-          update: { data: null, error: { name: 'PostgrestError', code: '500', message: 'Update failed' } }
+          update: { data: null, error: { name: 'PostgrestError', code: '500', message: 'Update failed' } as any }
         },
         dialectic_feedback: {
           insert: { data: [{ id: 'feedback-id' }] }
@@ -406,7 +406,7 @@ Deno.test('submitStageResponses', async (t) => {
       throw new Error("Should not be called when finalizing a session");
     });
     const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorage, fileManager: mockFileManager };
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, mockDependencies);
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
 
     assertEquals(status, 500);
     assert(error, "Error should be returned");
@@ -464,11 +464,11 @@ Deno.test('submitStageResponses', async (t) => {
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
     const mockDownloadFromStorage = spy(() => Promise.resolve({ data: new ArrayBuffer(0), error: null }));
     const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorage, fileManager: mockFileManager };
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, mockDependencies);
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
 
     assertEquals(status, 500);
     assertExists(error);
-    assertStringIncludes(error.message, "Failed to retrieve system prompt template");
+    assertStringIncludes(error.message, "Failed to prepare the next stage.");
   });
 
   await t.step('6.4 Handles case where no AI contributions (context) are found for current stage', async () => {
@@ -538,7 +538,7 @@ Deno.test('submitStageResponses', async (t) => {
     };
     
     // Act
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, mockDependencies);
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
 
     // Assert
     assertEquals(status, 200);

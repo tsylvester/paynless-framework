@@ -18,11 +18,30 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
     const mockProjectId = "project-happy-path-id";
     const mockPayload: DeleteProjectPayload = { projectId: mockProjectId };
 
-    const mockResources = [
-        { storage_bucket: 'dialectic-contributions', storage_path: `projects/${mockProjectId}/file1.md` },
-        { storage_bucket: 'dialectic-contributions', storage_path: `projects/${mockProjectId}/folder1/file2.txt` },
+    const mockProjectResources = [
+        { storage_bucket: 'dialectic-contributions', storage_path: `projects/${mockProjectId}/project_file1.md` },
     ];
-    const filesToRemove = mockResources.map(r => r.storage_path);
+    const mockSessionId = "session-happy-path-id";
+    const mockContributions = [
+        {
+            storage_bucket: 'dialectic-contributions',
+            storage_path: `projects/${mockProjectId}/sessions/${mockSessionId}/contrib1.md`,
+            raw_response_storage_path: `projects/${mockProjectId}/sessions/${mockSessionId}/contrib1_raw.json`,
+        },
+        {
+            storage_bucket: 'dialectic-contributions',
+            storage_path: `projects/${mockProjectId}/sessions/${mockSessionId}/contrib2.md`,
+            raw_response_storage_path: null, // Test case with no raw response path
+        },
+    ];
+
+    const filesToRemove = [
+        ...mockProjectResources.map(r => r.storage_path),
+        ...mockContributions.flatMap(c => [
+            c.storage_path,
+            c.raw_response_storage_path,
+        ].filter(Boolean) as string[]),
+    ];
 
     // 1. Mock the DB calls
     const mockProjectsSelect = spy(async (state: any) => {
@@ -34,7 +53,21 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
     
     const mockResourcesSelect = spy(async (state: any) => {
         if (state.filters.some((f: any) => f.column === 'project_id' && f.value === mockProjectId)) {
-            return { data: mockResources, error: null, count: mockResources.length, status: 200, statusText: "OK" };
+            return { data: mockProjectResources, error: null, count: mockProjectResources.length, status: 200, statusText: "OK" };
+        }
+        return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+    });
+
+    const mockSessionsSelect = spy(async (state: any) => {
+        if (state.filters.some((f: any) => f.column === 'project_id' && f.value === mockProjectId)) {
+            return { data: [{ id: mockSessionId }], error: null, count: 1, status: 200, statusText: "OK" };
+        }
+        return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+    });
+
+    const mockContributionsSelect = spy(async (state: any) => {
+        if (state.filters.some((f: any) => f.column === 'session_id' && f.value.includes(mockSessionId))) {
+            return { data: mockContributions, error: null, count: mockContributions.length, status: 200, statusText: "OK" };
         }
         return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
     });
@@ -51,14 +84,19 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
         genericMockResults: {
             dialectic_projects: { select: mockProjectsSelect, delete: mockProjectsDelete },
             dialectic_project_resources: { select: mockResourcesSelect },
+            dialectic_sessions: { select: mockSessionsSelect },
+            dialectic_contributions: { select: mockContributionsSelect },
         },
         storageMock: {
             removeResult: async (bucketId, paths) => {
                 // Basic check to see if the paths to remove match what's expected
-                if (bucketId === 'dialectic-contributions' && paths.every(p => filesToRemove.includes(p))) {
+                // Sort both arrays for consistent comparison
+                const sortedPaths = [...paths].sort();
+                const sortedFilesToRemove = [...filesToRemove].sort();
+                if (bucketId === 'dialectic-contributions' && JSON.stringify(sortedPaths) === JSON.stringify(sortedFilesToRemove)) {
                     return { data: [{ bucket: bucketId, name: 'mocked-removal' }], error: null };
                 }
-                return { data: null, error: new Error("Mocked removal failed: paths did not match.") };
+                return { data: null, error: new Error(`Mocked removal failed: paths did not match. Expected ${JSON.stringify(sortedFilesToRemove)}, got ${JSON.stringify(sortedPaths)}`) };
             },
         }
     };
@@ -79,18 +117,20 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
     // Assert DB calls
     assertEquals(mockProjectsSelect.calls.length, 1, "Project select should be called once for ownership check");
     assertEquals(mockResourcesSelect.calls.length, 1, "Resources select should be called once");
+    assertEquals(mockSessionsSelect.calls.length, 1, "Sessions select should be called once");
+    assertEquals(mockContributionsSelect.calls.length, 1, "Contributions select should be called once");
     assertEquals(mockProjectsDelete.calls.length, 1, "Project delete should be called once");
 
     // Assert Storage calls
     assertExists(removeSpy, "The remove spy for the storage bucket should exist.");
-    // It will be called for each resource
-    assertEquals(removeSpy.calls.length, mockResources.length, "Storage remove should be called for each resource");
+    // It will be called once per bucket
+    assertEquals(removeSpy.calls.length, 1, "Storage remove should be called once per bucket");
     
-    // Check that each call to remove was for one of the expected files
-    const removedPaths = removeSpy.calls.map(call => call.args[0][0]); // Get the path from each call
+    // Check that the call to remove was for all the expected files
+    const removedPathsInCall = removeSpy.calls[0].args[0].sort(); // Get the paths from the call and sort
     assertEquals(
-        JSON.stringify(removedPaths.sort()),
-        JSON.stringify(filesToRemove.sort()),
+        JSON.stringify(removedPathsInCall),
+        JSON.stringify(filesToRemove.sort()), // Sort expected paths for comparison
         "Storage remove was not called with the correct file paths"
     );
 

@@ -1,5 +1,5 @@
 import { assertEquals, assertExists, assert, assertStringIncludes } from "https://deno.land/std@0.218.2/testing/asserts.ts";
-import { spy } from "https://deno.land/std@0.218.2/testing/mock.ts";
+import { spy, type Spy } from "https://deno.land/std@0.218.2/testing/mock.ts";
 import { User, type SupabaseClient } from 'npm:@supabase/supabase-js@^2';
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts';
 
@@ -201,7 +201,7 @@ Deno.test('submitStageResponses', async (t) => {
     };
 
     // 1.1.2 Act: Call the function
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, mockDependencies);
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
 
     // 1.1.3 Assert: Verify outcomes
     assertEquals(status, 200, "Expected status 200");
@@ -332,7 +332,7 @@ Deno.test('submitStageResponses', async (t) => {
       fileManager: mockFileManager,
     };
 
-    const { data, status, error } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, mockDependencies);
+    const { data, status, error } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
 
     assertEquals(error, undefined);
     assertEquals(status, 200);
@@ -413,7 +413,7 @@ Deno.test('submitStageResponses', async (t) => {
       throw new Error("Should not be called when finalizing a session");
     });
     const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorage, fileManager: mockFileManager };
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client, mockUser, mockDependencies);
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
 
     assertEquals(status, 200);
     assertEquals(error, undefined);
@@ -421,6 +421,49 @@ Deno.test('submitStageResponses', async (t) => {
     assertEquals(data.updatedSession?.status, 'iteration_complete_pending_review');
     assertEquals(mockDownloadFromStorage.calls.length, 0, "No seed prompt should be generated");
     assert(data.nextStageSeedPromptPath === null || data.nextStageSeedPromptPath === undefined, "Next stage seed path should be null");
+  });
+
+  await t.step('1.2 Handles session completion (no next stage) successfully', async () => {
+    // ... (arrange as needed, similar to database.test.ts for completion path) ...
+    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockParalysisStage.slug, currentIterationNumber: 1, fileManager: createMockFileManagerService(), responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
+    const mockFileManager = createMockFileManagerService();
+    mockFileManager.uploadAndRegisterFile = spy(async (context: UploadContext): Promise<FileManagerResponse> => {
+      if (context.pathContext.fileType === 'user_feedback') return { record: { storage_path: 'path/to/feedback.md' } as any, error: null };
+      return { record: { storage_path: 'path/to/other.md' } as any, error: null };
+    });
+
+    const mockDbConfig: MockSupabaseDataConfig = {
+      genericMockResults: {
+        dialectic_sessions: {
+          select: { data: [{ 
+            id: testSessionId, 
+            project: { id: testProjectId, user_id: testUserId, process_template_id: testProcessTemplateId },
+            stage: mockParalysisStage, // Current stage is Paralysis
+            iteration_count: 1,
+          }] },
+          update: { data: [{ id: testSessionId, status: 'completed', current_stage_id: null, completed_at: new Date().toISOString() }] } // Mock successful update to 'completed'
+        },
+        dialectic_contributions: { select: { data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId, iteration_number: 1, stage: 'paralysis', is_latest_edit: true, storage_path: 'path/to/paralysis_A.md', storage_bucket: 'content' }] } },
+        dialectic_feedback: { insert: { data: [{ id: crypto.randomUUID(), feedback_value_text: 'text', session_id: testSessionId, user_id: testUserId, contribution_id: testContributionId1, feedback_type: 'text_response', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }] } },
+        dialectic_stage_transitions: { select: { data: null, error: null } }, // No transition from Paralysis
+        dialectic_process_templates: { select: { data: [mockProcessTemplate] } },
+        dialectic_stages: { select: { data: [mockParalysisStage] } }
+      },
+      storageMock: {
+        downloadResult: (bucket, path) => {
+            if (path === 'path/to/paralysis_A.md') return Promise.resolve({ data: new TextEncoder().encode('Paralysis content by ModelA').buffer as unknown as Blob, error: null });
+            return Promise.resolve({data: null, error: new Error('Mock download error for completion test')});
+        }
+      }
+    };
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: mockSupabase.client.storage.from('content').download as any, fileManager: mockFileManager });
+
+    assertEquals(status, 200);
+    assertEquals(error, undefined);
+    assert(data);
+    assertEquals(data.updatedSession?.status, 'completed');
+    assertEquals(data.nextStageSeedPromptPath, null);
   });
 
 });
