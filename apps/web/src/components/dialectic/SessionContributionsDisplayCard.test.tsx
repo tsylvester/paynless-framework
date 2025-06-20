@@ -16,9 +16,16 @@ vi.mock('./GeneratedContributionCard', () => ({
 vi.mock('@paynless/store', async () => {
   // Import the actual mock module
   const actualDialecticStoreMock = await vi.importActual<typeof import('../../mocks/dialecticStore.mock')>('../../mocks/dialecticStore.mock');
+  const actualStore = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
   return {
     __esModule: true, // Required for ES modules when using await vi.importActual
     ...actualDialecticStoreMock, // Spread all exports from the mock, including the vi.fn() for the selector
+    // Add new selectors to the mock
+    selectIsLoadingProjectDetail: actualStore.selectIsLoadingProjectDetail,
+    selectContributionGenerationStatus: actualStore.selectContributionGenerationStatus,
+    selectProjectDetailError: actualStore.selectProjectDetailError,
+    // Ensure selectIsStageReadyForSessionIteration is a mock function
+    selectIsStageReadyForSessionIteration: vi.fn(), 
   };
 });
 
@@ -33,10 +40,11 @@ import {
   DialecticStateValues,
   ApiResponse,
   SubmitStageResponsesResponse,
+  ContributionGenerationStatus,
 } from '@paynless/types';
 import { vi, beforeEach, describe, it, expect, type MockInstance } from 'vitest';
 import { initializeMockDialecticState, getDialecticStoreState } from '../../mocks/dialecticStore.mock';
-import { useDialecticStore, selectIsStageReadyForSessionIteration as actualSelectIsStageReady } from '@paynless/store';
+import { useDialecticStore, selectIsStageReadyForSessionIteration } from '@paynless/store';
 
 const mockThesisStage: DialecticStage = {
     id: 's1',
@@ -158,23 +166,39 @@ describe('SessionContributionsDisplayCard', () => {
     status: 'active',
     created_at: '2023-01-01T09:00:00Z',
     updated_at: '2023-01-01T09:00:00Z',
+    isLoadingProcessTemplate: false,
+    processTemplateError: null,
+    contributionGenerationStatus: 'idle',
+    generateContributionsError: null,
+    isSubmittingStageResponses: false,
+    submitStageResponsesError: null,
+    isSavingContributionEdit: false,
+    saveContributionEditError: null,
   };
 
   const setup = (
     project: DialecticProject | null,
     activeSessionId: string | null,
     activeStage: DialecticStage | null,
-    overrides?: Partial<DialecticStateValues>,
-    isStageReadyOverride: boolean = true
+    overrides?: Partial<DialecticStateValues>, // Keep this for general overrides
+    isStageReadyOverride: boolean = true,
+    // Add specific states for new tests
+    isLoadingDetailsOverride: boolean = false,
+    generationStatusOverride: ContributionGenerationStatus = 'idle',
+    projectErrorOverride: ApiError | null = null
   ) => {
     const initialState: DialecticStateValues = {
-      ...getDialecticStoreState(),
+      ...getDialecticStoreState(), // Start with a full default state from the mock
       currentProjectDetail: project,
       activeContextSessionId: activeSessionId,
       activeContextStage: activeStage,
       isSubmittingStageResponses: false,
       submitStageResponsesError: null,
-      ...overrides,
+      // Apply new specific overrides
+      isLoadingProjectDetail: isLoadingDetailsOverride,
+      contributionGenerationStatus: generationStatusOverride,
+      projectDetailError: projectErrorOverride,
+      ...overrides, // Apply general overrides last so they can supersede
     };
 
     initializeMockDialecticState(initialState);
@@ -184,12 +208,10 @@ describe('SessionContributionsDisplayCard', () => {
       resetSubmitStageResponsesError: mockResetSubmitStageResponsesError,
     });
 
-    // Cast through 'unknown' to MockInstance for TypeScript
-    const mockedSelectIsStageReady = actualSelectIsStageReady as unknown as MockInstance<
+    (selectIsStageReadyForSessionIteration as unknown as MockInstance<
         [DialecticStateValues, string, string, string, number],
         boolean
-    >; 
-    mockedSelectIsStageReady.mockReturnValue(isStageReadyOverride);
+    >).mockReturnValue(isStageReadyOverride);
 
     const activeSession = project?.dialectic_sessions?.find(s => s.id === activeSessionId);
 
@@ -198,13 +220,11 @@ describe('SessionContributionsDisplayCard', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Ensure selectIsStageReadyForSessionIteration is reset for each test if not overridden in setup
-    (actualSelectIsStageReady as unknown as MockInstance<[DialecticStateValues, string, string, string, number], boolean>).mockClear();
-
+    // Default setup REMOVED from here
   });
 
   it('renders contributions for the active stage only', () => {
-    setup(mockProject, 'sess-1', mockThesisStage); // isStageReadyOverride defaults to true
+    setup(mockProject, 'sess-1', mockThesisStage, {}, true, false, 'idle', null);
     expect(screen.getByTestId('generated-contribution-card-c1')).toBeInTheDocument();
     expect(screen.queryByTestId('generated-contribution-card-c2')).not.toBeInTheDocument();
   });
@@ -226,12 +246,12 @@ describe('SessionContributionsDisplayCard', () => {
         return s;
       }) : []
     };
-    setup(projectWithNoSynthContributions, 'sess-1', mockSynthesisStage, undefined, true);
+    setup(projectWithNoSynthContributions, 'sess-1', mockSynthesisStage, {}, true, false, 'idle', null);
     
     expect(screen.getByText(`Contributions for: ${mockSynthesisStage.display_name}`)).toBeInTheDocument();
-    expect(screen.getByText(/Review the AI-generated contributions for this stage./i)).toBeInTheDocument(); // CardDescription
+    expect(screen.getByText(/Review the generated contributions below./i)).toBeInTheDocument(); // CardDescription
     expect(screen.queryByTestId(/generated-contribution-card-/)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Submit Responses/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Submit Responses & Proceed/i })).not.toBeInTheDocument();
   });
   
   it('does NOT render the GenerateContributionButton when no contributions exist for the stage', () => {
@@ -251,21 +271,21 @@ describe('SessionContributionsDisplayCard', () => {
         return s;
       }) : []
     };
-    setup(projectWithNoSynthContributions, 'sess-1', mockSynthesisStage, undefined, true);
+    setup(projectWithNoSynthContributions, 'sess-1', mockSynthesisStage, {}, true, false, 'idle', null);
     expect(screen.queryByTestId('generate-contributions-button-mock')).not.toBeInTheDocument();
   });
 
   it('displays a "Stage Not Ready" message and no contributions when the stage is not ready', () => {
-    setup(mockProject, 'sess-1', mockThesisStage, undefined, false); // Explicitly set isStageReadyOverride to false
+    setup(mockProject, 'sess-1', mockThesisStage, {}, false, false, 'idle', null); // Explicitly set isStageReadyOverride to false
 
     expect(screen.getByText('Stage Not Ready')).toBeInTheDocument(); // AlertTitle
-    expect(screen.getByText(/Stage not ready. Contributions cannot be generated or displayed/i)).toBeInTheDocument(); // AlertDescription
+    expect(screen.getByText(/The seed prompt for this stage and iteration is not yet available. Contributions cannot be displayed or generated./i)).toBeInTheDocument(); // AlertDescription
     expect(screen.queryByTestId(/generated-contribution-card-/)).not.toBeInTheDocument(); // No contribution cards
-    expect(screen.queryByRole('button', { name: /Submit Responses/i })).not.toBeInTheDocument(); // No submit button
+    expect(screen.queryByRole('button', { name: /Submit Responses & Proceed/i })).not.toBeInTheDocument(); // No submit button
   });
 
   it('manages local state for user responses correctly', () => {
-    setup(mockProject, 'sess-1', mockThesisStage);
+    setup(mockProject, 'sess-1', mockThesisStage, {}, true, false, 'idle', null);
     const textarea: HTMLTextAreaElement = screen.getByTestId('response-textarea-c1');
     
     expect(textarea.value).toBe('');
@@ -273,22 +293,27 @@ describe('SessionContributionsDisplayCard', () => {
     expect(textarea.value).toBe('This is a test response.');
   });
   
-  it('shows and enables the "Submit Responses" button only when there is text', () => {
-    setup(mockProject, 'sess-1', mockThesisStage);
-    const submitButton = screen.getByRole('button', { name: /Submit Responses for Thesis & Prepare Next Stage/i });
-    expect(submitButton).toBeDisabled();
-    
-    fireEvent.change(screen.getByTestId('response-textarea-c1'), { target: { value: 'a response' } });
+  it('shows the "Submit Responses & Proceed" button as enabled by default when contributions are present', () => {
+    setup(mockProject, 'sess-1', mockThesisStage, {}, true, false, 'idle', null);
+    const submitButton = screen.getByRole('button', { name: /Submit Responses & Proceed/i });
+    expect(submitButton).toBeInTheDocument();
     expect(submitButton).toBeEnabled();
   });
+
+  it('disables the "Submit Responses & Proceed" button when isSubmittingStageResponses is true', () => {
+    setup(mockProject, 'sess-1', mockThesisStage, {isSubmittingStageResponses: true}, true, false, 'idle', null);
+    const submitButton = screen.getByRole('button', { name: /Submit Responses & Proceed/i });
+    expect(submitButton).toBeInTheDocument();
+    expect(submitButton).toBeDisabled();
+  });
   
-  it('calls submitStageResponses with the correct payload when the submit button is clicked', async () => {
-    setup(mockProject, 'sess-1', mockThesisStage);
+  it('calls submitStageResponses with the correct payload when the submit button is clicked (with responses)', async () => {
+    setup(mockProject, 'sess-1', mockThesisStage, {}, true, false, 'idle', null);
     
     const textarea = screen.getByTestId('response-textarea-c1');
     fireEvent.change(textarea, { target: { value: 'My detailed feedback.' } });
     
-    const submitButton = screen.getByRole('button', { name: /Submit Responses for Thesis & Prepare Next Stage/i });
+    const submitButton = screen.getByRole('button', { name: /Submit Responses & Proceed/i });
     fireEvent.click(submitButton);
 
     await waitFor(() => {
@@ -309,21 +334,130 @@ describe('SessionContributionsDisplayCard', () => {
   });
 
   it('disables the submit button while submitting and shows loading state', () => {
-    setup(mockProject, 'sess-1', mockThesisStage, { isSubmittingStageResponses: true });
+    setup(mockProject, 'sess-1', mockThesisStage, { isSubmittingStageResponses: true }, true, false, 'idle', null);
     
-    // Have to add text to enable the button first
-    fireEvent.change(screen.getByTestId('response-textarea-c1'), { target: { value: 'a response' } });
-
-    const submitButton = screen.getByRole('button', { name: /Submitting.../i });
+    const submitButton = screen.getByRole('button', { name: /Submit Responses & Proceed/i });
     expect(submitButton).toBeDisabled();
-    expect(within(submitButton).getByTestId('loader')).toBeInTheDocument();
+    // Check for loader icon within the button
+    expect(within(submitButton).getByTestId('loader-icon')).toBeInTheDocument();
+    expect(within(submitButton).getByTestId('loader-icon')).toHaveClass('animate-spin');
   });
   
   it('displays an error message if submitting responses fails', () => {
     const error: ApiError = { code: '500', message: 'Submission failed', details: 'Server error' };
-    setup(mockProject, 'sess-1', mockThesisStage, { submitStageResponsesError: error });
+    setup(mockProject, 'sess-1', mockThesisStage, { submitStageResponsesError: error }, true, false, 'idle', null);
 
     expect(screen.getByText(/Submission failed/i)).toBeInTheDocument();
+  });
+
+  // --- New Tests for Loading, Error, and Empty States ---
+
+  it('should display contributions for the active stage and iteration', () => {
+    setup(mockProject, mockSession.id, mockThesisStage, {}, true, false, 'idle', null);
+    expect(screen.getByTestId('generated-contribution-card-c1')).toBeInTheDocument();
+  });
+
+  it('should display spinner when contributionGenerationStatus is "initiating"', () => {
+    setup(mockProject, mockSession.id, mockThesisStage, {}, true, false, 'initiating', null);
+    expect(screen.getByTestId('contributions-generating-spinner')).toBeInTheDocument();
+    expect(screen.getByText(/Contributions are being generated./i)).toBeInTheDocument();
+  });
+
+  it('should display spinner when contributionGenerationStatus is "generating"', () => {
+    setup(mockProject, mockSession.id, mockThesisStage, {}, true, false, 'generating', null);
+    expect(screen.getByTestId('contributions-generating-spinner')).toBeInTheDocument();
+  });
+
+  it('should display stage not ready message if stage is not ready and generation is idle', () => {
+    setup(mockProject, mockSession.id, mockThesisStage, {}, false, false, 'idle', null);
+    expect(screen.getByTestId('stage-not-ready-alert')).toBeInTheDocument();
+    expect(screen.getByText(/The seed prompt for this stage and iteration is not yet available./i)).toBeInTheDocument();
+  });
+
+  it('should display loading skeletons when isLoadingCurrentProjectDetail is true, generation is idle, and no contributions displayed', () => {
+    const projectWithNoContributions = {
+      ...mockProject,
+      dialectic_sessions: [{
+        ...mockSession,
+        dialectic_contributions: [], // Ensure no contributions to trigger skeleton
+      }]
+    };
+    setup(projectWithNoContributions, mockSession.id, mockThesisStage, {}, true, true, 'idle', null);
+    expect(screen.getByTestId('contributions-loading-skeletons')).toBeInTheDocument();
+    expect(screen.getByText(/Loading new contributions.../i)).toBeInTheDocument();
+    // GeneratedContributionCardSkeleton has 6 skeleton elements with role="status"
+    // The test renders two such cards when loading.
+    const skeletons = screen.getAllByRole('status');
+    expect(skeletons.length).toBe(12); 
+  });
+
+  it('should display projectDetailError if present, generation is idle, and not loading details', () => {
+    const error: ApiError = { message: 'Failed to fetch details!', code: 'FETCH_ERROR' };
+    setup(mockProject, mockSession.id, mockThesisStage, {}, true, false, 'idle', error);
+    expect(screen.getByTestId('contributions-fetch-error')).toBeInTheDocument();
+    expect(screen.getByText(/Error Loading Contributions/i)).toBeInTheDocument();
+    expect(screen.getByText(/Failed to load contributions: Failed to fetch details!/i)).toBeInTheDocument();
+  });
+
+  it('should display "no contributions yet" message when stage is ready, idle, not loading, no error, and no contributions', () => {
+    const projectWithNoContributions = {
+      ...mockProject,
+      dialectic_sessions: [{
+        ...mockSession,
+        dialectic_contributions: [], // Ensure no contributions
+      }]
+    };
+    setup(projectWithNoContributions, mockSession.id, mockThesisStage, {}, true, false, 'idle', null);
+    expect(screen.getByTestId('no-contributions-yet')).toBeInTheDocument();
+    expect(screen.getByText(/No contributions have been generated for Thesis in this iteration yet./i)).toBeInTheDocument();
+  });
+
+  // --- End of New Tests ---
+
+  it('should not display antithesis contributions when thesis stage is active', () => {
+    setup(mockProject, mockSession.id, mockThesisStage, {}, true, false, 'idle', null);
+    expect(screen.queryByTestId('generated-contribution-card-c2')).not.toBeInTheDocument();
+  });
+
+  it('shows confirmation modal when submitting without responses and no edits', async () => {
+    setup(mockProject, 'sess-1', mockThesisStage, {}, true, false, 'idle', null);
+    const submitButton = screen.getByRole('button', { name: /Submit Responses & Proceed/i });
+    fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getByText('Proceed Without Feedback?')).toBeInTheDocument();
+    });
+    // Click cancel
+    const cancelButton = screen.getByRole('button', { name: 'Cancel' });
+    fireEvent.click(cancelButton);
+    await waitFor(() => {
+        expect(screen.queryByText('Proceed Without Feedback?')).not.toBeInTheDocument();
+    });
+    expect(mockSubmitStageResponses).not.toHaveBeenCalled();
+  });
+
+  it('proceeds with submission from confirmation modal', async () => {
+    setup(mockProject, 'sess-1', mockThesisStage, {}, true, false, 'idle', null);
+    const submitButton = screen.getByRole('button', { name: /Submit Responses & Proceed/i });
+    fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getByText('Proceed Without Feedback?')).toBeInTheDocument();
+    });
+    
+    const proceedButton = screen.getByRole('button', { name: 'Proceed' });
+    fireEvent.click(proceedButton);
+
+    await waitFor(() => {
+      expect(mockSubmitStageResponses).toHaveBeenCalledTimes(1);
+      expect(mockSubmitStageResponses).toHaveBeenCalledWith({
+        sessionId: 'sess-1',
+        projectId: 'proj-1',
+        stageSlug: 'thesis',
+        currentIterationNumber: 1,
+        responses: [], // No responses in this case
+      });
+    });
   });
 
 }); 

@@ -82,7 +82,7 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers>): ActionHandlers
         listAvailableDomains: overrides?.listAvailableDomains || (() => Promise.resolve([])),
         updateProjectDomain: overrides?.updateProjectDomain || (() => Promise.resolve({ data: mockProject as any })),
         getProjectDetails: overrides?.getProjectDetails || (() => Promise.resolve({ data: mockProject as any })),
-        getContributionContentSignedUrlHandler: overrides?.getContributionContentSignedUrlHandler || (() => Promise.resolve({ data: { signedUrl: '' }})),
+        getContributionContentHandler: overrides?.getContributionContentHandler || (() => Promise.resolve({ data: { content: 'mock content', mimeType: 'text/plain', fileName: 'mock.txt', sizeBytes: 123 }})),
         startSession: overrides?.startSession || (() => Promise.resolve({ data: mockSession as any })),
         generateContributions: overrides?.generateContributions || (() => Promise.resolve({ success: false, error: { message: "Not implemented" } })),
         listProjects: overrides?.listProjects || (() => Promise.resolve({ data: [mockProject] as any })),
@@ -257,7 +257,7 @@ withSupabaseEnv("handleRequest - Routing and Dispatching", async (t) => {
         mockUserClient as any,
         mockAdminClient as any
       );
-      assertEquals(response.status, 204); 
+      assertEquals(response.status, 415);
     });
 
     await t.step("should return 415 for unsupported content type", async () => {
@@ -824,13 +824,13 @@ withSupabaseEnv("handleRequest - generateContributions", async (t) => {
     });
 });
 
-withSupabaseEnv("handleRequest - getContributionContentSignedUrlHandler", async (t) => {
+withSupabaseEnv("handleRequest - getContributionContentDataHandler", async (t) => {
     const contributionId = 'contrib-123';
 
-    await t.step("should call handler and return 200 with signed URL on success", async () => {
-        const signedUrl = "https://signed.url/content";
-        const handlerSpy = spy(() => Promise.resolve({ data: { signedUrl }, status: 200 }));
-        const mockHandlers = createMockHandlers({ getContributionContentSignedUrlHandler: handlerSpy as any });
+    await t.step("should call handler and return 200 with content data on success", async () => {
+        const mockContentData = { content: "mock file content", mimeType: "text/plain", fileName: "test.txt", sizeBytes: 20 };
+        const handlerSpy = spy(() => Promise.resolve({ data: mockContentData, status: 200 }));
+        const mockHandlers = createMockHandlers({ getContributionContentHandler: handlerSpy as any });
         
         const mockToken = "mock-jwt";
         const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
@@ -838,7 +838,7 @@ withSupabaseEnv("handleRequest - getContributionContentSignedUrlHandler", async 
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
         
-        const req = createJsonRequest("getContributionContentSignedUrl", { contributionId }, mockToken);
+        const req = createJsonRequest("getContributionContentData", { contributionId }, mockToken);
         const response = await handleRequest(
           req,
           mockHandlers,
@@ -848,14 +848,15 @@ withSupabaseEnv("handleRequest - getContributionContentSignedUrlHandler", async 
         
         assertEquals(response.status, 200);
         const body = await response.json();
-        assertEquals(body.signedUrl, signedUrl);
+        assertEquals(body.content, mockContentData.content);
+        assertEquals(body.mimeType, mockContentData.mimeType);
         assertEquals(handlerSpy.calls.length, 1);
     });
 
     await t.step("should return error if handler fails", async () => {
         const error: ServiceError = { message: "Not Found", status: 404, code: "NOT_FOUND" };
         const handlerSpy = spy(() => Promise.resolve({ error, status: 404 }));
-        const mockHandlers = createMockHandlers({ getContributionContentSignedUrlHandler: handlerSpy as any });
+        const mockHandlers = createMockHandlers({ getContributionContentHandler: handlerSpy as any });
         
         const mockToken = "mock-jwt";
         const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
@@ -863,7 +864,7 @@ withSupabaseEnv("handleRequest - getContributionContentSignedUrlHandler", async 
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
 
-        const req = createJsonRequest("getContributionContentSignedUrl", { contributionId }, mockToken);
+        const req = createJsonRequest("getContributionContentData", { contributionId }, mockToken);
         const response = await handleRequest(
           req,
           mockHandlers,

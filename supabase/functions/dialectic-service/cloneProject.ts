@@ -37,6 +37,7 @@ function getFileTypeFromResourceDescription(
     if (typeof descriptionJson === 'string') {
         descriptionString = descriptionJson;
     } else if (descriptionJson !== null && descriptionJson !== undefined) {
+        // This case should be less common now if FileManagerService ensures JSON string storage
         descriptionString = JSON.stringify(descriptionJson);
     }
 
@@ -45,9 +46,12 @@ function getFileTypeFromResourceDescription(
             const parsed = JSON.parse(descriptionString);
             if (parsed && typeof parsed.type === 'string' && AllKnownFileTypes.includes(parsed.type as FileType)) {
                 return parsed.type as FileType;
+            } else {
+                console.warn('[cloneProject] Parsed resource_description, but type property is missing, invalid, or not a known FileType. Defaulting. Description:', descriptionString);
             }
         } catch (e) {
-            console.warn('[cloneProject] Could not parse resource_description string to determine FileType, defaulting.', descriptionString, e);
+            const errorMessage = e instanceof Error ? e.message : String(e);
+            console.warn('[cloneProject] Could not parse resource_description string to determine FileType, defaulting. Description:', descriptionString, 'Error:', errorMessage);
         }
     }
     return defaultType;

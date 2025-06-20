@@ -126,7 +126,7 @@ Deno.test('FileManagerService', async (t) => {
         const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.insert
         const insertData = insertSpy?.calls[0].args[0] as any
         assertEquals(insertData.project_id, 'project-uuid-123')
-        assertEquals(insertData.resource_description, 'A test PDF file.')
+        assertEquals(insertData.resource_description, JSON.stringify({ type: context.pathContext.fileType, originalDescription: context.description }))
       } finally {
         afterEach()
       }

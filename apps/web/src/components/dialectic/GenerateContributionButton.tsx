@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { useDialecticStore } from '@paynless/store';
+import { useDialecticStore, selectSelectedModelIds } from '@paynless/store';
 import type { ApiError, DialecticContribution, DialecticStage } from '@paynless/types';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
@@ -32,10 +32,13 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
     currentProjectDetail,
   } = useDialecticStore((state) => ({
     generateContributions: state.generateContributions,
-    isGeneratingContributions: state.isGeneratingContributions,
+    isGeneratingContributions: state.contributionGenerationStatus === 'generating',
     generateContributionsError: state.generateContributionsError,
     currentProjectDetail: state.currentProjectDetail,
   }));
+
+  const currentSelectedModelIds = useDialecticStore(selectSelectedModelIds);
+  const areAnyModelsSelected = currentSelectedModelIds && currentSelectedModelIds.length > 0;
 
   const activeSession = currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
   const contributionsForStageAndIterationExist = activeSession?.dialectic_contributions?.some(
@@ -89,12 +92,14 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
   return (
     <Button
       onClick={handleClick}
-      disabled={disabled || isGeneratingContributions}
+      disabled={disabled || isGeneratingContributions || !areAnyModelsSelected}
       className={className}
       data-testid={`generate-${currentStage.slug}-button`}
     >
       {isGeneratingContributions ? (
         <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
+      ) : !areAnyModelsSelected ? (
+        "Choose AI Models"
       ) : currentStageFriendlyName === "Stage Not Ready" ? (
         "Stage Not Ready"
       ) : contributionsForStageAndIterationExist ? (

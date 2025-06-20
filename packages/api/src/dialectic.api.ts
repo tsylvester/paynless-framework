@@ -2,7 +2,6 @@ import type { ApiClient } from './apiClient';
 import type {
     ApiResponse,
     DialecticProject,
-    ContributionContentSignedUrlResponse,
     StartSessionPayload,
     DialecticSession,
     AIModelCatalogEntry,
@@ -23,6 +22,7 @@ import type {
     DialecticDomain,
     DialecticProcessTemplate,
     UpdateSessionModelsPayload,
+    GetContributionContentDataResponse,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -229,32 +229,32 @@ export class DialecticApiClient {
     }
 
     /**
-     * Fetches a signed URL for a specific dialectic contribution's content.
+     * Fetches the actual content of a specific dialectic contribution directly.
      * Requires authentication.
      */
-    async getContributionContentSignedUrl(contributionId: string): Promise<ApiResponse<ContributionContentSignedUrlResponse | null>> {
-        logger.info('Fetching signed URL for contribution content', { contributionId });
+    async getContributionContentData(contributionId: string): Promise<ApiResponse<GetContributionContentDataResponse | null>> {
+        logger.info('Fetching contribution content data directly', { contributionId });
 
         try {
-            const response = await this.apiClient.post<ContributionContentSignedUrlResponse | null, DialecticServiceActionPayload>(
+            const response = await this.apiClient.post<GetContributionContentDataResponse | null, DialecticServiceActionPayload>(
                 'dialectic-service',
                 {
-                    action: 'getContributionContentSignedUrl',
+                    action: 'getContributionContentData',
                     payload: { contributionId },
                 } as DialecticServiceActionPayload
             );
 
             if (response.error) {
-                logger.error('Error fetching signed URL for contribution content:', { error: response.error, contributionId });
+                logger.error('Error fetching contribution content data directly:', { error: response.error, contributionId });
             } else if (response.data) {
-                logger.info('Successfully fetched signed URL for contribution content', { contributionId, signedUrl: response.data.signedUrl });
+                logger.info('Successfully fetched contribution content data directly', { contributionId, hasContent: !!response.data.content, fileName: response.data.fileName });
             } else {
-                logger.warn('No signed URL data returned for contribution content', { contributionId });
+                logger.warn('No data returned when fetching contribution content data directly', { contributionId });
             }
             return response;
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'A network error occurred';
-            logger.error('Network error in getContributionContentSignedUrl:', { errorMessage: message, errorObject: error });
+            logger.error('Network error in getContributionContentData:', { errorMessage: message, errorObject: error, contributionId });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },

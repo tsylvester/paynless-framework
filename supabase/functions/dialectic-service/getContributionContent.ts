@@ -1,30 +1,20 @@
 // deno-lint-ignore-file no-explicit-any
 import { 
     ContributionWithNestedOwner,
+    GetContributionContentDataResponse,
   } from "./dialectic.interface.ts";
 import type { SupabaseClient } from '@supabase/supabase-js'; // Added import for SupabaseClient
 import type { ServiceError, GetUserFn, ILogger } from '../_shared/types.ts';
 
-interface CreateSignedUrlFnResult {
-  signedUrl: string | null;
-  error: ServiceError | Error | null; // Allow for ServiceError or generic Error
-}
-
-interface CreateSignedUrlFn {
-  (client: SupabaseClient, bucket: string, path: string, expiresIn: number): Promise<CreateSignedUrlFnResult>; 
-}
-
+console.log("getContributionContent function script loaded (data fetch version)");
   
-console.log("getContributionContent function started");
-  
-export async function getContributionContentSignedUrlHandler(
+export async function getContributionContentHandler(
     // req: Request, // For user authentication - replaced by getUser
     getUser: GetUserFn,
     dbClient: SupabaseClient, // Used SupabaseClient type
-    createSignedUrl: CreateSignedUrlFn,
     logger: ILogger,
     payload: { contributionId: string }
-  ): Promise<{ data?: { signedUrl: string; mimeType: string; sizeBytes: number | null }; error?: { message: string; status?: number; details?: string, code?: string } }> {
+  ): Promise<{ data?: GetContributionContentDataResponse; error?: { message: string; status?: number; details?: string, code?: string } }> {
     const { contributionId } = payload;
   
     if (!contributionId) {
@@ -36,8 +26,8 @@ export async function getContributionContentSignedUrlHandler(
     const { data: { user }, error: userError } = await getUser();
   
     if (userError || !user) {
-      // logger.warn("User not authenticated for getContributionContentSignedUrl", { error: userError }); // Replaced
-      logger.warn("User not authenticated for getContributionContentSignedUrl", { error: userError });
+      // logger.warn("User not authenticated for getContributionContentHandler", { error: userError }); // Replaced
+      logger.warn("User not authenticated for getContributionContentHandler", { error: userError });
       return { error: { message: "User not authenticated", code: "AUTH_ERROR", status: 401 } };
     }
   
@@ -48,6 +38,7 @@ export async function getContributionContentSignedUrlHandler(
         storage_path,
         mime_type,
         size_bytes,
+        file_name,
         dialectic_sessions (
           project_id,
           dialectic_projects ( user_id )
@@ -57,14 +48,14 @@ export async function getContributionContentSignedUrlHandler(
       .maybeSingle();
   
     if (contributionError) {
-      // logger.error("Error fetching contribution details for signed URL:", { error: contributionError, contributionId }); // Replaced
-      logger.error("Error fetching contribution details for signed URL:", { error: contributionError, contributionId });
+      // logger.error("Error fetching contribution details for content:", { error: contributionError, contributionId }); // Replaced
+      logger.error("Error fetching contribution details for content:", { error: contributionError, contributionId });
       return { error: { message: "Failed to fetch contribution details.", details: contributionError.message, code: "DB_FETCH_ERROR", status: 500 } };
     }
   
     if (!contributionData) {
-      // logger.warn("Contribution not found for signed URL", { contributionId }); // Replaced
-      logger.warn("Contribution not found for signed URL", { contributionId });
+      // logger.warn("Contribution not found for content", { contributionId }); // Replaced
+      logger.warn("Contribution not found for content", { contributionId });
       return { error: { message: "Contribution not found.", code: "NOT_FOUND", status: 404 } };
     }
   
@@ -72,9 +63,9 @@ export async function getContributionContentSignedUrlHandler(
     const projectOwnerUserId = typedContributionData.dialectic_sessions?.dialectic_projects?.user_id;
   
     if (!projectOwnerUserId || projectOwnerUserId !== user.id) {
-      // logger.warn("User not authorized to access this contribution for signed URL", { contributionId, userId: user.id, projectOwnerUserId }); // Replaced
-      logger.warn("User not authorized to access this contribution for signed URL", { contributionId, userId: user.id, projectOwnerUserId });
-      return { error: { message: "User not authorized to access this contribution.", code: "AUTH_FORBIDDEN", status: 403 } };
+      // logger.warn("User not authorized to access this contribution's content", { contributionId, userId: user.id, projectOwnerUserId }); // Replaced
+      logger.warn("User not authorized to access this contribution's content", { contributionId, userId: user.id, projectOwnerUserId });
+      return { error: { message: "User not authorized to access this contribution's content.", code: "AUTH_FORBIDDEN", status: 403 } };
     }
   
     if (!typedContributionData.storage_bucket || !typedContributionData.storage_path) {
@@ -82,40 +73,32 @@ export async function getContributionContentSignedUrlHandler(
       logger.error("Contribution is missing storage bucket or path information", { contributionId });
       return { error: { message: "Contribution is missing storage information.", code: "INTERNAL_ERROR", status: 500 } };
     }
-  
-    // const { signedUrl, error: signedUrlError } = await createSignedUrlForPath( // Replaced
-    //   dbClient,
-    //   typedContributionData.storage_bucket,
-    //   typedContributionData.storage_path,
-    //   60 * 5 // 5 minutes expiry
-    // );
-    const { signedUrl, error: signedUrlError } = await createSignedUrl(
-      dbClient, 
-      typedContributionData.storage_bucket,
-      typedContributionData.storage_path,
-      60 * 5 // 5 minutes expiry
-    );
-  
-    if (signedUrlError) {
-      // logger.error("Error generating signed URL for contribution:", { error: signedUrlError, contributionId }); // Replaced
-      logger.error("Error generating signed URL for contribution:", { error: signedUrlError, contributionId });
-      // Check if signedUrlError has a message property before accessing it
-      const details = typeof signedUrlError === 'object' && signedUrlError !== null && 'message' in signedUrlError ? (signedUrlError as Error).message : 'Unknown error';
-      return { error: { message: "Failed to generate signed URL.", details: details, code: "STORAGE_ERROR", status: 500 } };
+
+    // Download the file content directly
+    const { data: fileBlob, error: downloadError } = await dbClient.storage
+      .from(typedContributionData.storage_bucket)
+      .download(typedContributionData.storage_path);
+
+    if (downloadError) {
+      logger.error('Error downloading file from storage for contribution:', { contributionId, storagePath: typedContributionData.storage_path, error: downloadError });
+      return { error: { message: "Failed to download contribution content.", status: 500, details: downloadError.message, code: "STORAGE_DOWNLOAD_ERROR" } };
     }
-  
-    if (!signedUrl) {
-      // logger.error("Failed to generate signed URL, received null", { contributionId }); // Replaced
-      logger.error("Failed to generate signed URL, received null", { contributionId });
-      return { error: { message: "Failed to generate signed URL, received null.", code: "STORAGE_ERROR", status: 500 } };
+    
+    if (!fileBlob) {
+      logger.error('No data returned from storage download for contribution:', { contributionId, storagePath: typedContributionData.storage_path });
+      return { error: { message: "Failed to retrieve contribution content (empty).", status: 500, code: "STORAGE_EMPTY_CONTENT" } };
     }
+
+    const content = await fileBlob.text();
+    logger.info(`Successfully fetched and read content for contributionId: ${contributionId}`);
   
-    return {
-      data: {
-        signedUrl: signedUrl,
+    const responseData: GetContributionContentDataResponse = {
+        content: content,
         mimeType: typedContributionData.mime_type || 'application/octet-stream',
-        sizeBytes: typedContributionData.size_bytes
-      }
+        sizeBytes: typedContributionData.size_bytes || null,
+        fileName: typedContributionData.file_name || null,
     };
+
+    return { data: responseData };
   }
   

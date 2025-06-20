@@ -21,6 +21,7 @@ import {
   DialecticProcessTemplate,
   UpdateSessionModelsPayload,
   DialecticSession,
+  GetContributionContentDataResponse,
 } from "./dialectic.interface.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import {
@@ -44,7 +45,7 @@ import { createProject } from "./createProject.ts";
 import { listAvailableDomains } from "./listAvailableDomains.ts";
 import { updateProjectDomain } from "./updateProjectDomain.ts";
 import { getProjectDetails } from "./getProjectDetails.ts";
-import { getContributionContentSignedUrlHandler } from "./getContributionContent.ts";
+import { getContributionContentHandler } from "./getContributionContent.ts";
 import { startSession } from "./startSession.ts";
 import { generateContributions } from "./generateContribution.ts";
 import { listProjects } from "./listProjects.ts";
@@ -112,7 +113,7 @@ export interface ActionHandlers {
   listAvailableDomains: (dbClient: SupabaseClient, payload?: { stageAssociation?: string }) => Promise<DomainDescriptor[] | { error: ServiceError }>;
   updateProjectDomain: (getUserFn: GetUserFn, dbClient: SupabaseClient, payload: UpdateProjectDomainPayload, logger: ILogger) => Promise<{ data?: DialecticProject; error?: ServiceError }>;
   getProjectDetails: (payload: GetProjectDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: DialecticProject; error?: ServiceError; status?: number }>;
-  getContributionContentSignedUrlHandler: (getUserFn: GetUserFn, dbClient: SupabaseClient, createSignedUrlFn: CreateSignedUrlFn, logger: ILogger, payload: { contributionId: string }) => Promise<{ data?: { signedUrl: string }; error?: ServiceError; status?: number }>;
+  getContributionContentHandler: (getUserFn: GetUserFn, dbClient: SupabaseClient, logger: ILogger, payload: { contributionId: string }) => Promise<{ data?: GetContributionContentDataResponse; error?: ServiceError; status?: number }>;
   startSession: (user: User, dbClient: SupabaseClient, payload: StartSessionPayload, dependencies: { logger: ILogger }) => Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }>;
   generateContributions: (dbClient: SupabaseClient, payload: GenerateContributionsPayload, authToken: string, dependencies: { logger: ILogger }) => Promise<{ success: boolean; data?: GenerateContributionsSuccessResponse; error?: ServiceError }>;
   listProjects: (user: User, dbClient: SupabaseClient) => Promise<{ data?: DialecticProject[]; error?: ServiceError; status?: number }>;
@@ -138,10 +139,6 @@ export async function handleRequest(
   let authToken: string | null = null;
   if (authHeader && authHeader.startsWith("Bearer ")) {
     authToken = authHeader.substring(7);
-  }
-  const preflightResponse = handleCorsPreflightRequest(req);
-  if (preflightResponse) {
-    return preflightResponse;
   }
 
   const getUserFnForRequest: GetUserFn = async (): Promise<GetUserFnResult> => {
@@ -292,12 +289,12 @@ export async function handleRequest(
           }
           return createSuccessResponse(data, 202, req);
         }
-        case "getContributionContentSignedUrl": {
+        case "getContributionContentData": {
           const payload = requestBody.payload as { contributionId: string };
           if (!payload || !payload.contributionId) {
             return createErrorResponse("contributionId is required.", 400, req, { message: "contributionId is required.", status: 400 });
           }
-          const { data, error, status } = await handlers.getContributionContentSignedUrlHandler(getUserFnForRequest, adminClient, createSignedUrlDefaultFn, logger, payload);
+          const { data, error, status } = await handlers.getContributionContentHandler(getUserFnForRequest, adminClient, logger, payload);
           if (error) {
             return createErrorResponse(error.message, status, req, error);
           }
@@ -410,7 +407,7 @@ const handlers: ActionHandlers = {
   listAvailableDomains,
   updateProjectDomain,
   getProjectDetails,
-  getContributionContentSignedUrlHandler,
+  getContributionContentHandler,
   startSession,
   generateContributions,
   listProjects,

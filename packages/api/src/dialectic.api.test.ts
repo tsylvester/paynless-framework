@@ -32,6 +32,7 @@ import {
     DialecticStage,
     UpdateSessionModelsPayload,
     DomainDescriptor,
+    GetContributionContentDataResponse,
 } from '@paynless/types';
 
 // Mock the base ApiClient
@@ -61,6 +62,14 @@ const mockDialecticProject: DialecticProject = {
   repo_url: null,
   status: 'active',
   dialectic_process_templates: null,
+  isLoadingProcessTemplate: false,
+  processTemplateError: null,
+  contributionGenerationStatus: 'idle',
+  generateContributionsError: null,
+  isSubmittingStageResponses: false,
+  submitStageResponsesError: null,
+  isSavingContributionEdit: false,
+  saveContributionEditError: null,
 };
 
 const mockDialecticSession: DialecticSession = {
@@ -88,6 +97,14 @@ const baseMockProject: Omit<DialecticProject, 'user_id' | 'created_at' | 'update
     repo_url: null,
     status: 'active',
     dialectic_process_templates: null,
+    isLoadingProcessTemplate: false,
+    processTemplateError: null,
+    contributionGenerationStatus: 'idle',
+    generateContributionsError: null,
+    isSubmittingStageResponses: false,
+    submitStageResponsesError: null,
+    isSavingContributionEdit: false,
+    saveContributionEditError: null,
 };
 
 describe('DialecticApiClient', () => {
@@ -328,6 +345,14 @@ describe('DialecticApiClient', () => {
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 dialectic_process_templates: null,
+                isLoadingProcessTemplate: false,
+                processTemplateError: null,
+                contributionGenerationStatus: 'idle',
+                generateContributionsError: null,
+                isSubmittingStageResponses: false,
+                submitStageResponsesError: null,
+                isSavingContributionEdit: false,
+                saveContributionEditError: null,
             }; 
             const mockResponse: ApiResponse<DialecticProject> = {
                 data: mockProjectResponse,
@@ -365,6 +390,14 @@ describe('DialecticApiClient', () => {
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 dialectic_process_templates: null,
+                isLoadingProcessTemplate: false,
+                processTemplateError: null,
+                contributionGenerationStatus: 'idle',
+                generateContributionsError: null,
+                isSubmittingStageResponses: false,
+                submitStageResponsesError: null,
+                isSavingContributionEdit: false,
+                saveContributionEditError: null,
             };
             const mockResponse: ApiResponse<DialecticProject> = {
                 data: mockProjectData,
@@ -681,88 +714,6 @@ describe('DialecticApiClient', () => {
         });
     });
 
-    describe('getContributionContentSignedUrl', () => {
-        const endpoint = 'dialectic-service';
-        const contributionId = 'contrib-xyz-789';
-        const requestBody = { action: 'getContributionContentSignedUrl', payload: { contributionId } };
-
-        const mockSignedUrlResponse: ContributionContentSignedUrlResponse = {
-            signedUrl: 'https://example.com/signed-url-for-content',
-            mimeType: 'text/markdown',
-            sizeBytes: 1024,
-        };
-
-        it('should call apiClient.post with the correct endpoint and body', async () => {
-            const mockResponse: ApiResponse<ContributionContentSignedUrlResponse | null> = {
-                data: mockSignedUrlResponse,
-                status: 200,
-            };
-            mockApiClientPost.mockResolvedValue(mockResponse);
-
-            await dialecticApiClient.getContributionContentSignedUrl(contributionId);
-
-            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
-        });
-
-        it('should return the signed URL response on successful fetch', async () => {
-            const mockResponse: ApiResponse<ContributionContentSignedUrlResponse | null> = {
-                data: mockSignedUrlResponse,
-                status: 200,
-            };
-            mockApiClientPost.mockResolvedValue(mockResponse);
-
-            const result = await dialecticApiClient.getContributionContentSignedUrl(contributionId);
-
-            expect(result.data).toEqual(mockSignedUrlResponse);
-            expect(result.status).toBe(200);
-            expect(result.error).toBeUndefined();
-        });
-
-        it('should return null data if the contribution content is not found (e.g., 404 from backend)', async () => {
-            const mockResponse: ApiResponse<ContributionContentSignedUrlResponse | null> = {
-                data: null, // Backend might return null if not found, or an error
-                status: 404, 
-            };
-            mockApiClientPost.mockResolvedValue(mockResponse);
-
-            const result = await dialecticApiClient.getContributionContentSignedUrl(contributionId);
-
-            expect(result.data).toBeNull();
-            expect(result.status).toBe(404);
-            expect(result.error).toBeUndefined(); // Assuming a 404 with null data isn't an "error" in the ApiResponse structure itself
-        });
-
-        it('should return the error object on other API failures', async () => {
-            const mockApiError: ApiErrorType = { code: 'SERVER_ERROR', message: 'Failed to fetch signed URL' };
-            const mockErrorResponse: ApiResponse<ContributionContentSignedUrlResponse | null> = {
-                error: mockApiError,
-                status: 500,
-            };
-            mockApiClientPost.mockResolvedValue(mockErrorResponse);
-
-            const result = await dialecticApiClient.getContributionContentSignedUrl(contributionId);
-
-            expect(result.error).toEqual(mockApiError);
-            expect(result.status).toBe(500);
-            expect(result.data).toBeUndefined();
-        });
-
-        it('should return a network error if apiClient.post rejects', async () => {
-            const networkErrorMessage = 'Simulated network failure for getContributionContentSignedUrl';
-            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
-
-            const result = await dialecticApiClient.getContributionContentSignedUrl(contributionId);
-
-            expect(result.error).toEqual({
-                code: 'NETWORK_ERROR',
-                message: networkErrorMessage,
-            });
-            expect(result.status).toBe(0);
-            expect(result.data).toBeUndefined();
-        });
-    });
-
     describe('listAvailableDomainOverlays', () => {
         const endpoint = 'dialectic-service';
         const stageAssociation = 'synthesis';
@@ -792,6 +743,14 @@ describe('DialecticApiClient', () => {
             selected_domain_id: domainId,
             dialectic_domains: { name: 'Finance' },
             dialectic_process_templates: null,
+            isLoadingProcessTemplate: false,
+            processTemplateError: null,
+            contributionGenerationStatus: 'idle',
+            generateContributionsError: null,
+            isSubmittingStageResponses: false,
+            submitStageResponsesError: null,
+            isSavingContributionEdit: false,
+            saveContributionEditError: null,
         };
 
         it('should call apiClient.post with the correct endpoint and body', async () => {
@@ -925,11 +884,17 @@ describe('DialecticApiClient', () => {
             project_name: `${mockDialecticProject.project_name} (Clone)`,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            // Sessions and resources would typically be part of a deep clone, 
-            // but for this test, we focus on the project entity itself.
             dialectic_sessions: [], 
             resources: [],
             dialectic_process_templates: null,
+            isLoadingProcessTemplate: false,
+            processTemplateError: null,
+            contributionGenerationStatus: 'idle',
+            generateContributionsError: null,
+            isSubmittingStageResponses: false,
+            submitStageResponsesError: null,
+            isSavingContributionEdit: false,
+            saveContributionEditError: null,
         };
 
         it('should call apiClient.post with the correct endpoint and body for cloneProject', async () => {
@@ -1174,6 +1139,14 @@ describe('DialecticApiClient', () => {
             initial_user_prompt: validPayload.newInitialPrompt,
             updated_at: new Date().toISOString(),
             dialectic_process_templates: null,
+            isLoadingProcessTemplate: false,
+            processTemplateError: null,
+            contributionGenerationStatus: 'idle',
+            generateContributionsError: null,
+            isSubmittingStageResponses: false,
+            submitStageResponsesError: null,
+            isSavingContributionEdit: false,
+            saveContributionEditError: null,
         };
 
         it('should call apiClient.post with the correct endpoint and body', async () => {
@@ -1529,6 +1502,92 @@ describe('DialecticApiClient', () => {
             mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
 
             const result = await dialecticApiClient.updateSessionModels(validPayload);
+
+            expect(result.error).toEqual({
+                code: 'NETWORK_ERROR',
+                message: networkErrorMessage,
+            });
+            expect(result.status).toBe(0);
+            expect(result.data).toBeUndefined();
+        });
+    });
+
+    describe('getContributionContentData', () => {
+        const endpoint = 'dialectic-service';
+        const contributionId = 'contrib-cdata-123';
+        const requestBody: DialecticServiceActionPayload = {
+            action: 'getContributionContentData',
+            payload: { contributionId },
+        };
+
+        const mockContentDataResponse: GetContributionContentDataResponse = {
+            content: 'This is the contribution content.',
+            mimeType: 'text/markdown',
+            sizeBytes: 1024,
+            fileName: 'contribution.md',
+        };
+
+        it('should call apiClient.post with the correct endpoint and body', async () => {
+            const mockResponse: ApiResponse<GetContributionContentDataResponse | null> = {
+                data: mockContentDataResponse,
+                status: 200,
+            };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            await dialecticApiClient.getContributionContentData(contributionId);
+
+            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
+            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+        });
+
+        it('should return the contribution content data on successful fetch', async () => {
+            const mockResponse: ApiResponse<GetContributionContentDataResponse | null> = {
+                data: mockContentDataResponse,
+                status: 200,
+            };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            const result = await dialecticApiClient.getContributionContentData(contributionId);
+
+            expect(result.data).toEqual(mockContentDataResponse);
+            expect(result.status).toBe(200);
+            expect(result.error).toBeUndefined();
+        });
+
+        it('should return null data if the contribution content is not found (e.g. backend returns null)', async () => {
+            const mockResponse: ApiResponse<GetContributionContentDataResponse | null> = {
+                data: null,
+                status: 200, // Or 404, depending on backend implementation for not found with null data
+            };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            const result = await dialecticApiClient.getContributionContentData(contributionId);
+
+            expect(result.data).toBeNull();
+            expect(result.status).toBe(200);
+            expect(result.error).toBeUndefined();
+        });
+
+        it('should return the error object on other API failures', async () => {
+            const mockApiError: ApiErrorType = { code: 'SERVER_ERROR', message: 'Failed to fetch content data' };
+            const mockErrorResponse: ApiResponse<GetContributionContentDataResponse | null> = {
+                error: mockApiError,
+                status: 500,
+            };
+            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+
+            const result = await dialecticApiClient.getContributionContentData(contributionId);
+
+            expect(result.error).toEqual(mockApiError);
+            expect(result.status).toBe(500);
+            expect(result.data).toBeUndefined();
+        });
+
+        it('should return a network error if apiClient.post rejects', async () => {
+            const networkErrorMessage = 'Simulated network failure for getContributionContentData';
+            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+
+            const result = await dialecticApiClient.getContributionContentData(contributionId);
 
             expect(result.error).toEqual({
                 code: 'NETWORK_ERROR',

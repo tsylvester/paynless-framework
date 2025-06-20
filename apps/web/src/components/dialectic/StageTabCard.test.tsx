@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type MockInstance } from 'vitest';
 import { StageTabCard } from './StageTabCard';
 import { 
   DialecticProject, 
@@ -13,6 +13,7 @@ import {
   DialecticStateValues,
 } from '@paynless/types';
 import { initializeMockDialecticState, getDialecticStoreState } from '../../mocks/dialecticStore.mock';
+import { selectIsStageReadyForSessionIteration } from '@paynless/store';
 
 vi.mock('@paynless/store', async (importOriginal) => {
   const actualStoreModule = await importOriginal<typeof import('@paynless/store')>();
@@ -20,8 +21,14 @@ vi.mock('@paynless/store', async (importOriginal) => {
   return {
     ...actualStoreModule,
     useDialecticStore: mockDialecticStoreUtils.useDialecticStore,
+    selectIsStageReadyForSessionIteration: vi.fn(),
+    selectSelectedModelIds: vi.fn(() => ['mock-model-id']),
   };
 });
+
+vi.mock('./AIModelSelector', () => ({
+  AIModelSelector: vi.fn(() => <div data-testid="ai-model-selector-mock">AIModelSelectorMock</div>),
+}));
 
 const mockStage: DialecticStage = {
     id: 'stage-id-hypothesis',
@@ -64,6 +71,14 @@ const mockProject: DialecticProject = {
   dialectic_sessions: [mockSession],
   process_template_id: 'pt-1',
   dialectic_process_templates: null,
+  isLoadingProcessTemplate: false,
+  processTemplateError: null,
+  contributionGenerationStatus: 'idle',
+  generateContributionsError: null,
+  isSubmittingStageResponses: false,
+  submitStageResponsesError: null,
+  isSavingContributionEdit: false,
+  saveContributionEditError: null,
 };
 
 const mockSeedPromptResource: DialecticProjectResource = {
@@ -85,15 +100,32 @@ const mockSeedPromptResource: DialecticProjectResource = {
 
 describe('StageTabCard', () => {
 
-  const setupStore = (session: DialecticSession | undefined, project: DialecticProject | undefined, activeStage: DialecticStage | null, isGenerating = false, generateError: ApiError | null = null, contributionCache: Record<string, ContributionCacheEntry> = {}, overrides?: Partial<DialecticStateValues>) => {
+  const setupStore = (
+    session: DialecticSession | undefined, 
+    project: DialecticProject | undefined, 
+    activeStage: DialecticStage | null, 
+    isStageReadyOverride?: boolean,
+    isGenerating = false, 
+    generateError: ApiError | null = null, 
+    contributionCache: Record<string, ContributionCacheEntry> = {}, 
+    initialPromptCache: Record<string, { content: string; isLoading: boolean; error: ApiError | null; }> = {},
+    overrides?: Partial<DialecticStateValues>
+  ) => {
+    const isReady = isStageReadyOverride === undefined ? true : isStageReadyOverride;
+    (selectIsStageReadyForSessionIteration as unknown as MockInstance<
+        [DialecticStore, string, string, string, number],
+        boolean
+    >).mockReturnValue(isReady);
+
     const state: Partial<DialecticStore> = {
       activeContextProjectId: project?.id ?? null,
       activeContextSessionId: session?.id ?? null,
       activeContextStage: activeStage,
       currentProjectDetail: project,
-      isGeneratingContributions: isGenerating,
+      contributionGenerationStatus: isGenerating ? 'generating' : 'idle',
       generateContributionsError: generateError,
       contributionContentCache: contributionCache,
+      initialPromptContentCache: initialPromptCache,
       ...overrides,
     };
     initializeMockDialecticState(state);
@@ -101,48 +133,47 @@ describe('StageTabCard', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Set up default mocks for actions on the store state
     const storeState = getDialecticStoreState();
     storeState.setActiveDialecticContext = vi.fn();
     storeState.generateContributions = vi.fn();
     storeState.fetchInitialPromptContent = vi.fn();
   });
 
-  const renderComponent = (stage: DialecticStage, isActive: boolean, overrides?: Partial<DialecticStateValues>, onCardClickMock?: () => void) => {
-    setupStore(mockSession, mockProject, stage, false, null, {}, overrides);
+  const renderComponent = (stage: DialecticStage, isActive: boolean, isStageReadyOverride?: boolean, overrides?: Partial<DialecticStateValues>, onCardClickMock?: () => void) => {
+    setupStore(mockSession, mockProject, stage, isStageReadyOverride, false, null, {}, {}, overrides);
     render(<StageTabCard stage={stage} isActiveStage={isActive} onCardClick={onCardClickMock || (() => {})} />);
   };
 
   it('renders display name and reflects active state', () => {
-    renderComponent(mockStage, true);
+    renderComponent(mockStage, true, true);
     const card = screen.getByTestId(`stage-tab-${mockStage.slug}`);
     expect(card).toHaveClass('border-primary');
     expect(screen.getByText(mockStage.display_name)).toBeInTheDocument();
   });
 
   it('reflects inactive state', () => {
-    renderComponent(mockStage, false);
+    renderComponent(mockStage, false, true);
     const card = screen.getByTestId(`stage-tab-${mockStage.slug}`);
     expect(card).not.toHaveClass('border-primary');
   });
 
   it('calls setActiveDialecticContext from the store when clicked', () => {
     const mockOnCardClick = vi.fn();
-    renderComponent(mockStage, true, undefined, mockOnCardClick);
+    renderComponent(mockStage, true, true, undefined, mockOnCardClick);
     fireEvent.click(screen.getByTestId(`stage-tab-${mockStage.slug}`));
     expect(mockOnCardClick).toHaveBeenCalledWith(mockStage);
   });
 
   describe('Context Unavailable Message', () => {
     it('shows context unavailable if session is missing', () => {
-        renderComponent(mockStage, true, { activeContextSessionId: undefined });
+        renderComponent(mockStage, true, true, { activeContextSessionId: undefined });
         expect(screen.getByText('Context unavailable')).toBeInTheDocument();
     });
   });
 
   describe('Generate Contributions Button', () => {
-    it('is visible and enabled if card is active and seed prompt exists', async () => {
-      renderComponent(mockStage, true, {
+    it('is visible and enabled if card is active and stage is ready and seed prompt is loaded', async () => {
+      renderComponent(mockStage, true, true, {
         currentProjectDetail: {
           ...mockProject,
           resources: [mockSeedPromptResource]
@@ -159,7 +190,7 @@ describe('StageTabCard', () => {
     });
 
     it('is visible but disabled if seed prompt is loading', async () => {
-      renderComponent(mockStage, true, {
+      renderComponent(mockStage, true, true, {
         currentProjectDetail: {
           ...mockProject,
           resources: [mockSeedPromptResource]
@@ -175,8 +206,8 @@ describe('StageTabCard', () => {
       });
     });
 
-    it('is visible but disabled if seed prompt does not exist', async () => {
-      renderComponent(mockStage, true, {
+    it('is visible but disabled if stage is not ready (seed prompt does not exist effectively)', async () => {
+      renderComponent(mockStage, true, false, {
         currentProjectDetail: {
           ...mockProject,
           resources: []
@@ -191,13 +222,13 @@ describe('StageTabCard', () => {
     });
 
     it('is not visible if stage card is not active', () => {
-      renderComponent(mockStage, false);
+      renderComponent(mockStage, false, true);
       const generateButton = screen.queryByRole('button', { name: /Generate/ });
       expect(generateButton).not.toBeInTheDocument();
     });
 
     it('dispatches generateContributions action with correct payload on click', async () => {
-      renderComponent(mockStage, true, {
+      renderComponent(mockStage, true, true, {
         currentProjectDetail: {
           ...mockProject,
           resources: [mockSeedPromptResource]
@@ -251,7 +282,7 @@ describe('StageTabCard', () => {
       };
 
       const sessionWithContributions = { ...mockSession, dialectic_contributions: [contribution] };
-      renderComponent(mockStage, true, {
+      renderComponent(mockStage, true, true, {
         currentProjectDetail: {
           ...mockProject,
           dialectic_sessions: [sessionWithContributions],
@@ -271,15 +302,7 @@ describe('StageTabCard', () => {
 
   describe('Stage Readiness UI Logic (as per Plan 2.B.2)', () => {
     it('should disable button and show "Stage Not Ready" text when stage is active but not ready', async () => {
-      // Simulate stage not ready by providing no resources
-      renderComponent(mockStage, true, {
-        currentProjectDetail: {
-          ...mockProject,
-          dialectic_sessions: [{ ...mockSession, current_stage_id: mockStage.id }],
-          resources: [], // No resources means selectIsStageReadyForSessionIteration will be false
-        },
-        initialPromptContentCache: {},
-      });
+      renderComponent(mockStage, true, false);
 
       await waitFor(() => {
         const generateButton = screen.getByRole('button', { name: "Stage Not Ready" });
@@ -289,38 +312,9 @@ describe('StageTabCard', () => {
     });
 
     it('should enable button and show "Generate Contributions" text when stage is active and ready', async () => {
-      // Simulate stage ready by providing the specific seed prompt resource
-      renderComponent(mockStage, true, {
+      renderComponent(mockStage, true, true, {
         currentProjectDetail: {
           ...mockProject,
-          dialectic_sessions: [{ ...mockSession, current_stage_id: mockStage.id }],
-          resources: [mockSeedPromptResource], // This resource makes selectIsStageReadyForSessionIteration true for mockStage
-        },
-        initialPromptContentCache: {
-          [mockSeedPromptResource.id]: { content: 'Seed prompt content', isLoading: false, error: null }
-        }
-      });
-
-      await waitFor(() => {
-        // Note: The button name might be "Generate Hypothesis" or "Regenerate Hypothesis" based on other logic.
-        // The plan specifies testing for "Generate Contributions" as the general ready text.
-        // We will look for a button that is enabled and whose text will be set according to the plan's new logic.
-        // For this test, we assume no prior contributions, so it wouldn't be "Regenerate".
-        // The actual implementation will set the text to "Generate Contributions" or "Stage Not Ready".
-        const generateButton = screen.getByRole('button');
-        expect(generateButton).toBeInTheDocument();
-        expect(generateButton).toBeEnabled();
-        // The component isn't updated yet, so text check will fail. This is RED state.
-        // expect(generateButton).toHaveTextContent("Generate Contributions"); 
-      });
-    });
-
-    it('button should be disabled if stage is not active, regardless of readiness (as per plan logic)', async () => {
-      // Stage is ready
-      renderComponent(mockStage, false, { // isActiveStage is false
-        currentProjectDetail: {
-          ...mockProject,
-          dialectic_sessions: [{ ...mockSession, current_stage_id: mockStage.id }],
           resources: [mockSeedPromptResource],
         },
         initialPromptContentCache: {
@@ -328,10 +322,16 @@ describe('StageTabCard', () => {
         }
       });
 
-      // Existing tests already cover that the button might not be in the document if not active.
-      // If it *were* to be in the document (e.g. hidden but present), the plan's logic `disabled={!isStageReady || !isActiveStage}`
-      // and `buttonDisabled = !isActiveStage || (isActiveStage && !isStageReady);` implies it would be disabled.
-      // This test confirms the button is not present or, if it were, it would be disabled by !isActiveStage.
+      await waitFor(() => {
+        const generateButton = screen.getByRole('button');
+        expect(generateButton).toBeInTheDocument();
+        expect(generateButton).toBeEnabled();
+      });
+    });
+
+    it('button should be disabled if stage is not active, regardless of readiness (as per plan logic)', async () => {
+      renderComponent(mockStage, false, true);
+
       const generateButton = screen.queryByRole('button');
       if (generateButton) {
         expect(generateButton).toBeDisabled();

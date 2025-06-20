@@ -151,43 +151,66 @@ describe('AIModelSelector', () => {
   });
 
   test('displays selected models summary correctly', () => {
+    let unmount: () => void;
+
+    // Initial: No models selected
     setupMockStores({ selectedModelIds: [] }, { availableProviders: mockAiProvidersData });
-    render(<AIModelSelector />);
+    ({ unmount } = render(<AIModelSelector />));
     expect(screen.getByText('No models selected')).toBeInTheDocument();
+    unmount();
 
     // Test with multiplicity 1 for GPT-4
     setupMockStores({ selectedModelIds: ['model1'] }, { availableProviders: mockAiProvidersData });
-    render(<AIModelSelector />); 
+    ({ unmount } = render(<AIModelSelector />));
     expect(screen.getByText('GPT-4')).toBeInTheDocument();
-    
+    expect(screen.queryByText('Claude 3')).not.toBeInTheDocument();
+    unmount();
+
     // Test with multiplicity 2 for GPT-4
     setupMockStores({ selectedModelIds: ['model1', 'model1'] }, { availableProviders: mockAiProvidersData });
-    render(<AIModelSelector />); 
-    expect(screen.getByText('GPT-4 (x2)')).toBeInTheDocument();
+    ({ unmount } = render(<AIModelSelector />));
+    const gpt4Elements = screen.getAllByText('GPT-4');
+    expect(gpt4Elements.length).toBe(2);
+    gpt4Elements.forEach(el => expect(el).toBeInTheDocument());
+    expect(screen.queryByText('Claude 3')).not.toBeInTheDocument();
+    unmount();
 
     // Test with GPT-4 (x1) and Claude 3 (x1)
     setupMockStores({ selectedModelIds: ['model1', 'model2'] }, { availableProviders: mockAiProvidersData });
-    render(<AIModelSelector />); 
-    expect(screen.getByText('GPT-4, Claude 3')).toBeInTheDocument();
+    ({ unmount } = render(<AIModelSelector />));
+    expect(screen.getByText('GPT-4')).toBeInTheDocument();
+    expect(screen.getByText('Claude 3')).toBeInTheDocument();
+    unmount();
 
     // Test with GPT-4 (x2) and Claude 3 (x1)
     setupMockStores({ selectedModelIds: ['model1', 'model1', 'model2'] }, { availableProviders: mockAiProvidersData });
-    render(<AIModelSelector />); 
-    expect(screen.getByText('GPT-4 (x2), Claude 3')).toBeInTheDocument();
+    ({ unmount } = render(<AIModelSelector />));
+    const gpt4Again = screen.getAllByText('GPT-4');
+    expect(gpt4Again.length).toBe(2);
+    gpt4Again.forEach(el => expect(el).toBeInTheDocument());
+    expect(screen.getByText('Claude 3')).toBeInTheDocument();
+    unmount();
 
-    const manyProviders = [
-        ...mockAiProvidersData,
-        { id: 'model3', name: 'Gemini', provider: 'Google', api_identifier: 'gemini', created_at: 'test', updated_at: 'test', is_active: true, is_enabled: true, config: null, description: null, default_model_config: null, credentials_schema: null, credentials_status: null, default_provider_model_id: null, last_synced_at: null, organization_id: null, requires_credentials: true, supports_system_prompt: true, supports_tools: false, user_id: null },
-    ];
-    // Test with three models, GPT-4 (x1), Claude 3 (x1), Gemini (x1) -> 'GPT-4, Claude 3, +1 more'
+    const geminiModel: AiProvider = { id: 'model3', name: 'Gemini', provider: 'Google', api_identifier: 'gemini', created_at: 'test', updated_at: 'test', is_active: true, is_enabled: true, config: null, description: null, default_model_config: null, credentials_schema: null, credentials_status: null, default_provider_model_id: null, last_synced_at: null, organization_id: null, requires_credentials: true, supports_system_prompt: true, supports_tools: false, user_id: null };
+    const manyProviders: AiProvider[] = [...mockAiProvidersData, geminiModel];
+
+    // Test with three models, GPT-4 (x1), Claude 3 (x1), Gemini (x1)
     setupMockStores({ selectedModelIds: ['model1', 'model2', 'model3'] }, { availableProviders: manyProviders });
-    render(<AIModelSelector />); 
-    expect(screen.getByText('GPT-4, Claude 3, +1 more')).toBeInTheDocument();
+    ({ unmount } = render(<AIModelSelector />));
+    expect(screen.getByText('GPT-4')).toBeInTheDocument();
+    expect(screen.getByText('Claude 3')).toBeInTheDocument();
+    expect(screen.getByText('Gemini')).toBeInTheDocument();
+    unmount();
 
-    // Test with three models, GPT-4 (x2), Claude 3 (x1), Gemini (x1) -> 'GPT-4 (x2), Claude 3, +1 more'
+    // Test with three models, GPT-4 (x2), Claude 3 (x1), Gemini (x1)
     setupMockStores({ selectedModelIds: ['model1', 'model1', 'model2', 'model3'] }, { availableProviders: manyProviders });
-    render(<AIModelSelector />); 
-    expect(screen.getByText('GPT-4 (x2), Claude 3, +1 more')).toBeInTheDocument();
+    ({ unmount } = render(<AIModelSelector />));
+    const gpt4ElementsMany = screen.getAllByText('GPT-4');
+    expect(gpt4ElementsMany.length).toBe(2);
+    gpt4ElementsMany.forEach(el => expect(el).toBeInTheDocument());
+    expect(screen.getByText('Claude 3')).toBeInTheDocument();
+    expect(screen.getByText('Gemini')).toBeInTheDocument();
+    unmount();
   });
 
   test('renders MultiplicitySelector for each model in the dropdown', async () => {
@@ -314,5 +337,88 @@ describe('AIModelSelector', () => {
     setupMockStores({}, { availableProviders: [], isConfigLoading: false, aiError: 'Some error' });
     render(<AIModelSelector />);
     expect(screen.getByRole('button')).not.toBeDisabled(); // Button should be clickable to show error
+  });
+});
+
+describe('AIModelSelector Pulsing animation', () => {
+  const getPulsingDiv = () => {
+    const button = screen.getByRole('button', { name: /Select AI Models/i });
+    // The pulsing div is expected to be the direct parent of the button component
+    // due to the structure and Radix UI's asChild prop behavior.
+    return button.parentElement;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Ensure scrollIntoView is mocked for Radix components that might use it
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+  });
+
+  test('applies pulsing animation when no models selected, not disabled, not loading, no error, and providers exist', () => {
+    setupMockStores(
+      { selectedModelIds: [] }, // No models
+      {
+        availableProviders: mockAiProvidersData, // Has providers
+        isConfigLoading: false,                 // Not loading
+        aiError: null,                          // No error
+      }
+    );
+    render(<AIModelSelector disabled={false} />); // Not disabled by prop
+    const pulsingDiv = getPulsingDiv();
+    expect(pulsingDiv).toHaveClass('ring-2', 'ring-primary', 'animate-pulse', 'rounded-lg', 'p-0.5');
+  });
+
+  test('does NOT apply pulsing animation if models ARE selected', () => {
+    setupMockStores(
+      { selectedModelIds: ['model1'] }, // Models selected
+      { availableProviders: mockAiProvidersData, isConfigLoading: false, aiError: null }
+    );
+    render(<AIModelSelector disabled={false} />);
+    const pulsingDiv = getPulsingDiv();
+    expect(pulsingDiv).not.toHaveClass('animate-pulse');
+  });
+
+  test('does NOT apply pulsing animation if disabled by prop', () => {
+    setupMockStores(
+      { selectedModelIds: [] },
+      { availableProviders: mockAiProvidersData, isConfigLoading: false, aiError: null }
+    );
+    render(<AIModelSelector disabled={true} />); // Disabled
+    const pulsingDiv = getPulsingDiv();
+    expect(pulsingDiv).not.toHaveClass('animate-pulse');
+  });
+
+  test('does NOT apply pulsing animation if config is loading', () => {
+    setupMockStores(
+      { selectedModelIds: [] },
+      { availableProviders: mockAiProvidersData, isConfigLoading: true, aiError: null } // Loading
+    );
+    render(<AIModelSelector disabled={false} />);
+    const pulsingDiv = getPulsingDiv();
+    expect(pulsingDiv).not.toHaveClass('animate-pulse');
+  });
+
+  test('does NOT apply pulsing animation if there is an AI error', () => {
+    setupMockStores(
+      { selectedModelIds: [] },
+      { availableProviders: mockAiProvidersData, isConfigLoading: false, aiError: 'Some Error' } // Error
+    );
+    render(<AIModelSelector disabled={false} />);
+    const pulsingDiv = getPulsingDiv();
+    expect(pulsingDiv).not.toHaveClass('animate-pulse');
+  });
+
+  test('does NOT apply pulsing animation if there are no available providers', () => {
+    // This scenario leads to `finalIsDisabled` being true because `hasContentProviders` is false.
+    // The pulse condition `!finalIsDisabled` becomes false.
+    setupMockStores(
+      { selectedModelIds: [] },
+      { availableProviders: [], isConfigLoading: false, aiError: null } // No providers
+    );
+    render(<AIModelSelector disabled={false} />);
+    const button = screen.getByRole('button', { name: /Select AI Models/i });
+    expect(button).toBeDisabled(); // Button becomes disabled because no providers + not loading + no error
+    const pulsingDiv = getPulsingDiv();
+    expect(pulsingDiv).not.toHaveClass('animate-pulse');
   });
 }); 

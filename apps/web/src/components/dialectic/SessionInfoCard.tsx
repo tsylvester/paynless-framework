@@ -1,15 +1,18 @@
 import React, { useEffect, useMemo } from 'react';
 import {
   useDialecticStore,
-  selectIsStageReadyForSessionIteration
+  selectIsStageReadyForSessionIteration,
+  selectContributionGenerationStatus,
+  selectGenerateContributionsError,
 } from '@paynless/store';
-import { DialecticProject, DialecticSession, DialecticStage } from '@paynless/types';
+import { DialecticProject, DialecticSession, DialecticStage, ContributionGenerationStatus } from '@paynless/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
 import { AIModelSelector } from './AIModelSelector';
+import { Loader2 } from 'lucide-react';
 
 interface SessionInfoCardProps {
   session?: DialecticSession;
@@ -19,6 +22,8 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = ({ session }) => 
   const project: DialecticProject | null = useDialecticStore(state => state.currentProjectDetail);
   const activeStage: DialecticStage | null = useDialecticStore(state => state.activeContextStage);
   const fetchInitialPromptContent = useDialecticStore(state => state.fetchInitialPromptContent);
+  const contributionGenerationStatus: ContributionGenerationStatus = useDialecticStore(selectContributionGenerationStatus);
+  const generateContributionsError = useDialecticStore(selectGenerateContributionsError);
 
   const isStageReady = useDialecticStore(state => {
     if (!project || !session || !activeStage) {
@@ -88,11 +93,23 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = ({ session }) => 
   return (
     <Card className="mb-6" aria-labelledby={`session-info-title-${session.id}`}>
       <CardHeader>
-        <CardTitle id={`session-info-title-${session.id}`} className="text-xl">
+        <CardTitle data-testid={`session-info-title-${session.id}`} className="text-xl">
           {session.session_description || 'Session Information'} | 
           <Badge variant={session.status?.includes('error') ? 'destructive' : 'secondary'}>{session.status || 'N/A'}</Badge> | 
-          Iteration: {session.iteration_count} | <AIModelSelector /> 
+          Iteration: {session.iteration_count}
         </CardTitle>
+        {(contributionGenerationStatus === 'initiating' || contributionGenerationStatus === 'generating') && (
+          <div className="flex items-center text-sm text-muted-foreground mt-2" data-testid="generating-contributions-indicator">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Generating contributions, please wait...
+          </div>
+        )}
+        {contributionGenerationStatus === 'failed' && generateContributionsError && (
+          <Alert variant="destructive" className="mt-2" data-testid="generate-contributions-error">
+            <AlertTitle>Error Generating Contributions</AlertTitle>
+            <AlertDescription>{generateContributionsError.message}</AlertDescription>
+          </Alert>
+        )}
       </CardHeader>
       <CardContent>
         {activeStage && !isStageReady && (

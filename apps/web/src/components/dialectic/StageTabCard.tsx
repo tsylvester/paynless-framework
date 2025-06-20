@@ -11,6 +11,7 @@ import {
 } from '@paynless/store';
 import { useMemo } from 'react';
 import { GenerateContributionButton } from './GenerateContributionButton';
+import { AIModelSelector } from './AIModelSelector';
 
 interface StageTabCardProps {
   stage: DialecticStage;
@@ -116,7 +117,7 @@ export const StageTabCard: React.FC<StageTabCardProps> = ({
       <CardHeader className="pb-2 pt-3 px-3">
         <CardTitle className="text-base text-center">{stage.display_name}</CardTitle>
       </CardHeader>
-      <CardContent className="flex-grow flex flex-col justify-center items-center text-center px-2 pb-2">
+      <CardContent className="flex-grow flex flex-col justify-center items-center text-center px-2">
         {stage.description && (
           <p className="text-xs text-muted-foreground">{stage.description}</p>
         )}
@@ -125,7 +126,7 @@ export const StageTabCard: React.FC<StageTabCardProps> = ({
         )}
       </CardContent>
       {isActiveStage && (
-        <CardFooter className="p-2 border-t flex-shrink-0">
+        <CardFooter className="p-2 border-t flex-shrink-0 flex flex-col items-center justify-center gap-4">
           <GenerateContributionButton 
             currentStageFriendlyName={textForButtonPropValue}
             currentStage={stage}
@@ -134,6 +135,7 @@ export const StageTabCard: React.FC<StageTabCardProps> = ({
             disabled={finalButtonDisabled}
             className="w-full"
           />
+          <AIModelSelector />
         </CardFooter>
       )}
     </Card>

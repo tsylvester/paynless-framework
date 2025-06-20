@@ -1,5 +1,6 @@
 import React, { useMemo, useEffect } from 'react';
 import { InternalDropdownButton } from './InternalDropdownButton';
+import type { AiProvider } from '@paynless/types';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -20,6 +21,29 @@ interface AIModelSelectorProps {
   disabled?: boolean;
 }
 
+const SelectedModelsDisplayContent: React.FC<{
+  availableProviders: AiProvider[] | null | undefined;
+  currentSelectedModelIds: string[] | null;
+}> = ({ availableProviders, currentSelectedModelIds }) => {
+  if (!availableProviders || availableProviders.length === 0) {
+    return <span className="text-muted-foreground text-sm">No models available</span>;
+  }
+
+  if (!currentSelectedModelIds || currentSelectedModelIds.length === 0) {
+    return <span className="text-sm">No models selected</span>;
+  }
+
+  return (
+    <div className="flex flex-col items-start">
+      {currentSelectedModelIds.map((modelId, index) => {
+        const provider = availableProviders.find(p => p.id === modelId);
+        const displayName = provider ? provider.name : 'Unknown Model';
+        return <div key={`${modelId}-${index}`} className="truncate w-full leading-tight text-sm" title={displayName}>{displayName}</div>;
+      })}
+    </div>
+  );
+};
+
 export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
   disabled,
 }) => {
@@ -35,7 +59,6 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
     setModelMultiplicity: state.setModelMultiplicity,
   }));
 
-  // Calculate multiplicities
   const modelMultiplicities = useMemo(() => {
     const counts: Record<string, number> = {};
     if (currentSelectedModelIds) {
@@ -46,7 +69,6 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
     return counts;
   }, [currentSelectedModelIds]);
 
-  // Fetch models on mount if not already loading, no providers yet, and no prior unhandled error.
   useEffect(() => {
     if (!isConfigLoading && (!availableProviders || availableProviders.length === 0) && !aiError) {
       loadAiConfig();
@@ -57,35 +79,12 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
     setModelMultiplicity(modelId, newCount);
   };
 
-  const selectedProviderNames = useMemo(() => {
-    if (!availableProviders || availableProviders.length === 0) return 'No models available';
-
-    const selectedModels = availableProviders.filter(
-      (provider) => (modelMultiplicities[provider.id] || 0) > 0
-    );
-
-    if (selectedModels.length === 0) return 'No models selected';
-
-    const names = selectedModels.map((provider) => {
-      const count = modelMultiplicities[provider.id] || 0;
-      return count > 1 ? `${provider.name} (x${count})` : provider.name;
-    });
-
-    if (names.length === 0) return 'No models selected';
-    if (names.length > 2) return `${names.slice(0, 2).join(', ')}, +${names.length - 2} more`;
-    return names.join(', ');
-  }, [modelMultiplicities, availableProviders]);
-
   const hasContentProviders = availableProviders && availableProviders.length > 0;
   
-  // Button is disabled if:
-  // 1. `disabled` prop is true
-  // 2. OR it's not loading, there's no error, AND there are no providers to show.
   const finalIsDisabled = 
     disabled || 
     (!isConfigLoading && !aiError && !hasContentProviders);
 
-  // Determine dropdown content sections for clarity
   let dropdownContent: React.ReactNode = null;
   if (isConfigLoading) {
     dropdownContent = <DropdownMenuLabel>Loading models...</DropdownMenuLabel>;
@@ -125,22 +124,30 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
       </>
     );
   } else { 
-    // Not loading, no error, no providers
     dropdownContent = <DropdownMenuLabel>No models available to select.</DropdownMenuLabel>;
   }
 
   return (
-    <div className="inline-block">
+    <div className={`inline-block ${
+      (!currentSelectedModelIds || currentSelectedModelIds.length === 0) && !finalIsDisabled && !isConfigLoading && !aiError
+        ? 'ring-2 ring-primary animate-pulse rounded-lg p-0.5'
+        : ''
+    }`}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <InternalDropdownButton
             variant="outline"
-            className="justify-between"
+            className="justify-between items-start h-auto py-2 text-left"
             disabled={finalIsDisabled}
             aria-label="Select AI Models"
           >
-            <span className="truncate" title={selectedProviderNames}>{selectedProviderNames}</span>
-            <ChevronDown data-slot="icon" className="ml-2 size-4 shrink-0 opacity-50" />
+            <div className="flex-grow mr-1">
+              <SelectedModelsDisplayContent
+                availableProviders={availableProviders}
+                currentSelectedModelIds={currentSelectedModelIds}
+              />
+            </div>
+            <ChevronDown data-slot="icon" className="ml-1 size-4 shrink-0 opacity-50" />
           </InternalDropdownButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-[calc(var(--radix-dropdown-menu-trigger-width))] min-w-64 bg-background/80 backdrop-blur-md">

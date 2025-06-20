@@ -129,7 +129,7 @@ type UpdateProjectDomainAction = { action: 'updateProjectDomain', payload: Updat
 type GetProjectDetailsAction = { action: 'getProjectDetails', payload: GetProjectDetailsPayload };
 type StartSessionAction = { action: 'startSession', payload: StartSessionPayload };
 type GenerateContributionsAction = { action: 'generateContributions', payload: GenerateContributionsPayload };
-type GetContributionContentSignedUrlAction = { action: 'getContributionContentSignedUrl', payload: GetContributionContentSignedUrlPayload };
+type GetContributionContentDataAction = { action: 'getContributionContentData', payload: GetContributionContentSignedUrlPayload };
 type DeleteProjectAction = { action: 'deleteProject', payload: DeleteProjectPayload };
 type CloneProjectAction = { action: 'cloneProject', payload: CloneProjectPayload };
 type ExportProjectAction = { action: 'exportProject', payload: ExportProjectPayload };
@@ -149,7 +149,7 @@ export type DialecticServiceRequest =
   | GetProjectDetailsAction
   | StartSessionAction
   | GenerateContributionsAction
-  | GetContributionContentSignedUrlAction
+  | GetContributionContentDataAction
   | DeleteProjectAction
   | CloneProjectAction
   | ExportProjectAction
@@ -269,6 +269,7 @@ export interface ContributionWithNestedOwner {
   storage_path: string | null;
   mime_type: string | null;
   size_bytes: number | null;
+  file_name: string | null;
   dialectic_sessions: {
     project_id: string | null;
     dialectic_projects: {
@@ -446,3 +447,10 @@ export type UploadContext = {
     originalFileName: string;
   };
 };
+
+export interface GetContributionContentDataResponse {
+  content: string;
+  mimeType: string;
+  sizeBytes: number | null;
+  fileName: string | null;
+}

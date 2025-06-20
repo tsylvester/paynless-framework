@@ -17,6 +17,8 @@ export type DialecticProcessTemplate = Database['public']['Tables']['dialectic_p
   transitions?: DialecticStageTransition[];
 };
 
+// New type for contribution generation status
+export type ContributionGenerationStatus = 'idle' | 'initiating' | 'generating' | 'failed';
 
 export interface DialecticProject {
     id: string;
@@ -35,6 +37,21 @@ export interface DialecticProject {
     resources?: DialecticProjectResource[];
     process_template_id?: string | null;
     dialectic_process_templates: DialecticProcessTemplate | null;
+    isLoadingProcessTemplate: boolean;
+    processTemplateError: ApiError | null;
+
+    // States for generating contributions
+    // isGeneratingContributions: boolean; // Replaced by contributionGenerationStatus
+    contributionGenerationStatus: ContributionGenerationStatus; // New
+    generateContributionsError: ApiError | null;
+
+    // States for submitting stage responses (as per plan 1.5.6.4)
+    isSubmittingStageResponses: boolean; 
+    submitStageResponsesError: ApiError | null;
+
+    // States for saving contribution edits (as per plan 1.5.6.5)
+    isSavingContributionEdit: boolean;
+    saveContributionEditError: ApiError | null;
 }
 
 export interface CreateProjectPayload {
@@ -50,8 +67,20 @@ export interface DeleteProjectPayload {
   projectId: string;
 }
 
+// Ensure this interface is defined and exported
 export interface GetContributionContentSignedUrlPayload {
   contributionId: string;
+}
+
+export interface GetContributionContentDataPayload {
+  contributionId: string;
+}
+
+export interface GetContributionContentDataResponse {
+  content: string;
+  mimeType: string;
+  sizeBytes: number | null;
+  fileName: string | null;
 }
 
 export interface StartSessionPayload {
@@ -203,7 +232,8 @@ export interface DialecticStateValues {
   processTemplateError: ApiError | null;
 
   // States for generating contributions
-  isGeneratingContributions: boolean;
+  // isGeneratingContributions: boolean; // Replaced by contributionGenerationStatus
+  contributionGenerationStatus: ContributionGenerationStatus; // New
   generateContributionsError: ApiError | null;
 
   // States for submitting stage responses (as per plan 1.5.6.4)
@@ -232,13 +262,12 @@ export interface InitialPromptCacheEntry {
 }
 
 export interface ContributionCacheEntry {
-  signedUrl?: string;
-  expiry?: number;
   content?: string;
   isLoading: boolean;
-  error?: string;
+  error?: ApiError | null;
   mimeType?: string;
   sizeBytes?: number | null;
+  fileName?: string | null;
 }
 
 export interface DialecticActions {
@@ -339,7 +368,7 @@ export interface DialecticApiClient {
   startSession(payload: StartSessionPayload): Promise<ApiResponse<DialecticSession>>;
   updateSessionModels(payload: UpdateSessionModelsPayload): Promise<ApiResponse<DialecticSession>>;
   listModelCatalog(): Promise<ApiResponse<AIModelCatalogEntry[]>>;
-  getContributionContentSignedUrl(contributionId: string): Promise<ApiResponse<ContributionContentSignedUrlResponse | null>>;
+  getContributionContentData(contributionId: string): Promise<ApiResponse<GetContributionContentDataResponse | null>>;
   listDomains(): Promise<ApiResponse<DialecticDomain[]>>;
   fetchProcessTemplate(templateId: string): Promise<ApiResponse<DialecticProcessTemplate>>;
 
@@ -427,8 +456,8 @@ export type DialecticServiceActionPayload = {
   action: 'listAvailableDomainOverlays';
   payload: { stageAssociation: DialecticStage };
 } | {
-  action: 'getContributionContentSignedUrl';
-  payload: GetContributionContentSignedUrlPayload;
+  action: 'getContributionContentData';
+  payload: GetContributionContentDataPayload;
 } | {
   action: 'fetchProcessTemplate';
   payload: { templateId: string };

@@ -60,22 +60,18 @@ describe('useDialecticStore', () => {
 
     describe('fetchContributionContent action', () => {
         const testContributionId = 'contrib-123';
-        const mockSignedUrl = 'https://example.com/some-url';
-        const mockContent = 'This is the test content.';
+        const mockContentData = {
+            content: 'This is the test content.',
+            mimeType: 'text/markdown',
+            sizeBytes: 123,
+            fileName: 'test.md',
+        };
+        const mockApiError: ApiError = { message: 'API Failed', code: 'API_ERROR' };
 
-        it('should fetch signed URL and content if not cached', async () => {
-            api.dialectic().getContributionContentSignedUrl.mockResolvedValue({
-                data: { 
-                signedUrl: mockSignedUrl, 
-                mimeType: 'text/plain', 
-                sizeBytes: 100 
-            },
-            status: 200
-            });
-
-            global.fetch = vi.fn().mockResolvedValue({
-                ok: true,
-                text: () => Promise.resolve(mockContent),
+        it('should fetch content data and update cache if not cached', async () => {
+            api.dialectic().getContributionContentData.mockResolvedValue({
+                data: mockContentData,
+                status: 200,
             });
 
             await useDialecticStore.getState().fetchContributionContent(testContributionId);
@@ -83,96 +79,65 @@ describe('useDialecticStore', () => {
             const state = useDialecticStore.getState();
             const cacheEntry = state.contributionContentCache[testContributionId];
 
-            expect(api.dialectic().getContributionContentSignedUrl).toHaveBeenCalledWith(testContributionId);
-            expect(global.fetch).toHaveBeenCalledWith(mockSignedUrl);
+            expect(api.dialectic().getContributionContentData).toHaveBeenCalledWith(testContributionId);
             expect(cacheEntry.isLoading).toBe(false);
-            expect(cacheEntry.content).toBe(mockContent);
+            expect(cacheEntry.content).toBe(mockContentData.content);
+            expect(cacheEntry.mimeType).toBe(mockContentData.mimeType);
+            expect(cacheEntry.sizeBytes).toBe(mockContentData.sizeBytes);
+            expect(cacheEntry.fileName).toBe(mockContentData.fileName);
+            expect(cacheEntry.error).toBeNull();
         });
 
-        it('should use cached signed URL if valid and fetch content', async () => {
-            // ... (setup state with cached URL)
-             useDialecticStore.setState({ 
+        it('should use cached content if already available and not errored', async () => {
+            useDialecticStore.setState({
                 contributionContentCache: {
-                    [testContributionId]: { 
-                        signedUrl: mockSignedUrl, 
-                        isLoading: false, 
-                        content: undefined, 
-                        error: undefined,
-                        expiry: Date.now() + 10000, // Set a valid expiry
-                    }
-                }
-            });
-            global.fetch = vi.fn().mockResolvedValue({
-                ok: true,
-                text: () => Promise.resolve(mockContent),
-            });
-
-            await useDialecticStore.getState().fetchContributionContent(testContributionId);
-
-            expect(api.dialectic().getContributionContentSignedUrl).not.toHaveBeenCalled();
-            expect(global.fetch).toHaveBeenCalledWith(mockSignedUrl);
-            const state = useDialecticStore.getState();
-            expect(state.contributionContentCache[testContributionId].content).toBe(mockContent);
-        });
-
-        it('should not fetch if content is cached and not expired', async () => {
-            useDialecticStore.setState({ 
-                contributionContentCache: {
-                    [testContributionId]: { 
-                        signedUrl: mockSignedUrl, 
-                        isLoading: false, 
-                        content: mockContent, // Content is cached
-                        error: undefined,
-                        expiry: Date.now() + 10000, // Set a valid expiry
+                    [testContributionId]: {
+                        content: mockContentData.content,
+                        mimeType: mockContentData.mimeType,
+                        sizeBytes: mockContentData.sizeBytes,
+                        fileName: mockContentData.fileName,
+                        isLoading: false,
+                        error: null,
                     }
                 }
             });
 
             await useDialecticStore.getState().fetchContributionContent(testContributionId);
 
-            expect(api.dialectic().getContributionContentSignedUrl).not.toHaveBeenCalled();
-            expect(global.fetch).not.toHaveBeenCalled();
-        });
-
-        it('should re-fetch signed URL and content if URL is expired', async () => {
-            useDialecticStore.setState({ 
-                contributionContentCache: {
-                    [testContributionId]: { 
-                        signedUrl: 'https://example.com/expired-url', 
-                        isLoading: false, 
-                        content: undefined, 
-                        error: undefined,
-                        expiry: Date.now() - 1000, // Set an expired expiry
-                    }
-                }
-            });
-
-            api.dialectic().getContributionContentSignedUrl.mockResolvedValue({
-                data: { 
-                signedUrl: mockSignedUrl, 
-                mimeType: 'text/plain', 
-                sizeBytes: 100 },
-            status: 200
-            });
-            global.fetch = vi.fn().mockResolvedValue({
-                ok: true,
-                text: () => Promise.resolve(mockContent),
-            });
-
-            await useDialecticStore.getState().fetchContributionContent(testContributionId);
-
+            expect(api.dialectic().getContributionContentData).not.toHaveBeenCalled();
             const state = useDialecticStore.getState();
             const cacheEntry = state.contributionContentCache[testContributionId];
-            expect(api.dialectic().getContributionContentSignedUrl).toHaveBeenCalledWith(testContributionId);
-            expect(global.fetch).toHaveBeenCalledWith(mockSignedUrl);
-            expect(cacheEntry.content).toBe(mockContent);
+            expect(cacheEntry.content).toBe(mockContentData.content);
+            expect(cacheEntry.isLoading).toBe(false); // Should remain false or be set to false
         });
 
-        it('should handle error when fetching signed URL', async () => {
-            const apiError = { message: 'Failed to get URL', code: 'NETWORK_ERROR' };
-            api.dialectic().getContributionContentSignedUrl.mockResolvedValue({
-                error: apiError,
+        it('should still set isLoading to false if content was in cache but isLoading was true initially', async () => {
+            // This scenario covers if a fetch was initiated, component unmounted, then re-mounted
+            // and fetchContributionContent is called again while content is now there.
+            useDialecticStore.setState({
+                contributionContentCache: {
+                    [testContributionId]: {
+                        content: mockContentData.content,
+                        mimeType: mockContentData.mimeType,
+                        sizeBytes: mockContentData.sizeBytes,
+                        fileName: mockContentData.fileName,
+                        isLoading: true, // Simulate it was loading
+                        error: null,
+                    }
+                }
+            });
+
+            await useDialecticStore.getState().fetchContributionContent(testContributionId);
+            expect(api.dialectic().getContributionContentData).not.toHaveBeenCalled();
+            const state = useDialecticStore.getState();
+            expect(state.contributionContentCache[testContributionId].isLoading).toBe(false);
+        });
+        
+        it('should handle API error when fetching content data', async () => {
+            api.dialectic().getContributionContentData.mockResolvedValue({
+                error: mockApiError,
                 status: 500,
+                data: undefined,
             });
 
             await useDialecticStore.getState().fetchContributionContent(testContributionId);
@@ -180,22 +145,14 @@ describe('useDialecticStore', () => {
             const state = useDialecticStore.getState();
             const cacheEntry = state.contributionContentCache[testContributionId];
             expect(cacheEntry.isLoading).toBe(false);
-            expect(cacheEntry.error).toBe(apiError.message);
-            expect(global.fetch).not.toHaveBeenCalled();
+            expect(cacheEntry.error).toEqual(mockApiError);
+            expect(cacheEntry.content).toBeUndefined();
         });
 
-        it('should handle error when fetching content from URL', async () => {
-            api.dialectic().getContributionContentSignedUrl.mockResolvedValue({
-                data: { 
-                signedUrl: mockSignedUrl, 
-                mimeType: 'text/plain', 
-                sizeBytes: 100 },
-            status: 200
-            });
-            global.fetch = vi.fn().mockResolvedValue({
-                ok: false,
-                status: 403,
-                statusText: 'Forbidden',
+        it('should handle API error when fetching content data (no data returned)', async () => {
+            api.dialectic().getContributionContentData.mockResolvedValue({
+                data: null, // No data
+                status: 200, // But status is OK
             });
 
             await useDialecticStore.getState().fetchContributionContent(testContributionId);
@@ -203,414 +160,219 @@ describe('useDialecticStore', () => {
             const state = useDialecticStore.getState();
             const cacheEntry = state.contributionContentCache[testContributionId];
             expect(cacheEntry.isLoading).toBe(false);
-            expect(cacheEntry.error).toBe('Failed to fetch content: 403 Forbidden');
+            expect(cacheEntry.error).toEqual({
+                message: 'Failed to fetch contribution content, no data returned.',
+                code: 'NO_DATA_RETURNED',
+            });
+            expect(cacheEntry.content).toBeUndefined();
+        });
+
+        it('should handle network error when fetching content data', async () => {
+            const networkError = new Error('Network Failure');
+            api.dialectic().getContributionContentData.mockRejectedValue(networkError);
+
+            await useDialecticStore.getState().fetchContributionContent(testContributionId);
+
+            const state = useDialecticStore.getState();
+            const cacheEntry = state.contributionContentCache[testContributionId];
+            expect(cacheEntry.isLoading).toBe(false);
+            expect(cacheEntry.error).toEqual({
+                message: networkError.message,
+                code: 'NETWORK_ERROR',
+            });
+            expect(cacheEntry.content).toBeUndefined();
         });
 
         it('should set isLoading correctly during operations', async () => {
             let checkedLoading = false;
-            api.dialectic().getContributionContentSignedUrl.mockImplementation(async () => {
-                expect(useDialecticStore.getState().contributionContentCache[testContributionId].isLoading).toBe(true);
+            api.dialectic().getContributionContentData.mockImplementation(async () => {
+                // Check state while API call is in progress
+                expect(useDialecticStore.getState().contributionContentCache[testContributionId]?.isLoading).toBe(true);
                 checkedLoading = true;
-                return { data: { signedUrl: mockSignedUrl, 
-                mimeType: 'text/plain', 
-                sizeBytes: 100 },
-                status: 200
-                };
+                return { data: mockContentData, status: 200 };
             });
-            global.fetch = vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve('content') });
-            
+
             await useDialecticStore.getState().fetchContributionContent(testContributionId);
 
             expect(checkedLoading).toBe(true);
-            expect(useDialecticStore.getState().contributionContentCache[testContributionId].isLoading).toBe(false);
+            expect(useDialecticStore.getState().contributionContentCache[testContributionId]?.isLoading).toBe(false);
         });
     });
 
-    // --- Tests for fetchContributionContent ---
-    describe('fetchContributionContent thunk', () => {
-        const contributionId = 'contrib123';
-        const mockSignedUrlResponse: ContributionContentSignedUrlResponse = {
-            signedUrl: 'https://example.com/signed-url',
-            mimeType: 'text/plain',
-            sizeBytes: 100,
+    describe('generateContributions thunk', () => {
+        const mockPayload: GenerateContributionsPayload = {
+            sessionId: 'sess-generate-123',
+            projectId: 'proj-generate-abc',
+            iterationNumber: 1,
+            stageSlug: 'thesis',
         };
-        const mockContent = 'This is the test content.';
+
+        const mockSuccessResponse: GenerateContributionsResponse = {
+            message: 'Contributions generated successfully for thesis stage.',
+        };
+
+        const mockProjectDetailsAfterGeneration: DialecticProject = {
+            id: 'proj-generate-abc',
+            project_name: 'Generated Project',
+            user_id: 'user-test',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            status: 'active',
+            initial_user_prompt: 'Initial',
+            selected_domain_id: 'domain-1',
+            dialectic_domains: { name: 'Test Domain' }, 
+            selected_domain_overlay_id: null,
+            repo_url: null,
+            dialectic_process_templates: null, 
+            process_template_id: 'pt-1',
+            dialectic_sessions: [
+                { 
+                    id: 'sess-generate-123', 
+                    project_id: 'proj-generate-abc',
+                    session_description: 'Test session',
+                    current_stage_id: 'thesis-stage-id',
+                    iteration_count: 1,
+                    current_iteration: 1,
+                    dialectic_contributions: [{ id: 'new-contrib-1' } as DialecticContribution],
+                    selected_model_catalog_ids: [],
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    associated_chat_id: null,
+                    user_input_reference_url: null,
+                     status: 'pending_antithesis',
+                } as DialecticSession,
+            ],
+            isLoadingProcessTemplate: false,
+            processTemplateError: null,
+            contributionGenerationStatus: 'idle', 
+            generateContributionsError: null,
+            isSubmittingStageResponses: false,
+            submitStageResponsesError: null,
+            isSavingContributionEdit: false,
+            saveContributionEditError: null,
+        };
+
+        const mockApiError: ApiError = { code: 'GENERATION_FAILED', message: 'Failed to generate' };
+        const networkError = new Error('Network failure');
 
         beforeEach(() => {
-            vi.useFakeTimers();
-            // Mock global fetch before each test in this describe block
-            global.fetch = vi.fn() as Mock<[RequestInfo | URL, RequestInit | undefined], Promise<Response>>;
+            // Ensure timers are faked for tests that might rely on setImmediate or setTimeout behavior in the store
+             vi.useFakeTimers();
         });
 
         afterEach(() => {
             vi.runOnlyPendingTimers();
             vi.useRealTimers();
-            // No need to restoreAllMocks for global.fetch if it's re-assigned in beforeEach
         });
 
-        it('should first fetch signed URL, then content, and update cache', async () => {
-            api.dialectic().getContributionContentSignedUrl.mockResolvedValueOnce({
-                data: mockSignedUrlResponse,
+        it('should call API, update status, and refresh project details on success', async () => {
+            api.dialectic().generateContributions.mockResolvedValue({
+                data: mockSuccessResponse,
                 status: 200,
             });
-            (global.fetch as Mock<[RequestInfo | URL, RequestInit | undefined], Promise<Response>>).mockResolvedValueOnce(
-                new Response(mockContent, { 
-                    status: 200, 
-                    headers: { 'Content-Type': mockSignedUrlResponse.mimeType || 'text/plain' } 
-                })
-            );
-
-            const { fetchContributionContent } = useDialecticStore.getState();
-            await fetchContributionContent(contributionId);
-
-            const state = useDialecticStore.getState();
-            const cacheEntry = state.contributionContentCache[contributionId];
-
-            expect(api.dialectic().getContributionContentSignedUrl).toHaveBeenCalledWith(contributionId);
-            expect(global.fetch).toHaveBeenCalledWith(mockSignedUrlResponse.signedUrl);
-            expect(cacheEntry).toBeDefined();
-            expect(cacheEntry?.isLoading).toBe(false);
-            expect(cacheEntry?.error).toBeUndefined();
-            expect(cacheEntry?.signedUrl).toBe(mockSignedUrlResponse.signedUrl);
-            expect(cacheEntry?.mimeType).toBe(mockSignedUrlResponse.mimeType);
-            expect(cacheEntry?.sizeBytes).toBe(mockSignedUrlResponse.sizeBytes);
-            expect(cacheEntry?.content).toBe(mockContent);
-            expect(cacheEntry?.expiry).toBeGreaterThan(Date.now());
-
-            vi.advanceTimersByTime(14 * 60 * 1000 + 1000);
-            
-            api.dialectic().getContributionContentSignedUrl.mockResolvedValueOnce({
-                data: { ...mockSignedUrlResponse, signedUrl: 'https://example.com/signed-url-new' },
+            api.dialectic().getProjectDetails.mockResolvedValue({
+                data: mockProjectDetailsAfterGeneration,
                 status: 200,
             });
-            (global.fetch as Mock<[RequestInfo | URL, RequestInit | undefined], Promise<Response>>).mockResolvedValueOnce(
-                new Response('new content', { 
-                    status: 200, 
-                    headers: { 'Content-Type': mockSignedUrlResponse.mimeType || 'text/plain' } 
-                })
-            );
-
-            await fetchContributionContent(contributionId);
-            const updatedState = useDialecticStore.getState();
-            const updatedCacheEntry = updatedState.contributionContentCache[contributionId];
-
-            expect(api.dialectic().getContributionContentSignedUrl).toHaveBeenCalledTimes(2);
-            expect(global.fetch).toHaveBeenCalledTimes(2);
-            expect((global.fetch as Mock<any,any>).mock.calls[1][0]).toBe('https://example.com/signed-url-new');
-            expect(updatedCacheEntry?.content).toBe('new content');
-        });
-
-        it('should use cached signed URL if valid and content not present', async () => {
-            const initialExpiry = Date.now() + 10 * 60 * 1000;
-            useDialecticStore.setState(state => ({
-                contributionContentCache: {
-                    ...state.contributionContentCache,
-                    [contributionId]: {
-                        signedUrl: mockSignedUrlResponse.signedUrl,
-                        mimeType: mockSignedUrlResponse.mimeType,
-                        sizeBytes: mockSignedUrlResponse.sizeBytes,
-                        expiry: initialExpiry,
-                        isLoading: false,
-                    }
-                }
-            }));
-        
-            (global.fetch as Mock<[RequestInfo | URL, RequestInit | undefined], Promise<Response>>).mockResolvedValueOnce(
-                new Response(mockContent, { 
-                    status: 200, 
-                    headers: { 'Content-Type': mockSignedUrlResponse.mimeType || 'text/plain' } 
-                })
-            );
-        
-            const { fetchContributionContent } = useDialecticStore.getState();
-            await fetchContributionContent(contributionId);
-        
-            const state = useDialecticStore.getState();
-            const cacheEntry = state.contributionContentCache[contributionId];
-        
-            expect(api.dialectic().getContributionContentSignedUrl).not.toHaveBeenCalled();
-            expect(global.fetch).toHaveBeenCalledWith(mockSignedUrlResponse.signedUrl);
-            expect(cacheEntry?.content).toBe(mockContent);
-            expect(cacheEntry?.isLoading).toBe(false);
-        });
-
-        it('should use cached content if valid and not expired', async () => {
-            const initialExpiry = Date.now() + 10 * 60 * 1000;
-            useDialecticStore.setState(state => ({
-                contributionContentCache: {
-                    ...state.contributionContentCache,
-                    [contributionId]: {
-                        signedUrl: mockSignedUrlResponse.signedUrl,
-                        mimeType: mockSignedUrlResponse.mimeType,
-                        sizeBytes: mockSignedUrlResponse.sizeBytes,
-                        content: mockContent,
-                        expiry: initialExpiry,
-                        isLoading: false,
-                    }
-                }
-            }));
-                
-            const { fetchContributionContent } = useDialecticStore.getState();
-            await fetchContributionContent(contributionId);
-                
-            expect(api.dialectic().getContributionContentSignedUrl).not.toHaveBeenCalled();
-            expect(global.fetch).not.toHaveBeenCalled();
-            const state = useDialecticStore.getState();
-            expect(state.contributionContentCache[contributionId]?.isLoading).toBe(false);
-            expect(state.contributionContentCache[contributionId]?.content).toBe(mockContent);
-        });
-
-        it('should handle API error when fetching signed URL', async () => {
-            const apiError: ApiError = { code: 'API_ERROR', message: 'Failed to fetch signed URL' };
-            api.dialectic().getContributionContentSignedUrl.mockResolvedValueOnce({ error: apiError, status: 500 });
-        
-            const { fetchContributionContent } = useDialecticStore.getState();
-            await fetchContributionContent(contributionId);
-        
-            const state = useDialecticStore.getState();
-            const cacheEntry = state.contributionContentCache[contributionId];
-        
-            expect(cacheEntry?.isLoading).toBe(false);
-            expect(cacheEntry?.error).toBe(apiError.message);
-            expect(cacheEntry?.content).toBeUndefined();
-            expect(global.fetch).not.toHaveBeenCalled();
-        });
-        
-        it('should handle network error when fetching signed URL (rejected promise)', async () => {
-            const networkErrorMessage = 'Network connection failed';
-            api.dialectic().getContributionContentSignedUrl.mockRejectedValueOnce(new Error(networkErrorMessage));
-        
-            const { fetchContributionContent } = useDialecticStore.getState();
-            await fetchContributionContent(contributionId);
-        
-            const state = useDialecticStore.getState();
-            const cacheEntry = state.contributionContentCache[contributionId];
-        
-            expect(cacheEntry?.isLoading).toBe(false);
-            expect(cacheEntry?.error).toBe(networkErrorMessage);
-            expect(cacheEntry?.content).toBeUndefined();
-            expect(global.fetch).not.toHaveBeenCalled();
-        });
-
-        it('should handle error when fetching content from signed URL', async () => {
-            api.dialectic().getContributionContentSignedUrl.mockResolvedValueOnce({
-                data: mockSignedUrlResponse,
-                status: 200,
+            api.dialectic().fetchProcessTemplate.mockResolvedValue({
+                data: { id: 'pt-1', name: 'Test Template', stages: [], starting_stage_id: 's1' } as any,
+                status: 200
             });
-            const fetchErrorMessage = 'Forbidden';
-            (global.fetch as Mock<[RequestInfo | URL, RequestInit | undefined], Promise<Response>>).mockResolvedValueOnce(
-                new Response(fetchErrorMessage, { 
-                    status: 403, 
-                    statusText: fetchErrorMessage 
-                })
-            );
-        
-            const { fetchContributionContent } = useDialecticStore.getState();
-            await fetchContributionContent(contributionId);
-        
-            const state = useDialecticStore.getState();
-            const cacheEntry = state.contributionContentCache[contributionId];
-        
-            expect(cacheEntry?.isLoading).toBe(false);
-            expect(cacheEntry?.error).toContain(fetchErrorMessage);
-            expect(cacheEntry?.content).toBeUndefined();
-        });
-
-        it('should handle network error when fetching content from signed URL (fetch rejects)', async () => {
-            api.dialectic().getContributionContentSignedUrl.mockResolvedValueOnce({
-                data: mockSignedUrlResponse,
-                status: 200,
-            });
-            const fetchNetworkErrorMessage = 'Simulated network failure during fetch';
-            (global.fetch as Mock<[RequestInfo | URL, RequestInit | undefined], Promise<Response>>).mockRejectedValueOnce(new Error(fetchNetworkErrorMessage));
-
-            const { fetchContributionContent } = useDialecticStore.getState();
-            await fetchContributionContent(contributionId);
-
-            const state = useDialecticStore.getState();
-            const cacheEntry = state.contributionContentCache[contributionId];
-
-            expect(cacheEntry?.isLoading).toBe(false);
-            expect(cacheEntry?.error).toBe(fetchNetworkErrorMessage); 
-            expect(cacheEntry?.content).toBeUndefined();
-        });
-
-        it('should set isLoading correctly during operations and clear previous error', async () => {
-            const initialError = "Previous error";
-            useDialecticStore.setState(state => ({
-                contributionContentCache: {
-                    ...state.contributionContentCache,
-                    [contributionId]: {
-                        isLoading: false,
-                        error: initialError,
-                    }
-                }
-            }));
-            
-            let checkedLoadingDuringApiCall = false;
-            let checkedLoadingDuringFetch = false;
-
-            api.dialectic().getContributionContentSignedUrl.mockImplementationOnce(async () => {
-                const stateBeforeApiResolve = useDialecticStore.getState();
-                expect(stateBeforeApiResolve.contributionContentCache[contributionId]?.isLoading).toBe(true);
-                expect(stateBeforeApiResolve.contributionContentCache[contributionId]?.error).toBeUndefined();
-                checkedLoadingDuringApiCall = true;
-                return { data: mockSignedUrlResponse, status: 200 };
-            });
-        
-            (global.fetch as Mock<[RequestInfo | URL, RequestInit | undefined], Promise<Response>>).mockImplementationOnce(async () => {
-                const stateBeforeFetchResolve = useDialecticStore.getState();
-                expect(stateBeforeFetchResolve.contributionContentCache[contributionId]?.isLoading).toBe(true);
-                checkedLoadingDuringFetch = true;
-                return new Response(mockContent, { 
-                    status: 200, 
-                    headers: { 'Content-Type': mockSignedUrlResponse.mimeType || 'text/plain' } 
-                });
-            });
-        
-            const { fetchContributionContent } = useDialecticStore.getState();
-            await fetchContributionContent(contributionId);
-        
-            const finalState = useDialecticStore.getState();
-            expect(finalState.contributionContentCache[contributionId]?.isLoading).toBe(false);
-            expect(finalState.contributionContentCache[contributionId]?.content).toBe(mockContent);
-            expect(finalState.contributionContentCache[contributionId]?.error).toBeUndefined();
-            expect(checkedLoadingDuringApiCall).toBe(true);
-            expect(checkedLoadingDuringFetch).toBe(true);
-        });
-    });
-
-    // New describe block for generateContributions
-    describe('generateContributions thunk', () => {
-        const mockSessionId = 'sess-generate-123';
-        const mockProjectId = 'proj-generate-abc';
-        const mockStageSlug = 'thesis';
-        const mockIterationNumber = 1;
-        const mockContribution: DialecticContribution = {
-            id: 'contrib-new-1',
-            session_id: mockSessionId,
-            user_id: 'user-abc',
-            stage: { 
-                id: 'stage-1', 
-                display_name: 'Thesis', 
-                slug: 'thesis', 
-                description: '', 
-                created_at: '', 
-                default_system_prompt_id: null, 
-                expected_output_artifacts: null,
-                input_artifact_rules: null,
-            },
-            iteration_number: mockIterationNumber,
-            model_id: 'gpt-4',
-            model_name: 'GPT-4',
-            prompt_template_id_used: 'pt-123',
-            seed_prompt_url: null,
-            content_storage_bucket: 'test-bucket',
-            content_storage_path: 'path/to/content',
-            content_mime_type: 'text/plain',
-            content_size_bytes: 1234,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: 'path/to/raw',
-            target_contribution_id: null,
-            tokens_used_input: 100,
-            tokens_used_output: 200,
-            processing_time_ms: 500,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-        };
-        const mockSuccessResponse: GenerateContributionsResponse = {
-            message: 'Contributions generated successfully for thesis stage.',
-            contributions: [mockContribution]
-        };
-        const mockGeneratePayload: GenerateContributionsPayload = {
-            sessionId: mockSessionId,
-            projectId: mockProjectId,
-            iterationNumber: mockIterationNumber,
-            stageSlug: mockStageSlug,
-        };
-
-        it('should call API with correct payload and update state on success', async () => {
-            const mockApiResponse: ApiResponse<GenerateContributionsResponse> = { data: mockSuccessResponse, status: 200 };
-            api.dialectic().generateContributions.mockResolvedValue(mockApiResponse);
 
             const { generateContributions } = useDialecticStore.getState();
-            const result = await generateContributions(mockGeneratePayload);
+            
+            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('idle');
 
-            expect(api.dialectic().generateContributions).toHaveBeenCalledWith(mockGeneratePayload);
+            const promise = generateContributions(mockPayload);
+            
+            // Immediately after call, status should be 'generating'
+            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('generating');
+            
+            const result = await promise;
+
+            expect(api.dialectic().generateContributions).toHaveBeenCalledWith(mockPayload);
             const state = useDialecticStore.getState();
-            expect(state.isGeneratingContributions).toBe(false);
+            expect(state.contributionGenerationStatus).toBe('idle'); 
             expect(state.generateContributionsError).toBeNull();
             expect(result.data).toEqual(mockSuccessResponse);
-
-            // Assuming successful generation should refetch project details to update contributions
-            expect(api.dialectic().getProjectDetails).toHaveBeenCalledWith(mockProjectId);
+            expect(api.dialectic().getProjectDetails).toHaveBeenCalledWith(mockPayload.projectId);
+            expect(state.currentProjectDetail?.id).toBe(mockProjectDetailsAfterGeneration.id);
         });
 
         it('should set error state if API returns an error', async () => {
-            const mockError: ApiError = { code: 'GENERATION_FAILED', message: 'Failed to generate' };
-            const mockApiResponse: ApiResponse<GenerateContributionsResponse> = { error: mockError, status: 500 };
-            api.dialectic().generateContributions.mockResolvedValue(mockApiResponse);
+            api.dialectic().generateContributions.mockResolvedValue({
+                error: mockApiError,
+                status: 500,
+                data: undefined, // ensure data is explicitly undefined or null for error responses
+            });
 
             const { generateContributions } = useDialecticStore.getState();
-            const result = await generateContributions(mockGeneratePayload);
+            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('idle');
+            
+            const resultPromise = generateContributions(mockPayload);
+            
+            // Immediately after call, status should be 'generating'
+            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('generating');
+
+            const result = await resultPromise;
 
             const state = useDialecticStore.getState();
-            expect(state.isGeneratingContributions).toBe(false);
-            expect(state.generateContributionsError).toEqual(mockError);
-            expect(result.error).toEqual(mockError);
+            expect(state.contributionGenerationStatus).toBe('failed');
+            expect(state.generateContributionsError).toEqual(mockApiError);
+            expect(result.error).toEqual(mockApiError);
             expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
         });
 
         it('should set network error state if API call throws', async () => {
-            const networkError = new Error('Network failure');
             api.dialectic().generateContributions.mockRejectedValue(networkError);
 
             const { generateContributions } = useDialecticStore.getState();
-            const result = await generateContributions(mockGeneratePayload);
+            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('idle');
+            
+            const resultPromise = generateContributions(mockPayload);
+
+            // Immediately after call, status should be 'generating'
+            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('generating');
+            
+            const result = await resultPromise;
 
             const state = useDialecticStore.getState();
-            expect(state.isGeneratingContributions).toBe(false);
+            expect(state.contributionGenerationStatus).toBe('failed');
             expect(state.generateContributionsError).toEqual({ message: networkError.message, code: 'NETWORK_ERROR' });
             expect(result.error).toEqual({ message: networkError.message, code: 'NETWORK_ERROR' });
             expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
         });
 
-        it('should set loading state during the generation process', async () => {
-            const { generateContributions } = useDialecticStore.getState();
-            const mockGeneratePayload = {
-                sessionId: 'sess-generate-123',
-                projectId: 'proj-generate-456',
-                stageSlug: 'thesis' as DialecticStage['slug'],
-                iterationNumber: 1,
-            };
-
-            const mockSuccessResponse: GenerateContributionsResponse = {
-                message: 'Contributions generated successfully.',
-                contributions: [],
-            };
-
+        it('should set contributionGenerationStatus through generating > idle/failed path', async () => {
             let resolveGeneration: (value: ApiResponse<GenerateContributionsResponse>) => void;
             const generationPromise = new Promise<ApiResponse<GenerateContributionsResponse>>(resolve => {
                 resolveGeneration = resolve;
             });
             
-            api.dialectic().generateContributions.mockReturnValue(generationPromise);
+            api.dialectic().generateContributions.mockImplementation(() => generationPromise);
+            api.dialectic().getProjectDetails.mockResolvedValue({ 
+                data: mockProjectDetailsAfterGeneration,
+                status: 200,
+            });
+            api.dialectic().fetchProcessTemplate.mockResolvedValue({
+                data: { id: 'pt-1', name: 'Test Template', stages: [], starting_stage_id: 's1' } as any,
+                status: 200
+            });
+
+            const { generateContributions } = useDialecticStore.getState();
+
+            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('idle');
             
-            const generationCall = generateContributions(mockGeneratePayload);
-            
-            const stateBefore = useDialecticStore.getState();
-            expect(stateBefore.isGeneratingContributions).toBe(true);
+            const resultPromise = generateContributions(mockPayload); 
+
+            // Status is 'generating' immediately after call
+            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('generating');
 
             resolveGeneration!({ data: mockSuccessResponse, status: 200 });
+            await resultPromise; 
 
-            await generationCall;
-
-            const stateAfter = useDialecticStore.getState();
-            expect(stateAfter.isGeneratingContributions).toBe(false);
+            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('idle');
+            expect(useDialecticStore.getState().generateContributionsError).toBeNull();
         });
     });
 
@@ -651,8 +413,18 @@ describe('useDialecticStore', () => {
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
             }],
+            dialectic_domains: { name: 'Test Domain' },
+            dialectic_process_templates: null,
+            process_template_id: 'pt-1',
+            isLoadingProcessTemplate: false,
+            processTemplateError: null,
+            contributionGenerationStatus: 'idle',
+            generateContributionsError: null,
             selected_domain_id: 'domain-1',
-            domain_name: 'Domain 1',
+            isSubmittingStageResponses: false,
+            submitStageResponsesError: null,
+            isSavingContributionEdit: false,
+            saveContributionEditError: null,
         };
         const mockSuccessResponse: SubmitStageResponsesResponse = {
             userFeedbackStoragePath: 'path/to/feedback.json',
@@ -776,7 +548,17 @@ describe('useDialecticStore', () => {
             selected_domain_overlay_id: null,
             selected_domain_id: 'domain-1',
             repo_url: null,
-            domain_name: 'Domain 1',
+            dialectic_domains: { name: 'Test Domain' },
+            dialectic_process_templates: null,
+            process_template_id: 'pt-1',
+            isLoadingProcessTemplate: false,
+            processTemplateError: null,
+            contributionGenerationStatus: 'idle',
+            generateContributionsError: null,
+            isSubmittingStageResponses: false,
+            submitStageResponsesError: null,
+            isSavingContributionEdit: false,
+            saveContributionEditError: null,
             dialectic_sessions: [
                 {
                     id: mockSessionId,

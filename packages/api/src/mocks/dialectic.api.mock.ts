@@ -3,7 +3,7 @@ import type {
     DialecticProject, 
     CreateProjectPayload, 
     ApiResponse, 
-    ContributionContentSignedUrlResponse, 
+    GetContributionContentDataResponse,
     StartSessionPayload, 
     DialecticSession, 
     AIModelCatalogEntry,
@@ -32,7 +32,7 @@ export type MockDialecticApiClient = {
     listAvailableDomainOverlays: ReturnType<typeof vi.fn<[payload: { stageAssociation: string }], Promise<ApiResponse<DomainOverlayDescriptor[]>>>>;
     createProject: ReturnType<typeof vi.fn<[payload: CreateProjectPayload], Promise<ApiResponse<DialecticProject>>>>;
     listProjects: ReturnType<typeof vi.fn<[], Promise<ApiResponse<DialecticProject[]>>>>;
-    getContributionContentSignedUrl: ReturnType<typeof vi.fn<[contributionId: string], Promise<ApiResponse<ContributionContentSignedUrlResponse | null>>>>;
+    getContributionContentData: ReturnType<typeof vi.fn<[contributionId: string], Promise<ApiResponse<GetContributionContentDataResponse | null>>>>;
     startSession: ReturnType<typeof vi.fn<[payload: StartSessionPayload], Promise<ApiResponse<DialecticSession>>>>;
     getProjectDetails: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<DialecticProject>>>>;
     listModelCatalog: ReturnType<typeof vi.fn<[], Promise<ApiResponse<AIModelCatalogEntry[]>>>>;
@@ -58,7 +58,7 @@ export function createMockDialecticClient(): MockDialecticApiClient {
         listAvailableDomainOverlays: vi.fn<[{ stageAssociation: string }], Promise<ApiResponse<DomainOverlayDescriptor[]>>>(),
         createProject: vi.fn<[CreateProjectPayload], Promise<ApiResponse<DialecticProject>>>(),
         listProjects: vi.fn<[], Promise<ApiResponse<DialecticProject[]>>>(),
-        getContributionContentSignedUrl: vi.fn<[string], Promise<ApiResponse<ContributionContentSignedUrlResponse | null>>>(),
+        getContributionContentData: vi.fn<[string], Promise<ApiResponse<GetContributionContentDataResponse | null>>>(),
         startSession: vi.fn<[StartSessionPayload], Promise<ApiResponse<DialecticSession>>>(),
         getProjectDetails: vi.fn<[string], Promise<ApiResponse<DialecticProject>>>(),
         listModelCatalog: vi.fn<[], Promise<ApiResponse<AIModelCatalogEntry[]>>>(),

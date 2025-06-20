@@ -105,6 +105,12 @@ export const selectStartSessionError = (state: DialecticStateValues): ApiError |
 // Selector for the contribution content cache
 export const selectContributionContentCache = (state: DialecticStateValues) => state.contributionContentCache;
 
+// New selector for contribution generation status
+export const selectContributionGenerationStatus = (state: DialecticStateValues) => state.contributionGenerationStatus;
+
+// Selector for any error related to generating contributions
+export const selectGenerateContributionsError = (state: DialecticStateValues): ApiError | null => state.generateContributionsError;
+
 // Selector for the current project ID
 export const selectCurrentProjectId = (state: DialecticStateValues): string | undefined => 
   state.currentProjectDetail?.id;

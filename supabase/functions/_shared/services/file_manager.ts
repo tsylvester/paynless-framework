@@ -110,16 +110,40 @@ export class FileManagerService {
       | TablesInsert<'dialectic_contributions'>
 
     if (targetTable === 'dialectic_project_resources') {
+      let finalDescriptionString: string | null = null;
+      if (typeof context.description === 'string') {
+        try {
+          const parsedJson = JSON.parse(context.description);
+          if (typeof parsedJson === 'object' && parsedJson !== null) {
+            // Parsed successfully into an object, merge fileType
+            const descriptionObject = { ...parsedJson, type: context.pathContext.fileType };
+            finalDescriptionString = JSON.stringify(descriptionObject);
+          } else {
+            // Parsed, but not an object (e.g., a stringified number/boolean) or was null
+            finalDescriptionString = JSON.stringify({ type: context.pathContext.fileType, originalDescription: context.description });
+          }
+        } catch (e) {
+          // Not valid JSON, treat as a literal string description
+          finalDescriptionString = JSON.stringify({ type: context.pathContext.fileType, originalDescription: context.description });
+        }
+      } else if (context.description === null || context.description === undefined) {
+        finalDescriptionString = null;
+      } else {
+        // This case should ideally not be hit if context.description is typed as string | undefined | null
+        // However, to be safe, if it's some other type, we'll stringify it directly within the wrapper
+        console.warn('Unexpected type for context.description:', typeof context.description);
+        finalDescriptionString = JSON.stringify({ type: context.pathContext.fileType, originalDescription: String(context.description) });
+      }
+
       recordData = {
         project_id: context.pathContext.projectId,
-        user_id: context.userId!, // Ensure userId is not null if your RLS/DB expects it
+        user_id: context.userId!,
         file_name: fileName,
         mime_type: context.mimeType,
         size_bytes: context.sizeBytes,
         storage_bucket: this.storageBucket,
         storage_path: mainContentFilePath,
-        resource_description: context.description ?? null,
-        // Ensure all required fields for dialectic_project_resources are covered
+        resource_description: finalDescriptionString,
       }
     } else { // This case is for 'dialectic_contributions'
       if (!context.contributionMetadata) {

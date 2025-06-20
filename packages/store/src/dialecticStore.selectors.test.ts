@@ -37,7 +37,12 @@ import {
     selectActiveContextProjectId,
     selectActiveContextSessionId,
     selectActiveContextStage,
-    selectIsStageReadyForSessionIteration
+    selectIsStageReadyForSessionIteration,
+    selectContributionGenerationStatus,
+    selectGenerateContributionsError,
+    selectAllContributionsFromCurrentProject,
+    selectSessionById,
+    selectStageById
 } from './dialecticStore.selectors';
 import { initialDialecticStateValues } from './dialecticStore';
 import type { 
@@ -83,15 +88,37 @@ describe('Dialectic Store Selectors', () => {
         { id: 'dom2', name: 'Domain 2', description: 'Test domain 2', parent_domain_id: null },
     ];
     const mockDomainsError: ApiError = { code: 'DOMAIN_ERR', message: 'Test Domain Error' };
+    const mockStage1: DialecticStage = { 
+        id: 'stage-abc', 
+        slug: 'mock-stage-1', 
+        display_name: 'Mock Stage 1', 
+        description: 'First mock stage',
+        created_at: new Date().toISOString(),
+        default_system_prompt_id: 'sp-1',
+        input_artifact_rules: null,
+        expected_output_artifacts: null,
+    };
+    const mockStage2: DialecticStage = { 
+        id: 'stage-def', 
+        slug: 'mock-stage-2', 
+        display_name: 'Mock Stage 2', 
+        description: 'Second mock stage',
+        created_at: new Date().toISOString(),
+        default_system_prompt_id: 'sp-2',
+        input_artifact_rules: null,
+        expected_output_artifacts: null,
+    };
     const mockProcessTemplate: DialecticProcessTemplate = {
         id: 'pt-1',
         name: 'Test Template',
         description: 'A test template',
         created_at: new Date().toISOString(),
-        starting_stage_id: 's1'
+        starting_stage_id: 'stage-abc',
+        stages: [mockStage1, mockStage2],
     };
     const mockProcessTemplateError: ApiError = { code: 'TEMPLATE_ERR', message: 'Test Template Error' };
     const mockSaveContributionError: ApiError = { code: 'SAVE_ERR', message: 'Test Save Error' };
+    const mockGenerateContributionsError: ApiError = { code: 'GEN_ERR', message: 'Test Generation Error' };
 
     const mockSessions: DialecticSession[] = [
         {
@@ -107,8 +134,25 @@ describe('Dialectic Store Selectors', () => {
             updated_at: new Date().toISOString(),
             user_input_reference_url: null,
             dialectic_contributions: [
-                { id: 'c1', session_id: 'session-1' } as DialecticContribution,
-            ]
+                { id: 'c1-s1', session_id: 'session-1' } as DialecticContribution,
+                { id: 'c2-s1', session_id: 'session-1' } as DialecticContribution,
+            ],
+        },
+        {
+            id: 'session-2',
+            project_id: 'projDetail1',
+            session_description: 'Session Two',
+            iteration_count: 1,
+            selected_model_catalog_ids: ['model-2'],
+            status: 'active',
+            associated_chat_id: 'chat-2',
+            current_stage_id: 's1',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            user_input_reference_url: null,
+            dialectic_contributions: [
+                { id: 'c1-s2', session_id: 'session-2' } as DialecticContribution,
+            ],
         }
     ];
 
@@ -128,6 +172,14 @@ describe('Dialectic Store Selectors', () => {
         resources: [],
         process_template_id: 'pt1',
         dialectic_process_templates: mockProcessTemplate,
+        isLoadingProcessTemplate: false,
+        processTemplateError: null,
+        contributionGenerationStatus: 'idle',
+        generateContributionsError: null,
+        isSubmittingStageResponses: false,
+        submitStageResponsesError: null,
+        isSavingContributionEdit: false,
+        saveContributionEditError: null,
     };
 
     const testState: DialecticStateValues = {
@@ -150,6 +202,8 @@ describe('Dialectic Store Selectors', () => {
         activeContextSessionId: 'session-1',
         activeContextStage: mockThesisStage,
         currentProjectDetail: mockProjectDetail,
+        contributionGenerationStatus: 'generating',
+        generateContributionsError: mockGenerateContributionsError,
     };
 
     const initialState: DialecticStateValues = {
@@ -407,9 +461,9 @@ describe('Dialectic Store Selectors', () => {
 
     describe('selectContributionById', () => {
         it('should return the correct contribution when found', () => {
-            const result = selectContributionById(testState, 'c1');
+            const result = selectContributionById(testState, 'c1-s1');
             expect(result).toBeDefined();
-            expect(result?.id).toBe('c1');
+            expect(result?.id).toBe('c1-s1');
         });
 
         it('should return undefined if the contribution is not found', () => {
@@ -419,7 +473,7 @@ describe('Dialectic Store Selectors', () => {
 
         it('should return undefined if there are no sessions', () => {
             const stateWithoutSessions = { ...testState, currentProjectDetail: { ...testState.currentProjectDetail, dialectic_sessions: [] } as DialecticProject };
-            const result = selectContributionById(stateWithoutSessions, 'c1');
+            const result = selectContributionById(stateWithoutSessions, 'c1-s1');
             expect(result).toBeUndefined();
         });
     });
@@ -442,6 +496,163 @@ describe('Dialectic Store Selectors', () => {
     it('selectActiveContextStage should return the active stage', () => {
         expect(selectActiveContextStage(testState)).toEqual(mockThesisStage);
         expect(selectActiveContextStage(initialState)).toBeNull();
+    });
+
+    // Tests for selectContributionGenerationStatus
+    it('selectContributionGenerationStatus should return status from testState', () => {
+        expect(selectContributionGenerationStatus(testState)).toBe('generating');
+    });
+
+    it('selectContributionGenerationStatus should return initial "idle" from initialState', () => {
+        expect(selectContributionGenerationStatus(initialState)).toBe('idle');
+    });
+
+    it('selectContributionGenerationStatus should return "failed" when set in state', () => {
+        const failedState: DialecticStateValues = { ...initialState, contributionGenerationStatus: 'failed' };
+        expect(selectContributionGenerationStatus(failedState)).toBe('failed');
+    });
+
+    // Tests for selectGenerateContributionsError
+    it('selectGenerateContributionsError should return error from testState', () => {
+        expect(selectGenerateContributionsError(testState)).toEqual(mockGenerateContributionsError);
+    });
+
+    it('selectGenerateContributionsError should return initial null from initialState', () => {
+        expect(selectGenerateContributionsError(initialState)).toBeNull();
+    });
+
+    // Tests for selectAllContributionsFromCurrentProject
+    describe('selectAllContributionsFromCurrentProject', () => {
+        it('should return all contributions from all sessions in testState', () => {
+            const expectedContributions = [
+                { id: 'c1-s1', session_id: 'session-1' } as DialecticContribution,
+                { id: 'c2-s1', session_id: 'session-1' } as DialecticContribution,
+                { id: 'c1-s2', session_id: 'session-2' } as DialecticContribution,
+            ];
+            expect(selectAllContributionsFromCurrentProject(testState)).toEqual(expectedContributions);
+        });
+
+        it('should return an empty array if currentProjectDetail is null', () => {
+            const stateWithNullProject: DialecticStateValues = { ...initialState, currentProjectDetail: null };
+            expect(selectAllContributionsFromCurrentProject(stateWithNullProject)).toEqual([]);
+        });
+        
+        it('should return an empty array if currentProjectDetail is null (using initialState)', () => {
+            expect(selectAllContributionsFromCurrentProject(initialState)).toEqual([]);
+        });
+
+        it('should return an empty array if dialectic_sessions is null', () => {
+            const stateWithNullSessions: DialecticStateValues = {
+                ...testState,
+                currentProjectDetail: { ...mockProjectDetail, dialectic_sessions: null as any }, // Type assertion for test
+            };
+            expect(selectAllContributionsFromCurrentProject(stateWithNullSessions)).toEqual([]);
+        });
+
+        it('should return an empty array if dialectic_sessions is empty', () => {
+            const stateWithEmptySessions: DialecticStateValues = {
+                ...testState,
+                currentProjectDetail: { ...mockProjectDetail, dialectic_sessions: [] },
+            };
+            expect(selectAllContributionsFromCurrentProject(stateWithEmptySessions)).toEqual([]);
+        });
+
+        it('should return an empty array if sessions have no contributions', () => {
+            const projectWithEmptyContributions: DialecticProject = {
+                ...mockProjectDetail,
+                dialectic_sessions: [
+                    { ...mockSessions[0], dialectic_contributions: [] },
+                    { ...mockSessions[1], dialectic_contributions: null as any }, // Test with null contributions too
+                ],
+            };
+            const stateWithEmptyContributions: DialecticStateValues = {
+                ...testState,
+                currentProjectDetail: projectWithEmptyContributions,
+            };
+            expect(selectAllContributionsFromCurrentProject(stateWithEmptyContributions)).toEqual([]);
+        });
+    });
+
+    // Tests for selectSessionById
+    describe('selectSessionById', () => {
+        const existingSessionId = 'session-1';
+        const nonExistingSessionId = 'session-non-exist';
+
+        it('should return the correct session when found in testState', () => {
+            const result = selectSessionById(testState, existingSessionId);
+            expect(result).toBeDefined();
+            expect(result?.id).toBe(existingSessionId);
+            expect(result?.session_description).toBe('Session One');
+        });
+
+        it('should return undefined if the session ID is not found in testState', () => {
+            const result = selectSessionById(testState, nonExistingSessionId);
+            expect(result).toBeUndefined();
+        });
+
+        it('should return undefined if currentProjectDetail is null (using initialState)', () => {
+            const result = selectSessionById(initialState, existingSessionId);
+            expect(result).toBeUndefined();
+        });
+
+        it('should return undefined if dialectic_sessions is null', () => {
+            const stateWithNullSessions: DialecticStateValues = {
+                ...testState,
+                currentProjectDetail: { ...mockProjectDetail, dialectic_sessions: null as any },
+            };
+            const result = selectSessionById(stateWithNullSessions, existingSessionId);
+            expect(result).toBeUndefined();
+        });
+
+        it('should return undefined if dialectic_sessions is empty', () => {
+            const stateWithEmptySessions: DialecticStateValues = {
+                ...testState,
+                currentProjectDetail: { ...mockProjectDetail, dialectic_sessions: [] },
+            };
+            const result = selectSessionById(stateWithEmptySessions, existingSessionId);
+            expect(result).toBeUndefined();
+        });
+    });
+
+    // Tests for selectStageById
+    describe('selectStageById', () => {
+        const existingStageId = 'stage-abc';
+        const nonExistingStageId = 'stage-non-exist';
+
+        it('should return the correct stage when found in testState', () => {
+            const result = selectStageById(testState, existingStageId);
+            expect(result).toBeDefined();
+            expect(result?.id).toBe(existingStageId);
+            expect(result?.display_name).toBe('Mock Stage 1');
+        });
+
+        it('should return undefined if the stage ID is not found in testState', () => {
+            const result = selectStageById(testState, nonExistingStageId);
+            expect(result).toBeUndefined();
+        });
+
+        it('should return undefined if currentProcessTemplate is null (using initialState)', () => {
+            const result = selectStageById(initialState, existingStageId);
+            expect(result).toBeUndefined();
+        });
+
+        it('should return undefined if currentProcessTemplate.stages is null', () => {
+            const stateWithNullStages: DialecticStateValues = {
+                ...testState,
+                currentProcessTemplate: { ...mockProcessTemplate, stages: null as any },
+            };
+            const result = selectStageById(stateWithNullStages, existingStageId);
+            expect(result).toBeUndefined();
+        });
+
+        it('should return undefined if currentProcessTemplate.stages is empty', () => {
+            const stateWithEmptyStages: DialecticStateValues = {
+                ...testState,
+                currentProcessTemplate: { ...mockProcessTemplate, stages: [] },
+            };
+            const result = selectStageById(stateWithEmptyStages, existingStageId);
+            expect(result).toBeUndefined();
+        });
     });
 });
 
@@ -484,6 +695,15 @@ describe('selectIsStageReadyForSessionIteration', () => {
         resources: [mockSeedPromptResource],
         process_template_id: 'pt-1',
         dialectic_process_templates: { id: 'pt-1' } as DialecticProcessTemplate, // Simplified
+        // Add missing DialecticProject fields
+        isLoadingProcessTemplate: false,
+        processTemplateError: null,
+        contributionGenerationStatus: 'idle',
+        generateContributionsError: null,
+        isSubmittingStageResponses: false,
+        submitStageResponsesError: null,
+        isSavingContributionEdit: false,
+        saveContributionEditError: null,
     };
 
     it('should return true if project, session, stage, and matching seed prompt resource exist', () => {

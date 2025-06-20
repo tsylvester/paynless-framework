@@ -16,6 +16,8 @@ import type {
   DialecticContribution,
   DialecticDomain,
   UpdateSessionModelsPayload,
+  GenerateContributionsPayload,
+  GenerateContributionsResponse,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
@@ -80,7 +82,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
   processTemplateError: null,
 
   // States for generating contributions
-  isGeneratingContributions: false,
+  contributionGenerationStatus: 'idle',
   generateContributionsError: null,
 
   isSubmittingStageResponses: false,
@@ -459,149 +461,95 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     const currentCache = get().contributionContentCache;
     const entry = currentCache[contributionId];
 
-    const now = Date.now();
-
-    // 1. Check cache for valid, non-expired content
-    if (entry && entry.content && entry.expiry && entry.expiry > now) {
-      logger.info(`[DialecticStore] Content for ${contributionId} found in cache and is valid.`);
-      // Optionally update isLoading to false if it was stuck on true from a previous failed attempt
+    // 1. Check cache for already loaded, non-error content
+    if (entry && entry.content && !entry.error) {
+      logger.info(`[DialecticStore] Content for ${contributionId} found in cache.`);
       if (entry.isLoading) {
         set(state => ({
           contributionContentCache: {
             ...state.contributionContentCache,
-            [contributionId]: { ...entry, isLoading: false }
-          }
+            [contributionId]: { ...entry, isLoading: false },
+          },
         }));
       }
-      return; // Content already available and fresh
+      return;
     }
 
-    // 2. Update cache to isLoading: true, clear previous error for this specific entry
+    // 2. Set loading state and clear previous error
+    logger.info(`[DialecticStore] Fetching content data directly for ${contributionId}.`);
     set(state => ({
       contributionContentCache: {
         ...state.contributionContentCache,
-        [contributionId]: { 
-          ...(entry || {}), // Spread existing entry or empty object
-          isLoading: true, 
-          error: undefined, // Clear previous error on new attempt
-        }
-      }
+        [contributionId]: {
+          // Spread existing entry fields that are still relevant or for safety,
+          // though many will be overwritten. Explicitly clear fields that should be reset.
+          ...(entry || {}),
+          isLoading: true,
+          error: null, 
+          content: undefined, 
+          // signedUrl and expiry are no longer part of ContributionCacheEntry per type changes
+          // mimeType, sizeBytes, fileName will be set on successful fetch
+        },
+      },
     }));
 
-    let signedUrlToUse: string | undefined = undefined;
-    let mimeTypeToUse: string | undefined = undefined;
-    let sizeBytesToUse: number | null | undefined = undefined;
-    let expiryToUse: number | undefined = undefined;
+    try {
+      const response = await api.dialectic().getContributionContentData(contributionId);
 
-    // 3. Fetch Signed URL if not in cache or expired
-    if (entry && entry.signedUrl && entry.expiry && entry.expiry > now) {
-      logger.info(`[DialecticStore] Using cached signed URL for ${contributionId}.`);
-      signedUrlToUse = entry.signedUrl;
-      mimeTypeToUse = entry.mimeType;
-      sizeBytesToUse = entry.sizeBytes;
-      expiryToUse = entry.expiry;
-    } else {
-      logger.info(`[DialecticStore] Fetching new signed URL for ${contributionId}.`);
-      try {
-        const response = await api.dialectic().getContributionContentSignedUrl(contributionId);
-        if (response.error || !response.data) {
-          const errMsg = response.error?.message || 'Failed to get signed URL, no data returned.';
-          logger.error('[DialecticStore] Error fetching signed URL:', { contributionId, error: errMsg });
-          set(state => ({
-            contributionContentCache: {
-              ...state.contributionContentCache,
-              [contributionId]: { ...state.contributionContentCache[contributionId], isLoading: false, error: errMsg }
-            }
-          }));
-          return;
-        }
-
-        signedUrlToUse = response.data.signedUrl;
-        mimeTypeToUse = response.data.mimeType;
-        sizeBytesToUse = response.data.sizeBytes;
-        // Expires in 15 mins from generation, set our cache for 14 mins for safety
-        const expiresInMilliseconds = 14 * 60 * 1000; 
-        expiryToUse = Date.now() + expiresInMilliseconds;
-
+      if (response.error || !response.data) {
+        const errorDetail: ApiError = response.error || {
+          message: 'Failed to fetch contribution content, no data returned.',
+          code: 'NO_DATA_RETURNED',
+        };
+        logger.error('[DialecticStore] Error fetching contribution content data directly:', { contributionId, error: errorDetail });
         set(state => ({
           contributionContentCache: {
             ...state.contributionContentCache,
             [contributionId]: {
               ...state.contributionContentCache[contributionId],
-              signedUrl: signedUrlToUse,
-              mimeType: mimeTypeToUse,
-              sizeBytes: sizeBytesToUse,
-              expiry: expiryToUse,
-              // isLoading remains true, error cleared by initial set above
-            }
-          }
-        }));
-      } catch (e: unknown) {
-        const networkErrorMsg = e instanceof Error ? e.message : 'Network error fetching signed URL';
-        logger.error('[DialecticStore] Network error fetching signed URL:', { contributionId, error: networkErrorMsg });
-        set(state => ({
-          contributionContentCache: {
-            ...state.contributionContentCache,
-            [contributionId]: { ...state.contributionContentCache[contributionId], isLoading: false, error: networkErrorMsg }
-          }
-        }));
-        return;
-      }
-    }
-
-    // 4. Fetch Actual Content if we have a valid signed URL
-    if (!signedUrlToUse) {
-      // This case should ideally be caught by earlier error handling when fetching URL
-      logger.error(`[DialecticStore] No signed URL available for ${contributionId} after attempting fetch. Should not happen.`);
-      if (!get().contributionContentCache[contributionId]?.error) { // Avoid overwriting specific error from URL fetch
-         set(state => ({
-            contributionContentCache: {
-              ...state.contributionContentCache,
-              [contributionId]: { ...state.contributionContentCache[contributionId], isLoading: false, error: 'Internal error: Signed URL was not obtained.' }
-            }
-          }));
-      }
-      return;
-    }
-
-    logger.info(`[DialecticStore] Fetching content from signed URL for ${contributionId}`);
-    try {
-      const contentResponse = await fetch(signedUrlToUse);
-      if (!contentResponse.ok) {
-        const fetchErrorMsg = `Failed to fetch content: ${contentResponse.status} ${contentResponse.statusText}`;
-        logger.error('[DialecticStore] Error fetching content from signed URL:', { contributionId, status: contentResponse.status, statusText: contentResponse.statusText });
-        set(state => ({
-          contributionContentCache: {
-            ...state.contributionContentCache,
-            [contributionId]: { ...state.contributionContentCache[contributionId], isLoading: false, error: fetchErrorMsg }
-          }
+              isLoading: false,
+              error: errorDetail,
+              content: undefined, // Ensure content is undefined on error
+            },
+          },
         }));
         return;
       }
 
-      // Assuming text content for now. Could check mimeTypeToUse for other types later.
-      const content = await contentResponse.text();
-      logger.info(`[DialecticStore] Successfully fetched content for ${contributionId}`);
+      // Successfully fetched content
+      const { content, mimeType, sizeBytes, fileName } = response.data;
+      logger.info(`[DialecticStore] Successfully fetched content data directly for ${contributionId}`, { fileName, mimeType });
       set(state => ({
         contributionContentCache: {
           ...state.contributionContentCache,
           [contributionId]: {
-            ...state.contributionContentCache[contributionId],
-            content: content,
+            ...state.contributionContentCache[contributionId], // Preserve other fields if any, though most are set here
             isLoading: false,
-            error: undefined, // Clear error on success
-          }
-        }
+            error: null,
+            content: content,
+            mimeType: mimeType,
+            sizeBytes: sizeBytes,
+            fileName: fileName,
+          },
+        },
       }));
 
     } catch (e: unknown) {
-      const contentFetchErrorMsg = e instanceof Error ? e.message : 'Network error fetching content from signed URL';
-      logger.error('[DialecticStore] Network error fetching content:', { contributionId, error: contentFetchErrorMsg });
+      const networkError: ApiError = {
+        message: e instanceof Error ? e.message : 'A network error occurred while fetching contribution content.',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error fetching contribution content data directly:', { contributionId, error: networkError });
       set(state => ({
         contributionContentCache: {
           ...state.contributionContentCache,
-          [contributionId]: { ...state.contributionContentCache[contributionId], isLoading: false, error: contentFetchErrorMsg }
-        }
+          [contributionId]: {
+            ...state.contributionContentCache[contributionId], // Preserve other fields if any
+            isLoading: false,
+            error: networkError,
+            content: undefined, // Ensure content is undefined on error
+          },
+        },
       }));
     }
   },
@@ -890,36 +838,43 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     set(initialDialecticStateValues);
   },
 
-  generateContributions: async (payload: { sessionId: string; projectId: string; stageSlug: DialecticStage['slug']; iterationNumber: number; }) => {
-    set({ isGeneratingContributions: true, generateContributionsError: null });
-    logger.info('[DialecticStore] Generating contributions...', { sessionId: payload.sessionId, stageSlug: payload.stageSlug, iteration: payload.iterationNumber });
+  generateContributions: async (payload: GenerateContributionsPayload): Promise<ApiResponse<GenerateContributionsResponse>> => {
+    set({ 
+      contributionGenerationStatus: 'initiating',
+      generateContributionsError: null 
+    });
+    logger.info('[DialecticStore] Generating contributions...', { payload });
     try {
-      // Ensure the API client method api.dialectic().generateContributions also expects this full payload.
-      // If not, the API client layer might need adjustment, or we adapt the payload here.
-      // Assuming the API client is updated or can handle this payload structure.
+      set({ contributionGenerationStatus: 'generating' });
       const response = await api.dialectic().generateContributions(payload);
       if (response.error) {
-        logger.error('[DialecticStore] Error generating contributions:', { errorDetails: response.error, sessionId: payload.sessionId });
-        set({ isGeneratingContributions: false, generateContributionsError: response.error });
-        return { error: response.error, status: response.status, data: undefined };
+        logger.error('[DialecticStore] Error generating contributions:', { errorDetails: response.error });
+        set({
+          contributionGenerationStatus: 'failed',
+          generateContributionsError: response.error,
+        });
+        return { error: response.error } as ApiResponse<never>;
       } else {
-        logger.info('[DialecticStore] Successfully generated contributions:', { responseData: response.data, sessionId: payload.sessionId });
-        set({ isGeneratingContributions: false, generateContributionsError: null });
-        
-        // Refetch project details to update UI with new contributions and session status
-        logger.info(`[DialecticStore] Contributions generated for session ${payload.sessionId}. Refetching project details for project ${payload.projectId}.`);
+        logger.info('[DialecticStore] Successfully initiated contribution generation:', { responseData: response.data });
+        set({
+          contributionGenerationStatus: 'idle',
+          generateContributionsError: null,
+        });
+
         await get().fetchDialecticProjectDetails(payload.projectId);
-        
-        return { data: response.data, status: response.status };
+        return { data: response.data } as ApiResponse<GenerateContributionsResponse>;
       }
     } catch (error: unknown) {
       const networkError: ApiError = {
         message: error instanceof Error ? error.message : 'An unknown network error occurred while generating contributions',
         code: 'NETWORK_ERROR',
       };
-      logger.error('[DialecticStore] Network error generating contributions:', { errorDetails: networkError, sessionId: payload.sessionId });
-      set({ isGeneratingContributions: false, generateContributionsError: networkError });
-      return { error: networkError, status: 0, data: undefined };
+      logger.error('[DialecticStore] Network error generating contributions:', { errorDetails: networkError });
+      set({
+        contributionGenerationStatus: 'failed',
+        generateContributionsError: networkError,
+      });
+      return { error: networkError } as ApiResponse<never>;
     }
   },
 
@@ -1022,5 +977,3 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     }
   },
 }));
-
-export const getDialecticStoreInitialState = (): DialecticStateValues => ({ ...initialDialecticStateValues }); 

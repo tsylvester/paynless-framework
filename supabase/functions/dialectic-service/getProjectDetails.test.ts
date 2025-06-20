@@ -358,8 +358,9 @@ describe("getProjectDetails", () => {
     assertExists(qbSpies?.select, "Select spy should exist");
     assertExists(qbSpies?.eq, "Eq spy should exist");
 
-    assertEquals(fromSpy.calls.length, 1);
+    assertEquals(fromSpy.calls.length, 2);
     assertEquals(fromSpy.calls[0].args[0], 'dialectic_projects');
+    assertEquals(fromSpy.calls[1].args[0], 'dialectic_stage_transitions');
     
     assertEquals(qbSpies.select.calls.length, 1);
     const expectedSelect = `
