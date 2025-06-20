@@ -22,7 +22,6 @@ import type {
   StartSessionPayload,
   DomainOverlayDescriptor,
   DialecticDomain,
-  UploadProjectResourceFilePayload,
   DialecticProjectResource,
   UpdateProjectInitialPromptPayload,
 } from '@paynless/types';
@@ -341,75 +340,6 @@ describe('useDialecticStore', () => {
               code: 'NETWORK_ERROR',
             });
           });
-    });
-
-    describe('uploadProjectResourceFile action', () => {
-        const projectId = 'proj-res-123';
-        // Mock File object
-        const mockFile = new File(['dummy content'], 'dummy.txt', { type: 'text/plain' });
-        const uploadPayload: UploadProjectResourceFilePayload = {
-            projectId,
-            file: mockFile,
-            fileName: 'dummy.txt',
-            fileSizeBytes: mockFile.size,
-            fileType: mockFile.type,
-            resourceDescription: 'A dummy file for testing',
-        };
-
-        const mockResourceResponse: DialecticProjectResource = {
-            id: 'res-xyz',
-            project_id: projectId,
-            file_name: 'dummy.txt',
-            storage_path: 'path/to/dummy.txt',
-            mime_type: 'text/plain',
-            size_bytes: mockFile.size,
-            resource_description: 'A dummy file for testing',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-        };
-
-        it('should upload a file and return resource details on success', async () => {
-            const mockApiResponse: ApiResponse<DialecticProjectResource> = {
-                data: mockResourceResponse,
-                status: 201,
-            };
-            (api.dialectic().uploadProjectResourceFile as Mock).mockResolvedValue(mockApiResponse);
-
-            const { uploadProjectResourceFile } = useDialecticStore.getState();
-            const result = await uploadProjectResourceFile(uploadPayload);
-
-            expect(api.dialectic().uploadProjectResourceFile).toHaveBeenCalledWith(uploadPayload);
-            expect(result).toEqual(mockApiResponse);
-        });
-
-        it('should return API error if uploadProjectResourceFile API returns an error', async () => {
-            const mockError: ApiError = { code: 'UPLOAD_FAILED', message: 'File upload failed due to API error' };
-            const mockApiResponse: ApiResponse<DialecticProjectResource> = {
-                error: mockError,
-                status: 500,
-            };
-            (api.dialectic().uploadProjectResourceFile as Mock).mockResolvedValue(mockApiResponse);
-
-            const { uploadProjectResourceFile } = useDialecticStore.getState();
-            const result = await uploadProjectResourceFile(uploadPayload);
-
-            expect(api.dialectic().uploadProjectResourceFile).toHaveBeenCalledWith(uploadPayload);
-            expect(result).toEqual(mockApiResponse);
-        });
-
-        it('should return network error if uploadProjectResourceFile API call throws', async () => {
-            const networkErrorMessage = 'Network connection lost during upload';
-            (api.dialectic().uploadProjectResourceFile as Mock).mockRejectedValue(new Error(networkErrorMessage));
-
-            const { uploadProjectResourceFile } = useDialecticStore.getState();
-            const result = await uploadProjectResourceFile(uploadPayload);
-
-            expect(api.dialectic().uploadProjectResourceFile).toHaveBeenCalledWith(uploadPayload);
-            expect(result).toEqual({
-                error: { message: networkErrorMessage, code: 'NETWORK_ERROR' },
-                status: 0,
-            });
-        });
     });
 
     describe('resetCreateProjectError action', () => {

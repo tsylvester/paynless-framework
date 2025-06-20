@@ -10,8 +10,6 @@ import type {
     DomainDescriptor,
     UpdateProjectDomainPayload,
     DomainOverlayDescriptor,
-    UploadProjectResourceFilePayload,
-    DialecticProjectResource,
     UpdateProjectInitialPromptPayload,
     GenerateContributionsPayload,
     GenerateContributionsResponse,
@@ -25,6 +23,7 @@ import type {
     GetProjectResourceContentResponse,
     DialecticDomain,
     DialecticProcessTemplate,
+    UpdateSessionModelsPayload,
 } from '@paynless/types'; 
 
 // --- Dialectic Client Mock Setup ---
@@ -38,7 +37,6 @@ export type MockDialecticApiClient = {
     getProjectDetails: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<DialecticProject>>>>;
     listModelCatalog: ReturnType<typeof vi.fn<[], Promise<ApiResponse<AIModelCatalogEntry[]>>>>;
     updateProjectDomain: ReturnType<typeof vi.fn<[payload: UpdateProjectDomainPayload], Promise<ApiResponse<DialecticProject>>>>;
-    uploadProjectResourceFile: ReturnType<typeof vi.fn<[payload: UploadProjectResourceFilePayload], Promise<ApiResponse<DialecticProjectResource>>>>;
     deleteProject: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<void>>>>;
     cloneProject: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<DialecticProject>>>>;
     exportProject: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<{ export_url: string }>>>>;
@@ -50,6 +48,7 @@ export type MockDialecticApiClient = {
     getProjectResourceContent: ReturnType<typeof vi.fn<[payload: GetProjectResourceContentPayload], Promise<ApiResponse<GetProjectResourceContentResponse>>>>;
     listDomains: ReturnType<typeof vi.fn<[], Promise<ApiResponse<DialecticDomain[]>>>>;
     fetchProcessTemplate: ReturnType<typeof vi.fn<[templateId: string], Promise<ApiResponse<DialecticProcessTemplate>>>>;
+    updateSessionModels: ReturnType<typeof vi.fn<[payload: UpdateSessionModelsPayload], Promise<ApiResponse<DialecticSession>>>>;
 };
 
 // Factory function to create a new mock instance
@@ -64,7 +63,6 @@ export function createMockDialecticClient(): MockDialecticApiClient {
         getProjectDetails: vi.fn<[string], Promise<ApiResponse<DialecticProject>>>(),
         listModelCatalog: vi.fn<[], Promise<ApiResponse<AIModelCatalogEntry[]>>>(),
         updateProjectDomain: vi.fn<[UpdateProjectDomainPayload], Promise<ApiResponse<DialecticProject>>>(),
-        uploadProjectResourceFile: vi.fn<[UploadProjectResourceFilePayload], Promise<ApiResponse<DialecticProjectResource>>>(),
         deleteProject: vi.fn<[string], Promise<ApiResponse<void>>>(),
         cloneProject: vi.fn<[string], Promise<ApiResponse<DialecticProject>>>(),
         exportProject: vi.fn<[string], Promise<ApiResponse<{ export_url: string }>>>(),
@@ -76,6 +74,7 @@ export function createMockDialecticClient(): MockDialecticApiClient {
         getProjectResourceContent: vi.fn<[GetProjectResourceContentPayload], Promise<ApiResponse<GetProjectResourceContentResponse>>>(),
         listDomains: vi.fn<[], Promise<ApiResponse<DialecticDomain[]>>>(),
         fetchProcessTemplate: vi.fn<[string], Promise<ApiResponse<DialecticProcessTemplate>>>(),
+        updateSessionModels: vi.fn<[UpdateSessionModelsPayload], Promise<ApiResponse<DialecticSession>>>(),
     };
 }
 

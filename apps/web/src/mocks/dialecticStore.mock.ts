@@ -98,7 +98,6 @@ const initializeInternalDialecticStoreState = (): DialecticStore => {
     startDialecticSession: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 } as ApiResponse<DialecticSession>),
     fetchAIModelCatalog: vi.fn().mockResolvedValue(undefined as void),
     fetchContributionContent: vi.fn().mockResolvedValue(undefined as void),
-    uploadProjectResourceFile: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 } as ApiResponse<DialecticProjectResource>),
     resetCreateProjectError: vi.fn(() => { (newState as DialecticStateValues).createProjectError = null; }),
     resetProjectDetailsError: vi.fn(() => { (newState as DialecticStateValues).projectDetailError = null; }),
     deleteDialecticProject: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 } as ApiResponse<void>),

@@ -73,7 +73,6 @@ vi.mock('@/components/dialectic/DomainSelector', () => ({
 }));
 
 const mockCreateDialecticProject = vi.fn();
-const mockUploadProjectResourceFile = vi.fn();
 const mockResetCreateProjectError = vi.fn();
 
 let mockStoreState: DialecticStore;
@@ -108,7 +107,6 @@ const createMockStoreState = (overrides: Partial<DialecticStore>): DialecticStor
     isCreatingProject: false,
     createProjectError: null,
     createDialecticProject: mockCreateDialecticProject,
-    uploadProjectResourceFile: mockUploadProjectResourceFile, 
     isStartingSession: false,
     startSessionError: null,
     startDialecticSession: vi.fn(),

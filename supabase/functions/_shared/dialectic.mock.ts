@@ -8,7 +8,6 @@ import type {
     DialecticSession,
     AIModelCatalogEntry,
     DomainOverlayDescriptor,
-    UploadProjectResourceFilePayload,
     DialecticProjectResource,
     GenerateContributionsPayload, // Corrected name
     GenerateContributionsSuccessResponse, // Corrected name

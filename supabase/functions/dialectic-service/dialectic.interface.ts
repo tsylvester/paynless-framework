@@ -299,18 +299,6 @@ export interface DialecticProjectResource {
   metadata?: Record<string, unknown> | null; // For any other structured data
 }
 
-export interface UploadProjectResourceFilePayload {
-  projectId: string;
-  fileName: string; // Original file name
-  fileType: string; // MIME type
-  resourceDescription?: string | null;
-  // The actual file will be part of FormData, not this JSON payload
-}
-
-export interface UploadProjectResourceFileSuccessResponse {
-  message: string;
-  resource: DialecticProjectResource;
-}
 // --- END: Added for Project Resource Upload (1.0.B) ---
 
 export interface DomainOverlayDescriptor {
@@ -419,15 +407,6 @@ export interface ArtifactSourceRule {
 
 export interface InputArtifactRules {
   sources: ArtifactSourceRule[];
-}
-
-export interface UploadProjectResourceFileResult {
-  data?: DialecticProjectResource;
-  error?: {
-    message: string;
-    details?: string;
-    status: number;
-  };
 }
 
 // Local response type definition to align with DB schema, avoiding interface mismatches.

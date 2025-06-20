@@ -257,8 +257,6 @@ export interface DialecticActions {
 
   fetchContributionContent: (contributionId: string) => Promise<void>;
 
-  uploadProjectResourceFile: (payload: UploadProjectResourceFilePayload) => Promise<ApiResponse<DialecticProjectResource>>;
-
   resetCreateProjectError: () => void;
   resetProjectDetailsError: () => void;
 
@@ -281,12 +279,16 @@ export interface DialecticActions {
   generateContributions: (payload: GenerateContributionsPayload) => Promise<ApiResponse<GenerateContributionsResponse>>;
   
   // Actions for submitting stage responses and preparing next seed (plan 1.2.Y / 1.5.6.4)
+  setSubmittingStageResponses: (isSubmitting: boolean) => void;
+  setSubmitStageResponsesError: (error: ApiError | null) => void;
   submitStageResponses: (payload: SubmitStageResponsesPayload) => Promise<ApiResponse<SubmitStageResponsesResponse>>;
-  resetSubmitStageResponsesError: () => void; // Added for plan
+  resetSubmitStageResponsesError: () => void;
 
   // Actions for saving contribution edits (plan 1.2.Y / 1.5.6.5)
+  setSavingContributionEdit: (isSaving: boolean) => void;
+  setSaveContributionEditError: (error: ApiError | null) => void;
   saveContributionEdit: (payload: SaveContributionEditPayload) => Promise<ApiResponse<DialecticContribution>>;
-  resetSaveContributionEditError: () => void; // Added for plan
+  resetSaveContributionEditError: () => void;
 
   // New context actions
   setActiveContextProjectId: (id: string | null) => void;
@@ -295,6 +297,7 @@ export interface DialecticActions {
   setActiveDialecticContext: (context: { projectId: string | null; sessionId: string | null; stage: DialecticStage | null }) => void;
 
   _resetForTesting?: () => void;
+  reset: () => void;
 }
 
 export type DialecticStore = DialecticStateValues & DialecticActions;
@@ -339,8 +342,6 @@ export interface DialecticApiClient {
   getContributionContentSignedUrl(contributionId: string): Promise<ApiResponse<ContributionContentSignedUrlResponse | null>>;
   listDomains(): Promise<ApiResponse<DialecticDomain[]>>;
   fetchProcessTemplate(templateId: string): Promise<ApiResponse<DialecticProcessTemplate>>;
-
-  uploadProjectResourceFile(payload: UploadProjectResourceFilePayload): Promise<ApiResponse<DialecticProjectResource>>;
 
   updateProjectDomain(payload: UpdateProjectDomainPayload): Promise<ApiResponse<DialecticProject>>;
 
@@ -391,15 +392,6 @@ export interface DialecticProjectResource {
     updated_at: string;
 }
 
-export interface UploadProjectResourceFilePayload {
-    projectId: string;
-    file: File;
-    fileName: string;
-    fileSizeBytes: number;
-    fileType: string;
-    resourceDescription?: string;
-}
-
 export interface DomainOverlayDescriptor {
   id: string; // Corresponds to domain_specific_prompt_overlays.id
   domainId: string;
@@ -440,9 +432,6 @@ export type DialecticServiceActionPayload = {
 } | {
   action: 'fetchProcessTemplate';
   payload: { templateId: string };
-} | {
-  action: 'uploadProjectResourceFile';
-  payload: FormData; 
 } | {
   action: 'generateContributions';
   payload: GenerateContributionsPayload;

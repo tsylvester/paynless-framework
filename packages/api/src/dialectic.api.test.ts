@@ -11,7 +11,6 @@ import {
     AIModelCatalogEntry, 
     ContributionContentSignedUrlResponse, 
     DialecticProjectResource, 
-    UploadProjectResourceFilePayload, 
     DomainOverlayDescriptor, 
     UpdateProjectDomainPayload,
     DeleteProjectPayload,
@@ -31,6 +30,8 @@ import {
     DialecticDomain,
     DialecticProcessTemplate,
     DialecticStage,
+    UpdateSessionModelsPayload,
+    DomainDescriptor,
 } from '@paynless/types';
 
 // Mock the base ApiClient
@@ -53,12 +54,13 @@ const mockDialecticProject: DialecticProject = {
   project_name: 'Test Project',
   initial_user_prompt: 'Test prompt',
   selected_domain_id: 'dom-1',
-  domain_name: 'Software Development',
+  dialectic_domains: { name: 'Software Development' },
   selected_domain_overlay_id: null,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   repo_url: null,
   status: 'active',
+  dialectic_process_templates: null,
 };
 
 const mockDialecticSession: DialecticSession = {
@@ -77,14 +79,15 @@ const mockDialecticSession: DialecticSession = {
 
 // Remove any mock project data that incorrectly includes a 'sessions' array directly
 // For example, if baseMockProject previously had a sessions property, remove it:
-const baseMockProject: Omit<DialecticProject, 'user_id' | 'created_at' | 'updated_at' | 'id'> & Partial<Pick<DialecticProject, 'id' | 'user_id' | 'created_at' | 'updated_at'>> = {
+const baseMockProject: Omit<DialecticProject, 'user_id' | 'created_at' | 'updated_at' | 'id' | 'dialectic_domains' | 'dialectic_process_templates'> & Partial<Pick<DialecticProject, 'id' | 'user_id' | 'created_at' | 'updated_at'>> & { dialectic_domains?: { name: string } | null, dialectic_process_templates?: DialecticProcessTemplate | null } = {
     project_name: "Test Project Base",
     initial_user_prompt: "Base prompt.",
     selected_domain_id: "dom-1",
-    domain_name: 'Software Development',
+    dialectic_domains: { name: 'Software Development' },
     selected_domain_overlay_id: null,
     repo_url: null,
     status: 'active',
+    dialectic_process_templates: null,
 };
 
 describe('DialecticApiClient', () => {
@@ -166,7 +169,6 @@ describe('DialecticApiClient', () => {
             name: 'Standard Dialectic',
             description: 'A standard process',
             created_at: new Date().toISOString(),
-            domain_id: 'domain-1',
             starting_stage_id: 'stage-1',
             stages: [],
             transitions: [],
@@ -205,10 +207,19 @@ describe('DialecticApiClient', () => {
     describe('listAvailableDomains', () => {
         const endpoint = 'dialectic-service';
         const requestBody = { action: 'listAvailableDomains' };
+        const requestBodyWithParams = (stageAssociation: string) => ({ 
+            action: 'listAvailableDomains', 
+            payload: { stageAssociation } 
+        });
 
-        it('should call apiClient.post with the correct endpoint, body', async () => {
-            const mockResponse: ApiResponse<string[]> = {
-                data: [],
+        const mockDomainDescriptors: DomainDescriptor[] = [
+            { id: 'dd-1', domain_name: 'Software Development', description: 'Domains related to software engineering', stage_association: null },
+            { id: 'dd-2', domain_name: 'Technical Writing', description: 'Domains related to technical documentation', stage_association: 'planning' },
+        ];
+
+        it('should call apiClient.post with the correct endpoint and body when no params are provided', async () => {
+            const mockResponse: ApiResponse<DomainDescriptor[]> = {
+                data: mockDomainDescriptors,
                 status: 200,
             };
             mockApiClientPost.mockResolvedValue(mockResponse);
@@ -219,24 +230,37 @@ describe('DialecticApiClient', () => {
             expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
         });
 
-        it('should return the domain tags array on successful response', async () => {
-            const mockTags: string[] = ['software_development', 'technical_writing'];
-            const mockResponse: ApiResponse<string[]> = {
-                data: mockTags,
+        it('should call apiClient.post with the correct endpoint and body when stageAssociation param is provided', async () => {
+            const mockResponse: ApiResponse<DomainDescriptor[]> = {
+                data: [mockDomainDescriptors[1]], // Assuming filtering happens backend
+                status: 200,
+            };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+            const params = { stageAssociation: 'planning' };
+
+            await dialecticApiClient.listAvailableDomains(params);
+
+            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
+            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBodyWithParams(params.stageAssociation));
+        });
+
+        it('should return the DomainDescriptor array on successful response', async () => {
+            const mockResponse: ApiResponse<DomainDescriptor[]> = {
+                data: mockDomainDescriptors,
                 status: 200,
             };
             mockApiClientPost.mockResolvedValue(mockResponse);
 
             const result = await dialecticApiClient.listAvailableDomains();
 
-            expect(result.data).toEqual(mockTags);
+            expect(result.data).toEqual(mockDomainDescriptors);
             expect(result.status).toBe(200);
             expect(result.error).toBeUndefined();
         });
 
         it('should return the error object on failed response', async () => {
-            const mockApiError: ApiErrorType = { code: 'SERVER_ERROR', message: 'Failed to fetch tags' };
-            const mockErrorResponse: ApiResponse<string[]> = {
+            const mockApiError: ApiErrorType = { code: 'SERVER_ERROR', message: 'Failed to fetch available domains' };
+            const mockErrorResponse: ApiResponse<DomainDescriptor[]> = {
                 error: mockApiError,
                 status: 500,
             };
@@ -297,12 +321,13 @@ describe('DialecticApiClient', () => {
                 project_name: validPayload.projectName,
                 initial_user_prompt: validPayload.initialUserPrompt,
                 selected_domain_id: validPayload.selectedDomainId,
-                domain_name: 'Software Development',
+                dialectic_domains: { name: 'Software Development' },
                 selected_domain_overlay_id: null,
                 repo_url: null,
                 status: 'active',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                dialectic_process_templates: null,
             }; 
             const mockResponse: ApiResponse<DialecticProject> = {
                 data: mockProjectResponse,
@@ -333,12 +358,13 @@ describe('DialecticApiClient', () => {
                 project_name: validPayload.projectName,
                 initial_user_prompt: validPayload.initialUserPrompt,
                 selected_domain_id: validPayload.selectedDomainId,
-                domain_name: 'Software Development',
+                dialectic_domains: { name: 'Software Development' },
                 selected_domain_overlay_id: null,
                 repo_url: null,
                 status: 'active',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                dialectic_process_templates: null,
             };
             const mockResponse: ApiResponse<DialecticProject> = {
                 data: mockProjectData,
@@ -737,119 +763,6 @@ describe('DialecticApiClient', () => {
         });
     });
 
-    describe('uploadProjectResourceFile', () => {
-        const endpoint = 'dialectic-service';
-        const mockFile = new File(['dummy content'], 'prompt.md', { type: 'text/markdown' });
-        const validPayload: UploadProjectResourceFilePayload = {
-            projectId: 'proj-123',
-            file: mockFile,
-            fileName: 'prompt.md',
-            fileSizeBytes: mockFile.size,
-            fileType: mockFile.type,
-            resourceDescription: 'Initial prompt file',
-        };
-
-        const mockProjectResource: DialecticProjectResource = {
-            id: 'resource-abc-123',
-            project_id: validPayload.projectId,
-            file_name: validPayload.fileName,
-            storage_path: `projects/${validPayload.projectId}/resources/prompt.md`,
-            mime_type: validPayload.fileType,
-            size_bytes: validPayload.fileSizeBytes,
-            resource_description: validPayload.resourceDescription || null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-        };
-
-        // Helper to create FormData from UploadProjectResourceFilePayload for tests
-        const createUploadFormDataFromPayload = (payload: UploadProjectResourceFilePayload): FormData => {
-            const formData = new FormData();
-            formData.append('action', 'uploadProjectResourceFile');
-            formData.append('projectId', payload.projectId);
-            formData.append('file', payload.file, payload.fileName);
-            formData.append('fileName', payload.fileName);
-            formData.append('fileSizeBytes', payload.fileSizeBytes.toString());
-            formData.append('fileType', payload.fileType);
-            if (payload.resourceDescription) {
-                formData.append('resourceDescription', payload.resourceDescription);
-            }
-            return formData;
-        };
-
-
-        it('should call apiClient.post with FormData for uploadProjectResourceFile', async () => {
-            const mockResponse: ApiResponse<DialecticProjectResource> = {
-                data: mockProjectResource,
-                status: 201,
-            };
-            mockApiClientPost.mockResolvedValue(mockResponse);
-
-            const formData = createUploadFormDataFromPayload(validPayload);
-            await dialecticApiClient.uploadProjectResourceFile(validPayload); // The method itself takes the structured payload
-
-            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            const calls = mockApiClientPost.mock.calls;
-            expect(calls[0][0]).toEqual(endpoint);
-            expect(calls[0][1]).toBeInstanceOf(FormData); // Key check: payload is FormData
-            
-            const sentFormData = calls[0][1] as FormData;
-            expect(sentFormData.get('action')).toEqual('uploadProjectResourceFile');
-            expect(sentFormData.get('projectId')).toEqual(validPayload.projectId);
-            expect(sentFormData.get('fileName')).toEqual(validPayload.fileName);
-            expect(sentFormData.get('fileType')).toEqual(validPayload.fileType);
-            expect(sentFormData.get('fileSizeBytes')).toEqual(validPayload.fileSizeBytes.toString());
-            expect(sentFormData.get('resourceDescription')).toEqual(validPayload.resourceDescription);
-            const sentFile = sentFormData.get('file') as File;
-            expect(sentFile).toBeInstanceOf(File);
-            expect(sentFile.name).toEqual(validPayload.fileName);
-            expect(sentFile.size).toEqual(validPayload.fileSizeBytes);
-            expect(sentFile.type).toEqual(validPayload.fileType);
-        });
-
-        it('should return the created project resource data on successful upload', async () => {
-            const mockResponse: ApiResponse<DialecticProjectResource> = {
-                data: mockProjectResource,
-                status: 201,
-            };
-            mockApiClientPost.mockResolvedValue(mockResponse);
-
-            const result = await dialecticApiClient.uploadProjectResourceFile(validPayload);
-
-            expect(result.data).toEqual(mockProjectResource);
-            expect(result.status).toBe(201);
-            expect(result.error).toBeUndefined();
-        });
-
-        it('should return the error object on failed upload', async () => {
-            const mockApiError: ApiErrorType = { code: 'STORAGE_ERROR', message: 'Failed to upload file to storage' };
-            const mockErrorResponse: ApiResponse<DialecticProjectResource> = {
-                error: mockApiError,
-                status: 500,
-            };
-            mockApiClientPost.mockResolvedValue(mockErrorResponse);
-
-            const result = await dialecticApiClient.uploadProjectResourceFile(validPayload);
-
-            expect(result.error).toEqual(mockApiError);
-            expect(result.status).toBe(500);
-            expect(result.data).toBeUndefined();
-        });
-
-        it('should return a network error if apiClient.post rejects', async () => {
-            const networkErrorMessage = 'Simulated network failure for uploadProjectResourceFile';
-            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
-
-            const result = await dialecticApiClient.uploadProjectResourceFile(validPayload);
-
-            expect(result.error).toEqual({
-                code: 'NETWORK_ERROR',
-                message: networkErrorMessage,
-            });
-            expect(result.status).toBe(0);
-            expect(result.data).toBeUndefined();
-        });
-    });
-
     describe('listAvailableDomainOverlays', () => {
         const endpoint = 'dialectic-service';
         const stageAssociation = 'synthesis';
@@ -877,7 +790,8 @@ describe('DialecticApiClient', () => {
         const mockUpdatedProject: DialecticProject = {
             ...mockDialecticProject,
             selected_domain_id: domainId,
-            domain_name: 'Finance', // Assuming this would be the name for dom-2
+            dialectic_domains: { name: 'Finance' },
+            dialectic_process_templates: null,
         };
 
         it('should call apiClient.post with the correct endpoint and body', async () => {
@@ -1015,6 +929,7 @@ describe('DialecticApiClient', () => {
             // but for this test, we focus on the project entity itself.
             dialectic_sessions: [], 
             resources: [],
+            dialectic_process_templates: null,
         };
 
         it('should call apiClient.post with the correct endpoint and body for cloneProject', async () => {
@@ -1258,6 +1173,7 @@ describe('DialecticApiClient', () => {
             id: validPayload.projectId,
             initial_user_prompt: validPayload.newInitialPrompt,
             updated_at: new Date().toISOString(),
+            dialectic_process_templates: null,
         };
 
         it('should call apiClient.post with the correct endpoint and body', async () => {
@@ -1542,6 +1458,77 @@ describe('DialecticApiClient', () => {
             mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
 
             const result = await dialecticApiClient.getProjectResourceContent(validPayload);
+
+            expect(result.error).toEqual({
+                code: 'NETWORK_ERROR',
+                message: networkErrorMessage,
+            });
+            expect(result.status).toBe(0);
+            expect(result.data).toBeUndefined();
+        });
+    });
+
+    describe('updateSessionModels', () => {
+        const endpoint = 'dialectic-service';
+        const validPayload: UpdateSessionModelsPayload = {
+            sessionId: 'sess-123',
+            selectedModelCatalogIds: ['model-xyz', 'model-abc'],
+        };
+        const requestBody = { action: 'updateSessionModels', payload: validPayload };
+        const mockUpdatedSession: DialecticSession = {
+            ...mockDialecticSession, // Assuming mockDialecticSession is a base session
+            id: validPayload.sessionId,
+            selected_model_catalog_ids: validPayload.selectedModelCatalogIds,
+            updated_at: new Date().toISOString(),
+        };
+
+        it('should call apiClient.post with the correct endpoint and body', async () => {
+            const mockResponse: ApiResponse<DialecticSession> = {
+                data: mockUpdatedSession,
+                status: 200,
+            };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            await dialecticApiClient.updateSessionModels(validPayload);
+
+            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
+            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+        });
+
+        it('should return the updated session data on successful response', async () => {
+            const mockResponse: ApiResponse<DialecticSession> = {
+                data: mockUpdatedSession,
+                status: 200,
+            };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            const result = await dialecticApiClient.updateSessionModels(validPayload);
+
+            expect(result.data).toEqual(mockUpdatedSession);
+            expect(result.status).toBe(200);
+            expect(result.error).toBeUndefined();
+        });
+
+        it('should return the error object on failed update (e.g., session not found)', async () => {
+            const mockApiError: ApiErrorType = { code: 'NOT_FOUND', message: 'Session not found for model update' };
+            const mockErrorResponse: ApiResponse<DialecticSession> = {
+                error: mockApiError,
+                status: 404,
+            };
+            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+
+            const result = await dialecticApiClient.updateSessionModels(validPayload);
+
+            expect(result.error).toEqual(mockApiError);
+            expect(result.status).toBe(404);
+            expect(result.data).toBeUndefined();
+        });
+
+        it('should return a network error if apiClient.post rejects', async () => {
+            const networkErrorMessage = 'Simulated network failure for updateSessionModels';
+            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+
+            const result = await dialecticApiClient.updateSessionModels(validPayload);
 
             expect(result.error).toEqual({
                 code: 'NETWORK_ERROR',

@@ -88,7 +88,6 @@ const createMockStoreState = (overrides: Partial<DialecticStore> = {}) => {
     isStartNewSessionModalOpen: false,
     resetCreateProjectError: vi.fn(),
     resetProjectDetailsError: vi.fn(),
-    uploadProjectResourceFile: vi.fn(),
     isUpdatingProjectPrompt: false, // This is related to the save action
     isUploadingProjectResource: false,
     uploadProjectResourceError: null,

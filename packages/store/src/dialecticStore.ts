@@ -8,8 +8,6 @@ import type {
   DialecticStore, 
   StartSessionPayload,
   DialecticSession,
-  UploadProjectResourceFilePayload,
-  DialecticProjectResource,
   UpdateProjectInitialPromptPayload,
   DialecticStage,
   SubmitStageResponsesPayload,
@@ -17,6 +15,7 @@ import type {
   SaveContributionEditPayload,
   DialecticContribution,
   DialecticDomain,
+  UpdateSessionModelsPayload,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
@@ -93,6 +92,10 @@ export const initialDialecticStateValues: DialecticStateValues = {
   activeContextProjectId: null,
   activeContextSessionId: null,
   activeContextStage: null,
+
+  // States for updating session models
+  isUpdatingSessionModels: false,
+  updateSessionModelsError: null,
 };
 
 export const useDialecticStore = create<DialecticStore>((set, get) => ({
@@ -603,40 +606,6 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     }
   },
 
-  uploadProjectResourceFile: async (payload: UploadProjectResourceFilePayload): Promise<ApiResponse<DialecticProjectResource>> => {
-    set({ isUploadingProjectResource: true, uploadProjectResourceError: null });
-    logger.info('[DialecticStore] Uploading project resource file...', { projectId: payload.projectId, fileName: payload.fileName });
-    try {
-      // Pass the payload object directly, ensuring all its properties (like file, fileName, fileSizeBytes, fileType)
-      // are correctly received by the API client method, which now expects a single object.
-      const response = await api.dialectic().uploadProjectResourceFile(payload);
-
-      if (response.error) {
-        logger.error('[DialecticStore] Error uploading project resource file:', { errorDetails: response.error });
-        set({ isUploadingProjectResource: false, uploadProjectResourceError: response.error });
-        return { data: undefined, error: response.error, status: response.status || 0 };
-      }
-      logger.info('[DialecticStore] Successfully uploaded project resource file', { resource: response.data });
-      // Optionally update project details if the resource is linked there
-      set(state => ({
-        isUploadingProjectResource: false,
-        currentProjectDetail: state.currentProjectDetail && state.currentProjectDetail.id === response.data?.project_id
-          ? { 
-              ...state.currentProjectDetail,
-              resources: [...(state.currentProjectDetail.resources || []), response.data!]
-            }
-          : state.currentProjectDetail,
-      }));
-      return response;
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      const networkError: ApiError = { message: errMsg, code: 'NETWORK_ERROR' };
-      logger.error('[DialecticStore] Network error uploading project resource file:', { errorDetails: networkError });
-      set({ isUploadingProjectResource: false, uploadProjectResourceError: networkError });
-      return { data: undefined, error: networkError, status: 0 };
-    }
-  },
-
   deleteDialecticProject: async (projectId: string): Promise<ApiResponse<void>> => {
     // Reset any previous global project error, as this operation is specific.
     // Individual errors for this action will be handled by the component using the returned ApiResponse.
@@ -751,24 +720,99 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     }
   },
 
+  updateSessionModels: async (payload: UpdateSessionModelsPayload): Promise<ApiResponse<DialecticSession>> => {
+    set({ isUpdatingSessionModels: true, updateSessionModelsError: null });
+    logger.info('[DialecticStore] Updating session models...', { payload });
+    try {
+      const response = await api.dialectic().updateSessionModels(payload);
+      if (response.error || !response.data) {
+        const error = response.error || { message: 'No data returned from update session models', code: 'UNKNOWN_ERROR' } as ApiError;
+        logger.error('[DialecticStore] Error updating session models:', { errorDetails: error, sessionId: payload.sessionId });
+        set({ isUpdatingSessionModels: false, updateSessionModelsError: error });
+        return { error, status: response.status || 0, data: undefined };
+      } else {
+        logger.info('[DialecticStore] Successfully updated session models:', { sessionId: payload.sessionId, updatedSession: response.data });
+        const updatedSessionFromApi = response.data;
+        set(state => {
+          let newCurrentProjectDetail = state.currentProjectDetail;
+          if (state.currentProjectDetail && state.currentProjectDetail.dialectic_sessions) {
+            const sessionIndex = state.currentProjectDetail.dialectic_sessions.findIndex(
+              s => s.id === updatedSessionFromApi.id
+            );
+            if (sessionIndex !== -1) {
+              const newSessions = [...state.currentProjectDetail.dialectic_sessions];
+              // Merge: keep existing fields, overwrite with new ones from updatedSessionFromApi
+              newSessions[sessionIndex] = {
+                ...newSessions[sessionIndex],
+                ...updatedSessionFromApi,
+              };
+              newCurrentProjectDetail = {
+                ...state.currentProjectDetail,
+                dialectic_sessions: newSessions,
+              };
+            }
+          }
+          return {
+            currentProjectDetail: newCurrentProjectDetail,
+            isUpdatingSessionModels: false,
+            updateSessionModelsError: null,
+          };
+        });
+        return { data: updatedSessionFromApi, status: response.status || 200 };
+      }
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while updating session models',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error updating session models:', { errorDetails: networkError, sessionId: payload.sessionId });
+      set({ isUpdatingSessionModels: false, updateSessionModelsError: networkError });
+      return { error: networkError, status: 0, data: undefined };
+    }
+  },
+
   setSelectedModelIds: (modelIds: string[]) => {
     logger.info('[DialecticStore] Setting selected model IDs.', { modelIds });
     set({ selectedModelIds: modelIds });
+    const activeSessionId = get().activeContextSessionId;
+    if (activeSessionId) {
+      get().updateSessionModels({ sessionId: activeSessionId, selectedModelCatalogIds: modelIds })
+        .then(response => {
+          if (response.error) {
+            logger.error('[DialecticStore] Post-setSelectedModelIds: Failed to update session models on backend', { sessionId: activeSessionId, error: response.error});
+            // Optionally set a specific error for this background update failure if UI needs to react
+          }
+        })
+        .catch(err => {
+          logger.error('[DialecticStore] Post-setSelectedModelIds: Network error during background session model update', { sessionId: activeSessionId, error: err});
+        });
+    }
   },
 
   setModelMultiplicity: (modelId: string, count: number) => {
+    let newSelectedIds: string[] = [];
     set((state) => {
       const currentSelectedIds = state.selectedModelIds || [];
-      // Filter out all occurrences of the current modelId
       const filteredIds = currentSelectedIds.filter((id) => id !== modelId);
-      // Add the modelId 'count' times
-      const newSelectedIds = [...filteredIds];
+      newSelectedIds = [...filteredIds];
       for (let i = 0; i < count; i++) {
         newSelectedIds.push(modelId);
       }
-      logger.info(`[DialecticStore] Setting multiplicity for model ${modelId} to ${count}.`, { newSelectedModelIds: newSelectedIds });
+      logger.info(`[DialecticStore] Setting multiplicity for model ${modelId} to ${count}.`, { newSelectedIds });
       return { selectedModelIds: newSelectedIds };
     });
+    const activeSessionId = get().activeContextSessionId;
+    if (activeSessionId) {
+      get().updateSessionModels({ sessionId: activeSessionId, selectedModelCatalogIds: newSelectedIds })
+        .then(response => {
+          if (response.error) {
+            logger.error('[DialecticStore] Post-setModelMultiplicity: Failed to update session models on backend', { sessionId: activeSessionId, modelId, count, error: response.error});
+          }
+        })
+        .catch(err => {
+          logger.error('[DialecticStore] Post-setModelMultiplicity: Network error during background session model update', { sessionId: activeSessionId, modelId, count, error: err});
+        });
+    }
   },
 
   resetSelectedModelId: () => {

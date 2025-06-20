@@ -448,9 +448,9 @@ While the project is advancing well, these three areas represent fundamental, un
     *   `[ ] 2.X.2.3.2` In the function that handles a successful response from `callUnifiedAIModel`, replace existing file saving logic with a call to `fileManager.uploadAndRegisterFile`.
     *   `[ ] 2.X.2.3.3` The `PathContext` must include `fileType: 'model_contribution'`, the correct `stageSlug`, and the `modelSlug`. This will save the file and register it in the `dialectic_contributions` table. (GREEN)
 *   `[ ] 2.X.2.4 [COMMIT]` refactor(be): refactor dialectic-service actions to use FileManagerService
-*   `[ ] 2.X.2.3 [BE/REFACTOR]` **Refactor `generateContributions.ts` (and `callModel.ts` if content decisions are made there)**
+*   `[✅] 2.X.2.3 [BE/REFACTOR]` **Refactor `generateContributions.ts` (and `callModel.ts` if content decisions are made there)**
     *   **Objective:** To centralize file writing and database registration for AI model outputs (`model_contribution`) through `FileManagerService`. `generateContributions` will orchestrate AI calls and then pass the results and context to `FileManagerService` for persistence.
-    *   `[ ] 2.X.2.3.1 [TEST-INT]` **Update Integration Tests for `generateContributions`** (RED)
+    *   `[✅] 2.X.2.3.1 [TEST-INT]` **Update Integration Tests for `generateContributions`** (RED)
         *   In `generateContributions.test.ts` (or relevant integration test file):
             *   Remove mocks for direct `dbClient.from('dialectic_contributions').insert()` related to saving contributions.
             *   Remove mocks for direct `uploadToStorage` and `deleteFromStorage` related to contribution content and raw responses.
@@ -473,7 +473,7 @@ While the project is advancing well, these three areas represent fundamental, un
                         *   `sizeBytes` calculated from `aiResponse.content`.
             *   Assert that if `FileManagerService.uploadAndRegisterFile` returns an error for a model's contribution, that model's attempt is added to `failedContributionAttempts` and does *not* throw an unhandled exception that stops the loop.
             *   Assert that the `successfulContributions` array is populated with the record returned by `FileManagerService.uploadAndRegisterFile`.
-    *   `[ ] 2.X.2.3.2 [BE]` **Modify `generateContributions.ts` Response Handling** (GREEN)
+    *   `[✅] 2.X.2.3.2 [BE]` **Modify `generateContributions.ts` Response Handling** (GREEN)
         *   Locate the loop where `callUnifiedAIModel` is invoked for each selected model.
         *   Inside the `try` block, after a successful `aiResponse` is received (i.e., `!aiResponse.error && aiResponse.content`):
             *   **Remove Direct Storage Uploads:** Delete the lines calling `uploadToStorage` for `contentStoragePath` and `rawResponseStoragePath`.
@@ -525,12 +525,12 @@ While the project is advancing well, these three areas represent fundamental, un
         *   **Catch Block**: The existing `catch (error)` block that handles `dbInsertError` (and other errors within the `try`) should still be present. Its `deleteFromStorage` calls will now be redundant if the failure happened *after* `FileManagerService` was invoked and `FileManagerService` itself failed and cleaned up. If `FileManagerService` succeeded but a subsequent error occurs *before* the `catch` block, then files *might* exist that `FileManagerService` didn't clean. Review this carefully. The main goal is that `FileManagerService` cleans its own attempt. If `generateContributions` causes an error *after* a successful `FileManagerService` call, then `generateContributions` might need to tell `FileManagerService` to delete what was just made.
             *   Simplified `catch` block: It should primarily log that an unexpected error occurred for the model and add to `failedContributionAttempts`. The specific file cleanup for the *current* attempt should have been handled by `FileManagerService` if the error was during its `uploadAndRegisterFile` operation.
 
-    *   `[ ] 2.X.2.3.3 [BE]` **Verify `FileManagerService` for Contributions Table** (GREEN)
+    *   `[✅] 2.X.2.3.3 [BE]` **Verify `FileManagerService` for Contributions Table** (GREEN)
         *   In `file_manager.ts`, ensure the `else` block for `targetTable === 'dialectic_contributions'` correctly maps all necessary fields from its `UploadContext` (and its `pathContext`) to the `dialectic_contributions` table columns.
         *   This includes: `project_id` (from `context.pathContext.projectId`), `session_id`, `user_id`, `stage`, `model_name` (from `context.pathContext.modelSlug`), `file_name`, `mime_type`, `size_bytes`, `storage_bucket`, `storage_path`, `iteration_number`.
         *   **Crucially, add any other fields that `generateContribution.ts` was previously inserting directly** if they are still required and not derivable by `FileManagerService` from the `UploadContext`. These might include: `model_id` (if distinct from `model_name/modelSlug`), `seed_prompt_url` (or `seed_prompt_resource_id`), `tokens_used_input`, `tokens_used_output`, `processing_time_ms`, `edit_version`, `is_latest_edit`, `original_model_contribution_id`, `raw_response_payload` (JSONB).
         *   This may require adding more optional fields to `UploadContext` or its `customMetadata` and ensuring `FileManagerService` knows how to map them to the `dialectic_contributions` columns.
-    *   `[ ] 2.X.2.3.4 [TEST-INT]` Run integration tests for `generateContributions`. (GREEN)
+    *   `[✅] 2.X.2.3.4 [TEST-INT]` Run integration tests for `generateContributions`. (GREEN)
     *   [ ] Refactor cloneProject to use new file management logic, ensure all files are copied to the new project, and all rows are created for all files
     *   [ ] Refactor deleteProject to use new file management logic, ensure all files are deleted from storage, and all rows are deleted from the database
     *   [ ] Refactor exportProject to use new file management logic, ensure all files are saved into the correct file tree structure and zipped into the export file. 
@@ -548,21 +548,21 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
 
 ### 2.X.3 Deprecation and Code Cleanup
 
-*   `[ ] 2.X.3.1 [BE/REFACTOR]` **Deprecate `uploadProjectResourceFile.ts`**
-    *   `[ ] 2.X.3.1.1` Delete the file `supabase/functions/dialectic-service/uploadProjectResourceFile.ts`.
-    *   `[ ] 2.X.3.1.2` In `supabase/functions/dialectic-service/index.ts`, remove the `'uploadProjectResourceFile'` case from the action handler.
-*   `[ ] 2.X.3.2 [API/REFACTOR]` **Update API Client**
-    *   `[ ] 2.X.3.2.1` In `packages/types/src/dialectic.types.ts`, remove `uploadProjectResourceFile` from the `DialecticAPIInterface`.
-    *   `[ ] 2.X.3.2.2` In `packages/api/src/dialectic.api.ts`, remove the implementation of `uploadProjectResourceFile`.
-    *   `[ ] 2.X.3.2.3` Remove the corresponding mocks from `packages/api/src/mocks.ts`.
-*   `[ ] 2.X.3.3 [STORE/REFACTOR]` **Update State Management**
-    *   `[ ] 2.X.3.3.1` In `packages/store/src/dialecticStore.ts`, delete the `uploadProjectResourceFile` thunk.
-*   `[ ] 2.X.3.4 [UI/REFACTOR]` **Refactor Project Creation Form**
-    *   `[ ] 2.X.3.4.1` This step is a verification. The refactoring of `createProject` in Phase 1 (`1.X`) already transitions the UI away from a separate file upload call. Verify that `CreateDialecticProjectForm.tsx`'s `onSubmit` handler now calls the `createProject` thunk with `FormData`, and that no subsequent, separate file upload call exists.
-*   `[ ] 2.X.3.5 [TEST-E2E]` **Update All Tests**
-    *   `[ ] 2.X.3.5.1` Search the entire codebase for any remaining references to `uploadProjectResourceFile` (especially in tests) and remove or refactor them.
-*   [ ] Search the entire codebase for references to deprecated files and functions and update them to use the new method. 
-*   [ ] This task is not complete until all references to the old functions are updated so that the codebase no longer refers to the old functions anywhere 
+*   `[✅] 2.X.3.1 [BE/REFACTOR]` **Deprecate `uploadProjectResourceFile.ts`**
+    *   `[✅] 2.X.3.1.1` Delete the file `supabase/functions/dialectic-service/uploadProjectResourceFile.ts`.
+    *   `[✅] 2.X.3.1.2` In `supabase/functions/dialectic-service/index.ts`, remove the `'uploadProjectResourceFile'` case from the action handler.
+*   `[✅] 2.X.3.2 [API/REFACTOR]` **Update API Client**
+    *   `[✅] 2.X.3.2.1` In `packages/types/src/dialectic.types.ts`, remove `uploadProjectResourceFile` from the `DialecticAPIInterface`.
+    *   `[✅] 2.X.3.2.2` In `packages/api/src/dialectic.api.ts`, remove the implementation of `uploadProjectResourceFile`.
+    *   `[✅] 2.X.3.2.3` Remove the corresponding mocks from `packages/api/src/mocks.ts`.
+*   `[✅] 2.X.3.3 [STORE/REFACTOR]` **Update State Management**
+    *   `[✅] 2.X.3.3.1` In `packages/store/src/dialecticStore.ts`, delete the `uploadProjectResourceFile` thunk.
+*   `[✅] 2.X.3.4 [UI/REFACTOR]` **Refactor Project Creation Form**
+    *   `[✅] 2.X.3.4.1` This step is a verification. The refactoring of `createProject` in Phase 1 (`1.X`) already transitions the UI away from a separate file upload call. Verify that `CreateDialecticProjectForm.tsx`'s `onSubmit` handler now calls the `createProject` thunk with `FormData`, and that no subsequent, separate file upload call exists.
+*   `[✅] 2.X.3.5 [TEST-E2E]` **Update All Tests**
+    *   `[✅] 2.X.3.5.1` Search the entire codebase for any remaining references to `uploadProjectResourceFile` (especially in tests) and remove or refactor them.
+*   [✅] Search the entire codebase for references to deprecated files and functions and update them to use the new method. 
+*   [✅] This task is not complete until all references to the old functions are updated so that the codebase no longer refers to the old functions anywhere 
         * Except the implementation  plan documents which document how the system was built, including details on refactorings and deprecated logic
 *   `[ ] 2.X.3.6 [COMMIT]` refactor(system): deprecate and remove legacy uploadProjectResourceFile function
 
@@ -617,7 +617,7 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
             *   Also capture the actual `model_id` used for the call (from `providerDetails.id` or similar context available during the model iteration).
             *   Capture other relevant metadata like `rawProviderResponse` (to determine `raw_response_storage_path` if applicable, or to store inline if schema allows and preferred), `prompt_template_id_used`, `seed_prompt_url`.
             *   Populate the updated `UploadContext` with these values and pass it to `fileManager.uploadAndRegisterFile`.
-    *   `[ ] 2.X.5.1.4 [TEST-INT]` Update/Create integration tests for `generateContributions.ts`. These tests must:
+    *   `[✅] 2.X.5.1.4 [TEST-INT]` Update/Create integration tests for `generateContributions.ts`. These tests must:
         *   Mock `callUnifiedAIModel` to return realistic `UnifiedAIResponse` data, including token counts and processing times.
         *   Assert that `FileManagerService.uploadAndRegisterFile` is called with an `UploadContext` containing the correct tokenomics data and other metadata.
         *   Mock `FileManagerService.uploadAndRegisterFile` to simulate a successful database insert and verify that the `generateContributions` function correctly processes this success.

@@ -23,6 +23,7 @@ import type {
   DomainOverlayDescriptor,
   DialecticDomain,
   DialecticProcessTemplate,
+  DialecticStage,
 } from '@paynless/types';
 
 // Add the mock call here
@@ -88,13 +89,184 @@ describe('useDialecticStore', () => {
         });
     });
 
+    describe('resetCreateProjectError action', () => {
+        it('should set createProjectError to null', () => {
+            // Set an initial error
+            useDialecticStore.setState({ createProjectError: { code: 'ERROR', message: 'Some error' } });
+            let state = useDialecticStore.getState();
+            expect(state.createProjectError).not.toBeNull();
+
+            // Call the reset action
+            state.resetCreateProjectError();
+            state = useDialecticStore.getState(); // Re-fetch state after action
+            expect(state.createProjectError).toBeNull();
+        });
+    });
+
+    describe('resetProjectDetailsError action', () => {
+        it('should set projectDetailError to null', () => {
+            // Set an initial error
+            useDialecticStore.setState({ projectDetailError: { code: 'ERROR', message: 'Some details error' } });
+            let state = useDialecticStore.getState();
+            expect(state.projectDetailError).not.toBeNull();
+
+            // Call the reset action
+            state.resetProjectDetailsError();
+            state = useDialecticStore.getState(); // Re-fetch state after action
+            expect(state.projectDetailError).toBeNull();
+        });
+    });
+
+    describe('resetSelectedModelId action', () => {
+        it('should set selectedModelIds to an empty array', () => {
+            // Set an initial state for selectedModelIds
+            useDialecticStore.setState({ selectedModelIds: ['model-1', 'model-2'] });
+            let state = useDialecticStore.getState();
+            expect(state.selectedModelIds).not.toEqual([]);
+
+            // Call the reset action
+            state.resetSelectedModelId();
+            state = useDialecticStore.getState(); // Re-fetch state after action
+            expect(state.selectedModelIds).toEqual([]);
+        });
+    });
+
+    describe('reset action', () => {
+        it('should reset the entire store to initialDialecticStateValues', () => {
+            // Modify some state values
+            useDialecticStore.setState({
+                isLoadingProjects: true,
+                projects: [{ id: '1' } as any],
+                selectedDomain: { id: 'test-domain' } as any,
+            });
+
+            let state = useDialecticStore.getState();
+            expect(state.isLoadingProjects).toBe(true);
+            expect(state.projects.length).toBe(1);
+            expect(state.selectedDomain).not.toBeNull();
+
+            // Call the reset action
+            state.reset();
+            state = useDialecticStore.getState(); // Re-fetch state after action
+
+            // Check a few key properties to ensure they are reset
+            expect(state.isLoadingProjects).toBe(initialDialecticStateValues.isLoadingProjects);
+            expect(state.projects).toEqual(initialDialecticStateValues.projects);
+            expect(state.selectedDomain).toBe(initialDialecticStateValues.selectedDomain);
+            // For a more thorough test, one might compare the entire state object
+            // to initialDialecticStateValues, but that can be brittle if initial state changes often.
+            // Checking a representative sample is usually sufficient for this type of reset.
+            Object.keys(initialDialecticStateValues).forEach(key => {
+                expect((state as any)[key]).toEqual((initialDialecticStateValues as any)[key]);
+            });
+        });
+    });
+
+    describe('Context Setter Actions', () => {
+        it('setActiveContextProjectId should update activeContextProjectId', () => {
+            const { setActiveContextProjectId } = useDialecticStore.getState();
+            const testId = 'project-xyz';
+            setActiveContextProjectId(testId);
+            expect(useDialecticStore.getState().activeContextProjectId).toBe(testId);
+            setActiveContextProjectId(null);
+            expect(useDialecticStore.getState().activeContextProjectId).toBeNull();
+        });
+
+        it('setActiveContextSessionId should update activeContextSessionId', () => {
+            const { setActiveContextSessionId } = useDialecticStore.getState();
+            const testId = 'session-xyz';
+            setActiveContextSessionId(testId);
+            expect(useDialecticStore.getState().activeContextSessionId).toBe(testId);
+            setActiveContextSessionId(null);
+            expect(useDialecticStore.getState().activeContextSessionId).toBeNull();
+        });
+
+        it('setActiveContextStage should update activeContextStage', () => {
+            const { setActiveContextStage } = useDialecticStore.getState();
+            const testStage = { id: 'stage-1', slug: 'test-stage' } as DialecticStage;
+            setActiveContextStage(testStage);
+            expect(useDialecticStore.getState().activeContextStage).toEqual(testStage);
+            setActiveContextStage(null);
+            expect(useDialecticStore.getState().activeContextStage).toBeNull();
+        });
+
+        it('setActiveDialecticContext should update all context fields', () => {
+            const { setActiveDialecticContext } = useDialecticStore.getState();
+            const testContext = {
+                projectId: 'proj-ctx',
+                sessionId: 'sess-ctx',
+                stage: { id: 'stage-ctx', slug: 'ctx-stage' } as DialecticStage,
+            };
+            setActiveDialecticContext(testContext);
+            const state = useDialecticStore.getState();
+            expect(state.activeContextProjectId).toBe(testContext.projectId);
+            expect(state.activeContextSessionId).toBe(testContext.sessionId);
+            expect(state.activeContextStage).toEqual(testContext.stage);
+
+            setActiveDialecticContext({ projectId: null, sessionId: null, stage: null });
+            const clearedState = useDialecticStore.getState();
+            expect(clearedState.activeContextProjectId).toBeNull();
+            expect(clearedState.activeContextSessionId).toBeNull();
+            expect(clearedState.activeContextStage).toBeNull();
+        });
+    });
+
+    describe('Submission State Actions', () => {
+        it('setSubmittingStageResponses should update isSubmittingStageResponses', () => {
+            const { setSubmittingStageResponses } = useDialecticStore.getState();
+            setSubmittingStageResponses(true);
+            expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(true);
+            setSubmittingStageResponses(false);
+            expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
+        });
+
+        it('setSubmitStageResponsesError should update submitStageResponsesError', () => {
+            const { setSubmitStageResponsesError } = useDialecticStore.getState();
+            const testError: ApiError = { code: 'ERR', message: 'Test submit error' };
+            setSubmitStageResponsesError(testError);
+            expect(useDialecticStore.getState().submitStageResponsesError).toEqual(testError);
+            setSubmitStageResponsesError(null);
+            expect(useDialecticStore.getState().submitStageResponsesError).toBeNull();
+        });
+
+        it('resetSubmitStageResponsesError should set submitStageResponsesError to null', () => {
+            useDialecticStore.setState({ submitStageResponsesError: { code: 'ERR', message: 'Initial error' }});
+            const { resetSubmitStageResponsesError } = useDialecticStore.getState();
+            resetSubmitStageResponsesError();
+            expect(useDialecticStore.getState().submitStageResponsesError).toBeNull();
+        });
+
+        it('setSavingContributionEdit should update isSavingContributionEdit', () => {
+            const { setSavingContributionEdit } = useDialecticStore.getState();
+            setSavingContributionEdit(true);
+            expect(useDialecticStore.getState().isSavingContributionEdit).toBe(true);
+            setSavingContributionEdit(false);
+            expect(useDialecticStore.getState().isSavingContributionEdit).toBe(false);
+        });
+
+        it('setSaveContributionEditError should update saveContributionEditError', () => {
+            const { setSaveContributionEditError } = useDialecticStore.getState();
+            const testError: ApiError = { code: 'SAVE_ERR', message: 'Test save error' };
+            setSaveContributionEditError(testError);
+            expect(useDialecticStore.getState().saveContributionEditError).toEqual(testError);
+            setSaveContributionEditError(null);
+            expect(useDialecticStore.getState().saveContributionEditError).toBeNull();
+        });
+
+        it('resetSaveContributionEditError should set saveContributionEditError to null', () => {
+            useDialecticStore.setState({ saveContributionEditError: { code: 'SAVE_ERR', message: 'Initial save error' }});
+            const { resetSaveContributionEditError } = useDialecticStore.getState();
+            resetSaveContributionEditError();
+            expect(useDialecticStore.getState().saveContributionEditError).toBeNull();
+        });
+    });
+
     describe('fetchProcessTemplate thunk', () => {
         const mockTemplate: DialecticProcessTemplate = {
             id: 'pt1',
             name: 'Standard Dialectic',
             description: 'A standard template',
             created_at: new Date().toISOString(),
-            domain_id: 'dom-123',
             starting_stage_id: 'stage-1',
             stages: [],
         };
@@ -178,7 +350,7 @@ describe('useDialecticStore', () => {
             id: 'proj-123',
             project_name: 'Test Project',
             selected_domain_id: 'domain-1',
-            domain_name: 'Software Development',
+            dialectic_domains: { name: 'Software Development' },
             user_id: 'user-123',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -187,6 +359,7 @@ describe('useDialecticStore', () => {
             initial_prompt_resource_id: null,
             selected_domain_overlay_id: null,
             repo_url: null,
+            dialectic_process_templates: null,
         };
 
         const mockPayload: CreateProjectPayload = {

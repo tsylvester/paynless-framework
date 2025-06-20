@@ -6,15 +6,12 @@ import type {
     StartSessionPayload,
     DialecticSession,
     AIModelCatalogEntry,
-    DialecticProjectResource,
     DomainDescriptor,
     DomainOverlayDescriptor,
     UpdateProjectDomainPayload,
     DeleteProjectPayload,
     DialecticServiceActionPayload,
     UpdateProjectInitialPromptPayload,
-    UploadProjectResourceFilePayload,
-    FetchOptions,
     GetProjectResourceContentPayload,
     GetProjectResourceContentResponse,
     DialecticContribution,
@@ -258,51 +255,6 @@ export class DialecticApiClient {
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'A network error occurred';
             logger.error('Network error in getContributionContentSignedUrl:', { errorMessage: message, errorObject: error });
-            return {
-                data: undefined,
-                error: { code: 'NETWORK_ERROR', message },
-                status: 0,
-            };
-        }
-    }
-
-    /**
-     * Uploads a project resource file.
-     * Requires authentication.
-     */
-    async uploadProjectResourceFile(
-        payload: UploadProjectResourceFilePayload,
-        methodOptions?: { onUploadProgress?: (progressEvent: ProgressEvent) => void } & FetchOptions
-    ): Promise<ApiResponse<DialecticProjectResource>> {
-        logger.info('Uploading project resource file', { projectId: payload.projectId, fileName: payload.fileName });
-
-        const formData = new FormData();
-        formData.append('action', 'uploadProjectResourceFile');
-        formData.append('projectId', payload.projectId);
-        formData.append('file', payload.file, payload.fileName);
-        formData.append('fileName', payload.fileName);
-        formData.append('fileSizeBytes', payload.fileSizeBytes.toString());
-        formData.append('fileType', payload.fileType);
-        if (payload.resourceDescription) {
-            formData.append('resourceDescription', payload.resourceDescription);
-        }
-
-        try {
-            const response = await this.apiClient.post<DialecticProjectResource, FormData>(
-                'dialectic-service',
-                formData,
-                methodOptions
-            );
-
-            if (response.error) {
-                logger.error('Error uploading project resource file:', { error: response.error, projectId: payload.projectId });
-            } else {
-                logger.info('Successfully uploaded project resource file', { resourceId: response.data?.id });
-            }
-            return response;
-        } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : 'A network error occurred';
-            logger.error('Network error in uploadProjectResourceFile:', { errorMessage: message, errorObject: error });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },
@@ -613,6 +565,39 @@ export class DialecticApiClient {
           status: 0,
         } as ApiResponse<GetProjectResourceContentResponse>;
       }
+    }
+
+    /**
+     * Updates the selected models for a given session.
+     * Requires authentication.
+     */
+    async updateSessionModels(payload: UpdateSessionModelsPayload): Promise<ApiResponse<DialecticSession>> {
+        logger.info('Updating selected models for session', { sessionId: payload.sessionId, models: payload.selectedModelCatalogIds });
+
+        try {
+            const response = await this.apiClient.post<DialecticSession, DialecticServiceActionPayload>(
+                'dialectic-service',
+                {
+                    action: 'updateSessionModels',
+                    payload,
+                } as DialecticServiceActionPayload
+            );
+
+            if (response.error) {
+                logger.error('Error updating session models:', { error: response.error, sessionId: payload.sessionId });
+            } else {
+                logger.info('Successfully updated session models', { sessionId: payload.sessionId, updatedSession: response.data });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in updateSessionModels:', { errorMessage: message, errorObject: error, sessionId: payload.sessionId });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
     }
 
     /**

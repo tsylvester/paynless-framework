@@ -104,7 +104,6 @@ describe('GenerateContributionButton', () => {
       startDialecticSession: vi.fn().mockResolvedValue({ data: {}, error: null }),
       fetchAIModelCatalog: vi.fn(),
       fetchContributionContent: vi.fn(),
-      uploadProjectResourceFile: vi.fn().mockResolvedValue({ data: {}, error: null }),
       resetCreateProjectError: vi.fn(),
       resetProjectDetailsError: vi.fn(),
       deleteDialecticProject: vi.fn().mockResolvedValue({ data: {}, error: null }),

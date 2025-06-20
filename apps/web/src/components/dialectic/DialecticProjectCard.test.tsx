@@ -99,7 +99,6 @@ const createMockStore = (projectOverrides?: Partial<MockDialecticProjectWithUser
     startDialecticSession: vi.fn(),
     contributionContentCache: {},
     fetchContributionContent: vi.fn(),
-    uploadProjectResourceFile: vi.fn(),
     resetCreateProjectError: vi.fn(),
     resetProjectDetailsError: vi.fn(),
     allSystemPrompts: [],
