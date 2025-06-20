@@ -148,13 +148,13 @@ export async function saveContributionEdit(
         p_tokens_used_input: 0,
         p_tokens_used_output: 0,
         p_processing_time_ms: 0,
-        p_citations: {}, 
+        p_citations: null,
         p_target_contribution_id: originalContributionIdToEdit, 
         p_edit_version: newEditVersion,
         p_is_latest_edit: true,
         p_original_model_contribution_id: newOriginalModelContributionId,
         p_error_details: '',
-        p_model_id: null,
+        p_model_id: null as unknown as string,
         p_contribution_type: 'user_edit'
     };
 

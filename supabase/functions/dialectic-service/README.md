@@ -231,18 +231,6 @@ Saves user edits to the content of a contribution.
 -   **Success Response (`data` object)**:
     -   The updated `DialecticContribution` object.
 
-### `uploadProjectResourceFile`
-
-Uploads a resource file (e.g., an image) to be associated with a project. This is a multipart request.
-
--   **URL**: `POST /dialectic-service`
--   **Request**: `multipart/form-data`
-    -   `action`: "uploadProjectResourceFile"
-    -   `projectId`: The UUID of the project.
-    -   `file`: The file to upload.
--   **Success Response (`data` object)**:
-    -   Details about the uploaded resource, including its URL.
-
 ### `getProjectResourceContent`
 
 Retrieves the content of a specific project resource file from Supabase Storage.

@@ -295,7 +295,13 @@ export async function startSession(
         mimeType: 'text/markdown',
         sizeBytes: seedPromptBuffer.byteLength,
         userId: userId,
-        description: `Assembled seed prompt for session ${newSessionRecord.id}, stage ${stageContext.slug}`,
+        description: JSON.stringify({
+            type: 'seed_prompt',
+            session_id: newSessionRecord.id,
+            stage_slug: stageContext.slug,
+            iteration: 1, // Corresponds to pathContext.iteration for initial seed
+            original_file_name: `${stageContext.slug}_seed_prompt.md`
+        }),
     });
 
     if (seedPromptUploadResult.error || !seedPromptUploadResult.record) {

@@ -19,6 +19,8 @@ import {
   SubmitStageResponsesDependencies,
   FetchProcessTemplatePayload,
   DialecticProcessTemplate,
+  UpdateSessionModelsPayload,
+  DialecticSession,
 } from "./dialectic.interface.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import {
@@ -35,7 +37,9 @@ import type {
   ILogger
 } from '../_shared/types.ts';
 import type { DomainDescriptor } from "./listAvailableDomains.ts";
-
+import type { IFileManager } from "../_shared/types/file_manager.types.ts";
+import type { DownloadStorageResult } from "../_shared/supabase_storage_utils.ts";
+import type { IStorageUtils } from "../_shared/types/storage_utils.types.ts";
 import { createProject } from "./createProject.ts";
 import { listAvailableDomains } from "./listAvailableDomains.ts";
 import { updateProjectDomain } from "./updateProjectDomain.ts";
@@ -44,7 +48,6 @@ import { getContributionContentSignedUrlHandler } from "./getContributionContent
 import { startSession } from "./startSession.ts";
 import { generateContributions } from "./generateContribution.ts";
 import { listProjects } from "./listProjects.ts";
-import { uploadProjectResourceFileHandler, type UploadProjectResourceFileResult } from "./uploadProjectResourceFile.ts";
 import { listAvailableDomainOverlays } from "./listAvailableDomainOverlays.ts";
 import { deleteProject } from './deleteProject.ts';
 import { cloneProject, CloneProjectResult } from './cloneProject.ts';
@@ -52,9 +55,11 @@ import { exportProject } from './exportProject.ts';
 import { getProjectResourceContent } from "./getProjectResourceContent.ts";
 import { saveContributionEdit } from './saveContributionEdit.ts';
 import { submitStageResponses } from './submitStageResponses.ts';
-import { uploadToStorage, downloadFromStorage } from '../_shared/supabase_storage_utils.ts';
+import { downloadFromStorage } from '../_shared/supabase_storage_utils.ts';
 import { listDomains, type DialecticDomain } from './listDomains.ts';
 import { fetchProcessTemplate } from './fetchProcessTemplate.ts';
+import { FileManagerService } from '../_shared/services/file_manager.ts';
+import { handleUpdateSessionModels } from './updateSessionModels.ts';
 
 console.log("dialectic-service function started");
 
@@ -69,7 +74,7 @@ export interface DialecticServiceDependencies {
 
 // --- START: DI Helper Functions (AuthError replaced with ServiceError) ---
 interface IsValidDomainFn { (dbClient: SupabaseClient, domainId: string): Promise<boolean>; }
-interface CreateSignedUrlFnResult { signedUrl: string | null; error: ServiceError | Error | null; }
+interface CreateSignedUrlFnResult { signedUrl: string | null; error: Error | null; }
 interface CreateSignedUrlFn { (client: SupabaseClient, bucket: string, path: string, expiresIn: number): Promise<CreateSignedUrlFnResult>; }
 
 export const isValidDomainDefaultFn: IsValidDomainFn = async (dbClient, domainId) => {
@@ -86,16 +91,16 @@ export const isValidDomainDefaultFn: IsValidDomainFn = async (dbClient, domainId
   return !!data;
 };
 
-export const createSignedUrlDefaultFn: CreateSignedUrlFn = async (client, bucket, path, expiresIn) => {
+export const createSignedUrlDefaultFn: CreateSignedUrlFn = async (client, bucket, path, expiresIn): Promise<{ signedUrl: string | null; error: Error | null }> => {
   const { data, error } = await client.storage.from(bucket).createSignedUrl(path, expiresIn);
   if (error) {
-    const storageError = error as Error & { statusCode?: string; error?: string; message: string };
-    const serviceError: ServiceError = {
-        message: storageError.message || 'Storage error creating signed URL',
-        status: storageError.statusCode ? parseInt(storageError.statusCode) : 500,
-        code: storageError.error || 'STORAGE_OPERATION_ERROR', 
-    };
-    return { signedUrl: null, error: serviceError };
+    if (error instanceof Error) {
+      return { signedUrl: null, error: error };
+    }
+    // If it's not an Error instance, create a new one.
+    // This handles cases where 'error' might be a Supabase specific error object that isn't a JS Error.
+    const storageError = error as { message?: string; error?: string; statusCode?: string };
+    return { signedUrl: null, error: new Error(storageError.message || 'Storage error creating signed URL') };
   }
   return { signedUrl: data?.signedUrl || null, error: null };
 };
@@ -111,16 +116,16 @@ export interface ActionHandlers {
   startSession: (user: User, dbClient: SupabaseClient, payload: StartSessionPayload, dependencies: { logger: ILogger }) => Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }>;
   generateContributions: (dbClient: SupabaseClient, payload: GenerateContributionsPayload, authToken: string, dependencies: { logger: ILogger }) => Promise<{ success: boolean; data?: GenerateContributionsSuccessResponse; error?: ServiceError }>;
   listProjects: (user: User, dbClient: SupabaseClient) => Promise<{ data?: DialecticProject[]; error?: ServiceError; status?: number }>;
-  uploadProjectResourceFileHandler: (payload: FormData, dbClient: SupabaseClient, user: User, logger: Logger) => Promise<UploadProjectResourceFileResult>;
   listAvailableDomainOverlays: (stageAssociation: string, dbClient: SupabaseClient) => Promise<DomainOverlayDescriptor[]>;
   deleteProject: (dbClient: SupabaseClient, payload: { projectId: string }, userId: string) => Promise<{data?: null, error?: { message: string; details?: string | undefined; }, status?: number}>;
-  cloneProject: (dbClient: SupabaseClient, originalProjectId: string, newProjectName: string | undefined, cloningUserId: string) => Promise<CloneProjectResult>;
-  exportProject: (dbClient: SupabaseClient, projectId: string, userId: string) => Promise<{ data?: { export_url: string }; error?: ServiceError; status?: number }>;
+  cloneProject: (dbClient: SupabaseClient, fileManager: IFileManager, originalProjectId: string, newProjectName: string | undefined, cloningUserId: string) => Promise<CloneProjectResult>;
+  exportProject: (dbClient: SupabaseClient, fileManager: IFileManager, storageUtils: IStorageUtils, projectId: string, userId: string) => Promise<{ data?: { export_url: string }; error?: ServiceError; status?: number }>;
   getProjectResourceContent: (payload: GetProjectResourceContentPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetProjectResourceContentResponse; error?: ServiceError; status?: number }>;
   saveContributionEdit: (payload: SaveContributionEditPayload, dbClient: SupabaseClient, user: User, logger: ILogger) => Promise<{ data?: DialecticContribution; error?: ServiceError; status?: number }>;
   submitStageResponses: (payload: SubmitStageResponsesPayload, dbClient: SupabaseClient, user: User, dependencies: SubmitStageResponsesDependencies) => Promise<{ data?: SubmitStageResponsesResponse; error?: ServiceError; status?: number }>;
   listDomains: (dbClient: SupabaseClient) => Promise<{ data?: DialecticDomain[]; error?: ServiceError }>;
   fetchProcessTemplate: (dbClient: SupabaseClient, payload: FetchProcessTemplatePayload) => Promise<{ data?: DialecticProcessTemplate; error?: ServiceError; status?: number }>;
+  updateSessionModels: (dbClient: SupabaseClient, payload: UpdateSessionModelsPayload, userId: string) => Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }>;
 }
 
 export async function handleRequest(
@@ -129,15 +134,14 @@ export async function handleRequest(
   userClient: SupabaseClient,
   adminClient: SupabaseClient
 ): Promise<Response> {
-  const preflightResponse = handleCorsPreflightRequest(req);
-  if (preflightResponse) {
-    return preflightResponse;
-  }
-
   const authHeader = req.headers.get("Authorization");
   let authToken: string | null = null;
   if (authHeader && authHeader.startsWith("Bearer ")) {
     authToken = authHeader.substring(7);
+  }
+  const preflightResponse = handleCorsPreflightRequest(req);
+  if (preflightResponse) {
+    return preflightResponse;
   }
 
   const getUserFnForRequest: GetUserFn = async (): Promise<GetUserFnResult> => {
@@ -174,13 +178,6 @@ export async function handleRequest(
           }
           return createSuccessResponse(data, status || 201, req);
         }
-        case 'uploadProjectResourceFile': {
-          const result = await handlers.uploadProjectResourceFileHandler(formData, adminClient, userForMultipart, logger);
-          if (result.error) {
-            return createErrorResponse(result.error.message, result.error.status || 500, req, result.error);
-          }
-          return createSuccessResponse(result.data, 200, req);
-        }
         default: {
           const errorMessage = `Unknown action '${action}' for multipart/form-data.`;
           logger.warn(errorMessage, { action });
@@ -196,7 +193,8 @@ export async function handleRequest(
         'listProjects', 'getProjectDetails', 'updateProjectDomain', 
         'startSession', 'generateContributions', 'getContributionContentSignedUrl',
         'deleteProject', 'cloneProject', 'exportProject', 'getProjectResourceContent',
-        'saveContributionEdit', 'submitStageResponses', 'fetchProcessTemplate'
+        'saveContributionEdit', 'submitStageResponses', 'fetchProcessTemplate',
+        'updateSessionModels'
       ];
 
       let userForJson: User | null = null;
@@ -208,6 +206,8 @@ export async function handleRequest(
         }
         userForJson = userData.user;
       }
+
+      const fileManager = new FileManagerService(adminClient);
 
       // Route to the appropriate handler
       switch (requestBody.action) {
@@ -319,7 +319,7 @@ export async function handleRequest(
           if (!payload || !payload.projectId) {
               return createErrorResponse("projectId is required for cloneProject.", 400, req, { message: "projectId is required for cloneProject.", status: 400 });
           }
-          const { data, error } = await handlers.cloneProject(adminClient, payload.projectId, payload.newProjectName, userForJson!.id);
+          const { data, error } = await handlers.cloneProject(adminClient, fileManager, payload.projectId, payload.newProjectName, userForJson!.id);
           if (error) {
               return createErrorResponse(error.message, 500, req, error);
           }
@@ -330,7 +330,11 @@ export async function handleRequest(
           if (!payload || !payload.projectId) {
             return createErrorResponse("projectId is required for exportProject.", 400, req, { message: "projectId is required for exportProject.", status: 400 });
           }
-          const { data, error, status } = await handlers.exportProject(adminClient, payload.projectId, userForJson!.id);
+          const storageUtils: IStorageUtils = {
+            downloadFromStorage,
+            createSignedUrlForPath: createSignedUrlDefaultFn // Assuming createSignedUrlDefaultFn matches the required signature
+          };
+          const { data, error, status } = await handlers.exportProject(adminClient, fileManager, storageUtils, payload.projectId, userForJson!.id);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }
@@ -348,22 +352,29 @@ export async function handleRequest(
           return createSuccessResponse(data, 200, req);
         }
         case "saveContributionEdit": {
-          const payload = requestBody.payload as SaveContributionEditPayload;
-          if (!payload || !payload.originalContributionIdToEdit || !payload.editedContentText) {
-            return createErrorResponse("originalContributionIdToEdit and editedContentText are required.", 400, req, { message: "contributionId and content are required.", status: 400 });
-          }
-          const { data, error, status } = await handlers.saveContributionEdit(payload, adminClient, userForJson!, logger);
+          const { data, error, status } = await handlers.saveContributionEdit(requestBody.payload as SaveContributionEditPayload, userClient, userForJson!, logger);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }
           return createSuccessResponse(data, status || 200, req);
         }
         case "submitStageResponses": {
-          const payload = requestBody.payload as SubmitStageResponsesPayload;
-          if (!payload || !payload.sessionId || !payload.responses) {
-            return createErrorResponse("sessionId and responses are required.", 400, req, { message: "sessionId and responses are required.", status: 400 });
+          const dependencies: SubmitStageResponsesDependencies = {
+            logger,
+            fileManager,
+            downloadFromStorage,
+          };
+          const { data, error, status } = await handlers.submitStageResponses(requestBody.payload as SubmitStageResponsesPayload, adminClient, userForJson!, dependencies);
+          if (error) {
+            return createErrorResponse(error.message, status || 500, req, error);
           }
-          const { data, error, status } = await handlers.submitStageResponses(payload, adminClient, userForJson!, { logger, uploadToStorage, downloadFromStorage});
+          return createSuccessResponse(data, status || 200, req);
+        }
+        case "updateSessionModels": {
+          if (!userForJson) {
+            return createErrorResponse('User not authenticated for updateSessionModels', 401, req, { message: "User not authenticated", status: 401, code: 'USER_AUTH_FAILED' });
+          }
+          const { data, error, status } = await handlers.updateSessionModels(adminClient, requestBody.payload as UpdateSessionModelsPayload, userForJson.id);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }
@@ -403,7 +414,6 @@ const handlers: ActionHandlers = {
   startSession,
   generateContributions,
   listProjects,
-  uploadProjectResourceFileHandler,
   listAvailableDomainOverlays,
   deleteProject,
   cloneProject,
@@ -413,6 +423,7 @@ const handlers: ActionHandlers = {
   submitStageResponses,
   listDomains,
   fetchProcessTemplate,
+  updateSessionModels: handleUpdateSessionModels,
 };
 
 serve(async (req) => {

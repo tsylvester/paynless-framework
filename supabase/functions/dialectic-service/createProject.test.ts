@@ -3,6 +3,8 @@ import { spy } from "jsr:@std/testing@0.225.1/mock";
 import { createProject, type CreateProjectOptions } from "./createProject.ts";
 import type { CreateProjectPayload, DialecticProject } from "./dialectic.interface.ts";
 import type { User } from "@supabase/supabase-js"; // Import User type
+import type { FileOptions } from "npm:@supabase/storage-js@^2.5.5"; // Added this import
+import type { IMockStorageFileOptions } from "../_shared/supabase.mock.ts"; // Added this import
 import * as domainUtils from "../_shared/domain-utils.ts"; // To mock isValidDomain
 import { createMockSupabaseClient, type MockSupabaseDataConfig, type MockQueryBuilderState } from "../_shared/supabase.mock.ts";
 
@@ -511,7 +513,7 @@ Deno.test("createProject - no default process template found for domain", async 
     }
   };
   
-  const { client: mockDbAdminClient, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
+  const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
   
   try {
     const result = await createProject(formData, mockDbAdminClient as any, mockUser, {});
@@ -593,9 +595,24 @@ Deno.test("createProject - successful with promptFile", async () => {
         }
       },
       'dialectic_project_resources': {
-        insert: async () => ({ data: [{ id: mockProjectResourceId }], error: null })
+        insert: async () => ({ data: [{ id: mockProjectResourceId, storage_path: 'mock/storage/path/prompt.txt' }], error: null })
       }
-    }
+    },
+    storageMock: {
+      uploadResult: async (bucketId: string, _path: string, _body: unknown, _options?: IMockStorageFileOptions) => {
+        if (bucketId !== "dialectic-contributions") {
+          return { data: null, error: new Error("Mock: Invalid bucket for upload") };
+        }
+        return { data: { path: 'mock/storage/path/prompt.txt' }, error: null };
+      },
+      removeResult: async (bucketId: string, _paths: string[]) => {
+        if (bucketId !== "dialectic-contributions") {
+          return { data: null, error: new Error("Mock: Invalid bucket for remove") };
+        }
+        return { data: [], error: null };
+      }
+    },
+    mockUser: mockUser,
   };
 
   const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
@@ -663,23 +680,42 @@ Deno.test("createProject - promptFile upload fails (storage error)", async () =>
         select: async () => ({ data: [{ process_template_id: mockProcessTemplateId }], error: null, count: 1 })
       },
        'dialectic_projects': {
-        insert: async () => ({ data: [{ id: 'temp-project-id' }], error: null })
+        insert: async () => ({ data: [{ id: 'temp-project-id' }], error: null }),
+        delete: async () => ({ data: [], error: null })
       }
     },
     storageMock: {
-      uploadResult: { data: null, error: new Error(storageErrorMessage) }
-    }
+      uploadResult: async (bucketId: string, _path: string, _body: unknown, _options?: IMockStorageFileOptions) => {
+        if (bucketId !== "dialectic-contributions") {
+          return { data: null, error: new Error("Mock: Invalid bucket for upload") };
+        }
+        return { data: null, error: new Error("Failed to upload initial prompt file.") }; 
+      },
+      removeResult: async (bucketId: string, _paths: string[]) => {
+        if (bucketId !== "dialectic-contributions") {
+          return { data: null, error: new Error("Mock: Invalid bucket for remove") };
+        }
+        return { data: [], error: null };
+      }
+    },
+    mockUser: mockUser,
   };
 
-  const { client: mockDbAdminClient, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
+  const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
 
   try {
     const result = await createProject(formData, mockDbAdminClient as any, mockUser, {});
 
     assertExists(result.error);
-    assertEquals(result.error?.message, "Failed to upload initial prompt file.");
+    assertEquals(result.error?.message, "Main content storage upload failed: Failed to upload initial prompt file.");
     assertEquals(result.error?.status, 500);
-    assertEquals(result.error?.details, storageErrorMessage);
+    assertEquals(result.error?.details, "Failed to upload initial prompt file.");
+
+    // Verify that the project was deleted if the file handling failed
+    const deleteProjectSpyStorageFail = spies.getLatestQueryBuilderSpies('dialectic_projects')?.delete;
+    assertExists(deleteProjectSpyStorageFail, "Delete spy for projects should exist after storage failure.");
+    assertEquals(deleteProjectSpyStorageFail.calls.length, 1, "Project delete should be called once after storage failure.");
+
   } finally {
     if (clearAllStubs) clearAllStubs();
   }
@@ -713,12 +749,28 @@ Deno.test("createProject - promptFile dialectic_project_resources insert fails (
         select: async () => ({ data: [{ process_template_id: mockProcessTemplateId }], error: null, count: 1 })
       },
       'dialectic_projects': {
-        insert: async () => ({ data: [{ id: 'temp-project-id' }], error: null })
+        insert: async () => ({ data: [{ id: 'temp-project-id' }], error: null }),
+        delete: async () => ({ data: [], error: null })
       },
       'dialectic_project_resources': {
-        insert: async () => ({ data: null, error: { name: "PostgrestError", message: resourceInsertError, code: 'XXXXX' } })
+        insert: async () => ({ data: null, error: new Error("Failed to record prompt file resource.") })
       }
-    }
+    },
+    storageMock: {
+      uploadResult: async (bucketId: string, _path: string, _body: unknown, _options?: IMockStorageFileOptions) => {
+        if (bucketId !== "dialectic-contributions") {
+          return { data: null, error: new Error("Mock: Invalid bucket for upload") };
+        }
+        return { data: { path: 'mock/storage/path/prompt.txt' }, error: null };
+      },
+      removeResult: async (bucketId: string, _paths: string[]) => {
+        if (bucketId !== "dialectic-contributions") {
+          return { data: null, error: new Error("Mock: Invalid bucket for remove") };
+        }
+        return { data: [], error: null };
+      }
+    },
+    mockUser: mockUser,
   };
 
   const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
@@ -727,14 +779,14 @@ Deno.test("createProject - promptFile dialectic_project_resources insert fails (
     const result = await createProject(formData, mockDbAdminClient as any, mockUser, {});
 
     assertExists(result.error);
-    assertEquals(result.error?.message, "Failed to record prompt file resource.");
+    assertEquals(result.error?.message, "Database insert failed: Failed to record prompt file resource.");
     assertEquals(result.error?.status, 500);
-    assertEquals(result.error?.details, resourceInsertError);
+    assertEquals(result.error?.details, "Failed to record prompt file resource.");
 
-    // Verify cleanup was attempted
-    const bucketSpies = spies.storage.from('dialectic-contributions');
-    assertExists(bucketSpies.removeSpy, "storage.remove should have been called for cleanup");
-    assertEquals(bucketSpies.removeSpy.calls.length, 1);
+    // Verify that the project was deleted if the file handling failed
+    const deleteProjectSpyResourceFail = spies.getLatestQueryBuilderSpies('dialectic_projects')?.delete;
+    assertExists(deleteProjectSpyResourceFail, "Delete spy for projects should exist after resource DB failure.");
+    assertEquals(deleteProjectSpyResourceFail.calls.length, 1, "Project delete should be called once after resource DB failure.");
 
   } finally {
     if (clearAllStubs) clearAllStubs();
@@ -773,12 +825,27 @@ Deno.test("createProject - project update with resource_id fails (db error)", as
         update: async () => ({ data: null, error: { name: "PostgrestError", message: projectUpdateError, code: 'YYYYY' } })
       },
       'dialectic_project_resources': {
-        insert: async () => ({ data: [{ id: 'res-id' }], error: null })
+        insert: async () => ({ data: [{ id: 'res-id', storage_path: 'mock/path/file.txt' }], error: null })
       }
-    }
+    },
+    storageMock: {
+      uploadResult: async (bucketId: string, _path: string, _body: unknown, _options?: IMockStorageFileOptions) => {
+        if (bucketId !== "dialectic-contributions") {
+          return { data: null, error: new Error("Mock: Invalid bucket for upload") };
+        }
+        return { data: { path: 'mock/storage/path/prompt.txt' }, error: null };
+      },
+      removeResult: async (bucketId: string, _paths: string[]) => {
+        if (bucketId !== "dialectic-contributions") {
+          return { data: null, error: new Error("Mock: Invalid bucket for remove") };
+        }
+        return { data: [], error: null };
+      }
+    },
+    mockUser: mockUser,
   };
 
-  const { client: mockDbAdminClient, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
+  const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
 
   try {
     const result = await createProject(formData, mockDbAdminClient as any, mockUser, {});

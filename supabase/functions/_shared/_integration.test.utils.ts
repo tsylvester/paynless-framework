@@ -1050,7 +1050,6 @@ export async function coreInitializeTestStep(
 
       if (existingResource) {
         // Resource exists, update it and register for restoration
-        resourceId = (existingResource as any).id; // Assuming there's an 'id' column
         registerUndoAction({
           type: 'RESTORE_UPDATED_ROW',
           tableName: tableNameKey,
@@ -1063,7 +1062,7 @@ export async function coreInitializeTestStep(
           .update(requirement.desiredState as any) // Cast to any if type issues with partial update
           .match(requirement.identifier as any);
         if (updateError) {
-          console.error(`[TestUtil] Error updating existing resource in ${requirement.tableName} (ID: ${resourceId}):`, updateError);
+          console.error(`[TestUtil] Error updating existing resource in ${requirement.tableName} (PK Identifier: ${JSON.stringify(requirement.identifier)}):`, updateError);
           processedResources.push({ 
             tableName: requirement.tableName, 
             identifier: requirement.identifier, 
@@ -1072,7 +1071,8 @@ export async function coreInitializeTestStep(
             error: `Update error: ${updateError.message}`
           });
         } else {
-          console.log(`[TestUtil] Updated existing resource in ${requirement.tableName} (ID: ${resourceId}) with data: ${JSON.stringify(requirement.desiredState)}`);
+          const logResourceId = (existingResource as any)[Object.keys(requirement.identifier)[0]] || 'unknown_id_value';
+          console.log(`[TestUtil] Updated existing resource in ${requirement.tableName} (PK Identifier: ${JSON.stringify(requirement.identifier)}, Logged PK Value: ${logResourceId}) with data: ${JSON.stringify(requirement.desiredState)}`);
           processedResources.push({ 
             tableName: requirement.tableName, 
             identifier: requirement.identifier, 
@@ -1095,7 +1095,7 @@ export async function coreInitializeTestStep(
           .single();
 
         if (insertError || !newResource) {
-          console.error(`[TestUtil] Error creating new resource in ${requirement.tableName}:`, insertError);
+          console.error(`[TestUtil] Error creating new resource in ${requirement.tableName} (PK Identifier: ${JSON.stringify(requirement.identifier)}):`, insertError);
           processedResources.push({ 
             tableName: requirement.tableName, 
             identifier: requirement.identifier, 
@@ -1103,14 +1103,14 @@ export async function coreInitializeTestStep(
             error: `Insert error: ${insertError?.message || 'No resource returned'}`
           });
         } else {
-          resourceId = (newResource as any).id;
           registerUndoAction({
             type: 'DELETE_CREATED_ROW',
             tableName: tableNameKey,
-            criteria: { id: resourceId }, // Assuming deletion by ID
+            criteria: requirement.identifier, // Use the original identifier for deletion criteria
             scope: executionScope
           });
-          console.log(`[TestUtil] Created new resource in ${requirement.tableName} (ID: ${resourceId}) with data: ${JSON.stringify(dataForDb)}`);
+          const logResourceId = (newResource as any)[Object.keys(requirement.identifier)[0]] || 'unknown_id_value';
+          console.log(`[TestUtil] Created new resource in ${requirement.tableName} (PK Identifier: ${JSON.stringify(requirement.identifier)}, Logged PK Value: ${logResourceId}) with data: ${JSON.stringify(dataForDb)}`);
           processedResources.push({ 
             tableName: requirement.tableName, 
             identifier: requirement.identifier, 

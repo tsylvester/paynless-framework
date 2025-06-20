@@ -5,12 +5,18 @@ import { startSession, type StartSessionDeps } from "./startSession.ts";
 import type { StartSessionPayload, StartSessionSuccessResponse, DialecticProjectResource } from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
-import { createMockSupabaseClient, getMockUser } from "../_shared/supabase.mock.ts";
+import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 import * as promptAssembler from "../_shared/prompt-assembler.ts";
 import { FileManagerService } from "../_shared/services/file_manager.ts";
 
 Deno.test("startSession - Happy Path (with explicit sessionDescription)", async () => {
-    const mockUser = getMockUser("user-happy-path-id");
+    const mockUser: User = {
+        id: "user-happy-path-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+    };
     const mockProjectId = "project-happy-path-id";
     const mockProcessTemplateId = "proc-template-happy-path";
     const mockInitialStageId = "stage-initial-happy-path";
@@ -47,13 +53,28 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
         updated_at: new Date().toISOString()
     };
 
+    const mockSeedPromptResource: DialecticProjectResource = { // Specific for seed prompt
+        id: "res-seed-789",
+        project_id: mockProjectId,
+        user_id: mockUser.id,
+        file_name: `${mockInitialStageSlug}_seed_prompt.md`,
+        storage_bucket: 'dialectic-resources',
+        storage_path: `some/path/${mockInitialStageSlug}_seed_prompt.md`,
+        mime_type: 'text/markdown',
+        size_bytes: 123,
+        resource_description: "Assembled seed prompt for the session",
+        status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+    };
+
     const mockFileManager = {
         uploadAndRegisterFile: () => Promise.resolve({ record: null, error: null }),
     } as unknown as FileManagerService;
 
-    const fmStub = stub(mockFileManager, "uploadAndRegisterFile", returnsNext([
-        Promise.resolve({ record: { ...mockResource, id: "res-789", file_name: 'seed_prompt.md' }, error: null }), // for seed_prompt
-    ]));
+    const fmStub = stub(mockFileManager, "uploadAndRegisterFile", 
+        () => Promise.resolve({ record: mockSeedPromptResource, error: null }) // Only one call expected for seed_prompt
+    );
 
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
         genericMockResults: {
@@ -106,6 +127,7 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
                 })
             }
         },
+        mockUser: mockUser,
     });
 
     const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
@@ -140,7 +162,13 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
 
 
 Deno.test("startSession - Happy Path (without explicit sessionDescription, defaults are used)", async () => {
-    const mockUser = getMockUser("user-default-desc-id");
+    const mockUser: User = {
+        id: "user-default-desc-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+    };
     const mockProjectId = "project-default-desc-id";
     const mockProjectName = "Default Description Project";
     const mockProcessTemplateId = "proc-template-default-desc";
@@ -176,13 +204,28 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
         updated_at: new Date().toISOString()
     };
     
+    const mockSeedPromptResource: DialecticProjectResource = { // Specific for seed prompt
+        id: "res-seed-default-789",
+        project_id: mockProjectId,
+        user_id: mockUser.id,
+        file_name: `${mockInitialStageSlug}_seed_prompt.md`,
+        storage_bucket: 'dialectic-resources',
+        storage_path: `some/other/path/${mockInitialStageSlug}_seed_prompt.md`,
+        mime_type: 'text/markdown',
+        size_bytes: 456,
+        resource_description: "Default assembled seed prompt for the session",
+        status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+    };
+
     const mockFileManager = {
         uploadAndRegisterFile: () => Promise.resolve({ record: null, error: null }),
     } as unknown as FileManagerService;
     
-    const fmStub = stub(mockFileManager, "uploadAndRegisterFile", returnsNext([
-        Promise.resolve({ record: { ...mockResource, id: "res-seed", file_name: 'seed_prompt.md' }, error: null }), // for seed_prompt
-    ]));
+    const fmStub = stub(mockFileManager, "uploadAndRegisterFile", 
+        () => Promise.resolve({ record: mockSeedPromptResource, error: null }) // Only one call expected for seed_prompt
+    );
 
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
         genericMockResults: {
@@ -235,6 +278,7 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
                 })
             }
         },
+        mockUser: mockUser,
     });
 
     const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;

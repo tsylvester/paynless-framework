@@ -178,11 +178,11 @@ describe("Edge Function: dialectic-service - Action: getProjectDetails", () => {
         status: "thesis_complete", 
         iteration_count: 1,
         max_iterations: 3, 
-        active_thesis_prompt_template_id: null, 
-        active_antithesis_prompt_template_id: null,
-        active_synthesis_prompt_template_id: null,
-        active_parenthesis_prompt_template_id: null,
-        active_paralysis_prompt_template_id: null,
+        current_stage_id: "stage-uuid-thesis",
+        user_input_reference_url: null,
+        selected_model_catalog_ids: ["model-catalog-id-1", "model-catalog-id-2"],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
       .select()
       .single();
@@ -197,32 +197,20 @@ describe("Edge Function: dialectic-service - Action: getProjectDetails", () => {
     assert(!model2Err && model2Data, "Test setup: anthropic/claude-3 not found.");
     const model2CatalogId = model2Data.id;
     
-    const { data: sm1, error: sm1Err } = await adminClient
-      .from("dialectic_session_models")
-      .insert({ session_id: session.id, model_id: model1CatalogId })
-      .select('id').single();
-    assert(!sm1Err && sm1, `Error inserting session_model 1: ${sm1Err?.message}`);
-
-    const { data: sm2, error: sm2Err } = await adminClient
-      .from("dialectic_session_models")
-      .insert({ session_id: session.id, model_id: model2CatalogId })
-      .select('id').single();
-    assert(!sm2Err && sm2, `Error inserting session_model 2: ${sm2Err?.message}`);
-
     const contrib1CreatedAt = new Date(Date.now() - 2000).toISOString();
     const contrib2CreatedAt = new Date(Date.now() - 1000).toISOString();
 
     await adminClient.from("dialectic_contributions").insert({
-        id: crypto.randomUUID(), session_id: session.id, session_model_id: sm1.id, stage: "thesis", iteration_number: 1,
-        actual_prompt_sent: "Thesis prompt 1", content_storage_bucket: "dialectic-contributions",
-        content_storage_path: `${projectId}/${session.id}/contrib1.md`, content_mime_type: "text/markdown",
-        content_size_bytes: 100, created_at: contrib1CreatedAt, user_id: null, parent_contribution_id: null
+        id: crypto.randomUUID(), session_id: session.id, stage: "thesis", iteration_number: 1,
+        actual_prompt_sent: "Thesis prompt 1", storage_bucket: "dialectic-contributions",
+        storage_path: `${projectId}/${session.id}/contrib1.md`, mime_type: "text/markdown",
+        size_bytes: 100, created_at: contrib1CreatedAt, user_id: null, parent_contribution_id: null
     });
     await adminClient.from("dialectic_contributions").insert({
-        id: crypto.randomUUID(), session_id: session.id, session_model_id: sm2.id, stage: "thesis", iteration_number: 1,
-        actual_prompt_sent: "Thesis prompt 2", content_storage_bucket: "dialectic-contributions",
-        content_storage_path: `${projectId}/${session.id}/contrib2.md`, content_mime_type: "text/markdown",
-        content_size_bytes: 120, created_at: contrib2CreatedAt, user_id: null, parent_contribution_id: null
+        id: crypto.randomUUID(), session_id: session.id, stage: "thesis", iteration_number: 1,
+        actual_prompt_sent: "Thesis prompt 2", storage_bucket: "dialectic-contributions",
+        storage_path: `${projectId}/${session.id}/contrib2.md`, mime_type: "text/markdown",
+        size_bytes: 120, created_at: contrib2CreatedAt, user_id: null, parent_contribution_id: null
     });
     
     const request: DialecticServiceRequest = {

@@ -6,11 +6,17 @@ import type { StartSessionPayload } from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import * as sharedLogger from "../_shared/logger.ts";
-import { createMockSupabaseClient, getMockUser } from "../_shared/supabase.mock.ts";
+import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 import * as promptAssembler from "../_shared/prompt-assembler.ts";
 import { FileManagerService } from '../_shared/services/file_manager.ts';
 
-const MOCK_USER = getMockUser("user-id");
+const MOCK_USER: User = {
+    id: "user-id",
+    app_metadata: {},
+    user_metadata: {},
+    aud: 'authenticated',
+    created_at: new Date().toISOString(),
+};
 const MOCK_FILE_MANAGER = {
     uploadAndRegisterFile: () => Promise.resolve({ record: null, error: null }),
 } as unknown as FileManagerService;
@@ -23,7 +29,8 @@ Deno.test("startSession - Error: Project not found", async () => {
             dialectic_projects: {
                 select: async () => ({ data: null, error: { message: "Not found", code: "PGRST116" } as any, status: 404, statusText: 'not found' })
             }
-        }
+        },
+        mockUser: MOCK_USER,
     });
     const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
@@ -44,7 +51,8 @@ Deno.test("startSession - Error: Project is missing a process_template_id", asyn
                     statusText: 'ok'
                 })
             }
-        }
+        },
+        mockUser: MOCK_USER,
     });
     const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
@@ -68,7 +76,8 @@ Deno.test("startSession - Error: No entry point stage found for the process temp
             dialectic_stage_transitions: {
                 select: async () => ({ data: null, error: { message: "Not found" } as any, status: 500, statusText: 'error' })
             }
-        }
+        },
+        mockUser: MOCK_USER,
     });
     const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
@@ -94,7 +103,8 @@ Deno.test("startSession - Error: Initial stage has no associated system prompt",
                     statusText: 'ok'
                 })
             }
-        }
+        },
+        mockUser: MOCK_USER,
     });
     const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
@@ -115,7 +125,8 @@ Deno.test("startSession - Error: Database error on session insertion", async () 
                 insert: async () => ({ data: null, error: { name: 'PostgrestError', message: "Simulated DB error"} as any }),
                 delete: async () => ({ data: null, error: null, status: 204, statusText: 'no content' })
             }
-        }
+        },
+        mockUser: MOCK_USER,
     });
     const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
@@ -160,6 +171,7 @@ Deno.test("startSession - Error: Fails to upload user prompt and cleans up sessi
                 delete: spiedSessionDeleteFn // Use the spied function here
             }
         },
+        mockUser: MOCK_USER,
         // No storageConfig needed here as FileManagerService is fully stubbed for this test path
     });
     

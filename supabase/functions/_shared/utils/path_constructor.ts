@@ -27,58 +27,90 @@ export function constructStoragePath(context: PathContext): string {
     originalFileName,
   } = context;
 
-  const sanitizedFileName = sanitizeForPath(originalFileName);
+  // Use projectId (UUID) for robust internal pathing. project_name_slug can be used for exports.
+  const projectRoot = `projects/${projectId}`;
+
+  // Sanitize parts of the filename that come from dynamic data if they are part of originalFileName construction
+  // However, originalFileName itself passed in should ideally be the final desired name.
+  const sanitizedOriginalFileName = originalFileName; // Assuming originalFileName is already well-formed or sanitized by caller
 
   switch (fileType) {
     case 'project_readme':
-      return `projects/${projectId}/project_readme.md`;
+      return `${projectRoot}/project_readme.md`;
 
-    case 'general_resource':
-      // Assuming a general resource is associated with a project, not a specific session/iteration.
-      // A UUID could be added here for uniqueness if needed, but using original name for now.
-      return `projects/${projectId}/resources/${sanitizedFileName}`;
+    case 'initial_user_prompt': // Project-level initial prompt
+      return `${projectRoot}/${sanitizedOriginalFileName}`; // Or a fixed name like "initial_project_prompt.md"
 
-    case 'user_prompt':
+    // Files under session_{sessionId}/iteration_{N}/0_seed_inputs/
+    case 'user_prompt': // Iteration-specific user prompt
       if (!sessionId || iteration === undefined) {
         throw new Error('Session ID and iteration are required for user_prompt file type.');
       }
-      return `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/0_seed_inputs/user_prompt.md`;
+      return `${projectRoot}/sessions/${sessionId}/iteration_${iteration}/0_seed_inputs/user_prompt.md`;
 
     case 'system_settings':
       if (!sessionId || iteration === undefined) {
         throw new Error('Session ID and iteration are required for system_settings file type.');
       }
-      return `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/0_seed_inputs/system_settings.json`;
+      return `${projectRoot}/sessions/${sessionId}/iteration_${iteration}/0_seed_inputs/system_settings.json`;
+
+    case 'general_resource':
+      if (!sessionId || iteration === undefined) {
+        throw new Error('Session ID and iteration are required for general_resource file type.');
+      }
+      if (!originalFileName) {
+        throw new Error('originalFileName is required for general_resource file type.');
+      }
+      return `${projectRoot}/sessions/${sessionId}/iteration_${iteration}/0_seed_inputs/general_resource/${sanitizeForPath(originalFileName)}`;
     
+    // Files under session_{sessionId}/iteration_{N}/{stageSlug}/
     case 'seed_prompt':
       if (!sessionId || iteration === undefined || !stageSlug) {
         throw new Error('Session ID, iteration, and stageSlug are required for seed_prompt file type.');
       }
-      return `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/${stageSlug}/seed_prompt.md`;
+      return `${projectRoot}/sessions/${sessionId}/iteration_${iteration}/${stageSlug}/seed_prompt.md`;
 
-    case 'model_contribution':
-      if (!sessionId || iteration === undefined || !stageSlug || !modelSlug) {
-        throw new Error('Session ID, iteration, stageSlug, and modelSlug are required for model_contribution file type.');
-      }
-      return `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/${stageSlug}/${sanitizeForPath(modelSlug)}/${sanitizedFileName}`;
-      
     case 'user_feedback':
       if (!sessionId || iteration === undefined || !stageSlug) {
         throw new Error('Session ID, iteration, and stageSlug are required for user_feedback file type.');
       }
-      return `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/${stageSlug}/user_feedback.md`;
+      // Filename could be fixed (e.g., user_feedback.md) or based on originalFileName if more flexibility is needed.
+      // Plan implies: user_feedback_{stage_suffix}.md. Assuming stageSlug contains the suffix.
+      return `${projectRoot}/sessions/${sessionId}/iteration_${iteration}/${stageSlug}/user_feedback_${stageSlug}.md`;
 
-    case 'contribution_document':
-       if (!sessionId || iteration === undefined || !stageSlug) {
-        throw new Error('Session ID, iteration, and stageSlug are required for contribution_document file type.');
+    case 'model_contribution_main':
+      if (!sessionId || iteration === undefined || !stageSlug || !modelSlug || !originalFileName) {
+        throw new Error('Session ID, iteration, stageSlug, modelSlug, and originalFileName are required for model_contribution_main.');
       }
-      // Documents are nested under a 'documents' folder within the stage directory.
-      return `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/${stageSlug}/documents/${sanitizedFileName}`;
+      // originalFileName here should be the final filename like "claude_opus_hypothesis.md"
+      // modelSlug in PathContext is for validation or if the caller wants path_constructor to build the filename, which is not the current assumption.
+      return `${projectRoot}/sessions/${sessionId}/iteration_${iteration}/${stageSlug}/${sanitizeForPath(originalFileName)}`;
 
-    default:
+    case 'model_contribution_raw_json':
+      if (!sessionId || iteration === undefined || !stageSlug || !modelSlug || !originalFileName) {
+        throw new Error('Session ID, iteration, stageSlug, modelSlug, and originalFileName are required for model_contribution_raw_json.');
+      }
+      // originalFileName here should be the final filename like "claude_opus_hypothesis_raw.json"
+      return `${projectRoot}/sessions/${sessionId}/iteration_${iteration}/${stageSlug}/raw_responses/${sanitizeForPath(originalFileName)}`;
+      
+    case 'contribution_document':
+       if (!sessionId || iteration === undefined || !stageSlug || !originalFileName) {
+        throw new Error('Session ID, iteration, stageSlug, and originalFileName are required for contribution_document.');
+      }
+      return `${projectRoot}/sessions/${sessionId}/iteration_${iteration}/${stageSlug}/documents/${sanitizeForPath(originalFileName)}`;
+
+    // File at the root of session_{sessionId}/iteration_{N}/
+    case 'iteration_summary_md':
+      if (!sessionId || iteration === undefined) {
+        throw new Error('Session ID and iteration are required for iteration_summary_md file type.');
+      }
+      return `${projectRoot}/sessions/${sessionId}/iteration_${iteration}/iteration_summary.md`;
+
+    default: {
       // This is a safety net. In a strongly-typed system, this should not be reached.
       // We can assert this at compile time using a helper function.
       const _exhaustiveCheck: never = fileType;
       throw new Error(`Unhandled file type: ${_exhaustiveCheck}`);
+    }
   }
 } 

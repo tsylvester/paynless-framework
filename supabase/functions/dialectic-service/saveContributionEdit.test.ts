@@ -152,7 +152,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
     // 6. Create an initial AI contribution in that session
     const initialContributionData: DialecticContributionInsert = {
       session_id: session.id,
-      stage: 'THESIS', // This field is actually still required on contributions
+      stage: stage.slug, // Use the actual slug of the created stage
       storage_path: `projects/${project.id}/sessions/${session.id}/it1/thesis/ai_initial.md`,
       user_id: null, // AI contribution has no user
       model_id: null,

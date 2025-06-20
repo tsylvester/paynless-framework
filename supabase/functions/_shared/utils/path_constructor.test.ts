@@ -26,7 +26,7 @@ Deno.test('constructStoragePath', async (t) => {
       fileType: 'general_resource',
       originalFileName: 'My File With Spaces.pdf',
     });
-    assertEquals(path, 'projects/project-uuid-123/resources/my_file_with_spaces.pdf');
+    assertEquals(path, 'projects/project-uuid-123/sessions/session-uuid-456/iteration_1/0_seed_inputs/general_resource/my_file_with_spaces.pdf');
   });
 
   await t.step('should construct path for user_prompt', () => {
@@ -59,11 +59,11 @@ Deno.test('constructStoragePath', async (t) => {
   await t.step('should construct path for model_contribution and sanitize model slug', () => {
     const path = constructStoragePath({
       ...baseContext,
-      fileType: 'model_contribution',
+      fileType: 'model_contribution_main',
       modelSlug: 'GPT-4 Turbo',
-      originalFileName: 'response.md',
+      originalFileName: 'gpt-4_turbo_response.md',
     });
-    assertEquals(path, 'projects/project-uuid-123/sessions/session-uuid-456/iteration_1/1_hypothesis/gpt-4_turbo/response.md');
+    assertEquals(path, 'projects/project-uuid-123/sessions/session-uuid-456/iteration_1/1_hypothesis/gpt-4_turbo_response.md');
   });
   
   await t.step('should construct path for user_feedback', () => {
@@ -72,7 +72,7 @@ Deno.test('constructStoragePath', async (t) => {
       fileType: 'user_feedback',
       originalFileName: 'feedback.md',
     });
-    assertEquals(path, 'projects/project-uuid-123/sessions/session-uuid-456/iteration_1/1_hypothesis/user_feedback.md');
+    assertEquals(path, 'projects/project-uuid-123/sessions/session-uuid-456/iteration_1/1_hypothesis/user_feedback_1_hypothesis.md');
   });
   
   await t.step('should construct path for contribution_document', () => {
@@ -110,11 +110,11 @@ Deno.test('constructStoragePath', async (t) => {
     assertThrows(() => {
       constructStoragePath({
         ...baseContext,
-        fileType: 'model_contribution',
+        fileType: 'model_contribution_main',
         originalFileName: 'response.md',
         modelSlug: undefined, // Missing modelSlug
       });
-    }, Error, 'Session ID, iteration, stageSlug, and modelSlug are required for model_contribution file type.');
+    }, Error, 'Session ID, iteration, stageSlug, modelSlug, and originalFileName are required for model_contribution_main.');
   });
 
   await t.step('should sanitize complex file names', () => {
@@ -123,6 +123,6 @@ Deno.test('constructStoragePath', async (t) => {
       fileType: 'general_resource',
       originalFileName: 'File With ALL CAPS & Special Chars!@#$.zip',
     });
-    assertEquals(path, 'projects/project-uuid-123/resources/file_with_all_caps__special_chars.zip');
+    assertEquals(path, 'projects/project-uuid-123/sessions/session-uuid-456/iteration_1/0_seed_inputs/general_resource/file_with_all_caps__special_chars.zip');
   });
 }); 

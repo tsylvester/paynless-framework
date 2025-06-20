@@ -4,7 +4,7 @@ import type {
   Database,
   TablesInsert,
 } from '../../types_db.ts'
-import type { FileManagerResponse, UploadContext } from '../types/file_manager.types.ts'
+import type { FileManagerResponse, UploadContext, PathContext } from '../types/file_manager.types.ts'
 
 /**
  * Determines the target database table based on the file type.
@@ -15,7 +15,7 @@ function getTableForFileType(
   fileType: UploadContext['pathContext']['fileType'],
 ): 'dialectic_project_resources' | 'dialectic_contributions' {
   switch (fileType) {
-    case 'model_contribution':
+    case 'model_contribution_main':
     case 'contribution_document':
       return 'dialectic_contributions'
     default:
@@ -33,9 +33,9 @@ export class FileManagerService {
 
   constructor(supabaseClient: SupabaseClient<Database>) {
     this.supabase = supabaseClient
-    const bucket = Deno.env.get('SUPABASE_CONTENT_STORAGE_BUCKET')
+    const bucket = Deno.env.get('SB_CONTENT_STORAGE_BUCKET')
     if (!bucket) {
-      throw new Error('SUPABASE_CONTENT_STORAGE_BUCKET environment variable is not set.')
+      throw new Error('SB_CONTENT_STORAGE_BUCKET environment variable is not set.')
     }
     this.storageBucket = bucket
   }
@@ -50,26 +50,60 @@ export class FileManagerService {
   async uploadAndRegisterFile(
     context: UploadContext,
   ): Promise<FileManagerResponse> {
-    const filePath = constructStoragePath(context.pathContext)
+    const mainContentFilePath = constructStoragePath(context.pathContext)
+    let rawJsonResponseFilePath: string | null = null;
 
-    // 1. Upload file to Storage
-    const { error: uploadError } = await this.supabase.storage
+    // 1. Upload main file content to Storage
+    const { error: mainUploadError } = await this.supabase.storage
       .from(this.storageBucket)
-      .upload(filePath, context.fileContent, {
+      .upload(mainContentFilePath, context.fileContent, {
         contentType: context.mimeType,
-        upsert: true, // Overwrite if exists, useful for retries
+        upsert: true, 
       })
 
-    if (uploadError) {
+    if (mainUploadError) {
       return {
         record: null,
-        error: { message: `Storage upload failed: ${uploadError.message}`},
+        error: { message: "Main content storage upload failed", details: mainUploadError.message },
       }
     }
 
-    // 2. Insert record into the appropriate database table
+    // 2. If this is a model contribution and raw JSON response content is provided, upload it
+    if (context.pathContext.fileType === 'model_contribution_main' && context.contributionMetadata?.rawJsonResponseContent) {
+      try {
+        const mainOriginalFileName = context.pathContext.originalFileName;
+        const rawOriginalFileName = mainOriginalFileName.replace(/(\.\w+)$/, '_raw.json'); // E.g., "model_hyp.md" -> "model_hyp_raw.json"
+        
+        const rawJsonPathContext: PathContext = {
+          ...context.pathContext, // projectId, sessionId, iteration, stageSlug, modelSlug
+          fileType: 'model_contribution_raw_json',
+          originalFileName: rawOriginalFileName,
+        };
+        rawJsonResponseFilePath = constructStoragePath(rawJsonPathContext);
+
+        const { error: rawJsonUploadError } = await this.supabase.storage
+          .from(this.storageBucket)
+          .upload(rawJsonResponseFilePath, context.contributionMetadata.rawJsonResponseContent, {
+            contentType: 'application/json',
+            upsert: true,
+          });
+
+        if (rawJsonUploadError) {
+          // Log warning but don't necessarily fail the whole operation,
+          // as per behavior in original generateContribution.ts for raw response.
+          // The main contribution record will have a null raw_response_storage_path.
+          console.warn(`Raw JSON response upload failed for ${mainOriginalFileName}: ${rawJsonUploadError.message}. Proceeding without raw JSON path.`);
+          rawJsonResponseFilePath = null; 
+        }
+      } catch (e: unknown) {
+         console.warn(`Error processing or uploading raw JSON response for ${context.pathContext.originalFileName}: ${(e as Error).message}. Proceeding without raw JSON path.`);
+         rawJsonResponseFilePath = null;
+      }
+    }
+
+    // 3. Insert record into the appropriate database table
     const targetTable = getTableForFileType(context.pathContext.fileType)
-    const fileName = context.pathContext.originalFileName
+    const fileName = context.pathContext.originalFileName // This is the main content's original file name
 
     let recordData:
       | TablesInsert<'dialectic_project_resources'>
@@ -78,28 +112,67 @@ export class FileManagerService {
     if (targetTable === 'dialectic_project_resources') {
       recordData = {
         project_id: context.pathContext.projectId,
-        user_id: context.userId,
+        user_id: context.userId!, // Ensure userId is not null if your RLS/DB expects it
         file_name: fileName,
         mime_type: context.mimeType,
         size_bytes: context.sizeBytes,
         storage_bucket: this.storageBucket,
-        storage_path: filePath,
+        storage_path: mainContentFilePath,
         resource_description: context.description ?? null,
+        // Ensure all required fields for dialectic_project_resources are covered
       }
-    } else {
-      // This case is for 'dialectic_contributions'
+    } else { // This case is for 'dialectic_contributions'
+      if (!context.contributionMetadata) {
+        // This should be caught by stricter typing or validation before calling
+        await this.supabase.storage.from(this.storageBucket).remove([mainContentFilePath]);
+        if (rawJsonResponseFilePath) {
+            await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFilePath]);
+        }
+        return { record: null, error: { message: 'Internal Server Error: Contribution metadata is missing for a dialectic_contributions record.' }};
+      }
+      if (!context.pathContext.sessionId || context.contributionMetadata.iterationNumber === undefined || !context.pathContext.stageSlug) {
+         await this.supabase.storage.from(this.storageBucket).remove([mainContentFilePath]);
+        if (rawJsonResponseFilePath) {
+            await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFilePath]);
+        }
+        return { record: null, error: { message: 'Internal Server Error: SessionId, iteration, or stageSlug missing for contribution.' }};
+      }
+
+      const meta = context.contributionMetadata;
       recordData = {
-        project_id: context.pathContext.projectId,
-        session_id: context.pathContext.sessionId!,
-        user_id: context.userId,
-        stage: context.pathContext.stageSlug!,
-        model_name: context.pathContext.modelSlug,
-        file_name: fileName,
+        // id is auto-generated by DB
+        session_id: context.pathContext.sessionId,
+        model_id: meta.modelIdUsed,
+        model_name: meta.modelNameDisplay, // Display name for quick reference
+        user_id: context.userId, // Can be null if system generated
+        stage: context.pathContext.stageSlug,
+        iteration_number: meta.iterationNumber,
+        
+        storage_bucket: this.storageBucket,
+        storage_path: mainContentFilePath, // Path to the main content file
         mime_type: context.mimeType,
         size_bytes: context.sizeBytes,
-        storage_bucket: this.storageBucket,
-        storage_path: filePath,
-        iteration_number: context.pathContext.iteration ?? 1,
+        file_name: fileName, // The originalFileName of the main content
+
+        raw_response_storage_path: rawJsonResponseFilePath, // Path to the raw JSON, or null if upload failed/not provided
+        
+        tokens_used_input: meta.tokensUsedInput,
+        tokens_used_output: meta.tokensUsedOutput,
+        processing_time_ms: meta.processingTimeMs,
+        
+        seed_prompt_url: meta.seedPromptStoragePath, // Path to the seed prompt that was used
+        prompt_template_id_used: meta.promptTemplateIdUsed,
+
+        citations: meta.citations,
+        contribution_type: meta.contributionType,
+        error: meta.errorDetails, // Error from AI model generation, not service error
+        
+        target_contribution_id: meta.targetContributionId,
+        
+        edit_version: meta.editVersion ?? 1,
+        is_latest_edit: meta.isLatestEdit ?? true,
+        original_model_contribution_id: meta.originalModelContributionId,
+        // Ensure all required fields for 'dialectic_contributions' from types_db.ts are covered
       }
     }
 
@@ -118,10 +191,13 @@ export class FileManagerService {
 
     if (insertError) {
       // Attempt to clean up the orphaned file if DB insert fails
-      await this.supabase.storage.from(this.storageBucket).remove([filePath])
+      await this.supabase.storage.from(this.storageBucket).remove([mainContentFilePath])
+      if (rawJsonResponseFilePath) {
+        await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFilePath])
+      }
       return {
         record: null,
-        error: { message: `Database insert failed: ${insertError.message}` },
+        error: { message: "Database insert failed", details: insertError.message },
       }
     }
 

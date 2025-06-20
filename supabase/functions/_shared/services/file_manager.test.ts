@@ -17,14 +17,17 @@ Deno.test('FileManagerService', async (t) => {
   let setup: MockSupabaseClientSetup
   let fileManager: FileManagerService
   let envStub: any
+  let originalEnvGet: any
 
   const beforeEach = (config: MockSupabaseDataConfig = {}) => {
+    // Store the original Deno.env.get before stubbing
+    originalEnvGet = Deno.env.get.bind(Deno.env);
     // Stub Deno.env.get to control the bucket name for tests
     envStub = stub(Deno.env, 'get', (key: string) => {
-      if (key === 'SUPABASE_CONTENT_STORAGE_BUCKET') {
+      if (key === 'SB_CONTENT_STORAGE_BUCKET') {
         return 'test-bucket'
       }
-      return Deno.env.get(key)
+      return originalEnvGet(key)
     })
 
     setup = createMockSupabaseClient('test-user-id', config)
@@ -34,6 +37,10 @@ Deno.test('FileManagerService', async (t) => {
   const afterEach = () => {
     if (envStub) {
       envStub.restore()
+    }
+    // Restore original Deno.env.get if it was modified
+    if (originalEnvGet && Deno.env.get !== originalEnvGet) {
+        Deno.env.get = originalEnvGet;
     }
   }
 
@@ -62,7 +69,7 @@ Deno.test('FileManagerService', async (t) => {
         assertRejects(
           async () => new FileManagerService(setup.client as any),
           Error,
-          'CONTENT_STORAGE_BUCKET environment variable is not set.',
+          'SB_CONTENT_STORAGE_BUCKET environment variable is not set.',
         )
       } finally {
         afterEach()
@@ -91,7 +98,7 @@ Deno.test('FileManagerService', async (t) => {
         const config: MockSupabaseDataConfig = {
           genericMockResults: {
             dialectic_project_resources: {
-              insert: { data: [{ id: 'resource-123' }], error: null },
+              insert: { data: [{ id: 'resource-123', project_id: 'project-uuid-123', user_id: 'user-uuid-789', file_name: 'test.pdf', mime_type: 'application/pdf', size_bytes: 12345, storage_bucket: 'test-bucket', storage_path: 'projects/project-uuid-123/sessions/session-for-proj-res/iteration_0/0_seed_inputs/general_resource/test.pdf', resource_description: 'A test PDF file.' }], error: null },
             },
           },
         }
@@ -103,6 +110,8 @@ Deno.test('FileManagerService', async (t) => {
             fileType: 'general_resource',
             projectId: 'project-uuid-123',
             originalFileName: 'test.pdf',
+            sessionId: 'session-for-proj-res',
+            iteration: 0,
           },
           description: 'A test PDF file.',
         }
@@ -140,13 +149,25 @@ Deno.test('FileManagerService', async (t) => {
         const context: UploadContext = {
           ...baseUploadContext,
           pathContext: {
-            fileType: 'model_contribution',
+            fileType: 'model_contribution_main',
             projectId: 'project-uuid-123',
             sessionId: 'session-uuid-456',
             iteration: 2,
             stageSlug: '2_antithesis',
             modelSlug: 'claude-3-sonnet',
             originalFileName: 'claude_contribution.md',
+          },
+          contributionMetadata: {
+            iterationNumber: 2,
+            modelIdUsed: 'model-id-sonnet',
+            modelNameDisplay: 'Claude 3 Sonnet',
+            tokensUsedInput: 100,
+            tokensUsedOutput: 200,
+            processingTimeMs: 5000,
+            contributionType: 'model_generated',
+            sessionId: 'session-uuid-456',
+            stageSlug: '2_antithesis',
+            rawJsonResponseContent: '{"raw":"mock raw json response"}',
           },
         }
 
@@ -180,7 +201,7 @@ Deno.test('FileManagerService', async (t) => {
 
         assertExists(error)
         assertEquals(record, null)
-        assertEquals(error.message, 'Storage upload failed: Upload failed')
+        assertEquals(error.message, 'Main content storage upload failed')
 
         // DB should not have been called
         assertEquals(setup.spies.fromSpy.calls.length, 0)
@@ -208,7 +229,7 @@ Deno.test('FileManagerService', async (t) => {
 
         assertExists(error)
         assertEquals(record, null)
-        assertEquals(error.message, 'Database insert failed: DB insert failed')
+        assertEquals(error.message, 'Database insert failed')
         assertEquals(removeSpy!.calls.length, 1)
       } finally {
         afterEach()

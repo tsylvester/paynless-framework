@@ -86,7 +86,6 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers>): ActionHandlers
         startSession: overrides?.startSession || (() => Promise.resolve({ data: mockSession as any })),
         generateContributions: overrides?.generateContributions || (() => Promise.resolve({ success: false, error: { message: "Not implemented" } })),
         listProjects: overrides?.listProjects || (() => Promise.resolve({ data: [mockProject] as any })),
-        uploadProjectResourceFileHandler: overrides?.uploadProjectResourceFileHandler || (() => Promise.resolve({} as any)),
         listAvailableDomainOverlays: overrides?.listAvailableDomainOverlays || (() => Promise.resolve([])),
         deleteProject: overrides?.deleteProject || (() => Promise.resolve({ status: 200 })),
         cloneProject: overrides?.cloneProject || (() => Promise.resolve({ data: mockProject as any, error: null, status: 201 })),
@@ -96,6 +95,7 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers>): ActionHandlers
         submitStageResponses: overrides?.submitStageResponses || (() => Promise.resolve({ data: {} as any, status: 200 })),
         listDomains: overrides?.listDomains || (() => Promise.resolve({ data: [] })),
         fetchProcessTemplate: overrides?.fetchProcessTemplate || (() => Promise.resolve({ data: {} as any, status: 200 })),
+        updateSessionModels: overrides?.updateSessionModels || (() => Promise.resolve({ data: mockSession as any, status: 200 })),
         ...overrides,
     } as ActionHandlers;
 };
@@ -652,10 +652,7 @@ withSupabaseEnv("handleRequest - getProjectDetails", async (t) => {
 
         assertEquals(response.status, 401);
         const body = await response.json();
-        assertEquals(
-          body.error,
-          "User not authenticated"
-        );
+        assertEquals(body.error, "User not authenticated");
         assertEquals(getDetailsSpy.calls.length, 0);
     });
 });
@@ -1155,5 +1152,126 @@ withSupabaseEnv("handleRequest - fetchProcessTemplate", async (t) => {
 
         assertEquals(response.status, 401);
         assertEquals(fetchSpy.calls.length, 0);
+    });
+});
+
+withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
+    const mockSessionId = 'sess-test-update';
+    const mockSelectedModelCatalogIds = ['model-a', 'model-b'];
+    const mockUpdatedSession: DialecticSession = {
+        ...mockSession, // Use the global mockSession as a base
+        id: mockSessionId,
+        selected_model_catalog_ids: mockSelectedModelCatalogIds,
+        updated_at: new Date().toISOString(),
+    };
+
+    const payload = { sessionId: mockSessionId, selectedModelCatalogIds: mockSelectedModelCatalogIds };
+
+    await t.step("should call updateSessionModels and return 200 on success", async () => {
+        const updateSpy = spy(() => Promise.resolve({ data: mockUpdatedSession, status: 200 }));
+        const mockHandlers = createMockHandlers({ updateSessionModels: updateSpy as any });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("updateSessionModels", payload, mockToken);
+        const response = await handleRequest(req, mockHandlers, mockUserClient as any, mockAdminClient as any);
+        
+        assertEquals(response.status, 200);
+        const body = await response.json();
+        assertEquals(body.id, mockSessionId);
+        assertEquals(body.selected_model_catalog_ids, mockSelectedModelCatalogIds);
+        assertEquals(updateSpy.calls.length, 1);
+    });
+
+    await t.step("should return error if updateSessionModels handler fails", async () => {
+        const error: ServiceError = { message: "Update Failed", status: 500, code: "DB_UPDATE_ERROR" };
+        const updateSpy = spy(() => Promise.resolve({ error, status: 500 }));
+        const mockHandlers = createMockHandlers({ updateSessionModels: updateSpy as any });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+        
+        const req = createJsonRequest("updateSessionModels", payload, mockToken);
+        const response = await handleRequest(req, mockHandlers, mockUserClient as any, mockAdminClient as any);
+        
+        assertEquals(response.status, 500);
+        const body = await response.json();
+        assertEquals(body.error, error.message);
+        assertEquals(updateSpy.calls.length, 1);
+    });
+
+    await t.step("should return 401 if not authenticated", async () => {
+        const updateSpy = spy(() => Promise.resolve({ data: mockUpdatedSession, status: 200 }));
+        const mockHandlers = createMockHandlers({ updateSessionModels: updateSpy as any });
+
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: null }, error: null } // Simulates auth failure
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+        
+        const req = createJsonRequest("updateSessionModels", payload); // No token
+        const response = await handleRequest(req, mockHandlers, mockUserClient as any, mockAdminClient as any);
+
+        assertEquals(response.status, 401);
+        const body = await response.json();
+        assertEquals(body.error, "User not authenticated");
+        assertEquals(updateSpy.calls.length, 0);
+    });
+
+    await t.step("should return 400 if sessionId is missing from payload", async () => {
+        const updateSpy = spy(() => Promise.resolve({ data: mockUpdatedSession, status: 200 }));
+        // const mockHandlers = createMockHandlers({ updateSessionModels: updateSpy as any });
+        
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const incompletePayload = { selectedModelCatalogIds: mockSelectedModelCatalogIds }; // Missing sessionId
+        const req = createJsonRequest("updateSessionModels", incompletePayload, mockToken);
+        const reqClone = req.clone(); // Clone the request
+
+        const specificErrorSpy = spy(() => Promise.resolve({ error: {message: "sessionId is required", status: 400, code: "MISSING_PARAM"}, status: 400 }));
+        const specificMockHandlers = createMockHandlers({ updateSessionModels: specificErrorSpy as any });
+        
+        // Use the cloned request
+        const specificResponse = await handleRequest(reqClone, specificMockHandlers, mockUserClient as any, mockAdminClient as any);
+        
+        assertEquals(specificResponse.status, 400);
+        const body = await specificResponse.json();
+        assertEquals(body.error, "sessionId is required");
+        assertEquals(specificErrorSpy.calls.length, 1); // The mock handler was called
+    });
+
+     await t.step("should return 400 if selectedModelCatalogIds is missing from payload", async () => {
+        const updateSpy = spy(() => Promise.resolve({ data: mockUpdatedSession, status: 200 }));
+        const mockHandlers = createMockHandlers({ updateSessionModels: updateSpy as any });
+        
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null }
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const incompletePayload = { sessionId: mockSessionId }; // Missing selectedModelCatalogIds
+        const req = createJsonRequest("updateSessionModels", incompletePayload, mockToken);
+        
+        const specificErrorSpy = spy(() => Promise.resolve({ error: {message: "selectedModelCatalogIds is required", status: 400, code: "MISSING_PARAM"}, status: 400 }));
+        const specificMockHandlers = createMockHandlers({ updateSessionModels: specificErrorSpy as any });
+        
+        const specificResponse = await handleRequest(req, specificMockHandlers, mockUserClient as any, mockAdminClient as any);
+        
+        assertEquals(specificResponse.status, 400);
+        const body = await specificResponse.json();
+        assertEquals(body.error, "selectedModelCatalogIds is required");
+        assertEquals(specificErrorSpy.calls.length, 1); 
     });
 }); 

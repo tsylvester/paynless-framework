@@ -1,8 +1,10 @@
 // deno-lint-ignore-file no-explicit-any
 import type { SupabaseClient, User } from "@supabase/supabase-js";
+import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts';
 import { 
     DialecticProject 
   } from "./dialectic.interface.ts";
+import { FileManagerService } from "../_shared/services/file_manager.ts";
 
   console.log("createProject function started");
   
@@ -97,57 +99,47 @@ export async function createProject(
 
     if (promptFile) {
       console.log(`Processing promptFile: ${promptFile.name}, size: ${promptFile.size}, type: ${promptFile.type}`);
-      const projectResourceRecordId = crypto.randomUUID();
-      const storagePath = `projects/${newProjectData.id}/initial-prompts/${projectResourceRecordId}/${promptFile.name}`;
       
-      const { data: uploadData, error: uploadError } = await dbAdminClient.storage
-        .from('dialectic-contributions')
-        .upload(storagePath, promptFile, {
-          contentType: promptFile.type,
-          upsert: false,
-        });
+      const fileManager = new FileManagerService(dbAdminClient);
+      const fileBuffer = await promptFile.arrayBuffer();
 
-      if (uploadError) {
-        console.error("Error uploading promptFile to storage:", uploadError);
-        return { error: { message: "Failed to upload initial prompt file.", details: uploadError.message, status: 500 } };
+      const uploadResult = await fileManager.uploadAndRegisterFile({
+        pathContext: {
+          projectId: newProjectData.id,
+          fileType: 'initial_user_prompt',
+          originalFileName: promptFile.name,
+        },
+        fileContent: Buffer.from(fileBuffer),
+        mimeType: promptFile.type,
+        sizeBytes: promptFile.size,
+        userId: user.id,
+        description: 'Initial project prompt file',
+      });
+
+      if (uploadResult.error || !uploadResult.record) {
+        console.error("Error uploading promptFile via FileManagerService:", uploadResult.error);
+        await dbAdminClient.from('dialectic_projects').delete().eq('id', newProjectData.id);
+        
+        const baseMessage = uploadResult.error?.message || "Failed to upload and register initial prompt file.";
+        const errorDetails = uploadResult.error?.details;
+        const fullMessage = errorDetails ? `${baseMessage}: ${errorDetails}` : baseMessage;
+
+        return { 
+          error: { 
+            message: fullMessage, 
+            details: errorDetails || (uploadResult.error?.message && uploadResult.error.message !== baseMessage ? uploadResult.error.message : undefined),
+            status: 500 
+          }
+        };
       }
       
-      if (!uploadData) {
-        return { error: { message: "Failed to upload initial prompt file, no upload data returned.", status: 500 } };
-      }
-      
-      console.log("File uploaded successfully to path:", uploadData.path);
-
-      const { data: resourceData, error: resourceCreateError } = await dbAdminClient
-        .from('dialectic_project_resources')
-        .insert({
-          id: projectResourceRecordId,
-          project_id: newProjectData.id,
-          user_id: user.id,
-          file_name: promptFile.name,
-          storage_bucket: 'dialectic-contributions',
-          storage_path: uploadData.path,
-          mime_type: promptFile.type,
-          size_bytes: promptFile.size,
-          resource_description: 'Initial project prompt file',
-        })
-        .select('id')
-        .single();
-
-      if (resourceCreateError) {
-        console.error("Error creating dialectic_project_resources record:", resourceCreateError);
-        await dbAdminClient.storage.from('dialectic-contributions').remove([uploadData.path]);
-        return { error: { message: "Failed to record prompt file resource.", details: resourceCreateError.message, status: 500 } };
-      }
-
-      if (!resourceData) {
-        return { error: { message: "Failed to record prompt file resource, no data returned.", status: 500 } };
-      }
+      const promptResourceId = uploadResult.record.id;
+      console.log(`File uploaded and registered successfully via FileManagerService. Resource ID: ${promptResourceId}`);
 
       const { data: updatedProjectData, error: updateProjectError } = await dbAdminClient
         .from('dialectic_projects')
         .update({
-          initial_prompt_resource_id: projectResourceRecordId,
+          initial_prompt_resource_id: promptResourceId,
           initial_user_prompt: "",
         })
         .eq('id', newProjectData.id)
