@@ -10,6 +10,7 @@ import type { ServiceError } from '../types.ts';
  */
 export type FileType =
   | 'project_readme' // The main README for a dialectic project.
+  | 'initial_user_prompt' // The initial user-provided prompt file for a project.
   | 'user_prompt' // The initial user-provided prompt file for an iteration.
   | 'system_settings' // JSON file with system settings for an iteration.
   | 'seed_prompt' // The fully constructed prompt sent to a model for a specific stage.

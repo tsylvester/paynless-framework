@@ -347,7 +347,6 @@ export interface IMockClientSpies {
     contentType?: string;
     upsert?: boolean;
     // Add other storage options as needed, e.g., cacheControl
-    copy: (fromPath: string, toPath: string) => Promise<IMockStorageCopyResponse>;
   }
   
   export interface IMockStorageUploadData {
@@ -1139,12 +1138,25 @@ export class MockStorageBucketAPIImpl implements IMockStorageBucketAPI {
     // --- COPY ---
     public async performCopyInternal(fromPath: string, toPath: string, options?: { destinationBucket?: string }): Promise<{ data: { path: string } | null; error: Error | null; }> {
         console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performCopyInternal FROM: ${fromPath} TO: ${toPath}`);
-        const funcConfig = this.config.storageConfig?.[this.bucketId]?.copy;
-        if (funcConfig) {
-            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured copy function.`);
-            return funcConfig(fromPath, toPath, options);
+        const specificBucketConfig = this.config.storageConfig?.[this.bucketId]?.copy;
+        if (typeof specificBucketConfig === 'function') {
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured copy function from storageConfig.${this.bucketId}.copy.`);
+            return specificBucketConfig(fromPath, toPath, options);
         }
-        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for copy. Returning default success.`);
+
+        const genericMockResult = this.config.storageMock?.copyResult;
+        if (genericMockResult) {
+            if (typeof genericMockResult === 'function') {
+                console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using function from storageMock.copyResult (called with bucketId).`);
+                // The genericMockResult function is (bucketId: string, fromPath: string, toPath: string) => Promise<IMockStorageCopyResponse>
+                return (genericMockResult as (bucketId: string, fromPath: string, toPath: string, options?: { destinationBucket?: string }) => Promise<IMockStorageCopyResponse>)(this.bucketId, fromPath, toPath, options);
+            } else { // It's an IMockStorageCopyResponse object
+                console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using object from storageMock.copyResult.`);
+                return Promise.resolve(genericMockResult);
+            }
+        }
+
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for copy (checked storageConfig and storageMock). Returning default success.`);
         return { data: { path: toPath }, error: null };
     }
 
@@ -1152,12 +1164,25 @@ export class MockStorageBucketAPIImpl implements IMockStorageBucketAPI {
     // --- DOWNLOAD ---
     public async performDownloadInternal(path: string, options?: TransformOptions): Promise<{ data: Blob | null; error: Error | null; }> {
         console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performDownloadInternal PATH: ${path}`);
-        const funcConfig = this.config.storageConfig?.[this.bucketId]?.download;
-        if (funcConfig) {
-            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured download function.`);
-            return funcConfig(path, options);
+        const specificBucketConfig = this.config.storageConfig?.[this.bucketId]?.download;
+        if (typeof specificBucketConfig === 'function') {
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured download function from storageConfig.${this.bucketId}.download.`);
+            return specificBucketConfig(path, options);
         }
-        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for download. Returning default empty blob success.`);
+
+        const genericMockResult = this.config.storageMock?.downloadResult;
+        if (genericMockResult) {
+            if (typeof genericMockResult === 'function') {
+                console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using function from storageMock.downloadResult (called with bucketId).`);
+                // The genericMockResult function is (bucketId: string, path: string, options?: TransformOptions) => Promise<IMockStorageDownloadResponse>
+                return (genericMockResult as (bucketId: string, path: string, options?: TransformOptions) => Promise<IMockStorageDownloadResponse>)(this.bucketId, path, options);
+            } else { // It's an IMockStorageDownloadResponse object
+                console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using object from storageMock.downloadResult.`);
+                return Promise.resolve(genericMockResult);
+            }
+        }
+
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for download (checked storageConfig and storageMock). Returning default empty blob success.`);
         return { data: new Blob(["mock content for " + path]), error: null };
     }
 
@@ -1166,10 +1191,10 @@ export class MockStorageBucketAPIImpl implements IMockStorageBucketAPI {
         console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performGetPublicUrlInternal PATH: ${path}`);
         const funcConfig = this.config.storageConfig?.[this.bucketId]?.getPublicUrl;
         if (funcConfig) {
-            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured getPublicUrl function.`);
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured getPublicUrl function from storageConfig.${this.bucketId}.getPublicUrl.`);
             return funcConfig(path, options);
         }
-        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for getPublicUrl. Returning default success.`);
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for getPublicUrl (checked storageConfig). Returning default success.`);
         return { data: { publicUrl: `http://mock.storage.com/${this.bucketId}/${path}` } };
     }
 
@@ -1177,12 +1202,27 @@ export class MockStorageBucketAPIImpl implements IMockStorageBucketAPI {
     // --- LIST ---
     public async performListInternal(path?: string, options?: SearchOptions, parameters?: { headers?: HeadersInit, signal?: AbortSignal }): Promise<{ data: FileObject[] | null; error: Error | null; }> {
         console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performListInternal PATH: ${path}`);
-        const funcConfig = this.config.storageConfig?.[this.bucketId]?.list;
-        if (funcConfig) {
-            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured list function.`);
-            return funcConfig(path, options, parameters);
+        const specificBucketConfig = this.config.storageConfig?.[this.bucketId]?.list;
+        if (typeof specificBucketConfig === 'function') {
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured list function from storageConfig.${this.bucketId}.list.`);
+            return specificBucketConfig(path, options, parameters);
         }
-        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for list. Returning default empty success.`);
+
+        const genericMockResult = this.config.storageMock?.listResult;
+        if (genericMockResult) {
+            if (typeof genericMockResult === 'function') {
+                console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using function from storageMock.listResult (called with bucketId).`);
+                // The genericMockResult function is (bucketId: string, path?: string, options?: object) => Promise<IMockStorageListResponse>
+                // Cast to any to handle potential type difference between IMockStorageListResponse.data and FileObject[]
+                return (genericMockResult as (bucketId: string, path?: string, options?: SearchOptions, parameters?: { headers?: HeadersInit, signal?: AbortSignal }) => Promise<any>)(this.bucketId, path, options, parameters) as Promise<{ data: FileObject[] | null; error: Error | null; }>;
+            } else { // It's an IMockStorageListResponse object
+                console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using object from storageMock.listResult.`);
+                // Cast to any to handle potential type difference
+                return Promise.resolve(genericMockResult as any as { data: FileObject[] | null; error: Error | null; });
+            }
+        }
+
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for list (checked storageConfig and storageMock). Returning default empty success.`);
         return { data: [], error: null };
     }
 
@@ -1191,34 +1231,62 @@ export class MockStorageBucketAPIImpl implements IMockStorageBucketAPI {
         console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performMoveInternal FROM: ${fromPath} TO: ${toPath}`);
         const funcConfig = this.config.storageConfig?.[this.bucketId]?.move;
         if (funcConfig) {
-            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured move function.`);
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured move function from storageConfig.${this.bucketId}.move.`);
             return funcConfig(fromPath, toPath);
         }
-        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for move. Returning default success.`);
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for move (checked storageConfig). Returning default success.`);
         return { data: { message: "Successfully moved" }, error: null };
     }
 
     // --- REMOVE ---
     public async performRemoveInternal(paths: string[]): Promise<{ data: FileObject[] | null; error: Error | null; }> {
         console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performRemoveInternal PATHS: ${paths.join(', ')}`);
-        const funcConfig = this.config.storageConfig?.[this.bucketId]?.remove;
-        if (funcConfig) {
-            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured remove function.`);
-            return funcConfig(paths);
+        const specificBucketConfig = this.config.storageConfig?.[this.bucketId]?.remove;
+        if (typeof specificBucketConfig === 'function') {
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured remove function from storageConfig.${this.bucketId}.remove.`);
+            return specificBucketConfig(paths);
         }
-        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for remove. Returning default empty success.`);
+
+        const genericMockResult = this.config.storageMock?.removeResult;
+        if (genericMockResult) {
+            if (typeof genericMockResult === 'function') {
+                console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using function from storageMock.removeResult (called with bucketId).`);
+                // The genericMockResult function is (bucketId: string, paths: string[]) => Promise<IMockStorageRemoveResponse>
+                // Cast to any to handle the type difference between IMockStorageRemoveResponse.data and FileObject[]
+                return (genericMockResult as (bucketId: string, paths: string[]) => Promise<any>)(this.bucketId, paths) as Promise<{ data: FileObject[] | null; error: Error | null; }>;
+            } else { // It's an IMockStorageRemoveResponse object
+                console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using object from storageMock.removeResult.`);
+                // Cast to any to handle the type difference
+                return Promise.resolve(genericMockResult as any as { data: FileObject[] | null; error: Error | null; });
+            }
+        }
+
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for remove (checked storageConfig and storageMock). Returning default empty success.`);
         return { data: [], error: null };
     }
 
     // --- CREATE SIGNED URL ---
     public async performCreateSignedUrlInternal(path: string, expiresIn: number, options?: { download?: string | boolean; transform?: TransformOptions }): Promise<{ data: { signedUrl: string } | null; error: Error | null; }> {
         console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performCreateSignedUrlInternal PATH: ${path}`);
-        const funcConfig = this.config.storageConfig?.[this.bucketId]?.createSignedUrl;
-        if (funcConfig) {
-            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured createSignedUrl function.`);
-            return funcConfig(path, expiresIn, options);
+        const specificBucketConfig = this.config.storageConfig?.[this.bucketId]?.createSignedUrl;
+        if (typeof specificBucketConfig === 'function') {
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured createSignedUrl function from storageConfig.${this.bucketId}.createSignedUrl.`);
+            return specificBucketConfig(path, expiresIn, options);
         }
-        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for createSignedUrl. Returning default success.`);
+
+        const genericMockResult = this.config.storageMock?.createSignedUrlResult;
+        if (genericMockResult) {
+            if (typeof genericMockResult === 'function') {
+                console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using function from storageMock.createSignedUrlResult (called with bucketId).`);
+                // The genericMockResult function is (bucketId: string, path: string, expiresIn: number) => Promise<IMockStorageSignedUrlResponse>
+                return (genericMockResult as (bucketId: string, path: string, expiresIn: number, options?: { download?: string | boolean; transform?: TransformOptions }) => Promise<IMockStorageSignedUrlResponse>)(this.bucketId, path, expiresIn, options);
+            } else { // It's an IMockStorageSignedUrlResponse object
+                console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using object from storageMock.createSignedUrlResult.`);
+                return Promise.resolve(genericMockResult);
+            }
+        }
+
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for createSignedUrl (checked storageConfig and storageMock). Returning default success.`);
         return { data: { signedUrl: `http://mock.storage.com/${this.bucketId}/${path}?signed=true` }, error: null };
     }
 
@@ -1227,10 +1295,10 @@ export class MockStorageBucketAPIImpl implements IMockStorageBucketAPI {
         console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performCreateSignedUrlsInternal PATHS: ${paths.join(', ')}`);
         const funcConfig = this.config.storageConfig?.[this.bucketId]?.createSignedUrls;
         if (funcConfig) {
-            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured createSignedUrls function.`);
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured createSignedUrls function from storageConfig.${this.bucketId}.createSignedUrls.`);
             return funcConfig(paths, expiresIn, options);
         }
-        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for createSignedUrls. Returning default success.`);
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for createSignedUrls (checked storageConfig). Returning default success.`);
         const signedUrlsData = paths.map(p => ({ signedUrl: `http://mock.storage.com/${this.bucketId}/${p}?signed=true`, path: p, error: null }));
         return { data: signedUrlsData, error: null };
     }
@@ -1238,12 +1306,32 @@ export class MockStorageBucketAPIImpl implements IMockStorageBucketAPI {
     // --- UPLOAD ---
     public async performUploadInternal(path: string, body: FileBody, options?: FileOptions): Promise<{ data: { path: string } | null; error: Error | null; }> { 
         console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performUploadInternal PATH: ${path}`);
-        const funcConfig = this.config.storageConfig?.[this.bucketId]?.upload;
-        if (funcConfig) {
-            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured upload function.`);
-            return funcConfig(path, body, options);
+        console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Full this.config:`, JSON.stringify(this.config, null, 2));
+        console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] this.config.storageConfig for bucket:`, JSON.stringify(this.config.storageConfig?.[this.bucketId], null, 2));
+        console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] this.config.storageMock:`, JSON.stringify(this.config.storageMock, null, 2));
+
+        const specificBucketConfig = this.config.storageConfig?.[this.bucketId]?.upload;
+        console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] specificBucketConfig (upload fn): ${typeof specificBucketConfig}`);
+
+        if (typeof specificBucketConfig === 'function') {
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured upload function from storageConfig.${this.bucketId}.upload.`);
+            return specificBucketConfig(path, body, options);
         }
-        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for upload. Returning default success.`);
+
+        const genericMockResult = this.config.storageMock?.uploadResult;
+        console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] genericMockResult (uploadResult):`, JSON.stringify(genericMockResult));
+
+        if (genericMockResult) {
+            if (typeof genericMockResult === 'function') {
+                console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using function from storageMock.uploadResult (called with bucketId).`);
+                return (genericMockResult as (bucketId: string, path: string, body: FileBody, options?: any) => Promise<IMockStorageUploadResponse>)(this.bucketId, path, body, options);
+            } else { // It's an IMockStorageUploadResponse object
+                console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using object from storageMock.uploadResult.`);
+                return Promise.resolve(genericMockResult);
+            }
+        }
+
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for upload (checked storageConfig and storageMock). Returning default success.`);
         return { data: { path: path }, error: null };
     }
 
@@ -1252,10 +1340,10 @@ export class MockStorageBucketAPIImpl implements IMockStorageBucketAPI {
         console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] performUpdateInternal PATH: ${path}`);
         const funcConfig = this.config.storageConfig?.[this.bucketId]?.update;
         if (funcConfig) {
-            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured update function.`);
+            console.log(`[Mock StorageBucketAPI Impl - ${this.bucketId}] Using configured update function from storageConfig.${this.bucketId}.update.`);
             return funcConfig(path, body, options);
         }
-        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for update. Returning default success.`);
+        console.warn(`[Mock StorageBucketAPI Impl - ${this.bucketId}] No mock config for update (checked storageConfig). Returning default success.`);
         return { data: { path: path }, error: null };
     }
 
@@ -1420,18 +1508,15 @@ export function createMockSupabaseClient(
         storageFromSpy: storageFromSpy, // Populate storageFromSpy (client.storage.from())
         storage: {
             from: (bucketId: string) => {
-                const bucketAPI = mockStorageBucketAPIs.get(bucketId);
+                let bucketAPI = mockStorageBucketAPIs.get(bucketId);
                 if (!bucketAPI) {
-                    console.warn(`[Mock Supabase Spies] Storage bucket API not found for ${bucketId} when creating spies.`);
-                    return {
-                        uploadSpy: undefined,
-                        downloadSpy: undefined,
-                        createSignedUrlSpy: undefined,
-                        removeSpy: undefined,
-                        listSpy: undefined,
-                        copySpy: undefined,
-                    };
+                    console.warn(`[Mock Supabase Spies] Storage bucket API not found for ${bucketId} during spy access. Proactively creating one.`);
+                    // Create and store the mock bucket API instance if it doesn't exist
+                    // It uses the main 'config' passed to createMockSupabaseClient
+                    bucketAPI = new MockStorageBucketAPIImpl(bucketId, config);
+                    mockStorageBucketAPIs.set(bucketId, bucketAPI);
                 }
+                // bucketAPI is now guaranteed to be defined here
                 return {
                     uploadSpy: bucketAPI.upload,
                     downloadSpy: bucketAPI.download,

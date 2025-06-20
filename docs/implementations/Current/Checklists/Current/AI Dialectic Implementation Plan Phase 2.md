@@ -230,16 +230,86 @@ While the project is advancing well, these three areas represent fundamental, un
 
 *   [X] Fix MarkdownRenderer so that it properly shows UL & OL 
 *   [X] Add better explanation of stages on StageTabCard
-*   [ ] Add model selector to StageTabCard to set models for that stage
-*   [ ] Remove Generate Thesis Contributions button from Contributions Display component 
+*   [X] Add model selector to SessionInfoCard to set models for the session
+*   [X] Remove Generate Thesis Contributions button from Contributions Display component 
 *   [ ] When Contributions already exist, change "Generate {Stage}" to "Regenerate {Stage}"
 *   [ ] Add "Begin Next Stage" button to Contributions tab to signal it's time to move on. 
 *   [ ] (Too complex for now) Use TextInputArea on SessionInfoCard so users can edit & save their prompt 
 *   [ ] (Too complex for now) When overlays are not provided, the assembler should omit the section. 
 
-Okay, I've read the `AI Dialectic Implementation Plan Phase 2.md` document and will propose a new section that transposes our discussion about stage readiness into the existing plan's format and sequence.
+## File Structure for Supabase Storage and Export Tools
 
-Here's the proposed new section:
+{repo_root}/  (Root of the user's GitHub repository)
+└── {dialectic_outputs_base_dir_name}/ (Configurable, e.g., "ai_dialectic_sessions")
+    └── {project_name_slug}/
+        ├── project_readme.md      (High-level project description, goals, defined by user or initial setup)
+        ├── Implementation/          (User-managed folder for their current work-in-progress files related to this project)
+        │   └── ...
+        ├── Complete/                (User-managed folder for their completed work items for this project)
+        │   └── ...
+        └── session_{session_id_short}/  (Each distinct run of the dialectic process)
+            └── iteration_{N}/        (N being the iteration number, e.g., "iteration_1")
+                ├── 0_seed_inputs/
+                │   ├── user_prompt.md  (The specific prompt that kicked off this iteration)
+                │   ├── general_resource (all optional)
+                │   │    ├── `{deployment_context}` (where/how the solution will be implemented), 
+                │   │    ├── `{domain_standards}` (domain-specific quality standards and best practices), 
+                │   │    ├── `{success_criteria}` (measurable outcomes that define success), 
+                │   │    ├── `{constraint_boundaries}` (non-negotiable requirements and limitations), 
+                │   │    ├── `{stakeholder_considerations}` (who will be affected and how),
+                │   │    ├── `{reference_documents}` (user-provided reference materials and existing assets), 
+                │   │    └── `{compliance_requirements}` (regulatory, legal, or organizational compliance mandates)
+                │   └── system_settings.json          (Models, core prompt templates used for this iteration)
+                ├── 1_hypothesis/
+                │   ├── raw_responses
+                │   │   └──{model_name_slug}_{stage_slug}_raw.json
+                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
+                │   ├── {model_name_slug}_hypothesis.md (Contains YAML frontmatter + AI response)
+                │   ├── ... (other models' hypothesis outputs)
+                │   ├── user_feedback_hypothesis.md   (User's feedback on this stage)
+                │   └── documents/                      (Optional refined documents, e.g., PRDs from each model)
+                │       └── {model_name_slug}_prd_hypothesis.md
+                │       └── ...
+                ├── 2_antithesis/
+                │   ├── raw_responses
+                │   │   └──{model_name_slug}_{stage_slug}_raw.json
+                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
+                │   ├── {critiquer_model_slug}_critique_on_{original_model_slug}.md
+                │   ├── ...
+                │   └── user_feedback_antithesis.md
+                ├── 3_synthesis/
+                │   ├── raw_responses
+                │   │   └──{model_name_slug}_{stage_slug}_raw.json
+                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
+                │   ├── {model_name_slug}_synthesis.md
+                │   ├── ...
+                │   ├── user_feedback_synthesis.md
+                │   └── documents/                      (Refined documents from each model, e.g., PRDs, business cases)
+                │       ├── {model_name_slug}_prd_synthesis.md
+                │       ├── {model_name_slug}_business_case_synthesis.md
+                │       └── ...
+                ├── 4_parenthesis/
+                │   ├── raw_responses
+                │   │   └──{model_name_slug}_{stage_slug}_raw.json
+                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
+                │   ├── {model_name_slug}_parenthesis.md
+                │   ├── ...
+                │   ├── user_feedback_parenthesis.md
+                │   └── documents/                      (Detailed implementation plans from each model)
+                │       └── {model_name_slug}_implementation_plan_parenthesis.md
+                │       └── ...
+                ├── 5_paralysis/
+                │   ├── raw_responses
+                │   │   └──{model_name_slug}_{stage_slug}_raw.json
+                │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
+                │   ├── {model_name_slug}_paralysis.md
+                │   ├── ...
+                │   ├── user_feedback_paralysis.md
+                │   └── documents/                      (The user-selected/finalized canonical outputs)
+                │       ├── chosen_implementation_plan.md
+                │       ├── project_checklist.csv
+                │       └── ... (other formats like Jira importable CSV/JSON)
+                └── iteration_summary.md (Optional: An AI or user-generated summary of this iteration's key outcomes and learnings)
 
 ---
 
@@ -378,9 +448,103 @@ Here's the proposed new section:
     *   `[ ] 2.X.2.3.2` In the function that handles a successful response from `callUnifiedAIModel`, replace existing file saving logic with a call to `fileManager.uploadAndRegisterFile`.
     *   `[ ] 2.X.2.3.3` The `PathContext` must include `fileType: 'model_contribution'`, the correct `stageSlug`, and the `modelSlug`. This will save the file and register it in the `dialectic_contributions` table. (GREEN)
 *   `[ ] 2.X.2.4 [COMMIT]` refactor(be): refactor dialectic-service actions to use FileManagerService
-*   [ ] Refactor cloneProject to use new file management logic, ensure all files are copied to the new project, and all rows are created for all files
-*   [ ] Refactor deleteProject to use new file management logic, ensure all files are deleted from storage, and all rows are deleted from the database
-*   [ ] Refactor exportProject to use new file management logic, ensure all files are saved into the correct file tree structure and zipped into the export file. 
+*   `[ ] 2.X.2.3 [BE/REFACTOR]` **Refactor `generateContributions.ts` (and `callModel.ts` if content decisions are made there)**
+    *   **Objective:** To centralize file writing and database registration for AI model outputs (`model_contribution`) through `FileManagerService`. `generateContributions` will orchestrate AI calls and then pass the results and context to `FileManagerService` for persistence.
+    *   `[ ] 2.X.2.3.1 [TEST-INT]` **Update Integration Tests for `generateContributions`** (RED)
+        *   In `generateContributions.test.ts` (or relevant integration test file):
+            *   Remove mocks for direct `dbClient.from('dialectic_contributions').insert()` related to saving contributions.
+            *   Remove mocks for direct `uploadToStorage` and `deleteFromStorage` related to contribution content and raw responses.
+            *   Add mocks for `FileManagerService.uploadAndRegisterFile`.
+            *   Assert that `FileManagerService.uploadAndRegisterFile` is called:
+                *   Once per successful AI model response for the raw JSON response.
+                    *   Verify `PathContext` with a `fileType` like `'model_contribution_raw_json'` (new FileType for distinct handling) saved to `{project_name_slug}/session_{session_id_short}/iteration_{N}/{stage}/raw_responses/{model_name_slug}_{stage_slug}_raw.json`.
+                    *   Verify `UploadContext` with stringified `aiResponse.rawProviderResponse`.
+                *   The responses are parsed to extract the deliverable documents for the stage (e.g `1_hypothesis/documents/{model_name_slug}_prd_hypothesis.md`, `3_synthesis/documents/{model_name_slug}_prd_synthesis.md`, `3_synthesis/documents/{model_name_slug}_business_case_synthesis`, `4_parenthesis/documents/{model_name_slug}_implementation_plan_parenthesis.md`, `5_paralysis/documents/{model_name_slug}_implementation_plan_paralysis.md`) from the full completion .json
+                *   Once per successful AI model response for the main content (e.g., Markdown).
+                    *   Verify the `PathContext` includes:
+                        *   `fileType: 'model_contribution'`
+                        *   Correct `projectId`, `sessionId`, `iterationNumber`, `stageSlug`.
+                        *   A `modelSlug` derived from `providerDetails.api_identifier` or `providerDetails.name` (ensure sanitization for path compatibility, perhaps `sanitizeForPath(providerDetails.name)`).
+                        *   An `originalFileName` like `${sanitizeForPath(providerDetails.name)}_${stage.slug}_contribution.md`.
+                    *   Verify the `UploadContext` includes:
+                        *   `fileContent` matching `aiResponse.content`.
+                        *   `mimeType` (e.g., `'text/markdown'`).
+                        *   `userId` (should be `null` or a system user ID if contributions are not directly owned by the session user, confirm desired behavior).
+                        *   `sizeBytes` calculated from `aiResponse.content`.
+            *   Assert that if `FileManagerService.uploadAndRegisterFile` returns an error for a model's contribution, that model's attempt is added to `failedContributionAttempts` and does *not* throw an unhandled exception that stops the loop.
+            *   Assert that the `successfulContributions` array is populated with the record returned by `FileManagerService.uploadAndRegisterFile`.
+    *   `[ ] 2.X.2.3.2 [BE]` **Modify `generateContributions.ts` Response Handling** (GREEN)
+        *   Locate the loop where `callUnifiedAIModel` is invoked for each selected model.
+        *   Inside the `try` block, after a successful `aiResponse` is received (i.e., `!aiResponse.error && aiResponse.content`):
+            *   **Remove Direct Storage Uploads:** Delete the lines calling `uploadToStorage` for `contentStoragePath` and `rawResponseStoragePath`.
+            *   **Remove Direct Metadata Fetch:** Delete lines calling `getFileMetadata`.
+            *   **Remove Direct DB Insert:** Delete the `dbClient.from('dialectic_contributions').insert(...)` call.
+            *   **Instantiate `FileManagerService`**: `const fileManager = new FileManagerService(dbClient);` (or ensure it's available via DI).
+            *   **Prepare Main Contribution Context:**
+                *   Define `contributionPathContext: PathContext = { ... }` with:
+                    *   `fileType: 'model_contribution'`
+                    *   `projectId`
+                    *   `sessionId`
+                    *   `iteration: iterationNumber`
+                    *   `stageSlug: stage.slug`
+                    *   `modelSlug: sanitizeForPath(providerDetails.api_identifier || providerDetails.name)` (ensure `sanitizeForPath` is imported/available).
+                    *   `originalFileName: \`${sanitizeForPath(providerDetails.api_identifier || providerDetails.name)}_${stage.slug}.md\`` (or a similar standardized name).
+                *   Define `contributionUploadContext: UploadContext = { ... }` with:
+                    *   `pathContext: contributionPathContext`
+                    *   `fileContent: aiResponse.content`
+                    *   `mimeType: aiResponse.contentType || 'text/markdown'`
+                    *   `sizeBytes: new TextEncoder().encode(aiResponse.content).length`
+                    *   `userId: null` (confirm: should this be the session user ID or null/system? `FileManagerService` expects a `userId`. If it's the session user, fetch from `sessionDetails.user_id` if available, or pass down from `authToken` if that's the pattern for system actions).
+                    *   `description: \`AI contribution for ${stage.slug} by ${providerDetails.name}\`` (optional).
+                    *   `customMetadata: { tokens_used_input: aiResponse.inputTokens, tokens_used_output: aiResponse.outputTokens, processing_time_ms: aiResponse.processingTimeMs, model_id: modelIdForCall, seed_prompt_url: seedPromptPath, raw_response_storage_path: "NEEDS_RETHINKING_IF_RAW_IS_SEPARATE_FILE" }`
+                        *   **Note on `raw_response_storage_path` and `seed_prompt_url`**: These were previously direct column values. If `FileManagerService` doesn't store these directly in the primary record for `model_contribution`, consider if they should be part of `customMetadata` (if `dialectic_contributions` table has a JSONB field for such things) or if the `dialectic_contributions` table needs to be extended, or if storing the raw response itself needs a separate `FileManagerService.uploadAndRegisterFile` call with a different `FileType`.
+                        *   For simplicity, if `rawProviderResponse` is small, it could be stored in a JSONB column directly in `dialectic_contributions`. If large, it needs its own file. `FileManagerService` as written expects to create one DB record per `uploadAndRegisterFile` call.
+                        *   Let's assume for now: `rawProviderResponse` will be stored in a JSONB field `raw_response_payload` on `dialectic_contributions`. The `seed_prompt_url` might be better as `seed_prompt_resource_id` (UUID FK) if seed prompts are also managed by `FileManagerService`.
+            *   **Call `FileManagerService` for Main Contribution:**
+                *   `const { record: dbContribution, error: fileManagerError } = await fileManager.uploadAndRegisterFile(contributionUploadContext);`
+            *   **Handle `FileManagerService` Response:**
+                *   If `fileManagerError`:
+                    *   Log the error.
+                    *   Add to `failedContributionAttempts` (modelId, modelName, error message from `fileManagerError.message`, code `fileManagerError.code || 'FILE_MANAGER_ERROR'`).
+                    *   `continue;` to the next model. (No need for manual storage cleanup here, as `FileManagerService` handles its own cleanup on DB insert failure).
+                *   Else (`dbContribution` is populated):
+                    *   This `dbContribution` is the record from either `dialectic_project_resources` or `dialectic_contributions`. Ensure it's cast or asserted to the correct type if needed for `successfulContributions.push()`.
+                    *   Add `dbContribution` (or a transformed version matching `Database['public']['Tables']['dialectic_contributions']['Row']`) to `successfulContributions`.
+                    *   Log success.
+            *   **Handling Raw AI Response (Example: Storing in a JSONB column on the main contribution record):**
+                *   If `FileManagerService` successfully created `dbContribution`, and you want to store `aiResponse.rawProviderResponse` on that same record:
+                    *   This requires `dialectic_contributions` to have a column like `raw_response_payload JSONB NULLABLE`.
+                    *   The `FileManagerService.uploadAndRegisterFile` for `model_contribution` would need to be enhanced to accept `rawProviderResponse` in its `UploadContext` and include it in its `recordData` for insertion.
+                    *   *Alternatively*, if raw responses must be separate files:
+                        *   Define `rawResponsePathContext: PathContext = { ... fileType: 'model_contribution_raw_json' ... }`
+                        *   Define `rawResponseUploadContext: UploadContext = { ... fileContent: JSON.stringify(aiResponse.rawProviderResponse || {}), mimeType: 'application/json' ... }`
+                        *   `const { record: rawResponseFileRecord, error: rawFileError } = await fileManager.uploadAndRegisterFile(rawResponseUploadContext);`
+                        *   If successful, `dbContribution` (main one) would need a column `raw_response_resource_id` to link to `rawResponseFileRecord.id`.
+                        *   This two-file approach adds complexity. Storing in a JSONB column on the main contribution is simpler if raw responses aren't excessively large.
+
+        *   **Catch Block**: The existing `catch (error)` block that handles `dbInsertError` (and other errors within the `try`) should still be present. Its `deleteFromStorage` calls will now be redundant if the failure happened *after* `FileManagerService` was invoked and `FileManagerService` itself failed and cleaned up. If `FileManagerService` succeeded but a subsequent error occurs *before* the `catch` block, then files *might* exist that `FileManagerService` didn't clean. Review this carefully. The main goal is that `FileManagerService` cleans its own attempt. If `generateContributions` causes an error *after* a successful `FileManagerService` call, then `generateContributions` might need to tell `FileManagerService` to delete what was just made.
+            *   Simplified `catch` block: It should primarily log that an unexpected error occurred for the model and add to `failedContributionAttempts`. The specific file cleanup for the *current* attempt should have been handled by `FileManagerService` if the error was during its `uploadAndRegisterFile` operation.
+
+    *   `[ ] 2.X.2.3.3 [BE]` **Verify `FileManagerService` for Contributions Table** (GREEN)
+        *   In `file_manager.ts`, ensure the `else` block for `targetTable === 'dialectic_contributions'` correctly maps all necessary fields from its `UploadContext` (and its `pathContext`) to the `dialectic_contributions` table columns.
+        *   This includes: `project_id` (from `context.pathContext.projectId`), `session_id`, `user_id`, `stage`, `model_name` (from `context.pathContext.modelSlug`), `file_name`, `mime_type`, `size_bytes`, `storage_bucket`, `storage_path`, `iteration_number`.
+        *   **Crucially, add any other fields that `generateContribution.ts` was previously inserting directly** if they are still required and not derivable by `FileManagerService` from the `UploadContext`. These might include: `model_id` (if distinct from `model_name/modelSlug`), `seed_prompt_url` (or `seed_prompt_resource_id`), `tokens_used_input`, `tokens_used_output`, `processing_time_ms`, `edit_version`, `is_latest_edit`, `original_model_contribution_id`, `raw_response_payload` (JSONB).
+        *   This may require adding more optional fields to `UploadContext` or its `customMetadata` and ensuring `FileManagerService` knows how to map them to the `dialectic_contributions` columns.
+    *   `[ ] 2.X.2.3.4 [TEST-INT]` Run integration tests for `generateContributions`. (GREEN)
+    *   [ ] Refactor cloneProject to use new file management logic, ensure all files are copied to the new project, and all rows are created for all files
+    *   [ ] Refactor deleteProject to use new file management logic, ensure all files are deleted from storage, and all rows are deleted from the database
+    *   [ ] Refactor exportProject to use new file management logic, ensure all files are saved into the correct file tree structure and zipped into the export file. 
+    *   [ ] exportProject becomes the basis for syncing the file tree to other storage tools like GitHub, Dropbox, etc. 
+
+*   `[ ] 2.X.2.4 [COMMIT]` refactor(be): refactor dialectic-service actions to use FileManagerService
+
+---
+
+This new section `2.X.2.3` provides a detailed plan for refactoring `generateContributions.ts`. It emphasizes:
+1.  Delegating file system and primary DB record creation for contributions to `FileManagerService`.
+2.  Ensuring `FileManagerService` is equipped to handle the specific fields required for `dialectic_contributions`.
+3.  Updating tests to reflect this delegation.
+4.  Rethinking how raw responses and other specific metadata are stored, ideally by enhancing `FileManagerService`'s capabilities or the `dialectic_contributions` table schema (e.g., with a JSONB column).
 
 ### 2.X.3 Deprecation and Code Cleanup
 
@@ -422,6 +586,97 @@ Here's the proposed new section:
     *   `[ ] 2.X.4.3.2` After testing, inspect the Supabase Storage bucket using the file browser. Verify that the directory structure and file names are 100% correct according to the architectural specification.
 *   `[ ] 2.X.4.4 [COMMIT]` feat(system): complete architectural refactor for unified file management
 
+---
+
+### 2.X.5 UI Integration for Dialectic Tokenomics & Wallet Management
+
+**Objective:** To provide users with full visibility and control over token consumption within the Dialectic service by deeply integrating existing, robust tokenomics UI components and backend capabilities. This involves displaying pre-submission cost estimates, post-submission actuals for AI contributions, allowing users to select a token wallet for operations using the established `WalletSelector.tsx`, and showing current wallet balances and affordability leveraging components like `ChatAffordabilityIndicator.tsx` and `TokenUsageDisplay.tsx`.
+
+**Core Principle:** Maximize reuse of components from `apps/web/src/components/ai/` and ensure backend processes correctly populate existing database fields to feed data into these established UI patterns.
+
+**Prerequisite:** `generateContributions.ts` and `FileManagerService` must be correctly populating the existing tokenomics and model identifier fields in the `dialectic_contributions` table.
+
+*   `[ ] 2.X.5.1 [BE]` **Ensure `generateContributions` & `FileManagerService` Populate Existing Tokenomics Fields**
+    *   `[✅] 2.X.5.1.1 [BE/TYPES]` **Verify and Align `UploadContext`:**
+        *   In `supabase/functions/_shared/types/file_manager.types.ts`, ensure `UploadContext` (or its `customMetadata`) is structured to carry:
+            *   `modelIdUsed: string` (corresponding to `dialectic_contributions.model_id` which is FK to `ai_providers.id`)
+            *   `tokensUsedInput: number`
+            *   `tokensUsedOutput: number`
+            *   `processingTimeMs: number`
+            *   `promptTemplateIdUsed?: string` (for `dialectic_contributions.prompt_template_id_used`)
+            *   `seedPromptUrl?: string` (for `dialectic_contributions.seed_prompt_url`)
+            *   `rawResponseStoragePath?: string` (for `dialectic_contributions.raw_response_storage_path`)
+            *   `citations?: Json` (for `dialectic_contributions.citations`)
+            *   `error?: string` (for `dialectic_contributions.error`)
+            *   `contributionType?: string` (for `dialectic_contributions.contribution_type`)
+    *   `[🚧] 2.X.5.1.2 [BE]` **Enhance `FileManagerService.uploadAndRegisterFile`:**
+        *   In `supabase/functions/_shared/services/file_manager.ts`, when `targetTable` is `dialectic_contributions`, ensure the `recordData` object correctly maps all relevant fields from the updated `UploadContext` (from `2.X.5.1.1`) to their corresponding columns in the `dialectic_contributions` table as defined in `supabase/functions/types_db.ts`. This includes `model_id`, `tokens_used_input`, `tokens_used_output`, `processing_time_ms`, `prompt_template_id_used`, `raw_response_storage_path`, `seed_prompt_url`, etc.
+    *   `[✅] 2.X.5.1.3 [BE]` **Refactor `generateContributions.ts` Data Handling:**
+        *   In `supabase/functions/dialectic-service/generateContributions.ts`:
+            *   When a response is received from `callUnifiedAIModel` (which returns `UnifiedAIResponse`), correctly extract `inputTokens`, `outputTokens` (or parse from `tokenUsage` object), `processingTimeMs`.
+            *   Also capture the actual `model_id` used for the call (from `providerDetails.id` or similar context available during the model iteration).
+            *   Capture other relevant metadata like `rawProviderResponse` (to determine `raw_response_storage_path` if applicable, or to store inline if schema allows and preferred), `prompt_template_id_used`, `seed_prompt_url`.
+            *   Populate the updated `UploadContext` with these values and pass it to `fileManager.uploadAndRegisterFile`.
+    *   `[ ] 2.X.5.1.4 [TEST-INT]` Update/Create integration tests for `generateContributions.ts`. These tests must:
+        *   Mock `callUnifiedAIModel` to return realistic `UnifiedAIResponse` data, including token counts and processing times.
+        *   Assert that `FileManagerService.uploadAndRegisterFile` is called with an `UploadContext` containing the correct tokenomics data and other metadata.
+        *   Mock `FileManagerService.uploadAndRegisterFile` to simulate a successful database insert and verify that the `generateContributions` function correctly processes this success.
+        *   Specifically test that the `DB_INSERT_FAIL` errors (seen in logs) are resolved by providing all necessary data.
+
+*   `[ ] 2.X.5.2 [API/STORE]` **Propagate Tokenomics Data & Wallet State for Dialectic Service**
+    *   `[ ] 2.X.5.2.1 [TYPES]` In `packages/types/src/dialectic.types.ts`:
+        *   Align the `DialecticContribution` type with the fields now confirmed to be in the database and populated by the backend. Ensure it includes:
+            *   `tokens_used_input: number | null`
+            *   `tokens_used_output: number | null`
+            *   `processing_time_ms: number | null`
+            *   `model_id: string | null` (actual ID of the AI provider/model used)
+            *   Other fields like `raw_response_storage_path`, `seed_prompt_url`, `citations` as they are made available.
+    *   `[ ] 2.X.5.2.2 [STORE]` In `packages/store/src/dialecticStore.ts`:
+        *   Ensure `fetchDialecticProjectDetails` thunk correctly processes and stores this enhanced `DialecticContribution` data (including tokenomics) within `currentProjectDetail.sessions.contributions`.
+        *   Adapt or reuse existing wallet state management. Add `activeDialecticWalletId: string | null` to `DialecticState` (in `packages/store/src/interfaces/dialectic.ts`) if a distinct active wallet for Dialectic operations is desired. Create actions to set/update it.
+    *   `[ ] 2.X.5.2.3 [STORE]` Create/update selectors in `packages/store/src/dialecticStore.selectors.ts`:
+        *   `selectDialecticContributionTokenDetails(contributionId: string): { tokensUsedInput: number | null, tokensUsedOutput: number | null, processingTimeMs: number | null, modelId: string | null } | null`
+        *   `selectActiveDialecticStageTotalTokenUsage(sessionId: string, stageSlug: string, iterationNumber: number): { totalInput: number, totalOutput: number, totalProcessingMs: number } | null`
+        *   `selectDialecticSessionTotalTokenUsage(sessionId: string): { totalInput: number, totalOutput: number, totalProcessingMs: number } | null`
+        *   `selectActiveDialecticWalletId(): string | null`
+    *   `[ ] 2.X.5.2.4 [BE]` Modify backend actions in `dialectic-service` (e.g., `generateContributions`) to accept an optional `walletId` in their payload. This `walletId` will be used by the `TokenWalletService`. Fallback to user's default wallet if not provided.
+
+*   `[ ] 2.X.5.3 [UI]` **Integrate Existing `WalletSelector.tsx` and Balance Display**
+    *   `[ ] 2.X.5.3.1 [TEST-UNIT]` Update/create unit tests for `DialecticSessionDetailsPage.tsx` or relevant parent components to cover wallet selection and balance display integration. (RED)
+    *   `[ ] 2.X.5.3.2 [UI]` In `apps/web/src/pages/DialecticSessionDetailsPage.tsx` (or a suitable layout component):
+        *   Integrate `apps/web/src/components/ai/WalletSelector.tsx`.
+        *   Connect it to update `activeDialecticWalletId` in the store.
+        *   Display the selected wallet's balance using existing mechanisms.
+    *   `[ ] 2.X.5.3.3 [UI]` Ensure UI elements triggering AI processing pass the `activeDialecticWalletId` to the backend if required.
+    *   `[ ] 2.X.5.3.4 [TEST-UNIT]` Run UI tests. (GREEN)
+
+*   `[ ] 2.X.5.4 [UI]` **Implement Pre-Submission Token Cost Estimates Using Existing Estimators**
+    *   `[ ] 2.X.5.4.1 [TEST-UNIT]` Update/create unit tests for pre-submission estimate displays. (RED)
+    *   `[ ] 2.X.5.4.2 [BE]` Develop backend function `estimateDialecticStageCost` in `dialectic-service`.
+        *   Input: `projectId`, `sessionId`, `stageSlug`, `iterationNumber`, `modelIds`, `walletId`.
+        *   Output: `EstimatedTokenUsage { perModel: Array<{modelId: string, estimatedTokens: number}>, totalEstimatedTokens: number }`.
+        *   Logic: Construct the potential seed prompt(s) and use a token counting utility (e.g., from `supabase/functions/_shared/` or similar to `countTokensForMessages` from chat service logs).
+    *   `[ ] 2.X.5.4.3 [API/STORE]` Add API client method and store thunk for `estimateDialecticStageCost`. Store estimate in `DialecticState`.
+    *   `[ ] 2.X.5.4.4 [UI]` In `apps/web/src/components/dialectic/StageTabCard.tsx`:
+        *   Trigger `estimateDialecticStageCost` thunk upon model selection.
+        *   Display estimate using `apps/web/src/components/ai/CurrentMessageTokenEstimator.tsx` or `ChatTokenUsageDisplay.tsx`.
+        *   Integrate `apps/web/src/components/ai/ChatAffordabilityIndicator.tsx` using the estimate and selected wallet balance.
+    *   `[ ] 2.X.5.4.5 [TEST-UNIT]` Run UI tests. (GREEN)
+
+*   `[ ] 2.X.5.5 [UI]` **Display Post-Submission Actual Token Costs Using Existing `TokenUsageDisplay.tsx`**
+    *   `[ ] 2.X.5.5.1 [TEST-UNIT]` Update/create unit tests for displaying actual token costs. (RED)
+    *   `[ ] 2.X.5.5.2 [UI]` In `apps/web/src/components/dialectic/cards/SessionContributionsDisplayCard.tsx` (or component rendering individual contributions):
+        *   Use `selectDialecticContributionTokenDetails` selector.
+        *   Integrate `apps/web/src/components/ai/TokenUsageDisplay.tsx` to show `tokensUsedInput`, `tokensUsedOutput` for each contribution. Display `model_id` or resolved model name.
+    *   `[ ] 2.X.5.5.3 [UI]` In a summary area (e.g., `StageTabCard.tsx` or `SessionInfoCard.tsx`):
+        *   Use `selectActiveDialecticStageTotalTokenUsage` and `selectDialecticSessionTotalTokenUsage` selectors.
+        *   Display aggregate costs, potentially adapting `apps/web/src/components/ai/ChatTokenUsageDisplay.tsx`.
+    *   `[ ] 2.X.5.5.4 [TEST-UNIT]` Run UI tests. (GREEN)
+
+*   `[ ] 2.X.5.6 [REFACTOR]` Conduct a thorough review of all integrated tokenomics UI components and related state management within the Dialectic feature. Ensure consistency and accuracy.
+*   `[ ] 2.X.5.7 [COMMIT]` feat(dialectic): integrate tokenomics display, cost estimation, and wallet management into Dialectic UI using existing AI components
+
+---
 
 ### 1.6 Basic GitHub Integration (Backend & API)
 *   `[ ] 1.6.1 [CONFIG]` Add new environment variables if needed for GitHub App/PAT specifically for Dialectic outputs, or confirm existing ones are sufficient and securely stored (e.g., in Supabase Vault).

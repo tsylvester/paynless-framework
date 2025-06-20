@@ -138,6 +138,7 @@ type SaveContributionEditAction = { action: 'saveContributionEdit', payload: Sav
 type SubmitStageResponsesAction = { action: 'submitStageResponses', payload: SubmitStageResponsesPayload };
 type ListAvailableDomainOverlaysAction = { action: 'listAvailableDomainOverlays', payload: ListAvailableDomainOverlaysPayload };
 type FetchProcessTemplateAction = { action: 'fetchProcessTemplate', payload: FetchProcessTemplatePayload };
+type UpdateSessionModelsAction = { action: 'updateSessionModels', payload: UpdateSessionModelsPayload };
 
 // The main union type for all possible JSON requests to the service.
 export type DialecticServiceRequest =
@@ -156,7 +157,8 @@ export type DialecticServiceRequest =
   | SaveContributionEditAction
   | SubmitStageResponsesAction
   | ListAvailableDomainOverlaysAction
-  | FetchProcessTemplateAction;
+  | FetchProcessTemplateAction
+  | UpdateSessionModelsAction;
 
 // --- END: Discriminated Union ---
 
@@ -191,6 +193,11 @@ export interface StartSessionPayload {
   stageSlug?: string;
 }
 
+export interface UpdateSessionModelsPayload {
+  sessionId: string;
+  selectedModelCatalogIds: string[];
+}
+
 export type StartSessionSuccessResponse = DialecticSession;
 
 export interface CallUnifiedAIModelOptions {
@@ -217,9 +224,11 @@ export type DialecticStage = Database['public']['Tables']['dialectic_stages']['R
 
 export interface GenerateContributionsPayload {
   sessionId: string;
+  projectId: string;
   stageSlug?: DialecticStage['slug'];
   iterationNumber?: number;
   chatId?: string | null;
+  selectedModelCatalogIds: string[];
 }
 
 export interface GenerateContributionsSuccessResponse {
@@ -447,3 +456,14 @@ export type UploadAndRegisterResourceFn = (
   data?: DialecticProjectResource;
   error?: { message: string; details?: string; status: number };
 }>;
+
+export type UploadContext = {
+  pathContext: {
+    projectId: string;
+    sessionId: string;
+    stageSlug: string;
+    iterationNumber: number;
+    fileType: string;
+    originalFileName: string;
+  };
+};

@@ -1286,6 +1286,8 @@ The implementation plan uses the following labels to categorize work steps:
                 │   │    └── `{compliance_requirements}` (regulatory, legal, or organizational compliance mandates)
                 │   └── system_settings.json          (Models, core prompt templates used for this iteration)
                 ├── 1_hypothesis/
+                │   ├── raw_responses
+                │   │   └──{model_name_slug}_{stage_slug}_raw.json
                 │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
                 │   ├── {model_name_slug}_hypothesis.md (Contains YAML frontmatter + AI response)
                 │   ├── ... (other models' hypothesis outputs)
@@ -1294,11 +1296,15 @@ The implementation plan uses the following labels to categorize work steps:
                 │       └── {model_name_slug}_prd_hypothesis.md
                 │       └── ...
                 ├── 2_antithesis/
+                │   ├── raw_responses
+                │   │   └──{model_name_slug}_{stage_slug}_raw.json
                 │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
                 │   ├── {critiquer_model_slug}_critique_on_{original_model_slug}.md
                 │   ├── ...
                 │   └── user_feedback_antithesis.md
                 ├── 3_synthesis/
+                │   ├── raw_responses
+                │   │   └──{model_name_slug}_{stage_slug}_raw.json
                 │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
                 │   ├── {model_name_slug}_synthesis.md
                 │   ├── ...
@@ -1308,6 +1314,8 @@ The implementation plan uses the following labels to categorize work steps:
                 │       ├── {model_name_slug}_business_case_synthesis.md
                 │       └── ...
                 ├── 4_parenthesis/
+                │   ├── raw_responses
+                │   │   └──{model_name_slug}_{stage_slug}_raw.json
                 │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
                 │   ├── {model_name_slug}_parenthesis.md
                 │   ├── ...
@@ -1316,6 +1324,8 @@ The implementation plan uses the following labels to categorize work steps:
                 │       └── {model_name_slug}_implementation_plan_parenthesis.md
                 │       └── ...
                 ├── 5_paralysis/
+                │   ├── raw_responses
+                │   │   └──{model_name_slug}_{stage_slug}_raw.json
                 │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
                 │   ├── {model_name_slug}_paralysis.md
                 │   ├── ...

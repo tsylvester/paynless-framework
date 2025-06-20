@@ -25,6 +25,7 @@ import type {
     SaveContributionEditPayload,
     DialecticDomain,
     DialecticProcessTemplate,
+    UpdateSessionModelsPayload,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 

@@ -20,7 +20,7 @@ import {
 export async function callUnifiedAIModel(
     modelCatalogId: string, // This is ai_providers.id, will be passed as providerId in ChatApiRequest
     renderedPrompt: string,
-    associatedChatId: string, // Chat ID for the /chat function
+    associatedChatId: string | null | undefined, // MODIFIED: Allow null or undefined
     authToken: string,        // User's JWT for calling /chat
     options?: CallUnifiedAIModelOptions
   ): Promise<UnifiedAIResponse> {
@@ -42,7 +42,7 @@ export async function callUnifiedAIModel(
         message: renderedPrompt,
         providerId: modelCatalogId,
         promptId: options?.currentStageSystemPromptId || "__none__",
-        chatId: associatedChatId,
+        chatId: associatedChatId === null ? undefined : associatedChatId, // MODIFIED: Convert null to undefined
         messages: historyForChatApi,
         max_tokens_to_generate: options?.customParameters?.max_tokens_to_generate,
         // organizationId might be relevant if dialectics are org-specific

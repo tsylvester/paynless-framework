@@ -62,6 +62,11 @@ export interface StartSessionPayload {
   stageSlug?: string;
 }
 
+export interface UpdateSessionModelsPayload {
+  sessionId: string;
+  selectedModelCatalogIds: string[];
+}
+
 export interface DialecticSession {
   id: string;
   project_id: string;
@@ -213,6 +218,10 @@ export interface DialecticStateValues {
   activeContextProjectId: string | null;
   activeContextSessionId: string | null;
   activeContextStage: DialecticStage | null;
+
+  // States for updating session models (newly added)
+  isUpdatingSessionModels: boolean;
+  updateSessionModelsError: ApiError | null;
 }
 
 export interface InitialPromptCacheEntry {
@@ -243,6 +252,7 @@ export interface DialecticActions {
   fetchDialecticProjectDetails: (projectId: string) => Promise<void>;
   createDialecticProject: (payload: CreateProjectPayload) => Promise<ApiResponse<DialecticProject>>;
   startDialecticSession: (payload: StartSessionPayload) => Promise<ApiResponse<DialecticSession>>;
+  updateSessionModels: (payload: UpdateSessionModelsPayload) => Promise<ApiResponse<DialecticSession>>;
   fetchAIModelCatalog: () => Promise<void>;
 
   fetchContributionContent: (contributionId: string) => Promise<void>;
@@ -324,6 +334,7 @@ export interface DialecticApiClient {
   listProjects(): Promise<ApiResponse<DialecticProject[]>>;
   getProjectDetails(projectId: string): Promise<ApiResponse<DialecticProject>>;
   startSession(payload: StartSessionPayload): Promise<ApiResponse<DialecticSession>>;
+  updateSessionModels(payload: UpdateSessionModelsPayload): Promise<ApiResponse<DialecticSession>>;
   listModelCatalog(): Promise<ApiResponse<AIModelCatalogEntry[]>>;
   getContributionContentSignedUrl(contributionId: string): Promise<ApiResponse<ContributionContentSignedUrlResponse | null>>;
   listDomains(): Promise<ApiResponse<DialecticDomain[]>>;
@@ -459,6 +470,9 @@ export type DialecticServiceActionPayload = {
 } | {
   action: 'saveContributionEdit';
   payload: SaveContributionEditPayload;
+} | {
+  action: 'updateSessionModels';
+  payload: UpdateSessionModelsPayload;
 }
 
 export interface DialecticServiceResponsePayload {
