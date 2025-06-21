@@ -359,6 +359,24 @@ export interface DialecticContribution {
     updated_at: string;
 }
 
+export interface DialecticFeedback {
+  id: string;
+  session_id: string;
+  project_id: string;
+  user_id: string;
+  stage_slug: string;
+  iteration_number: number;
+  storage_bucket: string;
+  storage_path: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  feedback_type: string;
+  resource_description?: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DialecticApiClient {
   listAvailableDomains(): Promise<ApiResponse<{ data: DomainDescriptor[] }>>;
   listAvailableDomainOverlays(payload: { stageAssociation: string }): Promise<ApiResponse<DomainOverlayDescriptor[]>>;
@@ -525,6 +543,11 @@ export interface SubmitStageResponsesPayload {
   stageSlug: DialecticStage['slug'];
   currentIterationNumber: number;
   responses: SubmitStageResponseItem[];
+  userStageFeedback?: { 
+    content: string; 
+    feedbackType: string; 
+    resourceDescription?: Record<string, unknown>; 
+  };
 }
   
 export interface SubmitStageResponsesResponse { 

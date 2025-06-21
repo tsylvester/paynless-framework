@@ -611,13 +611,13 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
     *   `[✅] 2.Y.1.4 [DB]` Regenerate database types: `supabase gen types typescript --project-id "$PROJECT_REF" --schema public > supabase/functions/types_db.ts`.
     *   `[✅] 2.Y.1.5 [COMMIT]` feat(db): update dialectic_feedback table for file-based storage
 
-*   `[ ] 2.Y.2 [TYPES]` **Update Shared Type Definitions**
-    *   `[ ] 2.Y.2.1 [TYPES]` In `packages/types/src/dialectic.types.ts`:
-        *   `[ ]` Modify `SubmitStageResponsesPayload`:
+*   `[✅] 2.Y.2 [TYPES]` **Update Shared Type Definitions**
+    *   `[✅] 2.Y.2.1 [TYPES]` In `packages/types/src/dialectic.types.ts`:
+        *   `[✅]` Modify `SubmitStageResponsesPayload`:
             *   Add optional `userStageFeedback: { content: string; feedbackType: string; resourceDescription?: Record<string, any>; }`.
-        *   `[ ]` Define/Update `DialecticFeedback` interface to match the new table structure (id, session_id, project_id, user_id, stage_slug, iteration_number, storage_bucket, storage_path, file_name, mime_type, size_bytes, feedback_type, resource_description, created_at, updated_at).
-    *   `[ ] 2.Y.2.2 [TYPES]` Mirror changes from `packages/types/src/dialectic.types.ts` to `supabase/functions/dialectic-service/dialectic.interface.ts`.
-    *   `[ ] 2.Y.2.3 [COMMIT]` feat(types): update dialectic types for file-based user feedback
+        *   `[✅]` Define/Update `DialecticFeedback` interface to match the new table structure (id, session_id, project_id, user_id, stage_slug, iteration_number, storage_bucket, storage_path, file_name, mime_type, size_bytes, feedback_type, resource_description, created_at, updated_at).
+    *   `[✅] 2.Y.2.2 [TYPES]` Mirror changes from `packages/types/src/dialectic.types.ts` to `supabase/functions/dialectic-service/dialectic.interface.ts`.
+    *   `[✅] 2.Y.2.3 [COMMIT]` feat(types): update dialectic types for file-based user feedback
 
 *   `[ ] 2.Y.3 [BE/UTIL]` **Update Path Construction Utilities**
     *   `[ ] 2.Y.3.1 [TEST-UNIT]` Review `supabase/functions/_shared/utils/path_constructor.test.ts` to determine its capabilities. It may require new unit tests for: (RED)

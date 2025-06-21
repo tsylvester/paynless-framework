@@ -360,23 +360,26 @@ export interface SaveContributionEditPayload {
   // session_id is implied by the originalContributionIdToEdit and will be fetched
 }
 
-// DialecticContribution is used as the success response for SaveContributionEdit
-
-// Ensure this is the end of the file or before any other specific type groupings if necessary
-
-// Add other service-specific interfaces here if needed in the future
-
-// Added for submitStageResponsesAndPrepareNextSeed
+// Updated DialecticFeedback to match the new file-based schema
 export interface DialecticFeedback {
   id: string;
   session_id: string;
-  contribution_id: string | null;
+  project_id: string; // Added
   user_id: string;
-  feedback_type: string; // e.g., 'text_response', 'rating_stars', 'thumb_reaction'
-  feedback_value_text: string | null;
-  feedback_value_structured: Record<string, unknown> | null;
+  stage_slug: string; // Added
+  iteration_number: number; // Added
+  storage_bucket: string; // Added
+  storage_path: string; // Added
+  file_name: string; // Added
+  mime_type: string; // Added
+  size_bytes: number; // Added
+  feedback_type: string; // Kept, ensure it's used for the file's purpose type
+  resource_description?: Record<string, unknown> | null; // Added, replaces feedback_value_structured
   created_at: string;
   updated_at: string;
+  // contribution_id: string | null; // Removed
+  // feedback_value_text: string | null; // Removed
+  // feedback_value_structured: Record<string, unknown> | null; // Removed, replaced by resource_description
 }
 
 export interface SubmitStageResponseItem {
@@ -384,12 +387,18 @@ export interface SubmitStageResponseItem {
   responseText: string;
   rating?: number;
 }
+
 export interface SubmitStageResponsesPayload { 
   sessionId: string;
   projectId: string;
   stageSlug: DialecticStage['slug'];
   currentIterationNumber: number;
   responses: SubmitStageResponseItem[];
+  userStageFeedback?: { 
+    content: string; 
+    feedbackType: string; 
+    resourceDescription?: Record<string, unknown>; 
+  };
 }
 
 export interface SubmitStageResponsesResponse {
