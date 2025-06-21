@@ -82,20 +82,24 @@ Deno.test('submitStageResponses', async (t) => {
 
 
   await t.step('3.1 Fails with appropriate error for missing sessionId', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [{ originalContributionId: 'id', responseText: 'text'}], sessionId: '', fileManager: createMockFileManagerService()};
+    const mockPayload: SubmitStageResponsesPayload = { stageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [{ originalContributionId: 'id', responseText: 'text'}], sessionId: '', projectId: testProjectId };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, {});
     const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
     
     assertEquals(status, 400);
     assertExists(error);
-    assertStringIncludes(error.message, "Invalid payload: missing required fields.");
+    assertEquals(error.message, "Invalid payload: missing required fields (sessionId, projectId, stageSlug, currentIterationNumber, and responses array must be provided).");
   });
 
   await t.step('3.2 Fails if sessionId does not correspond to an existing session', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: crypto.randomUUID(), currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, fileManager: createMockFileManagerService(), responses: [{ originalContributionId: 'id', responseText: 'text'}] };
+    const mockPayload: SubmitStageResponsesPayload = { sessionId: crypto.randomUUID(), stageSlug: mockThesisStage.slug, currentIterationNumber: 1, projectId: testProjectId, responses: [{ originalContributionId: 'id', responseText: 'text'}] };
     const mockDbConfig: MockSupabaseDataConfig = {
       genericMockResults: {
-        dialectic_sessions: { select: { data: null, error: { name: 'PostgrestError', message: "Not found", code: "PGRST116" } as any } }
+        dialectic_sessions: {
+          select: {
+            data: null,
+            error: { name: 'PostgrestError', message: "Not found", code: "PGRST116" } as any }
+        }
       }
     };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
@@ -112,9 +116,9 @@ Deno.test('submitStageResponses', async (t) => {
     // 3.3.1 Arrange
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
-      currentStageSlug: 'invalid-stage', // Deliberately wrong slug
+      stageSlug: 'invalid-stage', // Deliberately wrong slug
       currentIterationNumber: 1,
-      fileManager: createMockFileManagerService(),
+      projectId: testProjectId,
       responses: [{ originalContributionId: 'id', responseText: 'text' }],
     };
 
@@ -168,27 +172,64 @@ Deno.test('submitStageResponses', async (t) => {
   });
 
   await t.step('3.4 Fails for missing currentIterationNumber', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, responses: [{ originalContributionId: 'id', responseText: 'text'}], fileManager: createMockFileManagerService(), currentIterationNumber: undefined as any};
+    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, stageSlug: mockThesisStage.slug, responses: [{ originalContributionId: 'id', responseText: 'text'}], projectId: testProjectId, currentIterationNumber: undefined as any};
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, {});
     const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
     
     assertEquals(status, 400);
     assertExists(error);
-    assertStringIncludes(error.message, "Invalid payload: missing required fields.");
+    assertEquals(error.message, "Invalid payload: missing required fields (sessionId, projectId, stageSlug, currentIterationNumber, and responses array must be provided).");
   });
 
-  await t.step('3.5 Fails if responses array is empty or not provided', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, fileManager: createMockFileManagerService(), responses: [] };
-    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, {});
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
+  await t.step('3.5 Allows empty responses array and proceeds (assuming session found)', async () => {
+    const mockPayload: SubmitStageResponsesPayload = { 
+      sessionId: testSessionId, 
+      stageSlug: mockThesisStage.slug, 
+      currentIterationNumber: 1, 
+      projectId: testProjectId, 
+      responses: [] 
+    };
+    const mockDbConfigWithSession: MockSupabaseDataConfig = {
+      genericMockResults: {
+        dialectic_sessions: { 
+          select: { 
+            data: [{ 
+              id: testSessionId, 
+              project: { id: testProjectId, user_id: testUserId, process_template_id: testProcessTemplateId, max_iterations: 3 },
+              stage: mockThesisStage,
+              iteration_count: 1,
+            }] 
+          },
+          update: { data: [{ id: testSessionId, status: `pending_${mockAntithesisStage.slug}`, current_stage_id: mockAntithesisStage.id, iteration_count: 1 }] }
+        },
+        dialectic_stage_transitions: { select: { data: [{ target_stage: mockAntithesisStage }] } },
+        system_prompts: { select: { data: [{ id: mockAntithesisStage.default_system_prompt_id, prompt_text: 'Next prompt for {{prior_stage_ai_outputs}}' }] } },
+        dialectic_contributions: { 
+          select: (state: any) => {
+            if (state.filters.some((f:any) => f.column === 'is_latest_edit')) {
+              return Promise.resolve({ data: [] });
+            }
+            return Promise.resolve({ data: [] });
+          }
+        },
+      }
+    };
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfigWithSession);
+    const mockFileManager = createMockFileManagerService(); 
+    mockFileManager.setUploadAndRegisterFileResponse({ id: 'seed-prompt-file-id', project_id: testProjectId, user_id: testUserId, storage_bucket: 'test-bucket', storage_path: 'path/to/seed.md', file_name: 'seed.md', mime_type: 'text/markdown', size_bytes: 100, created_at: 'now', updated_at: 'now', resource_description: null }, null);
+
+    const { error, status, data } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: mockFileManager });
     
-    assertEquals(status, 400);
-    assertExists(error);
-    assertStringIncludes(error.message, "Invalid payload: missing required fields");
+    assertEquals(status, 200, error ? `Expected 200 but got ${status} with error: ${error.message}`: `Expected 200 but got ${status}`);
+    assert(!error, "Expected no error for valid empty responses array leading to successful processing.");
+    assertExists(data);
+    assertEquals(data?.updatedSession?.status, `pending_${mockAntithesisStage.slug}`);
+    assertExists(data?.nextStageSeedPromptPath);
+    assertEquals(data?.nextStageSeedPromptPath, 'path/to/seed.md');
   });
 
     await t.step('3.6 Fails if items in responses array miss originalContributionId or responseText', async () => {
-      const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, fileManager: createMockFileManagerService(), responses: [{ originalContributionId: testContributionId1, responseText: undefined as any }] };
+      const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, stageSlug: mockThesisStage.slug, currentIterationNumber: 1, projectId: testProjectId, responses: [{ originalContributionId: testContributionId1, responseText: undefined as any }] };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, {});
     const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
     
@@ -198,7 +239,7 @@ Deno.test('submitStageResponses', async (t) => {
   });
 
   await t.step('3.7 Fails if an originalContributionId in a response is not found or not linked to the session', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, fileManager: createMockFileManagerService(), responses: [{ originalContributionId: 'non-existent-id', responseText: 'text' }] };
+    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, stageSlug: mockThesisStage.slug, currentIterationNumber: 1, projectId: testProjectId, responses: [{ originalContributionId: 'non-existent-id', responseText: 'text' }] };
     const mockDbConfig: MockSupabaseDataConfig = {
       genericMockResults: {
         dialectic_sessions: { select: { data: [{ 
@@ -219,7 +260,7 @@ Deno.test('submitStageResponses', async (t) => {
   });
 
   await t.step('4.1 Handles failure when fetching the current DialecticSession', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, fileManager: createMockFileManagerService(), responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
+    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, stageSlug: mockThesisStage.slug, currentIterationNumber: 1, projectId: testProjectId, responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
     const mockDbConfig: MockSupabaseDataConfig = {
       genericMockResults: {
         dialectic_sessions: { select: { data: null, error: { name: 'PostgrestError', code: '500', message: "DB connection failed" } as any } }
@@ -233,115 +274,125 @@ Deno.test('submitStageResponses', async (t) => {
     assertStringIncludes(error.message, "Session not found or access denied.");
   });
 
-  await t.step('4.2 Handles failure when inserting records into dialectic_feedback', async () => {
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, fileManager: createMockFileManagerService(), responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
+  await t.step('4.2 Handles failure when fileManager fails to save userStageFeedback', async () => {
+    const mockPayload: SubmitStageResponsesPayload = { 
+      sessionId: testSessionId, 
+      stageSlug: mockThesisStage.slug, 
+      currentIterationNumber: 1, 
+      projectId: testProjectId, 
+      responses: [{ originalContributionId: testContributionId1, responseText: 'text' }],
+      userStageFeedback: {
+        content: "This is some feedback content that will fail to save.",
+        feedbackType: "TestFeedbackType_FileManagerFail",
+        resourceDescription: { summary: "A test summary for file manager failure" }
+      }
+    };
     const mockDbConfig: MockSupabaseDataConfig = {
       genericMockResults: {
         dialectic_sessions: { select: { data: [{ 
             id: testSessionId,
-            project: { id: testProjectId, user_id: testUserId },
-            stage: mockThesisStage
+            project: { id: testProjectId, user_id: testUserId, process_template_id: testProcessTemplateId, max_iterations: 3 },
+            stage: mockThesisStage,
+            iteration_count: 1,
         }] } },
         dialectic_contributions: { select: { data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId }] } },
-        dialectic_feedback: { insert: { data: null, error: { name: 'PostgrestError', code: '500', message: "Insert failed" } as any } }
       }
     };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: createMockFileManagerService() });
+    const mockFileManager = createMockFileManagerService();
+    let feedbackUploadAttempted = false;
+    mockFileManager.uploadAndRegisterFile = spy(async (context: UploadContext): Promise<FileManagerResponse> => {
+      if (context.pathContext.fileType === 'user_feedback') {
+        feedbackUploadAttempted = true;
+        return { record: null, error: { message: "FileManager failed to save feedback" } };
+      }
+      return { record: { id: 'some-other-file-id', storage_path: 'other/path', project_id: testProjectId, user_id: testUserId, storage_bucket: 'b', file_name: 'f', mime_type: 'm', size_bytes: 1, created_at: 'c', updated_at: 'u', resource_description: null } as any, error: null };
+    });
 
+    const { error, status } = await submitStageResponses(
+        mockPayload, 
+        mockSupabase.client as any, 
+        mockUser, 
+        { logger, downloadFromStorage: spy(() => Promise.resolve({data: null, error: null})), fileManager: mockFileManager }
+    );
+    
     assertEquals(status, 500);
     assertExists(error);
-    assertStringIncludes(error.message, "Failed to insert user feedback records.");
+    assertEquals(error.message, "Failed to save user feedback.");
+    assert(feedbackUploadAttempted, "FileManagerService.uploadAndRegisterFile should have been called for user_feedback.");
   });
 
   await t.step('4.3 Handles failure when fetching system prompt for the next stage', async () => {
-     const mockFileManager = createMockFileManagerService();
-     mockFileManager.setUploadAndRegisterFileResponse({
-        id: 'resource-id',
-        project_id: testProjectId,
-        user_id: testUserId,
-        storage_bucket: 'test-bucket',
-        storage_path: 'path/to/feedback.md',
-        file_name: 'feedback.md',
-        mime_type: 'text/markdown',
-        size_bytes: 100,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        resource_description: null,
-     }, null);
-     const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, fileManager: mockFileManager, responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
-     const mockDbConfig: MockSupabaseDataConfig = {
-         genericMockResults: {
-            dialectic_sessions: { select: { data: [{ 
-                id: testSessionId,
-                project: { id: testProjectId, user_id: testUserId, process_template_id: testProcessTemplateId },
-                stage: mockThesisStage
-            }] } },
-             dialectic_feedback: { insert: { data: [{id: crypto.randomUUID()}] } },
-             dialectic_contributions: { select: { data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId }] } },
-             system_prompts: { select: { data: null, error: { name: 'PostgrestError', code: '500', message: "DB connection failed" } as any } },
-             dialectic_stage_transitions: { select: { data: [{ target_stage: mockAntithesisStage }]}},
-             dialectic_process_templates: {
-               select: { data: [mockProcessTemplate] }
-             }
-         }
-     };
-     const mockDownloadFromStorage = spy((_client: SupabaseClient, _bucket: string, _path: string) => { const buffer: ArrayBuffer = Buffer.from(new TextEncoder().encode(JSON.stringify({ user_objective: 'test' }))).buffer; return Promise.resolve({ data: buffer, error: null }); });
-     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
-     const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, { logger, downloadFromStorage: mockDownloadFromStorage, fileManager: mockFileManager });
- 
-     assertEquals(status, 500);
-     assertExists(error);
-     assertStringIncludes(error.message as string, "Failed to prepare the next stage.");
+    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, stageSlug: mockThesisStage.slug, currentIterationNumber: 1, projectId: testProjectId, responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
+    const mockDbConfig: MockSupabaseDataConfig = {
+      genericMockResults: {
+        dialectic_sessions: { select: { data: [{ 
+            id: testSessionId, 
+            project: { id: testProjectId, user_id: testUserId, process_template_id: testProcessTemplateId, max_iterations: 3 }, 
+            stage: mockThesisStage,
+            iteration_count: 1,
+        }] } },
+        dialectic_contributions: { select: { data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId }] } },
+        dialectic_stage_transitions: { select: { data: [{ target_stage: mockAntithesisStage }] } }, 
+        system_prompts: { select: { data: null, error: { name: 'PostgrestError', code: 'PGRST116', message: "No system prompt found with that ID" } as any } },
+      }
+    };
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
+    const mockFileManager = createMockFileManagerService();
+    mockFileManager.setUploadAndRegisterFileResponse({ id: 'feedback-id', project_id: testProjectId, user_id: testUserId, storage_bucket: 'b', storage_path: 'p', file_name: 'f', mime_type: 'm', size_bytes: 1, created_at: 'c', updated_at: 'u', resource_description: null }, null);
+
+
+    const { error, status } = await submitStageResponses(
+        mockPayload, 
+        mockSupabase.client as any, 
+        mockUser, 
+        { logger, downloadFromStorage: spy(() => Promise.resolve({data: new TextEncoder().encode("content").buffer as ArrayBuffer, error: null})), fileManager: mockFileManager }
+    );
+    
+    assertEquals(status, 500);
+    assertExists(error);
+    assertEquals(error.message, "Failed to prepare seed prompt for the next stage: Failed to retrieve system prompt template for next stage.");
   });
 
   await t.step('4.4 Handles failure when fetching context/previous contributions', async () => {
-    const mockFileManager = createMockFileManagerService();
-    mockFileManager.setUploadAndRegisterFileResponse({
-      id: 'resource-id',
-      project_id: testProjectId,
-      user_id: testUserId,
-      storage_bucket: 'test-bucket',
-      storage_path: 'path/to/feedback.md',
-      file_name: 'feedback.md',
-      mime_type: 'text/markdown',
-      size_bytes: 100,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      resource_description: null,
-    }, null);
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, fileManager: mockFileManager, responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
+    const mockPayload: SubmitStageResponsesPayload = { sessionId: testSessionId, stageSlug: mockThesisStage.slug, currentIterationNumber: 1, projectId: testProjectId, responses: [{ originalContributionId: testContributionId1, responseText: 'text' }] };
     const mockDbConfig: MockSupabaseDataConfig = {
-        genericMockResults: {
-            dialectic_sessions: { select: { data: [{ 
-                id: testSessionId,
-                project: { id: testProjectId, user_id: testUserId, process_template_id: testProcessTemplateId },
-                stage: mockThesisStage
-            }] } },
-            dialectic_feedback: { insert: { data: [{id: crypto.randomUUID()}] } },
-            system_prompts: { select: { data: [{ id: testSystemPromptId, prompt_text: "Next prompt" }] } },
-            dialectic_stage_transitions: { select: { data: [{ target_stage: mockAntithesisStage }]}},
-            dialectic_contributions: {
-              select: (state: any) => {
-                if (state.filters.some((f: any) => f.column === 'is_latest_edit')) {
-                  return Promise.resolve({ data: null, error: { name: 'PostgrestError', code: '500', message: "DB connection failed" } as any });
-                }
-                return Promise.resolve({ data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId }] });
-              }
-            },
-            dialectic_process_templates: {
-              select: { data: [mockProcessTemplate] }
+      genericMockResults: {
+        dialectic_sessions: { select: { data: [{ 
+            id: testSessionId, 
+            project: { id: testProjectId, user_id: testUserId, process_template_id: testProcessTemplateId, max_iterations: 3 }, 
+            stage: mockThesisStage,
+            iteration_count: 1,
+        }] } },
+        dialectic_contributions: { 
+          select: (state: any) => {
+            if (state.selectColumns === 'id, session_id') {
+              return Promise.resolve({ data: [{ id: testContributionId1, session_id: testSessionId }]});
             }
-        }
+            if (state.filters.some((f:any) => f.column === 'is_latest_edit')) {
+              return Promise.resolve({ data: null, error: { name: 'PostgrestError', code: '500', message: "DB connection failed for contributions needed for seed" } as any });
+            }
+            return Promise.resolve({ data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId }]});
+          }
+        },
+        dialectic_stage_transitions: { select: { data: [{ target_stage: mockAntithesisStage }] } },
+        system_prompts: { select: { data: [{ id: mockAntithesisStage.default_system_prompt_id, prompt_text: 'Next prompt {{prior_stage_ai_outputs}}' }] } }
+      }
     };
-    const mockDownloadFromStorage = spy((_client: SupabaseClient, _bucket: string, _path: string) => { const buffer: ArrayBuffer = Buffer.from(new TextEncoder().encode(JSON.stringify({ user_objective: 'test' }))).buffer; return Promise.resolve({ data: buffer, error: null }); });
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
-    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorage, fileManager: mockFileManager };
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
+    const mockFileManager = createMockFileManagerService();
+    mockFileManager.setUploadAndRegisterFileResponse({ id: 'feedback-id', project_id: testProjectId, user_id: testUserId, storage_bucket: 'b', storage_path: 'p', file_name: 'f', mime_type: 'm', size_bytes: 1, created_at: 'c', updated_at: 'u', resource_description: null }, null);
 
+    const { error, status } = await submitStageResponses(
+        mockPayload, 
+        mockSupabase.client as any, 
+        mockUser, 
+        { logger, downloadFromStorage: spy(() => Promise.resolve({data: new TextEncoder().encode("downloaded content").buffer as ArrayBuffer, error: null})), fileManager: mockFileManager }
+    );
+    
     assertEquals(status, 500);
     assertExists(error);
-    assertStringIncludes(error.message, "Failed to prepare the next stage.");
+    assertEquals(error.message, "Failed to prepare seed prompt for the next stage: Failed to retrieve AI contributions for prompt assembly.");
   });
 
   await t.step('4.5 Handles failure when updating the DialecticSession at the end', async () => {
@@ -362,9 +413,9 @@ Deno.test('submitStageResponses', async (t) => {
     
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
-      currentStageSlug: mockParalysisStage.slug, // Final stage
+      stageSlug: mockParalysisStage.slug, // Final stage
       currentIterationNumber: 1,
-      fileManager: mockFileManager,
+      projectId: testProjectId,
       responses: [
         { originalContributionId: testContributionId1, responseText: "text" },
       ],
@@ -416,59 +467,57 @@ Deno.test('submitStageResponses', async (t) => {
   });
 
   await t.step('6.3 Handles case where system prompt template for the next stage is not found', async () => {
-    const mockFileManager = createMockFileManagerService();
-    mockFileManager.setUploadAndRegisterFileResponse({
-      id: 'resource-id',
-      project_id: testProjectId,
-      user_id: testUserId,
-      storage_bucket: 'test-bucket',
-      storage_path: 'path/to/feedback.md',
-      file_name: 'feedback.md',
-      mime_type: 'text/markdown',
-      size_bytes: 100,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      resource_description: null,
-    }, null);
-
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
-      currentStageSlug: 'thesis',
+      projectId: testProjectId,
+      stageSlug: mockThesisStage.slug,
       currentIterationNumber: 1,
-      fileManager: mockFileManager,
       responses: [{ originalContributionId: testContributionId1, responseText: "Response text" }],
     };
+
     const mockDbConfig: MockSupabaseDataConfig = {
       genericMockResults: {
         dialectic_sessions: { 
           select: { data: [{ 
-              id: testSessionId,
-              project: { id: testProjectId, user_id: testUserId, process_template_id: testProcessTemplateId },
-              stage: mockThesisStage
-          }] }
+            id: testSessionId, 
+            project: { id: testProjectId, user_id: testUserId, process_template_id: testProcessTemplateId, max_iterations: 3 }, 
+            stage: mockThesisStage, 
+            iteration_count: 1,
+          }] } 
         },
-        dialectic_feedback: { insert: { data: [{id: 'fb-id'}] } },
-        dialectic_contributions: {
-          select: { data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId }] },
+        dialectic_contributions: { 
+          select: (state: any) => {
+            if (state.selectColumns === 'id, session_id') { 
+              return Promise.resolve({ data: [{ id: testContributionId1, session_id: testSessionId }] });
+            }
+            return Promise.resolve({ data: [{ id: testContributionId1, storage_path: 'path/to/prev_content.md', storage_bucket: 'bucket', model_name: 'test-model' }] });
+          }
         },
-        system_prompts: {
-          select: { data: null, error: new Error('not found'), status: 500 }
+        dialectic_stage_transitions: { select: { data: [{ target_stage: mockAntithesisStage }] } }, 
+        system_prompts: { 
+          select: { data: null, error: { name: 'PostgrestError', message: 'No system prompt found with that ID', code: 'PGRST116' } as any } 
         },
-        dialectic_stage_transitions: { select: { data: [{ target_stage: mockAntithesisStage }]}},
-        dialectic_process_templates: {
-          select: { data: [mockProcessTemplate] }
-        }
-      }
+      },
     };
+    const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
+    const mockFileManager = createMockFileManagerService();
+    mockFileManager.setUploadAndRegisterFileResponse({ id: 'any-file-id', project_id: testProjectId, user_id: testUserId, storage_bucket: 'b', storage_path: 'p', file_name: 'f', mime_type: 'm', size_bytes: 1, created_at: 'c', updated_at: 'u', resource_description: null }, null);
 
-    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
-    const mockDownloadFromStorage = spy(() => Promise.resolve({ data: new ArrayBuffer(0), error: null }));
-    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorage, fileManager: mockFileManager };
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
 
-    assertEquals(status, 500);
-    assertExists(error);
-    assertStringIncludes(error.message, "Failed to prepare the next stage.");
+    const { error, status } = await submitStageResponses(
+      mockPayload,
+      mockSupabase.client as any,
+      mockUser,
+      { 
+        logger, 
+        downloadFromStorage: spy(() => Promise.resolve({ data: new TextEncoder().encode("previous content").buffer as ArrayBuffer, error: null })),
+        fileManager: mockFileManager 
+      }
+    );
+
+    assertEquals(status, 500, "Expected status 500 when system prompt for next stage is not found.");
+    assertExists(error, "Expected an error object.");
+    assertEquals(error.message, "Failed to prepare seed prompt for the next stage: Failed to retrieve system prompt template for next stage.");
   });
 
   await t.step('6.4 Handles case where no AI contributions (context) are found for current stage', async () => {
@@ -492,9 +541,9 @@ Deno.test('submitStageResponses', async (t) => {
     
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
-      currentStageSlug: 'thesis',
+      stageSlug: 'thesis',
       currentIterationNumber: 1,
-      fileManager: mockFileManager,
+      projectId: testProjectId,
       responses: [
         { originalContributionId: testContributionId1, responseText: "text" },
       ]
@@ -513,7 +562,6 @@ Deno.test('submitStageResponses', async (t) => {
         dialectic_contributions: {
           select: (state: any) => {
             if (state.filters.some((f: any) => f.column === 'is_latest_edit')) {
-              // This is the key part of this test: return no contributions
               return Promise.resolve({ data: [] });
             }
             return Promise.resolve({ data: [{ id: state.filters.find((f: any) => f.column === 'id')?.value, model_name: 'ModelA', session_id: testSessionId }] });
@@ -537,16 +585,13 @@ Deno.test('submitStageResponses', async (t) => {
       fileManager: mockFileManager,
     };
     
-    // Act
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
 
-    // Assert
     assertEquals(status, 200);
     assert(data);
     assertEquals(error, undefined);
     assert(data.updatedSession?.status === `pending_${mockAntithesisStage.slug}`);
 
-    // Verify the rendered prompt doesn't contain the placeholder but has the "no content" message.
     const uploadCalls = mockFileManager.uploadAndRegisterFile.calls;
     const seedPromptCall = uploadCalls.find(c => c.args[0].pathContext.fileType === 'seed_prompt');
     assertExists(seedPromptCall, 'A seed prompt should still be generated.');

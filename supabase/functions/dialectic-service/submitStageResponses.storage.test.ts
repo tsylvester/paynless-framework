@@ -83,10 +83,15 @@ Deno.test('submitStageResponses', async (t) => {
   await t.step('5.1 Handles failure when uploading the consolidated user feedback file', async () => {
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
-      currentStageSlug: mockThesisStage.slug,
+      projectId: testProjectId,
+      stageSlug: mockThesisStage.slug,
       currentIterationNumber: 1,
-      fileManager: createMockFileManagerService(),
       responses: [{ originalContributionId: testContributionId1, responseText: "Response text" }],
+      userStageFeedback: {
+        content: "This is specific user stage feedback for test 5.1.",
+        feedbackType: "TestFeedbackType_5_1",
+        resourceDescription: { summary: "Resource description for test 5.1 feedback" }
+      }
     };
 
     const mockDbConfig: MockSupabaseDataConfig = {
@@ -121,7 +126,7 @@ Deno.test('submitStageResponses', async (t) => {
     assertEquals(status, 500);
     assertExists(error);
     assertEquals(data, undefined);
-    assertStringIncludes(error.message, "Failed to upload consolidated user feedback.");
+    assertStringIncludes(error.message, "Failed to save user feedback.");
     assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "FileManager should have been called once and failed");
   });
 
@@ -155,12 +160,12 @@ Deno.test('submitStageResponses', async (t) => {
 
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
-      currentStageSlug: 'thesis',
+      projectId: testProjectId,
+      stageSlug: 'thesis',
       currentIterationNumber: 1,
-      fileManager: mockFileManager,
       responses: [
         { originalContributionId: testContributionId1, responseText: "Response text" },
-      ]
+      ],
     };
 
     const mockDbConfig: MockSupabaseDataConfig = {
@@ -207,10 +212,7 @@ Deno.test('submitStageResponses', async (t) => {
     // 5.2.3 Assert
     assertEquals(status, 500, 'Expected status 500 on seed prompt upload failure');
     assertExists(error, 'Expected an error object to be returned');
-    assertEquals(
-      error.message,
-      'Failed to prepare the next stage.',
-    );
+    assertStringIncludes(error.message, "Failed to save seed prompt for the next stage", "Error message for seed prompt save failure did not match");
   });
 
   await t.step('5.3 Handles failure when downloading AI contribution content (for seed prompt context)', async () => {
@@ -228,9 +230,9 @@ Deno.test('submitStageResponses', async (t) => {
 
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
-      currentStageSlug: 'thesis',
+      projectId: testProjectId,
+      stageSlug: 'thesis',
       currentIterationNumber: 1,
-      fileManager: createMockFileManagerService(), // This will be used in the main function
       responses: [
         { originalContributionId: testContributionId1, responseText: 'text' },
       ],
@@ -270,13 +272,47 @@ Deno.test('submitStageResponses', async (t) => {
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, {
       logger,
       downloadFromStorage: mockDownloadFromStorage,
-      fileManager: mockPayload.fileManager, 
+      fileManager: successfulFileManager,
     });
 
     // 5.3.3 Assert
     assertEquals(status, 500, 'Expected status 500');
     assertExists(error, 'Expected error object');
-    assertStringIncludes(error.message, 'Failed to upload consolidated user feedback.');
+    assertStringIncludes(error.message, "Failed to prepare seed prompt for the next stage", "Error message for seed prompt preparation failure did not match");
+    assertStringIncludes(error.message, "Failed to download content for prompt assembly", "Error message for seed prompt download failure did not match");
+  });
+
+  await t.step('5.4 Handles failure during fileManager.uploadAndRegisterFile for user feedback, database insertion is rolled back or not committed', async () => {
+    const mockPayload: SubmitStageResponsesPayload = {
+      sessionId: testSessionId,
+      projectId: testProjectId,
+      stageSlug: 'thesis',
+      currentIterationNumber: 1,
+      responses: [{ originalContributionId: testContributionId1, responseText: "text" }],
+      userStageFeedback: { content: "Test feedback content", feedbackType: "test_feedback", resourceDescription: { summary: "Test summary" } },
+    };
+
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, {
+      genericMockResults: {
+        dialectic_sessions: { select: { data: [{ id: testSessionId, iteration_count: 1, project: { id: testProjectId, user_id: testUserId, process_template_id: testProcessTemplateId }, stage: mockThesisStage }] } },
+        dialectic_feedback: { insert: { data: [{ id: 'fb-id' }] } },
+        dialectic_contributions: { select: { data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId }] } },
+        dialectic_process_templates: { select: { data: [mockProcessTemplate] } }
+      }
+    });
+
+    // Act
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, {
+      logger,
+      downloadFromStorage: spy((): Promise<{ data: ArrayBuffer | null; error: Error | null; }> => Promise.resolve({ data: null, error: new Error('Upload failed') })),
+      fileManager: createMockFileManagerService(),
+    });
+    
+    // Assert
+    assertEquals(status, 500);
+    assertExists(error);
+    assertEquals(data, undefined);
+    assertStringIncludes(error.message, "Failed to save user feedback.");
   });
 
 });

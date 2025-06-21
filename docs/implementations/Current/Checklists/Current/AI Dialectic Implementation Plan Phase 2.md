@@ -678,27 +678,28 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
     *   `[✅] 2.Y.4.7 [TEST-UNIT]` Run `file_manager.test.ts`.
     *   `[✅] 2.Y.4.8 [COMMIT]` feat(be,fm): FileManager handles attempt counts in contribution filenames; user_feedback paths
 
-*   `[ ] 2.Y.5 [BE/REFACTOR]` **Refactor `submitStageResponses.ts` Edge Function**
-    *   `[ ] 2.Y.5.1 [TEST-INT]` In `submitStageResponses.test.ts`: (RED)
-        *   `[ ]` Update tests to use the new `SubmitStageResponsesPayload` (including `userStageFeedback` object).
-        *   `[ ]` Mock `FileManagerService.uploadAndRegisterFile`.
-        *   `[ ]` Assert that if `payload.userStageFeedback` is present, `FileManagerService.uploadAndRegisterFile` is called with:
-            *   `fileType: 'user_feedback'`.
-            *   Correct `PathContext` (project, session, iteration, stageSlug for the feedback).
-            *   `fileContent` matching `payload.userStageFeedback.content`.
-            *   `mimeType: 'text/markdown'`.
-            *   `customMetadata` including `feedbackType` and `resourceDescription` from payload.
-    *   `[ ] 2.Y.5.2 [BE]` In `supabase/functions/dialectic-service/submitStageResponses.ts`:
-        *   `[ ]` Adapt to the new `SubmitStageResponsesPayload` structure.
-        *   `[ ]` If `payload.userStageFeedback` is provided:
-            *   Instantiate `FileManagerService`.
-            *   Construct the `UploadContext` as specified in the test.
-            *   Call `await fileManager.uploadAndRegisterFile(uploadContext)`.
-            *   Handle success/error from `FileManagerService`.
-        *   `[ ]` The existing logic for handling `payload.responses` (user inputs for the AI's *next* step) will proceed largely as before, focusing on preparing the next seed prompt. Rename or refactor `storeAndSummarizeUserFeedback` if its name is now misleading. (GREEN)
-    *   `[ ] 2.Y.5.3 [TEST-INT]` Run `submitStageResponses.test.ts`.
-    *   `[ ] 2.Y.5.4 [REFACTOR]` Review `submitStageResponses.ts` for clarity and correctness.
-    *   `[ ] 2.Y.5.5 [COMMIT]` refactor(be): adapt submitStageResponses to handle file-based user feedback
+*   `[✅] 2.Y.5 [BE/REFACTOR]` **Refactor `submitStageResponses.ts` Edge Function**
+    *   `[✅] 2.Y.5.1 [TEST-INT]` In `submitStageResponses.test.ts`: (RED)
+        *   `[✅]` Update tests to use the new `SubmitStageResponsesPayload` (including `userStageFeedback` object).
+        *   `[✅]` Mock `FileManagerService.uploadAndRegisterFile`.
+        *   `[✅]` Assert it's called correctly for `fileType: 'user_feedback'` if `userStageFeedback` is present.
+            *   `[✅]` Verify `PathContext` uses `projectId`, `sessionId`, `iterationNumber`, `stageSlug`.
+            *   `[✅]` Verify `originalFileName` (e.g., `user_feedback_${stageSlug}.md`).
+            *   `[✅]` Verify `UploadContext` passes `userStageFeedback.content`.
+            *   `[✅]` `mimeType: 'text/markdown'`.
+            *   `[✅]` `customMetadata` including `feedbackType` and `resourceDescription` from payload.
+    *   `[✅] 2.Y.5.2 [BE]` In `supabase/functions/dialectic-service/submitStageResponses.ts`:
+        *   `[✅]` Adapt to the new `SubmitStageResponsesPayload` structure.
+        *   `[✅]` If `payload.userStageFeedback` is provided:
+            *   `[✅]` Instantiate `FileManagerService`.
+            *   `[✅]` Prepare `PathContext` and `UploadContext` as detailed for the test.
+            *   `[✅]` Call `fileManager.uploadAndRegisterFile(...)`.
+            *   `[✅]` The ID of the created `dialectic_project_resources` record (for the feedback file) should be stored in the `dialectic_feedback.feedback_file_id` (or similar new field) when creating feedback records related to `payload.responses` later in the function. This links specific textual responses to the overall stage feedback document.
+            *   `[✅]` Handle success/error from `FileManagerService`.
+        *   `[✅]` The existing logic for handling `payload.responses` (user inputs for the AI's *next* step) will proceed largely as before, focusing on preparing the next seed prompt. Rename or refactor `storeAndSummarizeUserFeedback` if its name is now misleading. (GREEN)
+    *   `[✅] 2.Y.5.3 [TEST-INT]` Run `submitStageResponses.test.ts`.
+    *   `[✅] 2.Y.5.4 [REFACTOR]` Review `submitStageResponses.ts` for clarity and correctness.
+    *   `[✅] 2.Y.5.5 [COMMIT]` refactor(be): adapt submitStageResponses to handle file-based user feedback
 
 *   `[ ] 2.Y.6 [API/STORE]` **Update API Client and Store for Feedback File Handling**
     *   `[ ] 2.Y.6.1 [TEST-UNIT]` In `packages/api/src/dialectic.api.test.ts`, update tests for `submitStageResponses` to use the new payload structure. (RED)

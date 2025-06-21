@@ -31,27 +31,33 @@ const STORAGE_BUCKET = Deno.env.get('SUPABASE_CONTENT_STORAGE_BUCKET');
 function mapDbFeedbackToInterface(
   dbFeedback: Tables<'dialectic_feedback'>,
 ): DialecticFeedback {
-  let feedback_value_structured: Record<string, unknown> | null = null;
-  const rawFeedbackValue = dbFeedback.feedback_value_structured;
+  // feedback_value_structured was replaced by resource_description in the new schema
+  // and is directly mapped if it's a valid object.
+  let resource_description_mapped: Record<string, unknown> | null = null;
+  const rawResourceDescription = dbFeedback.resource_description;
 
-  // Validate that the Json type is a non-array object before assigning.
-  // A shallow copy is used to create a new, correctly typed object.
   if (
-    rawFeedbackValue &&
-    typeof rawFeedbackValue === 'object' &&
-    !Array.isArray(rawFeedbackValue)
+    rawResourceDescription &&
+    typeof rawResourceDescription === 'object' &&
+    !Array.isArray(rawResourceDescription)
   ) {
-    feedback_value_structured = { ...rawFeedbackValue };
+    resource_description_mapped = { ...rawResourceDescription };
   }
 
   return {
     id: dbFeedback.id,
     session_id: dbFeedback.session_id,
-    contribution_id: dbFeedback.contribution_id,
+    project_id: dbFeedback.project_id,
     user_id: dbFeedback.user_id,
+    stage_slug: dbFeedback.stage_slug,
+    iteration_number: dbFeedback.iteration_number,
+    storage_bucket: dbFeedback.storage_bucket,
+    storage_path: dbFeedback.storage_path,
+    file_name: dbFeedback.file_name,
+    mime_type: dbFeedback.mime_type,
+    size_bytes: dbFeedback.size_bytes,
     feedback_type: dbFeedback.feedback_type,
-    feedback_value_text: dbFeedback.feedback_value_text,
-    feedback_value_structured,
+    resource_description: resource_description_mapped,
     created_at: dbFeedback.created_at,
     updated_at: dbFeedback.updated_at,
   };
@@ -357,83 +363,6 @@ async function prepareNextStageSeedPrompt(
   return { prompt: renderedPrompt, path };
 }
 
-async function storeAndSummarizeUserFeedback(
-  dbClient: SupabaseClient<Database>,
-  user: User,
-  payload: SubmitStageResponsesPayload,
-  dependencies: { fileManager: IFileManager },
-  projectId: string,
-): Promise<{
-  data?: {
-    feedbackRecords: DialecticFeedback[];
-    consolidatedFeedbackPath?: string;
-  };
-  error?: ServiceError;
-}> {
-  const { sessionId, currentStageSlug, currentIterationNumber, responses } =
-    payload;
-
-  // Insert feedback records into the database
-  const feedbackToInsert = responses.map((r) => ({
-    session_id: sessionId,
-    user_id: user.id,
-    contribution_id: r.originalContributionId,
-    feedback_type: 'text_response', // Assuming text response for now
-    feedback_value_text: r.responseText,
-  }));
-
-  const { data: insertedFeedback, error: insertError } = await dbClient
-    .from('dialectic_feedback')
-    .insert(feedbackToInsert)
-    .select();
-
-  if (insertError) {
-    return {
-      error: {
-        message: 'Failed to insert user feedback records.',
-        details: JSON.stringify(insertError),
-      },
-    };
-  }
-
-  // Consolidate feedback into a markdown file and upload
-  const consolidatedContent = responses
-    .map((r) => `> ${r.responseText}`)
-    .join('\n\n---\n\n');
-  const pathContext: PathContext = {
-    projectId: projectId,
-    sessionId,
-    iteration: currentIterationNumber,
-    stageSlug: currentStageSlug,
-    fileType: 'user_feedback',
-    originalFileName: `user_feedback_${currentStageSlug}.md`,
-  };
-
-  const uploadResponse = await dependencies.fileManager.uploadAndRegisterFile({
-    pathContext,
-    fileContent: consolidatedContent,
-    userId: user.id,
-    mimeType: 'text/markdown',
-    sizeBytes: new TextEncoder().encode(consolidatedContent).length,
-  });
-
-  if (uploadResponse.error) {
-    return {
-      error: {
-        message: 'Failed to upload consolidated user feedback.',
-        details: JSON.stringify(uploadResponse.error),
-      },
-    };
-  }
-
-  return {
-    data: {
-      feedbackRecords: insertedFeedback.map(mapDbFeedbackToInterface),
-      consolidatedFeedbackPath: uploadResponse.record?.storage_path,
-    },
-  };
-}
-
 export async function submitStageResponses(
   payload: SubmitStageResponsesPayload,
   dbClient: SupabaseClient<Database>,
@@ -447,9 +376,11 @@ export async function submitStageResponses(
   const { logger, fileManager, downloadFromStorage } = dependencies;
   const {
     sessionId,
-    currentStageSlug,
+    projectId,
+    stageSlug,
     currentIterationNumber,
     responses,
+    userStageFeedback,
   } = payload;
   logger.info(
     `[submitStageResponses] Received payload for session: ${sessionId}`,
@@ -462,11 +393,10 @@ export async function submitStageResponses(
   }
 
   if (
-    !sessionId || !currentStageSlug || !currentIterationNumber || !responses ||
-    responses.length === 0
+    !sessionId || !projectId || !stageSlug || !currentIterationNumber || responses === null || responses === undefined
   ) {
     return {
-      error: { message: 'Invalid payload: missing required fields.' },
+      error: { message: 'Invalid payload: missing required fields (sessionId, projectId, stageSlug, currentIterationNumber, and responses array must be provided).' },
       status: 400,
     };
   }
@@ -484,6 +414,7 @@ export async function submitStageResponses(
     .from('dialectic_sessions')
     .select('*, project:dialectic_projects(*), stage:dialectic_stages!current_stage_id(*)')
     .eq('id', sessionId)
+    .eq('dialectic_projects.id', projectId)
     .single();
 
   if (sessionError || !sessionData || !sessionData.project || !sessionData.stage) {
@@ -498,7 +429,7 @@ export async function submitStageResponses(
   if (sessionData.project.user_id !== user.id) {
     return { error: { message: 'User does not own the project.' }, status: 403 };
   }
-  if (sessionData.stage.slug !== currentStageSlug) {
+  if (sessionData.stage.slug !== stageSlug) {
     return { error: { message: 'Stage slug mismatch.' }, status: 400 };
   }
 
@@ -521,22 +452,70 @@ export async function submitStageResponses(
     }
   }
 
-  // --- 4. Store Feedback ---
-  const { data: feedbackData, error: feedbackError } =
-    await storeAndSummarizeUserFeedback(dbClient, user, payload, {
-      fileManager,
-    }, sessionData.project.id);
+  let savedStageFeedbackRecord: DialecticFeedback | null = null;
 
-  if (feedbackError) {
-    logger.error('Failed to store consolidated user feedback.', {
-      error: feedbackError.details,
+  // 2. Save the consolidated user feedback for the current stage if provided
+  if (userStageFeedback && userStageFeedback.content) {
+    logger.info('User stage feedback provided. Saving to storage...', {
+      sessionId,
+      projectId,
+      stageSlug,
+      iteration: currentIterationNumber,
     });
-    return { error: feedbackError, status: 500 };
+    try {
+      const feedbackPathContext: PathContext = {
+        projectId: projectId,
+        sessionId: sessionId,
+        iteration: currentIterationNumber,
+        stageSlug: stageSlug,
+        fileType: 'user_feedback',
+        originalFileName: `user_feedback_${stageSlug}.md`,
+      };
+
+      const feedbackCustomMetadata: Record<string, string> = {
+        feedbackType: userStageFeedback.feedbackType,
+      };
+
+      if (userStageFeedback.resourceDescription !== undefined) {
+        feedbackCustomMetadata.resourceDescription = JSON.stringify(userStageFeedback.resourceDescription);
+      }
+
+      const feedbackUploadContext = {
+        pathContext: feedbackPathContext,
+        fileContent: userStageFeedback.content,
+        mimeType: 'text/markdown',
+        sizeBytes: new TextEncoder().encode(userStageFeedback.content).length,
+        userId: user.id,
+        description: `User feedback for project ${projectId}, session ${sessionId}, stage ${stageSlug}, iteration ${currentIterationNumber}`,
+        customMetadata: feedbackCustomMetadata,
+      };
+
+      const { record: feedbackFileRecord, error: fileManagerError } =
+        await fileManager.uploadAndRegisterFile(feedbackUploadContext);
+
+      if (fileManagerError || !feedbackFileRecord) {
+        logger.error('Failed to save user stage feedback via FileManagerService.', {
+          error: fileManagerError,
+        });
+        return {
+          error: {
+            message: 'Failed to save user feedback.',
+            details: fileManagerError?.message,
+          },
+          status: 500,
+        };
+      }
+      savedStageFeedbackRecord = feedbackFileRecord as unknown as DialecticFeedback;
+      logger.info('User stage feedback saved successfully.', {
+        feedbackRecordId: savedStageFeedbackRecord.id,
+      });
+    } catch (e) {
+      logger.error('Exception while saving user stage feedback.', { error: e });
+      return { error: { message: 'Failed to save user feedback due to an exception.' }, status: 500 };
+    }
   }
 
-  const { feedbackRecords } = feedbackData!;
-
-  // --- 5. Determine Next Stage ---
+  // --- 4. Determine Next Stage ---
   if (!sessionData.project.process_template_id) {
     return {
       error: { message: 'Project is not associated with a process template.' },
@@ -579,7 +558,7 @@ export async function submitStageResponses(
     return {
       data: {
         message: 'Session completed successfully.',
-        feedbackRecords,
+        feedbackRecords: savedStageFeedbackRecord ? [savedStageFeedbackRecord] : [],
         nextStageSeedPromptPath: null,
         updatedSession: updated,
       },
@@ -587,51 +566,17 @@ export async function submitStageResponses(
     };
   }
 
-  logger.info(`Transitioning from ${currentStageSlug} to ${nextStage.slug}`);
+  logger.info(`Transitioning from ${stageSlug} to ${nextStage.slug}`);
 
-  // --- 6. Prepare and Store Next Stage Seed Prompt ---
-  let nextStageSeedPromptPath: string | undefined;
+  // --- 5. Prepare and Store Next Stage Seed Prompt ---
+  let seedPromptResult: { prompt: string; path: PathContext } | undefined; // Initialize as undefined
+  let seedPromptError: Error | null = null;
   try {
-    // Manually construct the correctly-typed object for prompt preparation.
-    if (!sessionData.project.process_template_id) {
-      // This check is repeated for safety but the earlier one should catch it.
-      throw new Error('Project is not associated with a process template.');
-    }
-    const { data: templateData, error: templateError } = await dbClient
-      .from('dialectic_process_templates')
-      .select('*')
-      .eq('id', sessionData.project.process_template_id)
-      .single();
-
-    if (templateError || !templateData) {
-      throw new Error(
-        `Failed to fetch process template: ${templateError?.message || 'Not found'}`,
-      );
-    }
-
-    const sessionForPrompting = {
-      ...sessionData,
-      project: {
-        ...sessionData.project,
-        process_template: templateData,
-      },
-      stage: sessionData.stage,
-    };
-
-    const { prompt, path } = await prepareNextStageSeedPrompt(
-      sessionForPrompting,
+    seedPromptResult = await prepareNextStageSeedPrompt(
+      sessionData,
       nextStage,
       { logger, downloadFromStorage, dbClient },
     );
-    const uploadResponse = await fileManager.uploadAndRegisterFile({
-      pathContext: path,
-      fileContent: prompt,
-      userId: user.id,
-      mimeType: 'text/markdown',
-      sizeBytes: new TextEncoder().encode(prompt).length,
-    });
-    if (uploadResponse.error) throw uploadResponse.error;
-    nextStageSeedPromptPath = uploadResponse.record?.storage_path;
   } catch (err) {
     const errorMessage = (err && typeof err === 'object' && 'message' in err)
       ? (err as { message: string }).message
@@ -640,40 +585,100 @@ export async function submitStageResponses(
       `Failed to prepare or save seed prompt for next stage: ${nextStage.slug}`,
       { error: err },
     );
-    return {
-      error: {
-        message: 'Failed to prepare the next stage.',
-        details: errorMessage,
-      },
-      status: 500,
-    };
+    seedPromptError = new Error(errorMessage);
   }
 
-  // --- 7. Update Session ---
+  // Combined check for an error during preparation OR an undefined result
+  if (seedPromptError || !seedPromptResult) {
+    // This block handles cases where seed prompt preparation failed or yielded no result
+    const errorMessage = seedPromptError ? seedPromptError.message : 'Result was undefined without explicit error.';
+    logger.error('Failed to prepare next stage seed prompt.', {
+      errorDetails: errorMessage,
+    });
+    return {
+      status: 500, // Critical failure
+      error: { message: `Failed to prepare seed prompt for the next stage: ${errorMessage}` },
+    };
+  }
+  // If we reach here, seedPromptResult IS defined and seedPromptError is null.
+  // Now, try to save the seed prompt to storage.
+  let savedSeedPromptRecord: DialecticFeedback | null = null; // This might need to be a more generic file record type
+  let nextStageSeedPromptPathForResult: string | null = null; // Changed from const and initialized to null
+
+  try {
+    const seedPromptUploadContext = {
+      pathContext: seedPromptResult.path,
+      fileContent: seedPromptResult.prompt,
+      mimeType: 'text/markdown',
+      sizeBytes: new TextEncoder().encode(seedPromptResult.prompt).length,
+      userId: user.id,
+      description:
+        `Seed prompt for project ${projectId}, session ${sessionId}, stage ${nextStage.slug}, iteration ${sessionData.iteration_count + 1}`,
+      customMetadata: {
+        promptType: 'NextStageSeed_v1',
+        targetStageSlug: nextStage.slug,
+        sourceStageSlug: stageSlug,
+      },
+    };
+    const { record: seedFileRecord, error: seedFileError } =
+      await fileManager.uploadAndRegisterFile(seedPromptUploadContext);
+
+    if (seedFileError || !seedFileRecord) {
+      logger.error('Failed to save next stage seed prompt via FileManagerService.', {
+        error: seedFileError,
+      });
+      return {
+        status: 500, // Critical failure
+        error: {
+          message: 'Failed to save seed prompt for the next stage.',
+          details: seedFileError?.message,
+        },
+      };
+    }
+    // Consider if this cast is always safe, or if seedFileRecord is a generic file record
+    savedSeedPromptRecord = seedFileRecord as unknown as DialecticFeedback;
+    nextStageSeedPromptPathForResult = savedSeedPromptRecord.storage_path; // Assign actual storage path
+    logger.info('Next stage seed prompt saved successfully.', {
+      seedPromptRecordId: savedSeedPromptRecord.id,
+    });
+  } catch (e) {
+    const errorMessage = (e && typeof e === 'object' && 'message' in e)
+    ? (e as { message: string }).message
+    : String(e);
+    logger.error('Exception while saving next stage seed prompt.', { error: e });
+    return {
+        status: 500, // Critical failure
+        error: { message: `Failed to save seed prompt for the next stage due to an exception: ${errorMessage}` },
+     };
+  }
+
+  // --- 6. Update Session Status ---
   const { data: updatedSession, error: updateError } = await dbClient
     .from('dialectic_sessions')
     .update({
-      updated_at: new Date().toISOString(),
       current_stage_id: nextStage.id,
       status: `pending_${nextStage.slug}`,
+      updated_at: new Date().toISOString(),
     })
     .eq('id', sessionId)
     .select()
     .single();
 
   if (updateError) {
+    logger.error('Failed to update session to next stage.', { error: updateError });
+    // This is a more critical error as the session state is inconsistent.
     return {
-      error: { message: 'Failed to update session for next stage.', details: JSON.stringify(updateError) },
+      error: { message: 'Failed to update session to next stage.', details: updateError.message },
       status: 500,
     };
   }
-
+  
   return {
     data: {
-      message: `Transitioned to ${nextStage.slug}`,
-      feedbackRecords,
-      nextStageSeedPromptPath: nextStageSeedPromptPath ?? null,
-      updatedSession,
+      message: 'Responses submitted and next stage prepared.',
+      updatedSession: updatedSession, 
+      feedbackRecords: savedStageFeedbackRecord ? [savedStageFeedbackRecord] : [],
+      nextStageSeedPromptPath: nextStageSeedPromptPathForResult, // Use the variable holding the actual storage path
     },
     status: 200,
   };

@@ -80,7 +80,13 @@ Deno.test('submitStageResponses', async (t) => {
 
   await t.step('2.1 Fails if the user is not authenticated', async () => {
     // 2.1.1 Arrange
-    const mockPayload: SubmitStageResponsesPayload = { sessionId: crypto.randomUUID(), currentStageSlug: mockThesisStage.slug, currentIterationNumber: 1, responses: [{ originalContributionId: 'id', responseText: 'text'}] , fileManager: createMockFileManagerService()};
+    const mockPayload: SubmitStageResponsesPayload = { 
+      sessionId: crypto.randomUUID(), 
+      projectId: testProjectId,
+      stageSlug: mockThesisStage.slug,
+      currentIterationNumber: 1, 
+      responses: [{ originalContributionId: 'id', responseText: 'text'}] 
+    };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, {});
 
     // 2.1.2 Act
@@ -103,10 +109,10 @@ Deno.test('submitStageResponses', async (t) => {
     const otherUserId = crypto.randomUUID();
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
-      currentStageSlug: mockThesisStage.slug,
+      projectId: testProjectId,
+      stageSlug: mockThesisStage.slug,
       currentIterationNumber: 1,
-      responses: [{ originalContributionId: 'id', responseText: 'text' }],
-      fileManager: createMockFileManagerService(),
+      responses: [{ originalContributionId: 'id', responseText: 'text' }]
     };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, {
       genericMockResults: {
