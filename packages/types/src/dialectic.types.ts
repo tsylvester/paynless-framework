@@ -111,6 +111,7 @@ export interface DialecticSession {
 
   dialectic_session_models?: DialecticSessionModel[];
   dialectic_contributions?: DialecticContribution[];
+  feedback?: DialecticFeedback[];
 }
 
 export interface DialecticSessionModel {

@@ -702,14 +702,14 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
     *   `[✅] 2.Y.5.5 [COMMIT]` refactor(be): adapt submitStageResponses to handle file-based user feedback
 
 *   `[ ] 2.Y.6 [API/STORE]` **Update API Client and Store for Feedback File Handling**
-    *   `[ ] 2.Y.6.1 [TEST-UNIT]` In `packages/api/src/dialectic.api.test.ts`, update tests for `submitStageResponses` to use the new payload structure. (RED)
-    *   `[ ] 2.Y.6.2 [API]` In `packages/api/src/dialectic.api.ts`, update the `submitStageResponses` method signature and payload. (GREEN)
-    *   `[ ] 2.Y.6.3 [TEST-UNIT]` Run `dialectic.api.test.ts`.
-    *   `[ ] 2.Y.6.4 [TEST-UNIT]` In `packages/store/src/dialecticStore.test.ts`, update tests for `submitStageResponses` thunk with the new payload. (RED)
-    *   `[ ] 2.Y.6.5 [STORE]` In `packages/store/src/dialecticStore.ts`, update the `submitStageResponses` thunk and its payload type. (GREEN)
-    *   `[ ] 2.Y.6.6 [TEST-UNIT]` Run `dialecticStore.test.ts`.
-    *   `[ ] 2.Y.6.7 [STORE]` Ensure `fetchDialecticProjectDetails` correctly fetches and stores `DialecticFeedback` records (metadata for feedback files) associated with sessions/projects. Update selectors if needed (e.g., `selectFeedbackForStageIteration`).
-    *   `[ ] 2.Y.6.8 [COMMIT]` feat(api,store): update API and store for file-based feedback submission
+    *   `[✅] 2.Y.6.1 [TEST-UNIT]` In `packages/api/src/dialectic.api.test.ts`, update tests for `submitStageResponses` to use the new payload structure. (RED)
+    *   `[✅] 2.Y.6.2 [API]` In `packages/api/src/dialectic.api.ts`, update the `submitStageResponses` method signature and payload. (GREEN)
+    *   `[✅] 2.Y.6.3 [TEST-UNIT]` Run `dialectic.api.test.ts`.
+    *   `[✅] 2.Y.6.4 [TEST-UNIT]` In `packages/store/src/dialecticStore.test.ts`, update tests for `submitStageResponses` thunk with the new payload. (RED)
+    *   `[✅] 2.Y.6.5 [STORE]` In `packages/store/src/dialecticStore.ts`, update the `submitStageResponses` thunk and its payload type. (GREEN)
+    *   `[✅] 2.Y.6.6 [TEST-UNIT]` Run `dialecticStore.test.ts`.
+    *   `[✅] 2.Y.6.7 [STORE]` Ensure `fetchDialecticProjectDetails` correctly fetches and stores `DialecticFeedback` records (metadata for feedback files) associated with sessions/projects. Update selectors if needed (e.g., `selectFeedbackForStageIteration`).
+    *   `[✅] 2.Y.6.8 [COMMIT]` feat(api,store): update API and store for file-based feedback submission
 
 *   `[ ] 2.Y.7 [UI/REFACTOR]` **Refactor UI for Feedback Consolidation and Submission**
     *   `[ ] 2.Y.7.1 [TEST-UNIT]` In relevant UI component tests (e.g., `SessionContributionsDisplayCard.test.tsx` or wherever stage progression/submission is handled): (RED)

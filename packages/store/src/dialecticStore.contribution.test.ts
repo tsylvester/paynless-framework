@@ -382,13 +382,26 @@ describe('useDialecticStore', () => {
         const mockSessionId = 'sess-submit-456';
         const mockStageSlug = 'thesis';
         const mockIteration = 1;
-        const mockPayload: SubmitStageResponsesPayload = {
+
+        const mockPayloadWithoutFeedback: SubmitStageResponsesPayload = {
             projectId: mockProjectId,
             sessionId: mockSessionId,
             stageSlug: mockStageSlug,
             currentIterationNumber: mockIteration,
-            responses: [{ originalModelContributionId: 'contrib-model-A', responseText: 'Feedback for A' }],
+            responses: [{ originalContributionId: 'contrib-model-A', responseText: 'Feedback for A' }],
         };
+
+        const validUserStageFeedback: SubmitStageResponsesPayload['userStageFeedback'] = {
+            content: 'This is great feedback!',
+            feedbackType: 'file_upload',
+            resourceDescription: { fileName: 'feedback.txt', fileSize: 1024 }
+        };
+
+        const mockPayloadWithFeedback: SubmitStageResponsesPayload = {
+            ...mockPayloadWithoutFeedback,
+            userStageFeedback: validUserStageFeedback,
+        };
+        
         const mockProjectForRefetch: DialecticProject = {
             id: mockProjectId,
             project_name: 'Test Project for Submission Refetched',
@@ -426,59 +439,94 @@ describe('useDialecticStore', () => {
             isSavingContributionEdit: false,
             saveContributionEditError: null,
         };
-        const mockSuccessResponse: SubmitStageResponsesResponse = {
-            userFeedbackStoragePath: 'path/to/feedback.json',
+
+        const mockSuccessBaseResponse: Omit<SubmitStageResponsesResponse, 'userFeedbackStoragePath'> = {
             nextStageSeedPromptStoragePath: 'path/to/next_seed.md',
             updatedSession: { ...(mockProjectForRefetch.dialectic_sessions && mockProjectForRefetch.dialectic_sessions[0]), current_iteration: 2 } as DialecticSession,
             message: 'Successfully submitted and prepared next seed.',
         };
+        
+        const mockSuccessResponseWithFeedback: SubmitStageResponsesResponse = {
+            ...mockSuccessBaseResponse,
+            userFeedbackStoragePath: 'path/to/user_feedback.json', 
+        };
 
-        it('should set loading state, call API, refetch project details, and show success on successful submission', async () => {
-            api.dialectic().submitStageResponses.mockResolvedValueOnce({
-                data: mockSuccessResponse,
-                status: 200,
+        const mockSuccessResponseWithoutFeedback: SubmitStageResponsesResponse = {
+            ...mockSuccessBaseResponse,
+            userFeedbackStoragePath: 'path/to/user_feedback.json', 
+        };
+
+        describe('successful submission', () => {
+            it('with user feedback: should set loading state, call API, refetch project details, and show success', async () => {
+                api.dialectic().submitStageResponses.mockResolvedValueOnce({
+                    data: mockSuccessResponseWithFeedback,
+                    status: 200,
+                });
+                api.dialectic().getProjectDetails.mockResolvedValueOnce({
+                    data: mockProjectForRefetch,
+                    status: 200,
+                });
+    
+                const { submitStageResponses } = useDialecticStore.getState();
+                const result = await submitStageResponses(mockPayloadWithFeedback);
+    
+                expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
+                expect(useDialecticStore.getState().submitStageResponsesError).toBeNull();
+                expect(api.dialectic().submitStageResponses).toHaveBeenCalledWith(mockPayloadWithFeedback);
+                expect(api.dialectic().getProjectDetails).toHaveBeenCalledWith(mockProjectId);
+                expect(useDialecticStore.getState().currentProjectDetail?.id).toEqual(mockProjectForRefetch.id);
+                expect(result?.data).toEqual(mockSuccessResponseWithFeedback);
             });
-            api.dialectic().getProjectDetails.mockResolvedValueOnce({
-                data: mockProjectForRefetch,
-                status: 200,
+
+            it('without user feedback: should set loading state, call API, refetch project details, and show success', async () => {
+                api.dialectic().submitStageResponses.mockResolvedValueOnce({
+                    data: mockSuccessResponseWithoutFeedback,
+                    status: 200,
+                });
+                api.dialectic().getProjectDetails.mockResolvedValueOnce({
+                    data: mockProjectForRefetch,
+                    status: 200,
+                });
+    
+                const { submitStageResponses } = useDialecticStore.getState();
+                const result = await submitStageResponses(mockPayloadWithoutFeedback);
+    
+                expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
+                expect(useDialecticStore.getState().submitStageResponsesError).toBeNull();
+                expect(api.dialectic().submitStageResponses).toHaveBeenCalledWith(mockPayloadWithoutFeedback);
+                expect(api.dialectic().getProjectDetails).toHaveBeenCalledWith(mockProjectId);
+                expect(useDialecticStore.getState().currentProjectDetail?.id).toEqual(mockProjectForRefetch.id);
+                expect(result?.data).toEqual(mockSuccessResponseWithoutFeedback);
             });
-
-            const { submitStageResponses } = useDialecticStore.getState();
-            const result = await submitStageResponses(mockPayload);
-
-            expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
-            expect(useDialecticStore.getState().submitStageResponsesError).toBeNull();
-            expect(api.dialectic().submitStageResponses).toHaveBeenCalledWith(mockPayload);
-            expect(api.dialectic().getProjectDetails).toHaveBeenCalledWith(mockProjectId);
-            expect(useDialecticStore.getState().currentProjectDetail?.id).toEqual(mockProjectForRefetch.id);
-            expect(result?.data).toEqual(mockSuccessResponse);
         });
 
-        it('should set error state and show error toast on API error', async () => {
-            const apiError: ApiError = { code: 'SUBMISSION_FAILED', message: 'Failed to submit responses.' };
-            api.dialectic().submitStageResponses.mockResolvedValue({ error: apiError, status: 500 });
-        
-            const { submitStageResponses } = useDialecticStore.getState();
-            const result = await submitStageResponses(mockPayload);
-        
-            expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
-            expect(useDialecticStore.getState().submitStageResponsesError).toEqual(apiError);
-            expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
-            expect(result?.error).toEqual(apiError);
-        });
-        
-        it('should set network error state and show error toast if API call throws', async () => {
-            const networkErrorMessage = 'Network connection failed for submission';
-            api.dialectic().submitStageResponses.mockRejectedValue(new Error(networkErrorMessage));
-        
-            const { submitStageResponses } = useDialecticStore.getState();
-            const result = await submitStageResponses(mockPayload);
-        
-            expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
-            const expectedError: ApiError = { message: networkErrorMessage, code: 'NETWORK_ERROR' };
-            expect(useDialecticStore.getState().submitStageResponsesError).toEqual(expectedError);
-            expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
-            expect(result?.error).toEqual(expectedError);
+        describe('failed submission', () => {
+            it('should set error state on API error (when submitting with feedback)', async () => {
+                const apiError: ApiError = { code: 'SUBMISSION_FAILED', message: 'Failed to submit responses.' };
+                api.dialectic().submitStageResponses.mockResolvedValue({ error: apiError, status: 500 });
+            
+                const { submitStageResponses } = useDialecticStore.getState();
+                const result = await submitStageResponses(mockPayloadWithFeedback); // Using withFeedback for this test
+            
+                expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
+                expect(useDialecticStore.getState().submitStageResponsesError).toEqual(apiError);
+                expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
+                expect(result?.error).toEqual(apiError);
+            });
+            
+            it('should set network error state if API call throws (when submitting with feedback)', async () => {
+                const networkErrorMessage = 'Network connection failed for submission';
+                api.dialectic().submitStageResponses.mockRejectedValue(new Error(networkErrorMessage));
+            
+                const { submitStageResponses } = useDialecticStore.getState();
+                const result = await submitStageResponses(mockPayloadWithFeedback); // Using withFeedback for this test
+            
+                expect(useDialecticStore.getState().isSubmittingStageResponses).toBe(false);
+                const expectedError: ApiError = { message: networkErrorMessage, code: 'NETWORK_ERROR' };
+                expect(useDialecticStore.getState().submitStageResponsesError).toEqual(expectedError);
+                expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
+                expect(result?.error).toEqual(expectedError);
+            });
         });
     });
 

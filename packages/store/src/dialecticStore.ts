@@ -237,6 +237,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
           projectData.dialectic_sessions = projectData.dialectic_sessions.map(session => ({
             ...session,
             dialectic_contributions: session.dialectic_contributions || [], // Default to empty array
+            feedback: session.feedback || [], // Default to empty array for feedback
           }));
         }
         

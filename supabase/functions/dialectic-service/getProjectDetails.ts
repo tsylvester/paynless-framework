@@ -42,7 +42,8 @@ import {
         dialectic_process_templates ( * ),
         resources:dialectic_project_resources!dialectic_project_resources_project_id_fkey (*),
         dialectic_sessions (*,
-          dialectic_contributions (*)
+          dialectic_contributions (*),
+          dialectic_feedback (*)
         )
       `)
       .eq('id', projectId)

@@ -7,6 +7,7 @@ import type {
     DialecticStage,
     DialecticContribution,
     DialecticDomain,
+    DialecticFeedback,
 } from '@paynless/types';
 import { createSelector } from 'reselect';
 
@@ -209,4 +210,25 @@ export const selectIsStageReadyForSessionIteration = (
     }
 
     return false;
+};
+
+export const selectFeedbackForStageIteration = (
+  state: DialecticStateValues,
+  sessionId: string,
+  stageSlug: string,
+  iterationNumber: number
+): DialecticFeedback[] => {
+  const project = state.currentProjectDetail;
+  if (!project || !project.dialectic_sessions) {
+    return [];
+  }
+
+  const session = project.dialectic_sessions.find(s => s.id === sessionId);
+  if (!session || !session.feedback) {
+    return [];
+  }
+
+  return session.feedback.filter(
+    fb => fb.stage_slug === stageSlug && fb.iteration_number === iterationNumber
+  );
 };

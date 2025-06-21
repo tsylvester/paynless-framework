@@ -42,7 +42,8 @@ import {
     selectGenerateContributionsError,
     selectAllContributionsFromCurrentProject,
     selectSessionById,
-    selectStageById
+    selectStageById,
+    selectFeedbackForStageIteration
 } from './dialecticStore.selectors';
 import { initialDialecticStateValues } from './dialecticStore';
 import type { 
@@ -57,6 +58,7 @@ import type {
     DialecticSession,
     DialecticContribution,
     DialecticProjectResource,
+    DialecticFeedback
 } from '@paynless/types';
 
 const mockThesisStage: DialecticStage = {
@@ -120,6 +122,43 @@ describe('Dialectic Store Selectors', () => {
     const mockSaveContributionError: ApiError = { code: 'SAVE_ERR', message: 'Test Save Error' };
     const mockGenerateContributionsError: ApiError = { code: 'GEN_ERR', message: 'Test Generation Error' };
 
+    const mockFeedback1S1ThesisIter1: DialecticFeedback = {
+        id: 'fb1-s1-thesis-i1',
+        session_id: 'session-1',
+        project_id: 'projDetail1',
+        user_id: 'user1',
+        stage_slug: 'thesis',
+        iteration_number: 1,
+        storage_bucket: 'test-bucket',
+        storage_path: 'path/to/feedback1.md',
+        file_name: 'feedback1.md',
+        mime_type: 'text/markdown',
+        size_bytes: 100,
+        feedback_type: 'StageReviewSummary_v1',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+
+    const mockFeedback2S1ThesisIter1: DialecticFeedback = {
+        ...mockFeedback1S1ThesisIter1,
+        id: 'fb2-s1-thesis-i1',
+        file_name: 'feedback2.md',
+    };
+
+    const mockFeedbackS1AntithesisIter1: DialecticFeedback = {
+        ...mockFeedback1S1ThesisIter1,
+        id: 'fb1-s1-antithesis-i1',
+        stage_slug: 'antithesis',
+        file_name: 'feedback_antithesis.md',
+    };
+
+    const mockFeedbackS1ThesisIter2: DialecticFeedback = {
+        ...mockFeedback1S1ThesisIter1,
+        id: 'fb1-s1-thesis-i2',
+        iteration_number: 2,
+        file_name: 'feedback_iter2.md',
+    };
+
     const mockSessions: DialecticSession[] = [
         {
             id: 'session-1',
@@ -137,6 +176,7 @@ describe('Dialectic Store Selectors', () => {
                 { id: 'c1-s1', session_id: 'session-1' } as DialecticContribution,
                 { id: 'c2-s1', session_id: 'session-1' } as DialecticContribution,
             ],
+            feedback: [mockFeedback1S1ThesisIter1, mockFeedback2S1ThesisIter1, mockFeedbackS1AntithesisIter1, mockFeedbackS1ThesisIter2],
         },
         {
             id: 'session-2',
@@ -153,6 +193,7 @@ describe('Dialectic Store Selectors', () => {
             dialectic_contributions: [
                 { id: 'c1-s2', session_id: 'session-2' } as DialecticContribution,
             ],
+            feedback: [],
         }
     ];
 
@@ -652,6 +693,86 @@ describe('Dialectic Store Selectors', () => {
             };
             const result = selectStageById(stateWithEmptyStages, existingStageId);
             expect(result).toBeUndefined();
+        });
+    });
+
+    // Tests for selectFeedbackForStageIteration
+    describe('selectFeedbackForStageIteration', () => {
+        it('should return correct feedback for a given session, stage, and iteration', () => {
+            const result = selectFeedbackForStageIteration(testState, 'session-1', 'thesis', 1);
+            expect(result).toEqual([mockFeedback1S1ThesisIter1, mockFeedback2S1ThesisIter1]);
+        });
+
+        it('should return feedback for a different stage in the same session and iteration', () => {
+            const result = selectFeedbackForStageIteration(testState, 'session-1', 'antithesis', 1);
+            expect(result).toEqual([mockFeedbackS1AntithesisIter1]);
+        });
+
+        it('should return feedback for a different iteration of the same stage and session', () => {
+            const result = selectFeedbackForStageIteration(testState, 'session-1', 'thesis', 2);
+            expect(result).toEqual([mockFeedbackS1ThesisIter2]);
+        });
+
+        it('should return an empty array if currentProjectDetail is null', () => {
+            const stateWithNoProject = { ...initialDialecticStateValues, currentProjectDetail: null };
+            const result = selectFeedbackForStageIteration(stateWithNoProject, 'session-1', 'thesis', 1);
+            expect(result).toEqual([]);
+        });
+
+        it('should return an empty array if project has no sessions', () => {
+            const projectWithNoSessions: DialecticProject = { ...mockProjectDetail, dialectic_sessions: [] };
+            const stateWithNoSessions = { ...testState, currentProjectDetail: projectWithNoSessions };
+            const result = selectFeedbackForStageIteration(stateWithNoSessions, 'session-1', 'thesis', 1);
+            expect(result).toEqual([]);
+        });
+        
+        it('should return an empty array if project sessions is null', () => {
+            const projectWithNullSessions: DialecticProject = { ...mockProjectDetail, dialectic_sessions: null as any }; // Cast to any to bypass TS error for testing
+            const stateWithNullSessions = { ...testState, currentProjectDetail: projectWithNullSessions };
+            const result = selectFeedbackForStageIteration(stateWithNullSessions, 'session-1', 'thesis', 1);
+            expect(result).toEqual([]);
+        });
+
+        it('should return an empty array if session is not found', () => {
+            const result = selectFeedbackForStageIteration(testState, 'non-existent-session', 'thesis', 1);
+            expect(result).toEqual([]);
+        });
+
+        it('should return an empty array if session has no feedback property', () => {
+            const sessionWithoutFeedback: DialecticSession = { ...mockSessions[0], feedback: undefined };
+            const projectWithModifiedSession: DialecticProject = { 
+                ...mockProjectDetail, 
+                dialectic_sessions: [sessionWithoutFeedback, mockSessions[1]] 
+            };
+            const stateWithModifiedSession = { ...testState, currentProjectDetail: projectWithModifiedSession };
+            const result = selectFeedbackForStageIteration(stateWithModifiedSession, 'session-1', 'thesis', 1);
+            expect(result).toEqual([]);
+        });
+        
+        it('should return an empty array if session feedback is null', () => {
+            const sessionWithNullFeedback: DialecticSession = { ...mockSessions[0], feedback: null as any };  // Cast to any to bypass TS error for testing
+            const projectWithModifiedSession: DialecticProject = { 
+                ...mockProjectDetail, 
+                dialectic_sessions: [sessionWithNullFeedback, mockSessions[1]] 
+            };
+            const stateWithModifiedSession = { ...testState, currentProjectDetail: projectWithModifiedSession };
+            const result = selectFeedbackForStageIteration(stateWithModifiedSession, 'session-1', 'thesis', 1);
+            expect(result).toEqual([]);
+        });
+
+        it('should return an empty array if no feedback matches stageSlug', () => {
+            const result = selectFeedbackForStageIteration(testState, 'session-1', 'non-existent-stage', 1);
+            expect(result).toEqual([]);
+        });
+
+        it('should return an empty array if no feedback matches iterationNumber', () => {
+            const result = selectFeedbackForStageIteration(testState, 'session-1', 'thesis', 99);
+            expect(result).toEqual([]);
+        });
+
+        it('should return an empty array for a session that has no feedback records', () => {
+            const result = selectFeedbackForStageIteration(testState, 'session-2', 'thesis', 1);
+            expect(result).toEqual([]);
         });
     });
 });

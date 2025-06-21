@@ -10,7 +10,8 @@ import {
     DialecticSession, 
     DialecticSessionModel, 
     AIModelCatalogEntry,
-    DialecticProcessTemplate
+    DialecticProcessTemplate,
+    DialecticFeedback
 } from "./dialectic.interface.ts";
 import type { User } from "npm:@supabase/gotrue-js@^2.6.3";
 
@@ -214,10 +215,25 @@ describe("getProjectDetails", () => {
     assertEquals(result.error?.status, 500);
   });
 
-  type MockDbProjectData = Omit<DialecticProject, 'sessions' | 'contributions' | 'domain_name' | 'process_template'> & {
-    dialectic_sessions: (Omit<DialecticSession, 'contributions' | 'dialectic_contributions'> & {
-        dialectic_contributions?: Partial<DialecticContribution>[] | null;
-    })[] | null;
+  // Define MockSessionForDb explicitly
+  type MockSessionForDb = {
+    id: string;
+    project_id: string;
+    session_description: string | null;
+    iteration_count: number;
+    created_at: string;
+    updated_at: string;
+    status: string | null;
+    associated_chat_id: string | null;
+    current_stage_id: string | null;
+    selected_model_catalog_ids: string[] | null;
+    user_input_reference_url: string | null;
+    dialectic_contributions?: Partial<DialecticContribution>[] | null;
+    dialectic_feedback?: Partial<DialecticFeedback>[] | null; // snake_case
+  };
+
+  type MockDbProjectData = Omit<DialecticProject, 'sessions' | 'contributions' | 'domain_name' | 'process_template' | 'dialectic_sessions'> & {
+    dialectic_sessions: MockSessionForDb[] | null; // Use the new explicit type
     dialectic_domains: { name: string } | null;
     dialectic_process_templates: Partial<DialecticProcessTemplate> | null;
     process_template_id: string | null;
@@ -261,6 +277,7 @@ describe("getProjectDetails", () => {
             stage: 'thesis' 
             },
           ],
+          dialectic_feedback: [],
         },
         {
           id: "session-2",
@@ -275,6 +292,7 @@ describe("getProjectDetails", () => {
           selected_model_catalog_ids: ["model-1"],
           user_input_reference_url: null,
           dialectic_contributions: [],
+          dialectic_feedback: [],
         },
          {
           id: "session-3",
@@ -289,6 +307,7 @@ describe("getProjectDetails", () => {
           status: "pending_thesis",
           associated_chat_id: "chat-3",
           dialectic_contributions: null, 
+          dialectic_feedback: null,
         },
       ],
       dialectic_domains: { name: "General" },
@@ -369,7 +388,8 @@ describe("getProjectDetails", () => {
         dialectic_process_templates ( * ),
         resources:dialectic_project_resources!dialectic_project_resources_project_id_fkey (*),
         dialectic_sessions (*,
-          dialectic_contributions (*)
+          dialectic_contributions (*),
+          dialectic_feedback (*)
         )
       `.trim().replace(/\s+/g, ' ');
       
