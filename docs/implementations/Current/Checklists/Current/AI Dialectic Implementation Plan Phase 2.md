@@ -232,8 +232,8 @@ While the project is advancing well, these three areas represent fundamental, un
 *   [X] Add better explanation of stages on StageTabCard
 *   [X] Add model selector to SessionInfoCard to set models for the session
 *   [X] Remove Generate Thesis Contributions button from Contributions Display component 
-*   [ ] When Contributions already exist, change "Generate {Stage}" to "Regenerate {Stage}"
-*   [ ] Add "Begin Next Stage" button to Contributions tab to signal it's time to move on. 
+*   [X] When Contributions already exist, change "Generate {Stage}" to "Regenerate {Stage}"
+*   [X] Add "Begin Next Stage" button to Contributions tab to signal it's time to move on. 
 *   [ ] (Too complex for now) Use TextInputArea on SessionInfoCard so users can edit & save their prompt 
 *   [ ] (Too complex for now) When overlays are not provided, the assembler should omit the section. 
 
@@ -321,7 +321,7 @@ While the project is advancing well, these three areas represent fundamental, un
 
 ---
 
-*   `[ ] 2.B.1 [STORE]` **Create `selectIsStageReadyForSessionIteration` Selector**
+*   `[✅] 2.B.1 [STORE]` **Create `selectIsStageReadyForSessionIteration` Selector**
     *   `[✅] 2.B.1.1 [TEST-UNIT]` In `packages/store/src/dialecticStore.selectors.test.ts`, write unit tests for a new selector `selectIsStageReadyForSessionIteration`. (RED)
         *   Test scenarios:
             *   Project, session, stage, and matching seed prompt resource exist: returns `true`.
@@ -533,7 +533,7 @@ While the project is advancing well, these three areas represent fundamental, un
     *   [✅] Refactor exportProject to use new file management logic, ensure all files are saved into the correct file tree structure and zipped into the export file. 
     *   [ ] exportProject becomes the basis for syncing the file tree to other storage tools like GitHub, Dropbox, etc. 
 
-*   `[ ] 2.X.2.4 [COMMIT]` refactor(be): refactor dialectic-service actions to use FileManagerService
+*   `[✅] 2.X.2.4 [COMMIT]` refactor(be): refactor dialectic-service actions to use FileManagerService
 
 ---
 
@@ -582,6 +582,132 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
         4.  Submit feedback.
     *   `[ ] 2.X.4.3.2` After testing, inspect the Supabase Storage bucket using the file browser. Verify that the directory structure and file names are 100% correct according to the architectural specification.
 *   `[✅] 2.X.4.4 [COMMIT]` feat(system): complete architectural refactor for unified file management
+
+---
+
+## Section 2.Y: Refactor User Feedback to File-Based Storage
+
+**Objective:** To transition the storage of user feedback from direct database text fields to Markdown files within the designated Supabase Storage structure. This aligns with the project's overall file management strategy, facilitates easier export/sync, and prevents database bloat. The `dialectic_feedback` table will store metadata and a link to these feedback files.
+
+---
+
+*   `[✅] 2.Y.1 [DB]` **Update `dialectic_feedback` Table Schema**
+    *   `[✅] 2.Y.1.2 [DB]` Create a new Supabase migration script (`YYYYMMDDHHMMSS_update_dialectic_feedback.sql`):
+        *   `[✅]` `ALTER TABLE public.dialectic_feedback DROP COLUMN IF EXISTS feedback_value_text;`
+        *   `[✅]` `ALTER TABLE public.dialectic_feedback DROP COLUMN IF EXISTS feedback_value_structured;`
+        *   `[✅]` `ALTER TABLE public.dialectic_feedback DROP COLUMN IF EXISTS contribution_id;`
+        *   `[✅]` `ALTER TABLE public.dialectic_feedback ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES public.dialectic_projects(id) ON DELETE CASCADE NOT NULL;`
+        *   `[✅]` `ALTER TABLE public.dialectic_feedback ADD COLUMN IF NOT EXISTS stage_slug TEXT NOT NULL;`
+        *   `[✅]` `ALTER TABLE public.dialectic_feedback ADD COLUMN IF NOT EXISTS iteration_number INTEGER NOT NULL;`
+        *   `[✅]` `ALTER TABLE public.dialectic_feedback ADD COLUMN IF NOT EXISTS storage_bucket TEXT NOT NULL;`
+        *   `[✅]` `ALTER TABLE public.dialectic_feedback ADD COLUMN IF NOT EXISTS storage_path TEXT NOT NULL;`
+        *   `[✅]` `ALTER TABLE public.dialectic_feedback ADD COLUMN IF NOT EXISTS file_name TEXT NOT NULL;`
+        *   `[✅]` `ALTER TABLE public.dialectic_feedback ADD COLUMN IF NOT EXISTS mime_type TEXT NOT NULL DEFAULT 'text/markdown';`
+        *   `[✅]` `ALTER TABLE public.dialectic_feedback ADD COLUMN IF NOT EXISTS size_bytes INTEGER NOT NULL;`
+        *   `[✅]` `ALTER TABLE public.dialectic_feedback ALTER COLUMN feedback_type SET NOT NULL;` (Ensure `feedback_type` describes the feedback file, e.g., "StageReviewSummary")
+        *   `[✅]` `ALTER TABLE public.dialectic_feedback ADD COLUMN IF NOT EXISTS resource_description JSONB NULL;`
+        *   `[✅]` `ALTER TABLE public.dialectic_feedback ADD CONSTRAINT unique_session_stage_iteration_feedback UNIQUE (session_id, project_id, stage_slug, iteration_number);`
+        *   `[✅]` (GREEN)
+    *   `[✅] 2.Y.1.4 [DB]` Regenerate database types: `supabase gen types typescript --project-id "$PROJECT_REF" --schema public > supabase/functions/types_db.ts`.
+    *   `[✅] 2.Y.1.5 [COMMIT]` feat(db): update dialectic_feedback table for file-based storage
+
+*   `[ ] 2.Y.2 [TYPES]` **Update Shared Type Definitions**
+    *   `[ ] 2.Y.2.1 [TYPES]` In `packages/types/src/dialectic.types.ts`:
+        *   `[ ]` Modify `SubmitStageResponsesPayload`:
+            *   Add optional `userStageFeedback: { content: string; feedbackType: string; resourceDescription?: Record<string, any>; }`.
+        *   `[ ]` Define/Update `DialecticFeedback` interface to match the new table structure (id, session_id, project_id, user_id, stage_slug, iteration_number, storage_bucket, storage_path, file_name, mime_type, size_bytes, feedback_type, resource_description, created_at, updated_at).
+    *   `[ ] 2.Y.2.2 [TYPES]` Mirror changes from `packages/types/src/dialectic.types.ts` to `supabase/functions/dialectic-service/dialectic.interface.ts`.
+    *   `[ ] 2.Y.2.3 [COMMIT]` feat(types): update dialectic types for file-based user feedback
+
+*   `[ ] 2.Y.3 [BE/UTIL]` **Update Path Construction Utilities**
+    *   `[ ] 2.Y.3.1 [TEST-UNIT]` Review `supabase/functions/_shared/utils/path_constructor.test.ts` to determine its capabilities. It may require new unit tests for: (RED)
+        *   `sanitizeForPath(input: string): string` (lowercase, replaces spaces with underscores, removes unsafe chars).
+        *   `generateShortId(uuid: string, length: number = 8): string`.
+        *   `mapStageSlugToDirName(stageSlug: string): string` (e.g., 'thesis' -> '1_hypothesis', 'antithesis' -> '2_antithesis').
+    *   `[ ] 2.Y.3.2 [BE/UTIL]` If necessary, update `supabase/functions/_shared/utils/path_constructor.ts` to implement the functions. (GREEN)
+    *   `[ ] 2.Y.3.3 [TEST-UNIT]` Run tests for `path_constructor.ts`.
+    *   `[ ] 2.Y.3.4 [COMMIT]` feat(be,util): add slugifier and stage mapping utilities for path construction
+
+*   `[ ] 2.Y.4 [BE/SERVICE]` **Enhance `FileManagerService` for User Feedback Files**
+    *   `[ ] 2.Y.4.1 [TYPES]` In `supabase/functions/_shared/types/file_manager.types.ts`:
+        *   `[ ]` Review `'user_feedback'` in `FileType` literal union.
+    *   `[ ] 2.Y.4.2 [TEST-UNIT]` In `supabase/functions/_shared/utils/path_constructor.test.ts`: (RED)
+        *   `[ ]` Add tests for `constructStoragePath` with `fileType: 'user_feedback'`. Assert correct path based on `projectId`, `sessionId`, `iterationNumber`, `stageSlug` from `PathContext`, utilizing new slugifiers/mappers. Expected path: `{DIALECTIC_OUTPUTS_BASE_DIR}/{project_slug}/session_{session_id_short}/iteration_{iteration_number}/{mapped_stage_dir_name}/user_feedback_{stage_slug}.md`. (compare to existing path_constructor logic, this may be inaccurate)
+    *   `[ ] 2.Y.4.3 [BE/UTIL]` In `supabase/functions/_shared/utils/path_constructor.ts`:
+        *   `[ ]` Implement the case for `'user_feedback'` in `constructStoragePath`. Use `sanitizeForPath` for project slug, `generateShortId` for session ID part, and `mapStageSlugToDirName`. The filename should be `user_feedback_${context.stageSlug}.md`. (GREEN)
+    *   `[ ] 2.Y.4.4 [TEST-UNIT]` Run `path_constructor.test.ts`.
+    *   `[ ] 2.Y.4.5 [TEST-UNIT]` In `supabase/functions/_shared/services/file_manager.test.ts`: (RED)
+        *   `[ ]` Add tests for `uploadAndRegisterFile` when `fileType` is `'user_feedback'`. Assert it attempts to insert into `dialectic_feedback` with correct mappings (project_id, session_id, stage_slug, iteration_number, user_id, feedback_type from customMetadata, resource_description from customMetadata, etc.).
+    *   `[ ] 2.Y.4.6 [BE/SERVICE]` In `supabase/functions/_shared/services/file_manager.ts` in `uploadAndRegisterFile`:
+        *   `[ ]` When `context.pathContext.fileType === 'user_feedback'`, set `targetTable = 'dialectic_feedback'`.
+        *   `[ ]` Ensure `recordData` correctly maps all fields for the `dialectic_feedback` table from `context.pathContext` and `context.customMetadata` (for `feedback_type`, `resource_description`). (GREEN)
+    *   `[ ] 2.Y.4.7 [TEST-UNIT]` Run `file_manager.test.ts`.
+    *   `[ ] 2.Y.4.8 [COMMIT]` feat(be,service): enhance FileManagerService for user_feedback
+
+*   `[ ] 2.Y.5 [BE/REFACTOR]` **Refactor `submitStageResponses.ts` Edge Function**
+    *   `[ ] 2.Y.5.1 [TEST-INT]` In `submitStageResponses.test.ts`: (RED)
+        *   `[ ]` Update tests to use the new `SubmitStageResponsesPayload` (including `userStageFeedback` object).
+        *   `[ ]` Mock `FileManagerService.uploadAndRegisterFile`.
+        *   `[ ]` Assert that if `payload.userStageFeedback` is present, `FileManagerService.uploadAndRegisterFile` is called with:
+            *   `fileType: 'user_feedback'`.
+            *   Correct `PathContext` (project, session, iteration, stageSlug for the feedback).
+            *   `fileContent` matching `payload.userStageFeedback.content`.
+            *   `mimeType: 'text/markdown'`.
+            *   `customMetadata` including `feedbackType` and `resourceDescription` from payload.
+    *   `[ ] 2.Y.5.2 [BE]` In `supabase/functions/dialectic-service/submitStageResponses.ts`:
+        *   `[ ]` Adapt to the new `SubmitStageResponsesPayload` structure.
+        *   `[ ]` If `payload.userStageFeedback` is provided:
+            *   Instantiate `FileManagerService`.
+            *   Construct the `UploadContext` as specified in the test.
+            *   Call `await fileManager.uploadAndRegisterFile(uploadContext)`.
+            *   Handle success/error from `FileManagerService`.
+        *   `[ ]` The existing logic for handling `payload.responses` (user inputs for the AI's *next* step) will proceed largely as before, focusing on preparing the next seed prompt. Rename or refactor `storeAndSummarizeUserFeedback` if its name is now misleading. (GREEN)
+    *   `[ ] 2.Y.5.3 [TEST-INT]` Run `submitStageResponses.test.ts`.
+    *   `[ ] 2.Y.5.4 [REFACTOR]` Review `submitStageResponses.ts` for clarity and correctness.
+    *   `[ ] 2.Y.5.5 [COMMIT]` refactor(be): adapt submitStageResponses to handle file-based user feedback
+
+*   `[ ] 2.Y.6 [API/STORE]` **Update API Client and Store for Feedback File Handling**
+    *   `[ ] 2.Y.6.1 [TEST-UNIT]` In `packages/api/src/dialectic.api.test.ts`, update tests for `submitStageResponses` to use the new payload structure. (RED)
+    *   `[ ] 2.Y.6.2 [API]` In `packages/api/src/dialectic.api.ts`, update the `submitStageResponses` method signature and payload. (GREEN)
+    *   `[ ] 2.Y.6.3 [TEST-UNIT]` Run `dialectic.api.test.ts`.
+    *   `[ ] 2.Y.6.4 [TEST-UNIT]` In `packages/store/src/dialecticStore.test.ts`, update tests for `submitStageResponses` thunk with the new payload. (RED)
+    *   `[ ] 2.Y.6.5 [STORE]` In `packages/store/src/dialecticStore.ts`, update the `submitStageResponses` thunk and its payload type. (GREEN)
+    *   `[ ] 2.Y.6.6 [TEST-UNIT]` Run `dialecticStore.test.ts`.
+    *   `[ ] 2.Y.6.7 [STORE]` Ensure `fetchDialecticProjectDetails` correctly fetches and stores `DialecticFeedback` records (metadata for feedback files) associated with sessions/projects. Update selectors if needed (e.g., `selectFeedbackForStageIteration`).
+    *   `[ ] 2.Y.6.8 [COMMIT]` feat(api,store): update API and store for file-based feedback submission
+
+*   `[ ] 2.Y.7 [UI/REFACTOR]` **Refactor UI for Feedback Consolidation and Submission**
+    *   `[ ] 2.Y.7.1 [TEST-UNIT]` In relevant UI component tests (e.g., `SessionContributionsDisplayCard.test.tsx` or wherever stage progression/submission is handled): (RED)
+        *   `[ ]` Test new client-side logic for collecting discrete feedback items (ratings, text critiques on specific AI outputs) for a given stage.
+        *   `[ ]` Test the logic that formats these collected items into a single Markdown string.
+        *   `[ ]` Test that the `submitStageResponses` thunk is called with the correct `SubmitStageResponsesPayload`, including the `userStageFeedback.content` (Markdown string), `userStageFeedback.feedbackType`, and `userStageFeedback.resourceDescription`.
+    *   `[ ] 2.Y.7.2 [UI]` In the relevant UI component(s):
+        *   `[ ]` Implement logic to gather all user-provided feedback for the currently viewed AI contributions of a stage.
+        *   `[ ]` Implement a function to format this feedback into a structured Markdown string. This Markdown should be human-readable and could include frontmatter for summary, then sections for specific AI contributions (e.g., by ID).
+        *   `[ ]` When preparing to submit (e.g., "Proceed to next stage" or "Submit Review"):
+            *   Populate `userStageFeedback.content` with the generated Markdown.
+            *   Set `userStageFeedback.feedbackType` (e.g., "StageReviewSummary_v1").
+            *   Optionally populate `userStageFeedback.resourceDescription` with any structured summary.
+            *   Call the `submitStageResponses` thunk with this payload. (GREEN)
+    *   `[ ] 2.Y.7.3 [TEST-UNIT]` Run UI component tests.
+    *   `[ ] 2.Y.7.4 [REFACTOR]` Review UI logic for clarity and user experience.
+    *   `[ ] 2.Y.7.5 [COMMIT]` refactor(ui): implement client-side feedback consolidation to Markdown and update submission payload
+
+*   `[ ] 2.Y.8 [DOCS]` **Update Documentation**
+    *   `[ ] 2.Y.8.1 [DOCS]` Update `supabase/functions/_shared/services/file_manager.md` to include `'user_feedback'` file type and its path structure.
+    *   `[ ] 2.Y.8.2 [DOCS]` Update any backend or API documentation regarding `submitStageResponses` payload and `dialectic_feedback` table.
+    *   `[ ] 2.Y.8.3 [DOCS]` Update "File Structure for Supabase Storage and Export Tools" in the main plan if necessary to ensure it perfectly reflects the implemented paths for feedback files.
+    *   `[ ] 2.Y.8.4 [COMMIT]` docs: update documentation for file-based user feedback
+
+*   `[ ] 2.Y.9 [TEST-E2E]` **End-to-End Testing**
+    *   `[ ] 2.Y.9.1 [TEST-E2E]` Create/Update E2E tests:
+        *   User provides feedback on AI contributions for a stage.
+        *   User proceeds to the next stage or submits feedback.
+        *   Verify a Markdown file with the consolidated feedback is created in Supabase Storage at the correct path.
+        *   Verify a corresponding record exists in the `dialectic_feedback` table with correct metadata.
+    *   `[ ] 2.Y.9.2 [COMMIT]` test(e2e): add end-to-end tests for file-based user feedback submission
+
+---
 
 ### Dynamic Display of Generated Contributions and Enhanced User Feedback
 

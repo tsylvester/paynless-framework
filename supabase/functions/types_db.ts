@@ -385,44 +385,62 @@ export type Database = {
       }
       dialectic_feedback: {
         Row: {
-          contribution_id: string | null
           created_at: string
           feedback_type: string
-          feedback_value_structured: Json | null
-          feedback_value_text: string | null
+          file_name: string
           id: string
+          iteration_number: number
+          mime_type: string
+          project_id: string
+          resource_description: Json | null
           session_id: string
+          size_bytes: number
+          stage_slug: string
+          storage_bucket: string
+          storage_path: string
           updated_at: string
           user_id: string
         }
         Insert: {
-          contribution_id?: string | null
           created_at?: string
           feedback_type: string
-          feedback_value_structured?: Json | null
-          feedback_value_text?: string | null
+          file_name: string
           id?: string
+          iteration_number: number
+          mime_type?: string
+          project_id: string
+          resource_description?: Json | null
           session_id: string
+          size_bytes: number
+          stage_slug: string
+          storage_bucket: string
+          storage_path: string
           updated_at?: string
           user_id: string
         }
         Update: {
-          contribution_id?: string | null
           created_at?: string
           feedback_type?: string
-          feedback_value_structured?: Json | null
-          feedback_value_text?: string | null
+          file_name?: string
           id?: string
+          iteration_number?: number
+          mime_type?: string
+          project_id?: string
+          resource_description?: Json | null
           session_id?: string
+          size_bytes?: number
+          stage_slug?: string
+          storage_bucket?: string
+          storage_path?: string
           updated_at?: string
           user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "dialectic_feedback_contribution_id_fkey"
-            columns: ["contribution_id"]
+            foreignKeyName: "dialectic_feedback_project_id_fkey"
+            columns: ["project_id"]
             isOneToOne: false
-            referencedRelation: "dialectic_contributions"
+            referencedRelation: "dialectic_projects"
             referencedColumns: ["id"]
           },
           {

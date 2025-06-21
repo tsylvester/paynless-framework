@@ -384,13 +384,12 @@ export interface SubmitStageResponseItem {
   responseText: string;
   rating?: number;
 }
-
-export interface SubmitStageResponsesPayload {
+export interface SubmitStageResponsesPayload { 
   sessionId: string;
-  currentStageSlug: DialecticStage['slug'];
+  projectId: string;
+  stageSlug: DialecticStage['slug'];
   currentIterationNumber: number;
   responses: SubmitStageResponseItem[];
-  fileManager: IFileManager;
 }
 
 export interface SubmitStageResponsesResponse {

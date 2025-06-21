@@ -520,11 +520,11 @@ export interface GetProjectResourceContentResponse {
 // Add new payload/response types if they are not already defined from the plan for submitStageResponses and saveContributionEdit
 // These are placeholders from the plan, ensure they exist or are defined if not already in this file
 export interface SubmitStageResponsesPayload { 
-    sessionId: string;
-    projectId: string;
-    stageSlug: DialecticStage['slug'];
-    currentIterationNumber: number;
-    responses: UserResponseInput[];
+  sessionId: string;
+  projectId: string;
+  stageSlug: DialecticStage['slug'];
+  currentIterationNumber: number;
+  responses: SubmitStageResponseItem[];
 }
   
 export interface SubmitStageResponsesResponse { 
@@ -556,9 +556,11 @@ export interface IterationInitialPromptData {
   storagePath: string;
 }
 
-export interface UserResponseInput { 
-  originalModelContributionId: string; 
+
+export interface SubmitStageResponseItem {
+  originalContributionId: string;
   responseText: string;
+  rating?: number;
 }
 
 // END: New type definitions
