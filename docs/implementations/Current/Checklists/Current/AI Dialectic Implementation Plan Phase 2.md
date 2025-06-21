@@ -264,47 +264,47 @@ While the project is advancing well, these three areas represent fundamental, un
                 │   └── system_settings.json          (Models, core prompt templates used for this iteration)
                 ├── 1_hypothesis/
                 │   ├── raw_responses
-                │   │   └──{model_name_slug}_{stage_slug}_raw.json
+                │   │   └──{model_name_slug}_{n}_{stage_slug}_raw.json
                 │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
-                │   ├── {model_name_slug}_hypothesis.md (Contains YAML frontmatter + AI response)
+                │   ├── {model_name_slug}_{n}_hypothesis.md (Contains YAML frontmatter + AI response, appends a count so a single model can provide multiple contributions)
                 │   ├── ... (other models' hypothesis outputs)
                 │   ├── user_feedback_hypothesis.md   (User's feedback on this stage)
                 │   └── documents/                      (Optional refined documents, e.g., PRDs from each model)
-                │       └── {model_name_slug}_prd_hypothesis.md
+                │       └── {model_name_slug}_{n}_prd_hypothesis.md
                 │       └── ...
                 ├── 2_antithesis/
                 │   ├── raw_responses
-                │   │   └──{model_name_slug}_{stage_slug}_raw.json
+                │   │   └──{model_name_slug}_{n}_{stage_slug}_raw.json
                 │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
-                │   ├── {critiquer_model_slug}_critique_on_{original_model_slug}.md
+                │   ├── {critiquer_model_slug}_{n}_critique_on_{original_model_slug}_{m}.md (where "n" is the count for the original model and "m" is the count for the response model, in case a user calls the same model repeatedly for critiques)
                 │   ├── ...
                 │   └── user_feedback_antithesis.md
                 ├── 3_synthesis/
                 │   ├── raw_responses
-                │   │   └──{model_name_slug}_{stage_slug}_raw.json
+                │   │   └──{model_name_slug}_{n}_{stage_slug}_raw.json
                 │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
-                │   ├── {model_name_slug}_synthesis.md
+                │   ├── {model_name_slug}_{n}_synthesis.md
                 │   ├── ...
                 │   ├── user_feedback_synthesis.md
                 │   └── documents/                      (Refined documents from each model, e.g., PRDs, business cases)
-                │       ├── {model_name_slug}_prd_synthesis.md
-                │       ├── {model_name_slug}_business_case_synthesis.md
+                │       ├── {model_name_slug}_{n}_prd_synthesis.md
+                │       ├── {model_name_slug}_{n}_business_case_synthesis.md
                 │       └── ...
                 ├── 4_parenthesis/
                 │   ├── raw_responses
-                │   │   └──{model_name_slug}_{stage_slug}_raw.json
+                │   │   └──{model_name_slug}_{n}_{stage_slug}_raw.json
                 │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
-                │   ├── {model_name_slug}_parenthesis.md
+                │   ├── {model_name_slug}_{n}_parenthesis.md
                 │   ├── ...
                 │   ├── user_feedback_parenthesis.md
                 │   └── documents/                      (Detailed implementation plans from each model)
-                │       └── {model_name_slug}_implementation_plan_parenthesis.md
+                │       └── {model_name_slug}_{n}_implementation_plan_parenthesis.md
                 │       └── ...
                 ├── 5_paralysis/
                 │   ├── raw_responses
-                │   │   └──{model_name_slug}_{stage_slug}_raw.json
+                │   │   └──{model_name_slug}_{n}_{stage_slug}_raw.json
                 │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
-                │   ├── {model_name_slug}_paralysis.md
+                │   ├── {model_name_slug}_{n}_paralysis.md
                 │   ├── ...
                 │   ├── user_feedback_paralysis.md
                 │   └── documents/                      (The user-selected/finalized canonical outputs)
@@ -619,30 +619,54 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
     *   `[✅] 2.Y.2.2 [TYPES]` Mirror changes from `packages/types/src/dialectic.types.ts` to `supabase/functions/dialectic-service/dialectic.interface.ts`.
     *   `[✅] 2.Y.2.3 [COMMIT]` feat(types): update dialectic types for file-based user feedback
 
-*   `[ ] 2.Y.3 [BE/UTIL]` **Update Path Construction Utilities**
-    *   `[ ] 2.Y.3.1 [TEST-UNIT]` Review `supabase/functions/_shared/utils/path_constructor.test.ts` to determine its capabilities. It may require new unit tests for: (RED)
-        *   `sanitizeForPath(input: string): string` (lowercase, replaces spaces with underscores, removes unsafe chars).
-        *   `generateShortId(uuid: string, length: number = 8): string`.
-        *   `mapStageSlugToDirName(stageSlug: string): string` (e.g., 'thesis' -> '1_hypothesis', 'antithesis' -> '2_antithesis').
-    *   `[ ] 2.Y.3.2 [BE/UTIL]` If necessary, update `supabase/functions/_shared/utils/path_constructor.ts` to implement the functions. (GREEN)
-    *   `[ ] 2.Y.3.3 [TEST-UNIT]` Run tests for `path_constructor.ts`.
-    *   `[ ] 2.Y.3.4 [COMMIT]` feat(be,util): add slugifier and stage mapping utilities for path construction
+*   `[✅] 2.Y.3 [BE/UTIL]` **Update Path Construction Utilities**
+    *   `[✅] 2.Y.3.0 [TYPES]` In `supabase/functions/_shared/types/file_manager.types.ts`, add an optional `attemptCount?: number` to the `PathContext` interface.
+    *   `[✅] 2.Y.3.1 [TEST-UNIT]` Review and update `supabase/functions/_shared/utils/path_constructor.test.ts`. (GREEN)
+        *   `[✅]` Add/verify unit tests for `sanitizeForPath(input: string): string`.
+        *   `[✅]` Add unit tests for `generateShortId(uuid: string, length: number = 8): string`.
+        *   `[✅]` Add unit tests for `mapStageSlugToDirName(stageSlug: string): string`.
+        *   `[✅]` Add unit tests for `constructStoragePath` to verify correct filename construction (e.g., `{model_slug}_{attemptCount}_{stage_slug}.md`) when `attemptCount` is present for `model_contribution_main` and `model_contribution_raw_json`.
+        *   `[✅]` Ensure other `constructStoragePath` tests are updated to use `generateShortId` for session path segments and `mapStageSlugToDirName` for stage path segments consistently.
+        *   `[✅]` Verify `constructStoragePath` correctly generates paths for `user_feedback` files: `{DIALECTIC_OUTPUTS_BASE_DIR}/{project_slug}/session_{session_id_short}/iteration_{iteration_number}/{mapped_stage_dir_name}/user_feedback_{stage_slug}.md`.
+    *   `[✅] 2.Y.3.2 [BE/UTIL]` In `supabase/functions/_shared/utils/path_constructor.ts`, modify `constructStoragePath`:
+        *   `[✅]` Consistently use `generateShortId` for session ID parts of paths.
+        *   `[✅]` Consistently use `mapStageSlugToDirName` for stage directory parts of paths.
+        *   `[✅]` For `model_contribution_main` and `model_contribution_raw_json` file types: if `attemptCount` is provided in `PathContext`, construct the filename as `{model_slug}_{attemptCount}_{stage_slug}.md` (or `_raw.json`). Sanitize `model_slug` and `stage_slug` parts of the filename. Otherwise, use `originalFileName`.
+        *   `[✅]` For `user_feedback` file type, ensure path is `{DIALECTIC_OUTPUTS_BASE_DIR}/{project_slug}/session_{session_id_short}/iteration_{iteration_number}/{mapped_stage_dir_name}/user_feedback_{stage_slug}.md`. The `originalFileName` in `PathContext` for this type can be ignored for path construction if a fixed name based on `stage_slug` is used.
+    *   `[✅] 2.Y.3.3 [TEST-UNIT]` Run unit tests for `path_constructor.ts`. (GREEN)
+    *   `[✅] 2.Y.3.4 [COMMIT]` Commit changes with message: "feat(shared): update path_constructor for attempt_count and user_feedback"
 
-*   `[ ] 2.Y.4 [BE/SERVICE]` **Enhance `FileManagerService` for User Feedback Files**
+*   `[ ] 2.Y.4 [BE/SVC]` **Enhance `FileManagerService`**
     *   `[ ] 2.Y.4.1 [TYPES]` In `supabase/functions/_shared/types/file_manager.types.ts`:
-        *   `[ ]` Review `'user_feedback'` in `FileType` literal union.
+        *   `[ ]` Ensure `'user_feedback'` is in `FileType`.
+        *   `[ ]` (No changes needed here for `attemptCountInStage` for DB as per user feedback).
     *   `[ ] 2.Y.4.2 [TEST-UNIT]` In `supabase/functions/_shared/utils/path_constructor.test.ts`: (RED)
-        *   `[ ]` Add tests for `constructStoragePath` with `fileType: 'user_feedback'`. Assert correct path based on `projectId`, `sessionId`, `iterationNumber`, `stageSlug` from `PathContext`, utilizing new slugifiers/mappers. Expected path: `{DIALECTIC_OUTPUTS_BASE_DIR}/{project_slug}/session_{session_id_short}/iteration_{iteration_number}/{mapped_stage_dir_name}/user_feedback_{stage_slug}.md`. (compare to existing path_constructor logic, this may be inaccurate)
-    *   `[ ] 2.Y.4.3 [BE/UTIL]` In `supabase/functions/_shared/utils/path_constructor.ts`:
-        *   `[ ]` Implement the case for `'user_feedback'` in `constructStoragePath`. Use `sanitizeForPath` for project slug, `generateShortId` for session ID part, and `mapStageSlugToDirName`. The filename should be `user_feedback_${context.stageSlug}.md`. (GREEN)
-    *   `[ ] 2.Y.4.4 [TEST-UNIT]` Run `path_constructor.test.ts`.
+        *   `[ ]` (Covered by 2.Y.3.1) Ensure tests for `constructStoragePath` with `fileType: 'user_feedback'` are present. Expected path should use `projectId`, `generateShortId(sessionId)`, `iterationNumber`, `mapStageSlugToDirName(stageSlug)`. Filename `user_feedback_${sanitizeForPath(context.stageSlug)}.md`.
+    *   `[ ] 2.Y.4.3 [BE/UTIL]` In `supabase/functions/_shared/utils/path_constructor.ts`: (GREEN)
+        *   `[ ]` (Covered by 2.Y.3.2) Ensure implementation for `'user_feedback'` path construction is correct.
+    *   `[ ] 2.Y.4.4 [TEST-UNIT]` Run `path_constructor.test.ts` (if changes made here, otherwise covered by 2.Y.3.3).
     *   `[ ] 2.Y.4.5 [TEST-UNIT]` In `supabase/functions/_shared/services/file_manager.test.ts`: (RED)
-        *   `[ ]` Add tests for `uploadAndRegisterFile` when `fileType` is `'user_feedback'`. Assert it attempts to insert into `dialectic_feedback` with correct mappings (project_id, session_id, stage_slug, iteration_number, user_id, feedback_type from customMetadata, resource_description from customMetadata, etc.).
-    *   `[ ] 2.Y.4.6 [BE/SERVICE]` In `supabase/functions/_shared/services/file_manager.ts` in `uploadAndRegisterFile`:
-        *   `[ ]` When `context.pathContext.fileType === 'user_feedback'`, set `targetTable = 'dialectic_feedback'`.
-        *   `[ ]` Ensure `recordData` correctly maps all fields for the `dialectic_feedback` table from `context.pathContext` and `context.customMetadata` (for `feedback_type`, `resource_description`). (GREEN)
+        *   `[ ]` Add tests for `uploadAndRegisterFile` when `fileType` is `'user_feedback'`. Assert it attempts to insert into `dialectic_feedback`.
+        *   `[ ]` Add tests for `uploadAndRegisterFile` for `fileType: 'model_contribution_main'` (and `_raw_json`):
+            *   Caller provides base `modelSlug` and `stageSlug` in `PathContext`.
+            *   Simulate "file already exists" errors from `storage.upload()` (when `upsert: false`).
+            *   Assert that `FileManagerService` retries by calling `constructStoragePath` with an incremented `attemptCount` in the `PathContext` (e.g., `attemptCount: 0`, then `attemptCount: 1`).
+            *   Assert the final successful filename (e.g., `claude-3-opus_1_hypothesis.md`) and its path are used for DB insertion into `dialectic_contributions`.
+            *   Test the case where the first attempt (e.g., with `attemptCount: 0`) succeeds without collision.
+    *   `[ ] 2.Y.4.6 [BE/SERVICE]` In `supabase/functions/_shared/services/file_manager.ts` - `uploadAndRegisterFile`: (GREEN)
+        *   `[ ]` When `context.pathContext.fileType === 'user_feedback'`, set `targetTable = 'dialectic_feedback'` and map fields correctly.
+        *   `[ ]` For `fileType === 'model_contribution_main'` or `'model_contribution_raw_json'`:
+            *   Implement a retry loop (e.g., max 5-10 attempts).
+            *   Initialize `currentAttemptCount = 0`.
+            *   In each loop iteration:
+                *   Create/update a `PathContext` to pass to `constructStoragePath`, including `modelSlug`, `stageSlug` (from the input `context.pathContext`) and the current `attemptCount`.
+                *   Call `supabaseClient.storage.from(bucket).upload(path, fileContent, { contentType, upsert: false })`.
+                *   If upload succeeds: break loop, use the current path for the DB record.
+                *   If upload fails due to a "file already exists"-type error: increment `currentAttemptCount`, continue loop.
+                *   If upload fails for other reasons or retries exhausted: throw an error.
+            *   When inserting into `dialectic_contributions`, the `file_name` and `storage_path` will naturally contain the counter. No separate `attempt_count_in_stage` field is saved.
     *   `[ ] 2.Y.4.7 [TEST-UNIT]` Run `file_manager.test.ts`.
-    *   `[ ] 2.Y.4.8 [COMMIT]` feat(be,service): enhance FileManagerService for user_feedback
+    *   `[ ] 2.Y.4.8 [COMMIT]` feat(be,fm): FileManager handles attempt counts in contribution filenames; user_feedback paths
 
 *   `[ ] 2.Y.5 [BE/REFACTOR]` **Refactor `submitStageResponses.ts` Edge Function**
     *   `[ ] 2.Y.5.1 [TEST-INT]` In `submitStageResponses.test.ts`: (RED)
