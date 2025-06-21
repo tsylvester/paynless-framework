@@ -636,37 +636,47 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
     *   `[✅] 2.Y.3.3 [TEST-UNIT]` Run unit tests for `path_constructor.ts`. (GREEN)
     *   `[✅] 2.Y.3.4 [COMMIT]` Commit changes with message: "feat(shared): update path_constructor for attempt_count and user_feedback"
 
-*   `[ ] 2.Y.4 [BE/SVC]` **Enhance `FileManagerService`**
-    *   `[ ] 2.Y.4.1 [TYPES]` In `supabase/functions/_shared/types/file_manager.types.ts`:
-        *   `[ ]` Ensure `'user_feedback'` is in `FileType`.
-        *   `[ ]` (No changes needed here for `attemptCountInStage` for DB as per user feedback).
-    *   `[ ] 2.Y.4.2 [TEST-UNIT]` In `supabase/functions/_shared/utils/path_constructor.test.ts`: (RED)
-        *   `[ ]` (Covered by 2.Y.3.1) Ensure tests for `constructStoragePath` with `fileType: 'user_feedback'` are present. Expected path should use `projectId`, `generateShortId(sessionId)`, `iterationNumber`, `mapStageSlugToDirName(stageSlug)`. Filename `user_feedback_${sanitizeForPath(context.stageSlug)}.md`.
-    *   `[ ] 2.Y.4.3 [BE/UTIL]` In `supabase/functions/_shared/utils/path_constructor.ts`: (GREEN)
-        *   `[ ]` (Covered by 2.Y.3.2) Ensure implementation for `'user_feedback'` path construction is correct.
-    *   `[ ] 2.Y.4.4 [TEST-UNIT]` Run `path_constructor.test.ts` (if changes made here, otherwise covered by 2.Y.3.3).
-    *   `[ ] 2.Y.4.5 [TEST-UNIT]` In `supabase/functions/_shared/services/file_manager.test.ts`: (RED)
-        *   `[ ]` Add tests for `uploadAndRegisterFile` when `fileType` is `'user_feedback'`. Assert it attempts to insert into `dialectic_feedback`.
-        *   `[ ]` Add tests for `uploadAndRegisterFile` for `fileType: 'model_contribution_main'` (and `_raw_json`):
-            *   Caller provides base `modelSlug` and `stageSlug` in `PathContext`.
-            *   Simulate "file already exists" errors from `storage.upload()` (when `upsert: false`).
-            *   Assert that `FileManagerService` retries by calling `constructStoragePath` with an incremented `attemptCount` in the `PathContext` (e.g., `attemptCount: 0`, then `attemptCount: 1`).
-            *   Assert the final successful filename (e.g., `claude-3-opus_1_hypothesis.md`) and its path are used for DB insertion into `dialectic_contributions`.
-            *   Test the case where the first attempt (e.g., with `attemptCount: 0`) succeeds without collision.
-    *   `[ ] 2.Y.4.6 [BE/SERVICE]` In `supabase/functions/_shared/services/file_manager.ts` - `uploadAndRegisterFile`: (GREEN)
-        *   `[ ]` When `context.pathContext.fileType === 'user_feedback'`, set `targetTable = 'dialectic_feedback'` and map fields correctly.
-        *   `[ ]` For `fileType === 'model_contribution_main'` or `'model_contribution_raw_json'`:
-            *   Implement a retry loop (e.g., max 5-10 attempts).
-            *   Initialize `currentAttemptCount = 0`.
-            *   In each loop iteration:
-                *   Create/update a `PathContext` to pass to `constructStoragePath`, including `modelSlug`, `stageSlug` (from the input `context.pathContext`) and the current `attemptCount`.
-                *   Call `supabaseClient.storage.from(bucket).upload(path, fileContent, { contentType, upsert: false })`.
-                *   If upload succeeds: break loop, use the current path for the DB record.
-                *   If upload fails due to a "file already exists"-type error: increment `currentAttemptCount`, continue loop.
-                *   If upload fails for other reasons or retries exhausted: throw an error.
-            *   When inserting into `dialectic_contributions`, the `file_name` and `storage_path` will naturally contain the counter. No separate `attempt_count_in_stage` field is saved.
-    *   `[ ] 2.Y.4.7 [TEST-UNIT]` Run `file_manager.test.ts`.
-    *   `[ ] 2.Y.4.8 [COMMIT]` feat(be,fm): FileManager handles attempt counts in contribution filenames; user_feedback paths
+*   `[✅] 2.Y.4 [BE/SVC]` **Enhance `FileManagerService`**
+    *   `[✅] 2.Y.4.1 [TYPES]` In `supabase/functions/_shared/types/file_manager.types.ts`:
+        *   `[✅]` Ensure `'user_feedback'` is in `FileType`.
+        *   `[✅]` (Already done in 2.Y.3.0) Ensure `attemptCount?: number` is in `PathContext`.
+        *   `[✅]` Ensure `UploadContext` can appropriately handle `user_feedback` (no changes currently needed).
+    *   `[✅] 2.Y.4.2 [BE/SVC]` In `supabase/functions/_shared/services/file_manager.service.ts` (`uploadAndRegisterFile` method):
+        *   `[✅]` When `context.pathContext.fileType === 'user_feedback'`, set `targetTable = 'dialectic_feedback'` and map fields correctly.
+        *   `[✅]` For `fileType === 'model_contribution_main'` or `'model_contribution_raw_json'`:
+            *   `[✅]` Implement a retry loop (e.g., max 5-10 attempts).
+            *   `[✅]` Initialize `currentAttemptCount = 0`.
+            *   `[✅]` In each loop iteration:
+                *   `[✅]` Create/update a `PathContext` to pass to `constructStoragePath`, including `modelSlug`, `stageSlug` (from the input `context.pathContext`) and the current `attemptCount`.
+                *   `[✅]` Call `supabaseClient.storage.from(bucket).upload(path, fileContent, { contentType, upsert: false })`.
+                *   `[✅]` If upload succeeds: break loop, use the current path for the DB record.
+                *   `[✅]` If upload fails due to a "file already exists"-type error: increment `currentAttemptCount`, continue loop.
+                *   `[✅]` If upload fails for other reasons or retries exhausted: throw an error.
+            *   `[✅]` When inserting into `dialectic_contributions`, the `file_name` and `storage_path` will naturally contain the counter. No separate `attempt_count_in_stage` field is saved.
+    *   `[✅] 2.Y.4.3 [TEST-UNIT]` Run `path_constructor.test.ts` (if changes made here, otherwise covered by 2.Y.3.3).
+    *   `[✅] 2.Y.4.4 [TEST-UNIT]` In `supabase/functions/_shared/services/file_manager.test.ts`: (RED)
+        *   `[✅]` Add tests for `uploadAndRegisterFile` when `fileType` is `'user_feedback'`. Assert it attempts to insert into `dialectic_feedback`.
+        *   `[✅]` Add tests for `uploadAndRegisterFile` for `fileType: 'model_contribution_main'` (and `_raw_json`):
+            *   `[✅]` Caller provides base `modelSlug` and `stageSlug` in `PathContext`.
+            *   `[✅]` Simulate "file already exists" errors from `storage.upload()` (when `upsert: false`).
+            *   `[✅]` Assert that `FileManagerService` retries by calling `constructStoragePath` with an incremented `attemptCount` in the `PathContext` (e.g., `attemptCount: 0`, then `attemptCount: 1`).
+            *   `[✅]` Assert the final successful filename (e.g., `claude-3-opus_1_hypothesis.md`) and its path are used for DB insertion into `dialectic_contributions`.
+            *   `[✅]` Test the case where the first attempt (e.g., with `attemptCount: 0`) succeeds without collision.
+    *   `[✅] 2.Y.4.5 [TEST-UNIT]` Run `file_manager.test.ts`.
+    *   `[✅] 2.Y.4.6 [BE/SERVICE]` In `supabase/functions/_shared/services/file_manager.ts` - `uploadAndRegisterFile`: (GREEN)
+        *   `[✅]` When `context.pathContext.fileType === 'user_feedback'`, set `targetTable = 'dialectic_feedback'` and map fields correctly.
+        *   `[✅]` For `fileType === 'model_contribution_main'` or `'model_contribution_raw_json'`:
+            *   `[✅]` Implement a retry loop (e.g., max 5-10 attempts).
+            *   `[✅]` Initialize `currentAttemptCount = 0`.
+            *   `[✅]` In each loop iteration:
+                *   `[✅]` Create/update a `PathContext` to pass to `constructStoragePath`, including `modelSlug`, `stageSlug` (from the input `context.pathContext`) and the current `attemptCount`.
+                *   `[✅]` Call `supabaseClient.storage.from(bucket).upload(path, fileContent, { contentType, upsert: false })`.
+                *   `[✅]` If upload succeeds: break loop, use the current path for the DB record.
+                *   `[✅]` If upload fails due to a "file already exists"-type error: increment `currentAttemptCount`, continue loop.
+                *   `[✅]` If upload fails for other reasons or retries exhausted: throw an error.
+            *   `[✅]` When inserting into `dialectic_contributions`, the `file_name` and `storage_path` will naturally contain the counter. No separate `attempt_count_in_stage` field is saved.
+    *   `[✅] 2.Y.4.7 [TEST-UNIT]` Run `file_manager.test.ts`.
+    *   `[✅] 2.Y.4.8 [COMMIT]` feat(be,fm): FileManager handles attempt counts in contribution filenames; user_feedback paths
 
 *   `[ ] 2.Y.5 [BE/REFACTOR]` **Refactor `submitStageResponses.ts` Edge Function**
     *   `[ ] 2.Y.5.1 [TEST-INT]` In `submitStageResponses.test.ts`: (RED)

@@ -32,6 +32,7 @@ export interface PathContext {
   iteration?: number
   stageSlug?: string
   modelSlug?: string
+  attemptCount?: number
   originalFileName: string // The original, user-visible file name, e.g., "my_requirements.md"
 }
 
@@ -82,11 +83,12 @@ export interface UploadContext {
 /**
  * Represents a record in one of the file metadata tables.
  * This is a union type to allow the FileManagerService to return a record
- * from either `dialectic_project_resources` or `dialectic_contributions`.
+ * from `dialectic_project_resources`, `dialectic_contributions`, or `dialectic_feedback`.
  */
 export type FileRecord =
   | Database['public']['Tables']['dialectic_project_resources']['Row']
   | Database['public']['Tables']['dialectic_contributions']['Row'] 
+  | Database['public']['Tables']['dialectic_feedback']['Row'];
   
 export type FileManagerResponse = 
   | { record: FileRecord; error: null }
