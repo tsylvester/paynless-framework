@@ -6,6 +6,7 @@ import {
   selectIsLoadingProjectDetail,
   selectProjectDetailError,
   selectActiveContextStage,
+  selectActiveContextProjectId,
 } from '@paynless/store';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,7 +19,7 @@ import { AlertTriangle } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export function DialecticProjectDetailsPage() {
-  const { projectId } = useParams<{ projectId: string }>();
+  const { projectId: urlProjectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
 
   const { fetchDialecticProjectDetails, startDialecticSession } = useDialecticStore((state) => ({
@@ -30,16 +31,24 @@ export function DialecticProjectDetailsPage() {
   const isLoading = useDialecticStore(selectIsLoadingProjectDetail);
   const error = useDialecticStore(selectProjectDetailError);
   const initialStage = useDialecticStore(selectActiveContextStage);
+  const activeContextProjectId = useDialecticStore(selectActiveContextProjectId);
 
   useEffect(() => {
-    if (projectId) {
-      fetchDialecticProjectDetails(projectId);
+    if (urlProjectId) {
+      const shouldFetch = 
+        urlProjectId !== activeContextProjectId || 
+        !project || 
+        project.id !== urlProjectId;
+
+      if (shouldFetch) {
+        fetchDialecticProjectDetails(urlProjectId);
+      }
     }
-  }, [projectId, fetchDialecticProjectDetails]);
+  }, [urlProjectId, activeContextProjectId, project, fetchDialecticProjectDetails]);
 
   const handleStartNewSession = async () => {
-    if (!projectId) {
-      toast.error("Cannot start a session without a project ID.");
+    if (!project?.id) {
+      toast.error("Cannot start a session without a loaded project ID.");
       return;
     }
     if (!initialStage) {
@@ -47,15 +56,15 @@ export function DialecticProjectDetailsPage() {
       return;
     }
     const result = await startDialecticSession({
-      projectId,
-      selectedModelCatalogIds: [], // Models will be selected later
+      projectId: project.id,
+      selectedModelCatalogIds: [],
       stageSlug: initialStage.slug,
     });
 
     const newSession = result.data;
     if (newSession && newSession.id) {
       toast.success(`New session started: ${newSession.id}`);
-      navigate(`/dialectic/${projectId}/session/${newSession.id}`);
+      navigate(`/dialectic/${project.id}/session/${newSession.id}`);
     } else {
       toast.error(result.error?.message || "Failed to start a new session.");
     }
@@ -87,11 +96,20 @@ export function DialecticProjectDetailsPage() {
   }
 
   if (!project) {
-    return (
-      <div className="container mx-auto p-4">
-        <p>Project not found.</p>
-      </div>
-    );
+    if (!isLoading && !error && urlProjectId) {
+      return (
+        <div className="container mx-auto p-4">
+          <p>Project not found (ID: {urlProjectId}).</p>
+        </div>
+      );
+    } else if (!isLoading && !error) {
+      return (
+        <div className="container mx-auto p-4">
+          <p>Project not found or no project selected.</p>
+        </div>
+      );
+    }
+    return null;
   }
 
   return (

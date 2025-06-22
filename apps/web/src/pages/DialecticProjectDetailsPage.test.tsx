@@ -20,7 +20,7 @@ vi.mock('@/components/dialectic/ProjectSessionsList', () => ({
 // Use the centralized mock for the store
 vi.mock('@paynless/store', () => import('../mocks/dialecticStore.mock'));
 
-const mockProjectId = 'project-123';
+const mockProjectIdFromUrl = 'project-123'; // Renamed for clarity in new tests
 
 const mockInitialStage: DialecticStage = {
     id: 'stage-1',
@@ -43,7 +43,7 @@ const mockProcessTemplate: Omit<DialecticProcessTemplate, 'stages' | 'transition
 };
 
 const mockProject: DialecticProject = {
-  id: mockProjectId,
+  id: mockProjectIdFromUrl, // Ensure mockProject aligns with a potential URL ID
   user_id: 'user-123',
   project_name: 'Detailed Project Name',
   initial_user_prompt: 'The initial prompt.',
@@ -58,11 +58,19 @@ const mockProject: DialecticProject = {
   resources: [],
   process_template_id: 'pt-1',
   dialectic_process_templates: mockProcessTemplate as DialecticProcessTemplate,
+  isLoadingProcessTemplate: false,
+  processTemplateError: null,
+  contributionGenerationStatus: 'idle',
+  generateContributionsError: null,
+  isSubmittingStageResponses: false,
+  submitStageResponsesError: null,
+  isSavingContributionEdit: false,
+  saveContributionEditError: null,
 };
 
 const mockSession: DialecticSession = {
     id: 'ses-abc',
-    project_id: mockProjectId,
+    project_id: mockProjectIdFromUrl,
     session_description: 'A session for testing.',
     user_input_reference_url: null,
     iteration_count: 1,
@@ -91,33 +99,105 @@ describe('DialecticProjectDetailsPage', () => {
     resetDialecticStoreMock();
   });
 
+  /* // Commenting out the old unconditional fetch test as per X.1.3.1
   it('calls fetchDialecticProjectDetails with projectId on mount and shows loading skeletons', () => {
     setDialecticState({ isLoadingProjectDetail: true });
-    const { container } = renderWithRouter(`/dialectic/${mockProjectId}`);
+    const { container } = renderWithRouter(`/dialectic/${mockProjectIdFromUrl}`);
     const store = getDialecticStoreState();
-    expect(store.fetchDialecticProjectDetails).toHaveBeenCalledWith(mockProjectId);
+    expect(store.fetchDialecticProjectDetails).toHaveBeenCalledWith(mockProjectIdFromUrl);
     expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+  });
+  */
+
+  // New tests for X.1.3.1: Conditional fetching logic
+  describe('[X.1.3.1] Conditional fetching of project details', () => {
+    const urlProjectId = 'url-project-id-001';
+
+    it('Scenario 1a: calls fetchDialecticProjectDetails if URL projectId exists and activeContextProjectId differs', () => {
+      setDialecticState({
+        activeContextProjectId: 'different-project-id-789',
+        currentProjectDetail: null, // Can be null or for 'different-project-id'
+        isLoadingProjectDetail: false,
+      });
+      const store = getDialecticStoreState();
+      // Ensure the mock is clear before the render/action
+      (store.fetchDialecticProjectDetails as Mock).mockClear();
+      
+      renderWithRouter(`/dialectic/${urlProjectId}`);
+      
+      expect(store.fetchDialecticProjectDetails).toHaveBeenCalledWith(urlProjectId);
+    });
+
+    it('Scenario 1b: calls fetchDialecticProjectDetails if URL projectId exists and currentProjectDetail is null (even if activeContextProjectId matches URL)', () => {
+      setDialecticState({
+        activeContextProjectId: urlProjectId,
+        currentProjectDetail: null, // Project details are not loaded
+        isLoadingProjectDetail: false,
+      });
+      const store = getDialecticStoreState();
+      (store.fetchDialecticProjectDetails as Mock).mockClear();
+      
+      renderWithRouter(`/dialectic/${urlProjectId}`);
+      
+      expect(store.fetchDialecticProjectDetails).toHaveBeenCalledWith(urlProjectId);
+    });
+
+    it('Scenario 1c: calls fetchDialecticProjectDetails if URL projectId exists and currentProjectDetail.id differs from URL projectId (even if activeContextProjectId matches URL)', () => {
+      setDialecticState({
+        activeContextProjectId: urlProjectId,
+        currentProjectDetail: { ...mockProject, id: 'another-project-id-456' }, // Details for a different project
+        isLoadingProjectDetail: false,
+      });
+      const store = getDialecticStoreState();
+      (store.fetchDialecticProjectDetails as Mock).mockClear();
+      
+      renderWithRouter(`/dialectic/${urlProjectId}`);
+      
+      expect(store.fetchDialecticProjectDetails).toHaveBeenCalledWith(urlProjectId);
+    });
+
+    it('Scenario 2: does NOT call fetchDialecticProjectDetails if URL projectId exists and context is already aligned (project ID and details match)', () => {
+      // This test is expected to FAIL with current component logic and pass after refactor (X.1.3.2)
+      setDialecticState({
+        activeContextProjectId: urlProjectId,
+        currentProjectDetail: { ...mockProject, id: urlProjectId, project_name: "Correct Project Name" }, // Context is perfectly aligned
+        isLoadingProjectDetail: false,
+      });
+      const store = getDialecticStoreState();
+      (store.fetchDialecticProjectDetails as Mock).mockClear();
+
+      renderWithRouter(`/dialectic/${urlProjectId}`);
+
+      expect(store.fetchDialecticProjectDetails).not.toHaveBeenCalled();
+    });
   });
 
   it('displays error message if projectDetailError is present', () => {
     const error: ApiError = { message: 'Failed to load project', code: '404' };
     setDialecticState({ projectDetailError: error });
-    renderWithRouter(`/dialectic/${mockProjectId}`);
+    renderWithRouter(`/dialectic/${mockProjectIdFromUrl}`);
     expect(screen.getByText('Error')).toBeInTheDocument();
     expect(screen.getByText(error.message)).toBeInTheDocument();
   });
 
   it('displays "Project not found" message if no project is loaded and not loading', () => {
     setDialecticState({ currentProjectDetail: null, isLoadingProjectDetail: false });
-    renderWithRouter(`/dialectic/non-existent-id`);
+    renderWithRouter(`/dialectic/non-existent-id`); // Use a different ID to avoid conflict with mockProjectIdFromUrl
     expect(screen.getByText(/Project not found/i)).toBeInTheDocument();
   });
 
-  it('displays project details and child components when project data is loaded', () => {
-    setDialecticState({ currentProjectDetail: mockProject, isLoadingProjectDetail: false });
-    renderWithRouter(`/dialectic/${mockProjectId}`);
-    expect(screen.getByRole('heading', { name: /Detailed Project Name/i })).toBeInTheDocument();
-    expect(screen.getByText(mockProject.dialectic_domains!.name)).toBeInTheDocument();
+  it('displays project details and child components when project data is loaded from store', () => {
+    const projectForStore: DialecticProject = { ...mockProject, id: 'store-project-id-efg', project_name: 'Project Name From Store' };
+    setDialecticState({ 
+      currentProjectDetail: projectForStore, 
+      isLoadingProjectDetail: false,
+      activeContextProjectId: projectForStore.id // Align active context with the project detail
+    });
+    // Render with a URL that might differ from store, to ensure rendering uses store data
+    renderWithRouter(`/dialectic/${projectForStore.id}`); 
+    
+    expect(screen.getByRole('heading', { name: projectForStore.project_name })).toBeInTheDocument();
+    expect(screen.getByText(projectForStore.dialectic_domains!.name)).toBeInTheDocument();
     expect(screen.getByTestId('initial-problem-statement-mock')).toBeInTheDocument();
     expect(screen.getByTestId('project-sessions-list-mock')).toBeInTheDocument();
   });
@@ -130,13 +210,13 @@ describe('DialecticProjectDetailsPage', () => {
     const store = getDialecticStoreState();
     (store.startDialecticSession as Mock).mockResolvedValue({ data: mockSession, error: null });
 
-    renderWithRouter(`/dialectic/${mockProjectId}`);
+    renderWithRouter(`/dialectic/${mockProjectIdFromUrl}`);
     const startSessionButton = screen.getByRole('button', { name: /Start New Session/i });
     fireEvent.click(startSessionButton);
     
     await waitFor(() => {
         expect(store.startDialecticSession).toHaveBeenCalledWith({
-            projectId: mockProjectId,
+            projectId: mockProjectIdFromUrl,
             selectedModelCatalogIds: [],
             stageSlug: mockInitialStage.slug,
         });
@@ -151,7 +231,7 @@ describe('DialecticProjectDetailsPage', () => {
     const store = getDialecticStoreState();
     (store.startDialecticSession as Mock).mockResolvedValue({ data: mockSession, error: null });
 
-    const { container } = renderWithRouter(`/dialectic/${mockProjectId}`);
+    const { container } = renderWithRouter(`/dialectic/${mockProjectIdFromUrl}`);
     const startSessionButton = screen.getByRole('button', { name: /Start New Session/i });
     fireEvent.click(startSessionButton);
     
@@ -168,7 +248,7 @@ describe('DialecticProjectDetailsPage', () => {
     const store = getDialecticStoreState();
     (store.startDialecticSession as Mock).mockResolvedValue({ data: mockSession, error: null });
 
-    const { container } = renderWithRouter(`/dialectic/${mockProjectId}`);
+    const { container } = renderWithRouter(`/dialectic/${mockProjectIdFromUrl}`);
     const startSessionButton = screen.getByRole('button', { name: /Trigger Session From List/i });
     fireEvent.click(startSessionButton);
     

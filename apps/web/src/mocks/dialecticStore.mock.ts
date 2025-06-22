@@ -277,3 +277,24 @@ export const selectIsStageReadyForSessionIteration = vi.fn<
 //     }
 //     return false;
 // };
+
+// Add missing selectors required by DialecticProjectDetailsPage.tsx
+export const selectCurrentProjectDetail = (state: DialecticStateValues): DialecticProject | null => {
+  return state.currentProjectDetail;
+};
+
+export const selectIsLoadingProjectDetail = (state: DialecticStateValues): boolean => {
+  return state.isLoadingProjectDetail;
+};
+
+export const selectProjectDetailError = (state: DialecticStateValues): ApiError | null => {
+  return state.projectDetailError;
+};
+
+export const selectActiveContextStage = (state: DialecticStateValues): DialecticStage | null => {
+  return state.activeContextStage;
+};
+
+export const selectActiveContextProjectId = (state: DialecticStateValues): string | null => {
+  return state.activeContextProjectId;
+};
