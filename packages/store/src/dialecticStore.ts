@@ -95,6 +95,11 @@ export const initialDialecticStateValues: DialecticStateValues = {
   activeContextSessionId: null,
   activeContextStage: null,
 
+  // New initial states for single session fetching
+  activeSessionDetail: null,
+  isLoadingActiveSessionDetail: false,
+  activeSessionDetailError: null,
+
   // States for updating session models
   isUpdatingSessionModels: false,
   updateSessionModelsError: null,
@@ -903,7 +908,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
   setActiveContextStage: (stage: DialecticStage | null) => set({ activeContextStage: stage }),
 
   setActiveDialecticContext: (context: { projectId: string | null; sessionId: string | null; stage: DialecticStage | null }) => {
-    logger.info('[DialecticStore] Setting active dialectic context', context);
+    logger.info('[DialecticStore] Setting active dialectic context', { context });
     set({
       activeContextProjectId: context.projectId,
       activeContextSessionId: context.sessionId,
@@ -929,7 +934,6 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
         logger.info('[DialecticStore] Successfully submitted stage responses.', { response: response.data });
         set({ isSubmittingStageResponses: false, submitStageResponsesError: null });
         
-        // On success, refetch project details to get the most up-to-date state including the new session status and any new artifacts.
         logger.info(`[DialecticStore] Stage responses submitted for project ${payload.projectId}. Refetching project details.`);
         await get().fetchDialecticProjectDetails(payload.projectId);
       }
@@ -959,7 +963,6 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
         logger.info('[DialecticStore] Successfully saved contribution edit.', { newContribution: response.data });
         set({ isSavingContributionEdit: false, saveContributionEditError: null });
 
-        // Also update the content cache with the edited content immediately
         const newContribution = response.data;
         if (newContribution) {
           logger.info(`[DialecticStore] Updating content cache for new contribution version ${newContribution.id}.`);
@@ -970,13 +973,11 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
                 content: payload.editedContentText,
                 isLoading: false,
                 error: undefined,
-                // Other fields like signedUrl will be populated on next fetchContributionContent if needed
               }
             }
           }));
         }
         
-        // Refetch project details to get the most up-to-date contribution list
         logger.info(`[DialecticStore] Contribution edit saved for project ${payload.projectId}. Refetching project details.`);
         await get().fetchDialecticProjectDetails(payload.projectId);
       }
@@ -992,7 +993,92 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     }
   },
 
-  // ADDED: Implementation for fetching feedback file content and related actions
+  fetchAndSetCurrentSessionDetails: async (sessionId: string) => {
+    set({ isLoadingActiveSessionDetail: true, activeSessionDetailError: null });
+    logger.info(`[DialecticStore] Fetching current session details for sessionId: ${sessionId}`);
+    try {
+      const response = await api.dialectic().getSessionDetails(sessionId);
+      if (response.error || !response.data) {
+        logger.error('[DialecticStore] Error fetching session details:', { sessionId, errorDetails: response.error });
+        set({ 
+          activeSessionDetail: null, 
+          isLoadingActiveSessionDetail: false, 
+          activeSessionDetailError: response.error || { code: 'FETCH_ERROR', message: 'No data returned for session' } 
+        });
+        return;
+      }
+
+      const freshSessionData = response.data;
+      logger.info('[DialecticStore] Successfully fetched session details:', { sessionId, sessionData: freshSessionData });
+
+      set(state => {
+        const newProjectDetail = state.currentProjectDetail ? { ...state.currentProjectDetail } : null;
+        if (newProjectDetail && newProjectDetail.dialectic_sessions) {
+          const sessionIndex = newProjectDetail.dialectic_sessions.findIndex(s => s.id === freshSessionData.id);
+          if (sessionIndex > -1) {
+            newProjectDetail.dialectic_sessions[sessionIndex] = freshSessionData;
+          } else {
+            newProjectDetail.dialectic_sessions.push(freshSessionData);
+          }
+        } else if (newProjectDetail) {
+          newProjectDetail.dialectic_sessions = [freshSessionData];
+        }
+
+        let activeStage: DialecticStage | null = null;
+        if (freshSessionData.current_stage_id && newProjectDetail?.dialectic_process_templates?.stages) {
+            activeStage = newProjectDetail.dialectic_process_templates.stages.find(s => s.slug === freshSessionData.current_stage_id) || null;
+        }
+
+        return {
+          activeSessionDetail: freshSessionData,
+          isLoadingActiveSessionDetail: false,
+          activeSessionDetailError: null,
+          currentProjectDetail: newProjectDetail,
+          activeContextProjectId: freshSessionData.project_id,
+          activeContextSessionId: freshSessionData.id,
+          activeContextStage: activeStage,
+          selectedModelIds: freshSessionData.selected_model_catalog_ids || [],
+        };
+      });
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while fetching session details',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error fetching session details:', { sessionId, errorDetails: networkError });
+      set({ 
+        activeSessionDetail: null, 
+        isLoadingActiveSessionDetail: false, 
+        activeSessionDetailError: networkError 
+      });
+    }
+  },
+
+  activateProjectAndSessionContextForDeepLink: async (projectId: string, sessionId: string) => {
+    logger.info(`[DialecticStore] Activating project and session context for deep link. ProjectID: ${projectId}, SessionID: ${sessionId}`);
+    const state = get();
+
+    // Condition to fetch project details: 
+    // 1. If activeContextProjectId is different from the target projectId.
+    // 2. If currentProjectDetail is null (meaning no project is loaded).
+    // 3. If currentProjectDetail is loaded but its ID doesn't match the target projectId (consistency check).
+    const needsProjectFetch = 
+      state.activeContextProjectId !== projectId || 
+      !state.currentProjectDetail || 
+      state.currentProjectDetail.id !== projectId;
+
+    if (needsProjectFetch) {
+      logger.info(`[DialecticStore] Project context differs or not set. Fetching project details for ${projectId} before session.`);
+      await state.fetchDialecticProjectDetails(projectId);
+      // After project details are fetched, the new state will be available for fetchAndSetCurrentSessionDetails
+      // No need to await a second get() here, as fetchDialecticProjectDetails updates the store internally.
+    }
+
+    logger.info(`[DialecticStore] Proceeding to fetch session details for ${sessionId}.`);
+    await get().fetchAndSetCurrentSessionDetails(sessionId); // Use get() to ensure the latest state if fetchDialecticProjectDetails was called
+  },
+
+  // ADDED: Actions for fetching feedback file content
   fetchFeedbackFileContent: async (payload: { projectId: string; storagePath: string }) => {
     set({
       isFetchingFeedbackFileContent: true,

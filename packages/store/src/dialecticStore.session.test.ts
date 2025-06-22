@@ -262,6 +262,14 @@ describe('useDialecticStore', () => {
             updated_at: new Date().toISOString(),
             dialectic_sessions: [mockInitialSession],
             dialectic_process_templates: null,
+            isLoadingProcessTemplate: false,
+            processTemplateError: null,
+            contributionGenerationStatus: 'idle',
+            generateContributionsError: null,
+            isSubmittingStageResponses: false,
+            submitStageResponsesError: null,
+            isSavingContributionEdit: false,
+            saveContributionEditError: null,
         };
 
         const payload: UpdateSessionModelsPayload = {
@@ -539,6 +547,287 @@ describe('useDialecticStore', () => {
             expect(state.domainOverlaysError).toBeNull();
             expect(state.isLoadingDomainOverlays).toBe(false);
         });
+    });
+
+    describe('fetchAndSetCurrentSessionDetails Thunk', () => {
+        const mockSessionId = 'sess-fetch-123';
+        const mockProjectId = 'proj-for-sess-123';
+        const mockSessionData: DialecticSession = {
+            id: mockSessionId,
+            project_id: mockProjectId,
+            session_description: 'Fetched session',
+            user_input_reference_url: null,
+            associated_chat_id: null,
+            iteration_count: 2,
+            selected_model_catalog_ids: ['model-a', 'model-b'],
+            status: 'active',
+            current_stage_id: 'synthesis',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            dialectic_session_models: [{ id: 'sm-1', session_id: mockSessionId, model_id: 'model-a', model_role: 'primary', created_at: new Date().toISOString()}],
+            dialectic_contributions: [],
+        };
+
+        const mockProjectDetailWithSession: DialecticProject = {
+            id: mockProjectId,
+            user_id: 'user-1',
+            project_name: 'Project Containing Session',
+            selected_domain_id: 'domain-1',
+            dialectic_domains: null,
+            selected_domain_overlay_id: null,
+            repo_url: null,
+            status: 'active',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            dialectic_sessions: [mockSessionData], // Include the session here
+            resources: [],
+            process_template_id: null,
+            dialectic_process_templates: { // Ensure process template and stages are present for stage derivation
+                id: 'pt-1',
+                name: 'Test Template',
+                description: 'A test process template',
+                starting_stage_id: 'stage-synthesis-id',
+                stages: [{
+                    id: 'stage-synthesis-id',
+                    display_name: 'Synthesis Stage',
+                    slug: 'synthesis',
+                    description: 'desc',
+                    created_at: new Date().toISOString(),
+                    default_system_prompt_id: null,
+                    expected_output_artifacts: null, // Using null for Json type
+                    input_artifact_rules: null // Using null for Json type
+                }],
+                created_at: new Date().toISOString(),
+            },
+            isLoadingProcessTemplate: false,
+            processTemplateError: null,
+            contributionGenerationStatus: 'idle',
+            generateContributionsError: null,
+            isSubmittingStageResponses: false,
+            submitStageResponsesError: null,
+            isSavingContributionEdit: false,
+            saveContributionEditError: null,
+        };
+
+        it('should fetch session details, update state, and set context on success', async () => {
+            // Mock the API response for getSessionDetails
+            (api.dialectic().getSessionDetails as Mock).mockResolvedValueOnce({
+                data: mockSessionData,
+                error: undefined,
+                status: 200
+            } as ApiResponse<DialecticSession>);
+
+            // Set an initial currentProjectDetail that includes the session, or a project that will be updated
+            useDialecticStore.setState({
+                currentProjectDetail: {
+                    ...mockProjectDetailWithSession, // project_id matches mockSessionData.project_id
+                    dialectic_sessions: [], // Start with an empty sessions array to test update
+                },
+                activeContextStage: null,
+                selectedModelIds: [],
+            });
+
+            const { fetchAndSetCurrentSessionDetails } = useDialecticStore.getState();
+
+            await fetchAndSetCurrentSessionDetails(mockSessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.isLoadingActiveSessionDetail).toBe(false);
+            expect(state.activeSessionDetail).toEqual(mockSessionData);
+            expect(state.activeSessionDetailError).toBeNull();
+
+            // Check if the session was added/updated in currentProjectDetail.dialectic_sessions
+            expect(state.currentProjectDetail?.dialectic_sessions).toContainEqual(mockSessionData);
+
+            // Directly assert the context states updated by the thunk
+            expect(state.activeContextProjectId).toBe(mockSessionData.project_id);
+            expect(state.activeContextSessionId).toBe(mockSessionData.id);
+            expect(state.activeContextStage).toEqual(expect.objectContaining({ slug: mockSessionData.current_stage_id }));
+            expect(state.selectedModelIds).toEqual(mockSessionData.selected_model_catalog_ids);
+        });
+
+        it('should handle API errors when fetching session details', async () => {
+            const apiError: ApiError = { message: 'Failed to fetch', code: 'API_ERROR' };
+            (api.dialectic().getSessionDetails as Mock).mockResolvedValueOnce({ 
+                data: undefined, 
+                error: apiError, 
+                status: 500 
+            } as ApiResponse<DialecticSession>);
+            
+            useDialecticStore.setState({ 
+                currentProjectDetail: mockProjectDetailWithSession // Ensure project context exists
+            });
+
+            const { fetchAndSetCurrentSessionDetails } = useDialecticStore.getState();
+            await fetchAndSetCurrentSessionDetails(mockSessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.isLoadingActiveSessionDetail).toBe(false);
+            expect(state.activeSessionDetail).toBeNull();
+            expect(state.activeSessionDetailError).toEqual(apiError);
+        });
+
+        it('should update an existing session in currentProjectDetail.dialectic_sessions if it already exists', async () => {
+            const updatedMockSessionData = { ...mockSessionData, session_description: 'Updated Description' };
+            (api.dialectic().getSessionDetails as Mock).mockResolvedValueOnce({ 
+                data: updatedMockSessionData, 
+                error: undefined, 
+                status: 200 
+            });
+
+            useDialecticStore.setState({
+                currentProjectDetail: { 
+                    ...mockProjectDetailWithSession, 
+                    dialectic_sessions: [mockSessionData] // Project already has the older version of the session
+                }
+            });
+
+            const { fetchAndSetCurrentSessionDetails } = useDialecticStore.getState();
+            await fetchAndSetCurrentSessionDetails(mockSessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.activeSessionDetail).toEqual(updatedMockSessionData);
+            const updatedSessionInProject = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === mockSessionId);
+            expect(updatedSessionInProject).toEqual(updatedMockSessionData);
+            expect(state.currentProjectDetail?.dialectic_sessions?.length).toBe(1); // Still only one session
+        });
+
+        it('should add the session to currentProjectDetail.dialectic_sessions if project exists but session does not', async () => {
+            (api.dialectic().getSessionDetails as Mock).mockResolvedValueOnce({ 
+                data: mockSessionData, 
+                error: undefined, 
+                status: 200 
+            });
+
+            useDialecticStore.setState({
+                currentProjectDetail: { 
+                    ...mockProjectDetailWithSession, 
+                    dialectic_sessions: [] // Project exists, but no sessions yet
+                }
+            });
+
+            const { fetchAndSetCurrentSessionDetails } = useDialecticStore.getState();
+            await fetchAndSetCurrentSessionDetails(mockSessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.activeSessionDetail).toEqual(mockSessionData);
+            expect(state.currentProjectDetail?.dialectic_sessions).toContainEqual(mockSessionData);
+            expect(state.currentProjectDetail?.dialectic_sessions?.length).toBe(1);
+        });
+
+        it('should not modify currentProjectDetail if it is null', async () => {
+            (api.dialectic().getSessionDetails as Mock).mockResolvedValueOnce({ 
+                data: mockSessionData, 
+                error: undefined, 
+                status: 200 
+            });
+
+            useDialecticStore.setState({ currentProjectDetail: null }); // No project loaded
+
+            const { fetchAndSetCurrentSessionDetails } = useDialecticStore.getState();
+            await fetchAndSetCurrentSessionDetails(mockSessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.activeSessionDetail).toEqual(mockSessionData); // Fetches and sets active session
+            expect(state.currentProjectDetail).toBeNull(); // Project detail remains null
+        });
+    });
+
+    describe('activateProjectAndSessionContextForDeepLink Thunk', () => {
+        const mockProjectId = 'deep-proj-123';
+        const mockSessionId = 'deep-sess-456';
+
+        let fetchDialecticProjectDetailsSpy;
+        let fetchAndSetCurrentSessionDetailsSpy;
+
+        beforeEach(() => {
+            // Spy on the thunks within the same store
+            fetchDialecticProjectDetailsSpy = vi.spyOn(useDialecticStore.getState(), 'fetchDialecticProjectDetails').mockImplementationOnce(() => Promise.resolve()); // Mock implementation to prevent actual API calls
+            fetchAndSetCurrentSessionDetailsSpy = vi.spyOn(useDialecticStore.getState(), 'fetchAndSetCurrentSessionDetails').mockImplementationOnce(() => Promise.resolve());
+        });
+
+        afterEach(() => {
+            fetchDialecticProjectDetailsSpy.mockRestore();
+            fetchAndSetCurrentSessionDetailsSpy.mockRestore();
+        });
+
+        it('should call fetchDialecticProjectDetails then fetchAndSetCurrentSessionDetails if project context differs', async () => {
+            useDialecticStore.setState({ activeContextProjectId: 'different-project-id' });
+
+            const { activateProjectAndSessionContextForDeepLink } = useDialecticStore.getState();
+            await activateProjectAndSessionContextForDeepLink(mockProjectId, mockSessionId);
+
+            expect(fetchDialecticProjectDetailsSpy).toHaveBeenCalledWith(mockProjectId);
+            // Ensure fetchAndSetCurrentSessionDetails is called *after* fetchDialecticProjectDetails resolves
+            // This exact timing is hard to assert directly with Zustand spies without more complex async handling in tests
+            // But we can check it was called.
+            expect(fetchAndSetCurrentSessionDetailsSpy).toHaveBeenCalledWith(mockSessionId);
+            // A more robust test might involve mockImplementationOnce on fetchDialecticProjectDetails to control its resolution
+            // and then assert the call order or that fetchAndSetCurrentSessionDetails is called in a .then() or await.
+        });
+
+        it('should only call fetchAndSetCurrentSessionDetails if project context matches', async () => {
+            // Ensure currentProjectDetail is also set and matches mockProjectId
+            useDialecticStore.setState({ 
+                activeContextProjectId: mockProjectId,
+                currentProjectDetail: { // Add this
+                    id: mockProjectId, 
+                    user_id: 'user-1',
+                    project_name: 'Deep Link Test Project',
+                    selected_domain_id: 'domain-1',
+                    dialectic_domains: null,
+                    selected_domain_overlay_id: null,
+                    repo_url: null,
+                    status: 'active',
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    dialectic_sessions: [],
+                    resources: [],
+                    process_template_id: null,
+                    dialectic_process_templates: null,
+                    isLoadingProcessTemplate: false,
+                    processTemplateError: null,
+                    contributionGenerationStatus: 'idle',
+                    generateContributionsError: null,
+                    isSubmittingStageResponses: false,
+                    submitStageResponsesError: null,
+                    isSavingContributionEdit: false,
+                    saveContributionEditError: null,
+                } 
+            });
+
+            const { activateProjectAndSessionContextForDeepLink } = useDialecticStore.getState();
+            await activateProjectAndSessionContextForDeepLink(mockProjectId, mockSessionId);
+
+            expect(fetchDialecticProjectDetailsSpy).not.toHaveBeenCalled();
+            expect(fetchAndSetCurrentSessionDetailsSpy).toHaveBeenCalledWith(mockSessionId);
+        });
+
+        it('should call fetchDialecticProjectDetails then fetchAndSetCurrentSessionDetails if currentProjectDetail is null', async () => {
+            useDialecticStore.setState({ activeContextProjectId: null, currentProjectDetail: null });
+
+            const { activateProjectAndSessionContextForDeepLink } = useDialecticStore.getState();
+            await activateProjectAndSessionContextForDeepLink(mockProjectId, mockSessionId);
+
+            expect(fetchDialecticProjectDetailsSpy).toHaveBeenCalledWith(mockProjectId);
+            expect(fetchAndSetCurrentSessionDetailsSpy).toHaveBeenCalledWith(mockSessionId);
+        });
+
+        it('should call fetchDialecticProjectDetails then fetchAndSetCurrentSessionDetails if activeContextProjectId is null', async () => {
+            // This case also implies project context differs or is not set
+            useDialecticStore.setState({ activeContextProjectId: null });
+
+            const { activateProjectAndSessionContextForDeepLink } = useDialecticStore.getState();
+            await activateProjectAndSessionContextForDeepLink(mockProjectId, mockSessionId);
+
+            expect(fetchDialecticProjectDetailsSpy).toHaveBeenCalledWith(mockProjectId);
+            expect(fetchAndSetCurrentSessionDetailsSpy).toHaveBeenCalledWith(mockSessionId);
+        });
+    });
+
+    // Feedback file content tests were here, ensure they are still present if this is the end of the file
+    describe('Feedback File Content Actions', () => {
+        it.todo('should have tests for feedback file content actions'); // Placeholder test
     });
 
 });

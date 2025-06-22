@@ -93,6 +93,11 @@ describe('useDialecticStore', () => {
             expect(state.generateContributionsError).toBe(initialDialecticStateValues.generateContributionsError);
 
             expect(state.contributionContentCache).toEqual(initialDialecticStateValues.contributionContentCache);
+
+            // Verify new initial state for single session fetching
+            expect(state.activeSessionDetail).toBe(initialDialecticStateValues.activeSessionDetail);
+            expect(state.isLoadingActiveSessionDetail).toBe(initialDialecticStateValues.isLoadingActiveSessionDetail);
+            expect(state.activeSessionDetailError).toBe(initialDialecticStateValues.activeSessionDetailError);
         });
     });
 
@@ -145,12 +150,14 @@ describe('useDialecticStore', () => {
                 isLoadingProjects: true,
                 projects: [{ id: '1' } as any],
                 selectedDomain: { id: 'test-domain' } as any,
+                activeSessionDetail: { id: 'session-reset-test' } as any, // Add a value for new field
             });
 
             let state = useDialecticStore.getState();
             expect(state.isLoadingProjects).toBe(true);
             expect(state.projects.length).toBe(1);
             expect(state.selectedDomain).not.toBeNull();
+            expect(state.activeSessionDetail).not.toBeNull(); // Check new field
 
             // Call the reset action
             state.reset();
@@ -160,9 +167,8 @@ describe('useDialecticStore', () => {
             expect(state.isLoadingProjects).toBe(initialDialecticStateValues.isLoadingProjects);
             expect(state.projects).toEqual(initialDialecticStateValues.projects);
             expect(state.selectedDomain).toBe(initialDialecticStateValues.selectedDomain);
-            // For a more thorough test, one might compare the entire state object
-            // to initialDialecticStateValues, but that can be brittle if initial state changes often.
-            // Checking a representative sample is usually sufficient for this type of reset.
+            expect(state.activeSessionDetail).toBe(initialDialecticStateValues.activeSessionDetail); // Check new field is reset
+
             Object.keys(initialDialecticStateValues).forEach(key => {
                 expect((state as any)[key]).toEqual((initialDialecticStateValues as any)[key]);
             });

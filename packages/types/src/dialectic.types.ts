@@ -250,6 +250,11 @@ export interface DialecticStateValues {
   activeContextSessionId: string | null;
   activeContextStage: DialecticStage | null;
 
+  // New state for single session details
+  activeSessionDetail: DialecticSession | null;
+  isLoadingActiveSessionDetail: boolean;
+  activeSessionDetailError: ApiError | null;
+
   // States for updating session models (newly added)
   isUpdatingSessionModels: boolean;
   updateSessionModelsError: ApiError | null;
@@ -335,6 +340,10 @@ export interface DialecticActions {
   fetchFeedbackFileContent: (payload: { projectId: string; storagePath: string }) => Promise<void>;
   resetFetchFeedbackFileContentError: () => void;
   clearCurrentFeedbackFileContent: () => void;
+
+  // New actions for fetching and setting single session context
+  fetchAndSetCurrentSessionDetails: (sessionId: string) => Promise<void>;
+  activateProjectAndSessionContextForDeepLink: (projectId: string, sessionId: string) => Promise<void>;
 
   _resetForTesting?: () => void;
   reset: () => void;

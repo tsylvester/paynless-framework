@@ -840,7 +840,7 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
     *   `[✅] X.2.1.7 [COMMIT]` `feat(api,edge): implement getSessionDetails endpoint and client method`
 
 *   **Task X.2.2: Store - Fetching and Setting Single Session Context**
-    *   `[ ] X.2.2.1 [TEST-UNIT]` **Write Tests for New Session State and `fetchAndSetCurrentSessionDetails` Thunk** (RED)
+    *   `[✅] X.2.2.1 [TEST-UNIT]` **Write Tests for New Session State and `fetchAndSetCurrentSessionDetails` Thunk** (RED)
         *   **File:** `packages/store/src/dialecticStore.test.ts`
         *   **Assertions for State:** Verify presence of `activeSessionDetail`, `isLoadingActiveSessionDetail`, `activeSessionDetailError`.
         *   **Assertions for Thunk:**
@@ -852,21 +852,21 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
                 *   `setActiveDialecticContext` is called with `projectId`, `sessionId`, and derived stage.
                 *   `setSelectedModelIds` is called with session's model IDs.
             *   On error: `isLoadingActiveSessionDetail` and `activeSessionDetailError` are handled.
-    *   `[ ] X.2.2.2 [TYPES] [MOD]` **Add/Update Session State in `DialecticStateValues`** (GREEN - Part 1)
+    *   `[✅] X.2.2.2 [TYPES] [MOD]` **Add/Update Session State in `DialecticStateValues`** (GREEN - Part 1)
         *   **File:** `packages/types/src/dialectic.types.ts` (within `DialecticStateValues` interface)
         *   **Action:** Add `activeSessionDetail: DialecticSession | null;`, `isLoadingActiveSessionDetail: boolean;`, `activeSessionDetailError: ApiError | null;`.
-    *   `[ ] X.2.2.3 [SFC] [NEW]` **Define `fetchAndSetCurrentSessionDetails(sessionId: string)` Thunk** (GREEN - Part 2)
+    *   `[✅] X.2.2.3 [SFC] [NEW]` **Define `fetchAndSetCurrentSessionDetails(sessionId: string)` Thunk** (GREEN - Part 2)
         *   **File:** `packages/store/src/dialecticStore.ts`
-    *   `[ ] X.2.2.4 [REFACTOR]` Review new session state and thunk.
-    *   `[ ] X.2.2.5 [TEST-UNIT]` **Write Tests for `activateProjectAndSessionContextForDeepLink` Thunk** (RED)
+    *   `[✅] X.2.2.4 [REFACTOR]` Review new session state and thunk.
+    *   `[✅] X.2.2.5 [TEST-UNIT]` **Write Tests for `activateProjectAndSessionContextForDeepLink` Thunk** (RED)
         *   **File:** `packages/store/src/dialecticStore.test.ts`
         *   **Assertions:** Mock `fetchDialecticProjectDetails` and `fetchAndSetCurrentSessionDetails`.
             *   Scenario 1: `activeContextProjectId !== projectId` -> `fetchDialecticProjectDetails` is called, then `fetchAndSetCurrentSessionDetails`.
             *   Scenario 2: `activeContextProjectId === projectId` -> only `fetchAndSetCurrentSessionDetails` is called.
-    *   `[ ] X.2.2.6 [SFC] [NEW]` **Define `activateProjectAndSessionContextForDeepLink(projectId: string, sessionId: string)` Thunk** (GREEN)
+    *   `[✅] X.2.2.6 [SFC] [NEW]` **Define `activateProjectAndSessionContextForDeepLink(projectId: string, sessionId: string)` Thunk** (GREEN)
         *   **File:** `packages/store/src/dialecticStore.ts`
-    *   `[ ] X.2.2.7 [REFACTOR]` Review `activateProjectAndSessionContextForDeepLink` thunk.
-    *   `[ ] X.2.2.8 [COMMIT]` `feat(store,types): add state and thunks for fetching and activating single session context`
+    *   `[✅] X.2.2.7 [REFACTOR]` Review `activateProjectAndSessionContextForDeepLink` thunk.
+    *   `[✅] X.2.2.8 [COMMIT]` `feat(store,types): add state and thunks for fetching and activating single session context`
 
 *   **Task X.2.3: `ViewSessionButton` Component**
     *   `[ ] X.2.3.1 [TEST-UNIT]` **Write Tests for `ViewSessionButton`** (RED)
