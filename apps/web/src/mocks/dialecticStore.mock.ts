@@ -79,6 +79,9 @@ const initialDialecticStateValues: DialecticStateValues = {
   saveContributionEditError: null,
   isUpdatingSessionModels: false,
   updateSessionModelsError: null,
+  currentFeedbackFileContent: null,
+  isFetchingFeedbackFileContent: false,
+  fetchFeedbackFileContentError: null,
 };
 
 // 2. Define the internal state variable
@@ -138,6 +141,9 @@ const initializeInternalDialecticStoreState = (): DialecticStore => {
       (newState as DialecticStateValues).activeContextSessionId = context.sessionId;
       (newState as DialecticStateValues).activeContextStage = context.stage;
     }),
+    fetchFeedbackFileContent: vi.fn().mockResolvedValue(undefined as void),
+    resetFetchFeedbackFileContentError: vi.fn(() => { (newState as DialecticStateValues).fetchFeedbackFileContentError = null; }),
+    clearCurrentFeedbackFileContent: vi.fn(),
     reset: vi.fn(() => { 
       Object.assign(internalMockDialecticStoreState, initializeInternalDialecticStoreState());
     }),

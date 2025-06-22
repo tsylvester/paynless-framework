@@ -2,11 +2,20 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   useDialecticStore, 
   selectIsStageReadyForSessionIteration,
-  selectIsLoadingProjectDetail, // Added
-  selectContributionGenerationStatus, // Added
-  selectProjectDetailError // Added
+  selectIsLoadingProjectDetail,
+  selectContributionGenerationStatus,
+  selectProjectDetailError,
+  selectFeedbackForStageIteration
 } from '@paynless/store';
-import { DialecticContribution, ApiError, DialecticSession, DialecticStage } from '@paynless/types'; // Added ContributionGenerationStatus
+import { 
+  DialecticContribution, 
+  ApiError, 
+  DialecticSession, 
+  DialecticStage, 
+  DialecticFeedback, 
+  GetProjectResourceContentResponse,
+  SubmitStageResponsesPayload
+} from '@paynless/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -23,16 +32,15 @@ import {
 import { GeneratedContributionCard } from './GeneratedContributionCard';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Skeleton } from '@/components/ui/skeleton'; // Added
+import { Skeleton } from '@/components/ui/skeleton';
+import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
+
+// ADDED: Local type alias to ensure GetProjectResourceContentResponse is marked as used
+type FeedbackContentType = GetProjectResourceContentResponse;
 
 interface SessionContributionsDisplayCardProps {
   session: DialecticSession | undefined;
   activeStage: DialecticStage | null;
-}
-
-interface StageResponse {
-  originalContributionId: string;
-  responseText: string;
 }
 
 // Skeleton component for GeneratedContributionCard
@@ -66,6 +74,15 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
   const contributionGenerationStatus = useDialecticStore(selectContributionGenerationStatus);
   const projectDetailError = useDialecticStore(selectProjectDetailError);
 
+  // Store items for feedback content
+  const fetchFeedbackFileContent = useDialecticStore(state => state.fetchFeedbackFileContent);
+  // MODIFIED: Use the local type alias
+  const currentFeedbackFileContent: FeedbackContentType | null = useDialecticStore(state => state.currentFeedbackFileContent);
+  const isFetchingFeedbackFileContent = useDialecticStore(state => state.isFetchingFeedbackFileContent);
+  const fetchFeedbackFileContentError = useDialecticStore(state => state.fetchFeedbackFileContentError);
+  const clearCurrentFeedbackFileContent = useDialecticStore(state => state.clearCurrentFeedbackFileContent);
+  const resetFetchFeedbackFileContentError = useDialecticStore(state => state.resetFetchFeedbackFileContentError);
+
   const isStageReady = useDialecticStore(state =>
     project && session && activeStage ?
     selectIsStageReadyForSessionIteration(
@@ -77,9 +94,20 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
     ) : false
   );
 
+  // Select feedback metadata for the current stage and iteration
+  const feedbacksForStageIterationArray = useDialecticStore(state => 
+    project && session && activeStage 
+      ? selectFeedbackForStageIteration(state, session.id, activeStage.slug, session.iteration_count)
+      : null
+  );
+  // MODIFIED: Take the first element if the selector returns an array
+  const feedbackForStageIteration: DialecticFeedback | undefined = feedbacksForStageIterationArray?.[0];
+
   const [stageResponses, setStageResponses] = useState<Record<string, string>>({});
   const [submissionSuccessMessage, setSubmissionSuccessMessage] = useState<string | null>(null);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  // ADDED: State for controlling feedback content modal
+  const [showFeedbackContentModal, setShowFeedbackContentModal] = useState(false);
 
   useEffect(() => {
     setStageResponses({});
@@ -163,21 +191,38 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
         resetSubmitError?.();
     }
 
-    const responsesToSubmit: StageResponse[] = Object.entries(stageResponses)
-      .filter(([, text]) => text.trim() !== '')
-      .map(([originalContributionId, responseText]) => ({ originalContributionId, responseText }));
+    // CONSOLIDATE feedback into Markdown
+    let consolidatedMarkdown = "";
+    let hasAnyResponses = false;
+    displayedContributions.forEach(contrib => {
+      const originalId = contrib.original_model_contribution_id || contrib.id;
+      const responseText = stageResponses[originalId];
+      if (responseText && responseText.trim() !== "") {
+        hasAnyResponses = true;
+        consolidatedMarkdown += `## Feedback for Contribution by ${contrib.model_name || 'Unknown Model'} (ID: ${originalId.substring(0,8)}...)\n\n`;
+        consolidatedMarkdown += `${responseText.trim()}\n\n---\n\n`;
+      }
+    });
+
+    const payload: SubmitStageResponsesPayload = {
+      sessionId: session.id,
+      currentIterationNumber: session.iteration_count,
+      projectId: project.id,
+      stageSlug: activeStage.slug,
+      responses: [], // Send empty array as feedback is in the file
+    };
+
+    if (hasAnyResponses) {
+      payload.userStageFeedback = {
+        content: consolidatedMarkdown,
+        feedbackType: "StageContributionResponses_v1",
+        // resourceDescription could be added here if needed in the future
+      };
+    }
 
     try {
-      const result = await submitStageResponses({
-        sessionId: session.id,
-        currentIterationNumber: session.iteration_count,
-        responses: responsesToSubmit.map(r => ({
-          originalModelContributionId: r.originalContributionId,
-          responseText: r.responseText,
-        })),
-        projectId: project.id,
-        stageSlug: activeStage.slug,
-      });
+      // Use the constructed payload
+      const result = await submitStageResponses(payload);
       if (result?.data || !result.error) {
         setSubmissionSuccessMessage('Responses submitted successfully. The next stage is being prepared.');
         toast.success("Responses Submitted", { description: "The next stage is being prepared." });
@@ -330,8 +375,48 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
                 <AlertDescription>{submissionError.message}</AlertDescription>
             </Alert>
         )}
+        {/* ADDED: Alert for feedback content fetch error within CardHeader for general visibility */}
+        {fetchFeedbackFileContentError && !showFeedbackContentModal && (
+          <Alert variant="destructive" className="mt-2">
+            <AlertTitle>Error Fetching Feedback File</AlertTitle>
+            <AlertDescription>
+              {fetchFeedbackFileContentError.message}
+              <Button variant="link" size="sm" onClick={() => resetFetchFeedbackFileContentError()} className="ml-2 p-0 h-auto">Dismiss</Button>
+            </AlertDescription>
+          </Alert>
+        )}
       </CardHeader>
       <CardContent>
+        {/* Display feedback metadata if available */}
+        {feedbackForStageIteration && (
+          <div className="mb-6 p-4 border rounded-md bg-muted/40" data-testid="stage-feedback-display">
+            <h4 className="font-semibold mb-2 text-md">Stage Feedback Summary</h4>
+            <p className="text-sm text-muted-foreground">
+              Feedback File: <span className="font-medium text-foreground">{feedbackForStageIteration.file_name}</span>
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Submitted on: {new Date(feedbackForStageIteration.created_at).toLocaleString()}
+            </p>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="mt-2"
+              onClick={async () => {
+                if (project && feedbackForStageIteration) {
+                  if (fetchFeedbackFileContentError) resetFetchFeedbackFileContentError();
+                  await fetchFeedbackFileContent({ projectId: project.id, storagePath: feedbackForStageIteration.storage_path });
+                  setShowFeedbackContentModal(true);
+                }
+              }}
+              disabled={isFetchingFeedbackFileContent}
+            >
+              {isFetchingFeedbackFileContent ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              View Feedback Content
+            </Button>
+          </div>
+        )}
         {displayedContributions.length > 0 ? (
           <div className="space-y-4">
             {displayedContributions.map(contrib => (
@@ -386,6 +471,53 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ADDED: Modal for displaying feedback content */}
+      {showFeedbackContentModal && (
+        <AlertDialog open={showFeedbackContentModal} onOpenChange={(isOpen) => {
+          setShowFeedbackContentModal(isOpen);
+          if (!isOpen) {
+            clearCurrentFeedbackFileContent(); // Clear content and errors when modal is closed
+          }
+        }}>
+          <AlertDialogContent className="max-w-2xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Feedback Content: {currentFeedbackFileContent?.fileName || feedbackForStageIteration?.file_name || 'Loading...'}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Content of the submitted feedback file.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="my-4 max-h-[60vh] overflow-y-auto p-1 border rounded-md min-h-[200px]">
+              {isFetchingFeedbackFileContent && (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  <p className="ml-2 text-muted-foreground">Loading feedback...</p>
+                </div>
+              )}
+              {!isFetchingFeedbackFileContent && fetchFeedbackFileContentError && (
+                <Alert variant="destructive">
+                  <AlertTitle>Error Loading Content</AlertTitle>
+                  <AlertDescription>{fetchFeedbackFileContentError.message}</AlertDescription>
+                </Alert>
+              )}
+              {!isFetchingFeedbackFileContent && !fetchFeedbackFileContentError && currentFeedbackFileContent && (
+                <MarkdownRenderer content={currentFeedbackFileContent.content} />
+              )}
+              {!isFetchingFeedbackFileContent && !fetchFeedbackFileContentError && !currentFeedbackFileContent && (
+                 <p className="text-muted-foreground text-center py-4">No content to display or content has been cleared.</p>
+              )}
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => {
+                  setShowFeedbackContentModal(false);
+                  clearCurrentFeedbackFileContent();
+              }}>Close</AlertDialogCancel>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </Card>
   );
 };

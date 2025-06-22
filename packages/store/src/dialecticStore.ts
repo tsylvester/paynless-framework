@@ -98,6 +98,11 @@ export const initialDialecticStateValues: DialecticStateValues = {
   // States for updating session models
   isUpdatingSessionModels: false,
   updateSessionModelsError: null,
+
+  // ADDED: Initial states for fetching feedback file content
+  currentFeedbackFileContent: null,
+  isFetchingFeedbackFileContent: false,
+  fetchFeedbackFileContentError: null,
 };
 
 export const useDialecticStore = create<DialecticStore>((set, get) => ({
@@ -890,6 +895,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
   setActiveContextStage: (stage: DialecticStage | null) => set({ activeContextStage: stage }),
 
   setActiveDialecticContext: (context: { projectId: string | null; sessionId: string | null; stage: DialecticStage | null }) => {
+    logger.info('[DialecticStore] Setting active dialectic context', context);
     set({
       activeContextProjectId: context.projectId,
       activeContextSessionId: context.sessionId,
@@ -976,5 +982,54 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       set({ isSavingContributionEdit: false, saveContributionEditError: networkError });
       return { data: undefined, error: networkError, status: 0 };
     }
+  },
+
+  // ADDED: Implementation for fetching feedback file content and related actions
+  fetchFeedbackFileContent: async (payload: { projectId: string; storagePath: string }) => {
+    set({
+      isFetchingFeedbackFileContent: true,
+      fetchFeedbackFileContentError: null,
+      currentFeedbackFileContent: null, // Clear previous content
+    });
+    logger.info('[DialecticStore] Fetching feedback file content', payload);
+    try {
+      const response = await api.dialectic().getProjectResourceContent(payload);
+      if (response.error) {
+        logger.error('[DialecticStore] Error fetching feedback file content:', { payload, errorDetails: response.error });
+        set({ 
+          isFetchingFeedbackFileContent: false, 
+          fetchFeedbackFileContentError: response.error,
+          currentFeedbackFileContent: null,
+        });
+      } else {
+        logger.info('[DialecticStore] Successfully fetched feedback file content:', { payload, data: response.data });
+        set({
+          currentFeedbackFileContent: response.data || null,
+          isFetchingFeedbackFileContent: false,
+          fetchFeedbackFileContentError: null,
+        });
+      }
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while fetching feedback file content',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error fetching feedback file content:', { payload, errorDetails: networkError });
+      set({ 
+        isFetchingFeedbackFileContent: false, 
+        fetchFeedbackFileContentError: networkError,
+        currentFeedbackFileContent: null,
+      });
+    }
+  },
+
+  resetFetchFeedbackFileContentError: () => {
+    logger.info('[DialecticStore] Resetting fetchFeedbackFileContentError');
+    set({ fetchFeedbackFileContentError: null });
+  },
+
+  clearCurrentFeedbackFileContent: () => {
+    logger.info('[DialecticStore] Clearing currentFeedbackFileContent');
+    set({ currentFeedbackFileContent: null, isFetchingFeedbackFileContent: false, fetchFeedbackFileContentError: null }); // Also reset loading/error states
   },
 }));

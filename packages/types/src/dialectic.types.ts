@@ -253,6 +253,11 @@ export interface DialecticStateValues {
   // States for updating session models (newly added)
   isUpdatingSessionModels: boolean;
   updateSessionModelsError: ApiError | null;
+
+  // ADDED: States for fetching feedback file content
+  currentFeedbackFileContent: GetProjectResourceContentResponse | null;
+  isFetchingFeedbackFileContent: boolean;
+  fetchFeedbackFileContentError: ApiError | null;
 }
 
 export interface InitialPromptCacheEntry {
@@ -325,6 +330,11 @@ export interface DialecticActions {
   setActiveContextSessionId: (id: string | null) => void;
   setActiveContextStage: (stage: DialecticStage | null) => void;
   setActiveDialecticContext: (context: { projectId: string | null; sessionId: string | null; stage: DialecticStage | null }) => void;
+
+  // ADDED: Actions for fetching feedback file content
+  fetchFeedbackFileContent: (payload: { projectId: string; storagePath: string }) => Promise<void>;
+  resetFetchFeedbackFileContentError: () => void;
+  clearCurrentFeedbackFileContent: () => void;
 
   _resetForTesting?: () => void;
   reset: () => void;
@@ -527,7 +537,10 @@ export interface DialecticServiceFunctions {
 
 // Added for fetching project resource content
 export interface GetProjectResourceContentPayload {
-  resourceId: string;
+  resourceId?: string; // Make resourceId optional
+  projectId?: string;  // Add projectId as optional
+  storagePath?: string; // Add storagePath as optional
+  // Ensure at least one way to identify the resource is provided by API implementation
 }
 
 export interface GetProjectResourceContentResponse {
