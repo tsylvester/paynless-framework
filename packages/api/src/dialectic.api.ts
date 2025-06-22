@@ -686,4 +686,34 @@ export class DialecticApiClient {
             };
         }
     }
+
+    /**
+     * Fetches the details of a specific dialectic session.
+     * Requires authentication.
+     */
+    async getSessionDetails(sessionId: string): Promise<ApiResponse<DialecticSession>> {
+        logger.info('Fetching details for dialectic session', { sessionId });
+
+        try {
+            const response = await this.apiClient.post<DialecticSession, { action: string; payload: { sessionId: string } }>(
+                'dialectic-service',
+                { action: 'getSessionDetails', payload: { sessionId } }
+            );
+
+            if (response.error) {
+                logger.error('Error fetching dialectic session details:', { error: response.error, sessionId });
+            } else {
+                logger.info('Successfully fetched dialectic session details', { sessionId: response.data?.id });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in getSessionDetails:', { errorMessage: message, errorObject: error, sessionId });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
+    }
 } 

@@ -6,6 +6,7 @@ import {
   StartSessionPayload,
   GenerateContributionsPayload,
   GetProjectDetailsPayload,
+  GetSessionDetailsPayload,
   DialecticProject,
   DialecticContribution,
   DomainOverlayDescriptor,
@@ -39,12 +40,12 @@ import type {
 } from '../_shared/types.ts';
 import type { DomainDescriptor } from "./listAvailableDomains.ts";
 import type { IFileManager } from "../_shared/types/file_manager.types.ts";
-import type { DownloadStorageResult } from "../_shared/supabase_storage_utils.ts";
 import type { IStorageUtils } from "../_shared/types/storage_utils.types.ts";
 import { createProject } from "./createProject.ts";
 import { listAvailableDomains } from "./listAvailableDomains.ts";
 import { updateProjectDomain } from "./updateProjectDomain.ts";
 import { getProjectDetails } from "./getProjectDetails.ts";
+import { getSessionDetails } from "./getSessionDetails.ts";
 import { getContributionContentHandler } from "./getContributionContent.ts";
 import { startSession } from "./startSession.ts";
 import { generateContributions } from "./generateContribution.ts";
@@ -113,6 +114,7 @@ export interface ActionHandlers {
   listAvailableDomains: (dbClient: SupabaseClient, payload?: { stageAssociation?: string }) => Promise<DomainDescriptor[] | { error: ServiceError }>;
   updateProjectDomain: (getUserFn: GetUserFn, dbClient: SupabaseClient, payload: UpdateProjectDomainPayload, logger: ILogger) => Promise<{ data?: DialecticProject; error?: ServiceError }>;
   getProjectDetails: (payload: GetProjectDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: DialecticProject; error?: ServiceError; status?: number }>;
+  getSessionDetails: (payload: GetSessionDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }>;
   getContributionContentHandler: (getUserFn: GetUserFn, dbClient: SupabaseClient, logger: ILogger, payload: { contributionId: string }) => Promise<{ data?: GetContributionContentDataResponse; error?: ServiceError; status?: number }>;
   startSession: (user: User, dbClient: SupabaseClient, payload: StartSessionPayload, dependencies: { logger: ILogger }) => Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }>;
   generateContributions: (dbClient: SupabaseClient, payload: GenerateContributionsPayload, authToken: string, dependencies: { logger: ILogger }) => Promise<{ success: boolean; data?: GenerateContributionsSuccessResponse; error?: ServiceError }>;
@@ -191,7 +193,8 @@ export async function handleRequest(
         'startSession', 'generateContributions', 'getContributionContentSignedUrl',
         'deleteProject', 'cloneProject', 'exportProject', 'getProjectResourceContent',
         'saveContributionEdit', 'submitStageResponses', 'fetchProcessTemplate',
-        'updateSessionModels'
+        'updateSessionModels',
+        'getSessionDetails'
       ];
 
       let userForJson: User | null = null;
@@ -247,14 +250,24 @@ export async function handleRequest(
           return createSuccessResponse(data, 200, req);
         }
         case "getProjectDetails": {
-          if (!requestBody.payload || !requestBody.payload.projectId) {
-            return createErrorResponse("projectId is required.", 400, req, { message: "projectId is required.", status: 400 });
+          if (!requestBody.payload || !(requestBody.payload as GetProjectDetailsPayload).projectId) {
+            return createErrorResponse("projectId is required for getProjectDetails", 400, req, { message: "projectId is required for getProjectDetails", code: "VALIDATION_ERROR" });
           }
-          const { data, error, status } = await handlers.getProjectDetails(requestBody.payload, adminClient, userForJson!);
+          const { data, error, status } = await handlers.getProjectDetails(requestBody.payload as GetProjectDetailsPayload, adminClient, userForJson!);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }
-          return createSuccessResponse(data, 200, req);
+          return createSuccessResponse(data, status || 200, req);
+        }
+        case "getSessionDetails": {
+          if (!requestBody.payload || !(requestBody.payload as GetSessionDetailsPayload).sessionId) {
+            return createErrorResponse("sessionId is required for getSessionDetails", 400, req, { message: "sessionId is required for getSessionDetails", code: "VALIDATION_ERROR"});
+          }
+          const { data, error, status } = await handlers.getSessionDetails(requestBody.payload as GetSessionDetailsPayload, adminClient, userForJson!);
+          if (error) {
+            return createErrorResponse(error.message, status || 500, req, error);
+          }
+          return createSuccessResponse(data, status || 200, req);
         }
         case "updateProjectDomain": {
           const payload = requestBody.payload as UpdateProjectDomainPayload;
@@ -407,6 +420,7 @@ const handlers: ActionHandlers = {
   listAvailableDomains,
   updateProjectDomain,
   getProjectDetails,
+  getSessionDetails,
   getContributionContentHandler,
   startSession,
   generateContributions,

@@ -8,7 +8,8 @@ import type {
 } from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
-import { createMockSupabaseClient, type MockSupabaseDataConfig, PostgrestError } from "../_shared/supabase.mock.ts";
+import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../_shared/supabase.mock.ts";
+import type { PostgrestError } from "npm:@supabase/postgrest-js@1.15.5";
 import type { IFileManager } from "../_shared/types/file_manager.types.ts";
 
 Deno.test("generateContributions - Handles no selected models for session", async () => {
@@ -57,7 +58,7 @@ Deno.test("generateContributions - Handles no selected models for session", asyn
         }
     };
 
-    const { client: mockDbClient, clientSpies, cleanup } = createMockSupabaseClient(undefined, mockSupabaseConfig);
+    const { client: mockDbClient, spies: clientSpies, clearAllStubs: cleanup } = createMockSupabaseClient(undefined, mockSupabaseConfig);
 
     const mockFileManager: IFileManager = {
         uploadAndRegisterFile: spy(async () => await Promise.resolve({ record: null, error: { message: "Should not be called" } })),
@@ -82,7 +83,7 @@ Deno.test("generateContributions - Handles no selected models for session", asyn
         localLoggerInfo.restore();
         localLoggerError.restore();
         localLoggerWarn.restore();
-        cleanup();
+        if (cleanup) cleanup();
     }
 });
 
@@ -93,10 +94,11 @@ Deno.test("generateContributions - All selected AI models fail", async () => {
     const mockModelCatalogId1 = "mp-id1-all-fail";
     const mockModelCatalogId2 = "mp-id2-all-fail";
     const mockStageSlug = 'thesis';
+    const mockIterationNumber = 1;
     const mockPayload: GenerateContributionsPayload = { 
         sessionId: mockSessionId, 
         stageSlug: mockStageSlug, 
-        iterationNumber: 1, 
+        iterationNumber: mockIterationNumber, 
         projectId: mockProjectId,
         selectedModelCatalogIds: [mockModelCatalogId1, mockModelCatalogId2],
     };
@@ -104,6 +106,18 @@ Deno.test("generateContributions - All selected AI models fail", async () => {
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
+
+    const mockProjectResourceDataAllFail = {
+        storage_bucket: 'dialectic-private-resources',
+        storage_path: `projects/${mockProjectId}/sessions/${mockSessionId}/iteration_${mockIterationNumber}/${mockStageSlug}/seed_prompt_all_fail.md`,
+        file_name: 'seed_prompt_all_fail.md',
+        resource_description: JSON.stringify({ 
+            type: "seed_prompt", 
+            session_id: mockSessionId, 
+            stage_slug: mockStageSlug, 
+            iteration: mockIterationNumber 
+        }),
+    };
 
     const mockSupabaseConfig: MockSupabaseDataConfig = {
         genericMockResults: {
@@ -124,7 +138,7 @@ Deno.test("generateContributions - All selected AI models fail", async () => {
                     }],
                     error: null,
                 }),
-                update: () => Promise.resolve({ error: null }),
+                update: () => Promise.resolve({ data: [], error: null }),
             },
             'dialectic_projects': {
                 select: () => Promise.resolve({
@@ -138,10 +152,18 @@ Deno.test("generateContributions - All selected AI models fail", async () => {
                     Promise.resolve({ data: [{ id: mockModelCatalogId2, provider: "P2", name: "M2", api_identifier: "api2" }], error: null }),
                 ]))
             },
+            'dialectic_project_resources': {
+                select: async (state: any) => {
+                    if (state.filters.some((f: any) => f.column === 'project_id' && f.value === mockProjectId)) {
+                        return { data: [mockProjectResourceDataAllFail], error: null, count: 1 };
+                    }
+                    return { data: [], error: null, count: 0 };
+                }
+            }
         }
     };
 
-    const { client: mockDbClient, clientSpies, cleanup } = createMockSupabaseClient(undefined, mockSupabaseConfig);
+    const { client: mockDbClient, spies: clientSpies, clearAllStubs: cleanup } = createMockSupabaseClient(undefined, mockSupabaseConfig);
     const mockCallUnifiedAIModel = spy(async (): Promise<UnifiedAIResponse> => await Promise.resolve({ content: null, error: "Simulated AI fail", errorCode: "AI_FAIL" }));
 
     const mockFileManager: IFileManager = {
@@ -187,7 +209,7 @@ Deno.test("generateContributions - All selected AI models fail", async () => {
         localLoggerInfo.restore();
         localLoggerError.restore();
         localLoggerWarn.restore();
-        cleanup();
+        if (cleanup) cleanup();
     }
 });
 
@@ -198,10 +220,11 @@ Deno.test("generateContributions - AI Provider details fetch fails", async () =>
     const mockProjectId = "project-id-provider-missing";
     const mockModelCatalogId = "mp-id-1";
     const mockStageSlug = 'thesis';
+    const mockIterationNumber = 1;
     const mockPayload: GenerateContributionsPayload = { 
         sessionId: mockSessionId, 
         stageSlug: mockStageSlug, 
-        iterationNumber: 1, 
+        iterationNumber: mockIterationNumber, 
         projectId: mockProjectId,
         selectedModelCatalogIds: [mockModelCatalogId],
     };
@@ -209,6 +232,18 @@ Deno.test("generateContributions - AI Provider details fetch fails", async () =>
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
+
+    const mockProjectResourceDataProviderMissing = {
+        storage_bucket: 'dialectic-private-resources',
+        storage_path: `projects/${mockProjectId}/sessions/${mockSessionId}/iteration_${mockIterationNumber}/${mockStageSlug}/seed_prompt_provider_missing.md`,
+        file_name: 'seed_prompt_provider_missing.md',
+        resource_description: JSON.stringify({ 
+            type: "seed_prompt", 
+            session_id: mockSessionId, 
+            stage_slug: mockStageSlug, 
+            iteration: mockIterationNumber 
+        }),
+    };
 
     const mockSupabaseConfig: MockSupabaseDataConfig = {
         genericMockResults: {
@@ -229,7 +264,7 @@ Deno.test("generateContributions - AI Provider details fetch fails", async () =>
                     }],
                     error: null,
                 }),
-                update: () => Promise.resolve({ error: null }),
+                update: () => Promise.resolve({ data: [], error: null }),
             },
             'dialectic_projects': {
                 select: () => Promise.resolve({
@@ -240,13 +275,27 @@ Deno.test("generateContributions - AI Provider details fetch fails", async () =>
             'ai_providers': {
                 select: () => Promise.resolve({ 
                     data: null, 
-                    error: new PostgrestError({ message: "Simulated DB error", code: "DB_ERROR", details: "Details of DB error", hint: "Hint for DB" })
+                    error: { 
+                        name: 'PostgrestError', 
+                        message: "Simulated DB error", 
+                        code: "DB_ERROR", 
+                        details: "Details of DB error", 
+                        hint: "Hint for DB" 
+                    }
                 }),
             },
+            'dialectic_project_resources': {
+                select: async (state: any) => {
+                    if (state.filters.some((f: any) => f.column === 'project_id' && f.value === mockProjectId)) {
+                        return { data: [mockProjectResourceDataProviderMissing], error: null, count: 1 };
+                    }
+                    return { data: [], error: null, count: 0 };
+                }
+            }
         }
     };
     
-    const { client: mockDbClient, clientSpies, cleanup } = createMockSupabaseClient(undefined, mockSupabaseConfig);
+    const { client: mockDbClient, spies: clientSpies, clearAllStubs: cleanup } = createMockSupabaseClient(undefined, mockSupabaseConfig);
 
     const mockFileManager: IFileManager = {
         uploadAndRegisterFile: spy(async () => await Promise.resolve({ record: null, error: { message: "FM Should not be called" } })),
@@ -279,7 +328,7 @@ Deno.test("generateContributions - AI Provider details fetch fails", async () =>
         localLoggerInfo.restore();
         localLoggerError.restore();
         localLoggerWarn.restore();
-        cleanup();
+        if (cleanup) cleanup();
     }
 });
 
@@ -289,10 +338,11 @@ Deno.test("generateContributions - AI model returns no content", async () => {
     const mockProjectId = "project-id-no-content";
     const mockModelCatalogId = "mp-id-no-content";
     const mockStageSlug = 'thesis';
+    const mockIterationNumber = 1;
     const mockPayload: GenerateContributionsPayload = { 
         sessionId: mockSessionId, 
         stageSlug: mockStageSlug, 
-        iterationNumber: 1, 
+        iterationNumber: mockIterationNumber, 
         projectId: mockProjectId,
         selectedModelCatalogIds: [mockModelCatalogId],
     };
@@ -300,6 +350,18 @@ Deno.test("generateContributions - AI model returns no content", async () => {
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
+
+    const mockProjectResourceDataNoContent = {
+        storage_bucket: 'dialectic-private-resources',
+        storage_path: `projects/${mockProjectId}/sessions/${mockSessionId}/iteration_${mockIterationNumber}/${mockStageSlug}/seed_prompt_no_content.md`,
+        file_name: 'seed_prompt_no_content.md',
+        resource_description: JSON.stringify({ 
+            type: "seed_prompt", 
+            session_id: mockSessionId, 
+            stage_slug: mockStageSlug, 
+            iteration: mockIterationNumber 
+        }),
+    };
 
     const mockSupabaseConfig: MockSupabaseDataConfig = {
         genericMockResults: {
@@ -320,7 +382,7 @@ Deno.test("generateContributions - AI model returns no content", async () => {
                     }],
                     error: null,
                 }),
-                update: () => Promise.resolve({ error: null }),
+                update: () => Promise.resolve({ data: [], error: null }),
             },
             'dialectic_projects': {
                 select: () => Promise.resolve({
@@ -334,10 +396,18 @@ Deno.test("generateContributions - AI model returns no content", async () => {
                     error: null 
                 }),
             },
+            'dialectic_project_resources': {
+                select: async (state: any) => {
+                    if (state.filters.some((f: any) => f.column === 'project_id' && f.value === mockProjectId)) {
+                        return { data: [mockProjectResourceDataNoContent], error: null, count: 1 };
+                    }
+                    return { data: [], error: null, count: 0 };
+                }
+            }
         }
     };
 
-    const { client: mockDbClient, clientSpies, cleanup } = createMockSupabaseClient(undefined, mockSupabaseConfig);
+    const { client: mockDbClient, spies: clientSpies, clearAllStubs: cleanup } = createMockSupabaseClient(undefined, mockSupabaseConfig);
     const mockCallUnifiedAIModel = spy(async (): Promise<UnifiedAIResponse> => await Promise.resolve({ content: null, error: null, errorCode: 'NO_CONTENT_RETURNED' }));
 
     const mockFileManager: IFileManager = {
@@ -371,7 +441,7 @@ Deno.test("generateContributions - AI model returns no content", async () => {
         localLoggerInfo.restore();
         localLoggerError.restore();
         localLoggerWarn.restore();
-        cleanup();
+        if (cleanup) cleanup();
     }
 });
 
@@ -384,11 +454,12 @@ Deno.test("generateContributions - Successfully generates one contribution", asy
     const mockContributionId = "contribution-id-1";
     const mockChatId = "chat-id-1";
     const mockOwnerUserId = "owner-user-id-success";
+    const mockIterationNumber = 1;
 
     const mockPayload: GenerateContributionsPayload = { 
         sessionId: mockSessionId, 
         stageSlug: mockStageSlug, 
-        iterationNumber: 1, 
+        iterationNumber: mockIterationNumber, 
         projectId: mockProjectId,
         selectedModelCatalogIds: [mockModelCatalogId],
     };
@@ -396,6 +467,18 @@ Deno.test("generateContributions - Successfully generates one contribution", asy
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
+
+    const mockProjectResourceDataSuccess = {
+        storage_bucket: 'dialectic-private-resources',
+        storage_path: `projects/${mockProjectId}/sessions/${mockSessionId}/iteration_${mockIterationNumber}/${mockStageSlug}/seed_prompt_success.md`,
+        file_name: 'seed_prompt_success.md',
+        resource_description: JSON.stringify({ 
+            type: "seed_prompt", 
+            session_id: mockSessionId, 
+            stage_slug: mockStageSlug, 
+            iteration: mockIterationNumber 
+        }),
+    };
 
     const mockSuccessfulContributionRow = {
         id: mockContributionId,
@@ -444,7 +527,7 @@ Deno.test("generateContributions - Successfully generates one contribution", asy
                     }],
                     error: null,
                 }),
-                update: () => Promise.resolve({ error: null }),
+                update: () => Promise.resolve({ data: [], error: null }),
             },
             'dialectic_projects': {
                 select: () => Promise.resolve({
@@ -458,10 +541,18 @@ Deno.test("generateContributions - Successfully generates one contribution", asy
                     error: null
                 }),
             },
+            'dialectic_project_resources': {
+                select: async (state: any) => {
+                    if (state.filters.some((f: any) => f.column === 'project_id' && f.value === mockProjectId)) {
+                        return { data: [mockProjectResourceDataSuccess], error: null, count: 1 };
+                    }
+                    return { data: [], error: null, count: 0 };
+                }
+            }
         }
     };
 
-    const { client: mockDbClient, clientSpies, cleanup } = createMockSupabaseClient(mockOwnerUserId, mockSupabaseConfig);
+    const { client: mockDbClient, spies: clientSpies, clearAllStubs: cleanup } = createMockSupabaseClient(mockOwnerUserId, mockSupabaseConfig);
     
     const mockCallUnifiedAIModel = spy(async (): Promise<UnifiedAIResponse> => await Promise.resolve({ 
         content: "Successful contribution content", 
@@ -523,6 +614,6 @@ Deno.test("generateContributions - Successfully generates one contribution", asy
         localLoggerInfo.restore();
         localLoggerError.restore();
         localLoggerWarn.restore();
-        cleanup();
+        if (cleanup) cleanup();
     }
 });

@@ -37,12 +37,9 @@ export async function listProjects(
     return { error: { message: "Failed to fetch projects", details: projectsError.message, status: 500, code: "DB_ERROR" } };
   }
 
-  const projectsWithDomainName = projectsData?.map(p => ({
-    ...p,
-    dialectic_domains: undefined, // remove the nested object
-    domain_name: p.dialectic_domains?.name || null,
-  })) || [];
-
-  return { data: projectsWithDomainName as DialecticProject[] };
+  // The 'select(*, dialectic_domains(name))' query already structures
+  // dialectic_domains as { name: '...' } or null, which matches the DialecticProject type.
+  // No further mapping is needed here to create a top-level domain_name.
+  return { data: (projectsData as DialecticProject[]) || [] };
 }
   

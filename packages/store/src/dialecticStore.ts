@@ -247,10 +247,18 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
         }
         
         set({
-          currentProjectDetail: projectData || null,
+          currentProjectDetail: projectData,
           isLoadingProjectDetail: false,
           projectDetailError: null,
         });
+        
+        // Set active context and clear selected models
+        get().setActiveDialecticContext({ 
+          projectId: projectData ? projectData.id : null, 
+          sessionId: null, 
+          stage: null 
+        });
+        get().setSelectedModelIds([]);
         
         if (projectData?.process_template_id) {
           logger.info(`[DialecticStore] Project has process template ID. Fetching template...`, { templateId: projectData.process_template_id });

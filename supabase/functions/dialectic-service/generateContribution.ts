@@ -113,25 +113,72 @@ export async function generateContributions(
         deps.logger.warn(`[generateContributions] Session ${sessionId} is not in '${expectedStatus}' status. Current status: ${sessionDetails.status}`);
         return { success: false, error: { message: `Session is not in '${expectedStatus}' status. Current status: ${sessionDetails.status}`, status: 400 } };
       }
+
+      // Moved: Check if models are selected for the session BEFORE fetching resources
+      if (!sessionDetails.selected_model_catalog_ids || sessionDetails.selected_model_catalog_ids.length === 0) {
+        deps.logger.error(`[generateContributions] No models selected for session ${sessionId} (selected_model_catalog_ids is null or empty).`);
+        return { success: false, error: { message: "No models selected for this session.", status: 400, code: 'NO_MODELS_SELECTED' } };
+      }
   
       const associatedChatId = sessionDetails.associated_chat_id;
 
-      // 2. Derive seed prompt path and fetch its content
-      const seedPromptPath = `projects/${projectId}/sessions/${sessionId}/iteration_${iterationNumber}/${stage.slug}/seed_prompt.md`;
-      deps.logger.info(`[generateContributions] Fetching seed prompt from: ${seedPromptPath}`);
+      // 2. Fetch seed prompt resource details from the database
+      deps.logger.info(`[generateContributions] Fetching seed prompt resources for project ${projectId}`);
+      
+      const { data: projectResources, error: projectResourcesError } = await dbClient
+        .from('dialectic_project_resources')
+        .select('storage_bucket, storage_path, resource_description, file_name')
+        .eq('project_id', projectId);
+      
+      if (projectResourcesError || !projectResources) {
+        deps.logger.error(`[generateContributions] Error fetching project resources for project ${projectId}`, { error: projectResourcesError });
+        return { success: false, error: { message: "Could not fetch project resources.", status: 500, details: projectResourcesError?.message } };
+      }
 
-      const { data: promptContentBuffer, error: promptDownloadError } = await deps.downloadFromStorage(dbClient, BUCKET_NAME, seedPromptPath);
+      const seedPromptResource = projectResources.find(resource => {
+        if (typeof resource.resource_description !== 'string') return false;
+        try {
+          const desc = JSON.parse(resource.resource_description) as {
+            type?: unknown;
+            session_id?: unknown;
+            stage_slug?: unknown;
+            iteration?: unknown;
+          };
+
+          return typeof desc.type === 'string' && desc.type === 'seed_prompt' && 
+                 typeof desc.session_id === 'string' && desc.session_id === sessionId &&
+                 typeof desc.stage_slug === 'string' && desc.stage_slug === stage.slug &&
+                 typeof desc.iteration === 'number' && desc.iteration === iterationNumber;
+        } catch (e) {
+          // Log if parsing failed for a resource, but continue search
+          deps.logger.debug(`[generateContributions] Failed to parse resource_description for resource ${resource.file_name} while finding seed prompt. Content: ${resource.resource_description}`, { error: e });
+          return false;
+        }
+      });
+
+      if (!seedPromptResource) {
+        deps.logger.error(`[generateContributions] No specific seed prompt resource found matching criteria for session ${sessionId}, project ${projectId}, stage ${stage.slug}, iteration ${iterationNumber} after filtering ${projectResources.length} resources.`);
+        return { success: false, error: { message: "Seed prompt resource metadata not found or description mismatch.", status: 500 } };
+      }
+
+      const seedPromptStoragePath = seedPromptResource.storage_path;
+      const seedPromptBucketName = seedPromptResource.storage_bucket;
+
+      deps.logger.info(`[generateContributions] Fetching seed prompt content from bucket: ${seedPromptBucketName}, path: ${seedPromptStoragePath}`);
+
+      const { data: promptContentBuffer, error: promptDownloadError } = await deps.downloadFromStorage(dbClient, seedPromptBucketName, seedPromptStoragePath);
 
       if (promptDownloadError || !promptContentBuffer) {
-        deps.logger.error(`[generateContributions] Failed to download seed prompt from ${seedPromptPath}`, { error: promptDownloadError });
+        deps.logger.error(`[generateContributions] Failed to download seed prompt from bucket: ${seedPromptBucketName}, path: ${seedPromptStoragePath}`, { error: promptDownloadError });
         return { success: false, error: { message: "Could not retrieve the seed prompt for this stage.", status: 500, details: promptDownloadError?.message } };
       }
 
       const renderedPrompt = new TextDecoder().decode(promptContentBuffer);
   
-      if (!sessionDetails.selected_model_catalog_ids || sessionDetails.selected_model_catalog_ids.length === 0) {
-        deps.logger.error(`[generateContributions] No models selected for session ${sessionId} (selected_model_catalog_ids is null or empty).`);
-        return { success: false, error: { message: "No models selected for this session.", status: 400, code: 'NO_MODELS_SELECTED' } };
+      // Added: Check for empty rendered prompt
+      if (!renderedPrompt || renderedPrompt.trim() === "") {
+        deps.logger.error(`[generateContributions] Rendered seed prompt is empty for session ${sessionId}, project ${projectId}, stage ${stage.slug}.`);
+        return { success: false, error: { message: "Rendered seed prompt is empty. Cannot proceed.", status: 400, code: 'EMPTY_SEED_PROMPT' } };
       }
   
       const successfulContributions: Database['public']['Tables']['dialectic_contributions']['Row'][] = [];
@@ -231,7 +278,7 @@ export async function generateContributions(
               iterationNumber: iterationNumber ?? 0,
               rawJsonResponseContent: JSON.stringify(aiResponse.rawProviderResponse || {}),
               tokensUsedInput: aiResponse.inputTokens, tokensUsedOutput: aiResponse.outputTokens, processingTimeMs: aiResponse.processingTimeMs,
-              seedPromptStoragePath: seedPromptPath, 
+              seedPromptStoragePath: seedPromptStoragePath, 
               contributionType: stage.slug, 
               errorDetails: null, 
               promptTemplateIdUsed: null, 

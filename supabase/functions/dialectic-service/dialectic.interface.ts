@@ -140,6 +140,12 @@ type ListAvailableDomainOverlaysAction = { action: 'listAvailableDomainOverlays'
 type FetchProcessTemplateAction = { action: 'fetchProcessTemplate', payload: FetchProcessTemplatePayload };
 type UpdateSessionModelsAction = { action: 'updateSessionModels', payload: UpdateSessionModelsPayload };
 
+// Define new payload and action for getSessionDetails
+export interface GetSessionDetailsPayload { // Export if it might be used externally, otherwise keep as local type
+  sessionId: string;
+}
+type GetSessionDetailsAction = { action: 'getSessionDetails', payload: GetSessionDetailsPayload };
+
 // The main union type for all possible JSON requests to the service.
 export type DialecticServiceRequest =
   | ListProjectsAction
@@ -158,7 +164,8 @@ export type DialecticServiceRequest =
   | SubmitStageResponsesAction
   | ListAvailableDomainOverlaysAction
   | FetchProcessTemplateAction
-  | UpdateSessionModelsAction;
+  | UpdateSessionModelsAction
+  | GetSessionDetailsAction; // Add the new action to the union
 
 // --- END: Discriminated Union ---
 

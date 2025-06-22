@@ -797,14 +797,14 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
     *   `[✅] X.1.2.4 [TEST-UNIT]` **Write/Update Tests for `ViewProjectButton` Integration** (RED)
         *   **File:** `apps/web/src/pages/DialecticProjectsListPage.test.tsx` (or equivalent projects list component test file).
         *   **Assertions:** Assert `ViewProjectButton` is rendered for each project and that interaction with it behaves as expected (mocking underlying store/navigation).
-    *   `[ ] X.1.2.5 [PAGE] [MOD]` **Integrate `ViewProjectButton` into Projects List Page** (GREEN)
+    *   `[✅] X.1.2.5 [PAGE] [MOD]` **Integrate `ViewProjectButton` into Projects List Page** (GREEN)
         *   **File:** `apps/web/src/pages/DialecticProjectsListPage.tsx` (or equivalent).
         *   **Action:** Replace current `<Link>`-based navigation for viewing project details with `<ViewProjectButton />`.
-    *   `[ ] X.1.2.6 [REFACTOR]` Review integration of `ViewProjectButton`.
-    *   `[ ] X.1.2.7 [COMMIT]` `feat(web): implement ViewProjectButton and integrate into projects list`
+    *   `[✅] X.1.2.6 [REFACTOR]` Review integration of `ViewProjectButton`.
+    *   `[✅] X.1.2.7 [COMMIT]` `feat(web): implement ViewProjectButton and integrate into projects list`
 
 *   **Task X.1.3: Refactor `DialecticProjectDetailsPage.tsx` for Initial Deep-Link Load**
-    *   `[ ] X.1.3.1 [TEST-UNIT]` **Write/Update Tests for `DialecticProjectDetailsPage.tsx`** (RED)
+    *   `[✅] X.1.3.1 [TEST-UNIT]` **Write/Update Tests for `DialecticProjectDetailsPage.tsx`** (RED)
         *   **File:** `apps/web/src/pages/DialecticProjectDetailsPage.test.tsx`
         *   **Assertions:**
             *   Mock `useParams` to provide `urlProjectId`.
@@ -812,32 +812,32 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
             *   Scenario 1: `urlProjectId` exists AND (`urlProjectId !== activeContextProjectId` OR `!currentProjectDetail` OR `currentProjectDetail.id !== urlProjectId`) -> assert `fetchDialecticProjectDetails(urlProjectId)` is called.
             *   Scenario 2: `urlProjectId` exists but context is already aligned -> assert `fetchDialecticProjectDetails` is NOT called for this reason.
             *   Assert component rendering relies on store-derived context (`activeContextProjectId`, `currentProjectDetail`) and not directly on `useParams` for operational logic.
-    *   `[ ] X.1.3.2 [PAGE] [MOD]` **Refactor `DialecticProjectDetailsPage.tsx`** (GREEN)
+    *   `[✅] X.1.3.2 [PAGE] [MOD]` **Refactor `DialecticProjectDetailsPage.tsx`** (GREEN)
         *   **File:** `apps/web/src/pages/DialecticProjectDetailsPage.tsx`
         *   **Logic:**
             *   Use `useParams` in an `useEffect` hook *only* for initial deep-link hydration.
             *   If `urlProjectId` from params warrants a fetch (differs from `activeContextProjectId` or relevant data is missing), call `store.fetchDialecticProjectDetails(urlProjectId)`.
             *   All operational logic (rendering, event handlers) must use `activeContextProjectId` and `currentProjectDetail` from the store.
-    *   `[ ] X.1.3.3 [REFACTOR]` Review refactoring of `DialecticProjectDetailsPage.tsx`.
-    *   `[ ] X.1.3.4 [COMMIT]` `refactor(web,store): use store context in ProjectDetailsPage, limit useParams to deep-links`
+    *   `[✅] X.1.3.3 [REFACTOR]` Review refactoring of `DialecticProjectDetailsPage.tsx`.
+    *   `[✅] X.1.3.4 [COMMIT]` `refactor(web,store): use store context in ProjectDetailsPage, limit useParams to deep-links`
 
 **Phase X.2: Session Context Refactoring (Ensuring Session Freshness & Decoupling)**
 
 *   **Task X.2.1: API - New Endpoint for Single Session Details**
-    *   `[ ] X.2.1.1 [TEST-UNIT]` **Write Tests for `api.dialectic().getSessionDetails()` Client Method** (RED)
+    *   `[✅] X.2.1.1 [TEST-UNIT]` **Write Tests for `api.dialectic().getSessionDetails()` Client Method** (RED)
         *   **File:** `packages/api/src/dialectic.api.test.ts`
         *   **Assertions:** Mock `apiClient.post`. Assert it's called with the correct Edge Function name (e.g., `dialectic-service`), action (e.g., `getSessionDetails`), and payload (`{ sessionId }`).
-    *   `[ ] X.2.1.2 [API] [NEW]` **Define `api.dialectic().getSessionDetails(sessionId: string)` Client Method** (GREEN)
+    *   `[✅] X.2.1.2 [API] [NEW]` **Define `api.dialectic().getSessionDetails(sessionId: string)` Client Method** (GREEN)
         *   **File:** `packages/api/src/dialectic.api.ts`
-    *   `[ ] X.2.1.3 [REFACTOR]` Review new API client method.
-    *   `[ ] X.2.1.4 [TEST-INT]` **Write Integration Tests for `getSessionDetails` Edge Function** (RED)
+    *   `[✅] X.2.1.3 [REFACTOR]` Review new API client method.
+    *   `[✅] X.2.1.4 [TEST-INT]` **Write Integration Tests for `getSessionDetails` Edge Function** (RED)
         *   **File:** `supabase/functions/dialectic-service/getSessionDetails.test.ts` (Create, or add to existing test suite for the service).
         *   **Assertions:** Mock database client. Test successful fetch of a session by ID, and error scenarios (e.g., session not found).
-    *   `[ ] X.2.1.5 [EDGE] [NEW]` **Implement Supabase Edge Function for `getSessionDetails`** (GREEN)
+    *   `[✅] X.2.1.5 [EDGE] [NEW]` **Implement Supabase Edge Function for `getSessionDetails`** (GREEN)
         *   **File:** `supabase/functions/dialectic-service/index.ts` (add new case or new file if structured differently).
         *   **Logic:** Receives `sessionId`, fetches full session details from DB.
-    *   `[ ] X.2.1.6 [REFACTOR]` Review `getSessionDetails` Edge Function.
-    *   `[ ] X.2.1.7 [COMMIT]` `feat(api,edge): implement getSessionDetails endpoint and client method`
+    *   `[✅] X.2.1.6 [REFACTOR]` Review `getSessionDetails` Edge Function.
+    *   `[✅] X.2.1.7 [COMMIT]` `feat(api,edge): implement getSessionDetails endpoint and client method`
 
 *   **Task X.2.2: Store - Fetching and Setting Single Session Context**
     *   `[ ] X.2.2.1 [TEST-UNIT]` **Write Tests for New Session State and `fetchAndSetCurrentSessionDetails` Thunk** (RED)

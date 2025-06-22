@@ -99,7 +99,7 @@ Deno.test('constructStoragePath', async (t) => {
     const shortSessionId = generateShortId(baseContext.sessionId!);
     const mappedStageDir = mapStageSlugToDirName(baseContext.stageSlug!);
     const path = constructStoragePath(context);
-    assertEquals(path, `projects/${baseContext.projectId}/sessions/${shortSessionId}/iteration_${baseContext.iteration}/${mappedStageDir}/${baseContext.modelSlug}_0_${baseContext.stageSlug}_raw.json`);
+    assertEquals(path, `projects/${baseContext.projectId}/sessions/${shortSessionId}/iteration_${baseContext.iteration}/${mappedStageDir}/raw_responses/${baseContext.modelSlug}_0_${baseContext.stageSlug}_raw.json`);
   });
 
   await t.step('should construct path for model_contribution_raw_json with attemptCount 2', () => {
@@ -112,7 +112,7 @@ Deno.test('constructStoragePath', async (t) => {
     const shortSessionId = generateShortId(baseContext.sessionId!);
     const mappedStageDir = mapStageSlugToDirName(baseContext.stageSlug!);
     const path = constructStoragePath(context);
-    assertEquals(path, `projects/${baseContext.projectId}/sessions/${shortSessionId}/iteration_${baseContext.iteration}/${mappedStageDir}/${baseContext.modelSlug}_2_${baseContext.stageSlug}_raw.json`);
+    assertEquals(path, `projects/${baseContext.projectId}/sessions/${shortSessionId}/iteration_${baseContext.iteration}/${mappedStageDir}/raw_responses/${baseContext.modelSlug}_2_${baseContext.stageSlug}_raw.json`);
   });
   
   await t.step('model_contribution_main should still use originalFileName if attemptCount is undefined', () => {

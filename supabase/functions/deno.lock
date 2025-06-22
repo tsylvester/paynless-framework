@@ -31,6 +31,7 @@
     "npm:@supabase/gotrue-js@*": "2.69.1",
     "npm:@supabase/gotrue-js@^2.6.3": "2.69.1",
     "npm:@supabase/node-fetch@2.6.15": "2.6.15",
+    "npm:@supabase/postgrest-js@1.15.5": "1.15.5",
     "npm:@supabase/postgrest-js@1.19.4": "1.19.4",
     "npm:@supabase/postgrest-js@^1.15.5": "1.19.4",
     "npm:@supabase/realtime-js@2.11.2": "2.11.2",
@@ -560,6 +561,12 @@
         "whatwg-url"
       ]
     },
+    "@supabase/postgrest-js@1.15.5": {
+      "integrity": "sha512-YR4TiitTE2hizT7mB99Cl3V9i00RAY5sUxS2/NuWWzkreM7OeYlP2OqnqVwwb4z6ILn+j8x9e/igJDepFhjswQ==",
+      "dependencies": [
+        "@supabase/node-fetch"
+      ]
+    },
     "@supabase/postgrest-js@1.19.4": {
       "integrity": "sha512-O4soKqKtZIW3olqmbXXbKugUtByD2jPa8kL2m2c1oozAO11uCcGrRhkZL0kVxjBLrXHE0mdSkFsMj7jDSfyNpw==",
       "dependencies": [
@@ -587,7 +594,7 @@
         "@supabase/auth-js",
         "@supabase/functions-js",
         "@supabase/node-fetch",
-        "@supabase/postgrest-js",
+        "@supabase/postgrest-js@1.19.4",
         "@supabase/realtime-js",
         "@supabase/storage-js"
       ]

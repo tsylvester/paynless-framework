@@ -267,37 +267,86 @@ describe('useDialecticStore', () => {
         const mockProjectDetail: DialecticProject = {
             id: projectId,
             project_name: 'Detailed Project',
-            user_id: 'user1',
-            initial_user_prompt: 'A very detailed prompt',
-            selected_domain_id: 'dom-1',
-            domain_name: 'Software Development',
+            user_id: 'user-detail',
+            initial_user_prompt: 'Detail prompt',
+            selected_domain_id: 'dom-detail',
+            dialectic_domains: { name: 'Detailed Domain' },
             selected_domain_overlay_id: null,
             repo_url: null,
             status: 'active',
-            created_at: '2023-01-01T00:00:00Z',
-            updated_at: '2023-01-01T00:00:00Z',
-            process_template: { // This is the key nested object to test
-                id: 'pt-1',
-                name: 'Standard Process',
-                description: 'A standard process template',
-                created_at: '2023-01-01T00:00:00Z',
-                starting_stage_id: 'stage-1',
-                domain_id: 'dom-1'
-            }
+            created_at: '2023-02-01T00:00:00Z',
+            updated_at: '2023-02-01T00:00:00Z',
+            dialectic_sessions: [], // Add empty sessions array for completeness
+            resources: [], // Add empty resources array
+            process_template_id: 'pt-detail-1',
+            dialectic_process_templates: { // Corrected field name based on DialecticProject type
+                id: 'pt-detail-1',
+                name: 'Detail Process',
+                description: 'A detailed process template',
+                created_at: '2023-02-01T00:00:00Z',
+                // Ensure starting_stage_id and domain_id are included if they are non-nullable in DialecticProcessTemplate
+                // For this test, assuming they can be omitted if nullable or not directly relevant to the core assertions
+                stages: [],
+                transitions: [],
+            },
+            // The following are store-specific states, not part of DB response for DialecticProject typically
+            isLoadingProcessTemplate: false,
+            processTemplateError: null,
+            contributionGenerationStatus: 'idle',
+            generateContributionsError: null,
+            isSubmittingStageResponses: false,
+            submitStageResponsesError: null,
+            isSavingContributionEdit: false,
+            saveContributionEditError: null,
         };
 
-        it('should fetch and set the current project detail on success', async () => {
+        it('should fetch and set currentProjectDetail, and update context on success', async () => {
+            // Arrange: Set initial state for context fields to ensure they change
+            useDialecticStore.setState({
+                activeContextProjectId: 'old-project-id',
+                activeContextSessionId: 'old-session-id',
+                activeContextStage: { id: 'old-stage', name: 'Old Stage' } as any, // Cast for test mock
+                selectedModelIds: ['old-model-1'],
+            });
+
             const mockResponse: ApiResponse<DialecticProject> = { data: mockProjectDetail, status: 200 };
             (api.dialectic().getProjectDetails as Mock).mockResolvedValue(mockResponse);
 
-            const { fetchDialecticProjectDetails } = useDialecticStore.getState();
+            const { fetchDialecticProjectDetails, setActiveDialecticContext, setSelectedModelIds } = useDialecticStore.getState();
+            // Spy on the actions that should be called by the enhanced thunk
+            const setActiveDialecticContextSpy = vi.spyOn(useDialecticStore.getState(), 'setActiveDialecticContext');
+            const setSelectedModelIdsSpy = vi.spyOn(useDialecticStore.getState(), 'setSelectedModelIds');
+
+
+            // Act
             await fetchDialecticProjectDetails(projectId);
 
+            // Assert
             const state = useDialecticStore.getState();
             expect(state.isLoadingProjectDetail).toBe(false);
             expect(state.currentProjectDetail).toEqual(mockProjectDetail);
             expect(state.projectDetailError).toBeNull();
             expect(api.dialectic().getProjectDetails).toHaveBeenCalledWith(projectId);
+
+            // New assertions for context setting
+            // These direct assertions depend on the thunk *itself* calling these setters.
+            // If the thunk is expected to call other actions (like setActiveDialecticContext),
+            // then we should spy on those actions.
+            // For now, let's assume the thunk itself does this, or we verify the outcome.
+            expect(state.activeContextProjectId).toBe(projectId);
+            expect(state.activeContextSessionId).toBeNull();
+            expect(state.activeContextStage).toBeNull();
+            expect(state.selectedModelIds).toEqual([]);
+
+            // Verify that the specific context-setting actions were called by the thunk (if that's the implementation)
+            // This is a more robust way to test if the thunk delegates correctly.
+            // The thunk (Task X.1.1.2) is planned to call setActiveDialecticContext and setSelectedModelIds.
+            expect(setActiveDialecticContextSpy).toHaveBeenCalledWith({
+                projectId: projectId,
+                sessionId: null,
+                stage: null,
+            });
+            expect(setSelectedModelIdsSpy).toHaveBeenCalledWith([]);
         });
 
         it('should set error state if getProjectDetails API returns an error', async () => {
@@ -314,7 +363,7 @@ describe('useDialecticStore', () => {
             expect(state.projectDetailError).toEqual(mockError);
         });
 
-        it('should set loading state during fetch', async () => {
+        it('should set loading state during fetchProjectDetails', async () => {
             (api.dialectic().getProjectDetails as Mock).mockReturnValue(new Promise(() => {}));
 
             const { fetchDialecticProjectDetails } = useDialecticStore.getState();

@@ -124,9 +124,9 @@ describe("listProjects", () => {
     assertExists(result.data);
     assertEquals(result.data?.length, 2);
     assertEquals(result.data?.[0].id, "proj-1");
-    assertEquals((result.data?.[0] as any).domain_name, "Domain A");
+    assertEquals((result.data?.[0] as DialecticProjectWithDomain)?.dialectic_domains?.name, "Domain A");
     assertEquals(result.data?.[1].id, "proj-2");
-    assertEquals((result.data?.[1] as any).domain_name, "Domain B");
+    assertEquals((result.data?.[1] as DialecticProjectWithDomain)?.dialectic_domains?.name, "Domain B");
     assertEquals(result.error, undefined);
 
     const fromSpy = currentClientSpies.fromSpy;

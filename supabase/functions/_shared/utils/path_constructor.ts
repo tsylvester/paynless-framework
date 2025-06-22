@@ -75,6 +75,11 @@ export function constructStoragePath(context: PathContext): string {
   // However, originalFileName itself passed in should ideally be the final desired name.
   const sanitizedOriginalFileName = originalFileName; // Assuming originalFileName is already well-formed or sanitized by caller
 
+  let basePathForStageFiles = "";
+  if (shortSessionId && iteration !== undefined && mappedStageDir) {
+    basePathForStageFiles = `${projectRoot}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}`;
+  }
+
   switch (fileType) {
     case 'project_readme':
       return `${projectRoot}/project_readme.md`;
@@ -104,59 +109,51 @@ export function constructStoragePath(context: PathContext): string {
       return `${projectRoot}/sessions/${shortSessionId}/iteration_${iteration}/0_seed_inputs/general_resource/${sanitizeForPath(originalFileName)}`;
     
     case 'seed_prompt':
-      if (!shortSessionId || iteration === undefined || !mappedStageDir) {
+      if (!basePathForStageFiles || !mappedStageDir) { // mappedStageDir check is implicitly covered by basePathForStageFiles
         throw new Error('Session ID, iteration, and stageSlug are required for seed_prompt file type.');
       }
-      return `${projectRoot}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}/seed_prompt.md`;
+      return `${basePathForStageFiles}/seed_prompt.md`;
 
     case 'user_feedback':
-      if (!shortSessionId || iteration === undefined || !mappedStageDir || !rawStageSlug) { // rawStageSlug needed for filename
+      if (!basePathForStageFiles || !rawStageSlug) { // rawStageSlug needed for filename
         throw new Error('Session ID, iteration, and stageSlug are required for user_feedback file type.');
       }
-      return `${projectRoot}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}/user_feedback_${sanitizeForPath(rawStageSlug)}.md`;
+      return `${basePathForStageFiles}/user_feedback_${sanitizeForPath(rawStageSlug)}.md`;
 
     case 'model_contribution_main':
-      if (!shortSessionId || iteration === undefined || !mappedStageDir || !rawModelSlug || !rawStageSlug) {
+      if (!basePathForStageFiles || !rawModelSlug || !rawStageSlug) {
         throw new Error('Session ID, iteration, stageSlug, and modelSlug are required for model_contribution_main.');
       }
       if (attemptCount !== undefined && attemptCount !== null) {
         const modelSlugSanitized = sanitizeForPath(rawModelSlug);
         const stageSlugSanitized = sanitizeForPath(rawStageSlug);
-        return `${projectRoot}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}/${modelSlugSanitized}_${attemptCount}_${stageSlugSanitized}.md`;
+        return `${basePathForStageFiles}/${modelSlugSanitized}_${attemptCount}_${stageSlugSanitized}.md`;
       } else {
         if (!originalFileName) throw new Error('originalFileName is required for model_contribution_main when attemptCount is not provided.');
-        return `${projectRoot}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}/${sanitizeForPath(originalFileName)}`;
+        return `${basePathForStageFiles}/${sanitizeForPath(originalFileName)}`;
       }
 
-    case 'model_contribution_raw_json':
-      if (!shortSessionId || iteration === undefined || !mappedStageDir || !rawModelSlug || !rawStageSlug) {
+    case 'model_contribution_raw_json': {
+      if (!basePathForStageFiles || !rawModelSlug || !rawStageSlug) {
         throw new Error('Session ID, iteration, stageSlug, and modelSlug are required for model_contribution_raw_json.');
       }
+      const rawResponsesPath = `${basePathForStageFiles}/raw_responses`;
       if (attemptCount !== undefined && attemptCount !== null) {
         const modelSlugSanitized = sanitizeForPath(rawModelSlug);
         const stageSlugSanitized = sanitizeForPath(rawStageSlug);
-        return `${projectRoot}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}/${modelSlugSanitized}_${attemptCount}_${stageSlugSanitized}_raw.json`;
+        return `${rawResponsesPath}/${modelSlugSanitized}_${attemptCount}_${stageSlugSanitized}_raw.json`;
       } else {
         if (!originalFileName) throw new Error('originalFileName is required for model_contribution_raw_json when attemptCount is not provided.');
-        // Original logic for raw json was placing it in a subfolder 'raw_responses'
-        // The new naming convention with attemptCount does not specify this subfolder.
-        // For consistency with the non-attemptCount case, let's decide if it should be there.
-        // The test cases written for attemptCount place it in the mappedStageDir directly.
-        // So, if attemptCount IS NOT USED, we revert to originalFileName in a 'raw_responses' subfolder.
-        // If attemptCount IS USED, it is in mappedStageDir directly.
-        // This might be slightly inconsistent. Let's follow the TDD approach: test implies it's in mappedStageDir for attemptCount.
-        // What should it do if attemptCount is NOT defined? The old tests would expect 'raw_responses' subfolder.
-        // The new test `model_contribution_main should still use originalFileName if attemptCount is undefined`
-        // implies for main it's `.../${mappedStageDir}/custom_filename_for_main.md`
-        // Let's assume raw_json without attemptCount follows its original pattern.
-        return `${projectRoot}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}/raw_responses/${sanitizeForPath(originalFileName)}`;
+        return `${rawResponsesPath}/${sanitizeForPath(originalFileName)}`;
       }
+    }
       
-    case 'contribution_document':
-       if (!shortSessionId || iteration === undefined || !mappedStageDir || !originalFileName) {
+    case 'contribution_document': {
+       if (!basePathForStageFiles || !originalFileName) {
         throw new Error('Session ID, iteration, stageSlug, and originalFileName are required for contribution_document.');
       }
-      return `${projectRoot}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}/documents/${sanitizeForPath(originalFileName)}`;
+      return `${basePathForStageFiles}/documents/${sanitizeForPath(originalFileName)}`;
+    }
 
     case 'iteration_summary_md':
       if (!shortSessionId || iteration === undefined) {
