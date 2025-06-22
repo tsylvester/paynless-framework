@@ -208,21 +208,6 @@ describe('ProjectSessionsList', () => {
       });
       expect(alphaDescriptionDiv.textContent).toMatch(/Status: synthesis_complete/i);
       expect(alphaDescriptionDiv.textContent).toMatch(/Created: 1\/15\/2023/i);
-
-      // Simpler approach for seed prompt:
-      // 1. Get the card-content div within alphaCard.
-      // 2. Query for the <p> tag directly within that card-content.
-      // 3. Check its textContent.
-      const alphaCardContent = (alphaCard as HTMLElement).querySelector('div[data-slot="card-content"]');
-      expect(alphaCardContent).toBeInTheDocument(); // Ensure card-content exists
-
-      if (alphaCardContent) {
-        const seedPromptParagraph = alphaCardContent.querySelector('p');
-        expect(seedPromptParagraph).toBeInTheDocument(); // Ensure the paragraph exists
-        if (seedPromptParagraph) {
-          expect(seedPromptParagraph.textContent).toMatch(/Last Seed Prompt:\s*Alpha seed prompt/i);
-        }
-      }
     }
     
     const alphaLink = screen.getByRole('link', { name: 'Alpha Session Description' });

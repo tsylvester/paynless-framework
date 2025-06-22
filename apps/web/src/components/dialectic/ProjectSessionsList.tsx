@@ -64,7 +64,7 @@ export const ProjectSessionsList: React.FC<ProjectSessionsListProps> = ({ onStar
                       </Link>
                     </CardTitle>
                     <CardDescription>
-                      Created: {new Date(session.created_at).toLocaleString()} | Status: <Badge variant={session.status.startsWith('pending') || session.status.startsWith('generating') ? 'outline' : 'default'}>{session.status}</Badge>
+                      Created: {new Date(session.created_at).toLocaleString()} | Status: <Badge variant={session.status?.startsWith('pending') || session.status?.startsWith('generating') ? 'outline' : 'default'}>{session.status}</Badge>
                     </CardDescription>
                   </div>
                   <Button asChild variant="ghost" size="sm">
@@ -72,13 +72,6 @@ export const ProjectSessionsList: React.FC<ProjectSessionsListProps> = ({ onStar
                   </Button>
                 </div>
               </CardHeader>
-              {session.current_stage_seed_prompt && (
-                <CardContent className="pt-0">
-                  <p className="text-xs text-muted-foreground line-clamp-2">
-                    <strong>Last Seed Prompt:</strong> {session.current_stage_seed_prompt}
-                  </p>
-                </CardContent>
-              )}
             </Card>
           ))}
         </div>

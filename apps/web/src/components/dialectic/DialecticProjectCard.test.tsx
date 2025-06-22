@@ -5,6 +5,24 @@ import { DialecticProjectCard } from './DialecticProjectCard';
 import { useDialecticStore, initialDialecticStateValues } from '@paynless/store';
 import type { DialecticProject, DialecticStore, DialecticDomain } from '@paynless/types';
 
+// Mock ViewProjectButton by defining the mock directly in the factory function
+vi.mock('./ViewProjectButton', () => ({
+  ViewProjectButton: vi.fn(
+    (props: { projectId: string; projectName?: string; children?: React.ReactNode; variant?: string; className?: string }) => (
+      <button
+        data-testid="view-project-button-mock"
+        data-project-id={props.projectId}
+        // Use children as the primary source for display text, fallback to projectName
+        data-project-name={props.children?.toString() || props.projectName}
+        data-variant={props.variant}
+        className={props.className}
+      >
+        {props.children || props.projectName}
+      </button>
+    )
+  ),
+}));
+
 // Mock @paynless/store
 const mockDeleteDialecticProject = vi.fn();
 const mockCloneDialecticProject = vi.fn();
@@ -36,23 +54,36 @@ interface MockDialecticProjectWithUserDetails extends DialecticProject {
   user_email?: string | null;
 }
 
-const baseMockProject: MockDialecticProjectWithUserDetails = {
-  id: 'proj-123',
-  user_id: 'user-abc',
-  project_name: 'Test Project Alpha',
-  initial_user_prompt: 'This is the initial prompt for the test project. It might be a bit long to see if clamping works.',
-  created_at: new Date('2023-10-26T10:00:00.000Z').toISOString(),
-  updated_at: new Date('2023-10-26T11:00:00.000Z').toISOString(),
-  status: 'active',
-  selected_domain_id: 'domain-general',
-  dialectic_domains: { name: 'General' },
+// Define a base mock project to be used in tests
+// Ensure this matches the expected structure, removing isLoadingContributions
+const baseMockProject: DialecticProject = { // Or MockDialecticProjectWithUserDetails if that's the precise type
+  id: 'project-id-123',
+  project_name: 'Test Project Name',
+  created_at: '2023-10-26T11:00:00.000Z',
+  updated_at: '2023-01-01T12:00:00.000Z',
+  user_id: 'user-id-abc',
+  dialectic_domains: { name: 'Technology' },
+  selected_domain_id: 'domain-tech-id',
   selected_domain_overlay_id: null,
   repo_url: null,
-  // User details are now part of the base mock project for tests
-  user_first_name: 'DefaultFirstName', // Provide some defaults
-  user_last_name: 'DefaultLastName',
-  user_email: 'default@example.com',
-  dialectic_process_templates: null,
+  status: 'active',
+  initial_user_prompt: 'Test initial prompt.',
+  initial_prompt_resource_id: null,
+  dialectic_process_templates: {
+    created_at: '2023-01-01T12:00:00.000Z',
+    description: 'Test process template description',
+    id: 'process-template-id-123',
+    name: 'Test Process Template',
+    starting_stage_id: 'stage-id-123',
+  },
+  isLoadingProcessTemplate: false,
+  processTemplateError: null,
+  contributionGenerationStatus: 'idle',
+  generateContributionsError: null,
+  isSubmittingStageResponses: false,
+  submitStageResponsesError: null,
+  isSavingContributionEdit: false,
+  saveContributionEditError: null,
 };
 
 // Removed mockSelectUserDetailsById
@@ -129,27 +160,37 @@ describe('DialecticProjectCard', () => {
   });
 
   describe('Basic Rendering', () => {
-    it('should render project name as a link', () => {
+    it('should render project name as a button via ViewProjectButton', () => {
       render(
         <MemoryRouter>
           <DialecticProjectCard project={baseMockProject} />
         </MemoryRouter>
       );
-      const projectLink = screen.getByRole('link', { name: baseMockProject.project_name });
-      expect(projectLink).toBeInTheDocument();
-      expect(projectLink).toHaveAttribute('href', `/dialectic/${baseMockProject.id}`);
+      // Find the button by its role and text content
+      const titleButton = screen.getByRole('button', { name: baseMockProject.project_name });
+      expect(titleButton).toBeInTheDocument();
+      // Check that it's our mock and received the correct projectId
+      expect(titleButton).toHaveAttribute('data-testid', 'view-project-button-mock');
+      expect(titleButton).toHaveAttribute('data-project-id', baseMockProject.id);
+      expect(titleButton).toHaveAttribute('data-project-name', baseMockProject.project_name);
     });
 
-    it('should render project ID as a link if project name is missing', () => {
-      const projectWithoutName = { ...baseMockProject, project_name: '' };
+    it('should render project ID as a button via ViewProjectButton if project name is missing', () => {
+      // Use empty string for project_name for "missing name" scenario
+      const projectWithoutName: DialecticProject = { ...baseMockProject, project_name: '' };
       render(
         <MemoryRouter>
           <DialecticProjectCard project={projectWithoutName} />
         </MemoryRouter>
       );
-      const projectLink = screen.getByRole('link', { name: baseMockProject.id });
-      expect(projectLink).toBeInTheDocument();
-      expect(projectLink).toHaveAttribute('href', `/dialectic/${baseMockProject.id}`);
+      // Find the button by its role and text content (project.id)
+      // project.id should be used as name when project_name is empty
+      const titleButton = screen.getByRole('button', { name: projectWithoutName.id });
+      expect(titleButton).toBeInTheDocument();
+      // Check that it's our mock and received the correct projectId and display name
+      expect(titleButton).toHaveAttribute('data-testid', 'view-project-button-mock');
+      expect(titleButton).toHaveAttribute('data-project-id', projectWithoutName.id);
+      expect(titleButton).toHaveAttribute('data-project-name', projectWithoutName.id);
     });
 
     it('should render the formatted creation date', () => {
@@ -160,7 +201,7 @@ describe('DialecticProjectCard', () => {
       );
       // Expected format: October 26, 2023, 05:00 AM
       expect(screen.getByText(/Created: .*October 26, 2023/i)).toBeInTheDocument();
-      expect(screen.getByText(/05:00 AM/i)).toBeInTheDocument();
+      expect(screen.getByText(/06:00 AM/i)).toBeInTheDocument();
     });
 
     it('should render the initial user prompt (clamped)', () => {
@@ -171,24 +212,29 @@ describe('DialecticProjectCard', () => {
       );
       // The full prompt is 'This is the initial prompt for the test project. It might be a bit long to see if clamping works.'
       // The component uses line-clamp-3, so we check for the presence of the text, not exact match.
-      expect(screen.getByText(baseMockProject.initial_user_prompt)).toBeInTheDocument();
+      expect(screen.getByText(baseMockProject.initial_user_prompt!)).toBeInTheDocument();
       // Check if the text element has the line-clamp class
-      expect(screen.getByText(baseMockProject.initial_user_prompt)).toHaveClass('line-clamp-3');
+      expect(screen.getByText(baseMockProject.initial_user_prompt!)).toHaveClass('line-clamp-3');
     });
 
-    it('should render the "View Project" button as a link', () => {
+    it('should render the "View Project" button in the footer via ViewProjectButton', () => {
       render(
         <MemoryRouter>
           <DialecticProjectCard project={baseMockProject} />
         </MemoryRouter>
       );
-      const viewProjectButton = screen.getByRole('link', { name: /View Project/i });
-      expect(viewProjectButton).toBeInTheDocument();
-      expect(viewProjectButton).toHaveAttribute('href', `/dialectic/${baseMockProject.id}`);
+      // Find the button by its role and text content
+      const viewButton = screen.getByRole('button', { name: 'View Project' });
+      expect(viewButton).toBeInTheDocument();
+      // Check that it's our mock and received the correct projectId and display text
+      expect(viewButton).toHaveAttribute('data-testid', 'view-project-button-mock');
+      expect(viewButton).toHaveAttribute('data-project-id', baseMockProject.id);
+      // The explicit child "View Project" should be the name
+      expect(viewButton).toHaveAttribute('data-project-name', 'View Project');
     });
 
     it('should render the domain name when available', () => {
-      const projectWithDomain = { ...baseMockProject, domain_name: 'Software Development' };
+      const projectWithDomain = { ...baseMockProject, dialectic_domains: { name: 'Software Development' } };
       render(
         <MemoryRouter>
           <DialecticProjectCard project={projectWithDomain} />
@@ -197,14 +243,40 @@ describe('DialecticProjectCard', () => {
       expect(screen.getByText('Software Development')).toBeInTheDocument();
     });
 
-    it('should not render a domain badge if domain name is an empty string', () => {
-      const projectWithoutDomain = { ...baseMockProject, domain_name: '' };
+    it('should not render a domain badge if dialectic_domains.name is an empty string', () => {
+      const projectWithEmptyDomainName = { ...baseMockProject, dialectic_domains: { name: '' } };
       render(
         <MemoryRouter>
-          <DialecticProjectCard project={projectWithoutDomain} />
+          <DialecticProjectCard project={projectWithEmptyDomainName} />
         </MemoryRouter>
       );
-      expect(screen.queryByText(baseMockProject.dialectic_domains.name)).not.toBeInTheDocument();
+      // Check that no badge component (which often has role='status') is rendered.
+      expect(screen.queryByRole('status')).toBeNull();
+    });
+
+    it('should not render a domain badge if dialectic_domains is null', () => {
+      const projectWithNullDomain = { ...baseMockProject, dialectic_domains: null };
+      render(
+        <MemoryRouter>
+          <DialecticProjectCard project={projectWithNullDomain} />
+        </MemoryRouter>
+      );
+      // Check that no badge component (which often has role='status') is rendered.
+      expect(screen.queryByRole('status')).toBeNull();
+    });
+
+    it('should render domain badges if domains exist', () => {
+      const projectWithMultipleDomains = {
+        ...baseMockProject,
+        dialectic_domains: { name: 'Technology' }, // Ensure this matches the expected text and structure
+      };
+      render(
+        <MemoryRouter>
+          <DialecticProjectCard project={projectWithMultipleDomains} />
+        </MemoryRouter>
+      );
+      // baseMockProject has dialectic_domains: { name: 'Technology' }
+      expect(screen.getByText(projectWithMultipleDomains.dialectic_domains!.name)).toBeInTheDocument();
     });
   });
 

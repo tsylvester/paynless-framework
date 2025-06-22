@@ -1,5 +1,4 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
 import { DialecticProject } from '@paynless/types'; // Assuming types are available
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useDialecticStore } from '@paynless/store'; // Added store import
+import { ViewProjectButton } from './ViewProjectButton'; // Import the new button
 
 interface DialecticProjectCardProps {
   project: DialecticProject & { // Assume these fields will be added to DialecticProject type
@@ -90,7 +90,14 @@ export const DialecticProjectCard: React.FC<DialecticProjectCardProps> = ({ proj
           <div className="flex justify-between items-start">
             <div className="flex-grow">
               <CardTitle className="hover:text-primary transition-colors mb-1">
-                <Link to={`/dialectic/${project.id}`}>{project.project_name || project.id}</Link>
+                <ViewProjectButton 
+                  projectId={project.id} 
+                  projectName={project.project_name || project.id}
+                  variant="link"
+                  className="p-0 h-auto font-semibold text-lg"
+                >
+                  {project.project_name || project.id}
+                </ViewProjectButton>
               </CardTitle>
               <CardDescription>
                 Created: {formattedDate}
@@ -98,8 +105,8 @@ export const DialecticProjectCard: React.FC<DialecticProjectCardProps> = ({ proj
               <CardDescription>
                 By: {creatorName}
               </CardDescription>
-              {project.domain_name && (
-                <Badge variant="outline" className="mt-2">{project.domain_name}</Badge>
+              {project.dialectic_domains && project.dialectic_domains.name && (
+                <Badge variant="outline" className="mt-2">{project.dialectic_domains.name}</Badge>
               )}
             </div>
             <div className="flex items-center space-x-1">
@@ -121,9 +128,14 @@ export const DialecticProjectCard: React.FC<DialecticProjectCardProps> = ({ proj
           </p>
         </CardContent>
         <CardFooter className="mt-auto">
-          <Button asChild variant="outline" className="w-full">
-            <Link to={`/dialectic/${project.id}`}>View Project</Link>
-          </Button>
+          <ViewProjectButton 
+            projectId={project.id} 
+            projectName={project.project_name || 'View Project'}
+            variant="outline" 
+            className="w-full"
+          >
+            View Project
+          </ViewProjectButton>
         </CardFooter>
       </Card>
 
