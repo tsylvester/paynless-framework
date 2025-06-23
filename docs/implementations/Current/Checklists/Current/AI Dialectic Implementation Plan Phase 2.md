@@ -959,14 +959,14 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
 
 *   **Task X.3.1: Systematically Refactor Child Components**
     *   For each relevant child component of `DialecticProjectDetailsPage.tsx` and `DialecticSessionDetailsPage.tsx` (e.g., `InitialProblemStatement.tsx`, `SessionInfoCard.tsx`, `StageTabCard.tsx`, `SessionContributionsDisplayCard.tsx`, AI model selectors, etc.):
-        *   `[ ] X.3.1.1 [TEST-UNIT]` **Update Unit Tests for Child Component** (RED)
+        *   `[✅] X.3.1.1 [TEST-UNIT]` **Update Unit Tests for Child Component** (RED)
             *   **File:** `apps/web/src/components/dialectic/.../<ComponentName>.test.tsx`
             *   **Assertions:** Remove mocks for `useParams` or prop-drilled IDs. Mock relevant store selectors to provide context. Assert rendering and behavior based on this store context.
-        *   `[ ] X.3.1.2 [CMP] [MOD]` **Refactor Child Component** (GREEN)
+        *   `[✅] X.3.1.2 [CMP] [MOD]` **Refactor Child Component** (GREEN)
             *   **File:** `apps/web/src/components/dialectic/.../<ComponentName>.tsx`
             *   **Action:** Modify component to consume all necessary context directly from `useDialecticStore` using selectors.
-        *   `[ ] X.3.1.3 [REFACTOR]` Review refactored child component.
-    *   `[ ] X.3.1.4 [COMMIT]` `refactor(components): decouple child UI components from useParams, use store context` (This commit might be iterative if done component-by-component).
+        *   `[✅] X.3.1.3 [REFACTOR]` Review refactored child component.
+    *   `[✅] X.3.1.4 [COMMIT]` `refactor(components): decouple child UI components from useParams, use store context` (This commit might be iterative if done component-by-component).
 
 *   **Task X.3.2: Comprehensive Testing**
     *   `[ ] X.3.2.1 [TEST-E2E]` Conduct thorough end-to-end and manual testing of all navigation scenarios:

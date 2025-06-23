@@ -5,13 +5,13 @@ import {
   selectIsLoadingProjectDetail,
   selectContributionGenerationStatus,
   selectProjectDetailError,
-  selectFeedbackForStageIteration
+  selectFeedbackForStageIteration,
+  selectCurrentProjectDetail,
+  selectActiveContextStage
 } from '@paynless/store';
 import { 
   DialecticContribution, 
   ApiError, 
-  DialecticSession, 
-  DialecticStage, 
   DialecticFeedback, 
   GetProjectResourceContentResponse,
   SubmitStageResponsesPayload
@@ -35,14 +35,6 @@ import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
 
-// ADDED: Local type alias to ensure GetProjectResourceContentResponse is marked as used
-type FeedbackContentType = GetProjectResourceContentResponse;
-
-interface SessionContributionsDisplayCardProps {
-  session: DialecticSession | undefined;
-  activeStage: DialecticStage | null;
-}
-
 // Skeleton component for GeneratedContributionCard
 const GeneratedContributionCardSkeleton: React.FC = () => (
   <Card className="mb-4">
@@ -61,8 +53,27 @@ const GeneratedContributionCardSkeleton: React.FC = () => (
   </Card>
 );
 
-export const SessionContributionsDisplayCard: React.FC<SessionContributionsDisplayCardProps> = ({ session, activeStage }) => {
-  const project = useDialecticStore(state => state.currentProjectDetail);
+export const SessionContributionsDisplayCard: React.FC = () => {
+  console.log('[SessionContributionsDisplayCard] Rendering - Initial Check', {
+    project: useDialecticStore.getState().currentProjectDetail,
+    session: useDialecticStore.getState().activeSessionDetail,
+    activeStage: useDialecticStore.getState().activeContextStage,
+    isLoadingProjectDetail: useDialecticStore.getState().isLoadingProjectDetail,
+    contributionGenerationStatus: useDialecticStore.getState().contributionGenerationStatus,
+    projectDetailError: useDialecticStore.getState().projectDetailError,
+    isStageReady: useDialecticStore.getState().activeSessionDetail && useDialecticStore.getState().activeContextStage ? selectIsStageReadyForSessionIteration(
+      useDialecticStore.getState(),
+      useDialecticStore.getState().currentProjectDetail!.id,
+      useDialecticStore.getState().activeSessionDetail!.id,
+      useDialecticStore.getState().activeContextStage!.slug,
+      useDialecticStore.getState().activeSessionDetail!.iteration_count
+    ) : false
+  });
+
+  // MODIFIED: Get session and activeStage from store
+  const project = useDialecticStore(selectCurrentProjectDetail);
+  const session = useDialecticStore(state => state.activeSessionDetail); // Get session from activeSessionDetail
+  const activeStage = useDialecticStore(selectActiveContextStage); // Get activeStage from selectActiveContextStage
   
   const submitStageResponses = useDialecticStore(state => state.submitStageResponses);
   const isSubmitting = useDialecticStore(state => state.isSubmittingStageResponses);
@@ -76,31 +87,29 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
 
   // Store items for feedback content
   const fetchFeedbackFileContent = useDialecticStore(state => state.fetchFeedbackFileContent);
-  // MODIFIED: Use the local type alias
-  const currentFeedbackFileContent: FeedbackContentType | null = useDialecticStore(state => state.currentFeedbackFileContent);
+  const currentFeedbackFileContent: GetProjectResourceContentResponse | null = useDialecticStore(state => state.currentFeedbackFileContent);
   const isFetchingFeedbackFileContent = useDialecticStore(state => state.isFetchingFeedbackFileContent);
   const fetchFeedbackFileContentError = useDialecticStore(state => state.fetchFeedbackFileContentError);
   const clearCurrentFeedbackFileContent = useDialecticStore(state => state.clearCurrentFeedbackFileContent);
   const resetFetchFeedbackFileContentError = useDialecticStore(state => state.resetFetchFeedbackFileContentError);
 
   const isStageReady = useDialecticStore(state =>
-    project && session && activeStage ?
+    project && session && activeStage ? // Use store-derived session and activeStage
     selectIsStageReadyForSessionIteration(
         state,
         project.id,
-        session.id,
-        activeStage.slug, 
-        session.iteration_count
+        session.id, // Use store-derived session
+        activeStage.slug,  // Use store-derived activeStage
+        session.iteration_count // Use store-derived session
     ) : false
   );
 
   // Select feedback metadata for the current stage and iteration
   const feedbacksForStageIterationArray = useDialecticStore(state => 
-    project && session && activeStage 
+    project && session && activeStage // Use store-derived session and activeStage
       ? selectFeedbackForStageIteration(state, session.id, activeStage.slug, session.iteration_count)
       : null
   );
-  // MODIFIED: Take the first element if the selector returns an array
   const feedbackForStageIteration: DialecticFeedback | undefined = feedbacksForStageIterationArray?.[0];
 
   const [stageResponses, setStageResponses] = useState<Record<string, string>>({});
@@ -118,11 +127,24 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
   }, [activeStage, resetSubmitError, submissionError]);
 
   const displayedContributions = useMemo(() => {
-    if (!session?.dialectic_contributions || !session.iteration_count || !activeStage) return [];
+    // MODIFIED: Use session and activeStage from store
+    console.log('[SessionContributionsDisplayCard useMemo] Running. Session:', session, 'ActiveStage:', activeStage);
+
+    if (!session?.dialectic_contributions || !session.iteration_count || !activeStage) {
+      console.log('[SessionContributionsDisplayCard useMemo] Early exit: Missing session.dialectic_contributions, session.iteration_count, or activeStage.', {
+        hasDialecticContributions: !!session?.dialectic_contributions,
+        iterationCount: session?.iteration_count,
+        hasActiveStage: !!activeStage
+      });
+      return [];
+    }
+    console.log('[SessionContributionsDisplayCard useMemo] Initial session.dialectic_contributions:', JSON.parse(JSON.stringify(session.dialectic_contributions)));
+
 
     const contributionsForStageAndIteration = session.dialectic_contributions.filter(
       c => c.stage.slug === activeStage.slug && c.iteration_number === session.iteration_count
     );
+    console.log('[SessionContributionsDisplayCard useMemo] Filtered contributionsForStageAndIteration (count ' + contributionsForStageAndIteration.length + '):', JSON.parse(JSON.stringify(contributionsForStageAndIteration.map(c => ({id: c.id, stage_slug: c.stage.slug, iter: c.iteration_number, original_id: c.original_model_contribution_id, edit_version: c.edit_version, is_latest_edit: c.is_latest_edit})))));
 
     const latestEditsMap = new Map<string, DialecticContribution>();
 
@@ -172,6 +194,8 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
     // Deduplicate just in case the logic above had an edge case, ensuring unique IDs
     const uniqueFinalContributions = Array.from(new Map(finalContributions.map(c => [c.id, c])).values());
 
+    console.log('[SessionContributionsDisplayCard useMemo] uniqueFinalContributions before sort (count ' + uniqueFinalContributions.length + '):', uniqueFinalContributions.map(c => ({ id: c.id, original_id: c.original_model_contribution_id, edit_version: c.edit_version, is_latest_edit: c.is_latest_edit, model_name: c.model_name })));
+
     return uniqueFinalContributions.sort((a,b) => (a.model_name || '').localeCompare(b.model_name || ''));
 
   }, [session, activeStage]);
@@ -185,6 +209,7 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
   };
 
   const proceedWithSubmission = async () => {
+    // MODIFIED: Use session, activeStage, project from store
     if (!session || !session.iteration_count || !activeStage || !project) return;
     setSubmissionSuccessMessage(null);
     if (submissionError) {
@@ -334,6 +359,25 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
     );
   }
 
+  // NEW BLOCK: Error during the contribution generation process itself
+  if (contributionGenerationStatus === 'failed' && projectDetailError) {
+    return (
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle>Contributions for: {activeStageDisplayName}</CardTitle>
+        </CardHeader>
+        <CardContent data-testid="contributions-generation-error">
+          <Alert variant="destructive">
+            <AlertTitle>Error Generating Contributions</AlertTitle>
+            <AlertDescription>
+              Failed to generate contributions: {projectDetailError.message}. Please try again.
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+    );
+  }
+
   // 3. Error during the project detail refresh (potentially after generation)
   if (projectDetailError && !isLoadingCurrentProjectDetail && contributionGenerationStatus === 'idle') {
     return (
@@ -386,7 +430,7 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
           </Alert>
         )}
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-grow flex flex-col items-center justify-center p-4 space-y-4">
         {/* Display feedback metadata if available */}
         {feedbackForStageIteration && (
           <div className="mb-6 p-4 border rounded-md bg-muted/40" data-testid="stage-feedback-display">
@@ -403,8 +447,11 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
               className="mt-2"
               onClick={async () => {
                 if (project && feedbackForStageIteration) {
-                  if (fetchFeedbackFileContentError) resetFetchFeedbackFileContentError();
-                  await fetchFeedbackFileContent({ projectId: project.id, storagePath: feedbackForStageIteration.storage_path });
+                  if (fetchFeedbackFileContentError) resetFetchFeedbackFileContentError?.();
+                  await fetchFeedbackFileContent({ 
+                    projectId: project.id,
+                    storagePath: feedbackForStageIteration.storage_path,
+                  });
                   setShowFeedbackContentModal(true);
                 }
               }}
@@ -417,29 +464,27 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
             </Button>
           </div>
         )}
+
+        {/* Display contributions or "no contributions" message */}
         {displayedContributions.length > 0 ? (
-          <div className="space-y-4">
-            {displayedContributions.map(contrib => (
+          <div className="space-y-4"> 
+            {displayedContributions.map(contribution => (
               <GeneratedContributionCard
-                key={contrib.id}
-                contributionId={contrib.id}
-                projectId={project.id}
-                originalModelContributionIdForResponse={contrib.original_model_contribution_id || contrib.id}
-                initialResponseText={stageResponses[contrib.original_model_contribution_id || contrib.id] || ''}
+                key={contribution.id}
+                contributionId={contribution.id}
+                originalModelContributionIdForResponse={contribution.original_model_contribution_id || contribution.id}
+                initialResponseText={stageResponses[contribution.original_model_contribution_id || contribution.id] || ''}
                 onResponseChange={handleResponseChange}
               />
             ))}
           </div>
         ) : (
-          // 4. No contributions displayed and not currently loading/generating/error for the first time
-          // This state is reached if isStageReady IS true, but other conditions above weren't met and list is empty.
           !isLoadingCurrentProjectDetail && contributionGenerationStatus === 'idle' && !projectDetailError && (
-            <div data-testid="no-contributions-yet" className="text-center py-8">
-              <p className="text-muted-foreground">
-                No contributions have been generated for {activeStageDisplayName} in this iteration yet.
-              </p>
-              {/* You might add a button here or text guiding the user if appropriate */}
-            </div>
+               <div data-testid="no-contributions-yet" className="text-center py-8">
+                  <p className="text-muted-foreground">
+                      No contributions have been generated for {activeStageDisplayName} in this iteration yet.
+                  </p>
+              </div>
           )
         )}
       </CardContent>
@@ -477,7 +522,7 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
         <AlertDialog open={showFeedbackContentModal} onOpenChange={(isOpen) => {
           setShowFeedbackContentModal(isOpen);
           if (!isOpen) {
-            clearCurrentFeedbackFileContent(); // Clear content and errors when modal is closed
+            clearCurrentFeedbackFileContent();
           }
         }}>
           <AlertDialogContent className="max-w-2xl">
@@ -512,7 +557,6 @@ export const SessionContributionsDisplayCard: React.FC<SessionContributionsDispl
             <AlertDialogFooter>
               <AlertDialogCancel onClick={() => {
                   setShowFeedbackContentModal(false);
-                  clearCurrentFeedbackFileContent();
               }}>Close</AlertDialogCancel>
             </AlertDialogFooter>
           </AlertDialogContent>

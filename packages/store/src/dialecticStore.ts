@@ -484,10 +484,10 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     if (entry && entry.content && !entry.error) {
       logger.info(`[DialecticStore] Content for ${contributionId} found in cache.`);
       if (entry.isLoading) {
-        set(state => ({
+        set(state => ({ 
           contributionContentCache: {
             ...state.contributionContentCache,
-            [contributionId]: { ...entry, isLoading: false },
+            [contributionId]: { ...state.contributionContentCache[contributionId], isLoading: false },
           },
         }));
       }
@@ -496,23 +496,23 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
 
     // 2. Set loading state and clear previous error
     logger.info(`[DialecticStore] Fetching content data directly for ${contributionId}.`);
-    set(state => ({
-      contributionContentCache: {
-        ...state.contributionContentCache,
-        [contributionId]: {
-          // Spread existing entry fields that are still relevant or for safety,
-          // though many will be overwritten. Explicitly clear fields that should be reset.
-          ...(entry || {}),
-          isLoading: true,
-          error: null, 
-          content: undefined, 
-          // signedUrl and expiry are no longer part of ContributionCacheEntry per type changes
-          // mimeType, sizeBytes, fileName will be set on successful fetch
+    set(state => {
+      const existingEntryForId = state.contributionContentCache[contributionId];
+      return {
+        contributionContentCache: {
+          ...state.contributionContentCache,
+          [contributionId]: {
+            ...(existingEntryForId || {}),
+            isLoading: true,
+            error: null, 
+            content: undefined, 
+          },
         },
-      },
-    }));
+      };
+    });
 
     try {
+      logger.info(`[DialecticStore] fetchContributionContent: Attempting API call for ${contributionId}`);
       const response = await api.dialectic().getContributionContentData(contributionId);
 
       if (response.error || !response.data) {
@@ -1012,15 +1012,15 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
 
       const { session: fetchedSession, currentStageDetails: fetchedStageDetails } = response.data;
       
-      logger.info('[DialecticStore] Successfully fetched session details and stage:', { sessionId: fetchedSession.id, stage: fetchedStageDetails?.slug });
+      logger.info(`[DialecticStore] Successfully fetched session details and stage:`, { sessionId: fetchedSession.id, stage: fetchedStageDetails?.slug, sessionData: fetchedSession });
 
       set((state) => {
         const updatedProjectDetail = state.currentProjectDetail;
+        let sessionWithContributions = fetchedSession; // Default to fetchedSession
+
         if (updatedProjectDetail && updatedProjectDetail.dialectic_sessions) {
           const sessionIndex = updatedProjectDetail.dialectic_sessions.findIndex(s => s.id === fetchedSession.id);
           if (sessionIndex !== -1) {
-            // Preserve existing contributions and feedback if not included in fetchedSession, or merge if they are.
-            // Assuming fetchedSession is the most up-to-date representation of the session itself.
             const existingSessionData = updatedProjectDetail.dialectic_sessions[sessionIndex];
             updatedProjectDetail.dialectic_sessions[sessionIndex] = {
               ...fetchedSession,
@@ -1028,16 +1028,26 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
               feedback: fetchedSession.feedback || existingSessionData.feedback || [],
               dialectic_session_models: fetchedSession.dialectic_session_models || existingSessionData.dialectic_session_models || [],
             };
+            // After merging, this is the session we want for activeSessionDetail
+            sessionWithContributions = updatedProjectDetail.dialectic_sessions[sessionIndex]; 
           } else {
-            // Session not found in current project, add it (this might indicate a need to also fetch project if context is misaligned)
-            updatedProjectDetail.dialectic_sessions.push(fetchedSession);
+            // Session not found in current project, add it. 
+            // Ensure the pushed session has at least an empty contributions array if not present.
+            const sessionToAdd = {
+                ...fetchedSession,
+                dialectic_contributions: fetchedSession.dialectic_contributions || [],
+                feedback: fetchedSession.feedback || [],
+                dialectic_session_models: fetchedSession.dialectic_session_models || [],
+            };
+            updatedProjectDetail.dialectic_sessions.push(sessionToAdd);
+            sessionWithContributions = sessionToAdd;
           }
         }
 
         return {
           isLoadingActiveSessionDetail: false,
           activeSessionDetailError: null,
-          activeSessionDetail: fetchedSession,
+          activeSessionDetail: sessionWithContributions, // Use the potentially enriched session
           currentProjectDetail: updatedProjectDetail ? { ...updatedProjectDetail } : null,
         };
       });

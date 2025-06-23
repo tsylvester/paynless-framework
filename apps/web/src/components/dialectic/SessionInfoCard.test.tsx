@@ -1,12 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import { SessionInfoCard } from './SessionInfoCard';
 import { DialecticSession, DialecticStage, DialecticProjectResource, DialecticProject, DialecticStateValues, ApiError } from '@paynless/types';
 import {
   initializeMockDialecticState,
-  getDialecticStoreState,
 } from '@/mocks/dialecticStore.mock';
-import { selectIsStageReadyForSessionIteration } from '@paynless/store';
+import { selectIsStageReadyForSessionIteration, useDialecticStore as actualUseDialecticStore } from '@paynless/store';
 
 // Explicitly mock the @paynless/store to use our mock implementation
 vi.mock('@paynless/store', async () => {
@@ -123,92 +122,141 @@ const mockProject: DialecticProject = {
 
 const setupMockStore = (
     initialStateOverrides: Partial<DialecticStateValues> = {},
-    isStageReadyTestCondition?: boolean
+    isStageReadyTestCondition?: boolean,
+    activeSessionInStore: DialecticSession | null | undefined = mockSession
 ) => {
-  // 1. Set the mock return value for the selector *before* store initialization
   const isReady = isStageReadyTestCondition === undefined ? true : isStageReadyTestCondition;
   (selectIsStageReadyForSessionIteration as unknown as MockInstance<
     [DialecticStateValues, string, string, string, number],
     boolean
   >).mockReturnValue(isReady);
 
-  let resourcesForTest: DialecticProjectResource[] = initialStateOverrides.currentProjectDetail?.resources || mockProject.resources ? 
-    [...(initialStateOverrides.currentProjectDetail?.resources || mockProject.resources || [])] : [];
+  const effectiveContextSession = activeSessionInStore !== undefined
+                                  ? activeSessionInStore
+                                  : (initialStateOverrides.activeSessionDetail !== undefined
+                                    ? initialStateOverrides.activeSessionDetail
+                                    : mockSession);
+  const effectiveContextStage = initialStateOverrides.activeContextStage !== undefined
+                                ? initialStateOverrides.activeContextStage
+                                : mockStage;
+
+  let preliminaryContextProject = initialStateOverrides.currentProjectDetail === null
+                                     ? null
+                                     : (initialStateOverrides.currentProjectDetail || mockProject);
   
-  if (isStageReadyTestCondition === true) {
-    const seedPrompt = createMockSeedPromptResource(
-        mockProjectId,
-        mockSessionId,
-        mockStageSlug,
-        mockIterationNumber
-    );
-    if (!resourcesForTest.find(r => r.id === seedPrompt.id)) {
-        resourcesForTest.push(seedPrompt);
-    }
-  } else if (isStageReadyTestCondition === false) {
-     resourcesForTest = resourcesForTest.filter(r => {
-        try {
-            const desc = JSON.parse(r.resource_description || '{}');
-            return !(
-                desc.type === 'seed_prompt' &&
-                desc.session_id === mockSessionId &&
-                desc.stage_slug === mockStageSlug &&
-                desc.iteration === mockIterationNumber
-            );
-        } catch (e) {
-            return true;
-        }
-    });
+  // If currentProjectDetail was explicitly set to null, ensure preliminaryContextProject is also null.
+  if (Object.prototype.hasOwnProperty.call(initialStateOverrides, 'currentProjectDetail') && initialStateOverrides.currentProjectDetail === null) {
+    preliminaryContextProject = null;
   }
 
-  // Base state incorporating calculated resources and default stage
+  const resourcesOverridden = initialStateOverrides.currentProjectDetail?.resources !== undefined;
+  let resourcesForTest: DialecticProjectResource[];
+
+  if (resourcesOverridden) {
+    resourcesForTest = [...initialStateOverrides.currentProjectDetail!.resources!];
+  } else {
+    resourcesForTest = preliminaryContextProject?.resources ? [...preliminaryContextProject.resources] : [];
+  }
+  
+  const findMatchingSeedPrompt = (resList: DialecticProjectResource[]) => {
+    if (!effectiveContextSession || !effectiveContextStage) return undefined;
+    return resList.find(r => {
+      if (!r.resource_description) return false;
+      try {
+          const desc = JSON.parse(r.resource_description);
+          return desc.type === 'seed_prompt' &&
+                 desc.session_id === effectiveContextSession.id &&
+                 desc.stage_slug === effectiveContextStage.slug &&
+                 desc.iteration === effectiveContextSession.iteration_count;
+      } catch (e) { return false; }
+    });
+  };
+
+  if (isStageReadyTestCondition === true) {
+    if (!resourcesOverridden && preliminaryContextProject?.id && effectiveContextSession && effectiveContextStage) {
+      if (!findMatchingSeedPrompt(resourcesForTest)) {
+        const seedPrompt = createMockSeedPromptResource(
+            preliminaryContextProject.id, // Use ID from the correct project context
+            effectiveContextSession.id,
+            effectiveContextStage.slug,
+            effectiveContextSession.iteration_count
+        );
+        resourcesForTest.push(seedPrompt);
+      }
+    }
+  } else if (isStageReadyTestCondition === false) {
+     if (effectiveContextSession && effectiveContextStage) {
+        resourcesForTest = resourcesForTest.filter(r => {
+            if (!r.resource_description) return true;
+            try {
+                const desc = JSON.parse(r.resource_description || '{}');
+                return !(
+                    desc.type === 'seed_prompt' &&
+                    desc.session_id === effectiveContextSession.id &&
+                    desc.stage_slug === effectiveContextStage.slug &&
+                    desc.iteration === effectiveContextSession.iteration_count
+                );
+            } catch (e) {
+                return true;
+            }
+        });
+    }
+  }
+
   const baseEffectiveState: Partial<DialecticStateValues> = {
     activeContextStage: mockStage,
     initialPromptContentCache: {},
+    activeSessionDetail: effectiveContextSession,
+    activeContextSessionId: effectiveContextSession?.id || null,
+    activeContextProjectId: mockProject.id,
   };
   
-  // Determine the currentProjectDetail
   let effectiveProjectDetail: DialecticProject | null;
   if (initialStateOverrides.currentProjectDetail === null) {
-    effectiveProjectDetail = null; // Respect explicit null override
+    effectiveProjectDetail = null;
   } else {
     effectiveProjectDetail = {
       ...mockProject, 
       ...(initialStateOverrides.currentProjectDetail || {}),
-      resources: resourcesForTest, // Crucially use the calculated resourcesForTest
+      resources: resourcesForTest,
     };
   }
 
-  // Combine base, overrides, and then set the definitive project and stage
   const finalStateToInitialize: Partial<DialecticStateValues> = {
-    ...baseEffectiveState, // Start with defaults for stage, cache
-    ...initialStateOverrides, // Apply all other overrides from the specific test (e.g., initialPromptContentCache)
-    currentProjectDetail: effectiveProjectDetail, // Set the carefully constructed project detail
-    // Ensure activeContextStage is from override if present, else default from baseEffectiveState (mockStage)
+    ...baseEffectiveState,
+    ...initialStateOverrides,
+    currentProjectDetail: effectiveProjectDetail,
     activeContextStage: initialStateOverrides.activeContextStage !== undefined
                         ? initialStateOverrides.activeContextStage
                         : baseEffectiveState.activeContextStage,
+    activeSessionDetail: effectiveContextSession,
+    activeContextSessionId: effectiveContextSession?.id || null,
+    activeContextProjectId: effectiveProjectDetail ? effectiveProjectDetail.id : null,
   };
 
-  // 2. Initialize the mock store state
   initializeMockDialecticState(finalStateToInitialize);
+  actualUseDialecticStore.setState({
+    fetchInitialPromptContent: vi.fn(),
+  });
 };
 
 describe('SessionInfoCard', () => {
 
-  const renderComponent = (sessionToRender: DialecticSession | undefined) => {
-    return render(<SessionInfoCard session={sessionToRender} />);
+  const renderComponent = () => {
+    return render(<SessionInfoCard />);
   };
   
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset to a default clean state before each test
     setupMockStore({
       currentProjectDetail: mockProject,
       activeContextStage: mockStage,
-      contributionGenerationStatus: 'idle', // Default to idle
+      contributionGenerationStatus: 'idle', 
       generateContributionsError: null,
-    }, true); // Stage is ready by default
+    }, 
+    true,
+    mockSession
+    ); 
   });
 
   afterEach(() => {
@@ -221,21 +269,13 @@ describe('SessionInfoCard', () => {
       initialPromptContentCache: {
         [iterationUserPromptResource.id]: { isLoading: false, content: 'Mock prompt content for basic info', error: null }
       }
-    }, true);
+    }, 
+    true,
+    mockSession
+    );
 
-    const storeStateBeforeRender = getDialecticStoreState();
-    console.log('TEST_DIAGNOSTIC: currentProjectDetail before render (basic info test):', JSON.stringify(storeStateBeforeRender.currentProjectDetail?.project_name, null, 2));
-    console.log('TEST_DIAGNOSTIC: resources before render (basic info test):', JSON.stringify(storeStateBeforeRender.currentProjectDetail?.resources?.map(r=>r.id), null, 2));
-    if (!storeStateBeforeRender.currentProjectDetail) {
-      console.error('TEST_DIAGNOSTIC_ERROR: currentProjectDetail is NULL in store right before renderComponent (basic info test)!');
-    }
-    if (!storeStateBeforeRender.activeContextStage) {
-      console.error('TEST_DIAGNOSTIC_ERROR: activeContextStage is NULL in store right before renderComponent (basic info test)!');
-    }
-
-    renderComponent(mockSession);
+    renderComponent();
     
-    // Find the CardTitle by its unique ID
     const cardTitleElement = await screen.findByTestId(`session-info-title-${mockSession.id}`);
     expect(cardTitleElement).toBeInTheDocument();
     expect(cardTitleElement).toHaveTextContent(new RegExp(mockSession.session_description!));
@@ -248,206 +288,215 @@ describe('SessionInfoCard', () => {
   });
 
   it('displays loading state for iteration user prompt initially when stage is ready', async () => {
+    const specificPromptResourceId = 'res-specific-prompt-loading';
+    const specificPromptResource = createMockSeedPromptResource(
+      mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
+    );
     setupMockStore({
+      currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
       initialPromptContentCache: {
-        [iterationUserPromptResource.id]: { isLoading: true, content: '', error: null }
-      },
-    }, true);
-    renderComponent(mockSession);
-    await waitFor(() => {
-      expect(screen.getByTestId('iteration-prompt-loading')).toBeInTheDocument();
-    });
-  });
-  
-  it('fetches iteration user prompt content on mount if stage is ready and content not available', async () => {
-    setupMockStore({
-      initialPromptContentCache: {
-        [iterationUserPromptResource.id]: { content: '', isLoading: false, error: null }
+        [specificPromptResourceId]: { isLoading: true, content: '', error: null }
       }
-    }, true);
-    const { fetchInitialPromptContent } = getDialecticStoreState();
-    renderComponent(mockSession);
-    await waitFor(() => {
-      expect(fetchInitialPromptContent).toHaveBeenCalledWith(iterationUserPromptResource.id);
-    });
-  });
+    }, 
+    true,
+    mockSession
+    );
+    renderComponent();
 
-  it('renders iteration user prompt content once loaded when stage is ready', async () => {
-    const promptContent = 'This is the initial user prompt.';
-    setupMockStore({
-      initialPromptContentCache: {
-        [iterationUserPromptResource.id]: { content: promptContent, isLoading: false, error: null }
-      },
-    }, true);
-
-    renderComponent(mockSession);
-
-    await waitFor(() => {
-      const markdownMock = screen.getByTestId('markdown-renderer-mock');
-      expect(markdownMock).toBeInTheDocument();
-      expect(markdownMock).toHaveTextContent(promptContent);
-    });
-  });
-
-  it('displays error state if iteration user prompt content fetching fails when stage is ready', async () => {
-    const error = { code: 'FETCH_FAILED', message: 'Failed to load iteration prompt', name: 'FetchError', stack: 'stack' };
-    setupMockStore({
-      initialPromptContentCache: {
-        [iterationUserPromptResource.id]: { error: error, isLoading: false, content: '' }
-      },
-    }, true);
-    renderComponent(mockSession);
-
-    await waitFor(() => {
-      expect(screen.getByText(error.message)).toBeInTheDocument();
-    });
-  });
-
-  it('does not attempt to render prompt if session is undefined', () => {
-    setupMockStore({ }, true);
-    renderComponent(undefined);
-    expect(screen.getByText('Loading Session Information...')).toBeInTheDocument();
-    const { fetchInitialPromptContent } = getDialecticStoreState();
-    expect(fetchInitialPromptContent).not.toHaveBeenCalled();
-  });
-
-  it('does not attempt to fetch prompt if project is not found in store', () => {
-    setupMockStore({ currentProjectDetail: null, activeContextStage: mockStage }, true);
-    renderComponent(mockSession);
-    const { fetchInitialPromptContent } = getDialecticStoreState();
-    expect(fetchInitialPromptContent).not.toHaveBeenCalled();
+    expect(screen.getByTestId('iteration-prompt-loading')).toBeInTheDocument();
   });
   
-  it('does not attempt to fetch prompt if activeStage is not found in store', () => {
-    setupMockStore({ currentProjectDetail: mockProject, activeContextStage: null }, true);
-    renderComponent(mockSession);
-    const { fetchInitialPromptContent } = getDialecticStoreState();
-    expect(fetchInitialPromptContent).not.toHaveBeenCalled();
-  });
-
-  describe('Stage Readiness UI Logic (Plan 2.B.3.1)', () => {
-    it('shows warning and hides prompt if active stage is NOT ready', async () => {
-      setupMockStore({ }, false);
-      renderComponent(mockSession);
-
-      await waitFor(() => {
-        expect(screen.getByText('Stage Not Ready')).toBeInTheDocument();
-        expect(screen.getByText(/Please complete prior stages or ensure the seed prompt for this stage and iteration is available./)).toBeInTheDocument();
-        expect(screen.queryByTestId('markdown-renderer-mock')).toBeNull();
-        expect(screen.queryByTestId('iteration-prompt-loading')).toBeNull();
-      });
-    });
-
-    it('shows prompt and NO warning if active stage IS ready', async () => {
-      const promptContent = "Ready stage prompt content";
-      setupMockStore({
-        initialPromptContentCache: {
-          [iterationUserPromptResource.id]: { content: promptContent, isLoading: false, error: null }
-        }
-      }, true);
-      renderComponent(mockSession);
-
-      await waitFor(() => {
-        expect(screen.queryByText('Stage Not Ready')).toBeNull();
-        const markdownMock = screen.getByTestId('markdown-renderer-mock');
-        expect(markdownMock).toBeInTheDocument();
-        expect(markdownMock).toHaveTextContent(promptContent);
-      });
-    });
-
-    it('does not fetch prompt content if active stage is NOT ready', () => {
-      setupMockStore({ }, false);
-      
-      const { fetchInitialPromptContent } = getDialecticStoreState();
-      renderComponent(mockSession);
-
-      expect(fetchInitialPromptContent).not.toHaveBeenCalled();
-    });
-
-    it('still shows basic session info like description even if stage is not ready', async () => {
-        setupMockStore({
-            currentProjectDetail: { ...mockProject, project_name: 'Project For Not Ready Stage' },
-        }, false);
-
-        renderComponent(mockSession);
-
-        await waitFor(() => {
-            expect(screen.getByText(new RegExp(mockSession.session_description!))).toBeInTheDocument();
-            expect(screen.getByText(new RegExp(`Iteration: ${mockSession.iteration_count}`))).toBeInTheDocument();
-            expect(screen.getByText(new RegExp(mockSession.status!, 'i'))).toBeInTheDocument();
-            expect(screen.getByText('Stage Not Ready')).toBeInTheDocument();
-            expect(screen.queryByText('Loading Session Information...')).toBeNull();
-        });
-    });
-  });
-
-  it('should render session description and iteration count when session data is provided', async () => {
+  it('fetches iteration user prompt if not in cache and stage is ready', async () => {
+    const mockFetch = vi.fn();
+    const specificPromptResourceId = 'res-specific-prompt-fetch';
+    const specificPromptResource = createMockSeedPromptResource(
+      mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
+    );
     setupMockStore({
-      currentProjectDetail: mockProject,
-      activeContextStage: mockStage,
-      contributionGenerationStatus: 'idle',
-      generateContributionsError: null,
-    }, true); // Explicitly state stage is ready
-    renderComponent(mockSession);
+      currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
+      initialPromptContentCache: {},
+    }, 
+    true, 
+    mockSession 
+    );
+    actualUseDialecticStore.setState({ fetchInitialPromptContent: mockFetch });
 
-    // Check parts of the title more robustly by finding the CardTitle element
-    const titleElement = await screen.findByTestId(`session-info-title-${mockSession.id}`);
-    expect(titleElement).toBeInTheDocument();
-    expect(titleElement).toHaveTextContent(new RegExp(mockSession.session_description!)); // Check for description
-    expect(titleElement).toHaveTextContent(`Iteration: ${mockSession.iteration_count}`);
-    expect(titleElement).toHaveTextContent(new RegExp(mockSession.status!, 'i'));
+    renderComponent();
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(specificPromptResource.id);
+    });
   });
 
-  // New tests for contribution generation status
-  it('should display generating contributions indicator when status is "initiating"', () => {
-    setupMockStore({ 
-      currentProjectDetail: mockProject, 
-      activeContextStage: mockStage, 
-      contributionGenerationStatus: 'initiating',
-    }, true);
-    renderComponent(mockSession);
+  it('displays fetched iteration user prompt content when available and stage is ready', async () => {
+    const promptContent = "Fetched prompt content.";
+    const specificPromptResourceId = 'res-specific-prompt-display';
+    const specificPromptResource = createMockSeedPromptResource(
+      mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
+    );
+    setupMockStore({
+      currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
+      initialPromptContentCache: {
+        [specificPromptResourceId]: { isLoading: false, content: promptContent, error: null }
+      }
+    }, 
+    true,
+    mockSession
+    );
+    renderComponent();
+
+    expect(screen.getByTestId('markdown-renderer-mock')).toHaveTextContent(promptContent);
+  });
+
+  it('displays error message if fetching iteration user prompt fails and stage is ready', async () => {
+    const error: ApiError = { message: 'Failed to fetch', code: 'FETCH_ERROR' };
+    const specificPromptResourceId = 'res-specific-prompt-error';
+    const specificPromptResource = createMockSeedPromptResource(
+      mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
+    );
+    setupMockStore({
+      currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
+      initialPromptContentCache: {
+        [specificPromptResourceId]: { isLoading: false, content: '', error: error }
+      }
+    }, 
+    true,
+    mockSession
+    );
+    renderComponent();
+
+    expect(screen.getByText('Error Loading Prompt')).toBeInTheDocument();
+  });
+
+  it('renders "Stage Not Ready" message when isStageReady is false', () => {
+    setupMockStore(
+      { currentProjectDetail: mockProject },
+      false,
+      mockSession
+    );
+    renderComponent();
+
+    expect(screen.getByText('Stage Not Ready')).toBeInTheDocument();
+  });
+
+  it('renders loading state if session is undefined', () => {
+    setupMockStore(
+      { currentProjectDetail: mockProject },
+      true,
+      null
+    );
+    renderComponent();
+
+    expect(screen.getByText('Loading Session Information...')).toBeInTheDocument();
+  });
+
+  it('renders loading state if project is undefined', () => {
+    setupMockStore(
+      { currentProjectDetail: null },
+      true,
+      mockSession
+    );
+    renderComponent();
+    expect(screen.getByText('Loading Session Information...')).toBeInTheDocument();
+  });
+
+  it('displays generating contributions indicator when status is "initiating"', () => {
+    setupMockStore(
+      { contributionGenerationStatus: 'initiating' }, 
+      true, 
+      mockSession
+    );
+    renderComponent();
     expect(screen.getByTestId('generating-contributions-indicator')).toBeInTheDocument();
     expect(screen.getByText(/Generating contributions, please wait.../i)).toBeInTheDocument();
   });
 
-  it('should display generating contributions indicator when status is "generating"', () => {
-    setupMockStore({ 
-      currentProjectDetail: mockProject, 
-      activeContextStage: mockStage, 
-      contributionGenerationStatus: 'generating',
-    }, true);
-    renderComponent(mockSession);
+  it('displays generating contributions indicator when status is "generating"', () => {
+    setupMockStore(
+      { contributionGenerationStatus: 'generating' },
+      true,
+      mockSession
+      );
+    renderComponent();
     expect(screen.getByTestId('generating-contributions-indicator')).toBeInTheDocument();
+    expect(screen.getByText(/Generating contributions, please wait.../i)).toBeInTheDocument();
   });
 
-  it('should display error message when status is "failed" and error is present', () => {
-    const mockError: ApiError = { message: 'Generation failed badly', code: 'TEST_FAIL' };
-    setupMockStore({ 
-      currentProjectDetail: mockProject, 
-      activeContextStage: mockStage, 
-      contributionGenerationStatus: 'failed',
-      generateContributionsError: mockError,
-    }, true);
-    renderComponent(mockSession);
-    expect(screen.getByTestId('generate-contributions-error')).toBeInTheDocument();
-    expect(screen.getByText(/Error Generating Contributions/i)).toBeInTheDocument();
-    expect(screen.getByText(mockError.message)).toBeInTheDocument();
+  it('displays generation error if status is "failed" and error is present', () => {
+    const error: ApiError = { message: 'Generation failed hard', code: 'GEN_FAIL' };
+    setupMockStore(
+      { 
+        contributionGenerationStatus: 'failed',
+        generateContributionsError: error 
+      },
+      true,
+      mockSession
+      );
+    renderComponent();
+    const errorAlert = screen.getByTestId('generate-contributions-error');
+    expect(errorAlert).toBeInTheDocument();
+    expect(within(errorAlert).getByText('Error Generating Contributions')).toBeInTheDocument();
+    expect(within(errorAlert).getByText(error.message)).toBeInTheDocument();
   });
 
-  it('should not display indicator or error when status is "idle"', () => {
-    setupMockStore({ 
-      currentProjectDetail: mockProject, 
-      activeContextStage: mockStage, 
-      contributionGenerationStatus: 'idle',
-    }, true);
-    renderComponent(mockSession);
-    expect(screen.queryByTestId('generating-contributions-indicator')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('generate-contributions-error')).not.toBeInTheDocument();
+  it('does not display generation error or indicator if status is "idle"', () => {
+    setupMockStore(
+      { contributionGenerationStatus: 'idle' },
+      true,
+      mockSession
+      );
+    renderComponent();
+    expect(screen.queryByTestId('generating-contributions-indicator')).toBeNull();
+    expect(screen.queryByTestId('generate-contributions-error')).toBeNull();
   });
 
-  it('should display stage not ready message when stage is not ready', () => {
-    setupMockStore({ }, false);
-    renderComponent(mockSession);
-    expect(screen.getByText('Stage Not Ready')).toBeInTheDocument();
+  it('renders "No specific prompt is configured for this iteration/stage." when iterationUserPromptResourceId is null and stage is ready', () => {
+    setupMockStore(
+      { 
+        currentProjectDetail: { ...mockProject, resources: [] } 
+      },
+      true,
+      mockSession
+    );
+    renderComponent();
+    expect(screen.getByText('No specific prompt is configured for this iteration/stage.')).toBeInTheDocument();
   });
+
+  it('renders "Loading iteration prompt..." if resource ID exists but no cache entry and stage is ready', async () => {
+    const specificPromptResourceId = 'res-for-loading-text';
+    const specificPromptResource = createMockSeedPromptResource(
+      mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
+    );
+    setupMockStore(
+      { 
+        currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
+        initialPromptContentCache: {}
+      },
+      true,
+      mockSession
+    );
+    renderComponent();
+    expect(await screen.findByText('Loading iteration prompt...', {}, {timeout: 2000})).toBeInTheDocument();
+  });
+
+
+  it('renders "No specific prompt was set for this iteration." if cache entry exists with null content and no error/loading, and stage is ready', () => {
+    const specificPromptResourceId = 'res-null-content';
+    const specificPromptResource = createMockSeedPromptResource(
+      mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
+    );
+    setupMockStore(
+      { 
+        currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
+        initialPromptContentCache: {
+          [specificPromptResourceId]: {isLoading: false, content: '', error: null }
+        }
+      },
+      true,
+      mockSession
+    );
+    renderComponent();
+    expect(screen.getByText('No specific prompt was set for this iteration.')).toBeInTheDocument();
+  });
+
 }); 

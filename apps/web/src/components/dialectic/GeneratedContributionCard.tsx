@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useDialecticStore, selectContributionById } from '@paynless/store';
-import { ApiError } from '@paynless/types';
+import { ApiError, DialecticContribution } from '@paynless/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -13,7 +13,6 @@ import { toast } from 'sonner';
 
 interface GeneratedContributionCardProps {
   contributionId: string;
-  projectId: string;
   originalModelContributionIdForResponse: string;
   initialResponseText?: string;
   onResponseChange: (originalModelContributionIdForResponse: string, responseText: string) => void;
@@ -21,21 +20,27 @@ interface GeneratedContributionCardProps {
 
 export const GeneratedContributionCard: React.FC<GeneratedContributionCardProps> = ({
   contributionId,
-  projectId,
   originalModelContributionIdForResponse,
   initialResponseText = '',
   onResponseChange
 }) => {
-  const contribution = useDialecticStore(state => selectContributionById(state, contributionId));
+  console.log(`[GeneratedContributionCard] Rendering with contributionId: ${contributionId}`);
+
+  const contribution: DialecticContribution | undefined = useDialecticStore(state => selectContributionById(state, contributionId));
+  console.log(`[GeneratedContributionCard] For contributionId ${contributionId}, selected contribution metadata:`, contribution);
+
+  const projectId = useDialecticStore(state => state.currentProjectDetail?.id);
 
   const contentCacheEntry = useDialecticStore(state =>
     contribution?.id ? state.contributionContentCache?.[contribution.id] : undefined
   );
+  console.log(`[GeneratedContributionCard] For contributionId ${contributionId}, contentCacheEntry:`, contentCacheEntry);
+
   const fetchContributionContent = useDialecticStore(state => state.fetchContributionContent);
   const saveContributionEdit = useDialecticStore(state => state.saveContributionEdit);
   const isSavingEdit = useDialecticStore(state => state.isSavingContributionEdit);
   const saveEditError = useDialecticStore(state => state.saveContributionEditError as ApiError | null);
-  const resetSaveEditError = useDialecticStore(state => state.resetSaveContributionEditError); // Assuming this action exists
+  const resetSaveEditError = useDialecticStore(state => state.resetSaveContributionEditError);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editedContentText, setEditedContentText] = useState('');
@@ -50,10 +55,10 @@ export const GeneratedContributionCard: React.FC<GeneratedContributionCardProps>
   }, [initialResponseText]);
 
   useEffect(() => {
-    if (contribution?.id && (!contentCacheEntry || (!contentCacheEntry.content && !contentCacheEntry.isLoading && !contentCacheEntry.error))) {
-      fetchContributionContent(contribution.id); // Pass contribution ID to thunk
+    if (contributionId && contribution && (!contentCacheEntry || (!contentCacheEntry.content && !contentCacheEntry.isLoading))) {
+      fetchContributionContent(contributionId);
     }
-  }, [contribution, contentCacheEntry, fetchContributionContent]);
+  }, [contributionId, contribution, contentCacheEntry, fetchContributionContent]);
 
   useEffect(() => {
     if (isEditing) {
@@ -61,7 +66,6 @@ export const GeneratedContributionCard: React.FC<GeneratedContributionCardProps>
     }
   }, [isEditing, displayContent]);
 
-  // Clear save error when edit mode is toggled or component unmounts
   useEffect(() => {
     return () => {
       if(saveEditError && resetSaveEditError) resetSaveEditError();
@@ -74,11 +78,14 @@ export const GeneratedContributionCard: React.FC<GeneratedContributionCardProps>
     if (!isEditing) {
       setEditedContentText(displayContent);
     }
-    if(saveEditError && resetSaveEditError) resetSaveEditError(); // Clear error on toggle
+    if(saveEditError && resetSaveEditError) resetSaveEditError();
   };
 
   const handleSaveEdit = async () => {
-    if (!contribution || isSavingEdit) return;
+    if (!contribution || !projectId || isSavingEdit) {
+        if (!projectId) toast.error("Cannot save edit: Project context is missing.");
+        return;
+    }
     if(saveEditError && resetSaveEditError) resetSaveEditError();
 
     try {
@@ -90,11 +97,9 @@ export const GeneratedContributionCard: React.FC<GeneratedContributionCardProps>
             originalContributionIdToEdit: contribution.id,
             editedContentText,
       });
-      // Type assertion if the store action returns a more specific success object
       if (result?.data || !result?.error) { 
         toast.success('Edit Saved', { description: 'Your changes to the contribution have been saved.' });
         setIsEditing(false);
-        // Content will refresh from store due to new version becoming latest
       } else {
         const errorPayload = result as unknown as { error: ApiError };
         toast.error("Failed to Save Edit", { description: errorPayload?.error?.message || saveEditError?.message || "An unexpected error occurred." });
@@ -144,7 +149,7 @@ export const GeneratedContributionCard: React.FC<GeneratedContributionCardProps>
               value={editedContentText}
               onChange={setEditedContentText}
               placeholder="Enter edited content..."
-              showPreviewToggle={false}
+              showPreviewToggle={true}
               showFileUpload={false}
             />
             <p className="text-xs text-muted-foreground px-1">
@@ -189,7 +194,7 @@ export const GeneratedContributionCard: React.FC<GeneratedContributionCardProps>
               onChange={handleResponseChangeInternal}
               placeholder={`Respond to ${contribution.model_name || 'this contribution'}...`}
               showPreviewToggle={true}
-              showFileUpload={false} // No file uploads for individual responses here
+              showFileUpload={false}
               label="Enter your response, notes, criticism, requests, or other feedback. Anything you add will be used by the model for the next stage."
             />
           </div>

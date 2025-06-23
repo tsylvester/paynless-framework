@@ -15,11 +15,12 @@ import { AIModelSelector } from './AIModelSelector';
 import { Loader2 } from 'lucide-react';
 
 interface SessionInfoCardProps {
-  session?: DialecticSession;
+  // REMOVED: session?: DialecticSession;
 }
 
-export const SessionInfoCard: React.FC<SessionInfoCardProps> = ({ session }) => {
+export const SessionInfoCard: React.FC<SessionInfoCardProps> = (/* REMOVED: { session } */) => {
   const project: DialecticProject | null = useDialecticStore(state => state.currentProjectDetail);
+  const session: DialecticSession | null = useDialecticStore(state => state.activeSessionDetail);
   const activeStage: DialecticStage | null = useDialecticStore(state => state.activeContextStage);
   const fetchInitialPromptContent = useDialecticStore(state => state.fetchInitialPromptContent);
   const contributionGenerationStatus: ContributionGenerationStatus = useDialecticStore(selectContributionGenerationStatus);

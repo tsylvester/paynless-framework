@@ -237,6 +237,7 @@ export class DialecticApiClient {
         logger.info('Fetching contribution content data directly', { contributionId });
 
         try {
+            logger.debug(`[DialecticApiClient.getContributionContentData] About to call this.apiClient.post for ${contributionId}`);
             const response = await this.apiClient.post<GetContributionContentDataResponse | null, DialecticServiceActionPayload>(
                 'dialectic-service',
                 {
@@ -254,6 +255,7 @@ export class DialecticApiClient {
             }
             return response;
         } catch (error: unknown) {
+            logger.warn('[DialecticApiClient.getContributionContentData] Caught something in catch block:', { errorVal: error, contributionId });
             const message = error instanceof Error ? error.message : 'A network error occurred';
             logger.error('Network error in getContributionContentData:', { errorMessage: message, errorObject: error, contributionId });
             return {

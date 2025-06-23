@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { DialecticSessionDetailsPage } from './DialecticSessionDetailsPage';
-import { setDialecticState, resetDialecticStoreMock, getDialecticStoreState, mockActivateProjectAndSessionContextForDeepLink } from '../mocks/dialecticStore.mock';
+import { setDialecticStateValues, resetDialecticStoreMock, getDialecticStoreState, mockActivateProjectAndSessionContextForDeepLink } from '../mocks/dialecticStore.mock';
 import type {
   DialecticProject,
   DialecticSession,
@@ -124,11 +124,10 @@ describe('DialecticSessionDetailsPage', () => {
 
   it('Scenario 1: should call activateProjectAndSessionContextForDeepLink when no relevant context is set', async () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
-    setDialecticState({
+    setDialecticStateValues({
       activeContextProjectId: null,
       activeContextSessionId: null,
       activeSessionDetail: null,
-      fetchDialecticProjectDetails: vi.fn(),
     });
     
     renderWithRouter({});
@@ -140,12 +139,11 @@ describe('DialecticSessionDetailsPage', () => {
 
   it('Scenario 2: should call activateProjectAndSessionContextForDeepLink when project context matches but session context differs', async () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
-    setDialecticState({
+    setDialecticStateValues({
       activeContextProjectId: mockProjectId,
       activeContextSessionId: mockOtherSessionId,
       activeSessionDetail: mockOtherSession,
       currentProjectDetail: mockProject,
-      fetchDialecticProjectDetails: vi.fn(),
     });
 
     renderWithRouter({});
@@ -157,12 +155,11 @@ describe('DialecticSessionDetailsPage', () => {
   
   it('Scenario 2b: should call activateProjectAndSessionContextForDeepLink when project and session ID in context match, but activeSessionDetail is null', async () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
-    setDialecticState({
+    setDialecticStateValues({
       activeContextProjectId: mockProjectId,
       activeContextSessionId: mockSessionId,
       activeSessionDetail: null,
       currentProjectDetail: mockProject,
-      fetchDialecticProjectDetails: vi.fn(),
     });
 
     renderWithRouter({});
@@ -174,14 +171,13 @@ describe('DialecticSessionDetailsPage', () => {
 
   it('Scenario 3: should NOT call activateProjectAndSessionContextForDeepLink if context is already aligned and session details are present', async () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
-    setDialecticState({
+    setDialecticStateValues({
       activeContextProjectId: mockProjectId,
       activeContextSessionId: mockSessionId,
       activeSessionDetail: mockSession,
       currentProjectDetail: mockProject,
       currentProcessTemplate: mockProcessTemplate,
       activeContextStage: mockStages[0],
-      fetchDialecticProjectDetails: vi.fn(),
     });
 
     renderWithRouter({});
@@ -194,7 +190,7 @@ describe('DialecticSessionDetailsPage', () => {
 
   it('Scenario 4: should render correctly using store-derived context after hydration', async () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
-    setDialecticState({
+    setDialecticStateValues({
       activeContextProjectId: mockProjectId,
       activeContextSessionId: mockSessionId,
       activeSessionDetail: mockSession,
@@ -203,7 +199,6 @@ describe('DialecticSessionDetailsPage', () => {
       activeContextStage: mockStages[0],
       isLoadingActiveSessionDetail: false,
       activeSessionDetailError: null,
-      fetchDialecticProjectDetails: vi.fn(),
     });
 
     renderWithRouter({});
@@ -224,13 +219,12 @@ describe('DialecticSessionDetailsPage', () => {
 
   it('Scenario 5: should display loading UI when isLoadingActiveSessionDetail is true', async () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
-    setDialecticState({
+    setDialecticStateValues({
       activeContextProjectId: mockProjectId,
       activeContextSessionId: mockSessionId,
       activeSessionDetail: null,
       isLoadingActiveSessionDetail: true,
       currentProjectDetail: null,
-      fetchDialecticProjectDetails: vi.fn(),
     });
 
     renderWithRouter({});
@@ -242,14 +236,13 @@ describe('DialecticSessionDetailsPage', () => {
   it('Scenario 6: should display error UI when activeSessionDetailError is present', async () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
     const mockError: ApiError = { message: 'Failed to fetch session details', code: 'FETCH_ERROR' };
-    setDialecticState({
+    setDialecticStateValues({
       activeContextProjectId: mockProjectId,
       activeContextSessionId: mockSessionId,
       activeSessionDetail: null,
       isLoadingActiveSessionDetail: false,
       activeSessionDetailError: mockError,
       currentProjectDetail: null,
-      fetchDialecticProjectDetails: vi.fn(),
     });
 
     renderWithRouter({});

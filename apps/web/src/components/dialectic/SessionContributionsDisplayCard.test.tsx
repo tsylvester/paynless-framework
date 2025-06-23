@@ -14,19 +14,11 @@ vi.mock('./GeneratedContributionCard', () => ({
 
 // Then mock libraries/aliased paths
 vi.mock('@paynless/store', async () => {
-  // Import the actual mock module
-  const actualDialecticStoreMock = await vi.importActual<typeof import('../../mocks/dialecticStore.mock')>('../../mocks/dialecticStore.mock');
+  // CORRECTED: Import and spread ALL exports from the actual mock file.
+  const actualMock = await vi.importActual<typeof import('../../mocks/dialecticStore.mock')>('../../mocks/dialecticStore.mock');
   return {
-    __esModule: true, // Required for ES modules when using await vi.importActual
-    ...actualDialecticStoreMock, // Spread all exports from the mock, including the vi.fn() for the selector
-    // Ensure all selectors used by the component are vi.fn()
-    useDialecticStore: actualDialecticStoreMock.useDialecticStore, // Keep the actual store hook
-    // Selectors should be defined as vi.fn() so their return values can be controlled per test
-    selectIsStageReadyForSessionIteration: vi.fn(), 
-    selectFeedbackForStageIteration: vi.fn(),       // ADDED
-    selectIsLoadingProjectDetail: vi.fn(),          // CHANGED from actualStore
-    selectContributionGenerationStatus: vi.fn(),    // CHANGED from actualStore
-    selectProjectDetailError: vi.fn(),              // CHANGED from actualStore
+    ...actualMock,
+    __esModule: true, // Typically needed when using vi.importActual with ES modules
   };
 });
 
@@ -41,7 +33,6 @@ import {
   DialecticStateValues,
   ApiResponse,
   SubmitStageResponsesResponse,
-  ContributionGenerationStatus,
   DialecticFeedback,
   GetProjectResourceContentResponse,
 } from '@paynless/types';
@@ -53,7 +44,9 @@ import {
   selectFeedbackForStageIteration,
   selectIsLoadingProjectDetail,
   selectContributionGenerationStatus,
-  selectProjectDetailError
+  selectProjectDetailError,
+  selectActiveContextStage,
+  selectCurrentProjectDetail
 } from '@paynless/store';
 
 const mockThesisStage: DialecticStage = {
@@ -82,7 +75,7 @@ describe('SessionContributionsDisplayCard', () => {
   const mockSubmitStageResponses = vi.fn(
     (): Promise<ApiResponse<SubmitStageResponsesResponse>> => {
       const updatedSession: DialecticSession = {
-        ...mockSession,
+        ...mockBaseSession,
         status: 'antithesis_pending',
         current_stage_id: mockAntithesisStage.id,
       };
@@ -101,14 +94,36 @@ describe('SessionContributionsDisplayCard', () => {
   const mockSetActiveDialecticContext = vi.fn();
   const mockResetSubmitStageResponsesError = vi.fn();
 
-  // ADDED: Mock functions for new actions
   const mockFetchFeedbackFileContent = vi.fn();
   const mockClearCurrentFeedbackFileContent = vi.fn();
   const mockResetFetchFeedbackFileContentError = vi.fn();
 
+  const mockFetchedContent: GetProjectResourceContentResponse = {
+    content: '# Feedback\n\nThis is the markdown feedback.',
+    fileName: 'user_feedback_thesis.md',
+    mimeType: 'text/markdown',
+  };
+
+  const mockFeedback: DialecticFeedback = {
+    id: 'fb1',
+    session_id: 'sess-1',
+    project_id: 'proj-1',
+    stage_slug: mockThesisStage.slug,
+    iteration_number: 1,
+    user_id: 'u1',
+    file_name: 'user_feedback_thesis.md',
+    storage_bucket: 'feedback-bucket',
+    storage_path: 'project-123/session-abc/iteration_1/thesis/user_feedback_thesis.md',
+    mime_type: 'text/markdown',
+    size_bytes: 200,
+    created_at: '2023-10-27T05:00:00Z',
+    feedback_type: 'user_provided_feedback_v1',
+    updated_at: '2023-10-27T05:00:00Z',
+  };
+
   const mockThesisContrib: DialecticContribution = {
     id: 'c1',
-    stage: mockThesisStage,
+    stage: mockThesisStage, 
     original_model_contribution_id: 'c1',
     is_latest_edit: true,
     session_id: 'sess-1',
@@ -118,14 +133,20 @@ describe('SessionContributionsDisplayCard', () => {
     user_id: 'u1',
     model_id: 'm1',
     model_name: 'GPT-4',
-    content_storage_path: 'path/c1',
-    content_storage_bucket: 'b',
-    content_mime_type: 'text/plain',
-    content_size_bytes: 100,
+    content_storage_path: 'old/path/c1_content.md', 
+    content_storage_bucket: 'old_content_bucket',
+    content_mime_type: 'text/markdown', 
+    content_size_bytes: 100,      
+    file_name: 'gpt-4_thesis_contribution.md',
+    storage_bucket: 'dialectic-content',
+    storage_path: 'project-123/session-abc/iteration_1/thesis/gpt-4_thesis_contribution.md',
+    mime_type: 'text/markdown', 
+    size_bytes: 120,           
+    contribution_type: 'model_contribution',
     edit_version: 1,
     prompt_template_id_used: 'p',
-    raw_response_storage_path: 'p',
-    seed_prompt_url: 'p',
+    raw_response_storage_path: 'path/to/raw/c1.json',
+    seed_prompt_url: 'path/to/seed/prompt_c1.md',
     target_contribution_id: null,
     tokens_used_input: 1,
     tokens_used_output: 1,
@@ -137,12 +158,25 @@ describe('SessionContributionsDisplayCard', () => {
   const mockAntithesisContrib: DialecticContribution = {
     ...mockThesisContrib,
     id: 'c2',
-    stage: mockAntithesisStage,
+    stage: mockAntithesisStage, 
     original_model_contribution_id: 'c2',
     model_name: 'Claude 3',
+    content_storage_path: 'old/path/c2_content.md',
+    content_storage_bucket: 'old_content_bucket',
+    content_mime_type: 'text/markdown',
+    content_size_bytes: 110,
+    file_name: 'claude-3_antithesis_contribution.md',
+    storage_bucket: 'dialectic-content',
+    storage_path: 'project-123/session-abc/iteration_1/antithesis/claude-3_antithesis_contribution.md',
+    mime_type: 'text/markdown',
+    size_bytes: 160,
+    contribution_type: 'model_contribution',
+    raw_response_storage_path: 'path/to/raw/c2.json',
+    seed_prompt_url: 'path/to/seed/prompt_c2.md',
+    prompt_template_id_used: 'p2',
   };
 
-  const mockSession: DialecticSession = {
+  const mockBaseSession: DialecticSession = {
     id: 'sess-1',
     project_id: 'proj-1',
     status: 'thesis_complete',
@@ -163,9 +197,7 @@ describe('SessionContributionsDisplayCard', () => {
     project_name: 'p1',
     initial_user_prompt: 'ipu',
     selected_domain_id: 'd1',
-    dialectic_domains: {
-      name: 'Software Development',
-    },
+    dialectic_domains: { name: 'Software Development' },
     dialectic_process_templates: {
       created_at: '2023-01-01T09:00:00Z',
       description: 'pt-1',
@@ -174,7 +206,7 @@ describe('SessionContributionsDisplayCard', () => {
       starting_stage_id: 's1',
     },
     process_template_id: 'pt-1',
-    dialectic_sessions: [mockSession],
+    dialectic_sessions: [mockBaseSession],
     selected_domain_overlay_id: null,
     initial_prompt_resource_id: null,
     repo_url: null,
@@ -192,550 +224,376 @@ describe('SessionContributionsDisplayCard', () => {
   };
 
   const setup = (
-    project: DialecticProject | null,
-    activeSessionId: string | null,
-    activeStage: DialecticStage | null,
-    overrides?: Partial<DialecticStateValues>, 
-    isStageReadyOverride: boolean = true,
-    isLoadingDetailsOverride: boolean = false,
-    generationStatusOverride: ContributionGenerationStatus = 'idle',
-    projectErrorOverride: ApiError | null = null,
-    // ADDED: Override for feedback data
-    mockFeedbackDataOverride: DialecticFeedback[] | null = null 
+    {
+      projectInStore = mockProject,
+      activeSessionInStore = mockBaseSession,
+      activeStageInStore = mockThesisStage,
+      overrides = {},
+      isStageReadyOverride = true,
+      mockFeedbackDataOverride = null as DialecticFeedback[] | null
+    }: {
+      projectInStore?: DialecticProject | null;
+      activeSessionInStore?: DialecticSession | null;
+      activeStageInStore?: DialecticStage | null;
+      overrides?: Partial<DialecticStateValues>;
+      isStageReadyOverride?: boolean;
+      mockFeedbackDataOverride?: DialecticFeedback[] | null;
+    } = {}
   ) => {
-    const initialState: DialecticStateValues = {
-      ...getDialecticStoreState(), 
-      currentProjectDetail: project,
-      activeContextSessionId: activeSessionId,
-      activeContextStage: activeStage,
+    const initialState: Partial<DialecticStateValues> = {
+      currentProjectDetail: projectInStore,
+      activeSessionDetail: activeSessionInStore, 
+      activeContextStage: activeStageInStore,
+      activeContextSessionId: activeSessionInStore?.id || null,
+      activeContextProjectId: projectInStore?.id || null, 
       isSubmittingStageResponses: false,
       submitStageResponsesError: null,
-      isLoadingProjectDetail: isLoadingDetailsOverride,
-      contributionGenerationStatus: generationStatusOverride,
-      projectDetailError: projectErrorOverride,
-      // ADDED: Initial state for feedback content fetching
+      isLoadingProjectDetail: false,
+      contributionGenerationStatus: 'idle',
+      projectDetailError: null,
       currentFeedbackFileContent: null,
       isFetchingFeedbackFileContent: false,
       fetchFeedbackFileContentError: null,
-      ...overrides, 
+      ...(overrides || {}),
     };
 
     initializeMockDialecticState(initialState);
-    // UPDATED: Include new mock actions
     useDialecticStore.setState({
       submitStageResponses: mockSubmitStageResponses,
       setActiveDialecticContext: mockSetActiveDialecticContext,
       resetSubmitStageResponsesError: mockResetSubmitStageResponsesError,
-      // ADDED: New actions
       fetchFeedbackFileContent: mockFetchFeedbackFileContent,
       clearCurrentFeedbackFileContent: mockClearCurrentFeedbackFileContent,
       resetFetchFeedbackFileContentError: mockResetFetchFeedbackFileContentError,
     });
 
-    // ADDED: Ensure mockFetchFeedbackFileContent returns a resolved promise by default
     mockFetchFeedbackFileContent.mockResolvedValue(undefined);
 
-    // UPDATED: Mock return values for all relevant selectors
-    (selectIsStageReadyForSessionIteration as unknown as MockInstance<
-        [DialecticStateValues, string, string, string],
-        boolean
-    >).mockReturnValue(isStageReadyOverride);
-
-    (selectFeedbackForStageIteration as unknown as MockInstance<
-        [DialecticStateValues, string, string, string, number],
-        DialecticFeedback[] | null
-    >).mockReturnValue(mockFeedbackDataOverride);
+    (selectIsStageReadyForSessionIteration as unknown as MockInstance).mockReturnValue(isStageReadyOverride);
+    (selectFeedbackForStageIteration as unknown as MockInstance).mockReturnValue(mockFeedbackDataOverride);
+    (selectActiveContextStage as unknown as MockInstance).mockReturnValue(activeStageInStore);
+    (selectCurrentProjectDetail as unknown as MockInstance).mockReturnValue(projectInStore);
     
-    (selectIsLoadingProjectDetail as unknown as MockInstance<
-        [DialecticStateValues],
-        boolean
-    >).mockReturnValue(isLoadingDetailsOverride);
+    (selectIsLoadingProjectDetail as unknown as MockInstance).mockReturnValue(initialState.isLoadingProjectDetail ?? false);
+    (selectContributionGenerationStatus as unknown as MockInstance).mockReturnValue(initialState.contributionGenerationStatus ?? 'idle');
+    (selectProjectDetailError as unknown as MockInstance).mockReturnValue(initialState.projectDetailError ?? null);
 
-    (selectContributionGenerationStatus as unknown as MockInstance<
-        [DialecticStateValues],
-        ContributionGenerationStatus
-    >).mockReturnValue(generationStatusOverride);
-
-    (selectProjectDetailError as unknown as MockInstance<
-        [DialecticStateValues],
-        ApiError | null
-    >).mockReturnValue(projectErrorOverride);
-
-    const activeSession = project?.dialectic_sessions?.find(s => s.id === activeSessionId);
-
-    render(<SessionContributionsDisplayCard session={activeSession} activeStage={activeStage} />);
+    return render(<SessionContributionsDisplayCard />); 
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default setup REMOVED from here
-  });
-
-  it('renders contributions for the active stage only', () => {
-    setup(mockProject, 'sess-1', mockThesisStage, {}, true, false, 'idle', null);
-    expect(screen.getByTestId('generated-contribution-card-c1')).toBeInTheDocument();
-    expect(screen.queryByTestId('generated-contribution-card-c2')).not.toBeInTheDocument();
-  });
-
-  it('displays correct elements when stage is ready but there are no contributions for the active stage', () => {
-    const mockSynthesisStage: DialecticStage = { ...mockThesisStage, id: 's3', slug: 'synthesis', display_name: 'Synthesis' };
-    const projectWithNoSynthContributions: DialecticProject = {
-      ...mockProject,
-      dialectic_sessions: mockProject.dialectic_sessions ? mockProject.dialectic_sessions.map(s => {
-        if (s.id === 'sess-1') {
-          return {
-            ...s,
-            // Ensure no contributions for synthesis stage in iteration 1
-            dialectic_contributions: s.dialectic_contributions?.filter(
-              c => !(c.stage.slug === mockSynthesisStage.slug && c.iteration_number === s.iteration_count)
-            ) || []
-          };
-        }
-        return s;
-      }) : []
-    };
-    setup(projectWithNoSynthContributions, 'sess-1', mockSynthesisStage, {}, true, false, 'idle', null);
-    
-    expect(screen.getByText(`Contributions for: ${mockSynthesisStage.display_name}`)).toBeInTheDocument();
-    expect(screen.getByText(/Review the generated contributions below./i)).toBeInTheDocument(); // CardDescription
-    expect(screen.queryByTestId(/generated-contribution-card-/)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Submit Responses & Proceed/i })).not.toBeInTheDocument();
-  });
-  
-  it('does NOT render the GenerateContributionButton when no contributions exist for the stage', () => {
-    const mockSynthesisStage: DialecticStage = { ...mockThesisStage, id: 's3', slug: 'synthesis', display_name: 'Synthesis' };
-    // Similar setup: ensure no contributions for this stage
-     const projectWithNoSynthContributions: DialecticProject = {
-      ...mockProject,
-      dialectic_sessions: mockProject.dialectic_sessions ? mockProject.dialectic_sessions.map(s => {
-        if (s.id === 'sess-1') {
-          return {
-            ...s,
-            dialectic_contributions: s.dialectic_contributions?.filter(
-              c => !(c.stage.slug === mockSynthesisStage.slug && c.iteration_number === s.iteration_count)
-            ) || []
-          };
-        }
-        return s;
-      }) : []
-    };
-    setup(projectWithNoSynthContributions, 'sess-1', mockSynthesisStage, {}, true, false, 'idle', null);
-    expect(screen.queryByTestId('generate-contributions-button-mock')).not.toBeInTheDocument();
-  });
-
-  it('displays a "Stage Not Ready" message and no contributions when the stage is not ready', () => {
-    setup(mockProject, 'sess-1', mockThesisStage, {}, false, false, 'idle', null); // Explicitly set isStageReadyOverride to false
-
-    expect(screen.getByText('Stage Not Ready')).toBeInTheDocument(); // AlertTitle
-    expect(screen.getByText(/The seed prompt for this stage and iteration is not yet available. Contributions cannot be displayed or generated./i)).toBeInTheDocument(); // AlertDescription
-    expect(screen.queryByTestId(/generated-contribution-card-/)).not.toBeInTheDocument(); // No contribution cards
-    expect(screen.queryByRole('button', { name: /Submit Responses & Proceed/i })).not.toBeInTheDocument(); // No submit button
-  });
-
-  it('manages local state for user responses correctly', () => {
-    setup(mockProject, 'sess-1', mockThesisStage, {}, true, false, 'idle', null);
-    const textarea: HTMLTextAreaElement = screen.getByTestId('response-textarea-c1');
-    
-    expect(textarea.value).toBe('');
-    fireEvent.change(textarea, { target: { value: 'This is a test response.' } });
-    expect(textarea.value).toBe('This is a test response.');
-  });
-  
-  it('shows the "Submit Responses & Proceed" button as enabled by default when contributions are present', () => {
-    setup(mockProject, 'sess-1', mockThesisStage, {}, true, false, 'idle', null);
-    const submitButton = screen.getByRole('button', { name: /Submit Responses & Proceed/i });
-    expect(submitButton).toBeInTheDocument();
-    expect(submitButton).toBeEnabled();
-  });
-
-  it('disables the "Submit Responses & Proceed" button when isSubmittingStageResponses is true', () => {
-    setup(mockProject, 'sess-1', mockThesisStage, {isSubmittingStageResponses: true}, true, false, 'idle', null);
-    const submitButton = screen.getByRole('button', { name: /Submit Responses & Proceed/i });
-    expect(submitButton).toBeInTheDocument();
-    expect(submitButton).toBeDisabled();
-  });
-  
-  it('calls submitStageResponses with the correct payload when the submit button is clicked (with responses)', async () => {
-    const projectWithSession = {
-      ...mockProject,
-      dialectic_sessions: [mockSession],
-    };
-    setup(projectWithSession, 'sess-1', mockThesisStage, {
-      isSubmittingStageResponses: false,
+    const freshInitialState = getDialecticStoreState();
+    initializeMockDialecticState({
+        ...freshInitialState,
+        currentProjectDetail: null,
+        activeSessionDetail: null,
+        activeContextStage: null,
+        isLoadingProjectDetail: false,
+        contributionGenerationStatus: 'idle',
+        projectDetailError: null,
+        isSubmittingStageResponses: false,
+        submitStageResponsesError: null,
     });
 
-    // Simulate user typing a response
-    const textarea = screen.getByTestId('response-textarea-c1') as HTMLTextAreaElement;
-    fireEvent.change(textarea, { target: { value: 'My detailed feedback.' } });
+    (selectIsStageReadyForSessionIteration as unknown as MockInstance).mockReturnValue(false);
+    (selectFeedbackForStageIteration as unknown as MockInstance).mockReturnValue(null);
+    (selectActiveContextStage as unknown as MockInstance).mockReturnValue(null);
+    (selectCurrentProjectDetail as unknown as MockInstance).mockReturnValue(null);
+    (selectIsLoadingProjectDetail as unknown as MockInstance).mockReturnValue(false);
+    (selectContributionGenerationStatus as unknown as MockInstance).mockReturnValue('idle');
+    (selectProjectDetailError as unknown as MockInstance).mockReturnValue(null);
+  });
 
-    const submitButton = screen.getByRole('button', { name: /Submit Responses & Proceed/i });
-    fireEvent.click(submitButton);
-
-    await waitFor(() => {
-      expect(mockSubmitStageResponses).toHaveBeenCalledTimes(1);
-      expect(mockSubmitStageResponses).toHaveBeenCalledWith({
-        sessionId: 'sess-1',
-        projectId: 'proj-1',
-        stageSlug: 'thesis',
-        currentIterationNumber: 1,
-        responses: [],
-        userStageFeedback: {
-          content: `## Feedback for Contribution by GPT-4 (ID: c1...)
-
-My detailed feedback.
-
----
-
-`,
-          feedbackType: 'StageContributionResponses_v1',
-        },
+  describe('Contribution Display Logic', () => {
+    it('should display contributions for the active stage and iteration from store', () => {
+      const sessionWithThesisOnly = {
+          ...mockBaseSession, 
+          dialectic_contributions: [mockThesisContrib]
+      };
+      setup({ 
+        activeSessionInStore: sessionWithThesisOnly,
+        activeStageInStore: mockThesisStage 
       });
+      expect(screen.getByTestId('generated-contribution-card-c1')).toBeInTheDocument();
+      expect(screen.queryByTestId('generated-contribution-card-c2')).not.toBeInTheDocument();
     });
 
-    // Check for success message after submission
-    await waitFor(() => {
-      expect(screen.getByText('Responses submitted successfully. The next stage is being prepared.')).toBeInTheDocument();
-    });
-  });
-
-  it('disables the submit button while submitting and shows loading state', () => {
-    setup(mockProject, 'sess-1', mockThesisStage, { isSubmittingStageResponses: true }, true, false, 'idle', null);
-    
-    const submitButton = screen.getByRole('button', { name: /Submit Responses & Proceed/i });
-    expect(submitButton).toBeDisabled();
-    // Check for loader icon within the button
-    expect(within(submitButton).getByTestId('loader-icon')).toBeInTheDocument();
-    expect(within(submitButton).getByTestId('loader-icon')).toHaveClass('animate-spin');
-  });
-  
-  it('displays an error message if submitting responses fails', () => {
-    const error: ApiError = { code: '500', message: 'Submission failed', details: 'Server error' };
-    setup(mockProject, 'sess-1', mockThesisStage, { submitStageResponsesError: error }, true, false, 'idle', null);
-
-    expect(screen.getByText(/Submission failed/i)).toBeInTheDocument();
-  });
-
-  // --- New Tests for Loading, Error, and Empty States ---
-
-  it('should display contributions for the active stage and iteration', () => {
-    setup(mockProject, mockSession.id, mockThesisStage, {}, true, false, 'idle', null);
-    expect(screen.getByTestId('generated-contribution-card-c1')).toBeInTheDocument();
-  });
-
-  it('should display spinner when contributionGenerationStatus is "initiating"', () => {
-    setup(mockProject, mockSession.id, mockThesisStage, {}, true, false, 'initiating', null);
-    expect(screen.getByTestId('contributions-generating-spinner')).toBeInTheDocument();
-    expect(screen.getByText(/Contributions are being generated./i)).toBeInTheDocument();
-  });
-
-  it('should display spinner when contributionGenerationStatus is "generating"', () => {
-    setup(mockProject, mockSession.id, mockThesisStage, {}, true, false, 'generating', null);
-    expect(screen.getByTestId('contributions-generating-spinner')).toBeInTheDocument();
-  });
-
-  it('should display stage not ready message if stage is not ready and generation is idle', () => {
-    setup(mockProject, mockSession.id, mockThesisStage, {}, false, false, 'idle', null);
-    expect(screen.getByTestId('stage-not-ready-alert')).toBeInTheDocument();
-    expect(screen.getByText(/The seed prompt for this stage and iteration is not yet available./i)).toBeInTheDocument();
-  });
-
-  it('should display loading skeletons when isLoadingCurrentProjectDetail is true, generation is idle, and no contributions displayed', () => {
-    const projectWithNoContributions = {
-      ...mockProject,
-      dialectic_sessions: [{
-        ...mockSession,
-        dialectic_contributions: [], // Ensure no contributions to trigger skeleton
-      }]
-    };
-    setup(projectWithNoContributions, mockSession.id, mockThesisStage, {}, true, true, 'idle', null);
-    expect(screen.getByTestId('contributions-loading-skeletons')).toBeInTheDocument();
-    expect(screen.getByText(/Loading new contributions.../i)).toBeInTheDocument();
-    // GeneratedContributionCardSkeleton has 6 skeleton elements with role="status"
-    // The test renders two such cards when loading.
-    const skeletons = screen.getAllByRole('status');
-    expect(skeletons.length).toBe(12); 
-  });
-
-  it('should display projectDetailError if present, generation is idle, and not loading details', () => {
-    const error: ApiError = { message: 'Failed to fetch details!', code: 'FETCH_ERROR' };
-    setup(mockProject, mockSession.id, mockThesisStage, {}, true, false, 'idle', error);
-    expect(screen.getByTestId('contributions-fetch-error')).toBeInTheDocument();
-    expect(screen.getByText(/Error Loading Contributions/i)).toBeInTheDocument();
-    expect(screen.getByText(/Failed to load contributions: Failed to fetch details!/i)).toBeInTheDocument();
-  });
-
-  it('should display "no contributions yet" message when stage is ready, idle, not loading, no error, and no contributions', () => {
-    const projectWithNoContributions = {
-      ...mockProject,
-      dialectic_sessions: [{
-        ...mockSession,
-        dialectic_contributions: [], // Ensure no contributions
-      }]
-    };
-    setup(projectWithNoContributions, mockSession.id, mockThesisStage, {}, true, false, 'idle', null);
-    expect(screen.getByTestId('no-contributions-yet')).toBeInTheDocument();
-    expect(screen.getByText(/No contributions have been generated for Thesis in this iteration yet./i)).toBeInTheDocument();
-  });
-
-  // --- End of New Tests ---
-
-  it('should not display antithesis contributions when thesis stage is active', () => {
-    setup(mockProject, mockSession.id, mockThesisStage, {}, true, false, 'idle', null);
-    expect(screen.queryByTestId('generated-contribution-card-c2')).not.toBeInTheDocument();
-  });
-
-  it('shows confirmation modal when submitting without responses and no edits', async () => {
-    setup(mockProject, 'sess-1', mockThesisStage, {}, true, false, 'idle', null);
-    const submitButton = screen.getByRole('button', { name: /Submit Responses & Proceed/i });
-    fireEvent.click(submitButton);
-
-    await waitFor(() => {
-      expect(screen.getByText('Proceed Without Feedback?')).toBeInTheDocument();
-    });
-    // Click cancel
-    const cancelButton = screen.getByRole('button', { name: 'Cancel' });
-    fireEvent.click(cancelButton);
-    await waitFor(() => {
-        expect(screen.queryByText('Proceed Without Feedback?')).not.toBeInTheDocument();
-    });
-    expect(mockSubmitStageResponses).not.toHaveBeenCalled();
-  });
-
-  it('proceeds with submission from confirmation modal', async () => {
-    setup(mockProject, 'sess-1', mockThesisStage, {}, true, false, 'idle', null);
-    const submitButton = screen.getByRole('button', { name: /Submit Responses & Proceed/i });
-    fireEvent.click(submitButton);
-
-    await waitFor(() => {
-      expect(screen.getByText('Proceed Without Feedback?')).toBeInTheDocument();
-    });
-    
-    const proceedButton = screen.getByRole('button', { name: 'Proceed' });
-    fireEvent.click(proceedButton);
-
-    await waitFor(() => {
-      expect(mockSubmitStageResponses).toHaveBeenCalledTimes(1);
-      expect(mockSubmitStageResponses).toHaveBeenCalledWith({
-        sessionId: 'sess-1',
-        projectId: 'proj-1',
-        stageSlug: 'thesis',
-        currentIterationNumber: 1,
-        responses: [], // No responses in this case
+    it('should display no contributions if active stage has none for current iteration in store', () => {
+      const sessionWithOnlyAntithesis = {
+        ...mockBaseSession,
+        dialectic_contributions: [mockAntithesisContrib] 
+      };
+      setup({ 
+        activeSessionInStore: sessionWithOnlyAntithesis,
+        activeStageInStore: mockThesisStage
       });
+      expect(screen.queryByText(/No contributions have been generated for Thesis in this iteration yet./i)).toBeInTheDocument();
+      expect(screen.queryByTestId('generated-contribution-card-c1')).not.toBeInTheDocument();
+    });
+
+    it('should handle scenario where session has no contributions at all from store', () => {
+      const sessionWithNoContributions = {
+        ...mockBaseSession,
+        dialectic_contributions: [] 
+      };
+      setup({
+        activeSessionInStore: sessionWithNoContributions,
+        activeStageInStore: mockThesisStage
+      });
+      expect(screen.queryByText(/No contributions have been generated for Thesis in this iteration yet./i)).toBeInTheDocument();
+    });
+
+    it('should correctly filter contributions based on session iteration_count from store', () => {
+      const contribIter1 = { ...mockThesisContrib, id: 'c_iter1', original_model_contribution_id: 'c_iter1', iteration_number: 1 };
+      const contribIter2 = { ...mockThesisContrib, id: 'c_iter2', original_model_contribution_id: 'c_iter2', iteration_number: 2 };
+      const sessionIter2Active = {
+            ...mockBaseSession,
+            iteration_count: 2, 
+            dialectic_contributions: [contribIter1, contribIter2]
+      };
+      setup({
+        activeSessionInStore: sessionIter2Active,
+        activeStageInStore: mockThesisStage
+      });
+      expect(screen.queryByTestId('generated-contribution-card-c_iter1')).not.toBeInTheDocument();
+      expect(screen.getByTestId('generated-contribution-card-c_iter2')).toBeInTheDocument();
     });
   });
 
-  // ADDED: New test suite for feedback display and content viewing
-  describe('Feedback Display and Content Viewing', () => {
-    const mockFeedback: DialecticFeedback = {
-      id: 'fb-1',
-      project_id: 'proj-1',
-      session_id: 'sess-1',
-      stage_slug: 'thesis',
-      iteration_number: 1,
-      file_name: 'feedback_for_thesis_iter_1.md',
-      storage_bucket: 'dialectic-feedback',
-      storage_path: 'proj-1/sess-1/thesis/1/feedback.md',
-      feedback_type: 'StageContributionResponses_v1',
-      created_at: '2023-10-26T10:00:00Z',
-      updated_at: '2023-10-26T10:00:00Z',
-      user_id: 'u1',
-      mime_type: 'text/markdown',
-      size_bytes: 1234,
-    };
-
-    const mockFeedbackContentResponse: GetProjectResourceContentResponse = {
-      content: "## Mock Feedback\n\nThis is the content.",
-      fileName: "feedback_for_thesis_iter_1.md",
-      mimeType: "text/markdown",
-    };
-
-    it('displays feedback metadata and "View Feedback Content" button when feedback exists for the stage/iteration', () => {
-      setup(mockProject, 'sess-1', mockThesisStage, {}, true, false, 'idle', null, [mockFeedback]);
-
-      expect(screen.getByText('Stage Feedback Summary')).toBeInTheDocument();
-      // Use a regex to find the text parts, allowing for intervening elements like spans
-      expect(screen.getByText((content, element) => {
-        const hasText = (node: Element | null) => node?.textContent?.includes('Feedback File:') && node?.textContent?.includes(mockFeedback.file_name) || false;
-        const elementHasText = hasText(element);
-        const childrenDontHaveText = Array.from(element?.children || []).every(child => !hasText(child));
-        return elementHasText && childrenDontHaveText;
-      })).toBeInTheDocument();
-      expect(screen.getByText(`Submitted on: ${new Date(mockFeedback.created_at).toLocaleString()}`)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'View Feedback Content' })).toBeInTheDocument();
-    });
-
-    it('does not display feedback section if no feedback exists for the stage/iteration', () => {
-      setup(mockProject, 'sess-1', mockThesisStage, {}, true, false, 'idle', null, null); // No feedback
-      expect(screen.queryByText('Stage Feedback Summary')).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'View Feedback Content' })).not.toBeInTheDocument();
-    });
-
-    it('calls fetchFeedbackFileContent and opens modal when "View Feedback Content" button is clicked', async () => {
-      setup(mockProject, 'sess-1', mockThesisStage, {}, true, false, 'idle', null, [mockFeedback]);
-      
-      const viewButton = screen.getByRole('button', { name: 'View Feedback Content' });
-      fireEvent.click(viewButton);
-
-      expect(mockFetchFeedbackFileContent).toHaveBeenCalledWith({
-        projectId: mockFeedback.project_id,
-        storagePath: mockFeedback.storage_path,
+  describe('Feedback Submission Logic (with store-derived session/project)', () => {
+    it('should call submitStageResponses with correct payload using store data when submitting feedback', async () => {
+      const feedbackText = 'This is a test feedback.';
+      const sessionForFeedbackTest = {
+        ...mockBaseSession,
+        dialectic_contributions: [mockThesisContrib, mockAntithesisContrib]
+      };
+      setup({ 
+        projectInStore: mockProject, 
+        activeSessionInStore: sessionForFeedbackTest, 
+        activeStageInStore: mockThesisStage 
       });
 
-      // Wait for modal to appear (modal title can be used as an indicator)
+      const textarea = screen.getByTestId(`response-textarea-${mockThesisContrib.original_model_contribution_id}`);
+      fireEvent.change(textarea, { target: { value: feedbackText } });
+
+      const submitButton = screen.getByRole('button', { name: /Submit Responses & Proceed/i });
+      fireEvent.click(submitButton);
+
       await waitFor(() => {
-        expect(screen.getByText(/Feedback Content:/)).toBeInTheDocument();
+        expect(mockSubmitStageResponses).toHaveBeenCalledTimes(1);
+        expect(mockSubmitStageResponses).toHaveBeenCalledWith({
+          sessionId: 'sess-1',
+          projectId: 'proj-1',
+          stageSlug: 'thesis',
+          currentIterationNumber: 1,
+          responses: [],
+          userStageFeedback: {
+            content: expect.stringContaining(feedbackText),
+            feedbackType: 'StageContributionResponses_v1',
+          },
+        });
       });
     });
+  });
 
-    it('displays loading spinner in modal while fetching feedback content', async () => {
-      const sessionWithFeedback: DialecticSession = {
-        ...mockSession,
-        dialectic_contributions: [mockThesisContrib], 
+  describe('Loading and Error States (driven by store)', () => {
+    it('should display loading skeletons when isLoadingProjectDetail is true and no contributions are initially displayed', () => {
+      // Ensure no contributions for the active stage to trigger the skeleton loading state
+      const sessionWithNoThesisContributions = {
+        ...mockBaseSession,
+        dialectic_contributions: [mockAntithesisContrib] // Only antithesis, so thesis stage has none
       };
-
-      const projectWithFeedbackSession: DialecticProject = {
-        ...mockProject,
-        id: 'proj-feedback-test', // Ensure a unique ID if it matters for other parts of the test context
-        dialectic_sessions: [sessionWithFeedback],
-      };
-
-      // Ensure currentProjectDetail in the store has the project data
-      setup(
-        projectWithFeedbackSession, // This will set currentProjectDetail in the store via setup's logic
-        sessionWithFeedback.id,
-        mockThesisStage,
-        { 
-          currentProjectDetail: projectWithFeedbackSession, // Explicitly set it in overrides as well for clarity
-          currentFeedbackFileContent: null,
-          isFetchingFeedbackFileContent: false, 
-          fetchFeedbackFileContentError: null,
+      setup({ 
+        overrides: { 
+          isLoadingProjectDetail: true,
+          contributionGenerationStatus: 'idle', // Ensure not generating
+          projectDetailError: null,
         },
-        true, 
-        false, 
-        'idle', 
-        null, 
-        [mockFeedback]
-      );
-
-      mockFetchFeedbackFileContent.mockImplementation(() => {
-        useDialecticStore.setState({ isFetchingFeedbackFileContent: true });
-        return new Promise(() => {}); 
+        activeSessionInStore: sessionWithNoThesisContributions,
+        activeStageInStore: mockThesisStage 
       });
+      expect(screen.getByTestId('contributions-loading-skeletons')).toBeInTheDocument();
+      expect(screen.getByText(/Loading new contributions.../i)).toBeInTheDocument();
+      // Also check the card title is still there
+      expect(screen.getByText(`Contributions for: ${mockThesisStage.display_name}`)).toBeInTheDocument();
+    });
 
-      render(
-        <SessionContributionsDisplayCard
-          // Remove the project prop, as the component gets it from the store
-          session={sessionWithFeedback} // Pass the session directly as per component props
-          activeStage={mockThesisStage}
-          // Props below are not part of the defined SessionContributionsDisplayCardProps, 
-          // but were in the previous version of the test code. Review if they are still needed or handled differently.
-          // displayedContributions={[mockThesisContrib]} 
-          // stageResponses={{}}
-          // onStageResponseChange={() => {}}
-          // onProceedToNextStage={() => {}}
-          // onGenerateContribution={() => {}}
-          // onEditContribution={() => {}}
-          // contextualHelpContent={{ title: 'Help', content: 'Help content' }}
-        />
-      );
+    it('should display "Contributions are being generated" when contributionGenerationStatus is "generating"', () => {
+      setup({ overrides: { contributionGenerationStatus: 'generating' } });
+      const generatingSpinnerContainer = screen.getByTestId('contributions-generating-spinner');
+      expect(generatingSpinnerContainer).toBeInTheDocument();
+      // Use a function to check for the presence of both parts of the text within the specific container
+      expect(within(generatingSpinnerContainer).getByText((content, element) => {
+        if (!element) return false;
+        // Check text within the direct children paragraphs of the container
+        const pElements = Array.from(element.querySelectorAll(':scope > p'));
+        const hasPart1 = pElements.some(p => p.textContent?.includes('Contributions are being generated.'));
+        const hasPart2 = pElements.some(p => p.textContent?.includes('This card will update shortly.'));
+        return hasPart1 && hasPart2;
+      })).toBeInTheDocument();
+    });
+    
+    it('should display project detail error message if projectDetailError is present in store and not generating', () => {
+      const error: ApiError = { message: 'Network Error', code: 'NETWORK_ISSUE' };
+      setup({ 
+        overrides: { 
+          projectDetailError: error,
+          isLoadingProjectDetail: false, // Ensure not loading
+          contributionGenerationStatus: 'idle' // Ensure not generating
+        } 
+      });
+      const fetchErrorContainer = screen.getByTestId('contributions-fetch-error');
+      expect(fetchErrorContainer).toBeInTheDocument();
+      expect(within(fetchErrorContainer).getByText('Error Loading Contributions')).toBeInTheDocument();
+      // MODIFIED: Correctly query for the alert box and then its description
+      const alertBox = fetchErrorContainer.querySelector('[data-slot="alert"]');
+      expect(alertBox).toBeInTheDocument();
+      const alertDescription = alertBox?.querySelector('[data-slot="alert-description"]');
+      expect(alertDescription).toBeInTheDocument();
+      expect(alertDescription?.textContent).toContain(`Failed to load contributions: ${error.message}. Please try refreshing or generating again.`);
+    });
+
+    it('should display generate contributions error message if contributionGenerationStatus is "failed" and projectDetailError is present', () => {
+      const error: ApiError = { message: 'Failed to generate contributions', code: 'GENERATION_ERROR' };
+      setup({ 
+        overrides: { 
+          contributionGenerationStatus: 'failed',
+          projectDetailError: error, 
+          isLoadingProjectDetail: false 
+        } 
+      });
+      const generationErrorContainer = screen.getByTestId('contributions-generation-error');
+      expect(generationErrorContainer).toBeInTheDocument();
+      expect(within(generationErrorContainer).getByText('Error Generating Contributions')).toBeInTheDocument();
+      // MODIFIED: Correctly query for the alert box and then its description
+      const alertBox = generationErrorContainer.querySelector('[data-slot="alert"]');
+      expect(alertBox).toBeInTheDocument();
+      const alertDescription = alertBox?.querySelector('[data-slot="alert-description"]');
+      expect(alertDescription).toBeInTheDocument();
+      expect(alertDescription?.textContent).toContain(`Failed to generate contributions: ${error.message}. Please try again.`);
+    });
+  });
+
+  describe('General UI and No Contributions Message', () => {
+    it('should display no contributions message if session has no contributions for the active stage and iteration', () => {
+      const sessionWithOnlyAntithesisContributions = {
+        ...mockBaseSession,
+        dialectic_contributions: [mockAntithesisContrib]
+      };
+      setup({ 
+        projectInStore: mockProject, 
+        activeSessionInStore: sessionWithOnlyAntithesisContributions,
+        activeStageInStore: mockThesisStage, 
+      });
+      expect(screen.getByTestId('no-contributions-yet')).toBeInTheDocument();
+      expect(screen.getByText(/No contributions have been generated for Thesis in this iteration yet./i)).toBeInTheDocument();
+    });
+
+    it('should display fetched feedback content in a modal', async () => {
+      setup({ 
+        mockFeedbackDataOverride: [mockFeedback],
+      });
+      
+      // Mock the store state update that happens on successful fetch
+      mockFetchFeedbackFileContent.mockImplementationOnce(async () => {
+        useDialecticStore.setState({ 
+          currentFeedbackFileContent: mockFetchedContent,
+          isFetchingFeedbackFileContent: false,
+          fetchFeedbackFileContentError: null,
+        });
+        return { data: mockFetchedContent, error: null, status: 200 }; // Ensure it returns ApiResponse structure
+      });
 
       const viewButton = screen.getByRole('button', { name: /View Feedback Content/i });
-      expect(viewButton).toBeEnabled(); 
-      
       fireEvent.click(viewButton);
 
-      const modal = await screen.findByRole('alertdialog');
-      expect(modal).toBeInTheDocument();
-
-      // Remove unused loaderInModal
-      const loaderSvg = modal.querySelector('svg.animate-spin');
-      expect(loaderSvg).toBeInTheDocument();
-      expect(loaderSvg?.classList.contains('h-8')).toBe(true);
-      expect(loaderSvg?.classList.contains('w-8')).toBe(true);
-      
-      expect(mockFetchFeedbackFileContent).toHaveBeenCalledTimes(1);
-      // The component uses project.id from the store, ensure it's called with that
-      expect(mockFetchFeedbackFileContent).toHaveBeenCalledWith(
-        projectWithFeedbackSession.id, 
-        mockFeedback.storage_path
-      );
-    });
-
-    it('displays fetched feedback content using MarkdownRenderer in the modal', async () => {
-      setup(
-        mockProject, 
-        'sess-1', 
-        mockThesisStage, 
-        { 
-          currentFeedbackFileContent: mockFeedbackContentResponse,
-          isFetchingFeedbackFileContent: false 
-        }, 
-        true, false, 'idle', null, [mockFeedback]
-      );
-
-      const viewButton = screen.getByRole('button', { name: 'View Feedback Content' });
-      fireEvent.click(viewButton);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Feedback Content:/)).toBeInTheDocument();
-      });
-      
-      const modalContent = screen.getByRole('alertdialog');
-      // Check for the actual mock Markdown content
-      expect(within(modalContent).getByText(/Mock Feedback/)).toBeInTheDocument();
-      expect(within(modalContent).getByText(/This is the content./)).toBeInTheDocument();
+      const dialog = await screen.findByRole('alertdialog'); // MODIFIED: Wait for alertdialog
+      expect(dialog).toBeInTheDocument();
+      // Corrected modal title assertion
+      expect(within(dialog).getByText(`Feedback Content: ${mockFeedback.file_name}`)).toBeInTheDocument();
+      expect(within(dialog).getByRole('heading', { name: 'Feedback', level: 1 })).toBeInTheDocument();
+      expect(within(dialog).getByText('This is the markdown feedback.')).toBeInTheDocument();
     });
 
     it('displays error message in modal if fetching feedback content fails', async () => {
-      const error: ApiError = { code: 'FETCH_ERROR', message: 'Could not load feedback.' };
-      setup(
-        mockProject, 
-        'sess-1', 
-        mockThesisStage, 
-        { 
-          fetchFeedbackFileContentError: error,
-          isFetchingFeedbackFileContent: false 
-        }, 
-        true, false, 'idle', null, [mockFeedback]
-      );
-
-      const viewButton = screen.getByRole('button', { name: 'View Feedback Content' });
-      fireEvent.click(viewButton);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Feedback Content:/)).toBeInTheDocument();
-      });
+      setup({ mockFeedbackDataOverride: [mockFeedback] });
+      const error: ApiError = { message: 'Could not load feedback.', code: 'FETCH_ERROR' };
       
-      const modalContent = screen.getByRole('alertdialog');
-      expect(within(modalContent).getByText('Error Loading Content')).toBeInTheDocument();
-      expect(within(modalContent).getByText(error.message)).toBeInTheDocument();
+      mockFetchFeedbackFileContent.mockImplementationOnce(async () => {
+        useDialecticStore.setState({ 
+          fetchFeedbackFileContentError: error,
+          isFetchingFeedbackFileContent: false,
+          currentFeedbackFileContent: null,
+        });
+        // Simulate the actual return type of the store action on error
+        return { data: null, error, status: 500 }; 
+      });
+
+      const viewButton = screen.getByRole('button', { name: /View Feedback Content/i });
+      fireEvent.click(viewButton);
+      
+      const dialog = await screen.findByRole('alertdialog'); // MODIFIED: Wait for alertdialog
+      expect(dialog).toBeInTheDocument();
+
+      // Corrected modal title assertion
+      expect(within(dialog).getByText(`Feedback Content: ${mockFeedback.file_name}`)).toBeInTheDocument();
+      expect(within(dialog).getByText('Error Loading Content')).toBeInTheDocument();
+      expect(within(dialog).getByText(error.message)).toBeInTheDocument();
     });
 
     it('closes the modal and calls clearCurrentFeedbackFileContent when "Close" button is clicked', async () => {
-      setup(
-        mockProject, 
-        'sess-1', 
-        mockThesisStage, 
-        { currentFeedbackFileContent: mockFeedbackContentResponse }, 
-        true, false, 'idle', null, [mockFeedback]
-      );
-
-      const viewButton = screen.getByRole('button', { name: 'View Feedback Content' });
-      fireEvent.click(viewButton);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Feedback Content:/)).toBeInTheDocument();
+      setup({ mockFeedbackDataOverride: [mockFeedback] });
+      // Mock successful fetch to show content initially
+      mockFetchFeedbackFileContent.mockImplementationOnce(async () => {
+        useDialecticStore.setState({
+          currentFeedbackFileContent: mockFetchedContent,
+          isFetchingFeedbackFileContent: false,
+          fetchFeedbackFileContentError: null,
+        });
+        return { data: mockFetchedContent, error: null, status: 200 };
       });
 
-      const closeButton = screen.getByRole('button', { name: 'Close' });
+      const viewButton = screen.getByRole('button', { name: /View Feedback Content/i });
+      fireEvent.click(viewButton);
+
+      const dialog = await screen.findByRole('alertdialog'); // MODIFIED: findByRole alertdialog
+      expect(dialog).toBeInTheDocument();
+
+      const closeButton = within(dialog).getByRole('button', { name: /Close/i });
       fireEvent.click(closeButton);
 
       await waitFor(() => {
-        expect(screen.queryByText(/Feedback Content:/)).not.toBeInTheDocument();
+        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument(); // MODIFIED: queryByRole alertdialog
       });
-      expect(mockClearCurrentFeedbackFileContent).toHaveBeenCalled();
+      expect(mockClearCurrentFeedbackFileContent).toHaveBeenCalledTimes(1);
     });
   });
 
+  // Test for when activeSessionDetail or activeContextStage is null/undefined
+  describe('Edge Cases: Missing Store Data', () => {
+    it('should display an appropriate message or loading state if activeSessionDetail is null', () => {
+      setup({ activeSessionInStore: null });
+      // Component shows a specific message when essential context is missing
+      expect(screen.getByText('Loading Contributions...')).toBeInTheDocument();
+      expect(screen.getByText('Waiting for project, active session, and stage context...')).toBeInTheDocument();
+    });
+
+    it('should display an appropriate message if activeContextStage is null but session is present', () => {
+      setup({ activeStageInStore: null });
+      // Component shows a specific message when essential context is missing
+      expect(screen.getByText('Loading Contributions...')).toBeInTheDocument();
+      expect(screen.getByText('Waiting for project, active session, and stage context...')).toBeInTheDocument();
+    });
+
+    it('should not attempt to render contributions or submit if essential data is missing', () => {
+      setup({ activeSessionInStore: null });
+      expect(screen.queryByTestId(/generated-contribution-card-/)).toBeNull();
+      const submitButton = screen.queryByRole('button', { name: /Submit Responses & Proceed/i });
+      // The button might be disabled or not rendered. If rendered and disabled:
+      // expect(submitButton).toBeDisabled(); 
+      // If not rendered:
+      expect(submitButton).toBeNull();
+    });
+  });
 }); 

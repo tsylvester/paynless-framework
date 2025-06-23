@@ -50,6 +50,7 @@ export class ApiClient {
     private supabase: SupabaseClient<Database>;
     private functionsUrl: string;
     private supabaseAnonKey: string; // <<< Add storage for anon key
+    private tokenPromise: Promise<string | undefined> | null = null; // Add this line
 
     public billing: StripeApiClient;
     public ai: AiApiClient;
@@ -87,13 +88,33 @@ export class ApiClient {
     }
 
     private async getToken(): Promise<string | undefined> {
-        const { data, error } = await this.supabase.auth.getSession();
-        if (error) {
-            logger.error('Error fetching session for token:', { error });
-            return undefined;
+        logger.debug('[ApiClient.getToken] Attempting to get session...');
+
+        if (this.tokenPromise) {
+            logger.debug('[ApiClient.getToken] Token fetch already in progress, returning existing promise.');
+            return this.tokenPromise;
         }
-        logger.debug('[ApiClient.getToken] Fetched session data:', { session: data.session }); 
-        return data.session?.access_token;
+
+        logger.debug('[ApiClient.getToken] No token fetch in progress, initiating new one.');
+        this.tokenPromise = (async () => {
+            try {
+                const { data, error } = await this.supabase.auth.getSession();
+                logger.debug('[ApiClient.getToken] this.supabase.auth.getSession() returned.', { error: !!error, hasData: !!data });
+                if (error) {
+                    logger.error('Error fetching session for token:', { error });
+                    return undefined;
+                }
+                logger.debug('[ApiClient.getToken] Fetched session data:', { session: data.session });
+                return data.session?.access_token;
+            } finally {
+                // Important: Clear the promise so subsequent calls can fetch a new token if needed (e.g., after expiry)
+                // Or if the previous one failed.
+                logger.debug('[ApiClient.getToken] Clearing in-flight tokenPromise.');
+                this.tokenPromise = null;
+            }
+        })();
+
+        return this.tokenPromise;
     }
 
     // Update request method to use ApiResponse and ApiErrorType from @paynless/types
@@ -146,9 +167,17 @@ export class ApiClient {
 
         // Only add Authorization if not already present in options.headers and not public
         if (!options.isPublic && !headers.has('Authorization')) {
-            const tokenFromAuthGetSession = options.token || (await this.getToken());
-            if (tokenFromAuthGetSession) {
-                headers.append('Authorization', `Bearer ${tokenFromAuthGetSession}`);
+            const effectiveToken = options.token; // Use options.token if provided directly
+            if (effectiveToken) {
+                logger.debug('[ApiClient.request] Using token from options.');
+                headers.append('Authorization', `Bearer ${effectiveToken}`);
+            } else {
+                logger.debug('[ApiClient.request] No token in options, attempting to call this.getToken().');
+                const tokenFromAuthGetSession = await this.getToken();
+                logger.debug('[ApiClient.request] this.getToken() returned.', { hasToken: !!tokenFromAuthGetSession });
+                if (tokenFromAuthGetSession) {
+                    headers.append('Authorization', `Bearer ${tokenFromAuthGetSession}`);
+                }
             }
         }
         
