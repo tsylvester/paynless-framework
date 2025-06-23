@@ -49,6 +49,7 @@ interface TestUtilityDeps {
   supabaseUrl: string;
   supabaseAnonKey: string;
   supabaseServiceRoleKey: string;
+  supabaseClient?: SupabaseClient<Database>;
 }
 
 /**
@@ -228,6 +229,7 @@ export function initializeTestDeps(): void {
     supabaseUrl: SUPABASE_URL,
     supabaseAnonKey: SUPABASE_ANON_KEY,
     supabaseServiceRoleKey: SERVICE_ROLE_KEY,
+    supabaseClient: undefined,
   };
 
   // The complex override for createSupabaseClient within defaultDeps is no longer needed here
@@ -343,7 +345,13 @@ export async function coreCreateAndSetupTestUser(
 }
 
 export async function coreGenerateTestUserJwt(userId: string, role: string = 'authenticated', app_metadata?: Record<string, unknown>): Promise<string> {
-  if (!SUPABASE_JWT_SECRET) throw new Error("SUPABASE_JWT_SECRET is not available.");
+  if (!SUPABASE_JWT_SECRET) {
+    console.error("[TestUtil] SUPABASE_JWT_SECRET is not set! Cannot sign JWTs for tests.");
+    throw new Error("SUPABASE_JWT_SECRET is not set. Cannot sign JWTs for tests.");
+  }
+  // Log the presence and length of the JWT secret for debugging
+  console.log(`[TestUtil] SUPABASE_JWT_SECRET is present. Length: ${SUPABASE_JWT_SECRET.length}`);
+
   const payload: djwt.Payload = {
     iss: SUPABASE_URL ?? 'http://localhost:54321', 
     sub: userId, 
@@ -355,7 +363,12 @@ export async function coreGenerateTestUserJwt(userId: string, role: string = 'au
   };
   const header: djwt.Header = { alg: "HS256", typ: "JWT" };
   const cryptoKey = await crypto.subtle.importKey("raw", new TextEncoder().encode(SUPABASE_JWT_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
-  return await djwt.create(header, payload, cryptoKey);
+  const jwt = await djwt.create(header, payload, cryptoKey);
+
+  // Log the generated JWT
+  console.log(`[coreInitializeTestStep] Generated JWT for user ${userId}: ${jwt}`);
+
+  return jwt;
 }
 
 export async function coreEnsureTestUserAndWallet(userId: string, initialBalance: number = 10000, scope: 'global' | 'local' = 'local') {
@@ -1010,6 +1023,16 @@ export async function coreInitializeTestStep(
   processedResources: ProcessedResourceInfo[];
   primaryUserJwt: string;
 }> {
+  console.log(`[coreInitializeTestStep] Called with executionScope: ${executionScope}`);
+  console.log(`[coreInitializeTestStep] Config userProfile: ${JSON.stringify(config.userProfile)}`);
+  console.log(`[coreInitializeTestStep] Config initialWalletBalance: ${config.initialWalletBalance}`);
+  if (config.resources && config.resources.length > 0) {
+    console.log(`[coreInitializeTestStep] Config resources to process (${config.resources.length}):`);
+    config.resources.forEach(req => console.log(`  - Req: { tableName: '${req.tableName}', identifier: ${JSON.stringify(req.identifier)} }`));
+  } else {
+    console.log("[coreInitializeTestStep] No config.resources to process.");
+  }
+
   if (executionScope === 'global') {
     undoActionsStack = [];
   } else {
@@ -1026,7 +1049,9 @@ export async function coreInitializeTestStep(
   await coreEnsureTestUserAndWallet(primaryUserId, config.initialWalletBalance, executionScope);
 
   if (config.resources) {
+    console.log("[coreInitializeTestStep] Starting to process config.resources...");
     for (const requirement of config.resources) {
+      console.log(`[coreInitializeTestStep] Processing requirement: { tableName: '${requirement.tableName}', identifier: ${JSON.stringify(requirement.identifier)} }`);
       let resourceId: string | undefined;
       const tableNameKey = requirement.tableName as keyof Database['public']['Tables'];
 
@@ -1039,6 +1064,7 @@ export async function coreInitializeTestStep(
 
       if (selectError && selectError.code !== 'PGRST116') { // PGRST116 means no rows found
         console.error(`[TestUtil] Error checking for existing resource in ${requirement.tableName}:`, selectError);
+        console.error(`[coreInitializeTestStep] Select error for ${requirement.tableName} with identifier ${JSON.stringify(requirement.identifier)}: ${selectError.message}`);
         processedResources.push({ 
           tableName: requirement.tableName, 
           identifier: requirement.identifier, 
@@ -1050,6 +1076,7 @@ export async function coreInitializeTestStep(
 
       if (existingResource) {
         // Resource exists, update it and register for restoration
+        console.log(`[coreInitializeTestStep] Found existing resource for ${requirement.tableName} with identifier ${JSON.stringify(requirement.identifier)}. Original: ${JSON.stringify(existingResource)}`);
         registerUndoAction({
           type: 'RESTORE_UPDATED_ROW',
           tableName: tableNameKey,
@@ -1063,6 +1090,7 @@ export async function coreInitializeTestStep(
           .match(requirement.identifier as any);
         if (updateError) {
           console.error(`[TestUtil] Error updating existing resource in ${requirement.tableName} (PK Identifier: ${JSON.stringify(requirement.identifier)}):`, updateError);
+          console.error(`[coreInitializeTestStep] Update error for ${requirement.tableName} with identifier ${JSON.stringify(requirement.identifier)}: ${updateError.message}`);
           processedResources.push({ 
             tableName: requirement.tableName, 
             identifier: requirement.identifier, 
@@ -1073,6 +1101,7 @@ export async function coreInitializeTestStep(
         } else {
           const logResourceId = (existingResource as any)[Object.keys(requirement.identifier)[0]] || 'unknown_id_value';
           console.log(`[TestUtil] Updated existing resource in ${requirement.tableName} (PK Identifier: ${JSON.stringify(requirement.identifier)}, Logged PK Value: ${logResourceId}) with data: ${JSON.stringify(requirement.desiredState)}`);
+          console.log(`[coreInitializeTestStep] Pushing updated resource to processedResources: { tableName: '${requirement.tableName}', identifier: ${JSON.stringify(requirement.identifier)}, status: 'updated' }`);
           processedResources.push({ 
             tableName: requirement.tableName, 
             identifier: requirement.identifier, 
@@ -1082,6 +1111,7 @@ export async function coreInitializeTestStep(
         }
       } else {
         // Resource does not exist, create it and register for deletion
+        console.log(`[coreInitializeTestStep] No existing resource found for ${requirement.tableName} with identifier ${JSON.stringify(requirement.identifier)}. Creating new one.`);
         let dataForDb: Partial<Database['public']['Tables'][typeof tableNameKey]['Insert']>; // Use typeof for type indexing
         if (requirement.linkUserId) {
           dataForDb = { ...requirement.identifier, ...requirement.desiredState, user_id: primaryUserId as any }; // Cast primaryUserId if user_id type is not just string
@@ -1093,9 +1123,11 @@ export async function coreInitializeTestStep(
           .insert(dataForDb as any) // Cast to any if type issues
           .select()
           .single();
+        console.log(`[coreInitializeTestStep] Attempted insert for ${requirement.tableName}. Data: ${JSON.stringify(dataForDb)}. Result: newResource: ${JSON.stringify(newResource)}, insertError: ${JSON.stringify(insertError)}`);
 
         if (insertError || !newResource) {
           console.error(`[TestUtil] Error creating new resource in ${requirement.tableName} (PK Identifier: ${JSON.stringify(requirement.identifier)}):`, insertError);
+          console.error(`[coreInitializeTestStep] Insert error for ${requirement.tableName} with identifier ${JSON.stringify(requirement.identifier)}: ${insertError?.message || 'No resource returned'}`);
           processedResources.push({ 
             tableName: requirement.tableName, 
             identifier: requirement.identifier, 
@@ -1111,6 +1143,7 @@ export async function coreInitializeTestStep(
           });
           const logResourceId = (newResource as any)[Object.keys(requirement.identifier)[0]] || 'unknown_id_value';
           console.log(`[TestUtil] Created new resource in ${requirement.tableName} (PK Identifier: ${JSON.stringify(requirement.identifier)}, Logged PK Value: ${logResourceId}) with data: ${JSON.stringify(dataForDb)}`);
+          console.log(`[coreInitializeTestStep] Pushing created resource to processedResources: { tableName: '${requirement.tableName}', identifier: ${JSON.stringify(requirement.identifier)}, status: 'created', resource: ${JSON.stringify(newResource)} }`);
           processedResources.push({ 
             tableName: requirement.tableName, 
             identifier: requirement.identifier, 
@@ -1122,6 +1155,8 @@ export async function coreInitializeTestStep(
     }
   }
   
+  console.log(`[coreInitializeTestStep] Finished processing resources. Final processedResources array (before return): ${JSON.stringify(processedResources.map(p => ({ table: p.tableName, id: p.identifier, status: p.status, resourceKeys: p.resource ? Object.keys(p.resource) : null, error: p.error  })), null, 2)}`);
+
   const anonClient = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
     auth: {
       autoRefreshToken: false,

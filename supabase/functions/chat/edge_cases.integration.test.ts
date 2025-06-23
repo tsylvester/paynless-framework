@@ -4,36 +4,64 @@ import {
   assertNotEquals,
   assertStringIncludes,
 } from "https://deno.land/std@0.220.1/assert/mod.ts";
-import type { ChatApiRequest, TokenUsage, AiModelExtendedConfig } from "../_shared/types.ts";
-import { CHAT_FUNCTION_URL } from "../_shared/_integration.test.utils.ts"; 
+import type { 
+  ChatApiRequest, 
+  TokenUsage, 
+  AiModelExtendedConfig,
+  ChatHandlerDeps,
+  ILogger,
+  AiProviderAdapter
+} from "../_shared/types.ts";
+import { 
+  CHAT_FUNCTION_URL, 
+  type ProcessedResourceInfo,
+  currentTestDeps as cTestDeps, // Static import
+  mockAiAdapter as cMockAiAdapter,   // Static import
+  supabaseAdminClient as scAdminClient, // Static import
+  getTestUserAuthToken               // Static import
+} from "../_shared/_integration.test.utils.ts"; 
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 import type { MockQueryBuilderState, MockResolveQueryResult, MockPGRSTError } from "../_shared/supabase.mock.ts";
+import { handler as cHandler, defaultDeps as cChatDefaultDeps } from "./index.ts"; // Static import
+import type { SupabaseClient } from "npm:@supabase/supabase-js";
+import type { Database, Json } from "../types_db.ts";
+
+// Helper function to create ChatHandlerDeps
+const createDepsForEdgeCaseTest = (): ChatHandlerDeps => {
+  const deps: ChatHandlerDeps = {
+    ...cChatDefaultDeps,
+    logger: cTestDeps.logger,
+    getAiProviderAdapter: (
+      _providerApiIdentifier: string,
+      _providerDbConfig: Json | null,
+      _apiKey: string,
+      _loggerFromDep?: ILogger
+    ): AiProviderAdapter => cMockAiAdapter,
+    supabaseClient: cTestDeps.supabaseClient || undefined,
+    createSupabaseClient: cTestDeps.createSupabaseClient || cChatDefaultDeps.createSupabaseClient,
+  };
+  return deps;
+};
 
 export async function runEdgeCaseTests(
   t: Deno.TestContext,
   initializeTestGroupEnvironment: (options?: {
-    userProfile?: Partial<{ role: string; first_name: string }>;
+    userProfile?: Partial<{ role: "user" | "admin"; first_name: string }>;
     initialWalletBalance?: number;
-  }) => Promise<string>
+  }) => Promise<{ primaryUserId: string; processedResources: ProcessedResourceInfo<any>[]; }>
 ) {
   await t.step("[Edge Case] Insufficient balance BEFORE AI call", async () => {
     const initialBalance = 5;
-    const testUserId = await initializeTestGroupEnvironment({
+    const { primaryUserId: testUserId } = await initializeTestGroupEnvironment({
       userProfile: { first_name: "Low Balance User" },
       initialWalletBalance: initialBalance,
     });
-    const {
-      getTestUserAuthToken,
-      supabaseAdminClient: scAdminClient,
-      currentTestDeps: cTestDeps,
-      chatHandler: cHandler,
-      mockAiAdapter: cMockAiAdapter,
-    } = await import("../_shared/_integration.test.utils.ts");
+    // Removed dynamic imports, using static ones now
     const currentAuthToken = getTestUserAuthToken();
     assertExists(currentAuthToken, "Test user auth token was not set.");
     assertExists(scAdminClient, "Shared Supabase Admin Client is not initialized.");
     assertExists(cTestDeps, "Shared Test Deps are not initialized.");
-    assertExists(cHandler, "Chat handler is not available from utils.");
+    assertExists(cHandler, "Chat handler is not available from utils."); // cHandler is now static
     assertExists(cMockAiAdapter, "Mock AI adapter is not available from utils.");
 
     const { data: providerData, error: providerError } = await scAdminClient
@@ -58,7 +86,7 @@ export async function runEdgeCaseTests(
       body: JSON.stringify(requestBody),
     });
 
-    const response = await cHandler(request, cTestDeps);
+    const response = await cHandler(request, createDepsForEdgeCaseTest()); // Use helper
 
     const responseJsonForInsufficientBalance = await response.json();
     assertEquals(response.status, 402, "Expected 402 Payment Required due to insufficient funds pre-check. Body: " + JSON.stringify(responseJsonForInsufficientBalance));
@@ -80,17 +108,11 @@ export async function runEdgeCaseTests(
 
   await t.step("[Edge Case] AI Provider returns an error", async () => {
     const initialBalance = 1000;
-    const testUserId = await initializeTestGroupEnvironment({
+    const { primaryUserId: testUserId } = await initializeTestGroupEnvironment({
       userProfile: { first_name: "AI Error User" },
       initialWalletBalance: initialBalance,
     });
-    const {
-      getTestUserAuthToken,
-      supabaseAdminClient: scAdminClient,
-      currentTestDeps: cTestDeps,
-      chatHandler: cHandler,
-      mockAiAdapter: cMockAiAdapter,
-    } = await import("../_shared/_integration.test.utils.ts");
+    // Removed dynamic imports
     const currentAuthToken = getTestUserAuthToken();
     assertExists(currentAuthToken, "Test user auth token was not set for AI error test.");
     assertExists(scAdminClient, "Shared Supabase Admin Client is not initialized for AI error test.");
@@ -124,14 +146,12 @@ export async function runEdgeCaseTests(
       body: JSON.stringify(requestBody),
     });
 
-    const response = await cHandler(request, cTestDeps);
+    const response = await cHandler(request, createDepsForEdgeCaseTest()); // Use helper
     const responseJsonForAiError = await response.json();
     assertEquals(response.status, 502, "Expected 502 Bad Gateway due to AI provider error. Body: " + JSON.stringify(responseJsonForAiError));
 
-    // Check the top-level error field in the JSON response
     assertExists(responseJsonForAiError.error, "Response JSON should contain a top-level error field for AI provider errors.");
     assertStringIncludes(responseJsonForAiError.error, simulatedError.message, "Error message in response should include the simulated error message from mock.");
-    // The content of the error message returned to the client is directly from the adapter, it won't include "AI service request failed" prefix from the DB save attempt.
 
     const { data: wallet, error: walletError } = await scAdminClient
       .from("token_wallets")
@@ -159,7 +179,8 @@ export async function runEdgeCaseTests(
     const { data: assistantMessages, error: assistantMessageError } = await scAdminClient
       .from("chat_messages")
       .select("*")
-      .eq("user_id", testUserId)
+      // .eq("user_id", testUserId) // Assistant messages don't have user_id directly populated this way
+      .eq("chat_id", userMessages[0].chat_id) // Find by chat_id
       .eq("role", "assistant")
       .eq("error_type", "ai_provider_error")
       .order("created_at", { ascending: false });
@@ -173,18 +194,11 @@ export async function runEdgeCaseTests(
 
   await t.step("[Edge Case] Database error during message saving (after AI call & debit)", async () => {
     const initialBalance = 10000;
-    const testUserId = await initializeTestGroupEnvironment({
+    const { primaryUserId: testUserId } = await initializeTestGroupEnvironment({
         userProfile: { first_name: "DB Error User" },
         initialWalletBalance: initialBalance,
     });
-    const {
-        getTestUserAuthToken,
-        supabaseAdminClient: scAdminClient,
-        currentTestDeps: cTestDeps,
-        chatHandler: cHandler,
-        mockAiAdapter: cMockAiAdapter,
-    } = await import("../_shared/_integration.test.utils.ts");
-
+    // Removed dynamic imports
     const currentAuthToken = getTestUserAuthToken();
     assertExists(currentAuthToken);
     assertExists(scAdminClient);
@@ -192,18 +206,15 @@ export async function runEdgeCaseTests(
     assertExists(cHandler);
     assertExists(cMockAiAdapter);
 
-    // Fetch real provider data to be used in the mock
     const { data: realProviderDataFromDB, error: providerError } = await scAdminClient
         .from("ai_providers")
-        .select("id, api_identifier, config, name, provider, is_active") // Ensure is_active is selected
+        .select("id, api_identifier, config, name, provider, is_active")
         .eq("api_identifier", "gpt-3.5-turbo-test")
         .single();
     if (providerError) throw providerError;
     assertExists(realProviderDataFromDB, "Test provider 'gpt-3.5-turbo-test' not found in DB for mock setup.");
     
-    // Ensure the provider is seen as active for this test scenario
     const mockProviderData = { ...realProviderDataFromDB, is_active: true };
-
     const actualProviderDbId = mockProviderData.id;
     const providerApiIdentifier = mockProviderData.api_identifier;
 
@@ -213,7 +224,7 @@ export async function runEdgeCaseTests(
 
     const testMessageContent = "Test message that will trigger DB error for assistant msg";
     const requestBody: ChatApiRequest = {
-        providerId: actualProviderDbId, // Use the ID of the provider we are mocking the select for
+        providerId: actualProviderDbId,
         promptId: "__none__",
         message: testMessageContent,
     };
@@ -271,7 +282,6 @@ export async function runEdgeCaseTests(
                     insert: async (state: MockQueryBuilderState): Promise<any> => {
                         const chatInsertData = state.insertData as { user_id?: string, organization_id?: string | null, system_prompt_id?: string | null, title?: string };
                         const newChatId = crypto.randomUUID();
-                        // console.log(`[Test Mock DB] Mocking successful insert for chats table. New Chat ID: ${newChatId}`);
                         return {
                             data: [{ 
                                 id: newChatId, 
@@ -281,11 +291,10 @@ export async function runEdgeCaseTests(
                                 title: chatInsertData.title,
                                 created_at: new Date().toISOString(),
                                 updated_at: new Date().toISOString(),
-                                // Add any other fields that are typically returned or expected by .select('id').single()
                             }],
                             error: null,
                             count: 1,
-                            status: 201, // 201 Created
+                            status: 201, 
                             statusText: "Created"
                         } as MockResolveQueryResult;
                     }
@@ -305,7 +314,7 @@ export async function runEdgeCaseTests(
                                 status: 201, 
                                 statusText: "Created" 
                             } as MockResolveQueryResult;
-                        } else if (insertedData?.role === 'assistant' && userMessageInsertCount === 2) {
+                        } else if (insertedData?.role === 'assistant' && userMessageInsertCount === 2) { // Simulate error on second insert (assistant message)
                             return { 
                                 data: null, 
                                 error: simulatedAssistantInsertError, 
@@ -317,7 +326,7 @@ export async function runEdgeCaseTests(
                         console.warn(`[Test Mock DB] Unhandled insert on chat_messages: ${JSON.stringify(state)}, count: ${userMessageInsertCount}`);
                         return { data: null, error: { name: "TestMockUnhandled", message: "Unhandled insert for chat_messages", code:"TMU003"} as MockPGRSTError, count: 0, status: 500, statusText: "Not Found by Mock" } as MockResolveQueryResult;
                     },
-                    select: async (_state: MockQueryBuilderState): Promise<any> => {
+                    select: async (_state: MockQueryBuilderState): Promise<any> => { // Catch-all select for chat_messages
                         return { data: [], error: null, count: 0, status: 200, statusText: "OK" } as MockResolveQueryResult;
                     }
                 },
@@ -339,13 +348,14 @@ export async function runEdgeCaseTests(
         }
     );
     
-    const testSpecificDeps = {
-        ...cTestDeps,
-        getAiProviderAdapterOverride: () => cMockAiAdapter, 
-        createSupabaseClient: () => mockSupabaseSetup.client as any, 
-    };
-    
-    const response = await cHandler(request, testSpecificDeps);
+    const originalSupabaseClient = cTestDeps.supabaseClient;
+    cTestDeps.supabaseClient = mockSupabaseSetup.client as any; // Set the specific mock client
+    let response;
+    try {
+      response = await cHandler(request, createDepsForEdgeCaseTest()); // Use helper
+    } finally {
+      cTestDeps.supabaseClient = originalSupabaseClient; // Restore original client
+    }
 
     const responseJson = await response.json();
     assertEquals(response.status, 500, "Expected 500 Internal Server Error due to DB failure saving assistant message. Body: " + JSON.stringify(responseJson));

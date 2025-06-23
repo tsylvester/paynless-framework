@@ -75,7 +75,7 @@ Deno.test("Chat Wallet Functionality Tests", async (t) => {
     const res = await handler(req, deps);
     assertEquals(res.status, 402);
     const responseJson = await res.json();
-    assertEquals(responseJson.error, "Token wallet not found. Please set up or fund your wallet.");
+    assertEquals(responseJson.error, "Token wallet not found for your context. Please set up or fund your wallet.");
 
     const getWalletSpy = deps.tokenWalletService!.getWalletForContext as Spy<any>;
     assertSpyCalls(getWalletSpy, 1);

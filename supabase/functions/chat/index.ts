@@ -25,7 +25,6 @@ import type {
     AiModelExtendedConfig,
  } from '../_shared/types.ts'; 
 import type { Database, Json } from "../types_db.ts"; 
-import { verifyApiKey } from '../_shared/auth.ts'; // Assuming verifyApiKey is not used in this specific flow but kept for DI consistency
 import { logger } from '../_shared/logger.ts'; // Renamed to avoid conflict with deps.logger
 import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
 import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
@@ -76,6 +75,7 @@ const ChatApiRequestSchema = z.object({
     z.literal("__none__")
   ], { errorMap: () => ({ message: "promptId is required and must be a valid UUID or '__none__'." }) }),
   chatId: z.string().uuid({ message: "If provided, chatId must be a valid UUID." }).optional(),
+  walletId: z.string().uuid({ message: "If provided, walletId must be a valid UUID." }).optional(),
   selectedMessages: z.array(z.object({
     role: z.enum(["system", "user", "assistant"], { errorMap: () => ({ message: "selectedMessages.role must be 'system', 'user', or 'assistant'."}) }),
     content: z.string()
@@ -154,7 +154,7 @@ export async function handler(req: Request, deps: ChatHandlerDeps = defaultDeps)
         const parsedResult = ChatApiRequestSchema.safeParse(rawBody);
 
         if (!parsedResult.success) {
-          const errorMessages = parsedResult.error.errors.map(e => `${e.path.join('.') || 'body'}: ${e.message}`).join(', ');
+          const errorMessages = parsedResult.error.errors.map((e: z.ZodIssue) => `${e.path.join('.') || 'body'}: ${e.message}`).join(', ');
           logger.warn('Chat API request validation failed:', { errors: errorMessages, requestBody: rawBody });
           return createErrorResponse(`Invalid request body: ${errorMessages}`, 400, req);
         }
@@ -304,6 +304,7 @@ async function handlePostRequest(
         providerId: requestProviderId,
         promptId: requestPromptId,
         chatId: existingChatId, 
+        walletId: requestWalletId,
         rewindFromMessageId,
         selectedMessages,
         organizationId,
@@ -412,15 +413,35 @@ async function handlePostRequest(
 
         let wallet: TokenWallet | null = null;
         try {
-            wallet = await tokenWalletService!.getWalletForContext(userId, organizationId);
-            if (!wallet) {
-                logger.warn('No token wallet found for context.', { userId, organizationId });
-                return { error: { message: 'Token wallet not found. Please set up or fund your wallet.', status: 402 } };
+            if (requestWalletId) {
+                // Placeholder for fetching a specific wallet by ID, ensuring user has access
+                // This method will need to be implemented in TokenWalletService
+                logger.info('Attempting to fetch specific wallet by ID.', { requestWalletId, userId });
+                wallet = await tokenWalletService!.getWalletByIdAndUser(requestWalletId, userId); 
+                if (!wallet) {
+                    logger.warn('Specific token wallet not found or user lacks access.', { requestWalletId, userId });
+                    return { error: { message: `Token wallet with ID ${requestWalletId} not found or access denied.`, status: 403 } }; // 403 Forbidden or 404 Not Found
+                }
+                logger.info('Specific wallet retrieved.', { walletId: wallet.walletId, currentBalance: wallet.balance });
+            } else {
+                logger.info('No specific walletId provided, using context-based wallet.', { userId, organizationId });
+                wallet = await tokenWalletService!.getWalletForContext(userId, organizationId);
+                if (!wallet) {
+                    logger.warn('No token wallet found for context (user/org).', { userId, organizationId });
+                    return { error: { message: 'Token wallet not found for your context. Please set up or fund your wallet.', status: 402 } };
+                }
+                logger.info('Context wallet retrieved.', { walletId: wallet.walletId, currentBalance: wallet.balance });
             }
-            logger.info('Wallet retrieved for context.', { walletId: wallet.walletId, currentBalance: wallet.balance });
         } catch (error) {
-            logger.error('Error during token wallet operations (initial check):', { error: error, userId, organizationId });
-            return { error: { message: "Server error during wallet check.", status: 500 } };
+            logger.error('Error during token wallet operations:', { error: error, userId, organizationId, requestWalletId });
+            // It's important to distinguish between client errors (wallet not found) and server errors
+            const errorMessage = error instanceof Error && (error.message.includes("not found") || error.message.includes("denied")) 
+                ? error.message 
+                : "Server error during wallet check.";
+            const errorStatus = error instanceof Error && (error.message.includes("not found") || error.message.includes("denied")) 
+                ? (error.message.includes("denied") ? 403 : 404) 
+                : 500;
+            return { error: { message: errorMessage, status: errorStatus } };
         }
 
         // --- 4. Branch Logic: Rewind vs. Normal ---

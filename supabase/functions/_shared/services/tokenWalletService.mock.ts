@@ -3,7 +3,9 @@ import type {
     ITokenWalletService, 
     TokenWallet, 
     TokenWalletTransaction,
-    TokenWalletTransactionType
+    TokenWalletTransactionType,
+    GetTransactionHistoryParams,
+    PaginatedTransactions
 } from '../types/tokenWallet.types.ts';
 
 // Define a type for the configuration of mock implementations
@@ -11,6 +13,7 @@ export type TokenWalletServiceMethodImplementations = {
   createWallet?: ITokenWalletService['createWallet'];
   getWallet?: ITokenWalletService['getWallet'];
   getWalletForContext?: ITokenWalletService['getWalletForContext'];
+  getWalletByIdAndUser?: ITokenWalletService['getWalletByIdAndUser'];
   getBalance?: ITokenWalletService['getBalance'];
   recordTransaction?: ITokenWalletService['recordTransaction'];
   checkBalance?: ITokenWalletService['checkBalance'];
@@ -54,10 +57,24 @@ const getMockTokenWalletServiceInternalDefaults = (): Required<TokenWalletServic
             updatedAt: now,
         } as TokenWallet);
     },
+    getWalletByIdAndUser: (walletId: string, userId: string): Promise<TokenWallet | null> => {
+        const now = new Date();
+        if (walletId.includes(userId) || userId === 'dummy-user-default') {
+            return Promise.resolve({
+                walletId: walletId,
+                userId: userId,
+                balance: '300',
+                currency: 'AI_TOKEN',
+                createdAt: now,
+                updatedAt: now,
+            } as TokenWallet);
+        }
+        return Promise.resolve(null);
+    },
     getBalance: (_walletId: string): Promise<string> => { 
         return Promise.resolve('750'); 
     },
-    recordTransaction: (params: { walletId: string; type: TokenWalletTransactionType; amount: string; recordedByUserId: string; relatedEntityId?: string; relatedEntityType?: string; notes?: string; }): Promise<TokenWalletTransaction> => { 
+    recordTransaction: (params: { walletId: string; type: TokenWalletTransactionType; amount: string; recordedByUserId: string; idempotencyKey: string; relatedEntityId?: string; relatedEntityType?: string; notes?: string; }): Promise<TokenWalletTransaction> => { 
         const now = new Date();
         return Promise.resolve({
             transactionId: 'dummy-txn-default-' + Date.now(),
@@ -68,6 +85,7 @@ const getMockTokenWalletServiceInternalDefaults = (): Required<TokenWalletServic
             recordedByUserId: params.recordedByUserId,
             relatedEntityId: params.relatedEntityId,
             relatedEntityType: params.relatedEntityType,
+            idempotencyKey: params.idempotencyKey || 'dummy-idempotency-key',
             notes: params.notes,
             timestamp: now,
         } as TokenWalletTransaction);
@@ -75,8 +93,20 @@ const getMockTokenWalletServiceInternalDefaults = (): Required<TokenWalletServic
     checkBalance: (_walletId: string, _amountToSpend: string): Promise<boolean> => { 
         return Promise.resolve(parseFloat(_amountToSpend) <= 1000); // Default logic
     },
-    getTransactionHistory: (_walletId: string, _limit?: number, _offset?: number): Promise<TokenWalletTransaction[]> => { 
-        return Promise.resolve([]); 
+    getTransactionHistory: (_walletId: string, params?: GetTransactionHistoryParams): Promise<PaginatedTransactions> => {
+        if (params?.fetchAll) {
+            const now = new Date();
+            const allTransactions: TokenWalletTransaction[] = [
+                {
+                    transactionId: 'txn-all-1', walletId: _walletId, type: 'CREDIT_PURCHASE', amount: '100', balanceAfterTxn: '100', recordedByUserId: 'system', timestamp: now, idempotencyKey: 'key1',
+                },
+                {
+                    transactionId: 'txn-all-2', walletId: _walletId, type: 'DEBIT_USAGE', amount: '50', balanceAfterTxn: '50', recordedByUserId: 'system', timestamp: now, idempotencyKey: 'key2',
+                },
+            ];
+            return Promise.resolve({ transactions: allTransactions, totalCount: allTransactions.length });
+        }
+        return Promise.resolve({ transactions: [], totalCount: 0 });
     }
 });
 
@@ -86,6 +116,7 @@ export interface MockTokenWalletService {
     createWallet: Stub<ITokenWalletService, Parameters<ITokenWalletService['createWallet']>, ReturnType<ITokenWalletService['createWallet']>>;
     getWallet: Stub<ITokenWalletService, Parameters<ITokenWalletService['getWallet']>, ReturnType<ITokenWalletService['getWallet']>>;
     getWalletForContext: Stub<ITokenWalletService, Parameters<ITokenWalletService['getWalletForContext']>, ReturnType<ITokenWalletService['getWalletForContext']>>;
+    getWalletByIdAndUser: Stub<ITokenWalletService, Parameters<ITokenWalletService['getWalletByIdAndUser']>, ReturnType<ITokenWalletService['getWalletByIdAndUser']>>;
     getBalance: Stub<ITokenWalletService, Parameters<ITokenWalletService['getBalance']>, ReturnType<ITokenWalletService['getBalance']>>;
     recordTransaction: Stub<ITokenWalletService, Parameters<ITokenWalletService['recordTransaction']>, ReturnType<ITokenWalletService['recordTransaction']>>;
     checkBalance: Stub<ITokenWalletService, Parameters<ITokenWalletService['checkBalance']>, ReturnType<ITokenWalletService['checkBalance']>>;
@@ -107,6 +138,7 @@ export function createMockTokenWalletService(
     createWallet: defaults.createWallet,
     getWallet: defaults.getWallet,
     getWalletForContext: defaults.getWalletForContext,
+    getWalletByIdAndUser: defaults.getWalletByIdAndUser,
     getBalance: defaults.getBalance,
     recordTransaction: defaults.recordTransaction,
     checkBalance: defaults.checkBalance,
@@ -119,6 +151,7 @@ export function createMockTokenWalletService(
     createWallet: stub(mockServiceInstance, 'createWallet', config.createWallet || defaults.createWallet),
     getWallet: stub(mockServiceInstance, 'getWallet', config.getWallet || defaults.getWallet),
     getWalletForContext: stub(mockServiceInstance, 'getWalletForContext', config.getWalletForContext || defaults.getWalletForContext),
+    getWalletByIdAndUser: stub(mockServiceInstance, 'getWalletByIdAndUser', config.getWalletByIdAndUser || defaults.getWalletByIdAndUser),
     getBalance: stub(mockServiceInstance, 'getBalance', config.getBalance || defaults.getBalance),
     recordTransaction: stub(mockServiceInstance, 'recordTransaction', config.recordTransaction || defaults.recordTransaction),
     checkBalance: stub(mockServiceInstance, 'checkBalance', config.checkBalance || defaults.checkBalance),

@@ -5,8 +5,16 @@ import {
   assertStringIncludes,
 } from "https://deno.land/std@0.220.1/assert/mod.ts";
 import { stub } from "https://deno.land/std@0.220.1/testing/mock.ts";
-import type { ChatApiRequest, TokenUsage, AiModelExtendedConfig, ChatHandlerSuccessResponse } from "../_shared/types.ts";
-import { CHAT_FUNCTION_URL } from "../_shared/_integration.test.utils.ts";
+import type { ChatApiRequest, TokenUsage, AiModelExtendedConfig, ChatHandlerSuccessResponse, ChatHandlerDeps, AiProviderAdapter, ILogger } from "../_shared/types.ts";
+import {
+    CHAT_FUNCTION_URL,
+    supabaseAdminClient,
+    currentTestDeps,
+    mockAiAdapter,
+    type ProcessedResourceInfo,
+    getTestUserAuthToken
+} from "../_shared/_integration.test.utils.ts";
+import { handler as chatHandler, defaultDeps as chatDefaultDeps } from "./index.ts";
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 import type { MockQueryBuilderState, MockPGRSTError } from "../_shared/supabase.mock.ts";
 import { DEFAULT_INPUT_TOKEN_COST_RATE, DEFAULT_OUTPUT_TOKEN_COST_RATE } from "../_shared/config/token_cost_defaults.ts";
@@ -37,14 +45,31 @@ function restoreEnvStub() {
   }
 }
 
+// Helper function to create deps for each test call to chatHandler
+const createDepsForTest = (): ChatHandlerDeps => {
+  const deps: ChatHandlerDeps = {
+    ...chatDefaultDeps,
+    logger: currentTestDeps.logger,
+    getAiProviderAdapter: (
+      _providerApiIdentifier: string,
+      _providerDbConfig: Json | null,
+      _apiKey: string,
+      _loggerFromDep?: ILogger
+    ): AiProviderAdapter => mockAiAdapter, // Use the imported mockAiAdapter
+    supabaseClient: currentTestDeps.supabaseClient || undefined,
+    createSupabaseClient: currentTestDeps.createSupabaseClient || chatDefaultDeps.createSupabaseClient,
+  };
+  return deps;
+};
+
 export async function runSpecificConfigsTests(
   t: Deno.TestContext,
   initializeTestGroupEnvironment: (options?: {
-    userProfile?: Partial<{ role: string; first_name: string }>;
+    userProfile?: Partial<{ role: "user" | "admin"; first_name: string }>;
     initialWalletBalance?: number;
     aiProviderConfigOverride?: Partial<AiModelExtendedConfig>;
     aiProviderApiIdentifier?: string; 
-  }) => Promise<string>
+  }) => Promise<{ primaryUserId: string; processedResources: ProcessedResourceInfo<any>[]; }>
 ) {
   setupEnvStub(); // Setup stub before tests run
   try {
@@ -52,36 +77,28 @@ export async function runSpecificConfigsTests(
       const initialBalance = 1000;
       const providerApiIdForTest = "gpt-3.5-turbo-missing-rates";
 
-      // Setup: Provider with null cost rates. The system should use defaults.
-      const testUserId = await initializeTestGroupEnvironment({
+      const { primaryUserId: testUserId, processedResources } = await initializeTestGroupEnvironment({
         userProfile: { first_name: "Missing Rates User" },
         initialWalletBalance: initialBalance,
         aiProviderApiIdentifier: providerApiIdForTest,
-        aiProviderConfigOverride: { // Explicitly set rates to null
+        aiProviderConfigOverride: {
           input_token_cost_rate: null,
           output_token_cost_rate: null,
         },
       });
 
-      const {
-        getTestUserAuthToken,
-        supabaseAdminClient: scAdminClient,
-        currentTestDeps: cTestDeps,
-        chatHandler: cHandler,
-        mockAiAdapter: cMockAiAdapter,
-        getProviderIdByApiIdentifier,
-      } = await import("../_shared/_integration.test.utils.ts");
-
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
-      assertExists(scAdminClient);
-      assertExists(cTestDeps);
-      assertExists(cHandler);
-      assertExists(cMockAiAdapter);
-      assertExists(getProviderIdByApiIdentifier);
+      assertExists(supabaseAdminClient);
+      assertExists(currentTestDeps);
+      assertExists(chatHandler);
+      assertExists(mockAiAdapter);
 
-      const providerIdForTest = await getProviderIdByApiIdentifier(providerApiIdForTest);
-      assertExists(providerIdForTest, `Failed to get DB ID for provider ${providerApiIdForTest}`);
+      const providerResource = processedResources.find(
+        (r) => r.tableName === 'ai_providers' && (r.resource as any)?.api_identifier === providerApiIdForTest
+      );
+      const providerIdForTest = providerResource?.resource ? (providerResource.resource as any).id : undefined;
+      assertExists(providerIdForTest, `Failed to get DB ID for provider ${providerApiIdForTest} from processedResources`);
       
       const mockProviderDataForDbQuery = {
           id: providerIdForTest,
@@ -100,7 +117,7 @@ export async function runSpecificConfigsTests(
 
       const mockAiContent = "Response from model with missing rates.";
       const mockAiTokenUsage: TokenUsage = { prompt_tokens: 15, completion_tokens: 25, total_tokens: 40 }; 
-      cMockAiAdapter.setSimpleMockResponse(providerApiIdForTest, mockAiContent, providerIdForTest, null, mockAiTokenUsage);
+      mockAiAdapter.setSimpleMockResponse(providerApiIdForTest, mockAiContent, providerIdForTest, null, mockAiTokenUsage);
 
       const requestBody: ChatApiRequest = {
         providerId: providerIdForTest,
@@ -189,18 +206,18 @@ export async function runSpecificConfigsTests(
           }
       );
 
-      const originalCreateSupabaseClient = cTestDeps.createSupabaseClient;
-      cTestDeps.createSupabaseClient = (_url: string, _key: string, _options?: any) => mockSupabaseSetup.client as any;
+      const originalCreateSupabaseClient = currentTestDeps.createSupabaseClient;
+      currentTestDeps.createSupabaseClient = (_url: string, _key: string, _options?: any) => mockSupabaseSetup.client as any;
 
       let response: Response | undefined;
       try {
-        response = await cHandler(request, cTestDeps);
+        response = await chatHandler(request, createDepsForTest());
       } finally {
-        cTestDeps.createSupabaseClient = originalCreateSupabaseClient;
+        currentTestDeps.createSupabaseClient = originalCreateSupabaseClient;
         if (mockSupabaseSetup.clearAllStubs) {
           mockSupabaseSetup.clearAllStubs();
         }
-        cMockAiAdapter.reset();
+        mockAiAdapter.reset();
       }
 
       assertExists(response);
@@ -210,7 +227,7 @@ export async function runSpecificConfigsTests(
       assertExists(responseJson.assistantMessage, "Response JSON should contain an assistant message.");
       assertEquals(responseJson.assistantMessage.content, mockAiContent);
 
-      const { data: walletAfter, error: walletErrorAfter } = await scAdminClient
+      const { data: walletAfter, error: walletErrorAfter } = await supabaseAdminClient
         .from("token_wallets")
         .select("balance")
         .eq("user_id", testUserId)
@@ -235,7 +252,7 @@ export async function runSpecificConfigsTests(
       const mockCompletionTokensFromAI = 20; // AI returns more than cap
       const providerApiIdForTest = "gpt-hardcapped-output";
 
-      const testUserId = await initializeTestGroupEnvironment({
+      const { primaryUserId: testUserId, processedResources } = await initializeTestGroupEnvironment({
         userProfile: { first_name: "HardCap User" },
         initialWalletBalance: initialBalance,
         aiProviderApiIdentifier: providerApiIdForTest,
@@ -247,25 +264,14 @@ export async function runSpecificConfigsTests(
         },
       });
 
-      const {
-        getTestUserAuthToken,
-        supabaseAdminClient: scAdminClient,
-        currentTestDeps: cTestDeps,
-        chatHandler: cHandler,
-        mockAiAdapter: cMockAiAdapter,
-        getProviderIdByApiIdentifier,
-      } = await import("../_shared/_integration.test.utils.ts");
-
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
-      assertExists(scAdminClient);
-      assertExists(cTestDeps);
-      assertExists(cHandler);
-      assertExists(cMockAiAdapter);
-      assertExists(getProviderIdByApiIdentifier);
 
-      const providerIdForTest = await getProviderIdByApiIdentifier(providerApiIdForTest);
-      assertExists(providerIdForTest, `Failed to get DB ID for provider ${providerApiIdForTest}`);
+      const providerResource = processedResources.find(
+        (r) => r.tableName === 'ai_providers' && (r.resource as any)?.api_identifier === providerApiIdForTest
+      );
+      const providerIdForTest = providerResource?.resource ? (providerResource.resource as any).id : undefined;
+      assertExists(providerIdForTest, `Failed to get DB ID for provider ${providerApiIdForTest} from processedResources`);
 
       const mockProviderDataForDbQuery = {
         id: providerIdForTest,
@@ -284,7 +290,7 @@ export async function runSpecificConfigsTests(
 
       const mockAiContent = "Response from hardcapped model.";
       const mockAiTokenUsage: TokenUsage = { prompt_tokens: mockPromptTokens, completion_tokens: mockCompletionTokensFromAI, total_tokens: mockPromptTokens + mockCompletionTokensFromAI };
-      cMockAiAdapter.setSimpleMockResponse(providerApiIdForTest, mockAiContent, providerIdForTest, null, mockAiTokenUsage);
+      mockAiAdapter.setSimpleMockResponse(providerApiIdForTest, mockAiContent, providerIdForTest, null, mockAiTokenUsage);
 
       const requestBody: ChatApiRequest = {
         providerId: providerIdForTest,
@@ -348,18 +354,18 @@ export async function runSpecificConfigsTests(
         }
       );
 
-      const originalCreateSupabaseClient = cTestDeps.createSupabaseClient;
-      cTestDeps.createSupabaseClient = (_url: string, _key: string, _options?: any) => mockSupabaseSetup.client as any;
+      const originalCreateSupabaseClient = currentTestDeps.createSupabaseClient;
+      currentTestDeps.createSupabaseClient = (_url: string, _key: string, _options?: any) => mockSupabaseSetup.client as any;
 
       let response: Response | undefined;
       try {
-        response = await cHandler(request, cTestDeps);
+        response = await chatHandler(request, createDepsForTest());
       } finally {
-        cTestDeps.createSupabaseClient = originalCreateSupabaseClient;
+        currentTestDeps.createSupabaseClient = originalCreateSupabaseClient;
         if (mockSupabaseSetup.clearAllStubs) {
           mockSupabaseSetup.clearAllStubs();
         }
-        cMockAiAdapter.reset();
+        mockAiAdapter.reset();
       }
 
       assertExists(response);
@@ -378,7 +384,7 @@ export async function runSpecificConfigsTests(
         `Response completion tokens should be capped at hard_cap_output_tokens. Expected: ${hardCappedOutputLimit}, Got: ${responseTokenUsage.completion_tokens}`);
 
       // Verify wallet balance using the actual Supabase admin client, as the debit RPC uses it.
-      const { data: walletAfter, error: walletErrorAfter } = await scAdminClient
+      const { data: walletAfter, error: walletErrorAfter } = await supabaseAdminClient
         .from("token_wallets")
         .select("balance")
         .eq("user_id", testUserId)
@@ -404,7 +410,7 @@ export async function runSpecificConfigsTests(
       const mockPromptTokens = 10;
       const mockCompletionTokens = 15;
 
-      const testUserId = await initializeTestGroupEnvironment({
+      const { primaryUserId: testUserId, processedResources } = await initializeTestGroupEnvironment({
         userProfile: { first_name: "ZeroCost User" },
         initialWalletBalance: initialBalance,
         aiProviderApiIdentifier: providerApiIdForTest,
@@ -416,25 +422,14 @@ export async function runSpecificConfigsTests(
         },
       });
 
-      const {
-        getTestUserAuthToken,
-        supabaseAdminClient: scAdminClient,
-        currentTestDeps: cTestDeps,
-        chatHandler: cHandler,
-        mockAiAdapter: cMockAiAdapter,
-        getProviderIdByApiIdentifier,
-      } = await import("../_shared/_integration.test.utils.ts");
-
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
-      assertExists(scAdminClient);
-      assertExists(cTestDeps);
-      assertExists(cHandler);
-      assertExists(cMockAiAdapter);
-      assertExists(getProviderIdByApiIdentifier);
 
-      const providerIdForTest = await getProviderIdByApiIdentifier(providerApiIdForTest);
-      assertExists(providerIdForTest, `Failed to get DB ID for provider ${providerApiIdForTest}`);
+      const providerResource = processedResources.find(
+        (r) => r.tableName === 'ai_providers' && (r.resource as any)?.api_identifier === providerApiIdForTest
+      );
+      const providerIdForTest = providerResource?.resource ? (providerResource.resource as any).id : undefined;
+      assertExists(providerIdForTest, `Failed to get DB ID for provider ${providerApiIdForTest} from processedResources`);
 
       const mockProviderDataForDbQuery = {
         id: providerIdForTest,
@@ -453,7 +448,7 @@ export async function runSpecificConfigsTests(
 
       const mockAiContent = "Response from zero-cost model.";
       const mockAiTokenUsage: TokenUsage = { prompt_tokens: mockPromptTokens, completion_tokens: mockCompletionTokens, total_tokens: mockPromptTokens + mockCompletionTokens };
-      cMockAiAdapter.setSimpleMockResponse(providerApiIdForTest, mockAiContent, providerIdForTest, null, mockAiTokenUsage);
+      mockAiAdapter.setSimpleMockResponse(providerApiIdForTest, mockAiContent, providerIdForTest, null, mockAiTokenUsage);
 
       const requestBody: ChatApiRequest = {
         providerId: providerIdForTest,
@@ -512,18 +507,18 @@ export async function runSpecificConfigsTests(
         }
       );
 
-      const originalCreateSupabaseClient = cTestDeps.createSupabaseClient;
-      cTestDeps.createSupabaseClient = (_url: string, _key: string, _options?: any) => mockSupabaseSetup.client as any;
+      const originalCreateSupabaseClient = currentTestDeps.createSupabaseClient;
+      currentTestDeps.createSupabaseClient = (_url: string, _key: string, _options?: any) => mockSupabaseSetup.client as any;
 
       let response: Response | undefined;
       try {
-        response = await cHandler(request, cTestDeps);
+        response = await chatHandler(request, createDepsForTest());
       } finally {
-        cTestDeps.createSupabaseClient = originalCreateSupabaseClient;
+        currentTestDeps.createSupabaseClient = originalCreateSupabaseClient;
         if (mockSupabaseSetup.clearAllStubs) {
           mockSupabaseSetup.clearAllStubs();
         }
-        cMockAiAdapter.reset();
+        mockAiAdapter.reset();
       }
 
       assertExists(response);
@@ -539,7 +534,7 @@ export async function runSpecificConfigsTests(
       assertEquals(responseTokenUsage.completion_tokens, mockCompletionTokens, "Response completion_tokens should match AI mock.");
 
       // Verify wallet balance has not changed
-      const { data: walletAfter, error: walletErrorAfter } = await scAdminClient
+      const { data: walletAfter, error: walletErrorAfter } = await supabaseAdminClient
         .from("token_wallets")
         .select("balance")
         .eq("user_id", testUserId)
@@ -556,8 +551,7 @@ export async function runSpecificConfigsTests(
       const initialBalance = 100; // Balance not critical, but good to have a user context
       const providerApiIdForTest = "gpt-inactive-provider";
 
-      // Setup: Seed a provider marked as inactive
-      const testUserId = await initializeTestGroupEnvironment({
+      const { primaryUserId: testUserId, processedResources } = await initializeTestGroupEnvironment({
         userProfile: { first_name: "InactiveAccess User" },
         initialWalletBalance: initialBalance,
         aiProviderApiIdentifier: providerApiIdForTest,
@@ -572,19 +566,14 @@ export async function runSpecificConfigsTests(
         // is_active will be controlled by the mock DB response for ai_providers for this test
       });
 
-      const {
-        getTestUserAuthToken,
-        supabaseAdminClient: scAdminClient, // For checking no debit occurred (belt and braces)
-        currentTestDeps: cTestDeps,
-        chatHandler: cHandler,
-        mockAiAdapter: cMockAiAdapter, // Should not be called
-        getProviderIdByApiIdentifier,
-      } = await import("../_shared/_integration.test.utils.ts");
-
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
-      const providerIdForTest = await getProviderIdByApiIdentifier(providerApiIdForTest);
-      assertExists(providerIdForTest, `Failed to get DB ID for provider ${providerApiIdForTest}`);
+      
+      const providerResource = processedResources.find(
+        (r) => r.tableName === 'ai_providers' && (r.resource as any)?.api_identifier === providerApiIdForTest
+      );
+      const providerIdForTest = providerResource?.resource ? (providerResource.resource as any).id : undefined;
+      assertExists(providerIdForTest, `Failed to get DB ID for provider ${providerApiIdForTest} from processedResources`);
 
       // Override the provider data to ensure is_active is false for this specific test call
       const mockInactiveProviderData = {
@@ -644,18 +633,18 @@ export async function runSpecificConfigsTests(
           }
       );
 
-      const originalCreateSupabaseClient = cTestDeps.createSupabaseClient;
-      cTestDeps.createSupabaseClient = (_url: string, _key: string, _options?: any) => mockSupabaseSetup.client as any;
+      const originalCreateSupabaseClient = currentTestDeps.createSupabaseClient;
+      currentTestDeps.createSupabaseClient = (_url: string, _key: string, _options?: any) => mockSupabaseSetup.client as any;
 
       let response: Response | undefined;
       try {
-        response = await cHandler(request, cTestDeps);
+        response = await chatHandler(request, createDepsForTest());
       } finally {
-        cTestDeps.createSupabaseClient = originalCreateSupabaseClient;
+        currentTestDeps.createSupabaseClient = originalCreateSupabaseClient;
         if (mockSupabaseSetup.clearAllStubs) {
           mockSupabaseSetup.clearAllStubs();
         }
-        cMockAiAdapter.reset(); // Ensure adapter state is clean, though it shouldn't have been called.
+        mockAiAdapter.reset(); // Ensure adapter state is clean, though it shouldn't have been called.
       }
 
       assertExists(response);
@@ -666,7 +655,7 @@ export async function runSpecificConfigsTests(
       assertStringIncludes(responseJson.error, "is currently inactive", "Error message should indicate provider is inactive.");
 
       // Verify wallet balance has not changed, as a safety check
-      const { data: walletAfter, error: walletErrorAfter } = await scAdminClient
+      const { data: walletAfter, error: walletErrorAfter } = await supabaseAdminClient
         .from("token_wallets")
         .select("balance")
         .eq("user_id", testUserId)
@@ -683,19 +672,11 @@ export async function runSpecificConfigsTests(
       const initialBalance = 200;
       const nonExistentProviderId = crypto.randomUUID(); // Generate a random UUID
 
-      const testUserId = await initializeTestGroupEnvironment({
+      const { primaryUserId: testUserId } = await initializeTestGroupEnvironment({
         userProfile: { first_name: "NonExistentAccess User" },
         initialWalletBalance: initialBalance,
         // No specific aiProviderApiIdentifier or config override needed, as we are testing a non-existent ID.
       });
-
-      const {
-        getTestUserAuthToken,
-        supabaseAdminClient: scAdminClient,
-        currentTestDeps: cTestDeps,
-        chatHandler: cHandler,
-        mockAiAdapter: cMockAiAdapter, // Should not be called
-      } = await import("../_shared/_integration.test.utils.ts");
 
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
@@ -742,18 +723,18 @@ export async function runSpecificConfigsTests(
         }
       );
 
-      const originalCreateSupabaseClient = cTestDeps.createSupabaseClient;
-      cTestDeps.createSupabaseClient = (_url: string, _key: string, _options?: any) => mockSupabaseSetup.client as any;
+      const originalCreateSupabaseClient = currentTestDeps.createSupabaseClient;
+      currentTestDeps.createSupabaseClient = (_url: string, _key: string, _options?: any) => mockSupabaseSetup.client as any;
 
       let response: Response | undefined;
       try {
-        response = await cHandler(request, cTestDeps);
+        response = await chatHandler(request, createDepsForTest());
       } finally {
-        cTestDeps.createSupabaseClient = originalCreateSupabaseClient;
+        currentTestDeps.createSupabaseClient = originalCreateSupabaseClient;
         if (mockSupabaseSetup.clearAllStubs) {
           mockSupabaseSetup.clearAllStubs();
         }
-        cMockAiAdapter.reset(); // Adapter should not have been used
+        mockAiAdapter.reset(); // Adapter should not have been used
       }
 
       assertExists(response);
@@ -766,7 +747,7 @@ export async function runSpecificConfigsTests(
       assertStringIncludes(responseJson.error, `Provider with ID ${nonExistentProviderId} not found`, "Error message should indicate specific provider ID not found."); 
 
       // Verify wallet balance has not changed
-      const { data: walletAfter, error: walletErrorAfter } = await scAdminClient
+      const { data: walletAfter, error: walletErrorAfter } = await supabaseAdminClient
         .from("token_wallets")
         .select("balance")
         .eq("user_id", testUserId)
@@ -796,35 +777,24 @@ export async function runSpecificConfigsTests(
           hard_cap_output_tokens: 100,
       };
 
-      const testUserId = await initializeTestGroupEnvironment({
+      const { primaryUserId: testUserId, processedResources } = await initializeTestGroupEnvironment({
           userProfile: { first_name: "Char Count User" },
           initialWalletBalance: initialBalance,
           aiProviderApiIdentifier: providerApiIdForTest,
           aiProviderConfigOverride: charCountConfig,
       });
 
-      const {
-          getTestUserAuthToken,
-          supabaseAdminClient: scAdminClient,
-          currentTestDeps: cTestDeps,
-          chatHandler: cHandler,
-          mockAiAdapter: cMockAiAdapter,
-          getProviderIdByApiIdentifier,
-      } = await import("../_shared/_integration.test.utils.ts");
-
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
-      assertExists(scAdminClient);
-      assertExists(cTestDeps);
-      assertExists(cHandler);
-      assertExists(cMockAiAdapter);
-      assertExists(getProviderIdByApiIdentifier);
 
-      const providerIdForTest = await getProviderIdByApiIdentifier(providerApiIdForTest);
-      assertExists(providerIdForTest, `Failed to get DB ID for provider ${providerApiIdForTest}`);
+      const providerResource = processedResources.find(
+        (r) => r.tableName === 'ai_providers' && (r.resource as any)?.api_identifier === providerApiIdForTest
+      );
+      const providerIdForTest = providerResource?.resource ? (providerResource.resource as any).id : undefined;
+      assertExists(providerIdForTest, `Failed to get DB ID for provider ${providerApiIdForTest} from processedResources`);
 
       // Ensure the provider is not treated as "dummy" by directly updating its 'provider' column.
-      const { error: updateProviderError } = await scAdminClient
+      const { error: updateProviderError } = await supabaseAdminClient
           .from("ai_providers")
           .update({ provider: "openai" }) // Set to a non-dummy provider type like "openai"
           .eq("id", providerIdForTest);
@@ -844,7 +814,7 @@ export async function runSpecificConfigsTests(
           completion_tokens: expectedCompletionTokensByChar, 
           total_tokens: expectedPromptTokensByChar + expectedCompletionTokensByChar 
       }; 
-      cMockAiAdapter.setSimpleMockResponse(providerApiIdForTest, mockAiContent, providerIdForTest, null, mockAiTokenUsage);
+      mockAiAdapter.setSimpleMockResponse(providerApiIdForTest, mockAiContent, providerIdForTest, null, mockAiTokenUsage);
 
       const requestBody: ChatApiRequest = {
           providerId: providerIdForTest,
@@ -860,9 +830,9 @@ export async function runSpecificConfigsTests(
 
       let response: Response | undefined;
       try {
-          response = await cHandler(request, cTestDeps); 
+          response = await chatHandler(request, createDepsForTest()); 
       } finally {
-          cMockAiAdapter.reset(); 
+          mockAiAdapter.reset(); 
       }
 
       assertExists(response);
@@ -872,7 +842,7 @@ export async function runSpecificConfigsTests(
       assertExists(responseJson.assistantMessage, "Response JSON should contain an assistant message.");
       assertEquals(responseJson.assistantMessage.content, mockAiContent);
 
-      const { data: walletAfter, error: walletErrorAfter } = await scAdminClient
+      const { data: walletAfter, error: walletErrorAfter } = await supabaseAdminClient
           .from("token_wallets")
           .select("balance")
           .eq("user_id", testUserId)
@@ -896,26 +866,15 @@ export async function runSpecificConfigsTests(
     // This test should now pass with the DUMMY_API_KEY stubbed
     await t.step("[Specific Config] Chat with a non-existent system_prompt_id", async () => {
       const initialBalance = 1000;
-      // No specific user profile needed, default will suffice
-      const testUserId = await initializeTestGroupEnvironment({ // Capture userId here
+      const { primaryUserId: testUserId } = await initializeTestGroupEnvironment({ // Updated destructuring
         initialWalletBalance: initialBalance,
-        // Using a known provider that should work, e.g., the dummy one or a default one
-        // Ensure this provider is seeded by coreSeedAiProviders
         aiProviderApiIdentifier: 'dummy-echo-test', 
       }); 
-      const { 
-        getTestUserAuthToken, supabaseAdminClient: scAdminClient, 
-        currentTestDeps: cTestDeps, chatHandler: cHandler,
-        mockAiAdapter: cMockAiAdapter, // Added mockAiAdapter
-      } = await import("../_shared/_integration.test.utils.ts");
 
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken, "Test user auth token was not set.");
-      assertExists(scAdminClient, "Shared Supabase Admin Client is not initialized.");
-      assertExists(cTestDeps, "Shared Test Deps are not initialized.");
-      assertExists(cHandler, "Chat handler is not available.");
 
-      const { data: provider, error: providerErr } = await scAdminClient
+      const { data: provider, error: providerErr } = await supabaseAdminClient
         .from('ai_providers')
         .select('id')
         .eq('api_identifier', 'dummy-echo-test') // Use a known, working provider
@@ -935,7 +894,7 @@ export async function runSpecificConfigsTests(
       // Setup mock response for dummy-echo-test
       const mockContent = `Echo from Dummy: ${requestBody.message}`;
       const mockTokenUsage: TokenUsage = { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }; // Example usage
-      cMockAiAdapter.setSimpleMockResponse('dummy-echo-test', mockContent, provider.id, null, mockTokenUsage);
+      mockAiAdapter.setSimpleMockResponse('dummy-echo-test', mockContent, provider.id, null, mockTokenUsage);
 
       const request = new Request(CHAT_FUNCTION_URL, {
         method: "POST",
@@ -946,7 +905,7 @@ export async function runSpecificConfigsTests(
         body: JSON.stringify(requestBody),
       });
 
-      const response = await cHandler(request, cTestDeps);
+      const response = await chatHandler(request, createDepsForTest());
       const responseText = await response.text();
       
       // Expecting a 200 OK (fallback) for non-existent prompt ID, but got ${response.status}. Body: ${responseText}`);
@@ -967,7 +926,7 @@ export async function runSpecificConfigsTests(
       assertNotEquals(responseJson.assistantMessage.content.toLowerCase().includes("system prompt:"), true, "Response should not contain system prompt content for non-existent ID.");
 
       // Check wallet balance - should be unchanged if dummy provider (or charged normally if a real provider was used and succeeded)
-      const { data: wallet, error: walletErr } = await scAdminClient
+      const { data: wallet, error: walletErr } = await supabaseAdminClient
           .from('token_wallets')
           .select('balance')
           .eq('user_id', testUserId) 
@@ -977,30 +936,21 @@ export async function runSpecificConfigsTests(
       assertExists(wallet, "Wallet data was null for test user.");
       // For dummy-echo-test, balance should be unchanged. If we used a real provider, it would be charged.
       assertEquals(wallet.balance, initialBalance, "Wallet balance should remain unchanged for dummy provider with non-existent prompt ID.");
-      cMockAiAdapter.reset(); // Reset adapter after test
+      mockAiAdapter.reset(); // Reset adapter after test
     });
 
     // This test should now pass
     await t.step("[Context Handling] Chat continuation with existing chatId", async () => {
       const initialBalance = 1000;
-      const testUserId = await initializeTestGroupEnvironment({ 
+      const { primaryUserId: testUserId } = await initializeTestGroupEnvironment({ // Updated destructuring
         initialWalletBalance: initialBalance,
         aiProviderApiIdentifier: 'dummy-echo-test', 
       }); 
-      const { 
-        getTestUserAuthToken, supabaseAdminClient: scAdminClient, 
-        currentTestDeps: cTestDeps, chatHandler: cHandler,
-        mockAiAdapter: cMockAiAdapter, // Added mockAiAdapter
-      } = await import("../_shared/_integration.test.utils.ts");
 
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
-      assertExists(scAdminClient);
-      assertExists(cTestDeps);
-      assertExists(cHandler);
-      assertExists(testUserId);
 
-      const { data: provider, error: providerErr } = await scAdminClient
+      const { data: provider, error: providerErr } = await supabaseAdminClient
         .from('ai_providers')
         .select('id')
         .eq('api_identifier', 'dummy-echo-test')
@@ -1020,7 +970,7 @@ export async function runSpecificConfigsTests(
       // Setup mock for the first call
       const firstMockContent = `Echo from Dummy: ${firstMessageContent}`;
       const firstMockTokenUsage: TokenUsage = { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 };
-      cMockAiAdapter.setSimpleMockResponse('dummy-echo-test', firstMockContent, provider.id, null, firstMockTokenUsage);
+      mockAiAdapter.setSimpleMockResponse('dummy-echo-test', firstMockContent, provider.id, null, firstMockTokenUsage);
       
       const firstRequest = new Request(CHAT_FUNCTION_URL, {
         method: "POST",
@@ -1028,14 +978,14 @@ export async function runSpecificConfigsTests(
         body: JSON.stringify(firstRequestBody),
       });
 
-      const firstResponse = await cHandler(firstRequest, cTestDeps);
+      const firstResponse = await chatHandler(firstRequest, createDepsForTest());
       const firstResponseText = await firstResponse.text();
       assertEquals(firstResponse.status, 200, `First message failed. Body: ${firstResponseText}`);
       const firstResponseJson = JSON.parse(firstResponseText) as ChatHandlerSuccessResponse;
       assertExists(firstResponseJson.chatId, "chatId missing from first response.");
       const existingChatId = firstResponseJson.chatId;
       assertEquals(firstResponseJson.assistantMessage.content, firstMockContent);
-      cMockAiAdapter.reset(); // Reset after first call
+      mockAiAdapter.reset(); // Reset after first call
 
       // 2. Second message using existingChatId
       const secondMessageContent = "This is the second message in the same chat.";
@@ -1050,7 +1000,7 @@ export async function runSpecificConfigsTests(
       // Setup mock for the second call
       const secondMockContent = `Echo from Dummy: ${secondMessageContent}`;
       const secondMockTokenUsage: TokenUsage = { prompt_tokens: 6, completion_tokens: 6, total_tokens: 12 };
-      cMockAiAdapter.setSimpleMockResponse('dummy-echo-test', secondMockContent, provider.id, null, secondMockTokenUsage);
+      mockAiAdapter.setSimpleMockResponse('dummy-echo-test', secondMockContent, provider.id, null, secondMockTokenUsage);
 
       const secondRequest = new Request(CHAT_FUNCTION_URL, {
         method: "POST",
@@ -1058,17 +1008,17 @@ export async function runSpecificConfigsTests(
         body: JSON.stringify(secondRequestBody),
       });
 
-      const secondResponse = await cHandler(secondRequest, cTestDeps);
+      const secondResponse = await chatHandler(secondRequest, createDepsForTest());
       const secondResponseText = await secondResponse.text();
       assertEquals(secondResponse.status, 200, `Second message failed. Body: ${secondResponseText}`);
       const secondResponseJson = JSON.parse(secondResponseText) as ChatHandlerSuccessResponse;
       
       assertEquals(secondResponseJson.chatId, existingChatId, "chatId from second response does not match first.");
       assertEquals(secondResponseJson.assistantMessage.content, secondMockContent, "Dummy provider did not echo second message correctly.");
-      cMockAiAdapter.reset(); // Reset after second call
+      mockAiAdapter.reset(); // Reset after second call
 
       // 3. Verify messages in DB for the chat
-      const { data: messages, error: messagesError } = await scAdminClient
+      const { data: messages, error: messagesError } = await supabaseAdminClient
         .from('chat_messages')
         .select('content, role, chat_id')
         .eq('chat_id', existingChatId)
@@ -1088,7 +1038,7 @@ export async function runSpecificConfigsTests(
       assertEquals(messages[3].role, "assistant");
 
       // Check wallet balance
-      const { data: wallet, error: walletErr } = await scAdminClient
+      const { data: wallet, error: walletErr } = await supabaseAdminClient
           .from('token_wallets')
           .select('balance')
           .eq('user_id', testUserId) 
@@ -1102,24 +1052,15 @@ export async function runSpecificConfigsTests(
     // This test should now pass
     await t.step("[Context Handling] Chat continuation with selected messages", async () => {
       const initialBalance = 1000;
-      const testUserId = await initializeTestGroupEnvironment({ 
+      const { primaryUserId: testUserId } = await initializeTestGroupEnvironment({ // Updated destructuring
         initialWalletBalance: initialBalance,
         aiProviderApiIdentifier: 'dummy-echo-test', 
       });
-      const { 
-        getTestUserAuthToken, supabaseAdminClient: scAdminClient, 
-        currentTestDeps: cTestDeps, chatHandler: cHandler,
-        mockAiAdapter: cMockAiAdapter, // Added mockAiAdapter
-      } = await import("../_shared/_integration.test.utils.ts");
 
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
-      assertExists(scAdminClient);
-      assertExists(cTestDeps);
-      assertExists(cHandler);
-      assertExists(testUserId);
 
-      const { data: provider, error: providerErr } = await scAdminClient
+      const { data: provider, error: providerErr } = await supabaseAdminClient
         .from('ai_providers')
         .select('id')
         .eq('api_identifier', 'dummy-echo-test')
@@ -1134,10 +1075,10 @@ export async function runSpecificConfigsTests(
       // Setup mock for the first call
       const firstMockContent = `Echo from Dummy: ${firstMsgContent}`;
       const firstMockTokenUsage: TokenUsage = { prompt_tokens: 7, completion_tokens: 7, total_tokens: 14 };
-      cMockAiAdapter.setSimpleMockResponse('dummy-echo-test', firstMockContent, provider.id, null, firstMockTokenUsage);
+      mockAiAdapter.setSimpleMockResponse('dummy-echo-test', firstMockContent, provider.id, null, firstMockTokenUsage);
 
       const firstReq = new Request(CHAT_FUNCTION_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentAuthToken}` }, body: JSON.stringify(firstReqBody) });
-      const firstResp = await cHandler(firstReq, cTestDeps);
+      const firstResp = await chatHandler(firstReq, createDepsForTest());
       const firstRespText = await firstResp.text();
       assertEquals(firstResp.status, 200, `Selection Test: First message failed. Body: ${firstRespText}`);
       const firstRespJson = JSON.parse(firstRespText) as ChatHandlerSuccessResponse;
@@ -1148,7 +1089,7 @@ export async function runSpecificConfigsTests(
       assertExists(firstUserMessageId);
       assertExists(firstAssistantMessageId);
       assertEquals(firstRespJson.assistantMessage.content, firstMockContent); // Assert against mock content
-      cMockAiAdapter.reset(); // Reset after first call
+      mockAiAdapter.reset(); // Reset after first call
 
       // 2. Second message
       const secondMsgContent = "Second message, should be ignored due to selection.";
@@ -1157,17 +1098,17 @@ export async function runSpecificConfigsTests(
       // Setup mock for the second call
       const secondMockContent = `Echo from Dummy: ${secondMsgContent}`;
       const secondMockTokenUsage: TokenUsage = { prompt_tokens: 8, completion_tokens: 8, total_tokens: 16 };
-      cMockAiAdapter.setSimpleMockResponse('dummy-echo-test', secondMockContent, provider.id, null, secondMockTokenUsage);
+      mockAiAdapter.setSimpleMockResponse('dummy-echo-test', secondMockContent, provider.id, null, secondMockTokenUsage);
       
       const secondReq = new Request(CHAT_FUNCTION_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentAuthToken}` }, body: JSON.stringify(secondReqBody) });
-      const secondResp = await cHandler(secondReq, cTestDeps);
+      const secondResp = await chatHandler(secondReq, createDepsForTest());
       const secondRespText = await secondResp.text();
       assertEquals(secondResp.status, 200, `Selection Test: Second message failed. Body: ${secondRespText}`);
       const secondRespJson = JSON.parse(secondRespText) as ChatHandlerSuccessResponse;
       const secondUserMessageId = secondRespJson.userMessage?.id;
       assertExists(secondUserMessageId);
       assertEquals(secondRespJson.assistantMessage.content, secondMockContent); // Assert against mock content
-      cMockAiAdapter.reset(); // Reset after second call
+      mockAiAdapter.reset(); // Reset after second call
 
       // 3. Third message with selectedMessages (only the first user message)
       const thirdMsgContent = "Third message, context should be from first message only.";
@@ -1184,10 +1125,10 @@ export async function runSpecificConfigsTests(
       // The dummy provider will echo the third message, but its internal context (if it had one) should have been from the selected message.
       const thirdMockContent = `Echo from Dummy: ${thirdMsgContent}`;
       const thirdMockTokenUsage: TokenUsage = { prompt_tokens: 9, completion_tokens: 9, total_tokens: 18 };
-      cMockAiAdapter.setSimpleMockResponse('dummy-echo-test', thirdMockContent, provider.id, null, thirdMockTokenUsage);
+      mockAiAdapter.setSimpleMockResponse('dummy-echo-test', thirdMockContent, provider.id, null, thirdMockTokenUsage);
 
       const thirdReq = new Request(CHAT_FUNCTION_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentAuthToken}` }, body: JSON.stringify(thirdReqBody) });
-      const thirdResp = await cHandler(thirdReq, cTestDeps);
+      const thirdResp = await chatHandler(thirdReq, createDepsForTest());
       const thirdRespText = await thirdResp.text();
       assertEquals(thirdResp.status, 200, `Selection Test: Third message failed. Body: ${thirdRespText}`);
       const thirdRespJson = JSON.parse(thirdRespText) as ChatHandlerSuccessResponse;
@@ -1195,10 +1136,10 @@ export async function runSpecificConfigsTests(
       assertEquals(thirdRespJson.chatId, chatId, "Chat ID should be consistent.");
       // Dummy provider just echoes the current message. A more sophisticated mock would be needed to truly test context selection.
       assertEquals(thirdRespJson.assistantMessage.content, thirdMockContent, "Dummy provider should echo the third message.");
-      cMockAiAdapter.reset(); // Reset after third call
+      mockAiAdapter.reset(); // Reset after third call
 
       // Verify database state: check that all messages are there, as selection is for context, not for DB storage of the current turn.
-      const { data: messages, error: messagesError } = await scAdminClient
+      const { data: messages, error: messagesError } = await supabaseAdminClient
         .from('chat_messages')
         .select('id, content, role')
         .eq('chat_id', chatId)
@@ -1211,7 +1152,7 @@ export async function runSpecificConfigsTests(
       assertEquals(messages[4].id, thirdRespJson.userMessage?.id);
 
       // Check wallet balance
-      const { data: wallet, error: walletErr } = await scAdminClient.from('token_wallets').select('balance').eq('user_id', testUserId).is('organization_id', null).single();
+      const { data: wallet, error: walletErr } = await supabaseAdminClient.from('token_wallets').select('balance').eq('user_id', testUserId).is('organization_id', null).single();
       if (walletErr) throw walletErr;
       assertExists(wallet);
       assertEquals(wallet.balance, initialBalance, "Wallet balance should be unchanged.");
@@ -1222,26 +1163,16 @@ export async function runSpecificConfigsTests(
       const initialBalance = 1000;
       const providerApiIdMissingTokenization = "test-provider-missing-tokenization";
 
-      // 1. Setup user and wallet
-      const testUserId = await initializeTestGroupEnvironment({ 
+      const { primaryUserId: testUserId } = await initializeTestGroupEnvironment({ // Updated destructuring
         initialWalletBalance: initialBalance,
-        // We will create a custom provider for this test, so no need to specify aiProviderApiIdentifier here
       });
-      const { 
-        getTestUserAuthToken, supabaseAdminClient: scAdminClient, 
-        currentTestDeps: cTestDeps, chatHandler: cHandler 
-      } = await import("../_shared/_integration.test.utils.ts");
 
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
-      assertExists(scAdminClient);
-      assertExists(cTestDeps);
-      assertExists(cHandler);
-      assertExists(testUserId);
 
       // 2. Create a provider with missing tokenization_strategy in config
       const providerMissingStratId = crypto.randomUUID();
-      const { error: insertError } = await scAdminClient.from('ai_providers').insert({
+      const { error: insertError } = await supabaseAdminClient.from('ai_providers').insert({
         id: providerMissingStratId,
         provider: 'dummy',
         name: 'Missing Tokenization Strat Provider',
@@ -1266,7 +1197,7 @@ export async function runSpecificConfigsTests(
         body: JSON.stringify(requestBody),
       });
 
-      const response = await cHandler(request, cTestDeps);
+      const response = await chatHandler(request, createDepsForTest());
       const responseText = await response.text();
 
       // 4. Assert error response
@@ -1276,7 +1207,7 @@ export async function runSpecificConfigsTests(
       // Or more specific: assertStringIncludes(responseText.toLowerCase(), "missing tokenization_strategy");
 
       // 5. Verify wallet balance unchanged
-      const { data: wallet, error: walletErr } = await scAdminClient
+      const { data: wallet, error: walletErr } = await supabaseAdminClient
           .from('token_wallets')
           .select('balance')
           .eq('user_id', testUserId) 
@@ -1287,7 +1218,7 @@ export async function runSpecificConfigsTests(
       assertEquals(wallet.balance, initialBalance, "Wallet balance should be unchanged after failed chat.");
       
       // Cleanup: Delete the test provider
-      await scAdminClient.from('ai_providers').delete().eq('id', providerMissingStratId);
+      await supabaseAdminClient.from('ai_providers').delete().eq('id', providerMissingStratId);
     });
 
     // This test should now pass
@@ -1295,21 +1226,12 @@ export async function runSpecificConfigsTests(
       const initialBalance = 1000;
       const providerApiIdInvalidTokenization = "test-provider-invalid-tokenization-type";
 
-      // 1. Setup user and wallet
-      const testUserId = await initializeTestGroupEnvironment({ 
+      const { primaryUserId: testUserId } = await initializeTestGroupEnvironment({ // Updated destructuring
         initialWalletBalance: initialBalance,
       });
-      const { 
-        getTestUserAuthToken, supabaseAdminClient: scAdminClient, 
-        currentTestDeps: cTestDeps, chatHandler: cHandler 
-      } = await import("../_shared/_integration.test.utils.ts");
 
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
-      assertExists(scAdminClient);
-      assertExists(cTestDeps);
-      assertExists(cHandler);
-      assertExists(testUserId);
 
       // 2. Create a provider with an invalid tokenization_strategy.type in config
       const providerInvalidStratId = crypto.randomUUID();
@@ -1319,7 +1241,7 @@ export async function runSpecificConfigsTests(
         tokenization_strategy: { type: "this_is_not_a_valid_type" }
       } as unknown as Json;
 
-      const { error: insertError } = await scAdminClient.from('ai_providers').insert({
+      const { error: insertError } = await supabaseAdminClient.from('ai_providers').insert({
         id: providerInvalidStratId,
         provider: 'dummy',
         name: 'Invalid Tokenization Type Provider',
@@ -1343,7 +1265,7 @@ export async function runSpecificConfigsTests(
         body: JSON.stringify(requestBody),
       });
 
-      const response = await cHandler(request, cTestDeps);
+      const response = await chatHandler(request, createDepsForTest());
       const responseText = await response.text();
 
       // 4. Assert error response
@@ -1353,7 +1275,7 @@ export async function runSpecificConfigsTests(
       // assertStringIncludes(responseText.toLowerCase(), "invalid tokenization_strategy type");
 
       // 5. Verify wallet balance unchanged
-      const { data: wallet, error: walletErr } = await scAdminClient
+      const { data: wallet, error: walletErr } = await supabaseAdminClient
           .from('token_wallets')
           .select('balance')
           .eq('user_id', testUserId) 
@@ -1364,7 +1286,7 @@ export async function runSpecificConfigsTests(
       assertEquals(wallet.balance, initialBalance, "Wallet balance should be unchanged after failed chat with invalid type.");
       
       // Cleanup: Delete the test provider
-      await scAdminClient.from('ai_providers').delete().eq('id', providerInvalidStratId);
+      await supabaseAdminClient.from('ai_providers').delete().eq('id', providerInvalidStratId);
     });
   } finally {
     restoreEnvStub(); // Restore stub after all tests in this suite

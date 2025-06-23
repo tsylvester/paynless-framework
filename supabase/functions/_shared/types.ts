@@ -146,6 +146,7 @@ export interface ChatApiRequest {
   providerId: string; // uuid for ai_providers table
   promptId: string;   // uuid for system_prompts table, or '__none__'
   chatId?: string;   // uuid, optional for new chats
+  walletId?: string; // uuid, optional for specific wallet selection - ADDED
   selectedMessages?: { // User-selected messages for context
     role: 'system' | 'user' | 'assistant';
     content: string;
@@ -396,7 +397,7 @@ export type ChatMessageRole = 'system' | 'user' | 'assistant';
 export interface ServiceError {
   message: string;
   status?: number;
-  details?: string | Record<string, any>[];
+  details?: string | Record<string, unknown>[];
   code?: string;
 }
 

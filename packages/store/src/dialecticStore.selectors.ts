@@ -260,5 +260,30 @@ export const selectActiveDialecticStageTotalTokenUsage = createSelector(
   }
 );
 
+// Selector for total token usage for an entire session
+export const selectDialecticSessionTotalTokenUsage = createSelector(
+  [selectCurrentProjectSessions, (_, sessionId: string) => sessionId],
+  (sessions, sessionId) => {
+    if (!sessions) {
+      return null;
+    }
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session || !session.dialectic_contributions) {
+      return null;
+    }
+
+    let totalInput = 0;
+    let totalOutput = 0;
+    let totalProcessingMs = 0;
+
+    for (const contrib of session.dialectic_contributions) {
+      totalInput += contrib.tokens_used_input || 0;
+      totalOutput += contrib.tokens_used_output || 0;
+      totalProcessingMs += contrib.processing_time_ms || 0;
+    }
+    return { totalInput, totalOutput, totalProcessingMs };
+  }
+);
+
 // Selector for the active dialectic wallet ID
 export const selectActiveDialecticWalletId = (state: DialecticStateValues): string | null => state.activeDialecticWalletId;

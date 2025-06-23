@@ -43,6 +43,7 @@ export async function callUnifiedAIModel(
         providerId: modelCatalogId,
         promptId: options?.currentStageSystemPromptId || "__none__",
         chatId: associatedChatId === null ? undefined : associatedChatId, // MODIFIED: Convert null to undefined
+        walletId: options?.walletId,
         messages: historyForChatApi,
         max_tokens_to_generate: options?.customParameters?.max_tokens_to_generate,
         // organizationId might be relevant if dialectics are org-specific

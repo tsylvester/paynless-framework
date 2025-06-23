@@ -432,4 +432,47 @@ export class TokenWalletService implements ITokenWalletService {
     console.log(`[TokenWalletService] Successfully fetched ${transactions.length} transactions (total: ${totalCount}) for wallet ${walletId}`);
     return { transactions, totalCount };
   }
+
+  async getWalletByIdAndUser(walletId: string, userId: string): Promise<TokenWallet | null> {
+    console.log('[TokenWalletService GWID_ENTRY] Attempting to get wallet by ID for user', { walletId, userId });
+
+    const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+    if (!uuidRegex.test(walletId)) {
+      console.warn(`[TokenWalletService GWID_DEBUG_INVALID_UUID_FORMAT] Invalid walletId format, returning null: ${walletId}`);
+      return null;
+    }
+
+    // Note: userId is implicitly used by RLS because we are using this.supabaseClient (user-context client)
+    // The RLS policy on token_wallets should ensure that the user can only fetch wallets they own
+    // or organization wallets they have access to.
+    try {
+      const { data, error } = await this.supabaseClient
+        .from('token_wallets')
+        .select('wallet_id, user_id, organization_id, balance, currency, created_at, updated_at')
+        .eq('wallet_id', walletId)
+        .single(); // Use single() as we expect one wallet or none (due to RLS or not found)
+
+      if (error) {
+        if (error.code === 'PGRST116') { // Not found or RLS prevented access
+          console.warn(`[TokenWalletService GWID_DEBUG_PGRST116] Wallet not found or access denied for wallet ${walletId} by user ${userId}.`, { errorDetails: error });
+          return null;
+        }
+        console.error(`[TokenWalletService GWID_ERROR] Error fetching wallet ${walletId} for user ${userId}:`, error);
+        // Do not throw generic error, let the caller decide based on null
+        return null; 
+      }
+
+      if (!data) {
+        console.warn(`[TokenWalletService GWID_DEBUG_NO_DATA] No data returned for wallet ${walletId} by user ${userId} (but no error).`);
+        return null;
+      }
+
+      console.log(`[TokenWalletService GWID_DEBUG_SUCCESS] Wallet ${walletId} found for user ${userId}, returning transformed wallet.`);
+      return this._transformDbWalletToTokenWallet(data);
+
+    } catch (e) {
+      console.error(`[TokenWalletService GWID_CATCH_ERROR] Unexpected error fetching wallet ${walletId} for user ${userId}:`, e);
+      return null; // Return null on unexpected errors as well
+    }
+  }
 } 

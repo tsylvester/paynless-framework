@@ -368,6 +368,7 @@ Deno.test("callUnifiedAIModel - with options.currentStageSystemPromptId and opti
   const mockSystemPromptId = "custom-system-prompt-from-options-uuid";
   const mockMaxTokens = 150;
   const mockUserId = "user-uuid-options-2";
+  const mockWalletId = "wallet-uuid-test-123";
 
   const mockTokenUsage: TokenUsage = { prompt_tokens: 10, completion_tokens: 145, total_tokens: 155 }; 
   const baseMockAssistantMessage: any = {
@@ -412,6 +413,7 @@ Deno.test("callUnifiedAIModel - with options.currentStageSystemPromptId and opti
       max_tokens_to_generate: mockMaxTokens,
     },
     currentStageSystemPromptId: mockSystemPromptId,
+    walletId: mockWalletId,
   };
 
   try {
@@ -437,7 +439,8 @@ Deno.test("callUnifiedAIModel - with options.currentStageSystemPromptId and opti
         promptId: mockSystemPromptId, 
         chatId: mockAssociatedChatId,
         messages: [], 
-        max_tokens_to_generate: mockMaxTokens 
+        max_tokens_to_generate: mockMaxTokens,
+        walletId: mockWalletId
     };
     assertEquals(JSON.parse(fetchOptions.body as string), expectedBody);
 

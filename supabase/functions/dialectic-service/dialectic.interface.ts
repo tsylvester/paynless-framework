@@ -202,6 +202,7 @@ export interface UpdateSessionModelsPayload {
 export type StartSessionSuccessResponse = DialecticSession;
 
 export interface CallUnifiedAIModelOptions {
+  walletId?: string;
   customParameters?: {
     historyMessages?: ChatMessage[]; 
     max_tokens_to_generate?: number;

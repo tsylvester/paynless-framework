@@ -1106,23 +1106,23 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
         *   Mock `FileManagerService.uploadAndRegisterFile` to simulate a successful database insert and verify that the `generateContributions` function correctly processes this success.
         *   Specifically test that the `DB_INSERT_FAIL` errors (seen in logs) are resolved by providing all necessary data.
 
-*   `[ ] 2.X.5.2 [API/STORE]` **Propagate Tokenomics Data & Wallet State for Dialectic Service**
-    *   `[ ] 2.X.5.2.1 [TYPES]` In `packages/types/src/dialectic.types.ts`:
+*   `[✅] 2.X.5.2 [API/STORE]` **Propagate Tokenomics Data & Wallet State for Dialectic Service**
+    *   `[✅] 2.X.5.2.1 [TYPES]` In `packages/types/src/dialectic.types.ts`:
         *   Align the `DialecticContribution` type with the fields now confirmed to be in the database and populated by the backend. Ensure it includes:
             *   `tokens_used_input: number | null`
             *   `tokens_used_output: number | null`
             *   `processing_time_ms: number | null`
             *   `model_id: string | null` (actual ID of the AI provider/model used)
             *   Other fields like `raw_response_storage_path`, `seed_prompt_url`, `citations` as they are made available.
-    *   `[ ] 2.X.5.2.2 [STORE]` In `packages/store/src/dialecticStore.ts`:
+    *   `[✅] 2.X.5.2.2 [STORE]` In `packages/store/src/dialecticStore.ts`:
         *   Ensure `fetchDialecticProjectDetails` thunk correctly processes and stores this enhanced `DialecticContribution` data (including tokenomics) within `currentProjectDetail.sessions.contributions`.
         *   Adapt or reuse existing wallet state management. Add `activeDialecticWalletId: string | null` to `DialecticState` (in `packages/store/src/interfaces/dialectic.ts`) if a distinct active wallet for Dialectic operations is desired. Create actions to set/update it.
-    *   `[ ] 2.X.5.2.3 [STORE]` Create/update selectors in `packages/store/src/dialecticStore.selectors.ts`:
-        *   `selectDialecticContributionTokenDetails(contributionId: string): { tokensUsedInput: number | null, tokensUsedOutput: number | null, processingTimeMs: number | null, modelId: string | null } | null`
-        *   `selectActiveDialecticStageTotalTokenUsage(sessionId: string, stageSlug: string, iterationNumber: number): { totalInput: number, totalOutput: number, totalProcessingMs: number } | null`
-        *   `selectDialecticSessionTotalTokenUsage(sessionId: string): { totalInput: number, totalOutput: number, totalProcessingMs: number } | null`
-        *   `selectActiveDialecticWalletId(): string | null`
-    *   `[ ] 2.X.5.2.4 [BE]` Modify backend actions in `dialectic-service` (e.g., `generateContributions`) to accept an optional `walletId` in their payload. This `walletId` will be used by the `TokenWalletService`. Fallback to user's default wallet if not provided.
+    *   `[✅] 2.X.5.2.3 [STORE]` Create/update selectors in `packages/store/src/dialecticStore.selectors.ts`:
+        *   `[✅] selectDialecticContributionTokenDetails(contributionId: string): { tokensUsedInput: number | null, tokensUsedOutput: number | null, processingTimeMs: number | null, modelId: string | null } | null` // Data accessible via selectContributionById
+        *   `[✅] selectActiveDialecticStageTotalTokenUsage(sessionId: string, stageSlug: string, iterationNumber: number): { totalInput: number, totalOutput: number, totalProcessingMs: number } | null`
+        *   `[✅] selectDialecticSessionTotalTokenUsage(sessionId: string): { totalInput: number, totalOutput: number, totalProcessingMs: number } | null`
+        *   `[✅] selectActiveDialecticWalletId(): string | null`
+    *   `[✅] 2.X.5.2.4 [BE]` Modify backend actions in `dialectic-service` (e.g., `generateContributions`) to accept an optional `walletId` in their payload. This `walletId` will be used by the `TokenWalletService`. Fallback to user's default wallet if not provided.
 
 *   `[ ] 2.X.5.3 [UI]` **Integrate Existing `WalletSelector.tsx` and Balance Display**
     *   `[ ] 2.X.5.3.1 [TEST-UNIT]` Update/create unit tests for `DialecticSessionDetailsPage.tsx` or relevant parent components to cover wallet selection and balance display integration. (RED)

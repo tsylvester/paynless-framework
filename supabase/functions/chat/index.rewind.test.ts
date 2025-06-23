@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertExists, assertObjectMatch } from "jsr:@std/assert@0.225.3";
 import { spy, type Spy, assertSpyCalls, stub } from "jsr:@std/testing@0.225.1/mock"; 
-import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js";
+import { createClient, type SupabaseClient, type User } from "npm:@supabase/supabase-js";
 import type { ConnInfo } from "https://deno.land/std@0.177.0/http/server.ts";
 import type { Database, Json } from "../types_db.ts"; 
 import type { 
@@ -8,7 +8,6 @@ import type {
     ChatApiRequest,
     AdapterResponsePayload,
     ChatHandlerDeps,
-    User,
     AiModelExtendedConfig
 } from '../_shared/types.ts'; 
 import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts'; 
@@ -445,8 +444,8 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
             const response = await handler(req, deps);
             assertEquals(response.status, 404);
             const responseBody = await response.json();
-            // Expect the actual error message from the handler which originates from the mock .single() failure
-            assertEquals(responseBody.error, 'Query returned no rows (data was null after .single())');
+            // Expect the actual error message from the handler
+            assertEquals(responseBody.error, 'Query returned no rows');
         });
 
         await t.step("POST rewind with RPC error (simulating deactivation failure) returns 500", async () => {
