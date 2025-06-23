@@ -389,7 +389,7 @@ Deno.test("generateContributions - Final session status update fails (critical l
         assertEquals(contributionResponse.storage_path, mockStoragePath);
         assertEquals(contributionResponse.raw_response_storage_path, mockRawResponsePath);
         assertEquals(contributionResponse.size_bytes, mockFileSize);
-        assertEquals(contributionResponse.stage, mockStage.slug);
+        assertEquals(contributionResponse.stage.id, mockStage.id);
 
         assertEquals(result.data?.status, `${mockStage.slug}_generation_complete`); 
 

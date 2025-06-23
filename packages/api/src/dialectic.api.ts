@@ -23,6 +23,7 @@ import type {
     DialecticProcessTemplate,
     UpdateSessionModelsPayload,
     GetContributionContentDataResponse,
+    GetSessionDetailsResponse,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -666,19 +667,19 @@ export class DialecticApiClient {
     async fetchProcessTemplate(payload: { templateId: string }): Promise<ApiResponse<DialecticProcessTemplate>> {
         logger.info('Fetching process template', { templateId: payload.templateId });
         try {
-            const response = await this.apiClient.post<DialecticProcessTemplate, { action: string; payload: { templateId: string } }>(
+            const response = await this.apiClient.post<DialecticProcessTemplate, DialecticServiceActionPayload>(
                 'dialectic-service',
                 { action: 'fetchProcessTemplate', payload }
             );
             if (response.error) {
                 logger.error('Error fetching process template:', { error: response.error, templateId: payload.templateId });
             } else {
-                logger.info('Successfully fetched process template', { templateId: payload.templateId });
+                logger.info('Successfully fetched process template', { templateId: response.data?.id });
             }
             return response;
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'A network error occurred';
-            logger.error('Network error in fetchProcessTemplate:', { errorMessage: message, errorObject: error, templateId: payload.templateId });
+            logger.error('Network error in fetchProcessTemplate:', { errorMessage: message, errorObject: error });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },
@@ -688,14 +689,14 @@ export class DialecticApiClient {
     }
 
     /**
-     * Fetches the details of a specific dialectic session.
+     * Fetches the details of a specific dialectic session, including its current stage details.
      * Requires authentication.
      */
-    async getSessionDetails(sessionId: string): Promise<ApiResponse<DialecticSession>> {
+    async getSessionDetails(sessionId: string): Promise<ApiResponse<GetSessionDetailsResponse>> {
         logger.info('Fetching details for dialectic session', { sessionId });
 
         try {
-            const response = await this.apiClient.post<DialecticSession, { action: string; payload: { sessionId: string } }>(
+            const response = await this.apiClient.post<GetSessionDetailsResponse, { action: string; payload: { sessionId: string } }>(
                 'dialectic-service',
                 { action: 'getSessionDetails', payload: { sessionId } }
             );
@@ -703,12 +704,12 @@ export class DialecticApiClient {
             if (response.error) {
                 logger.error('Error fetching dialectic session details:', { error: response.error, sessionId });
             } else {
-                logger.info('Successfully fetched dialectic session details', { sessionId: response.data?.id });
+                logger.info('Successfully fetched dialectic session details', { sessionId: response.data?.session.id });
             }
             return response;
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'A network error occurred';
-            logger.error('Network error in getSessionDetails:', { errorMessage: message, errorObject: error, sessionId });
+            logger.error('Network error in getSessionDetails:', { errorMessage: message, errorObject: error });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },

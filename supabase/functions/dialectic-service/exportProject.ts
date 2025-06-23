@@ -145,22 +145,70 @@ export async function exportProject(
 
         if (sessionsData) {
             for (const session of sessionsData) {
-                const { data: contributions, error: contributionsError } = await supabaseClient
+                const { data: contributionsSql, error: contributionsError } = await supabaseClient
                     .from('dialectic_contributions')
-                    .select('*, parent_contribution_id:target_contribution_id') // For compatibility with manifest if needed
+                    .select('*, dialectic_stages(*), parent_contribution_id:target_contribution_id')
                     .eq('session_id', session.id);
 
                 if (contributionsError) {
                     logger.error('Error fetching contributions for session.', { details: contributionsError, sessionId: session.id });
                 }
+
+                const validContributions: DialecticContribution[] = [];
+                if (contributionsSql) {
+                    for (const c of contributionsSql) {
+                        // Check if dialectic_stages is a valid stage object and not an error or null
+                        // Supabase might return an error object if the relation isn't found, or null.
+                        // We need to ensure it's a plain object with an 'id' property.
+                        const stageObject = (c.dialectic_stages && typeof c.dialectic_stages === 'object' && 'id' in c.dialectic_stages)
+                            ? c.dialectic_stages as Database['public']['Tables']['dialectic_stages']['Row']
+                            : null;
+
+                        if (!stageObject) {
+                            logger.warn('Contribution found without a valid related stage object during export. Skipping contribution from manifest.', { contributionId: c.id, sessionId: session.id, stageData: c.dialectic_stages });
+                            continue; // Skip this contribution
+                        }
+
+                        const mappedContribution: DialecticContribution = {
+                            id: c.id,
+                            session_id: c.session_id,
+                            user_id: c.user_id,
+                            stage: stageObject, // Now validated
+                            iteration_number: c.iteration_number,
+                            model_id: c.model_id,
+                            model_name: c.model_name,
+                            prompt_template_id_used: c.prompt_template_id_used,
+                            seed_prompt_url: c.seed_prompt_url, // Corrected mapping
+                            content_storage_bucket: c.storage_bucket,
+                            content_storage_path: c.storage_path,
+                            content_mime_type: c.mime_type,
+                            content_size_bytes: c.size_bytes,
+                            edit_version: c.edit_version,
+                            is_latest_edit: c.is_latest_edit,
+                            original_model_contribution_id: c.original_model_contribution_id,
+                            raw_response_storage_path: c.raw_response_storage_path,
+                            target_contribution_id: c.target_contribution_id,
+                            tokens_used_input: c.tokens_used_input,
+                            tokens_used_output: c.tokens_used_output,
+                            processing_time_ms: c.processing_time_ms,
+                            error: c.error, // Corrected mapping
+                            citations: c.citations as { text: string; url?: string }[] | null,
+                            created_at: c.created_at,
+                            updated_at: c.updated_at,
+                            contribution_type: c.contribution_type,
+                            file_name: c.file_name,
+                            storage_bucket: c.storage_bucket,
+                            storage_path: c.storage_path,
+                            mime_type: c.mime_type,
+                            size_bytes: c.size_bytes,
+                        };
+                        validContributions.push(mappedContribution);
+                    }
+                }
                 
                 manifest.sessions.push({
                     ...session,
-                    contributions: contributions?.map(c => ({ 
-                        ...c, 
-                        actual_prompt_sent: null, // As per original, not exporting this
-                        citations: c.citations as { text: string; url?: string }[] | null 
-                    })) || [],
+                    contributions: validContributions,
                 });
             }
         }

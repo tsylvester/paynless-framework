@@ -52,6 +52,7 @@ describe("exportProject", () => {
     let contribution1ContentBuffer: ArrayBuffer;
     let contribution1RawJsonContentBuffer: ArrayBuffer;
     let mockFileRecordForZip: FileRecord;
+    let mockStage1Data: Tables<'dialectic_stages'>;
 
     beforeEach(async () => {
         projectData = {
@@ -127,6 +128,18 @@ describe("exportProject", () => {
         };
         contribution1ContentBuffer = await new Blob(["Contribution 1 main content"]).arrayBuffer();
         contribution1RawJsonContentBuffer = await new Blob([JSON.stringify({ raw: "response" })]).arrayBuffer();
+        
+        mockStage1Data = {
+            id: "stage-1-export-test",
+            slug: "hypothesis-export",
+            display_name: "Hypothesis (Export Test)",
+            description: "Mock stage for export testing",
+            default_system_prompt_id: "dsp-1",
+            expected_output_artifacts: { artifacts: [] },
+            input_artifact_rules: { rules: [] },
+            created_at: new Date().toISOString(),
+        };
+
         mockFileRecordForZip = { 
             id: "zip-export-file-id-123",
             project_id: mockProjectId,
@@ -170,8 +183,7 @@ describe("exportProject", () => {
                 'dialectic_contributions': {
                     select: (state: MockQueryBuilderState) => {
                         if (state.filters.some(f => f.column === 'session_id' && f.value === session1Data.id)) {
-                            const testContribData = { ...contribution1Data, parent_contribution_id: contribution1Data.target_contribution_id };
-                            return Promise.resolve({ data: [testContribData], error: null, count: 1, status: 200, statusText: "OK" });
+                            return Promise.resolve({ data: [{ ...contribution1Data, parent_contribution_id: contribution1Data.target_contribution_id, dialectic_stages: mockStage1Data }], error: null, count: 1, status: 200, statusText: "OK" });
                         }
                         return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
                     }
@@ -407,7 +419,7 @@ describe("exportProject", () => {
                 'dialectic_contributions': {
                     select: (state: MockQueryBuilderState) => {
                         if (state.filters.some(f => f.column === 'session_id' && f.value === session1Data.id)) {
-                            return Promise.resolve({ data: [{ ...contribution1Data, parent_contribution_id: contribution1Data.target_contribution_id }], error: null, count: 1, status: 200, statusText: "OK" });
+                            return Promise.resolve({ data: [{ ...contribution1Data, parent_contribution_id: contribution1Data.target_contribution_id, dialectic_stages: mockStage1Data }], error: null, count: 1, status: 200, statusText: "OK" });
                         }
                         return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
                     }
@@ -485,7 +497,7 @@ describe("exportProject", () => {
                 'dialectic_projects': { select: () => Promise.resolve({ data: [projectData], error: null }) },
                 'dialectic_project_resources': { select: () => Promise.resolve({ data: [resource1Data, resource2Data], error: null }) },
                 'dialectic_sessions': { select: () => Promise.resolve({ data: [session1Data], error: null }) },
-                'dialectic_contributions': { select: () => Promise.resolve({ data: [{ ...contribution1Data, parent_contribution_id: contribution1Data.target_contribution_id }], error: null }) },
+                'dialectic_contributions': { select: () => Promise.resolve({ data: [{ ...contribution1Data, parent_contribution_id: contribution1Data.target_contribution_id, dialectic_stages: mockStage1Data }], error: null }) },
             }
         });
 

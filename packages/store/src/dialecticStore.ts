@@ -994,10 +994,12 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
   },
 
   fetchAndSetCurrentSessionDetails: async (sessionId: string) => {
+    logger.info(`[DialecticStore] Fetching and setting current session details for session ID: ${sessionId}`);
     set({ isLoadingActiveSessionDetail: true, activeSessionDetailError: null });
-    logger.info(`[DialecticStore] Fetching current session details for sessionId: ${sessionId}`);
+
     try {
-      const response = await api.dialectic().getSessionDetails(sessionId);
+      const response = await api.dialectic().getSessionDetails(sessionId); // Expects ApiResponse<GetSessionDetailsResponse>
+
       if (response.error || !response.data) {
         logger.error('[DialecticStore] Error fetching session details:', { sessionId, errorDetails: response.error });
         set({ 
@@ -1008,38 +1010,52 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
         return;
       }
 
-      const freshSessionData = response.data;
-      logger.info('[DialecticStore] Successfully fetched session details:', { sessionId, sessionData: freshSessionData });
+      const { session: fetchedSession, currentStageDetails: fetchedStageDetails } = response.data;
+      
+      logger.info('[DialecticStore] Successfully fetched session details and stage:', { sessionId: fetchedSession.id, stage: fetchedStageDetails?.slug });
 
-      set(state => {
-        const newProjectDetail = state.currentProjectDetail ? { ...state.currentProjectDetail } : null;
-        if (newProjectDetail && newProjectDetail.dialectic_sessions) {
-          const sessionIndex = newProjectDetail.dialectic_sessions.findIndex(s => s.id === freshSessionData.id);
-          if (sessionIndex > -1) {
-            newProjectDetail.dialectic_sessions[sessionIndex] = freshSessionData;
+      set((state) => {
+        const updatedProjectDetail = state.currentProjectDetail;
+        if (updatedProjectDetail && updatedProjectDetail.dialectic_sessions) {
+          const sessionIndex = updatedProjectDetail.dialectic_sessions.findIndex(s => s.id === fetchedSession.id);
+          if (sessionIndex !== -1) {
+            // Preserve existing contributions and feedback if not included in fetchedSession, or merge if they are.
+            // Assuming fetchedSession is the most up-to-date representation of the session itself.
+            const existingSessionData = updatedProjectDetail.dialectic_sessions[sessionIndex];
+            updatedProjectDetail.dialectic_sessions[sessionIndex] = {
+              ...fetchedSession,
+              dialectic_contributions: fetchedSession.dialectic_contributions || existingSessionData.dialectic_contributions || [],
+              feedback: fetchedSession.feedback || existingSessionData.feedback || [],
+              dialectic_session_models: fetchedSession.dialectic_session_models || existingSessionData.dialectic_session_models || [],
+            };
           } else {
-            newProjectDetail.dialectic_sessions.push(freshSessionData);
+            // Session not found in current project, add it (this might indicate a need to also fetch project if context is misaligned)
+            updatedProjectDetail.dialectic_sessions.push(fetchedSession);
           }
-        } else if (newProjectDetail) {
-          newProjectDetail.dialectic_sessions = [freshSessionData];
-        }
-
-        let activeStage: DialecticStage | null = null;
-        if (freshSessionData.current_stage_id && newProjectDetail?.dialectic_process_templates?.stages) {
-            activeStage = newProjectDetail.dialectic_process_templates.stages.find(s => s.slug === freshSessionData.current_stage_id) || null;
         }
 
         return {
-          activeSessionDetail: freshSessionData,
           isLoadingActiveSessionDetail: false,
           activeSessionDetailError: null,
-          currentProjectDetail: newProjectDetail,
-          activeContextProjectId: freshSessionData.project_id,
-          activeContextSessionId: freshSessionData.id,
-          activeContextStage: activeStage,
-          selectedModelIds: freshSessionData.selected_model_catalog_ids || [],
+          activeSessionDetail: fetchedSession,
+          currentProjectDetail: updatedProjectDetail ? { ...updatedProjectDetail } : null,
         };
       });
+      
+      // Set the active context including the stage
+      get().setActiveDialecticContext({
+        projectId: fetchedSession.project_id,
+        sessionId: fetchedSession.id,
+        stage: fetchedStageDetails, // This can be null, setActiveDialecticContext should handle it
+      });
+
+      // Set selected models based on the session
+      if (fetchedSession.selected_model_catalog_ids) {
+        get().setSelectedModelIds(fetchedSession.selected_model_catalog_ids);
+      } else {
+        get().setSelectedModelIds([]); // Clear if no models are selected for the session
+      }
+
     } catch (error: unknown) {
       const networkError: ApiError = {
         message: error instanceof Error ? error.message : 'An unknown network error occurred while fetching session details',

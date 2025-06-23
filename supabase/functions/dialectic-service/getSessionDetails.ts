@@ -1,178 +1,115 @@
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
+import type {
+  GetSessionDetailsPayload,
+  DialecticSession,
+  GetSessionDetailsResponse,
+  DialecticStage,
+} from './dialectic.interface.ts';
 import type { ServiceError } from '../_shared/types.ts';
 import { logger } from '../_shared/logger.ts';
-import type { DialecticSession, DialecticContribution, DialecticSessionModel, AIModelCatalogEntry } from './dialectic.interface.ts';
-import type { Database, Json } from '../types_db.ts';
-
-interface GetSessionDetailsPayload {
-  sessionId: string;
-}
-
-// Define the expected raw row types from the database schema
-type SessionTableRow = Database['public']['Tables']['dialectic_sessions']['Row'];
-type ProjectAuthLink = { dialectic_projects: { user_id: string } }; // For the auth check from the inner join
-type AIProviderCatalogRow = Database['public']['Tables']['ai_providers']['Row'];
-type ContributionRow = Database['public']['Tables']['dialectic_contributions']['Row'];
-
-// Define the shape of the data returned by the Supabase query
-type RawSessionQueryResult = SessionTableRow & ProjectAuthLink & {
-  dialectic_session_models: (DialecticSessionModel & {
-    ai_provider: AIProviderCatalogRow | null; // From the aliased join: ai_provider_catalog:ai_provider(*)
-  })[] | null;
-  dialectic_contributions: ContributionRow[] | null;
-};
 
 export async function getSessionDetails(
   payload: GetSessionDetailsPayload,
   dbClient: SupabaseClient,
-  user: User
-): Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }> {
+  user: User,
+): Promise<{ data?: GetSessionDetailsResponse; error?: ServiceError; status?: number }> {
   const { sessionId } = payload;
 
   if (!sessionId) {
-    logger.warn("getSessionDetails: sessionId not provided in payload");
-    return {
-      error: {
-        message: "sessionId is required for getSessionDetails",
-        code: "VALIDATION_ERROR",
-      },
-      status: 400,
-    };
+    logger.warn('getSessionDetails: Missing sessionId in payload', { payload });
+    return { error: { message: 'Session ID is required.', code: 'VALIDATION_ERROR' }, status: 400 };
   }
 
-  logger.info(`getSessionDetails: Fetching session details for sessionId: ${sessionId}, userId: ${user.id}`);
+  logger.info('getSessionDetails: Fetching session details', { sessionId, userId: user.id });
 
   try {
-    const { data: sessionData, error: sessionError } = await dbClient
+    // Step 1: Fetch the session by ID and join with dialectic_stages
+    const { data: session, error: sessionError } = await dbClient
       .from('dialectic_sessions')
-      .select<string, RawSessionQueryResult>(`
+      .select(`
         *,
-        dialectic_projects!inner(user_id),
-        dialectic_session_models(*, ai_provider:ai_providers(*)), 
-        dialectic_contributions(*)
+        dialectic_stages (*)
       `)
       .eq('id', sessionId)
-      .eq('dialectic_projects.user_id', user.id)
-      .order('created_at', { foreignTable: 'dialectic_contributions', ascending: true })
-      .maybeSingle();
+      .single();
 
     if (sessionError) {
-      logger.error(`getSessionDetails: Database error fetching session ${sessionId}`, { error: sessionError });
-      return {
-        error: {
-          message: "Database error fetching session details.",
-          code: "DB_FETCH_ERROR",
-          details: sessionError.message,
-        },
-        status: 500,
-      };
-    }
-
-    if (!sessionData) {
-      logger.warn(`getSessionDetails: Session ${sessionId} not found or access denied for user ${user.id}`);
-      return {
-        error: {
-          message: "Session not found or access denied.",
-          code: "NOT_FOUND",
-        },
-        status: 404,
-      };
-    }
-
-    const { dialectic_projects, ...sessionFieldsFromQuery } = sessionData;
-
-    const mappedSessionModels: DialecticSessionModel[] = (sessionFieldsFromQuery.dialectic_session_models || []).map(sm => {
-      // Explicit mapping from AIProviderRow to AIModelCatalogEntry
-      let mappedAiProvider: AIModelCatalogEntry | undefined = undefined;
-      if (sm.ai_provider) {
-        const providerData = sm.ai_provider; // This is AIProviderRow
-        mappedAiProvider = {
-          id: providerData.id,
-          provider_name: providerData.provider || 'UnknownProvider', // Map from providerData.provider
-          model_name: providerData.name,         // Map from providerData.name
-          api_identifier: providerData.api_identifier,
-          description: providerData.description,
-          // Fields like strengths, weaknesses, context_window_tokens etc. are not direct columns in ai_providers
-          // They might be in providerData.config (Json) or might not be available at this level.
-          // For now, setting to null or default. A more robust solution might parse providerData.config.
-          strengths: null, 
-          weaknesses: null,
-          context_window_tokens: null, // Example: providerData.config?.context_window or similar
-          input_token_cost_usd_millionths: null,
-          output_token_cost_usd_millionths: null,
-          max_output_tokens: null,
-          is_active: providerData.is_active,
-          created_at: providerData.created_at,
-          updated_at: providerData.updated_at,
-          // supports_image_input, etc., would also likely come from config
-        };
+      logger.error('getSessionDetails: Error fetching session from database', { sessionId, error: sessionError });
+      if (sessionError.code === 'PGRST116') { // PostgREST error code for "Not found"
+        return { error: { message: 'Session not found.', code: 'NOT_FOUND' }, status: 404 };
       }
-      return {
-        id: sm.id,
-        session_id: sm.session_id,
-        model_id: sm.model_id,
-        model_role: sm.model_role,
-        created_at: sm.created_at,
-        ai_provider: mappedAiProvider,
+      return { error: { message: 'Failed to fetch session.', code: 'DB_ERROR', details: sessionError.message }, status: 500 };
+    }
+
+    if (!session) {
+      // This case should ideally be covered by PGRST116, but as a fallback
+      logger.warn('getSessionDetails: Session not found after query (no error)', { sessionId });
+      return { error: { message: 'Session not found.', code: 'NOT_FOUND' }, status: 404 };
+    }
+
+    // Step 2: Fetch the associated project to verify ownership
+    const { data: project, error: projectError } = await dbClient
+      .from('dialectic_projects')
+      .select('user_id')
+      .eq('id', session.project_id)
+      .single();
+
+    if (projectError) {
+      logger.error('getSessionDetails: Error fetching associated project', { projectId: session.project_id, sessionId, error: projectError });
+      return { error: { message: 'Failed to verify session ownership.', code: 'DB_ERROR', details: projectError.message }, status: 500 };
+    }
+
+    if (!project) {
+      logger.error('getSessionDetails: Associated project not found for session (data inconsistency likely)', { projectId: session.project_id, sessionId });
+      return { error: { message: 'Associated project not found for session.', code: 'INTERNAL_SERVER_ERROR' }, status: 500 };
+    }
+
+    // Step 3: Verify that the authenticated user owns the project
+    if (project.user_id !== user.id) {
+      logger.warn('getSessionDetails: User forbidden to access session (project ownership mismatch)', { sessionId, sessionProjectId: session.project_id, projectOwnerUserId: project.user_id, requestingUserId: user.id });
+      return { error: { message: 'You are not authorized to access this session.', code: 'FORBIDDEN' }, status: 403 };
+    }
+
+    logger.info('getSessionDetails: Successfully fetched and authorized session', { sessionId, userId: user.id, projectId: session.project_id });
+    
+    // Extract session and stage details
+    const { dialectic_stages, ...sessionFields } = session;
+    
+    const typedSession: DialecticSession = {
+        id: sessionFields.id,
+        project_id: sessionFields.project_id,
+        session_description: sessionFields.session_description,
+        user_input_reference_url: sessionFields.user_input_reference_url,
+        iteration_count: sessionFields.iteration_count,
+        selected_model_catalog_ids: sessionFields.selected_model_catalog_ids,
+        status: sessionFields.status,
+        associated_chat_id: sessionFields.associated_chat_id,
+        current_stage_id: sessionFields.current_stage_id,
+        created_at: sessionFields.created_at,
+        updated_at: sessionFields.updated_at,
       };
-    });
 
-    const mappedContributions: DialecticContribution[] = (sessionFieldsFromQuery.dialectic_contributions || []).map(c => ({
-      id: c.id,
-      session_id: c.session_id,
-      model_id: c.model_id,      
-      stage: c.stage,
-      iteration_number: c.iteration_number,
-      storage_bucket: c.storage_bucket,
-      storage_path: c.storage_path,
-      mime_type: c.mime_type,
-      size_bytes: c.size_bytes,
-      raw_response_storage_path: c.raw_response_storage_path,
-      tokens_used_input: c.tokens_used_input,
-      tokens_used_output: c.tokens_used_output,
-      processing_time_ms: c.processing_time_ms,
-      citations: c.citations as { text: string; url?: string }[] | null,
-      parent_contribution_id: c.target_contribution_id || null,
-      created_at: c.created_at,
-      updated_at: c.updated_at,
-      edit_version: c.edit_version,
-      is_latest_edit: c.is_latest_edit,
-      original_model_contribution_id: c.original_model_contribution_id,
-      error: c.error,
-      contribution_type: c.contribution_type,
-      model_name: c.model_name, // model_name is in dialectic_contributions table
-      user_id: null, // Not directly available from this query, set as null or decide if it should be added
-      actual_prompt_sent: null, // Often not a direct DB column here
-    }));
+    const currentStageDetails: DialecticStage | null = dialectic_stages 
+      ? {
+          id: dialectic_stages.id,
+          slug: dialectic_stages.slug, 
+          display_name: dialectic_stages.display_name,
+          description: dialectic_stages.description, 
+          default_system_prompt_id: dialectic_stages.default_system_prompt_id,
+          expected_output_artifacts: dialectic_stages.expected_output_artifacts,
+          input_artifact_rules: dialectic_stages.input_artifact_rules,
+          created_at: dialectic_stages.created_at,
+          // Ensure all properties from DialecticStage (Database['public']['Tables']['dialectic_stages']['Row']) are mapped here
+          // For example, if there are other non-nullable fields in the DB type not covered by the linter error message,
+          // they should be explicitly mapped from dialectic_stages.propertyName
+        }
+      : null;
 
-    const finalSession: DialecticSession = {
-      id: sessionFieldsFromQuery.id,
-      project_id: sessionFieldsFromQuery.project_id,
-      session_description: sessionFieldsFromQuery.session_description,
-      user_input_reference_url: sessionFieldsFromQuery.user_input_reference_url,
-      iteration_count: sessionFieldsFromQuery.iteration_count,
-      selected_model_catalog_ids: sessionFieldsFromQuery.selected_model_catalog_ids,
-      status: sessionFieldsFromQuery.status,
-      associated_chat_id: sessionFieldsFromQuery.associated_chat_id,
-      current_stage_id: sessionFieldsFromQuery.current_stage_id,
-      created_at: sessionFieldsFromQuery.created_at,
-      updated_at: sessionFieldsFromQuery.updated_at,
-      dialectic_session_models: mappedSessionModels,
-      dialectic_contributions: mappedContributions,
-    };
+    return { data: { session: typedSession, currentStageDetails }, status: 200 };
 
-    logger.info(`getSessionDetails: Successfully fetched session details for sessionId: ${sessionId}`);
-    return { data: finalSession, status: 200 };
-
-  } catch (err) {
-    logger.error(`getSessionDetails: Unexpected error for sessionId ${sessionId}`, { error: err });
-    return {
-      error: {
-        message: "An unexpected error occurred.",
-        code: "UNEXPECTED_ERROR",
-        details: err instanceof Error ? err.message : String(err),
-      },
-      status: 500,
-    };
+  } catch (e) {
+    const error = e as Error;
+    logger.error('getSessionDetails: An unexpected error occurred', { sessionId, errorMessage: error.message, stack: error.stack });
+    return { error: { message: 'An unexpected error occurred.', code: 'UNHANDLED_EXCEPTION', details: error.message }, status: 500 };
   }
 }

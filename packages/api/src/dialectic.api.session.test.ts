@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { DialecticApiClient } from './dialectic.api';
 import type { ApiClient } from './apiClient';
-import type { ApiResponse, DialecticSession, ApiError as ApiErrorType } from '@paynless/types';
+import type {
+  ApiResponse,
+  DialecticSession,
+  ApiError as ApiErrorType,
+  GetSessionDetailsResponse,
+  DialecticStage,
+} from '@paynless/types';
 
 // Mock the base ApiClient consistent with other API client tests
 const mockApiClientPost = vi.fn();
@@ -44,8 +50,34 @@ describe('DialecticApiClient - Session Methods', () => {
       feedback: [],
     };
 
+    // Added mockStageData
+    const mockStageData: DialecticStage = {
+      id: 'stage-1',
+      slug: 'hypothesis-generation',
+      display_name: 'Hypothesis Generation',
+      description: 'Generate initial hypotheses.',
+      default_system_prompt_id: 'default-system-prompt-hypothesis',
+      // expected_contribution_count: 3, // Removed
+      // display_order: 1, // Removed
+      created_at: new Date().toISOString(),
+      // updated_at: new Date().toISOString(), // This is not in the base type from the previous error
+      // project_process_template_id: 'template-123', // Removed
+      // user_id: null, // Removed
+      // permissions: 'edit', // Removed
+      // template_stage_id: 'original-template-stage-id' // Removed
+      // Add properties that ARE part of DialecticStage (Database['public']['Tables']['dialectic_stages']['Row'])
+      // For example, if 'expected_output_artifacts' and 'input_artifact_rules' are required and are of type Json:
+      expected_output_artifacts: {}, // or null if nullable, or valid Json
+      input_artifact_rules: {}, // or null if nullable, or valid Json
+    };
+
     it('should call apiClient.post with correct parameters for getSessionDetails', async () => {
-      mockApiClientPost.mockResolvedValueOnce({ data: mockSessionData, error: null, status: 200 });
+      // Mock with the new GetSessionDetailsResponse structure
+      mockApiClientPost.mockResolvedValueOnce({ 
+        data: { session: mockSessionData, currentStageDetails: mockStageData }, 
+        error: null, 
+        status: 200 
+      });
 
       await dialecticApiClient.getSessionDetails(sessionId);
 
@@ -59,7 +91,16 @@ describe('DialecticApiClient - Session Methods', () => {
     });
 
     it('should return session data on successful fetch', async () => {
-      const expectedResponse: ApiResponse<DialecticSession> = { data: mockSessionData, error: undefined, status: 200 };
+      // Updated expectedResponse to use GetSessionDetailsResponse
+      const mockApiResponseData: GetSessionDetailsResponse = { 
+        session: mockSessionData, 
+        currentStageDetails: mockStageData 
+      };
+      const expectedResponse: ApiResponse<GetSessionDetailsResponse> = { 
+        data: mockApiResponseData, 
+        error: undefined, 
+        status: 200 
+      };
       mockApiClientPost.mockResolvedValueOnce(expectedResponse);
 
       const result = await dialecticApiClient.getSessionDetails(sessionId);
@@ -69,7 +110,12 @@ describe('DialecticApiClient - Session Methods', () => {
 
     it('should return an error if apiClient.post returns an error', async () => {
       const apiError: ApiErrorType = { message: 'Failed to fetch session', code: 'API_ERROR' };
-      const expectedResponse: ApiResponse<DialecticSession> = { data: undefined, error: apiError, status: 500 };
+      // Return type for error remains ApiResponse<GetSessionDetailsResponse> but data is undefined
+      const expectedResponse: ApiResponse<GetSessionDetailsResponse> = { 
+        data: undefined, 
+        error: apiError, 
+        status: 500 
+      };
       mockApiClientPost.mockResolvedValueOnce(expectedResponse);
 
       const result = await dialecticApiClient.getSessionDetails(sessionId);

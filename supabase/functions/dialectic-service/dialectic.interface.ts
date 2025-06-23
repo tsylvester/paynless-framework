@@ -34,38 +34,39 @@ export type DialecticContributionSql = Database['public']['Tables']['dialectic_c
 // Defines the structured contribution object used within the service and for API responses,
 // aligning with packages/types/src/dialectic.types.ts
 export interface DialecticContribution {
-    id: string;
-    session_id: string;
-    model_id: string | null;
-    model_name: string | null;
-    user_id: string | null; // Note: Not directly in dialectic_contributions table; added from context.
-    stage: string;
-    iteration_number: number;
-    actual_prompt_sent: string | null;
-    
-    storage_bucket: string | null; // Aligns with packages/types nullability
-    storage_path: string | null;   // Aligns with packages/types nullability
-    mime_type: string | null;    // Aligns with packages/types nullability
-    size_bytes: number | null;
-
-    raw_response_storage_path: string | null;
-
-    tokens_used_input: number | null;
-    tokens_used_output: number | null;
-    processing_time_ms: number | null;
-
-    citations: { text: string; url?: string }[] | null; // Specific typing for citations
-
-    parent_contribution_id: string | null; // Renamed from DB's target_contribution_id for packages/types alignment
-    created_at: string;
-    updated_at: string;
-
-    edit_version: number;
-    is_latest_edit: boolean;
-    original_model_contribution_id: string | null;
-    error: string | null;
-    contribution_type: string | null;
+  id: string;
+  session_id: string;
+  user_id: string | null;
+  stage: DialecticStage;
+  iteration_number: number;
+  model_id: string | null;
+  model_name: string | null;
+  prompt_template_id_used: string | null;
+  seed_prompt_url: string | null;
+  content_storage_bucket: string | null;
+  content_storage_path: string | null;
+  content_mime_type: string | null;
+  content_size_bytes: number | null;
+  edit_version: number;
+  is_latest_edit: boolean;
+  original_model_contribution_id: string | null;
+  raw_response_storage_path: string | null;
+  target_contribution_id: string | null;
+  tokens_used_input: number | null;
+  tokens_used_output: number | null;
+  processing_time_ms: number | null;
+  error: string | null;
+  citations: { text: string; url?: string }[] | null;
+  created_at: string;
+  updated_at: string;
+  contribution_type: string | null;
+  file_name: string | null;
+  storage_bucket: string | null;
+  storage_path: string | null;
+  size_bytes: number | null;
+  mime_type: string | null;
 }
+
 
 export interface DialecticSessionModel {
     id: string;
@@ -88,9 +89,6 @@ export interface DialecticSession {
   current_stage_id: string | null;
   created_at: string;
   updated_at: string;
-
-  dialectic_session_models?: DialecticSessionModel[];
-  dialectic_contributions?: DialecticContribution[];
 }
 
 export type DialecticProcessTemplate = Database['public']['Tables']['dialectic_process_templates']['Row'];
@@ -468,4 +466,10 @@ export interface GetContributionContentDataResponse {
   mimeType: string;
   sizeBytes: number | null;
   fileName: string | null;
+}
+
+// Added GetSessionDetailsResponse interface
+export interface GetSessionDetailsResponse {
+  session: DialecticSession;
+  currentStageDetails: DialecticStage | null;
 }

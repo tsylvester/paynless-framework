@@ -6,6 +6,7 @@ import {
     UnifiedAIResponse,
     CallUnifiedAIModelOptions,
     FailedAttemptError,
+    DialecticContribution,
   } from "./dialectic.interface.ts";
   import { downloadFromStorage, deleteFromStorage } from "../_shared/supabase_storage_utils.ts";
   import { getExtensionFromMimeType } from "../_shared/path_utils.ts";
@@ -384,33 +385,36 @@ export async function generateContributions(
         message: responseMessage,
         sessionId: sessionId,
         status: finalStatus, 
-        contributions: successfulContributions.map(c => ({
-          id: c.id,
-          session_id: c.session_id,
-          model_id: c.model_id,
-          model_name: c.model_name,
-          user_id: c.user_id, 
-          stage: c.stage,
-          iteration_number: c.iteration_number,
-          actual_prompt_sent: c.seed_prompt_url || null,
-          storage_bucket: c.storage_bucket,
-          storage_path: c.storage_path,
-          mime_type: c.mime_type,
-          size_bytes: c.size_bytes,
-          raw_response_storage_path: c.raw_response_storage_path,
-          tokens_used_input: c.tokens_used_input,
-          tokens_used_output: c.tokens_used_output,
-          processing_time_ms: c.processing_time_ms,
-          citations: c.citations ? (typeof c.citations === 'string' ? JSON.parse(c.citations) : c.citations as { text: string; url?: string }[]) : null,
-          parent_contribution_id: c.target_contribution_id || null,
-          created_at: c.created_at,
-          updated_at: c.updated_at,
-          edit_version: c.edit_version,
-          is_latest_edit: c.is_latest_edit,
-          original_model_contribution_id: c.original_model_contribution_id,
-          error: c.error,
-          contribution_type: c.contribution_type,
-        })),
+        contributions: successfulContributions.map(c => {
+          let parsedCitations: { text: string; url?: string }[] | null = null;
+          if (c.citations) {
+            if (typeof c.citations === 'string') {
+              try {
+                parsedCitations = JSON.parse(c.citations);
+              } catch (jsonError) {
+                deps.logger.error('[generateContributions] Failed to parse citations JSON string for contribution.', { contributionId: c.id, citationsString: c.citations, error: jsonError });
+                parsedCitations = null; // Default to null on parsing error
+              }
+            } else {
+              // If it's not a string, assume it's already in the correct format or null
+              parsedCitations = c.citations as { text: string; url?: string }[] | null;
+            }
+          }
+
+          const mapped: DialecticContribution = {
+            ...c, 
+            stage: stage, 
+            content_storage_bucket: c.storage_bucket,
+            content_storage_path: c.storage_path,
+            content_mime_type: c.mime_type,
+            content_size_bytes: c.size_bytes,
+            citations: parsedCitations, // Use the parsed and typed citations
+            // Ensure file_name is present; it should be from ...c if c.file_name exists
+            // If c.file_name can be null and DialecticContribution.file_name cannot, adjust as needed.
+            // Assuming c.file_name aligns with DialecticContribution.file_name: string | null
+          };
+          return mapped;
+        }),
         errors: failedContributionAttempts.length > 0 ? failedContributionAttempts.map(f => ({
           modelId: f.modelId, 
           modelName: f.modelName,

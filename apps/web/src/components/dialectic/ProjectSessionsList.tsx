@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+// import { Link } from 'react-router-dom';
 import { useDialecticStore } from '@paynless/store';
 import { 
     selectCurrentProjectSessions, 
@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { ListChecks, Edit3, PlayCircle } from 'lucide-react';
 import type { DialecticSession } from '@paynless/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ViewSessionButton } from './controls/ViewSessionButton';
 
 interface ProjectSessionsListProps {
   onStartNewSession: () => void;
@@ -22,10 +23,10 @@ export const ProjectSessionsList: React.FC<ProjectSessionsListProps> = ({ onStar
   const projectDetail = useDialecticStore(selectCurrentProjectDetail);
   const sessions = useDialecticStore(selectCurrentProjectSessions);
 
-  const projectIdForLinks = projectDetail?.id === projectIdFromStore ? projectIdFromStore : undefined;
+  const currentProjectId = projectDetail?.id === projectIdFromStore ? projectIdFromStore : undefined;
   const displayableSessions = projectDetail?.id === projectIdFromStore ? sessions : undefined;
 
-  if (!projectIdForLinks) {
+  if (!currentProjectId) {
     return (
       <div>
         <h2 className="text-2xl font-semibold mb-6 flex items-center">
@@ -58,18 +59,19 @@ export const ProjectSessionsList: React.FC<ProjectSessionsListProps> = ({ onStar
               <CardHeader className="pb-4">
                 <div className="flex justify-between items-start">
                   <div>
-                    <CardTitle className="text-lg hover:text-primary transition-colors">
-                      <Link to={`/dialectic/${projectIdForLinks}/session/${session.id}`}>
-                        {session.session_description || `Session ${session.id.substring(0, 8)}`}
-                      </Link>
+                    <CardTitle className="text-lg">
+                      {session.session_description || `Session ${session.id.substring(0, 8)}`}
                     </CardTitle>
                     <CardDescription>
                       Created: {new Date(session.created_at).toLocaleString()} | Status: <Badge variant={session.status?.startsWith('pending') || session.status?.startsWith('generating') ? 'outline' : 'default'}>{session.status}</Badge>
                     </CardDescription>
                   </div>
-                  <Button asChild variant="ghost" size="sm">
-                    <Link to={`/dialectic/${projectIdForLinks}/session/${session.id}`}>View Session</Link>
-                  </Button>
+                  <ViewSessionButton 
+                    projectId={currentProjectId} 
+                    sessionId={session.id}
+                  >
+                    View Session
+                  </ViewSessionButton>
                 </div>
               </CardHeader>
             </Card>

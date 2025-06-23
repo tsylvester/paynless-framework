@@ -186,34 +186,76 @@ export async function saveContributionEdit(
         return { error: { message: 'Failed to retrieve new contribution record after creation.', status: 500, code: 'DB_FETCH_ERROR' }, status: 500 };
     }
     
-    const tempNewContributionDbRow = newContributionDbRow; 
+    const dbContributionRow = newContributionDbRow; // Alias for clarity
+
+    // Fetch the full stage object based on stage (which is stage_id) from the new contribution
+    if (!dbContributionRow.stage) {
+        logger.error('[saveContributionEdit] Newly created contribution is missing stage_id (dbContributionRow.stage is null)', { contributionId: dbContributionRow.id });
+        return { error: { message: 'Data integrity error: new contribution is missing stage_id.', status: 500, code: 'INTERNAL_SERVER_ERROR' }, status: 500 };
+    }
+
+    const { data: stageObject, error: stageFetchError } = await dbClient
+        .from('dialectic_stages')
+        .select('*')
+        .eq('id', dbContributionRow.stage)
+        .single();
+
+    if (stageFetchError || !stageObject) {
+        logger.error('[saveContributionEdit] Failed to fetch stage details for new contribution', { stageIdProvided: dbContributionRow.stage, stageFetchError });
+        return { error: { message: 'Data integrity error: Could not fetch stage details for the new contribution.', status: 500, code: 'INTERNAL_SERVER_ERROR' }, status: 500 };
+    }
+
+    let parsedCitations: { text: string; url?: string }[] | null = null;
+    if (dbContributionRow.citations) {
+        if (typeof dbContributionRow.citations === 'string') {
+            try {
+                parsedCitations = JSON.parse(dbContributionRow.citations);
+            } catch (jsonError) {
+                logger.error('[saveContributionEdit] Failed to parse citations JSON string for contribution.', { contributionId: dbContributionRow.id, citationsString: dbContributionRow.citations, error: jsonError });
+                // parsedCitations remains null
+            }
+        } else {
+            parsedCitations = dbContributionRow.citations as { text: string; url?: string }[] | null;
+        }
+    }
 
     const resultContribution: DialecticContribution = {
-        id: tempNewContributionDbRow.id,
-        session_id: tempNewContributionDbRow.session_id,
-        model_id: tempNewContributionDbRow.model_id, 
-        model_name: tempNewContributionDbRow.model_name, 
-        user_id: tempNewContributionDbRow.user_id, 
-        stage: tempNewContributionDbRow.stage,
-        iteration_number: tempNewContributionDbRow.iteration_number,
-        actual_prompt_sent: tempNewContributionDbRow.seed_prompt_url, 
-        storage_bucket: tempNewContributionDbRow.storage_bucket,
-        storage_path: tempNewContributionDbRow.storage_path,
-        mime_type: tempNewContributionDbRow.mime_type,
-        size_bytes: tempNewContributionDbRow.size_bytes,
-        raw_response_storage_path: tempNewContributionDbRow.raw_response_storage_path,
-        tokens_used_input: tempNewContributionDbRow.tokens_used_input,
-        tokens_used_output: tempNewContributionDbRow.tokens_used_output,
-        processing_time_ms: tempNewContributionDbRow.processing_time_ms,
-        citations: tempNewContributionDbRow.citations ? JSON.parse(JSON.stringify(tempNewContributionDbRow.citations)) : null,
-        parent_contribution_id: tempNewContributionDbRow.target_contribution_id, 
-        created_at: tempNewContributionDbRow.created_at,
-        updated_at: tempNewContributionDbRow.updated_at,
-        edit_version: tempNewContributionDbRow.edit_version,
-        is_latest_edit: tempNewContributionDbRow.is_latest_edit,
-        original_model_contribution_id: tempNewContributionDbRow.original_model_contribution_id,
-        error: tempNewContributionDbRow.error,
-        contribution_type: tempNewContributionDbRow.contribution_type
+        id: dbContributionRow.id,
+        session_id: dbContributionRow.session_id,
+        user_id: dbContributionRow.user_id,
+        stage: stageObject, // Use the fetched stage object
+        iteration_number: dbContributionRow.iteration_number,
+        model_id: dbContributionRow.model_id,
+        model_name: dbContributionRow.model_name,
+        prompt_template_id_used: dbContributionRow.prompt_template_id_used,
+        seed_prompt_url: dbContributionRow.seed_prompt_url,
+        
+        // Map content storage fields from db row's storage fields
+        content_storage_bucket: dbContributionRow.storage_bucket,
+        content_storage_path: dbContributionRow.storage_path,
+        content_mime_type: dbContributionRow.mime_type,
+        content_size_bytes: dbContributionRow.size_bytes,
+        
+        edit_version: dbContributionRow.edit_version,
+        is_latest_edit: dbContributionRow.is_latest_edit,
+        original_model_contribution_id: dbContributionRow.original_model_contribution_id,
+        raw_response_storage_path: dbContributionRow.raw_response_storage_path,
+        target_contribution_id: dbContributionRow.target_contribution_id,
+        tokens_used_input: dbContributionRow.tokens_used_input,
+        tokens_used_output: dbContributionRow.tokens_used_output,
+        processing_time_ms: dbContributionRow.processing_time_ms,
+        error: dbContributionRow.error,
+        citations: parsedCitations, // Use parsed citations
+        created_at: dbContributionRow.created_at,
+        updated_at: dbContributionRow.updated_at,
+        contribution_type: dbContributionRow.contribution_type,
+        file_name: dbContributionRow.file_name,
+
+        // Also map the direct storage fields as per DialecticContribution interface
+        storage_bucket: dbContributionRow.storage_bucket,
+        storage_path: dbContributionRow.storage_path,
+        mime_type: dbContributionRow.mime_type,
+        size_bytes: dbContributionRow.size_bytes,
     };
 
     logger.info('[saveContributionEdit] action completed successfully', { newContributionId: resultContribution.id });

@@ -114,6 +114,12 @@ export interface DialecticSession {
   feedback?: DialecticFeedback[];
 }
 
+// Added GetSessionDetailsResponse interface
+export interface GetSessionDetailsResponse {
+  session: DialecticSession;
+  currentStageDetails: DialecticStage | null;
+}
+
 export interface DialecticSessionModel {
     id: string;
     session_id: string;
@@ -352,31 +358,37 @@ export interface DialecticActions {
 export type DialecticStore = DialecticStateValues & DialecticActions;
 
 export interface DialecticContribution {
-    id: string;
-    session_id: string;
-    user_id: string | null;
-    stage: DialecticStage;
-    iteration_number: number;
-    model_id: string | null;
-    model_name: string | null;
-    prompt_template_id_used: string | null;
-    seed_prompt_url: string | null;
-    content_storage_bucket: string | null;
-    content_storage_path: string | null;
-    content_mime_type: string | null;
-    content_size_bytes: number | null;
-    edit_version: number;
-    is_latest_edit: boolean;
-    original_model_contribution_id: string | null;
-    raw_response_storage_path: string | null;
-    target_contribution_id: string | null;
-    tokens_used_input: number | null;
-    tokens_used_output: number | null;
-    processing_time_ms: number | null;
-    error: string | null;
-    citations: { text: string; url?: string }[] | null;
-    created_at: string;
-    updated_at: string;
+  id: string;
+  session_id: string;
+  user_id: string | null;
+  stage: DialecticStage;
+  iteration_number: number;
+  model_id: string | null;
+  model_name: string | null;
+  prompt_template_id_used: string | null;
+  seed_prompt_url: string | null;
+  content_storage_bucket: string | null;
+  content_storage_path: string | null;
+  content_mime_type: string | null;
+  content_size_bytes: number | null;
+  edit_version: number;
+  is_latest_edit: boolean;
+  original_model_contribution_id: string | null;
+  raw_response_storage_path: string | null;
+  target_contribution_id: string | null;
+  tokens_used_input: number | null;
+  tokens_used_output: number | null;
+  processing_time_ms: number | null;
+  error: string | null;
+  citations: { text: string; url?: string }[] | null;
+  created_at: string;
+  updated_at: string;
+  contribution_type: string | null;
+  file_name: string | null;
+  storage_bucket: string | null;
+  storage_path: string | null;
+  size_bytes: number | null;
+  mime_type: string | null;
 }
 
 export interface DialecticFeedback {

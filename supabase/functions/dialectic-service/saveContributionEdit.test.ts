@@ -152,7 +152,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
     // 6. Create an initial AI contribution in that session
     const initialContributionData: DialecticContributionInsert = {
       session_id: session.id,
-      stage: stage.slug, // Use the actual slug of the created stage
+      stage: stage.id, // Corrected: Use the stage ID (UUID)
       storage_path: `projects/${project.id}/sessions/${session.id}/it1/thesis/ai_initial.md`,
       user_id: null, // AI contribution has no user
       model_id: null,
@@ -225,7 +225,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
 
     // 1. Verify new contribution record
     expect(responseBody.id).not.toBe(originalAIContributionId);
-    expect(responseBody.stage).toBe(testData.initialAiContribution.stage);
+    expect(responseBody.stage.id).toBe(testData.initialAiContribution.stage);
     expect(responseBody.edit_version).toBe(testData.initialAiContribution.edit_version + 1);
     expect(responseBody.is_latest_edit).toBe(true);
     // original_model_contribution_id for an edit of a direct AI contribution should be the AI contribution's ID
@@ -418,7 +418,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
     expect(version2Contribution.edit_version).toBe(testData.initialAiContribution.edit_version + 1);
     expect(version2Contribution.is_latest_edit).toBe(true);
     expect(version2Contribution.original_model_contribution_id).toBe(originalAIContributionId);
-    expect(version2Contribution.parent_contribution_id).toBe(originalAIContributionId); // Target of edit was original AI
+    expect(version2Contribution.target_contribution_id).toBe(originalAIContributionId); // Target of edit was original AI
 
     // 2. Second User Edit (creates Version 3, editing Version 2)
     const secondEditContent = "This is the second user edit (Version 3), editing Version 2.";
@@ -444,13 +444,13 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
 
     // 3. Verify Version 3 properties
     expect(version3Contribution.id).not.toBe(version2Contribution.id);
-    expect(version3Contribution.stage).toBe(testData.initialAiContribution.stage);
+    expect(version3Contribution.stage.id).toBe(testData.initialAiContribution.stage);
     expect(version3Contribution.edit_version).toBe(version2Contribution.edit_version + 1); // Which is initial.edit_version + 2
     expect(version3Contribution.is_latest_edit).toBe(true);
     // Crucially, original_model_contribution_id should still point to the very first AI contribution
     expect(version3Contribution.original_model_contribution_id).toBe(originalAIContributionId);
     expect(version3Contribution.user_id).toBe(primaryUserId);
-    expect(version3Contribution.parent_contribution_id).toBe(version2Contribution.id); // Target of edit was Version 2
+    expect(version3Contribution.target_contribution_id).toBe(version2Contribution.id); // Target of edit was Version 2
 
     // 4. Verify Version 2 (first user edit) is_latest_edit is now false
     const { data: version2AfterEditData, error: fetchV2Error } = await adminClient

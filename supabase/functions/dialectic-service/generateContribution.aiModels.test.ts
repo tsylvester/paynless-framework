@@ -592,7 +592,7 @@ Deno.test("generateContributions - Successfully generates one contribution", asy
         assertEquals(firstContribution.id, mockContributionId);
         assertEquals(firstContribution.model_id, mockModelCatalogId);
         assertEquals(firstContribution.user_id, mockOwnerUserId);
-        assertEquals(firstContribution.stage, mockStageSlug);
+        assertEquals(firstContribution.stage.slug, mockStageSlug);
         assertEquals(result.data?.status, `${mockStageSlug}_generation_complete`);
         
         const fmSpy = mockFileManager.uploadAndRegisterFile as Spy;

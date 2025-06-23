@@ -869,7 +869,7 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
     *   `[✅] X.2.2.8 [COMMIT]` `feat(store,types): add state and thunks for fetching and activating single session context`
 
 *   **Task X.2.3: `ViewSessionButton` Component**
-    *   `[ ] X.2.3.1 [TEST-UNIT]` **Write Tests for `ViewSessionButton`** (RED)
+    *   `[✅] X.2.3.1 [TEST-UNIT]` **Write Tests for `ViewSessionButton`** (RED)
         *   **File:** `apps/web/src/components/dialectic/controls/ViewSessionButton.test.tsx` (Create if not exists)
         *   **Assertions:**
             *   Use existing mock for `useDialecticStore` to provide `fetchDialecticProjectDetails`, `fetchAndSetCurrentSessionDetails`, and `activeContextProjectId`.
@@ -877,18 +877,18 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
             *   Scenario 1 (Project context matches): Assert `fetchAndSetCurrentSessionDetails` is called.
             *   Scenario 2 (Project context differs): Assert `fetchDialecticProjectDetails` is called, then `fetchAndSetCurrentSessionDetails`.
             *   Assert `navigate` is called with the correct session URL after actions resolve.
-    *   `[ ] X.2.3.2 [CMP] [NEW]` **Create `ViewSessionButton.tsx`** (GREEN)
+    *   `[✅] X.2.3.2 [CMP] [NEW]` **Create `ViewSessionButton.tsx`** (GREEN)
         *   **File:** `apps/web/src/components/dialectic/controls/ViewSessionButton.tsx`
         *   **Props:** `sessionId: string`, `projectId: string`.
-    *   `[ ] X.2.3.3 [REFACTOR]` Review `ViewSessionButton` component.
-    *   `[ ] X.2.3.4 [TEST-UNIT]` **Write/Update Tests for `ViewSessionButton` Integration in `ProjectSessionsList`** (RED)
+    *   `[✅] X.2.3.3 [REFACTOR]` Review `ViewSessionButton` component.
+    *   `[✅] X.2.3.4 [TEST-UNIT]` **Write/Update Tests for `ViewSessionButton` Integration in `ProjectSessionsList`** (RED)
         *   **File:** `apps/web/src/components/dialectic/ProjectSessionsList.test.tsx`
         *   **Assertions:** Assert `ViewSessionButton` is rendered for each session and that interaction triggers the expected behavior (relying on mocks for the button's internal logic).
-    *   `[ ] X.2.3.5 [CMP] [MOD]` **Integrate `ViewSessionButton` in `ProjectSessionsList.tsx`** (GREEN)
+    *   `[✅] X.2.3.5 [CMP] [MOD]` **Integrate `ViewSessionButton` in `ProjectSessionsList.tsx`** (GREEN)
         *   **File:** `apps/web/src/components/dialectic/ProjectSessionsList.tsx`
         *   **Action:** Replace direct `<Link>` navigation with `<ViewSessionButton />`.
-    *   `[ ] X.2.3.6 [REFACTOR]` Review integration of `ViewSessionButton`.
-    *   `[ ] X.2.3.7 [COMMIT]` `feat(web): implement ViewSessionButton and integrate into sessions list`
+    *   `[✅] X.2.3.6 [REFACTOR]` Review integration of `ViewSessionButton`.
+    *   `[✅] X.2.3.7 [COMMIT]` `feat(web): implement ViewSessionButton and integrate into sessions list`
 
 *   **Task X.2.4: Refactor `DialecticSessionDetailsPage.tsx` for Initial Deep-Link Load & Store Context**
     *   `[ ] X.2.4.1 [TEST-UNIT]` **Write/Update Tests for `DialecticSessionDetailsPage.tsx`** (RED)
