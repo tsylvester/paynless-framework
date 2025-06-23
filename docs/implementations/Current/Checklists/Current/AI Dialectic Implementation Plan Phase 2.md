@@ -890,6 +890,54 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
     *   `[✅] X.2.3.6 [REFACTOR]` Review integration of `ViewSessionButton`.
     *   `[✅] X.2.3.7 [COMMIT]` `feat(web): implement ViewSessionButton and integrate into sessions list`
 
+    *   `[✅] X.2.3.8 [ARCH/REFACTOR]` **Enhancements to Underlying Services for Correct Stage Context on ViewSessionButton Click**
+        *   **Objective:** To ensure that when `ViewSessionButton` initiates the loading of session details, the specific `DialecticStage` object corresponding to the session's `current_stage_id` is fetched and set as the active stage in the store. This involves modifying the `getSessionDetails` Edge Function, its API client interface, and the store's handling of this data.
+        *   `[✅] X.2.3.8.1 [EDGE]` **Modify `getSessionDetails` Edge Function (`supabase/functions/dialectic-service/getSessionDetails.ts`)**
+            *   `[✅] X.2.3.8.1.1` Update the Supabase database query within the function.
+                *   The query should `JOIN` the `dialectic_sessions` table with the `dialectic_stages` table.
+                *   The `JOIN` condition will be `dialectic_sessions.current_stage_id = dialectic_stages.id`.
+                *   The `SELECT` clause should retrieve all columns from `dialectic_sessions` (aliased if necessary to avoid name clashes) and all columns from `dialectic_stages` (these will form the `DialecticStage` object).
+            *   `[✅] X.2.3.8.1.2` Change the structure of the data returned by the function. Instead of just returning the `DialecticSession` object, it should return an object containing two properties:
+                *   `session`: The fetched `DialecticSession` object.
+                *   `currentStageDetails`: The full `DialecticStage` object derived from the `JOIN`, or `null` if `current_stage_id` was null or no matching stage was found.
+                *   Example return structure: `{ data: { session: DialecticSession, currentStageDetails: DialecticStage | null }, status: 200 }`.
+            *   `[✅] X.2.3.8.1.3` Ensure RLS or appropriate user authorization checks are still performed to confirm the user can access the session (as previously implemented by checking project ownership).
+        *   `[✅] X.2.3.8.2 [TYPES/API]` **Update API Client and Type Definitions**
+            *   `[✅] X.2.3.8.2.1` In `packages/types/src/dialectic.types.ts` (and potentially mirrored in `supabase/functions/dialectic-service/dialectic.interface.ts` if it defines distinct response types for actions):
+                *   Define a new interface for the response of the `getSessionDetails` action, e.g.:
+                    ```typescript
+                    export interface GetSessionDetailsResponse {
+                      session: DialecticSession;
+                      currentStageDetails: DialecticStage | null;
+                    }
+                    ```
+                *   The existing `DialecticSession` and `DialecticStage` types themselves should remain unchanged.
+            *   `[✅] X.2.3.8.2.2` In `packages/api/src/dialectic.api.ts`:
+                *   Update the `getSessionDetails(sessionId: string)` method in `DialecticApiClient`. Its expected return type from `this.apiClient.post<...>` should now be `ApiResponse<GetSessionDetailsResponse>`.
+            *   `[✅] X.2.3.8.2.3` In `supabase/functions/dialectic-service/index.ts`:
+                *   Update the return type signature for `getSessionDetails` within the `ActionHandlers` interface to reflect the new `GetSessionDetailsResponse` structure:
+                    ```typescript
+                    getSessionDetails: (payload: GetSessionDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetSessionDetailsResponse; error?: ServiceError; status?: number }>;
+                    ```
+        *   `[✅] X.2.3.8.3 [STORE]` **Update Store Logic (`packages/store/src/dialecticStore.ts`)**
+            *   `[✅] X.2.3.8.3.1` Modify the `fetchAndSetCurrentSessionDetails(sessionId: string)` thunk:
+                *   It should now expect the API call `api.dialectic().getSessionDetails(sessionId)` to return an `ApiResponse<GetSessionDetailsResponse>`.
+                *   Upon successful API response (`response.data` is not null):
+                    *   Destructure the response: `const { session: fetchedSession, currentStageDetails: fetchedStageDetails } = response.data;`.
+                    *   Update `activeSessionDetail` in the store state with `fetchedSession`.
+                    *   Update the `dialectic_sessions` array within `currentProjectDetail` to reflect the potentially updated `fetchedSession`.
+                    *   Crucially, when calling `get().setActiveDialecticContext(...)` (or a similar action for setting the active context):
+                        *   Pass `projectId: fetchedSession.project_id`.
+                        *   Pass `sessionId: fetchedSession.id`.
+                        *   Pass `stage: fetchedStageDetails || null`. This directly sets the `activeContextStage` using the stage object provided by the backend, eliminating the need for client-side lookups against `currentProcessTemplate` for this specific initialization step.
+            *   `[✅] X.2.3.8.3.2` Verify that the `activateProjectAndSessionContextForDeepLink(projectId: string, sessionId: string)` thunk correctly calls the updated `fetchAndSetCurrentSessionDetails` and thus benefits from these changes. No direct changes might be needed in `activateProjectAndSessionContextForDeepLink` itself if its primary role is orchestration.
+        *   `[✅] X.2.3.8.4 [TEST-UNIT]` **Update Unit and Integration Tests**
+            *   Update unit tests for `getSessionDetails` Edge Function to assert the new return structure.
+            *   Update unit tests for `DialecticApiClient.getSessionDetails` to mock and assert the new response type.
+            *   Update unit tests for the `fetchAndSetCurrentSessionDetails` store thunk to mock the new API response and assert that `activeSessionDetail` and `activeContextStage` are set correctly.
+            *   Ensure tests for `ViewSessionButton` still pass, verifying it correctly triggers the thunks that now lead to the desired stage context being set.
+        *   `[✅] X.2.3.8.5 [COMMIT]` `refactor(dialectic): enhance getSessionDetails to return current stage object, update store for direct stage context setting`
+        
 *   **Task X.2.4: Refactor `DialecticSessionDetailsPage.tsx` for Initial Deep-Link Load & Store Context**
     *   `[ ] X.2.4.1 [TEST-UNIT]` **Write/Update Tests for `DialecticSessionDetailsPage.tsx`** (RED)
         *   **File:** `apps/web/src/pages/DialecticSessionDetailsPage.test.tsx`
