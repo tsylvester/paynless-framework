@@ -85,7 +85,7 @@ export const StageTabCard: React.FC<StageTabCardProps> = ({
     );
   }
 
-  const contributionsForStageExist = session.dialectic_contributions?.some(c => c.stage.id === stage.id);
+  const contributionsForStageExist = session.dialectic_contributions?.some(c => c.stage === stage.slug);
 
   const handleCardClick = () => {
     onCardClick(stage);

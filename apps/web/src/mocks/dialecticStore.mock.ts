@@ -32,6 +32,7 @@ export const selectActiveContextStage = (state: DialecticStateValues): Dialectic
 export const selectSelectedModelIds = vi.fn<[DialecticStateValues], string[]>().mockReturnValue([]);
 export const selectActiveContextProjectId = (state: DialecticStateValues): string | null => state.activeContextProjectId;
 export const selectActiveContextSessionId = (state: DialecticStateValues): string | null => state.activeContextSessionId;
+export const selectSessionById = (state: DialecticStateValues, sessionId: string): DialecticSession | undefined => state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
 export const selectCurrentProcessTemplate = (state: DialecticStateValues): DialecticProcessTemplate | null => state.currentProcessTemplate;
 export const selectOverlay = vi.fn();
 // ---- END: Controllable selectors ----
@@ -112,6 +113,7 @@ const initialDialecticStateValues: DialecticStateValues = {
   currentFeedbackFileContent: null,
   isFetchingFeedbackFileContent: false,
   fetchFeedbackFileContentError: null,
+  activeDialecticWalletId: null,
 };
 
 // 2. Helper function to create a new mock store instance
@@ -198,6 +200,7 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
     }),
     activateProjectAndSessionContextForDeepLink: mockActivateProjectAndSessionContextForDeepLink,
     fetchAndSetCurrentSessionDetails: mockFetchAndSetCurrentSessionDetails,
+    setActiveDialecticWalletId: vi.fn((id: string | null) => set({ activeDialecticWalletId: id })),
   }));
 };
 

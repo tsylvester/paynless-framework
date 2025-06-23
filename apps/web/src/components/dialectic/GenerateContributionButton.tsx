@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { useDialecticStore, selectSelectedModelIds } from '@paynless/store';
+import { useDialecticStore, selectSelectedModelIds, selectSessionById } from '@paynless/store';
 import type { ApiError, DialecticContribution, DialecticStage } from '@paynless/types';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
@@ -26,21 +26,21 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
   onGenerationComplete,
   className,
 }) => {
+  const store = useDialecticStore();
   const {
     generateContributions,
     isGeneratingContributions,
-    currentProjectDetail,
   } = useDialecticStore((state) => ({
     generateContributions: state.generateContributions,
     isGeneratingContributions: state.contributionGenerationStatus === 'generating',
     generateContributionsError: state.generateContributionsError,
-    currentProjectDetail: state.currentProjectDetail,
   }));
 
   const currentSelectedModelIds = useDialecticStore(selectSelectedModelIds);
   const areAnyModelsSelected = currentSelectedModelIds && currentSelectedModelIds.length > 0;
 
-  const activeSession = currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
+  const activeSession = useMemo(() => selectSessionById(store, sessionId), [store, sessionId]);
+
   const contributionsForStageAndIterationExist = activeSession?.dialectic_contributions?.some(
     c => c.stage === currentStage.slug && c.iteration_number === activeSession.iteration_count
   );

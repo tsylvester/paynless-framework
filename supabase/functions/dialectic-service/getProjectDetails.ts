@@ -3,7 +3,6 @@ import {
     GetProjectDetailsPayload,
     DialecticProject,
     DialecticContribution,
-    DialecticStage,
   } from "./dialectic.interface.ts";
   // import { createSupabaseClient } from "../_shared/auth.ts"; // Removed, user passed directly
   import { logger } from "../_shared/logger.ts";
@@ -72,71 +71,7 @@ import {
         }
       }
     }
-
-    // Populate full stage objects in contributions
-    if (project.process_template_id && project.dialectic_sessions) {
-      try {
-        // 1. Fetch stage transitions for the process template
-        const { data: transitions, error: transitionsError } = await dbClient
-          .from('dialectic_stage_transitions')
-          .select('source_stage_id, target_stage_id')
-          .eq('process_template_id', project.process_template_id);
-
-        if (transitionsError) {
-          logger.error("Error fetching stage transitions:", { error: transitionsError, projectId });
-          // Decide if this is a critical error or if we can proceed without full stage info
-          // For now, let's log and proceed, contributions might lack full stage context.
-        }
-
-        const stagesMap = new Map<string, DialecticStage>(); // Using 'any' for DialecticStage temporarily
-
-        if (transitions && transitions.length > 0) {
-          const stageIds = new Set<string>();
-          transitions.forEach(t => {
-            if (t.source_stage_id) stageIds.add(t.source_stage_id);
-            if (t.target_stage_id) stageIds.add(t.target_stage_id);
-          });
-
-          if (stageIds.size > 0) {
-            // 2. Fetch details for these unique stages
-            const { data: stagesData, error: stagesError } = await dbClient
-              .from('dialectic_stages')
-              .select('*')
-              .in('id', Array.from(stageIds));
-
-            if (stagesError) {
-              logger.error("Error fetching stage details:", { error: stagesError, projectId });
-              // Log and proceed
-            } else if (stagesData) {
-              // 3. Create a lookup map (slug -> stage object)
-              stagesData.forEach(stage => {
-                stagesMap.set(stage.slug, stage);
-              });
-            }
-          }
-        }
-        
-        // 4. Transform contributions
-        for (const session of project.dialectic_sessions) {
-          if (session.dialectic_contributions) {
-            for (const contribution of session.dialectic_contributions) {
-              const stageSlug = contribution.stage; // stage is initially a string slug
-              if (typeof stageSlug === 'string' && stagesMap.has(stageSlug)) {
-                contribution.stage = stagesMap.get(stageSlug);
-              } else if (typeof stageSlug === 'string') {
-                logger.warn("Stage object not found in map for slug:", { stageSlug, projectId, contributionId: contribution.id });
-                // Optionally, leave stage as slug or set to a default/null object
-                // For now, it remains the slug if not found, frontend needs to be robust.
-              }
-            }
-          }
-        }
-      } catch (e) {
-        logger.error("Error during stage transformation in getProjectDetails:", { error: e, projectId });
-        // Non-critical, proceed with potentially untransformed data
-      }
-    }
   
-    return { data: project as DialecticProject };
+    return { data: project };
   }
   
