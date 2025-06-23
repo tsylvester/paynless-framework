@@ -937,9 +937,9 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
             *   Update unit tests for the `fetchAndSetCurrentSessionDetails` store thunk to mock the new API response and assert that `activeSessionDetail` and `activeContextStage` are set correctly.
             *   Ensure tests for `ViewSessionButton` still pass, verifying it correctly triggers the thunks that now lead to the desired stage context being set.
         *   `[✅] X.2.3.8.5 [COMMIT]` `refactor(dialectic): enhance getSessionDetails to return current stage object, update store for direct stage context setting`
-        
+
 *   **Task X.2.4: Refactor `DialecticSessionDetailsPage.tsx` for Initial Deep-Link Load & Store Context**
-    *   `[ ] X.2.4.1 [TEST-UNIT]` **Write/Update Tests for `DialecticSessionDetailsPage.tsx`** (RED)
+    *   `[✅] X.2.4.1 [TEST-UNIT]` **Write/Update Tests for `DialecticSessionDetailsPage.tsx`** (RED)
         *   **File:** `apps/web/src/pages/DialecticSessionDetailsPage.test.tsx`
         *   **Assertions:**
             *   Mock `useParams` to provide `urlProjectId`, `urlSessionId`.
@@ -947,13 +947,13 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
             *   Scenario 1: URL params exist AND context is different (`urlProjectId !== activeContextProjectId` OR `urlSessionId !== activeContextSessionId`) -> assert `activateProjectAndSessionContextForDeepLink` is called.
             *   Scenario 2: Context is already aligned -> assert action is NOT called.
             *   Assert rendering relies on store-derived context (`activeSessionDetail`, etc.), not `useParams`.
-    *   `[ ] X.2.4.2 [PAGE] [MOD]` **Refactor `DialecticSessionDetailsPage.tsx`** (GREEN)
+    *   `[✅] X.2.4.2 [PAGE] [MOD]` **Refactor `DialecticSessionDetailsPage.tsx`** (GREEN)
         *   **File:** `apps/web/src/pages/DialecticSessionDetailsPage.tsx`
         *   **Logic:**
             *   Use `useParams` in `useEffect` *only* for initial deep-link hydration. Call `store.activateProjectAndSessionContextForDeepLink(urlProjectId, urlSessionId)` if context needs to be set/updated.
             *   All operational logic (rendering, data display) must use data selected from the store (e.g., `activeSessionDetail`).
-    *   `[ ] X.2.4.3 [REFACTOR]` Review `DialecticSessionDetailsPage.tsx` refactoring.
-    *   `[ ] X.2.4.4 [COMMIT]` `refactor(web,store): use store context in SessionDetailsPage, limit useParams to deep-links`
+    *   `[✅] X.2.4.3 [REFACTOR]` Review `DialecticSessionDetailsPage.tsx` refactoring.
+    *   `[✅] X.2.4.4 [COMMIT]` `refactor(web,store): use store context in SessionDetailsPage, limit useParams to deep-links`
 
 **Phase X.3: Decouple All Child Components & Final Cleanup**
 

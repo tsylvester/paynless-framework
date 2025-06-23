@@ -14,6 +14,10 @@ import type {
   ApiError
 } from '@paynless/types';
 
+// Define and export the mock for the new thunk
+export const mockActivateProjectAndSessionContextForDeepLink = vi.fn().mockResolvedValue(undefined as void);
+export const mockFetchAndSetCurrentSessionDetails = vi.fn().mockResolvedValue(undefined as void);
+
 const mockSession: DialecticSession = {
   id: 'ses-1',
   project_id: 'proj-1',
@@ -71,6 +75,9 @@ const initialDialecticStateValues: DialecticStateValues = {
   activeContextProjectId: null,
   activeContextSessionId: null,
   activeContextStage: null,
+  activeSessionDetail: null,
+  isLoadingActiveSessionDetail: false,
+  activeSessionDetailError: null,
   contributionGenerationStatus: 'idle',
   generateContributionsError: null,
   isSubmittingStageResponses: false,
@@ -148,6 +155,8 @@ const initializeInternalDialecticStoreState = (): DialecticStore => {
       Object.assign(internalMockDialecticStoreState, initializeInternalDialecticStoreState());
     }),
     _resetForTesting: vi.fn(() => { internalMockDialecticStoreState = initializeInternalDialecticStoreState(); }),
+    activateProjectAndSessionContextForDeepLink: mockActivateProjectAndSessionContextForDeepLink,
+    fetchAndSetCurrentSessionDetails: mockFetchAndSetCurrentSessionDetails,
   };
   return newState;
 };
@@ -222,6 +231,8 @@ export const setDialecticState = setDialecticStateValues;
 // 9. Reset Function for tests
 export const resetDialecticStoreMock = () => {
   internalMockDialecticStoreState = initializeInternalDialecticStoreState();
+  mockActivateProjectAndSessionContextForDeepLink.mockClear();
+  mockFetchAndSetCurrentSessionDetails.mockClear();
 };
 
 // 10. Action Access (for tests that might still use it, now returns the whole state/store object)
