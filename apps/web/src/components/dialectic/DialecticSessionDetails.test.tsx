@@ -24,7 +24,37 @@ vi.mock('react-router-dom', async (importOriginal) => {
 });
 
 // Mock the store at the top level to use our centralized mock
-vi.mock('@paynless/store', () => import('@/mocks/dialecticStore.mock'));
+vi.mock('@paynless/store', async () => {
+  const mockStoreActual = await vi.importActual<typeof import('@/mocks/dialecticStore.mock')>(
+    '@/mocks/dialecticStore.mock'
+  );
+  return {
+    ...mockStoreActual,
+    // Ensure all named exports from the mock file are available here.
+    // If specific selectors are still problematic, they can be explicitly returned:
+    // selectCurrentProjectDetail: mockStoreActual.selectCurrentProjectDetail,
+    // etc.
+  };
+});
+
+// Mock child components
+vi.mock('./SessionInfoCard', () => ({
+  SessionInfoCard: vi.fn(() => <div data-testid="mock-session-info-card">Mock SessionInfoCard</div>),
+}));
+
+vi.mock('./StageTabCard', () => ({
+  StageTabCard: vi.fn(({ stage, isActiveStage }) => (
+    <div data-testid={`mock-stage-tab-card-${stage.slug}`} data-isactive={isActiveStage}>
+      Mock StageTabCard: {stage.display_name}
+    </div>
+  )),
+}));
+
+vi.mock('./SessionContributionsDisplayCard', () => ({
+  SessionContributionsDisplayCard: vi.fn(() => (
+    <div data-testid="mock-session-contributions-display-card">Mock SessionContributionsDisplayCard</div>
+  )),
+}));
 
 // Mock GeneratedContributionCard which is the actual component being rendered
 vi.mock('./GeneratedContributionCard', () => ({
@@ -64,6 +94,12 @@ const createMockContribution = (id: string, stage: DialecticStage, session_model
   original_model_contribution_id: null,
   target_contribution_id: null,
   error: null,
+  contribution_type: 'generated',
+  file_name: 'file.md',
+  storage_bucket: 'bucket',
+  storage_path: `path/${id}.md`,
+  size_bytes: 100,
+  mime_type: 'text/markdown',
 });
 
 const mockThesisStage: DialecticStage = {
@@ -75,13 +111,6 @@ const mockThesisStage: DialecticStage = {
   description: 'Thesis stage',
   expected_output_artifacts: [],
   input_artifact_rules: [],
-  domain_id: 'some-domain-id',
-  is_active: true,
-  stage_order: 1,
-  display_name_short: 'Thesis',
-  parent_stage_id: null,
-  updated_at: new Date().toISOString(),
-  user_id: 'user-xyz',
 };
 
 const mockAntithesisStage: DialecticStage = {
@@ -93,23 +122,13 @@ const mockAntithesisStage: DialecticStage = {
   description: 'Antithesis stage',
   expected_output_artifacts: [],
   input_artifact_rules: [],
-  domain_id: 'some-domain-id',
-  is_active: true,
-  stage_order: 2,
-  display_name_short: 'Anti',
-  parent_stage_id: 'stage-thesis',
-  updated_at: new Date().toISOString(),
-  user_id: 'user-xyz',
 };
 
 const mockProcessTemplate: DialecticProcessTemplate = {
   id: 'proc-tpl-1',
-  template_name: 'Standard Dialectic',
+  name: 'Standard Dialectic',
   description: 'A standard Thesis-Antithesis process',
   created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-  user_id: 'user-xyz',
-  is_active: true,
   stages: [mockThesisStage, mockAntithesisStage],
   transitions: [
     {
@@ -117,15 +136,11 @@ const mockProcessTemplate: DialecticProcessTemplate = {
       process_template_id: 'proc-tpl-1',
       source_stage_id: mockThesisStage.id,
       target_stage_id: mockAntithesisStage.id,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      description: 'From Thesis to Antithesis',
-      is_active: true,
-      automation_trigger_condition: 'on_completion',
-      user_id: 'user-xyz',
+      created_at: new Date().toISOString(),   
+      condition_description: 'From Thesis to Antithesis',
     }
   ],
-  domain_id: null
+  starting_stage_id: mockThesisStage.id,
 };
 
 const mockSession: DialecticSession = {
@@ -136,7 +151,6 @@ const mockSession: DialecticSession = {
   session_description: 'Test Session Description',
   iteration_count: 1,
   status: 'thesis_complete',
-  convergence_status: 'pending',
   associated_chat_id: 'chat-123',
   current_stage_id: 'stage-thesis',
   created_at: new Date().toISOString(),
@@ -203,13 +217,29 @@ const mockFullProject: DialecticProject = {
   initial_user_prompt: 'Initial user prompt for the project.',
   initial_prompt_resource_id: null,
   selected_domain_id: 'dom-123',
-  domain_name: 'Software Development',
   selected_domain_overlay_id: null,
   repo_url: null,
   status: 'active',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   dialectic_sessions: [mockSession],
+  dialectic_domains: {name: 'Software Development'},
+  dialectic_process_templates: {
+    id: 'proc-tpl-1',
+    name: 'Standard Dialectic',
+    description: 'A standard Thesis-Antithesis process',
+    created_at: new Date().toISOString(),
+    stages: [mockThesisStage, mockAntithesisStage],
+    starting_stage_id: mockThesisStage.id,
+  },
+  isLoadingProcessTemplate: false,
+  processTemplateError: null,
+  contributionGenerationStatus: 'idle',
+  generateContributionsError: null,
+  isSubmittingStageResponses: false,
+  submitStageResponsesError: null,
+  isSavingContributionEdit: false,
+  saveContributionEditError: null,
 };
 
 describe('DialecticSessionDetails', () => {
@@ -223,27 +253,30 @@ describe('DialecticSessionDetails', () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
     
     // Case 1: No project loaded
-    initializeMockDialecticState({ currentProjectDetail: null });
+    initializeMockDialecticState({ currentProjectDetail: null, isLoadingProjectDetail: false, projectDetailError: null });
     render(<DialecticSessionDetails />);
     expect(getDialecticStoreState().fetchDialecticProjectDetails).toHaveBeenCalledWith(mockProjectId);
+    vi.mocked(getDialecticStoreState().fetchDialecticProjectDetails).mockClear();
 
     // Case 2: Different project loaded
-    initializeMockDialecticState({ currentProjectDetail: { ...mockFullProject, id: 'other-project' } });
+    initializeMockDialecticState({ currentProjectDetail: { ...mockFullProject, id: 'other-project' }, isLoadingProjectDetail: false, projectDetailError: null });
     render(<DialecticSessionDetails />);
     expect(getDialecticStoreState().fetchDialecticProjectDetails).toHaveBeenCalledWith(mockProjectId);
   });
 
   it('does not fetch if correct project details are already loaded', () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
-    initializeMockDialecticState({ currentProjectDetail: mockFullProject });
     
+    initializeMockDialecticState({ currentProjectDetail: mockFullProject, isLoadingProjectDetail: false, projectDetailError: null });
+
     render(<DialecticSessionDetails />);
     expect(getDialecticStoreState().fetchDialecticProjectDetails).not.toHaveBeenCalled();
   });
 
   it('renders loading state', () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
-    initializeMockDialecticState({ isLoadingProjectDetail: true, currentProjectDetail: null });
+
+    initializeMockDialecticState({ isLoadingProjectDetail: true, currentProjectDetail: null, projectDetailError: null });
 
     const { container } = render(<DialecticSessionDetails />);
     const skeletons = container.querySelectorAll('.animate-pulse');
@@ -252,11 +285,9 @@ describe('DialecticSessionDetails', () => {
 
   it('renders error state', () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
-    initializeMockDialecticState({ 
-      projectDetailError: { code: 'FETCH_ERROR', message: 'Failed to fetch' },
-      isLoadingProjectDetail: false,
-      currentProjectDetail: null,
-    });
+    const mockError = { code: 'FETCH_ERROR', message: 'Failed to fetch' };
+    
+    initializeMockDialecticState({ projectDetailError: mockError, isLoadingProjectDetail: false, currentProjectDetail: null });
 
     render(<DialecticSessionDetails />);
     expect(screen.getByText('Error Fetching Project Details')).toBeInTheDocument();
@@ -265,7 +296,8 @@ describe('DialecticSessionDetails', () => {
 
   it('renders message if project not found after loading', () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
-    initializeMockDialecticState({ currentProjectDetail: null, isLoadingProjectDetail: false });
+
+    initializeMockDialecticState({ currentProjectDetail: null, isLoadingProjectDetail: false, projectDetailError: null });
 
     render(<DialecticSessionDetails />);
     expect(screen.getByText('Project details not found or not loaded yet.')).toBeInTheDocument();
@@ -273,57 +305,77 @@ describe('DialecticSessionDetails', () => {
 
   it('renders message if session not found in project', () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: 'non-existent-session' });
-    initializeMockDialecticState({ currentProjectDetail: mockFullProject });
+
+    initializeMockDialecticState({ currentProjectDetail: mockFullProject, isLoadingProjectDetail: false, projectDetailError: null });
 
     render(<DialecticSessionDetails />);
     expect(screen.getByText('Session not found in this project.')).toBeInTheDocument();
   });
 
-  it('renders session details and contributions correctly', () => {
+  it('renders session details and contributions correctly', async () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
-    initializeMockDialecticState({ 
+
+    initializeMockDialecticState({
       currentProjectDetail: mockFullProject,
+      isLoadingProjectDetail: false,
+      projectDetailError: null,
       currentProcessTemplate: mockProcessTemplate,
-      activeContextStage: mockThesisStage,
+      activeContextStage: mockThesisStage, 
+      activeContextProjectId: mockProjectId,
+      activeContextSessionId: mockSessionId,
     });
 
     render(<DialecticSessionDetails />);
 
-    // Check for session info in SessionInfoCard
-    expect(screen.getByText(mockSession.session_description)).toBeInTheDocument();
+    // Verify mocked SessionInfoCard is rendered
+    expect(screen.getByTestId('mock-session-info-card')).toBeInTheDocument();
+
+    // Verify mocked StageTabCards are rendered with correct props
+    expect(screen.getByTestId(`mock-stage-tab-card-${mockThesisStage.slug}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`mock-stage-tab-card-${mockThesisStage.slug}`)).toHaveAttribute('data-isactive', 'true');
     
-    // The text is split across elements, so we get the container and check its content.
-    const descriptionElement = screen.getByText(mockSession.session_description).nextElementSibling;
-    expect(descriptionElement).toHaveTextContent(/Status:\s*thesis_complete/);
-    expect(descriptionElement).toHaveTextContent(/Iteration:\s*1/);
+    expect(screen.getByTestId(`mock-stage-tab-card-${mockAntithesisStage.slug}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`mock-stage-tab-card-${mockAntithesisStage.slug}`)).toHaveAttribute('data-isactive', 'false');
 
-    // Check for stage tabs
-    expect(screen.getByText(mockThesisStage.display_name)).toBeInTheDocument();
-    expect(screen.getByText(mockAntithesisStage.display_name)).toBeInTheDocument();
-
-    // Check for contributions of the active stage using the new mock
-    expect(screen.getByTestId('generated-contribution-card-contrib-1')).toBeInTheDocument();
-    expect(screen.getByTestId('generated-contribution-card-contrib-2')).toBeInTheDocument();
-
-    // Ensure contributions from other stages are not rendered
-    expect(screen.queryByTestId('generated-contribution-card-contrib-3')).not.toBeInTheDocument();
+    // Verify mocked SessionContributionsDisplayCard is rendered (since activeContextStage is set)
+    expect(screen.getByTestId('mock-session-contributions-display-card')).toBeInTheDocument();
   });
 
-  it('renders "No contributions" message if session has no contributions', () => {
+  it('does NOT render SessionContributionsDisplayCard if activeContextStage is null', () => {
+    mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
+    initializeMockDialecticState({
+      currentProjectDetail: mockFullProject,
+      isLoadingProjectDetail: false,
+      projectDetailError: null,
+      currentProcessTemplate: mockProcessTemplate,
+      activeContextStage: null, // Explicitly null
+      activeContextProjectId: mockProjectId,
+      activeContextSessionId: mockSessionId,
+    });
+
+    render(<DialecticSessionDetails />);
+    expect(screen.queryByTestId('mock-session-contributions-display-card')).not.toBeInTheDocument();
+  });
+
+  it('renders "No contributions" message if session has no contributions AND activeContextStage is set', () => {
     mockUseParams.mockReturnValue({ projectId: mockProjectId, sessionId: mockSessionId });
     const sessionWithoutContributions = {
       ...mockSession,
       dialectic_contributions: [],
     };
-    initializeMockDialecticState({
-      currentProjectDetail: {
+    const projectWithEmptySession = {
         ...mockFullProject,
         dialectic_sessions: [sessionWithoutContributions],
-      },
+    };
+
+    initializeMockDialecticState({
+      currentProjectDetail: projectWithEmptySession,
+      isLoadingProjectDetail: false,
+      projectDetailError: null,
       currentProcessTemplate: mockProcessTemplate,
       activeContextStage: mockThesisStage,
     });
-    
+
     render(<DialecticSessionDetails />);
     expect(screen.getByText('No contributions found for this session yet.')).toBeInTheDocument();
   });

@@ -5,20 +5,23 @@ import { DialecticSession, DialecticStage, DialecticProjectResource, DialecticPr
 import {
   initializeMockDialecticState,
 } from '@/mocks/dialecticStore.mock';
-import { selectIsStageReadyForSessionIteration, useDialecticStore as actualUseDialecticStore } from '@paynless/store';
+import { 
+  selectIsStageReadyForSessionIteration, 
+  useDialecticStore
+} from '@paynless/store';
 
 // Explicitly mock the @paynless/store to use our mock implementation
 vi.mock('@paynless/store', async () => {
   const dialecticMockModule = await vi.importActual<typeof import('@/mocks/dialecticStore.mock')>('@/mocks/dialecticStore.mock');
   // Import the actual selectors needed by the component from the real store module
-  const actualStoreModule = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
+  const actualOriginalStoreModule = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
   return {
     ...dialecticMockModule,
-    useDialecticStore: dialecticMockModule.mockedUseDialecticStoreHookLogic,
+    useDialecticStore: dialecticMockModule.useDialecticStore,
     selectIsStageReadyForSessionIteration: vi.fn(), // This will be controlled in setupMockStore
     // Provide the actual selectors for the component to use with the mocked store state
-    selectContributionGenerationStatus: actualStoreModule.selectContributionGenerationStatus,
-    selectGenerateContributionsError: actualStoreModule.selectGenerateContributionsError,
+    selectContributionGenerationStatus: actualOriginalStoreModule.selectContributionGenerationStatus,
+    selectGenerateContributionsError: actualOriginalStoreModule.selectGenerateContributionsError,
   };
 });
 
@@ -235,7 +238,7 @@ const setupMockStore = (
   };
 
   initializeMockDialecticState(finalStateToInitialize);
-  actualUseDialecticStore.setState({
+  useDialecticStore.setState({
     fetchInitialPromptContent: vi.fn(),
   });
 };
@@ -319,7 +322,7 @@ describe('SessionInfoCard', () => {
     true, 
     mockSession 
     );
-    actualUseDialecticStore.setState({ fetchInitialPromptContent: mockFetch });
+    useDialecticStore.setState({ fetchInitialPromptContent: mockFetch });
 
     renderComponent();
 

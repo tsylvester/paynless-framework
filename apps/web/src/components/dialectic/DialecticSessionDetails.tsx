@@ -6,26 +6,13 @@ import {
   selectIsLoadingProjectDetail,
   selectProjectDetailError,
 } from '@paynless/store';
-import { ContributionCard } from './ContributionCard';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Terminal } from 'lucide-react';
 import { DialecticContribution, DialecticSession, DialecticStore } from '@paynless/types';
 import { StageTabCard } from './StageTabCard';
 import { SessionInfoCard } from './SessionInfoCard';
-import { SessionContributionsDisplayCard } from './SessionContributionsDisplayCard';
-
-// Helper to get model name from session_model_id
-const getModelNameFromContribution = (contribution: DialecticContribution, session: DialecticSession | undefined): string => {
-  if (!session || !session.dialectic_session_models) return 'Unknown Model';
-  const sessionModel = session.dialectic_session_models.find(sm => sm.id === contribution.session_model_id);
-  if (!sessionModel) return 'Unknown Model';
-  if (sessionModel.ai_provider) {
-    return `${sessionModel.ai_provider.provider_name} ${sessionModel.ai_provider.model_name}`;
-  }
-  return sessionModel.model_id;
-};
+import { SessionContributionsDisplayCard } from './SessionContributionsDisplayCard'
 
 export const DialecticSessionDetails: React.FC = () => {
   const { projectId, sessionId } = useParams<{ projectId: string; sessionId: string }>();
@@ -98,7 +85,7 @@ export const DialecticSessionDetails: React.FC = () => {
 
   return (
     <div className="p-4 space-y-6">
-      <SessionInfoCard session={session} />
+      <SessionInfoCard />
 
       <div className="flex space-x-2 overflow-x-auto pb-4">
         {stageOrder.map((stage) => (
@@ -106,12 +93,13 @@ export const DialecticSessionDetails: React.FC = () => {
             key={stage.id}
             stage={stage}
             isActiveStage={activeContextStage?.id === stage.id}
+            onCardClick={() => {}}
           />
         ))}
       </div>
       
       {activeContextStage && (
-        <SessionContributionsDisplayCard session={session} activeStage={activeContextStage} />
+        <SessionContributionsDisplayCard />
       )}
 
       {Object.keys(contributionsByStage).length === 0 && (

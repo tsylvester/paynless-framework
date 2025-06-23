@@ -5,17 +5,14 @@ import type {
   DialecticStateValues,
   DialecticStore,
   DialecticProject,
-  ApiResponse,
   DialecticSession,
   DialecticStage,
   DialecticDomain,
-  DialecticContribution,
   DialecticActions,
-  GenerateContributionsResponse,
-  SubmitStageResponsesResponse,
   ApiError,
   DialecticFeedback,
-  ContributionGenerationStatus
+  ContributionGenerationStatus,
+  DialecticProcessTemplate,
 } from '@paynless/types';
 
 // ---- START: Define ALL controllable selectors as top-level vi.fn() mocks ----
@@ -23,13 +20,19 @@ import type {
 // However, preferring selectors that operate on the store's state is generally better.
 export const selectIsStageReadyForSessionIteration = vi.fn<[DialecticStateValues, string, string, string, number], boolean>().mockReturnValue(false);
 export const selectFeedbackForStageIteration = vi.fn<[DialecticStateValues, string, string, string, number], DialecticFeedback[] | null>().mockReturnValue(null);
-export const selectIsLoadingProjectDetail = vi.fn<[DialecticStateValues], boolean>().mockReturnValue(false);
-export const selectContributionGenerationStatus = vi.fn<[DialecticStateValues], ContributionGenerationStatus>().mockReturnValue('idle');
-export const selectProjectDetailError = vi.fn<[DialecticStateValues], ApiError | null>().mockReturnValue(null);
-export const selectActiveContextStage: Mock<[DialecticStateValues], DialecticStage | null> = vi.fn<[DialecticStateValues], DialecticStage | null>().mockReturnValue(null);
-export const selectCurrentProjectDetail = vi.fn<[DialecticStateValues], DialecticProject | null>().mockReturnValue(null);
+
+// Changed to actual selectors
+export const selectIsLoadingProjectDetail = (state: DialecticStateValues): boolean => state.isLoadingProjectDetail;
+export const selectCurrentProjectDetail = (state: DialecticStateValues): DialecticProject | null => state.currentProjectDetail;
+export const selectProjectDetailError = (state: DialecticStateValues): ApiError | null => state.projectDetailError;
+export const selectContributionGenerationStatus = (state: DialecticStateValues): ContributionGenerationStatus => state.contributionGenerationStatus;
+export const selectGenerateContributionsError = (state: DialecticStateValues): ApiError | null => state.generateContributionsError;
+
+export const selectActiveContextStage = (state: DialecticStateValues): DialecticStage | null => state.activeContextStage;
 export const selectSelectedModelIds = vi.fn<[DialecticStateValues], string[]>().mockReturnValue([]);
-export const selectActiveContextProjectId = vi.fn<[DialecticStateValues], string | null>().mockReturnValue(null);
+export const selectActiveContextProjectId = (state: DialecticStateValues): string | null => state.activeContextProjectId;
+export const selectActiveContextSessionId = (state: DialecticStateValues): string | null => state.activeContextSessionId;
+export const selectCurrentProcessTemplate = (state: DialecticStateValues): DialecticProcessTemplate | null => state.currentProcessTemplate;
 export const selectOverlay = vi.fn();
 // ---- END: Controllable selectors ----
 
@@ -251,17 +254,15 @@ export const initializeMockDialecticState = (initialStateOverrides?: Partial<Dia
   actualMockStore = createActualMockStore(initialStateOverrides);
 
   // If tests also rely on global selector mocks, reset them here.
-  // This depends on the testing strategy.
+  // Ensure that selectors converted to actual functions are NOT reset as vi.fn()
   selectIsStageReadyForSessionIteration.mockClear().mockReturnValue(false);
   selectFeedbackForStageIteration.mockClear().mockReturnValue(null);
-  selectIsLoadingProjectDetail.mockClear().mockReturnValue(false);
-  selectContributionGenerationStatus.mockClear().mockReturnValue('idle');
-  selectProjectDetailError.mockClear().mockReturnValue(null);
-  selectActiveContextStage.mockClear().mockReturnValue(null);
-  selectCurrentProjectDetail.mockClear().mockReturnValue(null);
   selectSelectedModelIds.mockClear().mockReturnValue([]);
-  selectActiveContextProjectId.mockClear().mockReturnValue(null);
   selectOverlay.mockClear();
+
+  // Resetting specific action mocks (ensure all relevant actions are included if needed for global mock state)
+  mockActivateProjectAndSessionContextForDeepLink.mockClear();
+  mockFetchAndSetCurrentSessionDetails.mockClear();
 };
 
 // 8. Reset Function for tests (full reset)
