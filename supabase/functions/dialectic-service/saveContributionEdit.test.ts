@@ -26,6 +26,7 @@ interface TestSetupData {
   sessionId: string;
   aiContributionId: string;
   initialAiContribution: DialecticContributionSql; // Store the full initial record for assertions
+  stageSlug: string; // Added to store the stage slug
 }
 // Helper type from Database for direct DB row manipulation
 type DialecticContributionSql = Database['public']['Tables']['dialectic_contributions']['Row'];
@@ -188,6 +189,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       sessionId: session.id,
       aiContributionId: aiContribution.id,
       initialAiContribution: aiContribution as DialecticContributionSql,
+      stageSlug: stage.slug, // Store the slug
     };
   });
 
@@ -225,7 +227,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
 
     // 1. Verify new contribution record
     expect(responseBody.id).not.toBe(originalAIContributionId);
-    expect(responseBody.stage.id).toBe(testData.initialAiContribution.stage);
+    expect(responseBody.stage).toBe(testData.stageSlug); // Use stageSlug for comparison
     expect(responseBody.edit_version).toBe(testData.initialAiContribution.edit_version + 1);
     expect(responseBody.is_latest_edit).toBe(true);
     // original_model_contribution_id for an edit of a direct AI contribution should be the AI contribution's ID
@@ -444,7 +446,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
 
     // 3. Verify Version 3 properties
     expect(version3Contribution.id).not.toBe(version2Contribution.id);
-    expect(version3Contribution.stage.id).toBe(testData.initialAiContribution.stage);
+    expect(version3Contribution.stage).toBe(testData.stageSlug); // Use stageSlug for comparison
     expect(version3Contribution.edit_version).toBe(version2Contribution.edit_version + 1); // Which is initial.edit_version + 2
     expect(version3Contribution.is_latest_edit).toBe(true);
     // Crucially, original_model_contribution_id should still point to the very first AI contribution

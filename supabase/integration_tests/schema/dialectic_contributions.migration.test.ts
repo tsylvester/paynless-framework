@@ -167,8 +167,8 @@ describe('Migration Test: dialectic_contributions table', () => {
     it('should not be nullable', () => expect(column?.is_nullable).toBe('NO'));
   });
 
-  describe('Column: content_storage_bucket', () => {
-    const columnName = 'content_storage_bucket';
+  describe('Column: storage_bucket', () => {
+    const columnName = 'storage_bucket';
     let column: TableColumnInfo | undefined;
     beforeAll(() => { column = findColumn(columnName); });
 
@@ -180,8 +180,8 @@ describe('Migration Test: dialectic_contributions table', () => {
     });
   });
 
-  describe('Column: content_storage_path', () => {
-    const columnName = 'content_storage_path';
+  describe('Column: storage_path', () => {
+    const columnName = 'storage_path';
     let column: TableColumnInfo | undefined;
     beforeAll(() => { column = findColumn(columnName); });
 

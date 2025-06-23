@@ -42,7 +42,7 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
 
   const activeSession = currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
   const contributionsForStageAndIterationExist = activeSession?.dialectic_contributions?.some(
-    c => c.stage.id === currentStage.id && c.iteration_number === activeSession.iteration_count
+    c => c.stage === currentStage.slug && c.iteration_number === activeSession.iteration_count
   );
 
   const handleClick = async () => {

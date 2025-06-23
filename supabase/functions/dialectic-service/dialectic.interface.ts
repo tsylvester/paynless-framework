@@ -37,16 +37,12 @@ export interface DialecticContribution {
   id: string;
   session_id: string;
   user_id: string | null;
-  stage: DialecticStage;
+  stage: string | null;
   iteration_number: number;
   model_id: string | null;
   model_name: string | null;
   prompt_template_id_used: string | null;
   seed_prompt_url: string | null;
-  content_storage_bucket: string | null;
-  content_storage_path: string | null;
-  content_mime_type: string | null;
-  content_size_bytes: number | null;
   edit_version: number;
   is_latest_edit: boolean;
   original_model_contribution_id: string | null;
@@ -234,6 +230,7 @@ export interface GenerateContributionsPayload {
   iterationNumber?: number;
   chatId?: string | null;
   selectedModelCatalogIds: string[];
+  walletId?: string;
 }
 
 export interface GenerateContributionsSuccessResponse {

@@ -232,3 +232,33 @@ export const selectFeedbackForStageIteration = (
     fb => fb.stage_slug === stageSlug && fb.iteration_number === iterationNumber
   );
 };
+
+// Selector for total token usage for a specific stage in a session and iteration
+export const selectActiveDialecticStageTotalTokenUsage = createSelector(
+  [selectCurrentProjectSessions, (_, sessionId: string) => sessionId, (_, __, stageSlug: string) => stageSlug, (_, __, ___, iterationNumber: number) => iterationNumber],
+  (sessions, sessionId, stageSlug, iterationNumber) => {
+    if (!sessions) {
+      return null;
+    }
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session || !session.dialectic_contributions) {
+      return null;
+    }
+
+    let totalInput = 0;
+    let totalOutput = 0;
+    let totalProcessingMs = 0;
+
+    for (const contrib of session.dialectic_contributions) {
+      if (contrib.stage && contrib.stage === stageSlug && contrib.iteration_number === iterationNumber) {
+        totalInput += contrib.tokens_used_input || 0;
+        totalOutput += contrib.tokens_used_output || 0;
+        totalProcessingMs += contrib.processing_time_ms || 0;
+      }
+    }
+    return { totalInput, totalOutput, totalProcessingMs };
+  }
+);
+
+// Selector for the active dialectic wallet ID
+export const selectActiveDialecticWalletId = (state: DialecticStateValues): string | null => state.activeDialecticWalletId;

@@ -19,6 +19,14 @@ vi.mock('@paynless/store', async () => {
   return {
     ...actualMock,
     __esModule: true, // Typically needed when using vi.importActual with ES modules
+    // Override specific selectors to be mock functions for this test suite
+    selectIsStageReadyForSessionIteration: vi.fn(),
+    selectFeedbackForStageIteration: vi.fn(),
+    selectActiveContextStage: vi.fn(),
+    selectCurrentProjectDetail: vi.fn(),
+    selectIsLoadingProjectDetail: vi.fn(),
+    selectContributionGenerationStatus: vi.fn(),
+    selectProjectDetailError: vi.fn(),
   };
 });
 
@@ -123,7 +131,7 @@ describe('SessionContributionsDisplayCard', () => {
 
   const mockThesisContrib: DialecticContribution = {
     id: 'c1',
-    stage: mockThesisStage, 
+    stage: mockThesisStage.slug, 
     original_model_contribution_id: 'c1',
     is_latest_edit: true,
     session_id: 'sess-1',
@@ -133,10 +141,6 @@ describe('SessionContributionsDisplayCard', () => {
     user_id: 'u1',
     model_id: 'm1',
     model_name: 'GPT-4',
-    content_storage_path: 'old/path/c1_content.md', 
-    content_storage_bucket: 'old_content_bucket',
-    content_mime_type: 'text/markdown', 
-    content_size_bytes: 100,      
     file_name: 'gpt-4_thesis_contribution.md',
     storage_bucket: 'dialectic-content',
     storage_path: 'project-123/session-abc/iteration_1/thesis/gpt-4_thesis_contribution.md',
@@ -158,15 +162,10 @@ describe('SessionContributionsDisplayCard', () => {
   const mockAntithesisContrib: DialecticContribution = {
     ...mockThesisContrib,
     id: 'c2',
-    stage: mockAntithesisStage, 
+    stage: mockAntithesisStage.slug, 
     original_model_contribution_id: 'c2',
     model_name: 'Claude 3',
-    content_storage_path: 'old/path/c2_content.md',
-    content_storage_bucket: 'old_content_bucket',
-    content_mime_type: 'text/markdown',
-    content_size_bytes: 110,
     file_name: 'claude-3_antithesis_contribution.md',
-    storage_bucket: 'dialectic-content',
     storage_path: 'project-123/session-abc/iteration_1/antithesis/claude-3_antithesis_contribution.md',
     mime_type: 'text/markdown',
     size_bytes: 160,
@@ -174,6 +173,7 @@ describe('SessionContributionsDisplayCard', () => {
     raw_response_storage_path: 'path/to/raw/c2.json',
     seed_prompt_url: 'path/to/seed/prompt_c2.md',
     prompt_template_id_used: 'p2',
+    storage_bucket: 'dialectic-content',
   };
 
   const mockBaseSession: DialecticSession = {

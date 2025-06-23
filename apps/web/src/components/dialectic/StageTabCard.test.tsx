@@ -256,7 +256,7 @@ describe('StageTabCard', () => {
       const contribution: DialecticContribution = {
         id: 'c-1',
         session_id: mockSession.id,
-        stage: mockStage,
+        stage: mockStage.slug,
         created_at: new Date().toISOString(),
         model_id: 'm-1',
         target_contribution_id: null,
@@ -265,10 +265,6 @@ describe('StageTabCard', () => {
         model_name: 'm-1',
         prompt_template_id_used: 'pt-1',
         seed_prompt_url: 'https://example.com/seed_prompt.md',
-        content_storage_bucket: 'test-bucket',
-        content_storage_path: 'test-path',
-        content_mime_type: 'text/markdown',
-        content_size_bytes: 123,
         edit_version: 1,
         is_latest_edit: true,
         original_model_contribution_id: null,
@@ -279,6 +275,12 @@ describe('StageTabCard', () => {
         error: null,
         citations: [],
         updated_at: new Date().toISOString(),
+        file_name: 'c-1.md',
+        storage_bucket: 'test-bucket',
+        storage_path: 'test-path',
+        mime_type: 'text/markdown',
+        size_bytes: 123,
+        contribution_type: 'ai',
       };
 
       const sessionWithContributions = { ...mockSession, dialectic_contributions: [contribution] };

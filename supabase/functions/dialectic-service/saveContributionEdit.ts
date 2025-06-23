@@ -223,7 +223,7 @@ export async function saveContributionEdit(
         id: dbContributionRow.id,
         session_id: dbContributionRow.session_id,
         user_id: dbContributionRow.user_id,
-        stage: stageObject, // Use the fetched stage object
+        stage: stageObject.slug, // Use the fetched stage object
         iteration_number: dbContributionRow.iteration_number,
         model_id: dbContributionRow.model_id,
         model_name: dbContributionRow.model_name,
@@ -231,10 +231,10 @@ export async function saveContributionEdit(
         seed_prompt_url: dbContributionRow.seed_prompt_url,
         
         // Map content storage fields from db row's storage fields
-        content_storage_bucket: dbContributionRow.storage_bucket,
-        content_storage_path: dbContributionRow.storage_path,
-        content_mime_type: dbContributionRow.mime_type,
-        content_size_bytes: dbContributionRow.size_bytes,
+        storage_bucket: dbContributionRow.storage_bucket,
+        storage_path: dbContributionRow.storage_path,
+        mime_type: dbContributionRow.mime_type,
+        size_bytes: dbContributionRow.size_bytes,
         
         edit_version: dbContributionRow.edit_version,
         is_latest_edit: dbContributionRow.is_latest_edit,
@@ -250,12 +250,6 @@ export async function saveContributionEdit(
         updated_at: dbContributionRow.updated_at,
         contribution_type: dbContributionRow.contribution_type,
         file_name: dbContributionRow.file_name,
-
-        // Also map the direct storage fields as per DialecticContribution interface
-        storage_bucket: dbContributionRow.storage_bucket,
-        storage_path: dbContributionRow.storage_path,
-        mime_type: dbContributionRow.mime_type,
-        size_bytes: dbContributionRow.size_bytes,
     };
 
     logger.info('[saveContributionEdit] action completed successfully', { newContributionId: resultContribution.id });

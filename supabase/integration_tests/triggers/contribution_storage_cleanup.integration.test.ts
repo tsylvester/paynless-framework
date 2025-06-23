@@ -247,10 +247,10 @@ describe("Contribution Storage Cleanup Trigger Integration Tests (Direct Supabas
       .insert({
         session_id: createdSessionId!,
         session_model_id: createdSessionModelId!,
-        content_storage_path: rawFilePath!,
+        storage_path: rawFilePath!,
         raw_response_storage_path: structuredFilePath!,
-        content_mime_type: 'text/plain',
-        content_storage_bucket: BUCKET_NAME,
+        mime_type: 'text/plain',
+        storage_bucket: BUCKET_NAME,
         stage: 'test_stage_direct',
       })
       .select()

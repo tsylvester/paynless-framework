@@ -81,17 +81,13 @@ const mockStage: DialecticStage = {
 const mockAIContribution: DialecticContribution = {
   id: mockContributionId_v1,
   session_id: mockSessionId,
-  stage: mockStage,
+  stage: mockStage.slug,
   iteration_number: 1,
   original_model_contribution_id: mockContributionId_v1, // Points to self
   is_latest_edit: true,
   edit_version: 1,
   user_id: null, // AI generated
   model_name: 'GPT-4 Super',
-  content_storage_bucket: 'test-bucket',
-  content_storage_path: `path/to/${mockContributionId_v1}.md`,
-  content_mime_type: 'text/markdown',
-  content_size_bytes: 100,
   created_at: 'now',
   updated_at: 'now',
   model_id: 'model-gpt4s',
@@ -115,17 +111,13 @@ const mockAIContribution: DialecticContribution = {
 const mockUserEditContribution: DialecticContribution = {
   id: mockContributionId_v2_edit,
   session_id: mockSessionId,
-  stage: mockStage,
+  stage: mockStage.slug,
   iteration_number: 1,
   original_model_contribution_id: mockContributionId_v1, // Points to AI version
   is_latest_edit: true,
   edit_version: 2,
   user_id: 'user-editor-gcc',
   model_name: 'GPT-4 Super', // Model name might be preserved from original
-  content_storage_bucket: 'test-bucket',
-  content_storage_path: `path/to/${mockContributionId_v2_edit}.md`,
-  content_mime_type: 'text/markdown',
-  content_size_bytes: 120,
   created_at: 'now',
   updated_at: 'now',
   model_id: null, // User edits don't have a model_id directly

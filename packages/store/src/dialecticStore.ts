@@ -108,6 +108,8 @@ export const initialDialecticStateValues: DialecticStateValues = {
   currentFeedbackFileContent: null,
   isFetchingFeedbackFileContent: false,
   fetchFeedbackFileContentError: null,
+
+  activeDialecticWalletId: null,
 };
 
 export const useDialecticStore = create<DialecticStore>((set, get) => ({
@@ -1151,5 +1153,11 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
   clearCurrentFeedbackFileContent: () => {
     logger.info('[DialecticStore] Clearing currentFeedbackFileContent');
     set({ currentFeedbackFileContent: null, isFetchingFeedbackFileContent: false, fetchFeedbackFileContentError: null }); // Also reset loading/error states
+  },
+
+  // Add the implementation for setActiveDialecticWalletId
+  setActiveDialecticWalletId: (walletId: string | null) => {
+    logger.info(`[DialecticStore] Setting active dialectic wallet ID to: ${walletId}`);
+    set({ activeDialecticWalletId: walletId });
   },
 }));

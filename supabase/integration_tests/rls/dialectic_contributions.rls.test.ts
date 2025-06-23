@@ -94,20 +94,6 @@ describe("RLS: dialectic_contributions", () => {
     session1Project1User2Id = s1p1u2.id;
     registerUndoAction({ type: 'DELETE_CREATED_ROW', tableName: 'dialectic_sessions', criteria: { id: session1Project1User2Id }, scope: 'global' });
 
-    const { data: dummySm, error: smError } = await adminClient
-        .from("dialectic_session_models")
-        .insert({ 
-            session_id: session1Project1User1Id, 
-            model_id: "00000000-0000-0000-0000-000000000000",
-            model_role: "assistant"
-        })
-        .select("id").single();
-    if (smError) throw new Error(`Failed to create dummy session model: ${smError.message}`);
-    assertExists(dummySm);
-    dummySessionModelId = dummySm.id;
-    registerUndoAction({ type: 'DELETE_CREATED_ROW', tableName: 'dialectic_session_models', criteria: { id: dummySessionModelId }, scope: 'global' });
-  });
-
   afterAll(async () => {
     await coreCleanupTestResources('all');
     await coreTeardown();
@@ -124,15 +110,14 @@ describe("RLS: dialectic_contributions", () => {
   
   type ContributionPayload = Database["public"]["Tables"]["dialectic_contributions"]["Insert"];
 
-  const getDummyContributionPayload = (sessionId: string, sessionModelId: string): Omit<ContributionPayload, 'id' | 'created_at' | 'updated_at'> => ({
+  const getDummyContributionPayload = (sessionId: string): Omit<ContributionPayload, 'id' | 'created_at' | 'updated_at'> => ({
       session_id: sessionId,
-      session_model_id: sessionModelId,
       stage: "thesis",
-      content_storage_path: `test/contributions/${crypto.randomUUID()}.md`,
+      storage_path: `test/contributions/${crypto.randomUUID()}.md`,
   });
 
   it("User can create a contribution for a session in their own project", async () => {
-    const payload = getDummyContributionPayload(session1Project1User1Id, dummySessionModelId);
+    const payload = getDummyContributionPayload(session1Project1User1Id);
     const { data, error } = await userClient1
       .from("dialectic_contributions")
       .insert(payload)
@@ -145,7 +130,7 @@ describe("RLS: dialectic_contributions", () => {
   });
 
   it("User cannot create a contribution for a session in another user's project", async () => {
-    const payload = getDummyContributionPayload(session1Project1User2Id, dummySessionModelId);
+    const payload = getDummyContributionPayload(session1Project1User2Id);
     const { data, error, status } = await userClient1 
       .from("dialectic_contributions")
       .insert(payload);

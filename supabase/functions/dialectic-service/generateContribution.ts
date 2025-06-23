@@ -403,11 +403,11 @@ export async function generateContributions(
 
           const mapped: DialecticContribution = {
             ...c, 
-            stage: stage, 
-            content_storage_bucket: c.storage_bucket,
-            content_storage_path: c.storage_path,
-            content_mime_type: c.mime_type,
-            content_size_bytes: c.size_bytes,
+            stage: stage.slug, 
+            storage_bucket: c.storage_bucket,
+            storage_path: c.storage_path,
+            mime_type: c.mime_type,
+            size_bytes: c.size_bytes,
             citations: parsedCitations, // Use the parsed and typed citations
             // Ensure file_name is present; it should be from ...c if c.file_name exists
             // If c.file_name can be null and DialecticContribution.file_name cannot, adjust as needed.

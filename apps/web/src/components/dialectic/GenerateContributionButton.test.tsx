@@ -25,7 +25,12 @@ import {
 vi.mock('@paynless/store', async () => {
   // Import all exports from our mock file
   const mockStoreExports = await vi.importActual<typeof import('@/mocks/dialecticStore.mock')>('@/mocks/dialecticStore.mock');
-  return mockStoreExports;
+  return {
+    ...mockStoreExports,
+    // Ensure selectSelectedModelIds is correctly defined for these tests.
+    // This assumes the mock store's state has a 'selectedModelIds' property.
+    selectSelectedModelIds: (state: { selectedModelIds?: string[] }) => state.selectedModelIds || [],
+  };
 });
 
 vi.mock('sonner', () => ({
@@ -50,9 +55,31 @@ const mockThesisStage: DialecticStage = {
 const mockGenericContribution: DialecticContribution = {
   id: 'contrib-generic',
   session_id: 'test-session-id',
-  stage: mockThesisStage, // Use mockThesisStage for consistency
+  stage: mockThesisStage.slug, // Use mockThesisStage for consistency
   iteration_number: 1,
-  user_id: 'u1', created_at: 'now', updated_at: 'now', model_id: 'm1', model_name: 'GPT-4', content_storage_path: 'p', content_storage_bucket: 'b', content_mime_type: 'text/plain', content_size_bytes: 100, edit_version: 1, prompt_template_id_used: 'p-template', raw_response_storage_path: 'raw/p', seed_prompt_url: 'seed/p', target_contribution_id: null, tokens_used_input: 10, tokens_used_output: 20, processing_time_ms: 50, error: null, citations: null, is_latest_edit: true, original_model_contribution_id: 'contrib-generic'
+  user_id: 'u1', 
+  created_at: 'now', 
+  updated_at: 'now', 
+  model_id: 'm1', 
+  model_name: 'GPT-4', 
+  edit_version: 1, 
+  prompt_template_id_used: 'p-template', 
+  raw_response_storage_path: 'raw/p', 
+  seed_prompt_url: 'seed/p', 
+  target_contribution_id: null, 
+  tokens_used_input: 10, 
+  tokens_used_output: 20, 
+  processing_time_ms: 50, 
+  error: null, 
+  citations: null, 
+  is_latest_edit: true, 
+  original_model_contribution_id: 'contrib-generic',
+  file_name: 'p.md',
+  storage_bucket: 'b',
+  storage_path: 'p',
+  mime_type: 'text/plain',
+  size_bytes: 100,
+  contribution_type: 'ai',
 };
 
 // Helper to create a complete DialecticProject mock
@@ -174,7 +201,7 @@ describe('GenerateContributionButton', () => {
 
   it('renders "Regenerate [StageName]" when contributions for current stage and iteration exist', () => {
     const currentIter = 1;
-    const existingContribution = { ...mockGenericContribution, stage: mockThesisStage, iteration_number: currentIter, session_id: defaultProps.sessionId };
+    const existingContribution = { ...mockGenericContribution, stage: mockThesisStage.slug, iteration_number: currentIter, session_id: defaultProps.sessionId };
     const sessionWithContribution = createMockSession(defaultProps.sessionId, defaultProps.projectId, currentIter, [existingContribution]);
     const projectWithContribution = createMockProject(defaultProps.projectId, [sessionWithContribution]);
     
@@ -282,7 +309,7 @@ describe('GenerateContributionButton', () => {
 
   it('is disabled and shows "Choose AI Models" when no models selected, overriding "Regenerate" label', () => {
     const currentIter = 1;
-    const existingContribution = { ...mockGenericContribution, stage: mockThesisStage, iteration_number: currentIter, session_id: defaultProps.sessionId };
+    const existingContribution = { ...mockGenericContribution, stage: mockThesisStage.slug, iteration_number: currentIter, session_id: defaultProps.sessionId };
     const sessionWithContribution = createMockSession(defaultProps.sessionId, defaultProps.projectId, currentIter, [existingContribution]);
     const projectWithContribution = createMockProject(defaultProps.projectId, [sessionWithContribution]);
 

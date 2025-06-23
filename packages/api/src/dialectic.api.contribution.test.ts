@@ -129,14 +129,10 @@ describe('DialecticApiClient', () => {
             model_id: 'model-abc',
             model_name: 'GPT-4 Thesis Generator',
             user_id: 'user-abc',
-            stage: mockStageObject,
+            stage: mockStageObject.slug,
             iteration_number: 1,
             prompt_template_id_used: 'pt-thesis-default',
             seed_prompt_url: `projects/${validPayload.projectId}/sessions/${validPayload.sessionId}/iteration_1/thesis/seed_prompt.md`,
-            content_storage_bucket: 'dialectic-contributions',
-            content_storage_path: `projects/${validPayload.projectId}/sessions/${validPayload.sessionId}/iteration_1/thesis/contrib-xyz.md`,
-            content_mime_type: 'text/markdown',
-            content_size_bytes: 1500,
             edit_version: 1,
             is_latest_edit: true,
             original_model_contribution_id: null,
@@ -149,6 +145,12 @@ describe('DialecticApiClient', () => {
             citations: null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            storage_bucket: 'dialectic-contributions',
+            storage_path: `projects/${validPayload.projectId}/sessions/${validPayload.sessionId}/iteration_1/thesis/contrib-xyz.md`,
+            mime_type: 'text/markdown',
+            size_bytes: 1500,
+            contribution_type: 'ai',
+            file_name: 'contrib-xyz.md',
         };
 
         const mockSuccessResponse: GenerateContributionsResponse = {

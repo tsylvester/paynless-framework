@@ -142,9 +142,9 @@ export const SessionContributionsDisplayCard: React.FC = () => {
 
 
     const contributionsForStageAndIteration = session.dialectic_contributions.filter(
-      c => c.stage.slug === activeStage.slug && c.iteration_number === session.iteration_count
+      c => c.stage === activeStage.slug && c.iteration_number === session.iteration_count
     );
-    console.log('[SessionContributionsDisplayCard useMemo] Filtered contributionsForStageAndIteration (count ' + contributionsForStageAndIteration.length + '):', JSON.parse(JSON.stringify(contributionsForStageAndIteration.map(c => ({id: c.id, stage_slug: c.stage.slug, iter: c.iteration_number, original_id: c.original_model_contribution_id, edit_version: c.edit_version, is_latest_edit: c.is_latest_edit})))));
+    console.log('[SessionContributionsDisplayCard useMemo] Filtered contributionsForStageAndIteration (count ' + contributionsForStageAndIteration.length + '):', JSON.parse(JSON.stringify(contributionsForStageAndIteration.map(c => ({id: c.id, stage_slug: c.stage, iter: c.iteration_number, original_id: c.original_model_contribution_id, edit_version: c.edit_version, is_latest_edit: c.is_latest_edit})))));
 
     const latestEditsMap = new Map<string, DialecticContribution>();
 

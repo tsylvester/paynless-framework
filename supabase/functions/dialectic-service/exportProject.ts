@@ -173,16 +173,12 @@ export async function exportProject(
                             id: c.id,
                             session_id: c.session_id,
                             user_id: c.user_id,
-                            stage: stageObject, // Now validated
+                            stage: stageObject.slug, // Now validated
                             iteration_number: c.iteration_number,
                             model_id: c.model_id,
                             model_name: c.model_name,
                             prompt_template_id_used: c.prompt_template_id_used,
                             seed_prompt_url: c.seed_prompt_url, // Corrected mapping
-                            content_storage_bucket: c.storage_bucket,
-                            content_storage_path: c.storage_path,
-                            content_mime_type: c.mime_type,
-                            content_size_bytes: c.size_bytes,
                             edit_version: c.edit_version,
                             is_latest_edit: c.is_latest_edit,
                             original_model_contribution_id: c.original_model_contribution_id,
