@@ -1061,11 +1061,17 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
     *   `test(dialectic-ui): update tests for SessionInfoCard and SessionContributionsDisplayCard loading states`
         *   *Status: Not applicable for AI to verify commits.*
 
-*   [X] Fix Delete to ensure it deletes the entire project.
 *   [ ] Fix Clone so it works again. 
 *   [ ] Fix Export so that it exports the entire project. 
+*   [ ] Fix Delete to use the new path structuring
 *   [X] Fix path_constructor so it does NOT append a filename to storage_path in "finalMainContentFilePath". 
     *    [X] For files that need filenames constructed, return the path and file name separately, not as a single string. 
+*   [ ] Fix PromptParser to construct all stage prompts correctly
+    *    [ ] Fill in all {variable} elements from the project details
+    *    [ ] Append all prompt resources to the actual prompt sent 
+*   [ ] Update all the prompts with the right content 
+*   [ ] Add the sync/export button to the Paralysis stage   
+*   [ ] Add a slice button to the Paralysis stage to take the selected plan, slice it according to an algorithm, then create a new project for each slice 
 ---
 
 `[✅] 1. [BE] Design and Implement `path_deconstructor.ts` Utility**

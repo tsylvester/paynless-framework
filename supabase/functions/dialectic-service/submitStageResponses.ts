@@ -20,48 +20,10 @@ import {
 } from '../_shared/supabase_storage_utils.ts';
 import type { PathContext } from '../_shared/types/file_manager.types.ts';
 import { renderPrompt } from '../_shared/prompt-renderer.ts';
-import type { IFileManager } from '../_shared/types/file_manager.types.ts';
+import { formatResourceDescription } from '../_shared/utils/resourceDescriptionFormatter.ts';
 
 // Get storage bucket from environment variables, with a fallback for safety.
 const STORAGE_BUCKET = Deno.env.get('SB_CONTENT_STORAGE_BUCKET');
-
-/**
- * Maps a raw database feedback record to the structured DialecticFeedback interface.
- */
-function mapDbFeedbackToInterface(
-  dbFeedback: Tables<'dialectic_feedback'>,
-): DialecticFeedback {
-  // feedback_value_structured was replaced by resource_description in the new schema
-  // and is directly mapped if it's a valid object.
-  let resource_description_mapped: Record<string, unknown> | null = null;
-  const rawResourceDescription = dbFeedback.resource_description;
-
-  if (
-    rawResourceDescription &&
-    typeof rawResourceDescription === 'object' &&
-    !Array.isArray(rawResourceDescription)
-  ) {
-    resource_description_mapped = { ...rawResourceDescription };
-  }
-
-  return {
-    id: dbFeedback.id,
-    session_id: dbFeedback.session_id,
-    project_id: dbFeedback.project_id,
-    user_id: dbFeedback.user_id,
-    stage_slug: dbFeedback.stage_slug,
-    iteration_number: dbFeedback.iteration_number,
-    storage_bucket: dbFeedback.storage_bucket,
-    storage_path: dbFeedback.storage_path,
-    file_name: dbFeedback.file_name,
-    mime_type: dbFeedback.mime_type,
-    size_bytes: dbFeedback.size_bytes,
-    feedback_type: dbFeedback.feedback_type,
-    resource_description: resource_description_mapped,
-    created_at: dbFeedback.created_at,
-    updated_at: dbFeedback.updated_at,
-  };
-}
 
 /**
  * Fetches and assembles content from various artifacts based on a set of rules.
@@ -128,7 +90,7 @@ async function fetchAndAssembleArtifacts(
       const { data: aiContributions, error: aiContribError } = await dbClient
         .from('dialectic_contributions')
         .select<string, DialecticContribution>(
-          'id, storage_path, storage_bucket, model_name',
+          'id, storage_path, file_name, storage_bucket, model_name',
         )
         .eq('session_id', sessionId)
         .eq('iteration_number', iterationNumber)
@@ -147,11 +109,17 @@ async function fetchAndAssembleArtifacts(
       if (aiContributions && aiContributions.length > 0) {
         for (const contrib of aiContributions) {
           if (contrib.storage_path && contrib.storage_bucket) {
+            let pathToDownload = contrib.storage_path;
+            if (contrib.file_name) {
+              const baseDir = contrib.storage_path.endsWith('/') ? contrib.storage_path : contrib.storage_path + '/';
+              pathToDownload = baseDir + contrib.file_name;
+            }
+
             const { data: content, error: downloadError } =
               await downloadFromStorage(
                 dbClient,
                 contrib.storage_bucket,
-                contrib.storage_path,
+                pathToDownload,
               );
             if (content && !downloadError) {
               contributionsContent +=
@@ -195,23 +163,29 @@ async function fetchAndAssembleArtifacts(
       if (content && !downloadError) {
         feedbackContent += `#### User Feedback for ${displayName}\n\n${new TextDecoder().decode(content)}\n\n---\n`;
       } else {
+        // Handle cases where content is null or downloadError is present
         if (downloadError) { // Explicit download error occurred
-          logger.error( // Changed to error log as this is now a critical failure point
-            `Failed to download feedback file for rule. Path: ${feedbackPath}`,
-            { error: downloadError, rule, projectId, sessionId, iterationNumber },
+          if (rule.required === true) {
+            logger.error(
+              `Failed to download REQUIRED feedback file for rule. Path: ${feedbackPath}`,
+              { error: downloadError, rule, projectId, sessionId, iterationNumber },
+            );
+            throw new Error(
+              `Failed to download feedback for stage '${displayName}' (slug: ${rule.stage_slug}) for prompt assembly. Storage error: ${downloadError.message}`
+            );
+          } else {
+            logger.warn(
+              `Failed to download OPTIONAL feedback file for rule, continuing. Path: ${feedbackPath}`,
+              { error: downloadError, rule, projectId, sessionId, iterationNumber },
+            );
+            feedbackContent += `No optional user feedback was provided or an error occurred while fetching it for this section.\n\n---\n`;
+          }
+        } else { // No explicit downloadError, but content might be null (e.g., file not found for optional feedback)
+          logger.warn(
+            `No feedback file found or content was empty for rule. Path: ${feedbackPath}`,
+            { rule, projectId, sessionId, iterationNumber },
           );
-          // Throwing error for consistency, making feedback download critical
-          throw new Error(
-            `Failed to download feedback for stage '${displayName}' (slug: ${rule.stage_slug}) for prompt assembly. Storage error: ${downloadError.message}`
-          );
-        } else { // No content, but no explicit error (e.g., file not found might return null content, null error)
-          // This case implies content is null and downloadError is also null.
-          // This could mean the file doesn't exist, which might be acceptable.
-          logger.warn(`No feedback file found or content was empty for rule. Path: ${feedbackPath}`, { rule, projectId, sessionId, iterationNumber });
-          feedbackContent += `No user feedback was found for this section.
-
----
-`;
+          feedbackContent += `No user feedback was found for this section.\n\n---\n`;
         }
       }
     }
@@ -677,13 +651,14 @@ export async function submitStageResponses(
       mimeType: 'text/markdown',
       sizeBytes: new TextEncoder().encode(seedPromptResult.prompt).length,
       userId: user.id,
-      description:
-        `Seed prompt for project ${projectId}, session ${sessionId}, stage ${nextStage.slug}, iteration ${sessionData.iteration_count + 1}`,
-      customMetadata: {
-        promptType: 'NextStageSeed_v1',
-        targetStageSlug: nextStage.slug,
-        sourceStageSlug: stageSlug,
-      },
+      description: formatResourceDescription({
+        type: seedPromptResult.path.fileType, 
+        session_id: seedPromptResult.path.sessionId!,      
+        stage_slug: seedPromptResult.path.stageSlug!,     
+        iteration: seedPromptResult.path.iteration!,       
+        original_file_name: seedPromptResult.path.originalFileName!,
+        project_id: seedPromptResult.path.projectId,    
+      }),
     };
     const { record: seedFileRecord, error: seedFileError } =
       await fileManager.uploadAndRegisterFile(seedPromptUploadContext);

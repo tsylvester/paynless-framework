@@ -10,6 +10,7 @@ import type { ILogger } from "../_shared/types.ts";
 import { PromptAssembler, type ProjectContext, type StageContext, type SessionContext } from "../_shared/prompt-assembler.ts";
 import { FileManagerService } from "../_shared/services/file_manager.ts";
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts';
+import { formatResourceDescription } from '../_shared/utils/resourceDescriptionFormatter.ts';
 
 async function getInitialPromptContent(
     dbClient: SupabaseClient<Database>,
@@ -295,12 +296,13 @@ export async function startSession(
         mimeType: 'text/markdown',
         sizeBytes: seedPromptBuffer.byteLength,
         userId: userId,
-        description: JSON.stringify({
+        description: formatResourceDescription({
             type: 'seed_prompt',
             session_id: newSessionRecord.id,
             stage_slug: stageContext.slug,
             iteration: 1, // Corresponds to pathContext.iteration for initial seed
-            original_file_name: `seed_prompt.md`
+            original_file_name: `seed_prompt.md`,
+            project_id: project.id, // Added project_id for completeness
         }),
     });
 
