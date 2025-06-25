@@ -801,7 +801,12 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     set(state => ({
       initialPromptContentCache: {
         ...state.initialPromptContentCache,
-        [resourceId]: { ...cacheEntry, isLoading: true, error: null },
+        [resourceId]: {
+          content: state.initialPromptContentCache[resourceId]?.content, // Preserve existing content
+          fileName: state.initialPromptContentCache[resourceId]?.fileName, // Preserve existing fileName
+          isLoading: true,
+          error: null,
+        },
       }
     }));
 
@@ -815,7 +820,11 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
         set(state => ({
           initialPromptContentCache: {
             ...state.initialPromptContentCache,
-            [resourceId]: { ...state.initialPromptContentCache[resourceId], isLoading: false, error },
+            [resourceId]: {
+              ...state.initialPromptContentCache[resourceId], // Spread existing to keep content/fileName if they were there
+              isLoading: false,
+              error,
+            },
           }
         }));
       } else {
@@ -845,7 +854,12 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       set(state => ({
         initialPromptContentCache: {
           ...state.initialPromptContentCache,
-          [resourceId]: { isLoading: false, error: networkError, content: '' },
+          [resourceId]: { // When a network error occurs, create a full entry
+            isLoading: false,
+            error: networkError,
+            content: '', // Provide default empty string for content
+            fileName: '', // Provide default empty string for fileName
+          },
         }
       }));
     }

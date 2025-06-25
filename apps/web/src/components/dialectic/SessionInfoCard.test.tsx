@@ -5,6 +5,8 @@ import { DialecticSession, DialecticStage, DialecticProjectResource, DialecticPr
 import {
   initializeMockDialecticState,
 } from '@/mocks/dialecticStore.mock';
+import { resetAiStoreMock } from '@/mocks/aiStore.mock';
+import { initializeMockWalletStore } from '@/mocks/walletStore.mock';
 import { 
   selectIsStageReadyForSessionIteration, 
   useDialecticStore
@@ -13,15 +15,24 @@ import {
 // Explicitly mock the @paynless/store to use our mock implementation
 vi.mock('@paynless/store', async () => {
   const dialecticMockModule = await vi.importActual<typeof import('@/mocks/dialecticStore.mock')>('@/mocks/dialecticStore.mock');
-  // Import the actual selectors needed by the component from the real store module
   const actualOriginalStoreModule = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
+  const organizationStoreMockModule = await vi.importActual<typeof import('@/mocks/organizationStore.mock')>('@/mocks/organizationStore.mock');
+  const aiStoreMockModule = await vi.importActual<typeof import('@/mocks/aiStore.mock')>('@/mocks/aiStore.mock');
+  const walletStoreMockModule = await vi.importActual<typeof import('@/mocks/walletStore.mock')>('@/mocks/walletStore.mock');
+  
   return {
-    ...dialecticMockModule,
     useDialecticStore: dialecticMockModule.useDialecticStore,
-    selectIsStageReadyForSessionIteration: vi.fn(), // This will be controlled in setupMockStore
-    // Provide the actual selectors for the component to use with the mocked store state
+    useOrganizationStore: organizationStoreMockModule.useOrganizationStore,
+    useAiStore: aiStoreMockModule.mockedUseAiStoreHookLogic,
+    initialAiStateValues: actualOriginalStoreModule.initialAiStateValues,
+    useWalletStore: walletStoreMockModule.useWalletStore,
+    initialWalletStateValues: actualOriginalStoreModule.initialWalletStateValues,
+    selectIsStageReadyForSessionIteration: vi.fn(),
     selectContributionGenerationStatus: actualOriginalStoreModule.selectContributionGenerationStatus,
     selectGenerateContributionsError: actualOriginalStoreModule.selectGenerateContributionsError,
+    selectPersonalWallet: walletStoreMockModule.selectPersonalWallet,
+    selectIsLoadingPersonalWallet: walletStoreMockModule.selectIsLoadingPersonalWallet,
+    selectPersonalWalletError: walletStoreMockModule.selectPersonalWalletError,
   };
 });
 
@@ -251,6 +262,8 @@ describe('SessionInfoCard', () => {
   
   beforeEach(() => {
     vi.clearAllMocks();
+    resetAiStoreMock();
+    initializeMockWalletStore();
     setupMockStore({
       currentProjectDetail: mockProject,
       activeContextStage: mockStage,

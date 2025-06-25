@@ -60,7 +60,6 @@ export class FileManagerService {
     let currentAttemptCount = 0;
 
     if (context.pathContext.fileType === 'model_contribution_main' || context.pathContext.fileType === 'model_contribution_raw_json') {
-      // Retry loop for model contributions to handle potential filename collisions
       for (currentAttemptCount = 0; currentAttemptCount < MAX_UPLOAD_ATTEMPTS; currentAttemptCount++) {
         const attemptPathContext: PathContext = {
           ...context.pathContext,
@@ -68,46 +67,47 @@ export class FileManagerService {
           modelSlug: context.pathContext.modelSlug!,
           stageSlug: context.pathContext.stageSlug!,
         };
-        const attemptPath = constructStoragePath(attemptPathContext);
+        const pathParts = constructStoragePath(attemptPathContext);
+        const fullPathForUpload = `${pathParts.storagePath}/${pathParts.fileName}`;
+
         const uploadResult = await this.supabase.storage
           .from(this.storageBucket)
-          .upload(attemptPath, context.fileContent, {
+          .upload(fullPathForUpload, context.fileContent, {
             contentType: context.mimeType,
-            upsert: false, // Important: do not overwrite existing files
+            upsert: false, 
           });
 
         mainUploadError = uploadResult.error;
 
         if (!mainUploadError) {
-          finalMainContentFilePath = attemptPath;
-          finalFileName = attemptPath.split('/').pop() || context.pathContext.originalFileName || 'filename_ERORR'; // Derive filename from path, fallback
-          break; // Successful upload
+          finalMainContentFilePath = pathParts.storagePath; // Directory path
+          finalFileName = pathParts.fileName;          // Filename
+          break; 
         } else if (mainUploadError.message && 
                    (mainUploadError.message.includes('The resource already exists') || 
                     ('status' in mainUploadError && mainUploadError.status === 409)
                    )
                   ) {
-          // File already exists, try next attemptCount
           if (currentAttemptCount === MAX_UPLOAD_ATTEMPTS - 1) {
-            // Last attempt failed due to collision
             mainUploadError = new Error(`Failed to upload file after ${MAX_UPLOAD_ATTEMPTS} attempts due to filename collisions.`);
             break;
           }
-          continue; // Next attempt
+          continue; 
         } else {
-          // Different error, break and report it
           break;
         }
       }
     } else {
-      // For other file types, upload directly (no retry loop for now)
-      finalMainContentFilePath = constructStoragePath(context.pathContext);
-      finalFileName = context.pathContext.originalFileName || 'filename_ERROR'; // Or derive from path if more robust
+      const pathParts = constructStoragePath(context.pathContext);
+      const fullPathForUpload = `${pathParts.storagePath}/${pathParts.fileName}`;
+      finalMainContentFilePath = pathParts.storagePath; // Directory path
+      finalFileName = pathParts.fileName;          // Filename
+
       const { error } = await this.supabase.storage
         .from(this.storageBucket)
-        .upload(finalMainContentFilePath, context.fileContent, {
+        .upload(fullPathForUpload, context.fileContent, {
           contentType: context.mimeType,
-          upsert: true, // Original behavior for non-contribution files
+          upsert: true, 
         });
       mainUploadError = error;
     }
@@ -119,40 +119,35 @@ export class FileManagerService {
       }
     }
     
-    let rawJsonResponseFilePath: string | null = null;
+    let rawJsonResponseFullStoragePath: string | null = null; // Stores full path for DB
     if (context.pathContext.fileType === 'model_contribution_main' && context.contributionMetadata?.rawJsonResponseContent) {
-      // This raw JSON upload needs to respect the main file's successful attemptCount.
-      // And its own retry logic if we want to number raw JSONs independently (e.g. _0_raw.json, _1_raw.json)
-      // For now, let's assume it uses the same attemptCount as the main file.
       try {
         const rawJsonPathContext: PathContext = {
           ...context.pathContext, 
           fileType: 'model_contribution_raw_json',
-          // finalFileName here is the one from the successful main upload, e.g., "model_0_stage.md"
-          // path_constructor will build "model_0_stage_raw.json"
           originalFileName: finalFileName.replace(/(\.\w+)$/, '_raw.json'), 
-          attemptCount: currentAttemptCount, // Use the successful attemptCount from main file upload
+          attemptCount: currentAttemptCount, 
           modelSlug: context.pathContext.modelSlug!, 
           stageSlug: context.pathContext.stageSlug!,
         };
-        rawJsonResponseFilePath = constructStoragePath(rawJsonPathContext);
+        const rawJsonPathParts = constructStoragePath(rawJsonPathContext);
+        const fullPathForRawJsonUpload = `${rawJsonPathParts.storagePath}/${rawJsonPathParts.fileName}`;
+        rawJsonResponseFullStoragePath = fullPathForRawJsonUpload; // Full path for DB
 
-        // TODO: This raw JSON upload might also need its own collision check if we allow multiple raw JSONs per main attempt
-        // For now, using upsert:true, but ideally should be upsert:false and part of a retry strategy if needed.
         const { error: rawJsonUploadError } = await this.supabase.storage
           .from(this.storageBucket)
-          .upload(rawJsonResponseFilePath, context.contributionMetadata.rawJsonResponseContent, {
+          .upload(fullPathForRawJsonUpload, context.contributionMetadata.rawJsonResponseContent, {
             contentType: 'application/json',
-            upsert: true, // Change to false and add retry if raw JSON also needs collision handling based on its own attempts
+            upsert: true, 
           });
 
         if (rawJsonUploadError) {
           console.warn(`Raw JSON response upload failed for ${finalFileName}: ${rawJsonUploadError.message}.`);
-          rawJsonResponseFilePath = null; 
+          rawJsonResponseFullStoragePath = null; 
         }
       } catch (e: unknown) {
          console.warn(`Error processing raw JSON for ${finalFileName}: ${(e as Error).message}.`);
-         rawJsonResponseFilePath = null;
+         rawJsonResponseFullStoragePath = null;
       }
     }
 
@@ -186,15 +181,16 @@ export class FileManagerService {
         mime_type: context.mimeType,
         size_bytes: context.sizeBytes,
         storage_bucket: this.storageBucket,
-        storage_path: finalMainContentFilePath, 
+        storage_path: finalMainContentFilePath, // Should be directory path now
         resource_description: finalDescriptionString,
       };
     } else if (targetTable === 'dialectic_contributions') {
       if (!context.contributionMetadata || !context.pathContext.sessionId || context.contributionMetadata.iterationNumber === undefined || !context.pathContext.stageSlug || !context.pathContext.modelSlug) {
-        // No need to remove file if upload failed already and mainUploadError is set
-        if (!mainUploadError) { // Only remove if main upload succeeded but this check fails
-            await this.supabase.storage.from(this.storageBucket).remove([finalMainContentFilePath]);
-            if (rawJsonResponseFilePath) { await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFilePath]); }
+        // Construct full path for removal if needed
+        const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
+        if (!mainUploadError) { 
+            await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]);
+            if (rawJsonResponseFullStoragePath) { await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFullStoragePath]); }
         }
         return { record: null, error: { message: 'Missing required metadata for contribution.' }};
       }
@@ -207,11 +203,11 @@ export class FileManagerService {
         stage: context.pathContext.stageSlug, 
         iteration_number: meta.iterationNumber,
         storage_bucket: this.storageBucket,
-        storage_path: finalMainContentFilePath, 
+        storage_path: finalMainContentFilePath, // Should be directory path now
         mime_type: context.mimeType,
         size_bytes: context.sizeBytes,
         file_name: finalFileName, 
-        raw_response_storage_path: rawJsonResponseFilePath,
+        raw_response_storage_path: rawJsonResponseFullStoragePath, // Stores full path
         tokens_used_input: meta.tokensUsedInput,
         tokens_used_output: meta.tokensUsedOutput,
         processing_time_ms: meta.processingTimeMs,
@@ -227,13 +223,15 @@ export class FileManagerService {
       };
     } else { // targetTable === 'dialectic_feedback'
       if (!context.pathContext.projectId || !context.userId || !context.pathContext.stageSlug || context.pathContext.iteration === undefined || !context.pathContext.sessionId ) {
-        if (!mainUploadError) { await this.supabase.storage.from(this.storageBucket).remove([finalMainContentFilePath]); }
+        const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
+        if (!mainUploadError) { await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]); }
         return { record: null, error: { message: 'Missing required fields for feedback record.' } };
       }
 
       const feedbackTypeFromContext = context.customMetadata?.feedbackType;
       if (!feedbackTypeFromContext) {
-        if (!mainUploadError) { await this.supabase.storage.from(this.storageBucket).remove([finalMainContentFilePath]); }
+        const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
+        if (!mainUploadError) { await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]); }
         return { record: null, error: { message: "'feedbackType' is missing in customMetadata for user_feedback."}};
       }
 
@@ -244,7 +242,7 @@ export class FileManagerService {
         stage_slug: context.pathContext.stageSlug,
         iteration_number: context.pathContext.iteration,
         storage_bucket: this.storageBucket,
-        storage_path: finalMainContentFilePath, 
+        storage_path: finalMainContentFilePath, // Should be directory path now
         file_name: finalFileName, 
         mime_type: context.mimeType,
         size_bytes: context.sizeBytes,
@@ -282,13 +280,13 @@ export class FileManagerService {
       // If mainUploadError was already set, the file might not have been uploaded or the path is wrong.
       if (!mainUploadError) {
           await this.supabase.storage.from(this.storageBucket).remove([finalMainContentFilePath]);
-          if (rawJsonResponseFilePath) {
-            await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFilePath]);
+          if (rawJsonResponseFullStoragePath) {
+            await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFullStoragePath]);
           }
       }
       return {
         record: null,
-        error: { message: "Database insert failed", details: insertError.message },
+        error: { message: "Database registration failed after successful upload.", details: insertError.message },
       }
     }
 

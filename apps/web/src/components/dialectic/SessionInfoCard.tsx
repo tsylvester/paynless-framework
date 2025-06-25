@@ -95,10 +95,12 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (/* REMOVED: { se
   return (
     <Card className="mb-6" aria-labelledby={`session-info-title-${session.id}`}>
       <CardHeader>
-        <CardTitle data-testid={`session-info-title-${session.id}`} className="text-xl">
+        <CardTitle data-testid={`session-info-title-${session.id}`} className="text-xl flex items-center gap-2">
           {session.session_description || 'Session Information'} | 
           <Badge variant={session.status?.includes('error') ? 'destructive' : 'secondary'}>{session.status || 'N/A'}</Badge> | 
-          Iteration: {session.iteration_count}
+          Iteration: {session.iteration_count} | 
+          <ChatContextSelector /> | 
+          <WalletSelector />
         </CardTitle>
         {(contributionGenerationStatus === 'initiating' || contributionGenerationStatus === 'generating') && (
           <div className="flex items-center text-sm text-muted-foreground mt-2" data-testid="generating-contributions-indicator">

@@ -113,7 +113,7 @@ export const DialecticSessionDetailsPage: React.FC = () => {
   
   return (
     <div className="container mx-auto p-4" role="main">
-      <SessionInfoCard session={activeSessionDetail} />
+      <SessionInfoCard />
 
       <div className="flex space-x-2 my-4 overflow-x-auto pb-2" role="tablist" aria-label="Dialectic Stages">
         {stagesForCurrentProcess.map(stage => (
@@ -127,7 +127,7 @@ export const DialecticSessionDetailsPage: React.FC = () => {
       </div>
 
       {activeContextStage && activeSessionDetail && (
-        <SessionContributionsDisplayCard session={activeSessionDetail} activeStage={activeContextStage} />
+        <SessionContributionsDisplayCard />
       )}
 
       {!activeContextStage && stagesForCurrentProcess.length > 0 && !isLoading && (

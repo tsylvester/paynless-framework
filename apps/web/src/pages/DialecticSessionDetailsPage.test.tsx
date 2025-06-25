@@ -11,6 +11,9 @@ import type {
   ApiError,
 } from '@paynless/types';
 
+// Import the type for the DialecticStore to correctly type the state in the mock
+import type { DialecticStore } from '@paynless/store';
+
 // Use the centralized mock for the store
 vi.mock('@paynless/store', () => import('../mocks/dialecticStore.mock'));
 
@@ -25,7 +28,18 @@ vi.mock('react-router-dom', async () => {
 });
 
 // Mock child components
-vi.mock('../components/dialectic/SessionInfoCard', () => ({ SessionInfoCard: ({ session }: { session: DialecticSession }) => <div data-testid="mock-session-info-card">{session?.session_description}</div> }));
+vi.mock('../components/dialectic/SessionInfoCard', async () => {
+  // Directly import the hook from our mock implementation
+  const { useDialecticStore } = await vi.importActual<typeof import('../mocks/dialecticStore.mock')>('../mocks/dialecticStore.mock');
+  
+  return {
+    SessionInfoCard: () => {
+      // Use the store to get the session, similar to the real component
+      const session = useDialecticStore((state: DialecticStore) => state.activeSessionDetail);
+      return <div data-testid="mock-session-info-card">{session?.session_description}</div>;
+    }
+  };
+});
 vi.mock('../components/dialectic/StageTabCard', () => ({
   StageTabCard: ({ stage, isActiveStage }: { stage: DialecticStage; isActiveStage: boolean }) => (
     <div data-testid={`mock-stage-tab-card-${stage.slug}`} data-active={String(isActiveStage)}>

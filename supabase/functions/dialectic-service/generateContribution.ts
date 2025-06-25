@@ -162,15 +162,27 @@ export async function generateContributions(
         return { success: false, error: { message: "Seed prompt resource metadata not found or description mismatch.", status: 500 } };
       }
 
-      const seedPromptStoragePath = seedPromptResource.storage_path;
+      const seedPromptDir = seedPromptResource.storage_path;
+      const seedPromptFileName = seedPromptResource.file_name;
       const seedPromptBucketName = seedPromptResource.storage_bucket;
 
-      deps.logger.info(`[generateContributions] Fetching seed prompt content from bucket: ${seedPromptBucketName}, path: ${seedPromptStoragePath}`);
+      if (!seedPromptDir || !seedPromptFileName) {
+        deps.logger.error(`[generateContributions] Seed prompt resource is missing storage_path or file_name. Dir: ${seedPromptDir}, File: ${seedPromptFileName}, Bucket: ${seedPromptBucketName}`);
+        return { success: false, error: { message: "Seed prompt resource metadata is incomplete (missing path or filename).", status: 500 } };
+      }
 
-      const { data: promptContentBuffer, error: promptDownloadError } = await deps.downloadFromStorage(dbClient, seedPromptBucketName, seedPromptStoragePath);
+      // Ensure no leading/trailing slashes on dir and no leading slash on filename to prevent double slashes or incorrect paths
+      const cleanedDir = seedPromptDir.endsWith('/') ? seedPromptDir.slice(0, -1) : seedPromptDir;
+      const cleanedFileName = seedPromptFileName.startsWith('/') ? seedPromptFileName.slice(1) : seedPromptFileName;
+      
+      const fullSeedPromptPath = `${cleanedDir}/${cleanedFileName}`;
+
+      deps.logger.info(`[generateContributions] Fetching seed prompt content from bucket: ${seedPromptBucketName}, path: ${fullSeedPromptPath}`);
+
+      const { data: promptContentBuffer, error: promptDownloadError } = await deps.downloadFromStorage(dbClient, seedPromptBucketName, fullSeedPromptPath);
 
       if (promptDownloadError || !promptContentBuffer) {
-        deps.logger.error(`[generateContributions] Failed to download seed prompt from bucket: ${seedPromptBucketName}, path: ${seedPromptStoragePath}`, { error: promptDownloadError });
+        deps.logger.error(`[generateContributions] Failed to download seed prompt from bucket: ${seedPromptBucketName}, path: ${fullSeedPromptPath}`, { error: promptDownloadError });
         return { success: false, error: { message: "Could not retrieve the seed prompt for this stage.", status: 500, details: promptDownloadError?.message } };
       }
 
@@ -279,7 +291,7 @@ export async function generateContributions(
               iterationNumber: iterationNumber ?? 0,
               rawJsonResponseContent: JSON.stringify(aiResponse.rawProviderResponse || {}),
               tokensUsedInput: aiResponse.inputTokens, tokensUsedOutput: aiResponse.outputTokens, processingTimeMs: aiResponse.processingTimeMs,
-              seedPromptStoragePath: seedPromptStoragePath, 
+              seedPromptStoragePath: fullSeedPromptPath, 
               contributionType: stage.slug, 
               errorDetails: null, 
               promptTemplateIdUsed: null, 

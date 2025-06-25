@@ -205,10 +205,21 @@ export async function cloneProject(
                 const fileContentBuffer = Buffer.from(await fileBlob.arrayBuffer());
                 
                 // Deconstruct the original path to get its components
-                const deconstructedPathInfo: DeconstructedPathInfo = deconstructStoragePath(res.storage_path, res.file_name || undefined);
+                const fullOriginalPath = res.storage_path;
+                const lastSlashIdx = fullOriginalPath.lastIndexOf('/');
+                let originalDir = '';
+                let originalFileName = fullOriginalPath;
+                if (lastSlashIdx !== -1) {
+                    originalDir = fullOriginalPath.substring(0, lastSlashIdx);
+                    originalFileName = fullOriginalPath.substring(lastSlashIdx + 1);
+                }
+                
+                // Now, res.file_name from the DB should ideally match originalFileName extracted from the path.
+                // We'll use the one from the path for deconstruction consistency.
+                const deconstructedPathInfo: DeconstructedPathInfo = deconstructStoragePath({storageDir: originalDir, fileName: originalFileName});
 
-                if (deconstructedPathInfo.error && !deconstructedPathInfo.originalProjectId) {
-                    console.error(`[cloneProject] Critical: Could not deconstruct storage path for resource ${res.id} ('${res.storage_path}'): ${deconstructedPathInfo.error}. Skipping this resource.`);
+                if (deconstructedPathInfo.error || !deconstructedPathInfo.originalProjectId) {
+                    console.warn(`[cloneProject] Critical: Could not deconstruct storage path for resource ${res.id} ('${res.storage_path}'): ${deconstructedPathInfo.error}. Skipping this resource.`);
                     continue; 
                 }
                 
@@ -398,7 +409,17 @@ export async function cloneProject(
                         // Deconstruct paths for main content and raw JSON response
                         let mainFileDeconstructedPathInfo: DeconstructedPathInfo | null = null;
                         if (originalContrib.storage_path) {
-                            mainFileDeconstructedPathInfo = deconstructStoragePath(originalContrib.storage_path, originalContrib.file_name || undefined);
+                            const fullMainContribPath = originalContrib.storage_path;
+                            const lastSlashMain = fullMainContribPath.lastIndexOf('/');
+                            let mainContribDir = '';
+                            let mainContribFileName = fullMainContribPath; // Default if no slash
+                            if (lastSlashMain !== -1) {
+                                mainContribDir = fullMainContribPath.substring(0, lastSlashMain);
+                                mainContribFileName = fullMainContribPath.substring(lastSlashMain + 1);
+                            }
+                            // Use the filename extracted from the path for deconstruction consistency.
+                            // originalContrib.file_name from DB should ideally match mainContribFileName.
+                            mainFileDeconstructedPathInfo = deconstructStoragePath({storageDir: mainContribDir, fileName: mainContribFileName});
                             if (mainFileDeconstructedPathInfo.error && !mainFileDeconstructedPathInfo.originalProjectId) {
                                 console.warn(`[cloneProject] Could not reliably deconstruct main contribution storage path '${originalContrib.storage_path}' for contrib ${originalContrib.id}: ${mainFileDeconstructedPathInfo.error}. Will rely on DB fallbacks for path components.`);
                             }
@@ -411,9 +432,21 @@ export async function cloneProject(
 
                         let rawJsonDeconstructedPathInfo: DeconstructedPathInfo | null = null;
                         if (originalContrib.raw_response_storage_path) {
-                            // Pass the filename from the path if available for deconstruction robustness
-                            const rawJsonOriginalNameGuess = originalContrib.raw_response_storage_path.split('/').pop();
-                            rawJsonDeconstructedPathInfo = deconstructStoragePath(originalContrib.raw_response_storage_path, rawJsonOriginalNameGuess);
+                            const fullRawJsonPath = originalContrib.raw_response_storage_path;
+                            const rawJsonOriginalNameGuess = fullRawJsonPath.split('/').pop()!; // Already correctly gets the filename
+                            
+                            const lastSlashRaw = fullRawJsonPath.lastIndexOf('/');
+                            let rawJsonDir = '';
+                            // let rawJsonFileNamePart = fullRawJsonPath; // Not needed, rawJsonOriginalNameGuess is better
+                            if (lastSlashRaw !== -1) {
+                                rawJsonDir = fullRawJsonPath.substring(0, lastSlashRaw);
+                                // rawJsonFileNamePart = fullRawJsonPath.substring(lastSlashRaw + 1); // Already have rawJsonOriginalNameGuess
+                            } else {
+                                // This case means raw_response_storage_path is just a filename, no directory.
+                                // storageDir will be empty, fileName will be rawJsonOriginalNameGuess.
+                            }
+
+                            rawJsonDeconstructedPathInfo = deconstructStoragePath({storageDir: rawJsonDir, fileName: rawJsonOriginalNameGuess});
                             if (rawJsonDeconstructedPathInfo.error && !rawJsonDeconstructedPathInfo.originalProjectId) {
                                 console.warn(`[cloneProject] Could not deconstruct raw JSON storage path '${originalContrib.raw_response_storage_path}' for contrib ${originalContrib.id}: ${rawJsonDeconstructedPathInfo.error}.`);
                             }
@@ -499,8 +532,18 @@ export async function cloneProject(
                         // Reconstruct seedPromptStoragePath for the new project/session context
                         let newSeedPromptStoragePath: string | undefined = undefined;
                         if (originalContrib.seed_prompt_url) {
-                            const originalSeedFileName = originalContrib.seed_prompt_url.split('/').pop()!;
-                            const deconstructedSeedPathInfo = deconstructStoragePath(originalContrib.seed_prompt_url, originalSeedFileName);
+                            const fullOriginalSeedPath = originalContrib.seed_prompt_url;
+                            const originalSeedFileName = fullOriginalSeedPath.split('/').pop()!;
+
+                            const lastSlashSeed = fullOriginalSeedPath.lastIndexOf('/');
+                            let originalSeedDir = '';
+                            if (lastSlashSeed !== -1) {
+                                originalSeedDir = fullOriginalSeedPath.substring(0, lastSlashSeed);
+                            } else {
+                                // Seed path is just a filename, no directory part.
+                            }
+
+                            const deconstructedSeedPathInfo = deconstructStoragePath({storageDir: originalSeedDir, fileName: originalSeedFileName});
 
                             if (deconstructedSeedPathInfo.error && !deconstructedSeedPathInfo.originalProjectId) {
                                 console.warn(`[cloneProject] Contrib ${originalContrib.id}: Could not deconstruct original seed_prompt_url '${originalContrib.seed_prompt_url}': ${deconstructedSeedPathInfo.error}. Seed path linking may be broken.`);
@@ -540,7 +583,8 @@ export async function cloneProject(
                                             stageSlug: stageSlugForSeedPathContext,
                                         };
                                         seedPathConstructionContextForLog = seedPathContext; // Assign for logging before potential error
-                                        newSeedPromptStoragePath = constructStoragePath(seedPathContext);
+                                        const newSeedPathParts = constructStoragePath(seedPathContext);
+                                        newSeedPromptStoragePath = `${newSeedPathParts.storagePath}/${newSeedPathParts.fileName}`;
                                     } catch (pathError) {
                                         console.warn(`[cloneProject] Contrib ${originalContrib.id}: Error constructing new seed prompt path for '${originalContrib.seed_prompt_url}': ${pathError instanceof Error ? pathError.message : String(pathError)}. Context: ${JSON.stringify(seedPathConstructionContextForLog)}`);
                                     }

@@ -109,6 +109,13 @@ export const DialecticProjectCard: React.FC<DialecticProjectCardProps> = ({ proj
                 <Badge variant="outline" className="mt-2">{project.dialectic_domains.name}</Badge>
               )}
             </div>
+
+          </div>
+        </CardHeader>
+        <CardContent className="flex-grow">
+          <p className="text-sm text-muted-foreground line-clamp-3">
+            {project.initial_user_prompt}
+          </p>
             <div className="flex items-center space-x-1">
               <Button variant="ghost" size="icon" aria-label="Export project" onClick={handleExport}>
                 <FileUp className="h-5 w-5" />
@@ -119,14 +126,7 @@ export const DialecticProjectCard: React.FC<DialecticProjectCardProps> = ({ proj
               <Button variant="ghost" size="icon" aria-label="Delete project" onClick={() => setShowDeleteDialog(true)} className="text-destructive hover:text-destructive/90">
                 <Trash2 className="h-5 w-5" />
               </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="flex-grow">
-          <p className="text-sm text-muted-foreground line-clamp-3">
-            {project.initial_user_prompt}
-          </p>
-        </CardContent>
+            </div>        </CardContent>
         <CardFooter className="mt-auto">
           <ViewProjectButton 
             projectId={project.id} 

@@ -231,7 +231,7 @@ export interface DialecticStateValues {
   selectedModelIds: string[];
 
   // Cache for initial prompt file content
-  initialPromptContentCache: { [resourceId: string]: { content: string; isLoading: boolean; error: ApiError | null } };
+  initialPromptContentCache: { [resourceId: string]: InitialPromptCacheEntry };
 
   // New state for process templates
   currentProcessTemplate: DialecticProcessTemplate | null;

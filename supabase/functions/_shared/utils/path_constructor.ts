@@ -1,6 +1,14 @@
 import type { PathContext } from '../types/file_manager.types.ts'
 
 /**
+ * Defines the structure for a constructed path, separating directory and filename.
+ */
+export interface ConstructedPath {
+  storagePath: string; // Directory path leading to the file
+  fileName: string;    // The name of the file itself
+}
+
+/**
  * Sanitizes a string to be used as a file or directory name.
  * Replaces spaces with underscores and converts to lowercase.
  * @param input The string to sanitize.
@@ -56,7 +64,7 @@ export function mapStageSlugToDirName(stageSlug: string): string {
  * @param context The context defining the file's place in the project structure.
  * @returns A relative path for the file within the Supabase Storage bucket.
  */
-export function constructStoragePath(context: PathContext): string {
+export function constructStoragePath(context: PathContext): ConstructedPath {
   const {
     projectId,
     fileType,
@@ -81,22 +89,22 @@ export function constructStoragePath(context: PathContext): string {
 
   switch (fileType) {
     case 'project_readme':
-      return `${projectRoot}/project_readme.md`;
+      return { storagePath: projectRoot, fileName: 'project_readme.md' };
 
     case 'initial_user_prompt':
       if (!originalFileName) {
         throw new Error('originalFileName is required for initial_user_prompt file type.');
       }
-      return `${projectRoot}/${sanitizeForPath(originalFileName)}`;
+      return { storagePath: projectRoot, fileName: sanitizeForPath(originalFileName) };
 
-    case 'project_settings_file': // New FileType
-      return `${projectRoot}/project_settings.json`;
+    case 'project_settings_file':
+      return { storagePath: projectRoot, fileName: 'project_settings.json' };
 
-    case 'general_resource': // Path and context requirements changed
+    case 'general_resource':
       if (!originalFileName) {
         throw new Error('originalFileName is required for general_resource file type.');
       }
-      return `${projectRoot}/general_resource/${sanitizeForPath(originalFileName)}`;
+      return { storagePath: `${projectRoot}/general_resource`, fileName: sanitizeForPath(originalFileName) };
     
     // Session-specific 'user_prompt' and 'system_settings' (using 0_seed_inputs) are removed
     // as they are not in the documented file tree.
@@ -105,22 +113,22 @@ export function constructStoragePath(context: PathContext): string {
       if (!basePathForStageFiles) { 
         throw new Error('projectId, sessionId, iteration, and stageSlug are required for seed_prompt file type.');
       }
-      return `${basePathForStageFiles}/seed_prompt.md`;
+      return { storagePath: basePathForStageFiles, fileName: 'seed_prompt.md' };
 
     case 'user_feedback':
       if (!basePathForStageFiles || !rawStageSlug) { 
-        // rawStageSlug is needed for the filename itself
         throw new Error('projectId, sessionId, iteration, and stageSlug are required for user_feedback file type.');
       }
-      return `${basePathForStageFiles}/user_feedback_${sanitizeForPath(rawStageSlug)}.md`;
+      return { storagePath: basePathForStageFiles, fileName: `user_feedback_${sanitizeForPath(rawStageSlug)}.md` };
 
-    case 'model_contribution_main':
+    case 'model_contribution_main': {
       if (!basePathForStageFiles || !rawModelSlug || !rawStageSlug || attemptCount === undefined || attemptCount === null) {
         throw new Error('projectId, sessionId, iteration, stageSlug, modelSlug, and attemptCount are required for model_contribution_main.');
       }
       const modelSlugSanitized = sanitizeForPath(rawModelSlug);
       const stageSlugSanitized = sanitizeForPath(rawStageSlug);
-      return `${basePathForStageFiles}/${modelSlugSanitized}_${attemptCount}_${stageSlugSanitized}.md`;
+      return { storagePath: basePathForStageFiles, fileName: `${modelSlugSanitized}_${attemptCount}_${stageSlugSanitized}.md` };
+    }
 
     case 'model_contribution_raw_json': {
       if (!basePathForStageFiles || !rawModelSlug || !rawStageSlug || attemptCount === undefined || attemptCount === null) {
@@ -129,14 +137,14 @@ export function constructStoragePath(context: PathContext): string {
       const rawResponsesPath = `${basePathForStageFiles}/raw_responses`;
       const modelSlugSanitizedRaw = sanitizeForPath(rawModelSlug);
       const stageSlugSanitizedRaw = sanitizeForPath(rawStageSlug);
-      return `${rawResponsesPath}/${modelSlugSanitizedRaw}_${attemptCount}_${stageSlugSanitizedRaw}_raw.json`;
+      return { storagePath: rawResponsesPath, fileName: `${modelSlugSanitizedRaw}_${attemptCount}_${stageSlugSanitizedRaw}_raw.json` };
     }
       
     case 'contribution_document': {
        if (!basePathForStageFiles || !originalFileName) {
         throw new Error('projectId, sessionId, iteration, stageSlug, and originalFileName are required for contribution_document.');
       }
-      return `${basePathForStageFiles}/documents/${sanitizeForPath(originalFileName)}`;
+      return { storagePath: `${basePathForStageFiles}/documents`, fileName: sanitizeForPath(originalFileName) };
     }
 
     default: {

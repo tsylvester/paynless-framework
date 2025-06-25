@@ -15,26 +15,18 @@ BEGIN
   IF antithesis_stage_id IS NOT NULL THEN
     UPDATE public.dialectic_stages
     SET input_artifact_rules = '{
-      "fetch_artifacts": [
+      "sources": [
         {
-          "source": "previous_stage_storage",
-          "file_type": "seed_prompt",
-          "purpose": "Original user input, domain settings, and project context from the preceding stage.",
-          "required": true,
-          "multiple": false,
-          "section_header": "--- Original Problem and Context (from previous stage''s seed prompt) ---"
-        },
-        {
-          "source": "previous_stage_storage",
-          "file_type": "model_contribution_main", 
+          "type": "contribution",
+          "stage_slug": "thesis",
           "purpose": "AI-generated proposals from the preceding stage.",
           "required": true,
           "multiple": true,
           "section_header": "--- Proposals from Previous Stage ---"
         },
         {
-          "source": "current_session_feedback",
-          "file_type": "user_feedback",
+          "type": "feedback",
+          "stage_slug": "thesis",
           "purpose": "User''s direct feedback on the proposals from the preceding stage.",
           "required": false,
           "multiple": false,
@@ -59,26 +51,34 @@ BEGIN
   IF synthesis_stage_id IS NOT NULL THEN
     UPDATE public.dialectic_stages
     SET input_artifact_rules = '{
-      "fetch_artifacts": [
+      "sources": [
         {
-          "source": "previous_stage_storage",
-          "file_type": "seed_prompt",
-          "purpose": "Context from the preceding Antithesis stage, which includes the original Hypothesis (thesis proposal and its seed prompt).",
+          "type": "contribution",
+          "stage_slug": "thesis",
+          "purpose": "AI-generated proposals from the Thesis stage.",
           "required": true,
-          "multiple": false,
-          "section_header": "--- Context from Previous Stage (Antithesis Seed Prompt: Includes Original Thesis & User Input) ---"
+          "multiple": true,
+          "section_header": "--- Proposals from Thesis Stage ---"
         },
         {
-          "source": "previous_stage_storage",
-          "file_type": "model_contribution_main",
+          "type": "feedback",
+          "stage_slug": "thesis",
+          "purpose": "User''s feedback on the Thesis stage proposals.",
+          "required": false,
+          "multiple": false,
+          "section_header": "--- User Feedback on Thesis Stage ---"
+        },
+        {
+          "type": "contribution",
+          "stage_slug": "antithesis",
           "purpose": "Critiques generated during the Antithesis stage.",
           "required": true,
           "multiple": true,
           "section_header": "--- Critiques from Antithesis Stage ---"
         },
         {
-          "source": "current_session_feedback",
-          "file_type": "user_feedback",
+          "type": "feedback",
+          "stage_slug": "antithesis",
           "purpose": "User''s direct feedback on the critiques from the Antithesis stage.",
           "required": false,
           "multiple": false,
@@ -86,8 +86,8 @@ BEGIN
         }
       ]
     }'::JSONB
-    WHERE id = synthesis_stage_id AND input_artifact_rules IS NULL; -- Only update if NULL
-    RAISE NOTICE 'Input artifact rules set for synthesis stage if it was null.';
+    WHERE id = synthesis_stage_id;
+    RAISE NOTICE 'Input artifact rules set for synthesis stage.';
   ELSE
     RAISE WARNING 'Synthesis stage not found, input_artifact_rules not set for it.';
   END IF;
@@ -103,34 +103,18 @@ BEGIN
   IF parenthesis_stage_id IS NOT NULL THEN
     UPDATE public.dialectic_stages
     SET input_artifact_rules = '{
-      "fetch_artifacts": [
+      "sources": [
         {
-          "source": "previous_stage_storage",
-          "file_type": "model_contribution_main",
-          "purpose": "The main synthesized proposals from the Synthesis stage.",
+          "type": "contribution",
+          "stage_slug": "synthesis",
+          "purpose": "Outputs (proposals, PRDs, plans) from the Synthesis stage.",
           "required": true,
           "multiple": true,
-          "section_header": "--- Synthesized Proposals from Previous Stage ---"
+          "section_header": "--- Outputs from Synthesis Stage ---"
         },
         {
-          "source": "previous_stage_storage",
-          "file_type": "contribution_document_prd",
-          "purpose": "PRD documents generated for each synthesized proposal from the Synthesis stage.",
-          "required": false,
-          "multiple": true,
-          "section_header": "--- PRDs from Synthesis Stage ---"
-        },
-        {
-          "source": "previous_stage_storage",
-          "file_type": "contribution_document_plan",
-          "purpose": "Initial implementation plans generated for each synthesized proposal from the Synthesis stage.",
-          "required": false,
-          "multiple": true,
-          "section_header": "--- Initial Implementation Plans from Synthesis Stage ---"
-        },
-        {
-          "source": "current_session_feedback",
-          "file_type": "user_feedback",
+          "type": "feedback",
+          "stage_slug": "synthesis",
           "purpose": "User''s direct feedback on the outputs from the Synthesis stage.",
           "required": false,
           "multiple": false,
@@ -138,8 +122,8 @@ BEGIN
         }
       ]
     }'::JSONB
-    WHERE id = parenthesis_stage_id AND input_artifact_rules IS NULL; -- Only update if NULL
-    RAISE NOTICE 'Input artifact rules set for parenthesis stage if it was null.';
+    WHERE id = parenthesis_stage_id;
+    RAISE NOTICE 'Input artifact rules set for parenthesis stage.';
   ELSE
     RAISE WARNING 'Parenthesis stage not found, input_artifact_rules not set for it.';
   END IF;
@@ -155,18 +139,18 @@ BEGIN
   IF paralysis_stage_id IS NOT NULL THEN
     UPDATE public.dialectic_stages
     SET input_artifact_rules = '{
-      "fetch_artifacts": [
+      "sources": [
         {
-          "source": "previous_stage_storage",
-          "file_type": "contribution_document_plan",
+          "type": "contribution",
+          "stage_slug": "parenthesis",
           "purpose": "Detailed implementation plans developed during the Parenthesis stage.",
           "required": true,
           "multiple": true,
           "section_header": "--- Implementation Plans from Parenthesis Stage ---"
         },
         {
-          "source": "current_session_feedback",
-          "file_type": "user_feedback",
+          "type": "feedback",
+          "stage_slug": "parenthesis",
           "purpose": "User''s direct feedback on the implementation plans from the Parenthesis stage.",
           "required": false,
           "multiple": false,
@@ -174,8 +158,8 @@ BEGIN
         }
       ]
     }'::JSONB
-    WHERE id = paralysis_stage_id AND input_artifact_rules IS NULL; -- Only update if NULL
-    RAISE NOTICE 'Input artifact rules set for paralysis stage if it was null.';
+    WHERE id = paralysis_stage_id;
+    RAISE NOTICE 'Input artifact rules set for paralysis stage.';
   ELSE
     RAISE WARNING 'Paralysis stage not found, input_artifact_rules not set for it.';
   END IF;

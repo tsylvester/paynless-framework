@@ -300,7 +300,7 @@ export async function startSession(
             session_id: newSessionRecord.id,
             stage_slug: stageContext.slug,
             iteration: 1, // Corresponds to pathContext.iteration for initial seed
-            original_file_name: `${stageContext.slug}_seed_prompt.md`
+            original_file_name: `seed_prompt.md`
         }),
     });
 

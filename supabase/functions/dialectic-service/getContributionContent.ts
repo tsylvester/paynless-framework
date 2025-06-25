@@ -68,24 +68,36 @@ export async function getContributionContentHandler(
       return { error: { message: "User not authorized to access this contribution's content.", code: "AUTH_FORBIDDEN", status: 403 } };
     }
   
-    if (!typedContributionData.storage_bucket || !typedContributionData.storage_path) {
-      // logger.error("Contribution is missing storage bucket or path information", { contributionId }); // Replaced
-      logger.error("Contribution is missing storage bucket or path information", { contributionId });
-      return { error: { message: "Contribution is missing storage information.", code: "INTERNAL_ERROR", status: 500 } };
+    const { storage_bucket, storage_path, file_name } = typedContributionData;
+
+    if (!storage_bucket || !storage_path || !file_name) {
+      logger.error("Contribution is missing storage bucket, path, or file_name information", { 
+        contributionId, 
+        bucket: storage_bucket, 
+        path: storage_path, 
+        file: file_name 
+      });
+      return { error: { message: "Contribution is missing essential storage information (bucket, path, or filename).", code: "INTERNAL_ERROR_INCOMPLETE_STORAGE_INFO", status: 500 } };
     }
+
+    // Ensure no leading/trailing slashes on dir and no leading slash on filename to prevent double slashes or incorrect paths
+    const cleanedDir = storage_path.endsWith('/') ? storage_path.slice(0, -1) : storage_path;
+    const cleanedFileName = file_name.startsWith('/') ? file_name.slice(1) : file_name;
+    
+    const fullPathForDownload = `${cleanedDir}/${cleanedFileName}`;
 
     // Download the file content directly
     const { data: fileBlob, error: downloadError } = await dbClient.storage
-      .from(typedContributionData.storage_bucket)
-      .download(typedContributionData.storage_path);
+      .from(storage_bucket)
+      .download(fullPathForDownload);
 
     if (downloadError) {
-      logger.error('Error downloading file from storage for contribution:', { contributionId, storagePath: typedContributionData.storage_path, error: downloadError });
+      logger.error('Error downloading file from storage for contribution:', { contributionId, storagePath: fullPathForDownload, error: downloadError });
       return { error: { message: "Failed to download contribution content.", status: 500, details: downloadError.message, code: "STORAGE_DOWNLOAD_ERROR" } };
     }
     
     if (!fileBlob) {
-      logger.error('No data returned from storage download for contribution:', { contributionId, storagePath: typedContributionData.storage_path });
+      logger.error('No data returned from storage download for contribution:', { contributionId, storagePath: fullPathForDownload });
       return { error: { message: "Failed to retrieve contribution content (empty).", status: 500, code: "STORAGE_EMPTY_CONTENT" } };
     }
 

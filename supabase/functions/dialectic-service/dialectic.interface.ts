@@ -415,6 +415,10 @@ export interface SubmitStageResponsesResponse {
 export interface ArtifactSourceRule {
   type: 'contribution' | 'feedback';
   stage_slug: string;
+  purpose?: string;
+  required?: boolean;
+  multiple?: boolean;
+  section_header?: string;
 }
 
 export interface InputArtifactRules {

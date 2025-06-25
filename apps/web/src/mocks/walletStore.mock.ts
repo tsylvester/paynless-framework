@@ -16,6 +16,7 @@ let currentMockWalletStoreState: MockableWalletStore;
 export const mockGetOrLoadOrganizationWallet = vi.fn();
 export const mockLoadPersonalWallet = vi.fn();
 export const mockDetermineChatWallet = vi.fn();
+export const mockSetCurrentChatWalletDecision = vi.fn();
 export const mockResetForTesting = vi.fn(); // This is the store's internal reset, might need a different name if we export a reset for the mock itself
 export const mockLoadTransactionHistory = vi.fn();
 export const mockInitiatePurchase = vi.fn();
@@ -31,13 +32,18 @@ export const selectActiveChatWalletInfo = vi.fn();
 
 // Helper to initialize/reset the mock state for each test
 export const initializeMockWalletStore = (initialState?: Partial<WalletStateValues>) => {
+  // Reset the top-level mock if tests spy on it AND expect per-test reset.
+  // However, actions on the store instance are what usually matters.
+  // mockDetermineChatWallet.mockClear(); // Or reset specific mocks as needed
+
   currentMockWalletStoreState = {
     ...initialWalletStateValues,
     ...initialState, // Allow overriding parts of the initial state
     // Assign mock functions to actions part of the store state
     getOrLoadOrganizationWallet: mockGetOrLoadOrganizationWallet,
     loadPersonalWallet: mockLoadPersonalWallet,
-    determineChatWallet: mockDetermineChatWallet,
+    determineChatWallet: vi.fn().mockReturnValue({ outcome: 'personal', walletId: 'mock-personal-wallet-id', error: null, consentRequired: false, orgId: null }),
+    setCurrentChatWalletDecision: mockSetCurrentChatWalletDecision,
     _resetForTesting: mockResetForTesting, 
     loadTransactionHistory: mockLoadTransactionHistory,
     initiatePurchase: mockInitiatePurchase,

@@ -223,8 +223,8 @@ describe('getContributionContentHandler', () => {
     );
 
     assertExists(result.error);
-    assertEquals(result.error?.message, 'Contribution is missing storage information.');
-    assertEquals(result.error?.code, 'INTERNAL_ERROR');
+    assertEquals(result.error?.message, 'Contribution is missing essential storage information (bucket, path, or filename).');
+    assertEquals(result.error?.code, 'INTERNAL_ERROR_INCOMPLETE_STORAGE_INFO');
     assertEquals(result.error?.status, 500);
     assertEquals(loggerErrorSpy.calls.length, 1);
     assertObjectMatch(loggerErrorSpy.calls[0].args[1] as Record<string, unknown>, { contributionId: 'contrib-id-missing-bucket' });
@@ -261,8 +261,8 @@ describe('getContributionContentHandler', () => {
     );
 
     assertExists(result.error);
-    assertEquals(result.error?.message, 'Contribution is missing storage information.');
-    assertEquals(result.error?.code, 'INTERNAL_ERROR');
+    assertEquals(result.error?.message, 'Contribution is missing essential storage information (bucket, path, or filename).');
+    assertEquals(result.error?.code, 'INTERNAL_ERROR_INCOMPLETE_STORAGE_INFO');
     assertEquals(result.error?.status, 500);
     assertEquals(loggerErrorSpy.calls.length, 1);
     assertObjectMatch(loggerErrorSpy.calls[0].args[1] as Record<string, unknown>, { contributionId: 'contrib-id-missing-path' });

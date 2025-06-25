@@ -63,22 +63,24 @@ export async function getProjectResourceContent(
 
 
     // 3. Download the file content from storage
-    if (!resource.storage_bucket || !resource.storage_path) {
-        logger.error('[getProjectResourceContent] Resource record is missing storage_bucket or storage_path', { resourceId });
+    if (!resource.storage_bucket || !resource.storage_path || !resource.file_name) {
+        logger.error('[getProjectResourceContent] Resource record is missing storage_bucket, storage_path, or file_name', { resourceId });
         return { error: { message: "Resource storage information is incomplete.", status: 500, code: "STORAGE_INFO_MISSING" }};
     }
 
+    const fullPathToDownload = `${resource.storage_path}/${resource.file_name}`;
+
     const { data: fileBlob, error: downloadError } = await dbClient.storage
       .from(resource.storage_bucket)
-      .download(resource.storage_path);
+      .download(fullPathToDownload);
 
     if (downloadError) {
-      logger.error('[getProjectResourceContent] Error downloading file from storage:', { resourceId, storagePath: resource.storage_path, error: downloadError });
+      logger.error('[getProjectResourceContent] Error downloading file from storage:', { resourceId, storagePath: fullPathToDownload, error: downloadError });
       return { error: { message: "Failed to download resource content.", status: 500, details: downloadError.message, code: "STORAGE_DOWNLOAD_ERROR" } };
     }
     
     if (!fileBlob) {
-      logger.error('[getProjectResourceContent] No data returned from storage download:', { resourceId, storagePath: resource.storage_path });
+      logger.error('[getProjectResourceContent] No data returned from storage download:', { resourceId, storagePath: fullPathToDownload });
       return { error: { message: "Failed to retrieve resource content (empty).", status: 500, code: "STORAGE_EMPTY_CONTENT" } };
     }
 

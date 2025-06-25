@@ -14,10 +14,20 @@ export function mapDirNameToStageSlug(dirName: string): string {
 }
 
 export function deconstructStoragePath(
-  storagePath: string,
-  dbOriginalFileName?: string,
+  params: { storageDir: string; fileName: string; dbOriginalFileName?: string },
 ): DeconstructedPathInfo {
-  const info: Partial<DeconstructedPathInfo> = {};
+  const { storageDir, fileName, dbOriginalFileName } = params;
+  const info: Partial<DeconstructedPathInfo> = {
+    // Initialize parsedFileNameFromPath with the input fileName.
+    // Regex matches below might refine this for specific structured filenames.
+    parsedFileNameFromPath: fileName,
+  };
+
+  // If storageDir is empty and fileName itself is a full path (legacy or specific cases),
+  // then we use fileName as the fullPath. Otherwise, combine them.
+  // For the new system, storageDir and fileName should always be distinct parts.
+  const fullPath = storageDir ? `${storageDir}/${fileName}` : fileName;
+
 
   // Regex patterns defined as strings
   const modelContribRawPatternString = "^([^/]+)/sessions/([^/]+)/iteration_(\\d+)/([^/]+)/raw_responses/(.+)_(\\d+)_([^_]+)_raw\\.json$";
@@ -31,7 +41,7 @@ export function deconstructStoragePath(
   const initialUserPromptPatternString = "^([^/]+)/((?!sessions/|general_resource/|project_readme\\.md$|project_settings\\.json$)[^/]+)$";
 
   // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/raw_responses/{modelSlugSanitized}_{attemptCount}_{stageSlugSanitized}_raw.json
-  let matches = storagePath.match(new RegExp(modelContribRawPatternString));
+  let matches = fullPath.match(new RegExp(modelContribRawPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
     info.shortSessionId = matches[2];
@@ -50,7 +60,7 @@ export function deconstructStoragePath(
   }
 
   // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/{modelSlugSanitized}_{attemptCount}_{stageSlugSanitized}.md
-  matches = storagePath.match(new RegExp(modelContribPatternString));
+  matches = fullPath.match(new RegExp(modelContribPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
     info.shortSessionId = matches[2];
@@ -69,7 +79,7 @@ export function deconstructStoragePath(
   }
   
   // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/documents/{sanitizedOriginalFileName}
-  matches = storagePath.match(new RegExp(contributionDocumentPatternString));
+  matches = fullPath.match(new RegExp(contributionDocumentPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
     info.shortSessionId = matches[2];
@@ -82,7 +92,7 @@ export function deconstructStoragePath(
   }
 
   // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/user_feedback_{sanitizedStageSlug}.md
-  matches = storagePath.match(new RegExp(userFeedbackPatternString));
+  matches = fullPath.match(new RegExp(userFeedbackPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
     info.shortSessionId = matches[2];
@@ -95,7 +105,7 @@ export function deconstructStoragePath(
   }
 
   // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/seed_prompt.md
-  matches = storagePath.match(new RegExp(seedPromptPatternString));
+  matches = fullPath.match(new RegExp(seedPromptPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
     info.shortSessionId = matches[2];
@@ -110,7 +120,7 @@ export function deconstructStoragePath(
   // --- Project Root Level Files ---
 
   // Path: {projectId}/project_readme.md
-  matches = storagePath.match(new RegExp(projectReadmePatternString));
+  matches = fullPath.match(new RegExp(projectReadmePatternString));
   if (matches) {
     info.originalProjectId = matches[1];
     info.parsedFileNameFromPath = 'project_readme.md';
@@ -119,7 +129,7 @@ export function deconstructStoragePath(
   }
 
   // Path: {projectId}/project_settings.json
-  matches = storagePath.match(new RegExp(projectSettingsFilePatternString));
+  matches = fullPath.match(new RegExp(projectSettingsFilePatternString));
   if (matches) {
     info.originalProjectId = matches[1];
     info.parsedFileNameFromPath = 'project_settings.json';
@@ -128,7 +138,7 @@ export function deconstructStoragePath(
   }
 
   // Path: {projectId}/general_resource/{sanitizedOriginalFileName}
-  matches = storagePath.match(new RegExp(generalResourcePatternString));
+  matches = fullPath.match(new RegExp(generalResourcePatternString));
   if (matches) {
     info.originalProjectId = matches[1];
     info.parsedFileNameFromPath = matches[2]; 
@@ -137,7 +147,7 @@ export function deconstructStoragePath(
   }
   
   // Path: {projectId}/{sanitizedOriginalFileName}
-  matches = storagePath.match(new RegExp(initialUserPromptPatternString));
+  matches = fullPath.match(new RegExp(initialUserPromptPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
     info.parsedFileNameFromPath = matches[2]; 

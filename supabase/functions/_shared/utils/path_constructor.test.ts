@@ -29,7 +29,8 @@ Deno.test('constructStoragePath', async (t) => {
       ...projectBaseContext,
       fileType: 'project_readme',
     });
-    assertEquals(path, 'project-uuid-123/project_readme.md');
+    assertEquals(path.storagePath, 'project-uuid-123');
+    assertEquals(path.fileName, 'project_readme.md');
   });
 
   await t.step('should construct path for initial_user_prompt and sanitize file name', () => {
@@ -38,7 +39,8 @@ Deno.test('constructStoragePath', async (t) => {
       fileType: 'initial_user_prompt',
       originalFileName: 'My Initial Prompt.txt',
     });
-    assertEquals(path, 'project-uuid-123/my_initial_prompt.txt');
+    assertEquals(path.storagePath, 'project-uuid-123');
+    assertEquals(path.fileName, 'my_initial_prompt.txt');
   });
 
   await t.step('should construct path for project_settings_file', () => {
@@ -46,7 +48,8 @@ Deno.test('constructStoragePath', async (t) => {
       ...projectBaseContext,
       fileType: 'project_settings_file',
     });
-    assertEquals(path, 'project-uuid-123/project_settings.json');
+    assertEquals(path.storagePath, 'project-uuid-123');
+    assertEquals(path.fileName, 'project_settings.json');
   });
 
   await t.step('should construct path for general_resource at project root and sanitize file name', () => {
@@ -55,7 +58,8 @@ Deno.test('constructStoragePath', async (t) => {
       fileType: 'general_resource',
       originalFileName: 'My Shared Document.pdf',
     });
-    assertEquals(path, 'project-uuid-123/general_resource/my_shared_document.pdf');
+    assertEquals(path.storagePath, 'project-uuid-123/general_resource');
+    assertEquals(path.fileName, 'my_shared_document.pdf');
   });
 
   await t.step('should construct path for seed_prompt', () => {
@@ -63,7 +67,8 @@ Deno.test('constructStoragePath', async (t) => {
       ...sessionBaseContext,
       fileType: 'seed_prompt',
     });
-    assertEquals(path, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/seed_prompt.md`);
+    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}`);
+    assertEquals(path.fileName, 'seed_prompt.md');
   });
 
   await t.step('should construct path for model_contribution_main with attemptCount 0', () => {
@@ -73,7 +78,8 @@ Deno.test('constructStoragePath', async (t) => {
       attemptCount: 0,
     };
     const path = constructStoragePath(context);
-    assertEquals(path, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.stageSlug!)}.md`);
+    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}`);
+    assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.stageSlug!)}.md`);
   });
   
   await t.step('should construct path for model_contribution_main with attemptCount 1', () => {
@@ -83,7 +89,8 @@ Deno.test('constructStoragePath', async (t) => {
       attemptCount: 1,
     };
     const path = constructStoragePath(context);
-    assertEquals(path, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.stageSlug!)}.md`);
+    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}`);
+    assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.stageSlug!)}.md`);
   });
 
   await t.step('should construct path for model_contribution_raw_json with attemptCount 0', () => {
@@ -93,7 +100,8 @@ Deno.test('constructStoragePath', async (t) => {
       attemptCount: 0,
     };
     const path = constructStoragePath(context);
-    assertEquals(path, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/raw_responses/${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.stageSlug!)}_raw.json`);
+    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/raw_responses`);
+    assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.stageSlug!)}_raw.json`);
   });
 
   await t.step('should construct path for model_contribution_raw_json with attemptCount 2', () => {
@@ -103,7 +111,8 @@ Deno.test('constructStoragePath', async (t) => {
       attemptCount: 2,
     };
     const path = constructStoragePath(context);
-    assertEquals(path, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/raw_responses/${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.stageSlug!)}_raw.json`);
+    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/raw_responses`);
+    assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.stageSlug!)}_raw.json`);
   });
   
   await t.step('should construct path for user_feedback', () => {
@@ -111,7 +120,8 @@ Deno.test('constructStoragePath', async (t) => {
       ...sessionBaseContext,
       fileType: 'user_feedback',
     });
-    assertEquals(path, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/user_feedback_${sanitizeForPath(sessionBaseContext.stageSlug!)}.md`);
+    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}`);
+    assertEquals(path.fileName, `user_feedback_${sanitizeForPath(sessionBaseContext.stageSlug!)}.md`);
   });
   
   await t.step('should construct path for contribution_document', () => {
@@ -120,7 +130,8 @@ Deno.test('constructStoragePath', async (t) => {
       fileType: 'contribution_document',
       originalFileName: 'prd_document.md',
     });
-    assertEquals(path, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/documents/prd_document.md`);
+    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/documents`);
+    assertEquals(path.fileName, 'prd_document.md');
   });
 
   await t.step('should throw error if originalFileName is missing for initial_user_prompt', () => {
@@ -191,7 +202,8 @@ Deno.test('constructStoragePath', async (t) => {
       fileType: 'initial_user_prompt',
       originalFileName: 'File With ALL CAPS & Special Chars!@#$.zip',
     });
-    assertEquals(path, 'project-uuid-123/file_with_all_caps__special_chars.zip');
+    assertEquals(path.storagePath, 'project-uuid-123');
+    assertEquals(path.fileName, 'file_with_all_caps__special_chars.zip');
   });
 
   await t.step('should sanitize complex file names for general_resource', () => {
@@ -200,7 +212,8 @@ Deno.test('constructStoragePath', async (t) => {
       fileType: 'general_resource',
       originalFileName: 'Another Complex! Name.docx',
     });
-    assertEquals(path, 'project-uuid-123/general_resource/another_complex_name.docx');
+    assertEquals(path.storagePath, 'project-uuid-123/general_resource');
+    assertEquals(path.fileName, 'another_complex_name.docx');
   });
 
   await t.step('should sanitize complex file names for contribution_document', () => {
@@ -209,7 +222,8 @@ Deno.test('constructStoragePath', async (t) => {
       fileType: 'contribution_document',
       originalFileName: 'Documents ! With % Spaces.pdf',
     });
-    assertEquals(path, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/documents/documents__with__spaces.pdf`);
+    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/documents`);
+    assertEquals(path.fileName, 'documents__with__spaces.pdf');
   });
 });
 

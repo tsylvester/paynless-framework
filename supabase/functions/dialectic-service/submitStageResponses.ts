@@ -23,7 +23,7 @@ import { renderPrompt } from '../_shared/prompt-renderer.ts';
 import type { IFileManager } from '../_shared/types/file_manager.types.ts';
 
 // Get storage bucket from environment variables, with a fallback for safety.
-const STORAGE_BUCKET = Deno.env.get('SUPABASE_CONTENT_STORAGE_BUCKET');
+const STORAGE_BUCKET = Deno.env.get('SB_CONTENT_STORAGE_BUCKET');
 
 /**
  * Maps a raw database feedback record to the structured DialecticFeedback interface.
@@ -93,13 +93,12 @@ async function fetchAndAssembleArtifacts(
   let contributionsContent = '';
   let feedbackContent = '';
 
-  // Fetch all required stage display names in one go to avoid multiple DB calls in a loop.
   const stageSlugsForDisplayName = rules.sources
     .map((rule: ArtifactSourceRule) => rule.stage_slug)
     .filter(
       (slug: string, index: number, self: string[]) =>
         self.indexOf(slug) === index,
-    ); // Unique slugs
+    );
 
   const { data: stagesData, error: stagesError } = await dbClient
     .from('dialectic_stages')
@@ -120,6 +119,12 @@ async function fetchAndAssembleArtifacts(
       (rule.stage_slug.charAt(0).toUpperCase() + rule.stage_slug.slice(1));
 
     if (rule.type === 'contribution') {
+      const blockHeader = rule.section_header 
+        ? `${rule.section_header}\n\n` 
+        : `### Contributions from ${displayName} Stage\n\n`;
+      
+      contributionsContent += blockHeader;
+
       const { data: aiContributions, error: aiContribError } = await dbClient
         .from('dialectic_contributions')
         .select<string, DialecticContribution>(
@@ -131,22 +136,17 @@ async function fetchAndAssembleArtifacts(
         .eq('is_latest_edit', true);
 
       if (aiContribError) {
-        logger.error('Failed to retrieve AI contributions for prompt assembly.', {
-          error: aiContribError,
-        });
+        logger.error(
+          `Failed to retrieve AI contributions for prompt assembly. Stage: '${displayName}' (slug: ${rule.stage_slug}). Full error: ${aiContribError.message}`,
+          { error: aiContribError, rule, projectId, sessionId, iterationNumber },
+        );
+        // Throwing error as expected by database test 4.4 for this specific message.
         throw new Error('Failed to retrieve AI contributions for prompt assembly.');
       }
 
       if (aiContributions && aiContributions.length > 0) {
-        if (!contributionsContent) {
-          contributionsContent += `## AI Contributions from Prior Stages\n\n`;
-        }
-        contributionsContent +=
-          `### Contributions from ${displayName} Stage\n\n`;
         for (const contrib of aiContributions) {
-          if (
-            contrib.storage_path && contrib.storage_bucket
-          ) {
+          if (contrib.storage_path && contrib.storage_bucket) {
             const { data: content, error: downloadError } =
               await downloadFromStorage(
                 dbClient,
@@ -158,38 +158,61 @@ async function fetchAndAssembleArtifacts(
                 `#### Contribution from ${contrib.model_name || 'AI Model'}\n\n${
                   new TextDecoder().decode(content)
                 }\n\n---\n`;
-            } else {
+            } else { // This implies downloadError is present or content is null
               logger.error(
-                `Failed to download content for contribution ${contrib.id} for prompt assembly.`,
-                { path: contrib.storage_path, error: downloadError },
+                `Failed to download content for contribution ${contrib.id} (stage '${displayName}') for prompt assembly.`,
+                {
+                  path: contrib.storage_path,
+                  error: downloadError,
+                  rule,
+                  projectId,
+                  sessionId,
+                  iterationNumber,
+                },
               );
-              throw new Error(
-                `Failed to download content for prompt assembly for contribution ${contrib.id}`,
-              );
+              // Throwing error as expected by storage test 5.3 for this specific message.
+              throw new Error('Failed to download content for prompt assembly.');
             }
           }
         }
       } else {
-        contributionsContent += `## AI Contributions from ${displayName}\n\nNo AI-generated content was provided for this stage.\n\n`;
+        contributionsContent += `No AI-generated content was provided for this stage
+
+---
+`;
       }
     } else if (rule.type === 'feedback') {
-      if (!feedbackContent) {
-        feedbackContent += `## User Feedback from Prior Stages\n\n`;
-      }
+      const blockHeader = rule.section_header 
+        ? `${rule.section_header}\n\n` 
+        : `### Feedback from ${displayName} Stage\n\n`;
+      feedbackContent += blockHeader;
+
       const feedbackPath =
         `projects/${projectId}/sessions/${sessionId}/iteration_${iterationNumber}/${rule.stage_slug}/user_feedback_${rule.stage_slug}.md`;
       const { data: content, error: downloadError } =
         await downloadFromStorage(dbClient, STORAGE_BUCKET, feedbackPath);
+
       if (content && !downloadError) {
-        feedbackContent +=
-          `### Feedback from ${displayName} Stage\n\n${
-            new TextDecoder().decode(content)
-          }\n\n---\n`;
+        feedbackContent += `#### User Feedback for ${displayName}\n\n${new TextDecoder().decode(content)}\n\n---\n`;
       } else {
-        logger.warn(`Could not find or download feedback file`, {
-          path: feedbackPath,
-          error: downloadError,
-        });
+        if (downloadError) { // Explicit download error occurred
+          logger.error( // Changed to error log as this is now a critical failure point
+            `Failed to download feedback file for rule. Path: ${feedbackPath}`,
+            { error: downloadError, rule, projectId, sessionId, iterationNumber },
+          );
+          // Throwing error for consistency, making feedback download critical
+          throw new Error(
+            `Failed to download feedback for stage '${displayName}' (slug: ${rule.stage_slug}) for prompt assembly. Storage error: ${downloadError.message}`
+          );
+        } else { // No content, but no explicit error (e.g., file not found might return null content, null error)
+          // This case implies content is null and downloadError is also null.
+          // This could mean the file doesn't exist, which might be acceptable.
+          logger.warn(`No feedback file found or content was empty for rule. Path: ${feedbackPath}`, { rule, projectId, sessionId, iterationNumber });
+          feedbackContent += `No user feedback was found for this section.
+
+---
+`;
+        }
       }
     }
   }
@@ -206,43 +229,85 @@ function parseInputArtifactRules(data: Json | null): InputArtifactRules {
     throw new Error('Rules object must contain a "sources" array.');
   }
 
-  const sources: (Json | undefined)[] = data.sources;
+  const sourcesRaw: (Json | undefined)[] = data.sources;
 
-  const parsedSources: ArtifactSourceRule[] = sources.map(
-    (source: Json | undefined, index: number): ArtifactSourceRule => {
-      if (source === null || typeof source !== 'object' || Array.isArray(source)) {
+  const parsedSources: ArtifactSourceRule[] = sourcesRaw.map(
+    (sourceRuleData: Json | undefined, index: number): ArtifactSourceRule => {
+      if (sourceRuleData === null || typeof sourceRuleData !== 'object' || Array.isArray(sourceRuleData)) {
         throw new Error(`Source at index ${index} must be a JSON object.`);
       }
 
-      if (!('type' in source) || !('stage_slug' in source)) {
+      // Check for required properties
+      if (!('type' in sourceRuleData) || !('stage_slug' in sourceRuleData)) {
         throw new Error(
           `Source at index ${index} must contain "type" and "stage_slug" properties.`,
         );
       }
-      
-      const { type, stage_slug } = source;
 
+      const type = sourceRuleData.type;
+      const stage_slug = sourceRuleData.stage_slug;
+
+      // Validate 'type' property
       if (
         typeof type !== 'string' ||
         (type !== 'contribution' && type !== 'feedback')
       ) {
         throw new Error(
-          `Source at index ${index} has an invalid or missing "type".`,
+          `Source at index ${index} has an invalid "type". Expected 'contribution' or 'feedback', got "${type}".`,
         );
       }
 
+      // Validate 'stage_slug' property
       if (typeof stage_slug !== 'string') {
         throw new Error(
-          `Source at index ${index} has an invalid or missing "stage_slug".`,
+          `Source at index ${index} has an invalid "stage_slug". Expected a string, got "${stage_slug}".`,
         );
       }
       
-      const newSource: ArtifactSourceRule = {
-        type: type,
+      const parsedRule: ArtifactSourceRule = {
+        type: type as 'contribution' | 'feedback',
         stage_slug: stage_slug,
       };
+
+      // Process optional fields, explicitly accessing them from sourceRuleData
+      const purpose = sourceRuleData.purpose;
+      const required = sourceRuleData.required;
+      const multiple = sourceRuleData.multiple;
+      const section_header = sourceRuleData.section_header;
+
+      if (purpose !== undefined) {
+        if (typeof purpose === 'string') {
+          parsedRule.purpose = purpose;
+        } else {
+          throw new Error(`Source at index ${index} has 'purpose' with incorrect type. Expected string, got ${typeof purpose}.`);
+        }
+      }
+
+      if (required !== undefined) {
+        if (typeof required === 'boolean') {
+          parsedRule.required = required;
+        } else {
+          throw new Error(`Source at index ${index} has 'required' with incorrect type. Expected boolean, got ${typeof required}.`);
+        }
+      }
+
+      if (multiple !== undefined) {
+        if (typeof multiple === 'boolean') {
+          parsedRule.multiple = multiple;
+        } else {
+          throw new Error(`Source at index ${index} has 'multiple' with incorrect type. Expected boolean, got ${typeof multiple}.`);
+        }
+      }
+
+      if (section_header !== undefined) {
+        if (typeof section_header === 'string') {
+          parsedRule.section_header = section_header;
+        } else {
+          throw new Error(`Source at index ${index} has 'section_header' with incorrect type. Expected string, got ${typeof section_header}.`);
+        }
+      }
       
-      return newSource;
+      return parsedRule;
     },
   );
 
@@ -357,7 +422,7 @@ async function prepareNextStageSeedPrompt(
     sessionId: sessionId,
     iteration: iterationNumber,
     stageSlug: nextStage.slug,
-    originalFileName: `seed_prompt_${nextStage.slug}.md`,
+    originalFileName: `seed_prompt.md`,
   };
 
   return { prompt: renderedPrompt, path };
