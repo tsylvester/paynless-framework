@@ -80,7 +80,7 @@ export class FileManagerService {
 
         if (!mainUploadError) {
           finalMainContentFilePath = attemptPath;
-          finalFileName = attemptPath.split('/').pop() || context.pathContext.originalFileName; // Derive filename from path
+          finalFileName = attemptPath.split('/').pop() || context.pathContext.originalFileName || 'filename_ERORR'; // Derive filename from path, fallback
           break; // Successful upload
         } else if (mainUploadError.message && 
                    (mainUploadError.message.includes('The resource already exists') || 
@@ -102,7 +102,7 @@ export class FileManagerService {
     } else {
       // For other file types, upload directly (no retry loop for now)
       finalMainContentFilePath = constructStoragePath(context.pathContext);
-      finalFileName = context.pathContext.originalFileName; // Or derive from path if more robust
+      finalFileName = context.pathContext.originalFileName || 'filename_ERROR'; // Or derive from path if more robust
       const { error } = await this.supabase.storage
         .from(this.storageBucket)
         .upload(finalMainContentFilePath, context.fileContent, {

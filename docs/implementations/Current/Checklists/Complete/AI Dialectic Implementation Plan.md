@@ -1075,15 +1075,6 @@ The implementation plan uses the following labels to categorize work steps:
 *   [✅] Start New Session modal incomplete
 *   [✅] Start New Session modal needs background blur
 
-### Enable Org Dialectic & Notifications 
-*   [ ] Add Org Switcher to Dialectic page
-*   [ ] Add Org Dialectic toggle to Org page
-*   [ ] Add notification triggers for members joining orgs
-*   [ ] Add notification triggers for participating group chat updates 
-*   [ ] Add org access to projects 
-*   [ ] Add org projects card to org page
-*   [ ] Add notification triggers for org projects 
-*   [ ] Add Posthog triggers for every GUI interaction 
 
 ### Fix Prompt Submission
 *   [✅] Fix StartSessionPayload throughout the app

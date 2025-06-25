@@ -77,6 +77,105 @@
 5.  If ready, proceed with Phase 1 deployment.
 ---
 
+*   [ ] Add `<ChatContextSelector/>` and `<WalletSelector>` to `SessionInfoCard.tsx`
+*   [ ] Pass chatContextId and walletId through store, API, and edge so that callModel passes them into chat
+*   [ ] Ensure that the correct values are used for dialectics so that the correct org owns the chat and the correct wallet is debited
+*   [ ] Add a means for orgs to buy tokens
+*   [ ] Add a setting for orgs to enable/disable dialectics 
+*   [ ] Remove all update state hooks and consent state logic from the Chat page, move it into the WalletSelector so the selector is independent
+*   [ ] Change consent from in-page spawned div to a modal 
+
+---
+
+### 2.X.5 UI Integration for Dialectic Tokenomics & Wallet Management
+
+**Objective:** To provide users with full visibility and control over token consumption within the Dialectic service by deeply integrating existing, robust tokenomics UI components and backend capabilities. This involves displaying pre-submission cost estimates, post-submission actuals for AI contributions, allowing users to select a token wallet for operations using the established `WalletSelector.tsx`, and showing current wallet balances and affordability leveraging components like `ChatAffordabilityIndicator.tsx` and `TokenUsageDisplay.tsx`.
+
+**Core Principle:** Maximize reuse of components from `apps/web/src/components/ai/` and ensure backend processes correctly populate existing database fields to feed data into these established UI patterns.
+
+**Prerequisite:** `generateContributions.ts` and `FileManagerService` must be correctly populating the existing tokenomics and model identifier fields in the `dialectic_contributions` table.
+
+*   `[ ] 2.X.5.1 [BE]` **Ensure `generateContributions` & `FileManagerService` Populate Existing Tokenomics Fields**
+    *   `[✅] 2.X.5.1.1 [BE/TYPES]` **Verify and Align `UploadContext`:**
+        *   In `supabase/functions/_shared/types/file_manager.types.ts`, ensure `UploadContext` (or its `customMetadata`) is structured to carry:
+            *   `modelIdUsed: string` (corresponding to `dialectic_contributions.model_id` which is FK to `ai_providers.id`)
+            *   `tokensUsedInput: number`
+            *   `tokensUsedOutput: number`
+            *   `processingTimeMs: number`
+            *   `promptTemplateIdUsed?: string` (for `dialectic_contributions.prompt_template_id_used`)
+            *   `seedPromptUrl?: string` (for `dialectic_contributions.seed_prompt_url`)
+            *   `rawResponseStoragePath?: string` (for `dialectic_contributions.raw_response_storage_path`)
+            *   `citations?: Json` (for `dialectic_contributions.citations`)
+            *   `error?: string` (for `dialectic_contributions.error`)
+            *   `contributionType?: string` (for `dialectic_contributions.contribution_type`)
+    *   `[🚧] 2.X.5.1.2 [BE]` **Enhance `FileManagerService.uploadAndRegisterFile`:**
+        *   In `supabase/functions/_shared/services/file_manager.ts`, when `targetTable` is `dialectic_contributions`, ensure the `recordData` object correctly maps all relevant fields from the updated `UploadContext` (from `2.X.5.1.1`) to their corresponding columns in the `dialectic_contributions` table as defined in `supabase/functions/types_db.ts`. This includes `model_id`, `tokens_used_input`, `tokens_used_output`, `processing_time_ms`, `prompt_template_id_used`, `raw_response_storage_path`, `seed_prompt_url`, etc.
+    *   `[✅] 2.X.5.1.3 [BE]` **Refactor `generateContributions.ts` Data Handling:**
+        *   In `supabase/functions/dialectic-service/generateContributions.ts`:
+            *   When a response is received from `callUnifiedAIModel` (which returns `UnifiedAIResponse`), correctly extract `inputTokens`, `outputTokens` (or parse from `tokenUsage` object), `processingTimeMs`.
+            *   Also capture the actual `model_id` used for the call (from `providerDetails.id` or similar context available during the model iteration).
+            *   Capture other relevant metadata like `rawProviderResponse` (to determine `raw_response_storage_path` if applicable, or to store inline if schema allows and preferred), `prompt_template_id_used`, `seed_prompt_url`.
+            *   Populate the updated `UploadContext` with these values and pass it to `fileManager.uploadAndRegisterFile`.
+    *   `[✅] 2.X.5.1.4 [TEST-INT]` Update/Create integration tests for `generateContributions.ts`. These tests must:
+        *   Mock `callUnifiedAIModel` to return realistic `UnifiedAIResponse` data, including token counts and processing times.
+        *   Assert that `FileManagerService.uploadAndRegisterFile` is called with an `UploadContext` containing the correct tokenomics data and other metadata.
+        *   Mock `FileManagerService.uploadAndRegisterFile` to simulate a successful database insert and verify that the `generateContributions` function correctly processes this success.
+        *   Specifically test that the `DB_INSERT_FAIL` errors (seen in logs) are resolved by providing all necessary data.
+
+*   `[✅] 2.X.5.2 [API/STORE]` **Propagate Tokenomics Data & Wallet State for Dialectic Service**
+    *   `[✅] 2.X.5.2.1 [TYPES]` In `packages/types/src/dialectic.types.ts`:
+        *   Align the `DialecticContribution` type with the fields now confirmed to be in the database and populated by the backend. Ensure it includes:
+            *   `tokens_used_input: number | null`
+            *   `tokens_used_output: number | null`
+            *   `processing_time_ms: number | null`
+            *   `model_id: string | null` (actual ID of the AI provider/model used)
+            *   Other fields like `raw_response_storage_path`, `seed_prompt_url`, `citations` as they are made available.
+    *   `[✅] 2.X.5.2.2 [STORE]` In `packages/store/src/dialecticStore.ts`:
+        *   Ensure `fetchDialecticProjectDetails` thunk correctly processes and stores this enhanced `DialecticContribution` data (including tokenomics) within `currentProjectDetail.sessions.contributions`.
+        *   Adapt or reuse existing wallet state management. Add `activeDialecticWalletId: string | null` to `DialecticState` (in `packages/store/src/interfaces/dialectic.ts`) if a distinct active wallet for Dialectic operations is desired. Create actions to set/update it.
+    *   `[✅] 2.X.5.2.3 [STORE]` Create/update selectors in `packages/store/src/dialecticStore.selectors.ts`:
+        *   `[✅] selectDialecticContributionTokenDetails(contributionId: string): { tokensUsedInput: number | null, tokensUsedOutput: number | null, processingTimeMs: number | null, modelId: string | null } | null` // Data accessible via selectContributionById
+        *   `[✅] selectActiveDialecticStageTotalTokenUsage(sessionId: string, stageSlug: string, iterationNumber: number): { totalInput: number, totalOutput: number, totalProcessingMs: number } | null`
+        *   `[✅] selectDialecticSessionTotalTokenUsage(sessionId: string): { totalInput: number, totalOutput: number, totalProcessingMs: number } | null`
+        *   `[✅] selectActiveDialecticWalletId(): string | null`
+    *   `[✅] 2.X.5.2.4 [BE]` Modify backend actions in `dialectic-service` (e.g., `generateContributions`) to accept an optional `walletId` in their payload. This `walletId` will be used by the `TokenWalletService`. Fallback to user's default wallet if not provided.
+
+*   `[ ] 2.X.5.3 [UI]` **Integrate Existing `WalletSelector.tsx` and Balance Display**
+    *   `[ ] 2.X.5.3.1 [TEST-UNIT]` Update/create unit tests for `SessionInfoCard.tsx` or relevant parent components to cover wallet selection and balance display integration. (RED)
+    *   `[ ] 2.X.5.3.2 [UI]` In `apps/web/src/components/dialectic/SessionInfoCard.tsx` (or a suitable layout component):
+        *   Integrate `apps/web/src/components/ai/WalletSelector.tsx`.
+        *   Connect it to update `activeDialecticWalletId` in the store.
+        *   Display the selected wallet's balance using existing mechanisms.
+    *   `[ ] 2.X.5.3.3 [UI]` Ensure UI elements triggering AI processing pass the `activeDialecticWalletId` to the backend if required.
+    *   `[ ] 2.X.5.3.4 [TEST-UNIT]` Run UI tests. (GREEN)
+
+*   `[ ] 2.X.5.4 [UI]` **Implement Pre-Submission Token Cost Estimates Using Existing Estimators**
+    *   `[ ] 2.X.5.4.1 [TEST-UNIT]` Update/create unit tests for pre-submission estimate displays. (RED)
+    *   `[ ] 2.X.5.4.2 [BE]` Develop backend function `estimateDialecticStageCost` in `dialectic-service`.
+        *   Input: `projectId`, `sessionId`, `stageSlug`, `iterationNumber`, `modelIds`, `walletId`.
+        *   Output: `EstimatedTokenUsage { perModel: Array<{modelId: string, estimatedTokens: number}>, totalEstimatedTokens: number }`.
+        *   Logic: Construct the potential seed prompt(s) and use a token counting utility (e.g., from `supabase/functions/_shared/` or similar to `countTokensForMessages` from chat service logs).
+    *   `[ ] 2.X.5.4.3 [API/STORE]` Add API client method and store thunk for `estimateDialecticStageCost`. Store estimate in `DialecticState`.
+    *   `[ ] 2.X.5.4.4 [UI]` In `apps/web/src/components/dialectic/StageTabCard.tsx`:
+        *   Trigger `estimateDialecticStageCost` thunk upon model selection.
+        *   Display estimate using `apps/web/src/components/ai/CurrentMessageTokenEstimator.tsx` or `ChatTokenUsageDisplay.tsx`.
+        *   Integrate `apps/web/src/components/ai/ChatAffordabilityIndicator.tsx` using the estimate and selected wallet balance.
+    *   `[ ] 2.X.5.4.5 [TEST-UNIT]` Run UI tests. (GREEN)
+
+*   `[ ] 2.X.5.5 [UI]` **Display Post-Submission Actual Token Costs Using Existing `TokenUsageDisplay.tsx`**
+    *   `[ ] 2.X.5.5.1 [TEST-UNIT]` Update/create unit tests for displaying actual token costs. (RED)
+    *   `[ ] 2.X.5.5.2 [UI]` In `apps/web/src/components/dialectic/cards/SessionContributionsDisplayCard.tsx` (or component rendering individual contributions):
+        *   Use `selectDialecticContributionTokenDetails` selector.
+        *   Integrate `apps/web/src/components/ai/TokenUsageDisplay.tsx` to show `tokensUsedInput`, `tokensUsedOutput` for each contribution. Display `model_id` or resolved model name.
+    *   `[ ] 2.X.5.5.3 [UI]` In a summary area (e.g., `StageTabCard.tsx` or `SessionInfoCard.tsx`):
+        *   Use `selectActiveDialecticStageTotalTokenUsage` and `selectDialecticSessionTotalTokenUsage` selectors.
+        *   Display aggregate costs, potentially adapting `apps/web/src/components/ai/ChatTokenUsageDisplay.tsx`.
+    *   `[ ] 2.X.5.5.4 [TEST-UNIT]` Run UI tests. (GREEN)
+
+*   `[ ] 2.X.5.6 [REFACTOR]` Conduct a thorough review of all integrated tokenomics UI components and related state management within the Dialectic feature. Ensure consistency and accuracy.
+*   `[ ] 2.X.5.7 [COMMIT]` feat(dialectic): integrate tokenomics display, cost estimation, and wallet management into Dialectic UI using existing AI components
+
+
 ## Section 2: Phase 2 - Structured Collaboration & Synthesis (Adding Synthesis Stage & Basic Human-in-the-Loop)
 
 **Phase 2 Value:** Implement the full initial dialectic cycle (Thesis -> Antithesis -> Synthesis). Introduce basic Human-in-the-Loop (HitL) capabilities, allowing users to guide the synthesis process. Enhance GitHub integration and expand prompt template library.
@@ -614,6 +713,16 @@
     *   `[ ] 4.1.E.4 [BE]` Set up basic dashboards or queries in the chosen logging/monitoring solution to visualize these key metrics.
     *   `[ ] 4.1.E.5 [DOCS]` Document the logging strategy and how to access/interpret logs and metrics.
     *   `[ ] 4.1.E.6 [COMMIT]` feat(ops): foundational analytics and monitoring infrastructure
+
+### Enable Org Dialectic & Notifications 
+*   [ ] Add Org Switcher to Dialectic page
+*   [ ] Add Org Dialectic toggle to Org page
+*   [ ] Add notification triggers for members joining orgs
+*   [ ] Add notification triggers for participating group chat updates 
+*   [ ] Add org access to projects 
+*   [ ] Add org projects card to org page
+*   [ ] Add notification triggers for org projects 
+*   [ ] Add Posthog triggers for every GUI interaction 
 
 ---
 

@@ -11,8 +11,9 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
-import { AIModelSelector } from './AIModelSelector';
 import { Loader2 } from 'lucide-react';
+import { WalletSelector } from '../ai/WalletSelector';
+import { ChatContextSelector } from '../ai/ChatContextSelector';
 
 interface SessionInfoCardProps {
   // REMOVED: session?: DialecticSession;

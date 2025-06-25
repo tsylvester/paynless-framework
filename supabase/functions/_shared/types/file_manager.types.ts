@@ -12,15 +12,13 @@ import type { ServiceError } from '../types.ts';
 export type FileType =
   | 'project_readme' // The main README for a dialectic project.
   | 'initial_user_prompt' // The initial user-provided prompt file for a project.
-  | 'user_prompt' // The initial user-provided prompt file for an iteration (in 0_seed_inputs).
-  | 'system_settings' // JSON file with system settings for an iteration (in 0_seed_inputs).
-  | 'seed_prompt' // The fully constructed prompt sent to a model for a specific stage.
+  | 'user_feedback' // User's consolidated feedback on a stage.
   | 'model_contribution_main' // For the primary content (e.g., Markdown) of an AI model's output for a stage.
   | 'model_contribution_raw_json' // For the raw JSON response from the AI provider for a stage.
-  | 'user_feedback' // User's consolidated feedback on a stage.
   | 'contribution_document' // A refined/derived document (e.g., PRD, checklist) within a stage's 'documents' folder.
+  | 'project_settings_file'
   | 'general_resource' // A general file resource uploaded by a user for an iteration (in 0_seed_inputs/general_resource).
-  | 'iteration_summary_md'; // For the summary markdown file at the root of an iteration.
+  | 'seed_prompt' // The fully constructed prompt sent to a model for a specific stage.
 
 /**
  * The context required to construct a unique, deterministic storage path for a file.
@@ -33,7 +31,7 @@ export interface PathContext {
   stageSlug?: string
   modelSlug?: string
   attemptCount?: number
-  originalFileName: string // The original, user-visible file name, e.g., "my_requirements.md"
+  originalFileName?: string // Made optional, validation per fileType
 }
 
 /**

@@ -1068,94 +1068,489 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
     *   `test(dialectic-ui): update tests for SessionInfoCard and SessionContributionsDisplayCard loading states`
         *   *Status: Not applicable for AI to verify commits.*
 
+*   [X] Fix Delete to ensure it deletes the entire project.
+*   [ ] Fix Clone so it works again. 
+*   [ ] Fix Export so that it exports the entire project. 
 
 ---
 
-### 2.X.5 UI Integration for Dialectic Tokenomics & Wallet Management
+`[✅] 1. [BE] Design and Implement `path_deconstructor.ts` Utility**
+    `[✅] a. [ARCH/DESIGN] Define `DeconstructedPathInfo` Interface`
+        `[✅] i. [TYPES]` Analyze `supabase/functions/_shared/file_manager.types.ts` type PathContext to determine if it is appropriate to use as the `DeconstructedPathInfo` interface. This interface should include optional fields for all components that can be parsed from a path (e.g., `originalProjectId`, `shortSessionId`, `iteration`, `stageDirName`, `modelSlug`, `attemptCount`, `parsedFileNameFromPath`, and an optional `error` string). 
+    `[✅] b. [BE/UTIL] Implement `deconstructStoragePath` Function`
+        `[✅] i. [BE]` Create the file `supabase/functions/_shared/utils/path_deconstructor.ts`.
+        `[✅] ii. [BE]` Implement the `deconstructStoragePath(storagePath: string, dbOriginalFileName?: string): DeconstructedPathInfo` function.
+            `[✅] 1. [BE]` Use a series of regular expressions, ordered from most specific path structure to most general, to parse the input `storagePath`.
+            `[✅] 2. [BE]` For each successful regex match, populate the `DeconstructedPathInfo` object with the extracted components.
+            `[✅] 3. [BE]` Include logic to infer `fileTypeGuess` based on path structure or characteristic filenames (e.g., "seed_prompt.md", "project_readme.md"). This is a 'guess' because the authoritative `fileType` will come from the database record during `cloneProject`.
+            `[✅] 4. [BE]` If the `dbOriginalFileName` is provided and relevant (e.g., for `model_contribution` types where parts of the context are in the filename), implement logic to parse it.
+            `[✅] 5. [BE]` If no pattern matches, populate the `error` field in `DeconstructedPathInfo`.
+    `[✅] c. [BE/UTIL] Implement Helper Utilities (if necessary)`
+        `[✅] i. [BE]` If needed, implement `mapDirNameToStageSlug(dirName: string): string` as an inverse to `mapStageSlugToDirName` from `path_constructor.ts`. This is only required if `cloneProject` needs the original `rawStageSlug` and it differs from the `stageDirName` captured from the path. (Analyze `path_constructor.ts` usage to confirm necessity).
 
-**Objective:** To provide users with full visibility and control over token consumption within the Dialectic service by deeply integrating existing, robust tokenomics UI components and backend capabilities. This involves displaying pre-submission cost estimates, post-submission actuals for AI contributions, allowing users to select a token wallet for operations using the established `WalletSelector.tsx`, and showing current wallet balances and affordability leveraging components like `ChatAffordabilityIndicator.tsx` and `TokenUsageDisplay.tsx`.
+`[ ] 2. [TEST-UNIT] Develop Comprehensive Unit Tests for `path_constructor.ts` and `path_deconstructor.ts``
+    `[✅] a. [TEST-UNIT] Create `path_deconstructor.test.ts``
+        `[✅] i. [TEST-UNIT]` Write unit tests for each regex and parsing path within `deconstructStoragePath`. (RED)
+        `[✅] ii. [TEST-UNIT]` Test with various valid storage paths representing all `FileType`s and their structural variations (e.g., with and without session/iteration/stage components, with attempt counts). (RED)
+        `[✅] iii. [TEST-UNIT]` Test with edge cases and malformed paths to ensure robust error reporting. (RED)
+        `[✅] iv. [BE]` Ensure `deconstructStoragePath` implementation passes all tests. (GREEN)
+    `[ ] b. [TEST-UNIT] Implement Yin/Yang (Inverse Function) Testing Strategy`
+        `[✅] i. [TEST-UNIT]` In `path_deconstructor.test.ts` (or a dedicated `path_constructor_inverse.test.ts`):
+            `[✅] 1. [TEST-UNIT]` For every `FileType` defined in `file_manager.types.ts`:
+                `[✅] a. [TEST-UNIT]` Construct a comprehensive set of valid `PathContext` objects covering all permutations (e.g., with/without optional `sessionId`, `iteration`, `stageSlug`, `modelSlug`, `attemptCount` as appropriate for the `FileType`).
+                `[✅] b. [TEST-UNIT]` For each `pathContext`:
+                    `[✅] i. [BE]` Generate `constructedPath = constructStoragePath(pathContext)`.
+                    `[✅] ii. [BE]` Call `deconstructedInfo = deconstructStoragePath(constructedPath, pathContext.originalFileName)`.
+                    `[✅] iii. [ASSERT]` Assert that `deconstructedInfo.error` is undefined.
+                    `[✅] iv. [ASSERT]` Assert that `deconstructedInfo` correctly contains the structural components corresponding to the input `pathContext` (e.g., `deconstructedInfo.shortSessionId` matches `generateShortId(pathContext.sessionId)`, `deconstructedInfo.iteration` matches `pathContext.iteration`, `deconstructedInfo.stageDirName` matches `mapStageSlugToDirName(pathContext.stageSlug)`, etc.).
+                    `[✅] v. [ASSERT]` Assert `deconstructedInfo.parsedFileNameFromPath` matches `sanitizeForPath(pathContext.originalFileName)` if the filename in path is dynamic, or the fixed filename (e.g., `project_readme.md`) if it's static for the `FileType`.
+        `[✅] ii. [TEST-UNIT]` In `path_constructor.test.ts` (or the dedicated inverse test file):
+            `[✅] 1. [TEST-UNIT]` For a representative set of valid storage path strings (covering all `FileType` variations):
+                `[✅] a. [BE]` Call `deconstructedInfo = deconstructStoragePath(samplePath, sampleDbOriginalFileName)`.
+                `[✅] b. [ASSERT]` Assert `deconstructedInfo.error` is undefined.
+                `[✅] c. [BE]` Create a new `reconstructedPathContext: PathContext` using:
+                    `[✅] i. ` `projectId: "new_test_project_id"` (or any consistent mock ID).
+                    `[✅] ii. ` `fileType: deconstructedInfo.fileTypeGuess` (or the known `FileType` for the `samplePath`).
+                    `[✅] iii. ` `originalFileName: sampleDbOriginalFileName` (or `deconstructedInfo.parsedFileNameFromPath` if that's the correct source for `originalFileName` in `PathContext`).
+                    `[✅] iv. ` `sessionId: "new_test_session_id"` if `deconstructedInfo.shortSessionId` was present.
+                    `[✅] v. ` `iteration: deconstructedInfo.iteration`.
+                    `[✅] vi. ` `stageSlug: deconstructedInfo.stageDirName` (or `mapDirNameToStageSlug(deconstructedInfo.stageDirName)` if an inverse mapping is used).
+                    `[✅] vii. ` `modelSlug: deconstructedInfo.modelSlug`.
+                    `[✅] viii. ` `attemptCount: deconstructedInfo.attemptCount`.
+                `[✅] d. [BE]` Generate `reconstructedPath = constructStoragePath(reconstructedPathContext)`.
+                `[✅] e. [ASSERT]` Assert that `reconstructedPath` matches the `samplePath` structure, substituting the new project/session IDs. (e.g., `samplePath.replace(deconstructedInfo.originalProjectId, "new_test_project_id").replace(deconstructedInfo.shortSessionId, generateShortId("new_test_session_id"))`).
+    `[✅] c. [REFACTOR]` Refactor `path_constructor.ts` and `path_deconstructor.ts` as needed until all inverse tests pass, ensuring they handle all `FileType`s and path variations correctly.
 
-**Core Principle:** Maximize reuse of components from `apps/web/src/components/ai/` and ensure backend processes correctly populate existing database fields to feed data into these established UI patterns.
+`[ ] 3. [BE/REFACTOR] Modify `cloneProject.ts` to Utilize `path_deconstructor.ts``
+    `[ ] a. [BE/REFACTOR] Pre-computation of Session ID Maps`
+        `[ ] i. [BE]` Before the `originalResources` loop, fetch all `originalSessions` for the `originalProjectId`.
+        `[ ] ii. [BE]` Create `originalShortSessionIdToFullSessionIdMap: Map<string, string>`.
+        `[ ] iii. [BE]` Create `originalFullSessionIdToNewFullSessionIdMap: Map<string, string>`.
+        `[ ] iv. [BE]` Populate these maps by iterating `originalSessions`, generating a new UUID for each cloned session, and storing the mappings.
+    `[ ] b. [BE/REFACTOR] Refactor Project Resources Cloning Loop`
+        `[ ] i. [BE]` Within the `for (const res of originalResources)` loop:
+            `[ ] 1. [BE]` Get `actualFileType = getFileTypeFromResourceDescription(res.resource_description)`.
+            `[ ] 2. [BE]` Call `deconstructedInfo = deconstructStoragePath(res.storage_path, res.file_name)`.
+            `[ ] 3. [BE]` If `deconstructedInfo.error` is present, log a critical error and decide on failure strategy (e.g., throw error to fail the entire clone).
+            `[ ] 4. [BE]` Construct the `newPathContext: PathContext` for `FileManagerService.uploadAndRegisterFile`:
+                `[ ] a. [BE]` `projectId: actualClonedProjectId`.
+                `[ ] b. [BE]` `fileType: actualFileType`.
+                `[ ] c. [BE]` `originalFileName: res.file_name` (from the original DB record).
+                `[ ] d. [BE]` `sessionId`: If `deconstructedInfo.shortSessionId`, derive `newClonedSessionId` using the pre-computed maps. Set this in `newPathContext`.
+                `[ ] e. [BE]` `iteration`: `deconstructedInfo.iteration`.
+                `[ ] f. [BE]` `stageSlug`: `deconstructedInfo.stageDirName` (or its reverse-mapped equivalent if necessary).
+                `[ ] g. [BE]` `modelSlug`: `deconstructedInfo.modelSlug`.
+                `[ ] h. [BE]` `attemptCount`: `deconstructedInfo.attemptCount`.
+            `[ ] 5. [BE]` **Crucial Validation Step:** Before calling `fileManager.uploadAndRegisterFile`, verify that `newPathContext` contains all mandatory fields required by `constructStoragePath` for the `actualFileType`. If not, log an error and handle failure. This step uses knowledge from `constructStoragePath`'s internal logic.
+            `[ ] 6. [BE]` Proceed with `fileManager.uploadAndRegisterFile(newUploadContext)` (where `newUploadContext` uses `newPathContext`).
+    `[ ] c. [BE/REFACTOR] Refactor Session Cloning Loop`
+        `[ ] i. [BE]` Ensure that when new session records are inserted into `dialectic_sessions`, the `id` used is the pre-generated new UUID from `originalFullSessionIdToNewFullSessionIdMap.get(originalSession.id)`.
+    `[ ] d. [BE/REFACTOR] Refactor Contributions Cloning Loop`
+        `[ ] i. [BE]` Within the `for (const originalContrib of originalContributions)` loop:
+            `[ ] 1. [BE]` For the main contribution file:
+                `[ ] a. [BE]` `actualFileType = 'model_contribution_main'` (or derived if more specific, e.g. from `effectiveFileType` logic).
+                `[ ] b. [BE]` If `originalContrib.storage_path` exists, call `deconstructedInfo = deconstructStoragePath(originalContrib.storage_path, originalContrib.file_name)`.
+                `[ ] c. [BE]` If `deconstructedInfo.error` or path doesn't exist, handle appropriately (e.g., skip file, log warning, or potentially reconstruct context from DB fields if path is missing but file content exists).
+                `[ ] d. [BE]` Construct `newContribPathContext: PathContext`:
+                    `[ ] i. ` `projectId: actualClonedProjectId`.
+                    `[ ] ii. ` `fileType: actualFileType`.
+                    `[ ] iii. ` `originalFileName: effectiveFileName` (as determined by existing logic).
+                    `[ ] iv. ` `sessionId: actualNewSessionId` (this is already known at this point in `cloneProject`).
+                    `[ ] v. ` `iteration: deconstructedInfo.iteration` (or `originalContrib.iteration_number` if path parsing failed but DB field is reliable).
+                    `[ ] vi. ` `stageSlug: deconstructedInfo.stageDirName` (or `originalContrib.stage`).
+                    `[ ] vii. ` `modelSlug: deconstructedInfo.modelSlug` (or `sanitizeForPath(originalContrib.model_name)`).
+                    `[ ] viii. ` `attemptCount: deconstructedInfo.attemptCount`.
+                `[ ] e. [BE]` Validate `newContribPathContext` against `constructStoragePath` requirements for `actualFileType`.
+                `[ ] f. [BE]` Update `contribUploadContext.pathContext` with `newContribPathContext`.
+            `[ ] 2. [BE]` Similar deconstruction/reconstruction logic might be needed if `raw_response_storage_path` is parsed for context, though `FileManagerService` handles raw response files based on metadata more than its own distinct path usually. Focus on getting the main contribution path correct.
+            `[ ] 3. [BE]` Proceed with `fileManager.uploadAndRegisterFile(contribUploadContext)`.
 
-**Prerequisite:** `generateContributions.ts` and `FileManagerService` must be correctly populating the existing tokenomics and model identifier fields in the `dialectic_contributions` table.
+`[ ] 4. [TEST-INT] Integration Testing for `cloneProject.ts``
+    `[ ] a. [TEST-INT]` Create/update integration tests for `cloneProject`.
+        `[ ] i. [TEST-INT]` Test cloning a project with various structures:
+            `[ ] 1. [TEST-INT]` Project with only project-level resources.
+            `[ ] 2. [TEST-INT]` Project with sessions and session-specific resources (like `seed_prompt`s stored as project resources).
+            `[ ] 3. [TEST-INT]` Project with sessions and contributions (including those with potential filename attempt counters).
+        `[ ] ii. [TEST-INT]` In each test, after `cloneProject` completes:
+            `[ ] 1. [ASSERT]` Verify the new project and session records are created correctly in the database.
+            `[ ] 2. [ASSERT]` Fetch all `dialectic_project_resources` and `dialectic_contributions` for the *cloned* project.
+            `[ ] 3. [ASSERT]` For each cloned resource/contribution, verify its `storage_path` is correctly structured for the *new* `projectId` and *new* `sessionId`(s), and matches what `constructStoragePath` would produce for its `FileType` and context.
+            `[ ] 4. [ASSERT]` (Optional but recommended) Verify that the file content was actually copied/uploaded to the new path in Supabase Storage (requires mocking storage appropriately or careful setup/teardown if hitting a live dev storage).
+        `[ ] iii. [TEST-INT]` Test error handling scenarios (e.g., if `deconstructStoragePath` returns an error for a critical file).
 
-*   `[ ] 2.X.5.1 [BE]` **Ensure `generateContributions` & `FileManagerService` Populate Existing Tokenomics Fields**
-    *   `[✅] 2.X.5.1.1 [BE/TYPES]` **Verify and Align `UploadContext`:**
-        *   In `supabase/functions/_shared/types/file_manager.types.ts`, ensure `UploadContext` (or its `customMetadata`) is structured to carry:
-            *   `modelIdUsed: string` (corresponding to `dialectic_contributions.model_id` which is FK to `ai_providers.id`)
-            *   `tokensUsedInput: number`
-            *   `tokensUsedOutput: number`
-            *   `processingTimeMs: number`
-            *   `promptTemplateIdUsed?: string` (for `dialectic_contributions.prompt_template_id_used`)
-            *   `seedPromptUrl?: string` (for `dialectic_contributions.seed_prompt_url`)
-            *   `rawResponseStoragePath?: string` (for `dialectic_contributions.raw_response_storage_path`)
-            *   `citations?: Json` (for `dialectic_contributions.citations`)
-            *   `error?: string` (for `dialectic_contributions.error`)
-            *   `contributionType?: string` (for `dialectic_contributions.contribution_type`)
-    *   `[🚧] 2.X.5.1.2 [BE]` **Enhance `FileManagerService.uploadAndRegisterFile`:**
-        *   In `supabase/functions/_shared/services/file_manager.ts`, when `targetTable` is `dialectic_contributions`, ensure the `recordData` object correctly maps all relevant fields from the updated `UploadContext` (from `2.X.5.1.1`) to their corresponding columns in the `dialectic_contributions` table as defined in `supabase/functions/types_db.ts`. This includes `model_id`, `tokens_used_input`, `tokens_used_output`, `processing_time_ms`, `prompt_template_id_used`, `raw_response_storage_path`, `seed_prompt_url`, etc.
-    *   `[✅] 2.X.5.1.3 [BE]` **Refactor `generateContributions.ts` Data Handling:**
-        *   In `supabase/functions/dialectic-service/generateContributions.ts`:
-            *   When a response is received from `callUnifiedAIModel` (which returns `UnifiedAIResponse`), correctly extract `inputTokens`, `outputTokens` (or parse from `tokenUsage` object), `processingTimeMs`.
-            *   Also capture the actual `model_id` used for the call (from `providerDetails.id` or similar context available during the model iteration).
-            *   Capture other relevant metadata like `rawProviderResponse` (to determine `raw_response_storage_path` if applicable, or to store inline if schema allows and preferred), `prompt_template_id_used`, `seed_prompt_url`.
-            *   Populate the updated `UploadContext` with these values and pass it to `fileManager.uploadAndRegisterFile`.
-    *   `[✅] 2.X.5.1.4 [TEST-INT]` Update/Create integration tests for `generateContributions.ts`. These tests must:
-        *   Mock `callUnifiedAIModel` to return realistic `UnifiedAIResponse` data, including token counts and processing times.
-        *   Assert that `FileManagerService.uploadAndRegisterFile` is called with an `UploadContext` containing the correct tokenomics data and other metadata.
-        *   Mock `FileManagerService.uploadAndRegisterFile` to simulate a successful database insert and verify that the `generateContributions` function correctly processes this success.
-        *   Specifically test that the `DB_INSERT_FAIL` errors (seen in logs) are resolved by providing all necessary data.
+`[ ] 5. [DOCS] Documentation Updates`
+    `[ ] a. [DOCS]` Create `supabase/functions/_shared/utils/path_deconstructor.md` (or similar) documenting its purpose, API, and the `DeconstructedPathInfo` interface.
+    `[ ] b. [DOCS]` Update documentation for `cloneProject` to mention its reliance on `path_deconstructor` for path mapping.
+    `[ ] c. [DOCS]` Update any architectural diagrams or file structure documentation if the understanding of path components has been refined.
 
-*   `[✅] 2.X.5.2 [API/STORE]` **Propagate Tokenomics Data & Wallet State for Dialectic Service**
-    *   `[✅] 2.X.5.2.1 [TYPES]` In `packages/types/src/dialectic.types.ts`:
-        *   Align the `DialecticContribution` type with the fields now confirmed to be in the database and populated by the backend. Ensure it includes:
-            *   `tokens_used_input: number | null`
-            *   `tokens_used_output: number | null`
-            *   `processing_time_ms: number | null`
-            *   `model_id: string | null` (actual ID of the AI provider/model used)
-            *   Other fields like `raw_response_storage_path`, `seed_prompt_url`, `citations` as they are made available.
-    *   `[✅] 2.X.5.2.2 [STORE]` In `packages/store/src/dialecticStore.ts`:
-        *   Ensure `fetchDialecticProjectDetails` thunk correctly processes and stores this enhanced `DialecticContribution` data (including tokenomics) within `currentProjectDetail.sessions.contributions`.
-        *   Adapt or reuse existing wallet state management. Add `activeDialecticWalletId: string | null` to `DialecticState` (in `packages/store/src/interfaces/dialectic.ts`) if a distinct active wallet for Dialectic operations is desired. Create actions to set/update it.
-    *   `[✅] 2.X.5.2.3 [STORE]` Create/update selectors in `packages/store/src/dialecticStore.selectors.ts`:
-        *   `[✅] selectDialecticContributionTokenDetails(contributionId: string): { tokensUsedInput: number | null, tokensUsedOutput: number | null, processingTimeMs: number | null, modelId: string | null } | null` // Data accessible via selectContributionById
-        *   `[✅] selectActiveDialecticStageTotalTokenUsage(sessionId: string, stageSlug: string, iterationNumber: number): { totalInput: number, totalOutput: number, totalProcessingMs: number } | null`
-        *   `[✅] selectDialecticSessionTotalTokenUsage(sessionId: string): { totalInput: number, totalOutput: number, totalProcessingMs: number } | null`
-        *   `[✅] selectActiveDialecticWalletId(): string | null`
-    *   `[✅] 2.X.5.2.4 [BE]` Modify backend actions in `dialectic-service` (e.g., `generateContributions`) to accept an optional `walletId` in their payload. This `walletId` will be used by the `TokenWalletService`. Fallback to user's default wallet if not provided.
+`[ ] 6. [COMMIT] Final Commit and Code Review`
+    `[ ] a. [COMMIT]` `feat(be,util): implement path_deconstructor and integrate into cloneProject for robust path mapping`
+    `[ ] b. [COMMIT]` `test(be,util): add comprehensive unit and integration tests for path deconstruction and project cloning`
+    `[ ] c. [REFACTOR]` Conduct a final code review of all changes.
 
-*   `[ ] 2.X.5.3 [UI]` **Integrate Existing `WalletSelector.tsx` and Balance Display**
-    *   `[ ] 2.X.5.3.1 [TEST-UNIT]` Update/create unit tests for `DialecticSessionDetailsPage.tsx` or relevant parent components to cover wallet selection and balance display integration. (RED)
-    *   `[ ] 2.X.5.3.2 [UI]` In `apps/web/src/pages/DialecticSessionDetailsPage.tsx` (or a suitable layout component):
-        *   Integrate `apps/web/src/components/ai/WalletSelector.tsx`.
-        *   Connect it to update `activeDialecticWalletId` in the store.
-        *   Display the selected wallet's balance using existing mechanisms.
-    *   `[ ] 2.X.5.3.3 [UI]` Ensure UI elements triggering AI processing pass the `activeDialecticWalletId` to the backend if required.
-    *   `[ ] 2.X.5.3.4 [TEST-UNIT]` Run UI tests. (GREEN)
+---
 
-*   `[ ] 2.X.5.4 [UI]` **Implement Pre-Submission Token Cost Estimates Using Existing Estimators**
-    *   `[ ] 2.X.5.4.1 [TEST-UNIT]` Update/create unit tests for pre-submission estimate displays. (RED)
-    *   `[ ] 2.X.5.4.2 [BE]` Develop backend function `estimateDialecticStageCost` in `dialectic-service`.
-        *   Input: `projectId`, `sessionId`, `stageSlug`, `iterationNumber`, `modelIds`, `walletId`.
-        *   Output: `EstimatedTokenUsage { perModel: Array<{modelId: string, estimatedTokens: number}>, totalEstimatedTokens: number }`.
-        *   Logic: Construct the potential seed prompt(s) and use a token counting utility (e.g., from `supabase/functions/_shared/` or similar to `countTokensForMessages` from chat service logs).
-    *   `[ ] 2.X.5.4.3 [API/STORE]` Add API client method and store thunk for `estimateDialecticStageCost`. Store estimate in `DialecticState`.
-    *   `[ ] 2.X.5.4.4 [UI]` In `apps/web/src/components/dialectic/StageTabCard.tsx`:
-        *   Trigger `estimateDialecticStageCost` thunk upon model selection.
-        *   Display estimate using `apps/web/src/components/ai/CurrentMessageTokenEstimator.tsx` or `ChatTokenUsageDisplay.tsx`.
-        *   Integrate `apps/web/src/components/ai/ChatAffordabilityIndicator.tsx` using the estimate and selected wallet balance.
-    *   `[ ] 2.X.5.4.5 [TEST-UNIT]` Run UI tests. (GREEN)
+## Section 2.Z: Implementing Data-Driven AI Response Formatting via `expected_output_artifacts`
 
-*   `[ ] 2.X.5.5 [UI]` **Display Post-Submission Actual Token Costs Using Existing `TokenUsageDisplay.tsx`**
-    *   `[ ] 2.X.5.5.1 [TEST-UNIT]` Update/create unit tests for displaying actual token costs. (RED)
-    *   `[ ] 2.X.5.5.2 [UI]` In `apps/web/src/components/dialectic/cards/SessionContributionsDisplayCard.tsx` (or component rendering individual contributions):
-        *   Use `selectDialecticContributionTokenDetails` selector.
-        *   Integrate `apps/web/src/components/ai/TokenUsageDisplay.tsx` to show `tokensUsedInput`, `tokensUsedOutput` for each contribution. Display `model_id` or resolved model name.
-    *   `[ ] 2.X.5.5.3 [UI]` In a summary area (e.g., `StageTabCard.tsx` or `SessionInfoCard.tsx`):
-        *   Use `selectActiveDialecticStageTotalTokenUsage` and `selectDialecticSessionTotalTokenUsage` selectors.
-        *   Display aggregate costs, potentially adapting `apps/web/src/components/ai/ChatTokenUsageDisplay.tsx`.
-    *   `[ ] 2.X.5.5.4 [TEST-UNIT]` Run UI tests. (GREEN)
+**Objective:** To standardize and control the structure of AI model responses by leveraging the `dialectic_stages.expected_output_artifacts` JSONB column. This column will store a JSON template defining the exact output format expected from the AI for each stage. The backend will wrap this template with a strong "meta-instruction" to guide the AI, parse the JSON response, and process the structured deliverables.
 
-*   `[ ] 2.X.5.6 [REFACTOR]` Conduct a thorough review of all integrated tokenomics UI components and related state management within the Dialectic feature. Ensure consistency and accuracy.
-*   `[ ] 2.X.5.7 [COMMIT]` feat(dialectic): integrate tokenomics display, cost estimation, and wallet management into Dialectic UI using existing AI components
+**Core Principles:**
+*   **Declarative Formatting:** Define AI output structures in the database, not in code.
+*   **Strong Guidance:** Use explicit meta-instructions to maximize AI compliance.
+*   **Parsing Robustness:** Expect and parse a JSON object from the AI.
+*   **Controlled Filenaming:** Use fixed filenames in the AI-requested template, then map them to dynamic, system-defined filenames upon processing.
 
+---
+
+*   `[ ] 2.Z.1 [DB/SEED]` **Define and Populate `expected_output_artifacts` Templates**
+    *   `[ ] 2.Z.1.1 [ARCH/DESIGN]` **Finalize JSON Structure for Deliverables**
+        *   Define a consistent master JSON structure template that can be adapted for each stage. This structure should include keys for all common deliverable types (e.g., `executive_summary`, `main_content_markdown`, `risk_assessment`, and an array for `files` like `[{ "template_filename": "fixed_prd.md", "content": "..."}]`).
+    *   `[ ] 2.Z.1.2 [DB/MIGRATION]` **Create/Update Migration/Seeding Script for `expected_output_artifacts`**
+        *   For each `dialectic_stages` record (Thesis, Antithesis, Synthesis, Parenthesis, Paralysis):
+            *   Populate the `expected_output_artifacts` column with a stage-specific JSON object template. This template will instruct the AI on how to structure its entire response.
+            *   **Example for Thesis Stage (Illustrative):**
+                ```json
+                {
+                  "executive_summary": "placeholder for executive summary",
+                  "detailed_implementation_strategy": "placeholder for implementation strategy",
+                  "development_checklist": ["placeholder for step 1"],
+                  "risk_assessment_and_mitigation": "placeholder for risk assessment",
+                  "success_metrics": "placeholder for success metrics",
+                  "files_to_generate": [
+                    {
+                      "template_filename": "thesis_product_requirements_document.md",
+                      "content_placeholder": "complete markdown content for PRD here"
+                    },
+                    {
+                      "template_filename": "thesis_implementation_plan_proposal.md",
+                      "content_placeholder": "complete markdown content for implementation plan here"
+                    }
+                  ]
+                }
+                ```
+            *   Ensure filenames within `files_to_generate` are fixed (e.g., `stage_specific_output_type.md`).
+    *   `[ ] 2.Z.1.3 [DOCS]` Document the standard JSON structure and the purpose of `expected_output_artifacts` in the project's technical documentation.
+    *   `[ ] 2.Z.1.4 [COMMIT]` `feat(db): define and seed expected_output_artifacts templates for dialectic stages`
+
+*   `[ ] 2.Z.2 [BE/PROMPT]` **Design and Implement Meta-Instruction Wrapper**
+    *   `[ ] 2.Z.2.1 [PROMPT]` **Craft the Meta-Instruction String**
+        *   Develop a clear, forceful instruction block that will precede the JSON template from `expected_output_artifacts` in the prompt sent to the AI.
+        *   **Example:**
+            ```
+            SYSTEM: Your entire response for this stage MUST be a single, valid JSON object. Strictly adhere to the JSON structure provided below under 'Expected JSON Output Structure:'. Populate all placeholder values (e.g., "placeholder for ...", "complete markdown content here") with your generated content. Do not include any conversational text, acknowledgments, apologies, or any other content outside of this JSON object. The JSON object must begin with '{' and end with '}'.
+
+            Expected JSON Output Structure:
+            ```
+            *(This will be followed by the JSON template)*
+            ```
+            Ensure your response is ONLY the JSON object. End of instructions.
+            ```
+    *   `[ ] 2.Z.2.2 [BE]` In `dialectic-service` (e.g., within `callUnifiedAIModel` or a prompt assembly utility):
+        *   Implement logic to fetch the `expected_output_artifacts` JSON for the current `DialecticStage`.
+        *   If `expected_output_artifacts` is present and valid:
+            *   Prepend the crafted meta-instruction.
+            *   Append the stringified JSON from `expected_output_artifacts`.
+            *   Append the concluding part of the meta-instruction ("Ensure your response is ONLY the JSON object. End of instructions.").
+            *   This becomes part of the main user/assistant prompt content sent to the AI model.
+    *   `[ ] 2.Z.2.3 [TEST-UNIT]` Write unit tests for the prompt assembly logic to verify correct construction of the meta-instruction and template inclusion. (RED then GREEN)
+    *   `[ ] 2.Z.2.4 [COMMIT]` `feat(be): implement meta-instruction wrapper for JSON response formatting`
+
+*   `[ ] 2.Z.3 [BE/SERVICE]` **Implement AI Response Parsing and Deliverable Processing**
+    *   `[ ] 2.Z.3.1 [BE]` In `dialectic-service` (e.g., in `generateContributions.ts` or where `callUnifiedAIModel`'s response is handled):
+        *   Attempt to `JSON.parse()` the AI's entire text response.
+        *   If parsing fails:
+            *   Log the error and the malformed response.
+            *   Implement error handling (e.g., return a specific error to the user, potentially attempt a retry with a stronger instruction).
+    *   `[ ] 2.Z.3.2 [BE]` If JSON parsing succeeds:
+        *   Extract the various deliverables based on the known keys from the `expected_output_artifacts` template (e.g., `parsedResponse.executive_summary`, etc.).
+        *   For each item in the `parsedResponse.files_to_generate` array (or similar key):
+            *   Get the `template_filename` and `content`.
+            *   **Implement Dynamic Filename Mapping:** Convert the `template_filename` (e.g., `"thesis_product_requirements_document.md"`) into the actual dynamic filename required by `FileManagerService` (e.g., incorporating `model_slug`, `stage_slug`, `iteration`, `attempt_count`). This logic will reside in `generateContributions.ts`.
+            *   Determine the correct `FileType` for `FileManagerService` based on the `template_filename` or other metadata (e.g., 'contribution\_document\_prd', 'contribution\_document\_plan').
+            *   Use `FileManagerService.uploadAndRegisterFile` to save the `content` with the dynamic filename, correct `FileType`, and other necessary context (`projectId`, `sessionId`, `model_id_used`, tokenomics data, etc.).
+        *   Store other non-file deliverables (like `executive_summary`) appropriately. This might involve new columns on `dialectic_contributions` if they are distinct from the main Markdown file content, or they could be part of a primary "summary" artifact. *Decision: For now, assume these are fields within a primary structured contribution; if they need to be separate files, the JSON template and parsing must reflect that.*
+    *   `[ ] 2.Z.3.3 [TEST-INT]` Write integration tests for `generateContributions.ts`: (RED then GREEN)
+        *   Mock `callUnifiedAIModel` to return a stringified JSON adhering to a sample `expected_output_artifacts` template.
+        *   Assert that the JSON is parsed correctly.
+        *   Assert that `FileManagerService.uploadAndRegisterFile` is called for each file in the `files_to_generate` array with correctly mapped dynamic filenames and `FileType`.
+        *   Test scenarios with malformed JSON responses from the AI.
+    *   `[ ] 2.Z.3.4 [COMMIT]` `feat(be): implement JSON response parsing and dynamic file processing in dialectic-service`
+
+*   `[ ] 2.Z.4 [REFACTOR]` **Review and Refine**
+    *   `[ ] 2.Z.4.1 [PROMPT/BE]` Test the entire flow with actual AI models. Refine the meta-instruction and JSON templates in `expected_output_artifacts` based on observed AI compliance and any parsing issues.
+    *   `[ ] 2.Z.4.2 [CODE]` Ensure all related code (prompt assembly, response parsing, error handling) is robust and well-documented.
+
+*   `[ ] 2.Z.5 [DOCS]` **Update System Documentation**
+    *   `[ ] 2.Z.5.1 [DOCS]` Document the new `expected_output_artifacts` column, its purpose, and the standard JSON structure.
+    *   `[ ] 2.Z.5.2 [DOCS]` Document the prompt assembly logic, including the meta-instruction.
+    *   `[ ] 2.Z.5.3 [DOCS]` Document the response parsing and dynamic filename mapping logic.
+    *   `[ ] 2.Z.5.4 [COMMIT]` `docs: document data-driven AI response formatting mechanism`
+
+---You're thinking ahead very effectively! Ensuring that the AI-generated implementation plans and checklists are well-structured, human-readable, and adhere to a consistent style is crucial for their practical use. Your refined legend and numbering scheme are excellent improvements.
+
+This "Formatting and Style Guide" should indeed be part of the instructions provided to the AI. The best place for this is within the `prompt_text` of the `system_prompts` table, specifically for those system prompts associated with stages that are expected to produce these structured documents (e.g., the system prompt for the "Parenthesis" stage).
+
+Let's extend "Section 2.Z" in your `AI Dialectic Implementation Plan Phase 2.md` to include these steps. I'll rename the section slightly to encompass both the JSON response structure and this content styling.
+
+---
+
+**Formatting and Style Guide for Implementation Plans & Checklists:**
+
+When generating implementation plans, detailed checklists, or any hierarchically structured task lists, you MUST adhere to the following formatting and style guide precisely:
+
+1.  **Overall Structure:**
+    *   Organize all plans and checklists into clear, hierarchical sections.
+    *   Start with high-level phases or major components and progressively detail sub-tasks and steps.
+
+2.  **Task Status Legend:**
+    *   Prefix EVERY actionable task item with one of the following status markers:
+        *   `[ ]` : Unstarted task.
+        *   `[✅]` : Completed task (use sparingly, as you are generating a plan for future work).
+        *   `[🚧]` : Task is in progress or partially completed (use sparingly).
+        *   `[⏸️]` : Task is paused or waiting for external input/clarification.
+        *   `[❓]` : There is significant uncertainty about this task that needs resolution.
+        *   `[🚫]` : Task is blocked by an unresolved issue or dependency.
+    *   The status marker is mandatory for all list items that represent an actionable step.
+
+3.  **Component Type Labels (Optional but Recommended):**
+    *   If a task directly relates to a specific type of system component or development activity, include ONE of the following labels immediately after the status marker and before the task description.
+    *   Use these labels judiciously where they add clarity.
+    *   Available Labels: `[DB]`, `[RLS]`, `[BE]`, `[API]`, `[STORE]`, `[UI]`, `[CLI]`, `[IDE]`, `[TEST-UNIT]`, `[TEST-INT]`, `[TEST-E2E]`, `[DOCS]`, `[REFACTOR]`, `[PROMPT]`, `[CONFIG]`.
+    *   Example: `[ ] [BE] Implement user authentication endpoint.`
+
+4.  **Numbering, Lettering, and Indentation Scheme:**
+    *   You MUST use the following scheme for hierarchical levels:
+        *   **Level 1 (Main Headings/Phases):** `[ ] 1. Task Description`
+        *   **Level 2 (Sub-tasks/Components):** `[ ] a. Task Description` (indented under Level 1)
+        *   **Level 3 (Detailed Steps):** `[ ] i. Task Description` (indented under Level 2)
+    *   Ensure proper Markdown indentation for nested lists to render correctly.
+    *   For clarity, try to limit nesting to these three levels. If a fourth level is absolutely essential for a very specific detail, you may restart with `1.` (indented under `i.`), or use a simple unnumbered bullet `-` for very fine-grained sub-points. Avoid overly deep numerical nesting (e.g., 1.2.3.4.5.a.i).
+
+5.  **Task Descriptions:**
+    *   Keep task descriptions clear, actionable, and concise.
+    *   Start task descriptions with a verb where appropriate.
+
+6.  **Plan Development Principles:**
+    *   **TDD (Test-Driven Development):** For any implementation tasks, explicitly include steps for writing tests *before* writing the implementation code. For example:
+        *   `[ ] [TEST-UNIT] Write failing unit tests for the new service (RED).`
+        *   `[ ] [BE] Implement the core logic for the new service (GREEN).`
+        *   `[ ] [REFACTOR] Refactor the new service code and tests.`
+    *   **Modularity:** Design components and tasks to be modular and reusable.
+    *   **Dependencies:** If tasks have clear dependencies, you can note them, but the hierarchical structure should imply the primary flow.
+    *   **Documentation:** Include explicit tasks for documentation (e.g., `[ ] [DOCS] Update the API documentation for the new endpoint.`).
+
+**Example of Expected Output Format:**
+
+```markdown
+[ ] 1. [BE] Phase 1: Setup Core Backend Infrastructure
+    [ ] a. [DB] Define database schema for user profiles.
+    [ ] b. [TEST-UNIT] Write failing unit tests for profile creation (RED).
+    [ ] c. [BE] Implement API endpoint for user profile creation (GREEN).
+        [ ] i. [BE] Add input validation.
+        [ ] ii. [BE] Implement database insertion logic.
+    [ ] d. [DOCS] Document the user profile API endpoint.
+[ ] 2. [UI] Phase 2: Develop User Interface
+    [ ] a. [UI] Design wireframes for the registration page.
+    [ ] b. [UI] Implement the registration form component.
+```
+
+By including such a guide in your system prompts, you are setting clear expectations for the AI, which should lead to more consistent, human-readable, and useful implementation plans and checklists. This aligns perfectly with making your overall system more robust and predictable.
+
+## Section 2.Z: Implementing Data-Driven AI Response Formatting & Content Styling
+
+**Objective:** To standardize and control both the *structure of AI model JSON responses* and the *formatting/style of detailed textual deliverables (like implementation plans)*. This involves using the `dialectic_stages.expected_output_artifacts` JSONB column for overall response structure and embedding a "Formatting and Style Guide" within relevant `system_prompts.prompt_text` for content styling.
+
+**Core Principles:**
+*   **Declarative Formatting:** Define AI output structures (JSON) and content styles (Markdown plans) in the database.
+*   **Strong Guidance:** Use explicit meta-instructions and style guides to maximize AI compliance.
+*   **Parsing Robustness:** Expect and parse a JSON object from the AI.
+*   **Controlled Filenaming:** Use fixed filenames in the AI-requested template, then map them to dynamic, system-defined filenames upon processing.
+*   **Content Usability:** Ensure generated plans/checklists are human-readable and consistently formatted.
+
+---
+
+*   `[ ] 2.Z.1 [PROMPT/DOCS]` **Develop the "Formatting and Style Guide" for Structured Documents**
+    *   `[ ] 2.Z.1.1 [PROMPT]` Finalize the detailed text for the "Formatting and Style Guide." This guide should include:
+        *   The refined Task Status Legend (e.g., `[ ] 1.`, `[ ] a.`, `[ ] i.`).
+        *   Instructions for using Component Type Labels (e.g., `[BE]`, `[UI]`).
+        *   Guidance on task description clarity, hierarchical structure, and limiting nesting depth.
+        *   Emphasis on plan development principles like TDD.
+        *   A clear example of the expected output format for a small plan.
+    *   `[ ] 2.Z.1.2 [DOCS]` Store this finalized guide text. If it's extensive, consider placing it in a shared, version-controlled document referenced by system prompts, or as a constant in a shared backend module if it needs programmatic access. For direct use, it will be embedded into system prompt texts.
+
+*   `[ ] 2.Z.2 [DB/SEED]` **Update `system_prompts` with Formatting and Style Guide**
+    *   `[ ] 2.Z.2.1 [DB/PROMPT]` Identify all `system_prompts` records (e.g., the default system prompts for "Parenthesis", "Paralysis", or any custom stage that should produce detailed plans/checklists) that require this style guide.
+    *   `[ ] 2.Z.2.2 [DB/MIGRATION]` Create or update a database migration/seeding script to modify the `prompt_text` of these identified `system_prompts`.
+        *   Embed the full "Formatting and Style Guide" (from `2.Z.1.1`) into the `prompt_text`. This guide should be clearly delineated within the system prompt (e.g., under a heading like "**Formatting and Style Guide for Implementation Plans & Checklists:**").
+        *   This ensures the AI receives these styling instructions as part of its core task directions for that stage.
+    *   `[ ] 2.Z.2.3 [COMMIT]` `feat(db,prompt): integrate formatting/style guide into relevant system prompts`
+
+*   `[ ] 2.Z.3 [DB/SEED]` **Define and Populate `expected_output_artifacts` JSON Templates**
+    *   `[ ] 2.Z.3.1 [ARCH/DESIGN]` Finalize the master JSON structure template for AI responses (as previously discussed in the original 2.Z.1.1). This template dictates keys like `executive_summary`, `files_to_generate`, etc.
+    *   `[ ] 2.Z.3.2 [DB/MIGRATION]` Ensure the migration/seeding script for `dialectic_stages.expected_output_artifacts` (from the original 2.Z.1.2) correctly populates this column for each stage with its specific JSON response template.
+        *   The `content_placeholder` for any deliverable that is a structured plan/checklist (e.g., `"content_placeholder": "complete markdown content for implementation plan here, adhering to the provided Formatting and Style Guide"`) implicitly relies on the AI having received the style guide via the system prompt.
+    *   `[ ] 2.Z.3.3 [DOCS]` Document the standard JSON structure and the purpose of `expected_output_artifacts`.
+    *   `[ ] 2.Z.3.4 [COMMIT]` `feat(db): define and seed expected_output_artifacts JSON templates for dialectic stages` (Commit may be merged with 2.Z.2.3 if done in one migration).
+
+*   `[ ] 2.Z.4 [BE/PROMPT]` **Implement Meta-Instruction Wrapper for JSON Response Structure**
+    *   `[ ] 2.Z.4.1 [PROMPT]` Craft the "meta-instruction" string that explicitly tells the AI to respond ONLY in the provided JSON format (as in the original 2.Z.2.1). This meta-instruction will wrap the JSON template taken from `expected_output_artifacts`.
+        *   **Refined Example considering SYSTEM prefix and EOF:**
+            ```
+            SYSTEM: Your entire response for this stage MUST be a single, valid JSON object. Strictly adhere to the JSON structure provided below under 'Expected JSON Output Structure:'. Populate all placeholder values (e.g., "placeholder for ...", "complete markdown content here") with your generated content. Do not include any conversational text, acknowledgments, apologies, or any other content outside of this JSON object. The JSON object must begin with '{' and end with '}'.
+
+            Expected JSON Output Structure:
+            [Insert JSON template from expected_output_artifacts here by the backend]
+
+            CRITICAL REMINDER: Ensure your response is ONLY the JSON object detailed above. End of Instructions. END_OF_RESPONSE_FORMAT_INSTRUCTIONS.
+            ```
+    *   `[ ] 2.Z.4.2 [BE]` In `dialectic-service` (e.g., within a prompt assembly utility called by `generateContributions.ts` before `callUnifiedAIModel`):
+        *   Fetch the `default_system_prompt_id` for the current `DialecticStage`.
+        *   Fetch the `prompt_text` from `system_prompts` using this ID (this text now includes the "Formatting and Style Guide").
+        *   Fetch the `expected_output_artifacts` JSON string for the current `DialecticStage`.
+        *   If `expected_output_artifacts` is present:
+            *   Construct the full user-facing part of the prompt by:
+                1.  Taking the main task description/context for the stage.
+                2.  Appending the meta-instruction (from `2.Z.4.1`).
+                3.  Appending the `expected_output_artifacts` JSON string itself.
+                4.  Appending the concluding part of the meta-instruction.
+        *   The final prompt sent to the AI model will consist of:
+            1.  The fetched system prompt content (which includes the style guide).
+            2.  The assembled user-facing prompt (task + JSON output structure instructions).
+    *   `[ ] 2.Z.4.3 [TEST-UNIT]` Write unit tests for the full prompt assembly logic, verifying correct inclusion and ordering of the system prompt (with style guide), task prompt, meta-instruction, and the JSON template. (RED then GREEN)
+    *   `[ ] 2.Z.4.4 [COMMIT]` `feat(be): implement full prompt assembly including style guide and JSON meta-instructions`
+
+*   `[ ] 2.Z.5 [BE/SERVICE]` **Implement AI JSON Response Parsing and Deliverable Processing**
+    *   `(Sub-steps 2.Z.3.1 to 2.Z.3.3 from the original plan remain largely the same, now referred to as 2.Z.5.1 to 2.Z.5.3)`
+    *   `[ ] 2.Z.5.1 [BE]` Attempt to `JSON.parse()` the AI's entire text response. Handle parsing failures.
+    *   `[ ] 2.Z.5.2 [BE]` If JSON parsing succeeds:
+        *   Extract deliverables based on keys from the `expected_output_artifacts` template.
+        *   For items in `files_to_generate`:
+            *   Implement dynamic filename mapping (fixed template filename to system's dynamic filename).
+            *   Determine `FileType`.
+            *   Use `FileManagerService.uploadAndRegisterFile` to save content. Ensure the content (which should be Markdown formatted according to the style guide) is passed correctly.
+        *   Store other non-file deliverables.
+    *   `[ ] 2.Z.5.3 [TEST-INT]` Write/update integration tests for `generateContributions.ts` to reflect this full flow. (RED then GREEN)
+    *   `[ ] 2.Z.5.4 [COMMIT]` `feat(be): implement JSON response parsing and processing with styled content`
+
+*   `[ ] 2.Z.6 [REFACTOR]` **Review, Test, and Refine**
+    *   `[ ] 2.Z.6.1 [PROMPT/BE]` Test the entire flow with actual AI models. Refine the "Formatting and Style Guide" in `system_prompts`, the meta-instruction for JSON output, and the JSON templates in `expected_output_artifacts` based on AI compliance and quality of generated content/structure.
+    *   `[ ] 2.Z.6.2 [CODE]` Ensure all related code is robust and well-documented.
+
+*   `[ ] 2.Z.7 [DOCS]` **Update System Documentation**
+    *   `(Sub-steps 2.Z.5.1 to 2.Z.5.3 from the original plan remain relevant, now 2.Z.7.1 to 2.Z.7.3)`
+    *   `[ ] 2.Z.7.1 [DOCS]` Document `expected_output_artifacts` (purpose, JSON structure).
+    *   `[ ] 2.Z.7.2 [DOCS]` Document the "Formatting and Style Guide" and its location/integration within system prompts.
+    *   `[ ] 2.Z.7.3 [DOCS]` Document the full prompt assembly logic (system prompt + style guide + task + meta-instruction + JSON template).
+    *   `[ ] 2.Z.7.4 [DOCS]` Document response parsing, dynamic filename mapping, and processing of styled content.
+    *   `[ ] 2.Z.7.5 [COMMIT]` `docs: update documentation for data-driven AI response formatting and content styling`
+
+---
+
+**Understanding the Core Challenge for AI:**
+
+*   **Gap Identification (Parenthesis):** This requires the AI to not just generate content, but to *analyze* existing content (the checklist from Synthesis) and identify what's *missing*. It needs to infer unstated prerequisites.
+*   **Dependency-Driven Reordering (Paralysis):** This is even harder. It requires the AI to build a mental (or implicit) dependency graph of a potentially very long list of tasks and then re-linearize it. This is akin to a topological sort.
+
+**General Prompting Strategies for Parenthesis & Paralysis:**
+
+1.  **Clear Role and Context:**
+    *   Assign a specific expert role to the AI (e.g., "You are a Senior Technical Architect and Project Planner responsible for ensuring the completeness and logical flow of implementation plans.").
+    *   Clearly state the purpose of the current stage (Parenthesis or Paralysis).
+    *   Provide the *entire* current checklist (from Synthesis for Parenthesis, from Parenthesis for Paralysis) as the primary input.
+
+2.  **Explicit Instructions on *How* to Analyze:**
+    *   Don't just say "find gaps." Guide its thought process.
+    *   Don't just say "reorder." Explain the reordering principle.
+
+3.  **Output Format Reinforcement:**
+    *   Continuously remind it of your desired checklist formatting (your refined legend `[ ] 1.`, `[ ] a.`, `[ ] i.`, component labels `[BE]`, etc.).
+    *   Remind it to produce the *entire* modified checklist as output, not just the changes.
+    *   Reinforce the need for the final output to be wrapped in the JSON structure defined by `expected_output_artifacts`.
+
+4.  **Leverage Strengths, Mitigate Weaknesses:**
+    *   AI is good at pattern matching and local context. Your "first mention" rule for Paralysis is a good way to give it a concrete heuristic.
+    *   AI struggles with long-term memory and global consistency across very long documents. Breaking down the analysis might help.
+
+**Structuring the Prompt for the "Parenthesis" Stage (Gap Analysis & Elaboration):**
+
+**Goal:** To take the checklist from Synthesis and add missing steps/sections.
+
+```
+SYSTEM: Your entire response for this stage MUST be a single, valid JSON object. Strictly adhere to the JSON structure provided below under 'Expected JSON Output Structure:'. Populate all placeholder values with your generated content. Do not include any conversational text, acknowledgments, apologies, or any other content outside of this JSON object. The JSON object must begin with '{' and end with '}'.
+
+You are a meticulous Senior Software Architect and Technical Planner. Your current task is to review and enhance an existing software implementation plan to ensure its absolute completeness. This is the "Parenthesis" stage of a dialectic process.
+
+**Input Implementation Plan/Checklist:**
+(Your backend service will insert the full checklist from the Synthesis stage here)
+
+**Your Task for the Parenthesis Stage (Gap Analysis and Elaboration):**
+
+1.  **Thoroughly Review:** Carefully read the entire "Input Implementation Plan/Checklist" provided above.
+2.  **Identify Missing Prerequisites & Gaps:** As you review, critically analyze the plan for any missing steps or components. Specifically look for:
+    *   Tasks that refer to components, modules, functions, data stores, UI elements, API endpoints, or services that have not yet been defined OR whose creation/setup steps are not detailed *earlier* in the plan.
+    *   Assumptions about the existence of foundational elements (e.g., project setup, core libraries, authentication context) without explicit checklist items for their establishment.
+    *   Descriptions of interactions (e.g., "Component X calls API Y," "Store Z fetches data from Backend Service A") where any part of that interaction (X, Y, Z, A, or the specific endpoint/function) has not been adequately planned for.
+    *   Steps that are too vague or high-level and require more detailed sub-tasks for a developer to implement effectively.
+3.  **Generate and Insert Missing Sections/Steps:** For each identified gap or overly vague step:
+    *   Generate a new, comprehensive set of checklist items required to design, implement, test, and document the missing element or to elaborate on the vague step.
+    *   These new items MUST strictly follow the "Formatting and Style Guide for Implementation Plans & Checklists" (using `[ ] 1.`, `[ ] a.`, `[ ] i.` numbering, status markers `[ ]`, and component labels like `[BE]`, `[UI]`, etc., as previously defined).
+    *   **Insertion Strategy:** Logically insert these new sections/steps into the plan. The ideal placement is *just before* the point where the missing element is first needed or used, or where the vague step needs detail. If it's a major new component, it might form its own new top-level section (e.g., a new `[ ] N. Define and Implement New Core Service Z`).
+4.  **Maintain Original Content and Structure:** Preserve all existing, valid checklist items and their relative order where no gaps are being filled around them. Your goal is to *augment and complete* the plan, not to reorder it at this stage.
+5.  **Output the Complete, Enhanced Plan:** Your final output must be the *entire, revised implementation plan*, incorporating all your additions and elaborations. This output will be the content for the primary checklist file defined in the 'Expected JSON Output Structure' below.
+
+Expected JSON Output Structure:
+(Your backend service will insert the JSON template from dialectic_stages.expected_output_artifacts for the Parenthesis stage here. This template will specify where the AI should place the full, revised checklist string.)
+
+CRITICAL REMINDER: Ensure your response is ONLY the JSON object detailed above. End of Instructions. END_OF_RESPONSE_FORMAT_INSTRUCTIONS.
+```
+
+**Structuring the Prompt for the "Paralysis" Stage (Dependency-Driven Reordering):**
+
+**Goal:** To take the (now more complete) checklist from Parenthesis and reorder it logically based on dependencies.
+
+```
+SYSTEM: Your entire response for this stage MUST be a single, valid JSON object. Strictly adhere to the JSON structure provided below under 'Expected JSON Output Structure:'. Populate all placeholder values with your generated content. Do not include any conversational text, acknowledgments, apologies, or any other content outside of this JSON object. The JSON object must begin with '{' and end with '}'.
+
+You are an expert Project Planner and System Architect specializing in optimizing software development workflows by ensuring strict dependency ordering. Your current task is to take a detailed (but potentially unordered) implementation plan and resequence it into a perfectly logical, step-by-step, buildable order. This is the "Paralysis" stage of a dialectic process.
+
+**Input Implementation Plan/Checklist:**
+(Your backend service will insert the full checklist from the Parenthesis stage here)
+
+**Your Task for the Paralysis Stage (Dependency-Driven Reordering):**
+
+1.  **Deeply Analyze Dependencies:** Meticulously examine every task, sub-task, and component mentioned in the "Input Implementation Plan/Checklist." Identify all explicit and implicit dependencies. For example:
+    *   A UI component displaying data depends on the API endpoint that provides the data.
+    *   An API endpoint depends on the backend service logic that implements it.
+    *   A backend service might depend on a database schema or another service.
+    *   Store actions/selectors depend on API client methods being available.
+    *   Tests for a feature depend on the feature itself being implemented.
+2.  **Reorder Based on "First Mention, Full Implementation Prioritization":**
+    *   Your primary goal is to reconstruct the *entire* checklist such that: When any component, module, function, data store, API, UI element, or service (let's call it 'Element X') is *first mentioned* as being needed, used by, or a prerequisite for another task in the plan, then ALL checklist items required to fully design, implement, test, and document 'Element X' MUST be placed *immediately before* that first mentioning task.
+    *   This ensures that no task attempts to use or refer to an 'Element X' before all steps for 'Element X's' creation and readiness have been listed.
+3.  **Maintain Granularity and Enforce Formatting:**
+    *   Do not lose, merge, or alter the content of any individual task descriptions from the input plan. Preserve all detailed sub-tasks.
+    *   The reordered plan MUST strictly adhere to the "Formatting and Style Guide for Implementation Plans & Checklists" (using `[ ] 1.`, `[ ] a.`, `[ ] i.` numbering, status markers `[ ]`, and component labels like `[BE]`, `[UI]`, etc., as previously defined). You will need to re-number and re-letter the *entire plan* according to its new logical sequence.
+4.  **Handle Ordering Conflicts:** If you encounter what appear to be circular dependencies that cannot be easily resolved into a linear sequence (this should be rare), make the most logical ordering choice possible. If a true conflict persists, you may add a `[❓]` comment briefly noting the items involved in the potential circular dependency, but still present a linear plan.
+5.  **Output the Complete, Reordered Plan:** Your final output must be the *entire, re-sequenced implementation plan*. This output will be the content for the primary checklist file defined in the 'Expected JSON Output Structure' below.
+
+Expected JSON Output Structure:
+(Your backend service will insert the JSON template from dialectic_stages.expected_output_artifacts for the Paralysis stage here. This template will specify where the AI should place the full, reordered checklist string.)
+
+CRITICAL REMINDER: Ensure your response is ONLY the JSON object detailed above. End of Instructions. END_OF_RESPONSE_FORMAT_INSTRUCTIONS.
+```
+
+**Key Improvements and Why They Might Work:**
+
+*   **Specificity of Analysis:** The prompts now guide *how* the AI should think about gaps and dependencies, rather than just stating the goal.
+*   **"First Mention, Full Implementation Prioritization":** This is a strong, actionable heuristic for the reordering task, which AI can often follow better than abstract dependency mapping.
+*   **Emphasis on Outputting the *Entire* Plan:** This is critical to avoid the AI just giving you diffs or fragments.
+*   **Reinforcement of Formatting:** Consistent reminders about your checklist style guide.
+*   **Acknowledging Your Workflow:** The prompt structure (SYSTEM block, then main task, then JSON structure request) is designed to work with your `expected_output_artifacts` strategy.
+
+**Your Multi-Agent Approach:**
+
+This is where your system can really shine. Even with these improved prompts:
+*   **Parenthesis:** Different models might identify different (or overlapping) gaps. Synthesizing these will lead to a more complete plan than any single model might produce.
+*   **Paralysis:** Different models might interpret "logical order" or the "first mention" rule slightly differently, especially for complex interdependencies. Comparing their reordered plans and synthesizing a final order (perhaps with some human oversight for tricky sections) will likely yield the most robust sequence.
+
+You are essentially using the AI ensemble to overcome individual model limitations in deep, long-range planning. This is a very advanced and effective way to use current AI capabilities.

@@ -50,7 +50,7 @@ Deno.test('FileManagerService', async (t) => {
 
   const baseUploadContext: UploadContext = {
     pathContext: {
-      fileType: 'user_prompt',
+      fileType: 'initial_user_prompt',
       projectId: 'project-uuid-123',
       sessionId: 'session-uuid-456',
       iteration: 1,

@@ -289,7 +289,7 @@ export async function startSession(
             sessionId: newSessionRecord.id,
             iteration: 1,
             stageSlug: stageContext.slug,
-            originalFileName: `${stageContext.slug}_seed_prompt.md`,
+            originalFileName: `seed_prompt.md`,
         },
         fileContent: seedPromptBuffer,
         mimeType: 'text/markdown',
