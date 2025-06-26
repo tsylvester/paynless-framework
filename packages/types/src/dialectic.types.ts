@@ -86,14 +86,14 @@ export interface GetContributionContentDataResponse {
 export interface StartSessionPayload {
   projectId: string;
   sessionDescription?: string | null;
-  selectedModelCatalogIds: string[];
+  selectedModelIds: string[];
   originatingChatId?: string | null;
   stageSlug?: string;
 }
 
 export interface UpdateSessionModelsPayload {
   sessionId: string;
-  selectedModelCatalogIds: string[];
+  selectedModelIds: string[];
 }
 
 export interface DialecticSession {
@@ -102,7 +102,7 @@ export interface DialecticSession {
   session_description: string | null;
   user_input_reference_url: string | null;
   iteration_count: number;
-  selected_model_catalog_ids: string[] | null;
+  selected_model_ids: string[] | null;
   status: string | null;
   associated_chat_id: string | null;
   current_stage_id: string | null;

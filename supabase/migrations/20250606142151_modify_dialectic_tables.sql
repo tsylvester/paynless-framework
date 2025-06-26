@@ -3,7 +3,7 @@ CREATE TYPE public.dialectic_stage_enum AS ENUM ('THESIS', 'ANTITHESIS', 'SYNTHE
 
 -- Modify dialectic_sessions table
 ALTER TABLE public.dialectic_sessions
-  ADD COLUMN selected_model_catalog_ids UUID[],
+  ADD COLUMN selected_model_ids UUID[],
   ADD COLUMN user_input_reference_url TEXT,
   ADD COLUMN stage public.dialectic_stage_enum NOT NULL;
 

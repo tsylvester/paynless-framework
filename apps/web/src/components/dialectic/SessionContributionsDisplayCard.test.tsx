@@ -185,7 +185,7 @@ describe('SessionContributionsDisplayCard', () => {
     session_description: 'A session',
     current_stage_id: mockThesisStage.id,
     user_input_reference_url: null,
-    selected_model_catalog_ids: [],
+    selected_model_ids: [],
     associated_chat_id: 'c1',
     created_at: '2023-01-01T10:00:00Z',
     updated_at: '2023-01-01T11:00:00Z',

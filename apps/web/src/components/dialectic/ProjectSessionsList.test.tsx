@@ -120,7 +120,7 @@ describe('ProjectSessionsList', () => {
       created_at: new Date(2023, 0, 15, 10, 30).toISOString(),
       updated_at: new Date().toISOString(),
       user_input_reference_url: null,
-      selected_model_catalog_ids: [],
+      selected_model_ids: [],
       associated_chat_id: 'chat-alpha',
       current_stage_id: 'stage-3',
       // current_stage_seed_prompt: 'Alpha seed prompt', // Property not in DialecticSession type
@@ -134,7 +134,7 @@ describe('ProjectSessionsList', () => {
       created_at: new Date(2023, 1, 20, 14, 0).toISOString(),
       updated_at: new Date().toISOString(),
       user_input_reference_url: null,
-      selected_model_catalog_ids: [],
+      selected_model_ids: [],
       associated_chat_id: 'chat-beta',
       current_stage_id: 'stage-1',
       // current_stage_seed_prompt: null, // Property not in DialecticSession type

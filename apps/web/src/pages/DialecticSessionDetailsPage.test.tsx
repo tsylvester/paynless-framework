@@ -80,7 +80,7 @@ const mockSession: DialecticSession = {
   status: 'active',
   associated_chat_id: null,
   user_input_reference_url: null,
-  selected_model_catalog_ids: [],
+  selected_model_ids: [],
 };
 
 const mockOtherSession: DialecticSession = {
@@ -94,7 +94,7 @@ const mockOtherSession: DialecticSession = {
   status: 'active',
   associated_chat_id: null,
   user_input_reference_url: null,
-  selected_model_catalog_ids: [],
+  selected_model_ids: [],
 };
 
 const mockProject: DialecticProject = {

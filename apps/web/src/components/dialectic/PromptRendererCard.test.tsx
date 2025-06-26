@@ -55,7 +55,7 @@ const mockProject: DialecticProject = {
         session_description: 'Test session',
         associated_chat_id: 'chat1',
         user_input_reference_url: null,
-        selected_model_catalog_ids: [],
+        selected_model_ids: [],
         current_stage_id: 'stage-1',
         dialectic_contributions: [
             {

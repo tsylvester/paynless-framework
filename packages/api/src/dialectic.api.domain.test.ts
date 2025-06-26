@@ -82,7 +82,7 @@ const mockDialecticSession: DialecticSession = {
   status: "pending_hypothesis",
   associated_chat_id: null,
   current_stage_id: 'stage-123',
-  selected_model_catalog_ids: ['model-1'],
+  selected_model_ids: ['model-1'],
   user_input_reference_url: null,
 };
 

@@ -97,7 +97,7 @@ const mockSession: DialecticSession = {
   created_at: '2023-01-01T00:00:00.000Z',
   updated_at: '2023-01-01T00:00:00.000Z',
   user_input_reference_url: null,
-  selected_model_catalog_ids: [],
+  selected_model_ids: [],
   associated_chat_id: null,
   dialectic_contributions: [],
 };

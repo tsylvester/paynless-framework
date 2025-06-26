@@ -74,7 +74,7 @@ describe('useDialecticStore', () => {
     describe('startDialecticSession action', () => {
         const startSessionPayload: StartSessionPayload = { 
             projectId: 'proj-123', 
-            selectedModelCatalogIds: ['model-abc'], 
+            selectedModelIds: ['model-abc'], 
             sessionDescription: 'Test Session' 
         };
         const mockSession: DialecticSession = { 
@@ -83,7 +83,7 @@ describe('useDialecticStore', () => {
             session_description: startSessionPayload.sessionDescription || null,
             user_input_reference_url: null,
             iteration_count: 1,
-            selected_model_catalog_ids: [],
+            selected_model_ids: [],
             status: 'pending_thesis',
             associated_chat_id: 'chat-123',
             current_stage_id: 'some-stage-id',
@@ -233,7 +233,7 @@ describe('useDialecticStore', () => {
         const mockInitialSession: DialecticSession = {
             id: sessionId,
             project_id: projectId,
-            selected_model_catalog_ids: initialSelectedModels,
+            selected_model_ids: initialSelectedModels,
             session_description: 'Initial session for model update test',
             user_input_reference_url: null,
             iteration_count: 1,
@@ -246,7 +246,7 @@ describe('useDialecticStore', () => {
 
         const mockUpdatedSessionFromApi: DialecticSession = {
             ...mockInitialSession,
-            selected_model_catalog_ids: updatedSelectedModels,
+            selected_model_ids: updatedSelectedModels,
             updated_at: new Date(Date.now() + 1000).toISOString(), // Ensure updated_at is different
         };
 
@@ -276,7 +276,7 @@ describe('useDialecticStore', () => {
 
         const payload: UpdateSessionModelsPayload = {
             sessionId: sessionId,
-            selectedModelCatalogIds: updatedSelectedModels,
+            selectedModelIds: updatedSelectedModels,
         };
 
         beforeEach(() => {
@@ -305,7 +305,7 @@ describe('useDialecticStore', () => {
             expect(updatedProjectDetail).not.toBeNull();
             const sessionInProject = updatedProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
             expect(sessionInProject).toBeDefined();
-            expect(sessionInProject?.selected_model_catalog_ids).toEqual(updatedSelectedModels);
+            expect(sessionInProject?.selected_model_ids).toEqual(updatedSelectedModels);
             expect(sessionInProject?.updated_at).toEqual(mockUpdatedSessionFromApi.updated_at);
         });
 
@@ -328,7 +328,7 @@ describe('useDialecticStore', () => {
             // Ensure project detail was not inadvertently changed on error
             const projectDetail = state.currentProjectDetail;
             const sessionInProject = projectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
-            expect(sessionInProject?.selected_model_catalog_ids).toEqual(initialSelectedModels);
+            expect(sessionInProject?.selected_model_ids).toEqual(initialSelectedModels);
         });
 
         it('should set network error state if API call throws', async () => {
@@ -410,7 +410,7 @@ describe('useDialecticStore', () => {
             await vi.waitFor(() => {
                 expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalledWith({
                     sessionId: activeSessionId,
-                    selectedModelCatalogIds: newModels,
+                    selectedModelIds: newModels,
                 });
             });
         });
@@ -486,10 +486,10 @@ describe('useDialecticStore', () => {
             await vi.waitFor(() => {
                 expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalledWith({
                     sessionId: activeSessionId,
-                    selectedModelCatalogIds: expect.arrayContaining(expectedIds.sort()), // Sort for comparison if order doesn't matter
+                    selectedModelIds: expect.arrayContaining(expectedIds.sort()), // Sort for comparison if order doesn't matter
                 });
                  const actualArgs = getMockDialecticClient().updateSessionModels.mock.calls[0][0];
-                 expect(actualArgs.selectedModelCatalogIds.sort()).toEqual(expectedIds.sort());
+                 expect(actualArgs.selectedModelIds.sort()).toEqual(expectedIds.sort());
             });
         });
 
@@ -560,7 +560,7 @@ describe('useDialecticStore', () => {
             session_description: 'Fetched session',
             user_input_reference_url: null,
             iteration_count: 2,
-            selected_model_catalog_ids: ['model-a', 'model-b'],
+            selected_model_ids: ['model-a', 'model-b'],
             status: 'active',
             associated_chat_id: null,
             current_stage_id: 'synthesis',
@@ -641,7 +641,7 @@ describe('useDialecticStore', () => {
             expect(state.activeContextProjectId).toEqual(mockProjectId);
             expect(state.activeContextSessionId).toEqual(mockSessionId);
             expect(state.activeContextStage).toEqual(mockStage);
-            expect(state.selectedModelIds).toEqual(mockSessionData.selected_model_catalog_ids);
+            expect(state.selectedModelIds).toEqual(mockSessionData.selected_model_ids);
 
             const projectDetail = state.currentProjectDetail;
             expect(projectDetail).not.toBeNull();

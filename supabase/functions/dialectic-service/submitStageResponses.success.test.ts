@@ -19,6 +19,7 @@ import { createMockFileManagerService, MockFileManagerService } from "../_shared
 import type { UploadContext, FileManagerResponse } from "../_shared/types/file_manager.types.ts";
 import type { Database, Json } from '../types_db.ts';
 import type { ServiceError } from '../_shared/types.ts';
+import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 
 // Import the specific action handler we are testing
 import { submitStageResponses } from './submitStageResponses.ts';
@@ -192,6 +193,7 @@ Deno.test('submitStageResponses', async (t) => {
           select: { data: [{
             id: testSessionId,
             iteration_count: 1,
+            current_stage_id: testThesisStageId,
             project: {
               id: testProjectId,
               user_id: testUserId,
@@ -321,77 +323,114 @@ Deno.test('submitStageResponses', async (t) => {
         }
     };
 
-    // 1.1.2 Act: Call the function
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
+    const assembleSpy = spy(PromptAssembler.prototype, "assemble");
 
-    // 1.1.3 Assert: Verify outcomes
-    assertEquals(status, 200, "Expected status 200");
-    assertExists(data, "Expected data in the response");
-    assertEquals(error, undefined, "Expected no error in the response");
+    try {
+      // 1.1.2 Act: Call the function
+      const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
 
-    // Check that the transition lookup was attempted
-    const fromSpy = mockSupabase.spies.fromSpy;
-    assert(fromSpy.calls.some(call => call.args[0] === 'dialectic_stage_transitions'), "Should have called from('dialectic_stage_transitions')");
+      // 1.1.3 Assert: Verify outcomes
+      assertEquals(status, 200, "Expected status 200");
+      assertExists(data, "Expected data in the response");
+      assertEquals(error, undefined, "Expected no error in the response");
 
-    // 1.1.9. Updates dialectic_sessions table correctly
-    assertExists(data.updatedSession?.status);
-    assert(data.updatedSession.status.includes(`pending_${mockAntithesisStage.slug}`), "Session status should be updated to pending_antithesis");
-    
-    // 1.1.2 & 1.1.3. Creates dialectic_feedback records
-    assertEquals(data.feedbackRecords.length, 1, "Expected one feedback record to be created from userStageFeedback");
-    
-    // Check that the file manager was used correctly
-    assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 2, "Expected FileManagerService to be called twice");
+      // Check that the transition lookup was attempted
+      const fromSpy = mockSupabase.spies.fromSpy;
+      assert(fromSpy.calls.some(call => call.args[0] === 'dialectic_stage_transitions'), "Should have called from('dialectic_stage_transitions')");
 
-    const feedbackCall = mockFileManager.uploadAndRegisterFile.calls.find(c => c.args[0].pathContext.fileType === 'user_feedback');
-    assertExists(feedbackCall, "Expected a call to save 'user_feedback'");
-    
-    const seedPromptCall = mockFileManager.uploadAndRegisterFile.calls.find(c => c.args[0].pathContext.fileType === 'seed_prompt');
-    assertExists(seedPromptCall, "Expected a call to save 'seed_prompt'");
+      // 1.1.9. Updates dialectic_sessions table correctly
+      assertExists(data.updatedSession?.status);
+      assert(data.updatedSession.status.includes(`pending_${mockAntithesisStage.slug}`), "Session status should be updated to pending_antithesis");
+      
+      // 1.1.2 & 1.1.3. Creates dialectic_feedback records
+      assertEquals(data.feedbackRecords.length, 1, "Expected one feedback record to be created from userStageFeedback");
+      
+      // Check that the file manager was used correctly
+      assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 2, "Expected FileManagerService to be called twice");
 
-    // Assertions for the 'user_feedback' call
-    const feedbackUploadContext = feedbackCall.args[0] as UploadContext;
-    assertEquals(feedbackUploadContext.pathContext.projectId, testProjectId);
-    assertEquals(feedbackUploadContext.pathContext.sessionId, testSessionId);
-    assertEquals(feedbackUploadContext.pathContext.stageSlug, mockThesisStage.slug);
-    assertEquals(feedbackUploadContext.pathContext.iteration, 1);
-    assertEquals(feedbackUploadContext.pathContext.originalFileName, `user_feedback_${mockThesisStage.slug}.md`);
-    assertEquals(feedbackUploadContext.mimeType, 'text/markdown');
-    assertEquals(feedbackUploadContext.feedbackTypeForDb, "StageReviewSummary_v1_test");
-    
-    // Explicitly type and check resourceDescriptionForDb before accessing .summary
-    const resourceDesc = feedbackUploadContext.resourceDescriptionForDb;
-    assertExists(resourceDesc, "resourceDescriptionForDb should exist in feedbackUploadContext");
-    const typedResDesc = resourceDesc as { summary: string };
-    assertEquals(typedResDesc.summary, "Test summary for resourceDescription");
+      const feedbackCall = mockFileManager.uploadAndRegisterFile.calls.find(c => c.args[0].pathContext.fileType === 'user_feedback');
+      assertExists(feedbackCall, "Expected a call to save 'user_feedback'");
+      
+      const seedPromptCall = mockFileManager.uploadAndRegisterFile.calls.find(c => c.args[0].pathContext.fileType === 'seed_prompt');
+      assertExists(seedPromptCall, "Expected a call to save 'seed_prompt'");
 
-    // 1.4 Verifies content of the consolidated feedback file
-    const feedbackFileContent = feedbackUploadContext.fileContent;
-    const feedbackContentString = typeof feedbackFileContent === 'string'
-        ? feedbackFileContent
-        : new TextDecoder().decode(feedbackFileContent as ArrayBuffer);
-    assertEquals(feedbackContentString, userSubmittedStageFeedbackContent, "Feedback file content should match userStageFeedback.content");
+      // Assertions for the 'user_feedback' call
+      const feedbackUploadContext = feedbackCall.args[0] as UploadContext;
+      assertEquals(feedbackUploadContext.pathContext.projectId, testProjectId);
+      assertEquals(feedbackUploadContext.pathContext.sessionId, testSessionId);
+      assertEquals(feedbackUploadContext.pathContext.stageSlug, mockThesisStage.slug);
+      assertEquals(feedbackUploadContext.pathContext.iteration, 1);
+      assertEquals(feedbackUploadContext.pathContext.originalFileName, `user_feedback_${mockThesisStage.slug}.md`);
+      assertEquals(feedbackUploadContext.mimeType, 'text/markdown');
+      assertEquals(feedbackUploadContext.feedbackTypeForDb, "StageReviewSummary_v1_test");
+      
+      // Explicitly type and check resourceDescriptionForDb before accessing .summary
+      const resourceDesc = feedbackUploadContext.resourceDescriptionForDb;
+      assertExists(resourceDesc, "resourceDescriptionForDb should exist in feedbackUploadContext");
+      const typedResDesc = resourceDesc as { summary: string };
+      assertEquals(typedResDesc.summary, "Test summary for resourceDescription");
 
-    // 1.5 Verifies content of the rendered next stage seed prompt
-    const seedPromptFileContent = seedPromptCall.args[0].fileContent;
-    const seedPromptContent = typeof seedPromptFileContent === 'string'
-        ? seedPromptFileContent
-        : new TextDecoder().decode(seedPromptFileContent);
-    assertStringIncludes(seedPromptContent, "AI content from ModelA", "Seed prompt content is missing AI output");
-    assertStringIncludes(seedPromptContent, "AI content from ModelB", "Seed prompt content is missing AI output");
-    assertStringIncludes(
-        seedPromptContent,
-        "This is some mock feedback from the prior thesis stage.",
-        "Seed prompt content is missing prior stage user feedback",
-    );
-    assert(
-        !seedPromptContent.includes("Response to first contribution"),
-        "Seed prompt should not contain current stage feedback when template does not explicitly ask for it",
-    );
+      // 1.4 Verifies content of the consolidated feedback file
+      const feedbackFileContent = feedbackUploadContext.fileContent;
+      const feedbackContentString = typeof feedbackFileContent === 'string'
+          ? feedbackFileContent
+          : new TextDecoder().decode(feedbackFileContent as ArrayBuffer);
+      assertEquals(feedbackContentString, userSubmittedStageFeedbackContent, "Feedback file content should match userStageFeedback.content");
 
-    assert(data?.nextStageSeedPromptPath, "Next stage seed path should be returned");
-    if(data?.nextStageSeedPromptPath) {
-        assert(data.nextStageSeedPromptPath.includes(mockAntithesisStage.slug), "Next stage seed path should be for antithesis");
+      // 1.5 Verifies content of the rendered next stage seed prompt
+      const seedPromptFileContent = seedPromptCall.args[0].fileContent;
+      const seedPromptContent = typeof seedPromptFileContent === 'string'
+          ? seedPromptFileContent
+          : new TextDecoder().decode(seedPromptFileContent);
+      assertStringIncludes(seedPromptContent, "AI content from ModelA", "Seed prompt content is missing AI output");
+      assertStringIncludes(seedPromptContent, "AI content from ModelB", "Seed prompt content is missing AI output");
+      assertStringIncludes(
+          seedPromptContent,
+          "This is some mock feedback from the prior thesis stage.",
+          "Seed prompt content is missing prior stage user feedback",
+      );
+      assert(
+          !seedPromptContent.includes("Response to first contribution"),
+          "Seed prompt should not contain current stage feedback when template does not explicitly ask for it",
+      );
+
+      assert(data?.nextStageSeedPromptPath, "Next stage seed path should be returned");
+      if(data?.nextStageSeedPromptPath) {
+          assert(data.nextStageSeedPromptPath.includes(mockAntithesisStage.slug), "Next stage seed path should be for antithesis");
+      }
+
+      // Assertions for PromptAssembler.assemble
+      assertEquals(assembleSpy.calls.length, 1, "PromptAssembler.assemble should be called once");
+      const assembleArgs = assembleSpy.calls[0].args;
+      
+      // projectContext
+      assertExists(assembleArgs[0], "projectContextForAssembler should be provided");
+      assertEquals(assembleArgs[0].id, testProjectId, "Incorrect projectId in projectContext");
+      assertEquals(assembleArgs[0].initial_user_prompt, "Initial prompt for testing.", "Incorrect projectInitialUserPrompt");
+      assertEquals(assembleArgs[0].selected_domain_id, MOCK_SUCCESS_TEST_DOMAIN.id, "Incorrect selectedDomain id");
+      assertEquals(assembleArgs[0].user_domain_overlay_values, null, "user_domain_overlay_values should be null as not provided in this test's project mock");
+
+
+      // sessionContext
+      assertExists(assembleArgs[1], "sessionContextForAssembler should be provided");
+      assertEquals(assembleArgs[1].id, testSessionId, "Incorrect sessionId in sessionContext");
+      assertEquals(assembleArgs[1].iteration_count, 1, "Incorrect currentIterationNumber in sessionContext");
+      assertEquals(assembleArgs[1].current_stage_id, mockThesisStage.id, "Incorrect currentStageId in sessionContext"); // Current stage at the time of assembly for NEXT stage's seed.
+
+      // stageContext (for the NEXT stage)
+      assertExists(assembleArgs[2], "stageContextForAssembler (for next stage) should be provided");
+      assertEquals(assembleArgs[2].slug, mockAntithesisStage.slug, "Incorrect stageSlug for next stage in stageContext");
+      assertEquals(assembleArgs[2].display_name, mockAntithesisStage.display_name, "Incorrect stageDisplayName for next stage");
+      assertExists(assembleArgs[2].input_artifact_rules, "inputArtifactRules for next stage should exist");
+      
+      // seedPromptTemplate (content of the system_prompt for the NEXT stage)
+      assertExists(assembleArgs[3], "seedPromptTemplate for next stage should be provided");
+      assertEquals(assembleArgs[3], 'Initial prompt for testing.', "Incorrect seedPromptTemplate content");
+      
+      // iterationNumber (for the NEXT stage's seed prompt, which is still part of the current iteration's lifecycle)
+      assertEquals(assembleArgs[4], 1, "Incorrect iterationNumber for assemble call");
+    } finally {
+      assembleSpy.restore();
     }
   });
 

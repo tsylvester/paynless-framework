@@ -142,7 +142,7 @@ const mockProcessTemplate: DialecticProcessTemplate = {
 const mockSession: DialecticSession = {
   id: mockSessionId,
   user_input_reference_url: 'https://example.com/user-input',
-  selected_model_catalog_ids: ['cat-gpt4', 'cat-claude3opus'],
+  selected_model_ids: ['cat-gpt4', 'cat-claude3opus'],
   project_id: mockProjectId,
   session_description: 'Test Session Description',
   iteration_count: 1,

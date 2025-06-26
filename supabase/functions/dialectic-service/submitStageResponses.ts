@@ -1,27 +1,16 @@
 // supabase/functions/dialectic-service/submitStageResponses.ts
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
-import type { ILogger } from '../_shared/types.ts';
 import type { ServiceError } from '../_shared/types.ts';
 import type { Database, Tables, Json } from '../types_db.ts';
 import {
   SubmitStageResponsesPayload,
-  type DialecticContribution,
-  type InputArtifactRules,
-  type ArtifactSourceRule,
   type SubmitStageResponsesDependencies,
   type SubmitStageResponsesResponse,
-  type DialecticSession,
   type DialecticFeedback,
   type DialecticStage,
   type DialecticProject,
 } from './dialectic.interface.ts';
-import {
-  downloadFromStorage,
-} from '../_shared/supabase_storage_utils.ts';
 import type { PathContext } from '../_shared/types/file_manager.types.ts';
-import { renderPrompt } from '../_shared/prompt-renderer.ts';
-import { formatResourceDescription } from '../_shared/utils/resourceDescriptionFormatter.ts';
-import { parseInputArtifactRules } from '../_shared/utils/input-artifact-parser.ts';
 import { PromptAssembler, type ProjectContext, type SessionContext, type StageContext } from "../_shared/prompt-assembler.ts";
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
 

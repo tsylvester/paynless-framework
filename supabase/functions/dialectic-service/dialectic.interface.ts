@@ -189,14 +189,14 @@ export interface GetProjectDetailsPayload {
 export interface StartSessionPayload {
   projectId: string;
   sessionDescription?: string | null;
-  selectedModelCatalogIds: string[];
+  selectedModelIds: string[];
   originatingChatId?: string | null;
   stageSlug?: string;
 }
 
 export interface UpdateSessionModelsPayload {
   sessionId: string;
-  selectedModelCatalogIds: string[];
+  selectedModelIds: string[];
 }
 
 export type StartSessionSuccessResponse = DialecticSession;

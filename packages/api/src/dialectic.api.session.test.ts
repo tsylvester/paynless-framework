@@ -37,7 +37,7 @@ describe('DialecticApiClient - Session Methods', () => {
       project_id: 'project-abc-123',
       session_description: 'Test session details',
       iteration_count: 1,
-      selected_model_catalog_ids: [],
+      selected_model_ids: [],
       status: 'active',
       current_stage_id: 'stage-1',
       created_at: new Date().toISOString(),

@@ -575,7 +575,7 @@ export class DialecticApiClient {
      * Requires authentication.
      */
     async updateSessionModels(payload: UpdateSessionModelsPayload): Promise<ApiResponse<DialecticSession>> {
-        logger.info('Updating selected models for session', { sessionId: payload.sessionId, models: payload.selectedModelCatalogIds });
+        logger.info('Updating selected models for session', { sessionId: payload.sessionId, models: payload.selectedModelIds });
 
         try {
             const response = await this.apiClient.post<DialecticSession, DialecticServiceActionPayload>(

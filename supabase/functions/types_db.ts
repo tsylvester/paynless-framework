@@ -619,7 +619,7 @@ export type Database = {
           id: string
           iteration_count: number
           project_id: string
-          selected_model_catalog_ids: string[] | null
+          selected_model_ids: string[] | null
           session_description: string | null
           status: string
           updated_at: string
@@ -632,7 +632,7 @@ export type Database = {
           id?: string
           iteration_count?: number
           project_id: string
-          selected_model_catalog_ids?: string[] | null
+          selected_model_ids?: string[] | null
           session_description?: string | null
           status?: string
           updated_at?: string
@@ -645,7 +645,7 @@ export type Database = {
           id?: string
           iteration_count?: number
           project_id?: string
-          selected_model_catalog_ids?: string[] | null
+          selected_model_ids?: string[] | null
           session_description?: string | null
           status?: string
           updated_at?: string

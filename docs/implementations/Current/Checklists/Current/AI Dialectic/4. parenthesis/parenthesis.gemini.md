@@ -299,12 +299,12 @@ The implementation plan uses the following labels to categorize work steps:
         *   `[ ] 1.2.1.3 [REFACTOR]` Review.
         *   `[ ] 1.2.1.4 [TEST-INT]` Run tests.
     *   Action: `startSession`
-        *   `[ ] 1.2.1.5 [TEST-INT]` Write tests for `startSession` action (input: `projectId`, `selectedModelCatalogIds` (array of strings from `ai_models_catalog.id`), `sessionDescription` (optional), `thesisPromptTemplateName` (optional, defaults to "dialectic_thesis_default_v1"), `antithesisPromptTemplateName` (optional, defaults to "dialectic_antithesis_critique_default_v1"); output: created session object; auth). (RED)
+        *   `[ ] 1.2.1.5 [TEST-INT]` Write tests for `startSession` action (input: `projectId`, `selectedModelIds` (array of strings from `ai_models_catalog.id`), `sessionDescription` (optional), `thesisPromptTemplateName` (optional, defaults to "dialectic_thesis_default_v1"), `antithesisPromptTemplateName` (optional, defaults to "dialectic_antithesis_critique_default_v1"); output: created session object; auth). (RED)
         *   `[ ] 1.2.1.6` Implement logic:
             1.  Verify project ownership.
             2.  Fetch `prompt_template.id` for thesis and antithesis from `prompt_templates` table using names.
             3.  Creates `dialectic_sessions` record (linking `active_thesis_prompt_template_id`, etc.).
-            4.  Creates `dialectic_session_models` records from `selectedModelCatalogIds`.
+            4.  Creates `dialectic_session_models` records from `selectedModelIds`.
             5.  Sets `dialectic_sessions.status` to `pending_thesis`.
             6.  Constructs `current_stage_seed_prompt` for the session by rendering the chosen thesis prompt template with the project's `initial_user_prompt`. Store this in `dialectic_sessions.current_stage_seed_prompt`.
             7.  **Asynchronously call `generateThesisContributions` action for this session.** (This will require a way to invoke another action within the same function or a separate, secure internal function. For Supabase, this might involve using `pg_net` or invoking another Edge Function with a service role key if direct async invocation within one function call isn't straightforward for long-running tasks.)
@@ -467,7 +467,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 1.5.5.2` Implement component:
         *   Dispatches `fetchAIModelCatalog` on mount if catalog is null.
         *   Uses `selectModelCatalog` for model selection.
-        *   Form with `sessionDescription` (optional), multi-select for `selectedModelCatalogIds`.
+        *   Form with `sessionDescription` (optional), multi-select for `selectedModelIds`.
         *   (Optional for Phase 1, can be hardcoded or defaults): Selectors for `thesisPromptTemplateName`, `antithesisPromptTemplateName`.
         *   On submit, dispatches `startDialecticSession` with `projectId` and form data.
         *   Closes modal and potentially refetches project details on success.

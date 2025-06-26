@@ -50,7 +50,7 @@ Fetches the list of dialectic projects for the authenticated user.
 #### `startSession(payload: StartSessionPayload): Promise<ApiResponse<DialecticSession>>`
 Starts a new dialectic session for a given project.
 -   **Parameters:**
-    -   `payload: StartSessionPayload`: An object containing `projectId`, `selectedModelCatalogIds`, and optional `sessionDescription`, `thesisPromptTemplateName`, `antithesisPromptTemplateName`.
+    -   `payload: StartSessionPayload`: An object containing `projectId`, `selectedModelIds`, and optional `sessionDescription`, `thesisPromptTemplateName`, `antithesisPromptTemplateName`.
 -   **Returns:** A promise that resolves to an `ApiResponse` containing the created `DialecticSession` object.
 
 #### `getProjectDetails(projectId: string): Promise<ApiResponse<DialecticProject>>`

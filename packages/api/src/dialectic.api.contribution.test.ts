@@ -82,7 +82,7 @@ const mockDialecticSession: DialecticSession = {
   status: "pending_hypothesis",
   associated_chat_id: null,
   current_stage_id: 'stage-123',
-  selected_model_catalog_ids: ['model-1'],
+  selected_model_ids: ['model-1'],
   user_input_reference_url: null,
 };
 
@@ -502,7 +502,7 @@ describe('DialecticApiClient', () => {
         const validPayload: StartSessionPayload = {
             projectId: 'proj-123',
             sessionDescription: 'Kicking off a new session',
-            selectedModelCatalogIds: ['model-abc', 'model-def'],
+            selectedModelIds: ['model-abc', 'model-def'],
         };
         const requestBody = { action: 'startSession', payload: validPayload };
 
@@ -679,13 +679,13 @@ describe('DialecticApiClient', () => {
         const endpoint = 'dialectic-service';
         const validPayload: UpdateSessionModelsPayload = {
             sessionId: 'sess-123',
-            selectedModelCatalogIds: ['model-xyz', 'model-abc'],
+            selectedModelIds: ['model-xyz', 'model-abc'],
         };
         const requestBody = { action: 'updateSessionModels', payload: validPayload };
         const mockUpdatedSession: DialecticSession = {
             ...mockDialecticSession, // Assuming mockDialecticSession is a base session
             id: validPayload.sessionId,
-            selected_model_catalog_ids: validPayload.selectedModelCatalogIds,
+            selected_model_ids: validPayload.selectedModelIds,
             updated_at: new Date().toISOString(),
         };
 

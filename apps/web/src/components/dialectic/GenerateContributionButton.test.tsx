@@ -128,7 +128,7 @@ const createMockSession = (
   session_description: `Session ${sessionId} for ${projectId}`,
   user_input_reference_url: null,
   iteration_count: iteration,
-  selected_model_catalog_ids: [],
+  selected_model_ids: [],
   status: 'active',
   associated_chat_id: null,
   current_stage_id: mockThesisStage.id,

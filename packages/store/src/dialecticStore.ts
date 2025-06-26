@@ -745,7 +745,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     set({ selectedModelIds: modelIds });
     const activeSessionId = get().activeContextSessionId;
     if (activeSessionId) {
-      get().updateSessionModels({ sessionId: activeSessionId, selectedModelCatalogIds: modelIds })
+      get().updateSessionModels({ sessionId: activeSessionId, selectedModelIds: modelIds })
         .then(response => {
           if (response.error) {
             logger.error('[DialecticStore] Post-setSelectedModelIds: Failed to update session models on backend', { sessionId: activeSessionId, error: response.error});
@@ -772,7 +772,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     });
     const activeSessionId = get().activeContextSessionId;
     if (activeSessionId) {
-      get().updateSessionModels({ sessionId: activeSessionId, selectedModelCatalogIds: newSelectedIds })
+      get().updateSessionModels({ sessionId: activeSessionId, selectedModelIds: newSelectedIds })
         .then(response => {
           if (response.error) {
             logger.error('[DialecticStore] Post-setModelMultiplicity: Failed to update session models on backend', { sessionId: activeSessionId, modelId, count, error: response.error});
@@ -1076,8 +1076,8 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       });
 
       // Set selected models based on the session
-      if (fetchedSession.selected_model_catalog_ids) {
-        get().setSelectedModelIds(fetchedSession.selected_model_catalog_ids);
+      if (fetchedSession.selected_model_ids) {
+        get().setSelectedModelIds(fetchedSession.selected_model_ids);
       } else {
         get().setSelectedModelIds([]); // Clear if no models are selected for the session
       }

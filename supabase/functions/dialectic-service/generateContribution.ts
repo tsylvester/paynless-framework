@@ -36,25 +36,13 @@ export async function generateContributions(
     dbClient: SupabaseClient<Database>,
     payload: GenerateContributionsPayload,
     authToken: string, 
-    partialDeps?: Partial<GenerateContributionsDeps> 
+    deps: GenerateContributionsDeps
   ): Promise<{ success: boolean; data?: GenerateContributionsSuccessResponse; error?: { message: string; status?: number; details?: string | FailedAttemptError[]; code?: string } }> {
     const BUCKET_NAME = 'dialectic-contributions';
 
-    // Corrected: Initialize dependencies, including FileManagerService, inside the main function scope
-    const defaultDepsInternal: GenerateContributionsDeps = {
-        callUnifiedAIModel: callUnifiedAIModel,
-        downloadFromStorage: downloadFromStorage,
-        getExtensionFromMimeType: getExtensionFromMimeType,
-        logger: logger,
-        randomUUID: crypto.randomUUID,
-        fileManager: new FileManagerService(dbClient),
-        deleteFromStorage: deleteFromStorage,
-      };
-
-    const deps = { ...defaultDepsInternal, ...partialDeps };
-
     const { sessionId, iterationNumber, stageSlug } = payload;
     if (!stageSlug) {
+      deps.logger.error("[generateContributions] stageSlug is required in the payload.");
       return { success: false, error: { message: "stageSlug is required in the payload.", status: 400 } };
     }
 

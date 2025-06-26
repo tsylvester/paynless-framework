@@ -48,7 +48,7 @@ const mockSession: DialecticSession = {
   session_description: 'Mock Session',
   user_input_reference_url: null,
   iteration_count: 1,
-  selected_model_catalog_ids: [],
+  selected_model_ids: [],
   status: 'active',
   associated_chat_id: null,
   current_stage_id: 'stage-1',

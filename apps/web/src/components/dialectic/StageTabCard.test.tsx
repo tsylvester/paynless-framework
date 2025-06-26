@@ -50,7 +50,7 @@ const mockSession: DialecticSession = {
   status: 'pending_hypothesis',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
-  selected_model_catalog_ids: ['model-1'],
+  selected_model_ids: ['model-1'],
   user_input_reference_url: null,
   associated_chat_id: null,
   dialectic_contributions: [],

@@ -79,7 +79,7 @@ Deno.test("generateContributions - Project owner details not found", async () =>
     });
     const mockDbClient = mockSupabase.client as unknown as SupabaseClient<Database>;
     
-    const partialDepsForTest: Partial<GenerateContributionsDeps> = {
+    const partialDepsForTest: GenerateContributionsDeps = {
         logger: logger, // Using the spied real logger
         // Other deps not expected to be called before this failure point
         randomUUID: spy(() => "dummy-uuid"),
@@ -235,11 +235,11 @@ Deno.test("generateContributions - Seed prompt download fails", async () => {
     const mockDownloadError = new Error("Simulated storage download failure");
     const mockDownloadFromStorageSpy = spy(async (_client: SupabaseClient<Database>, _bucket: string, _path: string) => await Promise.resolve({ data: null, error: mockDownloadError }));
     
-    const partialDepsForTest: Partial<GenerateContributionsDeps> = {
+    const partialDepsForTest: GenerateContributionsDeps = {
         logger: logger,
         downloadFromStorage: mockDownloadFromStorageSpy,
         randomUUID: spy(() => "dummy-uuid"),
-        callUnifiedAIModel: spy(async () => Promise.resolve({} as UnifiedAIResponse)),
+        callUnifiedAIModel: spy(async () => Promise.resolve({content: "mock content", error: null, errorCode: null, inputTokens: 10, outputTokens: 20, cost: 0.001, processingTimeMs: 100, rawProviderResponse: { some: "raw data"} })),
         getExtensionFromMimeType: spy(() => ".txt"),
         fileManager: {
             uploadAndRegisterFile: spy(async () => Promise.resolve({ record: null, error: new Error("Should not be called") })),
@@ -330,15 +330,16 @@ Deno.test("generateContributions - Seed prompt is empty string", async () => {
     const mockEmptyPrompt = "";
     const mockDownloadFromStorageSpy = spy(async () => await Promise.resolve({ data: new TextEncoder().encode(mockEmptyPrompt).buffer as ArrayBuffer, error: null }));
     
-    const partialDepsForTest: Partial<GenerateContributionsDeps> = {
+    const partialDepsForTest: GenerateContributionsDeps = {
         logger: logger,
         downloadFromStorage: mockDownloadFromStorageSpy,
-        callUnifiedAIModel: spy(async () => Promise.resolve({} as UnifiedAIResponse)),
+        callUnifiedAIModel: spy(async () => Promise.resolve({content: "mock content", error: null, errorCode: null, inputTokens: 10, outputTokens: 20, cost: 0.001, processingTimeMs: 100, rawProviderResponse: { some: "raw data"} })),
         getExtensionFromMimeType: spy(() => ".md"),
         randomUUID: spy(() => "contrib-uuid-empty-prompt"),
         fileManager: {
             uploadAndRegisterFile: spy(async () => Promise.resolve({ record: null, error: new Error("Should not be called") })),
-        } as IFileManager,
+        },
+        deleteFromStorage: spy(async () => Promise.resolve({data:[], error: null})),
     };
 
     try {
@@ -386,7 +387,7 @@ Deno.test("generateContributions - Success with associated_chat_id", async () =>
     const localLoggerWarn = spy(logger, 'warn');
 
     const mockStageData: DialecticStage = { id: 'stage-id-chat', slug: mockStageSlug, display_name: "Chat Stage", description: "Test chat success", created_at: new Date().toISOString(), default_system_prompt_id: null, expected_output_artifacts: {}, input_artifact_rules: {} };
-    const mockSessionDataWithChatId = { id: mockSessionId, project_id: mockProjectId, status: `pending_${mockStageSlug}`, associated_chat_id: mockChatId, selected_model_catalog_ids: [mockModelCatalogId], current_stage_slug: mockStageSlug, current_iteration_number: mockIterationNumber, iteration_count: 0 };
+    const initialMockSessionDataWithChatId = { id: mockSessionId, project_id: mockProjectId, status: `pending_${mockStageSlug}`, associated_chat_id: mockChatId, selected_model_catalog_ids: [mockModelCatalogId], current_stage_slug: mockStageSlug, current_iteration_number: mockIterationNumber, iteration_count: 0 };
     const mockProjectData = { id: mockProjectId, user_id: "owner-id-chat" };
     const mockAiProviderData = { id: mockModelCatalogId, provider: "mockProvChat", name: "Mock Model Chat Success", api_identifier: "mock-model-chat-api" };
     const mockProjectResourceDataChat = { storage_bucket: 'dialectic-private-resources', storage_path: `projects/${mockProjectId}/sessions/${mockSessionId}/iteration_${mockIterationNumber}/${mockStageSlug}/seed_prompt.md`, file_name: 'seed_prompt.md', resource_description: JSON.stringify({ type: "seed_prompt", session_id: mockSessionId, stage_slug: mockStageSlug, iteration: mockIterationNumber }) };
@@ -422,12 +423,32 @@ Deno.test("generateContributions - Success with associated_chat_id", async () =>
         target_contribution_id: null,
     };
 
+    // Introduce a mutable variable for session data within this test's scope
+    let currentMockSessionData = { ...initialMockSessionDataWithChatId }; // Use spread to clone initial state
+
     const mockSupabase = createMockSupabaseClient("test-user-chatid-success", {
         genericMockResults: {
             'dialectic_stages': { select: async () => ({ data: [mockStageData], error: null, count: 1, status: 200, statusText: 'OK' }) },
             'dialectic_sessions': { 
-                select: async () => ({ data: [mockSessionDataWithChatId], error: null, count: 1, status: 200, statusText: 'OK' }),
-                update: async () => ({ data: [{id: mockSessionId, status: `${mockStageSlug}_generation_complete`, iteration_count: mockIterationNumber }], error: null, count: 1, status: 200, statusText: 'OK' })
+                select: async (state) => {
+                    // Ensure we are responding to the select for the specific session ID this test cares about
+                    if (state.filters.some(f => f.column === 'id' && f.value === mockSessionId)) {
+                        return { data: [currentMockSessionData], error: null, count: 1, status: 200, statusText: 'OK' };
+                    }
+                    logger.warn(`[Mock Test Warning] Unexpected select on dialectic_sessions in 'Success with associated_chat_id' test. Filters: ${JSON.stringify(state.filters)}`);
+                    return { data: null, error: { name: 'MockPGRSTError', message: "Mock select: Session not found or unexpected query" } as MockPGRSTError, count: 0, status: 404, statusText: 'Not Found' };
+                },
+                update: async (state) => {
+                    // Ensure we are responding to the update for the specific session ID
+                    if (state.filters.some(f => f.column === 'id' && f.value === mockSessionId)) {
+                        const updatePayload = state.updateData as Partial<typeof currentMockSessionData>;
+                        currentMockSessionData = { ...currentMockSessionData, ...updatePayload }; // Apply the update to our mutable mock data
+                        // The real DB returns the updated rows
+                        return { data: [currentMockSessionData], error: null, count: 1, status: 200, statusText: 'OK' };
+                    }
+                    logger.warn(`[Mock Test Warning] Unexpected update on dialectic_sessions in 'Success with associated_chat_id' test. Filters: ${JSON.stringify(state.filters)}`);
+                    return { data: null, error: { name: 'MockPGRSTError', message: "Mock update: Session not found or unexpected query" } as MockPGRSTError, count: 0, status: 404, statusText: 'Not Found' };
+                }
             },
             'dialectic_projects': { select: async () => ({ data: [mockProjectData], error: null, count: 1, status: 200, statusText: 'OK' }) },
             'ai_providers': { select: async () => ({ data: [mockAiProviderData], error: null, count: 1, status: 200, statusText: 'OK' }) },
@@ -446,7 +467,7 @@ Deno.test("generateContributions - Success with associated_chat_id", async () =>
 
     const mockCallUnifiedAISpy = spy(async () => Promise.resolve({ content: mockAiResponseContent, contentType: "text/markdown", error: null, inputTokens:10, outputTokens:20, cost:0.01, processingTimeMs:100, rawProviderResponse: {} }));
     
-    const partialDepsForTest: Partial<GenerateContributionsDeps> = {
+    const partialDepsForTest: GenerateContributionsDeps = {
         logger: logger,
         downloadFromStorage: mockDownloadFromStorageSpy as any, // Cast to any to bypass complex spy typing for now
         callUnifiedAIModel: mockCallUnifiedAISpy,
@@ -454,7 +475,8 @@ Deno.test("generateContributions - Success with associated_chat_id", async () =>
         randomUUID: spy(() => mockContributionId), // Use defined ID
         fileManager: {
             uploadAndRegisterFile: spy(async () => Promise.resolve({ record: mockSuccessfulContributionRecord, error: null })),
-        } as IFileManager,
+        },
+        deleteFromStorage: spy(async () => Promise.resolve({data:[], error: null})),
     };
 
     try {
@@ -487,6 +509,13 @@ Deno.test("generateContributions - Success with associated_chat_id", async () =>
         
         const updatePayload = (updateInteraction as any)._state.upsertData ?? (updateInteraction as any)._state.updateData; 
         assertObjectMatch(updatePayload as Record<string, unknown>, { status: `${mockStageSlug}_generation_complete`, iteration_count: mockIterationNumber });
+
+        const updatedSession = await mockDbClient
+            .from('dialectic_sessions')
+            .select()
+            .eq('id', mockSessionId)
+            .single();
+        assertEquals(updatedSession.data?.iteration_count, mockIterationNumber);
 
     } finally {
         localLoggerInfo.restore();
@@ -566,15 +595,15 @@ Deno.test("generateContributions - No models selected for session", async () => 
         error: null 
     }));
 
-    const partialDepsForTest: Partial<GenerateContributionsDeps> = {
+    const partialDepsForTest: GenerateContributionsDeps = {
         logger: logger,
         randomUUID: spy(() => "dummy-uuid-no-models"),
-        callUnifiedAIModel: spy(async () => Promise.resolve({} as UnifiedAIResponse)),
+        callUnifiedAIModel: spy(async () => Promise.resolve({content: "mock content", error: null, errorCode: null, inputTokens: 10, outputTokens: 20, cost: 0.001, processingTimeMs: 100, rawProviderResponse: { some: "raw data"} })),
         downloadFromStorage: mockDownloadFromStorageSpy,
         getExtensionFromMimeType: spy(() => ".txt"),
         fileManager: {
             uploadAndRegisterFile: spy(async () => Promise.resolve({ record: null, error: new Error("Should not be called") })),
-        } as IFileManager,
+        },
         deleteFromStorage: spy(async () => Promise.resolve({data:[], error: null})),
     };
 
@@ -664,7 +693,7 @@ Deno.test("generateContributions - Stage details not found", async () => {
     });
     const mockDbClient = mockSupabase.client as unknown as SupabaseClient<Database>;
     
-    const partialDepsForTest: Partial<GenerateContributionsDeps> = {
+    const partialDepsForTest: GenerateContributionsDeps = {
         logger: logger, // Using the spied real logger
         // None of the other major deps should be called if stage fetch fails
         randomUUID: spy(() => "dummy-uuid"),
@@ -673,7 +702,7 @@ Deno.test("generateContributions - Stage details not found", async () => {
         getExtensionFromMimeType: spy(() => ".txt"),
         fileManager: {
             uploadAndRegisterFile: spy(async () => Promise.resolve({ record: null, error: new Error("Should not be called") })),
-        } as IFileManager,
+        },
         deleteFromStorage: spy(async () => Promise.resolve({data:[], error: null})),
     };
 
@@ -788,14 +817,15 @@ Deno.test("generateContributions - No AI models selected", async () => {
         error: null 
     }));
 
-    const partialDepsForTest: Partial<GenerateContributionsDeps> = {
+    const partialDepsForTest: GenerateContributionsDeps = {
         logger: logger,
         downloadFromStorage: mockDownloadFromStorageSpy,
-        callUnifiedAIModel: spy(async () => Promise.resolve({} as UnifiedAIResponse)),
+        callUnifiedAIModel: spy(async () => Promise.resolve({content: "mock content", error: null, errorCode: null, inputTokens: 10, outputTokens: 20, cost: 0.001, processingTimeMs: 100, rawProviderResponse: { some: "raw data"} })),
         getExtensionFromMimeType: spy(() => ".txt"),
+        randomUUID: spy(() => "dummy-uuid-no-models"),
         fileManager: {
             uploadAndRegisterFile: spy(async () => Promise.resolve({ record: null, error: new Error("Should not be called") })),
-        } as IFileManager,
+        },
         deleteFromStorage: spy(async () => Promise.resolve({data:[], error: null})),
     };
 
@@ -884,13 +914,14 @@ Deno.test("generateContributions - All models fail (FileManagerService failure)"
         return await Promise.resolve({ data: new TextEncoder().encode("seed").buffer as ArrayBuffer, error: null });
     });
 
-    const partialDepsForTest: Partial<GenerateContributionsDeps> = {
+    const partialDepsForTest: GenerateContributionsDeps = {
         logger: logger,
         downloadFromStorage: mockDownloadFromStorageSpy, // Use the defined spy
         callUnifiedAIModel: mockCallUnifiedAISpy,
         getExtensionFromMimeType: spy(() => ".md"),
         randomUUID: spy(() => "uuid-fm-all-fail"), // Can be same as models will fail before insert
-        fileManager: { uploadAndRegisterFile: mockFileManagerSpy } as IFileManager,
+        fileManager: { uploadAndRegisterFile: mockFileManagerSpy },
+        deleteFromStorage: spy(async () => Promise.resolve({data:[], error: null})),
     };
 
     try {

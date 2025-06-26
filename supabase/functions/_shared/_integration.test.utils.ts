@@ -491,6 +491,7 @@ export interface TestResourceRequirement<T extends keyof Database['public']['Tab
   desiredState: Partial<Database['public']['Tables'][T]['Row']>; 
   // Optional: If true, and resource has user_id, it will be set to primaryUserId
   linkUserId?: boolean; 
+  exportId?: string; // Optional: Used to export the ID of the created/identified resource for later reference
 }
 
 /**
@@ -527,6 +528,7 @@ export interface ProcessedResourceInfo<T extends keyof Database['public']['Table
   resource?: Database['public']['Tables'][T]['Row'] | null; // The actual row data, esp. with ID
   status: 'created' | 'updated' | 'exists_unchanged' | 'failed' | 'skipped'; // Added skipped
   error?: string;
+  exportId?: string; // Added exportId
 }
 
 // --- New Helper Functions for Schema Integration Tests ---
@@ -955,6 +957,52 @@ export async function isRLSEnabled(
   return false; // Or throw error if table not found
 }
 
+// Helper function to resolve {$ref: ...} placeholders
+function resolveReferences(obj: any, exportedIds: Map<string, string>): any {
+  if (typeof obj !== 'object' || obj === null) {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => resolveReferences(item, exportedIds));
+  }
+
+  // Check for {$ref: '...'} structure
+  // It must be an object with a single key '$ref' whose value is a string.
+  if (Object.prototype.hasOwnProperty.call(obj, '$ref') && typeof obj.$ref === 'string' && Object.keys(obj).length === 1) {
+    const refKey = obj.$ref; // e.g., "thesisPrompt_id" or "processTemplate"
+    let actualId: string | undefined = exportedIds.get(refKey);
+
+    // If direct lookup fails and key ends with _id, try trimming _id and looking up again
+    if (actualId === undefined && refKey.endsWith('_id')) {
+      const trimmedKey = refKey.substring(0, refKey.length - 3); // e.g., "thesisPrompt"
+      actualId = exportedIds.get(trimmedKey);
+    }
+
+    if (actualId !== undefined) {
+      return actualId; // Return the resolved UUID
+    } else {
+      // Enhanced logging for unresolved reference
+      console.warn(`[resolveReferences] Failed to resolve ref: "${refKey}".`);
+      console.warn(`[resolveReferences] Attempted direct key: "${refKey}", was present: ${exportedIds.has(refKey)}`);
+      if (refKey.endsWith('_id')) {
+        const trimmedKey = refKey.substring(0, refKey.length - 3);
+        console.warn(`[resolveReferences] Attempted trimmed key: "${trimmedKey}", was present: ${exportedIds.has(trimmedKey)}`);
+      }
+      console.warn(`[resolveReferences] Full exportedIds map at this failure point: ${JSON.stringify(Array.from(exportedIds.entries()))}`);
+      return obj; // Return original {$ref: ...} object if ref not found
+    }
+  }
+
+  // Recursively process other objects
+  const newObj: { [key: string]: any } = {};
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      newObj[key] = resolveReferences(obj[key], exportedIds);
+    }
+  }
+  return newObj;
+}
 
 /**
  * Initializes the testing environment for a single test case or a group of related test cases.
@@ -1045,117 +1093,122 @@ export async function coreInitializeTestStep(
   const processedResources: ProcessedResourceInfo[] = [];
   const userProfileProps: TestSetupConfig['userProfile'] = config.userProfile;
 
+  const exportedResourceIds = new Map<string, string>(); // Map to store exportId -> actual_id
+
   const { userId: primaryUserId, userClient: primaryUserClient, jwt: primaryUserJwt } = await coreCreateAndSetupTestUser(userProfileProps, executionScope);
   await coreEnsureTestUserAndWallet(primaryUserId, config.initialWalletBalance, executionScope);
 
   if (config.resources) {
     console.log("[coreInitializeTestStep] Starting to process config.resources...");
     for (const requirement of config.resources) {
-      console.log(`[coreInitializeTestStep] Processing requirement: { tableName: '${requirement.tableName}', identifier: ${JSON.stringify(requirement.identifier)} }`);
-      let resourceId: string | undefined;
+      console.log(`[coreInitializeTestStep] Processing requirement: { tableName: '${requirement.tableName}', identifier: ${JSON.stringify(requirement.identifier)}, exportId: ${requirement.exportId} }`);
+      
+      // 1. Resolve references in the current requirement's identifier and desiredState
+      const currentResolvedIdentifier = resolveReferences(JSON.parse(JSON.stringify(requirement.identifier)), exportedResourceIds);
+      const currentResolvedDesiredState = resolveReferences(JSON.parse(JSON.stringify(requirement.desiredState)), exportedResourceIds);
+      
+      let resourceId: string | undefined; // Not used currently, but good to declare if needed
       const tableNameKey = requirement.tableName as keyof Database['public']['Tables'];
 
-      // Check if the resource already exists based on the identifier
+      let resourceForProcessedList: any = null;
+      let operationStatus: 'created' | 'updated' | 'exists_unchanged' | 'failed' | 'skipped' = 'failed';
+      let operationError: string | undefined = undefined;
+
+      // Check if the resource already exists based on the *resolved* identifier
       const { data: existingResource, error: selectError } = await supabaseAdminClient
         .from(tableNameKey)
-        .select('*') // Select all columns to have the full original row for restoration
-        .match(requirement.identifier as any) // Cast identifier to any if type issues
-        .maybeSingle(); // Use maybeSingle to handle 0 or 1 row gracefully
+        .select('*') 
+        .match(currentResolvedIdentifier as any) 
+        .maybeSingle(); 
 
-      if (selectError && selectError.code !== 'PGRST116') { // PGRST116 means no rows found
-        console.error(`[TestUtil] Error checking for existing resource in ${requirement.tableName}:`, selectError);
-        console.error(`[coreInitializeTestStep] Select error for ${requirement.tableName} with identifier ${JSON.stringify(requirement.identifier)}: ${selectError.message}`);
-        processedResources.push({ 
-          tableName: requirement.tableName, 
-          identifier: requirement.identifier, 
-          status: 'failed', 
-          error: `Select error: ${selectError.message}` 
-        });
-        continue; // Skip this resource
-      }
-
-      if (existingResource) {
+      if (selectError && selectError.code !== 'PGRST116') { 
+        console.error(`[TestUtil] Error checking for existing resource in ${requirement.tableName} with resolved identifier ${JSON.stringify(currentResolvedIdentifier)}:`, selectError);
+        operationError = `Select error: ${selectError.message}`;
+        // processedResources.push(...) will be handled at the end of the loop iteration
+      } else if (existingResource) {
         // Resource exists, update it and register for restoration
-        console.log(`[coreInitializeTestStep] Found existing resource for ${requirement.tableName} with identifier ${JSON.stringify(requirement.identifier)}. Original: ${JSON.stringify(existingResource)}`);
+        console.log(`[coreInitializeTestStep] Found existing resource for ${requirement.tableName} with resolved identifier ${JSON.stringify(currentResolvedIdentifier)}. Original: ${JSON.stringify(existingResource)}`);
         registerUndoAction({
           type: 'RESTORE_UPDATED_ROW',
           tableName: tableNameKey,
-          identifier: requirement.identifier,
+          identifier: currentResolvedIdentifier, // Use resolved identifier for restoration match
           originalRow: existingResource as Database['public']['Tables'][typeof tableNameKey]['Row'],
           scope: executionScope
         });
+
+        // Update with resolved desired state
         const { error: updateError } = await supabaseAdminClient
           .from(tableNameKey)
-          .update(requirement.desiredState as any) // Cast to any if type issues with partial update
-          .match(requirement.identifier as any);
+          .update(currentResolvedDesiredState as any) 
+          .match(currentResolvedIdentifier as any); 
+        
         if (updateError) {
-          console.error(`[TestUtil] Error updating existing resource in ${requirement.tableName} (PK Identifier: ${JSON.stringify(requirement.identifier)}):`, updateError);
-          console.error(`[coreInitializeTestStep] Update error for ${requirement.tableName} with identifier ${JSON.stringify(requirement.identifier)}: ${updateError.message}`);
-          processedResources.push({ 
-            tableName: requirement.tableName, 
-            identifier: requirement.identifier, 
-            resource: existingResource, 
-            status: 'failed', 
-            error: `Update error: ${updateError.message}`
-          });
+          console.error(`[TestUtil] Error updating existing resource in ${requirement.tableName} (Resolved Identifier: ${JSON.stringify(currentResolvedIdentifier)}):`, updateError);
+          operationError = `Update error: ${updateError.message}`;
+          resourceForProcessedList = existingResource; // Keep existing resource info on failure
         } else {
-          const logResourceId = (existingResource as any)[Object.keys(requirement.identifier)[0]] || 'unknown_id_value';
-          console.log(`[TestUtil] Updated existing resource in ${requirement.tableName} (PK Identifier: ${JSON.stringify(requirement.identifier)}, Logged PK Value: ${logResourceId}) with data: ${JSON.stringify(requirement.desiredState)}`);
-          console.log(`[coreInitializeTestStep] Pushing updated resource to processedResources: { tableName: '${requirement.tableName}', identifier: ${JSON.stringify(requirement.identifier)}, status: 'updated' }`);
-          processedResources.push({ 
-            tableName: requirement.tableName, 
-            identifier: requirement.identifier, 
-            resource: { ...existingResource, ...requirement.desiredState }, // Reflect updated state
-            status: 'updated' 
-          });
+          const logResourceId = (existingResource as any).id || 'unknown_id_value'; // Assuming 'id' is the PK
+          console.log(`[TestUtil] Updated existing resource in ${requirement.tableName} (ID: ${logResourceId}, Resolved Identifier: ${JSON.stringify(currentResolvedIdentifier)}) with data: ${JSON.stringify(currentResolvedDesiredState)}`);
+          resourceForProcessedList = { ...existingResource, ...currentResolvedDesiredState };
+          operationStatus = 'updated';
         }
       } else {
-        // Resource does not exist, create it and register for deletion
-        console.log(`[coreInitializeTestStep] No existing resource found for ${requirement.tableName} with identifier ${JSON.stringify(requirement.identifier)}. Creating new one.`);
-        let dataForDb: Partial<Database['public']['Tables'][typeof tableNameKey]['Insert']>; // Use typeof for type indexing
+        // Resource does not exist, create it
+        console.log(`[coreInitializeTestStep] No existing resource found for ${requirement.tableName} with resolved identifier ${JSON.stringify(currentResolvedIdentifier)}. Creating new one.`);
+        let dataForDb: Partial<Database['public']['Tables'][typeof tableNameKey]['Insert']>;
+        
         if (requirement.linkUserId) {
-          dataForDb = { ...requirement.identifier, ...requirement.desiredState, user_id: primaryUserId as any }; // Cast primaryUserId if user_id type is not just string
+          dataForDb = { ...currentResolvedIdentifier, ...currentResolvedDesiredState, user_id: primaryUserId as any };
         } else {
-          dataForDb = { ...requirement.identifier, ...requirement.desiredState };
+          dataForDb = { ...currentResolvedIdentifier, ...currentResolvedDesiredState };
         }
+
         const { data: newResource, error: insertError } = await supabaseAdminClient
           .from(tableNameKey)
-          .insert(dataForDb as any) // Cast to any if type issues
+          .insert(dataForDb as any) 
           .select()
           .single();
-        console.log(`[coreInitializeTestStep] Attempted insert for ${requirement.tableName}. Data: ${JSON.stringify(dataForDb)}. Result: newResource: ${JSON.stringify(newResource)}, insertError: ${JSON.stringify(insertError)}`);
+        console.log(`[coreInitializeTestStep] Attempted insert for ${requirement.tableName}. Resolved Data: ${JSON.stringify(dataForDb)}. Result: newResource: ${JSON.stringify(newResource)}, insertError: ${JSON.stringify(insertError)}`);
 
         if (insertError || !newResource) {
-          console.error(`[TestUtil] Error creating new resource in ${requirement.tableName} (PK Identifier: ${JSON.stringify(requirement.identifier)}):`, insertError);
-          console.error(`[coreInitializeTestStep] Insert error for ${requirement.tableName} with identifier ${JSON.stringify(requirement.identifier)}: ${insertError?.message || 'No resource returned'}`);
-          processedResources.push({ 
-            tableName: requirement.tableName, 
-            identifier: requirement.identifier, 
-            status: 'failed', 
-            error: `Insert error: ${insertError?.message || 'No resource returned'}`
-          });
+          console.error(`[TestUtil] Error creating new resource in ${requirement.tableName} (Resolved Identifier: ${JSON.stringify(currentResolvedIdentifier)}):`, insertError);
+          operationError = `Insert error: ${insertError?.message || 'No resource returned'}`;
         } else {
           registerUndoAction({
             type: 'DELETE_CREATED_ROW',
             tableName: tableNameKey,
-            criteria: requirement.identifier, // Use the original identifier for deletion criteria
+            criteria: { id: (newResource as any).id } as any, // Use actual ID of created row for deletion
             scope: executionScope
           });
-          const logResourceId = (newResource as any)[Object.keys(requirement.identifier)[0]] || 'unknown_id_value';
-          console.log(`[TestUtil] Created new resource in ${requirement.tableName} (PK Identifier: ${JSON.stringify(requirement.identifier)}, Logged PK Value: ${logResourceId}) with data: ${JSON.stringify(dataForDb)}`);
-          console.log(`[coreInitializeTestStep] Pushing created resource to processedResources: { tableName: '${requirement.tableName}', identifier: ${JSON.stringify(requirement.identifier)}, status: 'created', resource: ${JSON.stringify(newResource)} }`);
-          processedResources.push({ 
-            tableName: requirement.tableName, 
-            identifier: requirement.identifier, 
-            resource: newResource as Database['public']['Tables'][typeof tableNameKey]['Row'], 
-            status: 'created' 
-          });
+          const logResourceId = (newResource as any).id || 'unknown_id_value'; // Assuming 'id' is the PK
+          console.log(`[TestUtil] Created new resource in ${requirement.tableName} (ID: ${logResourceId}, Resolved Identifier: ${JSON.stringify(currentResolvedIdentifier)}) with data: ${JSON.stringify(dataForDb)}`);
+          resourceForProcessedList = newResource as Database['public']['Tables'][typeof tableNameKey]['Row'];
+          operationStatus = 'created';
         }
       }
+
+      // 3. If successful and exportId is present, store its *actual* ID for *future* resources
+      if ((operationStatus === 'updated' || operationStatus === 'created') && requirement.exportId && resourceForProcessedList && (resourceForProcessedList as any).id) {
+        const actualId = (resourceForProcessedList as any).id;
+        exportedResourceIds.set(requirement.exportId, actualId);
+        console.log(`[coreInitializeTestStep] Exported ID: ${requirement.exportId} -> ${actualId}`);
+      } else if (operationStatus !== 'failed' && requirement.exportId && (!resourceForProcessedList || !(resourceForProcessedList as any).id)) {
+        console.warn(`[coreInitializeTestStep] Resource for ${requirement.tableName} with exportId '${requirement.exportId}' was processed but no ID was found to export.`);
+      }
+      
+      // Add to processedResources
+      processedResources.push({ 
+        tableName: requirement.tableName, 
+        identifier: requirement.identifier, // Store original identifier for reporting
+        resource: resourceForProcessedList, 
+        status: operationStatus, 
+        error: operationError,
+        exportId: requirement.exportId, // Ensure exportId is included
+      });
     }
   }
   
-  console.log(`[coreInitializeTestStep] Finished processing resources. Final processedResources array (before return): ${JSON.stringify(processedResources.map(p => ({ table: p.tableName, id: p.identifier, status: p.status, resourceKeys: p.resource ? Object.keys(p.resource) : null, error: p.error  })), null, 2)}`);
+  console.log(`[coreInitializeTestStep] Finished processing resources. Final processedResources array (before return): ${JSON.stringify(processedResources.map(p => ({ tableName: p.tableName, exportId: p.exportId, status: p.status, id: (p.resource as any)?.id, error: p.error  })), null, 2)}`);
 
   const anonClient = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
     auth: {

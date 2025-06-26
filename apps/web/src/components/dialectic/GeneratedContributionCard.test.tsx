@@ -157,7 +157,7 @@ describe('GeneratedContributionCard', () => {
       session_description: 'Test session for GCC',
       user_input_reference_url: null,
       iteration_count: 1,
-      selected_model_catalog_ids: ['model-catalog-gpt4s'],
+      selected_model_ids: ['model-catalog-gpt4s'],
       associated_chat_id: null,
       dialectic_contributions: [contribution], 
       dialectic_session_models: [],
@@ -202,7 +202,7 @@ describe('GeneratedContributionCard', () => {
       // and data should flow from currentProjectDetail and activeSessionDetail
       modelCatalog: [
         { 
-          id: 'model-catalog-gpt4s', // Used by mockSession's selected_model_catalog_ids
+          id: 'model-catalog-gpt4s', // Used by mockSession's selected_model_ids
           provider_name: 'OpenAI',
           model_name: 'GPT-4 Super', // Corrected from 'name'
           api_identifier: 'gpt-4s',

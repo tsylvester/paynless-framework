@@ -158,7 +158,7 @@ Deno.test("generateContributions - FileManagerService fails to upload/register f
 
     const mockDeleteFromStorage = spy(async () => ({ data: null, error: null }));
 
-    const mockDeps: Partial<GenerateContributionsDeps> = {
+    const mockDeps: GenerateContributionsDeps = {
         callUnifiedAIModel: mockCallUnifiedAIModel as any,
         downloadFromStorage: mockDownloadFromStorage, 
         getExtensionFromMimeType: spy(() => ".md"),
@@ -357,7 +357,7 @@ Deno.test("generateContributions - Final session status update fails (critical l
         uploadAndRegisterFile: mockUploadAndRegisterFileSuccessSpy,
     };
     
-    const mockDeps: Partial<GenerateContributionsDeps> = {
+    const mockDeps: GenerateContributionsDeps = {
         callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => await Promise.resolve({ 
             content: mockContent, 
             error: null, 
