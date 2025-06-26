@@ -24,6 +24,8 @@ import {
   DialecticSession,
   GetContributionContentDataResponse,
   GetSessionDetailsResponse,
+  GenerateContributionsDeps,
+  FailedAttemptError,
 } from "./dialectic.interface.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import {
@@ -58,11 +60,13 @@ import { exportProject } from './exportProject.ts';
 import { getProjectResourceContent } from "./getProjectResourceContent.ts";
 import { saveContributionEdit } from './saveContributionEdit.ts';
 import { submitStageResponses } from './submitStageResponses.ts';
-import { downloadFromStorage } from '../_shared/supabase_storage_utils.ts';
+import { downloadFromStorage, deleteFromStorage } from '../_shared/supabase_storage_utils.ts';
 import { listDomains, type DialecticDomain } from './listDomains.ts';
 import { fetchProcessTemplate } from './fetchProcessTemplate.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { handleUpdateSessionModels } from './updateSessionModels.ts';
+import { callUnifiedAIModel } from './callModel.ts';
+import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 
 console.log("dialectic-service function started");
 
@@ -118,7 +122,7 @@ export interface ActionHandlers {
   getSessionDetails: (payload: GetSessionDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetSessionDetailsResponse; error?: ServiceError; status?: number }>;
   getContributionContentHandler: (getUserFn: GetUserFn, dbClient: SupabaseClient, logger: ILogger, payload: { contributionId: string }) => Promise<{ data?: GetContributionContentDataResponse; error?: ServiceError; status?: number }>;
   startSession: (user: User, dbClient: SupabaseClient, payload: StartSessionPayload, dependencies: { logger: ILogger }) => Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }>;
-  generateContributions: (dbClient: SupabaseClient, payload: GenerateContributionsPayload, authToken: string, dependencies: { logger: ILogger }) => Promise<{ success: boolean; data?: GenerateContributionsSuccessResponse; error?: ServiceError }>;
+  generateContributions: (dbClient: SupabaseClient, payload: GenerateContributionsPayload, authToken: string, deps: GenerateContributionsDeps) => Promise<{ success: boolean; data?: GenerateContributionsSuccessResponse; error?: { message: string; status?: number; details?: string | FailedAttemptError[]; code?: string; }; }>;
   listProjects: (user: User, dbClient: SupabaseClient) => Promise<{ data?: DialecticProject[]; error?: ServiceError; status?: number }>;
   listAvailableDomainOverlays: (stageAssociation: string, dbClient: SupabaseClient) => Promise<DomainOverlayDescriptor[]>;
   deleteProject: (dbClient: SupabaseClient, payload: { projectId: string }, userId: string) => Promise<{data?: null, error?: { message: string; details?: string | undefined; }, status?: number}>;
@@ -297,7 +301,16 @@ export async function handleRequest(
            if (!payload || !payload.sessionId) {
             return createErrorResponse("sessionId is required for generateContributions.", 400, req, { message: "sessionId is required for generateContributions.", status: 400 });
           }
-          const { success, data, error } = await handlers.generateContributions(adminClient, payload, authToken!, { logger });
+          const deps: GenerateContributionsDeps = {
+            logger,
+            callUnifiedAIModel,
+            downloadFromStorage,
+            deleteFromStorage: (path: string) => deleteFromStorage(adminClient, 'dialectic-contributions', [path]),
+            getExtensionFromMimeType,
+            randomUUID: crypto.randomUUID,
+            fileManager: new FileManagerService(adminClient),
+          };
+          const { success, data, error } = await handlers.generateContributions(adminClient, payload, authToken!, deps);
           if (!success || error) {
             return createErrorResponse(error?.message || "Generation failed", error?.status || 500, req, error);
           }

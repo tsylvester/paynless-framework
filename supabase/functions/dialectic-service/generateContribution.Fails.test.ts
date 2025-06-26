@@ -1,6 +1,6 @@
 import { assertEquals, assertExists, assert } from "https://deno.land/std@0.190.0/testing/asserts.ts";
 import { spy } from "jsr:@std/testing@0.225.1/mock";
-import { generateContributions, type GenerateContributionsDeps } from "./generateContribution.ts";
+import { generateContributions } from "./generateContribution.ts";
 import { 
     createMockSupabaseClient,
 } from "../_shared/supabase.mock.ts";
@@ -9,7 +9,8 @@ import {
     type GenerateContributionsPayload, 
     type UnifiedAIResponse,
     type FailedAttemptError,
-    type DialecticContribution
+    type DialecticContribution,
+    type GenerateContributionsDeps
 } from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
@@ -44,7 +45,7 @@ Deno.test("generateContributions - FileManagerService fails to upload/register f
         projectId: mockProjectId,
         stageSlug: mockStage.slug,
         iterationNumber: 1,
-        selectedModelCatalogIds: [mockModelProviderId],
+        selectedModelIds: [mockModelProviderId],
     };
 
     const localLoggerInfo = spy(logger, 'info');
@@ -69,7 +70,7 @@ Deno.test("generateContributions - FileManagerService fails to upload/register f
                                 id: mockSessionId,
                                 project_id: mockProjectId,
                                 status: `pending_${mockStage.slug}`,
-                                selected_model_catalog_ids: [mockModelProviderId],
+                                selected_model_ids: [mockModelProviderId],
                                 associated_chat_id: "mock-chat-id-fm-fail",
                                 current_stage_slug: mockStage.slug,
                                 current_iteration_number: 1,
@@ -226,7 +227,7 @@ Deno.test("generateContributions - Final session status update fails (critical l
         projectId: mockProjectId,
         stageSlug: mockStage.slug,
         iterationNumber: 1,
-        selectedModelCatalogIds: [mockModelProviderId],
+        selectedModelIds: [mockModelProviderId],
     };
 
     const localLoggerInfo = spy(logger, 'info');
@@ -281,7 +282,7 @@ Deno.test("generateContributions - Final session status update fails (critical l
                                 id: mockSessionId,
                                 project_id: mockProjectId,
                                 status: `pending_${mockStage.slug}`,
-                                selected_model_catalog_ids: [mockModelProviderId],
+                                selected_model_ids: [mockModelProviderId],
                                 associated_chat_id: "mock-chat-id-status-update-fail",
                                 current_stage_slug: mockStage.slug,
                                 current_iteration_number: 1,

@@ -89,7 +89,7 @@ describe("exportProject", () => {
             project_id: mockProjectId,
             session_description: "Session 1 description",
             iteration_count: 1,
-            selected_model_catalog_ids: ["mc-1"],
+            selected_model_ids: ["mc-1"],
             user_input_reference_url: null,
             current_stage_id: "stage-1",
             status: "completed",

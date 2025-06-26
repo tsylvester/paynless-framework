@@ -23,7 +23,7 @@ const MOCK_FILE_MANAGER = {
 stub(MOCK_FILE_MANAGER, "uploadAndRegisterFile");
 
 Deno.test("startSession - Error: Project not found", async () => {
-    const payload: StartSessionPayload = { projectId: "non-existent-project-id", selectedModelCatalogIds: ["model-abc"] };
+    const payload: StartSessionPayload = { projectId: "non-existent-project-id", selectedModelIds: ["model-abc"] };
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
             dialectic_projects: {
@@ -40,7 +40,7 @@ Deno.test("startSession - Error: Project not found", async () => {
 
 Deno.test("startSession - Error: Project is missing a process_template_id", async () => {
     const mockProjectId = "project-no-template-id";
-    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelCatalogIds: ["model-abc"] };
+    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelIds: ["model-abc"] };
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
             dialectic_projects: {
@@ -60,9 +60,9 @@ Deno.test("startSession - Error: Project is missing a process_template_id", asyn
     assertEquals(result.error?.status, 400);
 });
 
-Deno.test("startSession - Error: No entry point stage found for the process template", async () => {
+Deno.test("startSession - Error: Process template is missing a starting_stage_id", async () => {
     const mockProjectId = "project-no-entry-point";
-    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelCatalogIds: ["model-abc"] };
+    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelIds: ["model-abc"] };
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
             dialectic_projects: {
@@ -73,53 +73,64 @@ Deno.test("startSession - Error: No entry point stage found for the process temp
                     statusText: 'ok'
                 })
             },
-            dialectic_stage_transitions: {
-                select: async () => ({ data: null, error: { message: "Not found" } as any, status: 500, statusText: 'error' })
-            }
+            dialectic_process_templates: {
+                select: async () => ({
+                    data: [{ id: "proc-template-no-entry", name: "Test Template", starting_stage_id: null }],
+                    error: null,
+                    status: 200,
+                    statusText: 'ok'
+                })
+            },
         },
         mockUser: MOCK_USER,
     });
     const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
-    assertEquals(result.error?.message, "Failed to determine initial process stage.");
+    assertEquals(result.error?.message, "Process template does not have a starting stage defined.");
     assertEquals(result.error?.status, 500);
 });
 
 Deno.test("startSession - Error: Initial stage has no associated system prompt", async () => {
     const mockProjectId = "project-no-prompt";
-    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelCatalogIds: ["model-abc"] };
+    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelIds: ["model-abc"] };
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
-            dialectic_projects: {
-                select: async () => ({ data: [{ id: mockProjectId, user_id: MOCK_USER.id, process_template_id: "proc-template-no-prompt", project_name: 'test', initial_user_prompt: 'test', dialectic_domains: { name: 'test' } }], error: null, status: 200, statusText: 'ok' })
-            },
-            dialectic_stage_transitions: {
+            dialectic_projects: { select: async () => ({ data: [{ id: mockProjectId, user_id: MOCK_USER.id, process_template_id: "proc-template-ok", project_name: 'test', initial_user_prompt: 'test', dialectic_domains: { name: 'test' } }], error: null, status: 200, statusText: 'ok' }) },
+            dialectic_process_templates: {
                 select: async () => ({
-                    data: [{
-                        dialectic_stages: { id: "stage-1", display_name: "hypothesis", system_prompts: [] }
-                    }],
-                    error: null,
-                    status: 200,
-                    statusText: 'ok'
+                    data: [{ id: "proc-template-ok", name: "Test Template", starting_stage_id: 'stage-1' }],
+                    error: null, status: 200, statusText: 'ok'
                 })
+            },
+            dialectic_stages: { select: async () => ({ data: [{ id: 'stage-1', display_name: "Hypothesis", slug: 'hypothesis', system_prompts: [{ id: "p-1", prompt_text: "t" }] }], error: null, status: 200, statusText: 'ok' }) },
+            domain_specific_prompt_overlays: { select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' }) },
+            dialectic_sessions: {
+                insert: async () => ({ data: null, error: { name: 'PostgrestError', message: "Simulated DB error"} as any }),
+                delete: async () => ({ data: null, error: null, status: 204, statusText: 'no content' })
             }
         },
         mockUser: MOCK_USER,
     });
     const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as any, payload, { logger: { info: spy(), error: spy() } as any, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
-    assertEquals(result.error?.message, "Configuration error: Initial stage 'hypothesis' is missing a default prompt.");
+    assertEquals(result.error?.message, "Configuration error: Initial stage 'Hypothesis' is missing a default prompt.");
     assertEquals(result.error?.status, 500);
 });
 
 Deno.test("startSession - Error: Database error on session insertion", async () => {
     const mockProjectId = "project-insert-fail";
-    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelCatalogIds: ["model-abc"] };
+    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelIds: ["model-abc"] };
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
             dialectic_projects: { select: async () => ({ data: [{ id: mockProjectId, user_id: MOCK_USER.id, process_template_id: "proc-template-ok", project_name: 'test', initial_user_prompt: 'test', dialectic_domains: { name: 'test' } }], error: null, status: 200, statusText: 'ok' }) },
-            dialectic_stage_transitions: { select: async () => ({ data: [{ dialectic_stages: { id: "stage-1", display_name: "hypothesis", system_prompts: [{ id: "p-1", prompt_text: "t" }] } }], error: null, status: 200, statusText: 'ok' }) },
-            dialectic_stages: { select: async () => ({ data: [{ id: 'stage-1', slug: 'hypothesis' }], error: null, status: 200, statusText: 'ok' }) },
+            dialectic_process_templates: {
+                select: async () => ({
+                    data: [{ id: "proc-template-ok", name: "Test Template", starting_stage_id: 'stage-1' }],
+                    error: null, status: 200, statusText: 'ok'
+                })
+            },
+            dialectic_stages: { select: async () => ({ data: [{ id: 'stage-1', display_name: "Hypothesis", slug: 'hypothesis', default_system_prompt_id: 'p-1', system_prompts: [{ id: "p-1", prompt_text: "t" }] }], error: null, status: 200, statusText: 'ok' }) },
+            system_prompts: { select: async () => ({ data: [{id: 'p-1', prompt_text: 'test prompt'}], error: null, status: 200, statusText: 'ok' }) },
             domain_specific_prompt_overlays: { select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' }) },
             dialectic_sessions: {
                 insert: async () => ({ data: null, error: { name: 'PostgrestError', message: "Simulated DB error"} as any }),
@@ -137,7 +148,7 @@ Deno.test("startSession - Error: Database error on session insertion", async () 
 Deno.test("startSession - Error: Fails to upload user prompt and cleans up session", async () => {
     const mockProjectId = "project-upload-fail";
     const mockNewSessionId = "session-to-be-deleted";
-    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelCatalogIds: ["model-abc"] };
+    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelIds: ["model-abc"] };
     
     const assembleSpy = spy(() => Promise.resolve("Assembled prompt content for error case"));
     const assemblerStub = stub(promptAssembler.PromptAssembler.prototype, "assemble", assembleSpy);
@@ -162,11 +173,17 @@ Deno.test("startSession - Error: Fails to upload user prompt and cleans up sessi
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
             dialectic_projects: { select: async () => ({ data: [{ id: mockProjectId, user_id: MOCK_USER.id, project_name: 'test', initial_user_prompt: 'test', dialectic_domains: { name: 'test' }, selected_domain_id: 'd-1', process_template_id: "proc-template-ok" }], error: null, status: 200, statusText: 'ok' }) },
-            dialectic_stage_transitions: { select: async () => ({ data: [{ dialectic_stages: { id: "stage-1", display_name: "hypothesis", system_prompts: [{ id: "p-1", prompt_text: "t" }] } }], error: null, status: 200, statusText: 'ok' }) },
-            dialectic_stages: { select: async () => ({ data: [{ id: 'stage-1', slug: 'hypothesis', display_name: "Hypothesis Stage" }], error: null, status: 200, statusText: 'ok' }) },
+            dialectic_process_templates: {
+                select: async () => ({
+                    data: [{ id: "proc-template-ok", name: "Test Template", starting_stage_id: 'stage-1' }],
+                    error: null, status: 200, statusText: 'ok'
+                })
+            },
+            dialectic_stages: { select: async () => ({ data: [{ id: 'stage-1', slug: 'hypothesis', display_name: "Hypothesis Stage", default_system_prompt_id: 'p-1', system_prompts: [{ id: "p-1", prompt_text: "t" }] }], error: null, status: 200, statusText: 'ok' }) },
+            system_prompts: { select: async () => ({ data: [{ id: 'p-1', prompt_text: 'test prompt' }], error: null, status: 200, statusText: 'ok' }) },
             domain_specific_prompt_overlays: { select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' }) },
             dialectic_sessions: {
-                insert: async () => ({ data: [{ id: mockNewSessionId, project_id: mockProjectId, current_stage_id: 'stage-1', iteration_count: 1, selected_model_catalog_ids: ['model-abc'] }], error: null, status: 201, statusText: 'created' }),
+                insert: async () => ({ data: [{ id: mockNewSessionId, project_id: mockProjectId, current_stage_id: 'stage-1', iteration_count: 1, selected_model_ids: ['model-abc'] }], error: null, status: 201, statusText: 'created' }),
                 delete: spiedSessionDeleteFn // Use the spied function here
             }
         },

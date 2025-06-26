@@ -9,7 +9,7 @@ export async function handleUpdateSessionModels(
   payload: UpdateSessionModelsPayload,
   userId: string,
 ): Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }> {
-  const { sessionId, selectedModelCatalogIds } = payload;
+  const { sessionId, selectedModelIds } = payload;
 
   logger.info(`[handleUpdateSessionModels] Attempting to update models for session ${sessionId} by user ${userId}.`, { payload });
 
@@ -53,7 +53,7 @@ export async function handleUpdateSessionModels(
   // Proceed with the update
   const { data: updatedSession, error: updateError } = await dbClient
     .from('dialectic_sessions')
-    .update({ selected_model_catalog_ids: selectedModelCatalogIds })
+    .update({ selected_model_ids: selectedModelIds })
     .eq('id', sessionId)
     .select(
       `
@@ -62,7 +62,7 @@ export async function handleUpdateSessionModels(
       session_description,
       user_input_reference_url,
       iteration_count,
-      selected_model_catalog_ids,
+      selected_model_ids,
       status,
       associated_chat_id,
       current_stage_id,

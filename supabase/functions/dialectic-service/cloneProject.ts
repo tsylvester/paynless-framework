@@ -314,7 +314,7 @@ export async function cloneProject(
                     project_id: actualClonedProjectId!,
                     session_description: originalSession.session_description ?? undefined,
                     iteration_count: originalSession.iteration_count,
-                    selected_model_catalog_ids: originalSession.selected_model_catalog_ids ?? undefined,
+                    selected_model_ids: originalSession.selected_model_ids ?? undefined,
                     user_input_reference_url: originalSession.user_input_reference_url ?? undefined,
                     current_stage_id: originalSession.current_stage_id,
                     status: originalSession.status,

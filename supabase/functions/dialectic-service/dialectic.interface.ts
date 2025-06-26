@@ -6,7 +6,8 @@ import {
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
 import type { Logger } from '../_shared/logger.ts';
 import type { IFileManager } from '../_shared/types/file_manager.types.ts';
-
+import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
+import type { DeleteStorageResult } from '../_shared/supabase_storage_utils.ts';
 
 export interface AIModelCatalogEntry {
     id: string;
@@ -79,7 +80,7 @@ export interface DialecticSession {
   session_description: string | null;
   user_input_reference_url: string | null;
   iteration_count: number;
-  selected_model_catalog_ids: string[] | null;
+  selected_model_ids: string[] | null;
   status: string | null;
   associated_chat_id: string | null;
   current_stage_id: string | null;
@@ -224,13 +225,23 @@ export interface UnifiedAIResponse {
 
 export type DialecticStage = Database['public']['Tables']['dialectic_stages']['Row'];
 
+
+export interface GenerateContributionsDeps {
+  callUnifiedAIModel: (modelId: string, prompt: string, chatId: string | null | undefined, authToken: string, options?: CallUnifiedAIModelOptions) => Promise<UnifiedAIResponse>;
+  downloadFromStorage: typeof downloadFromStorage;
+  getExtensionFromMimeType: typeof getExtensionFromMimeType;
+  logger: ILogger;
+  randomUUID: () => string;
+  fileManager: IFileManager;
+  deleteFromStorage: (path: string) => Promise<DeleteStorageResult>;
+}
 export interface GenerateContributionsPayload {
   sessionId: string;
   projectId: string;
   stageSlug?: DialecticStage['slug'];
   iterationNumber?: number;
   chatId?: string | null;
-  selectedModelCatalogIds: string[];
+  selectedModelIds: string[];
   walletId?: string;
 }
 

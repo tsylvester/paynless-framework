@@ -74,7 +74,7 @@ export class PromptAssembler {
 
         dynamicContextVariables.user_objective = project.project_name;
         dynamicContextVariables.domain = project.dialectic_domains.name;
-        dynamicContextVariables.agent_count = session.selected_model_catalog_ids?.length ?? 1;
+        dynamicContextVariables.agent_count = session.selected_model_ids?.length ?? 1;
         dynamicContextVariables.initial_project_context = projectInitialUserPrompt;
         
         dynamicContextVariables.prior_stage_ai_outputs = priorStageContributions;

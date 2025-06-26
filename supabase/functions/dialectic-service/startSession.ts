@@ -35,7 +35,7 @@ export async function startSession(
 
     log.info(`[startSession] Function started for user ${user.id} with payload projectId: ${payload.projectId}`);
 
-    const { projectId, originatingChatId, selectedModelCatalogIds, sessionDescription } = payload;
+    const { projectId, originatingChatId, selectedModelIds, sessionDescription } = payload;
     const userId = user.id;
 
     const { data: project, error: projectError } = await dbClient
@@ -109,39 +109,66 @@ export async function startSession(
         defaultSystemPrompt = prompt;
 
     } else {
-        // Fallback to entry point logic if no slug is provided
-        log.info(`[startSession] No stage slug provided, finding entry point for template: ${project.process_template_id}`);
+        // Use project.process_template_id to find the template, then its starting_stage_id
+        log.info(`[startSession] No stage slug provided. Looking up starting stage for project template ID: ${project.process_template_id}`);
         
-        type EntryPointResponse = {
-            dialectic_stages: {
-                id: string;
-                display_name: string;
-                system_prompts: {
-                    id: string;
-                    prompt_text: string;
-                }[] | null;
-            } | null;
+        if (!project.process_template_id) {
+            log.error(`[startSession] Project ${project.id} is missing a 'process_template_id'. Cannot determine starting stage.`);
+            return { error: { message: "Project is not configured with a process template.", status: 400 } };
         }
 
-        const { data: entryPoint, error: entryPointError } = await dbClient
-            .from('dialectic_stage_transitions')
-            .select('dialectic_stages!to_stage_id(id, display_name, system_prompts(id, prompt_text))')
-            .eq('process_template_id', project.process_template_id)
-            .eq('is_entry_point', true)
-            .single<EntryPointResponse>();
+        // Fetch the process template to get its starting_stage_id
+        const { data: processTemplate, error: templateError } = await dbClient
+            .from('dialectic_process_templates')
+            .select('id, name, starting_stage_id')
+            .eq('id', project.process_template_id)
+            .single();
 
-        if (entryPointError || !entryPoint || !entryPoint.dialectic_stages) {
-            log.error("[startSession] Could not find an entry point stage for the project's process template.", { processTemplateId: project.process_template_id, dbError: entryPointError });
-            return { error: { message: "Failed to determine initial process stage.", status: 500 } };
+        if (templateError || !processTemplate) {
+            log.error("[startSession] Error fetching process template or template not found.", { processTemplateId: project.process_template_id, dbError: templateError });
+            return { error: { message: "Process template not found.", status: templateError?.code === 'PGRST116' ? 404 : 500 } };
         }
-        const stage = entryPoint.dialectic_stages;
-        if (!stage.system_prompts || stage.system_prompts.length === 0) {
-             log.error(`[startSession] Entry point stage '${stage.display_name}' has no associated system prompt.`, { stageId: stage.id });
-             return { error: { message: `Configuration error: Initial stage '${stage.display_name}' is missing a default prompt.`, status: 500 } };
+
+        if (!processTemplate.starting_stage_id) {
+            log.error(`[startSession] Process template ${processTemplate.id} ('${processTemplate.name}') does not have a 'starting_stage_id' defined.`);
+            return { error: { message: "Process template does not have a starting stage defined.", status: 500 } };
         }
-        initialStageId = stage.id;
-        initialStageName = stage.display_name;
-        defaultSystemPrompt = stage.system_prompts[0];
+        
+        const actualStartingStageId = processTemplate.starting_stage_id;
+        log.info(`[startSession] Template's starting_stage_id is: ${actualStartingStageId}`);
+
+        // Fetch the stage details using the starting_stage_id from the template
+        const { data: stageData, error: stageError } = await dbClient
+            .from('dialectic_stages')
+            .select('id, display_name, default_system_prompt_id')
+            .eq('id', actualStartingStageId)
+            .single();
+
+        if (stageError || !stageData) {
+            log.error("[startSession] Could not find the starting stage defined by the process template.", { startingStageId: actualStartingStageId, dbError: stageError });
+            return { error: { message: "Failed to find the initial stage specified by the process template.", status: 500 } };
+        }
+
+        if (!stageData.default_system_prompt_id) {
+            log.error(`[startSession] Starting stage '${stageData.display_name}' (ID: ${stageData.id}) is missing a default_system_prompt_id.`);
+            return { error: { message: `Configuration error: Initial stage '${stageData.display_name}' is missing a default prompt.`, status: 500 } };
+        }
+
+        // Fetch the system prompt using the default_system_prompt_id from the stage
+        const { data: prompt, error: promptError } = await dbClient
+            .from('system_prompts')
+            .select('id, prompt_text')
+            .eq('id', stageData.default_system_prompt_id)
+            .single();
+
+        if (promptError || !prompt) {
+             log.error(`[startSession] Could not find system prompt with ID from starting stage.`, { promptId: stageData.default_system_prompt_id, dbError: promptError });
+             return { error: { message: `Configuration error: Default prompt for initial stage '${stageData.display_name}' not found.`, status: 500 } };
+        }
+        
+        initialStageId = stageData.id;
+        initialStageName = stageData.display_name;
+        defaultSystemPrompt = prompt;
     }
     
     if (!initialStageId || !initialStageName || !defaultSystemPrompt) {
@@ -217,7 +244,7 @@ export async function startSession(
             current_stage_id: initialStageId,
             status: initialSessionStatus,
             iteration_count: 1,
-            selected_model_catalog_ids: selectedModelCatalogIds ?? [],
+            selected_model_ids: selectedModelIds ?? [],
             session_description: sessionDescription ?? `Session for ${project.project_name} - ${initialStageName}`,
             associated_chat_id: originatingChatId,
         })

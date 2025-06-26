@@ -57,7 +57,7 @@ export function DialecticProjectDetailsPage() {
     }
     const result = await startDialecticSession({
       projectId: project.id,
-      selectedModelCatalogIds: [],
+      selectedModelIds: [],
       stageSlug: initialStage.slug,
     });
 

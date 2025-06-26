@@ -3,34 +3,19 @@ import {
     GenerateContributionsPayload, 
     GenerateContributionsSuccessResponse, 
     SelectedAiProvider,
-    UnifiedAIResponse,
-    CallUnifiedAIModelOptions,
     FailedAttemptError,
     DialecticContribution,
   } from "./dialectic.interface.ts";
-  import { downloadFromStorage, deleteFromStorage } from "../_shared/supabase_storage_utils.ts";
-  import { getExtensionFromMimeType } from "../_shared/path_utils.ts";
   import type { Database } from "../types_db.ts";
-  import { callUnifiedAIModel } from "./callModel.ts";
   import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
-  import type { ILogger } from "../_shared/types.ts";
   import type { PostgrestError } from '@supabase/supabase-js';
-  import { FileManagerService } from "../_shared/services/file_manager.ts";
-  import type { IFileManager, PathContext, UploadContext } from "../_shared/types/file_manager.types.ts";
-  import { logger } from "../_shared/logger.ts";
+  import type { PathContext, UploadContext } from "../_shared/types/file_manager.types.ts";
+  import { GenerateContributionsDeps } from "./dialectic.interface.ts";
 
   console.log("generateContribution function started");
   
   // Define Dependencies Interface
-  export interface GenerateContributionsDeps {
-    callUnifiedAIModel: (modelId: string, prompt: string, chatId: string | null | undefined, authToken: string, options?: CallUnifiedAIModelOptions) => Promise<UnifiedAIResponse>;
-    downloadFromStorage: typeof downloadFromStorage;
-    getExtensionFromMimeType: typeof getExtensionFromMimeType;
-    logger: ILogger;
-    randomUUID: () => string;
-    fileManager: IFileManager;
-    deleteFromStorage: typeof deleteFromStorage;
-  }
+
   
 export async function generateContributions(
     dbClient: SupabaseClient<Database>,
@@ -38,7 +23,6 @@ export async function generateContributions(
     authToken: string, 
     deps: GenerateContributionsDeps
   ): Promise<{ success: boolean; data?: GenerateContributionsSuccessResponse; error?: { message: string; status?: number; details?: string | FailedAttemptError[]; code?: string } }> {
-    const BUCKET_NAME = 'dialectic-contributions';
 
     const { sessionId, iterationNumber, stageSlug } = payload;
     if (!stageSlug) {
@@ -104,8 +88,8 @@ export async function generateContributions(
       }
 
       // Moved: Check if models are selected for the session BEFORE fetching resources
-      if (!sessionDetails.selected_model_catalog_ids || sessionDetails.selected_model_catalog_ids.length === 0) {
-        deps.logger.error(`[generateContributions] No models selected for session ${sessionId} (selected_model_catalog_ids is null or empty).`);
+      if (!sessionDetails.selected_model_ids || sessionDetails.selected_model_ids.length === 0) {
+        deps.logger.error(`[generateContributions] No models selected for session ${sessionId} (selected_model_ids is null or empty).`);
         return { success: false, error: { message: "No models selected for this session.", status: 400, code: 'NO_MODELS_SELECTED' } };
       }
   
@@ -186,7 +170,7 @@ export async function generateContributions(
       const failedContributionAttempts: FailedAttemptError[] = [];
   
   
-      for (const modelCatalogId of sessionDetails.selected_model_catalog_ids) {
+      for (const modelCatalogId of sessionDetails.selected_model_ids) {
         // Fetch AI provider details for this modelCatalogId
         const { data: providerData, error: providerError } = await dbClient
           .from('ai_providers')
@@ -312,7 +296,7 @@ export async function generateContributions(
           if (tempRawPathForCatch) { filesToClean.push(tempRawPathForCatch); }
           
           if (filesToClean.length > 0) {
-            const { error: deleteError } = await deps.deleteFromStorage(dbClient, BUCKET_NAME, filesToClean);
+            const { error: deleteError } = await deps.deleteFromStorage(filesToClean[0]);
             if (deleteError) {
               deps.logger.warn(`[generateContributions] Failed to clean up storage for ${modelIdentifier}. Files: ${filesToClean.join(', ')}`, { error: deleteError });
             } else {
@@ -333,7 +317,7 @@ export async function generateContributions(
   
       deps.logger.info(`[generateContributions] Finished processing all models for session ${sessionId}`, { successful: successfulContributions.length, failed: failedContributionAttempts.length });
   
-      if (successfulContributions.length === 0 && sessionDetails.selected_model_catalog_ids.length > 0) { // Check if models were supposed to run
+      if (successfulContributions.length === 0 && sessionDetails.selected_model_ids.length > 0) { // Check if models were supposed to run
         deps.logger.error(`[generateContributions] All models failed to generate contributions for session ${sessionId}`, { errors: failedContributionAttempts });
         // Update session status to indicate failure
         const failedStatus = `${stage.slug}_generation_failed`;

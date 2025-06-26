@@ -1,12 +1,9 @@
-import { assertEquals, assertExists, assertObjectMatch, assertRejects, assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
+import { assertEquals, assertExists, assertObjectMatch, assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { spy, stub, type Stub, returnsNext } from "jsr:@std/testing@0.225.1/mock";
 import { generateContributions } from "./generateContribution.ts";
 import { 
     type DialecticStage,
     type GenerateContributionsPayload, 
-    type GenerateContributionsSuccessResponse,
-    type DialecticContribution,
-    type CallUnifiedAIModelOptions,
     type UnifiedAIResponse,
     FailedAttemptError,
 } from "./dialectic.interface.ts";
@@ -14,11 +11,11 @@ import type { Database } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
 import type { 
     UploadStorageResult, 
-    DeleteStorageResult,
     DownloadStorageResult
 } from "../_shared/supabase_storage_utils.ts";
-import * as pathUtilsModule from "../_shared/path_utils.ts";
 import { createMockSupabaseClient, type MockSupabaseClientSetup } from "../_shared/supabase.mock.ts";
+import { MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
+import type { UploadContext } from '../_shared/types/file_manager.types.ts';
 
 const mockThesisStage: DialecticStage = {
     id: 'stage-thesis',
@@ -48,6 +45,7 @@ const mockSynthesisStage: DialecticStage = {
 // const loggerSpyWarn = spy(logger, 'warn');
 
 Deno.test("generateContributions - Happy Path (Single Model, Synthesis Stage)", async () => {
+    const mockFileManager = new MockFileManagerService();
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
@@ -60,7 +58,7 @@ Deno.test("generateContributions - Happy Path (Single Model, Synthesis Stage)", 
     const mockStageSlug = mockSynthesisStage;
     const mockSeedPrompt = "This is the seed prompt for the synthesis stage.";
     const mockModelProviderId = "test-ai-provider-id";
-    const mockApiIdentifier = "test-api-identifier";
+    const mockApiIdentifier = "testprovider-testmodel";
     const mockProviderName = "TestProvider";
     const mockModelName = "TestModel";
     const mockContributionId = "new-contribution-uuid";
@@ -78,13 +76,67 @@ Deno.test("generateContributions - Happy Path (Single Model, Synthesis Stage)", 
         stageSlug: mockStageSlug.slug,
         iterationNumber: mockIterationNumber,
         chatId: mockChatId,
+        projectId: mockProjectId,
+        selectedModelIds: [mockModelProviderId],
     };
+
+    const mockSuccessfulContributionRecord: Database['public']['Tables']['dialectic_contributions']['Row'] = {
+        id: mockContributionId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        session_id: mockSessionId,
+        model_id: mockModelProviderId,
+        model_name: mockModelName,
+        stage: mockStageSlug.slug,
+        iteration_number: mockIterationNumber,
+        storage_path: mockContentStoragePath,
+        raw_response_storage_path: mockRawResponseStoragePath,
+        seed_prompt_url: mockSeedPromptPath,
+        user_id: "test-user-id",
+        citations: null,
+        contribution_type: null,
+        edit_version: 1,
+        error: null,
+        is_latest_edit: true,
+        original_model_contribution_id: null,
+        prompt_template_id_used: null,
+        target_contribution_id: null,
+        tokens_used_input: 10,
+        tokens_used_output: 20,
+        processing_time_ms: 1000,
+        file_name: 'synthesis.md',
+        mime_type: 'text/markdown',
+        size_bytes: mockFileSize,
+        storage_bucket: 'dialectic-contributions',
+    };
+
+    mockFileManager.setUploadAndRegisterFileResponse(mockSuccessfulContributionRecord, null);
 
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(mockChatId, {
         genericMockResults: {
             'dialectic_stages': {
                 select: {
                     data: [mockSynthesisStage],
+                }
+            },
+            'dialectic_projects': {
+                select: {
+                    data: [{ user_id: 'test-user-id' }]
+                }
+            },
+            'dialectic_project_resources': {
+                select: {
+                    data: [{
+                        storage_bucket: 'dialectic-contributions',
+                        storage_path: `projects/${mockProjectId}/sessions/${mockSessionId}/iteration_${mockIterationNumber}/${mockStageSlug.slug}`,
+                        file_name: 'seed_prompt.md',
+                        resource_description: JSON.stringify({
+                            type: 'seed_prompt',
+                            session_id: mockSessionId,
+                            stage_slug: mockStageSlug.slug,
+                            iteration: mockIterationNumber
+                        })
+                    }]
                 }
             },
             'dialectic_sessions': {
@@ -94,7 +146,7 @@ Deno.test("generateContributions - Happy Path (Single Model, Synthesis Stage)", 
                         project_id: mockProjectId,
                         status: `pending_${mockStageSlug.slug}`,
                         associated_chat_id: mockChatId,
-                        selected_model_catalog_ids: [mockModelProviderId],
+                        selected_model_ids: [mockModelProviderId],
                     }],
                 },
                 update: { data: [{ id: mockSessionId, status: `${mockStageSlug.slug}_generation_complete` }] }
@@ -134,13 +186,12 @@ Deno.test("generateContributions - Happy Path (Single Model, Synthesis Stage)", 
             mockAuthToken,
             {
                 callUnifiedAIModel: mockCallUnifiedAIModel,
-                uploadToStorage: mockUploadToStorage as any,
                 downloadFromStorage: mockDownloadFromStorage,
-                getFileMetadata: mockGetFileMetadata,
                 deleteFromStorage: spy(async () => await Promise.resolve({ data: [], error: null })),
                 getExtensionFromMimeType: spy(() => mockFileExtension),
                 logger: logger,
-                randomUUID: spy(() => mockContributionId)
+                randomUUID: spy(() => mockContributionId),
+                fileManager: mockFileManager,
             }
         );
 
@@ -150,20 +201,28 @@ Deno.test("generateContributions - Happy Path (Single Model, Synthesis Stage)", 
         assertEquals(result.data.contributions[0].id, mockContributionId);
         assertEquals(result.data.status, `${mockStageSlug.slug}_generation_complete`);
 
-        const contributionInsertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_contributions', 'insert');
-        assertEquals(contributionInsertSpy?.callCount, 1);
-        const insertedData = contributionInsertSpy?.callsArgs[0][0] as unknown as Database['public']['Tables']['dialectic_contributions']['Insert'];
-        assertObjectMatch(insertedData, {
-            seed_prompt_url: mockSeedPromptPath,
-            stage: mockStageSlug.slug,
-            iteration_number: mockIterationNumber,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
+        const uploadSpy = mockFileManager.uploadAndRegisterFile as unknown as Stub;
+        assertEquals(uploadSpy.calls.length, 1);
+        const uploadCallArgs = (uploadSpy.calls[0].args[0] as unknown as UploadContext);
+        
+        assertObjectMatch(uploadCallArgs.pathContext, {
+            projectId: mockProjectId,
+            sessionId: mockSessionId,
+            stageSlug: mockStageSlug.slug,
+            iteration: mockIterationNumber,
+            fileType: 'model_contribution_main',
+            modelSlug: `${mockProviderName}-${mockModelName}`.toLowerCase().replace(/\s+/g, '-'),
         });
 
+        assertObjectMatch(uploadCallArgs.contributionMetadata as object, {
+            modelIdUsed: mockModelProviderId,
+            modelNameDisplay: mockModelName,
+            iterationNumber: mockIterationNumber,
+            seedPromptStoragePath: mockSeedPromptPath,
+        });
+        
         const sessionUpdateSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_sessions', 'update');
-        assertEquals(sessionUpdateSpy?.callCount, 1);
+        assertEquals(sessionUpdateSpy?.callsArgs.length, 1);
         assertObjectMatch(sessionUpdateSpy?.callsArgs[0][0] as any, { status: `${mockStageSlug.slug}_generation_complete` });
 
     } finally {
@@ -175,6 +234,7 @@ Deno.test("generateContributions - Happy Path (Single Model, Synthesis Stage)", 
 });
 
 Deno.test("generateContributions - Multiple Models (some success, some fail)", async () => {
+    const mockFileManager = new MockFileManagerService();
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
@@ -213,13 +273,72 @@ Deno.test("generateContributions - Multiple Models (some success, some fail)", a
         stageSlug: mockThesisStage.slug,
         iterationNumber: 1,
         chatId: mockChatId,
+        projectId: mockProjectId,
+        selectedModelIds: [mockModelProviderId1, mockModelProviderId2, mockModelProviderId3],
     };
+
+    // Setup MockFileManager to return success for the first model, and an error for the third.
+    const successfulRecord: Database['public']['Tables']['dialectic_contributions']['Row'] = {
+        id: mockContributionId1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        session_id: mockSessionId,
+        model_id: mockModelProviderId1,
+        model_name: mockModelName1,
+        stage: mockThesisStage.slug,
+        iteration_number: 1,
+        storage_path: 'path/to/successful/content.md',
+        raw_response_storage_path: 'path/to/successful/raw_response.json',
+        seed_prompt_url: 'path/to/successful/seed_prompt.md',
+        user_id: "test-user-id-multi",
+        citations: null,
+        contribution_type: null,
+        edit_version: 1,
+        error: null,
+        is_latest_edit: true,
+        original_model_contribution_id: null,
+        prompt_template_id_used: null,
+        target_contribution_id: null,
+        tokens_used_input: 10,
+        tokens_used_output: 20,
+        processing_time_ms: 1000,
+        file_name: 'thesis.md',
+        mime_type: 'text/markdown',
+        size_bytes: 100,
+        storage_bucket: 'dialectic-contributions',
+    };
+    
+    const uploadResponses = [
+        Promise.resolve({ record: successfulRecord, error: null }),
+        Promise.resolve({ record: null, error: { message: 'Forced file manager error for upload test' } })
+    ];
+    mockFileManager.uploadAndRegisterFile = spy(returnsNext(uploadResponses));
 
     const mockSupabase = createMockSupabaseClient(mockChatId, {
         genericMockResults: {
             'dialectic_stages': {
                 select: {
                     data: [mockThesisStage],
+                }
+            },
+            'dialectic_projects': {
+                select: {
+                    data: [{ user_id: 'test-user-id-multi' }]
+                }
+            },
+            'dialectic_project_resources': {
+                select: {
+                    data: [{
+                        storage_bucket: 'dialectic-contributions',
+                        storage_path: `projects/${mockProjectId}/sessions/${mockSessionId}/iteration_1/thesis`,
+                        file_name: 'seed_prompt.md',
+                        resource_description: JSON.stringify({
+                            type: 'seed_prompt',
+                            session_id: mockSessionId,
+                            stage_slug: 'thesis',
+                            iteration: 1,
+                        })
+                    }]
                 }
             },
             'dialectic_sessions': {
@@ -229,7 +348,7 @@ Deno.test("generateContributions - Multiple Models (some success, some fail)", a
                         project_id: mockProjectId,
                         status: 'pending_thesis',
                         associated_chat_id: mockChatId,
-                        selected_model_catalog_ids: [mockModelProviderId1, mockModelProviderId2, mockModelProviderId3],
+                        selected_model_ids: [mockModelProviderId1, mockModelProviderId2, mockModelProviderId3],
                     }],
                 },
                 update: { data: [{ id: mockSessionId, status: 'thesis_generation_partial' }] }
@@ -262,7 +381,10 @@ Deno.test("generateContributions - Multiple Models (some success, some fail)", a
         if (modelId === mockModelProviderId2) {
             return await Promise.resolve({ content: null, error: "AI failed", errorCode: "AI_CALL_FAILED_M2", inputTokens: 5, outputTokens: 0, processingTimeMs: 50 });
         }
-        return await Promise.resolve({ content: `Content for ${modelId}`, error: null, inputTokens: 10, outputTokens: 20 });
+        if (modelId === mockModelProviderId1) {
+            return await Promise.resolve({ content: mockContent1, error: null, inputTokens: 10, outputTokens: 20, processingTimeMs: 1200 });
+        }
+        return await Promise.resolve({ content: mockContent3, error: null, inputTokens: 15, outputTokens: 25, processingTimeMs: 1500 });
     });
 
     const mockUploadToStorage = spy(async (_db: any, _bucket: string, path: string): Promise<UploadStorageResult> => {
@@ -286,13 +408,12 @@ Deno.test("generateContributions - Multiple Models (some success, some fail)", a
             mockAuthToken,
             {
                 callUnifiedAIModel: mockCallUnifiedAIModel as any,
-                uploadToStorage: mockUploadToStorage as any,
                 downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => await Promise.resolve({ data: new TextEncoder().encode("seed").buffer as ArrayBuffer, error: null })),
-                getFileMetadata: spy(async () => await Promise.resolve({ size: 50, mimeType: 'text/markdown', error: null })),
                 deleteFromStorage: spy(async () => await Promise.resolve({ data: [], error: null })),
                 getExtensionFromMimeType: spy(() => mockFileExtension),
                 logger: logger,
-                randomUUID: uuidSpy as any
+                randomUUID: uuidSpy as any,
+                fileManager: mockFileManager,
             }
         );
 
@@ -301,7 +422,14 @@ Deno.test("generateContributions - Multiple Models (some success, some fail)", a
         assertEquals(result.data.contributions.length, 1);
         assertEquals(result.data.contributions[0].model_id, mockModelProviderId1);
         assertEquals(result.data.errors?.length, 2);
-        assertObjectMatch(result.data, { status: 'thesis_generation_partial' });
+        
+        const aiFailure = result.data.errors?.find(e => e.modelId === mockModelProviderId2);
+        assertExists(aiFailure);
+        assertEquals(aiFailure.message, "AI failed");
+
+        const uploadFailure = result.data.errors?.find(e => e.modelId === mockModelProviderId3);
+        assertExists(uploadFailure);
+        assertEquals(uploadFailure.message, "Forced file manager error for upload test");
 
     } finally {
         localLoggerInfo.restore();
@@ -312,6 +440,7 @@ Deno.test("generateContributions - Multiple Models (some success, some fail)", a
 });
 
 Deno.test("generateContributions - All Models Fail", async () => {
+    const mockFileManager = new MockFileManagerService();
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const localLoggerWarn = spy(logger, 'warn');
@@ -333,7 +462,11 @@ Deno.test("generateContributions - All Models Fail", async () => {
         stageSlug: mockThesisStage.slug,
         iterationNumber: 1,
         chatId: mockChatId,
+        projectId: mockProjectId,
+        selectedModelIds: [mockModels.fail_db.id, mockModels.fail_ai.id, mockModels.fail_upload.id],
     };
+
+    mockFileManager.setUploadAndRegisterFileResponse(null, { message: 'File manager forced error' });
 
     const mockSupabase = createMockSupabaseClient(mockChatId, {
         genericMockResults: {
@@ -342,8 +475,28 @@ Deno.test("generateContributions - All Models Fail", async () => {
                     data: [mockThesisStage],
                 }
             },
+            'dialectic_projects': {
+                select: {
+                    data: [{ user_id: 'test-user-id-all-fail' }]
+                }
+            },
+            'dialectic_project_resources': {
+                select: {
+                    data: [{
+                        storage_bucket: 'dialectic-contributions',
+                        storage_path: `projects/${mockProjectId}/sessions/${mockSessionId}/iteration_1/thesis`,
+                        file_name: 'seed_prompt.md',
+                        resource_description: JSON.stringify({
+                            type: 'seed_prompt',
+                            session_id: mockSessionId,
+                            stage_slug: 'thesis',
+                            iteration: 1,
+                        })
+                    }]
+                }
+            },
             'dialectic_sessions': {
-                select: { data: [{ id: mockSessionId, project_id: mockProjectId, status: 'pending_thesis', associated_chat_id: mockChatId, selected_model_catalog_ids: Object.values(mockModels).map(m => m.id) }] },
+                select: { data: [{ id: mockSessionId, project_id: mockProjectId, status: 'pending_thesis', associated_chat_id: mockChatId, selected_model_ids: Object.values(mockModels).map(m => m.id) }] },
                 update: { data: null, error: new Error("Simulated final status update failure") }
             },
             'ai_providers': {
@@ -354,7 +507,13 @@ Deno.test("generateContributions - All Models Fail", async () => {
                 }
             },
             'dialectic_contributions': {
-                insert: { data: null, error: { message: "DB insert failed for Model 1", code: "DB_INSERT_ERROR_M1" } as any }
+                insert: (state) => {
+                    const modelId = (state.insertData as any)?.model_id;
+                    if (modelId === mockModels.fail_db.id) {
+                        return Promise.resolve({ data: null, error: { message: "DB insert failed for Model 1", code: "DB_INSERT_ERROR_M1" } as any });
+                    }
+                    return Promise.resolve({ data: [{ id: `contrib-uuid-for-${modelId}`, ...(state.insertData as any) }], error: null, count: 1, status: 201, statusText: 'Created' });
+                }
             }
         }
     });
@@ -363,12 +522,18 @@ Deno.test("generateContributions - All Models Fail", async () => {
         if (modelId === mockModels.fail_ai.id) {
             return await Promise.resolve({ content: null, error: "AI failed for Model 2", errorCode: "AI_CALL_FAILED_M2", inputTokens: 5, outputTokens: 0, processingTimeMs: 50 });
         }
-        return await Promise.resolve({ content: `Content for ${modelId}`, error: null, inputTokens: 10, outputTokens: 20 });
+        return await Promise.resolve({
+            content: `Failed content from ${modelId}`,
+            error: null,
+            inputTokens: 5,
+            outputTokens: 5,
+            processingTimeMs: 100
+        });
     });
 
     const mockUploadToStorage = spy(async (_db: any, _bucket: string, path: string): Promise<UploadStorageResult> => {
         if (path.includes(mockModels.fail_upload.contributionId)) {
-            return await Promise.resolve({ error: { name: 'UploadErrorM3', message: "Upload failed for Model 3 content" }, path: null });
+            return await Promise.resolve({ error: { name: 'StorageUploadError', message: 'Failed to upload for Model 3' }, path: null });
         }
         return await Promise.resolve({ error: null, path });
     });
@@ -383,14 +548,13 @@ Deno.test("generateContributions - All Models Fail", async () => {
             mockPayload,
             mockAuthToken,
             {
-                callUnifiedAIModel: mockCallUnifiedAIModel as any,
-                uploadToStorage: mockUploadToStorage as any,
+                callUnifiedAIModel: mockCallUnifiedAIModel,
                 downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => await Promise.resolve({ data: new TextEncoder().encode("seed").buffer as ArrayBuffer, error: null })),
-                getFileMetadata: spy(async () => await Promise.resolve({ size: 50, mimeType: 'text/markdown', error: null })),
                 deleteFromStorage: mockDeleteFromStorage,
                 getExtensionFromMimeType: spy(() => mockFileExtension),
                 logger: logger,
-                randomUUID: uuidSpy as any
+                randomUUID: uuidSpy,
+                fileManager: mockFileManager,
             }
         );
 
@@ -403,7 +567,7 @@ Deno.test("generateContributions - All Models Fail", async () => {
         
         const dbError = details.find(e => e.modelId === mockModels.fail_db.id);
         assertExists(dbError, "DB failure error should be captured");
-        assertEquals(dbError.error, "Failed to insert contribution into database.");
+        assertEquals(dbError.error, "File manager forced error");
 
         const aiError = details.find(e => e.modelId === mockModels.fail_ai.id);
         assertExists(aiError, "AI failure error should be captured");
@@ -411,11 +575,15 @@ Deno.test("generateContributions - All Models Fail", async () => {
 
         const uploadError = details.find(e => e.modelId === mockModels.fail_upload.id);
         assertExists(uploadError, "Upload failure error should be captured");
-        assertEquals(uploadError.error, "Failed to insert contribution into database.");
+        assertEquals(uploadError.error, "File manager forced error");
 
         const deleteSpy = mockDeleteFromStorage as unknown as Stub;
-        assert(deleteSpy.calls.some(c => (c.args[2] as string[]).some(p => p.includes(mockModels.fail_db.contributionId))), "Storage cleanup should be attempted for the DB failure");
+        assertEquals(deleteSpy.calls.length, 0, "Storage cleanup should not be called as FileManager handles it internally now.");
         
+        const sessionUpdateSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_sessions', 'update');
+        assertEquals(sessionUpdateSpy?.callsArgs.length, 1);
+        assertObjectMatch(sessionUpdateSpy?.callsArgs[0][0] as any, { status: 'thesis_generation_failed' });
+
     } finally {
         localLoggerInfo.restore();
         localLoggerError.restore();

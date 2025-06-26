@@ -180,7 +180,7 @@ describe("Edge Function: dialectic-service - Action: getProjectDetails", () => {
         max_iterations: 3, 
         current_stage_id: "stage-uuid-thesis",
         user_input_reference_url: null,
-        selected_model_catalog_ids: ["model-catalog-id-1", "model-catalog-id-2"],
+        selected_model_ids: ["model-catalog-id-1", "model-catalog-id-2"],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })

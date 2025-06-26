@@ -226,7 +226,7 @@ describe("getProjectDetails", () => {
     status: string | null;
     associated_chat_id: string | null;
     current_stage_id: string | null;
-    selected_model_catalog_ids: string[] | null;
+    selected_model_ids: string[] | null;
     user_input_reference_url: string | null;
     dialectic_contributions?: Partial<DialecticContribution>[] | null;
     dialectic_feedback?: Partial<DialecticFeedback>[] | null; // snake_case
@@ -261,7 +261,7 @@ describe("getProjectDetails", () => {
           status: "thesis_complete",
           associated_chat_id: "chat-1",
           current_stage_id: "stage-1",
-          selected_model_catalog_ids: ["model-1"],
+          selected_model_ids: ["model-1"],
           user_input_reference_url: null,
           dialectic_contributions: [
             { 
@@ -289,7 +289,7 @@ describe("getProjectDetails", () => {
           status: "pending_thesis",
           associated_chat_id: "chat-2",
           current_stage_id: "stage-1",
-          selected_model_catalog_ids: ["model-1"],
+          selected_model_ids: ["model-1"],
           user_input_reference_url: null,
           dialectic_contributions: [],
           dialectic_feedback: [],
@@ -300,7 +300,7 @@ describe("getProjectDetails", () => {
           session_description: "Session 3 - Contributions is null",
           iteration_count: 1,
           current_stage_id: "stage-1",
-          selected_model_catalog_ids: ["model-1"],
+          selected_model_ids: ["model-1"],
           user_input_reference_url: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),

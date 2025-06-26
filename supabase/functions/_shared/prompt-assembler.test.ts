@@ -99,7 +99,7 @@ Deno.test("PromptAssembler", async (t) => {
             const session: SessionContext = {
                 id: "sess-123",
                 project_id: "proj-123",
-                selected_model_catalog_ids: ["model-1", "model-2"],
+                selected_model_ids: ["model-1", "model-2"],
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 current_stage_id: 'stage-123',
@@ -246,7 +246,7 @@ Deno.test("PromptAssembler", async (t) => {
             const session: SessionContext = {
                 id: "sess-456",
                 project_id: "proj-456",
-                selected_model_catalog_ids: ["model-alpha"],
+                selected_model_ids: ["model-alpha"],
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 current_stage_id: 'stage-789',
@@ -373,7 +373,7 @@ Deno.test("PromptAssembler", async (t) => {
             const session: SessionContext = {
                 id: "sess-err",
                 project_id: "proj-err",
-                selected_model_catalog_ids: ["model-err"],
+                selected_model_ids: ["model-err"],
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 current_stage_id: 'stage-err',
@@ -468,7 +468,7 @@ Deno.test("PromptAssembler", async (t) => {
             };
 
             const session: SessionContext = {
-                id: "sess-err-prop", project_id: "proj-err-prop", selected_model_catalog_ids: ["model-err-prop"],
+                id: "sess-err-prop", project_id: "proj-err-prop", selected_model_ids: ["model-err-prop"],
                 created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'stage-err-prop',
                 iteration_count: 1, session_description: 'Error prop test session', status: 'pending_thesis',
                 associated_chat_id: null, user_input_reference_url: null

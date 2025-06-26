@@ -30,7 +30,7 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
 
     const payload: StartSessionPayload = {
         projectId: mockProjectId,
-        selectedModelCatalogIds: ["model-1"],
+        selectedModelIds: ["model-1"],
         sessionDescription: mockExplicitSessionDescription
     };
 
@@ -90,20 +90,21 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
                     }], error: null, status: 200, statusText: 'ok'
                 })
             },
-            dialectic_stage_transitions: {
+            dialectic_process_templates: {
                 select: async () => ({
-                    data: [{
-                        dialectic_stages: {
-                            id: mockInitialStageId,
-                            display_name: mockInitialStageName,
-                            system_prompts: [{ id: mockSystemPromptId, prompt_text: mockSystemPromptText }]
-                        }
-                    }], error: null, status: 200, statusText: 'ok'
+                    data: [{ id: mockProcessTemplateId, name: 'Happy Template', starting_stage_id: mockInitialStageId }],
+                    error: null, status: 200, statusText: 'ok'
                 })
             },
             dialectic_stages: {
                 select: async () => ({
-                    data: [{ id: mockInitialStageId, slug: mockInitialStageSlug, display_name: mockInitialStageName }],
+                    data: [{ id: mockInitialStageId, slug: mockInitialStageSlug, display_name: mockInitialStageName, default_system_prompt_id: mockSystemPromptId }],
+                    error: null, status: 200, statusText: 'ok'
+                })
+            },
+            system_prompts: {
+                select: async () => ({
+                    data: [{id: mockSystemPromptId, prompt_text: mockSystemPromptText}],
                     error: null, status: 200, statusText: 'ok'
                 })
             },
@@ -115,7 +116,7 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
                     data: [{
                         id: mockNewSessionId, project_id: mockProjectId, session_description: mockExplicitSessionDescription,
                         status: `pending_${mockInitialStageName}`, iteration_count: 1, associated_chat_id: mockNewChatId,
-                        current_stage_id: mockInitialStageId, selected_model_catalog_ids: payload.selectedModelCatalogIds,
+                        current_stage_id: mockInitialStageId, selected_model_ids: payload.selectedModelIds,
                     }], error: null, status: 201, statusText: 'ok'
                 })
             },
@@ -193,7 +194,7 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
 
     const payload: StartSessionPayload = {
         projectId: mockProjectId,
-        selectedModelCatalogIds: ["model-1"],
+        selectedModelIds: ["model-1"],
     };
 
     const assembleSpyDefault = spy(() => Promise.resolve("Assembled prompt content for default case"));
@@ -248,19 +249,21 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
                     }], error: null, status: 200, statusText: 'ok'
                 })
             },
-            dialectic_stage_transitions: {
+            dialectic_process_templates: {
                 select: async () => ({
-                    data: [{
-                        dialectic_stages: {
-                            id: mockInitialStageId, display_name: mockInitialStageName,
-                            system_prompts: [{ id: mockSystemPromptId, prompt_text: "Default prompt text." }]
-                        }
-                    }], error: null, status: 200, statusText: 'ok'
+                    data: [{ id: mockProcessTemplateId, name: 'Default Template', starting_stage_id: mockInitialStageId }],
+                    error: null, status: 200, statusText: 'ok'
                 })
             },
             dialectic_stages: {
                 select: async () => ({
-                    data: [{ id: mockInitialStageId, slug: mockInitialStageSlug, display_name: mockInitialStageName }],
+                    data: [{ id: mockInitialStageId, slug: mockInitialStageSlug, display_name: mockInitialStageName, default_system_prompt_id: mockSystemPromptId }],
+                    error: null, status: 200, statusText: 'ok'
+                })
+            },
+            system_prompts: {
+                select: async () => ({
+                    data: [{id: mockSystemPromptId, prompt_text: "Default prompt text."}],
                     error: null, status: 200, statusText: 'ok'
                 })
             },
@@ -277,7 +280,7 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
                         iteration_count: 1, 
                         associated_chat_id: mockNewChatId,
                         current_stage_id: mockInitialStageId, 
-                        selected_model_catalog_ids: payload.selectedModelCatalogIds,
+                        selected_model_ids: payload.selectedModelIds,
                     }], error: null, status: 201, statusText: 'ok'
                 })
             },

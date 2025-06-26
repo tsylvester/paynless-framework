@@ -81,7 +81,7 @@ export async function getSessionDetails(
         session_description: sessionFields.session_description,
         user_input_reference_url: sessionFields.user_input_reference_url,
         iteration_count: sessionFields.iteration_count,
-        selected_model_catalog_ids: sessionFields.selected_model_catalog_ids,
+        selected_model_ids: sessionFields.selected_model_ids,
         status: sessionFields.status,
         associated_chat_id: sessionFields.associated_chat_id,
         current_stage_id: sessionFields.current_stage_id,

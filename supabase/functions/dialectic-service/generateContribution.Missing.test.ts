@@ -1,10 +1,11 @@
 import { assertEquals, assertExists, assertObjectMatch, assertRejects, assert, assertStringIncludes } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { spy, stub, type Spy, type Stub } from "jsr:@std/testing@0.225.1/mock";
-import { generateContributions, type GenerateContributionsDeps } from "./generateContribution.ts";
+import { generateContributions } from "./generateContribution.ts";
 import type { 
     GenerateContributionsPayload, 
     UnifiedAIResponse,
-    DialecticStage
+    DialecticStage,
+    GenerateContributionsDeps
 } from "./dialectic.interface.ts";
 import { logger } from "../_shared/logger.ts";
 import { createMockSupabaseClient, type MockPGRSTError, type IMockQueryBuilder } from "../_shared/supabase.mock.ts";
@@ -20,7 +21,7 @@ Deno.test("generateContributions - Project owner details not found", async () =>
     const mockSessionId = "test-session-id-proj-owner-fail";
     const mockProjectId = "project-id-proj-owner-fail";
     const mockStageSlug = 'thesis';
-    const mockPayload: GenerateContributionsPayload = { sessionId: mockSessionId, stageSlug: mockStageSlug, iterationNumber: 1, projectId: mockProjectId, selectedModelCatalogIds: ["m-id-1"] };
+    const mockPayload: GenerateContributionsPayload = { sessionId: mockSessionId, stageSlug: mockStageSlug, iterationNumber: 1, projectId: mockProjectId, selectedModelIds: ["m-id-1"] };
 
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
@@ -41,7 +42,7 @@ Deno.test("generateContributions - Project owner details not found", async () =>
         project_id: mockProjectId,
         status: `pending_${mockStageSlug}`, // Correct status for processing
         associated_chat_id: "any-chat-id-owner-fail",
-        selected_model_catalog_ids: ["m-id-1"], // Models are selected
+        selected_model_ids: ["m-id-1"], // Models are selected
         iteration_count: 0,
     };
     // dialectic_projects fetch will be configured to fail
@@ -137,7 +138,7 @@ Deno.test("generateContributions - Seed prompt download fails", async () => {
         stageSlug: mockStageSlug, 
         iterationNumber: mockIterationNumber, 
         projectId: mockProjectId, 
-        selectedModelCatalogIds: ["m-id-seed-fail"] 
+        selectedModelIds: ["m-id-seed-fail"] 
     };
 
     const localLoggerInfo = spy(logger, 'info');
@@ -159,7 +160,7 @@ Deno.test("generateContributions - Seed prompt download fails", async () => {
         project_id: mockProjectId,
         status: `pending_${mockStageSlug}`,
         associated_chat_id: "any-chat-id-seed-fail",
-        selected_model_catalog_ids: ["m-id-seed-fail"], 
+        selected_model_ids: ["m-id-seed-fail"], 
         iteration_count: mockIterationNumber -1, // Iteration count before this run
     };
     const mockProjectData = { // Project data is needed for project owner ID
@@ -304,7 +305,7 @@ Deno.test("generateContributions - Seed prompt is empty string", async () => {
         stageSlug: mockStageSlug, 
         iterationNumber: mockIterationNumber, 
         projectId: mockProjectId, 
-        selectedModelCatalogIds: ["m-id-empty-prompt"] 
+        selectedModelIds: ["m-id-empty-prompt"] 
     };
 
     const localLoggerInfo = spy(logger, 'info');
@@ -312,7 +313,7 @@ Deno.test("generateContributions - Seed prompt is empty string", async () => {
     const localLoggerWarn = spy(logger, 'warn');
     
     const mockStageData: DialecticStage = { id: 'stage-id-empty', slug: mockStageSlug, display_name: "Thesis", description: "Test", created_at: new Date().toISOString(), default_system_prompt_id: null, expected_output_artifacts: {}, input_artifact_rules: {} };
-    const mockSessionData = { id: mockSessionId, project_id: mockProjectId, status: `pending_${mockStageSlug}`, associated_chat_id: "any-chat-id-empty", selected_model_catalog_ids: ["m-id-empty-prompt"], iteration_count: 0 };
+    const mockSessionData = { id: mockSessionId, project_id: mockProjectId, status: `pending_${mockStageSlug}`, associated_chat_id: "any-chat-id-empty", selected_model_ids: ["m-id-empty-prompt"], iteration_count: 0 };
     const mockProjectData = { id: mockProjectId, user_id: "test-owner-user-id-empty" };
     const mockProjectResourceDataEmpty = { storage_bucket: 'dialectic-private-resources', storage_path: 'path/to/empty_seed.md', file_name: 'empty_seed.md', resource_description: JSON.stringify({ type: "seed_prompt", session_id: mockSessionId, stage_slug: mockStageSlug, iteration: mockIterationNumber }) };
 
@@ -379,7 +380,7 @@ Deno.test("generateContributions - Success with associated_chat_id", async () =>
         stageSlug: mockStageSlug, 
         iterationNumber: mockIterationNumber, 
         projectId: mockProjectId, 
-        selectedModelCatalogIds: [mockModelCatalogId] 
+        selectedModelIds: [mockModelCatalogId] 
     };
 
     const localLoggerInfo = spy(logger, 'info');
@@ -387,7 +388,7 @@ Deno.test("generateContributions - Success with associated_chat_id", async () =>
     const localLoggerWarn = spy(logger, 'warn');
 
     const mockStageData: DialecticStage = { id: 'stage-id-chat', slug: mockStageSlug, display_name: "Chat Stage", description: "Test chat success", created_at: new Date().toISOString(), default_system_prompt_id: null, expected_output_artifacts: {}, input_artifact_rules: {} };
-    const initialMockSessionDataWithChatId = { id: mockSessionId, project_id: mockProjectId, status: `pending_${mockStageSlug}`, associated_chat_id: mockChatId, selected_model_catalog_ids: [mockModelCatalogId], current_stage_slug: mockStageSlug, current_iteration_number: mockIterationNumber, iteration_count: 0 };
+    const initialMockSessionDataWithChatId = { id: mockSessionId, project_id: mockProjectId, status: `pending_${mockStageSlug}`, associated_chat_id: mockChatId, selected_model_ids: [mockModelCatalogId], current_stage_slug: mockStageSlug, current_iteration_number: mockIterationNumber, iteration_count: 0 };
     const mockProjectData = { id: mockProjectId, user_id: "owner-id-chat" };
     const mockAiProviderData = { id: mockModelCatalogId, provider: "mockProvChat", name: "Mock Model Chat Success", api_identifier: "mock-model-chat-api" };
     const mockProjectResourceDataChat = { storage_bucket: 'dialectic-private-resources', storage_path: `projects/${mockProjectId}/sessions/${mockSessionId}/iteration_${mockIterationNumber}/${mockStageSlug}/seed_prompt.md`, file_name: 'seed_prompt.md', resource_description: JSON.stringify({ type: "seed_prompt", session_id: mockSessionId, stage_slug: mockStageSlug, iteration: mockIterationNumber }) };
@@ -530,7 +531,7 @@ Deno.test("generateContributions - No models selected for session", async () => 
     const mockSessionId = "test-session-id-no-models-selected";
     const mockProjectId = "project-id-no-models";
     const mockStageSlug = 'thesis';
-    const mockPayload: GenerateContributionsPayload = { sessionId: mockSessionId, stageSlug: mockStageSlug, iterationNumber: 1, projectId: mockProjectId, selectedModelCatalogIds: [] }; // Empty selected models
+    const mockPayload: GenerateContributionsPayload = { sessionId: mockSessionId, stageSlug: mockStageSlug, iterationNumber: 1, projectId: mockProjectId, selectedModelIds: [] }; // Empty selected models
 
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
@@ -551,7 +552,7 @@ Deno.test("generateContributions - No models selected for session", async () => 
         project_id: mockProjectId,
         status: `pending_${mockStageSlug}`,
         associated_chat_id: "any-chat-id-no-models",
-        selected_model_catalog_ids: [], // Key for this test: no models selected
+        selected_model_ids: [], // Key for this test: no models selected
         iteration_count: 0,
     };
     const mockProjectData = {
@@ -649,7 +650,7 @@ Deno.test("generateContributions - Stage details not found", async () => {
         stageSlug: mockStageSlug, 
         iterationNumber: mockIterationNumber, 
         projectId: mockProjectId, 
-        selectedModelCatalogIds: ["m-id-stage-fail"] 
+        selectedModelIds: ["m-id-stage-fail"] 
     };
 
     const localLoggerInfo = spy(logger, 'info');
@@ -663,7 +664,7 @@ Deno.test("generateContributions - Stage details not found", async () => {
         project_id: mockProjectId,
         status: `pending_some_other_stage`,
         associated_chat_id: "any-chat-id-stage-fail",
-        selected_model_catalog_ids: ["m-id-stage-fail"], 
+        selected_model_ids: ["m-id-stage-fail"], 
         iteration_count: mockIterationNumber -1,
     };
     const mockProjectData = { 
@@ -752,7 +753,7 @@ Deno.test("generateContributions - No AI models selected", async () => {
     const mockSessionId = "test-session-id-no-models-sel";
     const mockProjectId = "project-id-no-models";
     const mockStageSlug = 'thesis';
-    const mockPayload: GenerateContributionsPayload = { sessionId: mockSessionId, stageSlug: mockStageSlug, iterationNumber: 1, projectId: mockProjectId, selectedModelCatalogIds: [] }; // Empty selected models
+    const mockPayload: GenerateContributionsPayload = { sessionId: mockSessionId, stageSlug: mockStageSlug, iterationNumber: 1, projectId: mockProjectId, selectedModelIds: [] }; // Empty selected models
 
     const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
@@ -773,7 +774,7 @@ Deno.test("generateContributions - No AI models selected", async () => {
         project_id: mockProjectId,
         status: `pending_${mockStageSlug}`,
         associated_chat_id: "any-chat-id-no-models",
-        selected_model_catalog_ids: [], // Key for this test: no models selected
+        selected_model_ids: [], // Key for this test: no models selected
         iteration_count: 0,
     };
     const mockProjectData = {
@@ -869,11 +870,11 @@ Deno.test("generateContributions - All models fail (FileManagerService failure)"
     const mockIterationNumber = 1;
     const model1ToFailFMAll = "m1-all-fm-fail";
     const model2ToFailFMAll = "m2-all-fm-fail";
-    const mockPayload: GenerateContributionsPayload = { sessionId: mockSessionId, stageSlug: mockStageSlug, iterationNumber: mockIterationNumber, projectId: mockProjectId, selectedModelCatalogIds: [model1ToFailFMAll, model2ToFailFMAll] };
+    const mockPayload: GenerateContributionsPayload = { sessionId: mockSessionId, stageSlug: mockStageSlug, iterationNumber: mockIterationNumber, projectId: mockProjectId, selectedModelIds: [model1ToFailFMAll, model2ToFailFMAll] };
     const localLoggerError = spy(logger, 'error');
 
     const mockStageData: DialecticStage = { id: 's-all-fm', slug: mockStageSlug, /* ... */ created_at: "now", default_system_prompt_id: null, display_name: "", description: "", expected_output_artifacts: {}, input_artifact_rules: {} };
-    const mockSessionData = { id: mockSessionId, project_id: mockProjectId, status: `pending_${mockStageSlug}`, selected_model_catalog_ids: mockPayload.selectedModelCatalogIds, /* ... */ associated_chat_id: "c-all-fm", current_stage_slug: mockStageSlug, current_iteration_number: mockIterationNumber, iteration_count: 0 };
+    const mockSessionData = { id: mockSessionId, project_id: mockProjectId, status: `pending_${mockStageSlug}`, selected_model_ids: mockPayload.selectedModelIds, /* ... */ associated_chat_id: "c-all-fm", current_stage_slug: mockStageSlug, current_iteration_number: mockIterationNumber, iteration_count: 0 };
     const mockProjectData = { id: mockProjectId, user_id: "u-all-fm" };
     const mockAiProvider1FMAll = { id: model1ToFailFMAll, provider: "p1fm", name: "M1FM_AllFail", api_identifier: "m1fm-all-api" };
     const mockAiProvider2FMAll = { id: model2ToFailFMAll, provider: "p2fm", name: "M2FM_AllFail", api_identifier: "m2fm-all-api" };

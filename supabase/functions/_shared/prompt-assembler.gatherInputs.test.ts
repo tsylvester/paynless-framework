@@ -85,7 +85,7 @@ Deno.test("PromptAssembler", async (t) => {
                 const session: SessionContext = { 
                     id: "s1",
                     project_id: "p1",
-                    selected_model_catalog_ids: ["m1"],
+                    selected_model_ids: ["m1"],
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
                     current_stage_id: 'stage-dummy',
@@ -140,7 +140,7 @@ Deno.test("PromptAssembler", async (t) => {
                 const session: SessionContext = { 
                     id: "s1",
                     project_id: "p1",
-                    selected_model_catalog_ids: ["m1"],
+                    selected_model_ids: ["m1"],
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
                     current_stage_id: 'stage-dummy',
@@ -200,7 +200,7 @@ Deno.test("PromptAssembler", async (t) => {
                 const session: SessionContext = { 
                     id: "s1",
                     project_id: "p1",
-                    selected_model_catalog_ids: ["m1"],
+                    selected_model_ids: ["m1"],
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
                     current_stage_id: 'stage-dummy',
@@ -258,7 +258,7 @@ Deno.test("PromptAssembler", async (t) => {
                 const session: SessionContext = { 
                     id: "s1",
                     project_id: "p1",
-                    selected_model_catalog_ids: ["m1"],
+                    selected_model_ids: ["m1"],
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
                     current_stage_id: 'stage-dummy',
@@ -376,7 +376,7 @@ Deno.test("PromptAssembler", async (t) => {
                 const session: SessionContext = { 
                     id: "s1", 
                     project_id: "p1",
-                    selected_model_catalog_ids: ["model-alpha-id"],
+                    selected_model_ids: ["model-alpha-id"],
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
                     current_stage_id: 'curr-stage',
@@ -479,7 +479,7 @@ Deno.test("PromptAssembler", async (t) => {
                 const session: SessionContext = { 
                     id: sessionId,
                     project_id: projectId,
-                    selected_model_catalog_ids: ["model-beta-id"],
+                    selected_model_ids: ["model-beta-id"],
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
                     current_stage_id: 'curr-stage-fb',
@@ -614,7 +614,7 @@ Deno.test("PromptAssembler", async (t) => {
                 const session: SessionContext = { 
                     id: sessionId,
                     project_id: projectId,
-                    selected_model_catalog_ids: ["model-gamma-id"],
+                    selected_model_ids: ["model-gamma-id"],
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
                     current_stage_id: 'curr-stage-both',
@@ -751,7 +751,7 @@ Deno.test("PromptAssembler", async (t) => {
                 const session: SessionContext = { 
                     id: sessionId,
                     project_id: projectId,
-                    selected_model_catalog_ids: ["model-custom-id"],
+                    selected_model_ids: ["model-custom-id"],
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
                     current_stage_id: 'curr-stage-ch',
@@ -858,7 +858,7 @@ Deno.test("PromptAssembler", async (t) => {
                 const session: SessionContext = { 
                     id: sessionId,
                     project_id: projectId,
-                    selected_model_catalog_ids: ["model-optfb-id"],
+                    selected_model_ids: ["model-optfb-id"],
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
                     current_stage_id: 'curr-stage-opt-fb',
@@ -986,7 +986,7 @@ Deno.test("PromptAssembler", async (t) => {
                 const session: SessionContext = { 
                     id: sessionId,
                     project_id: projectId,
-                    selected_model_catalog_ids: ["model-reqfb-id"],
+                    selected_model_ids: ["model-reqfb-id"],
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
                     current_stage_id: 'curr-stage-req-fb',
@@ -1060,7 +1060,7 @@ Deno.test("PromptAssembler", async (t) => {
                     id: "p-db-err-req", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
                 };
                 const session: SessionContext = { 
-                    id: "s-db-err-req", project_id: "p-db-err-req", selected_model_catalog_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
+                    id: "s-db-err-req", project_id: "p-db-err-req", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
                 }; 
                 const stage: StageContext = {
                     id: "stage-db-err-req", 
@@ -1109,7 +1109,7 @@ Deno.test("PromptAssembler", async (t) => {
                     id: "p-ms-opt", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
                 };
                 const session: SessionContext = { 
-                    id: "s-ms-opt", project_id: "p-ms-opt", selected_model_catalog_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
+                    id: "s-ms-opt", project_id: "p-ms-opt", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
                 }; 
                 const stage: StageContext = {
                     id: "stage-ms-opt", 
@@ -1176,7 +1176,7 @@ Deno.test("PromptAssembler", async (t) => {
                     id: "p-cdl-err-req", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
                 };
                 const session: SessionContext = { 
-                    id: "s-cdl-err-req", project_id: "p-cdl-err-req", selected_model_catalog_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
+                    id: "s-cdl-err-req", project_id: "p-cdl-err-req", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
                 }; 
                 const stage: StageContext = {
                     id: "stage-cdl-err-req", 
@@ -1249,7 +1249,7 @@ Deno.test("PromptAssembler", async (t) => {
                     id: "p-cdl-err-opt", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
                 };
                 const session: SessionContext = { 
-                    id: "s-cdl-err-opt", project_id: "p-cdl-err-opt", selected_model_catalog_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
+                    id: "s-cdl-err-opt", project_id: "p-cdl-err-opt", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
                 }; 
                 const stage: StageContext = {
                     id: "stage-cdl-err-opt", 
@@ -1313,7 +1313,7 @@ Deno.test("PromptAssembler", async (t) => {
                     id: "p-ms-req", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
                 };
                 const session: SessionContext = { 
-                    id: "s-ms-req", project_id: "p-ms-req", selected_model_catalog_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
+                    id: "s-ms-req", project_id: "p-ms-req", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
                 }; 
                 const stage: StageContext = {
                     id: "stage-ms-req", 
@@ -1379,7 +1379,7 @@ Deno.test("PromptAssembler", async (t) => {
                     id: "p-ms-opt", user_id: 'u1', project_name: "Test", initial_user_prompt: "Test", initial_prompt_resource_id: null, selected_domain_id: "d1", dialectic_domains: { name: "Test" }, process_template_id: 'pt1', selected_domain_overlay_id: null, user_domain_overlay_values: null, repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
                 };
                 const session: SessionContext = { 
-                    id: "s-ms-opt", project_id: "p-ms-opt", selected_model_catalog_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
+                    id: "s-ms-opt", project_id: "p-ms-opt", selected_model_ids: ["m1"], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'curr', iteration_count: 1, session_description: 'Test', status: 'pending_thesis', associated_chat_id: null, user_input_reference_url: null
                 }; 
                 const stage: StageContext = {
                     id: "stage-ms-opt", 

@@ -22,7 +22,7 @@ Deno.test("generateContributions - Handles no selected models for session", asyn
         stageSlug: mockStageSlug, 
         iterationNumber: 1, 
         projectId: mockProjectId,
-        selectedModelCatalogIds: [],
+        selectedModelIds: [],
     };
 
     const localLoggerInfo = spy(logger, 'info');
@@ -44,7 +44,7 @@ Deno.test("generateContributions - Handles no selected models for session", asyn
                         project_id: mockProjectId,
                         status: `pending_${mockStageSlug}`,
                         associated_chat_id: "any-chat-id",
-                        selected_model_catalog_ids: [],
+                        selected_model_ids: [],
                     }],
                     error: null,
                 }),
@@ -100,7 +100,7 @@ Deno.test("generateContributions - All selected AI models fail", async () => {
         stageSlug: mockStageSlug, 
         iterationNumber: mockIterationNumber, 
         projectId: mockProjectId,
-        selectedModelCatalogIds: [mockModelCatalogId1, mockModelCatalogId2],
+        selectedModelIds: [mockModelCatalogId1, mockModelCatalogId2],
     };
 
     const localLoggerInfo = spy(logger, 'info');
@@ -134,7 +134,7 @@ Deno.test("generateContributions - All selected AI models fail", async () => {
                         project_id: mockProjectId,
                         status: `pending_${mockStageSlug}`,
                         associated_chat_id: "any-chat-id",
-                        selected_model_catalog_ids: [mockModelCatalogId1, mockModelCatalogId2],
+                        selected_model_ids: [mockModelCatalogId1, mockModelCatalogId2],
                     }],
                     error: null,
                 }),
@@ -226,7 +226,7 @@ Deno.test("generateContributions - AI Provider details fetch fails", async () =>
         stageSlug: mockStageSlug, 
         iterationNumber: mockIterationNumber, 
         projectId: mockProjectId,
-        selectedModelCatalogIds: [mockModelCatalogId],
+        selectedModelIds: [mockModelCatalogId],
     };
 
     const localLoggerInfo = spy(logger, 'info');
@@ -260,7 +260,7 @@ Deno.test("generateContributions - AI Provider details fetch fails", async () =>
                         project_id: mockProjectId,
                         status: `pending_${mockStageSlug}`,
                         associated_chat_id: "any-chat-id",
-                        selected_model_catalog_ids: [mockModelCatalogId],
+                        selected_model_ids: [mockModelCatalogId],
                     }],
                     error: null,
                 }),
@@ -344,7 +344,7 @@ Deno.test("generateContributions - AI model returns no content", async () => {
         stageSlug: mockStageSlug, 
         iterationNumber: mockIterationNumber, 
         projectId: mockProjectId,
-        selectedModelCatalogIds: [mockModelCatalogId],
+        selectedModelIds: [mockModelCatalogId],
     };
 
     const localLoggerInfo = spy(logger, 'info');
@@ -378,7 +378,7 @@ Deno.test("generateContributions - AI model returns no content", async () => {
                         project_id: mockProjectId,
                         status: `pending_${mockStageSlug}`,
                         associated_chat_id: "any-chat-id",
-                        selected_model_catalog_ids: [mockModelCatalogId],
+                        selected_model_ids: [mockModelCatalogId],
                     }],
                     error: null,
                 }),
@@ -461,7 +461,7 @@ Deno.test("generateContributions - Successfully generates one contribution", asy
         stageSlug: mockStageSlug, 
         iterationNumber: mockIterationNumber, 
         projectId: mockProjectId,
-        selectedModelCatalogIds: [mockModelCatalogId],
+        selectedModelIds: [mockModelCatalogId],
     };
 
     const localLoggerInfo = spy(logger, 'info');
@@ -523,7 +523,7 @@ Deno.test("generateContributions - Successfully generates one contribution", asy
                         project_id: mockProjectId,
                         status: `pending_${mockStageSlug}`,
                         associated_chat_id: mockChatId,
-                        selected_model_catalog_ids: [mockModelCatalogId],
+                        selected_model_ids: [mockModelCatalogId],
                     }],
                     error: null,
                 }),

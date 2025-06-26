@@ -25,13 +25,13 @@ Deno.test("handleUpdateSessionModels - Happy Path: Successfully updates models",
 
     const payload: UpdateSessionModelsPayload = {
         sessionId: mockSessionId,
-        selectedModelCatalogIds: updatedModels,
+        selectedModelIds: updatedModels,
     };
 
     const mockSessionBeforeUpdate: Partial<DialecticSession> = {
         id: mockSessionId,
         project_id: mockProjectId,
-        selected_model_catalog_ids: initialModels,
+        selected_model_ids: initialModels,
         // user_id: mockUserId, // Removed: DialecticSession may not have user_id directly
     };
 
@@ -46,7 +46,7 @@ Deno.test("handleUpdateSessionModels - Happy Path: Successfully updates models",
         session_description: "Test Session",
         user_input_reference_url: null,
         iteration_count: 1,
-        selected_model_catalog_ids: updatedModels,
+        selected_model_ids: updatedModels,
         status: "active",
         associated_chat_id: "chat-123",
         current_stage_id: "stage-abc",
@@ -95,7 +95,7 @@ Deno.test("handleUpdateSessionModels - Happy Path: Successfully updates models",
         assertEquals(result.error, undefined, "Error should be undefined on happy path");
         assertEquals(result.status, 200);
         assertObjectMatch(result.data, mockSessionAfterUpdate as any);
-        assertEquals(result.data?.selected_model_catalog_ids, updatedModels);
+        assertEquals(result.data?.selected_model_ids, updatedModels);
 
         const sessionSelectSpies = mockAdminDbClientSetup.spies.getAllQueryBuilderSpies('dialectic_sessions');
         const projectSelectSpies = mockAdminDbClientSetup.spies.getAllQueryBuilderSpies('dialectic_projects');
@@ -121,7 +121,7 @@ Deno.test("handleUpdateSessionModels - Error: Session Not Found", async () => {
     const mockSessionId = "non-existent-session-id";
     const payload: UpdateSessionModelsPayload = {
         sessionId: mockSessionId,
-        selectedModelCatalogIds: ["model-1"],
+        selectedModelIds: ["model-1"],
     };
     const mockUser: User = { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: new Date().toISOString() };
 
@@ -159,13 +159,13 @@ Deno.test("handleUpdateSessionModels - Error: Project Not Found/Forbidden", asyn
     const mockProjectId = "project-impostor-trying-to-access-id";
     const payload: UpdateSessionModelsPayload = {
         sessionId: mockSessionId,
-        selectedModelCatalogIds: ["model-1"],
+        selectedModelIds: ["model-1"],
     };
     const mockUser: User = { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: new Date().toISOString() };
     const mockSessionInstance: DialecticSession = {
         id: mockSessionId, 
         project_id: mockProjectId, 
-        session_description: '', iteration_count:0, selected_model_catalog_ids:[], status:'', created_at:'', updated_at:'',
+        session_description: '', iteration_count:0, selected_model_ids:[], status:'', created_at:'', updated_at:'',
         user_input_reference_url: null,
         associated_chat_id: null,
         current_stage_id: null,
@@ -211,7 +211,7 @@ Deno.test("handleUpdateSessionModels - Error: Project Not Found/Forbidden", asyn
 Deno.test("handleUpdateSessionModels - Error: DB Error on Session Fetch", async () => {
     const mockUserId = "user-db-error-session-fetch-id";
     const mockSessionId = "session-db-error-fetch-id";
-    const payload: UpdateSessionModelsPayload = { sessionId: mockSessionId, selectedModelCatalogIds: ["model-1"] };
+    const payload: UpdateSessionModelsPayload = { sessionId: mockSessionId, selectedModelIds: ["model-1"] };
     const mockUser: User = { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: new Date().toISOString() };
 
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUserId, {
@@ -242,7 +242,7 @@ Deno.test("handleUpdateSessionModels - Error: DB Error on Project Fetch", async 
     const mockUserId = "user-db-error-project-fetch-id";
     const mockSessionId = "session-db-error-project-fetch-id";
     const mockProjectId = "project-for-db-error-fetch-id";
-    const payload: UpdateSessionModelsPayload = { sessionId: mockSessionId, selectedModelCatalogIds: ["model-1"] };
+    const payload: UpdateSessionModelsPayload = { sessionId: mockSessionId, selectedModelIds: ["model-1"] };
     const mockUser: User = { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: new Date().toISOString() };
     const mockSession: Partial<DialecticSession> = { id: mockSessionId, project_id: mockProjectId };
 
@@ -278,7 +278,7 @@ Deno.test("handleUpdateSessionModels - Error: DB Error on Session Update", async
     const mockSessionId = "session-db-error-update-id";
     const mockProjectId = "project-for-db-error-update-id";
     const updatedModels = ["model-new-1"];
-    const payload: UpdateSessionModelsPayload = { sessionId: mockSessionId, selectedModelCatalogIds: updatedModels };
+    const payload: UpdateSessionModelsPayload = { sessionId: mockSessionId, selectedModelIds: updatedModels };
     const mockUser: User = { id: mockUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: new Date().toISOString() };
     const mockSessionBeforeUpdate: Partial<DialecticSession> = { id: mockSessionId, project_id: mockProjectId };
     const mockProject: Partial<DialecticProject> = { id: mockProjectId, user_id: mockUserId };

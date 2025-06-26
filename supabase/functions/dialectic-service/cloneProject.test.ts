@@ -359,7 +359,7 @@ describe("cloneProject", () => {
                 id: originalSessionId1, project_id: originalProjectId, session_description: "First original session",
                 iteration_count: 2, status: "in_progress", current_stage_id: "stage_2_critique",
                 created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-                selected_model_catalog_ids: ["mc_claude_3_opus"], user_input_reference_url: null, associated_chat_id: null,
+                selected_model_ids: ["mc_claude_3_opus"], user_input_reference_url: null, associated_chat_id: null,
             }
         ];
 

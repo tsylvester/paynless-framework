@@ -65,7 +65,7 @@ const mockSession: DialecticSession = {
     session_description: 'A test session',
     user_input_reference_url: null,
     iteration_count: 0,
-    selected_model_catalog_ids: ['model-1'],
+    selected_model_ids: ['model-1'],
     status: 'active',
     associated_chat_id: null,
     current_stage_id: 'stage-1',
@@ -726,7 +726,7 @@ withSupabaseEnv("handleRequest - startSession", async (t) => {
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
 
-        const payload = { projectId, sessionDescription: 'New session', selectedModelCatalogIds: ['model-1'] };
+        const payload = { projectId, sessionDescription: 'New session', selectedModelIds: ['model-1'] };
         const req = createJsonRequest("startSession", payload, mockToken);
         const response = await handleRequest(
           req,
@@ -752,7 +752,7 @@ withSupabaseEnv("handleRequest - startSession", async (t) => {
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
 
-        const payload = { projectId, selectedModelCatalogIds: ['model-1'] };
+        const payload = { projectId, selectedModelIds: ['model-1'] };
         const req = createJsonRequest("startSession", payload, mockToken);
         const response = await handleRequest(
           req,
@@ -1158,15 +1158,15 @@ withSupabaseEnv("handleRequest - fetchProcessTemplate", async (t) => {
 
 withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
     const mockSessionId = 'sess-test-update';
-    const mockSelectedModelCatalogIds = ['model-a', 'model-b'];
+    const mockselectedModelIds = ['model-a', 'model-b'];
     const mockUpdatedSession: DialecticSession = {
         ...mockSession, // Use the global mockSession as a base
         id: mockSessionId,
-        selected_model_catalog_ids: mockSelectedModelCatalogIds,
+        selected_model_ids: mockselectedModelIds,
         updated_at: new Date().toISOString(),
     };
 
-    const payload = { sessionId: mockSessionId, selectedModelCatalogIds: mockSelectedModelCatalogIds };
+    const payload = { sessionId: mockSessionId, selectedModelIds: mockselectedModelIds };
 
     await t.step("should call updateSessionModels and return 200 on success", async () => {
         const updateSpy = spy(() => Promise.resolve({ data: mockUpdatedSession, status: 200 }));
@@ -1184,7 +1184,7 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
         assertEquals(response.status, 200);
         const body = await response.json();
         assertEquals(body.id, mockSessionId);
-        assertEquals(body.selected_model_catalog_ids, mockSelectedModelCatalogIds);
+        assertEquals(body.selected_model_ids, mockselectedModelIds);
         assertEquals(updateSpy.calls.length, 1);
     });
 
@@ -1236,7 +1236,7 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
 
-        const incompletePayload = { selectedModelCatalogIds: mockSelectedModelCatalogIds }; // Missing sessionId
+        const incompletePayload = { selectedModelIds: mockselectedModelIds }; // Missing sessionId
         const req = createJsonRequest("updateSessionModels", incompletePayload, mockToken);
         const reqClone = req.clone(); // Clone the request
 
@@ -1252,7 +1252,7 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
         assertEquals(specificErrorSpy.calls.length, 1); // The mock handler was called
     });
 
-     await t.step("should return 400 if selectedModelCatalogIds is missing from payload", async () => {
+     await t.step("should return 400 if selectedModelIds is missing from payload", async () => {
         const updateSpy = spy(() => Promise.resolve({ data: mockUpdatedSession, status: 200 }));
         const mockHandlers = createMockHandlers({ updateSessionModels: updateSpy as any });
         
@@ -1262,17 +1262,17 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
 
-        const incompletePayload = { sessionId: mockSessionId }; // Missing selectedModelCatalogIds
+        const incompletePayload = { sessionId: mockSessionId }; // Missing selectedModelIds
         const req = createJsonRequest("updateSessionModels", incompletePayload, mockToken);
         
-        const specificErrorSpy = spy(() => Promise.resolve({ error: {message: "selectedModelCatalogIds is required", status: 400, code: "MISSING_PARAM"}, status: 400 }));
+        const specificErrorSpy = spy(() => Promise.resolve({ error: {message: "selectedModelIds is required", status: 400, code: "MISSING_PARAM"}, status: 400 }));
         const specificMockHandlers = createMockHandlers({ updateSessionModels: specificErrorSpy as any });
         
         const specificResponse = await handleRequest(req, specificMockHandlers, mockUserClient as any, mockAdminClient as any);
         
         assertEquals(specificResponse.status, 400);
         const body = await specificResponse.json();
-        assertEquals(body.error, "selectedModelCatalogIds is required");
+        assertEquals(body.error, "selectedModelIds is required");
         assertEquals(specificErrorSpy.calls.length, 1); 
     });
 }); 

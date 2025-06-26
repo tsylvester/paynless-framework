@@ -6,11 +6,6 @@ import {
   setDialecticStateValues,
   resetDialecticStoreMock,
   getDialecticStoreState,
-  selectCurrentProjectDetail,
-  selectIsLoadingProjectDetail,
-  selectProjectDetailError,
-  selectActiveContextStage,
-  selectActiveContextProjectId
 } from '../mocks/dialecticStore.mock';
 import type { DialecticProject, ApiError, DialecticSession, DialecticStage, DialecticProcessTemplate } from '@paynless/types';
 
@@ -83,7 +78,7 @@ const mockSession: DialecticSession = {
     session_description: 'A session for testing.',
     user_input_reference_url: null,
     iteration_count: 1,
-    selected_model_catalog_ids: [],
+    selected_model_ids: [],
     status: 'active',
     associated_chat_id: null,
     current_stage_id: 'stage-1',
@@ -125,10 +120,6 @@ describe('DialecticProjectDetailsPage', () => {
     const urlProjectId = 'url-project-id-001';
 
     it('Scenario 1a: calls fetchDialecticProjectDetails if URL projectId exists and activeContextProjectId differs', () => {
-      selectActiveContextProjectId.mockReturnValue('different-project-id-789');
-      selectCurrentProjectDetail.mockReturnValue(null); // Or some project with 'different-project-id-789'
-      selectIsLoadingProjectDetail.mockReturnValue(false);
-      selectProjectDetailError.mockReturnValue(null);
       setDialecticStateValues({
         activeContextProjectId: 'different-project-id-789',
         currentProjectDetail: null,
@@ -144,10 +135,6 @@ describe('DialecticProjectDetailsPage', () => {
     });
 
     it('Scenario 1b: calls fetchDialecticProjectDetails if URL projectId exists and currentProjectDetail is null (even if activeContextProjectId matches URL)', () => {
-      selectActiveContextProjectId.mockReturnValue(urlProjectId);
-      selectCurrentProjectDetail.mockReturnValue(null);
-      selectIsLoadingProjectDetail.mockReturnValue(false);
-      selectProjectDetailError.mockReturnValue(null);
       setDialecticStateValues({
         activeContextProjectId: urlProjectId,
         currentProjectDetail: null,
@@ -164,10 +151,6 @@ describe('DialecticProjectDetailsPage', () => {
 
     it('Scenario 1c: calls fetchDialecticProjectDetails if URL projectId exists and currentProjectDetail.id differs from URL projectId (even if activeContextProjectId matches URL)', () => {
       const differentProject = { ...mockProject, id: 'another-project-id-456' };
-      selectActiveContextProjectId.mockReturnValue(urlProjectId);
-      selectCurrentProjectDetail.mockReturnValue(differentProject);
-      selectIsLoadingProjectDetail.mockReturnValue(false);
-      selectProjectDetailError.mockReturnValue(null);
       setDialecticStateValues({
         activeContextProjectId: urlProjectId,
         currentProjectDetail: differentProject,
@@ -184,10 +167,6 @@ describe('DialecticProjectDetailsPage', () => {
 
     it('Scenario 2: does NOT call fetchDialecticProjectDetails if URL projectId exists and context is already aligned (project ID and details match)', () => {
       const correctlyAlignedProject = { ...mockProject, id: urlProjectId, project_name: "Correct Project Name" };
-      selectActiveContextProjectId.mockReturnValue(urlProjectId);
-      selectCurrentProjectDetail.mockReturnValue(correctlyAlignedProject);
-      selectIsLoadingProjectDetail.mockReturnValue(false);
-      selectProjectDetailError.mockReturnValue(null);
       setDialecticStateValues({
         activeContextProjectId: urlProjectId,
         currentProjectDetail: correctlyAlignedProject,
@@ -205,10 +184,6 @@ describe('DialecticProjectDetailsPage', () => {
 
   it('displays error message if projectDetailError is present', () => {
     const error: ApiError = { message: 'Failed to load project', code: '404' };
-    selectProjectDetailError.mockReturnValue(error);
-    selectCurrentProjectDetail.mockReturnValue(null);
-    selectIsLoadingProjectDetail.mockReturnValue(false);
-    selectActiveContextProjectId.mockReturnValue(mockProjectIdFromUrl); // Context for URL
     setDialecticStateValues({ 
       projectDetailError: error, 
       currentProjectDetail: null, 
@@ -222,10 +197,6 @@ describe('DialecticProjectDetailsPage', () => {
 
   it('displays "Project not found" message if no project is loaded and not loading', () => {
     const nonExistentId = 'non-existent-id';
-    selectCurrentProjectDetail.mockReturnValue(null);
-    selectIsLoadingProjectDetail.mockReturnValue(false);
-    selectProjectDetailError.mockReturnValue(null);
-    selectActiveContextProjectId.mockReturnValue(nonExistentId); // Context for URL
     setDialecticStateValues({ 
       currentProjectDetail: null, 
       isLoadingProjectDetail: false, 
@@ -239,11 +210,6 @@ describe('DialecticProjectDetailsPage', () => {
 
   it('displays project details and child components when project data is loaded from store', () => {
     const projectForStore: DialecticProject = { ...mockProject, id: 'store-project-id-efg', project_name: 'Project Name From Store' };
-    selectCurrentProjectDetail.mockReturnValue(projectForStore);
-    selectIsLoadingProjectDetail.mockReturnValue(false);
-    selectProjectDetailError.mockReturnValue(null);
-    selectActiveContextProjectId.mockReturnValue(projectForStore.id);
-    // selectActiveContextStage might be needed if children depend on it, but not for project header
     setDialecticStateValues({ 
       currentProjectDetail: projectForStore, 
       isLoadingProjectDetail: false,
@@ -259,11 +225,6 @@ describe('DialecticProjectDetailsPage', () => {
   });
 
   it('calls startDialecticSession with correct parameters when "Start New Session" button is clicked', async () => {
-    selectCurrentProjectDetail.mockReturnValue(mockProject);
-    selectActiveContextStage.mockReturnValue(mockInitialStage);
-    selectIsLoadingProjectDetail.mockReturnValue(false);
-    selectProjectDetailError.mockReturnValue(null);
-    selectActiveContextProjectId.mockReturnValue(mockProjectIdFromUrl);
     setDialecticStateValues({
         currentProjectDetail: mockProject,
         activeContextStage: mockInitialStage,
@@ -281,18 +242,13 @@ describe('DialecticProjectDetailsPage', () => {
     await waitFor(() => {
         expect(store.startDialecticSession).toHaveBeenCalledWith({
             projectId: mockProjectIdFromUrl,
-            selectedModelCatalogIds: [],
+            selectedModelIds: [],
             stageSlug: mockInitialStage.slug,
         });
     });
   });
 
   it('navigates to the new session page on successful session start', async () => {
-    selectCurrentProjectDetail.mockReturnValue(mockProject);
-    selectActiveContextStage.mockReturnValue(mockInitialStage);
-    selectIsLoadingProjectDetail.mockReturnValue(false);
-    selectProjectDetailError.mockReturnValue(null);
-    selectActiveContextProjectId.mockReturnValue(mockProjectIdFromUrl);
     setDialecticStateValues({
         currentProjectDetail: mockProject,
         activeContextStage: mockInitialStage,
@@ -313,11 +269,6 @@ describe('DialecticProjectDetailsPage', () => {
   });
 
   it('navigates to the new session page when triggered from sessions list', async () => {
-    selectCurrentProjectDetail.mockReturnValue(mockProject);
-    selectActiveContextStage.mockReturnValue(mockInitialStage);
-    selectIsLoadingProjectDetail.mockReturnValue(false);
-    selectProjectDetailError.mockReturnValue(null);
-    selectActiveContextProjectId.mockReturnValue(mockProjectIdFromUrl);
     setDialecticStateValues({
         currentProjectDetail: mockProject,
         activeContextStage: mockInitialStage,
