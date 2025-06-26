@@ -24,6 +24,12 @@ import type { ServiceError } from '../_shared/types.ts';
 import { submitStageResponses } from './submitStageResponses.ts';
 import { logger } from "../_shared/logger.ts";
 
+const MOCK_AUTH_TEST_DOMAIN = {
+  id: "auth-test-domain-id",
+  name: "Auth Test Domain",
+  description: "A domain for auth testing."
+};
+
 Deno.test('submitStageResponses', async (t) => {
   const testUserId = crypto.randomUUID();
   const testProjectId = crypto.randomUUID();
@@ -118,7 +124,22 @@ Deno.test('submitStageResponses', async (t) => {
       genericMockResults: {
         dialectic_sessions: { select: { data: [{ 
             id: testSessionId,
-            project: { id: testProjectId, user_id: otherUserId }, // Different user
+            iteration_count: 1, // Added for consistency
+            project: { 
+              id: testProjectId, 
+              user_id: otherUserId, // Different user
+              process_template_id: testProcessTemplateId, 
+              initial_prompt_resource_id: "mock-initial-prompt-resource-id", 
+              repo_url: "mock-repo-url",
+              project_name: "Auth Test Project", // Added for consistency
+              selected_domain_id: MOCK_AUTH_TEST_DOMAIN.id, // Added for robustness
+              selected_domain_overlay_id: "mock-overlay-auth", // Added for robustness
+              dialectic_domains: { // Added for robustness
+                id: MOCK_AUTH_TEST_DOMAIN.id,
+                name: MOCK_AUTH_TEST_DOMAIN.name,
+                description: MOCK_AUTH_TEST_DOMAIN.description
+              }
+            },
             stage: mockThesisStage
         }] } },
         dialectic_process_templates: {
@@ -132,7 +153,7 @@ Deno.test('submitStageResponses', async (t) => {
     assertEquals(status, 403);
     assertExists(error);
     assertEquals(data, undefined);
-    assertStringIncludes(error?.message ?? '', "User does not own the project.");
+    assertStringIncludes(error?.message ?? '', "Unauthorized to submit to this project."); // Corrected assertion message
   });
 
 });

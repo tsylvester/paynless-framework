@@ -139,9 +139,8 @@ Deno.test("startSession - Error: Fails to upload user prompt and cleans up sessi
     const mockNewSessionId = "session-to-be-deleted";
     const payload: StartSessionPayload = { projectId: mockProjectId, selectedModelCatalogIds: ["model-abc"] };
     
-    const assembleStub = stub(promptAssembler.PromptAssembler.prototype, "assemble", () => {
-        return Promise.resolve("Assembled prompt content");
-    });
+    const assembleSpy = spy(() => Promise.resolve("Assembled prompt content for error case"));
+    const assemblerStub = stub(promptAssembler.PromptAssembler.prototype, "assemble", assembleSpy);
 
     const mockFileManager = {
         uploadAndRegisterFile: () => Promise.resolve({ record: null, error: null }),
@@ -195,8 +194,19 @@ Deno.test("startSession - Error: Fails to upload user prompt and cleans up sessi
 
         assertEquals(spiedSessionDeleteFn.calls.length, 1, "Session delete should have been called once for cleanup.");
         assertEquals(fmStub.calls.length, 1, "The file manager's uploadAndRegisterFile should have been called once (for the failing user_prompt).");
+
+        // Assert that assembler.assemble was called correctly even in this error path leading to cleanup
+        assertEquals(assembleSpy.calls.length, 1, "assembler.assemble should have been called once in error case.");
+        const assembleArgs = assembleSpy.calls[0].args as any[]; // Cast to any[]
+        assertEquals(assembleArgs.length, 5, "assembler.assemble should be called with 5 arguments in error case.");
+        // args[0] is projectContext
+        // args[1] is sessionContextForAssembler
+        // args[2] is stageContext
+        assert(typeof assembleArgs[3] === 'string', "Forth argument (projectInitialUserPrompt) should be a string in error case."); 
+        assertEquals(assembleArgs[4], 1, "Fifth argument (iterationNumber) should be 1 for startSession in error case.");
+
     } finally {
-        assembleStub.restore();
+        assemblerStub.restore();
         fmStub.restore(); // Restore the fileManager stub as well
     }
 });

@@ -412,14 +412,24 @@ export interface SubmitStageResponsesResponse {
 }
 
 // Add new types for handling artifact assembly rules
-export interface ArtifactSourceRule {
-  type: 'contribution' | 'feedback';
-  stage_slug: string;
+export interface BaseArtifactSourceRule {
   purpose?: string;
   required?: boolean;
   multiple?: boolean;
   section_header?: string;
 }
+
+export interface StageSpecificArtifactSourceRule extends BaseArtifactSourceRule {
+  type: 'contribution' | 'feedback';
+  stage_slug: string;
+}
+
+export interface InitialPromptArtifactSourceRule extends BaseArtifactSourceRule {
+  type: 'initial_project_prompt';
+  stage_slug?: undefined; // Explicitly undefined or can be omitted
+}
+
+export type ArtifactSourceRule = StageSpecificArtifactSourceRule | InitialPromptArtifactSourceRule;
 
 export interface InputArtifactRules {
   sources: ArtifactSourceRule[];

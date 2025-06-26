@@ -1072,6 +1072,7 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
 *   [ ] Update all the prompts with the right content 
 *   [ ] Add the sync/export button to the Paralysis stage   
 *   [ ] Add a slice button to the Paralysis stage to take the selected plan, slice it according to an algorithm, then create a new project for each slice 
+
 ---
 
 `[✅] 1. [BE] Design and Implement `path_deconstructor.ts` Utility**
@@ -1187,6 +1188,141 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
     `[ ] a. [COMMIT]` `feat(be,util): implement path_deconstructor and integrate into cloneProject for robust path mapping`
     `[ ] b. [COMMIT]` `test(be,util): add comprehensive unit and integration tests for path deconstruction and project cloning`
     `[ ] c. [REFACTOR]` Conduct a final code review of all changes.
+
+---
+
+# Centralizing Prompt Assembly Logic
+
+### Phase 1: Prepare Shared Utilities
+
+1.  **`Util`: `parseInputArtifactRules`**
+    *   `[✅]` (`BE`) Identify `parseInputArtifactRules` function within `supabase/functions/dialectic-service/submitStageResponses.ts`.
+    *   `[✅]` (`Test`) Write comprehensive unit tests for `parseInputArtifactRules`, covering valid structures, various rule types, optional fields, and error conditions (e.g., malformed JSON, missing required fields).
+    *   `[✅]` (`BE`) Move `parseInputArtifactRules` and its related type `InputArtifactRules` (and `ArtifactSourceRule`) to a new shared utility file (e.g., `supabase/functions/_shared/utils/input-artifact-parser.ts`).
+    *   `[✅]` (`BE`) Update `supabase/functions/dialectic-service/submitStageResponses.ts` to import `parseInputArtifactRules` and its types from the new shared location.
+    *   `[✅]` (`Test`) Run existing tests for `submitStageResponses.ts` that might indirectly depend on this function to ensure they still pass after the import change.
+
+2.  **`Util`: `downloadFromStorage` Access**
+    *   `[✅]` (`BE`) Confirm `downloadFromStorage` (from `supabase/functions/_shared/supabase_storage_utils.ts`) is suitable and accessible for `PromptAssembler`.
+    *   `[✅]` (`BE`) Ensure `PromptAssembler` (or its methods) can access the `STORAGE_BUCKET` environment variable, or have it passed appropriately if direct access is not ideal.
+
+3.  **`Util`: `getInitialPromptContent` (Moved Utility)**
+    *   `[✅]` (`BE`) Analyze `getInitialPromptContent` from `supabase/functions/dialectic-service/startSession.ts`.
+    *   `[✅]` (`BE`) Move `getInitialPromptContent` from `startSession`. This function will be responsible for retrieving the initial user prompt for a project, whether it's stored directly or as a resource.
+    *   `[✅]` (`Test`) Write unit tests for the new `getInitialPromptContent` utility, mocking DB calls and covering cases where the prompt is direct, a resource, or not found.
+
+### Phase 2: Enhance `PromptAssembler` (`supabase/functions/_shared/prompt-assembler.ts`)
+
+1.  **Update Type Definitions:**
+    *   `[✅]` (`BE`) Review and update `ProjectContext`, `SessionContext`, and `StageContext` types if needed.
+        *   Ensure `StageContext` includes `input_artifact_rules: Json | null` (or the parsed type).
+        *   Consider if `ProjectContext` needs `user_domain_overlay_id` or similar for user-specific overlays if not already present.
+
+2.  **Implement Private Method: `_gatherInputsForStage`**
+    *   `[✅]` (`BE`) Define the method signature: `private async _gatherInputsForStage(stage: StageContext, project: ProjectContext, session: SessionContext, iterationNumber: number): Promise<{ priorStageContributions: string; priorStageFeedback: string }>`
+    *   `[✅]` (`Test`) Outline unit test cases for `_gatherInputsForStage`:
+        *   `[✅]` Stage with no `input_artifact_rules`.
+        *   `[✅]` Rules fetching only contributions.
+        *   `[✅]` Rules fetching only feedback.
+        *   `[✅]` Rules fetching both contributions and feedback.
+        *   `[✅]` Rules with custom `section_header`.
+        *   `[✅]` Optional feedback file not found (should not error, provide default content).
+        *   `[✅]` Required feedback file not found (should throw an error, mimicking `fetchAndAssembleArtifacts`).
+        *   `[✅]` Error during DB query for contributions.
+        *   `[✅]` Error during `downloadFromStorage` for contributions or feedback.
+    *   `[✅]` (`BE`) Implement the logic for `_gatherInputsForStage`:
+        *   `[✅]` Use `this.dbClient` for database operations.
+        *   `[✅]` Import and use `parseInputArtifactRules` (from the shared utility created in Phase 1).
+        *   `[✅]` Import and use `downloadFromStorage` (from `_shared/supabase_storage_utils.ts`).
+        *   `[✅]` Adapt the artifact fetching logic from the original `fetchAndAssembleArtifacts` in `submitStageResponses.ts`. This includes querying `dialectic_contributions` and downloading feedback files based on `stage.input_artifact_rules`, `session.id`, and `iterationNumber`.
+        *   `[✅]` Concatenate fetched content into `priorStageContributions` and `priorStageFeedback` strings, incorporating `section_header` from rules.
+    *   `[✅]` (`Test`) Implement the unit tests for `_gatherInputsForStage`, using mocks for `dbClient`, `parseInputArtifactRules`, and `downloadFromStorage`.
+
+3.  **Update Public Method: `assemble`**
+    *   `[✅]` (`BE`) Modify the `assemble` method signature: `async assemble(project: ProjectContext, session: SessionContext, stage: StageContext, projectInitialUserPrompt: string, iterationNumber: number): Promise<string>`
+    *   `[✅]` (`Test`) Outline unit test cases for the updated `assemble` method:
+        *   `[✅]` Scenario: Assembling for the initial stage (e.g., `iterationNumber = 1`, `input_artifact_rules` might be minimal or empty).
+        *   `[✅]` Scenario: Assembling for a subsequent stage (e.g., `iterationNumber > 1` or current `iterationNumber` if advancing, uses `_gatherInputsForStage`).
+        *   `[✅]` Verification: Correct population of `dynamicContextVariables`, including:
+            *   `user_objective`
+            *   `domain`
+            *   `agent_count`
+            *   `initial_project_context` (new, from `projectInitialUserPrompt`)
+            *   `prior_stage_ai_outputs` (from `_gatherInputsForStage`)
+            *   `prior_stage_user_feedback` (from `_gatherInputsForStage`)
+        *   `[✅]` Verification: Correct `basePromptText` (from `stage.system_prompts.prompt_text`).
+        *   `[✅]` Verification: Correct `systemDefaultOverlayValues` (from `stage.domain_specific_prompt_overlays`).
+        *   `[✅]` Verification: Handling of `userProjectOverlayValues` (e.g., fetched based on `project.selected_domain_overlay_id`).
+    *   `[✅]` (`BE`) Implement the changes in `assemble`:
+        *   `[✅]` Call `await this._gatherInputsForStage(stage, project, session, iterationNumber)` if `stage.input_artifact_rules` exist and are relevant.
+        *   `[✅]` Update `dynamicContextVariables` creation:
+            *   `[✅]` Set `dynamicContextVariables.initial_project_context = projectInitialUserPrompt;` (replacing/clarifying `context_description`).
+            *   `[✅]` Populate `dynamicContextVariables.prior_stage_ai_outputs` and `dynamicContextVariables.prior_stage_user_feedback` using results from `_gatherInputsForStage`. Provide defaults like "N/A" or empty strings if no relevant rules or content.
+            *   `[✅]` Retain other variables like `user_objective`, `domain`, `agent_count`, and placeholders for `deployment_context`, etc.
+        *   `[✅]` Ensure `basePromptText` is sourced from `stage.system_prompts.prompt_text`.
+        *   `[✅]` Ensure `systemDefaultOverlayValues` are sourced from `stage.domain_specific_prompt_overlays` associated with the current `stage`.
+        *   `[✅]` Implement logic for `userProjectOverlayValues` (e.g., fetch using `project.selected_domain_overlay_id` if available).
+    *   `[✅]` (`Test`) Write/update unit tests for the `assemble` method, mocking `_gatherInputsForStage` and other dependencies.
+        *   `[✅]` Test Case 1: Initial Stage Assembly
+        *   `[✅]` Test Case 2: Subsequent Stage Assembly
+        *   `[✅]` Test Case 3: Missing System Prompt for Stage
+
+### Phase 3: Refactor `startSession.ts` (`supabase/functions/dialectic-service/startSession.ts`)
+
+1.  **Adapt `PromptAssembler` Usage:**
+    *   `[ ]` (`Test`) Review existing unit tests for `startSession.ts` that cover prompt assembly. Identify necessary modifications to reflect the new `PromptAssembler.assemble` signature.
+    *   `[ ]` (`BE`) Locate the existing call to `assembler.assemble`.
+    *   `[ ]` (`BE`) Ensure `initialPrompt.content` (which is the `projectInitialUserPrompt` for the first stage) is correctly passed.
+    *   `[ ]` (`BE`) Pass the current iteration number for a new session, which is `1`.
+    *   `[ ]` (`BE`) Update the call to: `assembler.assemble(projectContext, sessionContextForAssembler, stageContext, initialPrompt.content, 1)`
+    *   `[ ]` (`Test`) Update the unit tests for `startSession.ts`. Mock the `PromptAssembler.assemble` method and verify it's called with the correct arguments for an initial stage.
+
+### Phase 4: Refactor `submitStageResponses.ts` (`supabase/functions/dialectic-service/submitStageResponses.ts`)
+
+1.  **Integrate Enhanced `PromptAssembler`:**
+    *   `[ ]` (`Test`) Review existing unit tests for `submitStageResponses.ts`, particularly those testing `prepareNextStageSeedPrompt` and `fetchAndAssembleArtifacts`. These tests will need significant updates.
+    *   `[ ]` (`BE`) In the logic responsible for preparing the next stage's seed prompt (where `prepareNextStageSeedPrompt` was previously called):
+        *   Instantiate `const assembler = new PromptAssembler(dbClient);`.
+        *   Fetch `projectContext` (e.g., `sessionData.project` mapped to `ProjectContext`).
+        *   Fetch `sessionContext` (e.g., `sessionData` mapped to `SessionContext`).
+        *   `nextStage` (already fetched as `DialecticStage`) will serve as the `stage: StageContext` for the assembler. Ensure it includes `input_artifact_rules`, `system_prompts`, and `domain_specific_prompt_overlays`.
+        *   Fetch the `projectInitialUserPrompt` using the utility from Phase 1.3: `const { content: projectInitialUserPrompt, error: initPromptError } = await fetchProjectInitialPrompt(sessionData.project.id, dbClient, logger);` (handle `initPromptError`).
+        *   The `iterationNumber` for the `assemble` call should be `sessionData.iteration_count` (the current iteration, as `assemble` is preparing the prompt *for input into* models for this iteration of the *next stage*).
+        *   Call `const assembledSeedPrompt = await assembler.assemble(projectContext, sessionContext, nextStage, projectInitialUserPrompt, sessionData.iteration_count);`.
+        *   The `pathContext` for saving the assembled prompt can be constructed as before, using `nextStage.slug`, `sessionData.id`, `sessionData.iteration_count`.
+    *   `[ ]` (`Test`) Update unit tests for `submitStageResponses.ts`:
+        *   Mock `PromptAssembler.assemble` and verify it's called with the correct arguments (project context, session context, next stage details, project's initial prompt, current iteration number).
+        *   Verify the prompt string returned by `assemble` is correctly used for saving the seed prompt file.
+
+2.  **Remove Obsolete Logic:**
+    *   `[ ]` (`BE`) Delete the `fetchAndAssembleArtifacts` function from `submitStageResponses.ts`.
+    *   `[ ]` (`BE`) Delete the `prepareNextStageSeedPrompt` function from `submitStageResponses.ts`.
+    *   `[ ]` (`BE`) If `parseInputArtifactRules` was not moved in Phase 1 (it should have been), remove its local definition.
+    *   `[ ]` (`Chore`) Clean up any unused imports, variables, or types that were specific to the removed functions.
+
+3.  **Final Test Pass for `submitStageResponses.ts`:**
+    *   `[ ]` (`Test`) Ensure all unit and relevant integration tests for `submitStageResponses.ts` pass after the refactoring.
+
+### Phase 5: Integration Testing and Finalization
+
+1.  **End-to-End Integration Tests:**
+    *   `[ ]` (`Test`) Write or update integration tests that cover the complete flow:
+        *   `startSession`: Verify the creation of a session and the generation/storage of the correct initial seed prompt using the refactored `PromptAssembler`.
+        *   `submitStageResponses`:
+            *   Test a transition to a subsequent stage where `input_artifact_rules` require fetching prior contributions and/or feedback.
+            *   Verify the refactored `PromptAssembler` is used to generate the next stage's seed prompt correctly, incorporating these artifacts.
+            *   Verify the new seed prompt is stored correctly.
+    *   Consider scenarios with different `input_artifact_rules` for different stages.
+
+2.  **Manual Verification (Optional but Recommended):**
+    *   `[ ]` (`Chore`) If feasible, manually trigger the `startSession` and `submitStageResponses` functions with a sample project configuration to observe the behavior and inspect generated prompts in storage.
+
+3.  **Code Review and Cleanup:**
+    *   `[ ]` (`Chore`) Review all modified files (`prompt-assembler.ts`, `startSession.ts`, `submitStageResponses.ts`, and any new utility files) for code quality, clarity, comments, and adherence to project conventions.
+    *   `[ ]` (`Chore`) Ensure all `TODOs` introduced during this refactoring are either addressed or documented for future work.
+
+4.  **Documentation (If Applicable):**
+    *   `[ ]` (`Docs`) If any architectural diagrams or developer documentation describe the prompt assembly process, update them to reflect the new centralized approach in `PromptAssembler`.
 
 ---
 

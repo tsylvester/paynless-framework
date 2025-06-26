@@ -34,9 +34,8 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
         sessionDescription: mockExplicitSessionDescription
     };
 
-    const assemblerStub = stub(promptAssembler.PromptAssembler.prototype, "assemble", () => {
-        return Promise.resolve("Assembled prompt content");
-    });
+    const assembleSpy = spy(() => Promise.resolve("Assembled prompt content"));
+    const assemblerStub = stub(promptAssembler.PromptAssembler.prototype, "assemble", assembleSpy);
 
     const mockResource: DialecticProjectResource = {
         id: "res-123",
@@ -154,6 +153,18 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
         assertObjectMatch(result.data, expectedResponse as any);
         assertEquals(fmStub.calls.length, 1, "The file manager should have been called once.");
 
+        // Assert that assembler.assemble was called correctly
+        assertEquals(assembleSpy.calls.length, 1, "assembler.assemble should have been called once.");
+        const assembleArgs = assembleSpy.calls[0].args as any[];
+        assertEquals(assembleArgs.length, 5, "assembler.assemble should be called with 5 arguments.");
+        // We'll assume the contexts (args[0], args[1], args[2]) are complex objects.
+        // For now, we are primarily interested in the simpler arguments:
+        // args[0] is projectContext
+        // args[1] is sessionContextForAssembler
+        // args[2] is stageContext
+        assert(typeof assembleArgs[3] === 'string', "Forth argument (projectInitialUserPrompt) should be a string."); 
+        assertEquals(assembleArgs[4], 1, "Fifth argument (iterationNumber) should be 1 for startSession.");
+
     } finally {
         assemblerStub.restore();
         fmStub.restore();
@@ -185,9 +196,8 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
         selectedModelCatalogIds: ["model-1"],
     };
 
-    const assemblerStub = stub(promptAssembler.PromptAssembler.prototype, "assemble", () => {
-        return Promise.resolve("Assembled prompt content");
-    });
+    const assembleSpyDefault = spy(() => Promise.resolve("Assembled prompt content for default case"));
+    const assemblerStubDefault = stub(promptAssembler.PromptAssembler.prototype, "assemble", assembleSpyDefault);
 
     const mockResource: DialecticProjectResource = {
         id: "res-456",
@@ -302,9 +312,20 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
             current_stage_id: mockInitialStageId,
         };
         assertObjectMatch(result.data, expectedResponse as any);
-        assertEquals(fmStub.calls.length, 1, "The file manager should have been called once for default description test.");
+        assertEquals(fmStub.calls.length, 1, "The file manager should have been called once for the default case.");
+
+        // Assert that assembler.assemble was called correctly for the default case
+        assertEquals(assembleSpyDefault.calls.length, 1, "assembler.assemble should have been called once for default case.");
+        const assembleArgsDefault = assembleSpyDefault.calls[0].args as any[];
+        assertEquals(assembleArgsDefault.length, 5, "assembler.assemble should be called with 5 arguments for default case.");
+        // args[0] is projectContext
+        // args[1] is sessionContextForAssembler
+        // args[2] is stageContext
+        assert(typeof assembleArgsDefault[3] === 'string', "Forth argument (projectInitialUserPrompt) should be a string for default case."); 
+        assertEquals(assembleArgsDefault[4], 1, "Fifth argument (iterationNumber) should be 1 for startSession default case.");
+
     } finally {
-        assemblerStub.restore();
+        assemblerStubDefault.restore();
         fmStub.restore();
     }
 });

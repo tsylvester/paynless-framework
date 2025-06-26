@@ -17,12 +17,30 @@ import {
 } from './dialectic.interface.ts';
 import { createMockFileManagerService, MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
 import type { UploadContext, FileManagerResponse } from "../_shared/types/file_manager.types.ts";
-import type { Database } from '../types_db.ts';
+import type { Database, Json } from '../types_db.ts';
 import type { ServiceError } from '../_shared/types.ts';
 
 // Import the specific action handler we are testing
 import { submitStageResponses } from './submitStageResponses.ts';
 import { logger } from "../_shared/logger.ts";
+
+const MOCK_DEFAULT_DOMAIN = {
+  id: "default-domain-id",
+  name: "Default Test Domain",
+  description: "A default domain for testing success paths."
+};
+
+const MOCK_OVERLAY_DOMAIN = {
+  id: "mock-domain-with-overlay",
+  name: "Mock Domain With Overlay",
+  description: "A mock domain for testing overlay features."
+};
+
+const MOCK_SUCCESS_TEST_DOMAIN = {
+  id: "mock-domain-for-success-test",
+  name: "Mock Domain For Success",
+  description: "A mock domain for testing."
+};
 
 Deno.test('submitStageResponses', async (t) => {
   const testUserId = crypto.randomUUID();
@@ -77,10 +95,11 @@ Deno.test('submitStageResponses', async (t) => {
   const priorStageFeedbackContentForScope = "This is some mock feedback from the prior thesis stage.";
   const priorStageFeedbackPathForScope = `projects/${testProjectId}/sessions/${testSessionId}/iteration_1/${mockThesisStage.slug}/user_feedback_${mockThesisStage.slug}.md`;
 
-  const mockDownloadFromStorage = spy((_client: SupabaseClient, _bucket: string, path: string): Promise<{ data: ArrayBuffer | null; mimeType?: string; error: Error | null; }> => {
+  // This global spy is less critical if tests provide specific mocks in dependencies.
+  const mockDownloadFromStorageGlobalSpy = spy(async (_client: SupabaseClient, _bucket: string, path: string): Promise<{ data: ArrayBuffer | null; mimeType?: string; error: Error | null; }> => {
     if (path === systemSettingsPathForScope) {
         const buffer: ArrayBuffer = Buffer.from(new TextEncoder().encode(systemSettingsContentForScope)).buffer;
-        return Promise.resolve({ data: buffer, error: null });
+        return Promise.resolve({ data: buffer, error: null, mimeType: 'application/json' });
     }
     if (path === 'path/to/content1.md') { // Specific to test 1.1, could be parameterized if more tests need it
         const buffer: ArrayBuffer = Buffer.from(new TextEncoder().encode("AI content from ModelA")).buffer;
@@ -95,7 +114,7 @@ Deno.test('submitStageResponses', async (t) => {
         return Promise.resolve({ data: buffer, error: null });
     }
     // Default for any other path not explicitly mocked above
-    return Promise.resolve({ data: null, error: new Error(`Mock path not found in global mockDownloadFromStorage: ${path}`) });
+    return Promise.resolve({ data: null, error: new Error(`Path not found in global spy: ${path}`), mimeType: undefined });
   });
 
   const mockProcessTemplate = {
@@ -115,7 +134,7 @@ Deno.test('submitStageResponses', async (t) => {
       async (
         context: UploadContext,
       ): Promise<FileManagerResponse> => {
-        const { pathContext, fileContent, customMetadata, mimeType } = context;
+        const { pathContext, fileContent, mimeType } = context;
         const path =
           `projects/${pathContext.projectId}/sessions/${pathContext.sessionId}/iteration_${pathContext.iteration}/${pathContext.stageSlug}/${pathContext.originalFileName}`;
         
@@ -139,9 +158,9 @@ Deno.test('submitStageResponses', async (t) => {
             mime_type: mimeType || 'text/markdown',
             size_bytes: buffer.byteLength,
             resource_description: pathContext.fileType === 'user_feedback'
-              ? JSON.stringify(customMetadata?.resourceDescription)
+              ? JSON.stringify(context.resourceDescriptionForDb)
               : 'Mocked response from file manager',
-            feedback_type: pathContext.fileType === 'user_feedback' ? customMetadata?.feedbackType : undefined,
+            feedback_type: pathContext.fileType === 'user_feedback' ? context.feedbackTypeForDb : undefined,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           } as any,
@@ -173,10 +192,56 @@ Deno.test('submitStageResponses', async (t) => {
           select: { data: [{
             id: testSessionId,
             iteration_count: 1,
-            project: { id: testProjectId, user_id: testUserId, process_template_id: testProcessTemplateId, initial_user_prompt: "Initial prompt for testing.", project_name: "Test Project Name" },
+            project: {
+              id: testProjectId,
+              user_id: testUserId,
+              process_template_id: testProcessTemplateId,
+              initial_user_prompt: "Initial prompt for testing.",
+              initial_prompt_resource_id: "mock-initial-prompt-resource-id",
+              project_name: "Test Project Name",
+              repo_url: "mock-repo-url",
+              selected_domain_overlay_id: "mock-selected-domain-overlay-id",
+              selected_domain_id: MOCK_SUCCESS_TEST_DOMAIN.id,
+              dialectic_domains: {
+                id: MOCK_SUCCESS_TEST_DOMAIN.id,
+                name: MOCK_SUCCESS_TEST_DOMAIN.name,
+                description: MOCK_SUCCESS_TEST_DOMAIN.description
+              }
+            },
             stage: mockThesisStage
           }] },
           update: { data: [{ id: testSessionId, status: `pending_${mockAntithesisStage.slug}` }] },
+        },
+        dialectic_projects: {
+          select: (state: any) => {
+            const idFilter = state.filters.find((f: any) => f.column === 'id');
+            if (idFilter && idFilter.value === testProjectId) {
+              return Promise.resolve({
+                data: [{
+                  id: testProjectId,
+                  user_id: testUserId,
+                  process_template_id: testProcessTemplateId,
+                  initial_user_prompt: "Initial prompt for testing.",
+                  initial_prompt_resource_id: "mock-initial-prompt-resource-id",
+                  project_name: "Test Project Name",
+                  repo_url: "mock-repo-url",
+                  selected_domain_id: "mock-domain-for-success-test",
+                  selected_domain_overlay_id: "mock-selected-domain-overlay-id",
+                  dialectic_domains: [
+                    { id: "mock-domain-for-success-test", name: "Mock Domain For Success", description: "A mock domain for testing" },
+                    { id: "another-mock-domain", name: "Another Mock Domain", description: "Another one" }
+                  ],
+                  process_template: {
+                    id: testProcessTemplateId,
+                    name: "Mock Process Template Name",
+                  }
+                }],
+                error: null,
+              });
+            }
+            // Fallback for other project ID lookups if any
+            return Promise.resolve({ data: null, error: { name: 'PostgrestError', message: "No dialectic_projects mock for this ID", code: "PGRST116" }});
+          }
         },
         dialectic_feedback: {
           insert: { data: [{ id: crypto.randomUUID(), session_id: testSessionId, user_id: testUserId, feedback_type: "FileManagerCreatedFeedback_v1" }] }
@@ -198,20 +263,62 @@ Deno.test('submitStageResponses', async (t) => {
         dialectic_stage_transitions: {
           select: { data: [{
             source_stage_id: mockThesisStage.id,
-            target_stage: mockAntithesisStage
+            target_stage: {
+              id: mockAntithesisStage.id,
+              slug: mockAntithesisStage.slug,
+              display_name: mockAntithesisStage.display_name,
+              default_system_prompt_id: mockAntithesisStage.default_system_prompt_id,
+              input_artifact_rules: mockAntithesisStage.input_artifact_rules,
+              expected_output_artifacts: mockAntithesisStage.expected_output_artifacts,
+              description: mockAntithesisStage.description,
+              created_at: mockAntithesisStage.created_at,
+              system_prompts: {
+                id: testSystemPromptId,
+                prompt_text: 'Test prompt for Antithesis using {{prior_stage_ai_outputs}} and {{prior_stage_user_feedback}}'
+              },
+              domain_specific_prompt_overlays: []
+            }
           }]}
         },
         dialectic_process_templates: {
             select: { data: [mockProcessTemplate] }
         }
+      },
+      storageMock: {
+        downloadResult: async (bucket: string, path: string) => {
+          if (bucket === 'test-bucket' && path === 'path/to/content1.md') {
+            return { data: new Blob([new TextEncoder().encode("AI content from ModelA")]), error: null };
+          }
+          if (bucket === 'test-bucket' && path === 'path/to/content2.md') {
+            return { data: new Blob([new TextEncoder().encode("AI content from ModelB")]), error: null };
+          }
+          if (bucket === 'dialectic-contributions' && path === priorStageFeedbackPathForScope) {
+             return { data: new Blob([new TextEncoder().encode(priorStageFeedbackContentForScope)]), error: null };
+          }
+          logger.error(`[Test 1.1 storageMock] Unhandled path: bucket '${bucket}', path '${path}'`);
+          return { data: null, error: new Error(`Mock path not found in storageMock (Test 1.1): ${bucket}/${path}`) };
+        }
       }
     };
 
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
+    
     const mockDependencies = {
         logger,
-        downloadFromStorage: mockDownloadFromStorage,
-        fileManager: mockFileManager
+        fileManager: mockFileManager,
+        downloadFromStorage: async (client: SupabaseClient, bucket: string, path: string): Promise<{ data: ArrayBuffer | null; mimeType?: string; error: Error | null; }> => {
+            const { data: blob, error: downloadError } = await (client as any).storage.from(bucket).download(path);
+            if (downloadError) {
+                logger.error(`[Test - mockDependencies.downloadFromStorage] Error downloading ${bucket}/${path}`, { error: downloadError });
+                return { data: null, error: downloadError as Error, mimeType: undefined };
+            }
+            if (!blob) {
+                logger.warn(`[Test - mockDependencies.downloadFromStorage] No blob from ${bucket}/${path}`, { pathDetails: `${bucket}/${path}` });
+                return { data: null, error: new Error(`No data returned from storage download for ${path}`), mimeType: undefined };
+            }
+            const arrayBuffer = await blob.arrayBuffer();
+            return { data: arrayBuffer, error: null, mimeType: blob.type };
+        }
     };
 
     // 1.1.2 Act: Call the function
@@ -250,9 +357,13 @@ Deno.test('submitStageResponses', async (t) => {
     assertEquals(feedbackUploadContext.pathContext.iteration, 1);
     assertEquals(feedbackUploadContext.pathContext.originalFileName, `user_feedback_${mockThesisStage.slug}.md`);
     assertEquals(feedbackUploadContext.mimeType, 'text/markdown');
-    assertEquals(feedbackUploadContext.customMetadata?.feedbackType, "StageReviewSummary_v1_test");
-    assertExists(feedbackUploadContext.customMetadata?.resourceDescription, "resourceDescription should exist in customMetadata");
-    assertEquals(JSON.parse(feedbackUploadContext.customMetadata?.resourceDescription as string).summary, "Test summary for resourceDescription");
+    assertEquals(feedbackUploadContext.feedbackTypeForDb, "StageReviewSummary_v1_test");
+    
+    // Explicitly type and check resourceDescriptionForDb before accessing .summary
+    const resourceDesc = feedbackUploadContext.resourceDescriptionForDb;
+    assertExists(resourceDesc, "resourceDescriptionForDb should exist in feedbackUploadContext");
+    const typedResDesc = resourceDesc as { summary: string };
+    assertEquals(typedResDesc.summary, "Test summary for resourceDescription");
 
     // 1.4 Verifies content of the consolidated feedback file
     const feedbackFileContent = feedbackUploadContext.fileContent;
@@ -286,72 +397,89 @@ Deno.test('submitStageResponses', async (t) => {
 
   await t.step('1.2 Successfully processes responses for the final stage (no next transition)', async () => {
     const mockFileManager = createMockFileManagerService();
-    mockFileManager.setUploadAndRegisterFileResponse({
-      id: 'resource-id',
-      project_id: testProjectId,
-      user_id: testUserId,
-      storage_bucket: 'test-bucket',
-      storage_path: 'path/to/feedback.md',
-      file_name: 'feedback.md',
-      mime_type: 'text/markdown',
-      size_bytes: 100,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      resource_description: null,
-    }, null);
+    mockFileManager.uploadAndRegisterFile = spy(
+      async (
+        context: UploadContext,
+      ): Promise<FileManagerResponse> => {
+        const { pathContext, fileContent, mimeType } = context;
+        const path = `projects/${pathContext.projectId}/sessions/${pathContext.sessionId}/iteration_${pathContext.iteration}/${pathContext.stageSlug}/${pathContext.originalFileName}`;
+        
+        let buffer: Buffer;
+        if (typeof fileContent === 'string') {
+            buffer = Buffer.from(fileContent, 'utf-8');
+        } else if (fileContent instanceof Buffer) {
+            buffer = fileContent;
+        } else { // It's an ArrayBuffer
+            buffer = Buffer.from(fileContent);
+        }
 
+        return await Promise.resolve({
+          record: {
+            id: 'resource-id',
+            project_id: pathContext.projectId,
+            user_id: testUserId,
+            storage_bucket: 'test-bucket',
+            storage_path: path,
+            file_name: pathContext.originalFileName || 'test.md',
+            mime_type: mimeType || 'text/markdown',
+            size_bytes: buffer.byteLength,
+            resource_description: pathContext.fileType === 'user_feedback'
+              ? JSON.stringify(context.resourceDescriptionForDb)
+              : 'Mocked response from file manager',
+            feedback_type: pathContext.fileType === 'user_feedback' ? context.feedbackTypeForDb : undefined,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          } as any,
+          error: null,
+        });
+      },
+    );
+
+    // 1.2.1 Arrange
     const mockPayload: SubmitStageResponsesPayload = {
       sessionId: testSessionId,
       projectId: testProjectId,
-      stageSlug: mockParalysisStage.slug, // Assume this is the last stage for this test
+      stageSlug: mockParalysisStage.slug, // Final stage
       currentIterationNumber: 1,
-      responses: [
-        { originalContributionId: testContributionId1, responseText: "Final feedback on synthesis" },
-      ],
+      responses: [], // No AI responses for final user feedback submission
       userStageFeedback: {
-        content: "Final feedback on synthesis",
-        feedbackType: "StageReviewSummary_v1_test",
-        resourceDescription: { summary: "Test summary for resourceDescription" }
+        content: "This is the final feedback for the paralysis stage.",
+        feedbackType: "StageReviewSummary_v1_final_test",
+        resourceDescription: { summary: "Final thoughts summary" }
       }
-    };
-
-    const mockFinalStage = {
-        id: crypto.randomUUID(),
-        slug: mockParalysisStage.slug,
-        display_name: 'Synthesis',
-        default_system_prompt_id: null,
-        input_artifact_rules: {}
     };
 
     const mockDbConfig: MockSupabaseDataConfig = {
       genericMockResults: {
         dialectic_sessions: {
-          select: { data: [{ 
-            id: testSessionId, 
-            project: { id: testProjectId, user_id: testUserId, process_template_id: testProcessTemplateId },
-            stage: mockFinalStage 
+          select: { data: [{
+            id: testSessionId,
+            iteration_count: 1,
+            project: {
+              id: testProjectId,
+              user_id: testUserId,
+              process_template_id: testProcessTemplateId,
+              initial_prompt_resource_id: "mock-initial-prompt-resource-id",
+              project_name: "Test Project Name Final Stage",
+              repo_url: "mock-repo-url-final",
+              selected_domain_overlay_id: "mock-selected-domain-overlay-id-final",
+              selected_domain_id: MOCK_DEFAULT_DOMAIN.id,
+              dialectic_domains: {
+                id: MOCK_DEFAULT_DOMAIN.id,
+                name: MOCK_DEFAULT_DOMAIN.name,
+                description: MOCK_DEFAULT_DOMAIN.description
+              }
+            },
+            stage: mockParalysisStage // This is the final stage
           }] },
-          update: { data: [{ id: testSessionId, status: 'iteration_complete_pending_review' }] },
-        },
-        dialectic_feedback: {
-          insert: { data: [{ id: 'feedback-id' }] },
-        },
-        dialectic_contributions: {
-            select: (state: any) => {
-                const id = state.filters.find((f: { column: string; value: any; }) => f.column === 'id')?.value;
-                if (id === testContributionId1) {
-                    return Promise.resolve({ data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId }] });
-                }
-                return Promise.resolve({ data: [] });
-            }
+          update: { data: [{ id: testSessionId, status: `completed_${mockParalysisStage.slug}` }] },
         },
         dialectic_stage_transitions: {
-          // This time, the select for a transition returns nothing, ending the process.
-          select: { data: null, error: null }
+          // No transition expected from the final stage
+          select: { data: null } 
         },
-        dialectic_process_templates: {
-          select: { data: [mockProcessTemplate] }
-        }
+        // No dialectic_contributions needed if responses array is empty
+        // No system_prompts needed if no next stage
       }
     };
     
@@ -375,12 +503,213 @@ Deno.test('submitStageResponses', async (t) => {
     assertEquals(feedbackCall.args[0].pathContext.fileType, 'user_feedback');
 
     assert(data.nextStageSeedPromptPath === null || data.nextStageSeedPromptPath === undefined, "Next stage seed path should be null for the final stage");
-    assertEquals(data.updatedSession?.status, 'iteration_complete_pending_review', "Session status should be updated to reflect completion");
+    assertEquals(data.updatedSession?.status, 'completed_paralysis', "Session status should be updated to reflect completion");
   });
 
   await t.step('6.1 Successfully processes responses when domain overlay is present', async () => {
-    // This test is very similar to 1.1, but ensures the domain overlay is fetched and used.
-    // ... can be implemented if needed ...
+    const userSubmittedStageFeedbackContent = "Feedback content for domain overlay test.";
+    const mockFileManager = createMockFileManagerService();
+    mockFileManager.uploadAndRegisterFile = spy(
+      async (
+        context: UploadContext,
+      ): Promise<FileManagerResponse> => {
+        const { pathContext, fileContent, mimeType } = context;
+        const path =
+          `projects/${pathContext.projectId}/sessions/${pathContext.sessionId}/iteration_${pathContext.iteration}/${pathContext.stageSlug}/${pathContext.originalFileName}`;
+        
+        let buffer: Buffer;
+        if (typeof fileContent === 'string') {
+            buffer = Buffer.from(fileContent, 'utf-8');
+        } else if (fileContent instanceof Buffer) {
+            buffer = fileContent;
+        } else { // It's an ArrayBuffer
+            buffer = Buffer.from(fileContent);
+        }
+
+        return await Promise.resolve({
+          record: {
+            id: 'resource-id-fm-overlay-test',
+            project_id: pathContext.projectId,
+            user_id: testUserId,
+            storage_bucket: 'test-bucket',
+            storage_path: path,
+            file_name: pathContext.originalFileName || 'test.md',
+            mime_type: mimeType || 'text/markdown',
+            size_bytes: buffer.byteLength,
+            resource_description: pathContext.fileType === 'user_feedback'
+              ? JSON.stringify(context.resourceDescriptionForDb)
+              : 'Mocked response from file manager for overlay test',
+            feedback_type: pathContext.fileType === 'user_feedback' ? context.feedbackTypeForDb : undefined,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          } as any,
+          error: null,
+        });
+      },
+    );
+
+    const mockPayload: SubmitStageResponsesPayload = {
+      sessionId: testSessionId,
+      projectId: testProjectId,
+      stageSlug: mockThesisStage.slug,
+      currentIterationNumber: 1,
+      responses: [
+        { originalContributionId: testContributionId1, responseText: "Response for overlay test 1" },
+      ],
+      userStageFeedback: {
+        content: userSubmittedStageFeedbackContent,
+        feedbackType: "StageReviewSummary_v1_overlay_test",
+        resourceDescription: { summary: "Overlay test summary" }
+      }
+    };
+
+    const mockDbConfig: MockSupabaseDataConfig = {
+      genericMockResults: {
+        dialectic_sessions: {
+          select: { data: [{
+            id: testSessionId,
+            iteration_count: 1,
+            project: {
+              id: testProjectId,
+              user_id: testUserId,
+              process_template_id: testProcessTemplateId,
+              initial_user_prompt: "Initial prompt for overlay testing.",
+              initial_prompt_resource_id: "mock-initial-prompt-resource-id-overlay",
+              project_name: "Test Project With Overlay",
+              repo_url: "mock-repo-url-overlay",
+              selected_domain_id: MOCK_OVERLAY_DOMAIN.id,
+              selected_domain_overlay_id: "overlay-id-for-6.1",
+              user_domain_overlay_values: { custom_instruction: "Apply this overlay specific instruction." } as Json,
+              dialectic_domains: {
+                id: MOCK_OVERLAY_DOMAIN.id,
+                name: MOCK_OVERLAY_DOMAIN.name,
+                description: MOCK_OVERLAY_DOMAIN.description
+              }
+            },
+            stage: mockThesisStage
+          }] },
+          update: { data: [{ id: testSessionId, status: `pending_${mockAntithesisStage.slug}` }] },
+        },
+        dialectic_projects: { // This mock might need to be adjusted if the function queries it directly with overlay specifics
+          select: (state: any) => {
+            const idFilter = state.filters.find((f: any) => f.column === 'id');
+            if (idFilter && idFilter.value === testProjectId) {
+              return Promise.resolve({
+                data: [{
+                  id: testProjectId,
+                  user_id: testUserId,
+                  process_template_id: testProcessTemplateId,
+                  initial_user_prompt: "Initial prompt for overlay testing.",
+                  initial_prompt_resource_id: "mock-initial-prompt-resource-id-overlay",
+                  project_name: "Test Project With Overlay",
+                  repo_url: "mock-repo-url-overlay",
+                  selected_domain_id: MOCK_OVERLAY_DOMAIN.id,
+                  selected_domain_overlay_id: "overlay-id-for-6.1",
+                  user_domain_overlay_values: { custom_instruction: "Apply this overlay specific instruction." } as Json,
+                  dialectic_domains: { // Embedded as per the join simulation
+                    id: MOCK_OVERLAY_DOMAIN.id, 
+                    name: MOCK_OVERLAY_DOMAIN.name, 
+                    description: MOCK_OVERLAY_DOMAIN.description 
+                  },
+                  process_template: {
+                    id: testProcessTemplateId,
+                    name: "Mock Process Template Name",
+                  }
+                }],
+                error: null,
+              });
+            }
+            return Promise.resolve({ data: null, error: { name: 'PostgrestError', message: "No dialectic_projects mock for this ID in 6.1", code: "PGRST116" }});
+          }
+        },
+        dialectic_feedback: {
+          insert: { data: [{ id: crypto.randomUUID(), session_id: testSessionId, user_id: testUserId, feedback_type: "FileManagerCreatedFeedback_v1_overlay" }] }
+        },
+        dialectic_contributions: {
+          select: (state: any) => {
+            if (state.filters.some((f: any) => f.column === 'is_latest_edit')) {
+              return Promise.resolve({ data: [{ id: testContributionId1, model_name: 'ModelOverlay', storage_path: 'path/to/overlay_content.md', storage_bucket: 'test-bucket' }] });
+            }
+            const id = state.filters.find((f: { column: string; value: any; }) => f.column === 'id')?.value;
+            return Promise.resolve({ data: [{ id: id, model_name: `Model for ${id}`, session_id: testSessionId }] });
+          }
+        },
+        system_prompts: { // Ensure this prompt can utilize overlay values
+          select: { data: [{ id: testSystemPromptId, prompt_text: 'Overlay test prompt for Antithesis. Overlay: {{custom_instruction}} Prior: {{prior_stage_ai_outputs}} Feedback: {{prior_stage_user_feedback}}' }] },
+        },
+        dialectic_stage_transitions: {
+          select: { data: [{
+            source_stage_id: mockThesisStage.id,
+            target_stage: {
+              id: mockAntithesisStage.id,
+              slug: mockAntithesisStage.slug,
+              display_name: mockAntithesisStage.display_name,
+              default_system_prompt_id: mockAntithesisStage.default_system_prompt_id,
+              input_artifact_rules: mockAntithesisStage.input_artifact_rules,
+              expected_output_artifacts: mockAntithesisStage.expected_output_artifacts,
+              description: mockAntithesisStage.description,
+              created_at: mockAntithesisStage.created_at,
+              system_prompts: {
+                id: testSystemPromptId,
+                prompt_text: 'Overlay test prompt for Antithesis. Overlay: {{custom_instruction}} Prior: {{prior_stage_ai_outputs}} Feedback: {{prior_stage_user_feedback}}'
+              },
+              domain_specific_prompt_overlays: []
+            }
+          }]}
+        },
+        dialectic_process_templates: {
+            select: { data: [mockProcessTemplate] }
+        }
+      },
+      storageMock: {
+        downloadResult: async (bucket: string, path: string) => {
+          if (bucket === 'test-bucket' && path === 'path/to/overlay_content.md') {
+            return { data: new Blob([new TextEncoder().encode("AI content specific to overlay test")]), error: null };
+          }
+          if (bucket === 'dialectic-contributions' && path === priorStageFeedbackPathForScope) {
+             return { data: new Blob([new TextEncoder().encode(priorStageFeedbackContentForScope)]), error: null };
+          }
+          logger.error(`[Test 6.1 storageMock] Unhandled path: bucket '${bucket}', path '${path}'`);
+          return { data: null, error: new Error(`Mock path not found in storageMock for 6.1: ${bucket}/${path}`) };
+        }
+      }
+    };
+    
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
+    const mockDependencies = {
+        logger,
+        downloadFromStorage: mockDownloadFromStorageGlobalSpy, // Use the specific mock for this test
+        fileManager: mockFileManager
+    };
+
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
+
+    assertEquals(status, 200, "[6.1] Expected status 200");
+    assertExists(data, "[6.1] Expected data in the response");
+    assertEquals(error, undefined, "[6.1] Expected no error in the response");
+    
+    assertExists(data.updatedSession, "[6.1] updatedSession should exist in the response data");
+    assertExists(data.updatedSession.status, "[6.1] updatedSession.status should exist and be a string");
+    assert(typeof data.updatedSession.status === 'string', "[6.1] updatedSession.status should be a string type");
+    assert(data.updatedSession.status.includes(`pending_${mockAntithesisStage.slug}`), "[6.1] Session status should be updated");
+    assertEquals(data.feedbackRecords.length, 1, "[6.1] Expected one feedback record");
+    assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 2, "[6.1] Expected FileManagerService to be called twice");
+
+    const seedPromptCall = mockFileManager.uploadAndRegisterFile.calls.find(c => c.args[0].pathContext.fileType === 'seed_prompt');
+    assertExists(seedPromptCall, "[6.1] Expected a call to save 'seed_prompt'");
+    const seedPromptFileContent = seedPromptCall.args[0].fileContent;
+    const seedPromptContent = typeof seedPromptFileContent === 'string'
+        ? seedPromptFileContent
+        : new TextDecoder().decode(seedPromptFileContent);
+    
+    assertStringIncludes(seedPromptContent, "AI content specific to overlay test", "[6.1] Seed prompt missing AI output for overlay");
+    assertStringIncludes(seedPromptContent, "Apply this overlay specific instruction.", "[6.1] Seed prompt missing overlay custom instruction");
+    assertStringIncludes(seedPromptContent, priorStageFeedbackContentForScope, "[6.1] Seed prompt missing prior stage user feedback");
+    
+    assert(data?.nextStageSeedPromptPath, "[6.1] Next stage seed path should be returned");
+    if(data?.nextStageSeedPromptPath) {
+        assert(data.nextStageSeedPromptPath.includes(mockAntithesisStage.slug), "[6.1] Next stage seed path should be for antithesis");
+    }
   });
 
   await t.step('6.2 Successfully finalizes the session after the last stage (PARALYSIS)', async () => {
@@ -421,9 +750,25 @@ Deno.test('submitStageResponses', async (t) => {
     const mockDbConfig: MockSupabaseDataConfig = {
       genericMockResults: {
         dialectic_sessions: {
-          select: { data: [{ 
-            id: testSessionId, 
-            project: { id: testProjectId, user_id: testUserId, max_iterations: 3, process_template_id: testProcessTemplateId },
+          select: { data: [{
+            id: testSessionId,
+            iteration_count: 1,
+            project: {
+              id: testProjectId,
+              user_id: testUserId,
+              max_iterations: 3,
+              process_template_id: testProcessTemplateId,
+              initial_prompt_resource_id: "mock-initial-prompt-resource-id",
+              project_name: "Test Project Name",
+              repo_url: "mock-repo-url",
+              selected_domain_overlay_id: "mock-selected-domain-overlay-id-final",
+              selected_domain_id: MOCK_DEFAULT_DOMAIN.id,
+              dialectic_domains: {
+                id: MOCK_DEFAULT_DOMAIN.id,
+                name: MOCK_DEFAULT_DOMAIN.name,
+                description: MOCK_DEFAULT_DOMAIN.description
+              }
+            },
             stage: mockFinalStage
           }] },
           update: { data: [{ id: testSessionId, status: 'iteration_complete_pending_review' }] }
@@ -523,7 +868,7 @@ Deno.test('submitStageResponses', async (t) => {
       }
     };
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorage, fileManager: mockFileManager };
+    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorageGlobalSpy, fileManager: mockFileManager };
 
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
 
@@ -561,12 +906,14 @@ Deno.test('submitStageResponses', async (t) => {
       },
     };
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorage, fileManager: mockFileManager };
+    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorageGlobalSpy, fileManager: mockFileManager };
 
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
-    assertEquals(status, 404);
+    assertEquals(status, 500);
     assertExists(error);
-    assertEquals(error?.message, "Session not found or access denied.");
+    assertEquals(error?.message, "Session data is incomplete.");
+    assertExists(error?.details, "Error details should exist");
+    assertEquals(error?.details, "Project or stage details missing from session.", "Error details message mismatch");
     assertEquals(data, undefined);
   });
 
@@ -623,12 +970,12 @@ Deno.test('submitStageResponses', async (t) => {
       },
     };
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorage, fileManager: mockFileManager };
+    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorageGlobalSpy, fileManager: mockFileManager };
 
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
     assertEquals(status, 500);
     assertExists(error);
-    assertEquals(error?.message, "Failed to look up stage transition.");
+    assertEquals(error?.message, "Failed to determine next process stage.");
     assertEquals(data, undefined);
   });
 
@@ -659,7 +1006,7 @@ Deno.test('submitStageResponses', async (t) => {
                 select: { // Mock return for fetching current session and stage
                     data: [{
                         id: testSessionId,
-                        project: { id: testProjectId, user_id: testUserId, process_template_id: testProcessTemplateId, initial_user_prompt: "Initial prompt.", project_name: "Test Project Name" },
+                        project: { id: testProjectId, user_id: testUserId, process_template_id: testProcessTemplateId, initial_user_prompt: "Initial prompt.", project_name: "Test Project Name", repo_url: "mock-repo-url" },
                         stage: mockParalysisStage // Current stage is paralysis
                     }]
                 },
@@ -681,7 +1028,7 @@ Deno.test('submitStageResponses', async (t) => {
                     // For this test, no specific contribution ID is being validated from responses,
                     // so a generic successful response is fine if the function logic were to reach it.
                     // Since responses is empty, this specific mock won't be hit for ID validation.
-                    return Promise.resolve({ data: [{ id: id || crypto.randomUUID(), model_name: `Model for ${id}`, session_id: testSessionId }] });
+                    return Promise.resolve({ data: [{ id: id || crypto.randomUUID(), model_name: `Model for ${id || 'unknown-id'}`, session_id: testSessionId }] });
                 }
             }
         }
@@ -699,7 +1046,7 @@ Deno.test('submitStageResponses', async (t) => {
     assertEquals(status, 200, "Expected status 200 for end of process");
     assertExists(data, "Expected data in the response");
     assertEquals(error, undefined, "Expected no error");
-    assertEquals(data.message, "Session completed successfully.", "Message should indicate end of process");
+    assertEquals(data.message, "Stage responses submitted. Current stage is terminal.", "Message should indicate end of process");
     assertExists(data.updatedSession);
     assertEquals(data.updatedSession.status, 'completed', "Session status should be updated to completed or similar");
     assertEquals(data.nextStageSeedPromptPath, null, "No seed prompt should be generated if no next stage");
@@ -709,11 +1056,11 @@ Deno.test('submitStageResponses', async (t) => {
     assertExists(feedbackCall, "Expected a call to save 'user_feedback' for the paralysis stage");
     const feedbackUploadContext = feedbackCall.args[0] as UploadContext;
     assertEquals(feedbackUploadContext.fileContent, "This is the final feedback for the paralysis stage.");
-    assertEquals(feedbackUploadContext.customMetadata?.feedbackType, "ParalysisReviewSummary_v1");
+    assertEquals(feedbackUploadContext.feedbackTypeForDb, "ParalysisReviewSummary_v1");
 
     // Verify seed prompt was NOT saved
     const seedPromptCall = mockFileManager.uploadAndRegisterFile.calls.find(c => c.args[0].pathContext.fileType === 'seed_prompt');
     assertEquals(seedPromptCall, undefined, "Expected no call to save 'seed_prompt' as it's the end of process");
   });
 
-});
+}); // This closes the Deno.test block

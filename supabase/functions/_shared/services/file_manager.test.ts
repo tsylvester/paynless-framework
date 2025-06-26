@@ -162,7 +162,7 @@ Deno.test('FileManagerService', async (t) => {
         const expectedPathParts = constructStoragePath(context.pathContext);
         assertEquals(insertData.storage_path, expectedPathParts.storagePath);
         assertEquals(insertData.file_name, expectedPathParts.fileName);
-        assertEquals(insertData.resource_description, JSON.stringify({ type: context.pathContext.fileType, originalDescription: context.description }))
+        assertEquals(insertData.resource_description, JSON.stringify({ type: context.pathContext.fileType, originalDescription: context.description }) as Json);
       } finally {
         afterEach()
       }
@@ -412,11 +412,9 @@ Deno.test('FileManagerService', async (t) => {
           },
           mimeType: 'text/markdown',
           fileContent: '# My Feedback Content',
-          customMetadata: {
-            feedbackType: 'positive_suggestion',
-            resourceDescription: JSON.stringify({ rating: 5, comment: 'Excellent!' }),
-          },
           userId: 'user-feedback-user-id',
+          feedbackTypeForDb: 'some-feedback-type',
+          resourceDescriptionForDb: { description: "A test feedback resource" }
         };
         
         const expectedPath = constructStoragePath(context.pathContext);
@@ -441,15 +439,10 @@ Deno.test('FileManagerService', async (t) => {
         assertEquals(insertData.stage_slug, context.pathContext.stageSlug);
         assertEquals(insertData.iteration_number, context.pathContext.iteration);
         assertEquals(insertData.user_id, context.userId);
-        assertEquals(insertData.feedback_type, context.customMetadata?.feedbackType);
+        assertEquals(insertData.feedback_type, context.feedbackTypeForDb);
         
-        const actualResourceDesc = insertData.resource_description;
-        const expectedResourceDesc = context.customMetadata!.resourceDescription!;
-        if (typeof actualResourceDesc === 'string') {
-            assertEquals(actualResourceDesc, expectedResourceDesc);
-        } else {
-            assert(false, `Expected resource_description to be a string, but got ${typeof actualResourceDesc}`);
-        }
+        const expectedResourceDesc: Json = context.resourceDescriptionForDb! as unknown as Json;
+        assertEquals(insertData.resource_description, expectedResourceDesc);
         
         const derivedFileName = expectedPath.fileName;
         assertEquals(insertData.file_name, derivedFileName);

@@ -2,7 +2,8 @@ import { SupabaseClient } from 'npm:@supabase/supabase-js@^2.43.4'
 import { constructStoragePath } from '../utils/path_constructor.ts'
 import type {
   Database,
-  TablesInsert
+  TablesInsert,
+  Json
 } from '../../types_db.ts'
 import type { FileManagerResponse, UploadContext, PathContext, FileRecord } from '../types/file_manager.types.ts'
 
@@ -228,11 +229,10 @@ export class FileManagerService {
         return { record: null, error: { message: 'Missing required fields for feedback record.' } };
       }
 
-      const feedbackTypeFromContext = context.customMetadata?.feedbackType;
-      if (!feedbackTypeFromContext) {
+      if (typeof context.feedbackTypeForDb !== 'string' || !context.feedbackTypeForDb) {
         const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
         if (!mainUploadError) { await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]); }
-        return { record: null, error: { message: "'feedbackType' is missing in customMetadata for user_feedback."}};
+        return { record: null, error: { message: "'feedbackTypeForDb' is missing in UploadContext for user_feedback."}};
       }
 
       const feedbackInsertData: TablesInsert<'dialectic_feedback'> = {
@@ -242,12 +242,12 @@ export class FileManagerService {
         stage_slug: context.pathContext.stageSlug,
         iteration_number: context.pathContext.iteration,
         storage_bucket: this.storageBucket,
-        storage_path: finalMainContentFilePath, // Should be directory path now
+        storage_path: finalMainContentFilePath, 
         file_name: finalFileName, 
         mime_type: context.mimeType,
         size_bytes: context.sizeBytes,
-        feedback_type: feedbackTypeFromContext, 
-        resource_description: context.customMetadata?.resourceDescription || null, 
+        feedback_type: context.feedbackTypeForDb, 
+        resource_description: (context.resourceDescriptionForDb as Json) || null,
       };
       recordData = feedbackInsertData;
     }

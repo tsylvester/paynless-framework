@@ -44,8 +44,8 @@ export interface UploadContext {
   sizeBytes: number
   userId: string | null; // Allow null for system-generated contributions
   description?: string
-  customMetadata?: Record<string, string> // For any extra data to be stored.
 
+  // Specific for 'model_contribution_main' fileType
   contributionMetadata?: {
     sessionId: string;
     modelIdUsed: string; // FK to ai_providers.id
@@ -76,6 +76,10 @@ export interface UploadContext {
     isLatestEdit?: boolean; // Default to true for new contributions
     originalModelContributionId?: string | null; // Null for new, non-edited contributions
   };
+
+  // Specific for 'user_feedback' fileType
+  feedbackTypeForDb?: string; // To directly populate dialectic_feedback.feedback_type
+  resourceDescriptionForDb?: Record<string, unknown> | null; // To directly populate dialectic_feedback.resource_description (jsonb)
 }
 
 /**
