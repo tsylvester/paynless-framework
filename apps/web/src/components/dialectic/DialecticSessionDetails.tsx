@@ -5,6 +5,7 @@ import {
   selectCurrentProjectDetail,
   selectIsLoadingProjectDetail,
   selectProjectDetailError,
+  selectSortedStages,
 } from '@paynless/store';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -21,8 +22,9 @@ export const DialecticSessionDetails: React.FC = () => {
   const isLoading = useDialecticStore(selectIsLoadingProjectDetail);
   const error = useDialecticStore(selectProjectDetailError);
   const fetchProjectDetails = useDialecticStore((s: DialecticStore) => s.fetchDialecticProjectDetails);
-  const currentProcessTemplate = useDialecticStore(s => s.currentProcessTemplate);
+  const sortedStages = useDialecticStore(selectSortedStages);
   const activeContextStage = useDialecticStore(s => s.activeContextStage);
+  const setActiveContextStage = useDialecticStore(s => s.setActiveContextStage);
 
   useEffect(() => {
     if (projectId && (!projectDetail || projectDetail.id !== projectId)) {
@@ -60,7 +62,7 @@ export const DialecticSessionDetails: React.FC = () => {
     return <div className="p-4">Session not found in this project.</div>;
   }
 
-  if (!currentProcessTemplate?.stages) {
+  if (!sortedStages || sortedStages.length === 0) {
     return (
         <Alert variant="destructive" className="m-4">
             <Terminal className="h-4 w-4" />
@@ -70,11 +72,9 @@ export const DialecticSessionDetails: React.FC = () => {
     );
   }
   
-  const stageOrder = currentProcessTemplate.stages;
-
   const contributionsByStage: Record<string, DialecticContribution[]> = {};
   session.dialectic_contributions?.forEach((contrib: DialecticContribution) => {
-    const stageSlug = contrib.stage?.slug;
+    const stageSlug = contrib.stage;
     if (stageSlug) {
       if (!contributionsByStage[stageSlug]) {
         contributionsByStage[stageSlug] = [];
@@ -88,12 +88,12 @@ export const DialecticSessionDetails: React.FC = () => {
       <SessionInfoCard />
 
       <div className="flex space-x-2 overflow-x-auto pb-4">
-        {stageOrder.map((stage) => (
+        {sortedStages.map((stage) => (
           <StageTabCard
             key={stage.id}
             stage={stage}
             isActiveStage={activeContextStage?.id === stage.id}
-            onCardClick={() => {}}
+            onCardClick={(stage) => setActiveContextStage(stage)}
           />
         ))}
       </div>

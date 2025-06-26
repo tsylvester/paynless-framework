@@ -14,8 +14,15 @@ import type {
 // Import the type for the DialecticStore to correctly type the state in the mock
 import type { DialecticStore } from '@paynless/store';
 
-// Use the centralized mock for the store
-vi.mock('@paynless/store', () => import('../mocks/dialecticStore.mock'));
+// Use the centralized mock for the store, and now import the selectors
+vi.mock('@paynless/store', async (importOriginal) => {
+  const actualMock = await import('../mocks/dialecticStore.mock');
+  const original = await importOriginal() as any;
+  return {
+    ...original,
+    ...actualMock,
+  };
+});
 
 // Mock useParams
 const mockUseParams = vi.fn();

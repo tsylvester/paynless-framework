@@ -43,7 +43,8 @@ import {
     selectAllContributionsFromCurrentProject,
     selectSessionById,
     selectStageById,
-    selectFeedbackForStageIteration
+    selectFeedbackForStageIteration,
+    selectSortedStages
 } from './dialecticStore.selectors';
 import { initialDialecticStateValues } from './dialecticStore';
 import type { 
@@ -58,7 +59,8 @@ import type {
     DialecticSession,
     DialecticContribution,
     DialecticProjectResource,
-    DialecticFeedback
+    DialecticFeedback,
+    DialecticStageTransition
 } from '@paynless/types';
 
 const mockThesisStage: DialecticStage = {
@@ -77,6 +79,13 @@ const mockSynthesisStage: DialecticStage = {
     id: 's3',
     slug: 'synthesis',
     display_name: 'Synthesis',
+};
+
+const mockAntithesisStage: DialecticStage = {
+    ...mockThesisStage,
+    id: 's2',
+    slug: 'antithesis',
+    display_name: 'Antithesis',
 };
 
 describe('Dialectic Store Selectors', () => {
@@ -117,6 +126,9 @@ describe('Dialectic Store Selectors', () => {
         created_at: new Date().toISOString(),
         starting_stage_id: 'stage-abc',
         stages: [mockStage1, mockStage2],
+        transitions: [
+            { id: 't1', process_template_id: 'pt-1', source_stage_id: 'stage-abc', target_stage_id: 'stage-def', created_at: new Date().toISOString() }
+        ]
     };
     const mockProcessTemplateError: ApiError = { code: 'TEMPLATE_ERR', message: 'Test Template Error' };
     const mockSaveContributionError: ApiError = { code: 'SAVE_ERR', message: 'Test Save Error' };
@@ -775,6 +787,77 @@ describe('Dialectic Store Selectors', () => {
             expect(result).toEqual([]);
         });
     });
+
+    describe('selectSortedStages', () => {
+        const stage1: DialecticStage = { id: '1', display_name: 'Thesis', slug: 'thesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_artifacts: null, input_artifact_rules: null };
+        const stage2: DialecticStage = { id: '2', display_name: 'Antithesis', slug: 'antithesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_artifacts: null, input_artifact_rules: null };
+        const stage3: DialecticStage = { id: '3', display_name: 'Synthesis', slug: 'synthesis', created_at: '', default_system_prompt_id: null, description: null, expected_output_artifacts: null, input_artifact_rules: null };
+    
+        const transitions: DialecticStageTransition[] = [
+          { id: 't1', process_template_id: 'p1', source_stage_id: '1', target_stage_id: '2', created_at: new Date().toISOString(), condition_description: null },
+          { id: 't2', process_template_id: 'p1', source_stage_id: '2', target_stage_id: '3', created_at: new Date().toISOString(), condition_description: null },
+        ];
+    
+        it('should return stages sorted by transitions when template is valid', () => {
+          const processTemplate: DialecticProcessTemplate = {
+            id: 'p1',
+            name: 'Test Process',
+            starting_stage_id: '1',
+            stages: [stage3, stage1, stage2], // Intentionally out of order
+            transitions: transitions,
+            created_at: new Date().toISOString(),
+            description: null
+          };
+          const state = { ...initialDialecticStateValues, currentProcessTemplate: processTemplate };
+          const sortedStages = selectSortedStages(state);
+          expect(sortedStages.map(s => s.id)).toEqual(['1', '2', '3']);
+        });
+    
+        it('should return unsorted stages if starting_stage_id is missing', () => {
+          const processTemplate: DialecticProcessTemplate = {
+            id: 'p1',
+            name: 'Test Process',
+            starting_stage_id: null,
+            stages: [stage3, stage1, stage2],
+            transitions: transitions,
+            created_at: new Date().toISOString(),
+            description: null
+          };
+          const state = { ...initialDialecticStateValues, currentProcessTemplate: processTemplate };
+          const sortedStages = selectSortedStages(state);
+          expect(sortedStages).toEqual(processTemplate.stages);
+        });
+    
+        it('should return unsorted stages if transitions are missing', () => {
+          const processTemplate: DialecticProcessTemplate = {
+            id: 'p1',
+            name: 'Test Process',
+            starting_stage_id: '1',
+            stages: [stage3, stage1, stage2],
+            transitions: [],
+            created_at: new Date().toISOString(),
+            description: null
+          };
+          const state = { ...initialDialecticStateValues, currentProcessTemplate: processTemplate };
+          const sortedStages = selectSortedStages(state);
+          expect(sortedStages).toEqual(processTemplate.stages);
+        });
+    
+        it('should return an empty array if stages are empty', () => {
+          const processTemplate: DialecticProcessTemplate = {
+            id: 'p1',
+            name: 'Test Process',
+            starting_stage_id: '1',
+            stages: [],
+            transitions: transitions,
+            created_at: new Date().toISOString(),
+            description: null
+          };
+          const state = { ...initialDialecticStateValues, currentProcessTemplate: processTemplate };
+          const sortedStages = selectSortedStages(state);
+          expect(sortedStages).toEqual([]);
+        });
+      });
 });
 
 describe('selectIsStageReadyForSessionIteration', () => {

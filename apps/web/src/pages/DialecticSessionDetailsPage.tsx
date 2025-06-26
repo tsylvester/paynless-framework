@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useDialecticStore } from '@paynless/store';
+import { useDialecticStore, selectSortedStages } from '@paynless/store';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,6 +25,7 @@ export const DialecticSessionDetailsPage: React.FC = () => {
   const currentProjectDetail = useDialecticStore(state => state.currentProjectDetail) as DialecticProject | null;
   const activeContextStage = useDialecticStore(state => state.activeContextStage) as DialecticStage | null;
   const currentProcessTemplate = useDialecticStore(state => state.currentProcessTemplate);
+  const sortedStages = useDialecticStore(selectSortedStages);
   
   // Loading and error states from store
   const isLoadingProject = useDialecticStore(state => state.isLoadingProjectDetail);
@@ -32,8 +33,6 @@ export const DialecticSessionDetailsPage: React.FC = () => {
   const isLoadingSession = useDialecticStore(state => state.isLoadingActiveSessionDetail);
   const sessionError = useDialecticStore(state => state.activeSessionDetailError) as ApiError | null;
   
-  const stagesForCurrentProcess = useMemo(() => currentProcessTemplate?.stages || [], [currentProcessTemplate]);
-
   useEffect(() => {
     // Deep-link hydration logic
     if (urlProjectId && urlSessionId) {
@@ -116,7 +115,7 @@ export const DialecticSessionDetailsPage: React.FC = () => {
       <SessionInfoCard />
 
       <div className="flex space-x-2 my-4 overflow-x-auto pb-2" role="tablist" aria-label="Dialectic Stages">
-        {stagesForCurrentProcess.map(stage => (
+        {sortedStages.map(stage => (
           <StageTabCard
             key={stage.id}
             stage={stage}
@@ -130,13 +129,13 @@ export const DialecticSessionDetailsPage: React.FC = () => {
         <SessionContributionsDisplayCard />
       )}
 
-      {!activeContextStage && stagesForCurrentProcess.length > 0 && !isLoading && (
+      {!activeContextStage && sortedStages.length > 0 && !isLoading && (
         <Alert className="mt-4">
           <AlertTitle>Select a Stage</AlertTitle>
           <AlertDescription>Please select a dialectic stage to view its contributions.</AlertDescription>
         </Alert>
       )}
-      {stagesForCurrentProcess.length === 0 && !isLoading && (
+      {sortedStages.length === 0 && !isLoading && (
          <Alert variant="destructive" className="mt-4">
           <AlertTitle>Configuration Error</AlertTitle>
           <AlertDescription>Dialectic stages are not configured. Please check the application setup.</AlertDescription>

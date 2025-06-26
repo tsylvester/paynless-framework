@@ -171,6 +171,39 @@ export const selectCurrentProcessTemplate = (state: DialecticStateValues) => sta
 export const selectIsLoadingProcessTemplate = (state: DialecticStateValues) => state.isLoadingProcessTemplate;
 export const selectProcessTemplateError = (state: DialecticStateValues) => state.processTemplateError;
 
+export const selectSortedStages = createSelector(
+  [selectCurrentProcessTemplate],
+  (currentProcessTemplate) => {
+    if (!currentProcessTemplate?.stages || !currentProcessTemplate.transitions?.length || !currentProcessTemplate.starting_stage_id) {
+      return currentProcessTemplate?.stages || [];
+    }
+  
+    const { stages, transitions, starting_stage_id } = currentProcessTemplate;
+    
+    const sortedStageIds: string[] = [];
+    const transitionMap = new Map(transitions.map(t => [t.source_stage_id, t.target_stage_id]));
+  
+    let currentStageId: string | null | undefined = starting_stage_id;
+  
+    while (currentStageId) {
+      sortedStageIds.push(currentStageId);
+      currentStageId = transitionMap.get(currentStageId);
+    }
+  
+    const sorted = [...stages].sort((a, b) => {
+      const indexA = sortedStageIds.indexOf(a.id);
+      const indexB = sortedStageIds.indexOf(b.id);
+      
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+  
+      return indexA - indexB;
+    });
+  
+    return sorted;
+  }
+);
+
 // Memoized selector to get a specific stage by its ID from the current process template
 export const selectStageById = createSelector(
     [selectCurrentProcessTemplate, (_, stageId: string) => stageId],

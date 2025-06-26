@@ -28,6 +28,37 @@ export const selectProjectDetailError = (state: DialecticStateValues): ApiError 
 export const selectContributionGenerationStatus = (state: DialecticStateValues): ContributionGenerationStatus => state.contributionGenerationStatus;
 export const selectGenerateContributionsError = (state: DialecticStateValues): ApiError | null => state.generateContributionsError;
 
+export const selectSortedStages = (state: DialecticStateValues): DialecticStage[] => {
+  const { currentProcessTemplate } = state;
+  if (!currentProcessTemplate?.stages || !currentProcessTemplate.transitions?.length || !currentProcessTemplate.starting_stage_id) {
+    return currentProcessTemplate?.stages || [];
+  }
+
+  const { stages, transitions, starting_stage_id } = currentProcessTemplate;
+  
+  const sortedStageIds: string[] = [];
+  const transitionMap = new Map(transitions.map(t => [t.source_stage_id, t.target_stage_id]));
+
+  let currentStageId: string | null | undefined = starting_stage_id;
+
+  while (currentStageId) {
+    sortedStageIds.push(currentStageId);
+    currentStageId = transitionMap.get(currentStageId);
+  }
+
+  const sorted = [...stages].sort((a, b) => {
+    const indexA = sortedStageIds.indexOf(a.id);
+    const indexB = sortedStageIds.indexOf(b.id);
+    
+    if (indexA === -1) return 1;
+    if (indexB === -1) return -1;
+
+    return indexA - indexB;
+  });
+
+  return sorted;
+};
+
 export const selectActiveContextStage = (state: DialecticStateValues): DialecticStage | null => state.activeContextStage;
 export const selectSelectedModelIds = vi.fn<[DialecticStateValues], string[]>().mockReturnValue([]);
 export const selectActiveContextProjectId = (state: DialecticStateValues): string | null => state.activeContextProjectId;
