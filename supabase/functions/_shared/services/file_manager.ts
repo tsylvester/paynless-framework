@@ -222,7 +222,7 @@ export class FileManagerService {
         is_latest_edit: meta.isLatestEdit ?? true,
         original_model_contribution_id: meta.originalModelContributionId,
       };
-    } else { // targetTable === 'dialectic_feedback'
+    } else {  targetTable === 'dialectic_feedback'
       if (!context.pathContext.projectId || !context.userId || !context.pathContext.stageSlug || context.pathContext.iteration === undefined || !context.pathContext.sessionId ) {
         const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
         if (!mainUploadError) { await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]); }

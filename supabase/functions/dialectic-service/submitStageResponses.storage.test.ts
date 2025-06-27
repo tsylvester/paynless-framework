@@ -135,6 +135,9 @@ Deno.test('submitStageResponses', async (t) => {
         dialectic_contributions: { select: { data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId }] } },
         dialectic_process_templates: {
           select: { data: [mockProcessTemplate] }
+        },
+        dialectic_project_resources: {
+            select: { data: [{ storage_bucket: "mock-bucket", storage_path: "mock/path", file_name: "initial.md" }], error: null }
         }
       }
     };
@@ -231,11 +234,22 @@ Deno.test('submitStageResponses', async (t) => {
                 },
             },
             dialectic_feedback: { insert: { data: [{id: 'fb-id'}] } },
-            dialectic_contributions: { select: { data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId }] } },
-            system_prompts: { select: { data: [{ id: 'any-id', prompt_text: 'Next prompt' }] } },
-            dialectic_stage_transitions: { select: { data: [{ target_stage: mockAntithesisStage }] } },
+            dialectic_contributions: { select: { data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId, storage_bucket: 'test-bucket', storage_path: 'ai_contributions', file_name: 'contribution.md' }] } },
+            dialectic_stage_transitions: { 
+                select: { 
+                    data: [{ 
+                        target_stage: {
+                            ...mockAntithesisStage,
+                            system_prompts: { id: mockAntithesisStage.default_system_prompt_id, prompt_text: 'Next prompt' }
+                        }
+                    }] 
+                } 
+            },
             dialectic_process_templates: {
               select: { data: [mockProcessTemplate] }
+            },
+            dialectic_project_resources: {
+                select: { data: [{ storage_bucket: "mock-bucket", storage_path: "mock/path", file_name: "initial.md" }], error: null }
             }
         }
     };
@@ -252,7 +266,7 @@ Deno.test('submitStageResponses', async (t) => {
     // 5.2.3 Assert
     assertEquals(status, 500, 'Expected status 500 on seed prompt upload failure');
     assertExists(error, 'Expected an error object to be returned');
-    assertStringIncludes(error.message, "Could not find prompt resource details for ID mock-initial-prompt-resource-id", "Error message for initial prompt resource not found did not match");
+    assertStringIncludes(error.message, "Failed to store seed prompt for next stage", "Error message for seed prompt upload failure did not match");
     assertEquals(data, undefined, "Expected data to be undefined as the function should have exited early.");
   });
 
@@ -326,13 +340,28 @@ Deno.test('submitStageResponses', async (t) => {
         dialectic_project_resources: { // For initial project prompt
           select: (state) => {
             if (state.filters.some(f => f.column === 'id' && f.value === testInitialPromptResourceId5_3)) {
-              return Promise.resolve({ data: [{ storage_bucket: 'test-bucket', storage_path: initialPromptStoragePath5_3 }], error: null, status: 200, count: 1 });
+              return Promise.resolve({ data: [{ storage_bucket: 'test-bucket', storage_path: 'project_setups', file_name: 'initial_prompt_content_5_3.md' }], error: null, status: 200, count: 1 });
             }
             return Promise.resolve({ data: null, error: new Error("Initial prompt resource not found"), status: 404, count: 0 });
           }
         },
         dialectic_contributions: { // For AI contribution from current stage (thesis)
-          select: (state) => { // Assuming PromptAssembler fetches by session, iteration, stage
+          select: (state) => {
+            // Handle the initial contribution validation query
+            if (
+                state.selectColumns === 'id' &&
+                state.filters.some(f => f.column === 'session_id' && f.value === testSessionId5_3) &&
+                state.filters.some(f => f.column === 'stage' && f.value === mockThesisStage.slug) &&
+                state.filters.some(f => f.column === 'iteration_number' && f.value === 1) &&
+                !state.filters.some(f => f.column === 'is_latest_edit')
+            ) {
+                return Promise.resolve({
+                    data: [{ id: testContributionId5_3 }],
+                    error: null, status: 200, count: 1
+                });
+            }
+
+            // Handle the PromptAssembler query for contribution content
             if (state.filters.some(f => f.column === 'session_id' && f.value === testSessionId5_3) &&
                 state.filters.some(f => f.column === 'stage' && f.value === mockThesisStage.slug) &&
                 state.filters.some(f => f.column === 'iteration_number' && f.value === 1) &&
@@ -340,12 +369,11 @@ Deno.test('submitStageResponses', async (t) => {
             ) {
               return Promise.resolve({
                 data: [{
-                  id: testContributionId5_3, // This is the ID from user's response payload
+                  id: testContributionId5_3,
                   model_name: "TestModel",
-                  storage_path: contributionFileDirectory5_3, // Use directory path
+                  storage_path: contributionFileDirectory5_3,
                   storage_bucket: 'test-bucket',
-                  file_name: contributionFileName5_3, // Use file name
-                  // Other fields as needed by PromptInputArtifact
+                  file_name: contributionFileName5_3,
                 }], error: null, status: 200, count: 1
               });
             }
@@ -470,7 +498,10 @@ Deno.test('submitStageResponses', async (t) => {
         dialectic_process_templates: { select: { data: [mockProcessTemplate] } },
         // The following mocks allow the function to proceed after the user feedback save fails
         dialectic_stage_transitions: { select: { data: [{ target_stage: mockAntithesisStage }] } },
-        system_prompts: { select: { data: [{ id: mockAntithesisStage.default_system_prompt_id, prompt_text: 'Next prompt for antithesis' }] } }
+        system_prompts: { select: { data: [{ id: mockAntithesisStage.default_system_prompt_id, prompt_text: 'Next prompt for antithesis' }] } },
+        dialectic_project_resources: {
+            select: { data: [{ storage_bucket: "mock-bucket", storage_path: "mock/path", file_name: "initial.md" }], error: null }
+        }
       }
     };
 

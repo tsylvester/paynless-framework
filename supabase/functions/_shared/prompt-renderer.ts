@@ -49,20 +49,42 @@ export function renderPrompt(
   // 3. Merge dynamicContextVariables, taking precedence
   mergedVariables = { ...mergedVariables, ...dynamicContextVariables };
 
-  // 4. Substitute variables in basePromptText
+  // 4. Handle conditional sections first
   let renderedText = basePromptText;
+  const sectionRegex = /{{\s*#section:(\w+)\s*}}([\s\S]*?){{\s*\/section:\1\s*}}/g;
 
+  renderedText = renderedText.replace(sectionRegex, (match, key, content) => {
+    const value = mergedVariables[key];
+    if (value !== null && value !== undefined && value !== '') {
+      // If the value exists, keep the content, but remove the section tags.
+      return content;
+    }
+    // If the value is missing, remove the entire section.
+    return '';
+  });
+
+  // 5. Substitute remaining variables in the processed text
   for (const key in mergedVariables) {
     if (Object.prototype.hasOwnProperty.call(mergedVariables, key)) {
       const value = mergedVariables[key];
-      const stringValue = (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') 
-        ? String(value) 
-        : JSON.stringify(value);
-      
       const escapedKey = escapeRegExp(key);
-      const regex = new RegExp(`{\\s*${escapedKey}\\s*}`, 'g'); 
-      renderedText = renderedText.replace(regex, stringValue);
+      const placeholderRegex = new RegExp(`{\\s*${escapedKey}\\s*}`, 'g');
+
+      if (value === null || value === undefined || value === '') {
+        // This will now primarily handle single-line placeholders like list items
+        const lineRemovalRegex = new RegExp(`^.*${placeholderRegex.source}.*$\\n?`, "gm");
+        renderedText = renderedText.replace(lineRemovalRegex, '');
+      } else {
+        const stringValue = (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
+          ? String(value)
+          : JSON.stringify(value);
+        renderedText = renderedText.replace(placeholderRegex, stringValue);
+      }
     }
   }
+
+  // 6. Final cleanup of any leftover empty lines to avoid large gaps
+  renderedText = renderedText.replace(/\n{3,}/g, '\n\n');
+
   return renderedText;
 } 

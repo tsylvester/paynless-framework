@@ -2,16 +2,14 @@ import { assertEquals, assertRejects } from "jsr:@std/assert@0.225.3";
 import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
 import { 
     PromptAssembler, 
-    ProjectContext, 
-    SessionContext, 
-    StageContext 
 } from "./prompt-assembler.ts";
+import { ProjectContext, SessionContext, StageContext } from "./prompt-assembler.interface.ts";
 import { FileManagerService } from "./services/file_manager.ts";
 import { type InputArtifactRules, type ArtifactSourceRule, type DialecticContribution } from '../dialectic-service/dialectic.interface.ts';
 import { createMockSupabaseClient, type MockSupabaseDataConfig, type IMockSupabaseClient, type IMockClientSpies, type MockSupabaseClientSetup, type MockQueryBuilderState } from "./supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Json, Tables } from "../types_db.ts";
-import { Database } from "../dist/types_db.d.ts";
+import { Database } from "../types_db.ts";
 
 Deno.test("PromptAssembler", async (t) => {
     await t.step("_gatherInputsForStage tests", async (tCtx) => {
@@ -307,7 +305,7 @@ Deno.test("PromptAssembler", async (t) => {
             const mockStageDisplayName = "Previous Contribution Stage";
             const modelName = "Model Alpha";
             const contribContent = "This is contribution 1 content.";
-            const storagePath = "path/to/contrib1.md";
+            const storagePath = "path/to";
             const fileName = "contrib1.md";
 
             const config: MockSupabaseDataConfig = {
@@ -413,7 +411,13 @@ Deno.test("PromptAssembler", async (t) => {
                 const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
                 
                 const expectedHeader = "Contributions from some-slug stage\n\n";
-                const expectedContentSegment = `#### Contribution from ${modelName}\n\n${contribContent}\n\n---\n`;
+                const expectedContentSegment = `#### Contribution from ${modelName}\n${contribContent}\n\n`;
+
+                console.log("--- TEST LOG: should fetch and format only contributions ---");
+                console.log("ACTUAL:", JSON.stringify(result.priorStageContributions));
+                console.log("EXPECTED HEADER:", JSON.stringify(expectedHeader));
+                console.log("EXPECTED CONTENT:", JSON.stringify(expectedContentSegment));
+                console.log("--- END TEST LOG ---");
 
                 assertEquals(result.priorStageContributions.includes(expectedHeader), true, `Contribution section header missing or incorrect. Got: ${result.priorStageContributions}`);
                 assertEquals(result.priorStageContributions.includes(expectedContentSegment), true, `Contribution content missing or incorrect. Got: ${result.priorStageContributions}`);
@@ -498,8 +502,7 @@ Deno.test("PromptAssembler", async (t) => {
                                 type: "feedback", 
                                 stage_slug: feedbackStageSlug,
                                 required: true,
-                                multiple: false,
-                                section_header: "Feedback from some-slug stage",
+                                multiple: false
                             }
                         ]
                     },
@@ -515,12 +518,21 @@ Deno.test("PromptAssembler", async (t) => {
                 
                 const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
                 
-                const expectedHeader = "Feedback from some-slug stage\n\n";
-                const expectedContentSegment = `#### User Feedback for ${mockStageDisplayName}\n\n${feedbackContent}\n\n---\n`;
+                const expectedFeedback = `---
+### User Feedback on Previous Stage: ${mockStageDisplayName}
+---
 
-                assertEquals(result.priorStageFeedback.includes(expectedHeader), true, `Feedback section header missing. Got: ${result.priorStageFeedback}`);
-                assertEquals(result.priorStageFeedback.includes(expectedContentSegment), true, `Feedback content missing. Got: ${result.priorStageFeedback}`);
-                assertEquals(result.priorStageContributions, "");
+${feedbackContent}
+
+---
+`;
+                console.log("--- TEST LOG: should fetch and format only feedback ---");
+                console.log("ACTUAL:", JSON.stringify(result.priorStageFeedback));
+                console.log("EXPECTED:", JSON.stringify(expectedFeedback));
+                console.log("--- END TEST LOG ---");
+
+                assertEquals(result.priorStageFeedback, expectedFeedback, `Feedback content mismatch. Got: ${JSON.stringify(result.priorStageFeedback)}`);
+                assertEquals(result.priorStageContributions, "", "Contributions should be empty, but was not.");
 
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
                 assertEquals(downloadSpies.calls.length, 1);
@@ -542,7 +554,7 @@ Deno.test("PromptAssembler", async (t) => {
             const projectId = "p200";
             const sessionId = "s200";
             const iteration = 3;
-            const contribStoragePath = "path/to/contrib-both.md";
+            const contribStoragePath = "path/to";
             const contribFileName = "contrib-both.md";
             const expectedFeedbackPath = `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/${feedbackSlug}/user_feedback_${feedbackSlug}.md`;
 
@@ -658,12 +670,27 @@ Deno.test("PromptAssembler", async (t) => {
                 const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
 
                 const expectedContribHeader = "Contributions from contrib-slug-for-both stage\n\n";
+                const expectedContribContent = `#### Contribution from ${modelName}\n${contribContent}\n\n`;
+                const expectedFeedback = `Feedback from feedback-slug-for-both stage
+---
+
+${feedbackContent}
+
+---
+`;
+
+                console.log("--- TEST LOG: should fetch and format both contributions and feedback ---");
+                console.log("ACTUAL (Contrib):", JSON.stringify(result.priorStageContributions));
+                console.log("EXPECTED (Contrib Header):", JSON.stringify(expectedContribHeader));
+                console.log("EXPECTED (Contrib Content):", JSON.stringify(expectedContribContent));
+                console.log("ACTUAL (Feedback):", JSON.stringify(result.priorStageFeedback));
+                console.log("EXPECTED (Feedback):", JSON.stringify(expectedFeedback));
+                console.log("--- END TEST LOG ---");
+
                 assertEquals(result.priorStageContributions.includes(expectedContribHeader), true, `Contribution header mismatch. Got: ${result.priorStageContributions}`);
-                assertEquals(result.priorStageContributions.includes(`#### Contribution from ${modelName}\n\n${contribContent}\n\n---\n`), true);
+                assertEquals(result.priorStageContributions.includes(expectedContribContent), true);
                 
-                const expectedFeedbackHeader = "Feedback from feedback-slug-for-both stage\n\n";
-                assertEquals(result.priorStageFeedback.includes(expectedFeedbackHeader), true, `Feedback header mismatch. Got: ${result.priorStageFeedback}`);
-                assertEquals(result.priorStageFeedback.includes(`#### User Feedback for ${feedbackDisplayName}\n\n${feedbackContent}\n\n---\n`), true);
+                assertEquals(result.priorStageFeedback, expectedFeedback);
                 
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
                 assertEquals(downloadSpies.calls.length, 2, "Expected two download calls");
@@ -683,7 +710,7 @@ Deno.test("PromptAssembler", async (t) => {
             const projectId = "p300";
             const sessionId = "s300";
             const iteration = 1;
-            const contribStoragePath = "path/ch.md";
+            const contribStoragePath = "path";
             const contribFileName = "ch.md";
             const expectedFeedbackPath = `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/${feedbackSlug}/user_feedback_${feedbackSlug}.md`;
 
@@ -794,11 +821,24 @@ Deno.test("PromptAssembler", async (t) => {
 
                 const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
 
-                assertEquals(result.priorStageContributions.startsWith(customContribHeader + "\n\n"), true, "Contribution does not start with custom header.");
-                assertEquals(result.priorStageContributions.includes(`#### Contribution from ${modelName}\n\n${contribContent}\n\n---\n`), true);
-                
-                assertEquals(result.priorStageFeedback.startsWith(customFeedbackHeader + "\n\n"), true, "Feedback does not start with custom header.");
-                assertEquals(result.priorStageFeedback.includes(`#### User Feedback for Feedback Stage CH\n\n${feedbackContent}\n\n---\n`), true);
+                const expectedContrib = `${customContribHeader}\n\n#### Contribution from ${modelName}\n${contribContent}\n\n`;
+
+                const expectedFeedback = `${customFeedbackHeader}
+---
+
+${feedbackContent}
+
+---
+`;
+                console.log("--- TEST LOG: should use custom section_headers ---");
+                console.log("ACTUAL (Contrib):", JSON.stringify(result.priorStageContributions));
+                console.log("EXPECTED (Contrib):", JSON.stringify(expectedContrib));
+                console.log("ACTUAL (Feedback):", JSON.stringify(result.priorStageFeedback));
+                console.log("EXPECTED (Feedback):", JSON.stringify(expectedFeedback));
+                console.log("--- END TEST LOG ---");
+
+                assertEquals(result.priorStageContributions, expectedContrib, `Contribution content mismatch. Got: ${JSON.stringify(result.priorStageContributions)}`);
+                assertEquals(result.priorStageFeedback, expectedFeedback, `Feedback content mismatch. Got: ${JSON.stringify(result.priorStageFeedback)}`);
                 
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
                 assertEquals(downloadSpies.calls.length, 2, "Expected two download calls for custom headers test");
@@ -1150,7 +1190,7 @@ Deno.test("PromptAssembler", async (t) => {
                         select: async () => {
                             return { 
                                 data: [{
-                                    id: badContentContribId, storage_path: "path/to/required_content_error.md", file_name: "required_content_error.md",
+                                    id: badContentContribId, storage_path: "path/to", file_name: "required_content_error.md",
                                     storage_bucket: "test-bucket", model_name: "Model Content Error Req",
                                     session_id: 's-cdl-err-req', iteration_number: 1, stage: contribStageSlug, is_latest_edit: true, created_at: new Date().toISOString(),
                                     user_id: 'u1', content_type: 'text/markdown', raw_text_content: null, word_count: null, token_count: null, dialectic_project_id: 'p-cdl-err-req',
@@ -1196,7 +1236,7 @@ Deno.test("PromptAssembler", async (t) => {
                 assertEquals(currentConsoleErrorSpy!.calls.some(call => 
                     call.args.length > 0 && 
                     typeof call.args[0] === 'string' && 
-                    call.args[0].includes(`Failed to download content for contribution ${badContentContribId}`)
+                    call.args[0].includes(`Failed to download contribution file.`)
                 ), true, "Expected console.error for content download failure");
             } finally {
                 teardown();
@@ -1223,11 +1263,11 @@ Deno.test("PromptAssembler", async (t) => {
                         select: async () => {
                             return { 
                                 data: [{
-                                    id: badContentContribId, storage_path: "path/to/optional_content_error.md", file_name: "optional_content_error.md",
+                                    id: badContentContribId, storage_path: "path/to", file_name: "optional_content_error.md",
                                     storage_bucket: "test-bucket", model_name: "Model Content Error Opt",
                                     session_id: 's-cdl-err-opt', iteration_number: 1, stage: contribStageSlug, is_latest_edit: true, created_at: new Date().toISOString(),
                                     user_id: 'u1', content_type: 'text/markdown', raw_text_content: null, word_count: null, token_count: null, dialectic_project_id: 'p-cdl-err-opt',
-                                    model_id: "model-cdl-error-opt-id", updated_at: new Date().toISOString(), contribution_type: "model_generated", mime_type: "text/markdown"
+                                    model_id: "model-ms-opt-id", updated_at: new Date().toISOString(), contribution_type: "model_generated", mime_type: "text/markdown"
                                 }], 
                                 error: null, count: 1, status: 200, statusText: "OK"
                             };
@@ -1263,12 +1303,12 @@ Deno.test("PromptAssembler", async (t) => {
 
                 const result = await assembler['_gatherInputsForStage'](stage, project, session, 1);
 
-                assertEquals(result.priorStageContributions, "", "priorStageContributions was not empty as expected when optional content download fails.");
+                assertEquals(result.priorStageContributions, "", "priorStageContributions was not empty as expected when optional item misses storage details.");
                 assertEquals(result.priorStageFeedback, "");
                 assertEquals(currentConsoleErrorSpy!.calls.some(call => 
                     call.args.length > 0 &&
                     typeof call.args[0] === 'string' &&
-                    call.args[0].includes(`Failed to download content for contribution ${badContentContribId}`)
+                    call.args[0].includes(`Failed to download contribution file.`)
                 ), true, "Expected console.error for content download failure");
             } finally {
                 teardown();

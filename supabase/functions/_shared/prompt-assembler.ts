@@ -5,38 +5,23 @@ import { FileManagerService } from "./services/file_manager.ts";
 import { parseInputArtifactRules } from "./utils/input-artifact-parser.ts";
 import { downloadFromStorage } from "./supabase_storage_utils.ts";
 import { DialecticContribution, InputArtifactRules, ArtifactSourceRule } from '../dialectic-service/dialectic.interface.ts';
+import { DynamicContextVariables, ProjectContext, SessionContext, StageContext, RenderPromptFunctionType, DownloadStorageFunctionType } from "./prompt-assembler.interface.ts";
 
-export type ProjectContext = Tables<'dialectic_projects'> & {
-    dialectic_domains: Pick<Tables<'dialectic_domains'>, 'name'>,
-    user_domain_overlay_values?: Tables<'domain_specific_prompt_overlays'>['overlay_values']
-};
-
-export type SessionContext = Tables<'dialectic_sessions'>;
-
-export type StageContext = Tables<'dialectic_stages'> & {
-    system_prompts: Pick<Tables<'system_prompts'>, 'prompt_text'> | null,
-    domain_specific_prompt_overlays: Pick<Tables<'domain_specific_prompt_overlays'>, 'overlay_values'>[]
-};
-
-// Define the signature for the renderPrompt function
-type RenderPromptFunctionType = (
-    basePromptText: string,
-    dynamicContextVariables: Record<string, unknown>,
-    systemDefaultOverlayValues?: Tables<'domain_specific_prompt_overlays'>['overlay_values'] | null,
-    userProjectOverlayValues?: Tables<'domain_specific_prompt_overlays'>['overlay_values'] | null
-) => string;
 
 export class PromptAssembler {
     private dbClient: SupabaseClient<Database>;
     private storageBucket: string;
     private renderPromptFn: RenderPromptFunctionType;
+    private downloadFromStorageFn: DownloadStorageFunctionType;
 
     constructor(
         dbClient: SupabaseClient<Database>, 
+        downloadFn?: DownloadStorageFunctionType,
         renderPromptFn?: RenderPromptFunctionType
     ) {
         this.dbClient = dbClient;
-        this.renderPromptFn = renderPromptFn || renderPrompt; // Default to imported if not provided
+        this.renderPromptFn = renderPromptFn || renderPrompt;
+        this.downloadFromStorageFn = downloadFn || downloadFromStorage;
 
         const bucketFromEnv = Deno.env.get("SB_CONTENT_STORAGE_BUCKET");
         if (!bucketFromEnv) {
@@ -70,35 +55,32 @@ export class PromptAssembler {
         }
 
         // 2. Assemble Dynamic Context Variables
-        const dynamicContextVariables: Record<string, unknown> = {};
+        const dynamicContextVariables: DynamicContextVariables = {
+            user_objective: project.project_name,
+            domain: project.dialectic_domains.name,
+            agent_count: session.selected_model_ids?.length ?? 1,
+            context_description: projectInitialUserPrompt,
+            prior_stage_ai_outputs: priorStageContributions,
+            prior_stage_user_feedback: priorStageFeedback,
+            deployment_context: null,
+            reference_documents: null,
+            constraint_boundaries: null,
+            stakeholder_considerations: null,
+            deliverable_format: 'Standard markdown format.'
+        };
 
-        dynamicContextVariables.user_objective = project.project_name;
-        dynamicContextVariables.domain = project.dialectic_domains.name;
-        dynamicContextVariables.agent_count = session.selected_model_ids?.length ?? 1;
-        dynamicContextVariables.initial_project_context = projectInitialUserPrompt;
-        
-        dynamicContextVariables.prior_stage_ai_outputs = priorStageContributions;
-        dynamicContextVariables.prior_stage_user_feedback = priorStageFeedback;
-
-        // Placeholders for optional values. In a future step, these could be read from user inputs.
-        dynamicContextVariables.deployment_context = 'Not provided.';
-        dynamicContextVariables.reference_documents = 'Not provided.';
-        dynamicContextVariables.constraint_boundaries = 'Not provided.';
-        dynamicContextVariables.stakeholder_considerations = 'Not provided.';
-        dynamicContextVariables.deliverable_format = 'Standard markdown format.'; // System default
-        
-        // 3. Get Overlay values
+        // 4. Get Overlay values
         const systemDefaultOverlayValues = stage.domain_specific_prompt_overlays[0]?.overlay_values ?? null;
         
         const userProjectOverlayValues = project.user_domain_overlay_values ?? null;
 
-        // 4. Get Base Prompt Text
+        // 5. Get Base Prompt Text
         const basePromptText: string | undefined | null = stage.system_prompts?.prompt_text;
         if (!basePromptText) {
             throw new Error(`No system prompt template found for stage ${stage.id}`);
         }
 
-        // 5. Render the prompt
+        // 6. Render the prompt
         try {
             const renderedPrompt = this.renderPromptFn(
                 basePromptText,
@@ -172,11 +154,22 @@ export class PromptAssembler {
                 if (rule.type === 'contribution') {
                     const { data: aiContributions, error: aiContribError } = await this.dbClient
                         .from('dialectic_contributions')
-                        .select('id, storage_path, file_name, storage_bucket, model_name')
+                        .select('*')
                         .eq('session_id', session.id)
                         .eq('iteration_number', iterationNumber)
                         .eq('stage', rule.stage_slug)
                         .eq('is_latest_edit', true);
+
+                    console.log(
+                        `[PromptAssembler DBG] Contribution query results for rule stage '${rule.stage_slug}'`,
+                        {
+                            sessionId: session.id,
+                            iterationNumber: iterationNumber,
+                            stageSlugFromRule: rule.stage_slug,
+                            resultsCount: aiContributions?.length ?? 0,
+                            results: aiContributions,
+                        }
+                    );
 
                     if (aiContribError) {
                         console.error(
@@ -185,12 +178,16 @@ export class PromptAssembler {
                         );
                         if (rule.required !== false) {
                             criticalError = new Error(`Failed to retrieve REQUIRED AI contributions for stage '${displayName}'.`);
-                            console.log(`[PromptAssembler._gatherInputsForStage] criticalError SET (AI contributions): ${criticalError?.message}`); // DIAGNOSTIC LOG 1a
                             break; // Break from the 'for (const rule of parsedRules.sources)' loop
                         }
                         continue; // Skip this rule if optional and DB error, adds nothing to output
                     }
                     
+                    if ((!aiContributions || aiContributions.length === 0) && rule.required !== false) {
+                        criticalError = new Error(`Required contributions for stage '${displayName}' were not found.`);
+                        break; // Break from the 'for (const rule of parsedRules.sources)' loop
+                    }
+
                     const typedAiContributions = aiContributions as DialecticContribution[] | null;
                     let currentRuleContributionsContent = ""; // Accumulates content for *this specific rule's* contributions
 
@@ -207,27 +204,32 @@ export class PromptAssembler {
                                 }
 
                                 const { data: content, error: downloadError } =
-                                    await downloadFromStorage(
+                                    await this.downloadFromStorageFn(
                                         this.dbClient,
                                         contrib.storage_bucket,
                                         pathToDownload,
                                     );
                                     if (content && !downloadError) {
-                                        currentRuleContributionsContent += // Append to rule-specific content
-                                            `#### Contribution from ${contrib.model_name || 'AI Model'}
-
-${new TextDecoder().decode(content)}
-
----
-`;
+                                        /*console.log(
+                                            `[PromptAssembler DBG] Downloaded content for contribution ${contrib.id}`,
+                                            { content, downloadError, pathToDownload, contrib }
+                                        );*/
+                                         const decoder = new TextDecoder('utf-8');
+                                         const decodedContent = decoder.decode(content);
+                                         currentRuleContributionsContent += // Append to rule-specific content
+                                             `#### Contribution from ${contrib.model_name || 'AI Model'}\n` +
+                                             `${decodedContent}\n\n`;
+                                             /*console.log(
+                                                `[PromptAssembler DBG] Current rule contributions content:`,
+                                                { currentRuleContributionsContent }
+                                             );*/
                                     } else {
                                         console.error(
-                                            `[PromptAssembler._gatherInputsForStage] Failed to download content for contribution ${contrib.id} (stage '${displayName}')`,
+                                            `[PromptAssembler._gatherInputsForStage] Failed to download contribution file. Path: ${pathToDownload}`,
                                             { path: pathToDownload, error: downloadError, rule, projectId: project.id, sessionId: session.id, iterationNumber },
                                         );
                                         if (rule.required !== false) {
                                             criticalError = new Error(`Failed to download REQUIRED content for contribution ${contrib.id} from stage '${displayName}'. Original error: ${downloadError ? downloadError.message : 'Unknown download error'}`);
-                                            console.log(`[PromptAssembler._gatherInputsForStage] criticalError SET (contribution download): ${criticalError?.message}`); // DIAGNOSTIC LOG 1b
                                             break; // Break from the 'for (const contrib of typedAiContributions)' loop
                                         }
                                         // Optional failed download for an item, item contributes nothing to currentRuleContributionsContent
@@ -236,7 +238,6 @@ ${new TextDecoder().decode(content)}
                                  console.warn(`[PromptAssembler._gatherInputsForStage] Contribution ${contrib.id} is missing storage_path or storage_bucket.`);
                                  if (rule.required !== false) {
                                     criticalError = new Error(`REQUIRED Contribution ${contrib.id} from stage '${displayName}' is missing storage details.`);
-                                    console.log(`[PromptAssembler._gatherInputsForStage] criticalError SET (contribution missing storage): ${criticalError?.message}`); // DIAGNOSTIC LOG 1c
                                     break; // Break from the 'for (const contrib of typedAiContributions)' loop
                                  }
                                  // Optional item missing storage details, item contributes nothing to currentRuleContributionsContent
@@ -254,57 +255,50 @@ ${new TextDecoder().decode(content)}
 
 `;
                         priorStageContributions += blockHeader + currentRuleContributionsContent;
+                        console.log(
+                            `[PromptAssembler DBG] Prior stage contributions content:`,
+                            { priorStageContributions }
+                        );
                     }
                     // After processing all contributions for THIS rule, if a critical error occurred, break outer loop.
                     if (criticalError) break;
 
-                } else if (rule.type === 'feedback') { 
-                    const feedbackPath = `projects/${project.id}/sessions/${session.id}/iteration_${iterationNumber}/${rule.stage_slug}/user_feedback_${rule.stage_slug}.md`;
+                } else if (rule.type === 'feedback') {
+                    const feedbackFileName = `user_feedback_${rule.stage_slug}.md`;
+                    const feedbackPath =
+                        `projects/${project.id}/sessions/${session.id}/iteration_${iterationNumber}/${rule.stage_slug}/${feedbackFileName}`;
                     
-                    const { data: content, error: downloadError } =
-                        await downloadFromStorage(this.dbClient, this.storageBucket, feedbackPath);
+                    const { data: feedbackContent, error: feedbackDownloadError } = await this.downloadFromStorageFn(this.dbClient, this.storageBucket, feedbackPath);
 
-                    if (content && !downloadError) { // Successfully downloaded non-empty content
-                        const blockHeader = rule.section_header
-                            ? `${rule.section_header}
+                    if (feedbackContent && !feedbackDownloadError) {
+                        const content = new TextDecoder().decode(feedbackContent);
+                        if (rule.section_header) {
+                            priorStageFeedback += `${rule.section_header}
+---
 
-`
-                            : `### Feedback from ${displayName} Stage
-
-`;
-                        priorStageFeedback += blockHeader; // Add header
-                        priorStageFeedback += `#### User Feedback for ${displayName}
-
-${new TextDecoder().decode(content)}
+${content}
 
 ---
-`; // Add content
+`;
+                        } else {
+                            priorStageFeedback += `---
+### User Feedback on Previous Stage: ${displayName}
+---
+
+${content}
+
+---
+`;
+                        }
                     } else {
-                        // Content is null/empty or there was a downloadError
-                        if (downloadError) {
-                            console.error(
-                                `[PromptAssembler._gatherInputsForStage] Failed to download feedback file. Path: ${feedbackPath}`,
-                                { error: downloadError, rule, projectId: project.id, sessionId: session.id, iterationNumber },
-                            );
-                            if (rule.required !== false) {
-                                criticalError = new Error(
-                                    `Failed to download REQUIRED feedback for stage '${displayName}' (slug: ${rule.stage_slug}). Original error: ${downloadError ? downloadError.message : 'Unknown download error'}`
-                                );
-                                console.log(`[PromptAssembler._gatherInputsForStage] criticalError SET (feedback download): ${criticalError?.message}`); // DIAGNOSTIC LOG 1d
-                                break; // Break from the 'for (const rule of parsedRules.sources)' loop
-                            }
-                            // For optional feedback with download error, do nothing further.
-                            // The header and content are not added because the 'if (content && !downloadError)' condition was false.
-                        } else { // No downloadError means content is null or empty (e.g., file not found or empty file)
-                             console.info(
-                                `[PromptAssembler._gatherInputsForStage] No feedback file found or content was empty for stage '${displayName}'. Path: ${feedbackPath}`,
-                                { rule, projectId: project.id, sessionId: session.id, iterationNumber },
-                            );
-                            // For optional feedback not found or empty, do nothing further.
-                            // The header and content are not added.
-                            // If this was a required feedback that was simply not found (no download error, just null content),
-                            // and the system expects it, this might be an implicit issue not currently flagged as an error by this logic.
-                            // However, for optional, this is the correct behavior according to the new requirement.
+                        console.error(
+                            `[PromptAssembler._gatherInputsForStage] Failed to download feedback file. Path: ${feedbackPath}`,
+                            { error: feedbackDownloadError, rule, projectId: project.id, sessionId: session.id, iterationNumber },
+                        );
+
+                        if (rule.required !== false) { // Defaults to true if 'required' is not explicitly false
+                            criticalError = new Error(`Failed to download REQUIRED feedback for stage '${displayName}' (slug: ${rule.stage_slug}). Original error: ${feedbackDownloadError ? feedbackDownloadError.message : 'No data returned from storage download.'}`);
+                            break; // Break from the 'for (const rule of parsedRules.sources)' loop
                         }
                     }
                 }
@@ -315,10 +309,8 @@ ${new TextDecoder().decode(content)}
             }
         }
 
-        console.log(`[PromptAssembler._gatherInputsForStage] BEFORE FINAL THROW CHECK, criticalError is: ${criticalError?.message}`); // DIAGNOSTIC LOG 2
         if (criticalError) {
-            console.log(`[PromptAssembler._gatherInputsForStage] ABOUT TO THROW CRITICAL ERROR: ${criticalError.message}`);
-            throw criticalError; // Throw the first critical error encountered
+            throw criticalError;
         }
 
         return { priorStageContributions, priorStageFeedback };

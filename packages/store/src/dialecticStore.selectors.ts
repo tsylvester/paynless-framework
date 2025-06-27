@@ -210,40 +210,91 @@ export const selectStageById = createSelector(
     (processTemplate, stageId) => processTemplate?.stages?.find(s => s.id === stageId)
 );
 
-export const selectIsStageReadyForSessionIteration = (
-    state: DialecticStateValues,
-    projectId: string, // This parameter is for ensuring we are looking at the correct project, though currentProjectDetail is already specific
-    sessionId: string,
-    stageSlug: string,
-    iterationNumber: number
-): boolean => {
-    const project = state.currentProjectDetail;
+export const selectIsStageReadyForSessionIteration = createSelector(
+    [
+        selectCurrentProjectDetail,
+        selectCurrentProcessTemplate,
+        (_state, projectId: string) => projectId,
+        (_state, _projectId, sessionId: string) => sessionId,
+        (_state, _projectId, _sessionId, stageSlug: string) => stageSlug,
+        (_state, _projectId, _sessionId, _stageSlug, iterationNumber: number) => iterationNumber
+    ],
+    (project, processTemplate, projectId, sessionId, stageSlug, iterationNumber): boolean => {
+        if (!project || project.id !== projectId || !processTemplate) {
+            return false;
+        }
 
-    if (!project || project.id !== projectId || !project.resources || project.resources.length === 0) {
-        return false;
-    }
+        const stage = processTemplate.stages?.find(s => s.slug === stageSlug);
+        if (!stage) return false;
 
-    for (const resource of project.resources) {
-        if (typeof resource.resource_description === 'string') {
+        // If a stage has no input rules, it's ready by default.
+        if (!stage.input_artifact_rules) {
+            return true;
+        }
+
+        let rules;
+        if (typeof stage.input_artifact_rules === 'string') {
             try {
-                const description = JSON.parse(resource.resource_description);
-                if (
-                    description.type === 'seed_prompt' &&
-                    description.session_id === sessionId &&
-                    description.stage_slug === stageSlug &&
-                    description.iteration === iterationNumber
-                ) {
-                    return true;
+                rules = JSON.parse(stage.input_artifact_rules);
+            } catch (e) {
+                console.error("Failed to parse input_artifact_rules", e);
+                return false; // Invalid rules definition
+            }
+        } else {
+            rules = stage.input_artifact_rules;
+        }
+
+        if (!rules || !Array.isArray(rules.sources)) {
+            return true; // No sources defined, so we are ready.
+        }
+
+        for (const rule of rules.sources) {
+            if (rule.required === false) { // Explicitly check for false, as undefined should be treated as true
+                continue;
+            }
+
+            let found = false;
+            if (rule.type === 'contribution') {
+                const session = project.dialectic_sessions?.find(s => s.id === sessionId);
+                if (!session) {
+                    return false; // Contributions require a session object.
                 }
-            } catch (error) {
-                // Invalid JSON, ignore this resource
-                // console.warn('Failed to parse resource_description:', error, resource.resource_description);
+                found = session.dialectic_contributions?.some(c => 
+                    c.stage === rule.stage_slug &&
+                    c.iteration_number === iterationNumber
+                ) ?? false;
+            } else if (rule.type === 'seed_prompt') {
+                found = project.resources?.some(r => {
+                    if (typeof r.resource_description !== 'string') return false;
+                    try {
+                        const desc = JSON.parse(r.resource_description);
+                        return desc.type === 'seed_prompt' &&
+                               desc.session_id === sessionId &&
+                               desc.stage_slug === stageSlug &&
+                               desc.iteration === iterationNumber;
+                    } catch {
+                        return false;
+                    }
+                }) ?? false;
+            } else if (rule.type === 'feedback') {
+                const session = project.dialectic_sessions?.find(s => s.id === sessionId);
+                if (!session) {
+                    return false; // Feedback requires a session object.
+                }
+                found = session.feedback?.some(f =>
+                    f.stage_slug === rule.stage_slug &&
+                    f.iteration_number === iterationNumber
+                ) ?? false;
+            }
+
+            if (!found) {
+                return false; // A required input is missing
             }
         }
-    }
 
-    return false;
-};
+        return true; // All required inputs were found
+    }
+);
 
 export const selectFeedbackForStageIteration = (
   state: DialecticStateValues,

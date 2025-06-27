@@ -118,7 +118,7 @@ Deno.test('submitStageResponses', async (t) => {
       projectId: testProjectId,
       stageSlug: mockThesisStage.slug,
       currentIterationNumber: 1,
-      responses: [{ originalContributionId: 'id', responseText: 'text' }]
+      responses: [{ originalContributionId: testContributionId1, responseText: 'text' }]
     };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, {
       genericMockResults: {
@@ -144,6 +144,9 @@ Deno.test('submitStageResponses', async (t) => {
         }] } },
         dialectic_process_templates: {
           select: { data: [mockProcessTemplate] }
+        },
+        dialectic_contributions: {
+          select: { data: [{ id: testContributionId1 }] }
         }
       }
     });

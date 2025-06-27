@@ -7,11 +7,13 @@ import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import type { Database, Json } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
 import type { ILogger } from "../_shared/types.ts";
-import { PromptAssembler, type ProjectContext, type StageContext, type SessionContext } from "../_shared/prompt-assembler.ts";
+import { PromptAssembler } from "../_shared/prompt-assembler.ts";
+import { ProjectContext, StageContext, SessionContext } from "../_shared/prompt-assembler.interface.ts";
 import { FileManagerService } from "../_shared/services/file_manager.ts";
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts';
 import { formatResourceDescription } from '../_shared/utils/resourceDescriptionFormatter.ts';
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
+import { downloadFromStorage } from '../_shared/supabase_storage_utils.ts';
 
 export interface StartSessionDeps {
   randomUUID: () => string;
@@ -215,7 +217,7 @@ export async function startSession(
         domain_specific_prompt_overlays: overlaysError ? [] : (overlays || []).map(o => ({ overlay_values: o.overlay_values as Json })),
     };
     
-    const initialPrompt = await getInitialPromptContent(dbClient, projectContext, log);
+    const initialPrompt = await getInitialPromptContent(dbClient, projectContext, log, downloadFromStorage);
 
     if (!initialPrompt) {
         log.error(`[startSession] Failed to get initial prompt details for project ${project.id}`);

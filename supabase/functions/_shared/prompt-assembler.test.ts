@@ -2,16 +2,14 @@ import { assertEquals, assertRejects, assert } from "jsr:@std/assert@0.225.3";
 import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
 import { 
     PromptAssembler, 
-    ProjectContext, 
-    SessionContext, 
-    StageContext 
 } from "./prompt-assembler.ts";
+import { ProjectContext, SessionContext, StageContext, DownloadStorageFunctionType, DynamicContextVariables } from "./prompt-assembler.interface.ts";
 import { FileManagerService } from "./services/file_manager.ts";
 import { type InputArtifactRules, type ArtifactSourceRule, type DialecticContribution } from '../dialectic-service/dialectic.interface.ts';
 import { createMockSupabaseClient, type MockSupabaseDataConfig, type IMockSupabaseClient, type IMockClientSpies, type MockSupabaseClientSetup, type MockQueryBuilderState } from "./supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Json, Tables } from "../types_db.ts";
-import { Database } from "../dist/types_db.d.ts";
+import { Database } from "../types_db.ts";
 import * as promptRenderer from "./prompt-renderer.ts";
 
 // Define a type for the mock implementation of _gatherInputsForStage
@@ -24,6 +22,10 @@ type RenderPromptMock = (
     _systemDefaultOverlayValues?: Json, 
     _userProjectOverlayValues?: Json
 ) => string;
+
+const mockDownloadFn: DownloadStorageFunctionType = async (_client, _bucket, _path) => {
+    return await Promise.resolve({ data: new ArrayBuffer(0), error: null });
+};
 
 Deno.test("PromptAssembler", async (t) => {
     await t.step("should correctly assemble and render a prompt for the initial stage", async () => {
@@ -64,8 +66,9 @@ Deno.test("PromptAssembler", async (t) => {
             // --- End Mock renderPrompt --- 
 
             assembler = new PromptAssembler(
-                mockDbClient as SupabaseClient<any>, 
-                renderPromptMockFn // Inject mock function
+                mockDbClient as SupabaseClient<any>,
+                mockDownloadFn, 
+                renderPromptMockFn
             );
 
             let gatherInputsCallCount = 0;
@@ -148,17 +151,17 @@ Deno.test("PromptAssembler", async (t) => {
             const renderArgs = lastRenderPromptArgs;
             assertEquals(renderArgs?.[0], stageSystemPromptText);
             
-            const expectedDynamicVars: Record<string, unknown> = {
+            const expectedDynamicVars: DynamicContextVariables = {
                 user_objective: "Test Project Objective",
                 domain: "Software Development Domain",
                 agent_count: 2,
-                initial_project_context: "This is the initial user prompt content.",
+                context_description: "This is the initial user prompt content.",
                 prior_stage_ai_outputs: "N/A for initial stage.", 
                 prior_stage_user_feedback: "N/A for initial stage.",
-                deployment_context: 'Not provided.',
-                reference_documents: 'Not provided.',
-                constraint_boundaries: 'Not provided.',
-                stakeholder_considerations: 'Not provided.',
+                deployment_context: null,
+                reference_documents: null,
+                constraint_boundaries: null,
+                stakeholder_considerations: null,
                 deliverable_format: 'Standard markdown format.'
             };
             assertEquals(renderArgs?.[1], expectedDynamicVars);
@@ -210,6 +213,7 @@ Deno.test("PromptAssembler", async (t) => {
 
             assembler = new PromptAssembler(
                 mockDbClient as SupabaseClient<any>,
+                mockDownloadFn,
                 renderPromptMockFn
             );
 
@@ -250,7 +254,7 @@ Deno.test("PromptAssembler", async (t) => {
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 current_stage_id: 'stage-789',
-                iteration_count: 2, // Simulating a second iteration or later stage
+                iteration_count: 2,
                 session_description: 'Subsequent test session',
                 status: 'pending_synthesis',
                 associated_chat_id: null,
@@ -258,17 +262,23 @@ Deno.test("PromptAssembler", async (t) => {
             };
 
             const stageSystemPromptText = "Synthesize based on {prior_stage_ai_outputs} and {prior_stage_user_feedback}. Context: {initial_project_context}";
+            const stageOverlayValues = { "style": "informal" } as Json;
+
             const stage: StageContext = {
-                id: "stage-789",
+                id: "stage-456",
                 system_prompts: { prompt_text: stageSystemPromptText },
-                domain_specific_prompt_overlays: [], // No system overlays for this test
+                domain_specific_prompt_overlays: [
+                    { 
+                        overlay_values: stageOverlayValues
+                    }
+                ],
                 slug: 'synthesis-stage',
                 display_name: 'Synthesis Stage',
                 description: 'A stage that uses prior inputs',
                 created_at: new Date().toISOString(),
                 default_system_prompt_id: null,
                 expected_output_artifacts: null,
-                input_artifact_rules: { sources: [] } as Json // Non-null to ensure _gatherInputsForStage is meaningfully called
+                input_artifact_rules: { sources: [] } as Json
             };
             
             const iterationNumber = 2;
@@ -287,22 +297,22 @@ Deno.test("PromptAssembler", async (t) => {
             const renderArgs = lastRenderPromptArgs;
             assertEquals(renderArgs?.[0], stageSystemPromptText);
             
-            const expectedDynamicVars: Record<string, unknown> = {
+            const expectedDynamicVars: DynamicContextVariables = {
+                context_description: "Initial prompt for subsequent test.",
                 user_objective: "Subsequent Test Project",
                 domain: "Testing Domain",
                 agent_count: 1,
-                initial_project_context: "Initial prompt for subsequent test.",
                 prior_stage_ai_outputs: expectedPriorContributions,
                 prior_stage_user_feedback: expectedPriorFeedback,
-                deployment_context: 'Not provided.',
-                reference_documents: 'Not provided.',
-                constraint_boundaries: 'Not provided.',
-                stakeholder_considerations: 'Not provided.',
+                deployment_context: null,
+                reference_documents: null,
+                constraint_boundaries: null,
+                stakeholder_considerations: null,
                 deliverable_format: 'Standard markdown format.'
             };
             assertEquals(renderArgs?.[1], expectedDynamicVars);
-            assertEquals(renderArgs?.[2], null); // No system overlays in this stage mock
-            assertEquals(renderArgs?.[3], null); // user_domain_overlay_values is null in project mock
+            assertEquals(renderArgs?.[2], stageOverlayValues);
+            assertEquals(renderArgs?.[3], null);
 
         } finally {
             denoEnvStub?.restore();
@@ -343,6 +353,7 @@ Deno.test("PromptAssembler", async (t) => {
 
             assembler = new PromptAssembler(
                 mockDbClient as SupabaseClient<any>,
+                mockDownloadFn,
                 renderPromptMockFn
             );
 
@@ -446,6 +457,7 @@ Deno.test("PromptAssembler", async (t) => {
 
             assembler = new PromptAssembler(
                 mockDbClient as SupabaseClient<any>,
+                mockDownloadFn,
                 renderPromptMockFn
             );
 
@@ -578,6 +590,75 @@ Deno.test("PromptAssembler", async (t) => {
         } finally {
             if (denoEnvStub) {
                 denoEnvStub.restore();
+            }
+        }
+    });
+
+    await t.step("should throw an error if rendering the prompt fails", async () => {
+        const mockDbClient: any = { /* ... */ };
+        let denoEnvStub: any = null;
+        let originalGatherInputs: any = null;
+        let assembler: PromptAssembler | null = null;
+        try {
+            denoEnvStub = stub(Deno.env, "get", () => "test-bucket");
+            
+            const renderPromptMockFn_ThrowsError: RenderPromptMock = () => {
+                throw new Error("Simulated prompt rendering failure.");
+            };
+            
+            assembler = new PromptAssembler(
+                mockDbClient as SupabaseClient<any>,
+                mockDownloadFn,
+                renderPromptMockFn_ThrowsError
+            );
+            
+            const gatherInputsMockFn: GatherInputsMock = async () => ({
+                priorStageContributions: "Mock contributions",
+                priorStageFeedback: "Mock feedback"
+            });
+            
+            originalGatherInputs = (assembler as any)._gatherInputsForStage;
+            (assembler as any)._gatherInputsForStage = gatherInputsMockFn;
+
+            const project: ProjectContext = {
+                id: "proj-err-2",
+                user_id: 'user-err-2',
+                project_name: "Error Test Project",
+                initial_user_prompt: "Error prompt.",
+                initial_prompt_resource_id: null,
+                selected_domain_id: "domain-err-2",
+                dialectic_domains: { name: "Error Domain" },
+                process_template_id: 'pt-err-2',
+                selected_domain_overlay_id: null,
+                user_domain_overlay_values: null,
+                repo_url: null,
+                status: 'active',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+
+            const stage: StageContext = {
+                id: "stage-err-2",
+                system_prompts: { prompt_text: "Error prompt template." },
+                domain_specific_prompt_overlays: [],
+                 slug: 'error-stage',
+                display_name: 'Error Stage',
+                description: 'Error stage',
+                created_at: new Date().toISOString(),
+                default_system_prompt_id: null,
+                expected_output_artifacts: null,
+                input_artifact_rules: null
+            };
+
+            await assertRejects(
+                () => assembler!.assemble(project, {} as SessionContext, stage, "", 1),
+                Error,
+                "Simulated prompt rendering failure."
+            );
+        } finally {
+            denoEnvStub?.restore();
+            if (originalGatherInputs && assembler) {
+                (assembler as any)._gatherInputsForStage = originalGatherInputs;
             }
         }
     });

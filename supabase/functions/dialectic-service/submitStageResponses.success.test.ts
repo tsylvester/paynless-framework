@@ -250,13 +250,16 @@ Deno.test('submitStageResponses', async (t) => {
         },
         dialectic_contributions: {
           select: (state: any) => {
+            // For fetching contributions for seed prompt assembly
             if (state.filters.some((f: any) => f.column === 'is_latest_edit')) {
-              // For fetching contributions to create the seed prompt
               return Promise.resolve({ data: [{ id: testContributionId1, model_name: 'ModelA', storage_path: 'path/to/content1.md', storage_bucket: 'test-bucket' }, { id: testContributionId2, model_name: 'ModelB', storage_path: 'path/to/content2.md', storage_bucket: 'test-bucket' }] });
             }
-            // For validating originalContributionId
-            const id = state.filters.find((f: { column: string; value: any; }) => f.column === 'id')?.value;
-            return Promise.resolve({ data: [{ id: id, model_name: `Model for ${id}`, session_id: testSessionId }] });
+            // For validating originalContributionIds at the start of the function
+            if (state.selectColumns === 'id') {
+              return Promise.resolve({ data: [{ id: testContributionId1 }, { id: testContributionId2 }] });
+            }
+            // Fallback to catch unhandled cases
+            return Promise.resolve({ data: [], error: { message: `Unhandled dialectic_contributions select mock in test 1.1`, details: JSON.stringify(state) } });
           }
         },
         system_prompts: {
@@ -311,11 +314,11 @@ Deno.test('submitStageResponses', async (t) => {
         downloadFromStorage: async (client: SupabaseClient, bucket: string, path: string): Promise<{ data: ArrayBuffer | null; mimeType?: string; error: Error | null; }> => {
             const { data: blob, error: downloadError } = await (client as any).storage.from(bucket).download(path);
             if (downloadError) {
-                logger.error(`[Test - mockDependencies.downloadFromStorage] Error downloading ${bucket}/${path}`, { error: downloadError });
+                logger.error(`[Test 1.1 - mockDependencies.downloadFromStorage] Error downloading ${bucket}/${path}`, { error: downloadError });
                 return { data: null, error: downloadError as Error, mimeType: undefined };
             }
             if (!blob) {
-                logger.warn(`[Test - mockDependencies.downloadFromStorage] No blob from ${bucket}/${path}`, { pathDetails: `${bucket}/${path}` });
+                logger.warn(`[Test 1.1 - mockDependencies.downloadFromStorage] No blob from ${bucket}/${path}`, { pathDetails: `${bucket}/${path}` });
                 return { data: null, error: new Error(`No data returned from storage download for ${path}`), mimeType: undefined };
             }
             const arrayBuffer = await blob.arrayBuffer();
@@ -666,11 +669,16 @@ Deno.test('submitStageResponses', async (t) => {
         },
         dialectic_contributions: {
           select: (state: any) => {
+            // For fetching contributions for seed prompt assembly
             if (state.filters.some((f: any) => f.column === 'is_latest_edit')) {
               return Promise.resolve({ data: [{ id: testContributionId1, model_name: 'ModelOverlay', storage_path: 'path/to/overlay_content.md', storage_bucket: 'test-bucket' }] });
             }
-            const id = state.filters.find((f: { column: string; value: any; }) => f.column === 'id')?.value;
-            return Promise.resolve({ data: [{ id: id, model_name: `Model for ${id}`, session_id: testSessionId }] });
+            // For validating originalContributionId at the start of the function
+            if (state.selectColumns === 'id') {
+                return Promise.resolve({ data: [{ id: testContributionId1 }] });
+            }
+            // Fallback to catch unhandled cases
+            return Promise.resolve({ data: [], error: { message: `Unhandled dialectic_contributions select mock in test 6.1`, details: JSON.stringify(state) } });
           }
         },
         system_prompts: { // Ensure this prompt can utilize overlay values
@@ -717,8 +725,20 @@ Deno.test('submitStageResponses', async (t) => {
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
     const mockDependencies = {
         logger,
-        downloadFromStorage: mockDownloadFromStorageGlobalSpy, // Use the specific mock for this test
-        fileManager: mockFileManager
+        fileManager: mockFileManager,
+        downloadFromStorage: async (client: SupabaseClient, bucket: string, path: string): Promise<{ data: ArrayBuffer | null; mimeType?: string; error: Error | null; }> => {
+            const { data: blob, error: downloadError } = await (client as any).storage.from(bucket).download(path);
+            if (downloadError) {
+                logger.error(`[Test 6.1 - mockDependencies.downloadFromStorage] Error downloading ${bucket}/${path}`, { error: downloadError });
+                return { data: null, error: downloadError as Error, mimeType: undefined };
+            }
+            if (!blob) {
+                logger.warn(`[Test 6.1 - mockDependencies.downloadFromStorage] No blob from ${bucket}/${path}`, { pathDetails: `${bucket}/${path}` });
+                return { data: null, error: new Error(`No data returned from storage download for ${path}`), mimeType: undefined };
+            }
+            const arrayBuffer = await blob.arrayBuffer();
+            return { data: arrayBuffer, error: null, mimeType: blob.type };
+        }
     };
 
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);

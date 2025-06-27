@@ -472,7 +472,7 @@ describe("Edge Function: dialectic-service", () => {
       const startSessionPayload: StartSessionPayload = {
         projectId: testProjectId,
         // Use the SAME globally seeded dummy ID twice
-        selectedModelCatalogIds: [workingDummyProviderId, workingDummyProviderId], 
+        selectedModelIds: [workingDummyProviderId, workingDummyProviderId], 
         sessionDescription: "Test session for generating thesis contributions with duplicated (global) dummy model",
         originatingChatId: testAssociatedChatId, 
       };

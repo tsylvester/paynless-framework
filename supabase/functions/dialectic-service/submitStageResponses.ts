@@ -11,8 +11,11 @@ import {
   type DialecticProject,
 } from './dialectic.interface.ts';
 import type { PathContext } from '../_shared/types/file_manager.types.ts';
-import { PromptAssembler, type ProjectContext, type SessionContext, type StageContext } from "../_shared/prompt-assembler.ts";
+import { PromptAssembler } from "../_shared/prompt-assembler.ts";
+import { ProjectContext, SessionContext, StageContext } from "../_shared/prompt-assembler.interface.ts";
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
+import { formatResourceDescription } from '../_shared/utils/resourceDescriptionFormatter.ts';
+import { downloadFromStorage } from '../_shared/supabase_storage_utils.ts';
 
 // Get storage bucket from environment variables, with a fallback for safety.
 const STORAGE_BUCKET = Deno.env.get('SB_CONTENT_STORAGE_BUCKET');
@@ -120,6 +123,31 @@ export async function submitStageResponses(
   // Type assertion for project and stage as they are checked above
   const project = sessionData.project as DialecticProject & { dialectic_domains: { id: string, name: string, description: string | null } | null };
   const currentStage = sessionData.stage as DialecticStage;
+
+  // Validate that all originalContributionIds in the payload exist for this session, stage, and iteration.
+  if (payload.responses && payload.responses.length > 0) {
+    const { data: stageContributions, error: stageContributionsError } = await dbClient
+      .from('dialectic_contributions')
+      .select('id')
+      .eq('session_id', payload.sessionId)
+      .eq('stage', currentStage.slug)
+      .eq('iteration_number', payload.currentIterationNumber);
+
+    if (stageContributionsError) {
+      logger.error(`[submitStageResponses] Error fetching contributions for validation:`, { error: stageContributionsError });
+      return { error: { message: "Database error during contribution validation.", status: 500 }, status: 500 };
+    }
+
+    const validContributionIds = new Set(stageContributions?.map(c => c.id) ?? []);
+    for (const response of payload.responses) {
+      if (!validContributionIds.has(response.originalContributionId)) {
+        return {
+          error: { message: `Contribution with ID ${response.originalContributionId} not found for this session, stage, and iteration.`, status: 400 },
+          status: 400,
+        };
+      }
+    }
+  }
 
   // Additional validation for items in payload.responses
   for (const responseItem of payload.responses) {
@@ -239,10 +267,9 @@ export async function submitStageResponses(
     .from('dialectic_stage_transitions')
     .select(
       `
-      target_stage:dialectic_stages!inner (
+      target_stage:dialectic_stages!dialectic_stage_transitions_target_stage_id_fkey!inner (
         *,
-        system_prompts!inner(id, prompt_text),
-        domain_specific_prompt_overlays(id, overlay_values, domain_id)
+        system_prompts!inner(id, prompt_text)
       )
     `,
     )
@@ -269,12 +296,34 @@ export async function submitStageResponses(
 
   let nextStageFull: NextStageQueryResult | null = null;
   if (nextStageTransition && nextStageTransition.target_stage) {
+    const ts = nextStageTransition.target_stage as unknown as (Tables<'dialectic_stages'> & { system_prompts: {id: string, prompt_text: string} | null});
+    
+    type OverlayQueryResult = Pick<Tables<'domain_specific_prompt_overlays'>, 'id' | 'overlay_values' | 'domain_id'>;
+    let overlays: OverlayQueryResult[] | null = [];
+    if (ts.default_system_prompt_id) {
+      const { data, error } = await dbClient
+        .from('domain_specific_prompt_overlays')
+        .select('id, overlay_values, domain_id')
+        .eq('system_prompt_id', ts.default_system_prompt_id)
+        .eq('domain_id', project.selected_domain_id);
+      
+      if (error) {
+        logger.error(`Failed to fetch overlays for stage ${ts.slug}`, { error });
+      } else {
+        overlays = data;
+        if (!overlays || overlays.length === 0) {
+            logger.warn(`No domain-specific overlays found for stage '${ts.slug}' with system_prompt_id '${ts.default_system_prompt_id}' and domain_id '${project.selected_domain_id}'.`);
+        }
+      }
+    } else {
+        logger.warn(`Stage '${ts.slug}' (ID: ${ts.id}) does not have a default_system_prompt_id. Cannot fetch domain-specific overlays.`);
+    }
+
       // The target_stage from the query should match NextStageQueryResult
-      const ts = nextStageTransition.target_stage as unknown as NextStageQueryResult; // Cast if TS struggles with complex join type
       nextStageFull = {
           ...ts, // Spreads properties of Tables<'dialectic_stages'>
           system_prompts: ts.system_prompts, // Already in the correct shape or null
-          domain_specific_prompt_overlays: ts.domain_specific_prompt_overlays || [], // Ensure array
+          domain_specific_prompt_overlays: overlays || [], // Ensure array
       };
       logger.info(
         `[submitStageResponses] Next stage determined: ${nextStageFull.display_name} (ID: ${nextStageFull.id})`,
@@ -336,20 +385,12 @@ export async function submitStageResponses(
     return { error: { message: "Project configuration integrity error: Process template ID in DB is invalid.", status: 500 }, status: 500 };
   }
 
-  if (!project.repo_url) { 
-    logger.error("[submitStageResponses] Critical configuration error: project.repo_url is missing.");
-    return { error: { message: "Project configuration error: Missing repository URL.", status: 500 }, status: 500 };
-  }
-  if (!project.selected_domain_overlay_id) {
-    logger.error("[submitStageResponses] Critical configuration error: project.selected_domain_overlay_id is missing.");
-    return { error: { message: "Project configuration error: Missing selected domain overlay ID.", status: 500 }, status: 500 };
-  }
   if (!project.dialectic_domains || typeof project.dialectic_domains.name !== 'string' || !project.dialectic_domains.name) {
     logger.error("[submitStageResponses] Critical configuration error: project.dialectic_domains.name is missing or invalid.");
     return { error: { message: "Project configuration error: Missing or invalid dialectic domain name.", status: 500 }, status: 500 };
   }
 
-  const assembler = new PromptAssembler(dbClient);
+  const assembler = new PromptAssembler(dbClient, dependencies.downloadFromStorage);
 
   const projectContextForAssembler: ProjectContext = {
       id: project.id, 
@@ -359,11 +400,11 @@ export async function submitStageResponses(
       initial_prompt_resource_id: project.initial_prompt_resource_id, 
       selected_domain_id: project.selected_domain_id, 
       process_template_id: rawDbProject.process_template_id, // Checked: known to be a non-null string
-      repo_url: project.repo_url, 
+      repo_url: null, 
       status: project.status, 
       created_at: project.created_at, 
       updated_at: project.updated_at, 
-      selected_domain_overlay_id: project.selected_domain_overlay_id, 
+      selected_domain_overlay_id: project.selected_domain_overlay_id ?? null, 
       user_domain_overlay_values: rawDbProject.user_domain_overlay_values ?? null, 
       dialectic_domains: { name: project.dialectic_domains.name }, 
   };
@@ -381,7 +422,7 @@ export async function submitStageResponses(
   };
   
   // Robust handling for getInitialPromptContent
-  const initialUserPromptData = await getInitialPromptContent(dbClient, projectContextForAssembler, logger);
+  const initialUserPromptData = await getInitialPromptContent(dbClient, projectContextForAssembler, logger, dependencies.downloadFromStorage);
   if (!initialUserPromptData) {
       logger.error("[submitStageResponses] Critical error: Initial project prompt data object is missing.");
       return { error: { message: "Critical error: Initial project prompt data is missing.", status: 500 }, status: 500 };
@@ -408,6 +449,10 @@ export async function submitStageResponses(
       stageContextForAssembler,
       projectInitialUserPrompt,
       iterationNumber,
+    );
+    console.log(
+      `[submitStageResponses DBG] Assembled seed prompt text:`,
+      assembledSeedPromptText
     );
   } catch (assemblyError) {
     logger.error(
@@ -458,7 +503,14 @@ export async function submitStageResponses(
       mimeType: 'text/markdown',
       sizeBytes: new TextEncoder().encode(assembledSeedPromptText).length,
       userId: userId || '',
-      description: `Seed prompt for stage: ${nextStageFull.display_name}, iteration: ${iterationNumber}`,
+      description: formatResourceDescription({
+        type: 'seed_prompt',
+        session_id: payload.sessionId,
+        stage_slug: nextStageFull.slug,
+        iteration: iterationNumber,
+        original_file_name: seedPromptFileName,
+        project_id: project.id,
+      }),
     });
 
   if (seedFileError || !seedPromptFileRecord) {
