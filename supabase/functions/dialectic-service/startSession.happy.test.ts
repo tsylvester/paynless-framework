@@ -163,7 +163,7 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
         // args[0] is projectContext
         // args[1] is sessionContextForAssembler
         // args[2] is stageContext
-        assert(typeof assembleArgs[3] === 'string', "Forth argument (projectInitialUserPrompt) should be a string."); 
+        assertEquals(assembleArgs[3], "Let's be happy.", "The fourth argument to assemble should be the correct initial user prompt.");
         assertEquals(assembleArgs[4], 1, "Fifth argument (iterationNumber) should be 1 for startSession.");
 
     } finally {
@@ -324,11 +324,165 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
         // args[0] is projectContext
         // args[1] is sessionContextForAssembler
         // args[2] is stageContext
-        assert(typeof assembleArgsDefault[3] === 'string', "Forth argument (projectInitialUserPrompt) should be a string for default case."); 
+        assertEquals(assembleArgsDefault[3], "Default prompt", "The fourth argument should be the correct default prompt string.");
         assertEquals(assembleArgsDefault[4], 1, "Fifth argument (iterationNumber) should be 1 for startSession default case.");
 
     } finally {
         assemblerStubDefault.restore();
+        fmStub.restore();
+    }
+});
+
+Deno.test("startSession - Happy Path (with initial prompt from file resource)", async () => {
+    const mockUser: User = {
+        id: "user-file-prompt-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+    };
+    const mockProjectId = "project-file-prompt-id";
+    const mockResourceId = "resource-file-prompt-id";
+    const mockInitialStageId = "stage-initial-file-prompt";
+    const mockInitialStageName = "Analysis Stage";
+    const mockInitialStageSlug = "analysis-stage";
+    const mockSystemPromptId = "system-prompt-file-prompt";
+    const mockNewSessionId = "session-file-prompt-id";
+    const mockFileContent = "This is the initial prompt content from a file.";
+    const encoder = new TextEncoder();
+    const mockFileContentBuffer = encoder.encode(mockFileContent);
+    
+    const payload: StartSessionPayload = {
+        projectId: mockProjectId,
+        selectedModelIds: ["model-file"],
+        sessionDescription: "Session from a file prompt"
+    };
+
+    const assembleSpy = spy(() => Promise.resolve("Assembled prompt content from file"));
+    const assemblerStub = stub(promptAssembler.PromptAssembler.prototype, "assemble", assembleSpy);
+
+    const mockInitialPromptResource: DialecticProjectResource = {
+        id: mockResourceId,
+        project_id: mockProjectId,
+        user_id: mockUser.id,
+        file_name: 'initial_prompt.txt',
+        storage_bucket: 'dialectic-content',
+        storage_path: `projects/${mockProjectId}/initial_user_prompt`,
+        mime_type: 'text/plain',
+        size_bytes: mockFileContent.length,
+        resource_description: "Initial prompt from file",
+        status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+    };
+    
+    const mockSeedPromptResource: DialecticProjectResource = {
+        id: "res-seed-file-789",
+        project_id: mockProjectId,
+        user_id: mockUser.id,
+        file_name: `${mockInitialStageSlug}_seed_prompt.md`,
+        storage_bucket: 'dialectic-content',
+        storage_path: `projects/${mockProjectId}/sessions/${mockNewSessionId}/iteration_1/${mockInitialStageSlug}`,
+        mime_type: 'text/markdown',
+        size_bytes: 123,
+        resource_description: "Assembled seed prompt for the session",
+        status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+    };
+    
+    const mockFileManager = {
+        uploadAndRegisterFile: () => Promise.resolve({ record: mockSeedPromptResource, error: null }),
+    } as unknown as FileManagerService;
+    
+    const fmStub = stub(mockFileManager, "uploadAndRegisterFile", 
+        () => Promise.resolve({ record: mockSeedPromptResource, error: null })
+    );
+
+    const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
+        genericMockResults: {
+            dialectic_projects: {
+                select: async () => ({
+                    data: [{
+                        id: mockProjectId,
+                        user_id: mockUser.id,
+                        project_name: "File Prompt Project",
+                        initial_user_prompt: null, // Explicitly null for this test case
+                        initial_prompt_resource_id: mockResourceId,
+                        process_template_id: "proc-template-file",
+                        dialectic_domains: { name: 'Technical' },
+                        selected_domain_id: 'd-2'
+                    }], error: null, status: 200, statusText: 'ok'
+                })
+            },
+            dialectic_project_resources: {
+                select: async () => ({
+                    data: [mockInitialPromptResource],
+                    error: null, status: 200, statusText: 'ok'
+                })
+            },
+            dialectic_process_templates: {
+                select: async () => ({
+                    data: [{ id: "proc-template-file", name: 'File Template', starting_stage_id: mockInitialStageId }],
+                    error: null, status: 200, statusText: 'ok'
+                })
+            },
+            dialectic_stages: {
+                select: async () => ({
+                    data: [{ id: mockInitialStageId, slug: mockInitialStageSlug, display_name: mockInitialStageName, default_system_prompt_id: mockSystemPromptId }],
+                    error: null, status: 200, statusText: 'ok'
+                })
+            },
+            system_prompts: {
+                select: async () => ({
+                    data: [{id: mockSystemPromptId, prompt_text: "System prompt for file case."}],
+                    error: null, status: 200, statusText: 'ok'
+                })
+            },
+            domain_specific_prompt_overlays: {
+                select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' })
+            },
+            dialectic_sessions: {
+                insert: async () => ({
+                    data: [{ id: mockNewSessionId, project_id: mockProjectId, session_description: payload.sessionDescription }],
+                    error: null, status: 201, statusText: 'ok'
+                })
+            },
+        },
+        storageMock: {
+            downloadResult: async (bucketId, path) => {
+                const expectedPath = `${mockInitialPromptResource.storage_path}/${mockInitialPromptResource.file_name}`;
+                if (bucketId === mockInitialPromptResource.storage_bucket && path === expectedPath) {
+                    return { data: new Blob([mockFileContentBuffer]), error: null };
+                }
+                return { data: null, error: new Error(`Mock download error: Path not found - ${path}`) };
+            }
+        },
+        mockUser: mockUser,
+    });
+
+    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const mockLogger = { info: spy(), warn: spy(), error: spy(), debug: spy() } as any;
+
+    try {
+        const result = await startSession(mockUser, adminDbClient, payload, { 
+            logger: mockLogger, 
+            randomUUID: () => mockNewSessionId,
+            fileManager: mockFileManager,
+        });
+
+        assertExists(result.data, `Session start with file prompt failed: ${result.error?.message}`);
+        assertEquals(result.error, undefined, "Error should be undefined on file prompt happy path");
+
+        assertEquals(assembleSpy.calls.length, 1, "assembler.assemble should have been called once.");
+        const assembleArgs = assembleSpy.calls[0].args as any[];
+        
+        // Check that the prompt content from the file was passed to the assembler
+        assertEquals(assembleArgs[3], mockFileContent, "The fourth argument to assemble should be the content of the initial prompt file.");
+        assertEquals(assembleArgs[4], 1, "The fifth argument (iterationNumber) should be 1.");
+
+    } finally {
+        assemblerStub.restore();
         fmStub.restore();
     }
 });

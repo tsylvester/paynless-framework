@@ -206,9 +206,10 @@ export async function startSession(
     const descriptionForDb = sessionDescription?.trim() || `${project.project_name || 'Unnamed Project'} - New Session`;
 
     // Prepare prompt assembly context
+    const { dialectic_domains, ...projectData } = project;
     const projectContext: ProjectContext = {
-        ...project,
-        dialectic_domains: project.dialectic_domains ? { name: project.dialectic_domains.name } : { name: 'General' },
+        ...projectData,
+        dialectic_domains: dialectic_domains ? { name: dialectic_domains.name } : { name: 'General' },
     };
 
     const stageContext: StageContext = {

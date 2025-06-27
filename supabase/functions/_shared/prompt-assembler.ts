@@ -54,6 +54,8 @@ export class PromptAssembler {
             throw new Error(`Failed to gather inputs for prompt assembly: ${(inputError instanceof Error) ? inputError.message : String(inputError)}`);
         }
 
+        
+        
         // 2. Assemble Dynamic Context Variables
         const dynamicContextVariables: DynamicContextVariables = {
             user_objective: project.project_name,
