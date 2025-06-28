@@ -4,7 +4,8 @@ import React, { useEffect } from 'react';
 import { useOrganizationStore, selectCurrentUserRoleInOrg } from '@paynless/store';
 import { OrganizationListCard } from '../components/organizations/OrganizationListCard';
 import { OrganizationDetailsCard } from '../components/organizations/OrganizationDetailsCard';
-import { OrganizationSettingsCard } from '../components/organizations/OrganizationSettingsCard';
+import { OrganizationPrivacyCard } from '../components/organizations/OrganizationPrivacyCard';
+import { OrganizationChatSettings } from '../components/organizations/OrganizationChatSettings';
 import { MemberListCard } from '../components/organizations/MemberListCard';
 import { InviteMemberCard } from '../components/organizations/InviteMemberCard';
 import { PendingActionsCard } from '../components/organizations/PendingActionsCard';
@@ -100,7 +101,7 @@ export const OrganizationHubPage: React.FC = () => {
       <div className="flex flex-col md:flex-row gap-4">
         {/* Column 1: Organization List (Fixed width on medium screens and up) */}
         <div className="md:w-1/3 lg:w-1/4 flex-shrink-0"> {/* Adjust width as needed */}
-          <ErrorBoundary fallbackMessage="Could not load the organization list.">
+          <ErrorBoundary fallback="Could not load the organization list.">
             <OrganizationListCard />
           </ErrorBoundary>
         </div>
@@ -131,27 +132,32 @@ export const OrganizationHubPage: React.FC = () => {
             ) : (
               // Loading finished and no error, render the actual cards
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <ErrorBoundary fallbackMessage="Could not load organization details.">
+                <ErrorBoundary fallback="Could not load organization details.">
                   <OrganizationDetailsCard />
                 </ErrorBoundary>
                 {isAdmin && (
-                  <ErrorBoundary fallbackMessage="Could not load organization settings.">
-                    <OrganizationSettingsCard />
+                  <ErrorBoundary fallback="Could not load organization privacy settings.">
+                    <OrganizationPrivacyCard />
                   </ErrorBoundary>
                 )}
-                <ErrorBoundary fallbackMessage="Could not load the member list.">
+                <ErrorBoundary fallback="Could not load the member list.">
                   <MemberListCard />
                 </ErrorBoundary>
                 {isAdmin && (
-                  <ErrorBoundary fallbackMessage="Could not load the invite member section.">
+                  <ErrorBoundary fallback="Could not load the invite member section.">
                     <InviteMemberCard />
                   </ErrorBoundary>
                 )}
-                {isAdmin && (
-                  <ErrorBoundary fallbackMessage="Could not load pending actions.">
-                    <PendingActionsCard />
-                  </ErrorBoundary>
-                )}
+                  {isAdmin && (
+                    <ErrorBoundary fallback="Could not load pending actions.">
+                      <PendingActionsCard />
+                    </ErrorBoundary>
+                  )}
+                  {isAdmin && (
+                    <ErrorBoundary fallback="Could not load chat settings.">
+                      <OrganizationChatSettings />
+                    </ErrorBoundary>
+                  )}
               </div>
             )
           ) : userOrganizations.length > 0 ? (

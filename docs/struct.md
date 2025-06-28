@@ -252,16 +252,23 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       ├── components/     # UI Components specific to web app
 │   │       │   ├── ai/
 │   │       │   ├── auth/
-│   │       │   ├── billing/
-│   │       │   ├── common/
-│   │       │   ├── core/
+│   │       │   ├── common/       # Shared common components (e.g., ErrorBoundary)
+│   │       │   ├── debug/        # [NEW] Components for debugging/development
+│   │       │   ├── demos/        # [NEW] Demonstration components
+│   │       │   │   └── WalletBackupDemo/ # Example of platform capabilities
+│   │       │   │       ├── FileActionButtons.tsx
+│   │       │   │       ├── GenerateMnemonicButton.tsx
+│   │       │   │       ├── MnemonicInputArea.tsx
+│   │       │   │       ├── StatusDisplay.tsx
+│   │       │   │       └── WalletBackupDemoCard.tsx
+│   │       │   ├── features/     # [NEW] Feature-specific components (e.g. feature flags)
 │   │       │   ├── integrations/
 │   │       │   ├── layout/       # Includes header, sidebar
 │   │       │   ├── marketing/
-│   │       │   ├── profile/
-│   │       │   ├── routes/
-│   │       │   ├── subscription/
-│   │       │   ├── organizations/ # << NEW
+│   │       │   ├── notifications/ # << NEW DIR
+│   │       │   │   ├── Notifications.tsx # Component for displaying notifications list
+│   │       │   │   └── NotificationCard.tsx # Component for individual notification display
+│   │       │   ├── organizations/ # << Existing
 │   │       │   │   ├── AdminBadge.tsx
 │   │       │   │   ├── CreateOrganizationForm.tsx
 │   │       │   │   ├── CreateOrganizationModal.tsx
@@ -273,14 +280,10 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       │   │   ├── OrganizationSettingsCard.tsx
 │   │       │   │   ├── OrganizationSwitcher.tsx
 │   │       │   │   └── PendingActionsCard.tsx
-│   │       │   ├── demos/ # << NEW - Demonstration components
-│   │       │   │   └── WalletBackupDemo/ # << NEW - Demo for platform FS capabilities
-│   │       │   │       ├── FileActionButtons.tsx
-│   │       │   │       ├── GenerateMnemonicButton.tsx
-│   │       │   │       ├── MnemonicInputArea.tsx
-│   │       │   │       ├── StatusDisplay.tsx
-│   │       │   │       └── WalletBackupDemoCard.tsx
-│   │       │   ├── ui/           # Re-exported shadcn/ui components
+│   │       │   ├── profile/
+│   │       │   ├── routes/
+│   │       │   ├── subscription/
+│   │       │   └── ui/           # Re-exported shadcn/ui components
 │   │       │   └── Notifications.tsx # << CORRECTED: Top-level component for notifications
 │   │       │   └── NotificationCard.tsx # << NEW: Component for individual notification display
 │   │       ├── config/         # App-specific config (e.g., routes)
@@ -293,7 +296,7 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       │   ├── Dashboard.tsx
 │   │       │   ├── Home.tsx
 │   │       │   ├── Login.tsx
-│   │       │   ├── Notifications.tsx
+│   │       │   ├── Notifications.tsx # Page-level component (distinct from component/notifications/)
 │   │       │   ├── OrganizationFocusedViewPage.tsx
 │   │       │   ├── OrganizationHubPage.tsx
 │   │       │   ├── Profile.tsx
@@ -318,14 +321,14 @@ The project is organized as a monorepo using pnpm workspaces:
 │   └── macos/              # Mac Application (Placeholder) //do not remove
 │
 ├── packages/               # Shared libraries/packages
-│   ├── api/         # Frontend API client logic (Singleton)
+│   ├── api/                # Frontend API client logic (Singleton)
 │   │   └── src/
 │   │       ├── apiClient.ts      # Base API client (fetch wrapper, singleton)
-│   │       ├── stripe.api.ts     # Stripe/Subscription specific client methods
 │   │       ├── ai.api.ts         # AI Chat specific client methods
-│   │       ├── notifications.api.ts # << NEW - Notification fetching/updates/realtime
-│   │       └── organizations.api.ts # << NEW - Organization & Member management methods
-│   ├── analytics/   # Frontend analytics client logic (PostHog, Null adapter)
+│   │       ├── notifications.api.ts # Notification fetching/updates/realtime
+│   │       ├── organizations.api.ts # Organization & Member management methods
+│   │       └── stripe.api.ts     # Stripe/Subscription specific client methods (Filename corrected)
+│   ├── analytics/          # Frontend analytics client logic (PostHog, Null adapter)
 │   │   └── src/
 │   │       ├── index.ts          # Main service export & factory
 │   │       ├── nullAdapter.ts    # No-op analytics implementation
@@ -335,8 +338,8 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       ├── authStore.ts        # Auth state & actions
 │   │       ├── subscriptionStore.ts # Subscription state & actions
 │   │       └── aiStore.ts          # AI Chat state & actions
-│   │       ├── notificationStore.ts # << NEW - In-app notification state & actions
-│   │       └── organizationStore.ts # << NEW - Organization/Multi-tenancy state & actions
+│   │       ├── notificationStore.ts # In-app notification state & actions
+│   │       └── organizationStore.ts # Organization/Multi-tenancy state & actions
 │   ├── types/              # Shared TypeScript types and interfaces
 │   │   └── src/
 │   │       ├── api.types.ts
@@ -350,13 +353,13 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       ├── route.types.ts
 │   │       ├── vite-env.d.ts
 │   │       └── index.ts            # Main export for types
-│   ├── platform/ # Service for abstracting platform-specific APIs (FS, etc.)
+│   ├── platform/           # Service for abstracting platform-specific APIs (FS, etc.)
 │   │   └── src/
-│   │       ├── index.ts        # Main service export, platform/OS detection, provider loading
 │   │       ├── context.tsx     # PlatformProvider context and usePlatform hook, Tauri event listener
-│   │       ├── web.ts          # Web platform provider (implements capabilities for standard browser)
+│   │       ├── events.ts       # Event emitter and types for cross-component communication (e.g., file drop)
+│   │       ├── index.ts        # Main service export, platform/OS detection, provider loading
 │   │       ├── tauri.ts        # Tauri platform provider (uses Tauri plugins for native features like FS/Dialog)
-│   │       └── events.ts       # Event emitter and types for cross-component communication (e.g., file drop)
+│   │       └── web.ts          # Web platform provider (implements capabilities for standard browser)
 │   └── utils/              # Shared utility functions
 │       └── src/
 │           └── logger.ts         # Logging utility (singleton)
@@ -366,13 +369,13 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │   ├── _shared/          # Shared Deno utilities for functions
 │   │   │   ├── auth.ts           # Auth helpers
 │   │   │   ├── cors-headers.ts   # CORS header generation
-│   │   │   ├── email_service/    # [NEW] Email marketing service
-│   │   │   │   ├── factory.ts      # [NEW] Selects email service implementation
-│   │   │   │   ├── kit_service.ts  # [NEW] Kit implementation (planned)
-│   │   │   │   └── no_op_service.ts # [NEW] No-op implementation (planned)
+│   │   │   ├── email_service/    # Email marketing service
+│   │   │   │   ├── factory.ts      # Selects email service implementation
+│   │   │   │   ├── kit_service.ts  # Kit implementation (planned)
+│   │   │   │   └── no_op_service.ts # No-op implementation (planned)
 │   │   │   ├── responses.ts      # Standardized response helpers
 │   │   │   └── stripe-client.ts  # Stripe client initialization
-│   │   ├── node_modules/     # Function dependencies (managed by Deno/npm)
+│   │   ├── node_modules/     # Function dependencies (managed by Deno/npm) - Added
 │   │   ├── api-subscriptions/ # Subscription management endpoints
 │   │   ├── ai-providers/     # Fetch AI providers
 │   │   ├── chat/             # Handle AI chat message exchange
@@ -381,10 +384,11 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │   ├── login/
 │   │   ├── logout/
 │   │   ├── me/               # User profile fetch
+│   │   ├── notifications/    # Notification backend logic
 │   │   ├── on-user-created/  # Auth Hook: Triggered after user signs up
+│   │   ├── organizations/    # Organization backend logic
 │   │   ├── ping/             # Health check
 │   │   ├── profile/          # User profile update
-│   │   ├── refresh/
 │   │   ├── register/
 │   │   ├── reset-password/
 │   │   ├── session/
@@ -392,11 +396,9 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │   ├── sync-ai-models/   # Sync AI models to DB (Placeholder)
 │   │   ├── sync-stripe-plans/ # Sync Stripe plans to DB
 │   │   ├── system-prompts/   # Fetch system prompts
-│   │   ├── notifications/    # << NEW - Notification backend logic
-│   │   ├── organizations/    # << NEW - Organization backend logic
 │   │   ├── tools/            # Internal tooling scripts (e.g., env sync)
-│   │   ├── deno.jsonc
-│   │   ├── deno.lock
+│   │   ├── deno.jsonc        # Deno config
+│   │   ├── deno.lock         # Deno lock file
 │   │   ├── README.md         # Functions-specific README
 │   │   └── types_db.ts       # Generated DB types
 │   └── migrations/         # Database migration files (YYYYMMDDHHMMSS_*.sql)
@@ -409,7 +411,8 @@ The project is organized as a monorepo using pnpm workspaces:
 ├── pnpm-workspace.yaml     # pnpm workspace definition
 ├── tsconfig.base.json      # Base TypeScript configuration for the monorepo
 ├── tsconfig.json           # Root tsconfig (references base)
-└── README.md               # Project root README (often minimal, points here)
+├── tsconfig.node.json      # [NEW] TS config for Node scripts
+└── README.md               # Project root README
 ```
 
 ## Edge Functions (`supabase/functions/`)
@@ -420,7 +423,7 @@ supabase/functions/
 ├── _shared/             # Shared Deno utilities
 │   ├── auth.ts
 │   ├── cors-headers.ts
-│   ├── email_service/   # [NEW] Email marketing service
+│   ├── email_service/   # Email marketing service
 │   │   ├── factory.ts
 │   │   ├── kit_service.ts
 │   │   └── no_op_service.ts
@@ -435,22 +438,22 @@ supabase/functions/
 ├── login/               # Handles user login
 ├── logout/              # Handles user logout
 ├── me/                  # Handles fetching the current user's profile
-├── on-user-created/     # Auth Hook: Triggered after user signs up (e.g., create profile, **email sync**)
+├── notifications/       # [NEW] Notification backend logic
+├── on-user-created/     # Auth Hook: Triggered after user signs up (e.g., create profile, email sync)
+├── organizations/       # [NEW] Organization backend logic
 ├── ping/                # Simple health check endpoint
 ├── profile/             # Handles updating the current user's profile
-├── refresh/             # Handles session token refresh
 ├── register/            # Handles user registration
 ├── reset-password/      # Handles password reset flow
 ├── session/             # Handles session validation/information (needs verification)
 ├── stripe-webhook/      # Handles incoming Stripe events
 ├── sync-ai-models/      # [Admin/Internal] Syncs AI models from providers to DB (Placeholder/Inactive?)
 ├── sync-stripe-plans/   # [Admin/Internal] Syncs Stripe plans to DB
-└── system-prompts/      # Fetches active system prompts
+├── system-prompts/      # Fetches active system prompts
+└── tools/               # [NEW] Internal tooling scripts (e.g., env sync)
 ```
 
 ## Core Packages & Exports (For AI Assistants)
-
-This section details the key exports from the shared packages to help AI tools understand the available functionality. *(Note: Details require inspecting package source code)*
 
 ### 1. `packages/api` (API Interaction)
 
@@ -465,6 +468,8 @@ Manages all frontend interactions with the backend Supabase Edge Functions. It f
   - **`api.delete<ResponseType>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<ResponseType>>`**: Performs a DELETE request.
   - **`api.billing()`**: Accessor for the `StripeApiClient` instance.
   - **`api.ai()`**: Accessor for the `AiApiClient` instance.
+  - **`api.notifications()`**: [NEW] Accessor for the `NotificationApiClient` instance.
+  - **`api.organizations()`**: [NEW] Accessor for the `OrganizationApiClient` instance.
 
 - **`FetchOptions` type** (defined in `@paynless/types`): Extends standard `RequestInit`.
   - `{ isPublic?: boolean; token?: string; }` (Plus standard `RequestInit` properties like `headers`, `method`, `body`)
@@ -490,7 +495,7 @@ Methods for interacting with Stripe/Subscription related Edge Functions.
   - Returns the portal URL (in `data.url`) or error.
 - `getSubscriptionPlans(options?: FetchOptions): Promise<ApiResponse<SubscriptionPlan[]>>`
   - Fetches available subscription plans (e.g., from `subscription_plans` table).
-  - Returns `{ plans: SubscriptionPlan[] }` in the `data` field (Note: API returns array directly, type adjusted for clarity).
+  - Returns `SubscriptionPlan[]` in the `data` field. (Updated response description)
 - `getUserSubscription(options?: FetchOptions): Promise<ApiResponse<UserSubscription>>`
   - Fetches the current user's subscription details.
 - `cancelSubscription(subscriptionId: string, options?: FetchOptions): Promise<ApiResponse<void>>`
@@ -520,6 +525,60 @@ Methods for interacting with AI Chat related Edge Functions.
   - Fetches all messages for a specific chat.
   - `chatId` (Required): ID of the chat.
   - `token` (Required): User's auth token.
+
+#### [NEW] `NotificationApiClient` (Accessed via `api.notifications()`)
+Methods for interacting with Notification related Edge Functions.
+
+- `fetchNotifications(token: string): Promise<ApiResponse<Notification[]>>`
+  - Fetches notifications for the authenticated user.
+- `markNotificationRead(notificationId: string, token: string): Promise<ApiResponse<void>>`
+  - Marks a specific notification as read.
+- `markAllNotificationsAsRead(token: string): Promise<ApiResponse<void>>`
+  - Marks all user's notifications as read.
+- `subscribeToNotifications(handler: (payload: RealtimePostgresChangesPayload<Notification>) => void): Promise<Subscription | null>`
+  - Subscribes to real-time notification updates via Supabase Realtime.
+- `unsubscribeFromNotifications(subscription: Subscription | null): Promise<void>`
+  - Unsubscribes from real-time notification updates.
+
+#### [NEW] `OrganizationApiClient` (Accessed via `api.organizations()`)
+Methods for interacting with Organization related Edge Functions.
+
+- `createOrganization(data: CreateOrganizationRequest, token: string): Promise<ApiResponse<Organization>>`
+  - Creates a new organization.
+- `listUserOrganizations(pagination: PaginationParams, token: string): Promise<ApiResponse<PaginatedResponse<OrganizationMember>>>`
+  - Lists organizations the user is a member of (paginated).
+- `getOrganizationDetails(orgId: string, token: string): Promise<ApiResponse<OrganizationDetails>>`
+  - Fetches details for a specific organization (including members, pending actions).
+- `updateOrganization(orgId: string, data: UpdateOrganizationRequest, token: string): Promise<ApiResponse<Organization>>`
+  - Updates organization details (admin only).
+- `deleteOrganization(orgId: string, token: string): Promise<ApiResponse<void>>`
+  - Soft-deletes an organization (admin only).
+- `getOrganizationMembers(orgId: string, pagination: PaginationParams, token: string): Promise<ApiResponse<PaginatedResponse<OrganizationMember>>>`
+  - Lists members of a specific organization (paginated).
+- `updateMemberRole(orgId: string, membershipId: string, newRole: OrganizationRole, token: string): Promise<ApiResponse<OrganizationMember>>`
+  - Updates a member's role (admin only).
+- `removeMember(orgId: string, memberId: string, token: string): Promise<ApiResponse<void>>`
+  - Removes a member from an organization (admin or self).
+- `inviteUserByEmail(orgId: string, email: string, role: OrganizationRole, token: string): Promise<ApiResponse<Invite>>`
+  - Invites a user by email (admin only).
+- `getInviteDetails(inviteToken: string): Promise<ApiResponse<InviteDetails>>`
+  - Fetches details for a specific invite token (invited user or org admin).
+- `acceptOrganizationInvite(inviteToken: string, token: string): Promise<ApiResponse<OrganizationMember>>`
+  - Accepts an organization invitation (invited user).
+- `declineOrganizationInvite(inviteToken: string, token: string): Promise<ApiResponse<void>>`
+  - Declines an organization invitation (invited user).
+- `cancelInvite(orgId: string, inviteId: string, token: string): Promise<ApiResponse<void>>`
+  - Cancels a pending invite (admin only).
+- `requestToJoinOrganization(orgId: string, token: string): Promise<ApiResponse<OrganizationMember>>`
+  - Creates a request to join a public organization.
+- `getPendingOrgActions(orgId: string, token: string): Promise<ApiResponse<PendingOrgActions>>`
+  - Fetches pending invites and join requests (admin only).
+- `approveJoinRequest(orgId: string, membershipId: string, token: string): Promise<ApiResponse<OrganizationMember>>`
+  - Approves a pending join request (admin only).
+- `denyJoinRequest(orgId: string, membershipId: string, token: string): Promise<ApiResponse<void>>`
+  - Denies a pending join request (admin only).
+- `leaveOrganization(orgId: string, membershipId: string, token: string): Promise<ApiResponse<void>>`
+  - Allows a user to leave an organization.
 
 ### 2. `packages/store` (Global State Management)
 
@@ -634,6 +693,94 @@ Manages AI chat state, including providers, prompts, messages, and history.
   - `clearAiError(): void`
     - Sets `aiError` state to null.
 
+#### [NEW] `useNotificationStore` (Hook)
+Manages in-app notification state.
+
+- **State Properties**:
+  - `notifications: Notification[]`
+  - `unreadCount: number` (Derived from `notifications`)
+  - `isLoading: boolean`
+  - `error: Error | null`
+  - `realtimeSubscription: Subscription | null` (Internal)
+- **Actions**:
+  - `loadNotifications(): Promise<void>`
+    - Fetches notifications using `api.notifications().fetchNotifications`.
+    - Updates `notifications` and `unreadCount`.
+    - Requires authenticated user.
+  - `markNotificationRead(notificationId: string): Promise<void>`
+    - Optimistically updates UI and calls `api.notifications().markNotificationRead`.
+    - Requires authenticated user.
+  - `markAllNotificationsAsRead(): Promise<void>`
+    - Optimistically updates UI and calls `api.notifications().markAllNotificationsAsRead`.
+    - Requires authenticated user.
+  - `subscribeToNotifications(): Promise<void>`
+    - Initializes real-time subscription using `api.notifications().subscribeToNotifications`.
+    - Handles incoming notification payloads to update state.
+    - Requires authenticated user.
+  - `unsubscribeFromNotifications(): Promise<void>`
+    - Cleans up real-time subscription.
+
+#### [NEW] `useOrganizationStore` (Hook)
+Manages multi-tenancy (organizations) state.
+
+- **State Properties**:
+  - `organizationsList: OrganizationMember[]` (User's memberships)
+  - `currentOrganizationId: string | null`
+  - `currentOrganizationDetails: OrganizationDetails | null` (Includes org data, members, pending actions)
+  - `listPagination: PaginationState`
+  - `memberPagination: PaginationState`
+  - `isLoadingList: boolean`
+  - `isLoadingDetails: boolean`
+  - `isLoadingAction: boolean` (For specific member/invite actions)
+  - `error: string | null`
+  - `inviteDetails: InviteDetails | null` (For invite acceptance flow)
+  - `isCreateModalOpen: boolean`
+  - `isInviteModalOpen: boolean`
+  - `isSettingsModalOpen: boolean`
+- **Actions**:
+  - `loadUserOrganizations(page?: number, limit?: number): Promise<void>`
+    - Fetches user's org memberships using `api.organizations().listUserOrganizations`.
+  - `selectOrganization(orgId: string | null): Promise<void>`
+    - Sets `currentOrganizationId`. If `orgId` is not null, calls `loadOrganizationDetails`.
+  - `loadOrganizationDetails(orgId: string): Promise<void>`
+    - Fetches full org details using `api.organizations().getOrganizationDetails`.
+  - `createOrganization(data: CreateOrganizationRequest): Promise<Organization | null>`
+    - Calls `api.organizations().createOrganization`, refreshes list, selects new org.
+  - `updateOrganization(orgId: string, data: UpdateOrganizationRequest): Promise<boolean>`
+    - Calls `api.organizations().updateOrganization`, refreshes details.
+  - `deleteOrganization(orgId: string): Promise<boolean>`
+    - Calls `api.organizations().deleteOrganization`, refreshes list, clears selection if needed.
+  - `loadOrganizationMembers(orgId: string, page?: number, limit?: number): Promise<void>`
+    - Fetches org members (if needed separately) using `api.organizations().getOrganizationMembers`.
+  - `updateMemberRole(orgId: string, membershipId: string, newRole: OrganizationRole): Promise<boolean>`
+    - Calls `api.organizations().updateMemberRole`, refreshes details.
+  - `removeMember(orgId: string, memberId: string): Promise<boolean>`
+    - Calls `api.organizations().removeMember`, refreshes details.
+  - `inviteUserByEmail(orgId: string, email: string, role: OrganizationRole): Promise<boolean>`
+    - Calls `api.organizations().inviteUserByEmail`, refreshes details.
+  - `loadInviteDetails(inviteToken: string): Promise<void>`
+    - Calls `api.organizations().getInviteDetails`.
+  - `acceptInvite(inviteToken: string): Promise<OrganizationMember | null>`
+    - Calls `api.organizations().acceptOrganizationInvite`, refreshes list, selects new org.
+  - `declineInvite(inviteToken: string): Promise<boolean>`
+    - Calls `api.organizations().declineOrganizationInvite`.
+  - `cancelInvite(orgId: string, inviteId: string): Promise<boolean>`
+    - Calls `api.organizations().cancelInvite`, refreshes details.
+  - `requestToJoin(orgId: string): Promise<boolean>`
+    - Calls `api.organizations().requestToJoinOrganization`, refreshes details.
+  - `approveJoinRequest(orgId: string, membershipId: string): Promise<boolean>`
+    - Calls `api.organizations().approveJoinRequest`, refreshes details.
+  - `denyJoinRequest(orgId: string, membershipId: string): Promise<boolean>`
+    - Calls `api.organizations().denyJoinRequest`, refreshes details.
+  - `leaveOrganization(orgId: string, membershipId: string): Promise<boolean>`
+    - Calls `api.organizations().leaveOrganization`, refreshes list, clears selection if needed.
+  - `setCreateModalOpen(isOpen: boolean): void`
+  - `setInviteModalOpen(isOpen: boolean): void`
+  - `setSettingsModalOpen(isOpen: boolean): void`
+  - `setListPagination(pagination: Partial<PaginationState>): void`
+  - `setMemberPagination(pagination: Partial<PaginationState>): void`
+  - `clearError(): void`
+
 ### 3. `packages/utils` (Shared Utilities)
 
 #### `logger.ts` (Logging Utility)
@@ -654,12 +801,14 @@ Provides a singleton logger instance (`logger`) for consistent application loggi
 
 Contains centralized type definitions used across the monorepo. Exports all types via `index.ts`.
 
-- **`api.types.ts`**: `ApiResponse`, `ApiErrorType`, `FetchOptions`, `AuthRequiredError`, etc.
+- **`api.types.ts`**: `ApiResponse`, `ApiErrorType`, `FetchOptions`, `AuthRequiredError`, `PaginationParams`, `PaginatedResponse`, etc. (Added pagination types)
 - **`auth.types.ts`**: `User`, `Session`, `UserProfile`, `UserProfileUpdate`, `AuthStore`, `AuthResponse`, etc.
 - **`subscription.types.ts`**: `SubscriptionPlan`, `UserSubscription`, `SubscriptionStore`, `SubscriptionUsageMetrics`, `CheckoutSessionResponse`, `PortalSessionResponse`, `SubscriptionPlansResponse`, etc.
 - **`ai.types.ts`**: `AiProvider`, `SystemPrompt`, `Chat`, `ChatMessage`, `ChatApiRequest`, `AiState`, `AiStore`, etc.
+- **`notification.types.ts`**: [NEW] `Notification`, `NotificationStore`, `NotificationData`.
+- **`organization.types.ts`**: [NEW] `Organization`, `OrganizationMember`, `OrganizationRole`, `OrganizationVisibility`, `Invite`, `InviteStatus`, `MembershipStatus`, `OrganizationStore`, `CreateOrganizationRequest`, `UpdateOrganizationRequest`, `InviteDetails`, `OrganizationDetails`, `PendingOrgActions`.
 - **`analytics.types.ts`**: `AnalyticsClient`, `AnalyticsEvent`, `AnalyticsUserTraits`.
-- **`platform.types.ts`**: `PlatformCapabilities`, `FileSystemCapabilities`.
+- **`platform.types.ts`**: `PlatformCapabilities`, `FileSystemCapabilities`, `PlatformContextType`, `PlatformEvent`. (Updated)
 - **`email.types.ts`**: `SubscriberInfo`, `EmailMarketingService`. **[NEW]**
 - **`theme.types.ts`**: Types related to theming.
 - **`route.types.ts`**: Types related to application routing.
@@ -669,14 +818,13 @@ Contains centralized type definitions used across the monorepo. Exports all type
 
 Provides a service to abstract platform-specific functionalities (like filesystem access) for use in shared UI code.
 
-- **`getPlatformCapabilities(): PlatformCapabilities`**: Detects the current platform (web, tauri, etc.) and returns an object describing available capabilities. Result is memoized.
-  - Consumers check `capabilities.fileSystem.isAvailable` before attempting to use filesystem methods.
-- **`PlatformProvider` Component & `usePlatform` Hook (from `context.tsx`)**: Wraps the application (or parts of it) to provide capability state (`capabilities`, `isLoadingCapabilities`, `capabilityError`) via the hook.
-  - Consumers use the hook to access state and check `capabilities.fileSystem.isAvailable` before attempting filesystem methods.
-- **Providers (Internal):**
-  - `webPlatformCapabilities.ts`: Implements capabilities available in a standard web browser (currently FS is `isAvailable: false`).
-  - `tauriPlatformCapabilities.ts`: Implements capabilities available in the Tauri desktop environment (currently FS is `isAvailable: false`, planned to call Rust backend).
-- **`resetMemoizedCapabilities(): void`**: Clears the cached capabilities result (useful for testing).
+- **`getPlatformCapabilities(): Promise<PlatformCapabilities>`**: (Exported from `index.ts`) Detects the current platform (web, tauri, etc.) and asynchronously returns an object describing available capabilities (e.g., `fileSystem`). Result is memoized.
+- **`PlatformProvider` Component & `usePlatform` Hook**: (Exported from `index.ts`, defined in `context.tsx`) Wraps the application (or parts of it) to provide capability state (`capabilities: PlatformCapabilities | null`, `isLoadingCapabilities: boolean`, `capabilityError: Error | null`) via the hook. Consumers use the hook to access state and check capability availability (e.g., `capabilities.fileSystem.isAvailable`) before rendering UI or calling methods.
+- **`platformEventEmitter`**: (Exported from `index.ts`, defined in `events.ts`) A `mitt` event emitter instance used for decoupled communication, primarily for broadcasting drag-and-drop events (`file-drop`, `file-drag-hover`, `file-drag-cancel`) from the Tauri listener in `context.tsx` to consuming components like `DropZone`.
+- **Providers (Internal - Loaded dynamically by `index.ts`)**:
+  - `web.ts`: Implements capabilities available in a standard web browser (FS is `isAvailable: false`).
+  - `tauri.ts`: Implements capabilities available in the Tauri desktop environment using standard Tauri plugins (`fs`, `dialog`).
+- **`resetMemoizedCapabilities(): void`**: (Exported from `index.ts`) Clears the cached capabilities result (useful for testing).
 
 ### 6. `supabase/functions/_shared/` (Backend Shared Utilities)
 
@@ -704,29 +852,15 @@ Contains shared Deno code used by multiple Edge Functions (CORS handling, Supaba
 
 ### `@paynless/types`
 - **Purpose:** Centralizes TypeScript type definitions (interfaces, types) used across the monorepo.
-  - **`api.types.ts`**: `ApiResponse`, `ApiErrorType`, `FetchOptions`, `AuthRequiredError`, etc.
+  - **`api.types.ts`**: `ApiResponse`, `ApiErrorType`, `FetchOptions`, `AuthRequiredError`, `PaginationParams`, `PaginatedResponse`, etc. (Added pagination types)
   - **`auth.types.ts`**: `User`, `Session`, `UserProfile`, `UserProfileUpdate`, `AuthStore`, `AuthResponse`, etc.
   - **`subscription.types.ts`**: `SubscriptionPlan`, `UserSubscription`, `SubscriptionStore`, `SubscriptionUsageMetrics`, `CheckoutSessionResponse`, `PortalSessionResponse`, `SubscriptionPlansResponse`, etc.
   - **`ai.types.ts`**: `AiProvider`, `SystemPrompt`, `Chat`, `ChatMessage`, `ChatApiRequest`, `AiState`, `AiStore`, etc.
+  - **`notification.types.ts`**: [NEW] `Notification`, `NotificationStore`, `NotificationData`.
+  - **`organization.types.ts`**: [NEW] `Organization`, `OrganizationMember`, `OrganizationRole`, `OrganizationVisibility`, `Invite`, `InviteStatus`, `MembershipStatus`, `OrganizationStore`, `CreateOrganizationRequest`, `UpdateOrganizationRequest`, `InviteDetails`, `OrganizationDetails`, `PendingOrgActions`.
   - **`analytics.types.ts`**: `AnalyticsClient`, `AnalyticsEvent`, `AnalyticsUserTraits`.
   - **`platform.types.ts`**: `PlatformCapabilities`, `FileSystemCapabilities`.
   - **`email.types.ts`**: `SubscriberInfo`, `EmailMarketingService`. **[NEW]**
   - **`theme.types.ts`**: Types related to theming.
   - **`route.types.ts`**: Types related to application routing.
   - **`vite-env.d.ts`**: Vite environment types.
-
-### 5. `packages/platform` (Platform Abstraction)
-
-Provides a service to abstract platform-specific functionalities (like filesystem access) for use in shared UI code.
-
-- **`getPlatformCapabilities(): Promise<PlatformCapabilities>`**: (Exported from `index.ts`) Detects the current platform (web, tauri, etc.) and asynchronously returns an object describing available capabilities (e.g., `fileSystem`). Result is memoized.
-- **`PlatformProvider` Component & `usePlatform` Hook**: (Exported from `index.ts`, defined in `context.tsx`) Wraps the application (or parts of it) to provide capability state (`capabilities: PlatformCapabilities | null`, `isLoadingCapabilities: boolean`, `capabilityError: Error | null`) via the hook. Consumers use the hook to access state and check capability availability (e.g., `capabilities.fileSystem.isAvailable`) before rendering UI or calling methods.
-- **`platformEventEmitter`**: (Exported from `index.ts`, defined in `events.ts`) A `mitt` event emitter instance used for decoupled communication, primarily for broadcasting drag-and-drop events (`file-drop`, `file-drag-hover`, `file-drag-cancel`) from the Tauri listener in `context.tsx` to consuming components like `DropZone`.
-- **Providers (Internal - Loaded dynamically by `index.ts`)**:
-  - `web.ts`: Implements capabilities available in a standard web browser (FS is `isAvailable: false`).
-  - `tauri.ts`: Implements capabilities available in the Tauri desktop environment using standard Tauri plugins (`fs`, `dialog`).
-- **`resetMemoizedCapabilities(): void`**: (Exported from `index.ts`) Clears the cached capabilities result (useful for testing).
-
-### 6. `supabase/functions/_shared/` (Backend Shared Utilities)
-
-Contains shared Deno code used by multiple Edge Functions (CORS handling, Supabase client creation, auth helpers, Stripe client initialization, **email marketing service**). Refer to the files within this directory for specific utilities. 

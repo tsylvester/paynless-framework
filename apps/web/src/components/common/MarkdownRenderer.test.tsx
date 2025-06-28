@@ -50,14 +50,20 @@ describe('MarkdownRenderer', () => {
   });
 
   it('should render a GFM code block correctly', () => {
-    const codeContent = 'function greet() {\n  console.log("Hello");\n}';
-    render(<MarkdownRenderer content={"```javascript\n" + codeContent + "\n```"} />);
-    const codeElement = document.querySelector('pre > code.language-javascript');
+    const jsCode = "console.log('Hello, GFM!');";
+    const content = `\`\`\`javascript\n${jsCode}\n\`\`\``;
+    render(<MarkdownRenderer content={content} />);
+
+    // The syntax highlighter renders a div (PreTag) containing a code tag.
+    // The language class is on the code tag.
+    const codeElement = document.querySelector('code.language-javascript');
     expect(codeElement).toBeInTheDocument();
-    expect(codeElement?.tagName).toBe('CODE');
-    expect(codeElement?.parentElement?.tagName).toBe('PRE');
-    expect(codeElement).toHaveClass('language-javascript');
-    expect(codeElement?.textContent?.trim()).toBe(codeContent.trim());
+    expect(codeElement?.textContent).toContain(jsCode);
+
+    // The container should be a DIV, not a PRE, to avoid nesting errors.
+    const container = codeElement?.parentElement;
+    expect(container).toBeInTheDocument();
+    expect(container?.tagName).toBe('DIV');
   });
 
   it('should render a blockquote correctly', () => {
@@ -160,5 +166,45 @@ World`} />);
     expect(screen.getByRole('cell', { name: 'Cell 2' })).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: 'Cell 3' })).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: 'Cell 4' })).toBeInTheDocument();
+  });
+
+  it('should render an object as a JSON code block', () => {
+    const obj = { key: 'value', number: 123 };
+    render(<MarkdownRenderer content={obj} />);
+
+    const codeElement = document.querySelector('code.language-json');
+    expect(codeElement).toBeInTheDocument();
+    expect(codeElement?.parentElement?.tagName).toBe('DIV');
+
+    // Check for the presence of the stringified object content.
+    expect(codeElement?.textContent).toContain('"key": "value"');
+    expect(codeElement?.textContent).toContain('"number": 123');
+  });
+
+  it('should treat actual newlines in plain strings as hard breaks (remark-breaks)', () => {
+    render(<MarkdownRenderer content={"First line\nSecond line"} />);
+    const pElement = screen.getByText(/First line/).closest('p');
+    expect(pElement).toBeInTheDocument();
+    expect(pElement?.innerHTML).toMatch(/First line<br>\s*Second line/);
+  });
+
+  it('should convert literal "\\n" in plain strings to hard breaks', () => {
+    render(<MarkdownRenderer content={"First line\\nSecond line"} />); 
+    const pElement = screen.getByText(/First line/).closest('p');
+    expect(pElement).toBeInTheDocument();
+    expect(pElement?.innerHTML).toMatch(/First line<br>\s*Second line/);
+  });
+
+  it('should render newlines within JSON string values as visual breaks in the code block', () => {
+    const jsonWithNewlines = {
+      description: 'Line one\nLine two',
+    };
+    render(<MarkdownRenderer content={jsonWithNewlines} />);
+
+    const codeElement = document.querySelector('code.language-json');
+    expect(codeElement).toBeInTheDocument();
+    expect(codeElement?.parentElement?.tagName).toBe('DIV');
+
+    expect(codeElement?.textContent).toContain('"description": "Line one\\nLine two"');
   });
 }); 

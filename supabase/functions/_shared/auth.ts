@@ -1,7 +1,7 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 // Use npm: specifier directly to avoid Supabase CLI import map issues
-import { createClient, SupabaseClient, SupabaseClientOptions, GoTrueClient } from "npm:@supabase/supabase-js@^2.43.4";
+import { createClient, SupabaseClient, SupabaseClientOptions, GoTrueClient } from "npm:@supabase/supabase-js@^2";
 import type { Database } from '../types_db.ts';
 // Remove unused GenericSchema import
 // import type { GenericSchema } from "npm:@supabase/supabase-js@2/dist/module/lib/types";
@@ -27,12 +27,16 @@ export const createSupabaseClient = (
     createClientFn: CreateClientFn = createClient // Default to actual implementation
 ): SupabaseClient => {
   const authHeader = req.headers.get("Authorization");
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-  const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+  const supabaseUrl = Deno.env.get("SB_URL") ?? "";
+  const supabaseKey = Deno.env.get("SB_ANON_KEY") ?? "";
 
   return createClientFn(supabaseUrl, supabaseKey, {
     global: { headers: { Authorization: authHeader ?? "" } },
-    auth: { persistSession: false },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    },
   });
 };
 
@@ -43,15 +47,19 @@ export const createSupabaseClient = (
 export const createSupabaseAdminClient = (
     createClientFn: CreateClientFn = createClient // Default to actual implementation
 ): SupabaseClient => {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const supabaseUrl = Deno.env.get("SB_URL") ?? "";
+  const supabaseServiceKey = Deno.env.get("SB_SERVICE_ROLE_KEY") ?? "";
   
   if (!supabaseUrl || !supabaseServiceKey) {
     throw new Error("Missing Supabase URL or service role key");
   }
   
   return createClientFn(supabaseUrl, supabaseServiceKey, {
-    auth: { persistSession: false },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    },
   });
 };
 
@@ -92,7 +100,7 @@ export const getUserIdFromClient = async (supabase: SupabaseClient<Database>): P
  */
 export function verifyApiKey(req: Request): boolean {
   const apiKeyHeader = req.headers.get('apikey');
-  const expectedApiKey = Deno.env.get("SUPABASE_ANON_KEY");
+  const expectedApiKey = Deno.env.get("SB_ANON_KEY");
 
   // ---> Add Detailed Logging <---
   console.log(`[verifyApiKey] Received apikey header: ${apiKeyHeader}`);

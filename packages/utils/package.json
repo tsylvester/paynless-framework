@@ -20,6 +20,7 @@
   "dependencies": {
     "@paynless/types": "workspace:*",
     "date-fns": "^3.5.0",
+    "js-tiktoken": "^1.0.20",
     "pino": "^9.3.2",
     "pino-pretty": "^11.2.1",
     "vite-plugin-node-polyfills": "^0.23.0"

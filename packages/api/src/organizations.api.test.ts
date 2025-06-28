@@ -1,7 +1,16 @@
 import { describe, it, expect, vi, beforeEach, MockInstance } from 'vitest';
 import { OrganizationApiClient } from './organizations.api';
 import { ApiClient } from './apiClient'; // Import base client type
-import { ApiResponse, ApiError, Organization, OrganizationInsert, OrganizationUpdate, OrganizationMemberWithProfile, Invite, PendingOrgItems, PendingInviteWithInviter, PendingRequestWithDetails, PaginatedOrganizationsResponse, PaginatedMembersResponse, UserProfile } from '@paynless/types';
+import { 
+  ApiResponse, 
+  ApiError, 
+  Organization, 
+  OrganizationInsert, 
+  OrganizationUpdate, 
+  OrganizationMemberWithProfile, 
+  PaginatedOrganizationsResponse, 
+  PaginatedMembersResponse
+ } from '@paynless/types';
 
 // --- Mock the ApiClient dependency directly --- 
 const mockApiClient = {
@@ -39,7 +48,9 @@ describe('OrganizationApiClient', () => {
         name: orgName,
         visibility: visibility,
         created_at: new Date().toISOString(),
-        deleted_at: null
+        deleted_at: null,
+        allow_member_chat_creation: false,
+        token_usage_policy: 'member_tokens'
       };
       const mockResponse: ApiResponse<Organization> = { status: 201, data: mockReturnedOrg };
 
@@ -61,7 +72,9 @@ describe('OrganizationApiClient', () => {
         name: orgName,
         visibility: 'private',
         created_at: new Date().toISOString(),
-        deleted_at: null
+        deleted_at: null,
+        allow_member_chat_creation: false,
+        token_usage_policy: 'member_tokens'
       };
        const mockResponse: ApiResponse<Organization> = { status: 201, data: mockReturnedOrg };
 
@@ -107,6 +120,7 @@ describe('OrganizationApiClient', () => {
         created_at: new Date().toISOString(),
         deleted_at: null,
         allow_member_chat_creation: false, // Assuming a default or existing value
+        token_usage_policy: 'member_tokens'
       };
       const mockResponse: ApiResponse<Organization> = { status: 200, data: mockReturnedOrg };
 
@@ -128,6 +142,7 @@ describe('OrganizationApiClient', () => {
         created_at: new Date().toISOString(),
         deleted_at: null,
         allow_member_chat_creation: true,
+        token_usage_policy: 'member_tokens'
       };
       const mockResponse: ApiResponse<Organization> = { status: 200, data: mockReturnedOrg };
 
@@ -152,6 +167,8 @@ describe('OrganizationApiClient', () => {
         ...updateData,
         created_at: new Date().toISOString(),
         deleted_at: null,
+        allow_member_chat_creation: false,
+        token_usage_policy: 'member_tokens'
       };
       const mockResponse: ApiResponse<Organization> = { status: 200, data: mockReturnedOrg };
 
@@ -187,8 +204,8 @@ describe('OrganizationApiClient', () => {
   describe('listUserOrganizations', () => {
     it('should call apiClient.get with correct endpoint and return orgs', async () => {
        const mockOrgs: Organization[] = [
-        { id: orgId, name: 'Org 1', visibility: 'private', created_at: 'date1', deleted_at: null },
-        { id: 'org2', name: 'Org 2', visibility: 'private', created_at: 'date2', deleted_at: null }
+        { id: orgId, name: 'Org 1', visibility: 'private', created_at: 'date1', deleted_at: null, allow_member_chat_creation: false, token_usage_policy: 'member_tokens' },
+        { id: 'org2', name: 'Org 2', visibility: 'private', created_at: 'date2', deleted_at: null, allow_member_chat_creation: false, token_usage_policy: 'member_tokens' }
       ];
        const mockResponse: ApiResponse<Organization[]> = { status: 200, data: mockOrgs }; // Correct data type
 
@@ -240,7 +257,9 @@ describe('OrganizationApiClient', () => {
         name: 'Test Org Details',
         visibility: 'private',
         created_at: 'date1',
-        deleted_at: null
+        deleted_at: null,
+        allow_member_chat_creation: false,
+        token_usage_policy: 'member_tokens'
       };
       const mockResponse: ApiResponse<Organization> = { status: 200, data: mockOrg };
 

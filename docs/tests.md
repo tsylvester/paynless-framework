@@ -239,6 +239,94 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
 
 ---
 
+## Case Study: Refactoring and Testing `supabase/functions/webhooks/`
+
+The core challenge was to make the webhook handling logic in `supabase/functions/webhooks/index.ts` testable and to write reliable tests for it. This involved significant refactoring of both the main code and the tests, guided by established software design principles and careful attention to mocking strategies.
+
+### 1. Embracing Design Principles: Interfaces, Adapters, DIP, and DI
+
+*   **Dependency Inversion Principle (DIP) & Dependency Injection (DI):**
+    *   **Initial State:** The original `webhookRouterHandler` and its underlying logic had implicit dependencies, making them hard to isolate for testing. For instance, it directly imported and used services or factories.
+    *   **Refactoring for DI:**
+        1.  We extracted the core webhook processing logic into a new function, `handleWebhookRequestLogic`. This function was designed to accept all its necessary dependencies (like the `adminClient`, `tokenWalletService`, `paymentAdapterFactory`, and an environment variable getter `getEnv`) as parameters.
+        2.  The main `webhookRouterHandler` was then refactored to also accept its dependencies via parameters (`corsHandler`, `adminClientFactory`, `tokenWalletServiceFactory`, `paymentAdapterFactory`, `envGetter`).
+        3.  The top-level `serve` function (or Deno's request handler) became responsible for *composing* the application by creating and injecting the *real* dependencies into `webhookRouterHandler`.
+    *   **Benefits:** This shift to DI meant that for testing, we could pass in mock or spy implementations of these dependencies, giving us complete control over their behavior and allowing us to verify interactions precisely.
+
+*   **Interfaces and Adapters:**
+    *   **`ITokenWalletService`:** A crucial step was ensuring that `adapterFactory.ts` (specifically the `getPaymentAdapter` function) depended on the `ITokenWalletService` *interface* rather than a concrete `TokenWalletService` implementation. This adherence to DIP decoupled the adapter factory from specific service implementations, making the system more flexible and testable.
+    *   **`IPaymentGatewayAdapter`:** This interface defined a clear contract for how different payment gateways would be handled, allowing `handleWebhookRequestLogic` to work with any compliant adapter.
+
+### 2. Mastering Mocks and Spies with `jsr:@std/testing/mock`
+
+Understanding the difference and correct application of spies and stubs was paramount.
+
+*   **`spy()`:**
+    *   **Observing real methods:** Used to wrap existing methods on *mock objects* to verify calls, arguments, and return values without altering the method's original behavior (unless the spy itself *is* the fake). Example: `handleWebhookSpy = spy(mockStripeAdapter, 'handleWebhook');`.
+    *   **Creating fake function implementations for DI:** When a dependency is a function, a `spy` can be created from a handcrafted fake function. This spy can then be passed as the dependency. Example: `paymentAdapterFactorySpy = spy(fakePaymentAdapterFactory);` where `fakePaymentAdapterFactory` was our test-specific implementation. This pattern was key for testing DI-injected function dependencies.
+
+*   **`stub()`:**
+    *   **Replacing methods on existing objects/modules:** Used to replace a method on an *actual object or an imported module* with a controllable fake. This is powerful but can be tricky.
+    *   **`Deno.env.get`:** The most successful use of `stub` was for the global `Deno.env.get`. We created a single, file-scoped stub: `fileScopeDenoEnvGetStub = stub(Deno.env, "get", fakeImplementation);`.
+    *   **Pitfalls Encountered:**
+        *   Initially, we attempted to `stub` functions imported directly from other modules (e.g., `stub(adapterFactory, 'getPaymentAdapter')`). This often led to `MockError: cannot spy on non configurable instance method`. This error typically means the property isn't configurable, which can be the case for module exports or certain object properties. The DI approach (passing a spy) is generally more robust for such cases.
+        *   Confusion with `.returnsNext()`, `.callFake()`, `.returns()`: The availability and behavior of these stub/spy methods can depend on how the stub/spy was created and typed. We found that providing the fake implementation directly during `stub()` or `spy()` creation (e.g., `stub(obj, 'method', () => desiredValue)`) was often more straightforward and less error-prone than trying to chain these modifier methods, especially when complex types were involved.
+
+### 3. Rigorous Test Environment Setup and Teardown
+
+Isolated and consistent test environments are non-negotiable.
+
+*   **`beforeAll()` / `afterAll()`:**
+    *   Ideal for file-scoped setups. Our `fileScopeDenoEnvGetStub` was initialized in `beforeAll()` and restored in `afterAll()`, ensuring `Deno.env.get` was consistently mocked across all tests in the file and cleaned up afterwards.
+
+*   **`beforeEach()` / `afterEach()`:**
+    *   Essential for ensuring each test runs with a clean slate.
+    *   **Resetting State:** We used `beforeEach` to reset `mockEnvVarsForFileScope` (the object our `fileScopeDenoEnvGetStub` uses) and to re-initialize test-specific spies and mock dependencies.
+    *   **Restoration:**
+        *   Stubs *must* be restored (e.g., `myStub.restore()`) in `afterEach` or `afterAll` to prevent them from affecting other tests or leaking state.
+        *   Spies created on object methods (`spy(obj, 'method')`) also need restoration if you don't want the spy to persist. Spies that are simply fake functions passed via DI are typically just re-initialized in `beforeEach`.
+        *   We encountered `MockError: function cannot be restored` when attempting to restore spies that weren't method spies or were already restored.
+
+*   **Mocking `Deno.env.get` - The Winning Strategy:**
+    1.  A single `fileScopeDenoEnvGetStub` created in `beforeAll()` and restored in `afterAll()`.
+    2.  This stub's fake implementation reads from a mutable `mockEnvVarsForFileScope: Record<string, string | undefined>` object.
+    3.  In `beforeEach` for a test suite (or an individual test), `mockEnvVarsForFileScope` is cleared and then populated with *only the environment variables relevant to that specific test or suite*.
+    4.  The SUT calls the standard `Deno.env.get(key)`, which is intercepted by our stub.
+    *   The final bug we fixed was precisely because a `beforeEach` for one test suite correctly cleared `mockEnvVarsForFileScope` but didn't re-populate `STRIPE_WEBHOOK_SECRET` needed for a specific test within that suite.
+
+### 4. Handling Imported Functions and Module Dependencies
+
+*   **Prioritize Dependency Injection:** The most robust and testable way to handle a function imported from another module is to refactor the consuming code to accept that function (or a compatible one) as an argument (DI). This was our approach for `paymentAdapterFactory` and `corsHandler` in `webhookRouterHandler`, allowing us to pass in spies directly.
+*   **Stubbing Module Exports (Use with Caution):**
+    *   If DI isn't practical, you can *sometimes* stub an exported function from a module: `import * as myModule from './mod.ts'; const s = stub(myModule, 'func', fake);`.
+    *   This worked for `Deno.env.get` (as `Deno.env` is an object and `get` is its method). It was less reliable for our own module functions, often leading to the "non-configurable" error. DI is preferred.
+
+### 5. Lessons from Comparing Test Patterns and Overcoming Struggles
+
+Our journey involved looking at `initiate-payment/index.test.ts` and `stripePaymentAdapter.test.ts`.
+
+*   **`initiate-payment/index.test.ts`:** This was the golden reference for us.
+    *   **DI:** It clearly demonstrated passing dependencies (like a payment adapter) into its handler function.
+    *   **Global `Deno.env.get` Stub:** Its pattern of a single, file-scoped stub for `Deno.env.get`, managed by `beforeAll`/`afterAll` and a mutable mock variable object, was the exact solution we adopted.
+*   **`stripePaymentAdapter.test.ts`:** This file tests a class and spies/stubs methods *on instances* of that class, which is a standard OOP testing pattern but less directly applicable to our more functional `webhookRouterHandler` once we adopted DI for its function dependencies.
+*   **Key Struggles and Learnings:**
+    *   **The "Cannot Spy on Non-Configurable Instance Method" Trap:** This error was a frequent companion when we incorrectly tried to `stub` directly imported module functions that weren't designed for it or weren't properties of a plain object. Shifting to DI was the primary solution.
+    *   **Stub/Spy API Nuances:** Correctly typing stubs (`Stub<typeof TheObject, Parameters<...>, ReturnType<...>>`) and spies (`Spy<typeof TheObject, Parameters<...>, ReturnType<...>>` for method spies, or `Spy<(...args: X[]) => Y>` for function spies) was challenging. `Parameters<typeof ...>` and `ReturnType<typeof ...>` were very helpful. Sometimes, using a broader type or even `any` was a pragmatic escape hatch, but striving for type accuracy is better.
+    *   **Lifecycle Management:** Forgetting to restore stubs or trying to restore non-method spies led to errors and test interference. Meticulous setup and teardown are vital.
+    *   **Debugging Test Failures:** The "STRIPE_WEBHOOK_SECRET is not set" log output was a direct clue. Assertion errors (e.g., `Expected 200, Actual 500`) guided us to look at the SUT's behavior under specific mocked conditions.
+
+### General Takeaways:
+
+*   **Test-Driven Development (TDD) Mindset:** While we refactored existing code, approaching the *testing* of it with a TDD mindset (what behavior do I want to assert? how can I control dependencies to verify it?) is invaluable.
+*   **Isolate, Isolate, Isolate:** The more isolated the SUT, the easier it is to test. DI is your best friend here.
+*   **Read Error Messages and Logs:** They often contain the exact clues needed.
+*   **Iterate and Simplify:** When a testing approach becomes overly complex or error-prone, step back and look for simpler patterns (like the ones in `initiate-payment/index.test.ts`).
+*   **Patience and Persistence:** Debugging complex test setups, especially with asynchronous code and mocking, can be frustrating. A systematic approach, careful reading, and incremental changes eventually lead to success.
+
+This exercise, though challenging, has solidified the importance of these principles. The `webhooks/index.test.ts` file is now a much more robust and maintainable test suite, thanks to these efforts!
+
+---
+
 ## Troubleshooting Zustand Store Actions in Vitest: The "is not a function" Error
 
 **Symptom:**

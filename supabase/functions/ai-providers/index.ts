@@ -60,18 +60,18 @@ export async function mainHandler(req: Request, deps: AiProvidersHandlerDeps = d
   try {
     // Use Anon key - assuming RLS handles auth if needed, or it's public
     const supabaseUrl = getEnvDep('SUPABASE_URL') ?? '';
-    const supabaseAnonKey = getEnvDep('SUPABASE_ANON_KEY') ?? '';
+    const supabaseServiceRoleKey = getEnvDep('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     console.log(`[ai-providers] Checking Env Vars: OPENAI_API_KEY=${getEnvDep('OPENAI_API_KEY') ? 'SET' : 'MISSING'}, ANTHROPIC_API_KEY=${getEnvDep('ANTHROPIC_API_KEY') ? 'SET' : 'MISSING'}, GOOGLE_API_KEY=${getEnvDep('GOOGLE_API_KEY') ? 'SET' : 'MISSING'}`);
-    if (!supabaseUrl || !supabaseAnonKey) {
-        console.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables.");
+    if (!supabaseUrl || !supabaseServiceRoleKey) {
+        console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables.");
         return createErrorResponse("Server configuration error.", 500, req);
     }
-    const supabaseClient = createSupabaseClientDep(supabaseUrl, supabaseAnonKey);
+    const supabaseClient = createSupabaseClientDep(supabaseUrl, supabaseServiceRoleKey);
 
     // Fetch provider column as well
     const { data: allActiveProviders, error } = await supabaseClient
       .from('ai_providers')
-      .select('id, name, description, api_identifier, provider') 
+      .select('id, name, description, api_identifier, provider, config') 
       .eq('is_active', true)
       .eq('is_enabled', true);
 

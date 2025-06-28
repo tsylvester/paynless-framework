@@ -90,6 +90,9 @@ enabled = true
 # The maximum file size allowed (e.g. "5MB", "500KB").
 file_size_limit = "50MiB"
 
+[storage.buckets.dialectic-contributions]
+public = false
+
 # Image transformation API is available to Supabase Pro plan.
 # [storage.image_transformation]
 # enabled = true
@@ -324,10 +327,10 @@ verify_jwt = false
 [functions.reset-password]
 verify_jwt = false
 
-[functions.session]
+[functions.dialectic-service]
 verify_jwt = false
 
-[functions.refresh]
+[functions.session]
 verify_jwt = false
 
 # Add section specifically for stripe-webhook
@@ -342,19 +345,12 @@ verify_jwt = false
 [functions.on-user-created]
 verify_jwt = false
 
+# Add section for the new generic webhooks router
+[functions.webhooks] # For the function in supabase/functions/webhooks/
+  verify_jwt = false
+
 # Keep function sections below if they exist for other specific settings,
 # otherwise they can be removed if verify_jwt=false is set globally above.
-
-# [functions.hello-world]
-# # ...
-# [functions.logout]
-# # ...
-# [functions.me]
-# # ...
-# [functions.profile]
-# # ...
-# [functions.api-subscriptions]
-# # ...
 
 # AI Function "Chat" must disable JWT to enable replay flow 
 [functions.chat]

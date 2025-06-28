@@ -41,7 +41,7 @@ export class AiApiClient implements IAiApiClient {
      * Fetches the list of active system prompts.
      */
     async getSystemPrompts(token?: string): Promise<ApiResponse<SystemPrompt[]>> {
-        const options: FetchOptions = token ? { token } : { isPublic: true };
+        const options: FetchOptions = token ? { token } : {};
         logger.info('Fetching system prompts');
         const response = await this.apiClient.get<SystemPrompt[]>('/system-prompts', options);
         if (response.error) {

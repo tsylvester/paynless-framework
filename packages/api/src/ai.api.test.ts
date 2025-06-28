@@ -91,18 +91,15 @@ describe('AiApiClient', () => {
     describe('getSystemPrompts', () => {
         it('should call apiClient.get with the correct endpoint', async () => {
             // Arrange
-             const mockResponse: ApiResponse<SystemPrompt[]> = {
-                data: [],
-                status: 200,
-            };
-            (mockApiClient.get as vi.Mock).mockResolvedValue(mockResponse);
+            mockApiClient.get.mockResolvedValueOnce({ data: [], status: 200 });
 
             // Act
-            await aiApiClient.getSystemPrompts();
+            await aiApiClient.getSystemPrompts(); // No token passed, should not set isPublic: true
 
             // Assert
             expect(mockApiClient.get).toHaveBeenCalledTimes(1);
-            expect(mockApiClient.get).toHaveBeenCalledWith('/system-prompts', { isPublic: true });
+            // Verify it's called with an empty options object, or at least not with { isPublic: true }
+            expect(mockApiClient.get).toHaveBeenCalledWith('/system-prompts', {}); 
         });
 
         it('should return the prompts array on successful response', async () => {
@@ -178,6 +175,29 @@ describe('AiApiClient', () => {
             // Assert
             expect(mockApiClient.post).toHaveBeenCalledTimes(1);
             expect(mockApiClient.post).toHaveBeenCalledWith('chat', chatRequestData, undefined);
+        });
+
+        it('should call apiClient.post with contextMessages when provided', async () => {
+            // Arrange
+            const chatRequestDataWithContext: ChatApiRequest = {
+                ...chatRequestData,
+                contextMessages: [
+                    { role: 'user', content: 'Previous user message' },
+                    { role: 'assistant', content: 'Previous assistant response' },
+                ],
+            };
+            const mockResponse: ApiResponse<ChatMessage> = {
+                data: mockAssistantMessage,
+                status: 200,
+            };
+            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+
+            // Act
+            await aiApiClient.sendChatMessage(chatRequestDataWithContext);
+
+            // Assert
+            expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+            expect(mockApiClient.post).toHaveBeenCalledWith('chat', chatRequestDataWithContext, undefined);
         });
 
         it('should return the assistant message object on successful response', async () => {

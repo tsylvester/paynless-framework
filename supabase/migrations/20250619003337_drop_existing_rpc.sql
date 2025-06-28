@@ -1,0 +1,23 @@
+DROP FUNCTION public.save_contribution_edit_atomic(
+    p_original_contribution_id UUID,
+    p_session_id UUID,
+    p_user_id UUID,
+    p_stage TEXT,
+    p_iteration_number INT,
+    p_content_storage_bucket TEXT,
+    p_content_storage_path TEXT,
+    p_content_mime_type TEXT,
+    p_content_size_bytes BIGINT,
+    p_raw_response_storage_path TEXT,
+    p_tokens_used_input INT,
+    p_tokens_used_output INT,
+    p_processing_time_ms INT,
+    p_citations JSONB,
+    p_target_contribution_id UUID,
+    p_edit_version INT,
+    p_is_latest_edit BOOLEAN,
+    p_original_model_contribution_id UUID,
+    p_error_details TEXT,
+    p_model_id UUID,
+    p_contribution_type TEXT
+);

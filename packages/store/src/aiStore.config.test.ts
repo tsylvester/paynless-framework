@@ -13,7 +13,6 @@ import {
     type ApiResponse as PaynlessApiResponse
 } from '@paynless/types';
 import { useAuthStore } from './authStore';
-import { DUMMY_PROVIDER_ID, dummyProviderDefinition } from './aiStore.dummy';
 
 let mockAiApiInstance: MockedAiApiClient;
 
@@ -180,24 +179,24 @@ describe('aiStore - loadAiConfig', () => {
 
     it('should clear aiError on successful subsequent loadAiConfig', async () => {
         const errorMsg = 'Initial load failure.';
-        mockAiApiInstance.getAiProviders.mockResolvedValue({ 
-            data: undefined, 
-            status: 500, 
+        mockAiApiInstance.getAiProviders.mockResolvedValue({
+            data: undefined,
+            status: 500,
             error: { message: errorMsg, code: 'INITIAL_LOAD_ERROR' }
         });
-        mockAiApiInstance.getSystemPrompts.mockResolvedValue({ 
-            data: undefined, 
-            status: 500, 
+        mockAiApiInstance.getSystemPrompts.mockResolvedValue({
+            data: undefined,
+            status: 500,
             error: { message: 'Prompt load failure for this part of test', code: 'PROMPT_ERROR' }
         });
         await useAiStore.getState().loadAiConfig();
         expect(useAiStore.getState().aiError).toBe(errorMsg + " \n" + "Prompt load failure for this part of test");
 
-        mockAiApiInstance.getAiProviders.mockResolvedValue({ 
+        mockAiApiInstance.getAiProviders.mockResolvedValue({
             data: { providers: [...fullyTypedMockProviders] } as any,
             status: 200, error: undefined
         });
-        mockAiApiInstance.getSystemPrompts.mockResolvedValue({ 
+        mockAiApiInstance.getSystemPrompts.mockResolvedValue({
             data: { prompts: [...fullyTypedMockPrompts] } as any,
             status: 200, error: undefined
         });
@@ -206,91 +205,5 @@ describe('aiStore - loadAiConfig', () => {
         expect(state.aiError).toBeNull();
         expect(state.availableProviders).toEqual(fullyTypedMockProviders);
         expect(state.availablePrompts).toEqual(fullyTypedMockPrompts);
-    });
-});
-
-describe('aiStore - loadAiConfig - Dummy Provider', () => {
-    const localMockProviders: AiProvider[] = [
-        { id: 'lp1', name: 'Local P1', description: 'Local Provider 1', api_identifier: 'local-mock-id-1', config: null, created_at: new Date().toISOString(), is_active: true, is_enabled: true, provider: 'local_provider_type', updated_at: new Date().toISOString() }
-    ];
-    const localMockPrompts: SystemPrompt[] = [
-        { id: 'ls1', name: 'Local S1', prompt_text: 'Local System Prompt 1', created_at: new Date().toISOString(), is_active: true, updated_at: new Date().toISOString() }
-    ];
-    let originalNodeEnv: string | undefined;
-
-    beforeEach(async () => {
-        const { __mockAiApiInstance } = await import('@paynless/api') as any;
-        mockAiApiInstance = __mockAiApiInstance as MockedAiApiClient;
-        vi.clearAllMocks(); 
-        vi.restoreAllMocks();
-        if (mockAiApiInstance) {
-            resetMockAiApiClient(mockAiApiInstance); 
-        }
-        act(() => {
-            resetAiStore(); 
-            const initialAuthState = useAuthStore.getInitialState ? useAuthStore.getInitialState() : { user: null, session: null, profile: null, isLoading: false, error: null, navigate: null };
-            useAuthStore.setState({ ...initialAuthState, navigate: mockNavigateGlobal }, true);
-        });
-        mockAiApiInstance.getAiProviders.mockResolvedValue({ 
-            data: { providers: [...localMockProviders] } as any,
-            status: 200, error: undefined
-        });
-        mockAiApiInstance.getSystemPrompts.mockResolvedValue({ 
-            data: { prompts: [...localMockPrompts] } as any,
-            status: 200, error: undefined
-        });
-        originalNodeEnv = process.env.NODE_ENV;
-    });
-
-    afterEach(() => {
-        process.env.NODE_ENV = originalNodeEnv;
-    });
-
-    it('should add Dummy Test Provider to availableProviders in development mode', async () => {
-        process.env.NODE_ENV = 'development';
-        mockAiApiInstance.getAiProviders.mockResolvedValue({ data: { providers: [] } as any, status: 200, error: undefined });
-        mockAiApiInstance.getSystemPrompts.mockResolvedValue({ data: { prompts: [] } as any, status: 200, error: undefined });
-        await useAiStore.getState().loadAiConfig();
-        const state = useAiStore.getState();
-        const expectedProviders = [dummyProviderDefinition]; 
-        expect(state.availableProviders).toEqual(expectedProviders);
-        const foundDummy = state.availableProviders.find(p => p.id === DUMMY_PROVIDER_ID);
-        expect(foundDummy).toBeDefined();
-        expect(foundDummy).toEqual(dummyProviderDefinition);
-    });
-
-    it('should include dummy provider ALONGSIDE fetched providers in development mode', async () => {
-        process.env.NODE_ENV = 'development';
-        mockAiApiInstance.getAiProviders.mockResolvedValue({ data: { providers: [...localMockProviders] } as any, status: 200, error: undefined });
-        mockAiApiInstance.getSystemPrompts.mockResolvedValue({ data: { prompts: [...localMockPrompts] } as any, status: 200, error: undefined });
-        await useAiStore.getState().loadAiConfig();
-        const state = useAiStore.getState();
-        const expectedProviders = [...localMockProviders, dummyProviderDefinition];
-        expect(state.availableProviders).toEqual(expect.arrayContaining(expectedProviders));
-        expect(state.availableProviders.length).toBe(expectedProviders.length);
-        const foundDummy = state.availableProviders.find(p => p.id === DUMMY_PROVIDER_ID);
-        expect(foundDummy).toBeDefined();
-        const foundLocal = state.availableProviders.find(p => p.id === localMockProviders[0].id);
-        expect(foundLocal).toBeDefined();
-    });
-
-    it('should NOT add Dummy Test Provider to availableProviders in production mode', async () => {
-        process.env.NODE_ENV = 'production';
-        mockAiApiInstance.getAiProviders.mockResolvedValue({ data: { providers: [...localMockProviders] } as any, status: 200, error: undefined });
-        mockAiApiInstance.getSystemPrompts.mockResolvedValue({ data: { prompts: [...localMockPrompts] } as any, status: 200, error: undefined });
-        await useAiStore.getState().loadAiConfig();
-        const state = useAiStore.getState();
-        expect(state.availableProviders).toEqual(localMockProviders); 
-        const foundDummy = state.availableProviders.find(p => p.id === DUMMY_PROVIDER_ID);
-        expect(foundDummy).toBeUndefined();
-    });
-
-    it('should still load standard local prompts in development mode when dummy provider is added', async () => {
-        process.env.NODE_ENV = 'development';
-        mockAiApiInstance.getAiProviders.mockResolvedValue({ data: { providers: [...localMockProviders] } as any, status: 200, error: undefined });
-        mockAiApiInstance.getSystemPrompts.mockResolvedValue({ data: { prompts: [...localMockPrompts] } as any, status: 200, error: undefined });
-        await useAiStore.getState().loadAiConfig();
-        const state = useAiStore.getState();
-        expect(state.availablePrompts).toEqual(localMockPrompts);
     });
 });

@@ -68,7 +68,10 @@ export const PaginationComponent: React.FC<PaginationComponentProps> = ({
             <SelectTrigger className="h-8 w-[70px]">
               <SelectValue placeholder={pageSize} />
             </SelectTrigger>
-            <SelectContent side="top">
+            <SelectContent 
+              side="top" 
+              className="bg-background/95 backdrop-blur-sm dark:bg-neutral-900/95"
+            >
               {allowedPageSizes.map((size) => (
                 <SelectItem key={size} value={`${size}`}>
                   {size}

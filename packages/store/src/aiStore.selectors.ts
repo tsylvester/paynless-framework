@@ -1,5 +1,5 @@
 import { createSelector } from 'reselect';
-import type { AiState, ChatMessage, Chat, TokenUsage } from '@paynless/types';
+import type { AiState, ChatMessage, Chat, TokenUsage, ChatSessionTokenUsageDetails } from '@paynless/types';
 
 // Base selector for chatsByContext
 const selectChatsByContext = (state: AiState) => state.chatsByContext;
@@ -43,6 +43,43 @@ export const selectCurrentChatMessages = createSelector(
     }
     const messages = messagesByChatId[currentChatId] || [];
     return messages.filter(message => message.is_active_in_thread);
+  }
+);
+
+// Base selector for selectedMessagesMap
+const selectSelectedMessagesMap = (state: AiState) => state.selectedMessagesMap;
+
+/**
+ * Selects active and selected messages for the current chat.
+ * Filters messages where is_active_in_thread is true.
+ * A message is considered selected if its ID is in selectedMessagesMap[currentChatId] and true,
+ * or if its ID is NOT in selectedMessagesMap[currentChatId] (defaults to selected).
+ * @param state The AiState object.
+ * @returns An array of ChatMessage objects.
+ */
+export const selectSelectedChatMessages = createSelector(
+  [selectCurrentChatId, selectMessagesByChatId, selectSelectedMessagesMap],
+  (currentChatId, messagesByChatId, selectedMessagesMap): ChatMessage[] => {
+    if (!currentChatId) {
+      return [];
+    }
+    const messages = messagesByChatId[currentChatId] || [];
+    if (messages.length === 0) {
+      return [];
+    }
+
+    const currentChatSelections = selectedMessagesMap[currentChatId];
+
+    return messages.filter(message => {
+      // Only include messages that are explicitly active (true or undefined)
+      // Exclude messages that are explicitly inactive (false)
+      if (message.is_active_in_thread === false) {
+        return false;
+      }
+      // If currentChatSelections is undefined or message.id is not a key, default to selected (true).
+      // Otherwise, use the explicit boolean value from the map.
+      return currentChatSelections?.[message.id] ?? true;
+    });
   }
 );
 
@@ -134,13 +171,13 @@ export const selectChatTokenUsage = createSelector(
             total = typeof tokenObject['total_tokens'] === 'number' ? tokenObject['total_tokens'] as number : (prompt + completion);
           }
 
-          acc.promptTokens += prompt;
-          acc.completionTokens += completion;
-          acc.totalTokens += total;
+          acc.prompt_tokens += prompt;
+          acc.completion_tokens += completion;
+          acc.total_tokens += total;
         }
         return acc;
       },
-      { promptTokens: 0, completionTokens: 0, totalTokens: 0 } as TokenUsage // Initial accumulator typed as TokenUsage
+      { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } as TokenUsage // Initial accumulator typed as TokenUsage
     );
   }
 );
@@ -166,3 +203,73 @@ export const selectAllPersonalChatMessages = createSelector(
 
 // Selector for the whole AiState (if ever needed, though generally discouraged)
 // export const selectFullAiState = (state: AiState) => state; 
+
+export const selectCurrentChatSessionTokenUsage = createSelector(
+  [selectCurrentChatMessages],
+  (currentChatMessages): ChatSessionTokenUsageDetails => {
+    const totals: ChatSessionTokenUsageDetails = {
+      assistantPromptTokens: 0,
+      assistantCompletionTokens: 0,
+      assistantTotalTokens: 0,
+      overallTotalTokens: 0,
+    };
+
+    for (const message of currentChatMessages) {
+      const tu = message.token_usage as unknown as TokenUsage;
+      let messageTurnTotal = 0;
+
+      if (tu && typeof tu === 'object' && !Array.isArray(tu)) {
+        const prompt = Number(tu.prompt_tokens || 0);
+        const completion = Number(tu.completion_tokens || 0);
+        const totalFromRecord = Number(tu.total_tokens || 0);
+        
+        // Calculate message turn total: use total_tokens if valid, otherwise sum of prompt and completion
+        messageTurnTotal = (totalFromRecord > 0 && !isNaN(totalFromRecord)) ? totalFromRecord : (prompt + completion);
+
+        if (message.role === 'assistant') {
+          totals.assistantPromptTokens += prompt;
+          totals.assistantCompletionTokens += completion;
+          totals.assistantTotalTokens += messageTurnTotal;
+        }
+      }
+      // Add current message's total tokens to overallTotalTokens regardless of role
+      totals.overallTotalTokens += messageTurnTotal;
+    }
+    
+    // Ensure assistantTotalTokens is consistent if it was based on individual message totals
+    // If assistantTotalTokens was intended to be a sum of its prompt & completion, this might need adjustment
+    // For now, we trust the per-message calculation for assistantTotalTokens derived above.
+
+    // The console.warn for discrepancy can be removed or adjusted if this new logic is correct.
+    // For example, a discrepancy might still occur if a user message had prompt/completion tokens but no total_tokens.
+    // However, overallTotalTokens now aims to sum all messageTurnTotals.
+    if (totals.assistantPromptTokens + totals.assistantCompletionTokens !== totals.assistantTotalTokens && totals.assistantTotalTokens !== 0) {
+        console.warn('Discrepancy in assistant token calculation:', {
+            sumOfPromptAndCompletion: totals.assistantPromptTokens + totals.assistantCompletionTokens,
+            assistantTotalTokensFromMessages: totals.assistantTotalTokens,
+        });
+        // Optionally, decide on a source of truth if they differ, e.g.:
+        // totals.assistantTotalTokens = totals.assistantPromptTokens + totals.assistantCompletionTokens;
+    }
+
+    return totals;
+  }
+);
+
+export type ChatSelectionState = 'all' | 'none' | 'some' | 'empty';
+
+export const selectCurrentChatSelectionState = createSelector(
+  [selectCurrentChatMessages, selectSelectedChatMessages],
+  (activeMessages, selectedMessages): ChatSelectionState => {
+    if (activeMessages.length === 0) {
+      return 'empty';
+    }
+    if (selectedMessages.length === 0) {
+      return 'none';
+    }
+    if (selectedMessages.length === activeMessages.length) {
+      return 'all';
+    }
+    return 'some';
+  }
+);

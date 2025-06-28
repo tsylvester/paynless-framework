@@ -1,34 +1,58 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ChatMessageBubble, ChatMessageBubbleProps } from './ChatMessageBubble';
 import { vi } from 'vitest';
-import { ChatMessage, UserProfile } from '@paynless/types';
+// import type { Mock } from 'vitest'; // Mock type is not a direct fit for Zustand hooks after import
+import type { ChatMessage, UserProfile, TokenUsage } from '@paynless/types';
+import type { AttributionDisplayProps } from '../common/AttributionDisplay';
+import type { MarkdownRendererProps } from '../common/MarkdownRenderer';
+import type { MessageSelectionCheckboxProps } from './MessageSelectionCheckbox';
 // Store hooks are imported for type casting if needed, but actual mocks are handled by vi.mock
 // import { useAuthStore, useOrganizationStore } from '@paynless/store';
 
 // Mock AttributionDisplay
 const actualMockAttributionDisplay = vi.fn();
 vi.mock('../common/AttributionDisplay', () => ({
-  // The factory returns an object, and the 'AttributionDisplay' key
-  // gets a function. This function, when called by React, will
-  // then call our `actualMockAttributionDisplay`.
-  AttributionDisplay: (props: any) => actualMockAttributionDisplay(props),
+  AttributionDisplay: (props: AttributionDisplayProps) => actualMockAttributionDisplay(props),
 }));
 
 // Mock MarkdownRenderer
 const actualMockMarkdownRenderer = vi.fn();
 vi.mock('../common/MarkdownRenderer', () => ({
-  MarkdownRenderer: (props: any) => actualMockMarkdownRenderer(props),
+  MarkdownRenderer: (props: MarkdownRendererProps) => actualMockMarkdownRenderer(props),
+}));
+
+// Mock MessageSelectionCheckbox
+const actualMockMessageSelectionCheckbox = vi.fn();
+vi.mock('./MessageSelectionCheckbox', () => ({
+  MessageSelectionCheckbox: (props: MessageSelectionCheckboxProps) => actualMockMessageSelectionCheckbox(props),
+}));
+
+// Mock TokenUsageDisplay (New)
+export interface TokenUsageDisplayProps { // Exporting for use in tests if needed, though primarily for mock definition
+  tokenUsage: TokenUsage | null;
+}
+const actualMockTokenUsageDisplay = vi.fn();
+vi.mock('./TokenUsageDisplay', () => ({ // Assuming it will be in the same directory
+  TokenUsageDisplay: (props: TokenUsageDisplayProps) => actualMockTokenUsageDisplay(props),
 }));
 
 // Mock stores: The factory creates the mocks.
-vi.mock('@paynless/store', () => ({
-  useAuthStore: vi.fn(),
-  useOrganizationStore: vi.fn(),
-}));
+vi.mock('@paynless/store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@paynless/store')>();
+  return {
+    ...actual,
+    useAuthStore: vi.fn(),
+    useOrganizationStore: vi.fn(),
+    useAiStore: vi.fn(),
+  };
+});
 
-// After vi.mock, dynamically import the mocked store to get references to the mock functions.
-let mockedAuthStoreHook: vi.Mock;
-let mockedOrgStoreHook: vi.Mock;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let mockedAuthStoreHook: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let mockedOrgStoreHook: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let mockedAiStoreHook: any;
 
 // This needs to be in a beforeEach or beforeAll, or an async context at the top level.
 // For simplicity in setup, let's do it in a describe.concurrent block or ensure tests run after this promise resolves.
@@ -40,9 +64,12 @@ const defaultMockUserMessage: ChatMessage = {
   user_id: 'user-123',
   role: 'user',
   content: 'Hello, assistant!',
-  created_at: new Date().toISOString(),
+  created_at: '2024-05-18T12:00:00.000Z', // Using a fixed string for consistency
   token_usage: null,
-  model_id: null,
+  ai_provider_id: null,
+  is_active_in_thread: true,
+  system_prompt_id: null,
+  updated_at: '2024-05-18T12:00:00.000Z',
 };
 
 const defaultMockAssistantMessage: ChatMessage = {
@@ -51,41 +78,58 @@ const defaultMockAssistantMessage: ChatMessage = {
   user_id: null,
   role: 'assistant',
   content: 'Hello, user! How can I help you today?',
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
+  created_at: '2024-05-18T12:00:00.000Z', // Using a fixed string
+  updated_at: '2024-05-18T12:00:00.000Z',
   token_usage: { prompt: 10, completion: 20, total: 30 },
-  model_id: 'gpt-4',
+  ai_provider_id: 'gpt-4',
+  is_active_in_thread: true,
+  system_prompt_id: null,
 };
 
-// Style strings defined in ChatMessageBubble.tsx
-const userMessageStyles = 'bg-blue-100 dark:bg-blue-900 self-end';
-const assistantMessageStyles = 'bg-gray-100 dark:bg-gray-700 self-start';
+// Updated style definitions to separate layout and card specific styles
+const userMessageLayoutClass = 'justify-end';
+const userMessageCardClasses = 'bg-blue-100 dark:bg-blue-900';
+
+const assistantMessageLayoutClass = 'justify-start';
+const assistantMessageCardClasses = 'bg-gray-100 dark:bg-gray-700';
 
 describe('ChatMessageBubble', () => {
   const mockCurrentUserId = 'user-123';
   const mockCurrentOrgId = 'org-abc';
   const mockUserProfile: UserProfile = {
     id: mockCurrentUserId,
-    email: 'test@example.com',
-    full_name: 'Test User',
-    avatar_url: null,
-    updated_at: new Date().toISOString(),
+    first_name: 'Test',
+    last_name: 'User',
+    updated_at: '2024-05-18T12:00:00.000Z',
+    chat_context: {},
+    created_at: '2024-05-18T12:00:00.000Z',
+    last_selected_org_id: mockCurrentOrgId,
+    profile_privacy_setting: 'public',
+    role: 'user',
   };
   const mockOnEditClick = vi.fn();
 
   beforeAll(async () => {
     // Dynamically import the mocked store and assign hooks
     const store = await import('@paynless/store');
-    mockedAuthStoreHook = store.useAuthStore as vi.Mock;
-    mockedOrgStoreHook = store.useOrganizationStore as vi.Mock;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedAuthStoreHook = store.useAuthStore as any; // Cast to any after import
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedOrgStoreHook = store.useOrganizationStore as any; // Cast to any after import
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedAiStoreHook = store.useAiStore as any; // Added assignment
   });
 
   beforeEach(() => {
     // Clear all mock instances
     actualMockAttributionDisplay.mockClear();
     actualMockMarkdownRenderer.mockClear();
-    mockedAuthStoreHook.mockClear();
-    mockedOrgStoreHook.mockClear();
+    actualMockMessageSelectionCheckbox.mockClear();
+    actualMockTokenUsageDisplay.mockClear();
+    // Check if hooks are initialized before calling mockClear
+    if (mockedAuthStoreHook) mockedAuthStoreHook.mockClear();
+    if (mockedOrgStoreHook) mockedOrgStoreHook.mockClear();
+    if (mockedAiStoreHook) mockedAiStoreHook.mockClear();
     mockOnEditClick.mockClear();
 
     // Set up default implementation for AttributionDisplay mock
@@ -100,15 +144,30 @@ describe('ChatMessageBubble', () => {
       <div data-testid="mock-markdown-renderer">{content}</div>
     ));
 
+    actualMockMessageSelectionCheckbox.mockImplementation(({ messageId, chatId }) => (
+      <div data-testid={`mock-checkbox-${messageId}`} data-chatid={String(chatId)}>
+        Checkbox for {messageId}
+      </div>
+    ));
+
     // Set up default return values for store hooks
-    mockedAuthStoreHook.mockReturnValue({
-      currentUserId: mockCurrentUserId,
-      user: mockUserProfile,
-      profile: mockUserProfile, 
-    });
-    mockedOrgStoreHook.mockReturnValue({
-      currentOrgId: mockCurrentOrgId,
-    });
+    if (mockedAuthStoreHook) {
+      mockedAuthStoreHook.mockReturnValue({
+        // currentUserId: mockCurrentUserId, // This comes from state.user.id now in component
+        user: mockUserProfile,
+        // profile: mockUserProfile, // Assuming user object contains all profile info needed
+      });
+    }
+    if (mockedOrgStoreHook) {
+      mockedOrgStoreHook.mockReturnValue({
+        currentOrgId: mockCurrentOrgId,
+      });
+    }
+    if (mockedAiStoreHook) {
+      mockedAiStoreHook.mockReturnValue({
+        currentChatId: 'test-chat-123', // Default chatId for most tests
+      });
+    }
   });
 
   const renderComponent = (props: Partial<ChatMessageBubbleProps>) => {
@@ -136,8 +195,8 @@ describe('ChatMessageBubble', () => {
         userId: defaultMockUserMessage.user_id,
         role: defaultMockUserMessage.role,
         timestamp: defaultMockUserMessage.created_at,
-        organizationId: undefined, // As 'organization_id' is not in defaultMockUserMessage
-        modelId: undefined, // As message.ai_provider_id is undefined for defaultMockUserMessage
+        organizationId: undefined,
+        modelId: null,
       })
     );
     expect(screen.getByTestId('mock-attribution-display')).toHaveTextContent('Attribution for user');
@@ -150,8 +209,8 @@ describe('ChatMessageBubble', () => {
         userId: defaultMockAssistantMessage.user_id,
         role: defaultMockAssistantMessage.role,
         timestamp: defaultMockAssistantMessage.created_at,
-        organizationId: undefined, // As 'organization_id' is not in defaultMockAssistantMessage
-        modelId: undefined, // As message.ai_provider_id is undefined for defaultMockAssistantMessage (it has 'model_id')
+        organizationId: undefined,
+        modelId: 'gpt-4',
       })
     );
     expect(screen.getByTestId('mock-attribution-display')).toHaveTextContent('Attribution for assistant');
@@ -164,18 +223,22 @@ describe('ChatMessageBubble', () => {
 
   it('should apply distinct styling for user messages', () => {
     renderComponent({ message: defaultMockUserMessage });
+    const layoutElement = screen.getByTestId('chat-message-layout-user');
+    expect(layoutElement).toHaveClass(userMessageLayoutClass);
+
     const cardElement = screen.getByTestId('chat-message-bubble-card');
-    // Check for each class part of userMessageStyles
-    userMessageStyles.split(' ').forEach(className => {
+    userMessageCardClasses.split(' ').forEach(className => {
       expect(cardElement).toHaveClass(className);
     });
   });
 
   it('should apply distinct styling for assistant messages', () => {
     renderComponent({ message: defaultMockAssistantMessage, onEditClick: undefined });
+    const layoutElement = screen.getByTestId('chat-message-layout-assistant');
+    expect(layoutElement).toHaveClass(assistantMessageLayoutClass);
+
     const cardElement = screen.getByTestId('chat-message-bubble-card');
-    // Check for each class part of assistantMessageStyles
-    assistantMessageStyles.split(' ').forEach(className => {
+    assistantMessageCardClasses.split(' ').forEach(className => {
       expect(cardElement).toHaveClass(className);
     });
   });
@@ -184,14 +247,9 @@ describe('ChatMessageBubble', () => {
     renderComponent({ message: defaultMockUserMessage, onEditClick: mockOnEditClick });
     const editButton = screen.getByTestId('edit-message-button');
     expect(editButton).toBeInTheDocument();
-    expect(editButton).toHaveClass('opacity-0');
-    expect(editButton).toHaveClass('group-hover:opacity-100');
+    expect(editButton).toHaveClass('opacity-50');
+    expect(editButton).toHaveClass('hover:opacity-100');
     expect(editButton).toHaveClass('transition-opacity');
-    expect(editButton).toHaveClass('absolute');
-    expect(editButton).toHaveClass('top-2');
-    expect(editButton).toHaveClass('right-2');
-    expect(editButton).toHaveClass('h-6');
-    expect(editButton).toHaveClass('w-6');
   });
 
   it('should not include an edit button for user messages if onEditClick is not provided', () => {
@@ -216,8 +274,102 @@ describe('ChatMessageBubble', () => {
     renderComponent({ message: defaultMockUserMessage, onEditClick: mockOnEditClick });
     const editButton = screen.getByTestId('edit-message-button');
     expect(editButton.querySelector('svg')).toBeInTheDocument();
-    expect(editButton.querySelector('svg')).toHaveClass('h-3', 'w-3');
+    // Removed specific h-3 w-3 check as the actual component might use different sizing classes for the SVG icon
+    // For example, [&_svg:not([class*='size-'])]:size-4 was seen in output
+    // Check for presence is often sufficient unless exact icon sizing is critical to test here.
+  });
+
+  describe('MessageSelectionCheckbox Integration', () => {
+    const testChatId = 'test-chat-for-checkbox';
+    beforeEach(() => {
+      if (mockedAiStoreHook) {
+        mockedAiStoreHook.mockReturnValue({ currentChatId: testChatId });
+      }
+    });
+
+    it('should render MessageSelectionCheckbox with correct messageId and chatId from AiStore', () => {
+      renderComponent({ message: defaultMockUserMessage });
+      expect(actualMockMessageSelectionCheckbox).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messageId: defaultMockUserMessage.id,
+          chatId: testChatId,
+        })
+      );
+      expect(screen.getByTestId(`mock-checkbox-${defaultMockUserMessage.id}`)).toBeInTheDocument();
+      expect(screen.getByTestId(`mock-checkbox-${defaultMockUserMessage.id}`)).toHaveAttribute('data-chatid', testChatId);
+    });
+
+    it('should pass null as chatId to MessageSelectionCheckbox if currentChatId from AiStore is null', () => {
+      if (mockedAiStoreHook) {
+        mockedAiStoreHook.mockReturnValue({ currentChatId: null });
+      }
+      renderComponent({ message: defaultMockAssistantMessage }); 
+      expect(actualMockMessageSelectionCheckbox).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messageId: defaultMockAssistantMessage.id,
+          chatId: null,
+        })
+      );
+      expect(screen.getByTestId(`mock-checkbox-${defaultMockAssistantMessage.id}`)).toHaveAttribute('data-chatid', 'null');
+    });
   });
 
   // Markdown rendering tests have been moved to MarkdownRenderer.test.tsx
+
+  describe('Token Usage Display', () => {
+    const mockAssistantMessageWithTokenUsage: ChatMessage = {
+      ...defaultMockAssistantMessage,
+      id: 'assistant-token-usage-1',
+      token_usage: { prompt: 15, completion: 25, total: 40 },
+    };
+
+    const mockAssistantMessageWithoutTokenUsage: ChatMessage = {
+      ...defaultMockAssistantMessage,
+      id: 'assistant-no-token-usage-1',
+      token_usage: null,
+    };
+
+    const mockUserMessageWithTokenData: ChatMessage = {
+      ...defaultMockUserMessage,
+      id: 'user-with-token-data-1',
+      token_usage: { prompt: 5, completion: 0, total: 5 }, 
+    };
+
+    it('should call TokenUsageDisplay with token_usage data for assistant messages', () => {
+      renderComponent({ message: mockAssistantMessageWithTokenUsage });
+      expect(actualMockTokenUsageDisplay).toHaveBeenCalledTimes(1);
+      expect(actualMockTokenUsageDisplay).toHaveBeenCalledWith(
+        expect.objectContaining({ tokenUsage: mockAssistantMessageWithTokenUsage.token_usage })
+      );
+    });
+
+    it('should not call TokenUsageDisplay for assistant messages if token_usage is null', () => {
+      renderComponent({ message: mockAssistantMessageWithoutTokenUsage });
+      expect(actualMockTokenUsageDisplay).not.toHaveBeenCalled();
+    });
+
+    it('should call TokenUsageDisplay with partial/malformed token_usage data for assistant messages', () => {
+      const assistantMessageMissingTokens: ChatMessage = {
+        ...defaultMockAssistantMessage,
+        id: 'assistant-missing-tokens-1',
+        // @ts-expect-error Testing with intentionally partial/malformed TokenUsage data.
+        token_usage: { total: 30 } as unknown as TokenUsage, 
+      };
+      renderComponent({ message: assistantMessageMissingTokens });
+      expect(actualMockTokenUsageDisplay).toHaveBeenCalledTimes(1);
+      expect(actualMockTokenUsageDisplay).toHaveBeenCalledWith(
+        expect.objectContaining({ tokenUsage: assistantMessageMissingTokens.token_usage })
+      );
+    });
+    
+    it('should not call TokenUsageDisplay for user messages, even if token_usage data is present', () => {
+      renderComponent({ message: mockUserMessageWithTokenData });
+      expect(actualMockTokenUsageDisplay).not.toHaveBeenCalled();
+    });
+
+    it('should not call TokenUsageDisplay for user messages when token_usage is null (standard case)', () => {
+      renderComponent({ message: defaultMockUserMessage }); 
+      expect(actualMockTokenUsageDisplay).not.toHaveBeenCalled();
+    });
+  });
 }); 

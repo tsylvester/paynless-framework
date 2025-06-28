@@ -15,9 +15,9 @@ export function SubscriptionSuccessPage() {
       refreshSubscription();
     }
     
-    // Redirect to dashboard after 5 seconds
+    // Redirect to subscription page so user can see it completed successfully
     const timer = setTimeout(() => {
-      navigate('/dashboard');
+      navigate('/subscription');
     }, 5000);
     
     return () => clearTimeout(timer);
@@ -38,9 +38,9 @@ export function SubscriptionSuccessPage() {
           </p>
           <div className="mt-8">
             <p className="text-sm text-gray-500">
-              You will be redirected to the dashboard in a few seconds. If you're not redirected, please{' '}
-              <button 
-                onClick={() => navigate('/dashboard')}
+              You will be redirected to your subscription page in a few seconds. If you're not redirected, please{' '}
+              <button
+                onClick={() => navigate('/subscription')}
                 className="text-indigo-600 hover:text-indigo-500"
               >
                 click here

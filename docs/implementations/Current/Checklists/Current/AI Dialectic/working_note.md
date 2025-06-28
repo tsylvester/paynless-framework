@@ -1,0 +1,2 @@
+I forgot to ask the models to create an antithesis (critique) of the other model's versions *before* we created a synthesis. 
+Let's take a step back and generate the antithesis documents, then once we have them, redevelop the syntheses. 

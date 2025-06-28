@@ -35,9 +35,19 @@ export type Chat = Database['public']['Tables']['chats']['Row'];
  * Represents the token usage for a message or a chat.
  */
 export interface TokenUsage {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
+/**
+ * Detailed breakdown of token usage for a chat session.
+ */
+export interface ChatSessionTokenUsageDetails {
+  assistantPromptTokens: number;
+  assistantCompletionTokens: number;
+  assistantTotalTokens: number; // Sum of assistant's prompt & completion for all assistant messages
+  overallTotalTokens: number;  // Sum of assistantPromptTokens + assistantCompletionTokens for the session
 }
 
 /**
@@ -48,7 +58,54 @@ export type ChatMessage = Database['public']['Tables']['chat_messages']['Row']
 
 // --- Application/API/Adapter/Store Specific Types ---
 
-// Keep existing API/Usage types...
+// Accepted Tiktoken encoding names
+export type TiktokenEncoding = 'cl100k_base' | 'p50k_base' | 'r50k_base' | 'gpt2' | 'o200k_base';
+
+/**
+ * Interface for messages used in token counting functions.
+ */
+export interface MessageForTokenCounting {
+  role: "system" | "user" | "assistant" | "function"; // Function role might be needed for some models
+  content: string | null; // Content can be null for some function calls
+  name?: string; // Optional, for function calls
+}
+
+/**
+ * Extended configuration for an AI model, stored in the `ai_providers.config` JSON column.
+ * This structure holds information crucial for dynamic token cost calculation, output capping,
+ * and input token estimation strategies.
+ */
+export interface AiModelExtendedConfig {
+  // Token Costing & Limits (for getMaxOutputTokens logic)
+  input_token_cost_rate: number;    // How many wallet tokens 1 input token costs (e.g., 1.0)
+  output_token_cost_rate: number;   // How many wallet tokens 1 output token costs (e.g., 3.0)
+  hard_cap_output_tokens?: number; // Provider's absolute max output tokens (e.g., 4096, 8192, 200000)
+                                    // This is the 'global_max_tokens' or 'hard_cap' in ChatGPT's suggestion.
+  context_window_tokens?: number;   // Provider's max context window (input + output usually)
+
+  // Input Token Estimation Strategy (for client-side estimateInputTokens)
+  tokenization_strategy: {
+    type: 'tiktoken' | 'rough_char_count' | 'provider_specific_api' | 'unknown';
+    // For 'tiktoken'
+    tiktoken_encoding_name?: TiktokenEncoding; // e.g., 'cl100k_base', 'p50k_base', 'r50k_base', 'gpt2'
+    is_chatml_model?: boolean; // If true, apply ChatML counting rules (like in tokenizer_utils.ts)
+                                // We might need more granular rules here if ChatML varies.
+    api_identifier_for_tokenization?: string; // e.g., "gpt-4o", "gpt-3.5-turbo", for direct use with tiktoken's encodingForModel
+    // For 'rough_char_count'
+    chars_per_token_ratio?: number; // e.g., 4.0 (average chars per token)
+    // For 'provider_specific_api'
+    // No extra fields needed here; implies server-side call or pre-fetched from provider if available
+  };
+
+  // Optional: Provider-returned limits (can be synced automatically if API provides them)
+  provider_max_input_tokens?: number;
+  provider_max_output_tokens?: number; // This could directly inform hard_cap_output_tokens
+
+  // Optional: Default parameters for the model
+  default_temperature?: number;
+  default_top_p?: number;
+  // ... other common model params
+}
 
 /**
  * Structure for sending a message via the 'chat' Edge Function.
@@ -59,6 +116,25 @@ export interface ChatApiRequest {
   promptId: SystemPrompt['id']; // Reference aliased type
   chatId?: Chat['id'] | null;   // Reference aliased type (optional for new chats)
   organizationId?: string | null; // Add optional organizationId
+  contextMessages?: MessageForTokenCounting[]; // Added for selected context
+  rewindFromMessageId?: string | null; // Added for rewind
+  max_tokens_to_generate?: number; // Added for output capping
+  temperature?: number; // Added for temperature control
+  top_p?: number; // Added for top_p control
+  presence_penalty?: number; // Added for presence penalty
+  frequency_penalty?: number; // Added for frequency penalty
+  seed?: number; // Added for seed control
+  stop?: string[]; // Added for stop sequences
+  stream?: boolean; // Added for streaming responses
+  user?: string; // Added for user identification
+  response_format?: { type: string }; // Added for structured output
+  tools?: { type: string; function: { name: string; description: string, parameters: Record<string, unknown> } }[]; // Added for tool calling
+  tool_choice?: string; // Added for tool choice
+  logprobs?: number; // Added for logprobs
+  echo?: boolean; // Added for echoing messages
+  best_of?: number; // Added for best of responses
+  logit_bias?: Record<string, number>; // Added for logit bias
+  max_tokens?: number; // Added for max tokens
 }
 
 /**
@@ -137,8 +213,10 @@ export interface AiProviderAdapter {
 export interface ChatHandlerSuccessResponse {
   userMessage?: ChatMessageRow;       // Populated for normal new messages and new user message in rewind
   assistantMessage: ChatMessageRow;  // Always populated on success
+  chatId: string;                    // ID of the chat session (new or existing)
   isRewind?: boolean;                 // True if this was a rewind operation
   isDummy?: boolean;                  // True if dummy provider was used
+  
 }
 
 // --- Zustand Store Types ---
@@ -158,6 +236,9 @@ export interface AiState {
     };
     messagesByChatId: { [chatId: string]: ChatMessage[] };
     currentChatId: Chat['id'] | null; // Remains the same
+
+    // Message Selection State
+    selectedMessagesMap: { [chatId: string]: { [messageId: string]: boolean } };
 
     // Loading states
     isLoadingAiResponse: boolean; // Remains the same
@@ -186,6 +267,8 @@ export interface AiState {
 
     chatParticipantsProfiles: { [userId: string]: UserProfile }; 
 
+    pendingAction: AiPendingChatAction; // Added missing state property
+
     // Token Tracking (placeholders, to be detailed in STEP-2.1.8)
     // Example: chatTokenUsage?: { [chatId: string]: { promptTokens: number; completionTokens: number; totalTokens: number } };
     // Example: sessionTokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
@@ -201,12 +284,12 @@ export interface AiActions {
     providerId: AiProvider['id']; // Use aliased type
     promptId: SystemPrompt['id'] | null; // MODIFIED HERE
     chatId?: Chat['id'] | null; // Use aliased type
+    contextMessages?: MessageForTokenCounting[]; // Use the more permissive type here
   }) => Promise<ChatMessage | null>; // Use aliased type
   loadChatHistory: (organizationId?: string | null) => Promise<void>;
   loadChatDetails: (chatId: Chat['id']) => Promise<void>; // Use aliased type
   startNewChat: (organizationId?: string | null) => void;
   clearAiError: () => void;
-  checkAndReplayPendingChatAction: () => Promise<void>;
   deleteChat: (chatId: Chat['id'], organizationId?: string | null) => Promise<void>;
   prepareRewind: (messageId: ChatMessage['id'], chatId: Chat['id']) => void;
   cancelRewindPreparation: () => void;
@@ -218,10 +301,57 @@ export interface AiActions {
   setChatContextHydrated: (hydrated: boolean) => void;
   hydrateChatContext: (chatContext: ChatContextPreferences | null) => void;
   resetChatContextToDefaults: () => void;
+
+  // Message Selection Actions
+  toggleMessageSelection: (chatId: string, messageId: string) => void;
+  selectAllMessages: (chatId: string) => void;
+  deselectAllMessages: (chatId: string) => void;
+  clearMessageSelections: (chatId: string) => void;
+
+  // --- Internal actions exposed for testing or complex workflows ---
+  _addOptimisticUserMessage: (msgContent: string, explicitChatId?: string | null) => { tempId: string, chatIdUsed: string, createdTimestamp: string };
+  addOptimisticMessageForReplay: (messageContent: string, existingChatId?: string | null) => { tempId: string, chatIdForOptimistic: string };
+  _updateChatContextInProfile: (contextUpdate: Partial<ChatContextPreferences>) => Promise<void>;
+  _fetchAndStoreUserProfiles: (userIds: string[]) => Promise<void>;
+  _dangerouslySetStateForTesting: (newState: Partial<AiState>) => void;
+}
+
+/**
+ * Defines the selectors that are directly available on the AiStore instance.
+ */
+export interface AiStoreSelectors {
+  selectChatHistoryList: (contextId: string | null) => Chat[];
+  selectCurrentChatMessages: () => ChatMessage[];
+  selectSelectedChatMessages: () => ChatMessage[];
+  selectIsHistoryLoading: (contextId: string | null) => boolean;
+  selectIsDetailsLoading: () => boolean;
+  selectIsLoadingAiResponse: () => boolean;
+  selectAiError: () => string | null;
+  selectRewindTargetMessageId: () => string | null;
+  selectIsRewinding: () => boolean;
+  selectChatTokenUsage: (chatId: string) => TokenUsage | null;
+  selectAllPersonalChatMessages: () => ChatMessage[];
+  selectCurrentChatSessionTokenUsage: () => ChatSessionTokenUsageDetails;
+  selectCurrentChatSelectionState: () => 'all' | 'none' | 'some' | 'empty';
 }
 
 // Combined type for the store
 export type AiStore = AiState & AiActions; 
+
+// Type for the new selector's return value
+export type ChatSelectionState = 'all' | 'none' | 'some' | 'empty';
+
+// +++ ADDED PendingAction Type +++
+export type AiPendingChatAction = 
+  | 'SEND_MESSAGE' 
+  | 'LOAD_HISTORY' 
+  | 'LOAD_DETAILS' 
+  | 'DELETE_CHAT'
+  | 'LOAD_CONFIG'
+  | 'REPLAY_ACTION'
+  | 'REWIND_ACTION'
+  | null;
+// +++ END PendingAction Type +++
 
 // +++ ADDED Chat Context Preferences Type +++
 /**
@@ -269,4 +399,18 @@ export const initialAiStateValues: AiState = {
   selectedPromptId: null,
   isChatContextHydrated: false, 
   chatParticipantsProfiles: {}, 
+  selectedMessagesMap: {},
+  pendingAction: null,
 };
+// Type definitions for the new selector
+export type ActiveChatWalletInfoStatus = 'ok' | 'loading' | 'error' | 'consent_required' | 'consent_refused' | 'policy_org_wallet_unavailable' | 'policy_member_wallet_unavailable';
+
+export interface ActiveChatWalletInfo {
+  status: ActiveChatWalletInfoStatus;
+  type: 'personal' | 'organization' | null; 
+  walletId: string | null; 
+  orgId: string | null; 
+  balance: string | null; 
+  message?: string; // General message, can be error or informational
+  isLoadingPrimaryWallet: boolean; // True if the determined primary wallet (personal or specific org) is loading its details
+}

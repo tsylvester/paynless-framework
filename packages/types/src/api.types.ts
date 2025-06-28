@@ -65,6 +65,8 @@ export interface SuccessResponse<T> {
   status: number;
   data?: T;
   error?: undefined;
+  assistantMessage?: string;
+  chatId?: string;
 }
 
 /**

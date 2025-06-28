@@ -10,7 +10,6 @@ import {
     OrganizationActions,
     OrganizationUIState,
     OrganizationUIActions,
-    OrganizationUpdate,
 } from '@paynless/types';
 // Import the specific client class and the base api object
 import { 
@@ -990,68 +989,73 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
       //   return !!currentOrganizationDetails.allow_member_chat_creation;
       // },
 
-      updateOrganizationSettings: async (orgId: string, settings: { allow_member_chat_creation: boolean }): Promise<boolean> => {
-        const { _setLoading, _setError, currentOrganizationId, currentOrganizationDetails } = get(); // Get current details and list
-        
-        const isCurrentOrg = orgId === currentOrganizationId;
-        
+      updateOrganizationSettings: async (
+        orgId: string, 
+        settings: { 
+          allow_member_chat_creation?: boolean; 
+          token_usage_policy?: 'member_tokens' | 'organization_tokens';
+        }
+      ): Promise<boolean> => {
+        const { _setLoading, _setError, currentOrganizationId } = get();
         _setLoading(true);
         _setError(null);
+
+        if (!orgId) {
+          logger.warn('[OrganizationStore] updateOrganizationSettings - No orgId provided.');
+          _setError('Organization ID is required to update settings.');
+          _setLoading(false);
+          return false;
+        }
         
+        const isCurrentOrg = orgId === currentOrganizationId;
+
         try {
-            const apiClient = getApiClient();
-            // Align with the backend change: use updateOrganization which hits PUT /organizations/:orgId
-            // The OrganizationUpdate type should include allow_member_chat_creation as an optional field.
-            const response = await apiClient.organizations.updateOrganization(orgId, settings as Partial<OrganizationUpdate>); // Cast settings to allow partial update
+          const apiClient = getApiClient();
+          // Call the renamed method updateOrganizationSettings with the new settings structure
+          // The 'settings' object here is already a partial update.
+          const response = await apiClient.organizations.updateOrganizationSettings(orgId, settings);
 
-            if (response.error || !response.data) {
-                const errorMsg = response.error?.message ?? 'Failed to update organization settings';
-                logger.error('[OrganizationStore] updateOrganizationSettings - API Error', { orgId, settings, error: errorMsg, status: response.status });
-                _setError(errorMsg);
-                return false;
-            } else {
-                const updatedOrgDetails = response.data; // This will be the full updated Organization object
-                logger.info(`[OrganizationStore] Successfully updated organization settings for ${orgId}.`);
-                
-                // Optimistically update currentOrganizationDetails if it's the same org
-                // and merge with existing details to preserve other fields not returned by a partial update
-                // However, PUT usually returns the full resource, so merging might not be strictly needed if response.data is complete.
-                if (isCurrentOrg) {
-                    set({ 
-                        currentOrganizationDetails: {
-                            ...(currentOrganizationDetails || {}), // Keep existing details
-                            ...updatedOrgDetails, // Override with new data from response
-                        } as Organization, // Ensure the merged type is Organization
-                        error: null 
-                    });
-                } else {
-                    set({ error: null }); 
-                }
-
-                // Also update the organization in the userOrganizations list
-                set(state => ({
-                    userOrganizations: state.userOrganizations.map(org => 
-                        org.id === orgId ? { ...org, ...updatedOrgDetails } : org
-                    ),
-                    error: null, 
-                }));
-
-                // Analytics event (example)
-                // const analytics = useAnalyticsStore.getState(); 
-                // analytics.trackEvent('member_chat_creation_toggled', { 
-                //     organization_id: orgId,
-                //     enabled: settings.allow_member_chat_creation 
-                // });
-
-                return true; 
-            }
-        } catch (err: unknown) { 
-            const errorMsg = err instanceof Error ? err.message : 'An unexpected error occurred during settings update';
-            logger.error('[OrganizationStore] updateOrganizationSettings - Unexpected Error', { orgId, settings, message: errorMsg });
+          if (response.error || !response.data) { // Check for error or if response.data is null/undefined
+            const errorMsg = response.error?.message ?? 'Failed to update organization settings.';
+            logger.error('[OrganizationStore] updateOrganizationSettings - API Error', { orgId, settings, error: response.error?.message, status: response.status });
             _setError(errorMsg);
             return false;
+          } else {
+            const updatedOrgDetails = response.data; // This will be the full updated Organization object
+            logger.info(`[OrganizationStore] Successfully updated organization settings for ${orgId}.`);
+            
+            // Update currentOrganizationDetails if it's the same org
+            if (isCurrentOrg) {
+                set({ 
+                    currentOrganizationDetails: updatedOrgDetails, 
+                    error: null 
+                });
+            } else {
+                // If not the current org, just clear any existing general error
+                set({ error: null }); 
+            }
+
+            // Also update the organization in the userOrganizations list
+            set(state => ({
+                userOrganizations: state.userOrganizations.map(org => 
+                    org.id === orgId ? updatedOrgDetails : org // Replace the whole org object
+                ),
+                error: null, // Ensure error is cleared here too
+            }));
+            
+            // Optional: If it was the current org and details were sparse, a full refetch might be desired by some patterns,
+            // but PUT returning the full object usually suffices.
+            // if (isCurrentOrg) await fetchCurrentOrganizationDetails();
+
+            return true;
+          }
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred while updating settings.';
+          logger.error('[OrganizationStore] updateOrganizationSettings - Unexpected Error', { orgId, settings, error: errorMessage });
+          _setError(errorMessage);
+          return false;
         } finally {
-             _setLoading(false);
+          _setLoading(false);
         }
       },
 

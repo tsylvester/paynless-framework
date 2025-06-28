@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertExists, assertObjectMatch } from "jsr:@std/assert@0.225.3";
 import { spy, type Spy, assertSpyCalls, stub } from "jsr:@std/testing@0.225.1/mock"; 
-import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js";
+import { createClient, type SupabaseClient, type User } from "npm:@supabase/supabase-js";
 import type { ConnInfo } from "https://deno.land/std@0.177.0/http/server.ts";
 import type { Database, Json } from "../types_db.ts"; 
 import type { 
@@ -8,24 +8,27 @@ import type {
     ChatApiRequest,
     AdapterResponsePayload,
     ChatHandlerDeps,
-    MockSupabaseClientSetup,
-    User 
+    AiModelExtendedConfig
 } from '../_shared/types.ts'; 
 import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts'; 
 import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
   type MockQueryBuilderState, // Added for spy type in supaConfigForRewind
+  type MockSupabaseClientSetup // Imported from here
 } from "../_shared/supabase.mock.ts";
-import { handler, defaultDeps } from './index.ts';
+import {
+    createMockTokenWalletService, 
+    type MockTokenWalletService 
+} from '../_shared/services/tokenWalletService.mock.ts'; // CHAT-GPT ADDED
+import {
+    handler, 
+    defaultDeps,
+} from './index.ts'; // Assuming handler is in index.ts in the same directory
 
 // --- Helper to generate UUIDs ---
 function generateUUID() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        const r = Math.random() * 16 | 0;
-        const v = c === 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
+    return crypto.randomUUID();
 }
 
 type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
@@ -57,6 +60,24 @@ const testProviderId = generateUUID();
 const testApiIdentifier = 'openai-gpt-4';
 const testProviderString = 'openai';
 const systemPromptText = 'Test system prompt'; // General system prompt text for mocks
+
+// CHAT-GPT ADDED: Mock provider config and data for tests
+const mockModelConfig: AiModelExtendedConfig = {
+    api_identifier: testApiIdentifier, // Ensure this matches the testApiIdentifier used in tests
+    tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+    input_token_cost_rate: 0.001,
+    output_token_cost_rate: 0.002,
+};
+
+const mockProviderDataEntry = {
+    id: testProviderId, // Uses globally defined testProviderId
+    name: 'Mock OpenAI Provider For Rewind Tests',
+    api_identifier: testApiIdentifier, // Uses globally defined testApiIdentifier
+    provider: testProviderString, // Uses globally defined testProviderString
+    is_active: true,
+    config: mockModelConfig as unknown as Json, // Cast to unknown then Json
+};
+// END CHAT-GPT ADDED
 
 const mockUser = {
     id: 'user-1',
@@ -102,9 +123,10 @@ const createTestDeps = (
   supaConfig: MockSupabaseDataConfig = {},
   adapterSendMessageResult?: AdapterResponsePayload | Error,
   depOverrides: Partial<ChatHandlerDeps> = {}
-): { deps: ChatHandlerDeps; mockClientSetup: MockSupabaseClientSetup } => {
-  const mockClientSetup = createMockSupabaseClient(supaConfig);
-  
+): { deps: ChatHandlerDeps; mockClientSetup: MockSupabaseClientSetup; mockTokenWalletService: MockTokenWalletService } => {
+  const mockClientSetup = createMockSupabaseClient(testUserId, supaConfig);
+  const mockTokenWalletService = createMockTokenWalletService();
+
   const mockAdapter = adapterSendMessageResult ? createMockAdapter(adapterSendMessageResult) : undefined;
   const mockGetAiProviderAdapter = mockAdapter ? spy((_provider: string) => mockAdapter) : spy(getAiProviderAdapter); 
 
@@ -112,9 +134,10 @@ const createTestDeps = (
     ...defaultDeps, 
     createSupabaseClient: spy(() => mockClientSetup.client) as any,
     getAiProviderAdapter: mockGetAiProviderAdapter, 
+    tokenWalletService: mockTokenWalletService.instance,
     ...depOverrides, 
   };
-  return { deps, mockClientSetup };
+  return { deps, mockClientSetup, mockTokenWalletService };
 };
 
 // --- Isolated Rewind Test Suite ---
@@ -138,7 +161,7 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
         await t.step("POST request with rewindFromMessageId should call RPC and use its result", async () => {
             console.log("--- Running Rewind Functionality Unit Test (RPC) ---");
 
-            const rewindChatId = 'chat-rewind-rpc-abc';
+            const rewindChatId = generateUUID();
             const userMsg1Content = "User Message 1 for RPC rewind";
             const aiMsg1Content = "AI Response 1 for RPC rewind";
             // Messages to be made inactive by RPC - not directly asserted but implicitly part of rewind point
@@ -146,15 +169,19 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
             // const aiMsg2Content = "AI Response 2 for RPC rewind (to be inactive)";
             const userMsg3NewContent = "User Message 3 for RPC rewind (new user input)"; // This is the new message in the request
             const aiMsg3NewContentFromAdapter = "AI Response 3 from adapter for RPC rewind (new from AI)"; // This is what the AI adapter returns
-            const rewindFromMsgId = "ai-msg-1-rpc-id"; 
+            const rewindFromMsgId = generateUUID();
             const initialTimestamp = new Date().getTime();
             const msgTimestamp = (offsetSeconds: number) => new Date(initialTimestamp + offsetSeconds * 1000).toISOString();
             const systemPromptText = 'Test system prompt for RPC rewind';
 
+            // CHAT-GPT ADDED: IDs for the new messages that the RPC is expected to return
+            const mockNewUserMessageIdRpc = generateUUID();
+            const mockNewAssistantMessageIdRpc = generateUUID();
+
             // History that should be passed to the AI adapter
             const historyForAIAdapter: ChatMessageRow[] = [
-                { id: "user-msg-1-rpc-id", chat_id: rewindChatId, user_id: testUserId, role: 'user', content: userMsg1Content, created_at: msgTimestamp(0), is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null, updated_at: msgTimestamp(0) },
-                { id: rewindFromMsgId, chat_id: rewindChatId, user_id: null, role: 'assistant', content: aiMsg1Content, created_at: msgTimestamp(1), is_active_in_thread: true, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: {prompt_tokens:1, completion_tokens:1}, updated_at: msgTimestamp(1) },
+                { id: "user-msg-1-rpc-id", chat_id: rewindChatId, user_id: testUserId, role: 'user', content: userMsg1Content, created_at: msgTimestamp(0), is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null, updated_at: msgTimestamp(0), error_type: null, response_to_message_id: null },
+                { id: rewindFromMsgId, chat_id: rewindChatId, user_id: null, role: 'assistant', content: aiMsg1Content, created_at: msgTimestamp(1), is_active_in_thread: true, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: {prompt_tokens:1, completion_tokens:1}, updated_at: msgTimestamp(1), error_type: null, response_to_message_id: null },
             ];
             
             // This is the new message content from the request body
@@ -167,7 +194,7 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
 
             // This is the expected structure of the *final assistant message* returned by the RPC
             const mockAssistantMessageFromRpc: ChatMessageRow = {
-                id: "ai-msg-3-rpc-id", // New ID for the message created by RPC
+                id: mockNewAssistantMessageIdRpc, // CHAT-GPT CORRECTED: Use the generated ID from RPC expectation
                 chat_id: rewindChatId, 
                 user_id: null, 
                 role: 'assistant',
@@ -177,7 +204,26 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
                 token_usage: newAiResponseFromAdapterPayload.token_usage, // from AI adapter
                 ai_provider_id: testProviderId,
                 system_prompt_id: testPromptId,
-                updated_at: msgTimestamp(5)
+                updated_at: msgTimestamp(5),
+                error_type: null,
+                response_to_message_id: null
+            };
+            
+            // CHAT-GPT ADDED: This is the expected structure of the *new user message* after RPC (not directly returned by RPC, but fetched by handler)
+            const mockUserMessageAfterRpc: ChatMessageRow = {
+                id: mockNewUserMessageIdRpc, 
+                chat_id: rewindChatId,
+                user_id: testUserId,
+                role: 'user',
+                content: newRequestUserMessageContent,
+                created_at: msgTimestamp(4), // Timestamp will be set by DB, mock for assertion
+                is_active_in_thread: true,
+                ai_provider_id: testProviderId, 
+                system_prompt_id: testPromptId,    
+                updated_at: msgTimestamp(4),
+                error_type: null,
+                response_to_message_id: null,
+                token_usage: null
             };
             
             let selectCallCount = 0;
@@ -193,7 +239,7 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
                     },
                     'ai_providers': { 
                         select: { 
-                            data: [{ id: testProviderId, api_identifier: testApiIdentifier, provider: testProviderString, is_active: true }], 
+                            data: [mockProviderDataEntry],
                             error: null, status: 200, count: 1 
                         } 
                     },
@@ -220,10 +266,21 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
                                 state.filters.some((f: FilterType) => f.column === 'is_active_in_thread' && f.value === true) &&
                                 state.filters.some((f: FilterType) => f.column === 'created_at' && f.type === 'lte')) { // <<< Updated to check for 'lte'
                                 console.log('[Test Mock chat_messages.select RPC] Matched selectCallCount 2 for fetching active history with LTE.');
-                                // Return the history correctly, the error is simulated later in the RPC call mock
                                 const rewindPointTimestamp = historyForAIAdapter.find(m => m.id === rewindFromMsgId)?.created_at;
                                 const filteredHistory = rewindPointTimestamp ? historyForAIAdapter.filter(m => new Date(m.created_at) <= new Date(rewindPointTimestamp)) : [];
                                 return { data: filteredHistory as any[], error: null, status: 200, count: filteredHistory.length };
+                            }
+
+                            // CHAT-GPT ADDED: Third select call: Fetching the new user message by ID (mockNewUserMessageIdRpc)
+                            if (selectCallCount === 3 && state.filters.some((f: FilterType) => f.column === 'id' && f.value === mockNewUserMessageIdRpc) && state.selectColumns === '*') {
+                                console.log(`[Test Mock chat_messages.select RPC] Matched selectCallCount 3 for new user message ID: ${mockNewUserMessageIdRpc}`);
+                                return { data: [mockUserMessageAfterRpc as any] , error: null, status: 200, count: 1 }; // CHAT-GPT CORRECTED: Wrap data in an array for .single() mock
+                            }
+
+                            // CHAT-GPT ADDED: Fourth select call: Fetching the new assistant message by ID (mockNewAssistantMessageIdRpc)
+                            if (selectCallCount === 4 && state.filters.some((f: FilterType) => f.column === 'id' && f.value === mockNewAssistantMessageIdRpc) && state.selectColumns === '*') {
+                                console.log(`[Test Mock chat_messages.select RPC] Matched selectCallCount 4 for new assistant message ID: ${mockNewAssistantMessageIdRpc}`);
+                                return { data: [mockAssistantMessageFromRpc as any] , error: null, status: 200, count: 1 }; // CHAT-GPT CORRECTED: Wrap data in an array for .single() mock
                             }
                             
                             console.error(`[Test Mock chat_messages.select RPC] UNEXPECTED CALL. selectCallCount: ${selectCallCount}, Filters: ${JSON.stringify(state.filters)}`);
@@ -235,7 +292,10 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
                 },
                 rpcResults: {
                     'perform_chat_rewind': {
-                        data: [mockAssistantMessageFromRpc as any],
+                        data: [{ 
+                            new_user_message_id: mockNewUserMessageIdRpc, 
+                            new_assistant_message_id: mockNewAssistantMessageIdRpc 
+                        }],
                         error: null
                     }
                 }
@@ -257,20 +317,41 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
             assertEquals(response.status, 200, `RPC Rewind Test Failed: Status was ${response.status}, Body: ${await response.clone().text()}`);
             const responseBody = await response.json();
 
-            // Assert that responseBody.data matches the mockAssistantMessageFromRpc structure
-            // (Assuming RPC returns single object when 1 row is returned)
-            assertExists(responseBody.data, "Response body should have a 'data' property");
-            assertObjectMatch(responseBody.data, {
+            // CHAT-GPT ADDED: Debugging logs
+            console.log("--- BEFORE ASSERTION (RPC Test) ---");
+            console.log("Type of mockAssistantMessageFromRpc:", typeof mockAssistantMessageFromRpc);
+            try {
+                console.log("mockAssistantMessageFromRpc:", JSON.stringify(mockAssistantMessageFromRpc, null, 2));
+            } catch (e) {
+                console.log("mockAssistantMessageFromRpc (raw):", mockAssistantMessageFromRpc);
+                console.error("Error stringifying mockAssistantMessageFromRpc:", e);
+            }
+            console.log("mockAssistantMessageFromRpc.id:", mockAssistantMessageFromRpc ? mockAssistantMessageFromRpc.id : 'mockAssistantMessageFromRpc is falsy');
+            console.log("mockAssistantMessageFromRpc.chat_id:", mockAssistantMessageFromRpc ? mockAssistantMessageFromRpc.chat_id : 'mockAssistantMessageFromRpc is falsy');
+            console.log("responseBody:", JSON.stringify(responseBody, null, 2));
+            // END CHAT-GPT ADDED
+
+            // Assert that responseBody itself is the new assistant message
+            assertExists(responseBody, "Response body should exist and be the assistant message object");
+            
+            const expectedObjectForAssert = { 
                 id: mockAssistantMessageFromRpc.id,
+                chat_id: mockAssistantMessageFromRpc.chat_id,
+                user_id: mockAssistantMessageFromRpc.user_id,
+                role: mockAssistantMessageFromRpc.role,
                 content: mockAssistantMessageFromRpc.content,
-                chat_id: rewindChatId, // from mockAssistantMessageFromRpc via rewindChatId
-                role: 'assistant', // from mockAssistantMessageFromRpc
-                token_usage: mockAssistantMessageFromRpc.token_usage, // from mockAssistantMessageFromRpc
-                // Ensure other relevant fields from mockAssistantMessageFromRpc are checked if necessary
-                // For example, ai_provider_id and system_prompt_id from mockAssistantMessageFromRpc
+                is_active_in_thread: mockAssistantMessageFromRpc.is_active_in_thread,
+                token_usage: mockAssistantMessageFromRpc.token_usage,
                 ai_provider_id: mockAssistantMessageFromRpc.ai_provider_id,
-                system_prompt_id: mockAssistantMessageFromRpc.system_prompt_id
-            });
+                system_prompt_id: mockAssistantMessageFromRpc.system_prompt_id,
+                error_type: mockAssistantMessageFromRpc.error_type,
+                response_to_message_id: mockAssistantMessageFromRpc.response_to_message_id
+            };
+            // CHAT-GPT ADDED: Debugging log for the constructed expected object
+            console.log("expectedObjectForAssert:", JSON.stringify(expectedObjectForAssert, null, 2));
+            // END CHAT-GPT ADDED
+
+            assertObjectMatch(responseBody.assistantMessage, expectedObjectForAssert);
 
             // Assert RPC call
             assertSpyCalls(rpcSpy, 1);
@@ -311,8 +392,12 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
             
             // Ensure original select, update, insert mocks for chat_messages were not called for the DB modification part
             const cmSelectSpy = supaConfigForRewindRpc.genericMockResults!.chat_messages!.select as Spy<any,any[],any>;
-            // select is called twice: 1 for rewind point, 1 for history. Not for the actual data modification.
-            assertSpyCalls(cmSelectSpy, 2); 
+            // select is called multiple times: 
+            // 1. Fetching rewind point message's created_at (for history boundary)
+            // 2. Fetching active history for AI context (up to rewind point)
+            // 3. Fetching the new user message by ID (after RPC returns the ID)
+            // 4. Fetching the new assistant message by ID (after RPC returns the ID)
+            assertSpyCalls(cmSelectSpy, 4); // Reverted to 4, as the spy is indeed called 4 times.
 
             const cmUpdateSpy = supaConfigForRewindRpc.genericMockResults!.chat_messages!.update as Spy<any,any[],any>;
             assertSpyCalls(cmUpdateSpy, 0); // Should not be called
@@ -323,8 +408,8 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
 
         await t.step("POST rewind with non-existent rewindFromMessageId returns 404", async () => {
             console.log("--- Running Rewind Error Test: Rewind Point Not Found ---");
-            const rewindChatId = 'chat-rewind-err-nofound';
-            const rewindFromMsgIdNonExistent = "non-existent-msg-id";
+            const rewindChatId = generateUUID();
+            const rewindFromMsgIdNonExistent = generateUUID();
             const userMsgContent = "Test message";
 
             const supaConfigError: MockSupabaseDataConfig = {
@@ -332,7 +417,7 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
                 getUserResult: { data: { user: { id: testUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: now } as any }, error: null },
                 genericMockResults: {
                     'system_prompts': { select: { data: [{ id: testPromptId, prompt_text: "Sys Prompt" }], error: null, status: 200, count: 1 } },
-                    'ai_providers': { select: { data: [{ id: testProviderId, api_identifier: testApiIdentifier, provider: testProviderString }], error: null, status: 200, count: 1 } },
+                    'ai_providers': { select: { data: [mockProviderDataEntry], error: null, status: 200, count: 1 } },
                     'chats': { select: { data: [{ id: rewindChatId, user_id: testUserId, system_prompt_id: testPromptId } as any], error: null, status: 200, count: 1 } },
                     'chat_messages': {
                         select: spy(async (state: MockQueryBuilderState) => {
@@ -359,14 +444,14 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
             const response = await handler(req, deps);
             assertEquals(response.status, 404);
             const responseBody = await response.json();
-            // Expect the actual error message from the handler which originates from the mock .single() failure
-            assertEquals(responseBody.error, 'Query returned no rows (data was null after .single())');
+            // Expect the actual error message from the handler
+            assertEquals(responseBody.error, 'Query returned no rows');
         });
 
         await t.step("POST rewind with RPC error (simulating deactivation failure) returns 500", async () => {
             console.log("--- Running Rewind Error Test: RPC Failure (simulating deactivation issue) ---");
-            const rewindChatId = 'chat-rewind-err-rpc';
-            const rewindFromMsgId = "ai-msg-1-id-rpc-err";
+            const rewindChatId = generateUUID();
+            const rewindFromMsgId = generateUUID();
             const userMsgContent = "Test message for RPC error";
             const initialTimestamp = new Date().getTime(); // Define for msgTimestamp
             const msgTimestamp = (offsetSeconds: number) => new Date(initialTimestamp + offsetSeconds * 1000).toISOString(); // Define msgTimestamp
@@ -374,8 +459,8 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
             const systemPromptText = 'Test system prompt for RPC error';
 
             const historyForAIAdapterRpcError: ChatMessageRow[] = [
-                { id: "user-msg-1-rpc-err-id", chat_id: rewindChatId, user_id: testUserId, role: 'user', content: "User Message 1 for RPC error", created_at: msgTimestamp(0), is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null, updated_at: msgTimestamp(0) },
-                { id: rewindFromMsgId, chat_id: rewindChatId, user_id: null, role: 'assistant', content: "AI Response 1 for RPC error", created_at: msgTimestamp(1), is_active_in_thread: true, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: {prompt_tokens:1, completion_tokens:1}, updated_at: msgTimestamp(1) },
+                { id: "user-msg-1-rpc-err-id", chat_id: rewindChatId, user_id: testUserId, role: 'user', content: "User Message 1 for RPC error", created_at: msgTimestamp(0), is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null, updated_at: msgTimestamp(0), error_type: null, response_to_message_id: null },
+                { id: rewindFromMsgId, chat_id: rewindChatId, user_id: null, role: 'assistant', content: "AI Response 1 for RPC error", created_at: msgTimestamp(1), is_active_in_thread: true, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: {prompt_tokens:1, completion_tokens:1}, updated_at: msgTimestamp(1), error_type: null, response_to_message_id: null },
             ];
 
             const aiAdapterResponseForRpcError: AdapterResponsePayload = {
@@ -395,7 +480,7 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
                 getUserResult: { data: { user: { id: testUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: now } as any }, error: null },
                 genericMockResults: {
                     'system_prompts': { select: { data: [{ id: testPromptId, prompt_text: systemPromptText }], error: null, status: 200, count: 1 } },
-                    'ai_providers': { select: { data: [{ id: testProviderId, api_identifier: testApiIdentifier, provider: testProviderString }], error: null, status: 200, count: 1 } },
+                    'ai_providers': { select: { data: [mockProviderDataEntry], error: null, status: 200, count: 1 } },
                     'chat_messages': {
                         select: spy(async (state: MockQueryBuilderState) => { 
                             selectCallCountForRpcErrorTest.increment();
@@ -454,8 +539,8 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
 
         await t.step("POST rewind with error fetching active history returns 500", async () => {
             console.log("--- Running Rewind Error Test: History Fetch Failure ---");
-            const rewindChatId = 'chat-rewind-err-history';
-            const rewindFromMsgId = "ai-msg-1-id-history-err";
+            const rewindChatId = generateUUID();
+            const rewindFromMsgId = generateUUID();
             const userMsgContent = "Test message";
             const rewindPointCreatedAt = new Date().toISOString();
             let selectCallCountForHistoryTest = 0;
@@ -465,7 +550,7 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
                 getUserResult: { data: { user: { id: testUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: now } as any }, error: null },
                 genericMockResults: {
                     'system_prompts': { select: { data: [{ id: testPromptId, prompt_text: "Sys Prompt" }], error: null, status: 200, count: 1 } },
-                    'ai_providers': { select: { data: [{ id: testProviderId, api_identifier: testApiIdentifier, provider: testProviderString }], error: null, status: 200, count: 1 } },
+                    'ai_providers': { select: { data: [mockProviderDataEntry], error: null, status: 200, count: 1 } },
                     'chats': { select: { data: [{ id: rewindChatId, user_id: testUserId, system_prompt_id: testPromptId } as any], error: null, status: 200, count: 1 } },
                     'chat_messages': {
                         select: spy(async (state: MockQueryBuilderState) => {
@@ -589,6 +674,8 @@ async function setupTestData(
             ai_provider_id: null, 
             system_prompt_id: null,
             token_usage: null,
+            error_type: null,
+            response_to_message_id: null,
             // inserted_at: fourSecondsAgo.toISOString(), // Use created_at if DB schema expects it
         },
         { // AI Msg 1 (Rewind Point)
@@ -601,6 +688,8 @@ async function setupTestData(
             ai_provider_id: REAL_TEST_PROVIDER_ID,
             system_prompt_id: REAL_TEST_PROMPT_ID,
             token_usage: { prompt_tokens: 10, completion_tokens: 10 } as Json,
+            error_type: null,
+            response_to_message_id: null,
             // inserted_at: threeSecondsAgo.toISOString(),
         },
         { // User Msg 2
@@ -613,6 +702,8 @@ async function setupTestData(
             ai_provider_id: null,
             system_prompt_id: null,
             token_usage: null,
+            error_type: null,
+            response_to_message_id: null,
             // inserted_at: twoSecondsAgo.toISOString(),
         },
         { // AI Msg 2
@@ -625,6 +716,8 @@ async function setupTestData(
             ai_provider_id: REAL_TEST_PROVIDER_ID,
             system_prompt_id: REAL_TEST_PROMPT_ID,
             token_usage: { prompt_tokens: 10, completion_tokens: 10 } as Json,
+            error_type: null,
+            response_to_message_id: null,
             // inserted_at: oneSecondAgo.toISOString(),
         },
     ];
@@ -775,9 +868,9 @@ Deno.test("Chat Function Rewind Test (Real Database)", { sanitizeResources: fals
 
         // Assertions on the response body (new assistant message returned by RPC)
         // The RPC calls the adapter, which for the dummy provider, echoes.
-        assertExists(responseBody.data, "Response data should exist");
+        assertExists(responseBody, "Response data should exist"); // CHAT-GPT CORRECTED: responseBody IS the data
         // Assuming RPC returns a single object, not an array, when 1 row is returned.
-        assertObjectMatch(responseBody.data, {
+        assertObjectMatch(responseBody, { // CHAT-GPT CORRECTED: Assert on responseBody directly
             // id: string, // Cannot predict the new ID
             chat_id: testData.chatId,
             user_id: null, // Assistant messages have null user_id
@@ -804,7 +897,7 @@ Deno.test("Chat Function Rewind Test (Real Database)", { sanitizeResources: fals
         const aiMsg2After = messagesAfter.find(m => m.id === testData.aiMsg2Id);
         const newUserMsgAfter = messagesAfter.find(m => m.content === reqBody.message);
         // Access the id directly from responseBody.data
-        const newAiMsgAfter = messagesAfter.find(m => m.id === responseBody.data.id);
+        const newAiMsgAfter = messagesAfter.find(m => m.id === responseBody.id); // CHAT-GPT CORRECTED: responseBody.id
 
         assertExists(userMsg2After, "Original user message 2 not found after rewind");
         assertEquals(userMsg2After.is_active_in_thread, false, "User message 2 should be inactive after rewind");
@@ -828,7 +921,7 @@ Deno.test("Chat Function Rewind Test (Real Database)", { sanitizeResources: fals
         const testRunId = `nonexist-rewind-${generateTestRunSuffix()}`;
         const testData = await setupTestData(supabaseAdminClient!, realTestAuthenticatedUserId!, testRunId);
         assertExists(testData, "Test data setup failed");
-        const nonExistentMsgId = generateUUID();
+        const nonExistentMsgId = crypto.randomUUID();
 
         const reqBody: ChatApiRequest = {
             message: "User message for non-existent rewind",
@@ -865,7 +958,7 @@ Deno.test("Chat Function Rewind Test (Real Database)", { sanitizeResources: fals
             providerId: REAL_TEST_PROVIDER_ID,
             promptId: REAL_TEST_PROMPT_ID,
             // chatId is omitted
-            rewindFromMessageId: generateUUID() // A dummy rewind ID
+            rewindFromMessageId: crypto.randomUUID() // A dummy rewind ID
         };
         // Use the globally stored access token
         assertExists(testUserAccessToken, "Access token was not set during test user setup.");

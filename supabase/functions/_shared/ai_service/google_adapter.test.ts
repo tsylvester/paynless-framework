@@ -1,7 +1,15 @@
 import { assertEquals, assertExists, assertRejects, assertInstanceOf, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { spy, stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
-import { GoogleAdapter, googleAdapter } from './google_adapter.ts';
-import type { ChatApiRequest } from '../types.ts';
+import { GoogleAdapter } from './google_adapter.ts';
+import type { ChatApiRequest, ILogger } from '../types.ts';
+
+// Mock logger for testing
+const mockLogger: ILogger = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+};
 
 // --- Test Data ---
 const MOCK_API_KEY = 'google-test-api-key';
@@ -148,8 +156,8 @@ Deno.test("GoogleAdapter sendMessage - Success", async () => {
   });
 
   try {
-    const adapter = new GoogleAdapter();
-    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_GOOGLE, MOCK_MODEL_ID, MOCK_API_KEY);
+    const adapter = new GoogleAdapter(MOCK_API_KEY, mockLogger);
+    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_GOOGLE, MOCK_MODEL_ID);
 
     // Assert fetch was called correctly
     assertEquals(mockFetch.calls.length, 3, "Expected 3 fetch calls (generate + 2 countTokens)");
@@ -184,6 +192,7 @@ Deno.test("GoogleAdapter sendMessage - Success", async () => {
     assertEquals(tokenUsage.prompt_tokens, mockGenericTokenCountResponse.totalTokens);
     assertEquals(tokenUsage.completion_tokens, mockGenericTokenCountResponse.totalTokens);
     assertEquals(tokenUsage.total_tokens, mockGenericTokenCountResponse.totalTokens + mockGenericTokenCountResponse.totalTokens);
+    // assertExists(result.created_at); // Assuming created_at is no longer part of the response
 
   } finally {
     mockFetch.restore();
@@ -235,8 +244,8 @@ Deno.test("GoogleAdapter sendMessage - Success with Token Counting", async () =>
   });
 
   try {
-    const adapter = new GoogleAdapter();
-    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_GOOGLE, MOCK_MODEL_ID, MOCK_API_KEY);
+    const adapter = new GoogleAdapter(MOCK_API_KEY, mockLogger);
+    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_GOOGLE, MOCK_MODEL_ID);
 
     assertEquals(mockFetch.calls.length, 3, "Expected 3 fetch calls: generateContent, countTokens (prompt), countTokens (completion)");
     
@@ -255,6 +264,7 @@ Deno.test("GoogleAdapter sendMessage - Success with Token Counting", async () =>
     assertEquals(tokenUsage.prompt_tokens, mockPromptTokensResponse.totalTokens, "Prompt tokens mismatch");
     assertEquals(tokenUsage.completion_tokens, mockCompletionTokensResponse.totalTokens, "Completion tokens mismatch");
     assertEquals(tokenUsage.total_tokens, mockPromptTokensResponse.totalTokens + mockCompletionTokensResponse.totalTokens, "Total tokens mismatch");
+    // assertExists(result.created_at); // Assuming created_at is no longer part of the response
 
   } finally {
     mockFetch.restore();
@@ -272,9 +282,9 @@ Deno.test("GoogleAdapter sendMessage - API Error", async () => {
   );
 
   try {
-    const adapter = new GoogleAdapter();
+    const adapter = new GoogleAdapter(MOCK_API_KEY, mockLogger);
     await assertRejects(
-      () => adapter.sendMessage(MOCK_CHAT_REQUEST_GOOGLE, MOCK_MODEL_ID, MOCK_API_KEY),
+      () => adapter.sendMessage(MOCK_CHAT_REQUEST_GOOGLE, MOCK_MODEL_ID),
       Error,
       "Google Gemini API request failed: 400 - Invalid API key"
     );
@@ -303,9 +313,9 @@ Deno.test("GoogleAdapter sendMessage - Blocked by Safety", async () => {
   );
 
   try {
-    const adapter = new GoogleAdapter();
+    const adapter = new GoogleAdapter(MOCK_API_KEY, mockLogger);
     await assertRejects(
-      () => adapter.sendMessage(MOCK_CHAT_REQUEST_GOOGLE, MOCK_MODEL_ID, MOCK_API_KEY),
+      () => adapter.sendMessage(MOCK_CHAT_REQUEST_GOOGLE, MOCK_MODEL_ID),
       Error,
       "Request blocked by Google Gemini due to: SAFETY"
     );
@@ -325,13 +335,15 @@ Deno.test("GoogleAdapter sendMessage - Finish Reason MAX_TOKENS", async () => {
   );
 
   try {
-    const adapter = new GoogleAdapter();
-    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_GOOGLE, MOCK_MODEL_ID, MOCK_API_KEY);
+    const adapter = new GoogleAdapter(MOCK_API_KEY, mockLogger);
+    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_GOOGLE, MOCK_MODEL_ID);
 
     assertExists(result);
     assertEquals(result.role, 'assistant');
     // Check that the partial content includes the specific reason message
     assertEquals(result.content, "[Response stopped due to: MAX_TOKENS]");
+    // Token counts might still be available depending on mock
+    assertExists(result.token_usage);
 
   } finally {
     mockFetch.restore();
@@ -349,13 +361,14 @@ Deno.test("GoogleAdapter sendMessage - Finish Reason OTHER", async () => {
   );
 
   try {
-    const adapter = new GoogleAdapter();
-    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_GOOGLE, MOCK_MODEL_ID, MOCK_API_KEY);
+    const adapter = new GoogleAdapter(MOCK_API_KEY, mockLogger);
+    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_GOOGLE, MOCK_MODEL_ID);
 
     assertExists(result);
     assertEquals(result.role, 'assistant');
     // Check that the partial content includes the specific reason message
     assertEquals(result.content, "[Response stopped due to: OTHER]");
+    assertExists(result.token_usage);
 
   } finally {
     mockFetch.restore();
@@ -373,8 +386,8 @@ Deno.test("GoogleAdapter listModels - Success", async () => {
     );
 
     try {
-        const adapter = new GoogleAdapter();
-        const models = await adapter.listModels(MOCK_API_KEY);
+        const adapter = new GoogleAdapter(MOCK_API_KEY, mockLogger);
+        const models = await adapter.listModels();
 
         assertEquals(mockFetch.calls.length, 1);
         const fetchArgs = mockFetch.calls[0].args;
@@ -403,9 +416,9 @@ Deno.test("GoogleAdapter listModels - API Error", async () => {
     );
 
     try {
-        const adapter = new GoogleAdapter();
+        const adapter = new GoogleAdapter(MOCK_API_KEY, mockLogger);
         await assertRejects(
-            () => adapter.listModels(MOCK_API_KEY),
+            () => adapter.listModels(),
             Error,
             "Google Gemini API request failed fetching models: 403"
         );
@@ -414,8 +427,69 @@ Deno.test("GoogleAdapter listModels - API Error", async () => {
     }
 });
 
-// Test the exported instance
-Deno.test("Exported googleAdapter instance exists", () => {
-  assertExists(googleAdapter);
-  assertInstanceOf(googleAdapter, GoogleAdapter);
+Deno.test("GoogleAdapter sendMessage - API Error (generateContent)", async () => {
+  const mockFetch = stub(globalThis, "fetch", () =>
+    Promise.resolve(
+      new Response(JSON.stringify({ error: { code: 500, message: 'Internal Server Error' } }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+  );
+
+  try {
+    const adapter = new GoogleAdapter(MOCK_API_KEY, mockLogger);
+    await assertRejects(
+      () => adapter.sendMessage(MOCK_CHAT_REQUEST_GOOGLE, MOCK_MODEL_ID),
+      Error,
+      "Google Gemini API request failed: 500"
+    );
+  } finally {
+    mockFetch.restore();
+  }
+});
+
+Deno.test("GoogleAdapter sendMessage - API Error (countTokens)", async () => {
+  const mockFetch = stub(globalThis, "fetch", (input: string | URL | Request, _options?: RequestInit) => {
+    const urlString = input.toString();
+    if (urlString.includes(":generateContent")) {
+      // Allow generateContent to succeed
+      return Promise.resolve(
+        new Response(JSON.stringify(MOCK_GOOGLE_SUCCESS_RESPONSE), { // Use a success response here
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    } else if (urlString.includes(":countTokens")) {
+      // Make countTokens fail
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: { code: 500, message: 'Internal Server Error for countTokens' } }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    }
+    return Promise.reject(new Error(`Unexpected fetch call in mock: ${urlString}`));
+  });
+
+  try {
+    const adapter = new GoogleAdapter(MOCK_API_KEY, mockLogger);
+    // Even if countTokens fails, sendMessage should ideally still return the content
+    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_GOOGLE, MOCK_MODEL_ID);
+    assertExists(result);
+    assertEquals(result.content, "A region in spacetime where gravity is so strong nothing escapes, not even light.");
+    // Token usage might be null or incomplete if countTokens failed
+    assert(result.token_usage === null || typeof result.token_usage === 'object', "Token usage should be null or an object");
+    // Specifically, with the Google adapter's current error handling for _countTokens,
+    // it should return an object with 0s if token counting fails but generateContent succeeds.
+    if (result.token_usage !== null) { // If not null, check individual parts
+        const tu = result.token_usage as unknown as MockTokenUsage;
+        assertEquals(tu.prompt_tokens, 0);
+        assertEquals(tu.completion_tokens, 0);
+        assertEquals(tu.total_tokens, 0);
+    }
+
+  } finally {
+    mockFetch.restore();
+  }
 }); 

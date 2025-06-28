@@ -1,25 +1,26 @@
+import { type Json } from '../types_db.ts';
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
 // Import shared response/error handlers
 import { 
-    handleCorsPreflightRequest as actualHandleCorsPreflightRequest, 
-    createErrorResponse as actualCreateErrorResponse, 
-    createSuccessResponse as actualCreateJsonResponse 
+    handleCorsPreflightRequest, 
+    createErrorResponse, 
+    createSuccessResponse 
 } from '../_shared/cors-headers.ts'; 
 
 // Import provider-specific sync functions AND their default deps
 import {
-    syncOpenAIModels as actualSyncOpenAIModels,
+    syncOpenAIModels,
     defaultSyncOpenAIDeps
 } from './openai_sync.ts';
 import {
-    syncAnthropicModels as actualSyncAnthropicModels,
+    syncAnthropicModels,
     defaultSyncAnthropicDeps
 } from './anthropic_sync.ts';
 import {
-    syncGoogleModels as actualSyncGoogleModels,
+    syncGoogleModels,
     defaultSyncGoogleDeps
 } from './google_sync.ts';
 
@@ -38,6 +39,7 @@ export interface DbAiProvider {
   description: string | null;
   is_active: boolean;
   provider: string; 
+  config: Json | null;
 }
 
 // Structure for sync results
@@ -56,9 +58,9 @@ type ProviderSyncFunction = (client: SupabaseClient, key: string) => Promise<Syn
 export interface SyncAiModelsDeps {
   createSupabaseClient: (url: string, key: string) => SupabaseClient;
   getEnv: (key: string) => string | undefined;
-  handleCorsPreflightRequest: typeof actualHandleCorsPreflightRequest;
-  createJsonResponse: typeof actualCreateJsonResponse;
-  createErrorResponse: typeof actualCreateErrorResponse;
+  handleCorsPreflightRequest: typeof handleCorsPreflightRequest;
+  createJsonResponse: typeof createSuccessResponse;
+  createErrorResponse: typeof createErrorResponse;
   // Include the sync functions in dependencies for mocking
   doOpenAiSync: ProviderSyncFunction;
   doAnthropicSync: ProviderSyncFunction;
@@ -68,13 +70,13 @@ export interface SyncAiModelsDeps {
 export const defaultDeps: SyncAiModelsDeps = {
   createSupabaseClient: (url, key) => createClient(url, key),
   getEnv: Deno.env.get,
-  handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
-  createJsonResponse: actualCreateJsonResponse,
-  createErrorResponse: actualCreateErrorResponse,
+  handleCorsPreflightRequest,
+  createJsonResponse: createSuccessResponse,
+  createErrorResponse,
   // Provide wrapper functions that call the actual sync functions with their default deps
-  doOpenAiSync: (client, key) => actualSyncOpenAIModels(client, key, defaultSyncOpenAIDeps),
-  doAnthropicSync: (client, key) => actualSyncAnthropicModels(client, key, defaultSyncAnthropicDeps),
-  doGoogleSync: (client, key) => actualSyncGoogleModels(client, key, defaultSyncGoogleDeps),
+  doOpenAiSync: (client, key) => syncOpenAIModels(client, key, defaultSyncOpenAIDeps),
+  doAnthropicSync: (client, key) => syncAnthropicModels(client, key, defaultSyncAnthropicDeps),
+  doGoogleSync: (client, key) => syncGoogleModels(client, key, defaultSyncGoogleDeps),
 };
 
 // --- Provider Configuration (Internal - Uses deps) ---
@@ -98,7 +100,7 @@ const PROVIDERS_TO_SYNC: ProviderSyncConfig[] = [
 export async function getCurrentDbModels(supabaseClient: SupabaseClient, providerName: string): Promise<DbAiProvider[]> {
   const { data, error } = await supabaseClient
     .from('ai_providers')
-    .select('id, api_identifier, name, description, is_active, provider')
+    .select('id, api_identifier, name, description, is_active, provider, config')
     .eq('provider', providerName);
 
   if (error) {

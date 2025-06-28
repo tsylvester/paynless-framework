@@ -1,14 +1,16 @@
-import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest, AdapterResponsePayload } from '../types.ts';
+import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig, TiktokenEncoding } from '../types.ts';
 import type { Json } from '../../../functions/types_db.ts';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 
-// Define a minimal type for the items in the OpenAI models list
+// Define a type for the items in the OpenAI models list
 interface OpenAIModelItem {
   id: string;
   owned_by?: string;
-  // Add other potential fields if needed for filtering/display, but keep minimal
-  [key: string]: unknown; // Allow other fields but treat as unknown
+  context_window?: number; // Provided by OpenAI API for many models
+  // Other fields from OpenAI API might exist, e.g., relating to capabilities or rate limits.
+  // For now, we focus on id and context_window for config derivation.
+  [key: string]: unknown;
 }
 
 /**
@@ -16,11 +18,13 @@ interface OpenAIModelItem {
  */
 export class OpenAiAdapter implements AiProviderAdapter {
 
+  constructor(private apiKey: string, private logger: ILogger) {}
+
   async sendMessage(
     request: ChatApiRequest, // Contains previous messages if chatId was provided
     modelIdentifier: string, // e.g., "openai-gpt-4o" -> "gpt-4o"
-    apiKey: string
   ): Promise<AdapterResponsePayload> {
+    this.logger.debug('[OpenAiAdapter] sendMessage called', { modelIdentifier });
     // Use fetch directly
     const openaiUrl = `${OPENAI_API_BASE}/chat/completions`;
     // Remove provider prefix if present (ensure this matches your DB data convention)
@@ -37,27 +41,37 @@ export class OpenAiAdapter implements AiProviderAdapter {
       openaiMessages.push({ role: 'user', content: request.message });
     }
 
-    const openaiPayload = {
+    const openaiPayload: { 
+      model: string;
+      messages: { role: string; content: string }[];
+      max_tokens?: number; // Define max_tokens as optional here
+      // temperature: number; // Example of other params
+    } = {
       model: modelApiName,
       messages: openaiMessages,
       // Add other parameters as needed
       // temperature: 0.7,
     };
 
-    console.log(`Sending fetch request to OpenAI model: ${modelApiName}`);
+    // Add max_tokens to the payload if it's provided in the request
+    if (request.max_tokens_to_generate && request.max_tokens_to_generate > 0) {
+      openaiPayload.max_tokens = request.max_tokens_to_generate;
+    }
+
+    this.logger.info(`Sending fetch request to OpenAI model: ${modelApiName}`, { url: openaiUrl });
 
     const response = await fetch(openaiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify(openaiPayload),
     });
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error(`OpenAI API fetch error (${response.status}): ${errorBody}`);
+      this.logger.error(`OpenAI API fetch error (${response.status}): ${errorBody}`, { modelApiName, status: response.status });
       throw new Error(`OpenAI API request failed: ${response.status} ${response.statusText}`);
     }
 
@@ -65,7 +79,7 @@ export class OpenAiAdapter implements AiProviderAdapter {
 
     const aiContent = jsonResponse.choices?.[0]?.message?.content?.trim();
     if (!aiContent) {
-      console.error("OpenAI fetch response missing message content:", jsonResponse);
+      this.logger.error("OpenAI fetch response missing message content:", { response: jsonResponse, modelApiName });
       throw new Error('OpenAI response content is empty or missing.');
     }
 
@@ -84,53 +98,68 @@ export class OpenAiAdapter implements AiProviderAdapter {
       token_usage: tokenUsage,
       // REMOVED fields not provided by adapter: id, chat_id, created_at, user_id
     };
-
+    this.logger.debug('[OpenAiAdapter] sendMessage successful', { modelApiName });
     return assistantResponse;
   }
 
-  async listModels(apiKey: string): Promise<ProviderModelInfo[]> {
+  async listModels(): Promise<ProviderModelInfo[]> {
     const modelsUrl = `${OPENAI_API_BASE}/models`;
-    console.log("[openai_adapter] Fetching models from OpenAI...");
+    this.logger.info("[OpenAiAdapter] Fetching models from OpenAI...", { url: modelsUrl });
 
-    console.log("[openai_adapter] Before fetch call");
+    this.logger.debug("[OpenAiAdapter] Before fetch call");
     const response = await fetch(modelsUrl, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${this.apiKey}`,
       },
     });
-    console.log(`[openai_adapter] After fetch call (Status: ${response.status})`);
+    this.logger.debug(`[OpenAiAdapter] After fetch call (Status: ${response.status})`);
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error(`[openai_adapter] OpenAI API error fetching models (${response.status}): ${errorBody}`);
+      this.logger.error(`[OpenAiAdapter] OpenAI API error fetching models (${response.status}): ${errorBody}`, { status: response.status });
       throw new Error(`OpenAI API request failed fetching models: ${response.status} ${response.statusText}`);
     }
 
-    console.log("[openai_adapter] Before response.json() call");
+    this.logger.debug("[OpenAiAdapter] Before response.json() call");
     const jsonResponse = await response.json();
-    console.log("[openai_adapter] After response.json() call");
+    this.logger.debug("[OpenAiAdapter] After response.json() call");
     const models: ProviderModelInfo[] = [];
 
     if (jsonResponse.data && Array.isArray(jsonResponse.data)) {
       jsonResponse.data.forEach((model: OpenAIModelItem) => {
-        // We are interested in chat completion models, often contain 'gpt'
-        // This filtering might need refinement based on OpenAI's model ID conventions
-        if (model.id && (model.id.includes('gpt') || model.id.includes('instruct'))) { // Simple filter
+        // Filter for models we are interested in (e.g., GPT series)
+        if (model.id && (model.id.includes('gpt') || model.id.includes('instruct'))) {
+            const config: Partial<AiModelExtendedConfig> = {};
+
+            // Set context window and provider max input tokens from API if available
+            if (model.context_window) {
+                config.context_window_tokens = model.context_window;
+                config.provider_max_input_tokens = model.context_window;
+            }
+
+            // Tokenization strategy is NOT set by the adapter from OpenAI /models endpoint,
+            // as OpenAI does not provide these specific details (encoding name, chatml status) directly here.
+            // These will be handled by defaults in createDefaultOpenAIConfig and merged.
+            // config.tokenization_strategy = { ... }; // REMOVED
+            
+            // provider_max_output_tokens is not set here as it's not reliably in /models list.
+
             models.push({
-                api_identifier: `openai-${model.id}`, // Prepend 'openai-' for our internal identifier
-                name: `OpenAI ${model.id}`, // Simple naming convention
-                description: `Owned by: ${model.owned_by}`, // Example detail
-                // Add other relevant fields if needed and available
+                api_identifier: `openai-${model.id}`,
+                name: `OpenAI ${model.id}`,
+                description: `Owned by: ${model.owned_by}`,
+                // Only include config if it has properties (e.g. context_window_tokens was set)
+                config: Object.keys(config).length > 0 ? config as Json : undefined,
             });
         }
       });
     }
 
-    console.log(`Found ${models.length} potentially usable models from OpenAI.`);
+    this.logger.info(`[OpenAiAdapter] Found ${models.length} potentially usable models from OpenAI.`);
     return models;
   }
 }
 
-// Export an instance or the class itself depending on factory preference
-export const openAiAdapter = new OpenAiAdapter(); 
+// Removed: export const openAiAdapter = new OpenAiAdapter(); 
+// The class OpenAiAdapter is now exported directly and will be instantiated by the factory. 

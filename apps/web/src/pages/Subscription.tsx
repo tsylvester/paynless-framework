@@ -1,6 +1,6 @@
 // src/pages/Subscription.tsx
 import { useEffect } from 'react';
-import { useAuthStore } from '@paynless/store';
+import { useAuthStore, useWalletStore } from '@paynless/store';
 import { Navigate } from 'react-router-dom';
 import { logger } from '@paynless/utils';
 import { AlertCircle, AlertTriangle } from 'lucide-react';
@@ -15,14 +15,14 @@ import {
 } from '@paynless/store';
 import { CurrentSubscriptionCard } from '../components/subscription/CurrentSubscriptionCard';
 import { PlanCard } from '../components/subscription/PlanCard';
-import type { UserSubscription, SubscriptionPlan } from '@paynless/types';
+import type { UserSubscription, SubscriptionPlan, PurchaseRequest, PaymentInitiationResult } from '@paynless/types';
 
 export function SubscriptionPage() {
   const { user, isLoading: authLoading } = useAuthStore();
 
   const availablePlans = useSubscriptionStore(selectAvailablePlans);
   const userSubscription = useSubscriptionStore(selectUserSubscription);
-  const isSubscriptionLoading = useSubscriptionStore(selectIsSubscriptionLoading);
+  const isSubStoreLoading = useSubscriptionStore(selectIsSubscriptionLoading);
   const storeError = useSubscriptionStore(selectSubscriptionError);
   const hasActiveSubscription = useSubscriptionStore(selectHasActiveSubscription);
   const currentUserResolvedPlan = useSubscriptionStore(selectCurrentUserResolvedPlan);
@@ -30,15 +30,23 @@ export function SubscriptionPage() {
   const { 
     isTestMode, 
     loadSubscriptionData,
-    createCheckoutSession,
     createBillingPortalSession,
     cancelSubscription,
   } = useSubscriptionStore(state => ({ 
     isTestMode: state.isTestMode,
     loadSubscriptionData: state.loadSubscriptionData,
-    createCheckoutSession: state.createCheckoutSession,
     createBillingPortalSession: state.createBillingPortalSession,
     cancelSubscription: state.cancelSubscription,
+  }));
+
+  const {
+    initiatePurchase,
+    isLoadingPurchase,
+    purchaseError,
+  } = useWalletStore(state => ({
+    initiatePurchase: state.initiatePurchase,
+    isLoadingPurchase: state.isLoadingPurchase,
+    purchaseError: state.purchaseError,
   }));
   
   useEffect(() => {
@@ -49,22 +57,41 @@ export function SubscriptionPage() {
   }, [user?.id, loadSubscriptionData]);
   
   const handleSubscribe = async (priceId: string) => {
-    if (!user) return;
-    
-    logger.info('Initiating checkout process', { userId: user.id, priceId });
-    const checkoutUrl = await createCheckoutSession(priceId);
+    if (!user || !user.id) {
+      logger.warn('User not available for subscription.');
+      return;
+    }
 
-    if (checkoutUrl) {
-      logger.info('Redirecting to Stripe Checkout', { url: checkoutUrl });
-      window.location.href = checkoutUrl;
+    const plan = availablePlans.find(p => p.stripe_price_id === priceId);
+    if (!plan) {
+      logger.error('Selected plan not found in availablePlans', { priceId });
+      return;
+    }
+
+    logger.info('Initiating purchase process', { userId: user.id, priceId, planName: plan.name });
+
+    const purchaseRequest: PurchaseRequest = {
+      userId: user.id,
+      itemId: plan.stripe_price_id,
+      quantity: 1,
+      currency: plan.currency.toUpperCase(),
+      paymentGatewayId: 'stripe',
+      metadata: { planName: plan.name, planId: plan.id }
+    };
+
+    const result: PaymentInitiationResult | null = await initiatePurchase(purchaseRequest);
+
+    if (result?.success && result.redirectUrl) {
+      logger.info('Redirecting to Stripe Checkout via Wallet Store', { url: result.redirectUrl });
+      window.location.href = result.redirectUrl;
     } else {
-      logger.error('Failed to get checkout URL from store action');
+      logger.error('Failed to get checkout URL from wallet store action', { error: result?.error || purchaseError });
     }
   };
   
   const handleCancelSubscription = async () => {
     if (!user) return;
-    const subscriptionId = userSubscription?.stripeSubscriptionId;
+    const subscriptionId = userSubscription?.stripe_subscription_id;
     
     if (!subscriptionId) {
         logger.error('Cannot cancel/downgrade: Missing subscription ID.');
@@ -103,7 +130,7 @@ export function SubscriptionPage() {
     return `every ${count} ${interval}s`;
   };
   
-  const isLoading = authLoading || isSubscriptionLoading;
+  const isLoading = authLoading || isSubStoreLoading || isLoadingPurchase;
 
   if (isLoading && !userSubscription && !availablePlans.length) {
     return (
@@ -154,7 +181,7 @@ export function SubscriptionPage() {
           {userSubscription && currentUserResolvedPlan && userSubscription.status !== 'free' && (
             <CurrentSubscriptionCard 
               userSubscription={{...userSubscription, plan: currentUserResolvedPlan } as UserSubscription & { plan: SubscriptionPlan }}
-              isProcessing={isSubscriptionLoading}
+              isProcessing={isSubStoreLoading}
               handleManageSubscription={handleManageSubscription}
               handleCancelSubscription={handleCancelSubscription}
               formatAmount={formatAmount}
@@ -172,7 +199,7 @@ export function SubscriptionPage() {
                   plan={plan}
                   isCurrentPlan={isCurrentPlan}
                   userIsOnPaidPlan={!!userIsOnPaidPlan}
-                  isProcessing={isSubscriptionLoading}
+                  isProcessing={isSubStoreLoading || isLoadingPurchase}
                   handleSubscribe={handleSubscribe}
                   handleCancelSubscription={handleCancelSubscription}
                   formatAmount={formatAmount}
@@ -206,6 +233,13 @@ export function SubscriptionPage() {
               </div>
             </dl>
           </div>
+          
+          {purchaseError && (
+            <div className="mt-6 mx-auto max-w-lg p-4 bg-red-50 border border-red-200 rounded-md flex items-center gap-3 text-red-700">
+              <AlertCircle size={20} />
+              <span data-testid="purchase-error-message">{purchaseError.message || 'An error occurred with the purchase.'}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>

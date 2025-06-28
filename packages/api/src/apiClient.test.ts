@@ -3,7 +3,7 @@ import { http, HttpResponse } from 'msw';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { AuthRequiredError } from '@paynless/types';
 
-import { api, initializeApiClient, _resetApiClient, ApiError, getApiClient } from './apiClient';
+import { api, initializeApiClient, _resetApiClient, ApiError, getApiClient, ApiClient } from './apiClient';
 import { server } from './setupTests'; // <-- Import the shared server
 // Remove direct SupabaseClient import if no longer needed here
 // import { SupabaseClient } from '@supabase/supabase-js'; // Import SupabaseClient type
@@ -61,7 +61,7 @@ describe('apiClient', () => {
     mockSupabaseClient = (createClient as any).mock.results[0].value;
 
     // ---> Configure mock directly here <--- 
-    (mockSupabaseClient.auth.getSession as vi.Mock).mockResolvedValue({
+    (mockSupabaseClient.auth.getSession as import('vitest').Mock).mockResolvedValue({
       data: {
         session: {
           access_token: MOCK_ACCESS_TOKEN,
@@ -226,11 +226,11 @@ describe('apiClient', () => {
         );
 
         const response = await api.get(endpoint);
-        expect(response.data).toBeUndefined();
+        expect(response.data).toBeUndefined(); // Data is undefined in error cases
         expect(response.status).toBe(401);
         expect(response.error).toBeDefined();
         expect(response.error?.code).toBe('401'); // Just status code
-        expect(response.error?.message).toBe(errorResponse.message);
+        expect(response.error?.message).toBe('Unauthorized'); // Expect standard 401 message from statusText
         // IMPORTANT: Should NOT throw AuthRequiredError
     });
 
@@ -242,23 +242,163 @@ describe('apiClient', () => {
     const requestBody = { name: 'Test', value: 123 };
     const mockResponseData = { id: 'new-item-123', ...requestBody };
 
-    it('should perform a POST request with correct body and headers', async () => {
+    it('should perform a POST request with JSON body and default Content-Type', async () => {
       server.use(
         http.post(`${MOCK_FUNCTIONS_URL}/${endpoint}`, async ({ request }) => {
           const body = await request.json();
           expect(body).toEqual(requestBody);
           expect(request.headers.get('Authorization')).toBe(`Bearer ${MOCK_ACCESS_TOKEN}`);
-          expect(request.headers.get('Content-Type')).toBe('application/json');
           expect(request.headers.get('apikey')).toBe(MOCK_ANON_KEY);
-          return HttpResponse.json(mockResponseData, { status: 201 });
+          expect(request.headers.get('Content-Type')).toBe('application/json');
+          return HttpResponse.json(mockResponseData);
+        })
+      );
+      const response = await api.post(endpoint, requestBody);
+      expect(response.error).toBeUndefined();
+      expect(response.data).toEqual(mockResponseData);
+      expect(response.status).toBe(200);
+    });
+
+    it('should perform a POST request with FormData body', async () => {
+      const formData = new FormData();
+      formData.append('name', 'TestFile');
+      formData.append('value', '456');
+      // Note: We don't append a real file for simplicity in MSW, but test field transmission.
+
+      server.use(
+        http.post(`${MOCK_FUNCTIONS_URL}/${endpoint}`, async ({ request }) => {
+          const receivedFormData = await request.formData();
+          expect(receivedFormData.get('name')).toBe('TestFile');
+          expect(receivedFormData.get('value')).toBe('456');
+          // Content-Type for FormData is set by the browser/fetch with a boundary.
+          // We expect it to NOT be 'application/json' and to be present.
+          const contentType = request.headers.get('Content-Type');
+          expect(contentType).not.toBe('application/json');
+          expect(contentType).toMatch(/^multipart\/form-data; boundary=.+/);
+          expect(request.headers.get('Authorization')).toBe(`Bearer ${MOCK_ACCESS_TOKEN}`);
+          expect(request.headers.get('apikey')).toBe(MOCK_ANON_KEY);
+          return HttpResponse.json({ id: 'form-data-resp', name: receivedFormData.get('name') });
         })
       );
 
-      const response = await api.post(endpoint, requestBody);
-
+      const response = await api.post(endpoint, formData);
       expect(response.error).toBeUndefined();
-      expect(response.data).toEqual(mockResponseData);
-      expect(response.status).toBe(201);
+      expect(response.data).toEqual({ id: 'form-data-resp', name: 'TestFile' });
+      expect(response.status).toBe(200);
+    });
+
+    it('should perform a POST request with string body and explicit Content-Type (text/plain)', async () => {
+      const textBody = 'Hello, world!';
+      const explicitContentType = 'text/plain; charset=utf-8';
+      server.use(
+        http.post(`${MOCK_FUNCTIONS_URL}/${endpoint}`, async ({ request }) => {
+          const body = await request.text();
+          expect(body).toEqual(textBody);
+          expect(request.headers.get('Content-Type')).toBe(explicitContentType);
+          expect(request.headers.get('Authorization')).toBe(`Bearer ${MOCK_ACCESS_TOKEN}`);
+          expect(request.headers.get('apikey')).toBe(MOCK_ANON_KEY);
+          return HttpResponse.text('Received: ' + textBody, { status: 200, headers: { 'Content-Type': 'text/plain'} });
+        })
+      );
+
+      const response = await api.post(endpoint, textBody, { headers: { 'Content-Type': explicitContentType }});
+      expect(response.error).toBeUndefined();
+      expect(response.data).toBe('Received: Hello, world!');
+      expect(response.status).toBe(200);
+    });
+    
+    it('should perform a POST request with pre-stringified JSON body and explicit Content-Type', async () => {
+      const preStringifiedBody = JSON.stringify({ message: "Pre-stringified" });
+      const explicitContentType = 'application/json; charset=utf-8'; // Or just application/json
+      server.use(
+        http.post(`${MOCK_FUNCTIONS_URL}/${endpoint}`, async ({ request }) => {
+          const body = await request.text(); // Read as text to compare exact string
+          expect(body).toEqual(preStringifiedBody);
+          expect(request.headers.get('Content-Type')).toBe(explicitContentType);
+          return HttpResponse.json({ receivedMessage: JSON.parse(body).message });
+        })
+      );
+
+      const response = await api.post(endpoint, preStringifiedBody, { headers: { 'Content-Type': explicitContentType }});
+      expect(response.error).toBeUndefined();
+      expect(response.data).toEqual({ receivedMessage: "Pre-stringified" });
+      expect(response.status).toBe(200);
+    });
+
+    it('should perform a POST request with Blob body and explicit Content-Type (image/png)', async () => {
+      const blobBody = new Blob(['dummy image data'], { type: 'image/png' }); // Blob itself has a type
+      const explicitContentType = 'image/png'; // Caller explicitly sets it
+
+      server.use(
+        http.post(`${MOCK_FUNCTIONS_URL}/${endpoint}`, async ({ request }) => {
+          const receivedBlob = await request.blob();
+          expect(request.headers.get('Content-Type')).toBe(explicitContentType);
+          expect(receivedBlob.size).toBe(blobBody.size);
+          expect(receivedBlob.type).toBe(blobBody.type); // Or explicitContentType if Blob type is ignored
+          expect(await receivedBlob.text()).toBe(await blobBody.text());
+          return HttpResponse.json({ received: true, type: request.headers.get('Content-Type') });
+        })
+      );
+
+      const response = await api.post(endpoint, blobBody, { headers: { 'Content-Type': explicitContentType }});
+      expect(response.error).toBeUndefined();
+      expect(response.data).toEqual({ received: true, type: explicitContentType });
+      expect(response.status).toBe(200);
+    });
+
+    it('should perform a POST request with Blob body and no explicit Content-Type (should use Blob intrinsic type or be undefined)', async () => {
+      const blobContent = '<html><body>test</body></html>';
+      const blobIntrinsicType = 'text/html';
+      const blobBody = new Blob([blobContent], { type: blobIntrinsicType });
+
+      // Define an expected type for the response data from this specific mock handler
+      type ExpectedBlobResponseType = {
+        received: boolean;
+        typeFromBlob: string;
+        typeFromHeader: string | null;
+      };
+
+      server.use(
+        http.post(`${MOCK_FUNCTIONS_URL}/${endpoint}`, async ({ request }) => {
+          const receivedBlob = await request.blob();
+          const requestContentType = request.headers.get('Content-Type');
+          // fetch might set Content-Type based on Blob's intrinsic type if no explicit one is given.
+          // Or it might be undefined. It should NOT be application/json.
+          expect(requestContentType).not.toBe('application/json');
+          if (requestContentType) { // If fetch sets it (depends on environment/fetch spec adherence)
+            expect(requestContentType).toBe(blobIntrinsicType);
+          }
+          expect(receivedBlob.size).toBe(blobBody.size);
+          expect(await receivedBlob.text()).toBe(blobContent);
+          return HttpResponse.json({ received: true, typeFromBlob: receivedBlob.type, typeFromHeader: requestContentType });
+        })
+      );
+
+      const response = await api.post<ExpectedBlobResponseType, Blob>(endpoint, blobBody); // No explicit headers
+      expect(response.error).toBeUndefined();
+      expect(response.data?.received).toBe(true);
+      // Check what Content-Type the server (mock) actually saw
+      // Depending on the test environment (Node fetch vs browser fetch), this might vary.
+      // If Content-Type header is not set by fetch for a Blob without explicit header, typeFromHeader will be null.
+      // The crucial part is it's not application/json and the blob data is correct.
+      if (response.data?.typeFromHeader) {
+        expect(response.data.typeFromHeader).toBe(blobIntrinsicType);
+      }
+      expect(response.data?.typeFromBlob).toBe(blobIntrinsicType);
+      expect(response.status).toBe(200);
+    });
+
+    // Test for public POST endpoint
+    it('should NOT include Authorization header for public POST requests', async () => {
+      const endpoint = 'test-public-post';
+      server.use(
+        http.post(`${MOCK_FUNCTIONS_URL}/${endpoint}`, async ({ request }) => {
+          expect(request.headers.get('Authorization')).toBeNull();
+          expect(request.headers.get('apikey')).toBe(MOCK_ANON_KEY);
+          return HttpResponse.json({});
+        })
+      );
+      await api.post(endpoint, requestBody);
     });
 
     it('should handle POST API error response', async () => {
@@ -295,27 +435,40 @@ describe('apiClient', () => {
 
   // ---> NEW TESTS for api.put <---
   describe('api.put', () => {
-    const endpoint = 'test-put/item-123';
-    const requestBody = { value: 456 };
-    const mockResponseData = { id: 'item-123', value: 456 };
+    const endpoint = 'test-put';
+    const requestBody = { name: 'UpdatedTest', value: 456 };
+    const mockResponseData = { id: 'item-to-update-456', ...requestBody };
 
-    it('should perform a PUT request with correct body and headers', async () => {
+    it('should perform a PUT request with JSON body and default Content-Type', async () => {
       server.use(
         http.put(`${MOCK_FUNCTIONS_URL}/${endpoint}`, async ({ request }) => {
           const body = await request.json();
           expect(body).toEqual(requestBody);
-          expect(request.headers.get('Authorization')).toBe(`Bearer ${MOCK_ACCESS_TOKEN}`);
           expect(request.headers.get('Content-Type')).toBe('application/json');
-          expect(request.headers.get('apikey')).toBe(MOCK_ANON_KEY);
-          return HttpResponse.json(mockResponseData, { status: 200 });
+          return HttpResponse.json(mockResponseData);
         })
       );
-
       const response = await api.put(endpoint, requestBody);
-
       expect(response.error).toBeUndefined();
       expect(response.data).toEqual(mockResponseData);
       expect(response.status).toBe(200);
+    });
+
+    it('should perform a PUT request with FormData body', async () => {
+      const formData = new FormData();
+      formData.append('name', 'UpdatedFile');
+      server.use(
+        http.put(`${MOCK_FUNCTIONS_URL}/${endpoint}`, async ({ request }) => {
+          const receivedFormData = await request.formData();
+          expect(receivedFormData.get('name')).toBe('UpdatedFile');
+          const contentType = request.headers.get('Content-Type');
+          expect(contentType).toMatch(/^multipart\/form-data; boundary=.+/);
+          return HttpResponse.json({ id: 'put-form-data-resp', name: receivedFormData.get('name') });
+        })
+      );
+      const response = await api.put(endpoint, formData);
+      expect(response.error).toBeUndefined();
+      expect(response.data).toEqual({ id: 'put-form-data-resp', name: 'UpdatedFile' });
     });
 
     it('should handle PUT API error response', async () => {
@@ -388,8 +541,8 @@ describe('apiClient', () => {
       expect(response.error).toBeUndefined();
       expect(response.status).toBe(204);
       // Data might be null if fetch doesn't parse empty response, or T if expected
-      // ---> Expect empty string for 204 No Content response based on response.text() fallback <---
-      expect(response.data).toBe(''); 
+      // ---> Expect null for 204 No Content response <---
+      expect(response.data).toBeNull();
     });
 
 

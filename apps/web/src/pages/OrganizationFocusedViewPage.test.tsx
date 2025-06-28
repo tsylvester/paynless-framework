@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { OrganizationFocusedViewPage } from './OrganizationFocusedViewPage';
@@ -54,7 +53,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
 
 // Mock child components...
 vi.mock('../components/organizations/OrganizationDetailsCard', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../components/organizations/OrganizationDetailsCard')>();
+  const original = await importOriginal<typeof import('../components/organizations/OrganizationSettingsCard')>();
   return {
     ...original,
     OrganizationDetailsCard: () => <div data-testid="org-details-card">Details Mocked Robustly</div>,
@@ -63,7 +62,7 @@ vi.mock('../components/organizations/OrganizationDetailsCard', async (importOrig
 
 // Apply robust mocking to all card components
 vi.mock('../components/organizations/OrganizationSettingsCard', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../components/organizations/OrganizationSettingsCard')>();
+  const original = await importOriginal<typeof import('../components/organizations/OrganizationPrivacyCard')>();
   return {
     ...original,
     OrganizationSettingsCard: () => <div data-testid="org-settings-card">Settings Mocked Robustly</div>,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@/tests/utils/render'; // Use shared render util
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'; // Corrected import path
 import ConfigFileManager from './ConfigFileManager';
 import { usePlatform } from '@paynless/platform';
 import type { FileSystemCapabilities, CapabilityUnavailable, CapabilitiesContextValue } from '@paynless/types';

@@ -218,6 +218,56 @@ AI Selection
 *   [ ] Org members can only create chats with AIs admins allow 
 
 #### STEP-6.6.4 Phase 4 Cleanup 
+
+# Future Work for Tokenization & Token Management
+
+    *   [ ] **4.1.1.1a.3: [BE] [ARCH] Define Strategy for System-Initiated Recorder IDs.**
+        *   For actions not tied to a direct end-user (e.g., subscription renewals, admin adjustments), use designated placeholder UUIDs initially.
+        *   Examples: `00000000-SYSTEM-SUB-0001` for subscriptions, `00000000-SYSTEM-ADM-0001` for admin actions. (These should be valid UUIDs in practice).
+        *   Document these placeholder IDs and their intended future replacements.
+    *   [ ] **4.1.1.1a.4: [PLAN] Schedule Future Work: Implement Traceable System/Admin IDs.**
+        *   Add tasks to later phases (e.g., Admin Panel Implementation, Subscription Management) to replace placeholder `recorded_by_user_id` values with actual `subscription_id`s (linked to `payment_transactions` or a new `subscriptions` table) or `admin_user_id`s from an admin authentication system. This ensures long-term, granular auditability of all system-generated transactions.
+        
+## Test Fixes and Refactors
+
+**Goal:** Fix, Reduce, Refactor All Tests, Consolidate Mocks.
+
+*   [ ] **[REFACTOR] Consolidate Mocks**
+    *   Move interfaces & Types back into supbase.mock, stripe.mock, wallet.mock
+    *   Update references to call consolidated mocks 
+*   [ ] **4.6.1: [TEST-INT] Fix Webhook Index Tests**
+    *   Refactor tests into smaller independent units.
+    *   Fix failed tests. 
+
+*   [ ] Add a sliding context window to the Chat Context so that users can see how much of the window is used and what all messages are included in the context 
+
+## Phase 4.5: [ARCH] Tauri/Rust Desktop Wallet Integration Strategy (High-Level Design)
+
+**Goal:** Outline how the web platform's token wallet could potentially interact or synchronize with the Tauri/Rust desktop crypto wallet. This is a research and design phase.
+
+*   [ ] **4.5.1: [ARCH] Define Synchronization Model & Use Cases**
+    *   **Use Case 1 (Desktop as Payment Method):** User wants to use crypto from their Tauri wallet to buy AI Tokens for the web platform.
+        *   Model: Tauri app communicates with a custom "TauriPaymentAdapter" on the backend.
+    *   **Use Case 2 (Desktop as Client to AI Platform Wallet):** Desktop app wants to show AI Token balance and allow use of AI services, debiting the same centralized AI Token wallet.
+        *   Model: Tauri app's backend calls the same APIs as the web app (`/wallet-info`, `/chat` with token debits).
+    *   **Initial Focus:** Use Case 1. The Tauri wallet helps *acquire* platform AI Tokens.
+*   [ ] **4.5.2: [ARCH] `TauriPaymentAdapter` Design (for Use Case 1)**
+    *   The web UI's "Top-Up" page could have "Pay with Tauri Wallet" option.
+    *   Clicking this triggers `initiatePurchase` with `paymentGatewayId: 'tauri_crypto_wallet'`.
+    *   Backend `TauriPaymentAdapter.initiatePayment` might:
+        *   Generate a unique transaction ID for the platform.
+        *   Return instructions/deep-link for the user to open their Tauri wallet and approve a specific crypto transfer to a designated platform address, including the transaction ID in memo/metadata.
+    *   A separate backend process/webhook listener for the platform's crypto deposit address would:
+        *   Detect incoming crypto transactions.
+        *   Match the memo/metadata to a pending `payment_transactions` record.
+        *   Call `TokenWalletService.recordTransaction` to credit AI Tokens.
+*   [ ] **4.5.3: [ARCH] Security & UX for Tauri Payment Flow.**
+*   [ ] **4.5.4: [DOC] Document the chosen integration strategy for Tauri payments.**
+*   [ ] **4.5.5: [COMMIT]** "docs(ARCH): Outline strategy for Tauri desktop wallet as a payment method for AI Tokens"
+    *   *(Actual implementation of this adapter and flow would be a subsequent phase)*
+
+---
+
 #### STEP-6.6.5 Phase 5 Cleanup 
 
 **Phase 6 Complete Checkpoint:**

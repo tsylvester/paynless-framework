@@ -21,7 +21,7 @@ export interface AnalyticsClient {
    * @param eventName - The name of the event to track.
    * @param properties - Optional key-value pairs providing context for the event.
    */
-  track(eventName: string, properties?: Record<string, string | number | boolean | null>): void;
+  track(eventName: string, properties?: AnalyticsEventPayload): void;
 
   /**
    * Clears the identified user and resets analytics state (e.g., on logout).
@@ -48,6 +48,11 @@ export interface AnalyticsClient {
 
   // Potentially add other common methods like group, setPeopleProperties, etc. if needed
 }
+
+/**
+ * Defines the payload structure for analytics events.
+ */
+export type AnalyticsEventPayload = Record<string, string | number | boolean | null>;
 
 /**
  * Configuration options for the analytics service.
