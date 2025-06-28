@@ -333,10 +333,6 @@ verify_jwt = false
 [functions.session]
 verify_jwt = false
 
-# Add section specifically for stripe-webhook
-[functions.stripe-webhook]
-verify_jwt = false
-
 # Add section for ping
 [functions.ping]
 verify_jwt = false

@@ -33,7 +33,7 @@ import { TokenWalletService } from "./services/tokenWalletService.ts";
 // --- Exported Constants ---
 export const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 export const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
-export const SERVICE_ROLE_KEY = Deno.env.get("SB_SERVICE_ROLE_KEY"); 
+export const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"); 
 export const SUPABASE_JWT_SECRET = Deno.env.get("SUPABASE_JWT_SECRET");
 export const CHAT_FUNCTION_URL = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/chat` : 'http://localhost:54321/functions/v1/chat';
 
@@ -201,7 +201,7 @@ export function initializeSupabaseAdminClient(): SupabaseClient<Database> {
     throw new Error("SUPABASE_URL environment variable is not set.");
   }
   if (!SERVICE_ROLE_KEY) { 
-    throw new Error("SB_SERVICE_ROLE_KEY environment variable is not set.");
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY environment variable is not set.");
   }
   const client = createClient<Database>(SUPABASE_URL, SERVICE_ROLE_KEY, {
     auth: {
@@ -216,7 +216,7 @@ export function initializeSupabaseAdminClient(): SupabaseClient<Database> {
 
 export function initializeTestDeps(): void {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) {
-    throw new Error("SUPABASE_URL, SUPABASE_ANON_KEY, or SB_SERVICE_ROLE_KEY is not set.");
+    throw new Error("SUPABASE_URL, SUPABASE_ANON_KEY, or SUPABASE_SERVICE_ROLE_KEY is not set.");
   }
 
   if (!supabaseAdminClient) {

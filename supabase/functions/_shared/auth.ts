@@ -27,8 +27,8 @@ export const createSupabaseClient = (
     createClientFn: CreateClientFn = createClient // Default to actual implementation
 ): SupabaseClient => {
   const authHeader = req.headers.get("Authorization");
-  const supabaseUrl = Deno.env.get("SB_URL") ?? "";
-  const supabaseKey = Deno.env.get("SB_ANON_KEY") ?? "";
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
   return createClientFn(supabaseUrl, supabaseKey, {
     global: { headers: { Authorization: authHeader ?? "" } },
@@ -47,8 +47,8 @@ export const createSupabaseClient = (
 export const createSupabaseAdminClient = (
     createClientFn: CreateClientFn = createClient // Default to actual implementation
 ): SupabaseClient => {
-  const supabaseUrl = Deno.env.get("SB_URL") ?? "";
-  const supabaseServiceKey = Deno.env.get("SB_SERVICE_ROLE_KEY") ?? "";
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   
   if (!supabaseUrl || !supabaseServiceKey) {
     throw new Error("Missing Supabase URL or service role key");
@@ -100,7 +100,7 @@ export const getUserIdFromClient = async (supabase: SupabaseClient<Database>): P
  */
 export function verifyApiKey(req: Request): boolean {
   const apiKeyHeader = req.headers.get('apikey');
-  const expectedApiKey = Deno.env.get("SB_ANON_KEY");
+  const expectedApiKey = Deno.env.get("SUPABASE_ANON_KEY");
 
   // ---> Add Detailed Logging <---
   console.log(`[verifyApiKey] Received apikey header: ${apiKeyHeader}`);

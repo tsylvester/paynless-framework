@@ -56,7 +56,7 @@ export async function submitStageResponses(
 
   if (!STORAGE_BUCKET) {
     logger.error(
-      '[submitStageResponses] SUPABASE_CONTENT_STORAGE_BUCKET environment variable is not set.',
+      '[submitStageResponses] SB_CONTENT_STORAGE_BUCKET environment variable is not set.',
     );
     return {
       error: {

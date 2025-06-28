@@ -1,44 +1,32 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
-// import "jsr:@supabase/functions-js/edge-runtime.d.ts"; // Intentionally commented out for testing
-// Import types
-import type { 
-    SupabaseClient, 
-    AuthError, 
-    User,
-    PostgrestSingleResponse
-} from "@supabase/supabase-js";
-// Import dependencies and rename
 import { 
-  handleCorsPreflightRequest as actualHandleCorsPreflightRequest, 
-  createErrorResponse as actualCreateErrorResponse, 
-  createSuccessResponse as actualCreateSuccessResponse 
+  handleCorsPreflightRequest, 
+  createErrorResponse, 
+  createSuccessResponse 
 } from '../_shared/cors-headers.ts';
 import { 
-  createSupabaseClient as actualCreateSupabaseClient, 
-  verifyApiKey as actualVerifyApiKey,
-  createUnauthorizedResponse as actualCreateUnauthorizedResponse
+  createSupabaseClient,
+  createUnauthorizedResponse
 } from '../_shared/auth.ts';
 
 // Define dependencies interface (Restoring)
 export interface MeHandlerDeps {
-    handleCorsPreflightRequest: typeof actualHandleCorsPreflightRequest;
-    verifyApiKey: typeof actualVerifyApiKey;
-    createUnauthorizedResponse: typeof actualCreateUnauthorizedResponse;
-    createErrorResponse: typeof actualCreateErrorResponse;
-    createSuccessResponse: typeof actualCreateSuccessResponse;
-    createSupabaseClient: typeof actualCreateSupabaseClient;
+    handleCorsPreflightRequest: typeof handleCorsPreflightRequest;
+    createUnauthorizedResponse: typeof createUnauthorizedResponse;
+    createErrorResponse: typeof createErrorResponse;
+    createSuccessResponse: typeof createSuccessResponse;
+    createSupabaseClient: typeof createSupabaseClient;
 }
 
 // Default dependencies (Restoring)
 const defaultDeps: MeHandlerDeps = {
-    handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
-    verifyApiKey: actualVerifyApiKey,
-    createUnauthorizedResponse: actualCreateUnauthorizedResponse,
-    createErrorResponse: actualCreateErrorResponse,
-    createSuccessResponse: actualCreateSuccessResponse,
-    createSupabaseClient: actualCreateSupabaseClient,
+    handleCorsPreflightRequest: handleCorsPreflightRequest,
+    createUnauthorizedResponse: createUnauthorizedResponse,
+    createErrorResponse: createErrorResponse,
+    createSuccessResponse: createSuccessResponse,
+    createSupabaseClient: createSupabaseClient,
 };
 
 // Export the handler with deps parameter (Restoring)
@@ -50,16 +38,6 @@ export async function handleMeRequest(
   // Use deps again
   const corsResponse = deps.handleCorsPreflightRequest(req); 
   if (corsResponse) return corsResponse;
-
-  console.log("[me/index.ts] Verifying API key...");
-  // Use deps again
-  const isValidApiKey = deps.verifyApiKey(req); 
-  if (!isValidApiKey) {
-    console.log("[me/index.ts] API key verification failed.");
-    // Use deps again - createUnauthorizedResponse now takes req
-    return deps.createUnauthorizedResponse("Invalid or missing apikey", req); 
-  }
-  console.log("[me/index.ts] API key verified.");
 
   try {
     console.log("[me/index.ts] Creating Supabase client...");
@@ -117,7 +95,7 @@ export async function handleMeRequest(
 
       case 'PUT': {
         console.log(`[me/index.ts] Handling PUT for user ${user.id}`);
-        let updates: any;
+        let updates: Record<string, unknown>;
         try {
             updates = await req.json();
         } catch (jsonError) {

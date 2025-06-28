@@ -22,8 +22,8 @@ export interface WalletInfoHandlerDeps {
 }
 
 // Create Default Dependencies
-const supabaseUrlForDefault = Deno.env.get("SB_URL");
-const serviceRoleKeyForDefault = Deno.env.get("SB_SERVICE_ROLE_KEY");
+const supabaseUrlForDefault = Deno.env.get("SUPABASE_URL");
+const serviceRoleKeyForDefault = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
 // Note: Default TokenWalletService instantiation might be complex if it needs an async-created client.
 // For now, we'll rely on it being created inside the handler if not provided, using the client from deps.
