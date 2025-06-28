@@ -25,6 +25,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
 
+ALTER FUNCTION public.check_org_chat_creation_permission(UUID, UUID) SET search_path = public, pg_catalog;
+
 COMMENT ON FUNCTION public.check_org_chat_creation_permission(UUID, UUID)
 IS 'Checks if a given active user is permitted to create a chat in a specific organization.';
 

@@ -437,10 +437,9 @@ BEGIN
       SELECT 1
       FROM public.organization_members om
       WHERE om.organization_id = org_id
-        AND om.user_id = auth.uid()
+        AND om.user_id = (SELECT auth.uid())
         AND om.role = 'admin'
         AND om.status = 'active'
-        AND om.role = 'admin' -- This redundant check was in the source migration
   );
 END;
 $$;

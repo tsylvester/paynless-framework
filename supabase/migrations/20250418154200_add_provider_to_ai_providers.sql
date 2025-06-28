@@ -1,9 +1,9 @@
 -- Add the provider column to the ai_providers table
 ALTER TABLE public.ai_providers
-ADD COLUMN provider TEXT;
+ADD COLUMN IF NOT EXISTS provider TEXT;
 
 -- Add an index on the new provider column
-CREATE INDEX idx_ai_providers_provider ON public.ai_providers(provider);
+CREATE INDEX IF NOT EXISTS idx_ai_providers_provider ON public.ai_providers(provider);
 
 -- Backfill the provider column for existing OpenAI models 
 -- Assuming existing OpenAI models have api_identifier starting with 'openai-'

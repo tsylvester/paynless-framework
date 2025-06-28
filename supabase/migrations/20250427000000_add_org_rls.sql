@@ -24,7 +24,8 @@ BEGIN
     ) INTO is_member;
     RETURN is_member;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_catalog;
 
 -- Grant execute permission to authenticated users
 GRANT EXECUTE ON FUNCTION is_org_member(UUID, UUID, TEXT, TEXT) TO authenticated;
@@ -37,18 +38,21 @@ ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Enable read access for all users" ON public.organizations;
 
 -- Allow authenticated users to create organizations
+DROP POLICY IF EXISTS "Allow authenticated users to create organizations" ON public.organizations;
 CREATE POLICY "Allow authenticated users to create organizations"
     ON public.organizations FOR INSERT
     TO authenticated
     WITH CHECK (auth.role() = 'authenticated');
 
 -- Allow active members to view their non-deleted organizations
+DROP POLICY IF EXISTS "Allow active members to view their non-deleted organizations" ON public.organizations;
 CREATE POLICY "Allow active members to view their non-deleted organizations"
     ON public.organizations FOR SELECT
     TO authenticated
     USING (is_org_member(id, auth.uid(), 'active')); -- Check for active membership
 
 -- Allow admin members to update their non-deleted organizations
+DROP POLICY IF EXISTS "Allow admins to update their non-deleted organizations" ON public.organizations;
 CREATE POLICY "Allow admins to update their non-deleted organizations"
     ON public.organizations FOR UPDATE
     TO authenticated
@@ -63,6 +67,7 @@ ALTER TABLE public.organization_members ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Enable read access for all users" ON public.organization_members;
 
 -- Allow active members to view memberships within their non-deleted organizations
+DROP POLICY IF EXISTS "Allow active members to view memberships in their orgs" ON public.organization_members;
 CREATE POLICY "Allow active members to view memberships in their orgs"
     ON public.organization_members FOR SELECT
     TO authenticated
@@ -72,6 +77,7 @@ CREATE POLICY "Allow active members to view memberships in their orgs"
     );
 
 -- Allow admins to insert new members into their non-deleted organizations
+DROP POLICY IF EXISTS "Allow admins to insert new members" ON public.organization_members;
 CREATE POLICY "Allow admins to insert new members"
     ON public.organization_members FOR INSERT
     TO authenticated
@@ -81,6 +87,7 @@ CREATE POLICY "Allow admins to insert new members"
     );
 
 -- Allow admins to update any membership, or users to update their own, in non-deleted orgs
+DROP POLICY IF EXISTS "Allow admins or self to update memberships" ON public.organization_members;
 CREATE POLICY "Allow admins or self to update memberships"
     ON public.organization_members FOR UPDATE
     TO authenticated

@@ -2,8 +2,12 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
 
 -- Define User Roles Enum (Optional but good practice)
-DROP TYPE IF EXISTS public.user_role;
-CREATE TYPE public.user_role AS ENUM ('user', 'admin');
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+        CREATE TYPE public.user_role AS ENUM ('user', 'admin');
+    END IF;
+END$$;
 
 -- 1. Subscription Plans Table
 DROP TABLE IF EXISTS public.subscription_plans CASCADE;
@@ -60,6 +64,9 @@ COMMENT ON TABLE public.user_subscriptions IS 'Stores user subscription informat
 COMMENT ON COLUMN public.user_subscriptions.status IS 'Matches Stripe subscription statuses, plus potentially ''free''.';
 
 -- 4. Function to create a user profile and potentially a default subscription
+-- First, drop the trigger that depends on the function
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+
 DROP FUNCTION IF EXISTS public.handle_new_user();
 CREATE FUNCTION public.handle_new_user()
 RETURNS trigger
@@ -91,7 +98,6 @@ END;
 $$;
 
 -- 5. Trigger to call handle_new_user on new user signup
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();

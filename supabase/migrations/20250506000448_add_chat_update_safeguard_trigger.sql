@@ -18,9 +18,13 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+ALTER FUNCTION public.enforce_chat_update_restrictions() SET search_path = public, pg_catalog;
+
 -- Note: SECURITY INVOKER is default and appropriate here, trigger runs as user performing update.
 
 -- Trigger definition
+DROP TRIGGER IF EXISTS enforce_chat_update_restrictions ON public.chats;
 CREATE TRIGGER enforce_chat_update_restrictions
   BEFORE UPDATE ON public.chats
   FOR EACH ROW

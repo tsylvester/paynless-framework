@@ -35,5 +35,7 @@ EXCEPTION
 END;
 $$;
 
+ALTER FUNCTION public.create_org_and_admin_member(uuid, text, text) SET search_path = public, pg_catalog;
+
 COMMENT ON FUNCTION public.create_org_and_admin_member(uuid, text, text) 
-IS 'Creates a new organization and adds the specified user as the initial admin member within a single transaction. Returns the new organization ID.'; 
+IS 'Creates a new organization and adds the specified user as the initial admin member within a single transaction. Returns the new organization ID.';

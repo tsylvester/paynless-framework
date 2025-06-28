@@ -1,6 +1,6 @@
 -- Migration file: YYYYMMDDHHMMSS_create_subscription_transactions.sql
 
-CREATE TABLE public.subscription_transactions (
+CREATE TABLE IF NOT EXISTS public.subscription_transactions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
@@ -34,10 +34,10 @@ CREATE TABLE public.subscription_transactions (
 );
 
 -- Indexes for common queries
-CREATE INDEX idx_subscription_transactions_user_id ON public.subscription_transactions(user_id);
-CREATE INDEX idx_subscription_transactions_stripe_event_id ON public.subscription_transactions(stripe_event_id);
-CREATE INDEX idx_subscription_transactions_stripe_subscription_id ON public.subscription_transactions(stripe_subscription_id);
-CREATE INDEX idx_subscription_transactions_event_type ON public.subscription_transactions(event_type);
+CREATE INDEX IF NOT EXISTS idx_subscription_transactions_user_id ON public.subscription_transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_subscription_transactions_stripe_event_id ON public.subscription_transactions(stripe_event_id);
+CREATE INDEX IF NOT EXISTS idx_subscription_transactions_stripe_subscription_id ON public.subscription_transactions(stripe_subscription_id);
+CREATE INDEX IF NOT EXISTS idx_subscription_transactions_event_type ON public.subscription_transactions(event_type);
 
 -- Optional: Add comment for clarity
 COMMENT ON COLUMN public.subscription_transactions.stripe_event_id IS 'Unique Stripe event ID used for idempotency.';

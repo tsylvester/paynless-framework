@@ -1,6 +1,6 @@
 -- Add the updated_at column, allowing NULL initially for backfilling
 ALTER TABLE public.chat_messages
-ADD COLUMN updated_at TIMESTAMPTZ;
+ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
 
 -- Backfill existing rows: set updated_at to created_at
 UPDATE public.chat_messages
@@ -22,6 +22,8 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+ALTER FUNCTION public.trigger_set_timestamp() SET search_path = public, pg_catalog;
 
 -- Create the trigger to call the function before any update on chat_messages
 -- Drop trigger first if it exists (for idempotency)

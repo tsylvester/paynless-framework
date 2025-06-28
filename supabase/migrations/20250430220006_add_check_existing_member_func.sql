@@ -29,6 +29,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
 
+ALTER FUNCTION public.check_existing_member_by_email(uuid, text) SET search_path = public, pg_catalog;
+
 -- Grant execute permission to the authenticated role
 -- The edge function client uses the 'authenticated' role's permissions
 GRANT EXECUTE ON FUNCTION public.check_existing_member_by_email(uuid, text) TO authenticated;

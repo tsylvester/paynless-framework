@@ -16,6 +16,7 @@ DROP POLICY IF EXISTS "Allow users to delete their own chats" ON public.chats;
 -- Define INSERT policies FIRST
 
 -- INSERT Policy 1: Allow inserting personal chats if user_id matches auth.uid()
+DROP POLICY IF EXISTS "Allow users to insert personal chats" ON public.chats;
 CREATE POLICY "Allow users to insert personal chats"
   ON public.chats
   FOR INSERT
@@ -25,6 +26,7 @@ CREATE POLICY "Allow users to insert personal chats"
   );
 
 -- INSERT Policy 2: Allow inserting organizational chats if user is permitted
+DROP POLICY IF EXISTS "Allow permitted users to insert organizational chats" ON public.chats;
 CREATE POLICY "Allow permitted users to insert organizational chats"
   ON public.chats
   FOR INSERT
@@ -38,6 +40,7 @@ CREATE POLICY "Allow permitted users to insert organizational chats"
 -- Now define SELECT, UPDATE, DELETE policies
 
 -- SELECT: Admins/Members can select any chat in their org. Users can select their own personal chats.
+DROP POLICY IF EXISTS "Allow org members/admins and chat owners to select chats" ON public.chats;
 CREATE POLICY "Allow org members/admins and chat owners to select chats"
   ON public.chats
   FOR SELECT
@@ -54,6 +57,7 @@ CREATE POLICY "Allow org members/admins and chat owners to select chats"
   );
 
 -- UPDATE: Admins can update any chat in their org. Owners can update their own personal chats.
+DROP POLICY IF EXISTS "Allow org admins and chat owners to update chats" ON public.chats;
 CREATE POLICY "Allow org admins and chat owners to update chats"
   ON public.chats
   FOR UPDATE
@@ -80,6 +84,7 @@ CREATE POLICY "Allow org admins and chat owners to update chats"
   );
 
 -- DELETE: Admins can delete any chat in their org. Owners can delete their own personal chats.
+DROP POLICY IF EXISTS "Allow org admins and chat owners to delete chats" ON public.chats;
 CREATE POLICY "Allow org admins and chat owners to delete chats"
   ON public.chats
   FOR DELETE

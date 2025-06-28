@@ -1,7 +1,7 @@
 ALTER TABLE public.invites
-ADD COLUMN inviter_email text,
-ADD COLUMN inviter_first_name text,
-ADD COLUMN inviter_last_name text;
+ADD COLUMN IF NOT EXISTS inviter_email text,
+ADD COLUMN IF NOT EXISTS inviter_first_name text,
+ADD COLUMN IF NOT EXISTS inviter_last_name text;
 
 COMMENT ON COLUMN public.invites.inviter_email IS 'Snapshot of the inviting user''''s email at the time of invitation.';
 COMMENT ON COLUMN public.invites.inviter_first_name IS 'Snapshot of the inviting user''''s first name at the time of invitation.';

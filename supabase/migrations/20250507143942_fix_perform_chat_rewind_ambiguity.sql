@@ -76,4 +76,4 @@ EXCEPTION
 END;
 $function$;
 
-COMMENT ON FUNCTION public.perform_chat_rewind IS 'Performs a chat rewind operation atomically: deactivates messages after a specified point and inserts new user and assistant messages.';
+COMMENT ON FUNCTION public.perform_chat_rewind(uuid, uuid, uuid, text, uuid, uuid, text, jsonb, uuid, uuid) IS 'Performs a chat rewind operation atomically: deactivates messages after a specified point and inserts new user and assistant messages.';

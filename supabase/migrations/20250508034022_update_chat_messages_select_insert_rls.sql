@@ -12,6 +12,7 @@ DROP POLICY IF EXISTS "Allow users to select messages in their own chats" ON pub
 
 -- Create the new SELECT policy
 -- Allows users to select messages if they can select the parent chat (personal or org).
+DROP POLICY IF EXISTS "Allow users to select messages in accessible chats" ON public.chat_messages;
 CREATE POLICY "Allow users to select messages in accessible chats"
   ON public.chat_messages
   FOR SELECT
@@ -26,6 +27,7 @@ DROP POLICY IF EXISTS "Allow users to insert messages in their own chats" ON pub
 -- Create the new INSERT policy
 -- Allows users to insert messages if they can select the parent chat,
 -- AND ensures that if the role is 'user', the message's user_id matches the authenticated user.
+DROP POLICY IF EXISTS "Allow users to insert messages in accessible chats with role check" ON public.chat_messages;
 CREATE POLICY "Allow users to insert messages in accessible chats with role check"
   ON public.chat_messages
   FOR INSERT

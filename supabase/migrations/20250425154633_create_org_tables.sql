@@ -1,7 +1,7 @@
 -- Migration: Create organizations and organization_members tables
 
 -- Organizations Table
-CREATE TABLE public.organizations (
+CREATE TABLE IF NOT EXISTS public.organizations (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     name text NOT NULL,
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
@@ -17,7 +17,7 @@ COMMENT ON COLUMN public.organizations.visibility IS 'Controls if the organizati
 COMMENT ON COLUMN public.organizations.deleted_at IS 'Timestamp when the organization was soft-deleted.';
 
 -- Organization Members Table
-CREATE TABLE public.organization_members (
+CREATE TABLE IF NOT EXISTS public.organization_members (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     organization_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
@@ -33,9 +33,9 @@ COMMENT ON COLUMN public.organization_members.role IS 'User role within the orga
 COMMENT ON COLUMN public.organization_members.status IS 'Membership status (e.g., pending invite, active, removed).';
 
 -- Indexes for faster lookups
-CREATE INDEX idx_organization_members_user_id ON public.organization_members(user_id);
-CREATE INDEX idx_organization_members_organization_id ON public.organization_members(organization_id);
-CREATE INDEX idx_organization_members_user_org ON public.organization_members(user_id, organization_id);
+CREATE INDEX IF NOT EXISTS idx_organization_members_user_id ON public.organization_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_organization_members_organization_id ON public.organization_members(organization_id);
+CREATE INDEX IF NOT EXISTS idx_organization_members_user_org ON public.organization_members(user_id, organization_id);
 
 -- Enable RLS (Policies will be added in a separate step/migration)
 ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;

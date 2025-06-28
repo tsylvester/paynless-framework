@@ -47,6 +47,8 @@ BEGIN
 END;
 $$;
 
+ALTER FUNCTION public.delete_chat_and_messages_debug(uuid, uuid) SET search_path = public, pg_catalog;
+
 -- Grant execute (Remember to rename in tests)
 GRANT EXECUTE ON FUNCTION public.delete_chat_and_messages_debug(uuid, uuid) TO authenticated;
 

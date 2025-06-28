@@ -30,6 +30,8 @@ AS $$
   );
 $$;
 
+ALTER FUNCTION public.can_select_chat(uuid) SET search_path = public, pg_catalog;
+
 -- Grant execute permission on the function to the authenticated role
 GRANT EXECUTE ON FUNCTION public.can_select_chat(uuid) TO authenticated;
 

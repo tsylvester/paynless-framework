@@ -2,7 +2,7 @@
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-CREATE TABLE public.invites (
+CREATE TABLE IF NOT EXISTS public.invites (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
     invite_token text NOT NULL UNIQUE,
     organization_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
@@ -15,10 +15,10 @@ CREATE TABLE public.invites (
 );
 
 -- Indexes for frequent lookups
-CREATE INDEX idx_invites_organization_id ON public.invites(organization_id);
-CREATE INDEX idx_invites_invited_email ON public.invites(invited_email);
-CREATE INDEX idx_invites_status ON public.invites(status);
-CREATE INDEX idx_invites_invited_by_user_id ON public.invites(invited_by_user_id);
+CREATE INDEX IF NOT EXISTS idx_invites_organization_id ON public.invites(organization_id);
+CREATE INDEX IF NOT EXISTS idx_invites_invited_email ON public.invites(invited_email);
+CREATE INDEX IF NOT EXISTS idx_invites_status ON public.invites(status);
+CREATE INDEX IF NOT EXISTS idx_invites_invited_by_user_id ON public.invites(invited_by_user_id);
 
 COMMENT ON TABLE public.invites IS 'Stores invitations for users to join organizations.';
 COMMENT ON COLUMN public.invites.invite_token IS 'Unique, non-guessable token sent to the user.';

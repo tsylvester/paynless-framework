@@ -2,6 +2,7 @@
 -- Timestamp: 20250422103000 (Example timestamp)
 
 -- Policy: Users can read their own notifications
+DROP POLICY IF EXISTS "Allow user SELECT access to their own notifications" ON public.notifications;
 CREATE POLICY "Allow user SELECT access to their own notifications"
 ON public.notifications
 FOR SELECT
@@ -11,6 +12,7 @@ USING (auth.uid() = user_id);
 -- Note: This allows updating ANY column for owned rows.
 -- If we need to restrict ONLY to the 'read' column, it requires more complex trigger logic
 -- or restricting update permissions at the API layer. For now, allowing full row update for owners.
+DROP POLICY IF EXISTS "Allow user UPDATE access for their own notifications" ON public.notifications;
 CREATE POLICY "Allow user UPDATE access for their own notifications"
 ON public.notifications
 FOR UPDATE

@@ -46,7 +46,8 @@ BEGIN
 
     RETURN NULL; -- AFTER triggers often return NULL
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_catalog;
 
 -- Trigger for join requests
 DROP TRIGGER IF EXISTS trg_notify_admins_on_join_request ON public.organization_members;
@@ -90,7 +91,8 @@ BEGIN
 
     RETURN NULL;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_catalog;
 
 -- Trigger for role changes
 DROP TRIGGER IF EXISTS trg_notify_user_on_role_change ON public.organization_members;
@@ -133,7 +135,8 @@ BEGIN
 
     RETURN NULL;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_catalog;
 
 -- Trigger for member removal
 DROP TRIGGER IF EXISTS trg_notify_user_on_member_removed ON public.organization_members;

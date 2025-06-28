@@ -98,6 +98,7 @@ BEGIN
   END IF;
 
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_catalog;
 
 COMMENT ON FUNCTION public.restrict_invite_update_fields() IS 'V3: Trigger function to ensure specific field update rules for invites. Uses current_user = ''postgres'' for signup link. Allows service roles/superusers more leeway. Restricts non-admin invited users to primarily status changes. Includes extensive logging.';

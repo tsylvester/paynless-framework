@@ -62,6 +62,7 @@ BEGIN
     -- Otherwise, allow the operation
     IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_catalog;
 
 -- Note: We don't need to recreate the trigger itself, as it will use the updated function.

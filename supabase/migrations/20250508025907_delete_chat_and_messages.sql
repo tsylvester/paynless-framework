@@ -1,5 +1,7 @@
+DROP FUNCTION IF EXISTS public.delete_chat_and_messages(uuid, uuid);
+
 -- SQL Function for Atomic Chat Deletion with Permission Check
-CREATE OR REPLACE FUNCTION delete_chat_and_messages(p_chat_id uuid, p_user_id uuid)
+CREATE OR REPLACE FUNCTION public.delete_chat_and_messages(p_chat_id uuid, p_user_id uuid)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER -- Important: Allows function to bypass RLS temporarily IF NEEDED for cascading delete, use with caution. Review permissions carefully.
@@ -52,6 +54,8 @@ END;
 $$;
 
 -- Grant execute permission (adjust role as needed, e.g., 'authenticated')
+-- Revoke existing grant to be safe
+REVOKE EXECUTE ON FUNCTION public.delete_chat_and_messages(uuid, uuid) FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.delete_chat_and_messages(uuid, uuid) TO authenticated;
 -- Alternatively, if using SECURITY DEFINER isn't desired, you might need RLS policies
 -- on chat_messages and chats that allow deletion based on the same permission logic.

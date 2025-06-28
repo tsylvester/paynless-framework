@@ -12,6 +12,7 @@ CREATE OR REPLACE FUNCTION public.create_notification_for_user(
 RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER -- IMPORTANT: Allows function to insert rows bypassing user RLS
+SET search_path = public, pg_catalog
 AS $$
 BEGIN
   INSERT INTO public.notifications (user_id, type, data)
@@ -56,7 +57,8 @@ BEGIN
 
   RETURN NEW; -- Or NULL depending on trigger type (AFTER triggers often return NULL)
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_catalog;
 
 
 -- NOTE: We are NOT creating the actual TRIGGER statement here

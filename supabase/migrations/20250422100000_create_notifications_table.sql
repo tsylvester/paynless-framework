@@ -2,7 +2,7 @@
 -- Timestamp: 20250422100000 (Example timestamp)
 
 -- Create the notifications table
-CREATE TABLE public.notifications (
+CREATE TABLE IF NOT EXISTS public.notifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL,
   type TEXT NOT NULL,
@@ -22,8 +22,8 @@ COMMENT ON COLUMN public.notifications.data IS 'JSONB payload containing context
 COMMENT ON COLUMN public.notifications.read IS 'Indicates whether the user has read the notification.';
 
 -- Create indexes for common query patterns
-CREATE INDEX idx_notifications_user_id_created_at ON public.notifications(user_id, created_at DESC);
-CREATE INDEX idx_notifications_user_id_read ON public.notifications(user_id, read);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id_created_at ON public.notifications(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id_read ON public.notifications(user_id, read);
 
 -- Enable Row Level Security (RLS) on the new table
 -- Policies will be added in a separate step/migration (Step 1.2).

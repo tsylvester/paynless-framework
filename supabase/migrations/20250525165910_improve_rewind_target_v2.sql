@@ -144,3 +144,5 @@ BEGIN
     RETURN QUERY SELECT v_new_user_message_id, v_new_assistant_message_id;
 END;
 $$;
+
+ALTER FUNCTION public.perform_chat_rewind(uuid, uuid, uuid, text, uuid, text, uuid, uuid, jsonb, uuid, text) SET search_path = public, pg_catalog;

@@ -62,6 +62,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+ALTER FUNCTION public.handle_new_invite_notification() SET search_path = public, pg_catalog;
+
 -- Re-apply the trigger (ensure it points to the updated function)
 -- Drop existing trigger if it exists
 DROP TRIGGER IF EXISTS notify_user_on_invite ON public.invites;

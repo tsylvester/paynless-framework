@@ -21,5 +21,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
 
+ALTER FUNCTION public.is_org_admin(uuid) SET search_path = public, pg_catalog;
+
 -- Re-add comment
 COMMENT ON FUNCTION public.is_org_admin(uuid) IS 'Checks if the current authenticated user is an active admin of the specified non-deleted organization.'; 

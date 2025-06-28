@@ -1,9 +1,11 @@
 -- Add invited_user_id column to invites table
 ALTER TABLE public.invites
-ADD COLUMN invited_user_id UUID NULL;
+ADD COLUMN IF NOT EXISTS invited_user_id UUID NULL;
 
 -- Add foreign key constraint to auth.users
 -- Note: Ensure the user running migrations has reference permissions to auth.users
+ALTER TABLE public.invites
+DROP CONSTRAINT IF EXISTS invites_invited_user_id_fkey;
 ALTER TABLE public.invites
 ADD CONSTRAINT invites_invited_user_id_fkey
 FOREIGN KEY (invited_user_id)

@@ -1,6 +1,6 @@
 -- Add the is_enabled column to ai_providers table
 ALTER TABLE public.ai_providers
-ADD COLUMN is_enabled BOOLEAN NOT NULL DEFAULT false;
+ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT false;
 
 -- Add a comment explaining the purpose
 COMMENT ON COLUMN public.ai_providers.is_enabled IS 'Flag to control if the model is exposed to the frontend, managed manually.';

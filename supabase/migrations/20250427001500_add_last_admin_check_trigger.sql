@@ -45,9 +45,11 @@ BEGIN
       AND o.deleted_at IS NULL
       AND om.id <> OLD.id; -- Exclude the member being updated/deleted
 
-    -- If removing/demoting this admin leaves no other admins, raise an error
+    -- If removing/demoting this admin leaves no other admins, soft-delete the organization
     IF v_other_admin_count = 0 THEN
-        RAISE EXCEPTION 'Cannot remove or demote the last admin of organization %', v_organization_id;
+        UPDATE public.organizations
+        SET deleted_at = now()
+        WHERE id = v_organization_id;
     END IF;
 
     -- Otherwise, allow the operation

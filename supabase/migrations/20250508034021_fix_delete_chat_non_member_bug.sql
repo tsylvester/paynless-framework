@@ -46,5 +46,7 @@
     END;
     $$;
     
+    ALTER FUNCTION public.delete_chat_and_messages(uuid, uuid) SET search_path = public, pg_catalog;
+
     -- Ensure execute permission remains
     GRANT EXECUTE ON FUNCTION public.delete_chat_and_messages(uuid, uuid) TO authenticated;
