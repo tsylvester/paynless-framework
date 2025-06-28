@@ -236,7 +236,7 @@ export async function handleSendMessage(
               return { aiError: processingResult.error || 'Authentication required.', isLoadingAiResponse: false, pendingAction: 'SEND_MESSAGE', messagesByChatId: newMsgsByChatId };
           });
           try {
-              const pendingActionDetails: PendingAction = {
+              const pendingActionDetails: PendingAction<ChatApiRequest> = {
                   endpoint: 'chat', method: 'POST',
                   body: { message, chatId: effectiveChatIdForApi ?? null, organizationId: newChatContext || null, providerId: selectedProviderId, promptId: apiPromptId, contextMessages: finalContextMessages },
                   returnPath: 'chat'

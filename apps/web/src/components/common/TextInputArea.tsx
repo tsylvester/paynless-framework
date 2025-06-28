@@ -115,32 +115,6 @@ export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputArea
       <div className="grid w-full gap-1.5">
         <div className="flex justify-between items-center mb-1">
             <Label htmlFor={id}>{label}</Label>
-            <div className="flex items-center gap-1">
-              {showFileUpload && currentFileUploadConfig && onFileLoad && (
-                <FileUpload
-                  dataTestId={dataTestId ? `${dataTestId}-paperclip` : "file-upload-paperclip"}
-                  config={currentFileUploadConfig}
-                  onFileLoad={onFileLoad}
-                  onUploadTrigger={handleInternalDummyUploadTrigger}
-                  renderMode="minimalButton"
-                  buttonIcon={<Paperclip className="h-5 w-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" />}
-                  buttonClassName="p-1 bg-background/70 dark:bg-muted/70 rounded-full hover:bg-muted dark:hover:bg-muted/90 backdrop-blur-sm"
-                />
-              )}
-              {showPreviewToggle && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  type="button"
-                  onClick={togglePreviewMode}
-                  className="h-7 w-7 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                  aria-label={isPreviewMode ? 'Edit' : 'Preview'}
-                  data-testid={dataTestId ? `${dataTestId}-preview-toggle` : "preview-toggle"}
-                >
-                  {isPreviewMode ? <Edit3 className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              )}
-            </div>
         </div>
 
         <div 
@@ -152,6 +126,32 @@ export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputArea
             // Consider adding a maxHeight if needed, e.g., maxHeight: '70vh'
           }}
         >
+          <div className="absolute bottom-2 right-2 z-20 flex items-center gap-1">
+            {showFileUpload && currentFileUploadConfig && onFileLoad && (
+              <FileUpload
+                dataTestId={dataTestId ? `${dataTestId}-paperclip` : "file-upload-paperclip"}
+                config={currentFileUploadConfig}
+                onFileLoad={onFileLoad}
+                onUploadTrigger={handleInternalDummyUploadTrigger}
+                renderMode="minimalButton"
+                buttonIcon={<Paperclip className="h-5 w-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" />}
+                buttonClassName="p-1 bg-background/70 dark:bg-muted/70 rounded-full hover:bg-muted dark:hover:bg-muted/90 backdrop-blur-sm"
+              />
+            )}
+            {showPreviewToggle && (
+              <Button
+                variant="ghost"
+                size="icon"
+                type="button"
+                onClick={togglePreviewMode}
+                className="h-7 w-7 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                aria-label={isPreviewMode ? 'Edit' : 'Preview'}
+                data-testid={dataTestId ? `${dataTestId}-preview-toggle` : "preview-toggle"}
+              >
+                {isPreviewMode ? <Edit3 className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            )}
+          </div>
           {isPreviewMode && showPreviewToggle ? (
             <div 
               className={cn(

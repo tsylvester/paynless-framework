@@ -1314,6 +1314,10 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
             *   Verify the new seed prompt is stored correctly.
     *   Consider scenarios with different `input_artifact_rules` for different stages.
 
+*   [ ] Update Domains to be non-auth so they load on the homepage
+*   [ ] Update Domains to have is_enabled flag
+*   [ ] Update DomainSelector to check is_enabled and only fetch enabled domains
+
 **Integration Test Plan: Full Dialectic Workflow**
 
 **1. Test Suite Setup (`describe`, `beforeAll`, `afterAll`, `beforeEach`, `afterEach`)**

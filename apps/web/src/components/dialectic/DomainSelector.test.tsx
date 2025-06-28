@@ -75,10 +75,10 @@ describe('DomainSelector', () => {
         return render(<DomainSelector />);
     };
 
-    it('renders loading state and calls fetchDomains on mount if domains are not present', () => {
+    it('renders loading state when isLoading is true', () => {
         setup({ isLoadingDomains: true, domains: [] });
         expect(screen.getByText('Loading domains...')).toBeInTheDocument();
-        expect(mockFetchDomains).toHaveBeenCalledTimes(1);
+        expect(mockFetchDomains).not.toHaveBeenCalled();
     });
 
     it('does not call fetchDomains on mount if domains are already present', () => {
@@ -91,10 +91,10 @@ describe('DomainSelector', () => {
         const error: ApiError = { message: 'Failed to fetch', code: 'FETCH_ERROR' };
         setup({ domainsError: error, isLoadingDomains: false });
         expect(screen.getByText(`Error loading domains: ${error.message}`)).toBeInTheDocument();
-        expect(mockFetchDomains).toHaveBeenCalledTimes(1);
+        expect(mockFetchDomains).not.toHaveBeenCalled();
     });
 
-    it('renders "No domains available" when list is empty and not loading', () => {
+    it('fetches domains and renders "No domains available" when list is empty and not loading', () => {
         setup({ domains: [], isLoadingDomains: false });
         expect(screen.getByText('No domains available.')).toBeInTheDocument();
         expect(mockFetchDomains).toHaveBeenCalledTimes(1);

@@ -118,16 +118,6 @@ export interface ProfileResponse {
   profile: Database['public']['Tables']['user_profiles']['Row'] | null // Use DB type and allow null
 }
 
-/**
- * Structure of the pending action details stored in localStorage for replay.
- */
-export interface PendingAction {
-  endpoint: string;
-  method: string;
-  body?: Record<string, unknown> | null;
-  returnPath: string;
-}
-
 // Custom error class for authentication failures
 export class AuthRequiredError extends Error {
   constructor(message: string = 'Authentication Required') {

@@ -8,16 +8,18 @@ export interface DialecticDomain {
   name: string;
   description: string | null;
   parent_domain_id: string | null;
+  is_enabled: boolean;
 }
 
 export async function listDomains(
   dbClient: SupabaseClient
 ): Promise<{ data?: DialecticDomain[]; error?: ServiceError }> {
-  logger.info('Fetching all dialectic domains.');
+  logger.info('Fetching all enabled dialectic domains.');
 
   const { data, error } = await dbClient
     .from('dialectic_domains')
-    .select('id, name, description, parent_domain_id')
+    .select('id, name, description, parent_domain_id, is_enabled')
+    .eq('is_enabled', true)
     .order('name', { ascending: true });
 
   if (error) {

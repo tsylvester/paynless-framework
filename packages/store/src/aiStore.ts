@@ -580,7 +580,7 @@ export const useAiStore = create<AiStore>()(
                             return;
                         }
 
-                        let pendingAction: PendingAction | null = null;
+                        let pendingAction: PendingAction<ChatApiRequest> | null = null;
                         try {
                             pendingAction = JSON.parse(pendingActionJSON);
                         } catch (e) {

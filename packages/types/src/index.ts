@@ -17,6 +17,7 @@ export * from './services/payment.types'; // [NEW] Tokenomics Payment Types
 export * from './services/tokenWallet.types'; // [NEW] Tokenomics Wallet Types
 export * from './ai.SendMessage.types';
 export * from './dialectic.types';
+export * from './pendingAction.types';
 
 // Export Json type if it's defined elsewhere or define basic alias
 // If Json is complex and defined in its own file (e.g., json.types.ts), export that:

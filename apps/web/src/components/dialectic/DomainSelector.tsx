@@ -31,20 +31,32 @@ export function DomainSelector() {
     const currentProjectDetail = useDialecticStore(selectCurrentProjectDetail) as DialecticProject | null;
 
     useEffect(() => {
-        logger.info('[DomainSelector] Component mounted, fetching domains if needed.');
-        if (domains.length === 0) {
+        // 1. Fetch domains if they are not already loaded.
+        if (domains.length === 0 && !isLoading && !error) {
+            logger.info('[DomainSelector] No domains found, fetching from server.');
             fetchDomains();
         }
-    }, [fetchDomains, domains.length]);
 
-    useEffect(() => {
-        if (currentProjectDetail && domains.length > 0) {
-            const projectDomain = domains.find(d => d.id === currentProjectDetail.selected_domain_id);
-            if (projectDomain && projectDomain.id !== selectedDomain?.id) {
-                setSelectedDomain(projectDomain);
+        // 2. Once domains are loaded, set the selected domain based on priority.
+        if (domains.length > 0 && !selectedDomain) {
+            // Priority 1: Set domain from the current project if it exists.
+            if (currentProjectDetail?.selected_domain_id) {
+                const projectDomain = domains.find(d => d.id === currentProjectDetail.selected_domain_id);
+                if (projectDomain) {
+                    logger.info(`[DomainSelector] Setting domain based on current project: ${projectDomain.name}`);
+                    setSelectedDomain(projectDomain);
+                    return; // Domain set, exit.
+                }
+            }
+
+            // Priority 2: Default to "Software Development" if no project domain is set.
+            const softwareDevDomain = domains.find(d => d.name === 'Software Development');
+            if (softwareDevDomain) {
+                logger.info('[DomainSelector] Defaulting to "Software Development" domain.');
+                setSelectedDomain(softwareDevDomain);
             }
         }
-    }, [currentProjectDetail, domains, setSelectedDomain, selectedDomain]);
+    }, [domains, currentProjectDetail, selectedDomain, isLoading, error, fetchDomains, setSelectedDomain]);
 
     const handleValueChange = (selectedDomainId: string) => {
         const domain = domains.find(d => d.id === selectedDomainId) || null;

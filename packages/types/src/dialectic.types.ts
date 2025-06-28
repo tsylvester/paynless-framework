@@ -178,6 +178,7 @@ export interface DialecticDomain {
   name: string;
   description: string | null;
   parent_domain_id: string | null;
+  is_enabled: boolean;
 }
 
 

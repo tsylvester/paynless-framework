@@ -16,6 +16,13 @@ import type { CapabilitiesContextValue, PlatformCapabilities } from '@paynless/t
 import { CreateDialecticProjectForm } from './CreateDialecticProjectForm';
 import type { TextInputAreaProps } from '@/components/common/TextInputArea';
 
+const projectNamePlaceholder = "A Notepad App with To Do lists, or attach an .md file.";
+const initialUserPromptPlaceholder = `I want to create a notepad app with a to-do list, reminders, and event scheduling. It should say hello world, tell me the date, and then list all of my tasks and notes.
+
+I want it to record dates from my to-do list, schedule when it needs to be completed by, and provide reminders when the deadline is approaching.
+
+It should be a web app with user accounts, built in typescript with next.js and shadcn components.`;
+
 // Mock @paynless/store
 vi.mock('@paynless/store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@paynless/store')>();
@@ -74,6 +81,15 @@ vi.mock('@/components/dialectic/DomainSelector', () => ({
 
 const mockCreateDialecticProject = vi.fn();
 const mockResetCreateProjectError = vi.fn();
+const mockNavigate = vi.fn();
+
+vi.mock('react-router-dom', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('react-router-dom')>();
+    return {
+        ...actual,
+        useNavigate: () => mockNavigate,
+    };
+});
 
 let mockStoreState: DialecticStore;
 
@@ -152,20 +168,21 @@ describe('CreateDialecticProjectForm', () => {
   const renderForm = (props: Partial<Parameters<typeof CreateDialecticProjectForm>[0]> = {}) => {
     return render(
       <MemoryRouter>
-        <CreateDialecticProjectForm onProjectCreated={mockOnProjectCreated} {...props} />
+        <CreateDialecticProjectForm {...props} />
       </MemoryRouter>
     );
   };
 
   it('renders form fields and passes correct props to TextInputArea', () => {
     renderForm();
-    expect(screen.getByLabelText(/Project Name/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(projectNamePlaceholder)).toBeInTheDocument();
     
     expect(TextInputAreaMockComponent).toHaveBeenCalled();
     const propsPassed = capturedTextInputAreaProps;
     
     expect(propsPassed.id).toBe('initial-user-prompt');
-    expect(propsPassed.label).toBe('Initial User Prompt / Problem Statement');
+    expect(propsPassed.label).toBe('');
+    expect(propsPassed.placeholder).toBe(initialUserPromptPlaceholder);
     expect(propsPassed.dataTestId).toBe('text-input-area-for-prompt');
     expect(propsPassed.showPreviewToggle).toBe(true);
     expect(propsPassed.showFileUpload).toBe(true);
@@ -187,7 +204,6 @@ describe('CreateDialecticProjectForm', () => {
   });
 
   it('updates prompt value and auto-fills project name when onFileLoad is triggered from TextInputArea', async () => {
-
     const markdownContent = '# Hello From Test File';
     const fileName = 'test-file-name.md';
     const file = new File([markdownContent], fileName, { type: 'text/markdown' });
@@ -203,7 +219,7 @@ describe('CreateDialecticProjectForm', () => {
     });
     
     const expectedProjectName = markdownContent.replace(/^#\s*/, '').split('\n')[0];
-    expect(screen.getByLabelText(/Project Name/i)).toHaveValue(expectedProjectName);
+    expect(screen.getByPlaceholderText(projectNamePlaceholder)).toHaveValue(expectedProjectName);
   });
 
   it('passes showPreviewToggle=true to TextInputArea', () => {
@@ -213,10 +229,39 @@ describe('CreateDialecticProjectForm', () => {
     expect(screen.getByTestId('text-input-area-for-prompt-previewtoggle-indicator')).toBeInTheDocument();
   });
 
+  it('submits with placeholder values when form fields are empty', async () => {
+    const user = userEvent.setup();
+    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null, is_enabled: true };
+    mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain });
+    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
+    
+    const mockSuccessfulProject: DialecticProject = { id: 'new-proj-123', project_name: projectNamePlaceholder } as DialecticProject;
+    mockCreateDialecticProject.mockResolvedValueOnce({ data: mockSuccessfulProject, error: null });
+    
+    renderForm();
+            
+    const submitButton = screen.getByRole('button', { name: /Create Project/i });
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(mockCreateDialecticProject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectName: projectNamePlaceholder,
+          initialUserPrompt: initialUserPromptPlaceholder,
+          selectedDomainId: mockSelectedDomain.id,
+        })
+      );
+    });
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(`/dialectic/${mockSuccessfulProject.id}`);
+    });
+  });
+
   it('calls createDialecticProject with form data on submit', async () => {
     const user = userEvent.setup();
     const testData = { projectName: 'Test Project', initialUserPrompt: 'Test Prompt' };
-    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null };
+    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null, is_enabled: true };
     mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain });
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
     
@@ -233,12 +278,20 @@ describe('CreateDialecticProjectForm', () => {
       repo_url: null,
       dialectic_domains: { name: 'General' },
       dialectic_process_templates: null,
+      isLoadingProcessTemplate: false,
+      processTemplateError: null,
+      contributionGenerationStatus: 'idle',
+      generateContributionsError: null,
+      isSubmittingStageResponses: false,
+      submitStageResponsesError: null,
+      isSavingContributionEdit: false,
+      saveContributionEditError: null,
     };
     mockCreateDialecticProject.mockResolvedValueOnce({ data: mockSuccessfulProject, error: null });
     
     renderForm();
 
-    await user.type(screen.getByLabelText(/Project Name/i), testData.projectName);
+    await user.type(screen.getByPlaceholderText(projectNamePlaceholder), testData.projectName);
     act(() => {
       capturedTextInputAreaProps.onChange?.(testData.initialUserPrompt);
     });
@@ -257,7 +310,7 @@ describe('CreateDialecticProjectForm', () => {
     });
 
     await waitFor(() => {
-      expect(mockOnProjectCreated).toHaveBeenCalledWith(mockSuccessfulProject.id, mockSuccessfulProject.project_name);
+      expect(mockNavigate).toHaveBeenCalledWith(`/dialectic/${mockSuccessfulProject.id}`);
     });
   });
 
@@ -278,11 +331,19 @@ describe('CreateDialecticProjectForm', () => {
       repo_url: null,
       dialectic_domains: { name: 'General' },
       dialectic_process_templates: null,
+      isLoadingProcessTemplate: false,
+      processTemplateError: null,
+      contributionGenerationStatus: 'idle',
+      generateContributionsError: null,
+      isSubmittingStageResponses: false,
+      submitStageResponsesError: null,
+      isSavingContributionEdit: false,
+      saveContributionEditError: null,
     };
 
     mockCreateDialecticProject.mockResolvedValueOnce({ data: mockCreatedProject, error: null });
 
-    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null };
+    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null, is_enabled: true };
     mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain });
     vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
 
@@ -308,7 +369,7 @@ describe('CreateDialecticProjectForm', () => {
     });
 
     await waitFor(() => {
-      expect(mockOnProjectCreated).toHaveBeenCalledWith(mockCreatedProject.id, mockCreatedProject.project_name);
+      expect(mockNavigate).toHaveBeenCalledWith(`/dialectic/${mockCreatedProject.id}`);
     });
   });
 
@@ -326,7 +387,7 @@ describe('CreateDialecticProjectForm', () => {
     const error: ApiError = { message: 'Creation failed', code: 'SERVER_ERROR' };
     mockCreateDialecticProject.mockResolvedValueOnce({ data: null, error });
 
-    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null };
+    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null, is_enabled: true };
     mockStore = createMockStoreState({ 
       selectedDomain: mockSelectedDomain,
       createProjectError: error // Also set the error state
@@ -335,7 +396,7 @@ describe('CreateDialecticProjectForm', () => {
     
     renderForm();
 
-    await user.type(screen.getByLabelText(/Project Name/i), 'Error Project');
+    await user.type(screen.getByPlaceholderText(projectNamePlaceholder), 'Error Project');
     act(() => {
       capturedTextInputAreaProps.onChange?.('This will fail.');
     });
@@ -371,7 +432,7 @@ describe('CreateDialecticProjectForm', () => {
       capturedTextInputAreaProps.onChange?.(promptText);
     });
     await waitFor(() => {
-      expect(screen.getByLabelText(/Project Name/i)).toHaveValue("This is the first line.");
+      expect(screen.getByPlaceholderText(projectNamePlaceholder)).toHaveValue("This is the first line.");
     });
   });
 
@@ -380,14 +441,14 @@ describe('CreateDialecticProjectForm', () => {
     renderForm();
 
     const manualProjectName = "My Manual Project";
-    await user.type(screen.getByLabelText(/Project Name/i), manualProjectName);
+    await user.type(screen.getByPlaceholderText(projectNamePlaceholder), manualProjectName);
 
     // Now, type in the prompt - project name should NOT change
     act(() => {
       capturedTextInputAreaProps.onChange?.("A new prompt that won't change the name.");
     });
     await waitFor(() => {
-      expect(screen.getByLabelText(/Project Name/i)).toHaveValue(manualProjectName);
+      expect(screen.getByPlaceholderText(projectNamePlaceholder)).toHaveValue(manualProjectName);
     });
 
     // Now, simulate a file load - project name should also NOT change
@@ -395,7 +456,7 @@ describe('CreateDialecticProjectForm', () => {
       await triggerMockTextInputAreaOnFileLoad("# A file that won't change the name", new File([""], "test.md"));
     });
     await waitFor(() => {
-      expect(screen.getByLabelText(/Project Name/i)).toHaveValue(manualProjectName);
+      expect(screen.getByPlaceholderText(projectNamePlaceholder)).toHaveValue(manualProjectName);
     });
   });
 
@@ -406,7 +467,7 @@ describe('CreateDialecticProjectForm', () => {
     // First attempt fails
     mockCreateDialecticProject.mockResolvedValueOnce({ data: null, error: initialError });
 
-    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null };
+    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null, is_enabled: true };
     const mockStoreWithState = createMockStoreState({
         selectedDomain: mockSelectedDomain,
         createProjectError: initialError, // Start with an error
@@ -421,7 +482,7 @@ describe('CreateDialecticProjectForm', () => {
     });
 
     // Mock successful response for the second attempt
-    const mockSuccessfulProject: DialecticProject = { id: 'proj-456', user_id: 'user-xyz', project_name: 'Retry Project', created_at: '', updated_at: '', status: 'active', selected_domain_id: 'domain-1', dialectic_domains: { name: 'General' }, selected_domain_overlay_id: null, repo_url: null, dialectic_process_templates: null };
+    const mockSuccessfulProject: DialecticProject = { id: 'proj-456', user_id: 'user-xyz', project_name: 'Retry Project', created_at: '', updated_at: '', status: 'active', selected_domain_id: 'domain-1', dialectic_domains: { name: 'General' }, selected_domain_overlay_id: null, repo_url: null, dialectic_process_templates: null, isLoadingProcessTemplate: false, processTemplateError: null, contributionGenerationStatus: 'idle', generateContributionsError: null, isSubmittingStageResponses: false, submitStageResponsesError: null, isSavingContributionEdit: false, saveContributionEditError: null };
     mockCreateDialecticProject.mockResolvedValueOnce({ data: mockSuccessfulProject, error: null });
 
     // Simulate user trying again
@@ -460,7 +521,7 @@ describe('CreateDialecticProjectForm', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/Project Name/i)).toHaveValue("This is a new line of thinking.");
+      expect(screen.getByPlaceholderText(projectNamePlaceholder)).toHaveValue("This is a new line of thinking.");
     });
   });
 
@@ -469,20 +530,20 @@ describe('CreateDialecticProjectForm', () => {
     renderForm();
 
     const manualProjectName = "User Defined Name";
-    await user.type(screen.getByLabelText(/Project Name/i), manualProjectName);
+    await user.type(screen.getByPlaceholderText(projectNamePlaceholder), manualProjectName);
 
     act(() => {
       capturedTextInputAreaProps.onChange?.("This prompt should not override the manual name.");
     });
     await waitFor(() => {
-      expect(screen.getByLabelText(/Project Name/i)).toHaveValue(manualProjectName);
+      expect(screen.getByPlaceholderText(projectNamePlaceholder)).toHaveValue(manualProjectName);
     });
 
     await act(async () => {
       await triggerMockTextInputAreaOnFileLoad("# This file should not override", new File([""], "another.md"));
     });
     await waitFor(() => {
-      expect(screen.getByLabelText(/Project Name/i)).toHaveValue(manualProjectName);
+      expect(screen.getByPlaceholderText(projectNamePlaceholder)).toHaveValue(manualProjectName);
     });
   });
 }); 

@@ -327,6 +327,9 @@ verify_jwt = false
 [functions.reset-password]
 verify_jwt = false
 
+[functions.dialectic-service]
+verify_jwt = false
+
 [functions.session]
 verify_jwt = false
 

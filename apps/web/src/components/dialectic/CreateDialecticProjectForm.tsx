@@ -3,6 +3,7 @@ import { useForm, Controller, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { logger } from '@paynless/utils';
+import { useNavigate } from 'react-router-dom';
 
 import { 
   useDialecticStore, 
@@ -14,8 +15,8 @@ import {
 import { DomainSelector } from '@/components/dialectic/DomainSelector';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
+
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
 
@@ -24,15 +25,21 @@ import { usePlatform } from '@paynless/platform';
 import { platformEventEmitter, type PlatformEvents, type FileDropPayload } from '@paynless/platform';
 import type { CreateProjectPayload } from '@paynless/types';
 
+const projectNamePlaceholder = "A Notepad App with To Do lists, or attach an .md file.";
+const initialUserPromptPlaceholder = `I want to create a notepad app with a to-do list, reminders, and event scheduling. It should say hello world, tell me the date, and then list all of my tasks and notes.
+
+I want it to record dates from my to-do list, schedule when it needs to be completed by, and provide reminders when the deadline is approaching.
+
+It should be a web app with user accounts, built in typescript with next.js and shadcn components.`;
+
 const createProjectFormSchema = z.object({
-  projectName: z.string().min(3, 'Project name must be at least 3 characters').max(100),
-  initialUserPrompt: z.string().min(10, 'Initial prompt must be at least 10 characters').max(50000, 'Initial prompt cannot exceed 50,000 characters'),
+  projectName: z.string().max(100).optional(),
+  initialUserPrompt: z.string().max(50000).optional(),
 });
 
 type CreateProjectFormValues = z.infer<typeof createProjectFormSchema>;
 
 interface CreateDialecticProjectFormProps {
-  onProjectCreated?: (projectId: string, projectName?: string) => void;
   defaultProjectName?: string;
   defaultInitialPrompt?: string;
   enableDomainSelection?: boolean;
@@ -41,12 +48,11 @@ interface CreateDialecticProjectFormProps {
 }
 
 export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProps> = ({
-  onProjectCreated,
   defaultProjectName = '',
   defaultInitialPrompt = '',
   enableDomainSelection = true,
   submitButtonText = 'Create Project',
-  containerClassName = 'max-w-3xl'
+  containerClassName = 'max-w-3xl mx-auto'
 }) => {
   const createDialecticProject = useDialecticStore((state) => state.createDialecticProject);
   const isCreating = useDialecticStore(selectIsCreatingProject);
@@ -60,6 +66,7 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
 
   const [promptFile, setPromptFile] = useState<File | null>(null);
   const [projectNameManuallySet, setProjectNameManuallySet] = useState<boolean>(false);
+  const navigate = useNavigate();
 
   const {
     control,
@@ -265,13 +272,12 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
 
     if (!selectedDomainId) {
       logger.error("No domain selected. Cannot create project.");
-      // Optionally, set an error state to inform the user
       return;
     }
 
     const payload: CreateProjectPayload = {
-      projectName: data.projectName,
-      initialUserPrompt: data.initialUserPrompt,
+      projectName: data.projectName || projectNamePlaceholder,
+      initialUserPrompt: data.initialUserPrompt || initialUserPromptPlaceholder,
       promptFile: promptFile,
       selectedDomainId: selectedDomainId,
       selectedDomainOverlayId: currentSelectedDomainOverlayId,
@@ -280,11 +286,11 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
     try {
       const response = await createDialecticProject(payload);
 
-      if (response.data && onProjectCreated) {
-        logger.info('Project created successfully', { projectId: response.data.id });
-        onProjectCreated(response.data.id, response.data.project_name);
+      if (response.data) {
+        logger.info('Project created successfully, navigating.', { projectId: response.data.id });
+        navigate(`/dialectic/${response.data.id}`);
       } else {
-        logger.error('Project creation failed', { error: response?.error });
+        logger.error('Project creation failed', { error: response.error });
       }
     } catch (e) {
       logger.error('Error submitting form', { error: e instanceof Error ? e.message : String(e) });
@@ -293,17 +299,6 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
 
   return (
     <Card className={containerClassName}> 
-      <CardHeader>
-        <CardTitle>
-          {enableDomainSelection && (
-            <div className="flex flex-row items-center gap-2">
-              <span>Create</span>
-              <DomainSelector /> 
-              <span>Project</span>
-            </div>
-          )} 
-        </CardTitle>
-      </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <CardContent className="space-y-6">
           {creationError && (
@@ -313,43 +308,48 @@ export const CreateDialecticProjectForm: React.FC<CreateDialecticProjectFormProp
             </Alert>
           )}
           
-          <div className="space-y-2">
-            <Label htmlFor="project-name">Project Name</Label>
-            <Controller
-              name="projectName"
-              control={control}
-              render={({ field }) => (
-                <input
-                  id="project-name"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  placeholder="E.g., Q4 Product Strategy (auto-fills from prompt or file name)"
-                  {...field}
-                  onChange={(e) => {
-                    field.onChange(e); 
-                    if (e.target.value.trim() !== '') {
-                        setProjectNameManuallySet(true);
-                    } else {
-                        // If user clears the field, allow auto-naming to resume
-                        setProjectNameManuallySet(false);
-                    }
-                  }}
-                  aria-invalid={!!errors.projectName}
-                />
-              )}
-            />
-            {errors.projectName && <p className="text-sm text-destructive data-testid='project-name-error'">{errors.projectName.message}</p>}
-          </div>
 
           <div className="space-y-2 relative"> 
+          {enableDomainSelection && (
+            <div className="flex flex-row items-center gap-2 ">
+              <span>Create</span>
+              <DomainSelector /> 
+              <span>Project</span>
+              <Controller
+                name="projectName"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    id="project-name"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder={projectNamePlaceholder}
+                    {...field}
+                    onChange={(e) => {
+                      field.onChange(e); 
+                      if (e.target.value.trim() !== '') {
+                          setProjectNameManuallySet(true);
+                      } else {
+                          // If user clears the field, allow auto-naming to resume
+                          setProjectNameManuallySet(false);
+                      }
+                    }}
+                    aria-invalid={!!errors.projectName}
+                  />
+                )}
+              />
+            </div>
+          )}
+            {errors.projectName && <p className="text-sm text-destructive data-testid='project-name-error'">{errors.projectName.message}</p>}
+
             <Controller
               name="initialUserPrompt"
               control={control}
               render={({ field }) => (
                 <TextInputArea
                   id="initial-user-prompt"
-                  label="Initial User Prompt / Problem Statement"
-                  placeholder="Describe the core problem, question, or topic... or load from a .md file."
-                  value={field.value}
+                  label=""
+                  placeholder={initialUserPromptPlaceholder}
+                  value={field.value || ''}
                   onChange={field.onChange}
                   rows={8} 
                   dataTestId="text-input-area-for-prompt"
