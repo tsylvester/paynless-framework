@@ -28,7 +28,7 @@ importers:
         version: 20.17.46
       '@vitest/coverage-v8':
         specifier: 1.6.1
-        version: 1.6.1(vitest@1.6.1(@types/node@22.15.17)(@vitest/ui@1.6.1)(jsdom@26.1.0))
+        version: 1.6.1(vitest@1.6.1(@types/node@20.17.46)(@vitest/ui@1.6.1)(jsdom@26.1.0))
       '@vitest/ui':
         specifier: ^1.6.1
         version: 1.6.1(vitest@1.6.1)
@@ -9291,25 +9291,6 @@ snapshots:
       strip-literal: 2.1.1
       test-exclude: 6.0.0
       vitest: 1.6.1(@types/node@22.15.17)(@vitest/ui@1.6.1)(jsdom@24.1.3)
-    transitivePeerDependencies:
-      - supports-color
-
-  '@vitest/coverage-v8@1.6.1(vitest@1.6.1(@types/node@22.15.17)(@vitest/ui@1.6.1)(jsdom@26.1.0))':
-    dependencies:
-      '@ampproject/remapping': 2.3.0
-      '@bcoe/v8-coverage': 0.2.3
-      debug: 4.4.1
-      istanbul-lib-coverage: 3.2.2
-      istanbul-lib-report: 3.0.1
-      istanbul-lib-source-maps: 5.0.6
-      istanbul-reports: 3.1.7
-      magic-string: 0.30.17
-      magicast: 0.3.5
-      picocolors: 1.1.1
-      std-env: 3.9.0
-      strip-literal: 2.1.1
-      test-exclude: 6.0.0
-      vitest: 1.6.1(@types/node@22.15.17)(@vitest/ui@1.6.1)(jsdom@26.1.0)
     transitivePeerDependencies:
       - supports-color
 
