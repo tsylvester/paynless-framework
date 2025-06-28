@@ -25,6 +25,7 @@ component/
 ├── adapter.ts           # Concrete implementation using interface types
 ├── mocks.ts             # Official mocks/stubs/test doubles for this component
 ├── component.test.ts    # Tests using local mocks and test utilities
+├── tasks.md            # All maintenance, improvement, development, testing, etc. tasks to be completed 
 └── README.md           # Documentation including type contracts and mock usage
 ```
 

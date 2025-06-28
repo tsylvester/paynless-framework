@@ -1,5 +1,8 @@
 import { Navigate } from 'react-router-dom'
 import { useAuthStore } from '@paynless/store'
+import { Link } from 'react-router-dom'
+import { CreateDialecticProjectForm } from '../components/dialectic/CreateDialecticProjectForm'
+import { WalletSelector } from '../components/ai/WalletSelector'
 
 export function DashboardPage() {
   // Get user AND profile from the store
@@ -13,7 +16,11 @@ export function DashboardPage() {
     return (
       <div>
         <div className="flex justify-center items-center py-12">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
+          <div
+            className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"
+            role="progressbar"
+            aria-label="Loading content"
+          ></div>
         </div>
       </div>
     )
@@ -23,8 +30,6 @@ export function DashboardPage() {
     return <Navigate to="/login" />
   }
 
-  // Determine the name to display, prioritizing profile, then user, then email
-  const displayName = profile?.first_name || user.first_name || user.email
   // Determine role, prioritizing profile, then user (User object might not have role)
   const displayRole = profile?.role || user.role || 'user' // Default to 'user' if unknown
 
@@ -32,14 +37,6 @@ export function DashboardPage() {
     <div>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mt-8 bg-surface shadow overflow-hidden sm:rounded-lg">
-          <div className="px-6 py-6 sm:px-8">
-            <h2 className="text-lg leading-6 font-medium text-textPrimary">
-              Welcome back, {displayName}
-            </h2>
-            <p className="mt-2 max-w-2xl text-sm text-textSecondary">
-              Your personalized dashboard.
-            </p>
-          </div>
           <div className="border-t border-border px-6 py-6 sm:px-8">
             <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
               {/* Dashboard cards would go here */}
@@ -69,7 +66,9 @@ export function DashboardPage() {
                     Recent Activity
                   </h3>
                   <div className="mt-4 text-sm text-textSecondary">
-                    <p>No recent activity to display.</p>
+                    <div className="flex items-center">
+                      <WalletSelector /> <span className="ml-2">tokens remaining</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -79,25 +78,22 @@ export function DashboardPage() {
                   <h3 className="text-lg font-medium text-textPrimary">
                     Quick Actions
                   </h3>
-                  <div className="mt-4 text-sm text-textSecondary">
-                    <ul className="divide-y divide-border">
-                      <li className="py-3">
-                        <a
-                          href="/profile"
-                          className="text-primary hover:text-primary/90"
-                        >
-                          Edit profile
-                        </a>
-                      </li>
-                      <li className="py-3">
-                        <a
-                          href="/settings"
-                          className="text-primary hover:text-primary/90"
-                        >
-                          Account settings
-                        </a>
-                      </li>
-                    </ul>
+                  <div className="mt-4 grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
+                    <Link to="/dialectic" className="font-medium text-primary hover:text-primary/90">
+                      Start Project
+                    </Link>
+                    <Link to="/chat" className="font-medium text-primary hover:text-primary/90">
+                      Start Chat
+                    </Link>
+                    <Link to="/organizations" className="font-medium text-primary hover:text-primary/90">
+                      Create Organization
+                    </Link>
+                    <Link to="/organizations" className="font-medium text-primary hover:text-primary/90">
+                      Invite Teammates
+                    </Link>
+                    <Link to="/subscription" className="font-medium text-primary hover:text-primary/90">
+                      Subscribe
+                    </Link>
                   </div>
                 </div>
               </div>
@@ -105,443 +101,82 @@ export function DashboardPage() {
           </div>
         </div>
 
-        {/* WARNING and Usage Guidelines Section */}
-        <div
-          className="mt-10 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-200 px-6 py-4 rounded-lg relative mb-8"
-          role="alert"
-        >
-          <strong className="font-bold block text-lg">
-            WARNING! WARNING! WARNING!
-          </strong>
-          <ul className="list-disc list-inside mt-2 space-y-1">
-            <li>
-              This framework works AS IS, but there are no warranties or
-              guarantees, explicit or implied.
-            </li>
-            <li>
-              All changes are AT YOUR OWN RISK! Our code works, but we can't fix
-              YOUR code.
-            </li>
-            <li>
-              Be very careful before letting AI Coding Assistants tamper with
-              the Supabase Functions (<code>supabase/functions/</code>) or
-              Shared Packages (<code>packages/</code>).
-            </li>
-            <li>
-              Never let the frontend communicate directly with Supabase
-              database/auth. Maintain the backend (Edge Function) -&gt; store
-              -&gt; API Client -&gt; frontend layering.
-            </li>
-            <li>
-              Be extremely careful with any changes to files in{' '}
-              <code>packages/api</code> or <code>packages/store/</code>.
-            </li>
-            <li>
-              The <code>apps/web</code> and <code>apps/desktop</code> frontends
-              work, but <code>apps/android</code> and <code>apps/ios</code>{' '}
-              aren't populated yet.
-            </li>
-          </ul>
+        <div className="mt-10 bg-background/70 backdrop-blur-md border border-border shadow-lg rounded-lg p-8">
+        <CreateDialecticProjectForm />        
         </div>
 
         <div
-          className="mt-10 bg-blue-100 dark:bg-blue-900 border border-blue-400 dark:border-blue-700 text-blue-700 dark:text-blue-200 px-6 py-4 rounded-lg relative mb-8"
-          role="alert"
+          className="mt-10 bg-background/70 backdrop-blur-md border border-border shadow-lg rounded-lg p-8"
+          role="region"
+          aria-labelledby="dialectic-introduction"
         >
-          <strong className="font-bold block text-lg">
-            How to Effectively Use This Framework with AI Coding Assistants:
-          </strong>
-          <ul className="list-disc list-inside mt-2 space-y-1">
-            <li>
-              Read the <code className="text-xs">README.md</code> file
-              thoroughly to understand this project's architecture, structure,
-              and contents.
-            </li>
-            <li>
-              Keep the <code className="text-xs">README.md</code> file in
-              context for every AI coding prompt.
-            </li>
-            <li>
-              Regularly remind the AI assistant to re-read the{' '}
-              <code className="text-xs">README.md</code> file.
-            </li>
-            <li>
-              Regularly ask the AI assistant to update the documentation (like
-              the README) sections for database schema, file structure, and API
-              endpoints when you make changes.
-            </li>
-            <li>
-              Regularly ask the AI assistant if its proposed changes align with
-              the architecture, structure, and patterns described in the{' '}
-              <code className="text-xs">README.md</code> file.
-            </li>
-            <li>
-              Ask the AI assistant to create detailed work plans and checklists
-              for feature additions, including architecture considerations,
-              deliverables, development steps, and testing requirements.
-            </li>
-            <li>
-              Make the AI assistant follow the checklist, update its progress,
-              and refer back to it frequently.
-            </li>
-            <li>
-              Remind the AI assistant to use Test-Driven Development (TDD): Ask
-              it to write unit tests based on your requirements *before* writing
-              the feature code. Ensure the tests pass before accepting the code.
-            </li>
-          </ul>
-        </div>
-
-        {/* Setup Guide Section */}
-        <div className="mt-10 bg-surface shadow overflow-hidden sm:rounded-lg p-8">
-          <h2 className="text-xl font-semibold text-textPrimary mb-4">
-            How to Setup Your Paynless Framework
-          </h2>
-
-          <div className="space-y-6">
-            {/* GitHub Fork */}
-            <div>
-              <h3 className="text-lg font-medium text-textPrimary mb-2">
-                1. Fork on GitHub
-              </h3>
-              <ol className="list-decimal list-inside space-y-1 text-textSecondary">
-                <li>Complete your subscription to get access to the repo.</li>
-                <li>Open the Paynless Framework repo.</li>
-                <li>Click the "Fork" button in the top-right corner.</li>
-                <li>Choose your GitHub account to create the fork under.</li>
-              </ol>
-            </div>
-
-            {/* Setup Your Project Manually */}
-            <div>
-              <h3 className="text-lg font-medium text-textPrimary mb-2">
-                2. Setup Your Project Manually
-              </h3>
-
-              {/* Supabase Connection */}
-              <h4 className="text-md font-medium text-textPrimary mt-3 mb-1">
-                2a. Connect to Supabase
-              </h4>
-              <ol className="list-decimal list-inside space-y-1 text-textSecondary">
-                <li>
-                  Sign in to your{' '}
-                  <a
-                    href="https://supabase.com/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline"
-                  >
-                    Supabase
-                  </a>{' '}
-                  account.
-                </li>
-                <li>Create a new project or use an existing one.</li>
-                <li>
-                  Navigate to your Project Settings &gt; Integrations &gt;
-                  GitHub.
-                </li>
-                <li>
-                  Follow the instructions to connect your GitHub account and
-                  select your forked repository.
-                </li>
-                <li>
-                  Ensure you set up the required environment variables in your
-                  Supabase project settings (refer to <code>.env.example</code>{' '}
-                  in the repository for the list, e.g.,{' '}
-                  <code>STRIPE_SECRET_KEY</code>). Supabase might automatically
-                  detect some during the GitHub connection process.
-                </li>
-                <li>
-                  Run the database migrations from the{' '}
-                  <code>supabase/migrations</code> folder using the Supabase CLI
-                  or dashboard SQL editor to set up your schema.
-                </li>
-                <li>
-                  <strong>How to Set up Supabase CLI and Deploy:</strong>
-                  <ul className="list-disc list-inside ml-4 mt-1">
-                    <li>
-                      Install the Supabase CLI globally:{' '}
-                      <code>pnpm install -g supabase</code>
-                    </li>
-                    <li>
-                      Log in to the CLI: <code>supabase login</code>
-                    </li>
-                    <li>
-                      Link your local project to your Supabase project:{' '}
-                      <code>
-                        supabase link --project-ref &lt;your-project-ref&gt;
-                        --password &lt;your-database-password&gt;
-                      </code>
-                      <br />
-                      (Find your project ref in your Supabase dashboard URL).
-                    </li>
-                    <li>
-                      Push local database changes (like migrations) to your
-                      Supabase project: <code>supabase db push</code>
-                    </li>
-                    <li>
-                      Deploy all Edge Functions:{' '}
-                      <code>supabase functions deploy</code>
-                      <ul className="list-circle list-inside ml-4 mt-1">
-                        <li>
-                          The config.toml in the Supabase directory already
-                          turns off JWT for the public functions.
-                        </li>
-                        <li>
-                          The <code>--no-verify-jwt</code> flag is important
-                          here because functions like <code>login</code> and{' '}
-                          <code>register</code> need to be accessed without a
-                          pre-existing user JWT.
-                        </li>
-                        <li>
-                          If you need to deploy functions individually, use the
-                          flag only for public ones:
-                        </li>
-                        <li className="ml-4">
-                          <code>
-                            supabase functions deploy login --no-verify-jwt
-                          </code>
-                        </li>
-                        <li className="ml-4">
-                          <code>
-                            supabase functions deploy register --no-verify-jwt
-                          </code>
-                        </li>
-                        <li className="ml-4">
-                          <code>
-                            supabase functions deploy &lt;function_name&gt;
-                          </code>{' '}
-                          (for others)
-                        </li>
-                      </ul>
-                    </li>
-                  </ul>
-                </li>
-              </ol>
-
-              {/* Netlify Connection */}
-              <h4 className="text-md font-medium text-textPrimary mt-3 mb-1">
-                2b. Connect to Netlify (for Web App)
-              </h4>
-              <ol className="list-decimal list-inside space-y-1 text-textSecondary">
-                <li>
-                  Sign in to your{' '}
-                  <a
-                    href="https://netlify.com/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline"
-                  >
-                    Netlify
-                  </a>{' '}
-                  account.
-                </li>
-                <li>Click "Add new site" &gt; "Import an existing project".</li>
-                <li>Connect to GitHub and authorize Netlify.</li>
-                <li>Select your forked Paynless Framework repository.</li>
-                <li>
-                  Configure the build settings:
-                  <ul className="list-disc list-inside ml-4 mt-1">
-                    <li>
-                      Base directory: <code>apps/web</code>
-                    </li>
-                    <li>
-                      Build command: <code>pnpm run build</code>
-                    </li>
-                    <li>
-                      Publish directory: <code>apps/web/dist</code>
-                    </li>
-                  </ul>
-                </li>
-                <li>
-                  Add Redirect for Client-Side Routing:
-                  <ul className="list-disc list-inside ml-4 mt-1">
-                    <li>
-                      To ensure direct links or refreshes work correctly with
-                      React Router, create a file named <code>_redirects</code>{' '}
-                      in the <code>apps/web/public</code> directory with:
-                    </li>
-                    <pre className="bg-gray-100 dark:bg-gray-800 p-2 rounded text-xs my-1">
-                      <code>/* /index.html 200</code>
-                    </pre>
-                    <li>
-                      This is all set up in your netlify.toml file already.
-                    </li>
-                  </ul>
-                </li>
-                <li>
-                  Once you have Netlify connected to your Github account, it'll
-                  automatically deploy with each commit.
-                </li>
-              </ol>
-            </div>
-
-            {/* Stripe Setup */}
-            <div>
-              <h3 className="text-lg font-medium text-textPrimary mb-2">
-                3. Set Up Stripe Products & Webhooks
-              </h3>
-              <ol className="list-decimal list-inside space-y-1 text-textSecondary">
-                <li>
-                  In your{' '}
-                  <a
-                    href="https://stripe.com/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline"
-                  >
-                    Stripe
-                  </a>{' '}
-                  dashboard, create Products and corresponding Prices that match
-                  the plans you want to offer.
-                </li>
-                <li>
-                  Set up a Stripe Webhook endpoint:
-                  <ul className="list-disc list-inside ml-4 mt-1">
-                    <li>Go to Developers &gt; Webhooks &gt; Add endpoint.</li>
-                    <li>
-                      The endpoint URL should be your deployed Supabase function
-                      URL for the webhook handler:{' '}
-                      <code>
-                        &lt;your-supabase-project-url&gt;/functions/v1/stripe-webhook
-                      </code>
-                    </li>
-                    <li>
-                      Select the events to listen for. Essential events include:
-                      <ul className="list-circle list-inside ml-4 mt-1">
-                        <li>
-                          <code>checkout.session.completed</code>
-                        </li>
-                        <li>
-                          <code>invoice.paid</code>
-                        </li>
-                        <li>
-                          <code>invoice.payment_failed</code>
-                        </li>
-                        <li>
-                          <code>customer.subscription.updated</code>
-                        </li>
-                        <li>
-                          <code>customer.subscription.deleted</code>
-                        </li>
-                      </ul>
-                    </li>
-                  </ul>
-                </li>
-                <li>
-                  After creating the webhook, copy the Webhook Signing Secret.
-                </li>
-                <li>
-                  Add this secret as an environment variable named{' '}
-                  <code>STRIPE_WEBHOOK_SECRET</code> to your Supabase project
-                  (in the <code>.env</code> file for local development via{' '}
-                  <code>supabase start</code>, and in the Supabase Dashboard
-                  under Project Settings &gt; Functions for deployed functions).
-                </li>
-              </ol>
-            </div>
-
-            {/* OpenAI Setup */}
-            <div>
-              <h3 className="text-lg font-medium text-textPrimary mb-2">
-                4. Set Up OpenAI API Key
-              </h3>
-              <ol className="list-decimal list-inside space-y-1 text-textSecondary">
-                <li>
-                  If you plan to use the AI Chat features, you'll need an API
-                  key from OpenAI (or another supported provider).
-                </li>
-                <li>
-                  Visit{' '}
-                  <a
-                    href="https://openai.com/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline"
-                  >
-                    OpenAI
-                  </a>{' '}
-                  and create an account or sign in.
-                </li>
-                <li>
-                  Navigate to the API Keys section of your OpenAI account
-                  settings.
-                </li>
-                <li>Create a new secret key.</li>
-                <li>
-                  Add this key as an environment variable named{' '}
-                  <code>OPENAI_API_KEY</code>:
-                  <ul className="list-disc list-inside ml-4 mt-1">
-                    <li>
-                      For local development: Add it to your root{' '}
-                      <code>.env</code> file (and optionally sync to{' '}
-                      <code>supabase/.env.local</code> using the sync script).
-                    </li>
-                    <li>
-                      For deployed functions: Add it to your Supabase Project
-                      Settings &gt; Functions &gt; Secrets.
-                    </li>
-                  </ul>
-                </li>
-                <li>
-                  Other AI providers (like Anthropic, Gemini) will require
-                  similar steps with their respective keys (e.g.,{' '}
-                  <code>ANTHROPIC_API_KEY</code>).
-                </li>
-              </ol>
-            </div>
-
-            {/* Dev Environment Setup */}
-            <div>
-              <h3 className="text-lg font-medium text-textPrimary mb-2">
-                5. Load into Your Dev Environment
-              </h3>
-              <ol className="list-decimal list-inside space-y-1 text-textSecondary">
-                <li>Ensure you have Git and Node.js (with pnpm) installed.</li>
-                <li>
-                  Clone your forked repository to your local machine (
-                  <code>git clone &lt;your-fork-url&gt;</code>).
-                </li>
-                <li>
-                  Open the cloned repository folder in your preferred editor
-                  (like Cursor).
-                </li>
-                <li>
-                  Install dependencies: Run <code>pnpm install</code> in the
-                  integrated terminal at the project root.
-                </li>
-                <li>
-                  Copy <code>.env.example</code> to <code>.env</code> (at the
-                  root) and fill in your Supabase/Stripe keys.
-                </li>
-                <li>
-                  (Optional) Sync env vars to <code>supabase/.env.local</code>{' '}
-                  by running:{' '}
-                  <code>node supabase/functions/tools/sync-envs.js</code>
-                </li>
-                <li>
-                  Start the local Supabase stack: <code>supabase start</code>
-                </li>
-                <li>
-                  Apply migrations: <code>supabase db reset</code> (if first
-                  time) or <code>supabase migration up</code>
-                </li>
-                <li>
-                  Deploy functions locally:{' '}
-                  <code>supabase functions deploy</code>. The config.toml is set
-                  up to disable JWT on the public functions.
-                </li>
-                <li>
-                  Start the web app dev server:{' '}
-                  <code>pnpm --filter web dev</code>.
-                </li>
-              </ol>
-            </div>
-
-            <p className="text-center text-lg font-semibold text-green-600 dark:text-green-400 mt-8">
-              Congratulations, you now have a working app with user auth,
-              profiles, database, and subscriptions ready to go!
+          <div className="text-center">
+            <h2 id="dialectic-introduction" className="text-2xl font-bold text-primary tracking-tight">
+              <Link to="/dialectic" className="text-primary hover:text-primary/90">From Idea to Plan in Seconds.</Link>
+            </h2>
+            <p className="mt-4 max-w-3xl mx-auto text-lg text-textSecondary">
+              Our <Link to="/dialectic" className="text-primary hover:text-primary/90">Dialectic Engine</Link> orchestrates multiple AI models to build robust, battle-tested implementation plans for your software project in moments.
             </p>
+          </div>
+
+          <div className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-10">
+            {/* How It Works Section */}
+            <div className="space-y-4">
+              <h3 className="text-xl font-semibold text-textPrimary">How It Works</h3>
+              <ol className="list-decimal list-inside space-y-3 text-textSecondary">
+                <li>
+                  <strong className="font-medium text-textPrimary">Submit Your Vision:</strong> Start a new Project with a simple problem statement. Use text input, or upload a markdown file. Explain what you want to build, and our AI team gets to work.
+                </li>
+                <li>
+                  <strong className="font-medium text-textPrimary">Pick Your Players:</strong> Use any AI model in our library, as many as you want. <br/>(We recommend 3.)
+                </li>
+                <li>
+                  <strong className="font-medium text-textPrimary">AI-Powered <Link to="/dialectic" className="text-primary hover:text-primary/90">Dialectic</Link>:</strong>
+                  <ul className="list-disc list-inside ml-5 mt-1">
+                    <li><span className="font-semibold">Thesis (Idea):</span> Multiple AIs generate unique, diverse approaches.</li>
+                    <li><span className="font-semibold">Antithesis (Critique):</span> The AIs critique each other's work, finding flaws and blind spots.</li>
+                    <li><span className="font-semibold">Synthesis (Merge):</span> The best ideas are merged into a unified, superior plan.</li> 
+                    <li><span className="font-semibold">Parenthesis (Formalize):</span> The AIs transform the plan into a detailed, actionable checklist of explicit, specific prompts that explain exactly how to perform each step.</li>
+                    <li><span className="font-semibold">Paralysis (Organize):</span> The AIs organize the plan into a structured, easy-to-follow plan that's impossible to mess up.</li>
+                  </ul>
+                </li>
+                <li>
+                  <strong className="font-medium text-textPrimary">Generate Key Documents:</strong> We generate Product Requirements Documents (PRDs), use cases, business cases, and a full, detailed implementation plan suitable for any developer.
+                </li>
+              </ol>
+            </div>
+
+            {/* Features & What's Next Section */}
+            <div className="space-y-4">
+              <h3 className="text-xl font-semibold text-textPrimary">Features & What's Next</h3>
+              <div className="text-textSecondary space-y-3">
+                <p>
+                  Our implementation plans are a structured checklist of prompts that can be fed into a coding agent, or implemented manually by a team of developers.
+                </p>
+                <p>
+                  We support individuals and organizations with powerful tools, including an innovative context-managed multi-user <Link to="/chat" className="text-primary hover:text-primary/90">AI Chat</Link> and our groundbreaking structured <Link to="/dialectic" className="text-primary hover:text-primary/90">Dialectic</Link> process.
+                </p> 
+                <p> 
+                  Chat with coworkers about your project, pull an AI model into the chat for its opinion, and transition seamlessly into an implementation plan that explains exactly how to build the feature.
+                </p>
+              </div>
+              <div className="mt-10">
+                <h3 className="text-xl font-semibold text-textPrimary">Coming Soon:</h3>
+                <p className="text-textSecondary">
+                  We're constantly rolling out new capabilities. Get ready for direct plan exporting to GitHub and a powerful CLI to sync your projects with Linear, Jira, Microsoft Project, and your other favorite tools.
+                  <br/>
+                  We're working on importing plan documents into the dialectic so that your agents know exactly what to build.
+                </p>
+              </div>
+              <div className="mt-10">
+                 <div>
+                  <h3 className="text-xl font-semibold text-textPrimary">Get Started for Free</h3>
+                  <p className="text-textSecondary">
+                    All users get <span className="font-semibold text-primary">100k tokens per month</span>. Need more power and features? Check out our <Link to="/subscription" className="text-primary hover:text-primary/90">subscription options</Link> 10m tokens start at $19.99/month or $199.99/year.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

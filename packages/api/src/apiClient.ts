@@ -13,6 +13,7 @@ import { NotificationApiClient } from './notifications.api'; // Import new clien
 import { OrganizationApiClient } from './organizations.api'; // <<< Import Org client
 import { UserApiClient } from './users.api'; // +++ Add import
 import { WalletApiClient } from './wallet.api'; // Corrected WalletApiClient import path
+import { DialecticApiClient } from './dialectic.api'; // <<< IMPORT NEW DIALECTIC CLIENT
 import { logger } from '@paynless/utils';
 import type { Database } from '@paynless/db-types'; // Keep this for createClient
 
@@ -49,6 +50,7 @@ export class ApiClient {
     private supabase: SupabaseClient<Database>;
     private functionsUrl: string;
     private supabaseAnonKey: string; // <<< Add storage for anon key
+    private tokenPromise: Promise<string | undefined> | null = null; // Add this line
 
     public billing: StripeApiClient;
     public ai: AiApiClient;
@@ -56,6 +58,7 @@ export class ApiClient {
     public organizations: OrganizationApiClient; // <<< Add Org client property
     public users: UserApiClient; // +++ Add users property
     public wallet: WalletApiClient; // Added wallet property
+    public dialectic: DialecticApiClient; // <<< ADD DIALECTIC CLIENT PROPERTY
 
     // Update constructor signature
     constructor(options: ApiClientConstructorOptions) {
@@ -73,6 +76,7 @@ export class ApiClient {
         this.organizations = new OrganizationApiClient(this); // <<< Initialize Org client
         this.users = new UserApiClient(this); // +++ Initialize UserApiClient
         this.wallet = new WalletApiClient(this); // Initialize WalletApiClient
+        this.dialectic = new DialecticApiClient(this); // <<< INITIALIZE DIALECTIC CLIENT
     }
 
     /**
@@ -84,27 +88,96 @@ export class ApiClient {
     }
 
     private async getToken(): Promise<string | undefined> {
-        const { data, error } = await this.supabase.auth.getSession();
-        if (error) {
-            logger.error('Error fetching session for token:', { error });
-            return undefined;
+        logger.debug('[ApiClient.getToken] Attempting to get session...');
+
+        if (this.tokenPromise) {
+            logger.debug('[ApiClient.getToken] Token fetch already in progress, returning existing promise.');
+            return this.tokenPromise;
         }
-        logger.debug('[ApiClient.getToken] Fetched session data:', { session: data.session }); 
-        return data.session?.access_token;
+
+        logger.debug('[ApiClient.getToken] No token fetch in progress, initiating new one.');
+        this.tokenPromise = (async () => {
+            try {
+                const { data, error } = await this.supabase.auth.getSession();
+                logger.debug('[ApiClient.getToken] this.supabase.auth.getSession() returned.', { error: !!error, hasData: !!data });
+                if (error) {
+                    logger.error('Error fetching session for token:', { error });
+                    return undefined;
+                }
+                logger.debug('[ApiClient.getToken] Fetched session data:', { session: data.session });
+                return data.session?.access_token;
+            } finally {
+                // Important: Clear the promise so subsequent calls can fetch a new token if needed (e.g., after expiry)
+                // Or if the previous one failed.
+                logger.debug('[ApiClient.getToken] Clearing in-flight tokenPromise.');
+                this.tokenPromise = null;
+            }
+        })();
+
+        return this.tokenPromise;
     }
 
     // Update request method to use ApiResponse and ApiErrorType from @paynless/types
     private async request<T>(endpoint: string, options: FetchOptions = {}): Promise<ApiResponse<T>> {
         const url = `${this.functionsUrl}/${endpoint.startsWith('/') ? endpoint.substring(1) : endpoint}`;
         const headers = new Headers(options.headers || {});
-        headers.append('Content-Type', 'application/json');
-        headers.append('apikey', this.supabaseAnonKey); // <<< Always add apikey header
+        let processedBody = options.body; // Assume body is passed as-is initially
+
+        // 1. Handle FormData:
+        if (options.body instanceof FormData) {
+            // If the body is FormData, let the browser set the Content-Type.
+            // Remove any Content-Type erroneously set by the caller for FormData to prevent conflicts.
+            if (headers.has('Content-Type')) {
+                logger.warn("[apiClient] Content-Type header was removed because body is FormData. Browser will set appropriate Content-Type.");
+                headers.delete('Content-Type');
+            }
+            // `processedBody` remains `options.body` (the FormData instance).
+        } else if (options.body !== undefined && options.body !== null) {
+            // 2. Handle non-FormData bodies:
+            const contentType = headers.get('Content-Type');
+
+            // Check if it's a "plain" JS object (not a Blob, ArrayBuffer, File, etc.)
+            const isPlainObject = typeof options.body === 'object' &&
+                                  !(options.body instanceof Blob) &&
+                                  !(options.body instanceof ArrayBuffer) &&
+                                  !(options.body instanceof URLSearchParams) &&
+                                  // Add other Fetch API body types if necessary
+                                  Object.prototype.toString.call(options.body) === '[object Object]';
+
+            if (!contentType && isPlainObject) {
+                // Case 2a: No Content-Type from caller, and body is a plain object.
+                // Default to application/json and stringify.
+                headers.set('Content-Type', 'application/json');
+                // For the condition below, we need the updated Content-Type if it was just set.
+                // So, we re-fetch it if it was initially null and then set.
+                const currentContentType = headers.get('Content-Type'); 
+                if (currentContentType && currentContentType.toLowerCase().includes('application/json') && isPlainObject) {
+                    processedBody = JSON.stringify(options.body);
+                }
+            } else if (contentType && contentType.toLowerCase().includes('application/json') && isPlainObject) {
+                // Case 2b: Caller set Content-Type to application/json (or similar), and body is a plain object.
+                processedBody = JSON.stringify(options.body);
+            }
+            // Case 2c: Else (body is already a string, Blob, ArrayBuffer, URLSearchParams,
+            // or it's an object but Content-Type is not JSON, or no Content-Type and not a plain object).
+            // In these cases, `processedBody` remains `options.body`, and `headers` remain as set by the caller.
+        }
+
+        headers.append('apikey', this.supabaseAnonKey);
 
         // Only add Authorization if not already present in options.headers and not public
         if (!options.isPublic && !headers.has('Authorization')) {
-            const tokenFromAuthGetSession = options.token || (await this.getToken());
-            if (tokenFromAuthGetSession) {
-                headers.append('Authorization', `Bearer ${tokenFromAuthGetSession}`);
+            const effectiveToken = options.token; // Use options.token if provided directly
+            if (effectiveToken) {
+                logger.debug('[ApiClient.request] Using token from options.');
+                headers.append('Authorization', `Bearer ${effectiveToken}`);
+            } else {
+                logger.debug('[ApiClient.request] No token in options, attempting to call this.getToken().');
+                const tokenFromAuthGetSession = await this.getToken();
+                logger.debug('[ApiClient.request] this.getToken() returned.', { hasToken: !!tokenFromAuthGetSession });
+                if (tokenFromAuthGetSession) {
+                    headers.append('Authorization', `Bearer ${tokenFromAuthGetSession}`);
+                }
             }
         }
         
@@ -114,7 +187,11 @@ export class ApiClient {
         logger.info(`[apiClient] Requesting ${options.method || 'GET'} ${url}`, { headers: headersObject });
 
         try {
-            const response = await fetch(url, { ...options, headers });
+            const response = await fetch(url, {
+                ...options,
+                headers: headers,
+                body: processedBody
+            });
             
             // ---> Log right after fetch, before parsing body <--- 
             logger.info('[apiClient] Fetch completed', { status: response.status, ok: response.ok, url: response.url });
@@ -214,15 +291,15 @@ export class ApiClient {
     }
 
     public async post<T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> {
-        return this.request<T>(endpoint, { ...options, method: 'POST', body: JSON.stringify(body) });
+        return this.request<T>(endpoint, { ...options, method: 'POST', body: body as BodyInit | null | undefined });
     }
 
     public async put<T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> {
-        return this.request<T>(endpoint, { ...options, method: 'PUT', body: JSON.stringify(body) });
+        return this.request<T>(endpoint, { ...options, method: 'PUT', body: body as BodyInit | null | undefined });
     }
 
     public async patch<T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> {
-        return this.request<T>(endpoint, { ...options, method: 'PATCH', body: JSON.stringify(body) });
+        return this.request<T>(endpoint, { ...options, method: 'PATCH', body: body as BodyInit | null | undefined });
     }
 
     public async delete<T>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<T>> {
@@ -302,6 +379,7 @@ export const api = {
     organizations: () => getApiClient().organizations,
     users: () => getApiClient().users,
     wallet: () => getApiClient().wallet, // Added wallet accessor
+    dialectic: () => getApiClient().dialectic, // Added dialectic accessor
     getSupabaseClient: (): SupabaseClient<Database> => 
         getApiClient().getSupabaseClient(),
 }; 

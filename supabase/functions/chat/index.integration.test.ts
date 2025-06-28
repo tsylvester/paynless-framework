@@ -9,13 +9,13 @@ import {
   initializeSupabaseAdminClient,
   initializeTestDeps,
   coreTeardown,
-  coreResetDatabaseState,
-  coreSeedAiProviders,
   coreInitializeTestStep,
   setSharedAdminClient,
-  setSharedTestDeps,
   CHAT_FUNCTION_URL,
-} from "./_integration.test.utils.ts";
+  type ProcessedResourceInfo,
+  type TestResourceRequirement,
+  type TestSetupConfig,
+} from "../_shared/_integration.test.utils.ts";
 
 // Import types directly from their canonical location
 import type { ChatApiRequest, ChatHandlerSuccessResponse, AiModelExtendedConfig } from "../_shared/types.ts";
@@ -32,11 +32,8 @@ async function setupTestSuiteRouter() {
   const adminClient = initializeSupabaseAdminClient();
   setSharedAdminClient(adminClient); 
 
-  const deps = initializeTestDeps(adminClient);
-  setSharedTestDeps(deps); 
+  initializeTestDeps();
   
-  await coreResetDatabaseState(); 
-  await coreSeedAiProviders();
   console.log("Test suite setup complete (router).");
 }
 
@@ -46,16 +43,144 @@ async function teardownTestSuiteRouter() {
   console.log("Test suite teardown complete (router).");
 }
 
+// Define default resources needed for most chat integration tests
+const defaultTestAiProviders: TestResourceRequirement<any>[] = [
+  {
+    tableName: "ai_providers",
+    identifier: { api_identifier: "gpt-3.5-turbo-test" },
+    desiredState: {
+      name: "GPT-3.5 Turbo (Test)",
+      api_identifier: "gpt-3.5-turbo-test",
+      provider: "openai",
+      is_active: true,
+      config: {
+        tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } as AiModelExtendedConfig['tokenization_strategy'],
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
+        requires_api_key: false,
+      }
+    }
+  },
+  {
+    tableName: "ai_providers",
+    identifier: { api_identifier: "gpt-4-costly-test" },
+    desiredState: {
+      name: "GPT-4 Costly (Test)",
+      api_identifier: "gpt-4-costly-test",
+      provider: "openai",
+      is_active: true,
+      config: {
+        tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } as AiModelExtendedConfig['tokenization_strategy'],
+        input_token_cost_rate: 0.03,
+        output_token_cost_rate: 0.06,
+        requires_api_key: false,
+      }
+    }
+  },
+  {
+    tableName: "ai_providers",
+    identifier: { api_identifier: "anthropic-claude-test" },
+    desiredState: {
+      name: "Anthropic Claude (Test)",
+      api_identifier: "anthropic-claude-test",
+      provider: "anthropic",
+      is_active: true,
+      config: {
+        tokenization_strategy: { type: "claude_tokenizer" } as AiModelExtendedConfig['tokenization_strategy'],
+        input_token_cost_rate: 0.008,
+        output_token_cost_rate: 0.024,
+        requires_api_key: false,
+      }
+    }
+  },
+  {
+    tableName: "ai_providers",
+    identifier: { api_identifier: "google-gemini-pro-test" },
+    desiredState: {
+      name: "Google Gemini Pro (Test)",
+      api_identifier: "google-gemini-pro-test",
+      provider: "google",
+      is_active: true,
+      config: {
+        tokenization_strategy: { type: "google_gemini_tokenizer" } as AiModelExtendedConfig['tokenization_strategy'],
+        input_token_cost_rate: 0.000125,
+        output_token_cost_rate: 0.000375,
+        requires_api_key: false,
+      }
+    }
+  },
+  {
+    tableName: "ai_providers",
+    identifier: { api_identifier: "rough-char-count-test" },
+    desiredState: {
+      name: "Rough Char Count (Test)",
+      api_identifier: "rough-char-count-test",
+      provider: "custom",
+      is_active: true,
+      config: {
+        tokenization_strategy: { type: "rough_char_count", chars_per_token_ratio: 4 } as AiModelExtendedConfig['tokenization_strategy'],
+        input_token_cost_rate: 0.0001,
+        output_token_cost_rate: 0.0001,
+        requires_api_key: false,
+      }
+    }
+  },
+  {
+    tableName: "ai_providers",
+    identifier: { api_identifier: "inactive-provider-test" },
+    desiredState: {
+      name: "Inactive Provider (Test)",
+      api_identifier: "inactive-provider-test",
+      provider: "custom",
+      is_active: false,
+      config: {
+        tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } as AiModelExtendedConfig['tokenization_strategy'],
+        requires_api_key: false,
+      }
+    }
+  }
+];
+
+const defaultTestSystemPrompts: TestResourceRequirement<any>[] = [
+  {
+    tableName: "system_prompts",
+    identifier: { name: "Default Test System Prompt" },
+    desiredState: {
+      name: "Default Test System Prompt",
+      prompt_text: "You are a helpful AI assistant for testing purposes.",
+      is_active: true
+    }
+  },
+  {
+    tableName: "system_prompts",
+    identifier: { name: "Specific System Prompt for Happy Path" },
+    desiredState: {
+      name: "Specific System Prompt for Happy Path",
+      prompt_text: "You are a pirate. Respond as a pirate for this happy path test.",
+      is_active: true
+    }
+  }
+];
+
+const allDefaultTestResources = [...defaultTestAiProviders, ...defaultTestSystemPrompts];
+
 async function initializeTestGroupEnvironmentRouter(
   options: { 
-    userProfile?: Partial<{ role: string; first_name: string }>; 
+    userProfile?: Partial<{ role: "user" | "admin"; first_name: string }>;
     initialWalletBalance?: number; 
-    aiProviderApiIdentifier?: string;
-    aiProviderConfigOverride?: Partial<AiModelExtendedConfig>;
+    additionalResources?: TestResourceRequirement<any>[];
   } = {}
-): Promise<string> {
-  const userId = await coreInitializeTestStep(options);
-  return userId;
+): Promise<{ primaryUserId: string; processedResources: ProcessedResourceInfo[] }> {
+  const finalConfig: TestSetupConfig = {
+    ...options,
+    resources: [...allDefaultTestResources, ...(options.additionalResources || [])]
+  };
+  if ('additionalResources' in finalConfig) {
+    delete (finalConfig as any).additionalResources;
+  }
+
+  const result = await coreInitializeTestStep(finalConfig);
+  return result;
 }
 
 Deno.test({

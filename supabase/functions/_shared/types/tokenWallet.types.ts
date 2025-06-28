@@ -75,6 +75,14 @@ export interface ITokenWalletService {
   getWalletForContext(userId?: string, organizationId?: string): Promise<TokenWallet | null>;
 
   /**
+   * Retrieves a specific wallet by its ID if the given user has permissions for it.
+   * @param walletId - The ID of the wallet to retrieve.
+   * @param userId - The ID of the user requesting the wallet.
+   * @returns A promise resolving to the wallet, or null if not found or access denied.
+   */
+  getWalletByIdAndUser(walletId: string, userId: string): Promise<TokenWallet | null>;
+
+  /**
    * Gets the current balance of a specific wallet.
    * @param walletId - The ID of the wallet.
    * @returns A promise resolving to the balance as a string.

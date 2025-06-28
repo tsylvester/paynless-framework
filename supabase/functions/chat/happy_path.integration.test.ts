@@ -12,7 +12,10 @@ import type {
     ChatHandlerSuccessResponse, 
     TokenUsage,
     AiModelExtendedConfig,
-    ChatMessage
+    ChatMessage,
+    ChatHandlerDeps,
+    ILogger,
+    AiProviderAdapter
 } from "../_shared/types.ts";
 import {
   // Shared instances & state
@@ -22,42 +25,87 @@ import {
   // JWT token getter
   getTestUserAuthToken,
   // Core handler
-  chatHandler, // Use chatHandler from utils
+  // chatHandler, // Removed: This was incorrectly imported
   // Constants
-  CHAT_FUNCTION_URL
-} from "./_integration.test.utils.ts";
+  CHAT_FUNCTION_URL,
+  type ProcessedResourceInfo // Added ProcessedResourceInfo here
+} from "../_shared/_integration.test.utils.ts";
+import { handler as chatHandler, defaultDeps as chatDefaultDeps } from "./index.ts"; // Corrected path and new import
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import type { Database } from "../types_db.ts";
+import type { Database, Json } from "../types_db.ts"; // Added Json
 import { createMockSupabaseClient, type MockQueryBuilderState, type MockResolveQueryResult } from "../_shared/supabase.mock.ts";
+
+// Helper function to get provider data from processedResources
+async function getProviderForTest(
+  providerApiIdentifier: string,
+  processedResources: ProcessedResourceInfo<any>[]
+): Promise<{ id: string; api_identifier: string; config: AiModelExtendedConfig }> {
+  console.log(`[getProviderForTest] Searching for providerApiIdentifier: "${providerApiIdentifier}"`);
+  const providerResourcesFromProcessed = processedResources.filter(pr => pr.tableName === 'ai_providers');
+  console.log(`[getProviderForTest] Found ${providerResourcesFromProcessed.length} 'ai_providers' in processedResources:`);
+  providerResourcesFromProcessed.forEach(pr => {
+      console.log(`  - Resource: ${JSON.stringify(pr.resource)}`);
+  });
+
+  const providerResource = processedResources.find(
+    (pr) =>
+      pr.tableName === "ai_providers" &&
+      (pr.resource as any)?.api_identifier === providerApiIdentifier
+  );
+
+  if (!providerResource || !providerResource.resource) {
+    console.error(`[getProviderForTest] Provider NOT FOUND. Searched for: "${providerApiIdentifier}". Available 'ai_providers' resources:`, JSON.stringify(providerResourcesFromProcessed.map(pr => pr.resource), null, 2));
+    // Fallback to direct query IF REALLY NEEDED, but ideally processedResources should be complete
+    // For now, let's throw if not found in processedResources as it indicates a setup issue.
+    throw new Error(
+      `Provider with api_identifier '${providerApiIdentifier}' not found in processedResources. Check test setup.`
+    );
+  }
+  const providerData = providerResource.resource as any; // Cast to any to access properties
+  return {
+    id: providerData.id,
+    api_identifier: providerData.api_identifier,
+    config: providerData.config as AiModelExtendedConfig,
+  };
+}
+
+// This helper function creates the deps for each test call to chatHandler
+const createDepsForTest = (): ChatHandlerDeps => {
+  const deps: ChatHandlerDeps = {
+    ...chatDefaultDeps,
+    logger: currentTestDeps.logger,
+    getAiProviderAdapter: (
+      _providerApiIdentifier: string,
+      _providerDbConfig: Json | null,
+      _apiKey: string,
+      _loggerFromDep?: ILogger
+    ): AiProviderAdapter => mockAiAdapter,
+    supabaseClient: currentTestDeps.supabaseClient || undefined,
+    createSupabaseClient: currentTestDeps.createSupabaseClient || chatDefaultDeps.createSupabaseClient,
+  };
+  return deps;
+};
 
 export async function runHappyPathTests(
     thp: Deno.TestContext, // Renamed t to thp (test happy path) to avoid conflict if t is used inside steps
     initializeTestGroupEnvironment: (options?: { 
-        userProfile?: Partial<{ role: string; first_name: string }>; 
+        userProfile?: Partial<{ role: "user" | "admin"; first_name: string }>;
         initialWalletBalance?: number; 
-    }) => Promise<string>
+    }) => Promise<{ primaryUserId: string; processedResources: ProcessedResourceInfo<any>[]; }>
 ) {
     await thp.step("[Happy Path] Successful chat with user wallet debit (standard rates)", async () => {
       const initialBalance = 1000;
       // Use the passed initializeTestGroupEnvironment, which calls coreInitializeTestStep
-      const testUserId = await initializeTestGroupEnvironment({ 
+      const { primaryUserId: testUserId, processedResources } = await initializeTestGroupEnvironment({ 
         userProfile: { first_name: 'Happy Path User' },
         initialWalletBalance: initialBalance 
       });
       const currentAuthToken = getTestUserAuthToken(); // Get the token set by initializeTestGroupEnvironment
 
-      const { data: providerData, error: providerError } = await supabaseAdminClient
-        .from('ai_providers')
-        .select('id, api_identifier, config')
-        .eq('api_identifier', 'gpt-3.5-turbo-test')
-        .single();
-
-      if (providerError || !providerData) {
-        throw new Error(`Could not fetch provider 'gpt-3.5-turbo-test': ${providerError?.message}`);
-      }
-      const actualProviderDbId = providerData.id;
-      const providerApiIdentifier = providerData.api_identifier;
-      const providerConfig = providerData.config as unknown as AiModelExtendedConfig;
+      const providerInfo = await getProviderForTest("gpt-3.5-turbo-test", processedResources);
+      const actualProviderDbId = providerInfo.id;
+      const providerApiIdentifier = providerInfo.api_identifier;
+      const providerConfig = providerInfo.config;
 
       const mockAiResponseContent = "This is a happy path response from mock AI.";
       const mockTokenUsage: TokenUsage = { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 };
@@ -86,7 +134,7 @@ export async function runHappyPathTests(
           body: JSON.stringify(requestBody),
       });
 
-      const response = await chatHandler(request, currentTestDeps); // Use chatHandler and currentTestDeps from utils
+      const response = await chatHandler(request, createDepsForTest()); // Use createDepsForTest
 
       const responseText = await response.text(); 
       let responseJson: ChatHandlerSuccessResponse;
@@ -131,24 +179,16 @@ export async function runHappyPathTests(
 
     await thp.step("[Happy Path] Successful chat with costly model and correct debit", async () => {
       const initialBalance = 20000;
-      const testUserId = await initializeTestGroupEnvironment({
+      const { primaryUserId: testUserId, processedResources } = await initializeTestGroupEnvironment({
         userProfile: { first_name: 'Costly Model User' },
         initialWalletBalance: initialBalance 
       });
       const currentAuthToken = getTestUserAuthToken();
 
-      const { data: providerData, error: providerError } = await supabaseAdminClient
-        .from('ai_providers')
-        .select('id, api_identifier, config')
-        .eq('api_identifier', 'gpt-4-costly-test')
-        .single();
-
-      if (providerError || !providerData) {
-        throw new Error(`Could not fetch provider 'gpt-4-costly-test': ${providerError?.message}`);
-      }
-      const actualProviderDbId = providerData.id;
-      const providerApiIdentifier = providerData.api_identifier;
-      const providerConfig = providerData.config as unknown as AiModelExtendedConfig;
+      const providerInfo = await getProviderForTest("gpt-4-costly-test", processedResources);
+      const actualProviderDbId = providerInfo.id;
+      const providerApiIdentifier = providerInfo.api_identifier;
+      const providerConfig = providerInfo.config;
 
       const mockAiResponseContent = "I am a costly model response.";
       const mockTokenUsage: TokenUsage = { prompt_tokens: 50, completion_tokens: 100, total_tokens: 150 };
@@ -173,7 +213,7 @@ export async function runHappyPathTests(
           body: JSON.stringify(requestBody),
       });
       
-      const response = await chatHandler(request, currentTestDeps); 
+      const response = await chatHandler(request, createDepsForTest()); 
 
       const responseTextCostly = await response.text();
       let responseJsonCostly: ChatHandlerSuccessResponse;
@@ -204,24 +244,16 @@ export async function runHappyPathTests(
 
     await thp.step("[Happy Path] Successful rewind operation with correct debit", async () => {
       const initialBalance = 5000;
-      const testUserId = await initializeTestGroupEnvironment({
+      const { primaryUserId: testUserId, processedResources } = await initializeTestGroupEnvironment({
         userProfile: { first_name: 'Rewind User' },
         initialWalletBalance: initialBalance
       });
       const currentAuthToken = getTestUserAuthToken();
 
-      const { data: providerData, error: providerError } = await supabaseAdminClient
-        .from('ai_providers')
-        .select('id, api_identifier, config')
-        .eq('api_identifier', 'gpt-3.5-turbo-test')
-        .single();
-
-      if (providerError || !providerData) {
-        throw new Error(`Could not fetch provider 'gpt-3.5-turbo-test': ${providerError?.message}`);
-      }
-      const providerDbId = providerData.id;
-      const providerApiIdentifier = providerData.api_identifier;
-      const providerConfig = providerData.config as unknown as AiModelExtendedConfig;
+      const providerInfo = await getProviderForTest("gpt-3.5-turbo-test", processedResources);
+      const providerDbId = providerInfo.id;
+      const providerApiIdentifier = providerInfo.api_identifier;
+      const providerConfig = providerInfo.config;
 
       const initialUserMessageContent = "This is the first message in the chat.";
       const initialAiResponseContent = "This is the first AI response.";
@@ -250,7 +282,7 @@ export async function runHappyPathTests(
           method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${currentAuthToken}` },
           body: JSON.stringify(initialRequestBody),
       });
-      const initialResponse = await chatHandler(initialRequest, currentTestDeps);
+      const initialResponse = await chatHandler(initialRequest, createDepsForTest());
       const initialResponseText = await initialResponse.text();
       let initialResponseJson: ChatHandlerSuccessResponse;
       try {
@@ -303,7 +335,7 @@ export async function runHappyPathTests(
           method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${currentAuthToken}` },
           body: JSON.stringify(rewindRequestBody),
       });
-      const rewindResponse = await chatHandler(rewindRequest, currentTestDeps);
+      const rewindResponse = await chatHandler(rewindRequest, createDepsForTest());
       const rewindResponseText = await rewindResponse.text();
       let finalResponseJson: ChatHandlerSuccessResponse;
       try {
@@ -382,78 +414,40 @@ export async function runHappyPathTests(
     });
 
     await thp.step("[Happy Path] Successful chat using a valid system_prompt_id", async () => {
-      const testUserId = await initializeTestGroupEnvironment({ 
-        userProfile: { first_name: 'System Prompt User' },
-        initialWalletBalance: 3000 
+      const initialBalance = 1000;
+      const { primaryUserId: testUserId, processedResources } = await initializeTestGroupEnvironment({
+        userProfile: { first_name: 'SystemPrompt User' },
+        initialWalletBalance: initialBalance,
       });
       const currentAuthToken = getTestUserAuthToken();
 
-      const { data: providerData, error: providerError } = await supabaseAdminClient
-        .from('ai_providers')
-        .select('id, api_identifier, config')
-        .eq('api_identifier', 'gpt-3.5-turbo-test')
-        .single();
-      if (providerError || !providerData) throw providerError;
-      const providerDbId = providerData.id;
-      const providerApiIdentifier = providerData.api_identifier;
+      const providerInfo = await getProviderForTest("gpt-3.5-turbo-test", processedResources);
+      const actualProviderDbId = providerInfo.id;
+      const providerApiIdentifier = providerInfo.api_identifier;
 
-      const systemPromptText = "You are a VERY helpful pirate assistant. ARR matey!";
-      const testSystemPromptId = crypto.randomUUID();
+      // Find the system prompt from processedResources
+      const systemPromptResource = processedResources.find(
+        (pr) => pr.tableName === "system_prompts" && (pr.resource as any)?.prompt_text.includes("Specific System Prompt for Happy Path")
+      );
+      if (!systemPromptResource || !systemPromptResource.resource) {
+        throw new Error("Specific system prompt not found in processedResources for test.");
+      }
+      const systemPromptIdToUse = (systemPromptResource.resource as any).id;
+      const systemPromptText = (systemPromptResource.resource as any).prompt_text;
 
-      const { error: seedError } = await supabaseAdminClient.from('system_prompts').insert({
-        id: testSystemPromptId,
-        prompt_text: systemPromptText,
-        name: `Pirate Test Prompt ${crypto.randomUUID().slice(0, 8)}`,
-      });
-      if (seedError) throw seedError;
-
-      const { client: mockSystemPromptSupabaseClient } = createMockSupabaseClient(testUserId, {
-        genericMockResults: {
-          system_prompts: { 
-            select: (state: MockQueryBuilderState): Promise<{ data: object[] | null; error: Error | null; count: number | null; status: number; statusText: string; }> => { 
-              if (
-                state.operation === 'select' && 
-                state.filters.some(
-                  (f: MockQueryBuilderState['filters'][0]) => 
-                    f.column === 'id' &&
-                    f.value === testSystemPromptId &&
-                    f.type === 'eq'
-                ) &&
-                state.selectColumns?.includes('prompt_text') 
-              ) {
-                return Promise.resolve({
-                  data: [{ prompt_text: systemPromptText }],
-                  error: null,
-                  count: 1,
-                  status: 200,
-                  statusText: 'OK',
-                });
-              }
-              return Promise.resolve({ 
-                data: [], 
-                error: new Error(`Mock for system_prompts.select not configured for query: ${JSON.stringify(state)}`), 
-                count: 0, 
-                status: 404, 
-                statusText: 'Mock Not Found' 
-              });
-            }
-          },
-        },
-      });
-
-      const mockAiResponseContent = "Aye, Captain! The weather be fine!";
+      const mockAiResponseContent = "Response using specific system prompt.";
       const mockTokenUsage: TokenUsage = { prompt_tokens: 20, completion_tokens: 20, total_tokens: 40 };
       mockAiAdapter.setSimpleMockResponse(
         providerApiIdentifier,
         mockAiResponseContent,
-        providerDbId,
+        actualProviderDbId,
         null,
         mockTokenUsage
       );
       
       const requestBody: ChatApiRequest = {
-        providerId: providerDbId,
-        promptId: testSystemPromptId,
+        providerId: actualProviderDbId,
+        promptId: systemPromptIdToUse,
         message: "What be the weather today?",
       };
 
@@ -471,7 +465,7 @@ export async function runHappyPathTests(
         currentTestDeps.supabaseClient = mockSystemPromptSupabaseClient as unknown as SupabaseClient<Database>;
         // console.log("[TEST DEBUG] currentTestDeps.supabaseClient after override:", currentTestDeps.supabaseClient !== originalSupabaseClient ? " SUCCESSFULLY Overridden (different from original)" : "!!! NOT Overridden (still original) !!!");
 
-        const response = await chatHandler(request, currentTestDeps);
+        const response = await chatHandler(request, createDepsForTest());
         const responseText = await response.text();
         let responseJson: ChatHandlerSuccessResponse;
         try {
@@ -504,23 +498,15 @@ export async function runHappyPathTests(
     });
 
     await thp.step("[Happy Path] max_tokens_to_generate from client is respected/passed to AI", async () => {
-      const testUserId = await initializeTestGroupEnvironment({
+      const { primaryUserId: testUserId, processedResources } = await initializeTestGroupEnvironment({
         userProfile: { first_name: 'Max Tokens Test User' },
         initialWalletBalance: 1000
       });
       const currentAuthToken = getTestUserAuthToken();
 
-      const { data: providerData, error: providerError } = await supabaseAdminClient
-        .from('ai_providers')
-        .select('id, api_identifier')
-        .eq('api_identifier', 'gpt-3.5-turbo-test')
-        .single();
-
-      if (providerError || !providerData) {
-        throw new Error(`Could not fetch provider 'gpt-3.5-turbo-test': ${providerError?.message}`);
-      }
-      const actualProviderDbId = providerData.id;
-      const providerApiIdentifier = providerData.api_identifier;
+      const providerInfo = await getProviderForTest("gpt-3.5-turbo-test", processedResources);
+      const actualProviderDbId = providerInfo.id;
+      const providerApiIdentifier = providerInfo.api_identifier;
 
       const mockAiResponseContent = "Short response generated.";
       const mockTokenUsage: TokenUsage = { prompt_tokens: 5, completion_tokens: 10, total_tokens: 15 };
@@ -546,7 +532,7 @@ export async function runHappyPathTests(
         body: JSON.stringify(requestBody),
       });
       
-      const response = await chatHandler(request, currentTestDeps); 
+      const response = await chatHandler(request, createDepsForTest()); 
 
       const responseTextMaxTokens = await response.text();
       let responseJsonMaxTokens: ChatHandlerSuccessResponse;

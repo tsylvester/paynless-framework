@@ -21,13 +21,13 @@ import type {
     AiProviderAdapter, 
     ChatApiRequest,
     ChatHandlerDeps,
-    IMockQueryBuilder,
-    AdapterResponsePayload // Added
+    AdapterResponsePayload
 } from '../_shared/types.ts'; 
 import type { 
-    MockTokenWalletService, // Added
-    TokenWalletServiceMethodImplementations // Added
+    MockTokenWalletService, 
+    TokenWalletServiceMethodImplementations
 } from '../_shared/services/tokenWalletService.mock.ts';
+import type { IMockQueryBuilder } from '../_shared/supabase.mock.ts'; // This should be the ONLY import for IMockQueryBuilder
 import { logger } from '../_shared/logger.ts';
 
 import type { ChatHandlerSuccessResponse } from '../_shared/types.ts';
@@ -133,19 +133,55 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
     try { 
         await t.step("POST request with adapter sendMessage error returns 502", async () => {
             const adapterError = new Error("Adapter Failed: Simulated API Error");
-            // Use shared createTestDeps, providing supaConfig, adapter error, default tokenWalletConfig, default countTokensFn
+            
+            const supaConfigForAdapterErrorTest: MockSupabaseDataConfig = {
+                ...currentTestSupaConfigBase,
+                genericMockResults: {
+                    ...currentTestSupaConfigBase.genericMockResults,
+                    'chat_messages': {
+                        ...(currentTestSupaConfigBase.genericMockResults?.['chat_messages'] || {}),
+                        insert: (state: any) => { 
+                            const payloadArray = Array.isArray(state.insertData) ? state.insertData : [state.insertData];
+                            const insertedMessage = payloadArray[0] as Partial<ChatMessageRow>;
+
+                            if (insertedMessage.role === 'user' && insertedMessage.content === "trigger adapter error") {
+                                const userMessageToReturn: ChatMessageRow = {
+                                    ...mockUserDbRow,
+                                    id: "new-user-msg-adapter-err-id", 
+                                    content: "trigger adapter error",
+                                    chat_id: insertedMessage.chat_id || ChatTestConstants.testChatId, 
+                                };
+                                return Promise.resolve({ data: [userMessageToReturn], error: null, status: 201, count: 1 });
+                            } else if (insertedMessage.role === 'assistant' && insertedMessage.error_type === 'ai_provider_error') { 
+                                const assistantMessageToReturn: ChatMessageRow = {
+                                    ...mockAssistantDbRow,
+                                    id: "new-asst-msg-adapter-err-id",
+                                    content: insertedMessage.content ?? "Error: Content unavailable", // Provide fallback
+                                    chat_id: insertedMessage.chat_id || ChatTestConstants.testChatId,
+                                    error_type: 'ai_provider_error', 
+                                    token_usage: null, 
+                                };
+                                return Promise.resolve({ data: [assistantMessageToReturn], error: null, status: 201, count: 1 });
+                            }
+                            logger.error("Unexpected insert in adapter error test mock", { insertedMessage })
+                            return Promise.resolve({ data: null, error: new Error("Unexpected insert in adapter error test mock"), status: 500, count: 0 });
+                        }
+                    }
+                }
+            };
+
             const { deps } = createTestDeps(
-                currentTestSupaConfigBase, 
+                supaConfigForAdapterErrorTest, 
                 adapterError, 
-                {}, // Default token wallet mock
-                () => 10 // Default count tokens mock
+                {}, 
+                () => 10 
             );
             const req = new Request('http://localhost/chat', {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
                 body: JSON.stringify({ message: "trigger adapter error", providerId: testProviderId, promptId: testPromptId })
             });
             const response = await handler(req, deps);
-            assertEquals(response.status, 502);
+            assertEquals(response.status, 502); 
             assertEquals((await response.json()).error, "Adapter Failed: Simulated API Error"); 
         });
         

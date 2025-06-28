@@ -3,7 +3,7 @@ import { assert, assertEquals, assertExists, assertRejects } from "jsr:@std/asse
 import type { SupabaseClient, PostgrestResponse, PostgrestSingleResponse, PostgrestMaybeSingleResponse } from "npm:@supabase/supabase-js@2";
 
 // Import the function to test AND the dependency interface
-import { syncOpenAIModels, type SyncOpenAIDeps } from "./openai_sync.ts"; 
+import { syncOpenAIModels, type SyncOpenAIDeps, createDefaultOpenAIConfig } from "./openai_sync.ts"; 
 // Import shared types potentially used
 // NOTE: getCurrentDbModels is now mocked via deps, but keep types
 import { type SyncResult, type DbAiProvider } from "./index.ts"; 
@@ -14,10 +14,11 @@ import {
     createMockSupabaseClient, 
     type MockSupabaseDataConfig,
     MockQueryBuilderState,
+    type IMockQueryBuilder,
 } from "../_shared/supabase.mock.ts";
 
 import { assertThrows } from "jsr:@std/testing/asserts";
-import type { AiProviderAdapter, ProviderModelInfo, IMockQueryBuilder } from "../_shared/types.ts";
+import type { AiProviderAdapter, ProviderModelInfo, AiModelExtendedConfig } from "../_shared/types.ts";
 
 // Helper to create mock dependencies
 const createMockSyncDeps = (overrides: Partial<SyncOpenAIDeps> = {}): SyncOpenAIDeps => ({
@@ -29,21 +30,26 @@ const createMockSyncDeps = (overrides: Partial<SyncOpenAIDeps> = {}): SyncOpenAI
 });
 
 // Helper to generate default OpenAI config for testing consistency
-const getDefaultOpenAIConfig = (apiIdentifier: string, overrides: Record<string, any> = {}) => ({
-    input_token_cost_rate: 0.000001,
-    output_token_cost_rate: 0.000001,
-    context_window_tokens: 4096,
-    hard_cap_output_tokens: 2048,
-    tokenization_strategy: {
-        type: "tiktoken",
-        tiktoken_encoding_name: "cl100k_base",
-        is_chatml_model: false,
-        api_identifier_for_tokenization: apiIdentifier,
-    },
-    provider_max_input_tokens: 4096,
-    provider_max_output_tokens: 2048,
-    ...overrides
-});
+const getDefaultOpenAIConfig = (apiIdentifier: string, overrides: Partial<AiModelExtendedConfig> = {}) => {
+    const baseConfig = createDefaultOpenAIConfig(apiIdentifier);
+    
+    // Handle overrides, with special care for tokenization_strategy
+    const { tokenization_strategy: overrideTokenizationStrategy, ...otherOverrides } = overrides;
+    
+    const mergedConfig = {
+        ...baseConfig,
+        ...otherOverrides, // Apply top-level overrides
+    };
+
+    if (overrideTokenizationStrategy) {
+        mergedConfig.tokenization_strategy = {
+            ...baseConfig.tokenization_strategy,
+            ...overrideTokenizationStrategy, // Merge tokenization_strategy specifically
+        } as AiModelExtendedConfig['tokenization_strategy']; // Cast to satisfy type
+    }
+    
+    return mergedConfig;
+};
 
 // --- Test Suite ---
 
@@ -80,7 +86,7 @@ Deno.test("syncOpenAIModels", {
                     }
                 }
             };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, mockSupabaseConfig);
 
             // Call the function with mock deps
             const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
@@ -132,7 +138,7 @@ Deno.test("syncOpenAIModels", {
             });
 
             // No specific DB config needed as it shouldn't be called
-            const { client: mockClient, spies } = createMockSupabaseClient();
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, {});
 
             // Call the function with mock deps
             const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
@@ -179,7 +185,7 @@ Deno.test("syncOpenAIModels", {
              });
 
             // No specific DB config needed as mutations shouldn't be called
-            const { client: mockClient, spies } = createMockSupabaseClient();
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, {});
 
             // Call the function - it should catch the rejection from getCurrentDbModels
             const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
@@ -222,7 +228,7 @@ Deno.test("syncOpenAIModels", {
                 }
             }
         };
-        const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+        const { client: mockClient, spies } = createMockSupabaseClient(undefined, mockSupabaseConfig);
 
         await assertRejects(
             async () => {
@@ -280,7 +286,7 @@ Deno.test("syncOpenAIModels", {
                     }
                 }
             };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, mockSupabaseConfig);
 
             // Call the function with mock deps
             const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
@@ -362,7 +368,7 @@ Deno.test("syncOpenAIModels", {
                     }
                 }
             };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, mockSupabaseConfig);
 
             // Call the function - expect error to be caught and returned in result
             const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
@@ -427,7 +433,7 @@ Deno.test("syncOpenAIModels", {
             });
 
             // Configure Supabase mock (no DB ops expected)
-            const { client: mockClient, spies } = createMockSupabaseClient();
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, {});
             
             // Call function with mock deps
             const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
@@ -501,7 +507,7 @@ Deno.test("syncOpenAIModels", {
                     }
                 }
             };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, mockSupabaseConfig);
             
             // Call function with mock deps
             const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
@@ -569,7 +575,7 @@ Deno.test("syncOpenAIModels", {
                     }
                 }
             };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, mockSupabaseConfig);
             
             // Call function with mock deps
             const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
@@ -644,7 +650,7 @@ Deno.test("syncOpenAIModels", {
                     }
                 }
             };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, mockSupabaseConfig);
             
             // Call function - expect error to be caught and returned in result
             const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
@@ -716,7 +722,7 @@ Deno.test("syncOpenAIModels", {
                     }
                 }
             };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, mockSupabaseConfig);
             
             // Call function - expect error to be caught and returned in result
             const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
@@ -791,7 +797,7 @@ Deno.test("syncOpenAIModels", {
             });
 
             // Configure Supabase mock (no DB ops expected)
-            const { client: mockClient, spies } = createMockSupabaseClient();
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, {});
             
             // Call function with mock deps
             const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
@@ -848,7 +854,7 @@ Deno.test("syncOpenAIModels", {
                     }
                 }
             };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, mockSupabaseConfig);
             
             // Call function with mock deps
             const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
@@ -907,7 +913,12 @@ Deno.test("syncOpenAIModels", {
                 is_active: true, 
                 provider: 'openai', 
                 // Config that will be updated because some_custom_prop won't be in the newly generated default
-                config: getDefaultOpenAIConfig('openai-active1', { some_custom_prop: "old_value" }) 
+                config: (() => {
+                    const baseConfig = getDefaultOpenAIConfig('openai-active1');
+                    // Add a custom property to simulate an existing, non-standard config in the DB
+                    (baseConfig as any).some_custom_prop = "old_value"; 
+                    return baseConfig;
+                })()
             },
             { 
                 id: 'db-id-active2', 
@@ -946,7 +957,7 @@ Deno.test("syncOpenAIModels", {
                     }
                 }
             };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, mockSupabaseConfig);
 
             // Call the function with mock deps
             const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
@@ -1018,7 +1029,7 @@ Deno.test("syncOpenAIModels", {
             error: spy(() => {}), 
         });
 
-        const { client: mockClient, spies: clientSpiesForThisTest } = createMockSupabaseClient(); 
+        const { client: mockClient, spies: clientSpiesForThisTest } = createMockSupabaseClient(undefined, {}); 
 
         const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDepsForBadSelect);
 
@@ -1064,7 +1075,7 @@ Deno.test("MockClientResolutionWithError", async (t) => {
                 }
             }
         };
-        const { client: mockClient } = createMockSupabaseClient(mockSupabaseConfig);
+        const { client: mockClient } = createMockSupabaseClient(undefined, mockSupabaseConfig);
 
         // Directly await the query builder chain.
         // We expect it to RESOLVE now, not reject.

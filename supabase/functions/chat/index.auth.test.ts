@@ -168,9 +168,25 @@ Deno.test("Chat Auth Tests", async (t) => {
                 insert: { data: [{ id: ChatTestConstants.testChatId, user_id: ChatTestConstants.testUserId, system_prompt_id: ChatTestConstants.testPromptId, title:"test" }], error: null, status: 201, count: 1 },
                 select: { data: [{ id: ChatTestConstants.testChatId, user_id: ChatTestConstants.testUserId, system_prompt_id: ChatTestConstants.testPromptId, title:"test" }], error: null, status: 200, count: 1 } // For re-fetching after create
             },
-            // Mock message insertions to succeed
+            // Mock message insertions to succeed individually
             'chat_messages': {
-                insert: { data: [ChatTestConstants.mockUserDbRow, ChatTestConstants.mockAssistantDbRow], error: null, status: 201, count: 2 },
+                insert: (state) => {
+                  // Determine if it's the user or assistant message based on the input
+                  // This is a simplified check; more robust checks might be needed if structure varies
+                  const insertedData = Array.isArray(state.insertData) ? state.insertData[0] : state.insertData;
+                  let responseData = null;
+                  if (insertedData && (insertedData as any).role === 'user') {
+                    responseData = { ...ChatTestConstants.mockUserDbRow, id: crypto.randomUUID(), chat_id: ChatTestConstants.testChatId, ...insertedData };
+                  } else if (insertedData && (insertedData as any).role === 'assistant') {
+                    responseData = { ...ChatTestConstants.mockAssistantDbRow, id: crypto.randomUUID(), chat_id: ChatTestConstants.testChatId, ...insertedData };
+                  }
+                  // Fallback or throw error if unexpected data
+                  if (!responseData) {
+                    console.warn('[Test Mock chat_messages insert] Unexpected insertData:', state.insertData);
+                    return Promise.resolve({ data: null, error: new Error('Mock insert for chat_messages received unexpected data'), status: 500, count: 0 });
+                  }
+                  return Promise.resolve({ data: [responseData], error: null, status: 201, count: 1 });
+                },
             }
           }
         },

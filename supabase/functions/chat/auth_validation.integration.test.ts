@@ -4,7 +4,7 @@ import {
   assertStringIncludes,
 } from "https://deno.land/std@0.220.1/assert/mod.ts";
 import type { ChatApiRequest, AiModelExtendedConfig } from "../_shared/types.ts"; // TokenUsage might be needed for wallet checks
-import { CHAT_FUNCTION_URL, supabaseAdminClient } from "./_integration.test.utils.ts";
+import { CHAT_FUNCTION_URL, supabaseAdminClient, type ProcessedResourceInfo } from "../_shared/_integration.test.utils.ts";
 // import { createMockSupabaseClient } from "../_shared/supabase.mock.ts"; // May not be needed for all auth tests if errors are immediate
 // import type { MockQueryBuilderState, MockPGRSTError } from "../_shared/supabase.mock.ts";
 
@@ -12,11 +12,11 @@ import { CHAT_FUNCTION_URL, supabaseAdminClient } from "./_integration.test.util
 export async function runAuthValidationTests(
   t: Deno.TestContext,
   initializeTestGroupEnvironment: (options?: {
-    userProfile?: Partial<{ role: string; first_name: string }>;
+    userProfile?: Partial<{ role: "user" | "admin"; first_name: string }>;
     initialWalletBalance?: number;
     aiProviderConfigOverride?: Partial<AiModelExtendedConfig>;
     aiProviderApiIdentifier?: string; 
-  }) => Promise<string>
+  }) => Promise<{ primaryUserId: string; processedResources: ProcessedResourceInfo<any>[]; }>
 ) {
   await t.step("[Security/Auth] Invalid or expired JWT", async () => {
     const invalidJwt = "this-is-not-a-valid-jwt";
@@ -53,13 +53,13 @@ export async function runAuthValidationTests(
   });
 
   await t.step("[Security/Auth] User not found for JWT", async () => {
-    const testUserId = await initializeTestGroupEnvironment({
+    const { primaryUserId: testUserId } = await initializeTestGroupEnvironment({
       userProfile: { first_name: "ToBeDeleted User" },
       initialWalletBalance: 0, // Balance not relevant
     });
 
     // Dynamically import getTestUserAuthToken AFTER initializeTestGroupEnvironment has run
-    const { getTestUserAuthToken } = await import("./_integration.test.utils.ts");
+    const { getTestUserAuthToken } = await import("../_shared/_integration.test.utils.ts");
     const authToken = getTestUserAuthToken(); // This token is for testUserId
     assertExists(authToken, "Auth token should exist for the created user.");
 
@@ -108,7 +108,7 @@ export async function runAuthValidationTests(
       userProfile: { first_name: "InputValidation User" },
       initialWalletBalance: 100, // Balance not strictly relevant but good for full setup
     });
-    const { getTestUserAuthToken } = await import("./_integration.test.utils.ts");
+    const { getTestUserAuthToken } = await import("../_shared/_integration.test.utils.ts");
     const authToken = getTestUserAuthToken();
     assertExists(authToken, "Auth token is required for input validation tests.");
 
@@ -170,7 +170,7 @@ export async function runAuthValidationTests(
       userProfile: { first_name: "MalformedProviderId User" },
       initialWalletBalance: 100, 
     });
-    const { getTestUserAuthToken } = await import("./_integration.test.utils.ts");
+    const { getTestUserAuthToken } = await import("../_shared/_integration.test.utils.ts");
     const authToken = getTestUserAuthToken();
     assertExists(authToken, "Auth token is required for malformed providerId test.");
 
@@ -203,7 +203,7 @@ export async function runAuthValidationTests(
       userProfile: { first_name: "MalformedPromptId User" },
       initialWalletBalance: 100, 
     });
-    const { getTestUserAuthToken } = await import("./_integration.test.utils.ts");
+    const { getTestUserAuthToken } = await import("../_shared/_integration.test.utils.ts");
     const authToken = getTestUserAuthToken();
     assertExists(authToken, "Auth token is required for malformed promptId test.");
     

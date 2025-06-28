@@ -195,6 +195,662 @@ export type Database = {
           },
         ]
       }
+      dialectic_artifact_types: {
+        Row: {
+          created_at: string
+          default_file_extension: string | null
+          description: string | null
+          id: string
+          mime_type: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          default_file_extension?: string | null
+          description?: string | null
+          id?: string
+          mime_type: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          default_file_extension?: string | null
+          description?: string | null
+          id?: string
+          mime_type?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      dialectic_contributions: {
+        Row: {
+          citations: Json | null
+          contribution_type: string | null
+          created_at: string
+          edit_version: number
+          error: string | null
+          file_name: string | null
+          id: string
+          is_latest_edit: boolean
+          iteration_number: number
+          mime_type: string
+          model_id: string | null
+          model_name: string | null
+          original_model_contribution_id: string | null
+          processing_time_ms: number | null
+          prompt_template_id_used: string | null
+          raw_response_storage_path: string | null
+          seed_prompt_url: string | null
+          session_id: string
+          size_bytes: number | null
+          stage: string
+          storage_bucket: string
+          storage_path: string
+          target_contribution_id: string | null
+          tokens_used_input: number | null
+          tokens_used_output: number | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          citations?: Json | null
+          contribution_type?: string | null
+          created_at?: string
+          edit_version?: number
+          error?: string | null
+          file_name?: string | null
+          id?: string
+          is_latest_edit?: boolean
+          iteration_number?: number
+          mime_type?: string
+          model_id?: string | null
+          model_name?: string | null
+          original_model_contribution_id?: string | null
+          processing_time_ms?: number | null
+          prompt_template_id_used?: string | null
+          raw_response_storage_path?: string | null
+          seed_prompt_url?: string | null
+          session_id: string
+          size_bytes?: number | null
+          stage: string
+          storage_bucket?: string
+          storage_path: string
+          target_contribution_id?: string | null
+          tokens_used_input?: number | null
+          tokens_used_output?: number | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          citations?: Json | null
+          contribution_type?: string | null
+          created_at?: string
+          edit_version?: number
+          error?: string | null
+          file_name?: string | null
+          id?: string
+          is_latest_edit?: boolean
+          iteration_number?: number
+          mime_type?: string
+          model_id?: string | null
+          model_name?: string | null
+          original_model_contribution_id?: string | null
+          processing_time_ms?: number | null
+          prompt_template_id_used?: string | null
+          raw_response_storage_path?: string | null
+          seed_prompt_url?: string | null
+          session_id?: string
+          size_bytes?: number | null
+          stage?: string
+          storage_bucket?: string
+          storage_path?: string
+          target_contribution_id?: string | null
+          tokens_used_input?: number | null
+          tokens_used_output?: number | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_contributions_original_model_contribution_id_fkey"
+            columns: ["original_model_contribution_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_contributions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_contributions_prompt_template_id_used_fkey"
+            columns: ["prompt_template_id_used"]
+            isOneToOne: false
+            referencedRelation: "system_prompts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_contributions_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_contributions_target_contribution_id_fkey"
+            columns: ["target_contribution_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_contributions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_dialectic_contributions_model_id"
+            columns: ["model_id"]
+            isOneToOne: false
+            referencedRelation: "ai_providers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_domains: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          parent_domain_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          parent_domain_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          parent_domain_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_domains_parent_domain_id_fkey"
+            columns: ["parent_domain_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_domains"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_feedback: {
+        Row: {
+          created_at: string
+          feedback_type: string
+          file_name: string
+          id: string
+          iteration_number: number
+          mime_type: string
+          project_id: string
+          resource_description: Json | null
+          session_id: string
+          size_bytes: number
+          stage_slug: string
+          storage_bucket: string
+          storage_path: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          feedback_type: string
+          file_name: string
+          id?: string
+          iteration_number: number
+          mime_type?: string
+          project_id: string
+          resource_description?: Json | null
+          session_id: string
+          size_bytes: number
+          stage_slug: string
+          storage_bucket: string
+          storage_path: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          feedback_type?: string
+          file_name?: string
+          id?: string
+          iteration_number?: number
+          mime_type?: string
+          project_id?: string
+          resource_description?: Json | null
+          session_id?: string
+          size_bytes?: number
+          stage_slug?: string
+          storage_bucket?: string
+          storage_path?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_feedback_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_feedback_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_process_templates: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          starting_stage_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          starting_stage_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          starting_stage_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_process_templates_starting_stage_id_fkey"
+            columns: ["starting_stage_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_stages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_project_resources: {
+        Row: {
+          created_at: string
+          file_name: string
+          id: string
+          mime_type: string
+          project_id: string
+          resource_description: Json | null
+          size_bytes: number
+          storage_bucket: string
+          storage_path: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          id?: string
+          mime_type: string
+          project_id: string
+          resource_description?: Json | null
+          size_bytes: number
+          storage_bucket?: string
+          storage_path: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          id?: string
+          mime_type?: string
+          project_id?: string
+          resource_description?: Json | null
+          size_bytes?: number
+          storage_bucket?: string
+          storage_path?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_project_resources_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_projects: {
+        Row: {
+          created_at: string
+          id: string
+          initial_prompt_resource_id: string | null
+          initial_user_prompt: string
+          process_template_id: string | null
+          project_name: string
+          repo_url: Json | null
+          selected_domain_id: string
+          selected_domain_overlay_id: string | null
+          status: string
+          updated_at: string
+          user_domain_overlay_values: Json | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          initial_prompt_resource_id?: string | null
+          initial_user_prompt: string
+          process_template_id?: string | null
+          project_name: string
+          repo_url?: Json | null
+          selected_domain_id: string
+          selected_domain_overlay_id?: string | null
+          status?: string
+          updated_at?: string
+          user_domain_overlay_values?: Json | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          initial_prompt_resource_id?: string | null
+          initial_user_prompt?: string
+          process_template_id?: string | null
+          project_name?: string
+          repo_url?: Json | null
+          selected_domain_id?: string
+          selected_domain_overlay_id?: string | null
+          status?: string
+          updated_at?: string
+          user_domain_overlay_values?: Json | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_projects_process_template_id_fkey"
+            columns: ["process_template_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_process_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_projects_selected_domain_id_fkey"
+            columns: ["selected_domain_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_domains"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_dialectic_projects_selected_domain_overlay"
+            columns: ["selected_domain_overlay_id"]
+            isOneToOne: false
+            referencedRelation: "domain_specific_prompt_overlays"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_initial_prompt_resource"
+            columns: ["initial_prompt_resource_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_project_resources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_sessions: {
+        Row: {
+          associated_chat_id: string | null
+          created_at: string
+          current_stage_id: string
+          id: string
+          iteration_count: number
+          project_id: string
+          selected_model_ids: string[] | null
+          session_description: string | null
+          status: string
+          updated_at: string
+          user_input_reference_url: string | null
+        }
+        Insert: {
+          associated_chat_id?: string | null
+          created_at?: string
+          current_stage_id: string
+          id?: string
+          iteration_count?: number
+          project_id: string
+          selected_model_ids?: string[] | null
+          session_description?: string | null
+          status?: string
+          updated_at?: string
+          user_input_reference_url?: string | null
+        }
+        Update: {
+          associated_chat_id?: string | null
+          created_at?: string
+          current_stage_id?: string
+          id?: string
+          iteration_count?: number
+          project_id?: string
+          selected_model_ids?: string[] | null
+          session_description?: string | null
+          status?: string
+          updated_at?: string
+          user_input_reference_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_sessions_current_stage_id_fkey"
+            columns: ["current_stage_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_project"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_stage_transitions: {
+        Row: {
+          condition_description: string | null
+          created_at: string
+          id: string
+          process_template_id: string
+          source_stage_id: string
+          target_stage_id: string
+        }
+        Insert: {
+          condition_description?: string | null
+          created_at?: string
+          id?: string
+          process_template_id: string
+          source_stage_id: string
+          target_stage_id: string
+        }
+        Update: {
+          condition_description?: string | null
+          created_at?: string
+          id?: string
+          process_template_id?: string
+          source_stage_id?: string
+          target_stage_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_stage_transitions_process_template_id_fkey"
+            columns: ["process_template_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_process_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_stage_transitions_source_stage_id_fkey"
+            columns: ["source_stage_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_stage_transitions_target_stage_id_fkey"
+            columns: ["target_stage_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_stages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_stages: {
+        Row: {
+          created_at: string
+          default_system_prompt_id: string | null
+          description: string | null
+          display_name: string
+          expected_output_artifacts: Json | null
+          id: string
+          input_artifact_rules: Json | null
+          slug: string
+        }
+        Insert: {
+          created_at?: string
+          default_system_prompt_id?: string | null
+          description?: string | null
+          display_name: string
+          expected_output_artifacts?: Json | null
+          id?: string
+          input_artifact_rules?: Json | null
+          slug: string
+        }
+        Update: {
+          created_at?: string
+          default_system_prompt_id?: string | null
+          description?: string | null
+          display_name?: string
+          expected_output_artifacts?: Json | null
+          id?: string
+          input_artifact_rules?: Json | null
+          slug?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_stages_default_system_prompt_id_fkey"
+            columns: ["default_system_prompt_id"]
+            isOneToOne: false
+            referencedRelation: "system_prompts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      domain_process_associations: {
+        Row: {
+          created_at: string
+          domain_id: string
+          id: string
+          is_default_for_domain: boolean
+          process_template_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          domain_id: string
+          id?: string
+          is_default_for_domain?: boolean
+          process_template_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          domain_id?: string
+          id?: string
+          is_default_for_domain?: boolean
+          process_template_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "domain_process_associations_domain_id_fkey"
+            columns: ["domain_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_domains"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "domain_process_associations_process_template_id_fkey"
+            columns: ["process_template_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_process_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      domain_specific_prompt_overlays: {
+        Row: {
+          created_at: string
+          description: string | null
+          domain_id: string
+          id: string
+          is_active: boolean
+          overlay_values: Json
+          system_prompt_id: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          domain_id: string
+          id?: string
+          is_active?: boolean
+          overlay_values: Json
+          system_prompt_id: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          domain_id?: string
+          id?: string
+          is_active?: boolean
+          overlay_values?: Json
+          system_prompt_id?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "domain_specific_prompt_overlays_domain_id_fkey"
+            columns: ["domain_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_domains"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "domain_specific_prompt_overlays_system_prompt_id_fkey"
+            columns: ["system_prompt_id"]
+            isOneToOne: false
+            referencedRelation: "system_prompts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invites: {
         Row: {
           created_at: string
@@ -541,27 +1197,33 @@ export type Database = {
       system_prompts: {
         Row: {
           created_at: string
+          description: string | null
           id: string
           is_active: boolean
           name: string
           prompt_text: string
           updated_at: string
+          version: number
         }
         Insert: {
           created_at?: string
+          description?: string | null
           id?: string
           is_active?: boolean
           name: string
           prompt_text: string
           updated_at?: string
+          version?: number
         }
         Update: {
           created_at?: string
+          description?: string | null
           id?: string
           is_active?: boolean
           name?: string
           prompt_text?: string
           updated_at?: string
+          version?: number
         }
         Relationships: []
       }
@@ -569,7 +1231,7 @@ export type Database = {
         Row: {
           amount: number
           balance_after_txn: number
-          idempotency_key: string | null
+          idempotency_key: string
           notes: string | null
           payment_transaction_id: string | null
           recorded_by_user_id: string
@@ -583,7 +1245,7 @@ export type Database = {
         Insert: {
           amount: number
           balance_after_txn: number
-          idempotency_key?: string | null
+          idempotency_key: string
           notes?: string | null
           payment_transaction_id?: string | null
           recorded_by_user_id: string
@@ -597,7 +1259,7 @@ export type Database = {
         Update: {
           amount?: number
           balance_after_txn?: number
-          idempotency_key?: string | null
+          idempotency_key?: string
           notes?: string | null
           payment_transaction_id?: string | null
           recorded_by_user_id?: string
@@ -804,6 +1466,10 @@ export type Database = {
       }
     }
     Functions: {
+      begin_transaction: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
       can_select_chat: {
         Args: { check_chat_id: string }
         Returns: boolean
@@ -841,6 +1507,10 @@ export type Database = {
       delete_chat_and_messages_debug: {
         Args: { p_chat_id: string; p_user_id: string }
         Returns: string
+      }
+      execute_sql: {
+        Args: { query: string }
+        Returns: Json[]
       }
       grant_initial_free_tokens_to_user: {
         Args: { p_user_id: string; p_free_plan_id: string }
@@ -888,7 +1558,7 @@ export type Database = {
           p_transaction_type: string
           p_input_amount_text: string
           p_recorded_by_user_id: string
-          p_idempotency_key?: string
+          p_idempotency_key: string
           p_related_entity_id?: string
           p_related_entity_type?: string
           p_notes?: string
@@ -909,8 +1579,69 @@ export type Database = {
           payment_transaction_id: string
         }[]
       }
+      rollback_transaction: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      save_contribution_edit_atomic: {
+        Args:
+          | {
+              p_original_contribution_id: string
+              p_session_id: string
+              p_user_id: string
+              p_stage: string
+              p_iteration_number: number
+              p_actual_prompt_sent: string
+              p_content_storage_bucket: string
+              p_content_storage_path: string
+              p_content_mime_type: string
+              p_content_size_bytes: number
+              p_raw_response_storage_path: string
+              p_tokens_used_input: number
+              p_tokens_used_output: number
+              p_processing_time_ms: number
+              p_citations: Json
+              p_target_contribution_id: string
+              p_edit_version: number
+              p_is_latest_edit: boolean
+              p_original_model_contribution_id: string
+              p_error_details: string
+              p_model_id: string
+              p_contribution_type: string
+            }
+          | {
+              p_original_contribution_id: string
+              p_session_id: string
+              p_user_id: string
+              p_stage: string
+              p_iteration_number: number
+              p_storage_bucket: string
+              p_storage_path: string
+              p_mime_type: string
+              p_size_bytes: number
+              p_raw_response_storage_path: string
+              p_tokens_used_input: number
+              p_tokens_used_output: number
+              p_processing_time_ms: number
+              p_citations: Json
+              p_target_contribution_id: string
+              p_edit_version: number
+              p_is_latest_edit: boolean
+              p_original_model_contribution_id: string
+              p_error_details: string
+              p_model_id: string
+              p_contribution_type: string
+            }
+        Returns: string
+      }
     }
     Enums: {
+      dialectic_stage_enum:
+        | "THESIS"
+        | "ANTITHESIS"
+        | "SYNTHESIS"
+        | "PARENTHESIS"
+        | "PARALYSIS"
       org_token_usage_policy_enum: "member_tokens" | "organization_tokens"
       user_role: "user" | "admin"
     }
@@ -1031,6 +1762,13 @@ export const Constants = {
   },
   public: {
     Enums: {
+      dialectic_stage_enum: [
+        "THESIS",
+        "ANTITHESIS",
+        "SYNTHESIS",
+        "PARENTHESIS",
+        "PARALYSIS",
+      ],
       org_token_usage_policy_enum: ["member_tokens", "organization_tokens"],
       user_role: ["user", "admin"],
     },

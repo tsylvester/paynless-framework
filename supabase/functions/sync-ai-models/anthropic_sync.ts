@@ -1,13 +1,14 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { anthropicAdapter } from '../_shared/ai_service/anthropic_adapter.ts'; // Import specific adapter
-import type { ProviderModelInfo, AiModelExtendedConfig } from '../_shared/types.ts';
+import { AnthropicAdapter } from '../_shared/ai_service/anthropic_adapter.ts'; // Import AnthropicAdapter class
+import type { ProviderModelInfo, ILogger } from '../_shared/types.ts'; // Added ILogger
+import type { AiModelExtendedConfig } from '../_shared/types.ts';
 import { getCurrentDbModels, type SyncResult, type DbAiProvider } from './index.ts'; // Import shared helper and types from main index
 import type { Json } from '../types_db.ts'; // Added import
 
 const PROVIDER_NAME = 'anthropic';
 
 // Helper function to create a default AiModelExtendedConfig for Anthropic models
-function createDefaultAnthropicConfig(modelApiIdentifier: string): AiModelExtendedConfig {
+export function createDefaultAnthropicConfig(modelApiIdentifier: string): AiModelExtendedConfig {
   const modelId = modelApiIdentifier.toLowerCase(); // Normalize to lowercase for easier matching
   const contextWindow = 200000; // Standard for current Claude 3 & 3.5 models
   let hardCapOutput = 4096;   // Default, will be overridden for specific models
@@ -49,15 +50,19 @@ function createDefaultAnthropicConfig(modelApiIdentifier: string): AiModelExtend
     // contextWindow and hardCapOutput remain their initial defaults
   }
 
+  // For Anthropic, token counting is typically handled via their API or specific libraries.
+  // 'claude_tokenizer' is a placeholder for a more specific strategy if one becomes standard.
+  const tokenizationStrategy: AiModelExtendedConfig['tokenization_strategy'] = {
+    type: 'claude_tokenizer', 
+  };
+
   return {
+    api_identifier: modelApiIdentifier, // Ensure api_identifier is returned
     input_token_cost_rate: inputCostRate,
     output_token_cost_rate: outputCostRate,
     context_window_tokens: contextWindow,
     hard_cap_output_tokens: hardCapOutput, // This is our application's hard cap for generation
-    tokenization_strategy: {
-      type: 'provider_specific_api', // Anthropic counts tokens via its API
-      api_identifier_for_tokenization: modelApiIdentifier, // Pass the model ID for potential future use by a counter
-    },
+    tokenization_strategy: tokenizationStrategy,
     provider_max_input_tokens: contextWindow, // For Anthropic, context window is effectively max input
     provider_max_output_tokens: hardCapOutput, // Anthropic's stated max output for the model
   };
@@ -81,7 +86,16 @@ export interface SyncAnthropicDeps {
 
 // Default dependencies using actual implementations
 export const defaultSyncAnthropicDeps: SyncAnthropicDeps = {
-  listProviderModels: anthropicAdapter.listModels,
+  listProviderModels: async (apiKey: string): Promise<ProviderModelInfo[]> => {
+    const logger: ILogger = {
+      debug: (...args: unknown[]) => console.debug('[SyncAnthropic:AnthropicAdapter]', ...args),
+      info: (...args: unknown[]) => console.info('[SyncAnthropic:AnthropicAdapter]', ...args),
+      warn: (...args: unknown[]) => console.warn('[SyncAnthropic:AnthropicAdapter]', ...args),
+      error: (...args: unknown[]) => console.error('[SyncAnthropic:AnthropicAdapter]', ...args),
+    };
+    const adapter = new AnthropicAdapter(apiKey, logger);
+    return adapter.listModels();
+  },
   getCurrentDbModels: getCurrentDbModels,
   log: console.log,
   error: console.error,

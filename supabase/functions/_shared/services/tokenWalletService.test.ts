@@ -2112,4 +2112,379 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
         testUserProfileId = null;
     }
   });
+
+  // --- End of tests for getWalletForContext ---
+
+  // --- Tests for getWalletByIdAndUser ---
+
+  await t.step("getWalletByIdAndUser: successfully retrieves current user's own wallet by ID", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    let userWallet: TokenWallet | null = null;
+    const stepName = "getWalletByIdAndUser_self";
+    try {
+      userWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(userWallet, "User wallet should be created for setup.");
+      walletsToCleanup.push(userWallet.walletId);
+
+      const fetchedWallet = await tokenWalletService.getWalletByIdAndUser(userWallet.walletId, testUserProfileId!);
+      assertExists(fetchedWallet, "Fetched wallet should exist.");
+      assertEquals(fetchedWallet.walletId, userWallet.walletId);
+      assertEquals(fetchedWallet.userId, testUserProfileId);
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("getWalletByIdAndUser: successfully retrieves an org wallet by ID if user is admin", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    let orgWallet: TokenWallet | null = null;
+    const stepName = "getWalletByIdAndUser_org_admin";
+    const orgId = await createOrgAndMakeUserAdmin("GWBUOrgAdmin", supabaseAdminClient, testUserProfileId!, orgsToCleanup);
+    try {
+      orgWallet = await tokenWalletService.getWalletForContext(testUserProfileId!, orgId); // Get the auto-created org wallet
+      assertExists(orgWallet, "Org wallet should be created/fetched for setup.");
+      walletsToCleanup.push(orgWallet.walletId);
+
+      const fetchedWallet = await tokenWalletService.getWalletByIdAndUser(orgWallet.walletId, testUserProfileId!);
+      assertExists(fetchedWallet, "Fetched org wallet should exist for admin.");
+      assertEquals(fetchedWallet.walletId, orgWallet.walletId);
+      assertEquals(fetchedWallet.organizationId, orgId);
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("getWalletByIdAndUser: (RLS) returns null for another user's personal wallet", async () => {
+    assertExists(testUserProfileId, "Original test user profile ID must exist.");
+    let otherUserWallet: TokenWallet | null = null;
+    let secondUserFullCtx: SecondUserFullContext | null = null;
+    const stepName = "getWalletByIdAndUser_RLS_other_user_personal";
+
+    try {
+      // 1. Create another user and their wallet
+      secondUserFullCtx = await setupSecondUserContext(supabaseAdminClient);
+      assertExists(secondUserFullCtx.user.id, "Second user ID must exist.");
+      // Create wallet for the second user using *their* service instance or an admin one
+      otherUserWallet = await secondUserFullCtx.service.createWallet(secondUserFullCtx.user.id);
+      assertExists(otherUserWallet, "Second user's wallet should be created.");
+      walletsToCleanup.push(otherUserWallet.walletId); // Add to cleanup
+
+      // 2. Original authenticated user (tokenWalletService) tries to fetch otherUser\'s wallet
+      const fetchedWallet = await tokenWalletService.getWalletByIdAndUser(otherUserWallet.walletId, testUserProfileId!);
+      assertEquals(fetchedWallet, null, "Should return null when fetching another user's personal wallet by ID.");
+      
+      // 2.1 Original authenticated user (tokenWalletService) tries to fetch otherUser\'s wallet using *other user's ID in call*
+      const fetchedWalletAttempt2 = await tokenWalletService.getWalletByIdAndUser(otherUserWallet.walletId, secondUserFullCtx.user.id);
+      assertEquals(fetchedWalletAttempt2, null, "Should return null when fetching another user's personal wallet by ID, even if their ID is passed.");
+
+    } finally {
+      if (secondUserFullCtx?.user.id) {
+        await supabaseAdminClient.auth.admin.deleteUser(secondUserFullCtx.user.id);
+      }
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("getWalletByIdAndUser: (RLS) returns null for org wallet if user is member but not admin", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    let orgWallet: TokenWallet | null = null;
+    let secondUserFullCtx: SecondUserFullContext | null = null; // This will be the non-admin member
+    const stepName = "getWalletByIdAndUser_RLS_org_member_not_admin";
+    
+    // 1. Create org, add original testUser as ADMIN
+    const orgId = await createOrgAndMakeUserAdmin("GWBUOrgNotAdmin", supabaseAdminClient, testUserProfileId!, orgsToCleanup);
+    orgWallet = await tokenWalletService.getWalletForContext(testUserProfileId!, orgId); // Admin fetches/creates it
+    assertExists(orgWallet, "Org wallet for RLS test should be fetched/created by admin.");
+    walletsToCleanup.push(orgWallet.walletId);
+
+    try {
+      // 2. Create a second user and add them as a non-admin 'member' to the org
+      secondUserFullCtx = await setupSecondUserContext(supabaseAdminClient);
+      await supabaseAdminClient.from('organization_members').insert({
+        organization_id: orgId,
+        user_id: secondUserFullCtx.user.id,
+        role: 'member', // Non-admin role
+        status: 'active',
+      });
+
+      // 3. Second user (non-admin member) attempts to get org wallet using *their* service and *their* ID
+      const fetchedWallet = await secondUserFullCtx.service.getWalletByIdAndUser(orgWallet.walletId, secondUserFullCtx.user.id);
+      assertEquals(fetchedWallet, null, "Should return null for org wallet when user is member but not admin.");
+    } finally {
+      if (secondUserFullCtx?.user.id) {
+        await supabaseAdminClient.auth.admin.deleteUser(secondUserFullCtx.user.id);
+      }
+      await cleanupStepData(stepName);
+    }
+  });
+  
+  await t.step("getWalletByIdAndUser: (RLS) returns null for org wallet if user is not a member", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    let orgWallet: TokenWallet | null = null;
+    let secondUserFullCtx: SecondUserFullContext | null = null; // This user will NOT be a member
+    const stepName = "getWalletByIdAndUser_RLS_org_not_member";
+
+    // 1. Create org, add original testUser as ADMIN
+    const orgId = await createOrgAndMakeUserAdmin("GWBUOrgNotMember", supabaseAdminClient, testUserProfileId!, orgsToCleanup);
+    orgWallet = await tokenWalletService.getWalletForContext(testUserProfileId!, orgId); // Admin fetches/creates it
+    assertExists(orgWallet, "Org wallet for RLS test (not member) should be fetched/created by admin.");
+    walletsToCleanup.push(orgWallet.walletId);
+    
+    try {
+      // 2. Create a second user (who will NOT be added to the org)
+      secondUserFullCtx = await setupSecondUserContext(supabaseAdminClient);
+
+      // 3. Second user (not a member) attempts to get org wallet using *their* service and *their* ID
+      const fetchedWallet = await secondUserFullCtx.service.getWalletByIdAndUser(orgWallet.walletId, secondUserFullCtx.user.id);
+      assertEquals(fetchedWallet, null, "Should return null for org wallet when user is not a member.");
+    } finally {
+      if (secondUserFullCtx?.user.id) {
+        await supabaseAdminClient.auth.admin.deleteUser(secondUserFullCtx.user.id);
+      }
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("getWalletByIdAndUser: returns null for non-existent (valid UUID) wallet ID", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    const nonExistentWalletId = crypto.randomUUID();
+    const fetchedWallet = await tokenWalletService.getWalletByIdAndUser(nonExistentWalletId, testUserProfileId!);
+    assertEquals(fetchedWallet, null, "Should return null for a non-existent wallet ID.");
+  });
+
+  await t.step("getWalletByIdAndUser: returns null for invalidly formatted wallet ID string", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    const invalidWalletId = "this-is-not-a-uuid";
+    const fetchedWallet = await tokenWalletService.getWalletByIdAndUser(invalidWalletId, testUserProfileId!);
+    assertEquals(fetchedWallet, null, "Should return null for an invalidly formatted wallet ID.");
+  });
+
+  // --- End of tests for getWalletByIdAndUser ---
+
+  // --- Tests for getBalance ---
+  await t.step("getBalance: successfully retrieves the balance for an existing user wallet", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    let userWallet: TokenWallet | null = null;
+    const stepName = "getBalance_user_existing";
+    try {
+      userWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(userWallet, "User wallet should be created for setup.");
+      walletsToCleanup.push(userWallet.walletId);
+
+      const generatedPaymentTxId = crypto.randomUUID();
+      const creditAmount = '12345';
+
+      // Insert a dummy payment_transactions record
+      const { error: paymentTxError } = await supabaseAdminClient // Changed to supabaseAdminClient
+        .from('payment_transactions')
+        .insert({
+          id: generatedPaymentTxId,
+          target_wallet_id: userWallet.walletId,
+          payment_gateway_id: 'TEST_GATEWAY_GETBALANCE_USER',
+          tokens_to_award: parseInt(creditAmount),
+          status: 'COMPLETED', // Changed to uppercase
+          user_id: testUserProfileId!,
+        });
+      assertEquals(paymentTxError, null, `Failed to insert dummy payment transaction: ${paymentTxError?.message}`);
+
+      await tokenWalletService.recordTransaction({
+        walletId: userWallet.walletId,
+        type: 'CREDIT_PURCHASE',
+        amount: creditAmount,
+        recordedByUserId: testUserProfileId!,
+        notes: "Initial credit for getBalance test",
+        idempotencyKey: crypto.randomUUID(),
+        paymentTransactionId: generatedPaymentTxId, // Use the same UUID
+      });
+
+      // This will initially fail as getBalance is not implemented
+      const balance = await tokenWalletService.getBalance(userWallet.walletId);
+      assertEquals(balance, creditAmount);
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("getBalance: successfully retrieves the balance for an existing organization wallet (user is admin)", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    let orgWallet: TokenWallet | null = null;
+    const stepName = "getBalance_org_existing";
+    const orgId = await createOrgAndMakeUserAdmin("GetBalanceOrg", supabaseAdminClient, testUserProfileId!, orgsToCleanup);
+    try {
+      orgWallet = await tokenWalletService.getWalletForContext(testUserProfileId!, orgId);
+      assertExists(orgWallet, "Org wallet should be created/fetched for setup.");
+      walletsToCleanup.push(orgWallet.walletId);
+
+      const generatedPaymentTxId = crypto.randomUUID();
+      const creditAmount = '54321';
+
+      // Insert a dummy payment_transactions record
+      const { error: paymentTxError } = await supabaseAdminClient // Changed to supabaseAdminClient
+        .from('payment_transactions')
+        .insert({
+          id: generatedPaymentTxId,
+          target_wallet_id: orgWallet.walletId,
+          payment_gateway_id: 'TEST_GATEWAY_GETBALANCE_ORG',
+          tokens_to_award: parseInt(creditAmount),
+          status: 'COMPLETED', // Changed to uppercase
+          user_id: testUserProfileId!, // Assuming the admin user initiates this for the org
+          organization_id: orgId, // Link to the organization
+        });
+      assertEquals(paymentTxError, null, `Failed to insert dummy payment transaction for org: ${paymentTxError?.message}`);
+
+      await tokenWalletService.recordTransaction({
+        walletId: orgWallet.walletId,
+        type: 'CREDIT_PURCHASE',
+        amount: creditAmount,
+        recordedByUserId: testUserProfileId!, // Assuming admin performs this for the org
+        notes: "Initial credit for org getBalance test",
+        idempotencyKey: crypto.randomUUID(),
+        paymentTransactionId: generatedPaymentTxId, // Use the same UUID
+      });
+
+      const balance = await tokenWalletService.getBalance(orgWallet.walletId);
+      assertEquals(balance, creditAmount);
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("getBalance: returns '0' for a newly created user wallet", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    let userWallet: TokenWallet | null = null;
+    const stepName = "getBalance_user_new";
+    try {
+      userWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(userWallet, "User wallet should be created for setup.");
+      walletsToCleanup.push(userWallet.walletId);
+
+      const balance = await tokenWalletService.getBalance(userWallet.walletId);
+      assertEquals(balance, '0');
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("getBalance: returns '0' for a newly created organization wallet", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    let orgWallet: TokenWallet | null = null;
+    const stepName = "getBalance_org_new";
+    const orgId = await createOrgAndMakeUserAdmin("GetBalanceOrgNew", supabaseAdminClient, testUserProfileId!, orgsToCleanup);
+    try {
+      orgWallet = await tokenWalletService.getWalletForContext(testUserProfileId!, orgId);
+      assertExists(orgWallet, "Org wallet should be created/fetched for setup.");
+      walletsToCleanup.push(orgWallet.walletId);
+
+      const balance = await tokenWalletService.getBalance(orgWallet.walletId);
+      assertEquals(balance, '0');
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("getBalance: returns an error if the wallet ID does not exist", async () => {
+    const nonExistentWalletId = crypto.randomUUID();
+    // Expecting getBalance to throw an error for a non-existent wallet
+    await assertRejects(
+      async () => { await tokenWalletService.getBalance(nonExistentWalletId); },
+      Error, // Or a more specific error type if defined later
+      "Wallet not found" // Or similar error message
+    );
+  });
+
+  await t.step("getBalance: (RLS) fails to retrieve/returns error for another user's wallet", async () => {
+    assertExists(testUserProfileId, "Original test user profile ID must exist.");
+    let originalUserWallet: TokenWallet | null = null;
+    let secondUserFullCtx: SecondUserFullContext | null = null;
+    const stepName = "getBalance_RLS_other_user";
+
+    try {
+      originalUserWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(originalUserWallet, "Original user's wallet should be created.");
+      walletsToCleanup.push(originalUserWallet.walletId);
+
+      secondUserFullCtx = await setupSecondUserContext(supabaseAdminClient);
+      
+      await assertRejects(
+        async () => { await secondUserFullCtx!.service.getBalance(originalUserWallet!.walletId); },
+        Error, // Or specific error due to RLS / not found
+        "Wallet not found" // RLS might make it appear as 'not found' to the other user
+      );
+    } finally {
+      if (secondUserFullCtx?.user.id) {
+        await supabaseAdminClient.auth.admin.deleteUser(secondUserFullCtx.user.id);
+      }
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("getBalance: (RLS) fails/error for an org wallet if user is not admin", async () => {
+    assertExists(testUserProfileId, "Original test user profile ID must exist.");
+    let orgWallet: TokenWallet | null = null;
+    let secondUserFullCtx: SecondUserFullContext | null = null;
+    const stepName = "getBalance_RLS_org_not_admin";
+
+    // 1. Main user (admin) creates an org and its wallet
+    const orgId = await createOrgAndMakeUserAdmin("GetBalanceOrgRLS", supabaseAdminClient, testUserProfileId!, orgsToCleanup);
+    orgWallet = await tokenWalletService.getWalletForContext(testUserProfileId!, orgId);
+    assertExists(orgWallet, "Org wallet should be created/fetched by admin.");
+    walletsToCleanup.push(orgWallet.walletId);
+
+    try {
+      // 2. Create a second user (who will not be an admin of this org)
+      secondUserFullCtx = await setupSecondUserContext(supabaseAdminClient);
+      
+      // 3. Second user attempts to get balance (should fail due to RLS)
+      await assertRejects(
+        async () => { await secondUserFullCtx!.service.getBalance(orgWallet!.walletId); },
+        Error,
+        "Wallet not found" // RLS denial should appear as not found
+      );
+    } finally {
+      if (secondUserFullCtx?.user.id) {
+        await supabaseAdminClient.auth.admin.deleteUser(secondUserFullCtx.user.id);
+      }
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("getBalance: (Input Validation) returns an error if wallet ID is invalid format", async () => {
+    const invalidWalletId = "this-is-not-a-uuid";
+    await assertRejects(
+      async () => { await tokenWalletService.getBalance(invalidWalletId); },
+      Error, // Or a specific input validation error type
+      "Invalid wallet ID format"
+    );
+  });
+
+  await t.step("getBalance: successfully retrieves a very large balance correctly as a string", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    let userWallet: TokenWallet | null = null;
+    const stepName = "getBalance_large_amount";
+    const veryLargeAmount = '9999999999999999999'; // Max 19 digits for NUMERIC(19,0)
+    try {
+      userWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(userWallet, "User wallet should be created for setup.");
+      walletsToCleanup.push(userWallet.walletId);
+      
+      // Use admin client to directly call the RPC for a large credit adjustment.
+      const { error: rpcError } = await supabaseAdminClient.rpc('record_token_transaction', {
+        p_wallet_id: userWallet.walletId,
+        p_transaction_type: 'CREDIT_ADJUSTMENT',
+        p_input_amount_text: veryLargeAmount,
+        p_recorded_by_user_id: testUserProfileId!, 
+        p_notes: 'Test credit of very large amount',
+        p_idempotency_key: `idem-large-${crypto.randomUUID()}`,
+        p_payment_transaction_id: undefined
+      });
+      assertEquals(rpcError, null, `RPC call for large credit failed: ${rpcError?.message}`);
+
+      const balance = await tokenWalletService.getBalance(userWallet.walletId);
+      assertEquals(balance, veryLargeAmount);
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  // --- End of tests for getBalance ---
 }); 

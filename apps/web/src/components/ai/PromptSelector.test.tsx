@@ -5,9 +5,9 @@ import type { SystemPrompt, AiStore } from '@paynless/types';
 import { PromptSelector } from './PromptSelector';
 import { 
   mockedUseAiStoreHookLogic,
-  mockSetAiState,
+  mockSetState,
   resetAiStoreMock,
-  internalMockAiGetState, // To access action spies like setSelectedPrompt
+  getAiStoreState, // Changed from internalMockAiGetState to getAiStoreState
   mockSetAvailablePrompts // If we want to set prompts via the mock's specific utility
 } from '../../mocks/aiStore.mock'; // Adjusted path
 
@@ -35,14 +35,53 @@ vi.mock('@paynless/utils', () => ({
 // const mockSetSelectedPrompt = vi.fn(); // Removed, use spy from shared mock
 
 const mockAvailablePromptsData: SystemPrompt[] = [
-  { id: 'prompt-1', name: 'General Assistant', prompt_text: 'You are a helpful assistant.', created_at: '2023-01-01T00:00:00Z', updated_at: '2023-01-01T00:00:00Z', is_active: true },
-  { id: 'prompt-2', name: 'Code Helper', prompt_text: 'You are an expert programmer.', created_at: '2023-01-01T00:00:00Z', updated_at: '2023-01-01T00:00:00Z', is_active: true },
-  { id: 'prompt-3', name: 'Creative Writer', prompt_text: 'Help me write a story.', created_at: '2023-01-01T00:00:00Z', updated_at: '2023-01-01T00:00:00Z', is_active: true },
+  { 
+    id: 'prompt-1', 
+    name: 'General Assistant', 
+    prompt_text: 'You are a helpful assistant.', 
+    created_at: '2023-01-01T00:00:00Z', 
+    updated_at: '2023-01-01T00:00:00Z', 
+    is_active: true,
+    context: null,
+    description: null,
+    is_stage_default: false,
+    stage_association: null,
+    variables_required: {},
+    version: 1,
+  },
+  { 
+    id: 'prompt-2', 
+    name: 'Code Helper', 
+    prompt_text: 'You are an expert programmer.', 
+    created_at: '2023-01-01T00:00:00Z', 
+    updated_at: '2023-01-01T00:00:00Z', 
+    is_active: true,
+    context: null,
+    description: null,
+    is_stage_default: false,
+    stage_association: null,
+    variables_required: {},
+    version: 1,
+  },
+  { 
+    id: 'prompt-3', 
+    name: 'Creative Writer', 
+    prompt_text: 'Help me write a story.', 
+    created_at: '2023-01-01T00:00:00Z', 
+    updated_at: '2023-01-01T00:00:00Z', 
+    is_active: true,
+    context: null,
+    description: null,
+    is_stage_default: false,
+    stage_association: null,
+    variables_required: {},
+    version: 1,
+  },
 ];
 
 describe('PromptSelector', () => {
   const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
-  let storeActions: ReturnType<typeof internalMockAiGetState>; // To hold spies
+  let storeActions: ReturnType<typeof getAiStoreState>; // Changed type to use getAiStoreState
 
   beforeEach(() => {
     vi.clearAllMocks(); // Still useful
@@ -52,7 +91,7 @@ describe('PromptSelector', () => {
     vi.mocked(useAiStore).mockImplementation(mockedUseAiStoreHookLogic);
 
     // Initialize storeActions for easy access to spies, after reset
-    storeActions = internalMockAiGetState(); 
+    storeActions = getAiStoreState(); 
     HTMLElement.prototype.scrollIntoView = vi.fn(); // Mock scrollIntoView
 
     // Ensure setSelectedPrompt is a spy before each test, if not already by resetAiStoreMock
@@ -77,7 +116,7 @@ describe('PromptSelector', () => {
       mockSetAvailablePrompts(storeStateOverrides.availablePrompts);
     }
     // Set the rest of the state
-    mockSetAiState(storeStateOverrides); 
+    mockSetState(storeStateOverrides); 
     
     // The useAiStore mock implementation is already set at the top level vi.mock
     return render(<PromptSelector {...props} />);

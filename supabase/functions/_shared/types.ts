@@ -3,9 +3,7 @@
 // Types directly related to DB tables should be imported from ../types_db.ts
 import type { Database, Json } from '../types_db.ts';
 import type { handleCorsPreflightRequest, createSuccessResponse, createErrorResponse } from './cors-headers.ts';
-import { createClient, SupabaseClient } from "npm:@supabase/supabase-js";
-import type { Spy } from "jsr:@std/testing@0.225.1/mock";
-import type { User as SupabaseUser } from "npm:@supabase/supabase-js";
+import { createClient, SupabaseClient, User } from "npm:@supabase/supabase-js";
 import { Tables } from '../types_db.ts';
 import type { ITokenWalletService } from './types/tokenWallet.types.ts';
 // Import MessageForTokenCounting from the centralized location AT THE TOP
@@ -148,6 +146,7 @@ export interface ChatApiRequest {
   providerId: string; // uuid for ai_providers table
   promptId: string;   // uuid for system_prompts table, or '__none__'
   chatId?: string;   // uuid, optional for new chats
+  walletId?: string; // uuid, optional for specific wallet selection - ADDED
   selectedMessages?: { // User-selected messages for context
     role: 'system' | 'user' | 'assistant';
     content: string;
@@ -322,7 +321,7 @@ export interface AiModelExtendedConfig {
   output_token_cost_rate: number | null; // Cost per 1000 output tokens, can be null from DB
   
   tokenization_strategy: 
-    | { type: 'tiktoken'; tiktoken_encoding_name: TiktokenEncoding; tiktoken_model_name_for_rules_fallback?: TiktokenModelForRules; } 
+    | { type: 'tiktoken'; tiktoken_encoding_name: TiktokenEncoding; tiktoken_model_name_for_rules_fallback?: TiktokenModelForRules; is_chatml_model?: boolean; api_identifier_for_tokenization?: string; } 
     | { type: 'rough_char_count'; chars_per_token_ratio?: number; }
     | { type: 'claude_tokenizer'; } // Placeholder for Anthropic's official tokenizer
     | { type: 'google_gemini_tokenizer'; } // Placeholder for Google's official tokenizer
@@ -340,11 +339,8 @@ export interface AiModelExtendedConfig {
   max_context_window_tokens?: number; // Duplicates context_window_tokens? Consolidate if same meaning.
   notes?: string;
 
-  // Optional: Provider-returned limits (can be synced automatically if API provides them)
-  // These seem to overlap with hard_cap_output_tokens and context_window_tokens above.
-  // Let's keep the ones defined initially for AiModelConfig (lines 300-301) if they are distinct.
-  // provider_max_input_tokens?: number; // from the other AiModelConfig def
-  // provider_max_output_tokens?: number; // from the other AiModelConfig def
+  provider_max_input_tokens?: number; 
+  provider_max_output_tokens?: number; 
 
   // Optional: Default parameters for the model (also from other AiModelConfig def)
   default_temperature?: number;
@@ -384,97 +380,6 @@ export interface ChatHandlerDeps {
   supabaseClient?: SupabaseClient; // Added for test overrides
 }
 
-// --- Interfaces for Mock Supabase Client (for testing) ---
-
-export type User = SupabaseUser;
-
-export interface IMockQueryBuilder {
-  select: (columns?: string) => IMockQueryBuilder;
-  insert: (data: unknown[] | object) => IMockQueryBuilder;
-  update: (data: object) => IMockQueryBuilder;
-  delete: () => IMockQueryBuilder;
-  upsert: (data: unknown[] | object, options?: { onConflict?: string, ignoreDuplicates?: boolean }) => IMockQueryBuilder;
-
-  // Filtering
-  eq: (column: string, value: unknown) => IMockQueryBuilder;
-  neq: (column: string, value: unknown) => IMockQueryBuilder;
-  gt: (column: string, value: unknown) => IMockQueryBuilder;
-  gte: (column: string, value: unknown) => IMockQueryBuilder;
-  lt: (column: string, value: unknown) => IMockQueryBuilder;
-  lte: (column: string, value: unknown) => IMockQueryBuilder;
-  like: (column: string, pattern: string) => IMockQueryBuilder;
-  ilike: (column: string, pattern: string) => IMockQueryBuilder;
-  is: (column: string, value: 'null' | 'not null' | 'true' | 'false') => IMockQueryBuilder;
-  in: (column: string, values: unknown[]) => IMockQueryBuilder;
-  contains: (column: string, value: string | string[] | object) => IMockQueryBuilder;
-  containedBy: (column: string, value: string | string[] | object) => IMockQueryBuilder;
-  rangeGt: (column: string, range: string) => IMockQueryBuilder;
-  rangeGte: (column: string, range: string) => IMockQueryBuilder;
-  rangeLt: (column: string, range: string) => IMockQueryBuilder;
-  rangeLte: (column: string, range: string) => IMockQueryBuilder;
-  rangeAdjacent: (column: string, range: string) => IMockQueryBuilder;
-  overlaps: (column: string, value: string | string[]) => IMockQueryBuilder;
-  textSearch: (column: string, query: string, options?: { config?: string, type?: 'plain' | 'phrase' | 'websearch' }) => IMockQueryBuilder;
-  match: (query: object) => IMockQueryBuilder;
-  or: (filters: string, options?: { referencedTable?: string }) => IMockQueryBuilder;
-  filter: (column: string, operator: string, value: unknown) => IMockQueryBuilder;
-  not: (column: string, operator: string, value: unknown) => IMockQueryBuilder;
-
-  // Modifiers
-  order: (column: string, options?: { ascending?: boolean, nullsFirst?: boolean, referencedTable?: string }) => IMockQueryBuilder;
-  limit: (count: number, options?: { referencedTable?: string }) => IMockQueryBuilder;
-  range: (from: number, to: number, options?: { referencedTable?: string }) => IMockQueryBuilder;
-
-  // Terminators
-  single: () => Promise<{ data: object | null; error: Error | null; count: number | null; status: number; statusText: string; }>;
-  maybeSingle: () => Promise<{ data: object | null; error: Error | null; count: number | null; status: number; statusText: string; }>;
-  then: (
-    onfulfilled?: ((value: { data: unknown[] | null; error: Error | null; count: number | null; status: number; statusText: string; }) => unknown | PromiseLike<unknown>) | null | undefined, 
-    onrejected?: ((reason: unknown) => unknown | PromiseLike<unknown>) | null | undefined
-  ) => Promise<unknown>; 
-  returns: () => IMockQueryBuilder;
-  methodSpies: { [key: string]: Spy<(...args: unknown[]) => unknown> };
-}
-
-export interface IMockSupabaseAuth {
-  getUser: () => Promise<{ data: { user: User | null }; error: Error | null }>;
-}
-
-export interface IMockSupabaseClient {
-  from: (tableName: string) => IMockQueryBuilder;
-  auth: IMockSupabaseAuth; 
-  rpc: (name: string, params?: object, options?: { head?: boolean, count?: 'exact' | 'planned' | 'estimated' }) => Promise<{ data: unknown | null; error: Error | null; count: number | null; status: number; statusText: string; }>;
-  getLatestBuilder(tableName: string): IMockQueryBuilder | undefined;
-  getHistoricBuildersForTable(tableName: string): IMockQueryBuilder[] | undefined;
-  clearAllTrackedBuilders(): void;
-  getSpiesForTableQueryMethod: (tableName: string, methodName: keyof IMockQueryBuilder, callIndex?: number) => Spy | undefined;
-}
-
-export interface IMockClientSpies {
-  auth: {
-    getUserSpy: Spy<IMockSupabaseAuth['getUser']>;
-  };
-  rpcSpy: Spy<IMockSupabaseClient['rpc']>;
-  fromSpy: Spy<IMockSupabaseClient['from']>;
-  getLatestQueryBuilderSpies: (tableName: string) => ({
-    select?: Spy<IMockQueryBuilder['select']>;
-    insert?: Spy<IMockQueryBuilder['insert']>;
-    update?: Spy<IMockQueryBuilder['update']>;
-    delete?: Spy<IMockQueryBuilder['delete']>;
-    upsert?: Spy<IMockQueryBuilder['upsert']>;
-    eq?: Spy<IMockQueryBuilder['eq']>;
-    neq?: Spy<IMockQueryBuilder['neq']>;
-    gt?: Spy<IMockQueryBuilder['gt']>;
-    gte?: Spy<IMockQueryBuilder['gte']>;
-    lt?: Spy<IMockQueryBuilder['lt']>;
-    lte?: Spy<IMockQueryBuilder['lte']>;
-    single?: Spy<IMockQueryBuilder['single']>;
-    maybeSingle?: Spy<IMockQueryBuilder['maybeSingle']>;
-    then?: Spy<IMockQueryBuilder['then']>;
-  } | undefined);
-  getHistoricQueryBuilderSpies: (tableName: string, methodName: string) => { callCount: number; callsArgs: unknown[][] } | undefined;
-}
-
 export type PerformChatRewindResult = Database['public']['Functions']['perform_chat_rewind']['Returns'];
 
 // Add this new interface
@@ -483,3 +388,26 @@ export interface TokenUsage {
   completion_tokens: number;
   total_tokens: number;
 }
+
+// Define ChatMessageRole locally for clarity if not available from shared types
+export type ChatMessageRole = 'system' | 'user' | 'assistant';
+
+// --- START: New/Standardized Interfaces ---
+
+export interface ServiceError {
+  message: string;
+  status?: number;
+  details?: string | Record<string, unknown>[];
+  code?: string;
+}
+
+export interface GetUserFnResult {
+  data: { user: User | null };
+  error: ServiceError | null;
+}
+
+export interface GetUserFn {
+  (): Promise<GetUserFnResult>;
+}
+
+// --- END: New/Standardized Interfaces ---

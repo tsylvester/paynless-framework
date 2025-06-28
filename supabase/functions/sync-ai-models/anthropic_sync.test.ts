@@ -1,25 +1,22 @@
 // Import test utilities and types
-import { assertSpyCall, assertSpyCalls, spy, stub, type Stub, type Spy } from "jsr:@std/testing@0.225.1/mock";
-import { assert, assertEquals, assertExists, assertRejects } from "jsr:@std/assert@0.225.3";
+import { assertSpyCall, assertSpyCalls, spy, type Spy } from "jsr:@std/testing@0.225.1/mock";
+import { assert, assertEquals, assertExists } from "jsr:@std/assert@0.225.3";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { type Json } from "@paynless/db-types"; // Explicitly import Json
 
 // Import the function to test AND the dependency interface
-import { syncAnthropicModels, type SyncAnthropicDeps } from "./anthropic_sync.ts"; 
+import { syncAnthropicModels, type SyncAnthropicDeps, createDefaultAnthropicConfig } from "./anthropic_sync.ts";
+import { type DbAiProvider } from "./index.ts";
 
 // No longer need to import the adapter directly for mocking
 // import { anthropicAdapter } from "../_shared/ai_service/anthropic_adapter.ts";
 
 // Import shared types and test utils
 // NOTE: getCurrentDbModels is now mocked via deps, but keep types
-import type { DbAiProvider, SyncResult } from "./index.ts"; 
 import type { ProviderModelInfo, AiModelExtendedConfig } from "../_shared/types.ts";
 import { 
     createMockSupabaseClient, 
     type MockSupabaseDataConfig,
-    // setMockFetchResponse, // No longer needed if mocking adapter directly
-    // stubFetchForTestScope, // No longer needed if mocking adapter directly
-    type MockQueryBuilderState 
 } from "../_shared/supabase.mock.ts";
 
 // Constants for Anthropic
@@ -34,6 +31,42 @@ const createMockSyncDeps = (overrides: Partial<SyncAnthropicDeps> = {}): SyncAnt
     error: spy(() => {}), // Default: no-op spy
     ...overrides,
 });
+
+// Helper to generate default Anthropic config for testing consistency
+const getDefaultAnthropicConfig = (apiIdentifier: string, overrides: Partial<AiModelExtendedConfig> = {}) => {
+    const baseConfig = createDefaultAnthropicConfig(apiIdentifier); // Use actual function
+
+    // Handle overrides, with special care for tokenization_strategy
+    const { tokenization_strategy: overrideTokenizationStrategy, ...otherOverrides } = overrides;
+
+    const mergedConfig = { // Changed to const
+        ...baseConfig,
+        ...otherOverrides, // Apply top-level overrides
+    };
+
+    if (overrideTokenizationStrategy) {
+        // Ensure mergedConfig is treated as extensible when modifying its properties
+        (mergedConfig as AiModelExtendedConfig).tokenization_strategy = {
+            ...(baseConfig.tokenization_strategy || {}), // Start with base's strategy (which should have correct type)
+            ...overrideTokenizationStrategy, // Merge overrides for tokenization_strategy
+        };
+    }
+    
+    // Ensure the type is 'claude_tokenizer' if it somehow got changed or wasn't set by base/override.
+    // The baseConfig from actualCreateDefaultAnthropicConfig should already correctly set this to 'claude_tokenizer'.
+    // This check is more of a safeguard or for if overrides change the type.
+    if (mergedConfig.tokenization_strategy?.type !== 'claude_tokenizer') {
+      // If the override changed the type, or if baseConfig was faulty (it shouldn't be)
+      // we correct it here. But we must preserve other potentially overridden strategy fields.
+      (mergedConfig as AiModelExtendedConfig).tokenization_strategy = {
+        ...(mergedConfig.tokenization_strategy || {}), // keep existing fields from override or base
+        type: 'claude_tokenizer', // Ensure type is correct
+      };
+    }
+
+
+    return mergedConfig as AiModelExtendedConfig; // Cast to AiModelExtendedConfig
+};
 
 // --- Test Suite ---
 
@@ -64,7 +97,7 @@ Deno.test("syncAnthropicModels", {
                     }
                 }
             };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, mockSupabaseConfig);
 
             // Call the function with mock deps
             const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY, mockDeps);
@@ -107,7 +140,7 @@ Deno.test("syncAnthropicModels", {
                 listProviderModels: spy(() => Promise.reject(adapterError))
             });
             
-            const { client: mockClient, spies } = createMockSupabaseClient();
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, {});
 
             // Call the function with mock deps
             const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY, mockDeps);
@@ -147,7 +180,7 @@ Deno.test("syncAnthropicModels", {
             });
 
             // Configure Supabase mock (no DB ops expected)
-            const { client: mockClient, spies } = createMockSupabaseClient();
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, {});
 
             // Call the function with mock deps
             const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY, mockDeps);
@@ -182,19 +215,19 @@ Deno.test("syncAnthropicModels", {
         try {
             // Create a realistic config that createDefaultAnthropicConfig would generate for this specific model
             const commonModelConfigObj: AiModelExtendedConfig = {
+                api_identifier: `anthropic-claude-3-opus-20240229`,
                 input_token_cost_rate: 15.0 / 1000000,
                 output_token_cost_rate: 75.0 / 1000000,
                 context_window_tokens: 200000,
                 hard_cap_output_tokens: 4096,
                 tokenization_strategy: {
-                    type: 'provider_specific_api',
-                    api_identifier_for_tokenization: `anthropic-claude-3-opus-20240229`,
+                    type: 'claude_tokenizer',
                 },
                 provider_max_input_tokens: 200000,
                 provider_max_output_tokens: 4096,
             };
             const commonModel: ProviderModelInfo = { 
-                api_identifier: `anthropic-claude-3-opus-20240229`, 
+                api_identifier: commonModelConfigObj.api_identifier, 
                 name: 'Anthropic Claude 3 Opus', 
                 description: 'Most powerful model', 
                 config: commonModelConfigObj as unknown as Json 
@@ -218,7 +251,7 @@ Deno.test("syncAnthropicModels", {
             });
 
             // Configure Supabase mock (no DB ops expected)
-            const { client: mockClient, spies } = createMockSupabaseClient();
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, {});
             
             // Call function with mock deps
             const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY, mockDeps);
@@ -261,7 +294,7 @@ Deno.test("syncAnthropicModels", {
                     }
                 }
             };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, mockSupabaseConfig);
             
             // Call function with mock deps
             const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY, mockDeps);
@@ -317,7 +350,7 @@ Deno.test("syncAnthropicModels", {
                     }
                 }
             };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, mockSupabaseConfig);
 
             const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY, mockDeps);
 
@@ -366,7 +399,7 @@ Deno.test("syncAnthropicModels", {
                     }
                 }
             };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, mockSupabaseConfig);
             
             // Call function - expect error to be caught and returned in result
             const result = await syncAnthropicModels(mockClient as any, mockApiKey, mockDeps);
@@ -434,7 +467,7 @@ Deno.test("syncAnthropicModels", {
                 getCurrentDbModels: spy(async () => [inactiveDbModel])
             });
             
-            const { client: mockClient, spies } = createMockSupabaseClient({
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, {
                  genericMockResults: { ai_providers: { update: { data: [{...inactiveDbModel, name: apiModelReactivated.name, description: apiModelReactivated.description ?? null, is_active: true, config: null /* placeholder for generated config */}], error: null, count: 1 } } }
             });
 
@@ -474,7 +507,7 @@ Deno.test("syncAnthropicModels", {
                 listProviderModels: spy(async () => mockApiModels),
                 getCurrentDbModels: spy(async () => existingDbModels)
             });
-            const { client: mockClient, spies } = createMockSupabaseClient({ 
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, { 
                 genericMockResults: { 
                     ai_providers: { 
                         update: { data: [{id: 'db-id-1', config: null, is_active: false}, {id: 'db-id-2', config: null, is_active: false}], error: null, count: 2 } 

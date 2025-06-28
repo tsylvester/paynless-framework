@@ -4,9 +4,10 @@ import {
   TokenWallet, 
   TokenWalletTransaction, 
   PaymentInitiationResult, 
-  PurchaseRequest 
+  PurchaseRequest, 
 } from '@paynless/types';
-import { createMockAiApiClient, resetMockAiApiClient, type MockedAiApiClient } from './ai.api.mock'; // Import from sibling
+import { createMockAiApiClient, resetMockAiApiClient, type MockedAiApiClient } from './ai.api.mock';
+import { createMockDialecticClient, resetMockDialecticClient, type MockDialecticApiClient } from './dialectic.api.mock';
 
 // Define the type for the object returned by api.wallet()
 export type MockWalletApiClient = {
@@ -16,14 +17,14 @@ export type MockWalletApiClient = {
 };
 
 // --- AI Client Mock Setup ---
-// Create an instance of the AI client mock. This will be returned by api.ai()
-// It's declared with 'let' so resetApiMock can re-assign it for a fresh instance.
-const mockAiClientInstance: MockedAiApiClient = createMockAiApiClient();
+let mockAiClientInstance: MockedAiApiClient = createMockAiApiClient();
+let mockDialecticClientInstance: MockDialecticApiClient = createMockDialecticClient();
 
 // Define the type for the main mocked api object
 export type MockApi = {
   wallet: ReturnType<typeof vi.fn<[], MockWalletApiClient>>;
   ai: ReturnType<typeof vi.fn<[], MockedAiApiClient>>; // Added ai client
+  dialectic: ReturnType<typeof vi.fn<[], MockDialecticApiClient>>;
 };
 
 // Create the actual mock functions for the wallet client
@@ -37,6 +38,7 @@ const mockWalletClientInstance: MockWalletApiClient = {
 export const api: MockApi = {
   wallet: vi.fn(() => mockWalletClientInstance),
   ai: vi.fn(() => mockAiClientInstance), // Ensure api.ai() returns our mock AI client instance
+  dialectic: vi.fn(() => mockDialecticClientInstance),
 };
 
 /**
@@ -49,17 +51,22 @@ export function resetApiMock() {
   mockWalletClientInstance.getWalletTransactionHistory.mockReset();
   mockWalletClientInstance.initiateTokenPurchase.mockReset();
 
-  // Reset the AI client instance using its specific reset function
-  resetMockAiApiClient(mockAiClientInstance);
-  // Optionally, to ensure absolutely no state leakage if tests improperly hold references:
-  // mockAiClientInstance = createMockAiApiClient();
+  // Re-create the mock instances to ensure they are fresh.
+  mockAiClientInstance = createMockAiApiClient();
+  resetMockAiApiClient(mockAiClientInstance); 
 
+  mockDialecticClientInstance = createMockDialecticClient();
+  resetMockDialecticClient(mockDialecticClientInstance);
+  
   // Reset the main accessor mocks
   api.wallet.mockClear();
   api.ai.mockClear();
+  api.dialectic.mockClear();
+
   // Restore the default implementations to return the (potentially recreated) instances
   api.wallet.mockImplementation(() => mockWalletClientInstance);
   api.ai.mockImplementation(() => mockAiClientInstance);
+  api.dialectic.mockImplementation(() => mockDialecticClientInstance);
 }
 
 /**
@@ -67,6 +74,7 @@ export function resetApiMock() {
  * Useful for tests to access specific mock functions like sendChatMessage.
  */
 export const getMockAiClient = (): MockedAiApiClient => mockAiClientInstance;
+export const getMockDialecticClient = (): MockDialecticApiClient => mockDialecticClientInstance;
 
 // Make sure 'api' is exported and is the mockApiObject
 // ... existing code ... 
