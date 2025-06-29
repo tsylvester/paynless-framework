@@ -531,6 +531,25 @@ export interface ProcessedResourceInfo<T extends keyof Database['public']['Table
   exportId?: string; // Added exportId
 }
 
+/**
+ * Finds a processed resource by its exportId from the results of coreInitializeTestStep.
+ * This is a convenience helper to avoid manually searching the processedResources array.
+ * @param processedResources The array returned from coreInitializeTestStep.
+ * @param exportId The exportId you are looking for.
+ * @returns The resource object from the database, or undefined if not found.
+ */
+export function findProcessedResource(
+  processedResources: ProcessedResourceInfo[],
+  exportId: string
+): (Database['public']['Tables'][keyof Database['public']['Tables']]['Row'] & { id: string }) | undefined {
+    const found = processedResources.find(p => p.exportId === exportId);
+    if (found && found.resource) {
+        // We cast to add the 'id' property confidently, as it's expected for exported resources.
+        return found.resource as Database['public']['Tables'][keyof Database['public']['Tables']]['Row'] & { id: string };
+    }
+    return undefined;
+}
+
 // --- New Helper Functions for Schema Integration Tests ---
 
 export interface TableColumnInfo {
@@ -1096,7 +1115,11 @@ export async function coreInitializeTestStep(
   const exportedResourceIds = new Map<string, string>(); // Map to store exportId -> actual_id
 
   const { userId: primaryUserId, userClient: primaryUserClient, jwt: primaryUserJwt } = await coreCreateAndSetupTestUser(userProfileProps, executionScope);
-  await coreEnsureTestUserAndWallet(primaryUserId, config.initialWalletBalance, executionScope);
+  
+  // Only create a wallet if an initial balance is specified
+  if (config.initialWalletBalance !== undefined) {
+    await coreEnsureTestUserAndWallet(primaryUserId, config.initialWalletBalance, executionScope);
+  }
 
   if (config.resources) {
     console.log("[coreInitializeTestStep] Starting to process config.resources...");

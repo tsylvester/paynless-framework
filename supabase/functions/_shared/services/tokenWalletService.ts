@@ -16,17 +16,12 @@ export class TokenWalletService implements ITokenWalletService {
   private supabaseClient: SupabaseClient<Database>;
   private supabaseAdminClient: SupabaseClient<Database>; // For operations requiring service_role
 
-  constructor(userSupabaseClient: SupabaseClient<Database>) {
+  constructor(
+    userSupabaseClient: SupabaseClient<Database>,
+    adminSupabaseClient: SupabaseClient<Database>
+    ) {
     this.supabaseClient = userSupabaseClient; // Client with user's auth context
-    // Initialize admin client - ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are in env
-    const supabaseUrl = Deno.env.get('SB_URL');
-    const serviceRoleKey = Deno.env.get('SB_SERVICE_ROLE_KEY');
-    if (!supabaseUrl || !serviceRoleKey) {
-      throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set for TokenWalletService admin operations.');
-    }
-    this.supabaseAdminClient = createClient<Database>(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false, autoRefreshToken: false } // No user session for admin client
-    });
+    this.supabaseAdminClient = adminSupabaseClient;
   }
 
   private _transformDbWalletToTokenWallet(dbData: {
@@ -360,9 +355,12 @@ export class TokenWalletService implements ITokenWalletService {
 
     const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
     if (!uuidRegex.test(walletId)) {
-      console.warn(`[TokenWalletService] Invalid walletId format for getTransactionHistory: ${walletId}`);
-      return { transactions: [], totalCount: 0 };
+      console.error(`[TokenWalletService] Invalid walletId format for getTransactionHistory: ${walletId}`);
+      throw new Error("Invalid input: walletId must be a valid UUID.");
     }
+
+    // Temporary logging to diagnose test failures
+    console.log(`[DIAGNOSTIC] Fetching count for walletId: ${walletId}`);
 
     // Fetch total count (always useful)
     const { count, error: countError } = await this.supabaseClient
@@ -375,6 +373,9 @@ export class TokenWalletService implements ITokenWalletService {
       return { transactions: [], totalCount: 0 };
     }
     const totalCount = count === null ? 0 : count;
+
+    // Temporary logging to diagnose test failures
+    console.log(`[DIAGNOSTIC] Building query for walletId: ${walletId}`);
 
     // Build query for transactions
     let query = this.supabaseClient
