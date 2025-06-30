@@ -153,6 +153,49 @@ Deno.test("Me Function (/me) Tests", async (t) => {
             assertSpyCalls(mockDeps.createSuccessResponse as Spy, 0); 
         });
 
+        await t.step("GET: missing profile (PGRST116) should create and return new profile", async () => {
+            const notFoundError = new Error("Not Found") as Error & { code: string };
+            notFoundError.code = 'PGRST116';
+            const newProfile = { id: mockUserId, first_name: null, role: 'user' };
+
+            let selectCallCount = 0;
+            const mockDeps = createMockDeps({
+                genericMockResults: { 
+                    'user_profiles': { 
+                        select: () => {
+                            selectCallCount++;
+                            // On the first call, simulate "Not Found"
+                            if (selectCallCount === 1) {
+                                return Promise.resolve({ data: null, error: notFoundError, status: 404 });
+                            }
+                            // On subsequent calls (after insert), return the new profile
+                            return Promise.resolve({ data: [newProfile], error: null, status: 200 });
+                        },
+                        // The insert call should succeed and return the new profile
+                        insert: { data: [newProfile], error: null, status: 201 }
+                    }
+                }
+            });
+
+            const req = new Request('http://example.com/me', { method: 'GET' });
+            const res = await handleMeRequest(req, mockDeps);
+            
+            assertEquals(res.status, 200);
+            const body = await res.json();
+            assertEquals(body.user.id, mockUser.id);
+            assertEquals(body.profile.id, newProfile.id);
+            assertEquals(body.profile.role, 'user');
+
+            assertSpyCall(latestSpies.auth.getUserSpy, 0);
+            const querySpies = latestSpies.getLatestQueryBuilderSpies('user_profiles');
+            assertExists(querySpies);
+            
+            assertEquals(selectCallCount, 1);
+            assertSpyCall(querySpies.insert as Spy, 0);
+            assertSpyCall(mockDeps.createSuccessResponse as Spy, 0);
+            assertSpyCalls(mockDeps.createErrorResponse as Spy, 0);
+        });
+
         // --- PUT Tests ---
          await t.step("PUT: successful profile update should return updated profile", async () => {
             const mockDeps = createMockDeps();

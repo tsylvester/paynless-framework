@@ -60,36 +60,53 @@ export async function handleMeRequest(
     switch (req.method) {
       case 'GET': {
         console.log(`[me/index.ts] Handling GET for user ${user.id}`);
-        let profileData = null;
-        let profileError = null;
-        try {
-            console.log(`[me/index.ts] Fetching profile for user ${user.id}...`);
-            const { data, error } = await supabase // supabase client is fine
-              .from('user_profiles')
-              .select('*')
-              .eq('id', user.id)
-              .single();
-            profileData = data;
-            profileError = error;
-             console.log(`[me/index.ts] Profile fetch result: data=${!!profileData}, error=${profileError?.message}`);
-        } catch (fetchErr) {
-            console.error('[me/index.ts] Exception during profile fetch:', fetchErr);
-            // Revert: Remove fetchErr argument
-            return deps.createErrorResponse("Error fetching profile data", 500, req); 
+        
+        // Fetch the user's profile
+        let { data: profileData, error: profileError } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+
+        console.log(`[me/index.ts] Initial profile fetch: data=${!!profileData}, error=${profileError?.message}`);
+
+        // If the user profile is not found (PostgREST error 'PGRST116'), create it.
+        if (profileError && profileError.code === 'PGRST116') {
+          console.log(`[me/index.ts] Profile not found for user ${user.id}. Attempting to create one.`);
+          
+          const { data: newProfile, error: insertError } = await supabase
+            .from('user_profiles')
+            .insert({
+              id: user.id,
+              first_name: user.user_metadata?.first_name || null,
+              role: 'user'
+            })
+            .select()
+            .single();
+
+          if (insertError) {
+            console.error('[me/index.ts] CRITICAL: Failed to create profile for user:', user.id, insertError);
+            // This is a critical failure, as the user cannot proceed.
+            return deps.createErrorResponse("Failed to create user profile after not finding one.", 500, req);
+          }
+
+          console.log(`[me/index.ts] Successfully created new profile for user ${user.id}.`);
+          // Replace original profile data and clear the 'not found' error.
+          profileData = newProfile;
+          profileError = null; 
+        } else if (profileError) {
+          // For any other error, return a failure response.
+          console.error('[me/index.ts] An unexpected error occurred fetching profile:', profileError);
+          return deps.createErrorResponse("Failed to fetch profile", 500, req);
         }
 
-        if (profileError) {
-          console.error('[me/index.ts] Error fetching profile:', profileError);
-           // Revert: Remove profileError argument
-          return deps.createErrorResponse("Failed to fetch profile", 500, req); 
-        }
-
-        console.log(`[me/index.ts] Profile fetch successful for user ${user.id}. Returning combined data.`);
+        console.log(`[me/index.ts] Profile ready for user ${user.id}. Returning data.`);
+        
         const responseData = {
             user: user,
-            profile: profileData || null
+            profile: profileData,
         };
-        // Add req argument
+        
         return deps.createSuccessResponse(responseData, 200, req);
       }
 
