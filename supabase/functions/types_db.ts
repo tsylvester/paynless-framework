@@ -353,6 +353,7 @@ export type Database = {
           created_at: string
           description: string | null
           id: string
+          is_enabled: boolean
           name: string
           parent_domain_id: string | null
           updated_at: string
@@ -361,6 +362,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          is_enabled?: boolean
           name: string
           parent_domain_id?: string | null
           updated_at?: string
@@ -369,6 +371,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          is_enabled?: boolean
           name?: string
           parent_domain_id?: string | null
           updated_at?: string
@@ -1633,6 +1636,10 @@ export type Database = {
               p_contribution_type: string
             }
         Returns: string
+      }
+      true_up_user: {
+        Args: { p_user_id: string }
+        Returns: undefined
       }
     }
     Enums: {

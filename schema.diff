@@ -1,0 +1,1270 @@
+diff --git a/local_schema.sql b/remote_schema.sql
+index a51caeb..4979dfa 100644
+--- a/local_schema.sql
++++ b/remote_schema.sql
+@@ -123,8 +123,7 @@ CREATE OR REPLACE FUNCTION "public"."can_select_chat"("check_chat_id" "uuid") RE
+   SELECT EXISTS (
+     SELECT 1
+     FROM public.chats c
+-    WHERE c.id = check_chat_id
+-    AND (
++    WHERE c.id = check_chat_id AND (
+       -- Case 1: Personal chat, user is the owner
+       (c.organization_id IS NULL AND c.user_id = auth.uid()) OR
+       -- Case 2: Organization chat, user is a member of that organization
+@@ -146,19 +145,13 @@ DECLARE
+ BEGIN
+     -- 1. Find user_id from email
+     SELECT id INTO target_user_id FROM auth.users WHERE email = target_email LIMIT 1;
+-
+     -- 2. If user_id found, check membership status in the target org
+     IF target_user_id IS NOT NULL THEN
+         RETURN QUERY
+-        SELECT om.status
+-        FROM public.organization_members om
+-        WHERE om.organization_id = target_org_id
+-          AND om.user_id = target_user_id
+-          AND om.status IN ('active', 'pending'); -- Check for active or pending join request
++        SELECT om.status::text FROM public.organization_members om
++        WHERE om.organization_id = target_org_id AND om.user_id = target_user_id;
+     END IF;
+-
+-    -- If user_id not found or no matching membership, return empty set
+-    RETURN;
++    -- 3. If no user or membership found, return nothing
+ END;
+ $$;
+ 
+@@ -186,29 +179,25 @@ BEGIN
+             RETURN NEW;
+         END IF;
+     END IF;
+-
+     IF TG_OP = 'DELETE' THEN
+         v_organization_id := OLD.organization_id;
+     ELSE 
+         v_organization_id := NEW.organization_id;
+     END IF;
+-
+     IF EXISTS (SELECT 1 FROM public.organizations WHERE id = v_organization_id AND deleted_at IS NOT NULL) THEN
+         IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+     END IF;
+-
+     v_is_admin_being_removed := (
+         TG_OP = 'DELETE' AND OLD.role = 'admin' AND OLD.status = 'active'
+     ) OR (
+         TG_OP = 'UPDATE' AND
+-        OLD.role = 'admin' AND OLD.status = 'active' AND
++        OLD.role = 'admin' AND
++        OLD.status = 'active' AND
+         (NEW.role <> 'admin' OR NEW.status <> 'active')
+     );
+-
+     IF NOT v_is_admin_being_removed THEN
+          IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+     END IF;
+-
+     SELECT count(*)
+     INTO v_other_admin_count
+     FROM public.organization_members om
+@@ -218,11 +207,9 @@ BEGIN
+       AND om.status = 'active'
+       AND o.deleted_at IS NULL
+       AND om.id <> OLD.id; 
+-
+     IF v_other_admin_count = 0 THEN
+         RAISE EXCEPTION 'Cannot remove or demote the last admin of organization %', v_organization_id;
+     END IF;
+-
+     IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+ END;
+ $$;
+@@ -284,22 +271,14 @@ CREATE OR REPLACE FUNCTION "public"."create_org_and_admin_member"("p_user_id" "u
+ DECLARE
+   new_org_id uuid;
+ BEGIN
+-  -- Insert the new organization
+-  INSERT INTO public.organizations (name, visibility)
+-  VALUES (p_org_name, p_org_visibility)
++  -- Create the organization
++  INSERT INTO public.organizations (name, created_by, visibility)
++  VALUES (p_org_name, p_user_id, p_org_visibility)
+   RETURNING id INTO new_org_id;
+-
+-  -- Insert the creating user as the initial admin member
+-  INSERT INTO public.organization_members (user_id, organization_id, role, status)
+-  VALUES (p_user_id, new_org_id, 'admin', 'active');
+-
+-  -- Return the new organization's ID
++  -- Create the organization member
++  INSERT INTO public.organization_members (organization_id, user_id, role, status)
++  VALUES (new_org_id, p_user_id, 'admin', 'active');
+   RETURN new_org_id;
+-EXCEPTION
+-  WHEN OTHERS THEN
+-    -- Log the error and re-raise it to ensure the transaction is rolled back
+-    RAISE WARNING 'Error in create_org_and_admin_member: SQLSTATE: %, MESSAGE: %', SQLSTATE, SQLERRM;
+-    RAISE;
+ END;
+ $$;
+ 
+@@ -324,18 +303,15 @@ BEGIN
+   SELECT user_id, organization_id INTO v_chat_owner_id, v_chat_org_id
+   FROM public.chats
+   WHERE id = p_chat_id;
+-
+   IF NOT FOUND THEN
+     RETURN 'NOT FOUND';
+   END IF;
+-
+   -- 2. Permission Check
+   IF v_chat_org_id IS NOT NULL THEN
+     -- Organization chat
+     SELECT role INTO v_user_role
+     FROM public.organization_members
+     WHERE organization_id = v_chat_org_id AND user_id = p_user_id AND status = 'active';
+-
+     IF v_user_role IS NULL OR NOT (v_user_role = 'admin' OR v_chat_owner_id = p_user_id) THEN
+       RETURN 'ORG PERMISSION DENIED';
+     END IF;
+@@ -345,13 +321,10 @@ BEGIN
+        RETURN 'PERSONAL PERMISSION DENIED';
+     END IF;
+   END IF;
+-
+   -- 3. Perform Deletions
+   DELETE FROM public.chat_messages WHERE chat_id = p_chat_id;
+   DELETE FROM public.chats WHERE id = p_chat_id;
+-
+   RETURN 'DELETED';
+-
+ END;
+ $$;
+ 
+@@ -372,18 +345,15 @@ BEGIN
+   SELECT user_id, organization_id INTO v_chat_owner_id, v_chat_org_id
+   FROM public.chats
+   WHERE id = p_chat_id;
+-
+   IF NOT FOUND THEN
+     RETURN 'NOT FOUND';
+   END IF;
+-
+   -- 2. Permission Check
+   IF v_chat_org_id IS NOT NULL THEN
+     -- Organization chat
+     SELECT role INTO v_user_role
+     FROM public.organization_members
+     WHERE organization_id = v_chat_org_id AND user_id = p_user_id AND status = 'active';
+-
+     IF NOT (v_user_role = 'admin' OR v_chat_owner_id = p_user_id) THEN
+       RETURN 'ORG PERMISSION DENIED';
+     END IF;
+@@ -393,13 +363,10 @@ BEGIN
+        RETURN 'PERSONAL PERMISSION DENIED';
+     END IF;
+   END IF;
+-
+   -- 3. Perform Deletions
+   DELETE FROM public.chat_messages WHERE chat_id = p_chat_id;
+   DELETE FROM public.chats WHERE id = p_chat_id;
+-
+   RETURN 'DELETED';
+-
+ END;
+ $$;
+ 
+@@ -415,11 +382,9 @@ BEGIN
+   IF NEW.user_id <> OLD.user_id THEN
+     RAISE EXCEPTION 'Changing the user_id of a chat is not allowed.';
+   END IF;
+-
+   IF NEW.organization_id IS DISTINCT FROM OLD.organization_id THEN
+     RAISE EXCEPTION 'Changing the organization_id of a chat is not allowed.';
+   END IF;
+-
+   RETURN NEW;
+ END;
+ $$;
+@@ -445,6 +410,23 @@ $$;
+ ALTER FUNCTION "public"."execute_sql"("query" "text") OWNER TO "postgres";
+ 
+ 
++CREATE OR REPLACE FUNCTION "public"."get_user_email"("p_user_id" "uuid") RETURNS "text"
++    LANGUAGE "plpgsql" SECURITY DEFINER
++    SET "search_path" TO ''
++    AS $$
++BEGIN
++  RETURN (SELECT email FROM auth.users WHERE id = p_user_id);
++END;
++$$;
++
++
++ALTER FUNCTION "public"."get_user_email"("p_user_id" "uuid") OWNER TO "postgres";
++
++
++COMMENT ON FUNCTION "public"."get_user_email"("p_user_id" "uuid") IS 'Retrieves a user''s email by their UUID. SECURITY DEFINER is used to bypass RLS.';
++
++
++
+ CREATE OR REPLACE FUNCTION "public"."grant_initial_free_tokens_to_user"("p_user_id" "uuid", "p_free_plan_id" "uuid") RETURNS "void"
+     LANGUAGE "plpgsql" SECURITY DEFINER
+     SET "search_path" TO ''
+@@ -516,31 +498,31 @@ CREATE OR REPLACE FUNCTION "public"."handle_member_removed"() RETURNS "trigger"
+     AS $$
+ DECLARE
+     org_name TEXT;
+-    is_org_deleted BOOLEAN;
+ BEGIN
+-    -- Check if the organization is soft-deleted (though removal might still happen)
+-    SELECT deleted_at IS NOT NULL, name
+-    INTO is_org_deleted, org_name
++    -- Only trigger when status changes from 'active' to 'removed'
++    IF OLD.status <> 'active' OR NEW.status <> 'removed' THEN
++        RETURN NULL;
++    END IF;
++    -- Get organization name
++    SELECT name INTO org_name
+     FROM public.organizations
+-    WHERE id = NEW.organization_id; -- Use NEW or OLD, should be same org
+-
++    WHERE id = NEW.organization_id;
+     IF NOT FOUND THEN
+       -- Org might be hard deleted? Or FK constraint failed?
+       -- For now, just exit gracefully if org not found.
+       RETURN NULL;
+     END IF;
+-
+-    -- Create notification for the removed user
+-    PERFORM public.create_notification_for_user(
++    -- Insert notification for the removed user
++    INSERT INTO public.notifications (user_id, type, data)
++    VALUES (
+         NEW.user_id,
+-        'org_membership_removed',
++        'org_membership_terminated',
+         jsonb_build_object(
++            'reason', 'removed_by_admin',
+             'organization_id', NEW.organization_id,
+-            'organization_name', org_name,
+-            'target_path', '/dashboard/organizations' -- General path after removal
++            'organization_name', org_name
+         )
+     );
+-
+     RETURN NULL;
+ END;
+ $$;
+@@ -555,21 +537,18 @@ CREATE OR REPLACE FUNCTION "public"."handle_member_role_change"() RETURNS "trigg
+     AS $$
+ DECLARE
+     org_name TEXT;
+-    is_org_deleted BOOLEAN;
+ BEGIN
+-    -- Check if the organization is soft-deleted
+-    SELECT deleted_at IS NOT NULL, name
+-    INTO is_org_deleted, org_name
+-    FROM public.organizations
+-    WHERE id = NEW.organization_id;
+-
+-    -- Only proceed if the organization exists and is not deleted
+-    IF NOT FOUND OR is_org_deleted THEN
++    -- Only trigger if the role has actually changed
++    IF OLD.role = NEW.role THEN
+         RETURN NULL;
+     END IF;
+-
+-    -- Create notification for the affected user
+-    PERFORM public.create_notification_for_user(
++    -- Get organization name
++    SELECT name INTO org_name
++    FROM public.organizations
++    WHERE id = NEW.organization_id;
++    -- Insert a notification for the affected user
++    INSERT INTO public.notifications (user_id, type, data)
++    VALUES (
+         NEW.user_id,
+         'org_role_changed',
+         jsonb_build_object(
+@@ -580,7 +559,6 @@ BEGIN
+             'target_path', '/dashboard/organizations/' || NEW.organization_id::text || '/settings'
+         )
+     );
+-
+     RETURN NULL;
+ END;
+ $$;
+@@ -599,14 +577,12 @@ DECLARE
+   inviter_name text;
+   full_name text;
+ BEGIN
+-  -- Find the user_id associated with the invited email
++  -- Find the user_id for the invited email
+   SELECT id INTO invited_user_id FROM auth.users WHERE email = NEW.invited_email;
+-
+-  -- Only proceed if the user exists in auth.users
++  -- If the user exists, create a notification for them
+   IF invited_user_id IS NOT NULL THEN
+     -- Get organization name
+     SELECT name INTO organization_name FROM public.organizations WHERE id = NEW.organization_id;
+-
+     -- Get inviter name (optional, use email if profile/name not found)
+     SELECT
+       TRIM(p.first_name || ' ' || p.last_name), 
+@@ -617,11 +593,9 @@ BEGIN
+     FROM auth.users u
+     LEFT JOIN public.user_profiles p ON u.id = p.id 
+     WHERE u.id = NEW.invited_by_user_id;
+-
+     IF full_name IS NOT NULL AND full_name <> '' THEN
+       inviter_name := full_name;
+     END IF;
+-
+     INSERT INTO public.notifications (user_id, type, data)
+     VALUES (
+       invited_user_id,
+@@ -642,7 +616,6 @@ BEGIN
+   ELSE
+     RAISE LOG 'Invited user with email % not found in auth.users, no notification created.', NEW.invited_email;
+   END IF;
+-
+   RETURN NEW;
+ END;
+ $$;
+@@ -664,17 +637,15 @@ DECLARE
+     org_name TEXT;
+     is_org_deleted BOOLEAN;
+ BEGIN
+-    -- Check if the organization is soft-deleted
+-    SELECT deleted_at IS NOT NULL, name
+-    INTO is_org_deleted, org_name
++    -- Get organization name and check if it's deleted
++    SELECT name, (deleted_at IS NOT NULL)
++    INTO org_name, is_org_deleted
+     FROM public.organizations
+     WHERE id = NEW.organization_id;
+-
+     -- Only proceed if the organization exists and is not deleted
+     IF NOT FOUND OR is_org_deleted THEN
+         RETURN NULL; 
+     END IF;
+-
+     -- Find all active admins of this organization
+     FOR admin_record IN
+         SELECT user_id
+@@ -683,20 +654,17 @@ BEGIN
+           AND role = 'admin'
+           AND status = 'active'
+     LOOP
+-        -- Create notification for each admin
++        -- Create a notification for each admin
+         PERFORM public.create_notification_for_user(
+             admin_record.user_id,
+-            'org_join_request',
++            'join_request',
+             jsonb_build_object(
+                 'requesting_user_id', NEW.user_id,
+                 'organization_id', NEW.organization_id,
+-                'organization_name', org_name,
+-                'membership_id', NEW.id,
+-                'target_path', '/dashboard/organizations/' || NEW.organization_id::text || '/members?action=review&memberId=' || NEW.id::text
++                'organization_name', org_name
+             )
+         );
+     END LOOP;
+-
+     RETURN NULL; 
+ END;
+ $$;
+@@ -724,7 +692,7 @@ ALTER FUNCTION "public"."handle_new_organization"() OWNER TO "postgres";
+ 
+ CREATE OR REPLACE FUNCTION "public"."handle_new_user"() RETURNS "trigger"
+     LANGUAGE "plpgsql" SECURITY DEFINER
+-    SET "search_path" TO ''
++    SET "search_path" TO 'public'
+     AS $$
+ DECLARE
+   v_user_id UUID := NEW.id;
+@@ -741,58 +709,48 @@ DECLARE
+   v_idempotency_key_grant TEXT;
+ BEGIN
+   RAISE LOG '[handle_new_user] Processing new user ID: %, Email: %', v_user_id, v_user_email;
+-
+   v_profile_first_name := v_raw_user_meta_data ->> 'first_name';
+   INSERT INTO public.user_profiles (id, role, first_name)
+   VALUES (v_user_id, 'user', v_profile_first_name)
+   ON CONFLICT (id) DO NOTHING;
+   RAISE LOG '[handle_new_user] Ensured profile for user ID: %.', v_user_id;
+-
+   INSERT INTO public.token_wallets (user_id, currency)
+   VALUES (v_user_id, 'AI_TOKEN')
+   ON CONFLICT (user_id) WHERE organization_id IS NULL
+   DO NOTHING
+   RETURNING wallet_id INTO v_target_wallet_id;
+-
+   IF v_target_wallet_id IS NULL THEN
+     SELECT wallet_id INTO v_target_wallet_id
+     FROM public.token_wallets
+     WHERE user_id = v_user_id AND organization_id IS NULL;
+   END IF;
+-
+   IF v_target_wallet_id IS NULL THEN
+     RAISE WARNING '[handle_new_user] Failed to create or find personal wallet for user ID: %. Aborting token grant.', v_user_id;
+     RETURN NEW;
+   END IF;
+   RAISE LOG '[handle_new_user] Ensured wallet ID: % for user ID: %.', v_target_wallet_id, v_user_id;
+-
+   SELECT id, tokens_to_award INTO v_free_plan_id, v_tokens_to_award
+   FROM public.subscription_plans
+   WHERE name = 'Free'
+   LIMIT 1;
+-
+   IF v_free_plan_id IS NULL THEN
+     RAISE LOG '[handle_new_user] "Free" plan not found. No initial tokens will be granted for user ID: %.', v_user_id;
+   ELSIF v_tokens_to_award IS NULL OR v_tokens_to_award <= 0 THEN
+     RAISE LOG '[handle_new_user] "Free" plan (ID: %) found, but tokens_to_award is not positive (Value: %). No initial tokens for user ID: %.', v_free_plan_id, v_tokens_to_award, v_user_id;
+   ELSE
+     RAISE LOG '[handle_new_user] "Free" plan ID: % found with % tokens to award for user ID: %.', v_free_plan_id, v_tokens_to_award, v_user_id;
+-
+     INSERT INTO public.user_subscriptions (user_id, plan_id, status, current_period_start, current_period_end)
+     VALUES (v_user_id, v_free_plan_id, 'free', NOW(), NOW() + interval '1 month')
+     ON CONFLICT (user_id)
+     DO UPDATE SET plan_id = EXCLUDED.plan_id, status = EXCLUDED.status, updated_at = NOW(), current_period_start = EXCLUDED.current_period_start, current_period_end = EXCLUDED.current_period_end
+     WHERE public.user_subscriptions.status <> 'free';
+     RAISE LOG '[handle_new_user] Ensured user % subscribed to Free plan %.', v_user_id, v_free_plan_id;
+-
+     SELECT id INTO v_system_user_id FROM auth.users WHERE email LIKE v_system_user_email_pattern ORDER BY created_at DESC LIMIT 1;
+-
+     IF v_system_user_id IS NULL THEN
+        RAISE WARNING '[handle_new_user] System user for token allocation (pattern: %) not found. Grant for user % will be recorded by the user themselves.', v_system_user_email_pattern, v_user_id;
+     END IF;
+     
+     v_idempotency_key_grant := 'initial_free_grant_' || v_user_id::text || '_' || v_free_plan_id::text;
+-
+     IF EXISTS (SELECT 1 FROM public.token_wallet_transactions WHERE wallet_id = v_target_wallet_id AND idempotency_key = v_idempotency_key_grant) THEN
+       RAISE LOG '[handle_new_user] Initial free tokens (Plan ID: %) already granted to user ID: % (Wallet: %) via idempotency key: %.', v_free_plan_id, v_user_id, v_target_wallet_id, v_idempotency_key_grant;
+     ELSE
+@@ -800,9 +758,7 @@ BEGIN
+       BEGIN
+         SELECT balance INTO v_current_wallet_balance FROM public.token_wallets WHERE wallet_id = v_target_wallet_id FOR UPDATE;
+         v_new_wallet_balance := v_current_wallet_balance + v_tokens_to_award;
+-
+         UPDATE public.token_wallets SET balance = v_new_wallet_balance, updated_at = now() WHERE public.token_wallets.wallet_id = v_target_wallet_id;
+-
+         INSERT INTO public.token_wallet_transactions (
+             wallet_id, transaction_type, amount, balance_after_txn,
+             recorded_by_user_id, related_entity_id, related_entity_type, notes, idempotency_key
+@@ -819,7 +775,6 @@ BEGIN
+       END;
+     END IF;
+   END IF;
+-
+   RETURN NEW;
+ EXCEPTION
+   WHEN OTHERS THEN
+@@ -848,7 +803,6 @@ BEGIN
+   example_admin_id := auth.uid();
+   example_requesting_user_id := '00000000-0000-0000-0000-000000000001';
+   example_org_id := '00000000-0000-0000-0000-000000000002';
+-
+   PERFORM public.create_notification_for_user(
+     example_admin_id, 
+     'join_request',
+@@ -913,7 +867,7 @@ BEGIN
+       SELECT 1
+       FROM public.organization_members om
+       WHERE om.organization_id = org_id
+-        AND om.user_id = (SELECT auth.uid())
++        AND om.user_id = auth.uid()
+         AND om.role = 'admin'
+         AND om.status = 'active'
+   );
+@@ -973,15 +927,12 @@ BEGIN
+         invited_user_id = NEW.id,
+         status = 'accepted'
+       WHERE id = invite_record.id;
+-
+       INSERT INTO public.organization_members (user_id, organization_id, role, status)
+       VALUES (NEW.id, invite_record.organization_id, invite_record.role_to_assign, 'active')
+       ON CONFLICT (user_id, organization_id) DO UPDATE 
+       SET role = EXCLUDED.role, status = 'active';
+-
+     END LOOP;
+   END IF;
+-
+   RETURN NEW;
+ END;
+ $$;
+@@ -1246,21 +1197,17 @@ BEGIN
+   SELECT current_setting('role', true) INTO effective_role;
+   SELECT rolsuper INTO is_effective_role_superuser FROM pg_roles WHERE rolname = effective_role LIMIT 1;
+   is_effective_role_superuser := COALESCE(is_effective_role_superuser, FALSE);
+-
+   current_auth_role := auth.role();
+   current_auth_uid := auth.uid()::text;
+   current_session_user := session_user;
+-
+   RAISE LOG '[restrict_invite_update_fields V3] Current User: %, Session User: %, Effective Role: %, Is Superuser: %, Auth Role: %, Auth UID: %',
+               current_user, current_session_user, effective_role, is_effective_role_superuser, current_auth_role, current_auth_uid;
+   RAISE LOG '[restrict_invite_update_fields V3] OLD.invited_user_id: %, NEW.invited_user_id: %, OLD.status: %, NEW.status: %, OLD.invited_email: %, NEW.invited_email: %',
+               OLD.invited_user_id, NEW.invited_user_id, OLD.status, NEW.status, OLD.invited_email, NEW.invited_email;
+-
+   IF effective_role IN ('service_role', 'supabase_admin', 'supabase_storage_admin') OR is_effective_role_superuser IS TRUE THEN
+     RAISE LOG '[restrict_invite_update_fields V3] Allowing update due to powerful service/superuser role: %', effective_role;
+     RETURN NEW;
+   END IF;
+-
+   IF current_user = 'postgres' AND
+      OLD.status = 'pending' AND
+      OLD.invited_user_id IS NULL AND
+@@ -1278,18 +1225,15 @@ BEGIN
+     RAISE LOG '[restrict_invite_update_fields V3] Allowing update by current_user "postgres" for automated invite linking. Invite ID: %', OLD.id;
+     RETURN NEW;
+   END IF;
+-
+   SELECT public.is_org_admin(OLD.organization_id) INTO is_org_admin_check;
+   IF COALESCE(is_org_admin_check, FALSE) THEN
+     RAISE LOG '[restrict_invite_update_fields V3] Allowing update due to org admin status for user % and org %', current_auth_uid, OLD.organization_id;
+     RETURN NEW;
+   END IF;
+-
+   IF current_auth_role != 'authenticated' OR (auth.jwt() ->> 'email') != OLD.invited_email THEN
+      RAISE WARNING '[restrict_invite_update_fields V3] Auth check failed for non-admin/non-service/non-postgres-auto. Auth Role: %, Invite Email: %, JWT Email: %', current_auth_role, OLD.invited_email, (auth.jwt() ->> 'email');
+      RAISE EXCEPTION 'User is not authorized to modify this invite (not invited user or not authenticated properly).';
+   END IF;
+-
+   IF OLD.status = 'pending' AND NEW.status IN ('accepted', 'declined') THEN
+       IF NEW.status != OLD.status AND 
+          (NEW.invited_user_id IS NOT DISTINCT FROM OLD.invited_user_id OR (OLD.invited_user_id IS NULL AND NEW.invited_user_id = auth.uid())) AND
+@@ -1315,7 +1259,6 @@ BEGIN
+        RAISE WARNING '[restrict_invite_update_fields V3] Invalid status transition by non-admin/non-service/non-postgres-auto. OLD: %, NEW: %', row_to_json(OLD), row_to_json(NEW);
+        RAISE EXCEPTION 'Invite update rejected: Invalid status transition attempt by non-privileged user.';
+   END IF;
+-
+ END;
+ $$;
+ 
+@@ -2293,7 +2236,7 @@ COMMENT ON COLUMN "public"."payment_transactions"."status" IS 'Status of the pay
+ 
+ 
+ 
+-COMMENT ON COLUMN "public"."payment_transactions"."amount_requested_fiat" IS 'Amount in fiat currency (e.g., USD, EUR), stored as an integer in cents, exactly as received from Stripe.';
++COMMENT ON COLUMN "public"."payment_transactions"."amount_requested_fiat" IS 'Amount of fiat currency user intended to pay.';
+ 
+ 
+ 
+@@ -2312,7 +2255,7 @@ CREATE TABLE IF NOT EXISTS "public"."subscription_plans" (
+     "amount" integer,
+     "currency" "text",
+     "interval" "text",
+-    "interval_count" integer DEFAULT 1,
++    "interval_count" integer,
+     "metadata" "jsonb",
+     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+@@ -2432,8 +2375,8 @@ CREATE TABLE IF NOT EXISTS "public"."token_wallet_transactions" (
+     "notes" "text",
+     "idempotency_key" character varying(255) NOT NULL,
+     "timestamp" timestamp with time zone DEFAULT "now"() NOT NULL,
+-    "recorded_by_user_id" "uuid" NOT NULL,
+     "payment_transaction_id" "uuid",
++    "recorded_by_user_id" "uuid" NOT NULL,
+     CONSTRAINT "token_wallet_transactions_amount_check" CHECK (("amount" > (0)::numeric))
+ );
+ 
+@@ -2457,11 +2400,11 @@ COMMENT ON COLUMN "public"."token_wallet_transactions"."idempotency_key" IS 'Cli
+ 
+ 
+ 
+-COMMENT ON COLUMN "public"."token_wallet_transactions"."recorded_by_user_id" IS 'ID of the user or system entity that recorded/initiated this transaction. Mandatory for auditability.';
++COMMENT ON COLUMN "public"."token_wallet_transactions"."payment_transaction_id" IS 'Link to the payment_transactions table if this ledger entry was created as a direct result of a payment.';
+ 
+ 
+ 
+-COMMENT ON COLUMN "public"."token_wallet_transactions"."payment_transaction_id" IS 'Link to the payment_transactions table if this ledger entry was created as a direct result of a payment.';
++COMMENT ON COLUMN "public"."token_wallet_transactions"."recorded_by_user_id" IS 'ID of the user or system entity that recorded/initiated this transaction. Mandatory for auditability.';
+ 
+ 
+ 
+@@ -2557,25 +2500,6 @@ COMMENT ON COLUMN "public"."user_subscriptions"."status" IS 'Matches Stripe subs
+ 
+ 
+ 
+-CREATE OR REPLACE VIEW "public"."v_pending_membership_requests" AS
+- SELECT "om"."id",
+-    "om"."user_id",
+-    "om"."organization_id",
+-    "om"."status",
+-    "om"."created_at",
+-    "om"."role",
+-    "up"."first_name",
+-    "up"."last_name",
+-    "au"."email" AS "user_email"
+-   FROM (("public"."organization_members" "om"
+-     LEFT JOIN "public"."user_profiles" "up" ON (("om"."user_id" = "up"."id")))
+-     LEFT JOIN "auth"."users" "au" ON (("om"."user_id" = "au"."id")))
+-  WHERE ("om"."status" = 'pending_approval'::"text");
+-
+-
+-ALTER TABLE "public"."v_pending_membership_requests" OWNER TO "postgres";
+-
+-
+ ALTER TABLE ONLY "public"."ai_providers"
+     ADD CONSTRAINT "ai_providers_api_identifier_key" UNIQUE ("api_identifier");
+ 
+@@ -2746,11 +2670,6 @@ ALTER TABLE ONLY "public"."system_prompts"
+ 
+ 
+ 
+-ALTER TABLE ONLY "public"."system_prompts"
+-    ADD CONSTRAINT "system_prompts_name_unique" UNIQUE ("name");
+-
+-
+-
+ ALTER TABLE ONLY "public"."system_prompts"
+     ADD CONSTRAINT "system_prompts_pkey" PRIMARY KEY ("id");
+ 
+@@ -2781,11 +2700,6 @@ ALTER TABLE ONLY "public"."dialectic_feedback"
+ 
+ 
+ 
+-ALTER TABLE ONLY "public"."dialectic_project_resources"
+-    ADD CONSTRAINT "unique_storage_path" UNIQUE ("storage_bucket", "storage_path");
+-
+-
+-
+ ALTER TABLE ONLY "public"."organization_members"
+     ADD CONSTRAINT "unique_user_organization" UNIQUE ("user_id", "organization_id");
+ 
+@@ -2815,16 +2729,15 @@ ALTER TABLE ONLY "public"."user_subscriptions"
+ 
+ 
+ 
+-ALTER TABLE ONLY "public"."user_subscriptions"
+-    ADD CONSTRAINT "user_subscriptions_user_id_unique" UNIQUE ("user_id");
++CREATE INDEX "idx_ai_providers_provider" ON "public"."ai_providers" USING "btree" ("provider");
+ 
+ 
+ 
+-CREATE INDEX "idx_ai_providers_provider" ON "public"."ai_providers" USING "btree" ("provider");
++CREATE INDEX "idx_chat_messages_active_thread" ON "public"."chat_messages" USING "btree" ("chat_id", "created_at") WHERE ("is_active_in_thread" = true);
+ 
+ 
+ 
+-CREATE INDEX "idx_chat_messages_active_thread" ON "public"."chat_messages" USING "btree" ("chat_id", "created_at") WHERE ("is_active_in_thread" = true);
++CREATE INDEX "idx_chat_messages_ai_provider_id" ON "public"."chat_messages" USING "btree" ("ai_provider_id");
+ 
+ 
+ 
+@@ -2852,10 +2765,22 @@ CREATE INDEX "idx_chat_messages_response_to_message_id" ON "public"."chat_messag
+ 
+ 
+ 
++CREATE INDEX "idx_chat_messages_system_prompt_id" ON "public"."chat_messages" USING "btree" ("system_prompt_id");
++
++
++
++CREATE INDEX "idx_chat_messages_user_id" ON "public"."chat_messages" USING "btree" ("user_id");
++
++
++
+ CREATE INDEX "idx_chats_organization_id" ON "public"."chats" USING "btree" ("organization_id") WHERE ("organization_id" IS NOT NULL);
+ 
+ 
+ 
++CREATE INDEX "idx_chats_system_prompt_id" ON "public"."chats" USING "btree" ("system_prompt_id");
++
++
++
+ CREATE INDEX "idx_chats_user_id" ON "public"."chats" USING "btree" ("user_id");
+ 
+ 
+@@ -2876,6 +2801,10 @@ CREATE INDEX "idx_dialectic_contributions_original_model_is_latest" ON "public".
+ 
+ 
+ 
++CREATE INDEX "idx_dialectic_contributions_prompt_template_id_used" ON "public"."dialectic_contributions" USING "btree" ("prompt_template_id_used");
++
++
++
+ CREATE INDEX "idx_dialectic_contributions_session_id" ON "public"."dialectic_contributions" USING "btree" ("session_id");
+ 
+ 
+@@ -2892,6 +2821,14 @@ CREATE INDEX "idx_dialectic_contributions_user_id" ON "public"."dialectic_contri
+ 
+ 
+ 
++CREATE INDEX "idx_dialectic_domains_parent_domain_id" ON "public"."dialectic_domains" USING "btree" ("parent_domain_id");
++
++
++
++CREATE INDEX "idx_dialectic_feedback_project_id" ON "public"."dialectic_feedback" USING "btree" ("project_id");
++
++
++
+ CREATE INDEX "idx_dialectic_feedback_session_id" ON "public"."dialectic_feedback" USING "btree" ("session_id");
+ 
+ 
+@@ -2900,6 +2837,10 @@ CREATE INDEX "idx_dialectic_feedback_user_id" ON "public"."dialectic_feedback" U
+ 
+ 
+ 
++CREATE INDEX "idx_dialectic_process_templates_starting_stage_id" ON "public"."dialectic_process_templates" USING "btree" ("starting_stage_id");
++
++
++
+ CREATE INDEX "idx_dialectic_project_resources_project_id" ON "public"."dialectic_project_resources" USING "btree" ("project_id");
+ 
+ 
+@@ -2908,10 +2849,66 @@ CREATE INDEX "idx_dialectic_project_resources_user_id" ON "public"."dialectic_pr
+ 
+ 
+ 
++CREATE INDEX "idx_dialectic_projects_initial_prompt_resource_id" ON "public"."dialectic_projects" USING "btree" ("initial_prompt_resource_id");
++
++
++
++CREATE INDEX "idx_dialectic_projects_process_template_id" ON "public"."dialectic_projects" USING "btree" ("process_template_id");
++
++
++
++CREATE INDEX "idx_dialectic_projects_selected_domain_id" ON "public"."dialectic_projects" USING "btree" ("selected_domain_id");
++
++
++
++CREATE INDEX "idx_dialectic_projects_selected_domain_overlay_id" ON "public"."dialectic_projects" USING "btree" ("selected_domain_overlay_id");
++
++
++
++CREATE INDEX "idx_dialectic_projects_user_id" ON "public"."dialectic_projects" USING "btree" ("user_id");
++
++
++
+ CREATE INDEX "idx_dialectic_sessions_associated_chat_id" ON "public"."dialectic_sessions" USING "btree" ("associated_chat_id");
+ 
+ 
+ 
++CREATE INDEX "idx_dialectic_sessions_current_stage_id" ON "public"."dialectic_sessions" USING "btree" ("current_stage_id");
++
++
++
++CREATE INDEX "idx_dialectic_sessions_project_id" ON "public"."dialectic_sessions" USING "btree" ("project_id");
++
++
++
++CREATE INDEX "idx_dialectic_stage_transitions_process_template_id" ON "public"."dialectic_stage_transitions" USING "btree" ("process_template_id");
++
++
++
++CREATE INDEX "idx_dialectic_stage_transitions_source_stage_id" ON "public"."dialectic_stage_transitions" USING "btree" ("source_stage_id");
++
++
++
++CREATE INDEX "idx_dialectic_stage_transitions_target_stage_id" ON "public"."dialectic_stage_transitions" USING "btree" ("target_stage_id");
++
++
++
++CREATE INDEX "idx_dialectic_stages_default_system_prompt_id" ON "public"."dialectic_stages" USING "btree" ("default_system_prompt_id");
++
++
++
++CREATE INDEX "idx_domain_process_associations_process_template_id" ON "public"."domain_process_associations" USING "btree" ("process_template_id");
++
++
++
++CREATE INDEX "idx_domain_specific_prompt_overlays_domain_id" ON "public"."domain_specific_prompt_overlays" USING "btree" ("domain_id");
++
++
++
++CREATE INDEX "idx_domain_specific_prompt_overlays_system_prompt_id" ON "public"."domain_specific_prompt_overlays" USING "btree" ("system_prompt_id");
++
++
++
+ CREATE INDEX "idx_invites_invited_by_user_id" ON "public"."invites" USING "btree" ("invited_by_user_id");
+ 
+ 
+@@ -2940,6 +2937,10 @@ CREATE INDEX "idx_invites_status" ON "public"."invites" USING "btree" ("status")
+ 
+ 
+ 
++CREATE INDEX "idx_notifications_user_id" ON "public"."notifications" USING "btree" ("user_id");
++
++
++
+ CREATE INDEX "idx_notifications_user_id_created_at" ON "public"."notifications" USING "btree" ("user_id", "created_at" DESC);
+ 
+ 
+@@ -2960,6 +2961,10 @@ CREATE INDEX "idx_payment_transactions_gateway_id" ON "public"."payment_transact
+ 
+ 
+ 
++CREATE INDEX "idx_payment_transactions_organization_id" ON "public"."payment_transactions" USING "btree" ("organization_id");
++
++
++
+ CREATE INDEX "idx_payment_transactions_status" ON "public"."payment_transactions" USING "btree" ("status");
+ 
+ 
+@@ -2968,6 +2973,10 @@ CREATE INDEX "idx_payment_transactions_target_wallet_id" ON "public"."payment_tr
+ 
+ 
+ 
++CREATE INDEX "idx_payment_transactions_user_id" ON "public"."payment_transactions" USING "btree" ("user_id");
++
++
++
+ CREATE INDEX "idx_subscription_plans_stripe_product_id" ON "public"."subscription_plans" USING "btree" ("stripe_product_id");
+ 
+ 
+@@ -2988,6 +2997,14 @@ CREATE INDEX "idx_subscription_transactions_user_id" ON "public"."subscription_t
+ 
+ 
+ 
++CREATE INDEX "idx_subscription_transactions_user_subscription_id" ON "public"."subscription_transactions" USING "btree" ("user_subscription_id");
++
++
++
++CREATE INDEX "idx_token_wallet_transactions_payment_transaction_id" ON "public"."token_wallet_transactions" USING "btree" ("payment_transaction_id");
++
++
++
+ CREATE INDEX "idx_token_wallet_transactions_recorded_by" ON "public"."token_wallet_transactions" USING "btree" ("recorded_by_user_id");
+ 
+ 
+@@ -3004,10 +3021,6 @@ CREATE INDEX "idx_token_wallet_transactions_wallet_id" ON "public"."token_wallet
+ 
+ 
+ 
+-CREATE INDEX "idx_token_wallet_transactions_wallet_id_timestamp" ON "public"."token_wallet_transactions" USING "btree" ("wallet_id", "timestamp" DESC);
+-
+-
+-
+ CREATE INDEX "idx_token_wallets_organization_id" ON "public"."token_wallets" USING "btree" ("organization_id");
+ 
+ 
+@@ -3024,6 +3037,10 @@ CREATE INDEX "idx_user_profiles_privacy_setting" ON "public"."user_profiles" USI
+ 
+ 
+ 
++CREATE INDEX "idx_user_subscriptions_plan_id" ON "public"."user_subscriptions" USING "btree" ("plan_id");
++
++
++
+ CREATE UNIQUE INDEX "one_default_process_per_domain_idx" ON "public"."domain_process_associations" USING "btree" ("domain_id") WHERE ("is_default_for_domain" = true);
+ 
+ 
+@@ -3385,11 +3402,6 @@ ALTER TABLE ONLY "public"."token_wallet_transactions"
+ 
+ 
+ 
+-ALTER TABLE ONLY "public"."token_wallet_transactions"
+-    ADD CONSTRAINT "token_wallet_transactions_recorded_by_user_id_fkey" FOREIGN KEY ("recorded_by_user_id") REFERENCES "auth"."users"("id") ON DELETE RESTRICT;
+-
+-
+-
+ ALTER TABLE ONLY "public"."token_wallet_transactions"
+     ADD CONSTRAINT "token_wallet_transactions_wallet_id_fkey" FOREIGN KEY ("wallet_id") REFERENCES "public"."token_wallets"("wallet_id") ON DELETE CASCADE;
+ 
+@@ -3433,35 +3445,33 @@ CREATE POLICY "Admin INSERT access for organization invites" ON "public"."invite
+ 
+ 
+ 
+-CREATE POLICY "Admin SELECT access for organization invites" ON "public"."invites" FOR SELECT TO "authenticated" USING ("public"."is_org_admin"("organization_id"));
+-
++CREATE POLICY "Allow active members to view memberships in their orgs" ON "public"."organization_members" FOR SELECT TO "authenticated" USING ((( SELECT "om"."role"
++   FROM "public"."organization_members" "om"
++  WHERE (("om"."organization_id" = "organization_members"."organization_id") AND ("om"."user_id" = "auth"."uid"()))) = 'admin'::"text"));
+ 
+ 
+-CREATE POLICY "Admin UPDATE access for organization invites" ON "public"."invites" FOR UPDATE TO "authenticated" USING ("public"."is_org_admin"("organization_id")) WITH CHECK ("public"."is_org_admin"("organization_id"));
+ 
++CREATE POLICY "Allow active members to view memberships of their own organizat" ON "public"."organization_members" FOR SELECT TO "authenticated" USING (("organization_id" IN ( SELECT "organization_members_1"."organization_id"
++   FROM "public"."organization_members" "organization_members_1"
++  WHERE (("organization_members_1"."user_id" = "auth"."uid"()) AND ("organization_members_1"."status" = 'active'::"text")))));
+ 
+ 
+-CREATE POLICY "Allow active members to view memberships in their orgs" ON "public"."organization_members" FOR SELECT TO "authenticated" USING ("public"."is_org_member"("organization_id", "auth"."uid"(), 'active'::"text"));
+ 
++CREATE POLICY "Allow active members to view their own organization" ON "public"."organizations" FOR SELECT TO "authenticated" USING (("id" IN ( SELECT "organization_members"."organization_id"
++   FROM "public"."organization_members"
++  WHERE (("organization_members"."user_id" = "auth"."uid"()) AND ("organization_members"."status" = 'active'::"text")))));
+ 
+ 
+-CREATE POLICY "Allow active members to view their non-deleted organizations" ON "public"."organizations" FOR SELECT TO "authenticated" USING ("public"."is_org_member"("id", "auth"."uid"(), 'active'::"text"));
+ 
++CREATE POLICY "Allow admins or self to update memberships" ON "public"."organization_members" FOR UPDATE TO "authenticated" USING (("public"."is_org_admin"("organization_id") OR (( SELECT "auth"."uid"() AS "uid") = "user_id"))) WITH CHECK (("public"."is_org_admin"("organization_id") OR (( SELECT "auth"."uid"() AS "uid") = "user_id")));
+ 
+ 
+-CREATE POLICY "Allow admins or self to update memberships" ON "public"."organization_members" FOR UPDATE TO "authenticated" USING (("public"."is_org_member"("organization_id", "auth"."uid"(), 'active'::"text", 'admin'::"text") OR (("user_id" = "auth"."uid"()) AND (EXISTS ( SELECT 1
+-   FROM "public"."organizations"
+-  WHERE (("organizations"."id" = "organization_members"."organization_id") AND ("organizations"."deleted_at" IS NULL))))))) WITH CHECK (("public"."is_org_member"("organization_id", "auth"."uid"(), 'active'::"text", 'admin'::"text") OR (("user_id" = "auth"."uid"()) AND (EXISTS ( SELECT 1
+-   FROM "public"."organizations"
+-  WHERE (("organizations"."id" = "organization_members"."organization_id") AND ("organizations"."deleted_at" IS NULL)))))));
+ 
++CREATE POLICY "Allow admins to insert new members" ON "public"."organization_members" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_org_admin"("organization_id"));
+ 
+ 
+-CREATE POLICY "Allow admins to insert new members" ON "public"."organization_members" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_org_member"("organization_id", "auth"."uid"(), 'active'::"text", 'admin'::"text"));
+ 
+-
+-
+-CREATE POLICY "Allow admins to update their non-deleted organizations" ON "public"."organizations" FOR UPDATE TO "authenticated" USING ("public"."is_org_member"("id", "auth"."uid"(), 'active'::"text", 'admin'::"text")) WITH CHECK ("public"."is_org_member"("id", "auth"."uid"(), 'active'::"text", 'admin'::"text"));
++CREATE POLICY "Allow admins to update their non-deleted organizations" ON "public"."organizations" FOR UPDATE TO "authenticated" USING ((("deleted_at" IS NULL) AND "public"."is_org_admin"("id"))) WITH CHECK (("deleted_at" IS NULL));
+ 
+ 
+ 
+@@ -3477,15 +3487,7 @@ CREATE POLICY "Allow authenticated read access" ON "public"."subscription_plans"
+ 
+ 
+ 
+-CREATE POLICY "Allow authenticated read access to active providers" ON "public"."ai_providers" FOR SELECT TO "authenticated" USING (("is_active" = true));
+-
+-
+-
+-CREATE POLICY "Allow authenticated users to create organizations" ON "public"."organizations" FOR INSERT TO "authenticated" WITH CHECK (("auth"."role"() = 'authenticated'::"text"));
+-
+-
+-
+-CREATE POLICY "Allow authenticated users to read active system_prompts" ON "public"."system_prompts" FOR SELECT TO "authenticated" USING (("is_active" = true));
++CREATE POLICY "Allow authenticated users to create organizations" ON "public"."organizations" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "auth"."role"() AS "role") = 'authenticated'::"text"));
+ 
+ 
+ 
+@@ -3509,76 +3511,45 @@ CREATE POLICY "Allow authenticated users to read stages" ON "public"."dialectic_
+ 
+ 
+ 
+-CREATE POLICY "Allow authenticated users to select their own payment transacti" ON "public"."payment_transactions" FOR SELECT TO "authenticated" USING (("user_id" = "auth"."uid"()));
++CREATE POLICY "Allow authenticated users to select their own payment transacti" ON "public"."payment_transactions" FOR SELECT TO "authenticated" USING (((( SELECT "auth"."uid"() AS "uid") = "user_id") OR (("organization_id" IS NOT NULL) AND "public"."is_org_admin"("organization_id"))));
+ 
+ 
+ 
+ CREATE POLICY "Allow authenticated users to select their own wallet transactio" ON "public"."token_wallet_transactions" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+-   FROM "public"."token_wallets" "tw"
+-  WHERE (("tw"."wallet_id" = "token_wallet_transactions"."wallet_id") AND ("tw"."user_id" = "auth"."uid"())))));
+-
++   FROM "public"."token_wallets" "w"
++  WHERE (("w"."wallet_id" = "token_wallet_transactions"."wallet_id") AND (("w"."user_id" = ( SELECT "auth"."uid"() AS "uid")) OR (("w"."organization_id" IS NOT NULL) AND "public"."is_org_admin"("w"."organization_id")))))));
+ 
+ 
+-CREATE POLICY "Allow individual insert access" ON "public"."user_profiles" FOR INSERT TO "authenticated" WITH CHECK (("auth"."uid"() = "id"));
+ 
++CREATE POLICY "Allow individual insert access" ON "public"."user_subscriptions" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "auth"."uid"() AS "uid") = "user_id"));
+ 
+ 
+-CREATE POLICY "Allow individual insert access" ON "public"."user_subscriptions" FOR INSERT TO "authenticated" WITH CHECK (("auth"."uid"() = "user_id"));
+ 
++CREATE POLICY "Allow individual read access" ON "public"."user_subscriptions" FOR SELECT TO "authenticated" USING ((( SELECT "auth"."uid"() AS "uid") = "user_id"));
+ 
+ 
+-CREATE POLICY "Allow individual read access" ON "public"."user_profiles" FOR SELECT TO "authenticated" USING (("auth"."uid"() = "id"));
+ 
++CREATE POLICY "Allow individual update access" ON "public"."user_subscriptions" FOR UPDATE TO "authenticated" USING ((( SELECT "auth"."uid"() AS "uid") = "user_id")) WITH CHECK ((( SELECT "auth"."uid"() AS "uid") = "user_id"));
+ 
+ 
+-CREATE POLICY "Allow individual read access" ON "public"."user_subscriptions" FOR SELECT TO "authenticated" USING (("auth"."uid"() = "user_id"));
+ 
++CREATE POLICY "Allow org admins and chat owners to delete chats" ON "public"."chats" FOR DELETE TO "authenticated" USING (((( SELECT "auth"."uid"() AS "uid") = "user_id") OR (("organization_id" IS NOT NULL) AND "public"."is_org_admin"("organization_id"))));
+ 
+ 
+-CREATE POLICY "Allow individual update access" ON "public"."user_profiles" FOR UPDATE TO "authenticated" USING (("auth"."uid"() = "id")) WITH CHECK (("auth"."uid"() = "id"));
+ 
++CREATE POLICY "Allow org admins and chat owners to update chats" ON "public"."chats" FOR UPDATE TO "authenticated" USING (((( SELECT "auth"."uid"() AS "uid") = "user_id") OR (("organization_id" IS NOT NULL) AND "public"."is_org_admin"("organization_id"))));
+ 
+ 
+-CREATE POLICY "Allow individual update access" ON "public"."user_subscriptions" FOR UPDATE TO "authenticated" USING (("auth"."uid"() = "user_id")) WITH CHECK (("auth"."uid"() = "user_id"));
+ 
++CREATE POLICY "Allow org members/admins and chat owners to select chats" ON "public"."chats" FOR SELECT TO "authenticated" USING (((( SELECT "auth"."uid"() AS "uid") = "user_id") OR (("organization_id" IS NOT NULL) AND "public"."is_org_member"("organization_id", ( SELECT "auth"."uid"() AS "uid"), 'active'::"text"))));
+ 
+ 
+-CREATE POLICY "Allow org admins and chat owners to delete chats" ON "public"."chats" FOR DELETE TO "authenticated" USING (((("organization_id" IS NULL) AND ("auth"."uid"() = "user_id")) OR (("organization_id" IS NOT NULL) AND "public"."is_org_admin"("organization_id"))));
+ 
++CREATE POLICY "Allow read access to active providers" ON "public"."ai_providers" FOR SELECT TO "authenticated" USING (("is_active" = true));
+ 
+ 
+-CREATE POLICY "Allow org admins and chat owners to update chats" ON "public"."chats" FOR UPDATE TO "authenticated" USING (((("organization_id" IS NULL) AND ("auth"."uid"() = "user_id")) OR (("organization_id" IS NOT NULL) AND "public"."is_org_admin"("organization_id")))) WITH CHECK (((("organization_id" IS NULL) AND ("user_id" = "auth"."uid"())) OR (("organization_id" IS NOT NULL) AND "public"."is_org_admin"("organization_id"))));
+ 
+-
+-
+-CREATE POLICY "Allow org members/admins and chat owners to select chats" ON "public"."chats" FOR SELECT TO "authenticated" USING (((("organization_id" IS NULL) AND ("auth"."uid"() = "user_id")) OR (("organization_id" IS NOT NULL) AND "public"."is_org_member"("organization_id", "auth"."uid"(), 'active'::"text"))));
+-
+-
+-
+-CREATE POLICY "Allow organization admins to select their organization wallets" ON "public"."token_wallets" FOR SELECT TO "authenticated" USING ((("user_id" IS NULL) AND ("organization_id" IS NOT NULL) AND "public"."is_admin_of_org_for_wallet"("organization_id")));
+-
+-
+-
+-CREATE POLICY "Allow organization admins to select their organization's paymen" ON "public"."payment_transactions" FOR SELECT TO "authenticated" USING (((EXISTS ( SELECT 1
+-   FROM "public"."token_wallets" "tw"
+-  WHERE (("tw"."wallet_id" = "payment_transactions"."target_wallet_id") AND ("tw"."user_id" IS NULL) AND ("tw"."organization_id" IS NOT NULL) AND "public"."is_admin_of_org_for_wallet"("tw"."organization_id")))) OR (("organization_id" IS NOT NULL) AND "public"."is_admin_of_org_for_wallet"("organization_id"))));
+-
+-
+-
+-CREATE POLICY "Allow organization admins to select their organization's wallet" ON "public"."token_wallet_transactions" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+-   FROM "public"."token_wallets" "tw"
+-  WHERE (("tw"."wallet_id" = "token_wallet_transactions"."wallet_id") AND ("tw"."user_id" IS NULL) AND ("tw"."organization_id" IS NOT NULL) AND "public"."is_admin_of_org_for_wallet"("tw"."organization_id")))));
+-
+-
+-
+-CREATE POLICY "Allow permitted users to insert organizational chats" ON "public"."chats" FOR INSERT TO "authenticated" WITH CHECK ((("organization_id" IS NOT NULL) AND ("user_id" = "auth"."uid"()) AND "public"."check_org_chat_creation_permission"("organization_id", "auth"."uid"())));
+-
+-
+-
+-CREATE POLICY "Allow profile read based on privacy, shared org, or ownership" ON "public"."user_profiles" FOR SELECT USING ((("profile_privacy_setting" = 'public'::"text") OR (EXISTS ( SELECT 1
+-   FROM ("public"."organization_members" "om1"
+-     JOIN "public"."organization_members" "om2" ON (("om1"."organization_id" = "om2"."organization_id")))
+-  WHERE (("om1"."user_id" = "auth"."uid"()) AND ("om2"."user_id" = "user_profiles"."id") AND ("om1"."status" = 'active'::"text") AND ("om2"."status" = 'active'::"text")))) OR ("auth"."uid"() = "id")));
++CREATE POLICY "Allow read access to active system prompts" ON "public"."system_prompts" FOR SELECT TO "authenticated" USING (("is_active" = true));
+ 
+ 
+ 
+@@ -3626,11 +3597,11 @@ CREATE POLICY "Allow service_role to manage stages" ON "public"."dialectic_stage
+ 
+ 
+ 
+-CREATE POLICY "Allow user SELECT access to their own notifications" ON "public"."notifications" FOR SELECT TO "authenticated" USING (("auth"."uid"() = "user_id"));
++CREATE POLICY "Allow user SELECT access to their own notifications" ON "public"."notifications" FOR SELECT TO "authenticated" USING ((( SELECT "auth"."uid"() AS "uid") = "user_id"));
+ 
+ 
+ 
+-CREATE POLICY "Allow user UPDATE access for their own notifications" ON "public"."notifications" FOR UPDATE TO "authenticated" USING (("auth"."uid"() = "user_id")) WITH CHECK (("auth"."uid"() = "user_id"));
++CREATE POLICY "Allow user UPDATE access for their own notifications" ON "public"."notifications" FOR UPDATE TO "authenticated" USING ((( SELECT "auth"."uid"() AS "uid") = "user_id")) WITH CHECK ((( SELECT "auth"."uid"() AS "uid") = "user_id"));
+ 
+ 
+ 
+@@ -3638,98 +3609,108 @@ CREATE POLICY "Allow users to delete messages in accessible chats" ON "public"."
+ 
+ 
+ 
+-CREATE POLICY "Allow users to insert messages in accessible chats with role ch" ON "public"."chat_messages" FOR INSERT TO "authenticated" WITH CHECK (("public"."can_select_chat"("chat_id") AND (("role" <> 'user'::"text") OR ("user_id" = "auth"."uid"()))));
++CREATE POLICY "Allow users to insert messages in accessible chats with role ch" ON "public"."chat_messages" FOR INSERT TO "authenticated" WITH CHECK ((("role" = 'user'::"text") AND (( SELECT "auth"."uid"() AS "uid") = "user_id") AND (EXISTS ( SELECT 1
++   FROM "public"."chats" "c"
++  WHERE (("c"."id" = "chat_messages"."chat_id") AND (("c"."user_id" = ( SELECT "auth"."uid"() AS "uid")) OR (("c"."organization_id" IS NOT NULL) AND "public"."is_org_member"("c"."organization_id", ( SELECT "auth"."uid"() AS "uid"), 'active'::"text"))))))));
+ 
+ 
+ 
+-CREATE POLICY "Allow users to insert personal chats" ON "public"."chats" FOR INSERT TO "authenticated" WITH CHECK ((("organization_id" IS NULL) AND ("user_id" = "auth"."uid"())));
++CREATE POLICY "Allow users to read their own subscription transactions" ON "public"."subscription_transactions" FOR SELECT TO "authenticated" USING (("user_subscription_id" IN ( SELECT "user_subscriptions"."id"
++   FROM "public"."user_subscriptions"
++  WHERE ("user_subscriptions"."user_id" = "auth"."uid"()))));
+ 
+ 
+ 
+-CREATE POLICY "Allow users to insert their own profile" ON "public"."user_profiles" FOR INSERT WITH CHECK (("auth"."uid"() = "id"));
++CREATE POLICY "Allow users to select messages in accessible chats" ON "public"."chat_messages" FOR SELECT TO "authenticated" USING ("public"."can_select_chat"("chat_id"));
+ 
+ 
+ 
+-CREATE POLICY "Allow users to select messages in accessible chats" ON "public"."chat_messages" FOR SELECT TO "authenticated" USING ("public"."can_select_chat"("chat_id"));
++CREATE POLICY "Consolidated insert policy for chats" ON "public"."chats" FOR INSERT TO "authenticated" WITH CHECK (((("organization_id" IS NULL) AND ("user_id" = ( SELECT "auth"."uid"() AS "uid"))) OR (("organization_id" IS NOT NULL) AND "public"."check_org_chat_creation_permission"("organization_id", ( SELECT "auth"."uid"() AS "uid")))));
+ 
+ 
+ 
+-CREATE POLICY "Allow users to select their own user-specific wallets" ON "public"."token_wallets" FOR SELECT TO "authenticated" USING ((("user_id" = "auth"."uid"()) AND ("organization_id" IS NULL)));
++CREATE POLICY "Consolidated insert policy for user profiles" ON "public"."user_profiles" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "auth"."uid"() AS "uid") = "id"));
+ 
+ 
+ 
+-CREATE POLICY "Allow users to update messages in accessible chats" ON "public"."chat_messages" FOR UPDATE TO "authenticated" USING ("public"."can_select_chat"("chat_id")) WITH CHECK ("public"."can_select_chat"("chat_id"));
++CREATE POLICY "Consolidated read policy for user profiles" ON "public"."user_profiles" FOR SELECT TO "authenticated" USING (((( SELECT "auth"."uid"() AS "uid") = "id") OR ("profile_privacy_setting" = 'public'::"text") OR (("profile_privacy_setting" = 'private'::"text") AND (( SELECT "auth"."uid"() AS "uid") = "id")) OR (EXISTS ( SELECT 1
++   FROM ("public"."organization_members" "om1"
++     JOIN "public"."organization_members" "om2" ON (("om1"."organization_id" = "om2"."organization_id")))
++  WHERE (("om1"."user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("om2"."user_id" = "user_profiles"."id") AND ("om1"."status" = 'active'::"text") AND ("om2"."status" = 'active'::"text"))))));
+ 
+ 
+ 
+-CREATE POLICY "Allow users to update their own profile details" ON "public"."user_profiles" FOR UPDATE USING (("auth"."uid"() = "id")) WITH CHECK (("auth"."uid"() = "id"));
++CREATE POLICY "Consolidated select policy for dialectic_feedback" ON "public"."dialectic_feedback" FOR SELECT TO "authenticated" USING (((( SELECT "auth"."uid"() AS "uid") = "user_id") OR (EXISTS ( SELECT 1
++   FROM "public"."dialectic_projects" "dp"
++  WHERE (("dp"."id" = "dialectic_feedback"."project_id") AND ("dp"."user_id" = ( SELECT "auth"."uid"() AS "uid")))))));
+ 
+ 
+ 
+-CREATE POLICY "Deny access to non-service roles" ON "public"."subscription_transactions" USING (false) WITH CHECK (false);
++CREATE POLICY "Consolidated select policy for invites" ON "public"."invites" FOR SELECT TO "authenticated" USING (((( SELECT "auth"."uid"() AS "uid") = "invited_user_id") OR (("organization_id" IS NOT NULL) AND "public"."is_org_member"("organization_id", ( SELECT "auth"."uid"() AS "uid"), 'active'::"text")) OR ("invited_email" = ( SELECT ("auth"."jwt"() ->> 'email'::"text")))));
+ 
+ 
+ 
+-CREATE POLICY "Disallow direct deletes on payment transactions by users" ON "public"."payment_transactions" FOR DELETE TO "authenticated" USING (false);
++CREATE POLICY "Consolidated select policy for token wallets" ON "public"."token_wallets" FOR SELECT TO "authenticated" USING (((("user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("organization_id" IS NULL)) OR (("organization_id" IS NOT NULL) AND "public"."is_org_admin"("organization_id"))));
+ 
+ 
+ 
+-CREATE POLICY "Disallow direct deletes on wallet transactions (immutable ledge" ON "public"."token_wallet_transactions" FOR DELETE TO "authenticated" USING (false);
++CREATE POLICY "Consolidated update policy for chat messages" ON "public"."chat_messages" FOR UPDATE TO "authenticated" USING (("public"."can_select_chat"("chat_id") OR (EXISTS ( SELECT 1
++   FROM "public"."chats"
++  WHERE (("chats"."id" = "chat_messages"."chat_id") AND ("chats"."user_id" = ( SELECT "auth"."uid"() AS "uid"))))) OR (( SELECT "auth"."uid"() AS "uid") = "user_id"))) WITH CHECK (("public"."can_select_chat"("chat_id") OR (EXISTS ( SELECT 1
++   FROM "public"."chats"
++  WHERE (("chats"."id" = "chat_messages"."chat_id") AND ("chats"."user_id" = ( SELECT "auth"."uid"() AS "uid"))))) OR (( SELECT "auth"."uid"() AS "uid") = "user_id")));
+ 
+ 
+ 
+-CREATE POLICY "Disallow direct deletes on wallet transactions by service_role " ON "public"."token_wallet_transactions" FOR DELETE TO "service_role" USING (false);
++CREATE POLICY "Consolidated update policy for invites" ON "public"."invites" FOR UPDATE TO "authenticated" USING (((("status" = 'pending'::"text") AND (( SELECT "auth"."uid"() AS "uid") = "invited_user_id")) OR (("status" = 'pending'::"text") AND ("organization_id" IS NOT NULL) AND "public"."is_org_admin"("organization_id"))));
+ 
+ 
+ 
+-CREATE POLICY "Disallow direct deletes on wallets by users" ON "public"."token_wallets" FOR DELETE TO "authenticated" USING (false);
++CREATE POLICY "Consolidated update policy for user profiles" ON "public"."user_profiles" FOR UPDATE TO "authenticated" USING ((( SELECT "auth"."uid"() AS "uid") = "id")) WITH CHECK ((( SELECT "auth"."uid"() AS "uid") = "id"));
+ 
+ 
+ 
+-CREATE POLICY "Disallow direct inserts on payment transactions by users" ON "public"."payment_transactions" FOR INSERT TO "authenticated" WITH CHECK (false);
++CREATE POLICY "Disallow direct deletes on payment transactions by users" ON "public"."payment_transactions" FOR DELETE TO "authenticated" USING (false);
+ 
+ 
+ 
+-CREATE POLICY "Disallow direct inserts on wallet transactions by users" ON "public"."token_wallet_transactions" FOR INSERT TO "authenticated" WITH CHECK (false);
++CREATE POLICY "Disallow direct deletes on wallet transactions (immutable ledge" ON "public"."token_wallet_transactions" FOR DELETE TO "authenticated" USING (false);
+ 
+ 
+ 
+-CREATE POLICY "Disallow direct inserts on wallets by users" ON "public"."token_wallets" FOR INSERT TO "authenticated" WITH CHECK (false);
++CREATE POLICY "Disallow direct deletes on wallet transactions by service_role " ON "public"."token_wallet_transactions" FOR DELETE TO "service_role" USING (false);
+ 
+ 
+ 
+-CREATE POLICY "Disallow direct updates on payment transactions by users" ON "public"."payment_transactions" FOR UPDATE TO "authenticated" USING (false) WITH CHECK (false);
++CREATE POLICY "Disallow direct deletes on wallets by users" ON "public"."token_wallets" FOR DELETE TO "authenticated" USING (false);
+ 
+ 
+ 
+-CREATE POLICY "Disallow direct updates on wallet transactions (immutable ledge" ON "public"."token_wallet_transactions" FOR UPDATE TO "authenticated" USING (false) WITH CHECK (false);
++CREATE POLICY "Disallow direct inserts on payment transactions by users" ON "public"."payment_transactions" FOR INSERT TO "authenticated" WITH CHECK (false);
+ 
+ 
+ 
+-CREATE POLICY "Disallow direct updates on wallet transactions by service_role " ON "public"."token_wallet_transactions" FOR UPDATE TO "service_role" USING (false);
++CREATE POLICY "Disallow direct inserts on wallet transactions by users" ON "public"."token_wallet_transactions" FOR INSERT TO "authenticated" WITH CHECK (false);
+ 
+ 
+ 
+-CREATE POLICY "Disallow direct updates on wallets by users" ON "public"."token_wallets" FOR UPDATE TO "authenticated" USING (false) WITH CHECK (false);
++CREATE POLICY "Disallow direct inserts on wallets by users" ON "public"."token_wallets" FOR INSERT TO "authenticated" WITH CHECK (false);
+ 
+ 
+ 
+-CREATE POLICY "Disallow direct updates to wallets by authenticated users" ON "public"."token_wallets" FOR UPDATE TO "authenticated" USING (false) WITH CHECK (false);
++CREATE POLICY "Disallow direct updates on payment transactions by users" ON "public"."payment_transactions" FOR UPDATE TO "authenticated" USING (false) WITH CHECK (false);
+ 
+ 
+ 
+-CREATE POLICY "Invited user select access for pending invites" ON "public"."invites" FOR SELECT TO "authenticated" USING (((("auth"."jwt"() ->> 'email'::"text") = "invited_email") AND ("status" = 'pending'::"text")));
++CREATE POLICY "Disallow direct updates on wallet transactions (immutable ledge" ON "public"."token_wallet_transactions" FOR UPDATE TO "authenticated" USING (false) WITH CHECK (false);
+ 
+ 
+ 
+-CREATE POLICY "Invited user update access for pending invites" ON "public"."invites" FOR UPDATE TO "authenticated" USING (((("auth"."jwt"() ->> 'email'::"text") = "invited_email") AND ("status" = 'pending'::"text"))) WITH CHECK ((("auth"."jwt"() ->> 'email'::"text") = "invited_email"));
++CREATE POLICY "Disallow direct updates on wallet transactions by service_role " ON "public"."token_wallet_transactions" FOR UPDATE TO "service_role" USING (false);
+ 
+ 
+ 
+-CREATE POLICY "Project owners can view all feedback in their projects" ON "public"."dialectic_feedback" FOR SELECT USING ((EXISTS ( SELECT 1
+-   FROM ("public"."dialectic_sessions" "s"
+-     JOIN "public"."dialectic_projects" "p" ON (("s"."project_id" = "p"."id")))
+-  WHERE (("s"."id" = "dialectic_feedback"."session_id") AND ("p"."user_id" = "auth"."uid"())))));
++CREATE POLICY "Disallow updates to token wallets" ON "public"."token_wallets" FOR UPDATE TO "authenticated" USING (false) WITH CHECK (false);
+ 
+ 
+ 
+@@ -3740,45 +3721,27 @@ CREATE POLICY "Service role access for wallet transactions (Immutable)" ON "publ
+ CREATE POLICY "Users can manage contributions for projects they own" ON "public"."dialectic_contributions" TO "authenticated" USING ((EXISTS ( SELECT 1
+    FROM ("public"."dialectic_sessions" "ds"
+      JOIN "public"."dialectic_projects" "dp" ON (("ds"."project_id" = "dp"."id")))
+-  WHERE (("ds"."id" = "dialectic_contributions"."session_id") AND ("dp"."user_id" = "auth"."uid"()))))) WITH CHECK ((EXISTS ( SELECT 1
++  WHERE (("ds"."id" = "dialectic_contributions"."session_id") AND ("dp"."user_id" = ( SELECT "auth"."uid"() AS "uid")))))) WITH CHECK ((EXISTS ( SELECT 1
+    FROM ("public"."dialectic_sessions" "ds"
+      JOIN "public"."dialectic_projects" "dp" ON (("ds"."project_id" = "dp"."id")))
+-  WHERE (("ds"."id" = "dialectic_contributions"."session_id") AND ("dp"."user_id" = "auth"."uid"())))));
++  WHERE (("ds"."id" = "dialectic_contributions"."session_id") AND ("dp"."user_id" = ( SELECT "auth"."uid"() AS "uid"))))));
+ 
+ 
+ 
+ CREATE POLICY "Users can manage sessions for projects they own" ON "public"."dialectic_sessions" TO "authenticated" USING ((EXISTS ( SELECT 1
+    FROM "public"."dialectic_projects" "dp"
+-  WHERE (("dp"."id" = "dialectic_sessions"."project_id") AND ("dp"."user_id" = "auth"."uid"()))))) WITH CHECK ((EXISTS ( SELECT 1
+-   FROM "public"."dialectic_projects" "dp"
+-  WHERE (("dp"."id" = "dialectic_sessions"."project_id") AND ("dp"."user_id" = "auth"."uid"())))));
+-
+-
+-
+-CREATE POLICY "Users can manage their own feedback" ON "public"."dialectic_feedback" USING (("auth"."uid"() = "user_id")) WITH CHECK (("auth"."uid"() = "user_id"));
+-
+-
+-
+-CREATE POLICY "Users can manage their own project resources" ON "public"."dialectic_project_resources" TO "authenticated" USING (("auth"."uid"() = "user_id")) WITH CHECK (("auth"."uid"() = "user_id"));
+-
+-
+-
+-CREATE POLICY "Users can update message status" ON "public"."chat_messages" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
+-   FROM "public"."chats"
+-  WHERE (("chats"."id" = "chat_messages"."chat_id") AND ("chats"."user_id" = "auth"."uid"()))))) WITH CHECK ((EXISTS ( SELECT 1
+-   FROM "public"."chats"
+-  WHERE (("chats"."id" = "chat_messages"."chat_id") AND ("chats"."user_id" = "auth"."uid"())))));
++  WHERE (("dp"."id" = "dialectic_sessions"."project_id") AND ("dp"."user_id" = ( SELECT "auth"."uid"() AS "uid"))))));
+ 
+ 
+ 
+-CREATE POLICY "Users can update their own messages" ON "public"."chat_messages" FOR UPDATE TO "authenticated" USING (("auth"."uid"() = "user_id")) WITH CHECK (("auth"."uid"() = "user_id"));
++CREATE POLICY "Users can manage their own project resources" ON "public"."dialectic_project_resources" TO "authenticated" USING ((( SELECT "auth"."uid"() AS "uid") = "user_id")) WITH CHECK ((( SELECT "auth"."uid"() AS "uid") = "user_id"));
+ 
+ 
+ 
+ ALTER TABLE "public"."ai_providers" ENABLE ROW LEVEL SECURITY;
+ 
+ 
+-CREATE POLICY "auth_users_manage_own_dialectic_projects" ON "public"."dialectic_projects" TO "authenticated" USING (("auth"."uid"() = "user_id")) WITH CHECK (("auth"."uid"() = "user_id"));
++CREATE POLICY "auth_users_manage_own_dialectic_projects" ON "public"."dialectic_projects" TO "authenticated" USING ((( SELECT "auth"."uid"() AS "uid") = "user_id")) WITH CHECK ((( SELECT "auth"."uid"() AS "uid") = "user_id"));
+ 
+ 
+ 
+@@ -3869,6 +3832,10 @@ ALTER PUBLICATION "supabase_realtime" OWNER TO "postgres";
+ 
+ 
+ 
++ALTER PUBLICATION "supabase_realtime" ADD TABLE ONLY "public"."notifications";
++
++
++
+ 
+ 
+ 
+@@ -4049,12 +4016,6 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
+ 
+ 
+ 
+-
+-
+-
+-
+-
+-
+ 
+ 
+ 
+@@ -4128,6 +4089,12 @@ GRANT ALL ON FUNCTION "public"."execute_sql"("query" "text") TO "service_role";
+ 
+ 
+ 
++GRANT ALL ON FUNCTION "public"."get_user_email"("p_user_id" "uuid") TO "anon";
++GRANT ALL ON FUNCTION "public"."get_user_email"("p_user_id" "uuid") TO "authenticated";
++GRANT ALL ON FUNCTION "public"."get_user_email"("p_user_id" "uuid") TO "service_role";
++
++
++
+ GRANT ALL ON FUNCTION "public"."grant_initial_free_tokens_to_user"("p_user_id" "uuid", "p_free_plan_id" "uuid") TO "anon";
+ GRANT ALL ON FUNCTION "public"."grant_initial_free_tokens_to_user"("p_user_id" "uuid", "p_free_plan_id" "uuid") TO "authenticated";
+ GRANT ALL ON FUNCTION "public"."grant_initial_free_tokens_to_user"("p_user_id" "uuid", "p_free_plan_id" "uuid") TO "service_role";
+@@ -4437,12 +4404,6 @@ GRANT ALL ON TABLE "public"."user_subscriptions" TO "service_role";
+ 
+ 
+ 
+-GRANT ALL ON TABLE "public"."v_pending_membership_requests" TO "anon";
+-GRANT ALL ON TABLE "public"."v_pending_membership_requests" TO "authenticated";
+-GRANT ALL ON TABLE "public"."v_pending_membership_requests" TO "service_role";
+-
+-
+-
+ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES  TO "postgres";
+ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES  TO "anon";
+ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES  TO "authenticated";

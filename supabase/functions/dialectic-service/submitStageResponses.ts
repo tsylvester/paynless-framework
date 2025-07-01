@@ -15,7 +15,6 @@ import { PromptAssembler } from "../_shared/prompt-assembler.ts";
 import { ProjectContext, SessionContext, StageContext } from "../_shared/prompt-assembler.interface.ts";
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
 import { formatResourceDescription } from '../_shared/utils/resourceDescriptionFormatter.ts';
-import { downloadFromStorage } from '../_shared/supabase_storage_utils.ts';
 
 // Get storage bucket from environment variables, with a fallback for safety.
 const STORAGE_BUCKET = Deno.env.get('SB_CONTENT_STORAGE_BUCKET');
@@ -56,7 +55,7 @@ export async function submitStageResponses(
 
   if (!STORAGE_BUCKET) {
     logger.error(
-      '[submitStageResponses] SUPABASE_CONTENT_STORAGE_BUCKET environment variable is not set.',
+      '[submitStageResponses] SB_CONTENT_STORAGE_BUCKET environment variable is not set.',
     );
     return {
       error: {
@@ -371,10 +370,7 @@ export async function submitStageResponses(
   );
 
   // **Perform critical checks for ProjectContext components before instantiation**
-  if (!project.initial_prompt_resource_id) {
-    logger.error("[submitStageResponses] Critical configuration error: project.initial_prompt_resource_id is missing.");
-    return { error: { message: "Project configuration error: Missing initial prompt resource ID.", status: 500 }, status: 500 };
-  }
+  // Note: initial_prompt_resource_id is now always populated for all projects (both string and file inputs are stored as files)
 
   // sessionData.project is the raw result of SELECT * from dialectic_projects
   const rawDbProject = sessionData.project as Tables<'dialectic_projects'>;
@@ -397,7 +393,7 @@ export async function submitStageResponses(
       user_id: project.user_id, 
       project_name: project.project_name, 
       initial_user_prompt: project.initial_user_prompt, 
-      initial_prompt_resource_id: project.initial_prompt_resource_id, 
+      initial_prompt_resource_id: project.initial_prompt_resource_id ?? null, 
       selected_domain_id: project.selected_domain_id, 
       process_template_id: rawDbProject.process_template_id, // Checked: known to be a non-null string
       repo_url: null, 

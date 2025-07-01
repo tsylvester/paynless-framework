@@ -15,7 +15,7 @@ export interface TextInputAreaProps {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
-  label: string;
+  label?: string;
   placeholder?: string;
   id?: string;
   rows?: number;
@@ -112,14 +112,14 @@ export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputArea
     };
 
     return (
-      <div className="grid w-full gap-1.5">
+      <div className="grid w-full gap-1.5 max-w-none">
         <div className="flex justify-between items-center mb-1">
             <Label htmlFor={id}>{label}</Label>
         </div>
 
         <div 
           ref={containerRef}
-          className="relative w-full resize-y overflow-auto border rounded-md" // Added border and rounded-md here for consistent look
+          className="relative w-full resize-y overflow-auto border rounded-md max-w-none" // Added border and rounded-md here for consistent look
           style={{
             height: currentHeight,
             minHeight: minHeightStyle,
@@ -181,7 +181,7 @@ export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputArea
               rows={rows} // rows can give an initial height hint before manual resize
               data-testid={dataTestId}
               className={cn(
-                "w-full h-full p-3", // Added p-3 for consistency with preview, h-full to fill container
+                "w-full h-full p-3 max-w-none", // Added p-3 for consistency with preview, h-full to fill container, max-w-none to override inherited width constraints
                 "resize-none",      // Remove Textarea's own resize handle
                 "border-none focus:ring-0 focus-visible:ring-0", // Remove default border and focus ring as parent has border
                 textAreaClassName

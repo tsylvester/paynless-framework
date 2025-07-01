@@ -5,8 +5,8 @@
 // Ensure SUPABASE_URL and SUPABASE_SERVICE_KEY are available in your environment
 // or .env file, and that your Deno execution loads them (e.g., using --env-file flag or other means).
 
-const SUPABASE_URL = Deno.env.get("SB_URL");
-const SERVICE_KEY = Deno.env.get("SB_SERVICE_ROLE_KEY");
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const FUNCTION_NAME = "sync-ai-models";
 
 if (!SUPABASE_URL) {

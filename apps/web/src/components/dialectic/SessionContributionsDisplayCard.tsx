@@ -16,7 +16,7 @@ import {
   GetProjectResourceContentResponse,
   SubmitStageResponsesPayload
 } from '@paynless/types';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -404,9 +404,6 @@ export const SessionContributionsDisplayCard: React.FC = () => {
     <Card className="mt-4">
       <CardHeader>
         <CardTitle>Contributions for: {activeStageDisplayName}</CardTitle>
-        <CardDescription>
-          Review the generated contributions below. You can provide feedback or responses to each.
-        </CardDescription>
         {submissionSuccessMessage && (
             <Alert variant="default" className="mt-2">
                 <AlertTitle>Success</AlertTitle>

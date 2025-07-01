@@ -57,6 +57,8 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+ALTER FUNCTION public.update_updated_at_column() SET search_path = public, pg_catalog;
+
 -- Create the trigger if it doesn\'t exist for this table
 DO $$
 BEGIN

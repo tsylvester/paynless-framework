@@ -33,7 +33,7 @@ import { TokenWalletService } from "./services/tokenWalletService.ts";
 // --- Exported Constants ---
 export const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 export const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
-export const SERVICE_ROLE_KEY = Deno.env.get("SB_SERVICE_ROLE_KEY"); 
+export const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"); 
 export const SUPABASE_JWT_SECRET = Deno.env.get("SUPABASE_JWT_SECRET");
 export const CHAT_FUNCTION_URL = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/chat` : 'http://localhost:54321/functions/v1/chat';
 
@@ -77,6 +77,12 @@ export type UndoAction =
 let undoActionsStack: UndoAction[] = [];
 
 /**
+ * ADDED: This variable will hold the JWT for the currently initialized test user.
+ * It is set by `coreInitializeTestStep` and retrieved by `getTestUserAuthToken`.
+ */
+let currentTestJwt: string | null = null;
+
+/**
  * Registers an undo action to the global `undoActionsStack`.
  * These actions are processed in reverse order of registration during `coreCleanupTestResources`.
  * This function is primarily for internal use by the utility functions when they make changes
@@ -117,6 +123,20 @@ export async function coreCleanupTestResources(executionScope: 'all' | 'local' =
   const remainingActions: UndoAction[] = executionScope === 'all'
     ? [] // All actions will be removed
     : undoActionsStack.filter(action => action.scope === 'global'); // Keep global actions if scope is local
+
+  // Dependency-aware sorting of actions.
+  // This is a targeted fix. A more robust solution might involve building a full dependency graph.
+  actionsToProcess.sort((a, b) => {
+    // Rule 1: Always process 'DELETE_CREATED_ROW' for 'user_subscriptions' first.
+    if (a.type === 'DELETE_CREATED_ROW' && a.tableName === 'user_subscriptions' && b.type !== 'DELETE_CREATED_ROW') return -1;
+    if (b.type === 'DELETE_CREATED_ROW' && b.tableName === 'user_subscriptions' && a.type !== 'DELETE_CREATED_ROW') return 1;
+    
+    // Rule 2: User deletion should happen last.
+    if (a.type === 'DELETE_CREATED_USER') return 1;
+    if (b.type === 'DELETE_CREATED_USER') return -1;
+    
+    return 0; // Keep original order for other types
+  });
 
   // Process actions in the reverse order of their registration (LIFO)
   for (const action of actionsToProcess) {
@@ -201,7 +221,7 @@ export function initializeSupabaseAdminClient(): SupabaseClient<Database> {
     throw new Error("SUPABASE_URL environment variable is not set.");
   }
   if (!SERVICE_ROLE_KEY) { 
-    throw new Error("SB_SERVICE_ROLE_KEY environment variable is not set.");
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY environment variable is not set.");
   }
   const client = createClient<Database>(SUPABASE_URL, SERVICE_ROLE_KEY, {
     auth: {
@@ -216,7 +236,7 @@ export function initializeSupabaseAdminClient(): SupabaseClient<Database> {
 
 export function initializeTestDeps(): void {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) {
-    throw new Error("SUPABASE_URL, SUPABASE_ANON_KEY, or SB_SERVICE_ROLE_KEY is not set.");
+    throw new Error("SUPABASE_URL, SUPABASE_ANON_KEY, or SUPABASE_SERVICE_ROLE_KEY is not set.");
   }
 
   if (!supabaseAdminClient) {
@@ -443,7 +463,10 @@ export async function coreEnsureTestUserAndWallet(userId: string, initialBalance
 }
 
 export function getTestUserAuthToken(): string | null {
-    return null; // Commented out as it's not set globally by the utility anymore.
+    if (!currentTestJwt) {
+        testLogger.warn("getTestUserAuthToken called but no JWT is set. This can happen if coreInitializeTestStep has not been called or failed.");
+    }
+    return currentTestJwt;
 }
 
 // --- Test Configuration Interfaces for Desired State Management ---
@@ -529,6 +552,25 @@ export interface ProcessedResourceInfo<T extends keyof Database['public']['Table
   status: 'created' | 'updated' | 'exists_unchanged' | 'failed' | 'skipped'; // Added skipped
   error?: string;
   exportId?: string; // Added exportId
+}
+
+/**
+ * Finds a processed resource by its exportId from the results of coreInitializeTestStep.
+ * This is a convenience helper to avoid manually searching the processedResources array.
+ * @param processedResources The array returned from coreInitializeTestStep.
+ * @param exportId The exportId you are looking for.
+ * @returns The resource object from the database, or undefined if not found.
+ */
+export function findProcessedResource(
+  processedResources: ProcessedResourceInfo[],
+  exportId: string
+): (Database['public']['Tables'][keyof Database['public']['Tables']]['Row'] & { id: string }) | undefined {
+    const found = processedResources.find(p => p.exportId === exportId);
+    if (found && found.resource) {
+        // We cast to add the 'id' property confidently, as it's expected for exported resources.
+        return found.resource as Database['public']['Tables'][keyof Database['public']['Tables']]['Row'] & { id: string };
+    }
+    return undefined;
 }
 
 // --- New Helper Functions for Schema Integration Tests ---
@@ -1072,151 +1114,106 @@ export async function coreInitializeTestStep(
   primaryUserJwt: string;
 }> {
   console.log(`[coreInitializeTestStep] Called with executionScope: ${executionScope}`);
-  console.log(`[coreInitializeTestStep] Config userProfile: ${JSON.stringify(config.userProfile)}`);
-  console.log(`[coreInitializeTestStep] Config initialWalletBalance: ${config.initialWalletBalance}`);
-  if (config.resources && config.resources.length > 0) {
-    console.log(`[coreInitializeTestStep] Config resources to process (${config.resources.length}):`);
-    config.resources.forEach(req => console.log(`  - Req: { tableName: '${req.tableName}', identifier: ${JSON.stringify(req.identifier)} }`));
-  } else {
-    console.log("[coreInitializeTestStep] No config.resources to process.");
-  }
+  const {
+    resources: configResources = [],
+    userProfile: configUserProfile,
+    initialWalletBalance: configInitialWalletBalance,
+  } = config;
 
-  if (executionScope === 'global') {
-    undoActionsStack = [];
-  } else {
-    undoActionsStack = undoActionsStack.filter(action => action.scope === 'global');
+  if (!supabaseAdminClient) {
+    console.warn("[coreInitializeTestStep] supabaseAdminClient not initialized. Initializing now...");
+    initializeSupabaseAdminClient();
   }
+  const anonClient = createClient<Database>(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false
+    }
+  });
 
-  if (!currentTestDeps || !supabaseAdminClient) {
-    initializeTestDeps(); // Ensure dependencies, including adminClient, are ready
-  }
+  // Always create a primary user for the test context.
+  const { userId: primaryUserId, userClient: primaryUserClient, jwt: primaryUserJwt } = await coreCreateAndSetupTestUser(configUserProfile, executionScope);
+  
+  // Set the JWT for the current test scope so getTestUserAuthToken can retrieve it.
+  currentTestJwt = primaryUserJwt;
+
+  // Now ensure the wallet exists for this user.
+  await coreEnsureTestUserAndWallet(primaryUserId, configInitialWalletBalance, executionScope);
+
   const processedResources: ProcessedResourceInfo[] = [];
-  const userProfileProps: TestSetupConfig['userProfile'] = config.userProfile;
+  const exportedIds = new Map<string, string>();
 
-  const exportedResourceIds = new Map<string, string>(); // Map to store exportId -> actual_id
-
-  const { userId: primaryUserId, userClient: primaryUserClient, jwt: primaryUserJwt } = await coreCreateAndSetupTestUser(userProfileProps, executionScope);
-  await coreEnsureTestUserAndWallet(primaryUserId, config.initialWalletBalance, executionScope);
-
-  if (config.resources) {
+  if (configResources && configResources.length > 0) {
     console.log("[coreInitializeTestStep] Starting to process config.resources...");
-    for (const requirement of config.resources) {
-      console.log(`[coreInitializeTestStep] Processing requirement: { tableName: '${requirement.tableName}', identifier: ${JSON.stringify(requirement.identifier)}, exportId: ${requirement.exportId} }`);
+    for (const req of configResources) {
+      console.log(`[coreInitializeTestStep] Processing requirement: { tableName: '${req.tableName}', identifier: ${JSON.stringify(req.identifier)}, exportId: ${req.exportId} }`);
       
-      // 1. Resolve references in the current requirement's identifier and desiredState
-      const currentResolvedIdentifier = resolveReferences(JSON.parse(JSON.stringify(requirement.identifier)), exportedResourceIds);
-      const currentResolvedDesiredState = resolveReferences(JSON.parse(JSON.stringify(requirement.desiredState)), exportedResourceIds);
+      const resolvedIdentifier = resolveReferences(JSON.parse(JSON.stringify(req.identifier)), exportedIds);
+      const resolvedDesiredState = resolveReferences(JSON.parse(JSON.stringify(req.desiredState)), exportedIds);
       
-      let resourceId: string | undefined; // Not used currently, but good to declare if needed
-      const tableNameKey = requirement.tableName as keyof Database['public']['Tables'];
-
-      let resourceForProcessedList: any = null;
-      let operationStatus: 'created' | 'updated' | 'exists_unchanged' | 'failed' | 'skipped' = 'failed';
-      let operationError: string | undefined = undefined;
-
-      // Check if the resource already exists based on the *resolved* identifier
       const { data: existingResource, error: selectError } = await supabaseAdminClient
-        .from(tableNameKey)
-        .select('*') 
-        .match(currentResolvedIdentifier as any) 
-        .maybeSingle(); 
+        .from(req.tableName)
+        .select('*')
+        .match(resolvedIdentifier)
+        .maybeSingle();
 
-      if (selectError && selectError.code !== 'PGRST116') { 
-        console.error(`[TestUtil] Error checking for existing resource in ${requirement.tableName} with resolved identifier ${JSON.stringify(currentResolvedIdentifier)}:`, selectError);
-        operationError = `Select error: ${selectError.message}`;
-        // processedResources.push(...) will be handled at the end of the loop iteration
-      } else if (existingResource) {
-        // Resource exists, update it and register for restoration
-        console.log(`[coreInitializeTestStep] Found existing resource for ${requirement.tableName} with resolved identifier ${JSON.stringify(currentResolvedIdentifier)}. Original: ${JSON.stringify(existingResource)}`);
-        registerUndoAction({
-          type: 'RESTORE_UPDATED_ROW',
-          tableName: tableNameKey,
-          identifier: currentResolvedIdentifier, // Use resolved identifier for restoration match
-          originalRow: existingResource as Database['public']['Tables'][typeof tableNameKey]['Row'],
-          scope: executionScope
-        });
+      if (selectError && selectError.code !== 'PGRST116') {
+        console.error(`[coreInitializeTestStep] Error checking for existing resource in ${req.tableName}:`, selectError);
+        processedResources.push({ tableName: req.tableName, identifier: resolvedIdentifier, status: 'failed', error: selectError.message, exportId: req.exportId });
+        continue;
+      }
 
-        // Update with resolved desired state
-        const { error: updateError } = await supabaseAdminClient
-          .from(tableNameKey)
-          .update(currentResolvedDesiredState as any) 
-          .match(currentResolvedIdentifier as any); 
+      if (existingResource) {
+        // Exists: register for restoration and update
+        registerUndoAction({ type: 'RESTORE_UPDATED_ROW', tableName: req.tableName, identifier: resolvedIdentifier, originalRow: existingResource as any, scope: executionScope });
         
-        if (updateError) {
-          console.error(`[TestUtil] Error updating existing resource in ${requirement.tableName} (Resolved Identifier: ${JSON.stringify(currentResolvedIdentifier)}):`, updateError);
-          operationError = `Update error: ${updateError.message}`;
-          resourceForProcessedList = existingResource; // Keep existing resource info on failure
-        } else {
-          const logResourceId = (existingResource as any).id || 'unknown_id_value'; // Assuming 'id' is the PK
-          console.log(`[TestUtil] Updated existing resource in ${requirement.tableName} (ID: ${logResourceId}, Resolved Identifier: ${JSON.stringify(currentResolvedIdentifier)}) with data: ${JSON.stringify(currentResolvedDesiredState)}`);
-          resourceForProcessedList = { ...existingResource, ...currentResolvedDesiredState };
-          operationStatus = 'updated';
-        }
-      } else {
-        // Resource does not exist, create it
-        console.log(`[coreInitializeTestStep] No existing resource found for ${requirement.tableName} with resolved identifier ${JSON.stringify(currentResolvedIdentifier)}. Creating new one.`);
-        let dataForDb: Partial<Database['public']['Tables'][typeof tableNameKey]['Insert']>;
-        
-        if (requirement.linkUserId) {
-          dataForDb = { ...currentResolvedIdentifier, ...currentResolvedDesiredState, user_id: primaryUserId as any };
-        } else {
-          dataForDb = { ...currentResolvedIdentifier, ...currentResolvedDesiredState };
-        }
-
-        const { data: newResource, error: insertError } = await supabaseAdminClient
-          .from(tableNameKey)
-          .insert(dataForDb as any) 
+        const { data: updatedRecord, error: updateError } = await supabaseAdminClient
+          .from(req.tableName)
+          .update(resolvedDesiredState as any)
+          .match(resolvedIdentifier)
           .select()
           .single();
-        console.log(`[coreInitializeTestStep] Attempted insert for ${requirement.tableName}. Resolved Data: ${JSON.stringify(dataForDb)}. Result: newResource: ${JSON.stringify(newResource)}, insertError: ${JSON.stringify(insertError)}`);
-
-        if (insertError || !newResource) {
-          console.error(`[TestUtil] Error creating new resource in ${requirement.tableName} (Resolved Identifier: ${JSON.stringify(currentResolvedIdentifier)}):`, insertError);
-          operationError = `Insert error: ${insertError?.message || 'No resource returned'}`;
+        
+        if (updateError) {
+          console.error(`[coreInitializeTestStep] Error updating resource in ${req.tableName}:`, updateError);
+          processedResources.push({ tableName: req.tableName, identifier: resolvedIdentifier, resource: existingResource as any, status: 'failed', error: updateError.message, exportId: req.exportId });
         } else {
-          registerUndoAction({
-            type: 'DELETE_CREATED_ROW',
-            tableName: tableNameKey,
-            criteria: { id: (newResource as any).id } as any, // Use actual ID of created row for deletion
-            scope: executionScope
-          });
-          const logResourceId = (newResource as any).id || 'unknown_id_value'; // Assuming 'id' is the PK
-          console.log(`[TestUtil] Created new resource in ${requirement.tableName} (ID: ${logResourceId}, Resolved Identifier: ${JSON.stringify(currentResolvedIdentifier)}) with data: ${JSON.stringify(dataForDb)}`);
-          resourceForProcessedList = newResource as Database['public']['Tables'][typeof tableNameKey]['Row'];
-          operationStatus = 'created';
+          console.log(`[TestUtil] Updated existing resource in ${req.tableName} (ID: ${(updatedRecord as any).id}, Resolved Identifier: ${JSON.stringify(resolvedIdentifier)}) with data: ${JSON.stringify(resolvedDesiredState)}`);
+          processedResources.push({ tableName: req.tableName, identifier: resolvedIdentifier, resource: updatedRecord as any, status: 'updated', exportId: req.exportId });
+          if (req.exportId) {
+            exportedIds.set(req.exportId, (updatedRecord as any).id);
+          }
+        }
+      } else {
+        // Does not exist: create it
+        const createPayload = req.linkUserId 
+          ? { ...resolvedIdentifier, ...resolvedDesiredState, user_id: primaryUserId }
+          : { ...resolvedIdentifier, ...resolvedDesiredState };
+
+        const { data: newResource, error: createError } = await supabaseAdminClient
+          .from(req.tableName)
+          .insert(createPayload as any)
+          .select()
+          .single();
+
+        if (createError) {
+          console.error(`[coreInitializeTestStep] Error creating resource in ${req.tableName}:`, createError);
+          processedResources.push({ tableName: req.tableName, identifier: resolvedIdentifier, status: 'failed', error: createError.message, exportId: req.exportId });
+        } else {
+          console.log(`[TestUtil] Created new resource in ${req.tableName} with ID: ${(newResource as any).id}`);
+          const deleteCriteria = { id: (newResource as any).id };
+          registerUndoAction({ type: 'DELETE_CREATED_ROW', tableName: req.tableName, criteria: deleteCriteria, scope: executionScope });
+          processedResources.push({ tableName: req.tableName, identifier: resolvedIdentifier, resource: newResource as any, status: 'created', exportId: req.exportId });
+          if (req.exportId) {
+            exportedIds.set(req.exportId, (newResource as any).id);
+          }
         }
       }
-
-      // 3. If successful and exportId is present, store its *actual* ID for *future* resources
-      if ((operationStatus === 'updated' || operationStatus === 'created') && requirement.exportId && resourceForProcessedList && (resourceForProcessedList as any).id) {
-        const actualId = (resourceForProcessedList as any).id;
-        exportedResourceIds.set(requirement.exportId, actualId);
-        console.log(`[coreInitializeTestStep] Exported ID: ${requirement.exportId} -> ${actualId}`);
-      } else if (operationStatus !== 'failed' && requirement.exportId && (!resourceForProcessedList || !(resourceForProcessedList as any).id)) {
-        console.warn(`[coreInitializeTestStep] Resource for ${requirement.tableName} with exportId '${requirement.exportId}' was processed but no ID was found to export.`);
-      }
-      
-      // Add to processedResources
-      processedResources.push({ 
-        tableName: requirement.tableName, 
-        identifier: requirement.identifier, // Store original identifier for reporting
-        resource: resourceForProcessedList, 
-        status: operationStatus, 
-        error: operationError,
-        exportId: requirement.exportId, // Ensure exportId is included
-      });
     }
   }
   
   console.log(`[coreInitializeTestStep] Finished processing resources. Final processedResources array (before return): ${JSON.stringify(processedResources.map(p => ({ tableName: p.tableName, exportId: p.exportId, status: p.status, id: (p.resource as any)?.id, error: p.error  })), null, 2)}`);
-
-  const anonClient = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-      detectSessionInUrl: false,
-    },
-  });
 
   return {
     primaryUserId,

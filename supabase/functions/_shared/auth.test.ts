@@ -96,12 +96,13 @@ Deno.test("Auth Utilities", async (t) => {
     // --- Test createUnauthorizedResponse ---
     await t.step("createUnauthorizedResponse: should create 401 response", async () => {
         const message = "Invalid token";
-        const res = createUnauthorizedResponse(message);
+        const req = new Request("http://localhost:5173", { headers: { 'Origin': 'http://localhost:5173' }});
+        const res = createUnauthorizedResponse(message, req);
         assertEquals(res.status, 401);
         assertEquals(res.headers.get("Content-Type"), "application/json");
         assertExists(res.headers.get("Access-Control-Allow-Origin")); // Check CORS header exists
         const body = await res.json();
-        assertEquals(body, { error: { code: "unauthorized", message: message } });
+        assertEquals(body, { error: message });
     });
 
     // --- Test createSupabaseClient ---
@@ -124,7 +125,11 @@ Deno.test("Auth Utilities", async (t) => {
                     'test-anon-key', 
                     { 
                         global: { headers: { Authorization: 'Bearer test-token' } },
-                        auth: { persistSession: false },
+                        auth: { 
+                            persistSession: false,
+                            autoRefreshToken: false,
+                            detectSessionInUrl: false
+                        },
                     }
                 ]
             });
@@ -151,7 +156,13 @@ Deno.test("Auth Utilities", async (t) => {
                 args: [
                     'test-url', 
                     'test-service-key', 
-                    { auth: { persistSession: false } }
+                    { 
+                        auth: { 
+                            persistSession: false,
+                            autoRefreshToken: false,
+                            detectSessionInUrl: false
+                        } 
+                    }
                 ]
             });
         } finally {

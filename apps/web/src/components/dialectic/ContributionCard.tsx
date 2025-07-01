@@ -55,7 +55,7 @@ export const ContributionCard: React.FC<ContributionCardProps> = ({
           <Terminal className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
           <AlertDescription>
-            Could not load contribution content: {cacheEntry.error}
+            Could not load contribution content: {cacheEntry.error.message}
           </AlertDescription>
         </Alert>
       );
@@ -63,10 +63,18 @@ export const ContributionCard: React.FC<ContributionCardProps> = ({
 
     if (cacheEntry?.content) {
       if (cacheEntry.mimeType === 'text/markdown') {
-        return <MarkdownRenderer content={cacheEntry.content} />;
+        return (
+          <div className="overflow-x-auto max-w-full">
+            <MarkdownRenderer content={cacheEntry.content} />
+          </div>
+        );
       }
       // Fallback for plain text or other types
-      return <pre className="whitespace-pre-wrap text-sm">{cacheEntry.content}</pre>;
+      return (
+        <div className="overflow-x-auto max-w-full">
+          <pre className="whitespace-pre text-sm min-w-0">{cacheEntry.content}</pre>
+        </div>
+      );
     }
 
     // If no cache entry yet, or not loading and no content (e.g., initial state before useEffect runs)

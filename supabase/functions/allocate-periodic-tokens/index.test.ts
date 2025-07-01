@@ -44,17 +44,14 @@ describe("POST /allocate-periodic-tokens", () => {
 
   beforeEach(() => {
     denoEnvGetStub = stub(Deno.env, "get", (key: string) => {
-      if (key === "SB_URL") return mockSupabaseUrl;
-      if (key === "SB_SERVICE_ROLE_KEY") return mockServiceRoleKey;
+      if (key === "SUPABASE_URL") return mockSupabaseUrl;
+      if (key === "SUPABASE_SERVICE_ROLE_KEY") return mockServiceRoleKey;
       console.warn(`[Test Env Stub] Deno.env.get called with unmocked key: ${key}`);
       return undefined;
     });
 
     // Create fresh mocks for each test
-    mockSupabase = createMockSupabaseClient({
-      // genericMockResults: { /* configure specific table responses if needed */ },
-      // rpcResults: { /* configure specific rpc responses if needed */ }
-    });
+    mockSupabase = createMockSupabaseClient("allocate-periodic-tokens");
     
     mockTokenWallet = createMockTokenWalletService({
       // recordTransaction: async (params) => { /* custom mock logic */ return mockTransaction; }
@@ -96,7 +93,7 @@ describe("POST /allocate-periodic-tokens", () => {
     });
 
     // Configure the mock Supabase client to return an error for the 'subscription_plans' query
-    mockSupabase = createMockSupabaseClient({
+    mockSupabase = createMockSupabaseClient("allocate-periodic-tokens", {
       genericMockResults: {
         subscription_plans: {
           select: () => Promise.resolve({ data: null, error: new Error("DB error fetching plan"), count: 0, status: 500, statusText: "DB Error" })
@@ -137,7 +134,7 @@ describe("POST /allocate-periodic-tokens", () => {
         body: JSON.stringify({})
     });
 
-    mockSupabase = createMockSupabaseClient({
+    mockSupabase = createMockSupabaseClient("allocate-periodic-tokens", {
         genericMockResults: {
             subscription_plans: {
                 select: () => Promise.resolve({
@@ -174,7 +171,7 @@ describe("POST /allocate-periodic-tokens", () => {
         body: JSON.stringify({})
     });
 
-    mockSupabase = createMockSupabaseClient({
+    mockSupabase = createMockSupabaseClient("allocate-periodic-tokens", {
         genericMockResults: {
             subscription_plans: {
                 select: () => Promise.resolve({
@@ -223,6 +220,7 @@ describe("POST /allocate-periodic-tokens", () => {
         balanceAfterTxn: String(tokensToAward), // Assuming starts from 0 for simplicity
         recordedByUserId: "19c35c50-eab5-49db-997f-e6fea60253eb", // Actual SYSTEM_USER_ID from index.ts
         timestamp: new Date(),
+        idempotencyKey: "idempotency-key-mock",
         // notes, relatedEntityId, etc., are optional
     };
 
@@ -230,7 +228,7 @@ describe("POST /allocate-periodic-tokens", () => {
         Promise.resolve({ data: [{id: "sub-id-due"}], error: null, count: 1, status: 200, statusText: "OK" })
     );
 
-    mockSupabase = createMockSupabaseClient({
+    mockSupabase = createMockSupabaseClient("allocate-periodic-tokens", {
         genericMockResults: {
             subscription_plans: {
                 select: () => Promise.resolve({
@@ -379,7 +377,7 @@ describe("POST /allocate-periodic-tokens", () => {
     const mockSubscriptionPlanData = { id: mockPlanId, tokens_to_award: tokensToAward, interval: 'month', interval_count: 1 };
     const mockUserSubscriptionsData = users.map(u => ({ id: u.subId, user_id: u.userId, plan_id: mockPlanId, current_period_start: oldPeriodStart.toISOString(), current_period_end: u.current_period_end_iso, status: 'free' }));
     const mockTokenWalletsData = users.map(u => ({ wallet_id: u.walletId, user_id: u.userId }));
-    const mockTransactionResults: TokenWalletTransaction[] = users.map(u => ({ transactionId: `txn-${u.userId}`, walletId: u.walletId, type: "CREDIT_MONTHLY_FREE_ALLOCATION", amount: String(tokensToAward), balanceAfterTxn: String(tokensToAward), recordedByUserId: "19c35c50-eab5-49db-997f-e6fea60253eb", timestamp: new Date(), relatedEntityId: mockPlanId, relatedEntityType: 'subscription_plan' }));
+    const mockTransactionResults: TokenWalletTransaction[] = users.map(u => ({ transactionId: `txn-${u.userId}`, walletId: u.walletId, type: "CREDIT_MONTHLY_FREE_ALLOCATION", amount: String(tokensToAward), balanceAfterTxn: String(tokensToAward), recordedByUserId: "19c35c50-eab5-49db-997f-e6fea60253eb", timestamp: new Date(), relatedEntityId: mockPlanId, relatedEntityType: 'subscription_plan', idempotencyKey: "idempotency-key-mock" }));
 
     let recordTransactionCallCount = 0;
     const actualMockRecordTransactionImpl = async (_params: Parameters<ITokenWalletService['recordTransaction']>[0]): Promise<TokenWalletTransaction> => {
@@ -388,7 +386,7 @@ describe("POST /allocate-periodic-tokens", () => {
       return result;
     };
 
-    mockSupabase = createMockSupabaseClient({
+    mockSupabase = createMockSupabaseClient("allocate-periodic-tokens", {
       genericMockResults: {
         subscription_plans: { select: () => Promise.resolve({ data: [mockSubscriptionPlanData], error: null, count: 1, status: 200, statusText: "OK" }) },
         user_subscriptions: {
@@ -520,7 +518,8 @@ describe("POST /allocate-periodic-tokens", () => {
         recordedByUserId: SYSTEM_USER_ID,
         timestamp: new Date(),
         relatedEntityId: mockPlanId,
-        relatedEntityType: 'subscription_plan'
+          relatedEntityType: 'subscription_plan',
+        idempotencyKey: "idempotency-key-mock"
     }));    
 
     const actualMockRecordTransactionImpl = async (
@@ -531,7 +530,7 @@ describe("POST /allocate-periodic-tokens", () => {
         return result;
     };
 
-    mockSupabase = createMockSupabaseClient({
+    mockSupabase = createMockSupabaseClient("allocate-periodic-tokens", {
       genericMockResults: {
         subscription_plans: {
           select: () => Promise.resolve({ data: [mockSubscriptionPlanData], error: null, count: 1, status: 200, statusText: "OK" })
@@ -670,7 +669,8 @@ describe("POST /allocate-periodic-tokens", () => {
         recordedByUserId: SYSTEM_USER_ID,
         timestamp: new Date(),
         relatedEntityId: mockPlanId,
-        relatedEntityType: 'subscription_plan'
+        relatedEntityType: 'subscription_plan',
+        idempotencyKey: "idempotency-key-mock"
       };
     });
 
@@ -690,7 +690,7 @@ describe("POST /allocate-periodic-tokens", () => {
       return mockSuccessfulTransactionResults[callingUserId];
     };
 
-    mockSupabase = createMockSupabaseClient({
+    mockSupabase = createMockSupabaseClient("allocate-periodic-tokens", {
       genericMockResults: {
         subscription_plans: {
           select: () => Promise.resolve({ data: [mockSubscriptionPlanData], error: null, count: 1, status: 200, statusText: "OK" })
@@ -815,7 +815,8 @@ describe("POST /allocate-periodic-tokens", () => {
         recordedByUserId: SYSTEM_USER_ID,
         timestamp: new Date(),
         relatedEntityId: mockPlanId,
-        relatedEntityType: 'subscription_plan'
+        relatedEntityType: 'subscription_plan',
+        idempotencyKey: "idempotency-key-mock"
       };
     });
 
@@ -845,7 +846,7 @@ describe("POST /allocate-periodic-tokens", () => {
       return Promise.resolve({ data: [{ id: subIdBeingUpdated }], error: null, count: 1, status: 200, statusText: "OK" });
     });
 
-    mockSupabase = createMockSupabaseClient({
+    mockSupabase = createMockSupabaseClient("allocate-periodic-tokens", {
       genericMockResults: {
         subscription_plans: {
           select: () => Promise.resolve({ data: [mockSubscriptionPlanData], error: null, count: 1, status: 200, statusText: "OK" })

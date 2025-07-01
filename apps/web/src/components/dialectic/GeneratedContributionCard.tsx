@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useDialecticStore, selectContributionById } from '@paynless/store';
 import { ApiError, DialecticContribution } from '@paynless/types';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
-import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
 import { TextInputArea } from '@/components/common/TextInputArea';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Edit3, XCircle, Save } from 'lucide-react';
+import { Loader2, XCircle, Save } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface GeneratedContributionCardProps {
@@ -72,14 +71,7 @@ export const GeneratedContributionCard: React.FC<GeneratedContributionCardProps>
     };
   }, [saveEditError, resetSaveEditError]);
 
-  const handleEditToggle = () => {
-    if(isSavingEdit) return;
-    setIsEditing(!isEditing);
-    if (!isEditing) {
-      setEditedContentText(displayContent);
-    }
-    if(saveEditError && resetSaveEditError) resetSaveEditError();
-  };
+
 
   const handleSaveEdit = async () => {
     if (!contribution || !projectId || isSavingEdit) {
@@ -123,83 +115,96 @@ export const GeneratedContributionCard: React.FC<GeneratedContributionCardProps>
 
   return (
     <Card className="flex flex-col h-full">
-      <CardHeader className="pb-2">
+      <CardHeader>
         <div className="flex justify-between items-start">
             <div>
-                <CardTitle className="text-lg">{contribution.model_name || 'AI Contribution'}</CardTitle>
-                <CardDescription className="text-xs">
+                <CardTitle className="text-lg">{contribution.model_name} | 
                     {isUserEdited ? 
-                        <Badge variant="outline" className="border-amber-500 text-amber-600">Edited by User</Badge> : 
-                        <Badge variant="secondary">AI Generated</Badge>}
+                        <Badge variant="outline" className="border-amber-500 text-amber-600 mx-2">Edited by User</Badge> : 
+                        <Badge variant="secondary">AI Generated</Badge>} | 
                     <span className="ml-2">V{contribution.edit_version}</span>
-                </CardDescription>
+                </CardTitle>            
             </div>
-            {!isEditing && (
-                 <Button variant="outline" size="icon" onClick={handleEditToggle} title="Edit this contribution" disabled={isSavingEdit}>
-                    <Edit3 className="h-4 w-4" />
-                </Button>
-            )}
         </div>
       </CardHeader>
-      <CardContent className="flex-grow overflow-y-auto">
-        {isEditing ? (
-          <div className="space-y-2">
-            <TextInputArea
-              label="Enter edited content..."
-              value={editedContentText}
-              onChange={setEditedContentText}
-              placeholder="Enter edited content..."
-              showPreviewToggle={true}
-              showFileUpload={false}
-            />
-            <p className="text-xs text-muted-foreground px-1">
-              Recommended for significant corrections. For substantive dialogue, use the response area below.
-            </p>
+      {/* Main content area with responsive layout */}
+      <div className="flex-grow flex flex-col lg:flex-row gap-4 mx-6">
+        {/* Display Section */}
+        <div className="flex-1 min-w-0">
+          <div className="mb-2">
+            <h4 className="text-sm font-medium text-muted-foreground">Content</h4>
           </div>
-        ) : (
-          <>
-            {isLoadingContent && <div data-testid="content-loading-skeleton"><Skeleton className="h-24 w-full" /></div>}
-            {contentError && <Alert variant="destructive"><AlertDescription>{contentError.message}</AlertDescription></Alert>}
-            {displayContent && !isLoadingContent && !contentError && (
-              <div className="prose dark:prose-invert max-w-none text-sm p-1 border rounded-md max-h-60 overflow-y-auto bg-muted/20">
-                <MarkdownRenderer content={displayContent} />
+          {isLoadingContent && <div data-testid="content-loading-skeleton"><Skeleton className="h-24 w-full" /></div>}
+          {contentError && <Alert variant="destructive"><AlertDescription>{contentError.message}</AlertDescription></Alert>}
+          {!isLoadingContent && !contentError && (
+            <div style={isEditing ? { width: '100%' } : undefined}>
+              <TextInputArea
+                label=""
+                value={isEditing ? editedContentText : displayContent || "No content available"}
+                onChange={setEditedContentText}
+                disabled={!isEditing}
+                placeholder={isEditing ? "Enter edited content..." : ""}
+                showPreviewToggle={true}
+                showFileUpload={false}
+                initialPreviewMode={!isEditing}
+                onPreviewModeChange={(isPreview) => {
+                  if (!isSavingEdit) {
+                    setIsEditing(!isPreview);
+                    if (!isPreview) {
+                      setEditedContentText(displayContent);
+                    }
+                    if(saveEditError && resetSaveEditError) resetSaveEditError();
+                  }
+                }}
+                textAreaClassName={isEditing ? "!w-full [field-sizing:normal]" : "pointer-events-none"}
+              />
+            </div>
+          )}
+          {isEditing && (
+            <div className="mt-2 space-y-2">
+              <p className="text-xs text-muted-foreground px-1">
+                Recommended for significant corrections. For substantive dialogue, use the response area.
+              </p>
+              <div className="flex justify-end gap-2 w-full">
+                <Button variant="outline" onClick={() => {
+                  setIsEditing(false);
+                  setEditedContentText(displayContent);
+                  if(saveEditError && resetSaveEditError) resetSaveEditError();
+                }} size="sm" disabled={isSavingEdit}>
+                  <XCircle className="mr-1.5 h-4 w-4"/> Discard
+                </Button>
+                <Button onClick={handleSaveEdit} size="sm" disabled={isSavingEdit || editedContentText === displayContent}>
+                  {isSavingEdit ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin"/> : <Save className="mr-1.5 h-4 w-4"/>} 
+                  {isSavingEdit ? 'Saving...' : 'Save Edit'}
+                </Button>
               </div>
-            )}
-            {!displayContent && !isLoadingContent && !contentError && <p className="text-sm text-muted-foreground italic p-1">No content available or content is empty.</p>}
-          </>
-        )}
-        {saveEditError && isEditing && (
-            <Alert variant="destructive" className="mt-2">
-                <AlertTitle>Save Error</AlertTitle>
-                <AlertDescription>{saveEditError.message || "Could not save your edit."}</AlertDescription>
-            </Alert>
-        )}
-      </CardContent>
-      <CardFooter className="flex-col items-stretch gap-2 pt-3 border-t">
-        {isEditing ? (
-          <div className="flex justify-end gap-2 w-full">
-            <Button variant="outline" onClick={handleEditToggle} size="sm" disabled={isSavingEdit}>
-              <XCircle className="mr-1.5 h-4 w-4"/> Discard
-            </Button>
-            <Button onClick={handleSaveEdit} size="sm" disabled={isSavingEdit || editedContentText === displayContent}>
-              {isSavingEdit ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin"/> : <Save className="mr-1.5 h-4 w-4"/>} 
-              {isSavingEdit ? 'Saving...' : 'Save Edit'}
-            </Button>
+            </div>
+          )}
+          {saveEditError && isEditing && (
+              <Alert variant="destructive" className="mt-2">
+                  <AlertTitle>Save Error</AlertTitle>
+                  <AlertDescription>{saveEditError.message || "Could not save your edit."}</AlertDescription>
+              </Alert>
+          )}
+        </div>
+
+        {/* Response Section */}
+        <div className="flex-1 min-w-0">
+          <div className="mb-2">
+            <h4 className="text-sm font-medium text-muted-foreground">Your Response</h4>
           </div>
-        ) : (
           <div className="w-full space-y-1.5">
             <TextInputArea
               id={`response-${contribution.id}`}
               value={currentResponseText}
               onChange={handleResponseChangeInternal}
-              placeholder={`Respond to ${contribution.model_name || 'this contribution'}...`}
+              placeholder={`Enter your response for ${contribution.model_name}. Notes, criticism, requests, or other feedback. Anything you add will be used by the model for the next stage.`}
               showPreviewToggle={true}
               showFileUpload={false}
-              label="Enter your response, notes, criticism, requests, or other feedback. Anything you add will be used by the model for the next stage."
             />
           </div>
-        )}
-      </CardFooter>
+        </div>
+      </div>
     </Card>
   );
 }; 

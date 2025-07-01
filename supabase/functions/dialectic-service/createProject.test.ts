@@ -25,10 +25,12 @@ Deno.test("createProject - successful project creation (no file)", async () => {
     created_at: testTimestamp,
   };
 
+  const mockProjectResourceId = "res-uuid-for-string-upload";
+
   const mockExpectedDbInsert = {
     user_id: mockUserId,
     project_name: mockProjectName,
-    initial_user_prompt: mockInitialUserPromptText,
+    initial_user_prompt: "", // Always empty now - content stored as file
     selected_domain_id: mockSelectedDomainId,
     selected_domain_overlay_id: mockSelectedDomainOverlayId,
     process_template_id: mockProcessTemplateId,
@@ -41,7 +43,7 @@ Deno.test("createProject - successful project creation (no file)", async () => {
     id: "project-test-id-refactored",
     user_id: mockUserId,
     project_name: mockProjectName,
-    initial_user_prompt: mockInitialUserPromptText,
+    initial_user_prompt: "", // Always empty now - content stored as file
     selected_domain_id: mockSelectedDomainId,
     domain_name: "Software Development",
     selected_domain_overlay_id: mockSelectedDomainOverlayId,
@@ -49,7 +51,7 @@ Deno.test("createProject - successful project creation (no file)", async () => {
     status: "new",
     created_at: testTimestamp, // Use consistent timestamp
     updated_at: testTimestamp, // Use consistent timestamp
-    initial_prompt_resource_id: null,
+    initial_prompt_resource_id: mockProjectResourceId,
   };
 
   const formDataValues = {
@@ -89,6 +91,7 @@ Deno.test("createProject - successful project creation (no file)", async () => {
             data: [{
               ...mockProjectDataAfterInsert,
               ...insertedData,
+              initial_prompt_resource_id: null, // Still null at insert time
               // The database would return the domain as a nested object after the join
               domain: { name: mockProjectDataAfterInsert.domain_name },
             }],
@@ -96,6 +99,21 @@ Deno.test("createProject - successful project creation (no file)", async () => {
             count: 1,
             status: 201,
             statusText: 'Created'
+          };
+        },
+        update: async (state: MockQueryBuilderState) => {
+          const updatedData = state.updateData as any;
+          return {
+            data: [{
+              ...mockProjectDataAfterInsert,
+              ...updatedData,
+              domain: { name: mockProjectDataAfterInsert.domain_name },
+              // Don't include process_template here to trigger final select
+            }],
+            error: null,
+            count: 1,
+            status: 200,
+            statusText: 'OK'
           };
         },
         select: async (_state: MockQueryBuilderState) => {
@@ -108,8 +126,32 @@ Deno.test("createProject - successful project creation (no file)", async () => {
             error: null, count: 1, status: 200, statusText: 'OK'
           };
         }
+      },
+      'dialectic_project_resources': {
+        insert: async () => ({
+          data: [{ id: mockProjectResourceId, storage_path: 'mock/storage/path/prompt.md' }],
+          error: null,
+          count: 1,
+          status: 201,
+          statusText: 'Created'
+        })
       }
-    }
+    },
+    storageMock: {
+      uploadResult: async (bucketId: string, _path: string, _body: unknown, _options?: IMockStorageFileOptions) => {
+        if (bucketId !== "dialectic-contributions") {
+          return { data: null, error: new Error("Mock: Invalid bucket for upload") };
+        }
+        return { data: { path: 'mock/storage/path/prompt.md' }, error: null };
+      },
+      removeResult: async (bucketId: string, _paths: string[]) => {
+        if (bucketId !== "dialectic-contributions") {
+          return { data: null, error: new Error("Mock: Invalid bucket for remove") };
+        }
+        return { data: [], error: null };
+      }
+    },
+    mockUser: mockUser,
   };
 
   const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
@@ -134,11 +176,15 @@ Deno.test("createProject - successful project creation (no file)", async () => {
 
     assertExists(result.data.process_template, "process_template should exist on the returned project data");
     assertEquals(result.data.process_template?.id, mockProcessTemplateId);
+    assertEquals(result.data.initial_prompt_resource_id, mockProjectResourceId, "initial_prompt_resource_id should be set");
+    assertEquals(result.data.initial_user_prompt, "", "initial_user_prompt should be empty since content is stored as file");
 
-    assertEquals(spies.fromSpy.calls.length, 3, "fromSpy should be called 3 times (assoc, projects insert, projects select)");
+    assertEquals(spies.fromSpy.calls.length, 5, "fromSpy should be called 5 times (assoc, projects insert, resources insert, projects update, projects select)");
     assertEquals(spies.fromSpy.calls[0].args[0], 'domain_process_associations', "First from call should be for 'domain_process_associations'");
-    assertEquals(spies.fromSpy.calls[1].args[0], 'dialectic_projects', "Second from call should be for 'dialectic_projects'");
-    assertEquals(spies.fromSpy.calls[2].args[0], 'dialectic_projects', "Third from call should be for 'dialectic_projects'");
+    assertEquals(spies.fromSpy.calls[1].args[0], 'dialectic_projects', "Second from call should be for 'dialectic_projects' (insert)");
+    assertEquals(spies.fromSpy.calls[2].args[0], 'dialectic_project_resources', "Third from call should be for 'dialectic_project_resources'");
+    assertEquals(spies.fromSpy.calls[3].args[0], 'dialectic_projects', "Fourth from call should be for 'dialectic_projects' (update)");
+    assertEquals(spies.fromSpy.calls[4].args[0], 'dialectic_projects', "Fifth from call should be for 'dialectic_projects' (final select)");
 
     // We can check the insert payload was correct via the holder.
     assertObjectMatch(insertPayloadHolder.payload as any, mockExpectedDbInsert as any, "Insert payload should match expected");
@@ -217,9 +263,10 @@ Deno.test("createProject - database error on insert", async () => {
   const mockExpectedDbInsert = { // This is what we expect to be passed to insert, even if it fails
     user_id: mockUserId,
     project_name: mockProjectName,
-    initial_user_prompt: mockInitialUserPromptText,
+    initial_user_prompt: "", // Always empty now - content stored as file
     selected_domain_id: mockSelectedDomainId,
     selected_domain_overlay_id: null,
+    process_template_id: mockProcessTemplateId,
     status: "new",
     initial_prompt_resource_id: null,
   };
@@ -779,7 +826,7 @@ Deno.test("createProject - promptFile dialectic_project_resources insert fails (
     const result = await createProject(formData, mockDbAdminClient as any, mockUser, {});
 
     assertExists(result.error);
-    assertEquals(result.error?.message, "Database insert failed: Failed to record prompt file resource.");
+    assertEquals(result.error?.message, "Database registration failed after successful upload.: Failed to record prompt file resource.");
     assertEquals(result.error?.status, 500);
     assertEquals(result.error?.details, "Failed to record prompt file resource.");
 
@@ -877,10 +924,12 @@ Deno.test("createProject - successful project creation with domain and overlay",
     created_at: testTimestamp,
   };
 
+  const mockProjectResourceId = "res-uuid-for-overlay-string-upload";
+
   const mockExpectedDbInsert = {
     user_id: mockUserId,
     project_name: mockProjectName,
-    initial_user_prompt: mockInitialUserPromptText,
+    initial_user_prompt: "", // Always empty now - content stored as file
     selected_domain_id: mockSelectedDomainId,
     selected_domain_overlay_id: mockSelectedDomainOverlayId,
     process_template_id: mockProcessTemplateId,
@@ -892,7 +941,7 @@ Deno.test("createProject - successful project creation with domain and overlay",
     id: "project-test-id-with-domain-overlay",
     user_id: mockUserId,
     project_name: mockProjectName,
-    initial_user_prompt: mockInitialUserPromptText,
+    initial_user_prompt: "", // Always empty now - content stored as file
     selected_domain_id: mockSelectedDomainId,
     domain_name: "Domain For Overlay",
     selected_domain_overlay_id: mockSelectedDomainOverlayId,
@@ -900,7 +949,7 @@ Deno.test("createProject - successful project creation with domain and overlay",
     status: "new",
     created_at: testTimestamp,
     updated_at: testTimestamp,
-    initial_prompt_resource_id: null,
+    initial_prompt_resource_id: mockProjectResourceId,
   };
 
   const formDataValues = {
@@ -940,12 +989,28 @@ Deno.test("createProject - successful project creation with domain and overlay",
             data: [{
               ...mockProjectDataAfterInsert,
               ...insertedData,
+              initial_prompt_resource_id: null, // Still null at insert time
               domain: { name: mockProjectDataAfterInsert.domain_name },
             }],
             error: null,
             count: 1,
             status: 201,
             statusText: 'Created'
+          };
+        },
+        update: async (state: MockQueryBuilderState) => {
+          const updatedData = state.updateData as any;
+          return {
+            data: [{
+              ...mockProjectDataAfterInsert,
+              ...updatedData,
+              domain: { name: mockProjectDataAfterInsert.domain_name },
+              process_template: { id: mockProcessTemplateId, name: 'Overlay Mock Process' }
+            }],
+            error: null,
+            count: 1,
+            status: 200,
+            statusText: 'OK'
           };
         },
         select: async (_state: MockQueryBuilderState) => {
@@ -957,8 +1022,32 @@ Deno.test("createProject - successful project creation with domain and overlay",
             error: null, count: 1, status: 200, statusText: 'OK'
           };
         }
+      },
+      'dialectic_project_resources': {
+        insert: async () => ({
+          data: [{ id: mockProjectResourceId, storage_path: 'mock/storage/path/overlay-prompt.md' }],
+          error: null,
+          count: 1,
+          status: 201,
+          statusText: 'Created'
+        })
       }
-    }
+    },
+    storageMock: {
+      uploadResult: async (bucketId: string, _path: string, _body: unknown, _options?: IMockStorageFileOptions) => {
+        if (bucketId !== "dialectic-contributions") {
+          return { data: null, error: new Error("Mock: Invalid bucket for upload") };
+        }
+        return { data: { path: 'mock/storage/path/overlay-prompt.md' }, error: null };
+      },
+      removeResult: async (bucketId: string, _paths: string[]) => {
+        if (bucketId !== "dialectic-contributions") {
+          return { data: null, error: new Error("Mock: Invalid bucket for remove") };
+        }
+        return { data: [], error: null };
+      }
+    },
+    mockUser: mockUser,
   };
 
   const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
@@ -972,9 +1061,12 @@ Deno.test("createProject - successful project creation with domain and overlay",
     );
 
     assertExists(result.data, "result.data should exist");
+    assertEquals(result.error, undefined, "Error should be undefined on success");
     assertEquals(result.data.selected_domain_id, mockSelectedDomainId);
     assertEquals(result.data.selected_domain_overlay_id, mockSelectedDomainOverlayId);
     assertEquals(result.data.project_name, mockProjectName);
+    assertEquals(result.data.initial_prompt_resource_id, mockProjectResourceId, "initial_prompt_resource_id should be set");
+    assertEquals(result.data.initial_user_prompt, "", "initial_user_prompt should be empty since content is stored as file");
     assertExists(result.data.process_template, "process_template should exist on the returned data");
     assertEquals(result.data.process_template?.id, mockProcessTemplateId);
 

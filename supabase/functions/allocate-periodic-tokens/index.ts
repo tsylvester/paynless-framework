@@ -19,8 +19,8 @@ export async function handleAllocatePeriodicTokens(
 
   // 1. Initialize Supabase Admin Client - Now passed as parameter
   // const supabaseAdminClientInstance = createClient<Database>(
-  //   Deno.env.get('SB_URL') ?? '',
-  //   Deno.env.get('SB_SERVICE_ROLE_KEY') ?? ''
+  //   Deno.env.get('SUPABASE_URL') ?? '',
+  //   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   // );
 
   // Pass console as a simple logger; consider a more structured logger if needed.
@@ -180,8 +180,8 @@ export async function handleAllocatePeriodicTokens(
 serve(async (req) => {
   // Instantiate dependencies here for the actual function execution
   const supabaseAdminClient = createClient<Database>(
-    Deno.env.get('SB_URL') ?? '',
-    Deno.env.get('SB_SERVICE_ROLE_KEY') ?? ''
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   );
   const tokenWalletSvc = new TokenWalletService(supabaseAdminClient);
 

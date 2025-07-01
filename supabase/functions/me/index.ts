@@ -1,44 +1,32 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
-// import "jsr:@supabase/functions-js/edge-runtime.d.ts"; // Intentionally commented out for testing
-// Import types
-import type { 
-    SupabaseClient, 
-    AuthError, 
-    User,
-    PostgrestSingleResponse
-} from "@supabase/supabase-js";
-// Import dependencies and rename
 import { 
-  handleCorsPreflightRequest as actualHandleCorsPreflightRequest, 
-  createErrorResponse as actualCreateErrorResponse, 
-  createSuccessResponse as actualCreateSuccessResponse 
+  handleCorsPreflightRequest, 
+  createErrorResponse, 
+  createSuccessResponse 
 } from '../_shared/cors-headers.ts';
 import { 
-  createSupabaseClient as actualCreateSupabaseClient, 
-  verifyApiKey as actualVerifyApiKey,
-  createUnauthorizedResponse as actualCreateUnauthorizedResponse
+  createSupabaseClient,
+  createUnauthorizedResponse
 } from '../_shared/auth.ts';
 
 // Define dependencies interface (Restoring)
 export interface MeHandlerDeps {
-    handleCorsPreflightRequest: typeof actualHandleCorsPreflightRequest;
-    verifyApiKey: typeof actualVerifyApiKey;
-    createUnauthorizedResponse: typeof actualCreateUnauthorizedResponse;
-    createErrorResponse: typeof actualCreateErrorResponse;
-    createSuccessResponse: typeof actualCreateSuccessResponse;
-    createSupabaseClient: typeof actualCreateSupabaseClient;
+    handleCorsPreflightRequest: typeof handleCorsPreflightRequest;
+    createUnauthorizedResponse: typeof createUnauthorizedResponse;
+    createErrorResponse: typeof createErrorResponse;
+    createSuccessResponse: typeof createSuccessResponse;
+    createSupabaseClient: typeof createSupabaseClient;
 }
 
 // Default dependencies (Restoring)
 const defaultDeps: MeHandlerDeps = {
-    handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
-    verifyApiKey: actualVerifyApiKey,
-    createUnauthorizedResponse: actualCreateUnauthorizedResponse,
-    createErrorResponse: actualCreateErrorResponse,
-    createSuccessResponse: actualCreateSuccessResponse,
-    createSupabaseClient: actualCreateSupabaseClient,
+    handleCorsPreflightRequest: handleCorsPreflightRequest,
+    createUnauthorizedResponse: createUnauthorizedResponse,
+    createErrorResponse: createErrorResponse,
+    createSuccessResponse: createSuccessResponse,
+    createSupabaseClient: createSupabaseClient,
 };
 
 // Export the handler with deps parameter (Restoring)
@@ -50,16 +38,6 @@ export async function handleMeRequest(
   // Use deps again
   const corsResponse = deps.handleCorsPreflightRequest(req); 
   if (corsResponse) return corsResponse;
-
-  console.log("[me/index.ts] Verifying API key...");
-  // Use deps again
-  const isValidApiKey = deps.verifyApiKey(req); 
-  if (!isValidApiKey) {
-    console.log("[me/index.ts] API key verification failed.");
-    // Use deps again - createUnauthorizedResponse now takes req
-    return deps.createUnauthorizedResponse("Invalid or missing apikey", req); 
-  }
-  console.log("[me/index.ts] API key verified.");
 
   try {
     console.log("[me/index.ts] Creating Supabase client...");
@@ -82,42 +60,59 @@ export async function handleMeRequest(
     switch (req.method) {
       case 'GET': {
         console.log(`[me/index.ts] Handling GET for user ${user.id}`);
-        let profileData = null;
-        let profileError = null;
-        try {
-            console.log(`[me/index.ts] Fetching profile for user ${user.id}...`);
-            const { data, error } = await supabase // supabase client is fine
-              .from('user_profiles')
-              .select('*')
-              .eq('id', user.id)
-              .single();
-            profileData = data;
-            profileError = error;
-             console.log(`[me/index.ts] Profile fetch result: data=${!!profileData}, error=${profileError?.message}`);
-        } catch (fetchErr) {
-            console.error('[me/index.ts] Exception during profile fetch:', fetchErr);
-            // Revert: Remove fetchErr argument
-            return deps.createErrorResponse("Error fetching profile data", 500, req); 
+        
+        // Fetch the user's profile
+        let { data: profileData, error: profileError } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+
+        console.log(`[me/index.ts] Initial profile fetch: data=${!!profileData}, error=${profileError?.message}`);
+
+        // If the user profile is not found (PostgREST error 'PGRST116'), create it.
+        if (profileError && profileError.code === 'PGRST116') {
+          console.log(`[me/index.ts] Profile not found for user ${user.id}. Attempting to create one.`);
+          
+          const { data: newProfile, error: insertError } = await supabase
+            .from('user_profiles')
+            .insert({
+              id: user.id,
+              first_name: user.user_metadata?.first_name || null,
+              role: 'user'
+            })
+            .select()
+            .single();
+
+          if (insertError) {
+            console.error('[me/index.ts] CRITICAL: Failed to create profile for user:', user.id, insertError);
+            // This is a critical failure, as the user cannot proceed.
+            return deps.createErrorResponse("Failed to create user profile after not finding one.", 500, req);
+          }
+
+          console.log(`[me/index.ts] Successfully created new profile for user ${user.id}.`);
+          // Replace original profile data and clear the 'not found' error.
+          profileData = newProfile;
+          profileError = null; 
+        } else if (profileError) {
+          // For any other error, return a failure response.
+          console.error('[me/index.ts] An unexpected error occurred fetching profile:', profileError);
+          return deps.createErrorResponse("Failed to fetch profile", 500, req);
         }
 
-        if (profileError) {
-          console.error('[me/index.ts] Error fetching profile:', profileError);
-           // Revert: Remove profileError argument
-          return deps.createErrorResponse("Failed to fetch profile", 500, req); 
-        }
-
-        console.log(`[me/index.ts] Profile fetch successful for user ${user.id}. Returning combined data.`);
+        console.log(`[me/index.ts] Profile ready for user ${user.id}. Returning data.`);
+        
         const responseData = {
             user: user,
-            profile: profileData || null
+            profile: profileData,
         };
-        // Add req argument
+        
         return deps.createSuccessResponse(responseData, 200, req);
       }
 
       case 'PUT': {
         console.log(`[me/index.ts] Handling PUT for user ${user.id}`);
-        let updates: any;
+        let updates: Record<string, unknown>;
         try {
             updates = await req.json();
         } catch (jsonError) {

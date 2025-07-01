@@ -39,24 +39,58 @@ vi.mock('@paynless/store', async (importOriginal) => {
 });
 
 // Mock child components
-vi.mock('@/components/common/MarkdownRenderer', () => ({
-  MarkdownRenderer: vi.fn(({ content }) => <div data-testid="markdown-renderer-mock">{content}</div>),
-}));
 vi.mock('@/components/common/TextInputArea', () => ({
-  TextInputArea: vi.fn((props) => { // Access all props
-    const isEditMode = props.label === 'Enter edited content...';
-    const testId = isEditMode ? 'edit-textarea' : 'response-textarea';
-    const id = props.id || (isEditMode ? 'edit-textarea-mock-id' : 'response-textarea-mock-id'); // Provide a fallback id if needed
+  TextInputArea: vi.fn((props) => {
+    // Determine if this is the content area or response area based on props
+    // Content area has onPreviewModeChange but no id, response area has id starting with 'response-'
+    const isResponseArea = props.id && props.id.startsWith('response-');
+    const isContentArea = props.onPreviewModeChange && !isResponseArea;
+    
+    let testId: string;
+    let mockId: string;
+    
+    if (isContentArea) {
+      testId = 'content-textarea';
+      mockId = 'content-textarea-mock-id';
+    } else if (isResponseArea) {
+      testId = 'response-textarea';
+      mockId = props.id || 'response-textarea-mock-id';
+    } else {
+      // Fallback for edge cases
+      testId = 'generic-textarea';
+      mockId = 'generic-textarea-mock-id';
+    }
+
+    // Mock the preview toggle functionality
+    const handlePreviewToggle = () => {
+      if (props.onPreviewModeChange) {
+        // Toggle between preview and edit mode
+        const currentlyInPreview = props.initialPreviewMode !== false;
+        props.onPreviewModeChange(!currentlyInPreview);
+      }
+    };
 
     return (
-      <textarea
-        aria-label={props.label}
-        id={id}
-        data-testid={testId}
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-        placeholder={props.placeholder}
-      />
+      <div data-testid={`${testId}-container`}>
+        <textarea
+          aria-label={props.label || ""}
+          id={mockId}
+          data-testid={testId}
+          value={props.value}
+          onChange={(e) => props.onChange?.(e.target.value)}
+          placeholder={props.placeholder}
+          disabled={props.disabled}
+        />
+        {props.showPreviewToggle && (
+          <button
+            data-testid={`${testId}-preview-toggle`}
+            onClick={handlePreviewToggle}
+            type="button"
+          >
+            {props.initialPreviewMode ? 'Edit' : 'Preview'}
+          </button>
+        )}
+      </div>
     );
   })
 }));
@@ -274,10 +308,9 @@ describe('GeneratedContributionCard', () => {
 
       await waitFor(() => {
         expect(mockFetchContentImpl).toHaveBeenCalledWith(mockAIContribution.id);
-        const renderer = screen.getByTestId('markdown-renderer-mock');
-        expect(renderer.textContent).toContain("AI Content");
-        expect(renderer.textContent).toContain("Original thoughts.");
-      }, { timeout: 1000 }); // Keep or adjust timeout
+        const contentTextarea = screen.getByTestId('content-textarea');
+        expect(contentTextarea).toHaveValue(aiContent);
+      }, { timeout: 1000 });
     });
 
     it('displays content directly if already in cache', () => {
@@ -288,12 +321,12 @@ describe('GeneratedContributionCard', () => {
       );
       renderCard(mockAIContribution);
 
-      const renderer = screen.getByTestId('markdown-renderer-mock');
-      // Match the actual text content produced by the div, which might handle newlines differently
-      expect(renderer).toHaveTextContent("# AI Content Original thoughts."); 
+      const contentTextarea = screen.getByTestId('content-textarea');
+      expect(contentTextarea).toHaveValue(aiContent);
+      
       // Ensure fetch was NOT called
       const storeActions = getDialecticStoreState() as DialecticStore;
-      if (storeActions.fetchContributionContent) { // Check if defined, as it's a mock
+      if (storeActions.fetchContributionContent) {
         const fetchMock = storeActions.fetchContributionContent as Mock;
         expect(fetchMock).not.toHaveBeenCalled();
       }
@@ -316,8 +349,7 @@ describe('GeneratedContributionCard', () => {
       await waitFor(() => {
         expect(mockFetchContentImpl).toHaveBeenCalledWith(mockAIContribution.id);
         expect(screen.getByTestId('content-loading-skeleton')).toBeInTheDocument();
-        expect(screen.queryByTestId('markdown-renderer-mock')).not.toBeInTheDocument();
-        expect(screen.queryByText('No content available or content is empty.')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('content-textarea')).not.toBeInTheDocument();
       }, { timeout: 1000 });
     });
 
@@ -333,7 +365,7 @@ describe('GeneratedContributionCard', () => {
       expect(screen.getByText(error.message)).toBeInTheDocument();
     });
     
-    it('displays "No content available..." if content is empty string and not loading/error', () => {
+    it('displays "No content available" if content is empty string and not loading/error', () => {
       setupStore(
         mockAIContribution,
         {
@@ -341,7 +373,8 @@ describe('GeneratedContributionCard', () => {
         }
       );
       renderCard(mockAIContribution);
-      expect(screen.getByText('No content available or content is empty.')).toBeInTheDocument();
+      const contentTextarea = screen.getByTestId('content-textarea');
+      expect(contentTextarea).toHaveValue('No content available');
     });
 
     it('indicates if content is a user edit', () => {
@@ -367,37 +400,50 @@ describe('GeneratedContributionCard', () => {
       initializeMockDialecticState();
     });
 
-    it('toggles edit mode', async () => {
+    it('toggles edit mode via preview toggle', async () => {
       setupStore(mockAIContribution, { 
         [mockAIContribution.id!]: { content: aiContent, isLoading: false, error: undefined, mimeType: 'text/markdown' } 
       });
       renderCard(mockAIContribution);
 
-      const editButton = screen.getByTitle(/Edit this contribution/i);
-      fireEvent.click(editButton);
-      expect(screen.getByLabelText('Enter edited content...')).toBeInTheDocument();
-      expect(screen.getByLabelText('Enter edited content...')).toHaveValue(aiContent);
-      expect(screen.getByRole('button', { name: /Save Edit/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Discard/i })).toBeInTheDocument();
+      const previewToggle = screen.getByTestId('content-textarea-preview-toggle');
+      expect(previewToggle).toHaveTextContent('Edit');
       
-      fireEvent.click(screen.getByRole('button', { name: /Discard/i }));
-      expect(screen.queryByLabelText('Enter edited content...')).not.toBeInTheDocument();
+      fireEvent.click(previewToggle);
+      
+      // After clicking edit, should show save/discard buttons
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Save Edit/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Discard/i })).toBeInTheDocument();
+      });
+      
+      const discardButton = screen.getByRole('button', { name: /Discard/i });
+      fireEvent.click(discardButton);
+      
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: /Save Edit/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Discard/i })).not.toBeInTheDocument();
+      });
     });
 
     it('calls saveContributionEdit thunk on save with correct payload', async () => {
       setupStore(mockAIContribution, { 
         [mockAIContribution.id!]: { content: aiContent, isLoading: false, error: undefined, mimeType: 'text/markdown' } 
       });
-      // Corrected: use mockSaveEditImpl from setupStore for assertions if needed, 
-      // but here we are checking the mock on useDialecticStore.getState() directly after it's called.
-      // The actual mock instance is on getDialecticStoreState().saveContributionEdit
+      
       const storeActions = getDialecticStoreState();
       const saveEditMock = storeActions.saveContributionEdit as Mock;
 
       renderCard(mockAIContribution);
       
-      fireEvent.click(screen.getByTitle(/Edit this contribution/i));
-      const textarea = screen.getByLabelText('Enter edited content...');
+      const previewToggle = screen.getByTestId('content-textarea-preview-toggle');
+      fireEvent.click(previewToggle);
+      
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Save Edit/i })).toBeInTheDocument();
+      });
+
+      const textarea = screen.getByTestId('content-textarea');
       const newEditedText = "This is my superior edit.";
       fireEvent.change(textarea, { target: { value: newEditedText } });
       
@@ -421,7 +467,7 @@ describe('GeneratedContributionCard', () => {
       });
 
       const unresolvedPromise = new Promise(() => {});
-      mockSaveEditImpl.mockImplementation(async () => { // Use the mockSaveEditImpl from setupStore
+      mockSaveEditImpl.mockImplementation(async () => {
         useDialecticStore.setState({ 
           isSavingContributionEdit: true,
           saveContributionEditError: null 
@@ -431,12 +477,18 @@ describe('GeneratedContributionCard', () => {
 
       renderCard(mockAIContribution);
       
-      fireEvent.click(screen.getByTitle(/Edit this contribution/i));
-      const textarea = screen.getByLabelText('Enter edited content...');
+      const previewToggle = screen.getByTestId('content-textarea-preview-toggle');
+      fireEvent.click(previewToggle);
+      
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Save Edit/i })).toBeInTheDocument();
+      });
+
+      const textarea = screen.getByTestId('content-textarea');
       fireEvent.change(textarea, { target: { value: "New content to save" } });
       
-      const saveButtonTrigger = screen.getByRole('button', { name: /Save Edit/i });
-      fireEvent.click(saveButtonTrigger);
+      const saveButton = screen.getByRole('button', { name: /Save Edit/i });
+      fireEvent.click(saveButton);
 
       await waitFor(() => {
         expect(mockSaveEditImpl).toHaveBeenCalled();
@@ -461,10 +513,14 @@ describe('GeneratedContributionCard', () => {
 
       renderCard(mockAIContribution);
 
-      const editButton = screen.getByRole('button', { name: 'Edit this contribution' });
-      fireEvent.click(editButton);
+      const previewToggle = screen.getByTestId('content-textarea-preview-toggle');
+      fireEvent.click(previewToggle);
 
-      fireEvent.change(screen.getByTestId('edit-textarea'), { target: { value: 'Attempting to save this, expecting failure.' } });
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Save Edit/i })).toBeInTheDocument();
+      });
+
+      fireEvent.change(screen.getByTestId('content-textarea'), { target: { value: 'Attempting to save this, expecting failure.' } });
       
       const saveButton = screen.getByRole('button', { name: 'Save Edit' });
       fireEvent.click(saveButton);
@@ -483,13 +539,18 @@ describe('GeneratedContributionCard', () => {
       });
     });
 
-    it('displays guidance message for editing', () => {
+    it('displays guidance message for editing', async () => {
         setupStore(mockAIContribution, {
           [mockAIContribution.id!]: { content: aiContent, isLoading: false, error: undefined, mimeType: 'text/markdown' } 
         });
         renderCard(mockAIContribution);
-        fireEvent.click(screen.getByTitle(/Edit this contribution/i));
-        expect(screen.getByText(/Recommended for significant corrections/i)).toBeInTheDocument();
+        
+        const previewToggle = screen.getByTestId('content-textarea-preview-toggle');
+        fireEvent.click(previewToggle);
+        
+        await waitFor(() => {
+          expect(screen.getByText(/Recommended for significant corrections/i)).toBeInTheDocument();
+        });
     });
   });
 

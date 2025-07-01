@@ -45,6 +45,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+ALTER FUNCTION public.link_pending_invites_on_signup() SET search_path = public, pg_catalog;
+
 -- The associated trigger 'trigger_link_invites_on_signup' on 'auth.users'
 -- does not need to be dropped and recreated as CREATE OR REPLACE FUNCTION
 -- updates the function body in place.
