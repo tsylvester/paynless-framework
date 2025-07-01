@@ -69,6 +69,19 @@ export async function mainHandler(
             throw new HandlerError("Login completed but failed to retrieve session.", 500);
         }
 
+        // --- Start Legacy User True-Up ---
+        // Asynchronously call the database function to ensure the user has a profile,
+        // wallet, and free subscription. This is non-critical to the login flow,
+        // so we don't await it and won't fail the login if it errors.
+        // The `true_up_user` function is idempotent and will handle its own logging.
+        supabaseClient.rpc('true_up_user', { p_user_id: authData.user.id })
+            .then(({ error }) => {
+                if (error) {
+                    console.warn(`[Login] Non-critical error calling true_up_user for ${authData.user.id}:`, error.message);
+                }
+            });
+        // --- End Legacy User True-Up ---
+
         let profile = null;
         try {
             // Get the user's profile using the SAME client 

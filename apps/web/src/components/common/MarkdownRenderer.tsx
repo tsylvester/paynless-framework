@@ -16,7 +16,8 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
     prose 
     dark:prose-invert 
     prose-sm 
-    max-w-none 
+    max-w-none
+    min-w-0
     prose-headings:font-semibold 
     prose-a:text-blue-600 prose-a:hover:underline
     prose-code:bg-gray-200 prose-code:dark:bg-gray-800 prose-code:p-1 prose-code:rounded prose-code:text-sm
@@ -41,12 +42,11 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
   }
 
   return (
-    <div className={`w-full ${markdownStyles} ${className || ''}`}>
+    <div className={`w-full overflow-x-auto ${markdownStyles} ${className || ''}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks]}
         components={{
           code({
-            inline,
             className: mdClassName,
             children,
             ...props
@@ -60,13 +60,13 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
               // Block Code: Render with syntax highlighting.
               // Use PreTag="div" to avoid nesting errors (<pre> in <p>) which can happen with remark-breaks.
               const preStyle: CSSProperties = {
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-                overflowX: 'hidden',
+                whiteSpace: 'pre',
+                overflowX: 'auto',
+                maxWidth: '100%',
               };
               return (
                 <Prism
-                  style={oneDark as any} // Theme for syntax highlighting
+                  style={oneDark} // Theme for syntax highlighting
                   language={language}
                   PreTag="div"
                   customStyle={preStyle}

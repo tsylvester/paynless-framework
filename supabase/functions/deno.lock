@@ -24,6 +24,8 @@
     "jsr:@supabase/supabase-js@2": "2.49.4",
     "jsr:@supabase/supabase-js@^2.4.0": "2.49.4",
     "jsr:@zip-js/zip-js@*": "2.7.62",
+    "npm:@anthropic-ai/tokenizer@*": "0.0.4",
+    "npm:@google/generative-ai@*": "0.24.1",
     "npm:@jest/globals@*": "29.7.0",
     "npm:@supabase/auth-js@2.69.1": "2.69.1",
     "npm:@supabase/functions-js@*": "2.4.4",
@@ -165,6 +167,13 @@
       "dependencies": [
         "@jridgewell/gen-mapping",
         "@jridgewell/trace-mapping"
+      ]
+    },
+    "@anthropic-ai/tokenizer@0.0.4": {
+      "integrity": "sha512-EHRKbxlxlc8W4KCBEseByJ7YwyYCmgu9OyN59H9+IYIGPoKv8tXyQXinkeGDI+cI8Tiuz9wk2jZb/kK7AyvL7g==",
+      "dependencies": [
+        "@types/node@18.19.87",
+        "tiktoken"
       ]
     },
     "@babel/code-frame@7.26.2": {
@@ -405,6 +414,9 @@
         "@babel/helper-string-parser",
         "@babel/helper-validator-identifier"
       ]
+    },
+    "@google/generative-ai@0.24.1": {
+      "integrity": "sha512-MqO+MLfM6kjxcKoy0p1wRzG3b4ZZXtPI+z2IE26UogS2Cm/XHO+7gGRBh6gcJsOiIVoH93UwKvW4HdgiOZCy9Q=="
     },
     "@istanbuljs/load-nyc-config@1.1.0": {
       "integrity": "sha512-VjeHSlIzpv/NyD3N0YuHfXOPDIixcA1q2ZV98wsMqcYlPmv2n3Yb2lYP9XMElnaFVXg5A7YLTeLu6V84uQDjmQ==",

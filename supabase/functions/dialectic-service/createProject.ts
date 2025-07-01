@@ -65,12 +65,12 @@ export async function createProject(
       .insert({
         user_id: user.id,
         project_name: projectName,
-        initial_user_prompt: initialUserPromptText || "",
+        initial_user_prompt: "", // Always empty, we'll store everything as files
         selected_domain_id: selectedDomainId,
         selected_domain_overlay_id: selected_domain_overlay_id,
         process_template_id: defaultProcessTemplateId,
         status: 'new',
-        initial_prompt_resource_id: null,
+        initial_prompt_resource_id: null, // Will be set after file upload
       })
       .select(`
         *,
@@ -97,10 +97,13 @@ export async function createProject(
       return { error: { message: "Failed to create project, no data returned from initial insert.", status: 500 }};
     }
 
+    // Always create a file resource for the initial prompt, whether from string or file input
+    const fileManager = new FileManagerService(dbAdminClient);
+    let promptResourceId: string;
+
     if (promptFile) {
       console.log(`Processing promptFile: ${promptFile.name}, size: ${promptFile.size}, type: ${promptFile.type}`);
       
-      const fileManager = new FileManagerService(dbAdminClient);
       const fileBuffer = await promptFile.arrayBuffer();
 
       const uploadResult = await fileManager.uploadAndRegisterFile({
@@ -133,36 +136,81 @@ export async function createProject(
         };
       }
       
-      const promptResourceId = uploadResult.record.id;
+      promptResourceId = uploadResult.record.id;
       console.log(`File uploaded and registered successfully via FileManagerService. Resource ID: ${promptResourceId}`);
+    } else if (initialUserPromptText) {
+      // Convert string input to markdown file
+      console.log(`Converting string input to markdown file for project ${newProjectData.id}`);
+      
+      const stringUint8Array = new TextEncoder().encode(initialUserPromptText);
+      const stringBuffer = stringUint8Array.buffer.slice(stringUint8Array.byteOffset, stringUint8Array.byteOffset + stringUint8Array.byteLength) as ArrayBuffer;
+      const fileName = `initial_prompt_${Date.now()}.md`;
 
-      const { data: updatedProjectData, error: updateProjectError } = await dbAdminClient
-        .from('dialectic_projects')
-        .update({
-          initial_prompt_resource_id: promptResourceId,
-          initial_user_prompt: "",
-        })
-        .eq('id', newProjectData.id)
-        .select(`
-          *,
-          domain:dialectic_domains (
-            name
-          ),
-          process_template:dialectic_process_templates (
-            *
-          )
-        `)
-        .single();
+      const uploadResult = await fileManager.uploadAndRegisterFile({
+        pathContext: {
+          projectId: newProjectData.id,
+          fileType: 'initial_user_prompt',
+          originalFileName: fileName,
+        },
+        fileContent: stringBuffer,
+        mimeType: 'text/markdown',
+        sizeBytes: stringBuffer.byteLength,
+        userId: user.id,
+        description: 'Initial project prompt (converted from text input)',
+      });
 
-      if (updateProjectError) {
-        console.error("Error updating project with resource ID:", updateProjectError);
-        return { error: { message: "Failed to finalize project with file resource.", details: updateProjectError.message, status: 500 } };
+      if (uploadResult.error || !uploadResult.record) {
+        console.error("Error uploading string prompt as file via FileManagerService:", uploadResult.error);
+        await dbAdminClient.from('dialectic_projects').delete().eq('id', newProjectData.id);
+        
+        const baseMessage = uploadResult.error?.message || "Failed to upload and register initial prompt text as file.";
+        const errorDetails = uploadResult.error?.details;
+        const fullMessage = errorDetails ? `${baseMessage}: ${errorDetails}` : baseMessage;
+
+        return { 
+          error: { 
+            message: fullMessage, 
+            details: errorDetails || (uploadResult.error?.message && uploadResult.error.message !== baseMessage ? uploadResult.error.message : undefined),
+            status: 500 
+          }
+        };
       }
-      if (!updatedProjectData) {
-         return { error: { message: "Failed to finalize project with file resource, no data returned from update.", status: 500 }};
-      }
-       Object.assign(newProjectData, updatedProjectData);
+      
+      promptResourceId = uploadResult.record.id;
+      console.log(`String input converted to file and uploaded successfully via FileManagerService. Resource ID: ${promptResourceId}`);
+    } else {
+      // This shouldn't happen due to validation above, but adding for safety
+      console.error("No prompt content provided");
+      await dbAdminClient.from('dialectic_projects').delete().eq('id', newProjectData.id);
+      return { error: { message: "No initial prompt content provided.", status: 400 } };
     }
+
+    // Update project with the resource ID
+    const { data: updatedProjectData, error: updateProjectError } = await dbAdminClient
+      .from('dialectic_projects')
+      .update({
+        initial_prompt_resource_id: promptResourceId,
+      })
+      .eq('id', newProjectData.id)
+      .select(`
+        *,
+        domain:dialectic_domains (
+          name
+        ),
+        process_template:dialectic_process_templates (
+          *
+        )
+      `)
+      .single();
+
+    if (updateProjectError) {
+      console.error("Error updating project with resource ID:", updateProjectError);
+      return { error: { message: "Failed to finalize project with file resource.", details: updateProjectError.message, status: 500 } };
+    }
+    if (!updatedProjectData) {
+       return { error: { message: "Failed to finalize project with file resource, no data returned from update.", status: 500 }};
+    }
+    Object.assign(newProjectData, updatedProjectData);
     
     // This part of the logic assumes that if the project was just created and not updated,
     // the process_template relationship might not be populated. We'll fetch it if needed.
