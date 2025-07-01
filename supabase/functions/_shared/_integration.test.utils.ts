@@ -118,6 +118,20 @@ export async function coreCleanupTestResources(executionScope: 'all' | 'local' =
     ? [] // All actions will be removed
     : undoActionsStack.filter(action => action.scope === 'global'); // Keep global actions if scope is local
 
+  // Dependency-aware sorting of actions.
+  // This is a targeted fix. A more robust solution might involve building a full dependency graph.
+  actionsToProcess.sort((a, b) => {
+    // Rule 1: Always process 'DELETE_CREATED_ROW' for 'user_subscriptions' first.
+    if (a.type === 'DELETE_CREATED_ROW' && a.tableName === 'user_subscriptions' && b.type !== 'DELETE_CREATED_ROW') return -1;
+    if (b.type === 'DELETE_CREATED_ROW' && b.tableName === 'user_subscriptions' && a.type !== 'DELETE_CREATED_ROW') return 1;
+    
+    // Rule 2: User deletion should happen last.
+    if (a.type === 'DELETE_CREATED_USER') return 1;
+    if (b.type === 'DELETE_CREATED_USER') return -1;
+    
+    return 0; // Keep original order for other types
+  });
+
   // Process actions in the reverse order of their registration (LIFO)
   for (const action of actionsToProcess) {
     try {

@@ -218,7 +218,7 @@ export async function generateContributions(
               modelName: providerDetails.name,
               providerName: providerDetails.provider,
               error: aiResponse.error || "AI model returned no content.",
-              details: typeof aiResponse.errorCode === 'string' ? aiResponse.errorCode : undefined,
+              details: aiResponse.error ?? undefined,
               code: aiResponse.errorCode || 'AI_CALL_FAILED',
               inputTokens: aiResponse.inputTokens,
               outputTokens: aiResponse.outputTokens,
