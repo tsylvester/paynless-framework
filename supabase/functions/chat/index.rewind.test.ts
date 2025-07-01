@@ -607,12 +607,49 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
 
 // --- Real Database Test Suite ---
 
-// ** IMPORTANT: Replace these with the actual UUIDs of your pre-existing, active records **
-const REAL_TEST_PROVIDER_ID = "807057fe-6c6c-42cd-93c3-ef7d778e142d"; // Your dummy echo provider
-const REAL_TEST_PROMPT_ID = "22222222-2222-2222-2222-222222222222"; // Your test system prompt
+// Constants for real database tests
+// These will be set dynamically during test setup
+let REAL_TEST_PROVIDER_ID = ""; // Will be set to actual provider ID
+let REAL_TEST_PROMPT_ID = ""; // Will be set to actual prompt ID
 
-const REAL_TEST_PROVIDER_IDENTIFIER = 'dummy-echo-provider'; // Keep consistent if factory needs it
-const REAL_TEST_PROVIDER_STRING = 'dummy'; // Keep consistent if factory needs it
+const REAL_TEST_PROVIDER_IDENTIFIER = 'openai-gpt-4o'; // Use seeded provider
+
+/**
+ * Gets valid provider and prompt IDs from the database for testing
+ */
+async function getValidTestIds(supabaseClient: SupabaseClient<Database>): Promise<{
+    providerId: string;
+    promptId: string;
+}> {
+    // Get a provider ID
+    const { data: providerData, error: providerError } = await supabaseClient
+        .from('ai_providers')
+        .select('id')
+        .eq('api_identifier', REAL_TEST_PROVIDER_IDENTIFIER)
+        .eq('is_active', true)
+        .single();
+
+    if (providerError || !providerData) {
+        throw new Error(`Failed to find test provider '${REAL_TEST_PROVIDER_IDENTIFIER}': ${providerError?.message || 'not found'}`);
+    }
+
+    // Get a prompt ID
+    const { data: promptData, error: promptError } = await supabaseClient
+        .from('system_prompts')
+        .select('id')
+        .eq('name', 'Helpful Assistant')
+        .eq('is_active', true)
+        .single();
+
+    if (promptError || !promptData) {
+        throw new Error(`Failed to find test prompt 'Helpful Assistant': ${promptError?.message || 'not found'}`);
+    }
+
+    return {
+        providerId: providerData.id,
+        promptId: promptData.id
+    };
+}
 
 // Helper to generate a unique suffix for chat names etc., to avoid collisions if tests are re-run without cleanup
 function generateTestRunSuffix(): string {
@@ -820,6 +857,14 @@ Deno.test("Chat Function Rewind Test (Real Database)", { sanitizeResources: fals
     // let testUserAccessToken: string | null = null; // No longer needed as a separate variable here
     // let testUserIdReal: string | null = null; // Use realTestAuthenticatedUserId directly
 
+    // Setup test IDs first
+    await t.step("Setup Test IDs", async () => {
+        const { providerId, promptId } = await getValidTestIds(supabaseAdminClient!);
+        REAL_TEST_PROVIDER_ID = providerId;
+        REAL_TEST_PROMPT_ID = promptId;
+        console.log(`[Real DB Test Setup] Using provider: ${providerId}, prompt: ${promptId}`);
+    });
+
     await t.step("Setup Real Test User", async () => {
         const { data: signUpData, error: signUpError } = await realSupabaseClient.auth.signUp({
             email: testUserEmail,
@@ -833,6 +878,14 @@ Deno.test("Chat Function Rewind Test (Real Database)", { sanitizeResources: fals
         testUserAccessToken = signUpData.session.access_token; // Store globally
         realTestAuthenticatedUserId = signUpData.user.id;
         console.log(`[Real DB Test Setup] Signed up and in user: ${realTestAuthenticatedUserId}`);
+    });
+
+    await t.step("Get Valid Test IDs", async () => {
+        const testIds = await getValidTestIds(supabaseAdminClient!);
+        REAL_TEST_PROVIDER_ID = testIds.providerId;
+        REAL_TEST_PROMPT_ID = testIds.promptId;
+        console.log(`[Real DB Test Setup] Got valid test provider ID: ${REAL_TEST_PROVIDER_ID}`);
+        console.log(`[Real DB Test Setup] Got valid test prompt ID: ${REAL_TEST_PROMPT_ID}`);
     });
 
     await t.step("Basic rewind functionality (real database)", async () => {
@@ -866,18 +919,30 @@ Deno.test("Chat Function Rewind Test (Real Database)", { sanitizeResources: fals
                 const responseBody = await response.json();
         assertExists(responseBody, "Basic Rewind Failed: Response body is empty");
 
-        // Assertions on the response body (new assistant message returned by RPC)
-        // The RPC calls the adapter, which for the dummy provider, echoes.
-        assertExists(responseBody, "Response data should exist"); // CHAT-GPT CORRECTED: responseBody IS the data
-        // Assuming RPC returns a single object, not an array, when 1 row is returned.
-        assertObjectMatch(responseBody, { // CHAT-GPT CORRECTED: Assert on responseBody directly
-            // id: string, // Cannot predict the new ID
+        // Assertions on the response body structure
+        assertExists(responseBody, "Response data should exist");
+        assertExists(responseBody.userMessage, "User message should exist in response");
+        assertExists(responseBody.assistantMessage, "Assistant message should exist in response");
+        assertEquals(responseBody.chatId, testData.chatId, "Chat ID should match");
+        assertEquals(responseBody.isRewind, true, "Should indicate this was a rewind");
+
+        // Verify the assistant message structure
+        assertObjectMatch(responseBody.assistantMessage, {
             chat_id: testData.chatId,
             user_id: null, // Assistant messages have null user_id
             role: "assistant",
-            content: "Echo from Dummy: User message after rewind", // Dummy provider prepends. Hardcode expected value for clarity.
             is_active_in_thread: true,
-            // token_usage: { prompt_tokens: 0, completion_tokens: 10, total_tokens: 10 }, // Cannot deep match Json easily with assertObjectMatch
+            ai_provider_id: REAL_TEST_PROVIDER_ID,
+            system_prompt_id: REAL_TEST_PROMPT_ID,
+        });
+
+        // Verify the user message structure
+        assertObjectMatch(responseBody.userMessage, {
+            chat_id: testData.chatId,
+            user_id: realTestAuthenticatedUserId,
+            role: "user",
+            content: "User message after rewind",
+            is_active_in_thread: true,
             ai_provider_id: REAL_TEST_PROVIDER_ID,
             system_prompt_id: REAL_TEST_PROMPT_ID,
         });
@@ -896,8 +961,7 @@ Deno.test("Chat Function Rewind Test (Real Database)", { sanitizeResources: fals
         const userMsg2After = messagesAfter.find(m => m.id === testData.userMsg2Id);
         const aiMsg2After = messagesAfter.find(m => m.id === testData.aiMsg2Id);
         const newUserMsgAfter = messagesAfter.find(m => m.content === reqBody.message);
-        // Access the id directly from responseBody.data
-        const newAiMsgAfter = messagesAfter.find(m => m.id === responseBody.id); // CHAT-GPT CORRECTED: responseBody.id
+        const newAiMsgAfter = messagesAfter.find(m => m.id === responseBody.assistantMessage.id);
 
         assertExists(userMsg2After, "Original user message 2 not found after rewind");
         assertEquals(userMsg2After.is_active_in_thread, false, "User message 2 should be inactive after rewind");

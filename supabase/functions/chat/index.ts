@@ -60,9 +60,7 @@ export const defaultDeps: ChatHandlerDeps = {
     return apiKey.startsWith('sk-test-');
   },
   logger: logger,
-  tokenWalletService: (supabaseUrlForDefault && serviceRoleKeyForDefault) 
-    ? new TokenWalletService(createClient(supabaseUrlForDefault, serviceRoleKeyForDefault))
-    : undefined,
+  tokenWalletService: undefined, // Will be created in handler with proper user and admin clients
   countTokensForMessages: countTokensForMessages,
 };
 
@@ -141,6 +139,16 @@ export async function handler(req: Request, deps: ChatHandlerDeps = defaultDeps)
 
   const supabaseClientToUse = deps.supabaseClient || supabaseClient;
 
+  // Create TokenWalletService with proper user and admin clients
+  let tokenWalletService = deps.tokenWalletService;
+  if (!tokenWalletService) {
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (serviceRoleKey) {
+      const adminClient = createClient(supabaseUrl, serviceRoleKey);
+      tokenWalletService = new TokenWalletService(supabaseClient, adminClient);
+    }
+  }
+
   if (req.method === 'POST') {
     try {
         let rawBody;
@@ -162,7 +170,8 @@ export async function handler(req: Request, deps: ChatHandlerDeps = defaultDeps)
         const requestBody = parsedResult.data;
 
         logger.info('Received chat POST request (validated):', { body: requestBody });
-        const result = await handlePostRequest(requestBody, supabaseClient, userId, deps);
+        const depsWithTokenWalletService = { ...deps, tokenWalletService };
+        const result = await handlePostRequest(requestBody, supabaseClient, userId, depsWithTokenWalletService);
         
         // If handlePostRequest returns an assistantMessage with an error_type, set HTTP status to 502.
         // Otherwise, if it returns a general error object, use that status or default to 500.
@@ -501,11 +510,11 @@ async function handlePostRequest(
                     logger.error('Critical: modelConfig is null before token counting (rewind path).', { providerId: requestProviderId, apiIdentifier: providerApiIdentifier });
                     return { error: { message: 'Internal server error: Provider configuration missing for token calculation.', status: 500 } };
                 }
-                const tokensRequiredForRewind = countTokensFn(messagesForAdapter, modelConfig);
+                const tokensRequiredForRewind = await countTokensFn(messagesForAdapter, modelConfig);
                 logger.info('Estimated tokens for rewind prompt.', { tokensRequiredForRewind, model: providerApiIdentifier });
                 
-                const hasSufficientBalance = await tokenWalletService!.checkBalance(wallet.walletId, tokensRequiredForRewind.toString());
-                if (!hasSufficientBalance) {
+                const hasSufficient = await tokenWalletService!.checkBalance(wallet.walletId, tokensRequiredForRewind.toString());
+                if (!hasSufficient) {
                     logger.warn('Insufficient token balance for rewind prompt.', { 
                         currentBalance: wallet.balance,
                         tokensRequired: tokensRequiredForRewind 
@@ -694,7 +703,24 @@ async function handlePostRequest(
                     logger.info('Token transaction recorded (debit) for rewind.', { transactionId: transaction.transactionId, walletId: wallet.walletId, amount: actualTokensToDebit });
                 } catch (debitError: unknown) {
                     const typedDebitError = debitError instanceof Error ? debitError : new Error(String(debitError));
-                    logger.error('Failed to record token debit transaction for rewind:', { 
+                    
+                    if (typedDebitError.message.includes('Insufficient funds')) {
+                        logger.warn('Insufficient token balance for rewind debit.', { 
+                            walletId: wallet.walletId, 
+                            debitAmount: actualTokensToDebit,
+                            error: typedDebitError.message
+                        });
+                        return { 
+                            error: { 
+                                message: 'Insufficient token balance to complete the rewind operation.',
+                                status: 402 // Payment Required
+                            } 
+                        };
+                    }
+
+                    // For other debit errors, log it but don't block the response since the message is already saved.
+                    // This could be flagged for administrative review.
+                    logger.error('Non-funds-related error recording token debit transaction for rewind. The user has received the response.', { 
                         error: typedDebitError.message, 
                         walletId: wallet.walletId, 
                         actualTokensConsumed: actualTokensToDebit 
@@ -883,11 +909,11 @@ async function handlePostRequest(
                    return { error: { message: 'Server configuration error: Token counting utility is not available.', status: 500 } };
                }
 
-               const tokensRequiredForNormal = countTokensFn(messagesForProvider, modelConfig);
+               const tokensRequiredForNormal = await countTokensFn(messagesForProvider, modelConfig);
                logger.info('Estimated tokens for normal prompt.', { tokensRequiredForNormal, model: providerApiIdentifier });
 
-               const hasSufficientBalanceNormal = await tokenWalletService!.checkBalance(wallet.walletId, tokensRequiredForNormal.toString());
-               if (!hasSufficientBalanceNormal) {
+               const hasSufficient = await tokenWalletService!.checkBalance(wallet.walletId, tokensRequiredForNormal.toString());
+               if (!hasSufficient) {
                    logger.warn('Insufficient token balance for normal prompt.', { 
                        currentBalance: wallet.balance,
                        tokensRequired: tokensRequiredForNormal 
@@ -1052,6 +1078,22 @@ async function handlePostRequest(
                     transactionRecordedSuccessfully = true;
                 } catch (debitError: unknown) {
                     const typedDebitError = debitError instanceof Error ? debitError : new Error(String(debitError));
+                    
+                    // Check if the error is due to insufficient funds, which the DB function raises as an exception.
+                    if (typedDebitError.message.includes('Insufficient funds')) {
+                        logger.warn('Insufficient token balance detected during debit attempt.', { 
+                            walletId: wallet.walletId, 
+                            debitAmount: actualTokensToDebitNormal,
+                            error: typedDebitError.message
+                        });
+                        return { 
+                            error: { 
+                                message: `Insufficient token balance for this operation.`,
+                                status: 402 // Payment Required
+                            } 
+                        };
+                    }
+
                     logger.error('CRITICAL: Failed to record token debit transaction for normal path AFTER successful AI response. Messages will NOT be saved.', { 
                         error: typedDebitError.message, 
                         walletId: wallet.walletId, 

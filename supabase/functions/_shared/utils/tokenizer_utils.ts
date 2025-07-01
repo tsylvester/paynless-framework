@@ -97,14 +97,17 @@ export function countTokensForMessages(
     // encoding.free(); // js-tiktoken's getEncoding doesn't require manual free if not using WASM directly.
     return numTokens;
 
-  } else if (tokenization_strategy.type === "rough_char_count") {
+  } else if (tokenization_strategy.type === "rough_char_count" || tokenization_strategy.type === "claude_tokenizer" || tokenization_strategy.type === "google_gemini_tokenizer") {
+    if (tokenization_strategy.type !== "rough_char_count") {
+      console.warn(`[countTokensForMessages] Using 'rough_char_count' as a fallback for '${tokenization_strategy.type}' on model "${api_identifier}".`);
+    }
     let totalChars = 0;
     for (const message of messages) {
       if (message.role) totalChars += message.role.length;
       if (message.content) totalChars += message.content.length;
       if (message.name) totalChars += message.name.length;
     }
-    const ratio = tokenization_strategy.chars_per_token_ratio || 4.0; // Default to 4 chars/token
+    const ratio = (tokenization_strategy as { chars_per_token_ratio?: number }).chars_per_token_ratio || 4.0; // Default to 4 chars/token
     return Math.ceil(totalChars / ratio);
 
   } else if (tokenization_strategy.type === "none") {
