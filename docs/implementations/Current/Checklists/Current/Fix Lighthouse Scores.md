@@ -55,18 +55,18 @@ The implementation will strictly follow the Test-Driven Development (TDD) approa
 **Goal:** Ensure that the code for each page (route) is only loaded when the user navigates to it. This is the first line of defense against large bundles.
 
 ---
-*   `[ ] 1.1 [UI/REFACTOR]` **Lazy Load Page Components**
-    *   `[ ] 1.1.1` In `apps/web/src/routes/routes.tsx`, import `lazy` from `react`.
-    *   `[ ] 1.1.2` Convert all static page component imports (e.g., `import { LoginPage } from ...`) to use the `lazy()` function (e.g., `const LoginPage = lazy(...)`).
-    *   `[ ] 1.1.3` Ensure the conversion correctly handles both named and default exports.
-*   `[ ] 1.2 [UI/REFACTOR]` **Implement Suspense Fallback**
-    *   `[ ] 1.2.1` In the root layout component (`apps/web/src/components/routes/RootRoute.tsx`), import `Suspense` from `react`.
-    *   `[ ] 1.2.2` Wrap the `<Outlet />` component with `<Suspense fallback={...}>` to provide a loading UI while page chunks are being fetched.
-*   `[ ] 1.3 [CONFIG]` **Analyze Bundle Composition**
-    *   `[ ] 1.3.1` Install `rollup-plugin-visualizer` as a dev dependency in the `apps/web` workspace.
-    *   `[ ] 1.3.2` Update `apps/web/vite.config.ts` to include the visualizer plugin.
-    *   `[ ] 1.3.3` Run a production build and analyze the output to confirm `js-tiktoken` is the main issue.
-*   `[ ] 1.4 [COMMIT]` feat(web): implement route-based code splitting
+*   `[✅] 1.1 [UI/REFACTOR]` **Lazy Load Page Components**
+    *   `[✅] 1.1.1` In `apps/web/src/routes/routes.tsx`, import `lazy` from `react`.
+    *   `[✅] 1.1.2` Convert all static page component imports (e.g., `import { LoginPage } from ...`) to use the `lazy()` function (e.g., `const LoginPage = lazy(...)`).
+    *   `[✅] 1.1.3` Ensure the conversion correctly handles both named and default exports.
+*   `[✅] 1.2 [UI/REFACTOR]` **Implement Suspense Fallback**
+    *   `[✅] 1.2.1` In the root layout component (`apps/web/src/components/routes/RootRoute.tsx`), import `Suspense` from `react`.
+    *   `[✅] 1.2.2` Wrap the `<Outlet />` component with `<Suspense fallback={...}>` to provide a loading UI while page chunks are being fetched.
+*   `[✅] 1.3 [CONFIG]` **Analyze Bundle Composition**
+    *   `[✅] 1.3.1` Install `rollup-plugin-visualizer` as a dev dependency in the `apps/web` workspace.
+    *   `[✅] 1.3.2` Update `apps/web/vite.config.ts` to include the visualizer plugin.
+    *   `[✅] 1.3.3` Run a production build and analyze the output to confirm `js-tiktoken` is the main issue.
+*   `[✅] 1.4 [COMMIT]` feat(web): implement route-based code splitting
 
 ---
 
