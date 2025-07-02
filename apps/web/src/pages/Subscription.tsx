@@ -1,5 +1,5 @@
 // src/pages/Subscription.tsx
-import { useEffect } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useAuthStore, useWalletStore } from '@paynless/store';
 import { Navigate } from 'react-router-dom';
 import { logger } from '@paynless/utils';
@@ -16,9 +16,11 @@ import {
 import { CurrentSubscriptionCard } from '../components/subscription/CurrentSubscriptionCard';
 import { PlanCard } from '../components/subscription/PlanCard';
 import type { UserSubscription, SubscriptionPlan, PurchaseRequest, PaymentInitiationResult } from '@paynless/types';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export function SubscriptionPage() {
   const { user, isLoading: authLoading } = useAuthStore();
+  const [activeTab, setActiveTab] = useState('monthly');
 
   const availablePlans = useSubscriptionStore(selectAvailablePlans);
   const userSubscription = useSubscriptionStore(selectUserSubscription);
@@ -63,8 +65,8 @@ export function SubscriptionPage() {
     }
 
     const plan = availablePlans.find(p => p.stripe_price_id === priceId);
-    if (!plan) {
-      logger.error('Selected plan not found in availablePlans', { priceId });
+    if (!plan || !plan.stripe_price_id || !plan.currency) {
+      logger.error('Selected plan not found, or is missing price_id or currency', { priceId });
       return;
     }
 
@@ -132,6 +134,14 @@ export function SubscriptionPage() {
   
   const isLoading = authLoading || isSubStoreLoading || isLoadingPurchase;
 
+  const { monthlyPlans, annualPlans, topUpPlans, freePlan } = useMemo(() => {
+    const monthly = availablePlans.filter(p => p.name?.toLowerCase().includes('monthly'));
+    const annual = availablePlans.filter(p => p.name?.toLowerCase().includes('annual'));
+    const topUp = availablePlans.filter(p => p.name?.toLowerCase().includes('top up'));
+    const free = availablePlans.find(p => p.name?.toLowerCase() === 'free');
+    return { monthlyPlans: monthly, annualPlans: annual, topUpPlans: topUp, freePlan: free };
+  }, [availablePlans]);
+
   if (isLoading && !userSubscription && !availablePlans.length) {
     return (
       <div>
@@ -189,24 +199,96 @@ export function SubscriptionPage() {
             />
           )}
           
-          <div className="mt-12 sm:mt-16 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-            {availablePlans.map((plan) => {
-              const isCurrentPlan = currentUserResolvedPlan?.id === plan.id;
-              
-              return (
-                 <PlanCard 
-                  key={plan.id} 
-                  plan={plan}
-                  isCurrentPlan={isCurrentPlan}
-                  userIsOnPaidPlan={!!userIsOnPaidPlan}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-12">
+            <TabsList className="grid w-full grid-cols-3 max-w-md mx-auto bg-transparent p-0">
+              <TabsTrigger 
+                value="monthly" 
+                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=inactive]:bg-transparent data-[state=inactive]:text-primary data-[state=inactive]:border data-[state=inactive]:border-primary"
+              >
+                Monthly
+              </TabsTrigger>
+              <TabsTrigger 
+                value="annual" 
+                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=inactive]:bg-transparent data-[state=inactive]:text-primary data-[state=inactive]:border data-[state=inactive]:border-primary"
+              >
+                Annual
+              </TabsTrigger>
+              <TabsTrigger 
+                value="top-up"
+                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=inactive]:bg-transparent data-[state=inactive]:text-primary data-[state=inactive]:border data-[state=inactive]:border-primary"
+              >
+                Top-Up
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="monthly">
+              <div className="mt-8 sm:mt-12 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+                {monthlyPlans.map((plan) => (
+                  <PlanCard 
+                    key={plan.id} 
+                    plan={plan}
+                    isCurrentPlan={currentUserResolvedPlan?.id === plan.id}
+                    userIsOnPaidPlan={!!userIsOnPaidPlan}
+                    isProcessing={isSubStoreLoading || isLoadingPurchase}
+                    handleSubscribe={handleSubscribe}
+                    handleCancelSubscription={handleCancelSubscription}
+                    formatAmount={formatAmount}
+                    formatInterval={formatInterval}
+                  />
+                ))}
+              </div>
+            </TabsContent>
+            <TabsContent value="annual">
+              <div className="mt-8 sm:mt-12 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+                {annualPlans.map((plan) => (
+                  <PlanCard 
+                    key={plan.id} 
+                    plan={plan}
+                    isCurrentPlan={currentUserResolvedPlan?.id === plan.id}
+                    userIsOnPaidPlan={!!userIsOnPaidPlan}
+                    isProcessing={isSubStoreLoading || isLoadingPurchase}
+                    handleSubscribe={handleSubscribe}
+                    handleCancelSubscription={handleCancelSubscription}
+                    formatAmount={formatAmount}
+                    formatInterval={formatInterval}
+                  />
+                ))}
+              </div>
+            </TabsContent>
+            <TabsContent value="top-up">
+              <div className="mt-8 sm:mt-12 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+                {topUpPlans.map((plan) => (
+                  <PlanCard 
+                    key={plan.id} 
+                    plan={plan}
+                    isCurrentPlan={currentUserResolvedPlan?.id === plan.id}
+                    userIsOnPaidPlan={!!userIsOnPaidPlan}
+                    isProcessing={isSubStoreLoading || isLoadingPurchase}
+                    handleSubscribe={handleSubscribe}
+                    handleCancelSubscription={handleCancelSubscription}
+                    formatAmount={formatAmount}
+                    formatInterval={formatInterval}
+                  />
+                ))}
+              </div>
+            </TabsContent>
+          </Tabs>
+          
+          <div className="mt-12 sm:mt-16 grid gap-8">
+            {userIsOnPaidPlan && freePlan && currentUserResolvedPlan?.id !== freePlan.id && (
+              <div className="max-w-md mx-auto">
+                <PlanCard 
+                  key={freePlan.id} 
+                  plan={freePlan}
+                  isCurrentPlan={false}
+                  userIsOnPaidPlan={true}
                   isProcessing={isSubStoreLoading || isLoadingPurchase}
-                  handleSubscribe={handleSubscribe}
+                  handleSubscribe={() => handleCancelSubscription()}
                   handleCancelSubscription={handleCancelSubscription}
                   formatAmount={formatAmount}
                   formatInterval={formatInterval}
                 />
-              );
-            })}
+              </div>
+            )}
           </div>
           
           <div className="mt-12 text-center">
