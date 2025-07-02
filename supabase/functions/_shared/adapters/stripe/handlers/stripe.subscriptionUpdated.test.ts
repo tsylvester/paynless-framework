@@ -46,7 +46,9 @@ const createMockSubscriptionUpdatedEvent = (
             object: 'subscription_item',
             price: { id: `price_test_${Date.now()}`, object: 'price', active: true, currency: 'usd', product: `prod_test_${Date.now()}` } as Stripe.Price,
             quantity: 1,
-          } as Stripe.SubscriptionItem],
+            current_period_start: now - (30 * 24 * 60 * 60), // Same as subscription
+            current_period_end: now + (30 * 24 * 60 * 60),   // Same as subscription
+          } as any],
           has_more: false,
           url: `/v1/subscription_items?subscription=sub_test_${Date.now()}`,
         },
@@ -464,9 +466,13 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
         id: stripeSubscriptionId,
         customer: stripeCustomerId,
         status: newStatus,
-        items: { data: [{ price: { id: newStripePriceId } }] } as any, 
-        current_period_start: Math.floor(Date.now() / 1000) - (15 * 24 * 60 * 60), // e.g., 15 days into new period
-        current_period_end: Math.floor(Date.now() / 1000) + (15 * 24 * 60 * 60),   // e.g., 15 days left
+        items: { 
+          data: [{ 
+            price: { id: newStripePriceId },
+            current_period_start: Math.floor(Date.now() / 1000) - (30 * 24 * 60 * 60),
+            current_period_end: Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60)
+          }] 
+        } as any, 
       },
       { // Previous attributes indicating the OLD plan (for conceptual clarity in test naming)
         items: { data: [{ price: { id: oldStripePriceId } }] } as any,

@@ -65,7 +65,7 @@ describe('adapterFactory.getPaymentAdapter', () => {
       const adapter = getPaymentAdapter('stripe', mockAdminClient, mockTokenWalletService);
       assertExists(adapter);
       assertEquals(adapter?.gatewayId, 'stripe');
-      assertEquals(denoEnvGetStub.calls.length, 3, 'Should check mode, secret key, and webhook secret');
+      assertEquals(denoEnvGetStub.calls.length, 5, 'Should check mode, keys, and URLs');
       assert(denoEnvGetStub.calls.some(call => call.args[0] === 'VITE_STRIPE_TEST_MODE'));
       assert(denoEnvGetStub.calls.some(call => call.args[0] === 'STRIPE_SECRET_TEST_KEY'));
       assert(denoEnvGetStub.calls.some(call => call.args[0] === 'STRIPE_TEST_WEBHOOK_SECRET'));
@@ -83,7 +83,7 @@ describe('adapterFactory.getPaymentAdapter', () => {
       const adapter = getPaymentAdapter('stripe', mockAdminClient, mockTokenWalletService);
       assertExists(adapter);
       assertEquals(adapter?.gatewayId, 'stripe');
-      assertEquals(denoEnvGetStub.calls.length, 3);
+      assertEquals(denoEnvGetStub.calls.length, 5);
       assert(denoEnvGetStub.calls.some(call => call.args[0] === 'VITE_STRIPE_TEST_MODE'));
       assert(denoEnvGetStub.calls.some(call => call.args[0] === 'STRIPE_SECRET_LIVE_KEY'));
       assert(denoEnvGetStub.calls.some(call => call.args[0] === 'STRIPE_LIVE_WEBHOOK_SECRET'));
@@ -101,7 +101,7 @@ describe('adapterFactory.getPaymentAdapter', () => {
         const adapter = getPaymentAdapter('stripe', mockAdminClient, mockTokenWalletService);
         assertExists(adapter);
         assertEquals(adapter?.gatewayId, 'stripe');
-        assertEquals(denoEnvGetStub.calls.length, 3); // Mode, Live Key, Live Webhook
+        assertEquals(denoEnvGetStub.calls.length, 5); // Mode, Live Key, Live Webhook, and 2 for URLs in constructor
         assert(denoEnvGetStub.calls.some(call => call.args[0] === 'VITE_STRIPE_TEST_MODE'));
         assert(denoEnvGetStub.calls.some(call => call.args[0] === 'STRIPE_SECRET_LIVE_KEY'));
         assert(denoEnvGetStub.calls.some(call => call.args[0] === 'STRIPE_LIVE_WEBHOOK_SECRET'));
@@ -120,7 +120,7 @@ describe('adapterFactory.getPaymentAdapter', () => {
       // It should check mode, then test secret key, then fail
       assert(denoEnvGetStub.calls.some(call => call.args[0] === 'VITE_STRIPE_TEST_MODE'));
       assert(denoEnvGetStub.calls.some(call => call.args[0] === 'STRIPE_SECRET_TEST_KEY'));
-      assertEquals(denoEnvGetStub.calls.length, 2); 
+      assertEquals(denoEnvGetStub.calls.length, 2);
     });
 
     it('should return null if VITE_STRIPE_TEST_MODE is "true" and STRIPE_TEST_WEBHOOK_SECRET is missing', () => {

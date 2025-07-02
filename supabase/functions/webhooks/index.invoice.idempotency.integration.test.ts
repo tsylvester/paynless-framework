@@ -18,8 +18,7 @@ import {
   import * as adapterFactory from '../_shared/adapters/adapterFactory.ts';
   import { IPaymentGatewayAdapter, PaymentConfirmation } from '../_shared/types/payment.types.ts';
   import { StripePaymentAdapter } from '../_shared/adapters/stripe/stripePaymentAdapter.ts';
-  import { createMockSupabaseClient, MockQueryBuilderState, MockSupabaseClientSetup, MockSupabaseDataConfig } from '../_shared/supabase.mock.ts';
-  import { IMockSupabaseClient } from '../_shared/types.ts'; 
+  import { createMockSupabaseClient, MockQueryBuilderState, MockSupabaseClientSetup, MockSupabaseDataConfig, IMockSupabaseClient } from '../_shared/supabase.mock.ts';
   import { createMockTokenWalletService, MockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
   import Stripe from 'npm:stripe';
   

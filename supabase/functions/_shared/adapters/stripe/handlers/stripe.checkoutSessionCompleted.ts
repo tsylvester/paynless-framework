@@ -140,6 +140,14 @@ export async function handleCheckoutSessionCompleted(
       throw retrieveError; 
     }
     
+    const firstItem = stripeSubscriptionObject.items.data[0];
+    if (!firstItem) {
+      const errMsg = `Stripe Subscription object ${stripeSubscriptionId} is missing items.`;
+      context.logger.error(`[handleCheckoutSessionCompleted] ${errMsg}`, { subscription: stripeSubscriptionObject });
+      await context.updatePaymentTransaction(internalPaymentId, { status: 'FAILED' }, event.id);
+      return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: errMsg };
+    }
+
     const { data: planData, error: planFetchError } = await context.supabaseClient
       .from('subscription_plans')
       .select('id')
@@ -160,8 +168,8 @@ export async function handleCheckoutSessionCompleted(
       status: stripeSubscriptionObject.status,
       stripe_customer_id: stripeCustomerId as string,
       stripe_subscription_id: stripeSubscriptionId,
-      current_period_start: stripeSubscriptionObject.current_period_start ? new Date(stripeSubscriptionObject.current_period_start * 1000).toISOString() : null,
-      current_period_end: stripeSubscriptionObject.current_period_end ? new Date(stripeSubscriptionObject.current_period_end * 1000).toISOString() : null,
+      current_period_start: firstItem.current_period_start ? new Date(firstItem.current_period_start * 1000).toISOString() : null,
+      current_period_end: firstItem.current_period_end ? new Date(firstItem.current_period_end * 1000).toISOString() : null,
       cancel_at_period_end: stripeSubscriptionObject.cancel_at_period_end,
     };
     
