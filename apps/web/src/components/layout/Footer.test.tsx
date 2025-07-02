@@ -31,7 +31,7 @@ describe('Footer Component', () => {
     // Check the full text content using a regex to match the dynamic year and structure
     const currentYear = new Date().getFullYear();
     // Simple regex, removing unnecessary escapes
-    expect(copyrightParagraph.textContent).toMatch(`© ${currentYear} Paynless Framework. All rights reserved.`);
+    expect(copyrightParagraph.textContent).toMatch(`© ${currentYear} Paynless by PaynPoint Inc. All rights reserved.`);
   });
 
   it('should display navigation links', () => {

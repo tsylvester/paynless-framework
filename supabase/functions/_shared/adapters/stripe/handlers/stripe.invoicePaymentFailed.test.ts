@@ -197,7 +197,48 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     );
 
     const event = createMockInvoicePaymentFailedEvent(
-      { id: specificInvoiceId, customer: specificCustomerId, subscription: specificSubId, amount_due: 3000, currency: 'eur' },
+      { 
+        id: specificInvoiceId, 
+        customer: specificCustomerId, 
+        amount_due: 3000, 
+        currency: 'eur',
+        lines: {
+          data: [{
+            id: 'il_test_line_item',
+            object: 'line_item',
+            amount: 3000,
+            currency: 'eur',
+            description: 'Test subscription',
+            discountable: true,
+            livemode: false,
+            metadata: {},
+            period: {
+              start: Math.floor(Date.now() / 1000),
+              end: Math.floor(Date.now() / 1000) + 86400 * 30,
+            },
+            plan: null,
+            price: null,
+            proration: false,
+            quantity: 1,
+            subscription: specificSubId,
+            subscription_item: 'si_test_item',
+            tax_amounts: [],
+            tax_rates: [],
+            type: 'subscription',
+            unit_amount_excluding_tax: null,
+            discount_amounts: [],
+            discounts: [],
+            invoice: specificInvoiceId,
+            parent: null,
+            prorations: [],
+            unified_proration: false,
+            unique_id: 'il_test_unique'
+          } as any],
+          has_more: false,
+          object: 'list',
+          url: '',
+        }
+      },
       specificEventId
     );
 
@@ -503,7 +544,23 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
       { subscriptionRetrieve: { id: specificSubId, status: 'incomplete' } as Stripe.Subscription }
     );
 
-    const event = createMockInvoicePaymentFailedEvent({ id: specificInvoiceId, subscription: specificSubId });
+    const event = createMockInvoicePaymentFailedEvent({ 
+      id: specificInvoiceId,
+      lines: {
+        data: [{
+          id: 'il_test_line_item',
+          object: 'line_item',
+          amount: 2000,
+          currency: 'usd',
+          description: 'Test subscription',
+          subscription: specificSubId,
+          type: 'subscription'
+        } as any],
+        has_more: false,
+        object: 'list',
+        url: '',
+      }
+    });
     const result = await handleInvoicePaymentFailed(handlerContext, event);
 
     assert(result.success, `Expected overall success even if subscription update fails, got error: ${result.error}`);
@@ -546,7 +603,23 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
       { subscriptionRetrieve: stripeSubRetrieveError } // Simulate Stripe API error
     );
 
-    const event = createMockInvoicePaymentFailedEvent({ id: specificInvoiceId, subscription: specificSubId });
+    const event = createMockInvoicePaymentFailedEvent({ 
+      id: specificInvoiceId,
+      lines: {
+        data: [{
+          id: 'il_test_line_item',
+          object: 'line_item',
+          amount: 2000,
+          currency: 'usd',
+          description: 'Test subscription',
+          subscription: specificSubId,
+          type: 'subscription'
+        } as any],
+        has_more: false,
+        object: 'list',
+        url: '',
+      }
+    });
     const result = await handleInvoicePaymentFailed(handlerContext, event);
 
     assert(!result.success, `Expected overall failure when Stripe subscription retrieve fails, but got success: true`);
@@ -660,24 +733,28 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
       }
     );
 
-    const mockInvoice: Partial<Stripe.Invoice> = {
-      id: specificInvoiceId,
-      customer: specificCustomerId,
-      subscription: null, 
-      payment_intent: specificPaymentIntentId, 
-      amount_due: 5000, 
-      currency: 'usd',
-      billing_reason: 'manual', 
-      attempt_count: 1, 
-      status: 'open', 
-      paid: false,
-    };
-
     const event = createMockInvoicePaymentFailedEvent(
-      mockInvoice,
+      {
+        id: specificInvoiceId,
+        customer: specificCustomerId,
+        amount_due: 5000, 
+        currency: 'usd',
+        billing_reason: 'manual', 
+        attempt_count: 1, 
+        status: 'open',
+        confirmation_secret: {
+          client_secret: `${specificPaymentIntentId}_secret_test`,
+          type: 'payment_intent',
+        },
+        lines: {
+          data: [], // Empty lines for one-time purchase (no subscription)
+          has_more: false,
+          object: 'list',
+          url: '',
+        }
+      },
       specificEventId
-    );
-    event.data.object = mockInvoice as Stripe.Invoice; 
+    ); 
 
 
     const result = await handleInvoicePaymentFailed(handlerContext, event);

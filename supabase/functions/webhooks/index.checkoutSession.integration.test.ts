@@ -21,13 +21,11 @@ import {
   // TWS import is not used directly in these tests, can be removed if not needed for type inference elsewhere
   // import * as TWS from '../_shared/services/tokenWalletService.ts';
   import { StripePaymentAdapter } from '../_shared/adapters/stripe/stripePaymentAdapter.ts';
-  import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
-  import { IMockSupabaseClient, IMockQueryBuilder } from '../_shared/types.ts'; // Corrected import path and type, added IMockQueryBuilder
+  import { createMockSupabaseClient, MockQueryBuilderState, IMockSupabaseClient, IMockQueryBuilder } from '../_shared/supabase.mock.ts';
   import { createMockTokenWalletService, MockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
   import Stripe from 'npm:stripe';
   import { Buffer } from 'node:buffer';
   import { ParsedProductDescription } from '../_shared/utils/productDescriptionParser.ts';
-  import type { MockQueryBuilderState } from '../_shared/supabase.mock.ts'; // For typing the modified mock function
   
   import { webhookRouterHandler, handleWebhookRequestLogic, WebhookHandlerDependencies, WebhookRouterDependencies } from './index.ts';
   import type { SupabaseClient } from 'npm:@supabase/supabase-js';

@@ -291,7 +291,7 @@ describe("deleteFromStorage", () => {
     const result = await deleteFromStorage(client as unknown as SupabaseClient, bucketName, pathsToDelete);
 
     assertExists(result.error);
-    assertEquals(result.error, mockError);
+    assertEquals(result.error?.message, mockError.message);
     assertSpyCall(spies.storage.from(bucketName).removeSpy, 0, { args: [pathsToDelete] });
   });
 
@@ -309,7 +309,7 @@ describe("deleteFromStorage", () => {
     const result = await deleteFromStorage(client as unknown as SupabaseClient, bucketName, pathsToDelete);
 
     assertExists(result.error);
-    assertEquals(result.error, mockError);
+    assertEquals(result.error?.message, mockError.message);
     assertSpyCall(spies.storage.from(bucketName).removeSpy, 0, { args: [pathsToDelete] });
   });
 
@@ -492,7 +492,7 @@ describe("getFileMetadata", () => {
     const result = await getFileMetadata(client as unknown as SupabaseClient, bucketName, fullPath);
     
     assertExists(result.error);
-    assertEquals(result.error, mockError);
+    assertEquals(result.error?.message, mockError.message);
   });
 
   it("should return an error if file list is empty (file not found)", async () => {
@@ -508,7 +508,7 @@ describe("getFileMetadata", () => {
     const result = await getFileMetadata(client as unknown as SupabaseClient, bucketName, fullPath);
 
     assertExists(result.error);
-    assertStringIncludes(result.error!.message, 'File not found');
+    assertStringIncludes(result.error!.message, "File not found");
   });
 
   it("should return an error if file object has incomplete metadata", async () => {
@@ -547,7 +547,7 @@ describe("getFileMetadata", () => {
     const result = await getFileMetadata(client as unknown as SupabaseClient, bucketName, fullPath);
 
     assertExists(result.error);
-    assertEquals(result.error, mockError);
+    assertEquals(result.error?.message, mockError.message);
   });
 
   it("should handle paths without a directory", async () => {

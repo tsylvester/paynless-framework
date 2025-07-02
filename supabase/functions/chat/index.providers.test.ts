@@ -42,6 +42,14 @@ import type {
 import type { MockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
 import type { MockSupabaseDataConfig } from '../_shared/supabase.mock.ts';
 
+// --- Shared Mock Data for Provider Tests ---
+const mockValidProviderConfig: Json = {
+    api_identifier: testApiIdentifier,
+    tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+    input_token_cost_rate: 0.001,
+    output_token_cost_rate: 0.002,
+};
+
 // --- Test Suite for Chat Provider Functionality ---
 Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
     // --- Individual Tests (Should now use refactored mockSupaConfig) ---
@@ -185,7 +193,7 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
                                 api_identifier: testApiIdentifier, 
                                 provider: ChatTestConstants.testProviderString,
                                 is_active: false, // Set to inactive
-                                config: { api_identifier: testApiIdentifier, tokenization_strategy: {type: "tiktoken", tiktoken_encoding_name: "cl100k_base"}} as Json
+                                config: { ...mockValidProviderConfig }
                             }], 
                             error: null, 
                             status: 200, 
@@ -409,7 +417,7 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
         });
 
         await t.step("POST request with missing provider string in DB returns 500", async () => {
-            // *** FIX: Update mock config using genericMockResults ***
+            const providerName = "Provider With Null String"; // Updated name for clarity
             const missingProviderStringSupaConfig: MockSupabaseDataConfig = {
                 ...mockSupaConfigBase,
                 genericMockResults: {
@@ -420,11 +428,11 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
                             // Simulate provider lookup returning data but missing the crucial 'provider' string
                             data: [{ 
                                 id: testProviderId, 
-                                name: "Provider With Null String", // Added name
+                                name: providerName,
                                 api_identifier: testApiIdentifier, 
                                 provider: null, // This is the critical part for the test
                                 is_active: true, // Explicitly active to bypass inactive check for this test's purpose
-                                config: { api_identifier: testApiIdentifier, tokenization_strategy: {type: "tiktoken", tiktoken_encoding_name: "cl100k_base"}} as Json
+                                config: { ...mockValidProviderConfig }
                             }], 
                             error: null, 
                             status: 200,
@@ -441,7 +449,7 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
             });
             const response = await handler(req, deps);
             assertEquals(response.status, 500);
-            assertEquals((await response.json()).error, "Configuration for provider ID '123e4567-e89b-12d3-a456-426614174000' has an invalid provider name."); 
+            assertEquals((await response.json()).error, `Configuration for provider ID '${testProviderId}' has an invalid provider name.`); 
         });
 
         await t.step("POST request with unsupported provider returns 400", async () => {
@@ -462,7 +470,10 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
                                         api_identifier: 'unsupported-model', 
                                         provider: 'unsupported-provider', // The crucial part for factory to return null via override
                                         is_active: true, // To pass the active check
-                                        config: { api_identifier: 'unsupported-model', tokenization_strategy: {type: "tiktoken", tiktoken_encoding_name: "cl100k_base"}} as Json
+                                        config: {
+                                            ...mockValidProviderConfig,
+                                            api_identifier: 'unsupported-model'
+                                        }
                                     }], 
                                     error: null,
                                     status: 200,
@@ -524,7 +535,10 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
                                 api_identifier: "some-model-for-unsupported", 
                                 provider: "unsupportable_provider_co", // This type is not supported by AiServiceFactory
                                 is_active: true, 
-                                config: { api_identifier: "some-model-for-unsupported", tokenization_strategy: {type: "tiktoken", tiktoken_encoding_name: "cl100k_base"}} as Json
+                                config: {
+                                    ...mockValidProviderConfig,
+                                    api_identifier: "some-model-for-unsupported"
+                                }
                             }], 
                             error: null, 
                             status: 200, 
@@ -607,12 +621,11 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
                                     api_identifier: anthropicApiIdentifier, 
                                     tokenization_strategy: { 
                                         type: "tiktoken", 
-                                        tiktoken_encoding_name: "cl100k_base",
-                                        tiktoken_model_name_for_rules_fallback: anthropicApiIdentifier
+                                        tiktoken_encoding_name: "cl100k_base"
                                     },
                                     input_token_cost_rate: 0.01,
                                     output_token_cost_rate: 0.03
-                                } as Json
+                                }
                             }], 
                             error: null, 
                             status: 200, 

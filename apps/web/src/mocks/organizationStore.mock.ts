@@ -253,22 +253,16 @@ export const createMockOrganizationStore = (overrideActions?: Partial<MockOrgani
 
 // --- Exported Reset Function ---
 export const resetAllStoreMocks = () => {
-  // Reset Auth Store
+  // Reset state values to their initial state
   internalMockAuthStoreState = {
-    user: null, session: null, profile: null, isLoading: false, error: null, navigate: null,
+    user: null,
+    session: null,
+    profile: null,
+    isLoading: false,
+    error: null,
+    navigate: null,
   };
-
-  // Reset Organization Store spies
-  internalInviteUserSpy.mockClear().mockResolvedValue(true);
-  internalUpdateOrganizationSpy.mockClear().mockResolvedValue(true);
-  internalOpenDeleteDialogSpy.mockClear();
-  internalUpdateMemberRoleSpy.mockClear().mockResolvedValue(true);
-  internalRemoveMemberSpy.mockClear().mockResolvedValue(true);
-  internalFetchCurrentOrganizationMembersSpy.mockClear().mockResolvedValue(undefined);
-
-  // Reset Organization Store state values to their initial defaults
   internalMockOrgStoreState = {
-    // OrganizationState
     userOrganizations: [],
     currentOrganizationId: null,
     currentOrganizationDetails: null,
@@ -286,10 +280,8 @@ export const resetAllStoreMocks = () => {
     memberCurrentPage: 1,
     memberPageSize: 10,
     memberTotalCount: 0,
-    // OrganizationUIState
     isCreateModalOpen: false,
     isDeleteDialogOpen: false,
-    // Spied Actions (re-assign spies after clearing them)
     inviteUser: internalInviteUserSpy,
     updateOrganization: internalUpdateOrganizationSpy,
     openDeleteDialog: internalOpenDeleteDialogSpy,
@@ -297,6 +289,18 @@ export const resetAllStoreMocks = () => {
     removeMember: internalRemoveMemberSpy,
     fetchCurrentOrganizationMembers: internalFetchCurrentOrganizationMembersSpy,
   };
+
+  // Clear all spies/mock functions
+  internalInviteUserSpy.mockClear();
+  internalUpdateOrganizationSpy.mockClear();
+  internalOpenDeleteDialogSpy.mockClear();
+  internalUpdateMemberRoleSpy.mockClear();
+  internalRemoveMemberSpy.mockClear();
+  internalFetchCurrentOrganizationMembersSpy.mockClear();
+  
+  // If createMockActions creates new vi.fn() instances each time, 
+  // we don't need to clear them individually unless they are long-lived spies like the `internal...Spy` ones.
+  // The exported spies are the most important to clear.
 };
 
 // Export the mocked hook logic directly as useOrganizationStore for easier consumption in vi.mock factory

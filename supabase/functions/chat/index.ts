@@ -21,19 +21,58 @@ import type {
     PerformChatRewindArgs,
     ChatMessageInsert,
     ChatMessageRow,
-    TokenUsage,
-    AiModelExtendedConfig,
+    ChatMessageRole,
  } from '../_shared/types.ts'; 
 import type { Database, Json } from "../types_db.ts"; 
 import { logger } from '../_shared/logger.ts'; // Renamed to avoid conflict with deps.logger
 import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
 import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
 import { calculateActualChatCost } from '../_shared/utils/cost_utils.ts';
+import { getMaxOutputTokens } from '../_shared/utils/affordability_utils.ts';
 import { TokenWallet, TokenWalletTransactionType } from '../_shared/types/tokenWallet.types.ts';
 
-// Pre-fetch env vars for defaultDeps to handle potential early init issues in tests
-const supabaseUrlForDefault = Deno.env.get("SUPABASE_URL");
-const serviceRoleKeyForDefault = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+// --- Zod Schemas for Runtime Validation ---
+const TokenUsageSchema = z.object({
+  prompt_tokens: z.number(),
+  completion_tokens: z.number(),
+  total_tokens: z.number(),
+});
+
+const TiktokenEncodingSchema = z.enum(['cl100k_base', 'p50k_base', 'r50k_base', 'gpt2', 'o200k_base']);
+const TiktokenModelForRulesSchema = z.enum(['gpt-4', 'gpt-3.5-turbo', 'gpt-4o', 'gpt-3.5-turbo-0301']);
+
+const TokenizationStrategySchema = z.union([
+    z.object({ type: z.literal('tiktoken'), tiktoken_encoding_name: TiktokenEncodingSchema, tiktoken_model_name_for_rules_fallback: TiktokenModelForRulesSchema.optional(), is_chatml_model: z.boolean().optional(), api_identifier_for_tokenization: z.string().optional() }),
+    z.object({ type: z.literal('rough_char_count'), chars_per_token_ratio: z.number().optional() }),
+    z.object({ type: z.literal('claude_tokenizer') }),
+    z.object({ type: z.literal('google_gemini_tokenizer') }),
+    z.object({ type: z.literal('none') }),
+]);
+
+const AiModelExtendedConfigSchema = z.object({
+  model_id: z.string().optional(),
+  api_identifier: z.string(),
+  input_token_cost_rate: z.number().nullable(),
+  output_token_cost_rate: z.number().nullable(),
+  tokenization_strategy: TokenizationStrategySchema,
+  hard_cap_output_tokens: z.number().optional(),
+  context_window_tokens: z.number().optional(),
+  service_default_input_cost_rate: z.number().optional(),
+  service_default_output_cost_rate: z.number().optional(),
+  status: z.enum(['active', 'beta', 'deprecated', 'experimental']).optional(),
+  features: z.array(z.string()).optional(),
+  max_context_window_tokens: z.number().optional(),
+  notes: z.string().optional(),
+  provider_max_input_tokens: z.number().optional(),
+  provider_max_output_tokens: z.number().optional(),
+  default_temperature: z.number().optional(),
+  default_top_p: z.number().optional(),
+});
+
+// --- Type Guard Functions ---
+function isChatMessageRole(role: string): role is ChatMessageRole {
+    return ['system', 'user', 'assistant'].includes(role);
+}
 
 // Create default dependencies using actual implementations
 export const defaultDeps: ChatHandlerDeps = {
@@ -173,23 +212,16 @@ export async function handler(req: Request, deps: ChatHandlerDeps = defaultDeps)
         const depsWithTokenWalletService = { ...deps, tokenWalletService };
         const result = await handlePostRequest(requestBody, supabaseClient, userId, depsWithTokenWalletService);
         
-        // If handlePostRequest returns an assistantMessage with an error_type, set HTTP status to 502.
-        // Otherwise, if it returns a general error object, use that status or default to 500.
-        // If no error, status is 200.
-        let responseStatus = 200;
-        if (result && typeof result === 'object') {
-            if ('assistantMessage' in result && result.assistantMessage && 'error_type' in result.assistantMessage && result.assistantMessage.error_type) {
-                responseStatus = 502; // Bad Gateway for AI provider errors surfaced in assistant message
-                logger.warn('AI Provider error indicated in assistantMessage, setting status to 502.', { errorType: result.assistantMessage.error_type });
-            } else if ('error' in result && result.error) { // General error from handlePostRequest
-                responseStatus = result.error.status || 500;
-                logger.warn('General error returned from handlePostRequest, setting status.', { status: responseStatus, message: result.error.message });
-                // For general errors, the body is { error: message }, so use createErrorResponse
-                return createErrorResponse(result.error.message, responseStatus, req);
-            }
+        if (result && 'error' in result && result.error) {
+            const { message, status } = result.error;
+            logger.warn('handlePostRequest returned an error. Propagating as an error response.', {
+                message,
+                status: status || 500,
+            });
+            return createErrorResponse(message, status || 500, req);
         }
-        // For successful operations OR for AI provider errors where we still send user/assistant messages
-        return createSuccessResponse(result, responseStatus, req);
+
+        return createSuccessResponse(result, 200, req);
     } catch (err) {
         logger.error('Unhandled error in POST mainHandler:', { error: err instanceof Error ? err.stack : String(err) });
         const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred processing the chat request.';
@@ -236,8 +268,8 @@ async function constructMessageHistory(
     rewindFromMessageId: string | null | undefined, // Keep for potential future use, though not primary with selectedMessages
     selectedMessages: ChatApiRequest['selectedMessages'], 
     logger: ChatHandlerDeps['logger'] 
-): Promise<{ history: {role: 'user' | 'assistant' | 'system', content: string}[], historyFetchError?: Error }> {
-    const history: {role: 'user' | 'assistant' | 'system', content: string}[] = [];
+): Promise<{ history: {role: ChatMessageRole, content: string}[], historyFetchError?: Error }> {
+    const history: {role: ChatMessageRole, content: string}[] = [];
     let historyFetchError: Error | undefined = undefined;
 
     if (system_prompt_text) {
@@ -268,11 +300,11 @@ async function constructMessageHistory(
             for (const msg of dbMessages) {
                 if (msg && 
                     typeof msg.role === 'string' && 
-                    ['user', 'assistant', 'system'].includes(msg.role) && 
+                    isChatMessageRole(msg.role) && 
                     typeof msg.content === 'string'
                 ) {
                     history.push({
-                        role: msg.role as 'user' | 'assistant' | 'system',
+                        role: msg.role,
                         content: msg.content,
                     });
                 } else {
@@ -374,7 +406,19 @@ async function handlePostRequest(
         
         const providerApiIdentifier = providerData.api_identifier; // e.g., "gpt-3.5-turbo", "dummy-echo-v1"
         const providerDatabaseConfig = providerData.config; // This is the Json | null object
-        const modelConfig = providerData.config as unknown as AiModelExtendedConfig; 
+        
+        // Combine the top-level api_identifier into the config object before parsing
+        const combinedConfigForParsing = {
+            ...(typeof providerDatabaseConfig === 'object' && providerDatabaseConfig !== null ? providerDatabaseConfig : {}),
+            api_identifier: providerApiIdentifier
+        };
+
+        const parsedModelConfig = AiModelExtendedConfigSchema.safeParse(combinedConfigForParsing);
+        if (!parsedModelConfig.success) {
+            logger.error('Failed to parse provider config:', { providerId: requestProviderId, error: parsedModelConfig.error });
+            return { error: { message: `Invalid configuration for provider ID '${requestProviderId}'.`, status: 500 } };
+        }
+        const modelConfig = parsedModelConfig.data;
         logger.info('Fetched provider details:', { providerString: providerData.provider, api_identifier: providerApiIdentifier });
         
         if (!providerData.provider || typeof providerData.provider !== 'string' || providerData.provider.trim() === '') {
@@ -386,7 +430,6 @@ async function handlePostRequest(
             logger.error('Provider config (for AiModelExtendedConfig) is missing or invalid.', { providerId: requestProviderId, providerString: providerData.provider });
             return { error: { message: `Extended model configuration for provider '${providerData.name}' is missing or invalid.`, status: 500 } };
         }
-        modelConfig.api_identifier = providerApiIdentifier; 
         logger.info('Parsed AiModelExtendedConfig from providerData.config', { modelIdentifier: modelConfig.api_identifier });
 
         const apiKeyEnvVarName = `${providerData.provider.toUpperCase()}_API_KEY`;
@@ -489,22 +532,25 @@ async function handlePostRequest(
             const chatHistoryForAI: ChatMessageRow[] = historyData || [];
             logger.info(`Fetched ${chatHistoryForAI.length} messages for AI context (up to rewind point).`);
             
-            const messagesForAdapter: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
+            const messagesForAdapter: { role: ChatMessageRole; content: string }[] = [];
             if (actualSystemPromptText) {
                 messagesForAdapter.push({ role: 'system', content: actualSystemPromptText });
             }
             messagesForAdapter.push(
                 ...chatHistoryForAI
-                    .filter(msg => msg.role && ['user', 'assistant', 'system'].includes(msg.role) && typeof msg.content === 'string')
+                    .filter((msg): msg is ChatMessageRow & { role: ChatMessageRole; content: string } => 
+                        !!(msg.role && isChatMessageRole(msg.role) && typeof msg.content === 'string')
+                    )
                     .map(msg => ({ 
-                        role: msg.role as 'user' | 'assistant' | 'system', 
-                        content: msg.content as string
+                        role: msg.role, 
+                        content: msg.content,
                     }))
             );
             
             const apiKeyForAdapter = apiKey;
             logger.info(`Rewind path: Using API key for ${providerData.provider} for token check and adapter.`);
             
+            let maxAllowedOutputTokens: number;
             try {
                 if (!modelConfig) { 
                     logger.error('Critical: modelConfig is null before token counting (rewind path).', { providerId: requestProviderId, apiIdentifier: providerApiIdentifier });
@@ -513,15 +559,22 @@ async function handlePostRequest(
                 const tokensRequiredForRewind = await countTokensFn(messagesForAdapter, modelConfig);
                 logger.info('Estimated tokens for rewind prompt.', { tokensRequiredForRewind, model: providerApiIdentifier });
                 
-                const hasSufficient = await tokenWalletService!.checkBalance(wallet.walletId, tokensRequiredForRewind.toString());
-                if (!hasSufficient) {
+                maxAllowedOutputTokens = getMaxOutputTokens(
+                    parseFloat(String(wallet.balance)),
+                    tokensRequiredForRewind,
+                    modelConfig,
+                    logger
+                );
+
+                if (maxAllowedOutputTokens < 1) {
                     logger.warn('Insufficient token balance for rewind prompt.', { 
                         currentBalance: wallet.balance,
-                        tokensRequired: tokensRequiredForRewind 
+                        tokensRequired: tokensRequiredForRewind,
+                        maxAllowedOutput: maxAllowedOutputTokens
                     });
                     return { 
                         error: { 
-                            message: `Insufficient token balance. Approx. ${tokensRequiredForRewind} tokens needed, you have ${wallet.balance}.`, 
+                            message: `Insufficient token balance. You cannot generate a response.`, 
                             status: 402 
                         } 
                     };
@@ -542,7 +595,7 @@ async function handlePostRequest(
                     providerId: requestProviderId, 
                     promptId: requestPromptId,
                     chatId: currentChatId,
-                    max_tokens_to_generate: max_tokens_to_generate
+                    max_tokens_to_generate: Math.min(max_tokens_to_generate || Infinity, maxAllowedOutputTokens)
                 };
                 adapterResponsePayload = await aiProviderAdapter.sendMessage(
                     adapterChatRequest, 
@@ -555,9 +608,9 @@ async function handlePostRequest(
                  const errorMessage = adapterError instanceof Error ? adapterError.message : 'AI service request failed.';
                  
                  const assistantErrorContent = `AI service request failed (rewind): ${errorMessage}`;
-                 const assistantErrorMessageData: Partial<ChatMessageRow> = {
+                 const assistantErrorMessageData: ChatMessageInsert = {
                      id: generateUUID(),
-                     chat_id: currentChatId as string,
+                     chat_id: currentChatId,
                      user_id: userId,
                      role: 'assistant',
                      content: assistantErrorContent,
@@ -566,15 +619,13 @@ async function handlePostRequest(
                      token_usage: null,
                      error_type: 'ai_provider_error',
                      is_active_in_thread: true,
-                     created_at: new Date().toISOString(),
-                     updated_at: new Date().toISOString(),
                  };
 
                 // User message in rewind path is the new user message for the rewind.
                 // It is NOT saved by the perform_chat_rewind RPC if AI fails.
                 // So we should save it here.
                 const userMessageInsertOnErrorRewind: ChatMessageInsert = {
-                    chat_id: currentChatId as string,
+                    chat_id: currentChatId,
                     user_id: userId,
                     role: 'user',
                     content: userMessageContent, // This is the NEW user message
@@ -595,7 +646,7 @@ async function handlePostRequest(
                 
                 const { data: savedAssistantErrorMessageRewind, error: assistantErrorInsertErrorRewind } = await supabaseClient
                     .from('chat_messages')
-                    .insert(assistantErrorMessageData as ChatMessageInsert)
+                    .insert(assistantErrorMessageData)
                     .select()
                     .single();
 
@@ -610,9 +661,9 @@ async function handlePostRequest(
                 // The UI should primarily show active messages.
 
                  return {
-                    userMessage: savedUserMessageOnErrorRewind as ChatMessageRow,
-                    assistantMessage: savedAssistantErrorMessageRewind as ChatMessageRow,
-                    chatId: currentChatId as string,
+                    userMessage: savedUserMessageOnErrorRewind,
+                    assistantMessage: savedAssistantErrorMessageRewind,
+                    chatId: currentChatId,
                     isRewind: true, // Indicate it was a rewind attempt
                     // _error_for_main_handler_status: { message: errorMessage, status: 502 } // REMOVED - Signal to main handler
                 };
@@ -643,7 +694,7 @@ async function handlePostRequest(
             }
             
             // The RPC returns an array with a single object containing the two IDs
-            const rpcResult = rpcResultArray as unknown as ({ new_user_message_id: string, new_assistant_message_id: string }[] | null);
+            const rpcResult = rpcResultArray;
 
             if (!rpcResult || rpcResult.length !== 1 || !rpcResult[0].new_user_message_id || !rpcResult[0].new_assistant_message_id) {
                  logger.error('Rewind error: perform_chat_rewind RPC returned unexpected data format or missing IDs.', { result: rpcResult });
@@ -675,11 +726,16 @@ async function handlePostRequest(
                 return { error: { message: 'Failed to retrieve new assistant message post-rewind.', status: 500 }};
             }
             
-            const newUserMessageFromRpc = newUserMessageData as ChatMessageRow;
-            const newAssistantMessageFromRpc = newAssistantMessageData as ChatMessageRow;
+            const newUserMessageFromRpc = newUserMessageData;
+            const newAssistantMessageFromRpc = newAssistantMessageData ;
             
             // --- START: Token Debit for Rewind Path ---
-            const tokenUsageFromAdapter = adapterResponsePayload.token_usage as TokenUsage | null;
+            const parsedTokenUsage = TokenUsageSchema.nullable().safeParse(adapterResponsePayload.token_usage);
+            if (!parsedTokenUsage.success) {
+                logger.error('Rewind path: Failed to parse token_usage from adapter.', { error: parsedTokenUsage.error, payload: adapterResponsePayload.token_usage });
+                return { error: { message: 'Received invalid token usage data from AI provider.', status: 502 }};
+            }
+            const tokenUsageFromAdapter = parsedTokenUsage.data;
             const actualTokensToDebit = calculateActualChatCost(tokenUsageFromAdapter, modelConfig, logger);
 
             if (actualTokensToDebit > 0) {
@@ -689,9 +745,10 @@ async function handlePostRequest(
                     relatedEntityId: newAssistantMessageFromRpc.id 
                 });
                 try {
+                    const debitType: TokenWalletTransactionType = 'DEBIT_USAGE';
                     const transactionData = {
                         walletId: wallet.walletId,
-                        type: 'DEBIT_USAGE' as TokenWalletTransactionType,
+                        type: debitType,
                         amount: String(actualTokensToDebit),
                         recordedByUserId: userId,
                         idempotencyKey: crypto.randomUUID(),
@@ -880,6 +937,39 @@ async function handlePostRequest(
             }
             // The old blocks for re-checking !currentChatId or handling historyFetchError by nulling currentChatId are removed.
 
+            // --- Pre-flight affordability check for Normal Path ---
+            let maxAllowedOutputTokens: number;
+            try {
+                if (!modelConfig) {
+                    logger.error('Critical: modelConfig is null before token counting (normal path).', { providerId: requestProviderId, apiIdentifier: providerApiIdentifier });
+                    return { error: { message: 'Internal server error: Provider configuration missing for token calculation.', status: 500 } };
+                }
+                const tokensRequiredForNormal = await countTokensFn(messagesForProvider, modelConfig);
+                logger.info('Estimated tokens for normal prompt.', { tokensRequiredForNormal, model: providerApiIdentifier });
+                
+                maxAllowedOutputTokens = getMaxOutputTokens(
+                    parseFloat(String(wallet.balance)),
+                    tokensRequiredForNormal,
+                    modelConfig,
+                    logger
+                );
+
+                if (maxAllowedOutputTokens < 1) {
+                    logger.warn('Insufficient balance for estimated prompt tokens (normal path).', {
+                        walletId: wallet.walletId,
+                        balance: wallet.balance,
+                        estimatedCost: tokensRequiredForNormal,
+                        maxAllowedOutput: maxAllowedOutputTokens
+                    });
+                    return { error: { message: `Insufficient token balance for this request. Please add funds to your wallet.`, status: 402 } };
+                }
+            } catch(e: unknown) {
+                const errorMessage = e instanceof Error ? e.message : String(e);
+                logger.error('Error during token counting for normal prompt:', { error: errorMessage, model: providerApiIdentifier });
+                return { error: { message: 'Internal server error during token calculation.', status: 500 } };
+            }
+            // --- End pre-flight affordability check ---
+
             logger.info(`Processing with real provider: ${providerData.provider}`);
             // apiKeyNormal is fetched and used in this block, separate from rewind path's apiKey
             if (!apiKey) {
@@ -894,51 +984,6 @@ async function handlePostRequest(
                return { error: { message: `Unsupported AI provider: ${providerData.provider}`, status: 400 }};
             }
 
-            // --- START: Tokenization and Balance Check for Normal Path ---
-            try {
-               if (!modelConfig) {
-                   logger.error('Critical: modelConfig is null before token counting (normal path).', { providerId: requestProviderId, apiIdentifier: providerApiIdentifier });
-                   return { error: { message: 'Internal server error: Provider configuration missing for token calculation.', status: 500 } };
-               }
-               if (!modelConfig.tokenization_strategy || !modelConfig.tokenization_strategy.type) {
-                   logger.error('Normal Path: Tokenization strategy is missing or type is undefined in provider config.', { providerId: requestProviderId, modelConfig });
-                   return { error: { message: 'Provider configuration error: Tokenization strategy is missing or invalid.', status: 400 } };
-               }
-               if (typeof countTokensFn !== 'function') {
-                   logger.error('Normal Path: countTokensFn is not a function.', { providerId: requestProviderId });
-                   return { error: { message: 'Server configuration error: Token counting utility is not available.', status: 500 } };
-               }
-
-               const tokensRequiredForNormal = await countTokensFn(messagesForProvider, modelConfig);
-               logger.info('Estimated tokens for normal prompt.', { tokensRequiredForNormal, model: providerApiIdentifier });
-
-               const hasSufficient = await tokenWalletService!.checkBalance(wallet.walletId, tokensRequiredForNormal.toString());
-               if (!hasSufficient) {
-                   logger.warn('Insufficient token balance for normal prompt.', { 
-                       currentBalance: wallet.balance,
-                       tokensRequired: tokensRequiredForNormal 
-                   });
-                   return { 
-                       error: { 
-                           message: `Insufficient token balance. Approx. ${tokensRequiredForNormal} tokens needed, you have ${wallet.balance}.`, 
-                           status: 402 
-                       } 
-                   };
-               }
-            } catch (tokenError: unknown) {
-                const typedTokenError = tokenError instanceof Error ? tokenError : new Error(String(tokenError));
-                logger.error('Error during tokenization or pre-AI balance check for normal prompt:', { 
-                    error: typedTokenError.message, 
-                    model: providerApiIdentifier 
-                });
-                // If message indicates tokenization strategy, make it 400.
-                if (typedTokenError.message.toLowerCase().includes('tokenization strategy') || typedTokenError.message.toLowerCase().includes('tiktoken')) {
-                    return { error: { message: `Tokenization error for provider '${providerData.name}': ${typedTokenError.message}`, status: 400 } };
-                }
-                return { error: { message: `Server error: Could not estimate token cost or check balance. ${typedTokenError.message}`, status: 500 } };
-            }
-            // --- END: Tokenization and Balance Check for Normal Path ---
-
             logger.info(`Calling AI adapter (${providerData.provider}) for normal response...`);
             let adapterResponsePayload: AdapterResponsePayload;
             try {
@@ -949,7 +994,7 @@ async function handlePostRequest(
                     promptId: requestPromptId, 
                     chatId: currentChatId,
                     organizationId: organizationId,
-                    max_tokens_to_generate: max_tokens_to_generate
+                    max_tokens_to_generate: Math.min(max_tokens_to_generate || Infinity, maxAllowedOutputTokens)
                 };
                 adapterResponsePayload = await adapter.sendMessage(
                     adapterChatRequestNormal,
@@ -959,8 +1004,10 @@ async function handlePostRequest(
                 logger.info('AI adapter returned successfully (normal path).');
 
                 // --- START: Apply hard_cap_output_tokens if max_tokens_to_generate is not set ---
-                if (adapterResponsePayload.token_usage) { // Ensure token_usage is not null
-                    const tokenUsage = adapterResponsePayload.token_usage as unknown as TokenUsage; // Cast to specific type via unknown
+                const parsedTokenUsage = TokenUsageSchema.safeParse(adapterResponsePayload.token_usage);
+
+                if (parsedTokenUsage.success && parsedTokenUsage.data) { // Ensure token_usage is not null
+                    const tokenUsage = parsedTokenUsage.data;
 
                     if (
                         (!requestBody.max_tokens_to_generate || requestBody.max_tokens_to_generate <= 0) &&
@@ -983,8 +1030,8 @@ async function handlePostRequest(
                                 model_api_identifier: providerApiIdentifier
                             });
                         }
-                        // Update the original payload with the modified tokenUsage, casting back to Json via unknown
-                        adapterResponsePayload.token_usage = tokenUsage as unknown as Json;
+                        // Update the original payload with the modified tokenUsage
+                        adapterResponsePayload.token_usage = tokenUsage;
                     }
                 }
                 // --- END: Apply hard_cap_output_tokens ---
@@ -995,9 +1042,9 @@ async function handlePostRequest(
                 
                 // Construct a ChatMessageRow-like object for the erroring assistant message
                 const assistantErrorContent = `AI service request failed: ${errorMessage}`;
-                const assistantErrorMessageData: Partial<ChatMessageRow> = { // Use Partial as not all fields will be populated like a real DB row initially
+                const assistantErrorMessageData: ChatMessageInsert = { // Use Partial as not all fields will be populated like a real DB row initially
                     id: generateUUID(), // Generate a new UUID for this error message
-                    chat_id: currentChatId as string,
+                    chat_id: currentChatId!,
                     user_id: userId,
                     role: 'assistant',
                     content: assistantErrorContent,
@@ -1006,13 +1053,11 @@ async function handlePostRequest(
                     token_usage: null, // No token usage for a failed call
                     error_type: 'ai_provider_error', // Specific error type
                     is_active_in_thread: true, // Mark as active, it's the latest turn
-                    created_at: new Date().toISOString(), // Set current timestamp
-                    updated_at: new Date().toISOString(),
                 };
 
                 // Attempt to save user message first
                 const userMessageInsertOnError: ChatMessageInsert = {
-                    chat_id: currentChatId as string,
+                    chat_id: currentChatId,
                     user_id: userId,
                     role: 'user',
                     content: userMessageContent,
@@ -1035,7 +1080,7 @@ async function handlePostRequest(
                 // Attempt to save the erroring assistant message
                 const { data: savedAssistantErrorMessage, error: assistantErrorInsertError } = await supabaseClient
                     .from('chat_messages')
-                    .insert(assistantErrorMessageData as ChatMessageInsert) // Cast to ChatMessageInsert
+                    .insert(assistantErrorMessageData) // Cast to ChatMessageInsert
                     .select()
                     .single();
                 
@@ -1055,7 +1100,12 @@ async function handlePostRequest(
 
             // --- START: Token Debit for Normal Path (Moved Before Message Saves) ---
             let transactionRecordedSuccessfully = false;
-            const tokenUsageFromAdapterNormal = adapterResponsePayload.token_usage as TokenUsage | null;
+            const parsedTokenUsageNormal = TokenUsageSchema.nullable().safeParse(adapterResponsePayload.token_usage);
+            if (!parsedTokenUsageNormal.success) {
+                logger.error('Normal path: Failed to parse token_usage from adapter.', { error: parsedTokenUsageNormal.error, payload: adapterResponsePayload.token_usage });
+                return { error: { message: 'Received invalid token usage data from AI provider.', status: 502 }};
+            }
+            const tokenUsageFromAdapterNormal = parsedTokenUsageNormal.data;
             const actualTokensToDebitNormal = calculateActualChatCost(tokenUsageFromAdapterNormal, modelConfig, logger);
 
             if (actualTokensToDebitNormal > 0) {
@@ -1064,13 +1114,14 @@ async function handlePostRequest(
                     actualTokensToDebit: actualTokensToDebitNormal,
                 });
                 try {
+                    const debitType: TokenWalletTransactionType = 'DEBIT_USAGE';
                     const transactionData = {
                         walletId: wallet.walletId,
-                        type: 'DEBIT_USAGE' as TokenWalletTransactionType,
+                        type: debitType,
                         amount: String(actualTokensToDebitNormal),
                         recordedByUserId: userId,
                         idempotencyKey: crypto.randomUUID(),
-                        relatedEntityType: 'chat_message' as const,
+                        relatedEntityType: 'chat_message',
                         notes: `Token usage for chat message in chat ${currentChatId}. Model: ${modelConfig?.api_identifier || 'unknown'}. Input Tokens: ${tokenUsageFromAdapterNormal?.prompt_tokens || 0}, Output Tokens: ${tokenUsageFromAdapterNormal?.completion_tokens || 0}.`,
                     };
                     const transaction = await tokenWalletService!.recordTransaction(transactionData);
@@ -1080,15 +1131,15 @@ async function handlePostRequest(
                     const typedDebitError = debitError instanceof Error ? debitError : new Error(String(debitError));
                     
                     // Check if the error is due to insufficient funds, which the DB function raises as an exception.
-                    if (typedDebitError.message.includes('Insufficient funds')) {
-                        logger.warn('Insufficient token balance detected during debit attempt.', { 
+                    if (typedDebitError.message.includes('Insufficient funds') || typedDebitError.message.includes('new balance must be a non-negative integer')) {
+                        logger.warn('Insufficient funds for the actual cost of the AI operation.', { 
                             walletId: wallet.walletId, 
                             debitAmount: actualTokensToDebitNormal,
                             error: typedDebitError.message
                         });
                         return { 
                             error: { 
-                                message: `Insufficient token balance for this operation.`,
+                                message: `Insufficient funds for the actual cost of the AI operation. Your balance was not changed.`,
                                 status: 402 // Payment Required
                             } 
                         };
@@ -1117,88 +1168,116 @@ async function handlePostRequest(
             // transactionRecordedSuccessfully will allow us to proceed.
 
             // --- Message Saving (Only if debit was successful or legitimately skipped) ---
-            // The user message should ideally be saved once it's confirmed the interaction will proceed.
-            // However, to link assistant message to user message, user message often saved first or in transaction.
-            // For now, we save user message, then assistant. If assistant save fails, that's an issue.
+            try {
+                const userMessageInsert: ChatMessageInsert = {
+                    chat_id: currentChatId,
+                    user_id: userId,
+                    role: 'user',
+                    content: userMessageContent,
+                    is_active_in_thread: true,
+                    ai_provider_id: requestProviderId,
+                    system_prompt_id: finalSystemPromptIdForDb,
+                };
+                const { data: savedUserMessage, error: userInsertError } = await supabaseClient
+                    .from('chat_messages')
+                    .insert(userMessageInsert)
+                    .select()
+                    .single();
+                if (userInsertError || !savedUserMessage) {
+                    logger.error('Normal path error: Failed to insert user message. This happened AFTER a successful token debit (if applicable).', { error: userInsertError, chatId: currentChatId });
+                    throw userInsertError || new Error('Failed to save user message after token debit.');
+                }
+                logger.info('Normal path: Inserted user message.', { id: savedUserMessage.id });
+    
+                const assistantMessageInsert: ChatMessageInsert = {
+                    id: generateUUID(),
+                    chat_id: currentChatId,
+                    role: 'assistant',
+                    content: adapterResponsePayload.content,
+                    ai_provider_id: adapterResponsePayload.ai_provider_id,
+                    system_prompt_id: finalSystemPromptIdForDb,
+                    token_usage: adapterResponsePayload.token_usage,
+                    is_active_in_thread: true,
+                    error_type: null,
+                    response_to_message_id: savedUserMessage.id
+                };
+                const { data: insertedAssistantMessage, error: assistantInsertError } = await supabaseClient
+                    .from('chat_messages')
+                    .insert(assistantMessageInsert)
+                    .select()
+                    .single();
+    
+                if (assistantInsertError || !insertedAssistantMessage) {
+                    logger.error('Normal path error: Failed to insert assistant message. This happened AFTER successful token debit and user message save.', { error: assistantInsertError, chatId: currentChatId });
+                    throw assistantInsertError || new Error('Failed to insert assistant message after token debit.');
+                }
+                logger.info('Normal path: Inserted assistant message.', { id: insertedAssistantMessage.id });
 
-            const userMessageInsert: ChatMessageInsert = {
-                chat_id: currentChatId as string,
-                user_id: userId,
-                role: 'user',
-                content: userMessageContent,
-                is_active_in_thread: true,
-                ai_provider_id: requestProviderId, 
-                system_prompt_id: finalSystemPromptIdForDb, 
-            };
-            const { data: savedUserMessage, error: userInsertError } = await supabaseClient
-                .from('chat_messages')
-                .insert(userMessageInsert)
-                .select()
-                .single();
-             if (userInsertError || !savedUserMessage) {
-                 logger.error('Normal path error: Failed to insert user message. This happened AFTER a successful token debit (if applicable).', { error: userInsertError, chatId: currentChatId });
-                 return { error: { message: userInsertError.message || 'Failed to save user message after token debit.', status: 500 }};
-             }
-            logger.info('Normal path: Inserted user message.', { id: savedUserMessage.id });
+                const newAssistantMessageResponse: ChatMessageRow = {
+                    id: insertedAssistantMessage.id,
+                    chat_id: insertedAssistantMessage.chat_id,
+                    role: 'assistant',
+                    content: insertedAssistantMessage.content,
+                    created_at: insertedAssistantMessage.created_at,
+                    updated_at: insertedAssistantMessage.updated_at,
+                    user_id: userId,
+                    ai_provider_id: insertedAssistantMessage.ai_provider_id,
+                    system_prompt_id: insertedAssistantMessage.system_prompt_id,
+                    token_usage: insertedAssistantMessage.token_usage,
+                    is_active_in_thread: insertedAssistantMessage.is_active_in_thread,
+                    error_type: null,
+                    response_to_message_id: insertedAssistantMessage.response_to_message_id
+                };
+    
+                return {
+                    userMessage: savedUserMessage,
+                    assistantMessage: newAssistantMessageResponse,
+                    chatId: currentChatId
+                };
+            } catch (dbError) {
+                const typedDbError = dbError instanceof Error ? dbError : new Error(String(dbError));
+                logger.error('DATABASE ERROR during message persistence. This occurred after a successful debit.', {
+                    error: typedDbError.message,
+                    chatId: currentChatId,
+                    userId,
+                    tokensDebited: actualTokensToDebitNormal
+                });
 
-            const assistantMessageInsert: ChatMessageInsert = {
-                id: generateUUID(),
-                chat_id: currentChatId as string, 
-                role: 'assistant' as const,
-                content: adapterResponsePayload.content,
-                ai_provider_id: adapterResponsePayload.ai_provider_id,
-                system_prompt_id: finalSystemPromptIdForDb,
-                token_usage: adapterResponsePayload.token_usage,
-                is_active_in_thread: true,
-                error_type: null,
-                response_to_message_id: savedUserMessage.id
-            };
-            const { data: insertedAssistantMessage, error: assistantInsertError } = await supabaseClient
-                .from('chat_messages')
-                .insert(assistantMessageInsert)
-                .select()
-                .single();
-
-            if (assistantInsertError || !insertedAssistantMessage) {
-                logger.error('Normal path error: Failed to insert assistant message. This happened AFTER successful token debit and user message save.', { error: assistantInsertError, chatId: currentChatId });
-                return { error: { message: assistantInsertError?.message || 'Failed to insert assistant message after token debit.', status: 500 }};
+                // Attempt to issue a credit to refund the user
+                if (transactionRecordedSuccessfully && actualTokensToDebitNormal > 0) {
+                    try {
+                        const creditType: TokenWalletTransactionType = 'CREDIT_ADJUSTMENT';
+                        const refundTransactionData = {
+                            walletId: wallet.walletId,
+                            type: creditType,
+                            amount: String(actualTokensToDebitNormal),
+                            recordedByUserId: userId, // or a system user ID
+                            idempotencyKey: crypto.randomUUID(), // New UUID for the refund transaction
+                            relatedEntityType: 'chat_message',
+                            notes: `Automatic refund for failed message persistence in chat ${currentChatId}. Original debit amount: ${actualTokensToDebitNormal}.`,
+                        };
+                        await tokenWalletService!.recordTransaction(refundTransactionData);
+                        logger.info('Successfully issued refund credit transaction.', {
+                            walletId: wallet.walletId,
+                            amount: actualTokensToDebitNormal,
+                        });
+                    } catch (refundError) {
+                        logger.error('CRITICAL: FAILED TO ISSUE REFUND after DB persistence error. Wallet balance is likely incorrect.', {
+                            walletId: wallet.walletId,
+                            amountToRefund: actualTokensToDebitNormal,
+                            refundError: refundError instanceof Error ? refundError.message : String(refundError),
+                        });
+                    }
+                }
+                
+                // Return a specific error to the client.
+                return {
+                    error: {
+                        message: `Database error during message persistence: ${typedDbError.message}`,
+                        status: 500
+                    }
+                };
             }
-            logger.info('Normal path: Inserted assistant message.', { id: insertedAssistantMessage.id });
-            
-            // If debit was successful and relatedEntityId needs to be updated on the token transaction:
-            // This is complex if the debit happens before knowing the assistant message ID.
-            // One option: record debit without relatedEntityId, then update it. (Adds another DB call)
-            // Or: record with chat_id as relatedEntityId, and type 'chat_session_debit'.
-            // Current 'notes' field has chat_id. For now, let's assume this is sufficient.
-
-            // We need to map the DB row to the public response structure
-            const newAssistantMessageResponse: ChatMessageRow = {
-                id: insertedAssistantMessage.id,
-                chat_id: insertedAssistantMessage.chat_id,
-                role: 'assistant',
-                content: insertedAssistantMessage.content,
-                created_at: insertedAssistantMessage.created_at,
-                updated_at: insertedAssistantMessage.updated_at,
-                user_id: userId,
-                ai_provider_id: insertedAssistantMessage.ai_provider_id,
-                system_prompt_id: insertedAssistantMessage.system_prompt_id,
-                token_usage: insertedAssistantMessage.token_usage
-                    ? {
-                        prompt_tokens: (insertedAssistantMessage.token_usage as unknown as TokenUsage).prompt_tokens,
-                        completion_tokens: (insertedAssistantMessage.token_usage as unknown as TokenUsage).completion_tokens,
-                        ...( (insertedAssistantMessage.token_usage as unknown as TokenUsage).total_tokens !== undefined && { total_tokens: (insertedAssistantMessage.token_usage as unknown as TokenUsage).total_tokens } )
-                      }
-                    : null,
-                is_active_in_thread: insertedAssistantMessage.is_active_in_thread,
-                error_type: null,
-                response_to_message_id: insertedAssistantMessage.response_to_message_id
-            };
-
-            return { 
-                userMessage: savedUserMessage as ChatMessageRow, 
-                assistantMessage: newAssistantMessageResponse,
-                chatId: currentChatId as string
-            };
         }
     } catch (err) {
         logger.error('Unhandled error in handlePostRequest:', { error: err instanceof Error ? err.stack : String(err) });

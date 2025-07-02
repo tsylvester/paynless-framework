@@ -1,26 +1,37 @@
 import { renderHook, act } from '@testing-library/react-hooks';
-import { vi, describe, beforeEach, it, expect } from 'vitest'; // Removed MockedFunction
-import { useAiStore } from '../../../../packages/store/src/aiStore.ts'; // Adjusted path
+import { waitFor } from '@testing-library/react';
+import { vi, describe, beforeEach, it, expect } from 'vitest';
+import { useAiStore } from '../../../../packages/store/src/aiStore.ts';
 import { useTokenEstimator } from './useTokenEstimator.ts';
-import { ChatMessage, AiProvider, AiModelExtendedConfig, Json, SystemPrompt } from '@paynless/types';
+import { ChatMessage, AiProvider, AiModelExtendedConfig, Json, SystemPrompt, TokenEstimationResponse } from '@paynless/types';
 
-// Mock tiktoken with Vitest
-vi.mock('tiktoken', () => ({
-  __esModule: true, // Still good practice for ES Modules
-  get_encoding: vi.fn(() => ({
-    encode: vi.fn((text: string) => {
-      return text.split(' ').filter(s => s.length > 0);
+// Create the mock function first
+const mockEstimateTokens = vi.fn();
+
+// Mock the API module with proper setup
+vi.mock('@paynless/api', () => ({
+  api: {
+    ai: () => ({
+      estimateTokens: mockEstimateTokens,
     }),
-    decode: vi.fn(),
-  })),
+  },
 }));
 
 // Mock useAiStore with Vitest
-vi.mock('../../../../packages/store/src/aiStore', () => ({ // Adjusted path
+vi.mock('../../../../packages/store/src/aiStore', () => ({
   useAiStore: vi.fn(),
 }));
 
-const mockUseAiStore = vi.mocked(useAiStore); // Use vi.mocked for better type inference with Vitest
+// Mock useAuthStore to provide authentication token
+vi.mock('../../../../packages/store/src/authStore', () => ({
+  useAuthStore: {
+    getState: () => ({
+      session: { access_token: 'mock-auth-token' }
+    })
+  }
+}));
+
+const mockUseAiStore = vi.mocked(useAiStore);
 
 // Define MOCK_MODEL_CONFIG and MOCK_AI_PROVIDER
 const MOCK_MODEL_CONFIG_CHATML: AiModelExtendedConfig = {
@@ -73,6 +84,8 @@ const MOCK_SYSTEM_PROMPT_1: SystemPrompt = {
   is_active: true,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
+  description: 'A test system prompt',  
+  version: 1,
 };
 
 // Helper to create mock ChatMessage
@@ -88,16 +101,22 @@ const createMockChatMessage = (id: string, content: string, role: 'user' | 'assi
   system_prompt_id: null,
   token_usage: null,
   is_active_in_thread: true,
+  error_type: null,
+  response_to_message_id: null,
 });
 
 describe('useTokenEstimator', () => {
   beforeEach(() => {
     // Reset mocks before each test
-    // For Vitest, vi.clearAllMocks() or mockUseAiStore.mockReset() can be used.
-    // mockUseAiStore.mockReset() is more specific if useAiStore is the primary mock to reset here.
     mockUseAiStore.mockReset(); 
-    // If you also want to reset getEncoding mock states, you might need to do that explicitly if shared across tests
-    // e.g., vi.mocked(getEncoding).mockClear(); but ensure getEncoding is imported from tiktoken if doing so.
+    mockEstimateTokens.mockReset();
+    
+    // Set up default successful API response (will be overridden by individual tests)
+    mockEstimateTokens.mockResolvedValue({
+      data: { estimatedTokens: 0 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
   });
 
   // Updated getDefaultAiStoreState
@@ -118,188 +137,456 @@ describe('useTokenEstimator', () => {
     availablePrompts,                      
   });
 
-  it('should return 0 tokens for empty input and no selected messages', () => {
+  it('should return 0 tokens for empty input and no selected messages', async () => {
     mockUseAiStore.mockReturnValue(getDefaultAiStoreState());
     const { result } = renderHook(() => useTokenEstimator(''));
-    expect(result.current).toBe(0);
+    
+    // Initial state
+    expect(result.current.estimatedTokens).toBe(0);
+    expect(result.current.isLoading).toBe(false);
+    
+    // Should remain 0 and not load, as no API call is made for empty input
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(0);
+      expect(result.current.isLoading).toBe(false);
+    });
+    
+    // Verify no API call was made
+    expect(mockEstimateTokens).not.toHaveBeenCalled();
   });
 
-  it('should return estimated tokens for user input only, with no selected messages', () => {
+  it('should return estimated tokens for user input only, showing loading state', async () => {
+    mockEstimateTokens.mockResolvedValue({
+      data: { estimatedTokens: 2 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+    
     mockUseAiStore.mockReturnValue(getDefaultAiStoreState());
-    const { result } = renderHook(() => useTokenEstimator('Hello world')); // "Hello world" = 2 tokens
-    expect(result.current).toBe(9); // WAS 2
+    
+    const { result } = renderHook(() => useTokenEstimator('Hello world'));
+    
+    // After the hook runs, it should be in a loading state
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(true);
+    });
+    
+    // After the API call resolves, it should update tokens and stop loading
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(2);
+      expect(result.current.isLoading).toBe(false);
+    });
+    
+    expect(mockEstimateTokens).toHaveBeenCalledWith({
+      textOrMessages: [{ role: 'user', content: 'Hello world' }],
+      modelConfig: MOCK_MODEL_CONFIG_CHATML
+    }, 'mock-auth-token');
   });
 
-  it('should return estimated tokens for one selected message and no user input', () => {
+  it('should return estimated tokens for one selected message and no user input', async () => {
+    mockEstimateTokens.mockResolvedValue({
+      data: { estimatedTokens: 2 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+    
     const messages = [createMockChatMessage('msg1', 'Hi there', 'user', '2023-01-01T10:00:00Z')];
     const selected = { 'msg1': true };
     mockUseAiStore.mockReturnValue(getDefaultAiStoreState(messages, selected));
-    const { result } = renderHook(() => useTokenEstimator('')); // "Hi there" = 2 tokens
-    expect(result.current).toBe(9); // WAS 2
+    
+    const { result } = renderHook(() => useTokenEstimator(''));
+    
+    // Check loading and final states
+    await waitFor(() => expect(result.current.isLoading).toBe(true));
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(2);
+      expect(result.current.isLoading).toBe(false);
+    });
+    
+    expect(mockEstimateTokens).toHaveBeenCalledWith({
+      textOrMessages: [{ role: 'user', content: 'Hi there' }],
+      modelConfig: MOCK_MODEL_CONFIG_CHATML
+    }, 'mock-auth-token');
   });
 
-  it('should combine user input and one selected message', () => {
-    const messages = [createMockChatMessage('msg1', 'Context one.', 'assistant', '2023-01-01T10:00:00Z')]; // 2 tokens
+  it('should combine user input and selected messages for estimation', async () => {
+    mockEstimateTokens.mockResolvedValue({
+      data: { estimatedTokens: 5 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+    
+    const messages = [createMockChatMessage('msg1', 'Hi there', 'user', '2023-01-01T10:00:00Z')];
     const selected = { 'msg1': true };
     mockUseAiStore.mockReturnValue(getDefaultAiStoreState(messages, selected));
-    const { result } = renderHook(() => useTokenEstimator('Question:')); // 1 token
-    // "Context one. Question:" = 3 tokens
-    expect(result.current).toBe(16); // WAS 3, runner actual was 16. My calc 14.
+    
+    const { result } = renderHook(() => useTokenEstimator('Hello world'));
+    
+    await waitFor(() => expect(result.current.isLoading).toBe(true));
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(5);
+      expect(result.current.isLoading).toBe(false);
+    });
+    
+    expect(mockEstimateTokens).toHaveBeenCalledWith({
+      textOrMessages: [
+        { role: 'user', content: 'Hi there' },
+        { role: 'user', content: 'Hello world' }
+      ],
+      modelConfig: MOCK_MODEL_CONFIG_CHATML
+    }, 'mock-auth-token');
   });
 
-  it('should combine user input and multiple selected messages in chronological order', () => {
+  it('should use the system prompt when one is selected', async () => {
+    mockEstimateTokens.mockResolvedValue({
+      data: { estimatedTokens: 10 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+
+    mockUseAiStore.mockReturnValue(
+      getDefaultAiStoreState([], {}, 'chat1', MOCK_SYSTEM_PROMPT_1.id, [MOCK_SYSTEM_PROMPT_1])
+    );
+    
+    const { result } = renderHook(() => useTokenEstimator('Hello world'));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(true));
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(10);
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(mockEstimateTokens).toHaveBeenCalledWith({
+      textOrMessages: [
+        { role: 'system', content: 'You are a helpful assistant.' },
+        { role: 'user', content: 'Hello world' }
+      ],
+      modelConfig: MOCK_MODEL_CONFIG_CHATML
+    }, 'mock-auth-token');
+  });
+
+  it('should use string concatenation for non-ChatML models', async () => {
+    mockEstimateTokens.mockResolvedValue({
+      data: { estimatedTokens: 15 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+
+    const messages = [createMockChatMessage('msg1', 'Historic message', 'user', '2023-01-01T10:00:00Z')];
+    const selected = { 'msg1': true };
+
+    mockUseAiStore.mockReturnValue(
+      getDefaultAiStoreState(messages, selected, 'chat1', MOCK_SYSTEM_PROMPT_1.id, [MOCK_SYSTEM_PROMPT_1], MOCK_AI_PROVIDER_STRING)
+    );
+    
+    const { result } = renderHook(() => useTokenEstimator('New message'));
+    
+    await waitFor(() => expect(result.current.isLoading).toBe(true));
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(15);
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(mockEstimateTokens).toHaveBeenCalledWith({
+      textOrMessages: 'You are a helpful assistant.\nHistoric message\nNew message',
+      modelConfig: MOCK_MODEL_CONFIG_STRING
+    }, 'mock-auth-token');
+  });
+
+  it('should handle API errors gracefully and return a fallback estimate', async () => {
+    mockEstimateTokens.mockResolvedValue({
+      data: null,
+      error: { message: 'API failed' },
+      status: 500
+    });
+    
+    mockUseAiStore.mockReturnValue(getDefaultAiStoreState());
+    
+    const { result } = renderHook(() => useTokenEstimator('Hello world'));
+    
+    await waitFor(() => expect(result.current.isLoading).toBe(true));
+    await waitFor(() => {
+      // Fallback is ceil("Hello world".length / 4) = ceil(11/4) = 3
+      expect(result.current.estimatedTokens).toBe(3);
+      expect(result.current.isLoading).toBe(false);
+    });
+  });
+
+  it('should handle thrown exceptions gracefully and return a fallback estimate', async () => {
+    mockEstimateTokens.mockRejectedValue(new Error('Network error'));
+    
+    mockUseAiStore.mockReturnValue(getDefaultAiStoreState());
+    
+    const { result } = renderHook(() => useTokenEstimator('Hello world'));
+    
+    await waitFor(() => expect(result.current.isLoading).toBe(true));
+    await waitFor(() => {
+      // Fallback is ceil("Hello world".length / 4) = ceil(11/4) = 3
+      expect(result.current.estimatedTokens).toBe(3);
+      expect(result.current.isLoading).toBe(false);
+    });
+  });
+
+  it('should combine user input and multiple selected messages in chronological order', async () => {
+    mockEstimateTokens.mockResolvedValue({
+      data: { estimatedTokens: 21 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+    
     const messages = [
-      createMockChatMessage('msg1', 'First part', 'user', '2023-01-01T10:00:00Z'),      // 2 tokens
-      createMockChatMessage('msg2', 'Second part', 'assistant', '2023-01-01T10:01:00Z'), // 2 tokens
+      createMockChatMessage('msg1', 'First part', 'user', '2023-01-01T10:00:00Z'),
+      createMockChatMessage('msg2', 'Second part', 'assistant', '2023-01-01T10:01:00Z'),
     ];
     const selected = { 'msg1': true, 'msg2': true };
     mockUseAiStore.mockReturnValue(getDefaultAiStoreState(messages, selected));
-    const { result } = renderHook(() => useTokenEstimator('Another query')); // 2 tokens
-    // "First part Second part Another query" = 6 tokens
-    expect(result.current).toBe(21); // WAS 6
+    const { result } = renderHook(() => useTokenEstimator('Another query'));
+    
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(21);
+      expect(result.current.isLoading).toBe(false);
+    });
   });
 
-  it('should dynamically update when a message is selected', () => {
-    const msgA = createMockChatMessage('msgA', 'Alpha', 'user', '2023-01-01T10:00:00Z'); // 1 token
-    const msgB = createMockChatMessage('msgB', 'Beta', 'user', '2023-01-01T10:01:00Z');  // 1 token
-    const initialMessages = [msgA, msgB];
-    
-    let currentSelected = { 'msgA': true, 'msgB': false };
-    mockUseAiStore.mockImplementation(() => getDefaultAiStoreState(initialMessages, currentSelected));
-    
-    const { result, rerender } = renderHook(({ text }) => useTokenEstimator(text), {
-      initialProps: { text: 'Test' } // 1 token
-    });
-
-    // "Alpha Test" = 2 tokens
-    expect(result.current).toBe(13); // WAS 2
-
-    // Simulate selecting MsgB
-    act(() => {
-      currentSelected = { 'msgA': true, 'msgB': true };
-      // Vitest hooks should react to store changes if the hook is subscribed correctly.
-      // Re-mocking implementation might be needed if subscription is not robust or for test clarity.
-      mockUseAiStore.mockImplementation(() => getDefaultAiStoreState(initialMessages, currentSelected));
-    });
-    rerender({ text: 'Test' }); 
-    // "Alpha Beta Test" = 3 tokens
-    expect(result.current).toBe(18); // WAS 3
-  });
-
-  it('should dynamically update when a message is deselected', () => {
+  it('should dynamically update when a message is selected', async () => {
     const msgA = createMockChatMessage('msgA', 'Alpha', 'user', '2023-01-01T10:00:00Z');
     const msgB = createMockChatMessage('msgB', 'Beta', 'user', '2023-01-01T10:01:00Z');
     const initialMessages = [msgA, msgB];
+    const initialSelected = { 'msgA': true, 'msgB': false };
     
-    let currentSelected = { 'msgA': true, 'msgB': true };
-    mockUseAiStore.mockImplementation(() => getDefaultAiStoreState(initialMessages, currentSelected));
-
-    const { result, rerender } = renderHook(({ text }) => useTokenEstimator(text), {
-      initialProps: { text: 'Test' }
-    });
-
-    // "Alpha Beta Test" = 3 tokens
-    expect(result.current).toBe(18); // WAS 3
-
-    // Simulate deselecting MsgA
+    const { result, rerender } = renderHook(() => useTokenEstimator('Test'));
+    
+    // Initial render
     act(() => {
-      currentSelected = { 'msgA': false, 'msgB': true };
-      mockUseAiStore.mockImplementation(() => getDefaultAiStoreState(initialMessages, currentSelected));
+      mockUseAiStore.mockReturnValue(getDefaultAiStoreState(initialMessages, initialSelected));
     });
-    rerender({ text: 'Test' });
-    // "Beta Test" = 2 tokens
-    expect(result.current).toBe(13); // WAS 2
+
+    mockEstimateTokens.mockResolvedValueOnce({
+      data: { estimatedTokens: 13 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+
+    rerender();
+    
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(13);
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    // Simulate selecting MsgB
+    const nextSelected = { 'msgA': true, 'msgB': true };
+    act(() => {
+      mockUseAiStore.mockReturnValue(getDefaultAiStoreState(initialMessages, nextSelected));
+    });
+
+    mockEstimateTokens.mockResolvedValueOnce({
+      data: { estimatedTokens: 18 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+
+    rerender();
+    
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(18);
+      expect(result.current.isLoading).toBe(false);
+    });
   });
 
-  it('should estimate tokens for selected messages only if user input is empty', () => {
+  it('should dynamically update when a message is deselected', async () => {
+    const msgA = createMockChatMessage('msgA', 'Alpha', 'user', '2023-01-01T10:00:00Z');
+    const msgB = createMockChatMessage('msgB', 'Beta', 'user', '2023-01-01T10:01:00Z');
+    const initialMessages = [msgA, msgB];
+    const initialSelected = { 'msgA': true, 'msgB': true };
+    
+    const { result, rerender } = renderHook(() => useTokenEstimator('Test'));
+
+    // Initial render
+    act(() => {
+      mockUseAiStore.mockReturnValue(getDefaultAiStoreState(initialMessages, initialSelected));
+    });
+    
+    mockEstimateTokens.mockResolvedValueOnce({
+      data: { estimatedTokens: 18 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+
+    rerender();
+
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(18);
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    // Simulate deselecting MsgA
+    const nextSelected = { 'msgA': false, 'msgB': true };
+    act(() => {
+      mockUseAiStore.mockReturnValue(getDefaultAiStoreState(initialMessages, nextSelected));
+    });
+
+    mockEstimateTokens.mockResolvedValueOnce({
+      data: { estimatedTokens: 13 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+
+    rerender();
+    
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(13);
+      expect(result.current.isLoading).toBe(false);
+    });
+  });
+
+  it('should estimate tokens for selected messages only if user input is empty', async () => {
+    mockEstimateTokens.mockResolvedValue({
+      data: { estimatedTokens: 15 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+    
     const messages = [
-      createMockChatMessage('msg1', 'Content A', 'user', '2023-01-01T10:00:00Z'), // 2 tokens
-      createMockChatMessage('msg2', 'Content B', 'assistant', '2023-01-01T10:01:00Z'), // 2 tokens
+      createMockChatMessage('msg1', 'Content A', 'user', '2023-01-01T10:00:00Z'),
+      createMockChatMessage('msg2', 'Content B', 'assistant', '2023-01-01T10:01:00Z'),
     ];
     const selected = { 'msg1': true, 'msg2': true };
     mockUseAiStore.mockReturnValue(getDefaultAiStoreState(messages, selected));
     const { result } = renderHook(() => useTokenEstimator(''));
-    // "Content A Content B" = 4 tokens
-    expect(result.current).toBe(15); // WAS 4
+    
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(15);
+      expect(result.current.isLoading).toBe(false);
+    });
   });
 
-  it('should estimate tokens for user input only if no messages are selected', () => {
+  it('should estimate tokens for user input only if no messages are selected', async () => {
+    mockEstimateTokens.mockResolvedValue({
+      data: { estimatedTokens: 10 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+    
     const messages = [
       createMockChatMessage('msg1', 'Content A', 'user', '2023-01-01T10:00:00Z'),
     ];
-    const selected = { 'msg1': false }; // Or msg1 not in selected map
+    const selected = { 'msg1': false };
     mockUseAiStore.mockReturnValue(getDefaultAiStoreState(messages, selected));
-    const { result } = renderHook(() => useTokenEstimator('User input here')); // 3 tokens
-    expect(result.current).toBe(10); // WAS 3
+    const { result } = renderHook(() => useTokenEstimator('User input here'));
+    
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(10);
+      expect(result.current.isLoading).toBe(false);
+    });
   });
   
-  it('should handle multiple messages with mixed selection states and ensure chronological order', () => {
+  it('should handle multiple messages with mixed selection states and ensure chronological order', async () => {
+    mockEstimateTokens.mockResolvedValue({
+      data: { estimatedTokens: 20 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+    
     const messages = [
-      createMockChatMessage('msgOld', 'Oldest', 'user', '2023-01-01T09:00:00Z'),   // 1 token (selected)
-      createMockChatMessage('msgSkip', 'Middle', 'user', '2023-01-01T10:00:00Z'),  // (not selected)
-      createMockChatMessage('msgNew', 'Newest', 'assistant', '2023-01-01T11:00:00Z'), // 1 token (selected)
+      createMockChatMessage('msgOld', 'Oldest', 'user', '2023-01-01T09:00:00Z'),
+      createMockChatMessage('msgSkip', 'Middle', 'user', '2023-01-01T10:00:00Z'),
+      createMockChatMessage('msgNew', 'Newest', 'assistant', '2023-01-01T11:00:00Z'),
     ];
     const selected = { 'msgOld': true, 'msgNew': true, 'msgSkip': false };
     mockUseAiStore.mockReturnValue(getDefaultAiStoreState(messages, selected));
-    const { result } = renderHook(() => useTokenEstimator('Input')); // 1 token
-    // "Oldest Newest Input" = 3 tokens
-    expect(result.current).toBe(20); // WAS 3, runner actual was 20. My calc 18.
+    const { result } = renderHook(() => useTokenEstimator('Input'));
+    
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(20);
+      expect(result.current.isLoading).toBe(false);
+    });
   });
 
-  it('should return tokens for input only if no messages are loaded for the currentChatId', () => {
-    // Corrected expectation: if no messages, only input string is tokenized.
+  it('should return tokens for input only if no messages are loaded for the currentChatId', async () => {
+    mockEstimateTokens.mockResolvedValue({
+      data: { estimatedTokens: 9 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+    
     mockUseAiStore.mockReturnValue({
       currentChatId: 'chatWithNoMessages',
       messagesByChatId: {}, 
       selectedMessagesMap: {},
-      selectedProviderId: MOCK_AI_PROVIDER_CHATML.id, // Added
-      availableProviders: [MOCK_AI_PROVIDER_CHATML], // Added
+      selectedProviderId: MOCK_AI_PROVIDER_CHATML.id,
+      availableProviders: [MOCK_AI_PROVIDER_CHATML],
+      selectedPromptId: null,
+      availablePrompts: [],
     });
-    const { result } = renderHook(() => useTokenEstimator('Some input')); // "Some input" = 2 tokens
-    expect(result.current).toBe(9); // WAS 2
+    const { result } = renderHook(() => useTokenEstimator('Some input'));
+    
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(9);
+      expect(result.current.isLoading).toBe(false);
+    });
   });
   
   it('should return 0 tokens for empty input when currentChatId has no messages in selectedMessagesMap or messagesByChatId is empty for it', () => {
     mockUseAiStore.mockReturnValue({
       currentChatId: 'chat1',
-      messagesByChatId: { 'chat1': [createMockChatMessage('m1', 'Exists', 'user', '2023-01-01T09:00:00Z')] }, // Messages exist
-      selectedMessagesMap: { 'chat1': {} }, // But no selections for chat1
+      messagesByChatId: { 'chat1': [createMockChatMessage('m1', 'Exists', 'user', '2023-01-01T09:00:00Z')] },
+      selectedMessagesMap: { 'chat1': {} },
+      selectedProviderId: MOCK_AI_PROVIDER_CHATML.id,
+      availableProviders: [MOCK_AI_PROVIDER_CHATML],
+      selectedPromptId: null,
+      availablePrompts: [],
     });
     const { result: result1 } = renderHook(() => useTokenEstimator(''));
-    expect(result1.current).toBe(0);
+    expect(result1.current.estimatedTokens).toBe(0);
 
     mockUseAiStore.mockReturnValue({
       currentChatId: 'chat2',
-      messagesByChatId: { 'chat2': [] }, // No messages for chat2
-      selectedMessagesMap: { 'chat2': { 'someid': true } }, // Selections exist but no messages to match
+      messagesByChatId: { 'chat2': [] },
+      selectedMessagesMap: { 'chat2': { 'someid': true } },
+      selectedProviderId: MOCK_AI_PROVIDER_CHATML.id,
+      availableProviders: [MOCK_AI_PROVIDER_CHATML],
+      selectedPromptId: null,
+      availablePrompts: [],
     });
     const { result: result2 } = renderHook(() => useTokenEstimator(''));
-    expect(result2.current).toBe(0);
+    expect(result2.current.estimatedTokens).toBe(0);
   });
 
   // New Test Cases for System Prompts
 
-  it('should include system prompt tokens for ChatML models', () => {
+  it('should include system prompt tokens for ChatML models', async () => {
+    mockEstimateTokens.mockResolvedValue({
+      data: { estimatedTokens: 18 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+    
     mockUseAiStore.mockReturnValue(
       getDefaultAiStoreState(
-        [], // No messages
-        {}, // No selections
+        [],
+        {},
         'chat1',
-        MOCK_SYSTEM_PROMPT_1.id, // Select the system prompt
-        [MOCK_SYSTEM_PROMPT_1],   // Make it available
-        MOCK_AI_PROVIDER_CHATML   // Use ChatML provider
+        MOCK_SYSTEM_PROMPT_1.id,
+        [MOCK_SYSTEM_PROMPT_1],
+        MOCK_AI_PROVIDER_CHATML
       )
     );
-    const { result } = renderHook(() => useTokenEstimator('Test')); // User input: "Test" (1 token by mock)
-    expect(result.current).toBe(18);
+    const { result } = renderHook(() => useTokenEstimator('Test'));
+    
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(18);
+      expect(result.current.isLoading).toBe(false);
+    });
   });
 
-  it('should include system prompt tokens for non-ChatML models (string concatenation)', () => {
-    // System prompt: "You are a helpful assistant." (6 tokens by mock tokenizer)
-    // User input: "Hello there" (2 tokens by mock tokenizer)
-    // Combined string: "You are a helpful assistant.\nHello there"
-    // estimateInputTokens (non-ChatML) just counts tokens from this combined string.
-    // The mock tokenizer splits by space. "You are a helpful assistant. Hello there" -> 8 tokens.
+  it('should include system prompt tokens for non-ChatML models (string concatenation)', async () => {
+    mockEstimateTokens.mockResolvedValue({
+      data: { estimatedTokens: 8 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+    
     mockUseAiStore.mockReturnValue(
       getDefaultAiStoreState(
         [], 
@@ -307,62 +594,102 @@ describe('useTokenEstimator', () => {
         'chat1',
         MOCK_SYSTEM_PROMPT_1.id, 
         [MOCK_SYSTEM_PROMPT_1], 
-        MOCK_AI_PROVIDER_STRING // provider with non-ChatML config
+        MOCK_AI_PROVIDER_STRING
       )
     );
     const { result } = renderHook(() => useTokenEstimator('Hello there'));
-    expect(result.current).toBe(8);
+    
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(8);
+      expect(result.current.isLoading).toBe(false);
+    });
   });
 
-  it('should NOT include system prompt tokens if selectedPromptId is null', () => {
+  it('should NOT include system prompt tokens if selectedPromptId is null', async () => {
+    mockEstimateTokens.mockResolvedValue({
+      data: { estimatedTokens: 8 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+    
     mockUseAiStore.mockReturnValue(
       getDefaultAiStoreState(
-        [], // No messages
-        {}, // No selections
+        [],
+        {},
         'chat1',
-        null, // selectedPromptId is null
+        null,
         [MOCK_SYSTEM_PROMPT_1],
         MOCK_AI_PROVIDER_CHATML
       )
     );
     const { result } = renderHook(() => useTokenEstimator('Test'));
-    expect(result.current).toBe(8); // Only user input with ChatML overhead
+    
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(8);
+      expect(result.current.isLoading).toBe(false);
+    });
   });
 
-  it('should NOT include system prompt tokens if selectedPromptId is __none__', () => {
+  it('should NOT include system prompt tokens if selectedPromptId is __none__', async () => {
+    mockEstimateTokens.mockResolvedValue({
+      data: { estimatedTokens: 8 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+    
     mockUseAiStore.mockReturnValue(
       getDefaultAiStoreState(
-        [], // No messages
-        {}, // No selections
+        [],
+        {},
         'chat1',
-        '__none__', // selectedPromptId is __none__
+        '__none__',
         [MOCK_SYSTEM_PROMPT_1],
         MOCK_AI_PROVIDER_CHATML
       )
     );
     const { result } = renderHook(() => useTokenEstimator('Test'));
-    expect(result.current).toBe(8);
+    
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(8);
+      expect(result.current.isLoading).toBe(false);
+    });
   });
 
-  it('should NOT include system prompt tokens if selectedPromptId is invalid/not found', () => {
+  it('should NOT include system prompt tokens if selectedPromptId is invalid/not found', async () => {
+    mockEstimateTokens.mockResolvedValue({
+      data: { estimatedTokens: 8 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+    
     mockUseAiStore.mockReturnValue(
       getDefaultAiStoreState(
-        [], // No messages
-        {}, // No selections
+        [],
+        {},
         'chat1',
-        'invalid-prompt-id', // selectedPromptId is invalid
-        [MOCK_SYSTEM_PROMPT_1], // System prompt exists but ID won't match
+        'invalid-prompt-id',
+        [MOCK_SYSTEM_PROMPT_1],
         MOCK_AI_PROVIDER_CHATML
       )
     );
     const { result } = renderHook(() => useTokenEstimator('Test'));
-    expect(result.current).toBe(8);
+    
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(8);
+      expect(result.current.isLoading).toBe(false);
+    });
   });
 
-  it('should correctly combine system prompt, selected history, and user input for ChatML', () => {
+  it('should correctly combine system prompt, selected history, and user input for ChatML', async () => {
+    mockEstimateTokens.mockResolvedValue({
+      data: { estimatedTokens: 33 } as TokenEstimationResponse,
+      error: undefined,
+      status: 200
+    });
+    
     const messages = [
-      createMockChatMessage('msg1', 'History one.', 'user', '2023-01-01T10:00:00Z'),      // 2 tokens + ChatML message overhead
-      createMockChatMessage('msg2', 'History two.', 'assistant', '2023-01-01T10:01:00Z'), // 2 tokens + ChatML message overhead
+      createMockChatMessage('msg1', 'History one.', 'user', '2023-01-01T10:00:00Z'),
+      createMockChatMessage('msg2', 'History two.', 'assistant', '2023-01-01T10:01:00Z'),
     ];
     const selected = { 'msg1': true, 'msg2': true };
     mockUseAiStore.mockReturnValue(
@@ -370,13 +697,17 @@ describe('useTokenEstimator', () => {
         messages, 
         selected, 
         'chat1',
-        MOCK_SYSTEM_PROMPT_1.id, // System prompt selected
-        [MOCK_SYSTEM_PROMPT_1],   // System prompt available
+        MOCK_SYSTEM_PROMPT_1.id,
+        [MOCK_SYSTEM_PROMPT_1],
         MOCK_AI_PROVIDER_CHATML
       )
     );
     const { result } = renderHook(() => useTokenEstimator('New q'));
-    expect(result.current).toBe(33);
+    
+    await waitFor(() => {
+      expect(result.current.estimatedTokens).toBe(33);
+      expect(result.current.isLoading).toBe(false);
+    });
   });
 
 });

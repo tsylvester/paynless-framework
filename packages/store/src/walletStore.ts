@@ -10,7 +10,6 @@ import {
 } from '@paynless/types';
 import { api } from '@paynless/api'; // Uncommented for action implementation
 import { useOrganizationStore } from './organizationStore'; // For accessing organization details
-import { useAiStore } from './aiStore'; // For newChatContext
 import { logger } from '@paynless/utils'; // Added for logging
 
 export interface WalletStateValues {
@@ -38,7 +37,7 @@ export interface WalletActions {
   ) => Promise<void>;
   initiatePurchase: (request: PurchaseRequest) => Promise<PaymentInitiationResult | null>;
   _resetForTesting: () => void; // For test cleanup
-  determineChatWallet: () => WalletDecisionOutcome; // Kept here as it uses get() internally
+  determineChatWallet: (newChatContextOrgId: string | null | undefined) => WalletDecisionOutcome; // Kept here as it uses get() internally
   setUserOrgTokenConsent: (orgId: string, consent: boolean) => void;
   clearUserOrgTokenConsent: (orgId: string) => void;
   setCurrentChatWalletDecision: (decision: WalletDecisionOutcome) => void;
@@ -83,82 +82,79 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
     logger.debug('[walletStore.clearUserOrgTokenConsent] Consent cleared in Zustand state (set to null):', { orgId });
   },
 
-  determineChatWallet: (): WalletDecisionOutcome => {
+  determineChatWallet: (newChatContextOrgId: string | null | undefined): WalletDecisionOutcome => {
     logger.debug('[walletStore.determineChatWallet] Determining chat wallet...');
-    const newChatContextOrgId = useAiStore.getState().newChatContext;
-    
-    // Normalize "personal" to null for org lookup purposes within this function
-    const internalNewChatContextOrgId = newChatContextOrgId === 'personal' ? null : newChatContextOrgId;
     
     const orgStoreState = useOrganizationStore.getState();
-    const relevantOrgDetails = internalNewChatContextOrgId ? orgStoreState.userOrganizations.find(org => org.id === internalNewChatContextOrgId) : null;
+    const relevantOrgDetails = newChatContextOrgId && newChatContextOrgId !== 'personal'
+      ? orgStoreState.userOrganizations.find(org => org.id === newChatContextOrgId) 
+      : null;
     const currentConsentState = get().userOrgTokenConsent;
 
     logger.debug('[walletStore.determineChatWallet] Inputs:', {
-      originalNewChatContextOrgId: newChatContextOrgId, // Log original value
-      internalNewChatContextOrgId, // Log normalized value used for lookup
+      newChatContextOrgId,
       relevantOrgDetailsId: relevantOrgDetails?.id,
       relevantOrgNameFromDetails: relevantOrgDetails?.name,
       relevantOrgTokenPolicy: relevantOrgDetails?.token_usage_policy,
-      isOrgStoreLoading: orgStoreState.isLoading, // General loading state of orgStore
-      isCurrentOrgInStoreLoading: orgStoreState.currentOrganizationId === internalNewChatContextOrgId && orgStoreState.isLoading,
-      currentConsentStateForOrg: internalNewChatContextOrgId ? currentConsentState[internalNewChatContextOrgId] : 'N/A',
+      isOrgStoreLoading: orgStoreState.isLoading,
+      isCurrentOrgInStoreLoading: orgStoreState.currentOrganizationId === newChatContextOrgId && orgStoreState.isLoading,
+      currentConsentStateForOrg: newChatContextOrgId ? currentConsentState[newChatContextOrgId] : 'N/A',
     });
 
-    if (!internalNewChatContextOrgId) { // Check the normalized ID
-      logger.debug('[walletStore.determineChatWallet] Outcome: use_personal_wallet (no org context or context was "personal")');
+    if (newChatContextOrgId === 'personal' || !newChatContextOrgId) {
+      logger.debug('[walletStore.determineChatWallet] Outcome: use_personal_wallet (context is personal or null/undefined)');
       return { outcome: 'use_personal_wallet' };
     }
 
-    // If we have an org context (internalNewChatContextOrgId is not null), check if the specific details for THAT org are available and loaded.
+    // If we have an org context, check if the specific details for THAT org are available and loaded.
     if (!relevantOrgDetails) {
-        if (orgStoreState.currentOrganizationId === internalNewChatContextOrgId && orgStoreState.isLoading) {
-            logger.debug('[walletStore.determineChatWallet] Outcome: loading (orgStore currentOrganizationId matches internalNewChatContextOrgId and orgStore is loading)', { orgId: internalNewChatContextOrgId });
+        if (orgStoreState.currentOrganizationId === newChatContextOrgId && orgStoreState.isLoading) {
+            logger.debug('[walletStore.determineChatWallet] Outcome: loading (orgStore currentOrganizationId matches newChatContextOrgId and orgStore is loading)', { orgId: newChatContextOrgId });
             return { outcome: 'loading' };
         }
-        logger.warn('[walletStore.determineChatWallet] Relevant org details for original newChatContextOrgId not found in userOrganizations. Outcome: error.', { originalOrgId: newChatContextOrgId, internalOrgId: internalNewChatContextOrgId });
+        logger.warn('[walletStore.determineChatWallet] Relevant org details for newChatContextOrgId not found in userOrganizations. Outcome: error.', { orgId: newChatContextOrgId });
         return { outcome: 'error', message: `Organization details for ${newChatContextOrgId} are not available in the current list.` };
     }
     
-    // At this point, relevantOrgDetails should be populated for the internalNewChatContextOrgId.
+    // At this point, relevantOrgDetails should be populated for the newChatContextOrgId.
     const orgTokenPolicy = relevantOrgDetails.token_usage_policy || 'member_tokens';
-    logger.debug('[walletStore.determineChatWallet] Org token policy for orgId:' + internalNewChatContextOrgId + ' is ' + orgTokenPolicy);
+    logger.debug('[walletStore.determineChatWallet] Org token policy for orgId:' + newChatContextOrgId + ' is ' + orgTokenPolicy);
 
     if (orgTokenPolicy === 'organization_tokens') {
-      logger.debug('[walletStore.determineChatWallet] Outcome: org_wallet_not_available_policy_org (org policy is org_tokens)', { orgId: internalNewChatContextOrgId });
-      return { outcome: 'org_wallet_not_available_policy_org', orgId: internalNewChatContextOrgId };
+      logger.debug('[walletStore.determineChatWallet] Outcome: org_wallet_not_available_policy_org (org policy is org_tokens)', { orgId: newChatContextOrgId });
+      return { outcome: 'org_wallet_not_available_policy_org', orgId: newChatContextOrgId };
     }
 
     if (orgTokenPolicy === 'member_tokens') {
-      const consentForOrg = currentConsentState[internalNewChatContextOrgId]; // Use normalized ID for consent key
-      logger.debug('[walletStore.determineChatWallet] Org policy is member_tokens. Consent state for org:' + internalNewChatContextOrgId + ' is ' + consentForOrg);
+      const consentForOrg = currentConsentState[newChatContextOrgId];
+      logger.debug('[walletStore.determineChatWallet] Org policy is member_tokens. Consent state for org:' + newChatContextOrgId + ' is ' + consentForOrg);
       
       if (consentForOrg === undefined) {
-        logger.debug('[walletStore.determineChatWallet] Consent for org is undefined. Outcome: user_consent_required (pending load)', { orgId: internalNewChatContextOrgId });
-        return { outcome: 'user_consent_required', orgId: internalNewChatContextOrgId }; 
+        logger.debug('[walletStore.determineChatWallet] Consent for org is undefined. Outcome: user_consent_required (pending load)', { orgId: newChatContextOrgId });
+        return { outcome: 'user_consent_required', orgId: newChatContextOrgId }; 
       }
       
       if (consentForOrg === true) {
-        logger.debug('[walletStore.determineChatWallet] Consent is true. Outcome: use_personal_wallet_for_org', { orgId: internalNewChatContextOrgId });
-        return { outcome: 'use_personal_wallet_for_org', orgId: internalNewChatContextOrgId };
+        logger.debug('[walletStore.determineChatWallet] Consent is true. Outcome: use_personal_wallet_for_org', { orgId: newChatContextOrgId });
+        return { outcome: 'use_personal_wallet_for_org', orgId: newChatContextOrgId };
       } else if (consentForOrg === false) {
-        logger.debug('[walletStore.determineChatWallet] Consent is false. Outcome: user_consent_refused', { orgId: internalNewChatContextOrgId });
-        return { outcome: 'user_consent_refused', orgId: internalNewChatContextOrgId };
+        logger.debug('[walletStore.determineChatWallet] Consent is false. Outcome: user_consent_refused', { orgId: newChatContextOrgId });
+        return { outcome: 'user_consent_refused', orgId: newChatContextOrgId };
       } else { // consentForOrg is null
-        logger.debug('[walletStore.determineChatWallet] Consent is null. Outcome: user_consent_required', { orgId: internalNewChatContextOrgId });
-        return { outcome: 'user_consent_required', orgId: internalNewChatContextOrgId };
+        logger.debug('[walletStore.determineChatWallet] Consent is null. Outcome: user_consent_required', { orgId: newChatContextOrgId });
+        return { outcome: 'user_consent_required', orgId: newChatContextOrgId };
       }
     }
     
     // This path should ideally not be reached if policy is defaulted and all policies are handled.
     // However, to be safe, if somehow an unknown policy still gets through:
     if (orgTokenPolicy !== 'member_tokens' && orgTokenPolicy !== 'organization_tokens') {
-      logger.error('[walletStore.determineChatWallet] Outcome: error (unexpected token usage policy after defaulting)', { orgTokenPolicy, orgId: internalNewChatContextOrgId });
-      return { outcome: 'error', message: `Unexpected token usage policy for ${internalNewChatContextOrgId}: ${orgTokenPolicy}` };
+      logger.error('[walletStore.determineChatWallet] Outcome: error (unexpected token usage policy after defaulting)', { orgTokenPolicy, orgId: newChatContextOrgId });
+      return { outcome: 'error', message: `Unexpected token usage policy for ${newChatContextOrgId}: ${orgTokenPolicy}` };
     }
 
-    logger.error('[walletStore.determineChatWallet] Outcome: error (unhandled case in logic)', { orgId: internalNewChatContextOrgId, orgTokenPolicy });
-    return { outcome: 'error', message: `Unhandled wallet determination case for org ${internalNewChatContextOrgId}.` };
+    logger.error('[walletStore.determineChatWallet] Outcome: error (unhandled case in logic)', { orgId: newChatContextOrgId, orgTokenPolicy });
+    return { outcome: 'error', message: `Unhandled wallet determination case for org ${newChatContextOrgId}.` };
   },
 
   loadPersonalWallet: async () => {

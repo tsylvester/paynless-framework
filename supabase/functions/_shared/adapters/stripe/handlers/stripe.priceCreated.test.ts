@@ -155,7 +155,6 @@ Deno.test('handlePriceCreated specific tests', async (t) => {
       ): Promise<Stripe.Response<Stripe.Product>> => {
         const responseProduct: Stripe.Response<Stripe.Product> = {
           ...mockProduct, 
-          features: mockProduct.features || [],
           images: mockProduct.images || [],
           package_dimensions: mockProduct.package_dimensions === undefined ? null : mockProduct.package_dimensions,
           shippable: mockProduct.shippable === undefined ? null : mockProduct.shippable,
@@ -224,7 +223,6 @@ Deno.test('handlePriceCreated specific tests', async (t) => {
           interval: 'month',
           interval_count: 1,
           usage_type: 'licensed',
-          aggregate_usage: null,
           trial_period_days: null,
           meter: null,
         },

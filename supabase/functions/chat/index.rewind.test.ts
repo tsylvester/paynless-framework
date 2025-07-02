@@ -189,7 +189,7 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
 
             // This is what the AI adapter will return
             const newAiResponseFromAdapterPayload: AdapterResponsePayload = {
-                role: 'assistant', content: aiMsg3NewContentFromAdapter, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: { prompt_tokens: 10, completion_tokens: 20 },
+                role: 'assistant', content: aiMsg3NewContentFromAdapter, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
             };
 
             // This is the expected structure of the *final assistant message* returned by the RPC
@@ -464,7 +464,7 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
             ];
 
             const aiAdapterResponseForRpcError: AdapterResponsePayload = {
-                role: 'assistant', content: "AI content when RPC fails", ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: { prompt_tokens: 5, completion_tokens: 5 },
+                role: 'assistant', content: "AI content when RPC fails", ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 },
             };
             
             const selectCallCountForRpcErrorTest = (() => {
@@ -911,9 +911,48 @@ Deno.test("Chat Function Rewind Test (Real Database)", { sanitizeResources: fals
                     },
             body: JSON.stringify(reqBody),
                 });
+        
+        const testDeps = {
+            ...defaultDeps,
+            createSupabaseClient: () => {
+                const client = createClient(supabaseUrl, supabaseAnonKey, {
+                    global: { headers: { Authorization: `Bearer ${testUserAccessToken}` } },
+                    auth: { autoRefreshToken: false, persistSession: false }
+                });
+
+                const originalFrom = client.from;
+                // deno-lint-ignore no-explicit-any
+                client.from = (table: any) => {
+                    if (table === 'ai_providers') {
+                        return {
+                            select: () => ({
+                                eq: () => ({
+                                    single: async () => ({
+                                        data: {
+                                            id: REAL_TEST_PROVIDER_ID,
+                                            name: 'Injected Test Provider',
+                                            api_identifier: REAL_TEST_PROVIDER_IDENTIFIER,
+                                            provider: 'openai',
+                                            is_active: true,
+                                            config: {
+                                                ...mockModelConfig,
+                                                hard_cap_output_tokens: 16000
+                                            }
+                                        },
+                                        error: null
+                                    })
+                                })
+                            })
+                        } as any;
+                    }
+                    return originalFrom.call(client, table);
+                };
+                return client as any;
+            }
+        };
 
         // Call the actual handler
-                const response = await handler(req, defaultDeps);
+                const response = await handler(req, testDeps);
         const responseText = await response.clone().text(); // Clone for logging if needed
         assertEquals(response.status, 200, `Basic Rewind Failed: Status ${response.status}, Body: ${responseText}`);
                 const responseBody = await response.json();

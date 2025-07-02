@@ -69,8 +69,8 @@ const mockSetNewChatContext = vi.fn();
 let mockNewChatContext: string | null = null;
 
 const mockUserOrganizations: Organization[] = [
-    { id: 'org1', name: 'Organization 1', created_at: 'test', visibility: 'private', allow_member_chat_creation: true, deleted_at: null },
-    { id: 'org2', name: 'Organization 2', created_at: 'test', visibility: 'private', allow_member_chat_creation: true, deleted_at: null },
+    { id: 'org1', name: 'Organization 1', created_at: 'test', visibility: 'private', allow_member_chat_creation: true, deleted_at: null, token_usage_policy: 'member_tokens' },
+    { id: 'org2', name: 'Organization 2', created_at: 'test', visibility: 'private', allow_member_chat_creation: true, deleted_at: null, token_usage_policy: 'organization_tokens' },
 ];
 let mockIsOrgLoading = false;
 
@@ -121,7 +121,7 @@ describe('ChatContextSelector', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        mockNewChatContext = null;
+        mockNewChatContext = 'personal';
         mockIsOrgLoading = false;
         HTMLElement.prototype.scrollIntoView = vi.fn(); // Mock scrollIntoView
     });
@@ -130,8 +130,7 @@ describe('ChatContextSelector', () => {
         HTMLElement.prototype.scrollIntoView = originalScrollIntoView; // Restore original
     });
 
-    it('renders with "Personal" selected by default if store state is null', () => {
-        mockNewChatContext = null;
+    it('renders with "Personal" selected by default if store state is "personal"', () => {
         render(<ChatContextSelector />);
         expect(screen.getByText('Personal')).toBeInTheDocument();
     });
@@ -149,7 +148,7 @@ describe('ChatContextSelector', () => {
     });
 
 
-    it('calls setNewChatContext with null when "Personal" is selected', async () => {
+    it('calls setNewChatContext with "personal" when "Personal" is selected', async () => {
         const user = userEvent.setup();
         mockNewChatContext = 'org1';
         render(<ChatContextSelector />);
@@ -159,7 +158,7 @@ describe('ChatContextSelector', () => {
         const personalOption = await screen.findByRole('option', { name: 'Personal' });
         await user.click(personalOption);
 
-        expect(mockSetNewChatContext).toHaveBeenCalledWith(null);
+        expect(mockSetNewChatContext).toHaveBeenCalledWith('personal');
     });
 
     it('calls setNewChatContext with the orgId when an organization is selected', async () => {

@@ -1,31 +1,33 @@
 import { Navigate, RouteObject, createBrowserRouter } from 'react-router-dom';
-import { LoginPage } from '../pages/Login';
-import { RegisterPage } from '../pages/Register';
-import { DashboardPage } from '../pages/Dashboard';
-import { ProfilePage } from '../pages/Profile';
-import { SubscriptionPage } from '../pages/Subscription';
+import { lazy } from 'react';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
-import { SubscriptionSuccessPage } from '../pages/SubscriptionSuccess';
 import { RootRoute } from '../components/routes/RootRoute';
-import AiChatPage from '../pages/AiChat';
-import NotificationsPage from '../pages/Notifications';
-import { AcceptInvitePage } from '../pages/AcceptInvitePage';
-import { OrganizationHubPage } from '../pages/OrganizationHubPage';
-import { OrganizationFocusedViewPage } from '../pages/OrganizationFocusedViewPage';
-import { TransactionHistoryPage } from '../pages/TransactionHistory';
-import { HomePage } from '../pages/Home';
-import { DialecticProjectsPage } from '../pages/DialecticProjectsPage';
-import { CreateDialecticProjectPage } from '../pages/CreateDialecticProjectPage';
-import { DialecticProjectDetailsPage } from '../pages/DialecticProjectDetailsPage';
-import { DialecticSessionDetailsPage } from '../pages/DialecticSessionDetailsPage';
-//import { ForgotPassword } from '../pages/ForgotPassword';
-//import { ResetPassword } from '../pages/ResetPassword';
-//import { VerifyEmail } from '../pages/VerifyEmail';
-
 // Import the new wrapper and the demo component
 //import { TauriOnlyWrapper } from '../components/routes/TauriOnlyWrapper';
 import { WalletBackupDemoCard } from '../components/demos/WalletBackupDemo/WalletBackupDemoCard';
 import { ConfigFileManager } from '@/components/features/ConfigFileManager';
+
+// Lazy load all page components
+const LoginPage = lazy(() => import('../pages/Login').then(module => ({ default: module.LoginPage })));
+const RegisterPage = lazy(() => import('../pages/Register').then(module => ({ default: module.RegisterPage })));
+const DashboardPage = lazy(() => import('../pages/Dashboard').then(module => ({ default: module.DashboardPage })));
+const ProfilePage = lazy(() => import('../pages/Profile').then(module => ({ default: module.ProfilePage })));
+const SubscriptionPage = lazy(() => import('../pages/Subscription').then(module => ({ default: module.SubscriptionPage })));
+const SubscriptionSuccessPage = lazy(() => import('../pages/SubscriptionSuccess').then(module => ({ default: module.SubscriptionSuccessPage })));
+const AiChatPage = lazy(() => import('../pages/AiChat')); // Default export
+const NotificationsPage = lazy(() => import('../pages/Notifications')); // Default export
+const AcceptInvitePage = lazy(() => import('../pages/AcceptInvitePage').then(module => ({ default: module.AcceptInvitePage })));
+const OrganizationHubPage = lazy(() => import('../pages/OrganizationHubPage').then(module => ({ default: module.OrganizationHubPage })));
+const OrganizationFocusedViewPage = lazy(() => import('../pages/OrganizationFocusedViewPage').then(module => ({ default: module.OrganizationFocusedViewPage })));
+const TransactionHistoryPage = lazy(() => import('../pages/TransactionHistory').then(module => ({ default: module.TransactionHistoryPage })));
+const HomePage = lazy(() => import('../pages/Home').then(module => ({ default: module.HomePage })));
+const DialecticProjectsPage = lazy(() => import('../pages/DialecticProjectsPage').then(module => ({ default: module.DialecticProjectsPage })));
+const CreateDialecticProjectPage = lazy(() => import('../pages/CreateDialecticProjectPage').then(module => ({ default: module.CreateDialecticProjectPage })));
+const DialecticProjectDetailsPage = lazy(() => import('../pages/DialecticProjectDetailsPage').then(module => ({ default: module.DialecticProjectDetailsPage })));
+const DialecticSessionDetailsPage = lazy(() => import('../pages/DialecticSessionDetailsPage').then(module => ({ default: module.DialecticSessionDetailsPage })));
+//import { ForgotPassword } from '../pages/ForgotPassword';
+//import { ResetPassword } from '../pages/ResetPassword';
+//import { VerifyEmail } from '../pages/VerifyEmail';
 
 const routes: RouteObject[] = [
   {

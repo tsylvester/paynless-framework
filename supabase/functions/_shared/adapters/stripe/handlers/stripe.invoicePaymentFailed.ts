@@ -59,24 +59,29 @@ export async function handleInvoicePaymentFailed(
       }
     }
     
-    if (!userId && invoice.payment_intent && typeof invoice.payment_intent === 'string') {
-      context.logger.info(`[handleInvoicePaymentFailed] No userId yet, trying to find original payment_transaction via payment_intent ${invoice.payment_intent} for invoice ${invoice.id}`);
+    let paymentIntentId: string | undefined;
+    if (invoice.confirmation_secret?.client_secret) {
+        paymentIntentId = invoice.confirmation_secret.client_secret.split('_secret_')[0];
+    }
+
+    if (!userId && paymentIntentId) {
+      context.logger.info(`[handleInvoicePaymentFailed] No userId yet, trying to find original payment_transaction via payment_intent ${paymentIntentId} for invoice ${invoice.id}`);
       const {data: ptxnByPi, error: ptxnByPiError} = await context.supabaseClient
         .from('payment_transactions')
         .select('user_id, target_wallet_id, organization_id')
-        .eq('gateway_transaction_id', invoice.payment_intent) 
+        .eq('gateway_transaction_id', paymentIntentId) 
         .eq('payment_gateway_id', 'stripe')
         .maybeSingle();
 
       if (ptxnByPiError) {
-        context.logger.warn(`[handleInvoicePaymentFailed] DB error looking up payment_transaction by payment_intent ${invoice.payment_intent}.`, {error: ptxnByPiError});
+        context.logger.warn(`[handleInvoicePaymentFailed] DB error looking up payment_transaction by payment_intent ${paymentIntentId}.`, {error: ptxnByPiError});
       } else if (ptxnByPi?.user_id) {
         userId = ptxnByPi.user_id;
         targetWalletIdForFailedTx = ptxnByPi.target_wallet_id;
         organizationId = ptxnByPi.organization_id;
-        context.logger.info(`[handleInvoicePaymentFailed] Found user_id ${userId}, wallet ${targetWalletIdForFailedTx}, org ${organizationId} via payment_intent ${invoice.payment_intent}.`);
+        context.logger.info(`[handleInvoicePaymentFailed] Found user_id ${userId}, wallet ${targetWalletIdForFailedTx}, org ${organizationId} via payment_intent ${paymentIntentId}.`);
       } else {
-         context.logger.warn(`[handleInvoicePaymentFailed] Could not find payment_transaction or user_id via payment_intent ${invoice.payment_intent}.`);
+         context.logger.warn(`[handleInvoicePaymentFailed] Could not find payment_transaction or user_id via payment_intent ${paymentIntentId}.`);
       }
     }
 
@@ -93,7 +98,10 @@ export async function handleInvoicePaymentFailed(
       }
     }
     
-    if (!invoice.subscription) {
+    const subscriptionId = invoice.lines.data[0]?.subscription;
+    if (subscriptionId) {
+        metadataType = 'RENEWAL_FAILED';
+    } else {
         metadataType = 'ONE_TIME_PAYMENT_FAILED';
     }
 
@@ -113,7 +121,7 @@ export async function handleInvoicePaymentFailed(
       target_wallet_id: targetWalletIdForFailedTx,
       payment_gateway_id: 'stripe',
       gateway_transaction_id: invoice.id, 
-      status: 'FAILED' as const,
+      status: 'FAILED',
       amount_requested_fiat: invoice.amount_due / 100,
       currency_requested_fiat: invoice.currency,
       tokens_to_award: 0,
@@ -123,8 +131,8 @@ export async function handleInvoicePaymentFailed(
           stripe_event_id: eventId, 
           type: metadataType, 
           stripe_customer_id: stripeCustomerId,
-          stripe_subscription_id: (invoice.subscription && typeof invoice.subscription === 'string' ? invoice.subscription : undefined),
-          stripe_payment_intent_id: typeof invoice.payment_intent === 'string' ? invoice.payment_intent : undefined,
+          stripe_subscription_id: subscriptionId ?? undefined,
+          stripe_payment_intent_id: paymentIntentId,
           billing_reason: invoice.billing_reason ?? undefined,
           attempt_count: invoice.attempt_count,
        },
@@ -144,20 +152,20 @@ export async function handleInvoicePaymentFailed(
     
     let capturedSubRetrieveError: Error | null = null;
 
-    if (invoice.subscription && typeof invoice.subscription === 'string') {
+    if (subscriptionId && typeof subscriptionId === 'string') {
       try {
-        const stripeSubscription = await context.stripe.subscriptions.retrieve(invoice.subscription);
+        const stripeSubscription = await context.stripe.subscriptions.retrieve(subscriptionId);
         const newStatus = stripeSubscription.status; 
 
         const { error: subUpdateError } = await context.supabaseClient
           .from('user_subscriptions')
           .update({ status: newStatus, updated_at: new Date().toISOString() })
-          .eq('stripe_subscription_id', invoice.subscription);
+          .eq('stripe_subscription_id', subscriptionId);
 
         if (subUpdateError) {
-          context.logger.warn(`[handleInvoicePaymentFailed] Failed to update user_subscription ${invoice.subscription} status to ${newStatus} for failed invoice ${invoice.id}.`, { error: subUpdateError });
+          context.logger.warn(`[handleInvoicePaymentFailed] Failed to update user_subscription ${subscriptionId} status to ${newStatus} for failed invoice ${invoice.id}.`, { error: subUpdateError });
         } else {
-          context.logger.info(`[handleInvoicePaymentFailed] Updated user_subscription ${invoice.subscription} to status ${newStatus} for invoice ${invoice.id}.`);
+          context.logger.info(`[handleInvoicePaymentFailed] Updated user_subscription ${subscriptionId} to status ${newStatus} for invoice ${invoice.id}.`);
         }
       } catch (stripeSubError) {
           if (stripeSubError instanceof Error) {
@@ -165,14 +173,14 @@ export async function handleInvoicePaymentFailed(
           } else {
             capturedSubRetrieveError = new Error(String(stripeSubError));
           }
-          context.logger.warn(`[handleInvoicePaymentFailed] Failed to retrieve Stripe subscription ${invoice.subscription} during failed invoice processing for ${invoice.id}. Status may not be updated in user_subscriptions.`, { error: stripeSubError });
+          context.logger.warn(`[handleInvoicePaymentFailed] Failed to retrieve Stripe subscription ${subscriptionId} during failed invoice processing for ${invoice.id}. Status may not be updated in user_subscriptions.`, { error: stripeSubError });
       }
     } else {
         context.logger.info(`[handleInvoicePaymentFailed] Invoice ${invoice.id} is not linked to a subscription. No user_subscription update performed.`);
     }
 
     if (capturedSubRetrieveError) {
-      const errorMessage = `Stripe API error retrieving subscription ${invoice.subscription} for invoice ${invoice.id}: ${capturedSubRetrieveError.message}. While the payment transaction ${paymentTransactionIdForReturn} has been marked FAILED, the subscription status could not be verified/updated due to this internal error.`;
+      const errorMessage = `Stripe API error retrieving subscription ${subscriptionId} for invoice ${invoice.id}: ${capturedSubRetrieveError.message}. While the payment transaction ${paymentTransactionIdForReturn} has been marked FAILED, the subscription status could not be verified/updated due to this internal error.`;
       context.logger.error(`[handleInvoicePaymentFailed] ${errorMessage}`);
       return {
         success: false,

@@ -61,8 +61,8 @@ const authStoreInitialState = {
 
 const subscriptionStoreInitialState = {
   availablePlans: [
-      { id: 'plan-1', name: 'Basic Plan', stripe_price_id: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Basic Sub', features: ['Feature 1'] }, tokens_to_award: 1000 } as unknown as SubscriptionPlan,
-      { id: 'plan-2', name: 'Pro Plan', stripe_price_id: 'price_pro', amount: 5000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Pro Sub', features: ['Feature A', 'Feature B'] }, tokens_to_award: 5000 } as unknown as SubscriptionPlan
+      { id: 'plan-1', name: 'Basic Monthly Plan', stripe_price_id: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Basic Sub', features: ['Feature 1'] }, tokens_to_award: 1000 } as unknown as SubscriptionPlan,
+      { id: 'plan-2', name: 'Pro Monthly Plan', stripe_price_id: 'price_pro', amount: 5000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Pro Sub', features: ['Feature A', 'Feature B'] }, tokens_to_award: 5000 } as unknown as SubscriptionPlan
   ],
   userSubscription: {
     id: 'sub-db-id-123', 
@@ -74,7 +74,7 @@ const subscriptionStoreInitialState = {
     // The 'plan' object here might be overridden by currentUserResolvedPlan in the component,
     // but keeping it for now in case other selectors or direct access uses it.
     // Ideally, the component relies on currentUserResolvedPlan for consistency.
-    plan: { id: 'plan-1', name: 'Basic Plan', stripe_price_id: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Basic Sub', features: ['Feature 1'] }, tokens_to_award: 1000 } 
+    plan: { id: 'plan-1', name: 'Basic Monthly Plan', stripe_price_id: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Basic Sub', features: ['Feature 1'] }, tokens_to_award: 1000 } 
   } as unknown as UserSubscription,
   isSubscriptionLoading: false,
   hasActiveSubscription: true, // This is usually derived state, but set for mock
@@ -242,7 +242,7 @@ describe('SubscriptionPage Component', () => {
     const currentSubCard = currentSubHeading.parentElement?.parentElement as HTMLElement; // Navigate two levels up to the card root
     if (!currentSubCard) throw new Error('CurrentSubscriptionCard container not found');
     
-    expect(within(currentSubCard).getByText(/Basic Plan/i)).toBeInTheDocument(); // Plan name (scoped)
+    expect(within(currentSubCard).getByText(/Basic Monthly Plan/i)).toBeInTheDocument(); // Plan name (scoped)
     expect(within(currentSubCard).getByRole('button', { name: /Manage Billing/i })).toBeInTheDocument();
     expect(within(currentSubCard).getByRole('button', { name: /Cancel Subscription/i })).toBeInTheDocument(); 
   });
@@ -273,12 +273,12 @@ describe('SubscriptionPage Component', () => {
     const planCardsContainer = screen.getByRole('heading', { name: /Subscription Plans/i }).parentElement?.parentElement?.querySelector('.grid.gap-8') as HTMLElement;
     if (!planCardsContainer) throw new Error('Plan cards container not found');
 
-    const basicPlanCard = within(planCardsContainer).getByRole('heading', { name: /Basic Plan/i, level: 2 }).closest('div.border') as HTMLElement;
-    const proPlanCard = within(planCardsContainer).getByRole('heading', { name: /Pro Plan/i, level: 2 }).closest('div.border') as HTMLElement;
+    const basicPlanCard = within(planCardsContainer).getByRole('heading', { name: /Basic Monthly Plan/i, level: 2 }).closest('div.border') as HTMLElement;
+    const proPlanCard = within(planCardsContainer).getByRole('heading', { name: /Pro Monthly Plan/i, level: 2 }).closest('div.border') as HTMLElement;
     if (!basicPlanCard || !proPlanCard) throw new Error('Could not find specific plan card containers');
 
-    expect(within(basicPlanCard).getByRole('heading', { name: /Basic Plan/i, level: 2 })).toBeInTheDocument();
-    expect(within(proPlanCard).getByRole('heading', { name: /Pro Plan/i, level: 2 })).toBeInTheDocument();
+    expect(within(basicPlanCard).getByRole('heading', { name: /Basic Monthly Plan/i, level: 2 })).toBeInTheDocument();
+    expect(within(proPlanCard).getByRole('heading', { name: /Pro Monthly Plan/i, level: 2 })).toBeInTheDocument();
     expect(within(basicPlanCard).getByText('Feature 1')).toBeInTheDocument();
     expect(within(proPlanCard).getByText('Feature A')).toBeInTheDocument();
     
@@ -296,14 +296,14 @@ describe('SubscriptionPage Component', () => {
                             .parentElement?.parentElement?.querySelector('.grid.gap-8') as HTMLElement;
     if (!planCardsGrid) throw new Error('Plan cards grid container not found');
 
-    // Now find the Basic Plan card specifically within the grid
-    const basicPlanHeading = within(planCardsGrid).getByRole('heading', { name: /Basic Plan/i, level: 2 });
+    // Now find the Basic Monthly Plan card specifically within the grid
+    const basicPlanHeading = within(planCardsGrid).getByRole('heading', { name: /Basic Monthly Plan/i, level: 2 });
     const basicPlanCard = basicPlanHeading.closest('div.border') as HTMLElement;
     if (!basicPlanCard) throw new Error("Basic PlanCard not found within the grid");
     expect(within(basicPlanCard).getByRole('button', { name: /Current Plan/i })).toBeInTheDocument();
 
     // Find the Pro Plan card specifically within the grid
-    const proPlanHeading = within(planCardsGrid).getByRole('heading', { name: /Pro Plan/i, level: 2 });
+    const proPlanHeading = within(planCardsGrid).getByRole('heading', { name: /Pro Monthly Plan/i, level: 2 });
     const proPlanCard = proPlanHeading.closest('div.border') as HTMLElement;
     if (!proPlanCard) throw new Error("Pro PlanCard not found within the grid");
     expect(within(proPlanCard).getByRole('button', { name: /Change Plan/i })).toBeInTheDocument();
@@ -370,7 +370,7 @@ describe('SubscriptionPage Component', () => {
                               .parentElement?.parentElement?.querySelector('.grid.gap-8') as HTMLElement;
       if (!planCardsGrid) throw new Error('Plan cards grid container not found for initiatePurchase test');
       
-      const proPlan = subscriptionStoreInitialState.availablePlans.find(p => p.name === 'Pro Plan');
+      const proPlan = subscriptionStoreInitialState.availablePlans.find(p => p.name === 'Pro Monthly Plan');
       if (!proPlan) throw new Error("Pro Plan not found in initial state for test setup");
 
       const proPlanHeading = within(planCardsGrid).getByRole('heading', { name: proPlan.name, level: 2 });
@@ -478,7 +478,7 @@ describe('SubscriptionPage Component', () => {
 
   // --- Tests for handleSubscribe and useWalletStore interaction ---
   describe('handleSubscribe with useWalletStore (token purchase flow)', () => {
-    const basicPlan = subscriptionStoreInitialState.availablePlans[0];
+          const basicPlan = subscriptionStoreInitialState.availablePlans[0]; // Basic Monthly Plan
 
     beforeEach(() => {
       act(() => {

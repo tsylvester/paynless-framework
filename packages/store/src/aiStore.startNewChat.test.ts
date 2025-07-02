@@ -92,8 +92,8 @@ describe('aiStore - startNewChat action', () => {
 
             // Assert
             const state = useAiStore.getState();
-            expect(state.currentChatId).toBeNull();
-            expect(state.newChatContext).toBeNull(); // Assuming null for personal
+            expect(state.currentChatId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/); // Should be a UUID
+            expect(state.newChatContext).toBe('personal'); // Context should be set to 'personal'
             expect(state.aiError).toBeNull();
             expect(state.isLoadingAiResponse).toBe(false);
             expect(state.rewindTargetMessageId).toBeNull();
@@ -124,7 +124,7 @@ describe('aiStore - startNewChat action', () => {
 
             // Assert
             const state = useAiStore.getState();
-            expect(state.currentChatId).toBeNull();
+            expect(state.currentChatId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/); // Should be a UUID
             expect(state.newChatContext).toBe(mockOrgId);
             expect(state.aiError).toBeNull();
             expect(state.isLoadingAiResponse).toBe(false);
@@ -154,9 +154,9 @@ describe('aiStore - startNewChat action', () => {
 
             // Assert
             const state = useAiStore.getState();
-            expect(state.currentChatId).toBeNull();
+            expect(state.currentChatId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/); // Should be a UUID
             expect(state.aiError).toBeNull();
-            expect(state.newChatContext).toBeNull(); // Personal context
+            expect(state.newChatContext).toBe('personal'); // Personal context should be 'personal'
             expect(state.messagesByChatId[previousChatId]).toEqual(initialMessages[previousChatId]); // Important: Don't delete other chats' messages
         });
 
@@ -179,7 +179,7 @@ describe('aiStore - startNewChat action', () => {
 
             // Assert
             const state = useAiStore.getState();
-            expect(state.currentChatId).toBeNull();
+            expect(state.currentChatId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/); // Should be a UUID
             expect(state.aiError).toBeNull();
             expect(state.newChatContext).toBe(newOrgContext);
             expect(state.messagesByChatId[previousChatId]).toEqual(initialMessages[previousChatId]);
