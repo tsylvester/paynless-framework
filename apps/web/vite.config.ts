@@ -52,6 +52,7 @@ export default defineConfig({
       // Keep aliases for local workspace packages
       '@paynless/api': path.resolve(__dirname, '../../packages/api/src'),
       '@paynless/store': path.resolve(__dirname, '../../packages/store/src/index.ts'),
+      'bip39/src/wordlists/english$': path.resolve(__dirname, './src/lib/bip39-english.ts'),
       // Add aliases for other local packages if needed
       '@': path.resolve(__dirname, './src'),
     },
@@ -60,6 +61,39 @@ export default defineConfig({
     // Output directly to a dist folder inside the desktop app project
     outDir: 'dist',
     emptyOutDir: true, // Ensure it's clean before building
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes('node_modules')) {
+            if (id.includes('@supabase')) {
+              return 'supabase';
+            }
+            if (id.includes('refractor')) {
+              return 'refractor';
+            }
+            if (id.includes('micromark')) {
+              return 'micromark';
+            }
+            if (id.includes('bip39')) {
+              return 'bip39';
+            }
+            if (id.includes('posthog-js')) {
+              return 'posthog';
+            }
+            if (id.includes('zod')) {
+              return 'zod';
+            }
+            if (id.includes('@remix-run/router') || id.includes('react-router')) {
+              return 'router';
+            }
+          }
+          if (id.includes('packages/')) {
+            const pkgName = id.split('packages/')[1].split('/')[0];
+            return `vendor-${pkgName}`;
+          }
+        },
+      },
+    },
   },
   // Ensure server settings don't conflict if they exist
   server: {
