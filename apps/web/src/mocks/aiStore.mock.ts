@@ -14,7 +14,6 @@ let currentAiMockState: AiStore = {
     loadChatDetails: vi.fn(),
     startNewChat: vi.fn(),
     clearAiError: vi.fn(),
-    checkAndReplayPendingChatAction: vi.fn(),
     deleteChat: vi.fn(),
     prepareRewind: vi.fn(),
     cancelRewindPreparation: vi.fn(),
@@ -166,7 +165,6 @@ export const resetAiStoreMock = () => {
         loadChatDetails: vi.fn(),
         startNewChat: vi.fn(),
         clearAiError: vi.fn(),
-        checkAndReplayPendingChatAction: vi.fn(),
         deleteChat: vi.fn(),
         prepareRewind: vi.fn(),
         cancelRewindPreparation: vi.fn(),
@@ -186,4 +184,10 @@ export const resetAiStoreMock = () => {
         addOptimisticMessageForReplay: vi.fn() as unknown as AiStore['addOptimisticMessageForReplay'],
     };
     // The vi.fn() calls above ensure mocks are fresh, no need to loop and clear.
-}; 
+};
+
+// The actual mock hook that tests will use.
+// It uses the mock implementation and returns slices of the mock state.
+export const useAiStore = vi.fn().mockImplementation(selector => {
+    return selector(currentAiMockState);
+}); 

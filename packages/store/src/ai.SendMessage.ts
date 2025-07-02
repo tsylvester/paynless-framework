@@ -374,5 +374,5 @@ export async function handleSendMessage(
   
   logger.info('Message processed via handleSendMessage:', { assistantMessageId: assistantMessage.id, chatId: finalChatIdForLog, rewound: wasRewind });
   // Wallet refresh should be handled by the caller (aiStore) after this function returns.
-  return assistantMessage as ChatMessage;
+  return assistantMessage;
 }

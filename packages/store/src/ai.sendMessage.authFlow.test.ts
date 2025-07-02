@@ -184,7 +184,7 @@ describe('handleSendMessage', () => {
     it('[PERS] NEW CHAT SUCCESS: should return assistant message and update state correctly', async () => {
       // Setup: Initial State for a new personal chat
       testSpecificAiState.currentChatId = null;
-      testSpecificAiState.newChatContext = null; 
+      testSpecificAiState.newChatContext = 'personal'; 
       testSpecificAiState.messagesByChatId = {};
       testSpecificAiState.chatsByContext = { personal: [], orgs: {} };
       testSpecificAiState.selectedMessagesMap = {};
@@ -513,7 +513,7 @@ describe('handleSendMessage', () => {
 
       // Setup: Initial State for an existing personal chat
       testSpecificAiState.currentChatId = mockExistingChatId;
-      testSpecificAiState.newChatContext = null;
+      testSpecificAiState.newChatContext = 'personal';
       testSpecificAiState.messagesByChatId = {
         [mockExistingChatId]: [mockInitialUserMessageRow, mockInitialAssistantMessageRow],
       };
@@ -659,7 +659,7 @@ describe('handleSendMessage', () => {
       // Check if updated_at for the chat in chatsByContext might have changed (implementation dependent)
       // For this test, we focus on message list and currentChatId, assuming chat metadata updates are secondary or handled elsewhere.
 
-      expect(finalAiState.newChatContext).toBeNull(); 
+      expect(finalAiState.newChatContext).toBe('personal');
       expect(finalAiState.isLoadingAiResponse).toBe(false);
       expect(finalAiState.aiError).toBeNull();
     });
@@ -667,7 +667,7 @@ describe('handleSendMessage', () => {
     it('[API ERROR] NEW PERSONAL CHAT: should return null, set error, and clean up optimistic message', async () => {
       // Setup: Initial State for a new personal chat, similar to the success case
       testSpecificAiState.currentChatId = null;
-      testSpecificAiState.newChatContext = null; // string | null
+      testSpecificAiState.newChatContext = 'personal'; // string | null
       testSpecificAiState.messagesByChatId = {};
       testSpecificAiState.chatsByContext = { personal: [], orgs: {} };
       testSpecificAiState.availableProviders = [MOCK_AI_PROVIDER];
@@ -825,7 +825,7 @@ describe('handleSendMessage', () => {
 
       // Setup: Initial State for an existing personal chat that will encounter an API error
       testSpecificAiState.currentChatId = mockExistingChatId;
-      testSpecificAiState.newChatContext = null;
+      testSpecificAiState.newChatContext = 'personal';
       testSpecificAiState.messagesByChatId = {
         [mockExistingChatId]: [mockInitialUserMessageRow],
       };

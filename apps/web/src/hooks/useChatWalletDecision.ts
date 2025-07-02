@@ -46,7 +46,7 @@ export const useChatWalletDecision = (): UseChatWalletDecisionReturn => {
     clearUserOrgTokenConsent(orgIdToReset);
   }, [clearUserOrgTokenConsent]);
 
-  const calculatedOutcome = determineChatWallet();
+  const calculatedOutcome = determineChatWallet(newChatContextOrgId);
 
   const isLoadingConsent = calculatedOutcome.outcome === 'loading';
   

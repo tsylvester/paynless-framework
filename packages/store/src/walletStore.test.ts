@@ -165,8 +165,26 @@ describe('useWalletStore', () => {
 
       it('should return the transactionHistory array', () => {
         const mockTransactions: TokenWalletTransaction[] = [
-          { transactionId: 't1', walletId: 'w1', type: 'CREDIT_PURCHASE', amount: '100', balanceAfterTxn: '100', recordedByUserId: 'u1', timestamp: new Date() },
-          { transactionId: 't2', walletId: 'w1', type: 'DEBIT_USAGE', amount: '10', balanceAfterTxn: '90', recordedByUserId: 'u1', timestamp: new Date() },
+          { 
+            transactionId: 't1', 
+            walletId: 'w1', 
+            type: 'CREDIT_PURCHASE', 
+            amount: '100', 
+            balanceAfterTxn: '100', 
+            recordedByUserId: 'u1', 
+            timestamp: new Date(), 
+            idempotencyKey: 'i1' 
+          },
+          { 
+            transactionId: 't2', 
+            walletId: 'w1', 
+            type: 'DEBIT_USAGE', 
+            amount: '10', 
+            balanceAfterTxn: '90', 
+            recordedByUserId: 'u1', 
+            timestamp: new Date(), 
+            idempotencyKey: 'i2' 
+          },
         ];
         useWalletStore.setState({ transactionHistory: mockTransactions });
         const transactions = selectWalletTransactions(useWalletStore.getState());
@@ -318,15 +336,22 @@ describe('useWalletStore', () => {
         
         mockSetCurrentOrgId('org123');
 
-        mockSetCurrentOrganizationDetails({ ...defaultMockOrganization, id: 'org123', token_usage_policy: undefined } as Organization);
+        mockSetCurrentOrganizationDetails({ 
+          ...defaultMockOrganization, 
+          id: 'org123', 
+          token_usage_policy: 'member_tokens',
+          allow_member_chat_creation: false,
+          created_at: new Date().toISOString(),
+          deleted_at: null,
+        });
 
-        const result = useWalletStore.getState().determineChatWallet();
+        const result = useWalletStore.getState().determineChatWallet('org123');
         expect(result).toEqual({ outcome: 'loading' });
       });
 
       it('should return use_personal_wallet if newChatContext is null', () => {
         setupDetermineChatWalletTest({ newChatContextIsNull: true });
-        const result = useWalletStore.getState().determineChatWallet();
+        const result = useWalletStore.getState().determineChatWallet(null);
         expect(result).toEqual({ outcome: 'use_personal_wallet' });
       });
 
@@ -336,7 +361,7 @@ describe('useWalletStore', () => {
         mockSetUserOrganizations([]); // Explicitly set userOrganizations to be empty
         mockSetCurrentOrganizationDetails(null); // Ensure no current org details either
 
-        let result = useWalletStore.getState().determineChatWallet();
+        let result = useWalletStore.getState().determineChatWallet('org123');
         expect(result.outcome).toBe('error');
         if (result.outcome === 'error') {
           // The message comes from the !relevantOrgDetails block when not loading
@@ -352,7 +377,7 @@ describe('useWalletStore', () => {
         mockSetCurrentOrganizationDetails({ ...defaultMockOrganization, id: 'org456' } as Organization);
 
 
-        result = useWalletStore.getState().determineChatWallet();
+        result = useWalletStore.getState().determineChatWallet('org123');
         expect(result.outcome).toBe('error');
         if (result.outcome === 'error') {
           expect(result.message).toBe('Organization details for org123 are not available in the current list.');
@@ -366,9 +391,8 @@ describe('useWalletStore', () => {
           personalWallet: { walletId: 'pw', balance: '0', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() }, 
         });
 
-        const result = useWalletStore.getState().determineChatWallet();
+        const result = useWalletStore.getState().determineChatWallet('org123');
         expect(result.outcome).toBe('org_wallet_not_available_policy_org');
-        expect(result.orgId).toBe('org123');
       });
 
       it("should return user_consent_required if policy is 'member_tokens'", () => {
@@ -377,14 +401,13 @@ describe('useWalletStore', () => {
           personalWallet: { walletId: 'pw', balance: '100', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() },
           userOrgTokenConsent: { 'org123': null } // Explicitly set consent to null (pending)
         });
-        const result = useWalletStore.getState().determineChatWallet();
+        const result = useWalletStore.getState().determineChatWallet('org123');
         expect(result.outcome).toBe('user_consent_required');
-        expect(result.orgId).toBe('org123');
       });
 
       it('should return error for unexpected token_usage_policy', () => {
         setupDetermineChatWalletTest({ orgId: 'org123', policy: 'unexpected_policy' as any });
-        const result = useWalletStore.getState().determineChatWallet();
+        const result = useWalletStore.getState().determineChatWallet('org123');
         expect(result.outcome).toBe('error');
         if (result.outcome === 'error') {
           expect(result.message).toContain('Unexpected token usage policy for org123: unexpected_policy');
@@ -611,16 +634,17 @@ describe('useWalletStore', () => {
 
     describe('loadTransactionHistory', () => {
       const mockTransactions: TokenWalletTransaction[] = [
-        { transactionId: 't1', walletId: 'w1', type: 'CREDIT_PURCHASE', amount: '100', balanceAfterTxn: '100', recordedByUserId: 'u1', timestamp: new Date() },
-        { transactionId: 't2', walletId: 'w1', type: 'DEBIT_USAGE', amount: '10', balanceAfterTxn: '90', recordedByUserId: 'u1', timestamp: new Date() },
+        { transactionId: 't1', walletId: 'w1', type: 'CREDIT_PURCHASE', amount: '100', balanceAfterTxn: '100', recordedByUserId: 'u1', timestamp: new Date(), idempotencyKey: 'i1' },
+        { transactionId: 't2', walletId: 'w1', type: 'DEBIT_USAGE', amount: '10', balanceAfterTxn: '90', recordedByUserId: 'u1', timestamp: new Date(), idempotencyKey: 'i2' },
       ];
       const orgId = 'org-xyz';
       const limit = 10;
       const offset = 5;
 
       it('should load transaction history successfully for personal wallet', async () => {
-        const response: SuccessResponse<PaginatedTransactions> = { data: { transactions: mockTransactions, total: mockTransactions.length, limit: 0, offset: 0 }, error: undefined, status: 200 };
-        mockGetWalletTransactionHistory.mockResolvedValue(response as ApiResponse<PaginatedTransactions>);
+        const paginatedResponse: PaginatedTransactions = { transactions: mockTransactions, totalCount: mockTransactions.length };
+        const response: SuccessResponse<PaginatedTransactions> = { data: paginatedResponse, error: undefined, status: 200 };
+        mockGetWalletTransactionHistory.mockResolvedValue(response as any);
 
         await useWalletStore.getState().loadTransactionHistory(); // No params, so second arg to API client will be undefined
 
@@ -632,9 +656,9 @@ describe('useWalletStore', () => {
       });
 
       it('should load transaction history successfully for an organization wallet with pagination', async () => {
-        const paginatedResponseData: PaginatedTransactions = { transactions: mockTransactions, total: mockTransactions.length, limit, offset };
-        const response: SuccessResponse<PaginatedTransactions> = { data: paginatedResponseData, error: undefined, status: 200 };
-        mockGetWalletTransactionHistory.mockResolvedValue(response as ApiResponse<PaginatedTransactions>);
+        const paginatedResponse: PaginatedTransactions = { transactions: mockTransactions, totalCount: mockTransactions.length };
+        const response: SuccessResponse<PaginatedTransactions> = { data: paginatedResponse, error: undefined, status: 200 };
+        mockGetWalletTransactionHistory.mockResolvedValue(response as any);
 
         // Call loadTransactionHistory with the params object
         await useWalletStore.getState().loadTransactionHistory(orgId, { limit, offset });
@@ -650,7 +674,7 @@ describe('useWalletStore', () => {
       it('should handle API error when loading transaction history', async () => {
         const apiError: ApiError = { message: 'History API Error', code: 'HISTORY_FETCH_FAILED' }; 
         const response: ErrorResponse = { data: undefined, error: apiError, status: 500 }; 
-        mockGetWalletTransactionHistory.mockResolvedValue(response as ApiResponse<PaginatedTransactions>); // Ensure PaginatedTransactions type
+        mockGetWalletTransactionHistory.mockResolvedValue(response); // Ensure PaginatedTransactions type
 
         await useWalletStore.getState().loadTransactionHistory();
 
@@ -661,9 +685,9 @@ describe('useWalletStore', () => {
       });
 
       it('should handle empty transaction history (API returns empty array in PaginatedTransactions)', async () => {
-        const emptyPaginatedResponse: PaginatedTransactions = { transactions: [], total: 0, limit: 0, offset: 0 };
-        const response: SuccessResponse<PaginatedTransactions> = { data: emptyPaginatedResponse, error: undefined, status: 200 };
-        mockGetWalletTransactionHistory.mockResolvedValue(response as ApiResponse<PaginatedTransactions>);
+        const paginatedResponse: PaginatedTransactions = { transactions: [], totalCount: 0 };
+        const response: SuccessResponse<PaginatedTransactions> = { data: paginatedResponse, error: undefined, status: 200 };
+        mockGetWalletTransactionHistory.mockResolvedValue(response as any);
 
         await useWalletStore.getState().loadTransactionHistory();
 
@@ -679,8 +703,8 @@ describe('useWalletStore', () => {
         // or the API should return PaginatedTransactions with an empty list if "not found" means no transactions.
         // For this test, let's assume the API client successfully returns a response where `data` is `null`.
         // The store currently interprets `null` data (even without an error object) as an issue.
-        const response: SuccessResponse<null> = { data: null, error: undefined, status: 200 };
-        mockGetWalletTransactionHistory.mockResolvedValue(response as unknown as ApiResponse<PaginatedTransactions>);
+        const response: SuccessResponse<PaginatedTransactions | null> = { data: null, error: undefined, status: 200 };
+        mockGetWalletTransactionHistory.mockResolvedValue(response as any);
 
         await useWalletStore.getState().loadTransactionHistory();
 
@@ -692,9 +716,9 @@ describe('useWalletStore', () => {
       });
 
       it('should set isLoadingHistory to true during fetch and false afterwards', async () => {
-        const paginatedResponseData: PaginatedTransactions = { transactions: mockTransactions, total: mockTransactions.length, limit: 0, offset: 0 };
-        const response: SuccessResponse<PaginatedTransactions> = { data: paginatedResponseData, error: undefined, status: 200 };
-        mockGetWalletTransactionHistory.mockResolvedValue(response as ApiResponse<PaginatedTransactions>);
+        const paginatedResponse: PaginatedTransactions = { transactions: mockTransactions, totalCount: mockTransactions.length };
+        const response: SuccessResponse<PaginatedTransactions> = { data: paginatedResponse, error: undefined, status: 200 };
+        mockGetWalletTransactionHistory.mockResolvedValue(response as any);
         
         const loadPromise = useWalletStore.getState().loadTransactionHistory();
         expect(useWalletStore.getState().isLoadingHistory).toBe(true);

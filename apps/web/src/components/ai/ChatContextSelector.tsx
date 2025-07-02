@@ -21,8 +21,6 @@ interface ChatContextSelectorProps {
   disabled?: boolean; // Added disabled prop
 }
 
-const PERSONAL_CONTEXT_ID = '__personal__'; // Internal constant for personal context value
-
 export const ChatContextSelector: React.FC<ChatContextSelectorProps> = ({
   className,
   disabled = false, // Added disabled prop
@@ -41,23 +39,19 @@ export const ChatContextSelector: React.FC<ChatContextSelectorProps> = ({
   }));
 
   const handleValueChange = (value: string) => {
-    const newContextId = value === PERSONAL_CONTEXT_ID ? null : value;
-    setNewChatContext(newContextId);
-    logger.info(`[ChatContextSelector] Context selected for new chat: ${newContextId}`);
+    // The value is now either 'personal' or an org ID, which is exactly what the store expects.
+    setNewChatContext(value);
+    logger.info(`[ChatContextSelector] Context selected for new chat: ${value}`);
   };
 
-  // Ensure selectedChatContextForNewChat is initialized in the store,
-  // otherwise, this might be undefined initially.
-  // The store should initialize selectedChatContextForNewChat, perhaps to globalCurrentOrgId or null.
-  const currentSelectedValueInStore = newChatContext === undefined 
-    ? PERSONAL_CONTEXT_ID // Default to personal if undefined in store (should be initialized in store)
-    : (newChatContext === null ? PERSONAL_CONTEXT_ID : newChatContext);
+  // The value from the store is already 'personal' or an org ID.
+  const currentSelectedValueInStore = newChatContext || 'personal';
 
 
   const getDisplayName = () => {
     if (isOrgLoading) return 'Loading contexts...';
-    // Use selectedChatContextForNewChat from the store for display
-    if (newChatContext === null || newChatContext === undefined) return 'Personal';
+    // Use newChatContext from the store for display
+    if (newChatContext === 'personal') return 'Personal';
     const selectedOrg = userOrganizations?.find(org => org.id === newChatContext);
     return selectedOrg?.name || 'Select context'; // Fallback if org not found
   };
@@ -74,7 +68,7 @@ export const ChatContextSelector: React.FC<ChatContextSelectorProps> = ({
         </SelectValue>
       </SelectTrigger>
       <SelectContent className="bg-background/90 backdrop-blur-md border-border">
-        <SelectItem key={PERSONAL_CONTEXT_ID} value={PERSONAL_CONTEXT_ID}>
+        <SelectItem key="personal" value="personal">
           Personal
         </SelectItem>
         {userOrganizations?.map((org: Organization) => ( // Added type for org

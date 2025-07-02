@@ -154,9 +154,9 @@ describe('useAiStore - Context Actions', () => {
             //);
         });
 
-        it('should update newChatContext to null for personal context', () => {
-            useAiStore.getState().newChatContext = null;
-            expect(useAiStore.getState().newChatContext).toBeNull();
+        it('should update newChatContext to "personal" for personal context', () => {
+            useAiStore.getState().newChatContext = 'personal';
+            expect(useAiStore.getState().newChatContext).toBe('personal');
             //expect(analytics.track).toHaveBeenCalledWith(
             //    'Chat: Context For New Chat Selected In Store',
             //    { contextId: null, contextType: 'Personal' }

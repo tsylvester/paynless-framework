@@ -57,7 +57,6 @@ const setupStoreAndSpies = async (
   const mockLoadChatHistory = vi.fn();
   const mockLoadChatDetails = vi.fn();
   const mockStartNewChat = vi.fn();
-  const mockCheckAndReplayPendingChatAction = vi.fn();
   const mockDeleteChat = vi.fn();
   const mockPrepareRewind = vi.fn();
   const mockCancelRewindPreparation = vi.fn();
@@ -108,12 +107,12 @@ const setupStoreAndSpies = async (
       historyErrorByContext: { personal: null, orgs: {} },
       rewindTargetMessageId: null, // Ensure rewindTargetMessageId is initialized
       
+      pendingAction: null,
       // Actions
       loadAiConfig: mockLoadAiConfig,
       loadChatHistory: mockLoadChatHistory,
       loadChatDetails: mockLoadChatDetails,
       startNewChat: mockStartNewChat,
-      checkAndReplayPendingChatAction: mockCheckAndReplayPendingChatAction,
       deleteChat: mockDeleteChat,
       prepareRewind: mockPrepareRewind,
       cancelRewindPreparation: mockCancelRewindPreparation,
@@ -128,14 +127,12 @@ const setupStoreAndSpies = async (
   mockLoadAiConfig.mockResolvedValue(undefined);
   mockLoadChatHistory.mockResolvedValue(undefined);
   mockLoadChatDetails.mockResolvedValue(undefined);
-  mockCheckAndReplayPendingChatAction.mockResolvedValue(undefined);
 
   return {
     mockLoadAiConfig,
     mockLoadChatHistory,
     mockLoadChatDetails,
     mockStartNewChat,
-    mockCheckAndReplayPendingChatAction,
     mockDeleteChat,
     mockPrepareRewind,
     mockCancelRewindPreparation,
@@ -194,7 +191,7 @@ describe('AiChatPage Integration Tests', () => {
     render(<AiChatPage />);
     expect(await screen.findByTestId('chat-context-selector-mock')).toBeInTheDocument();
     await waitFor(() => {
-      expect(mocks.mockLoadChatHistory).toHaveBeenCalledWith(null);
+      expect(mocks.mockLoadChatHistory).toHaveBeenCalledWith('personal');
     });
   });
 
@@ -206,12 +203,12 @@ describe('AiChatPage Integration Tests', () => {
     
     // Simulate ChatContextSelector updating the store directly for testing AiChatPage's reaction
     act(() => {
-      useAiStore.setState({ newChatContext: null });
+      useAiStore.setState({ newChatContext: 'personal' });
     });
     
     await waitFor(() => {
       // AiChatPage useEffect for activeContextIdForHistory should trigger loadChatHistory
-      expect(mocks.mockLoadChatHistory).toHaveBeenCalledWith(null);
+      expect(mocks.mockLoadChatHistory).toHaveBeenCalledWith('personal');
     });
     // Analytics for context selection for new chat is tracked by setSelectedChatContextForNewChat action in store,
     // not directly by AiChatPage anymore.
