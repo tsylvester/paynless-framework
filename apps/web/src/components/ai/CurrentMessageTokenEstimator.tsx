@@ -6,18 +6,15 @@ export interface CurrentMessageTokenEstimatorProps {
 }
 
 export const CurrentMessageTokenEstimator: React.FC<CurrentMessageTokenEstimatorProps> = ({ textInput }) => {
-  const estimatedTokens = useTokenEstimator(textInput);
-
-  // Placeholder for rendering logic - to be refined by tests
-  if (typeof estimatedTokens !== 'number') {
-    // Or some other loading/default state if the hook could return something else initially
-    return null;
-  }
+  const { estimatedTokens, isLoading } = useTokenEstimator(textInput);
 
   return (
     <div className="text-sm text-muted-foreground" data-testid="current-message-token-estimator">
-      {/* Content to be driven by tests, e.g., `Est. tokens: ${estimatedTokens}` */}
-      Est. tokens: {estimatedTokens}
+      {isLoading ? (
+        <span>Estimating...</span>
+      ) : (
+        <span>Est. tokens: {estimatedTokens}</span>
+      )}
     </div>
   );
 }; 

@@ -378,7 +378,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
             });
             const response = await handler(req, deps);
             assertEquals(response.status, 500);
-            assertEquals((await response.json()).error, "Test: Message insert failed"); 
+            assertEquals((await response.json()).error, "Database error during message persistence: Test: Message insert failed"); 
         });
 
     } finally {

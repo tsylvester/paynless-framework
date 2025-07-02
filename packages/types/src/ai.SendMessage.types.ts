@@ -38,8 +38,6 @@ export interface HandleSendMessageServiceParams {
   authService: IAuthService;
   walletService: IWalletService;
   // Utility functions remain directly injected as they are stateless helpers
-  estimateInputTokensFn: (input: string | MessageForTokenCounting[], modelConfig: AiModelExtendedConfig) => Promise<number>;
-  getMaxOutputTokensFn: (walletBalance: number, inputTokens: number, modelConfig: AiModelExtendedConfig, deficitAllowed: number) => number;
   callChatApi: (request: ChatApiRequest, options: RequestInit) => Promise<ApiResponse<ChatHandlerSuccessResponse>>;
   logger: ILogger;
 }
@@ -76,18 +74,6 @@ export interface SendMessageParams {
   currentUserId?: string | null; // For logging context primarily
   token: string; // Auth token, added
   rewindTargetMessageId?: string | null; // For apiRequest.rewindFromMessageId, added
-
-  // Core utility functions (dependency injection)
-  estimateInputTokensFn: (
-    textOrMessages: string | MessageForTokenCounting[],
-    modelConfig: AiModelExtendedConfig
-  ) => Promise<number>;
-  getMaxOutputTokensFn: (
-    user_balance_tokens: number,
-    prompt_input_tokens: number,
-    modelConfig: AiModelExtendedConfig,
-    deficit_tokens_allowed: number
-  ) => number;
   
   // API interaction (dependency injection)
   callChatApi: ( 

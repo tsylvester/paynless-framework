@@ -11,7 +11,7 @@ export function Footer() {
             <p className="text-textSecondary text-sm">
                 &copy; {year} 
               <Link to="https://paynless.app" className="mx-2 text-textSecondary hover:text-textPrimary text-sm">
-                 Paynless Framework. All rights reserved.
+                 Paynless by PaynPoint Inc. All rights reserved.
               </Link>
             </p>
           </div>

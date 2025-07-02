@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useAiStore } from '../../../../packages/store/src/aiStore';
+import { useAuthStore } from '../../../../packages/store/src/authStore';
 import type { ChatMessage, AiModelExtendedConfig, MessageForTokenCounting, SystemPrompt } from '@paynless/types'; // Assuming @paynless/types resolves to packages/types/src
-import { estimateInputTokens } from '../../../../packages/utils/src/tokenCostUtils.ts';
+import { api } from '@paynless/api';
 
-export const useTokenEstimator = (textInput: string): number => {
+export const useTokenEstimator = (textInput: string): { estimatedTokens: number; isLoading: boolean } => {
   const {
     currentChatId,
     messagesByChatId,
@@ -24,80 +25,123 @@ export const useTokenEstimator = (textInput: string): number => {
     }),
   );
 
-  const estimatedTokens = useMemo(() => {
-    if (!selectedProviderId) return 0;
+  const [estimatedTokens, setEstimatedTokens] = useState<number>(0);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
-    const selectedProvider = availableProviders.find(p => p.id === selectedProviderId);
-    if (!selectedProvider || !selectedProvider.config) {
-      console.warn('useTokenEstimator: Selected provider or its config is missing.');
-      return 0; // Or a fallback rough estimate if preferred
-    }
-    const modelConfig = selectedProvider.config as unknown as AiModelExtendedConfig; // Cast, assuming valid structure
-
-    // Find the selected system prompt content
-    let systemPromptContent: string | null = null;
-    if (selectedPromptId && selectedPromptId !== '__none__') {
-      const prompt = availablePrompts.find((p: SystemPrompt) => p.id === selectedPromptId);
-      if (prompt) {
-        systemPromptContent = prompt.prompt_text;
+  useEffect(() => {
+    const estimateTokensAsync = async (): Promise<void> => {
+      if (!selectedProviderId) {
+        setEstimatedTokens(0);
+        return;
       }
-    }
 
-    let historyMessages: ChatMessage[] = [];
-    if (currentChatId) {
-      const messagesForCurrentChat = messagesByChatId[currentChatId] || [];
-      const selectionsForCurrentChat = selectedMessagesMap[currentChatId] || {};
-      historyMessages = messagesForCurrentChat
-        .filter(message => selectionsForCurrentChat[message.id])
-        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    }
+      setIsLoading(true);
 
-    // Prepare input for estimateInputTokens
-    let inputForEstimator: string | MessageForTokenCounting[];
-
-    if (
-      modelConfig.tokenization_strategy?.type === 'tiktoken' &&
-      modelConfig.tokenization_strategy?.is_chatml_model
-    ) {
-      const messagesForTokenCounting: MessageForTokenCounting[] = [];
-      if (systemPromptContent) {
-        messagesForTokenCounting.push({ role: 'system', content: systemPromptContent });
+      const selectedProvider = availableProviders.find(p => p.id === selectedProviderId);
+      if (!selectedProvider || !selectedProvider.config) {
+        console.warn('useTokenEstimator: Selected provider or its config is missing.');
+        setEstimatedTokens(0);
+        setIsLoading(false);
+        return;
       }
-      historyMessages.forEach(msg => {
-        messagesForTokenCounting.push({
-          role: msg.role as 'user' | 'assistant' | 'system',
-          content: msg.content,
+      const modelConfig: AiModelExtendedConfig = selectedProvider.config as unknown as AiModelExtendedConfig;
+
+      // Find the selected system prompt content
+      let systemPromptContent: string | null = null;
+      if (selectedPromptId && selectedPromptId !== '__none__') {
+        const prompt: SystemPrompt | undefined = availablePrompts.find((p: SystemPrompt) => p.id === selectedPromptId);
+        if (prompt) {
+          systemPromptContent = prompt.prompt_text;
+        }
+      }
+
+      let historyMessages: ChatMessage[] = [];
+      if (currentChatId) {
+        const messagesForCurrentChat: ChatMessage[] = messagesByChatId[currentChatId] || [];
+        const selectionsForCurrentChat: { [messageId: string]: boolean } = selectedMessagesMap[currentChatId] || {};
+        historyMessages = messagesForCurrentChat
+          .filter(message => selectionsForCurrentChat[message.id])
+          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      }
+
+      // Prepare input for API token estimation
+      let inputForEstimator: string | MessageForTokenCounting[];
+
+      if (
+        modelConfig.tokenization_strategy?.type === 'tiktoken' &&
+        modelConfig.tokenization_strategy?.is_chatml_model
+      ) {
+        const messagesForTokenCounting: MessageForTokenCounting[] = [];
+        if (systemPromptContent) {
+          messagesForTokenCounting.push({ role: 'system', content: systemPromptContent });
+        }
+        historyMessages.forEach(msg => {
+          messagesForTokenCounting.push({
+            role: msg.role as 'user' | 'assistant' | 'system',
+            content: msg.content,
+          });
         });
-      });
-      if (textInput.trim()) {
-        messagesForTokenCounting.push({ role: 'user', content: textInput });
+        if (textInput.trim()) {
+          messagesForTokenCounting.push({ role: 'user', content: textInput });
+        }
+        inputForEstimator = messagesForTokenCounting;
+        if (inputForEstimator.length === 0) {
+          setEstimatedTokens(0);
+          setIsLoading(false);
+          return;
+        }
+      } else {
+        // For non-ChatML tiktoken or rough_char_count, combine into a single string.
+        let combinedText: string = systemPromptContent ? systemPromptContent + '\n' : '';
+        combinedText += historyMessages.map(msg => msg.content).join('\n');
+        if (textInput.trim()) {
+          combinedText = combinedText.trim() ? combinedText.trim() + '\n' + textInput : textInput;
+        }
+        inputForEstimator = combinedText.trim();
+        if (!inputForEstimator) {
+          setEstimatedTokens(0);
+          setIsLoading(false);
+          return;
+        }
       }
-      inputForEstimator = messagesForTokenCounting;
-      // Handle empty case for ChatML - if no messages and no text input, tiktoken might error or give 0.
-      // estimateInputTokens handles empty arrays for ChatML by adding priming tokens, so should be okay.
-      if (inputForEstimator.length === 0) return 0; // Or let estimateInputTokens handle it
-    } else {
-      // For non-ChatML tiktoken or rough_char_count, combine into a single string.
-      let combinedText = systemPromptContent ? systemPromptContent + '\n' : '';
-      combinedText += historyMessages.map(msg => msg.content).join('\n');
-      if (textInput.trim()) {
-        combinedText = combinedText.trim() ? combinedText.trim() + '\n' + textInput : textInput;
-      }
-      inputForEstimator = combinedText.trim();
-      if (!inputForEstimator) return 0;
-    }
 
-    try {
-      return estimateInputTokens(inputForEstimator, modelConfig);
-    } catch (error) {
-      console.error('Error estimating tokens in useTokenEstimator:', error);
-      // Fallback strategy: very rough estimate or 0 if preferred
-      const fallbackText = typeof inputForEstimator === 'string' 
-        ? inputForEstimator 
-        : (inputForEstimator as MessageForTokenCounting[]).map(m => m.content || '').join('\n');
-      return Math.ceil(fallbackText.length / 4); // Default rough estimate
-    }
+      try {
+        const token = useAuthStore.getState().session?.access_token;
+        if (!token) {
+          console.warn('useTokenEstimator: No authentication token available, falling back to rough estimate');
+          const fallbackText: string = typeof inputForEstimator === 'string' 
+            ? inputForEstimator 
+            : (inputForEstimator as MessageForTokenCounting[]).map(m => m.content || '').join('\n');
+          setEstimatedTokens(Math.ceil(fallbackText.length / 4));
+          setIsLoading(false);
+          return;
+        }
+        
+        const response = await api.ai().estimateTokens({ textOrMessages: inputForEstimator, modelConfig }, token);
+        if (response.error || !response.data) {
+          console.warn('useTokenEstimator: API error, falling back to rough estimate:', response.error?.message);
+          // Fallback strategy: very rough estimate
+          const fallbackText: string = typeof inputForEstimator === 'string' 
+            ? inputForEstimator 
+            : (inputForEstimator as MessageForTokenCounting[]).map(m => m.content || '').join('\n');
+          setEstimatedTokens(Math.ceil(fallbackText.length / 4));
+        } else {
+          setEstimatedTokens(response.data.estimatedTokens);
+        }
+      } catch (error) {
+        console.error('Error estimating tokens in useTokenEstimator:', error);
+        // Fallback strategy: very rough estimate
+        const fallbackText: string = typeof inputForEstimator === 'string' 
+          ? inputForEstimator 
+          : (inputForEstimator as MessageForTokenCounting[]).map(m => m.content || '').join('\n');
+        setEstimatedTokens(Math.ceil(fallbackText.length / 4));
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    estimateTokensAsync();
   }, [textInput, currentChatId, messagesByChatId, selectedMessagesMap, selectedProviderId, availableProviders, selectedPromptId, availablePrompts]);
 
-  return estimatedTokens;
-}; 
+  return { estimatedTokens, isLoading };
+};

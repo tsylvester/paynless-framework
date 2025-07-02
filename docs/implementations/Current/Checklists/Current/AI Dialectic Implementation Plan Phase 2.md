@@ -1317,7 +1317,7 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
 *   [X] Update Domains to be non-auth so they load on the homepage
 *   [X] Update Domains to have is_enabled flag
 *   [X] Update DomainSelector to check is_enabled and only fetch enabled domains
-*   [ ] Fix Gemini window/div breaking
+*   [X] Fix Gemini window/div breaking
 *   [ ] Fix Agent selector dropdown location
 *   [ ] Fix "invalid state" complaints so if a generation fails or is completed, user can regenerate anyway
 

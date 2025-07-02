@@ -21,16 +21,12 @@ import {
     IWalletService,
     IAiStateService,
     HandleSendMessageServiceParams,
-    AiModelExtendedConfig
 } from '@paynless/types' // IMPORT NECESSARY TYPES
 
 // Import api AFTER other local/utility imports but BEFORE code that might use types that cause issues with mocking
 import { api } from '@paynless/api'; // MOVED HERE
 
-// PRESERVECHATTYPE HACK WAS HERE - NOW MOVED INSIDE create()
-
 import { logger } from '@paynless/utils';
-import { getMaxOutputTokens } from '../../utils/src/tokenCostUtils';
 import { useAuthStore } from './authStore';
 import { useWalletStore } from './walletStore'; // Keep this for getState()
 import { selectActiveChatWalletInfo } from './walletStore.selectors'; // Corrected import path
@@ -1064,21 +1060,6 @@ export const useAiStore = create<AiStore>()(
                             aiStateService: aiStateServiceAdapter,
                             authService: authServiceAdapter,
                             walletService: walletServiceAdapter,
-                            estimateInputTokensFn: async (textOrMessages: string | MessageForTokenCounting[], modelConfig: AiModelExtendedConfig): Promise<number> => {
-                                const session = authServiceAdapter.getSession();
-                                const token = session?.access_token;
-                                if (!token) {
-                                    logger.error('[aiStore] Token estimation failed: No auth token available');
-                                    return 0;
-                                }
-                                const response = await api.ai().estimateTokens({ textOrMessages, modelConfig }, token);
-                                if (response.error || !response.data) {
-                                    logger.error('[aiStore] Token estimation failed, falling back to 0:', { error: response.error?.message });
-                                    return 0;
-                                }
-                                return response.data.estimatedTokens;
-                            },
-                            getMaxOutputTokensFn: getMaxOutputTokens,
                             callChatApi: async (request: ChatApiRequest, options: RequestInit): Promise<ApiResponse<ChatHandlerSuccessResponse>> => {
                                 const response = await api.ai().sendChatMessage(request, options);
                                 return response; // No transformation needed - API client now returns the correct type

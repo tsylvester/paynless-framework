@@ -131,24 +131,24 @@ Deno.test("Chat Wallet Functionality Tests", async (t) => {
     assertExists(logCallArgs[1]?.error?.message.includes(errorMessage)); // The error object itself
   });
 
-  await t.step("POST request returns 402 if checkBalance returns false (insufficient funds)", async () => {
+  await t.step("POST request returns 402 if affordability check fails (insufficient funds)", async () => {
     const estimatedCost = 100;
     const tokenWalletConfig: TokenWalletServiceMethodImplementations = {
       getWalletForContext: spy(() => Promise.resolve({
         walletId: "wallet-test-insufficient",
         userId: testUserId,
-        balance: "50", // Balance is less than estimatedCost
+        balance: "0", // With a balance of 0, funds are definitely insufficient.
         currency: "AI_TOKEN",
         createdAt: new Date(),
         updatedAt: new Date(),
       })),
-      checkBalance: spy(() => Promise.resolve(false)), // Mock to return false
+      // checkBalance is no longer called in the normal path for pre-check
     };
     const countTokensFnMock = spy(() => estimatedCost);
 
-    const { deps } = createTestDeps(
+    const { deps, mockAdapterSpy } = createTestDeps(
       mockSupaConfigBase,
-      undefined, // No AI adapter response needed as it shouldn't be called
+      mockAdapterSuccessResponse, // Provide a mock adapter to prevent real calls if logic proceeds
       tokenWalletConfig,
       countTokensFnMock
     );
@@ -170,17 +170,13 @@ Deno.test("Chat Wallet Functionality Tests", async (t) => {
     const responseJson = await res.json();
     assertExists(responseJson.error, "Error message should exist");
     assert(responseJson.error.includes("Insufficient token balance"), `Error message should contain 'Insufficient token balance', got: ${responseJson.error}`);
-    assert(responseJson.error.includes(estimatedCost.toString()), `Error message should contain estimated cost '${estimatedCost}', got: ${responseJson.error}`);
+    // The new error message from `getMaxOutputTokens` path does not include the estimated cost.
 
     const getWalletSpy = deps.tokenWalletService!.getWalletForContext as Spy<any>;
-    const checkBalanceSpy = deps.tokenWalletService!.checkBalance as Spy<any>;
-
+    
     assertSpyCalls(getWalletSpy, 1);
     assertSpyCalls(countTokensFnMock, 1); // Token estimation should be called
-    assertSpyCalls(checkBalanceSpy, 1);
-    // Verify checkBalance was called with the correct walletId and estimatedCost
-    assertEquals(checkBalanceSpy.calls[0].args[0], "wallet-test-insufficient");
-    assertEquals(checkBalanceSpy.calls[0].args[1], estimatedCost.toString());
+    assertSpyCalls(mockAdapterSpy!, 0); // The AI adapter should NOT be called if funds are insufficient.
   });
 
   await t.step("POST request returns 500 if countTokensFn throws an error", async () => {
@@ -258,7 +254,7 @@ Deno.test("Chat Wallet Functionality Tests", async (t) => {
         createdAt: new Date(),
         updatedAt: new Date(),
       })),
-      checkBalance: spy(() => Promise.resolve(true)),
+      // checkBalance is no longer called in this path.
       recordTransaction: spy(() => Promise.reject(new Error(debitErrorMessage))), // Debit fails
     };
     const countTokensFnMock = spy(() => estimatedCost);
@@ -300,7 +296,6 @@ Deno.test("Chat Wallet Functionality Tests", async (t) => {
 
     assertSpyCalls(deps.tokenWalletService!.getWalletForContext as Spy<any>, 1);
     assertSpyCalls(countTokensFnMock, 1);
-    assertSpyCalls(deps.tokenWalletService!.checkBalance as Spy<any>, 1);
     assertSpyCalls(mockAdapterSpy!, 1);
     assertSpyCalls(deps.tokenWalletService!.recordTransaction as Spy<any>, 1); // Debit was attempted
 
@@ -343,7 +338,7 @@ Deno.test("Chat Wallet Functionality Tests", async (t) => {
         createdAt: new Date(),
         updatedAt: new Date(),
       })),
-      checkBalance: spy(() => Promise.resolve(true)),
+      // checkBalance is no longer called in this path.
       recordTransaction: spy(() => Promise.resolve({} as any)), // Should not be called
     };
     const countTokensFnMock = spy(() => estimatedCost);
@@ -408,7 +403,6 @@ Deno.test("Chat Wallet Functionality Tests", async (t) => {
 
     assertSpyCalls(deps.tokenWalletService!.getWalletForContext as Spy<any>, 1);
     assertSpyCalls(countTokensFnMock, 1);
-    assertSpyCalls(deps.tokenWalletService!.checkBalance as Spy<any>, 1);
     assertSpyCalls(mockAdapterSpy!, 1);
     assertSpyCalls(deps.tokenWalletService!.recordTransaction as Spy<any>, 0); // Debit skipped
 

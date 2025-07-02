@@ -184,6 +184,8 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
                                 is_active: true, 
                                 config: { 
                                     api_identifier: testApiIdentifier, 
+                                    input_token_cost_rate: 1,
+                                    output_token_cost_rate: 2,
                                     tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } 
                                 }
                             }], 

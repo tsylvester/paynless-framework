@@ -4,7 +4,6 @@ import type {
   ChatApiRequest,
   ILogger,
   AiState,
-  AiModelExtendedConfig,
   PendingAction,
   Chat,
   HandleSendMessageServiceParams,
@@ -21,44 +20,19 @@ async function coreMessageProcessing(
     targetChatId?: string | null;
     selectedContextMessages?: MessageForTokenCounting[];
     effectiveOrganizationId?: string | null;
-    walletBalanceInTokens: number;
-    deficitTokensAllowed: number;
-    modelConfig: AiModelExtendedConfig;
     token: string; // Auth token is now passed directly
     rewindTargetMessageId?: string | null;
-    estimateInputTokensFn: HandleSendMessageServiceParams['estimateInputTokensFn'];
-    getMaxOutputTokensFn: HandleSendMessageServiceParams['getMaxOutputTokensFn'];
     callChatApi: HandleSendMessageServiceParams['callChatApi'];
     logger: ILogger;
   }
 ): Promise<InternalProcessResult> {
   const {
     messageContent, targetProviderId, targetPromptId, targetChatId, selectedContextMessages,
-    effectiveOrganizationId, walletBalanceInTokens, deficitTokensAllowed, modelConfig, token,
-    rewindTargetMessageId, estimateInputTokensFn, getMaxOutputTokensFn, callChatApi, logger,
+    effectiveOrganizationId, token, rewindTargetMessageId, callChatApi, logger,
   } = params;
 
   logger.info('[coreMessageProcessing] Starting...', { targetProviderId, targetChatId });
   try {
-    let inputForTokenEstimation: string | MessageForTokenCounting[];
-    const messagesForHistory: MessageForTokenCounting[] = (selectedContextMessages || []).map(m => ({ role: m.role, content: m.content, name: m.name }));
-    if (modelConfig.tokenization_strategy?.type === 'tiktoken' && modelConfig.tokenization_strategy.is_chatml_model) {
-      const chatMlMessages: MessageForTokenCounting[] = [...messagesForHistory];
-      if (messageContent.trim()) chatMlMessages.push({ role: 'user', content: messageContent });
-      inputForTokenEstimation = chatMlMessages;
-    } else {
-      let combinedText = messagesForHistory.map(m => m.content || '').join('\n');
-      if (messageContent.trim()) combinedText = combinedText ? combinedText + '\n' + messageContent : messageContent;
-      inputForTokenEstimation = combinedText.trim() || (messageContent.trim() ? messageContent : []);
-    }
-    
-    const estimatedInputTokens = await estimateInputTokensFn(inputForTokenEstimation, modelConfig);
-    const maxAllowedOutputTokens = getMaxOutputTokensFn(walletBalanceInTokens, estimatedInputTokens, modelConfig, deficitTokensAllowed);
-
-    if (maxAllowedOutputTokens <= 0) {
-      return { success: false, error: 'Insufficient balance.', errorCode: 'INSUFFICIENT_FUNDS' };
-    }
-
     const apiRequest: ChatApiRequest = {
       message: messageContent, 
       providerId: targetProviderId, 
@@ -66,7 +40,6 @@ async function coreMessageProcessing(
       ...(targetChatId && { chatId: targetChatId }),
       ...(effectiveOrganizationId && { organizationId: effectiveOrganizationId }),
       ...(rewindTargetMessageId && { rewindFromMessageId: rewindTargetMessageId }),
-      max_tokens_to_generate: maxAllowedOutputTokens, 
       contextMessages: selectedContextMessages,
     };
     // Use RequestInit for fetch options, token is passed in headers
@@ -98,12 +71,12 @@ async function coreMessageProcessing(
     
     let actualCostWalletTokens: number | undefined = undefined;
     // Assuming token_usage is a valid, if optional, field on assistantMessage (ChatMessageRow)
-    if (assistantMessage && assistantMessage.token_usage && typeof assistantMessage.token_usage === 'object') {
+    if (assistantMessage?.token_usage && typeof assistantMessage.token_usage === 'object') {
         // The type of assistantMessage.token_usage should be inferred from ChatMessageRow (DB schema)
-        const usage = assistantMessage.token_usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }; // Keep cast for specific shape if DB type is JsonValue
-        const promptTokens = usage.prompt_tokens || estimatedInputTokens;
-        const completionTokens = usage.completion_tokens || 0;
-        actualCostWalletTokens = (promptTokens * modelConfig.input_token_cost_rate) + (completionTokens * modelConfig.output_token_cost_rate);
+        const usage = assistantMessage.token_usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number, cost?: number }; // Keep cast for specific shape if DB type is JsonValue
+        if (usage.cost) {
+          actualCostWalletTokens = usage.cost;
+        }
     }
 
     return {
@@ -130,8 +103,6 @@ export async function handleSendMessage(
     aiStateService, // Use the service interface
     authService,    // Use the service interface
     walletService,  // Use the service interface
-    estimateInputTokensFn,
-    getMaxOutputTokensFn,
     callChatApi,
     logger,
   } = serviceParams;
@@ -143,7 +114,6 @@ export async function handleSendMessage(
       newChatContext,
       selectedProviderId,
       selectedPromptId,
-      availableProviders,
       messagesByChatId,
       selectedMessagesMap,
   } = aiStateService.getAiState(); // Get AiState via the service
@@ -190,15 +160,6 @@ export async function handleSendMessage(
       return null;
   }
 
-  let modelConfig: AiModelExtendedConfig | null = null;
-  const providerEntry = availableProviders.find(p => p.id === selectedProviderId);
-  if (providerEntry && providerEntry.config && typeof providerEntry.config === 'object' && providerEntry.config !== null && 'input_token_cost_rate' in providerEntry.config) {
-      modelConfig = providerEntry.config as unknown as AiModelExtendedConfig;
-  } else {
-      aiStateService.setAiState({ isLoadingAiResponse: false, aiError: `Model config not found for ${selectedProviderId}.` });
-      return null;
-  }
-  
   // Use addOptimisticUserMessage from the aiStateService
   const { tempId: tempUserMessageId, chatIdUsed: optimisticMessageChatId } = aiStateService.addOptimisticUserMessage(message, inputChatId);
   
@@ -243,9 +204,8 @@ export async function handleSendMessage(
   const processingResult = await coreMessageProcessing({
       messageContent: message, targetProviderId: selectedProviderId, targetPromptId: apiPromptId,
       targetChatId: effectiveChatIdForApi, selectedContextMessages: finalContextMessages,
-      effectiveOrganizationId: organizationIdForApi, walletBalanceInTokens: parseInt(activeWalletInfo.balance || "0"),
-      deficitTokensAllowed: 0, modelConfig: modelConfig, token: token, rewindTargetMessageId: currentRewindTargetId,
-      estimateInputTokensFn, getMaxOutputTokensFn, callChatApi, logger,
+      effectiveOrganizationId: organizationIdForApi, token: token, rewindTargetMessageId: currentRewindTargetId,
+      callChatApi, logger,
   });
 
   logger.info('[handleSendMessage] coreMessageProcessing result:', { 
