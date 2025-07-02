@@ -44,7 +44,7 @@ import {
 } from '../../api/src/mocks';
 
 // --- Mock Utility Function Implementations ---
-const mockEstimateInputTokensFn = vi.fn<[string | MessageForTokenCounting[], AiModelExtendedConfig], number>();
+const mockEstimateInputTokensFn = vi.fn<[string | MessageForTokenCounting[], AiModelExtendedConfig], Promise<number>>();
 const mockGetMaxOutputTokensFn = vi.fn<[number, number, AiModelExtendedConfig, number], number>();
 
 let mockCallChatApi: Mock<[ChatApiRequest, RequestInit], Promise<ApiResponse<ChatHandlerSuccessResponse> | ErrorResponse>>;
@@ -199,7 +199,7 @@ describe('handleSendMessage', () => {
       }
     );
 
-    mockEstimateInputTokensFn.mockReturnValue(10);
+    mockEstimateInputTokensFn.mockResolvedValue(10);
     mockGetMaxOutputTokensFn.mockReturnValue(1000);
   });
 
@@ -1494,8 +1494,8 @@ describe('handleSendMessage', () => {
           isDummy: false,
         } as ChatHandlerSuccessResponse 
       });
-      // Mock estimateInputTokensFn and getMaxOutputTokensFn to avoid downstream errors
-      mockEstimateInputTokensFn.mockReturnValue(50);
+              // Mock estimateInputTokensFn and getMaxOutputTokensFn to avoid downstream errors
+        mockEstimateInputTokensFn.mockResolvedValue(50);
       mockGetMaxOutputTokensFn.mockReturnValue(1000);
 
       await handleSendMessage(serviceParams);
@@ -1562,7 +1562,7 @@ describe('handleSendMessage', () => {
           isDummy: false,
         } as ChatHandlerSuccessResponse 
       });
-      mockEstimateInputTokensFn.mockReturnValue(40); // Different value for clarity
+              mockEstimateInputTokensFn.mockResolvedValue(40); // Different value for clarity
       mockGetMaxOutputTokensFn.mockReturnValue(900);
 
       await handleSendMessage(serviceParams);
@@ -1585,7 +1585,7 @@ describe('handleSendMessage', () => {
       const expectedWalletBalanceInt = 50000;
       const deficitTokensAllowed = 0; // Default from coreMessageProcessing call
 
-      mockEstimateInputTokensFn.mockReturnValueOnce(knownInputTokens);
+              mockEstimateInputTokensFn.mockResolvedValueOnce(knownInputTokens);
       (mockWalletService.getActiveWalletInfo as any).mockReturnValueOnce({
         ...(mockWalletService.getActiveWalletInfo() as ActiveChatWalletInfo), 
         balance: walletBalanceString,
@@ -1649,8 +1649,8 @@ describe('handleSendMessage', () => {
         return { tempId: optimisticTempId, chatIdUsed: optimisticChatId, createdTimestamp: 'now' };
       });
       
-      // Ensure other necessary mocks are in place (like estimateInputTokensFn)
-      mockEstimateInputTokensFn.mockReturnValueOnce(10);
+              // Ensure other necessary mocks are in place (like estimateInputTokensFn)
+        mockEstimateInputTokensFn.mockResolvedValueOnce(10);
 
       const result = await handleSendMessage(getDefaultTestServiceParams({ message: messageContent }));
 
@@ -1681,7 +1681,7 @@ describe('handleSendMessage', () => {
       mockGetMaxOutputTokensFn.mockReturnValueOnce(knownMaxTokensToGenerate);
 
       // Other necessary mocks for the function to proceed
-      mockEstimateInputTokensFn.mockReturnValueOnce(50);
+              mockEstimateInputTokensFn.mockResolvedValueOnce(50);
       (mockWalletService.getActiveWalletInfo as any).mockReturnValueOnce({
         ...(mockWalletService.getActiveWalletInfo() as ActiveChatWalletInfo), // Cast to ensure it's seen as mockable by TS
         balance: '100000',
@@ -1747,7 +1747,7 @@ describe('handleSendMessage', () => {
           assistantMessage: mockAssistantMessageFromApi, 
         } as ChatHandlerSuccessResponse
       });
-      mockEstimateInputTokensFn.mockReturnValue(5); // Needs to be mocked for flow
+              mockEstimateInputTokensFn.mockResolvedValue(5); // Needs to be mocked for flow
       mockGetMaxOutputTokensFn.mockReturnValue(1000);
 
       await handleSendMessage(serviceParams);
@@ -1789,7 +1789,7 @@ describe('handleSendMessage', () => {
         selectedProviderId: MOCK_AI_PROVIDER.id,
         // totalTokensUsedInSession: 50, // REMOVED: Property does not exist
       };
-      mockEstimateInputTokensFn.mockReturnValueOnce(estimatedInputTokens);
+              mockEstimateInputTokensFn.mockResolvedValueOnce(estimatedInputTokens);
 
       // Expected cost: (estimatedInputTokens * inputRate) + (completionTokensFromApi * outputRate)
       const expectedCost = (estimatedInputTokens * inputRate) + (completionTokensFromApi * outputRate);

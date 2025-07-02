@@ -20,7 +20,8 @@ import {
     IAuthService,
     IWalletService,
     IAiStateService,
-    HandleSendMessageServiceParams
+    HandleSendMessageServiceParams,
+    AiModelExtendedConfig
 } from '@paynless/types' // IMPORT NECESSARY TYPES
 
 // Import api AFTER other local/utility imports but BEFORE code that might use types that cause issues with mocking
@@ -29,7 +30,7 @@ import { api } from '@paynless/api'; // MOVED HERE
 // PRESERVECHATTYPE HACK WAS HERE - NOW MOVED INSIDE create()
 
 import { logger } from '@paynless/utils';
-import { estimateInputTokens, getMaxOutputTokens } from '../../utils/src/tokenCostUtils';
+import { getMaxOutputTokens } from '../../utils/src/tokenCostUtils';
 import { useAuthStore } from './authStore';
 import { useWalletStore } from './walletStore'; // Keep this for getState()
 import { selectActiveChatWalletInfo } from './walletStore.selectors'; // Corrected import path
@@ -56,7 +57,7 @@ export const useAiStore = create<AiStore>()(
                             user_id: null,
                             // Add other required fields from Chat type if necessary, matching their types
                             // Example: is_active_in_thread: true // If Chat requires this
-                        } as Chat;
+                        };
                 // console.log('Using preserveChatType hack for build', !!preserveChatType); // Optional: keeping it commented for now to reduce side-effects further
 
                 // --- Helper function to update chat context in user's profile ---
@@ -484,9 +485,22 @@ export const useAiStore = create<AiStore>()(
                         }
 
                         try {
-                            const orgId = get().chatsByContext.orgs[chatId] 
-                                ? chatId // This logic seems flawed; orgId should be derived differently if chatId is an org chat ID
-                                : (get().currentChatId === chatId && get().newChatContext !== 'personal' ? get().newChatContext : null);
+                            // Find the organization ID by searching through all org chat lists for this chatId
+                            let orgId: string | null = null;
+                            const { chatsByContext, newChatContext, currentChatId } = get();
+                            
+                            // Search through all organization chat lists to find which org contains this chat
+                            for (const [orgIdKey, orgChats] of Object.entries(chatsByContext.orgs)) {
+                                if (orgChats && orgChats.some(chat => chat.id === chatId)) {
+                                    orgId = orgIdKey;
+                                    break;
+                                }
+                            }
+                            
+                            // Fallback: if this is the current chat and context is not personal, use newChatContext
+                            if (!orgId && currentChatId === chatId && newChatContext !== 'personal') {
+                                orgId = newChatContext;
+                            }
                             
                             logger.info(`[aiStore] Attempting to fetch chat details for chatId: ${chatId}, derived orgId: ${orgId}`);
 
@@ -501,7 +515,7 @@ export const useAiStore = create<AiStore>()(
                             if (response.error || !response.data) {
                                 throw new Error(response.error?.message || 'Failed to load chat messages.');
                             }
-                            const { messages } = response.data; // chat object also available if needed
+                            const { chat, messages } = response.data; // chat object is needed for updating context
 
                             set(state => {
                                 const newMessagesByChatId = {
@@ -517,10 +531,46 @@ export const useAiStore = create<AiStore>()(
                                 });
                                 newSelectedMessagesMap[chatId] = selectionsForThisChat;
 
+                                // Update chatsByContext to include this chat if not already present
+                                const newChatsByContext = { ...state.chatsByContext };
+                                if (chat.organization_id) {
+                                    // Organization chat
+                                    const orgId = chat.organization_id;
+                                    const orgChats = newChatsByContext.orgs[orgId] || [];
+                                    const chatExists = orgChats.some(existingChat => existingChat.id === chatId);
+                                    if (!chatExists) {
+                                        newChatsByContext.orgs = {
+                                            ...newChatsByContext.orgs,
+                                            [orgId]: [...orgChats, chat]
+                                        };
+                                    } else {
+                                        // Update existing chat with latest data
+                                        newChatsByContext.orgs = {
+                                            ...newChatsByContext.orgs,
+                                            [orgId]: orgChats.map(existingChat => 
+                                                existingChat.id === chatId ? chat : existingChat
+                                            )
+                                        };
+                                    }
+                                } else {
+                                    // Personal chat
+                                    const personalChats = newChatsByContext.personal || [];
+                                    const chatExists = personalChats.some(existingChat => existingChat.id === chatId);
+                                    if (!chatExists) {
+                                        newChatsByContext.personal = [...personalChats, chat];
+                                    } else {
+                                        // Update existing chat with latest data
+                                        newChatsByContext.personal = personalChats.map(existingChat => 
+                                            existingChat.id === chatId ? chat : existingChat
+                                        );
+                                    }
+                                }
+
                                 return {
                                     messagesByChatId: newMessagesByChatId,
-                                    selectedMessagesMap: newSelectedMessagesMap, // ADDED
-                                isDetailsLoading: false,
+                                    selectedMessagesMap: newSelectedMessagesMap,
+                                    chatsByContext: newChatsByContext,
+                                    isDetailsLoading: false,
                                     currentChatId: chatId, // Ensure currentChatId is set to the one being loaded
                                     aiError: null,
                                 };
@@ -983,7 +1033,7 @@ export const useAiStore = create<AiStore>()(
                     },
 
                     // SIMPLIFIED sendMessage ACTION
-                    sendMessage: async (data: { message: string; chatId?: string | null; contextMessages?: MessageForTokenCounting[] }) => {
+                    sendMessage: async (data: { message: string; providerId: string; promptId: string | null; chatId?: string | null; contextMessages?: MessageForTokenCounting[] }) => {
                         // --- Create Adapters for Service Dependencies ---
                         const authStoreState = useAuthStore.getState();
                         const authServiceAdapter: IAuthService = {
@@ -1006,13 +1056,33 @@ export const useAiStore = create<AiStore>()(
                         
                         // --- Prepare parameters for handleSendMessage ---
                         const serviceParams: HandleSendMessageServiceParams = {
-                            data,
+                            data: {
+                                message: data.message,
+                                chatId: data.chatId,
+                                contextMessages: data.contextMessages,
+                            },
                             aiStateService: aiStateServiceAdapter,
                             authService: authServiceAdapter,
                             walletService: walletServiceAdapter,
-                            estimateInputTokensFn: estimateInputTokens,
+                            estimateInputTokensFn: async (textOrMessages: string | MessageForTokenCounting[], modelConfig: AiModelExtendedConfig): Promise<number> => {
+                                const session = authServiceAdapter.getSession();
+                                const token = session?.access_token;
+                                if (!token) {
+                                    logger.error('[aiStore] Token estimation failed: No auth token available');
+                                    return 0;
+                                }
+                                const response = await api.ai().estimateTokens({ textOrMessages, modelConfig }, token);
+                                if (response.error || !response.data) {
+                                    logger.error('[aiStore] Token estimation failed, falling back to 0:', { error: response.error?.message });
+                                    return 0;
+                                }
+                                return response.data.estimatedTokens;
+                            },
                             getMaxOutputTokensFn: getMaxOutputTokens,
-                            callChatApi: api.ai().sendChatMessage.bind(api.ai()) as unknown as (request: ChatApiRequest, options: RequestInit) => Promise<ApiResponse<ChatHandlerSuccessResponse>>,
+                            callChatApi: async (request: ChatApiRequest, options: RequestInit): Promise<ApiResponse<ChatHandlerSuccessResponse>> => {
+                                const response = await api.ai().sendChatMessage(request, options);
+                                return response; // No transformation needed - API client now returns the correct type
+                            },
                             logger: logger as ILogger,
                         };
 

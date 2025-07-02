@@ -52,7 +52,7 @@ async function coreMessageProcessing(
       inputForTokenEstimation = combinedText.trim() || (messageContent.trim() ? messageContent : []);
     }
     
-    const estimatedInputTokens = estimateInputTokensFn(inputForTokenEstimation, modelConfig);
+    const estimatedInputTokens = await estimateInputTokensFn(inputForTokenEstimation, modelConfig);
     const maxAllowedOutputTokens = getMaxOutputTokensFn(walletBalanceInTokens, estimatedInputTokens, modelConfig, deficitTokensAllowed);
 
     if (maxAllowedOutputTokens <= 0) {
@@ -71,6 +71,20 @@ async function coreMessageProcessing(
     };
     // Use RequestInit for fetch options, token is passed in headers
     const response = await callChatApi(apiRequest, { headers: { Authorization: `Bearer ${token}` } });
+
+    logger.info('[coreMessageProcessing] API response:', { 
+      hasError: !!response.error, 
+      hasData: !!response.data,
+      errorMessage: response.error?.message,
+      responseData: response.data ? {
+        hasUserMessage: !!response.data.userMessage,
+        hasAssistantMessage: !!response.data.assistantMessage,
+        chatId: response.data.chatId,
+        isRewind: response.data.isRewind,
+        userMessageId: response.data.userMessage?.id,
+        assistantMessageId: response.data.assistantMessage?.id
+      } : null
+    });
 
     if (response.error || !response.data) {
       return { success: false, error: response.error?.message || 'API error', errorCode: response.error?.code || 'API_ERROR' };
@@ -219,12 +233,29 @@ export async function handleSendMessage(
 
   aiStateService.setAiState({ isLoadingAiResponse: true, aiError: null });
 
+  logger.info('[handleSendMessage] About to call coreMessageProcessing', { 
+    messageContent: message, 
+    effectiveChatIdForApi, 
+    optimisticMessageChatId,
+    tempUserMessageId 
+  });
+
   const processingResult = await coreMessageProcessing({
       messageContent: message, targetProviderId: selectedProviderId, targetPromptId: apiPromptId,
       targetChatId: effectiveChatIdForApi, selectedContextMessages: finalContextMessages,
       effectiveOrganizationId: organizationIdForApi, walletBalanceInTokens: parseInt(activeWalletInfo.balance || "0"),
       deficitTokensAllowed: 0, modelConfig: modelConfig, token: token, rewindTargetMessageId: currentRewindTargetId,
       estimateInputTokensFn, getMaxOutputTokensFn, callChatApi, logger,
+  });
+
+  logger.info('[handleSendMessage] coreMessageProcessing result:', { 
+    success: processingResult.success, 
+    hasAssistantMessage: !!processingResult.assistantMessage,
+    assistantMessageId: processingResult.assistantMessage?.id,
+    finalUserMessageId: processingResult.finalUserMessage?.id,
+    newlyCreatedChatId: processingResult.newlyCreatedChatId,
+    wasRewind: processingResult.wasRewind,
+    error: processingResult.error
   });
 
   if (!processingResult.success || !processingResult.assistantMessage) {
@@ -318,9 +349,24 @@ export async function handleSendMessage(
                const processedUserMessage = messagesForChatProcessing.find((msg: ChatMessage) => msg.role === 'user' && msg.id === tempUserMessageId);
                if (processedUserMessage) finalUserMessageIdToSelect = processedUserMessage.id;
            }
+           
+           logger.info('[handleSendMessage] Setting message selections:', {
+               actualNewChatId,
+               finalUserMessageIdToSelect,
+               assistantMessageId: assistantMessage.id,
+               previousSelections: selectionsForActualChat,
+               tempUserMessageId,
+               finalUserMessageFromApi: finalUserMessage?.id
+           });
+           
            if (finalUserMessageIdToSelect) selectionsForActualChat[finalUserMessageIdToSelect] = true;
            selectionsForActualChat[assistantMessage.id] = true;
            newSelectedMessagesMap[actualNewChatId] = selectionsForActualChat;
+           
+           logger.info('[handleSendMessage] Final selections for chat:', {
+               chatId: actualNewChatId,
+               selections: selectionsForActualChat
+           });
        }
 
        let updatedChatsByContext = { ...state.chatsByContext };

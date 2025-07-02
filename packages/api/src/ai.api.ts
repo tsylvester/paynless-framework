@@ -6,9 +6,12 @@ import type {
     Chat,
     ChatMessage,
     ChatApiRequest,
+    ChatHandlerSuccessResponse,
     ApiError,
     FetchOptions,
-    IAiApiClient
+    IAiApiClient,
+    TokenEstimationRequest,
+    TokenEstimationResponse
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -56,14 +59,14 @@ export class AiApiClient implements IAiApiClient {
      * Sends a chat message to the backend.
      * Handles both anonymous (isPublic: true) and authenticated requests.
      */
-    async sendChatMessage(data: ChatApiRequest, options?: FetchOptions): Promise<ApiResponse<ChatMessage>> {
+    async sendChatMessage(data: ChatApiRequest, options?: FetchOptions): Promise<ApiResponse<ChatHandlerSuccessResponse>> {
         // Validate essential data (can add more specific checks)
         if (!data.message || !data.providerId || !data.promptId) {
             const error: ApiError = { code: 'VALIDATION_ERROR', message: 'Missing required fields in chat message request' };
             return { error, status: 400 };
         }
         // Pass data and potentially undefined options to the underlying post method
-        return this.apiClient.post<ChatMessage, ChatApiRequest>('chat', data, options);
+        return this.apiClient.post<ChatHandlerSuccessResponse, ChatApiRequest>('chat', data, options);
     }
 
     /**
@@ -140,6 +143,40 @@ export class AiApiClient implements IAiApiClient {
         } else {
             logger.info(`Successfully deleted chat: ${chatId}`, { organizationId });
         }
+        return response;
+    }
+
+    /**
+     * Estimates tokens for given text or messages using server-side estimation.
+     * @param data - The token estimation request containing text/messages and model config.
+     * @param token - The user's authentication token.
+     * @returns An ApiResponse containing the estimated token count.
+     */
+    async estimateTokens(data: TokenEstimationRequest, token: string): Promise<ApiResponse<TokenEstimationResponse>> {
+        if (!data.textOrMessages || !data.modelConfig) {
+            const error: ApiError = { code: 'VALIDATION_ERROR', message: 'textOrMessages and modelConfig are required' };
+            return { error, status: 400 };
+        }
+        if (!token) {
+            const error: ApiError = { code: 'AUTH_ERROR', message: 'Authentication token is required' };
+            return { error, status: 401 };
+        }
+
+        const options: FetchOptions = { token };
+        
+        logger.info('Estimating tokens', { 
+            inputType: typeof data.textOrMessages,
+            modelStrategy: data.modelConfig.tokenization_strategy?.type 
+        });
+        
+        const response = await this.apiClient.post<TokenEstimationResponse, TokenEstimationRequest>('tokenEstimator', data, options);
+        
+        if (response.error) {
+            logger.error('Error estimating tokens:', { error: response.error });
+        } else {
+            logger.info(`Token estimation completed: ${response.data?.estimatedTokens} tokens`);
+        }
+        
         return response;
     }
 } 

@@ -17,6 +17,7 @@ import { useAiStore, initialAiStateValues } from './aiStore'; // Assuming initia
 import { act } from '@testing-library/react';
 import type { ChatMessage, AiState, User, ChatHandlerSuccessResponse, ChatApiRequest, Chat } from '@paynless/types';
 import { useAuthStore } from './authStore'; // Assuming useAuthStore is imported
+import { useWalletStore } from './walletStore'; // Add wallet store import
 // We might not need createMockAiApiClient directly if all mocking is through the hoisted functions
 // import { createMockAiApiClient, type MockedAiApiClient } from '@paynless/api/mocks';
 import type { MockedAiApiClient } from '@paynless/api/mocks';
@@ -80,7 +81,7 @@ const mockMessage = (
     id: string,
     content = 'Test message',
     role: 'user' | 'assistant' = 'user', // Added role parameter
-    userId = 'test-user' // Added userId parameter
+    userId: string | null = null // Changed to allow null and default to null
 ): ChatMessage => ({
     id,
     chat_id: chatId,
@@ -88,11 +89,13 @@ const mockMessage = (
     content,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    user_id: userId,
+    user_id: userId || (role === 'user' ? 'test-user' : null), // Auto-assign based on role if not specified
     ai_provider_id: null,
     system_prompt_id: null,
     token_usage: null,
     is_active_in_thread: true,
+    error_type: null,
+    response_to_message_id: null,
 });
 
 describe('aiStore - Message Selection Actions', () => {
@@ -103,8 +106,8 @@ describe('aiStore - Message Selection Actions', () => {
         testMockUsersGetProfile = mockedApiModule.__testMockUsersGetProfile;
         testMockApiPost = mockedApiModule.__testMockApiPost;
 
-        // Clear all mocks
-        vi.clearAllMocks(); // Clears call history, etc., for vi.fn()
+        // Clear call history for individual mocks (not implementations)
+        // vi.clearAllMocks(); // Don't use this as it clears implementations too
         
         // If resetMockAiApiClient is available and applicable for the instance type
         // from createMockAiApiClient, use it. Otherwise, clear individual methods.
@@ -115,6 +118,9 @@ describe('aiStore - Message Selection Actions', () => {
         if (testMockAiApiClient && typeof testMockAiApiClient.getChatWithMessages?.mockClear === 'function') {
             testMockAiApiClient.getChatWithMessages.mockClear();
         }
+        if (testMockAiApiClient && typeof testMockAiApiClient.estimateTokens?.mockClear === 'function') {
+            testMockAiApiClient.estimateTokens.mockClear();
+        }
         // Add .mockClear() for other methods on testMockAiApiClient as needed by tests
 
         if (testMockUsersGetProfile && typeof testMockUsersGetProfile.mockClear === 'function') {
@@ -122,6 +128,38 @@ describe('aiStore - Message Selection Actions', () => {
         }
         if (testMockApiPost && typeof testMockApiPost.mockClear === 'function') {
             testMockApiPost.mockClear();
+        }
+
+        // Set up mock implementations
+        if (testMockAiApiClient && testMockAiApiClient.estimateTokens) {
+            console.log('DEBUG: Setting up estimateTokens mock, type:', typeof testMockAiApiClient.estimateTokens);
+            testMockAiApiClient.estimateTokens.mockResolvedValue({
+                status: 200,
+                data: { estimatedTokens: 100 }
+            });
+        } else {
+            console.log('DEBUG: testMockAiApiClient or estimateTokens not available:', !!testMockAiApiClient, !!testMockAiApiClient?.estimateTokens);
+            // Manually add the estimateTokens method if it's missing
+            if (testMockAiApiClient && !testMockAiApiClient.estimateTokens) {
+                console.log('DEBUG: Manually adding estimateTokens method to mock client');
+                testMockAiApiClient.estimateTokens = vi.fn().mockResolvedValue({
+                    status: 200,
+                    data: { estimatedTokens: 100 }
+                });
+            }
+        }
+        
+        // Set up default mock implementation for sendChatMessage (will be overridden in specific tests)
+        if (testMockAiApiClient && testMockAiApiClient.sendChatMessage) {
+            testMockAiApiClient.sendChatMessage.mockResolvedValue({
+                status: 200,
+                data: {
+                    chatId: 'default-chat-id',
+                    userMessage: mockMessage('default-chat-id', 'default-user-msg', 'Default user message', 'user', 'user-123'),
+                    assistantMessage: mockMessage('default-chat-id', 'default-assistant-msg', 'Default AI response', 'assistant'),
+                    isRewind: false
+                }
+            });
         }
 
         act(() => {
@@ -377,22 +415,30 @@ describe('aiStore - Message Selection Actions', () => {
         });
 
         it('should select the new optimistic message when added to a new temporary chat', () => {
+            let newChatId: string | undefined;
             act(() => {
-                // Simulate starting a new chat (currentChatId is null or a temp id will be generated)
-                useAiStore.setState({ currentChatId: null, newChatContext: 'personal' });
-                (useAiStore.getState() as any)._addOptimisticUserMessage(optimisticMessageContent);
+                // Properly reset state for this test - clear existing chats
+                resetAiStore({ 
+                    currentChatId: null, 
+                    newChatContext: 'personal',
+                    messagesByChatId: {}, // Clear existing chats
+                    selectedMessagesMap: {} // Clear existing selections
+                });
+                const result = (useAiStore.getState() as any)._addOptimisticUserMessage(optimisticMessageContent);
+                newChatId = result.chatIdUsed;
             });
             const state = useAiStore.getState();
-            const tempChatId = Object.keys(state.messagesByChatId).find(id => id.startsWith('temp-chat-user-'));
-            expect(tempChatId).toBeDefined();
-            if (!tempChatId) return; // Guard for type checker
+            
+            // Verify the new chat was created
+            expect(newChatId).toBeDefined();
+            if (!newChatId) return; // Guard for TypeScript
+            expect(state.messagesByChatId[newChatId]).toBeDefined();
 
-            const optimisticMessage = state.messagesByChatId[tempChatId]?.find(m => m.content === optimisticMessageContent);
+            const optimisticMessage = state.messagesByChatId[newChatId]?.find(m => m.content === optimisticMessageContent);
             expect(optimisticMessage).toBeDefined();
             if (!optimisticMessage) return; // Guard
 
-            expect(state.selectedMessagesMap[tempChatId]?.[optimisticMessage.id]).toBe(true);
-             // RED: This test should initially fail until _addOptimisticUserMessage is updated
+            expect(state.selectedMessagesMap[newChatId]?.[optimisticMessage.id]).toBe(true);
         });
 
         it('should select the new optimistic message when added to an existing chat', () => {
@@ -464,8 +510,59 @@ describe('aiStore - Message Selection Actions', () => {
                     // Ensure a provider and prompt are selected for sendMessage tests
                     selectedProviderId: mockProviderId,
                     selectedPromptId: mockPromptId,
+                    availableProviders: [{
+                        id: mockProviderId,
+                        name: 'Test Provider',
+                        api_identifier: 'test-api',
+                        provider: 'test',
+                        description: 'Test provider',
+                        is_active: true,
+                        is_enabled: true,
+                        config: {
+                            input_token_cost_rate: 1.0,
+                            output_token_cost_rate: 3.0,
+                            tokenization_strategy: {
+                                type: 'rough_char_count',
+                                chars_per_token_ratio: 4.0
+                            }
+                        },
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    }],
+                    availablePrompts: [{
+                        id: mockPromptId,
+                        name: 'Test Prompt',
+                        prompt_text: 'Test system prompt',
+                        description: 'Test prompt description',
+                        version: 1,
+                        is_active: true,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    }]
                 });
                 useAuthStore.setState({ user: mockCurrentUser, session: { access_token: 'mock-token' } as any, profile: {} } as any);
+                // Mock wallet store to return a successful wallet status
+                useWalletStore.setState({
+                    currentChatWalletDecision: {
+                        outcome: 'use_personal_wallet',
+                        orgId: null
+                    },
+                    personalWallet: {
+                        walletId: 'wallet-123',
+                        balance: '1000',
+                        userId: mockCurrentUser.id,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    },
+                    isLoadingPersonalWallet: false,
+                    personalWalletError: null,
+                    organizationWallets: {},
+                    isLoadingOrgWallet: {},
+                    orgWalletErrors: {},
+                    transactionHistory: [],
+                    isLoadingTransactionHistory: false,
+                    transactionHistoryError: null
+                } as any);
             });
             
             // Clear mocks before each test to ensure isolation
@@ -498,6 +595,22 @@ describe('aiStore - Message Selection Actions', () => {
                     },
                     selectedProviderId: mockProviderId,
                     selectedPromptId: mockPromptId,
+                    availableProviders: [{
+                        id: mockProviderId,
+                        name: 'Mock Provider',
+                        api_identifier: 'mock-api',
+                        provider: 'mock',
+                        description: 'Mock provider for testing',
+                        is_active: true,
+                        is_enabled: true,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        config: {
+                            input_token_cost_rate: 1.0,
+                            output_token_cost_rate: 3.0,
+                            tokenization_strategy: { type: 'rough_char_count', chars_per_token_ratio: 4.0 }
+                        }
+                    }]
                 });
             });
 
@@ -506,14 +619,10 @@ describe('aiStore - Message Selection Actions', () => {
 
             // This is the structure the store expects in response.data
             const mockChatHandlerResponse: any = { // Temporarily use any to bypass strict type check due to IAiApiClient vs store discrepancy
-                chatId: actualChatId, // This field is not in the formal ChatHandlerSuccessResponse type
+                chatId: actualChatId, // The chat session ID
                 userMessage: finalUserMsg,
                 assistantMessage: assistantMsg,
-                originalTempId: optimisticTempId, // This field is not in the formal ChatHandlerSuccessResponse type
-                tempUserMessageId: optimisticTempId,  // This field is not in the formal ChatHandlerSuccessResponse type
-                finalUserMessageId: finalUserMsg.id, // This field is not in the formal ChatHandlerSuccessResponse type
-                assistantMessageId: assistantMsg.id, // This field is not in the formal ChatHandlerSuccessResponse type
-                isRewind: false, // ADDED: To match ChatHandlerSuccessResponse more closely
+                isRewind: false,
             };
 
             // Use the hoisted mock function
@@ -524,18 +633,26 @@ describe('aiStore - Message Selection Actions', () => {
             });
             
             await act(async () => {
-                await useAiStore.getState().sendMessage({ // CORRECTED: Pass single object argument
+                const result = await useAiStore.getState().sendMessage({ 
                     message: optimisticMessageContent, 
                     chatId: null, 
                     providerId: mockProviderId, 
                     promptId: mockPromptId 
                 });
+                console.log('DEBUG - sendMessage result:', result);
             });
 
             const { selectedMessagesMap, messagesByChatId } = useAiStore.getState();
             
-            expect(selectedMessagesMap[actualChatId]?.[finalUserMessageId]).toBe(true);
-            expect(selectedMessagesMap[actualChatId]?.[assistantMessageId]).toBe(true);
+            console.log('DEBUG - selectedMessagesMap after sendMessage:', JSON.stringify(selectedMessagesMap, null, 2));
+            console.log('DEBUG - messagesByChatId keys:', Object.keys(messagesByChatId));
+            console.log('DEBUG - actualChatId:', actualChatId);
+            console.log('DEBUG - finalUserMsg.id:', finalUserMsg.id);
+            console.log('DEBUG - assistantMsg.id:', assistantMsg.id);
+            console.log('DEBUG - tempChatId:', tempChatId);
+            
+            expect(selectedMessagesMap[actualChatId]?.[finalUserMsg.id]).toBe(true);
+            expect(selectedMessagesMap[actualChatId]?.[assistantMsg.id]).toBe(true);
             expect(selectedMessagesMap[tempChatId]).toBeUndefined();
             expect(messagesByChatId[tempChatId]).toBeUndefined();
         });
@@ -557,6 +674,22 @@ describe('aiStore - Message Selection Actions', () => {
                     },
                     selectedProviderId: mockProviderId,
                     selectedPromptId: mockPromptId,
+                    availableProviders: [{
+                        id: mockProviderId,
+                        name: 'Mock Provider',
+                        api_identifier: 'mock-api',
+                        provider: 'mock',
+                        description: 'Mock provider for testing',
+                        is_active: true,
+                        is_enabled: true,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        config: {
+                            input_token_cost_rate: 1.0,
+                            output_token_cost_rate: 3.0,
+                            tokenization_strategy: { type: 'rough_char_count', chars_per_token_ratio: 4.0 }
+                        }
+                    }]
                 });
             });
             
@@ -594,11 +727,7 @@ describe('aiStore - Message Selection Actions', () => {
                 chatId: existingChatId, 
                 userMessage: finalUserMsg,
                 assistantMessage: assistantMsg,
-                originalTempId: tempOptimisticDetails!.tempId,
-                tempUserMessageId: tempOptimisticDetails!.tempId, 
-                finalUserMessageId: finalUserMsg.id,
-                assistantMessageId: assistantMsg.id,
-                isRewind: false, // ADDED: To match ChatHandlerSuccessResponse more closely
+                isRewind: false,
             };
             
             // Use the hoisted mock function
@@ -609,18 +738,25 @@ describe('aiStore - Message Selection Actions', () => {
             });
 
             await act(async () => {
-                await useAiStore.getState().sendMessage({ // CORRECTED: Pass single object argument
+                const result = await useAiStore.getState().sendMessage({ 
                     message: optimisticMessageContent, 
                     chatId: existingChatId, 
                     providerId: mockProviderId, 
                     promptId: mockPromptId 
                 });
+                console.log('DEBUG 2 - sendMessage result:', result);
             });
 
             const { selectedMessagesMap } = useAiStore.getState();
             
-            expect(selectedMessagesMap[existingChatId]?.[finalUserMessageId]).toBe(true);
-            expect(selectedMessagesMap[existingChatId]?.[assistantMessageId]).toBe(true);
+            console.log('DEBUG 2 - selectedMessagesMap after sendMessage:', JSON.stringify(selectedMessagesMap, null, 2));
+            console.log('DEBUG 2 - existingChatId:', existingChatId);
+            console.log('DEBUG 2 - finalUserMsg.id:', finalUserMsg.id);
+            console.log('DEBUG 2 - assistantMsg.id:', assistantMsg.id);
+            console.log('DEBUG 2 - existingMsgId:', existingMsgId);
+            
+            expect(selectedMessagesMap[existingChatId]?.[finalUserMsg.id]).toBe(true);
+            expect(selectedMessagesMap[existingChatId]?.[assistantMsg.id]).toBe(true);
             expect(selectedMessagesMap[existingChatId]?.[existingMsgId]).toBe(false);
         });
     });
@@ -759,7 +895,6 @@ describe('aiStore - Message Selection Actions', () => {
         });
 
         it('should clear selections for a new temporary chat ID if one is created', () => {
-            const tempChatIdPattern = new RegExp(`^temp-chat-${userId}-[0-9]+$`);
             act(() => {
                 // Pre-populate a selection for a potential temp ID to ensure it gets cleared
                 // This scenario is a bit artificial but tests the clearing mechanism.
@@ -773,15 +908,15 @@ describe('aiStore - Message Selection Actions', () => {
 
             const { selectedMessagesMap, currentChatId } = useAiStore.getState();
             
-            expect(currentChatId).toMatch(tempChatIdPattern);
+            // The implementation now uses crypto.randomUUID() for new chat IDs
+            expect(currentChatId).toBeTruthy();
+            expect(typeof currentChatId).toBe('string');
             if (currentChatId) {
                  // Expect an empty map or undefined for the new temp chat ID, signifying cleared/default state
                 expect(selectedMessagesMap[currentChatId]).toEqual({});
             }
-            // Ensure the unrelated pre-existing selection is not touched if its ID wasn't the one generated
-            if (currentChatId !== 'temp-chat-user-123-random') {
-                expect(selectedMessagesMap['temp-chat-user-123-random']).toEqual({ 'some-message': true });
-            }
+            // Ensure the unrelated pre-existing selection is not touched since it has a different ID
+            expect(selectedMessagesMap['temp-chat-user-123-random']).toEqual({ 'some-message': true });
         });
 
         it('should initialize an empty selection map for the new currentChatId if no prior selections existed for it', () => {

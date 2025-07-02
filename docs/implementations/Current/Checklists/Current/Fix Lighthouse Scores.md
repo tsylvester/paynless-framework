@@ -75,15 +75,15 @@ The implementation will strictly follow the Test-Driven Development (TDD) approa
 **Goal:** For the best performance and smallest bundle, move the token counting logic entirely to the backend, removing the `js-tiktoken` dependency from the frontend bundle altogether.
 
 ---
-*   `[ ] 2.1 [BE]` **Create Server-Side Endpoint for Token Estimation**
-    *   `[ ] 2.1.1` Create a new Supabase Edge Function: `utils-service`.
-    *   `[ ] 2.1.2` Add an action `estimateTokens` to this service.
+*   `[✅] 2.1 [BE]` **Create Server-Side Endpoint for Token Estimation**
+    *   `[✅] 2.1.1` Create a new Supabase Edge Function: `tokenEstimator`.
+    *   `[✅] 2.1.2` Add an action `estimateTokens` to this service.
         *   The action will accept a payload: `{ textOrMessages: string | MessageForTokenCounting[], modelConfig: AiModelExtendedConfig }`.
         *   The implementation will be the logic currently in `packages/utils/src/tokenCostUtils.ts`. This function will now import `js-tiktoken` on the server, not the client.
-    *   `[ ] 2.1.3 [TEST-INT]` Write integration tests for the `estimateTokens` action.
-*   `[ ] 2.2 [API]` **Update API Client**
-    *   `[ ] 2.2.1` Add a new method `estimateTokens(payload)` to the `@paynless/api` client that invokes the new `utils-service` Edge Function.
-    *   `[ ] 2.2.2 [TEST-UNIT]` Write unit tests for the new API client method.
+    *   `[✅] 2.1.3 [TEST-INT]` Write integration tests for the `estimateTokens` action.
+*   `[✅] 2.2 [API]` **Update API Client**
+    *   `[✅] 2.2.1` Add a new method `estimateTokens(payload)` to the `@paynless/api` client that invokes the new `tokenEstimator` Edge Function.
+    *   `[✅] 2.2.2 [TEST-UNIT]` Write unit tests for the new API client method.
 *   `[ ] 2.3 [UI/REFACTOR]` **Refactor `useTokenEstimator` to use the API**
     *   `[ ] 2.3.1` Modify `apps/web/src/hooks/useTokenEstimator.ts`.
         *   `[ ]` The hook must become asynchronous, changing its signature to return an object: `{ estimatedTokens: number; isLoading: boolean; }`.
