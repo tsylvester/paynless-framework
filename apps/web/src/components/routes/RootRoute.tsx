@@ -1,4 +1,5 @@
 import { Outlet } from 'react-router-dom';
+import { Suspense } from 'react';
 import { NavigateInjector } from '../../App';
 import { Layout } from '../layout/Layout';
 
@@ -11,7 +12,16 @@ export function RootRoute() {
     <>
       <NavigateInjector />
       <Layout>
-        <Outlet /> 
+        <Suspense fallback={
+          <div className="flex items-center justify-center min-h-[50vh]">
+            <div className="flex flex-col items-center space-y-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 dark:border-white"></div>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Loading...</p>
+            </div>
+          </div>
+        }>
+          <Outlet /> 
+        </Suspense>
       </Layout>
     </>
   );

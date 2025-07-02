@@ -12,6 +12,10 @@ import {
     ChatApiResponse,
     ChatHistoryApiResponse,
     ChatMessagesApiResponse,
+    TokenEstimationRequest,
+    TokenEstimationResponse,
+    AiModelExtendedConfig,
+    MessageForTokenCounting,
 } from '@paynless/types';
 
 // Mock the base ApiClient
@@ -388,6 +392,178 @@ describe('AiApiClient', () => {
             // Assert
             expect(result.error).toEqual(errorResponse);
             expect(result.data).toBeUndefined();
+        });
+    });
+
+    // Tests for estimateTokens
+    describe('estimateTokens', () => {
+        const mockToken = 'test-auth-token';
+        
+        const mockModelConfig: AiModelExtendedConfig = {
+            api_identifier: 'gpt-4',
+            input_token_cost_rate: 0.03,
+            output_token_cost_rate: 0.06,
+            hard_cap_output_tokens: 4096,
+            tokenization_strategy: {
+                type: 'tiktoken',
+                tiktoken_encoding_name: 'cl100k_base',
+                is_chatml_model: true
+            }
+        };
+
+        const mockTokenEstimationRequest: TokenEstimationRequest = {
+            textOrMessages: 'Hello, how are you today?',
+            modelConfig: mockModelConfig
+        };
+
+        const mockTokenEstimationResponse: TokenEstimationResponse = {
+            estimatedTokens: 7
+        };
+
+        it('should call apiClient.post with the correct endpoint and data', async () => {
+            // Arrange
+            const mockResponse: ApiResponse<TokenEstimationResponse> = {
+                data: mockTokenEstimationResponse,
+                status: 200,
+            };
+            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+
+            // Act
+            await aiApiClient.estimateTokens(mockTokenEstimationRequest, mockToken);
+
+            // Assert
+            expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+            expect(mockApiClient.post).toHaveBeenCalledWith('tokenEstimator', mockTokenEstimationRequest, { token: mockToken });
+        });
+
+        it('should return the estimated tokens on successful response', async () => {
+            // Arrange
+            const mockResponse: ApiResponse<TokenEstimationResponse> = {
+                data: mockTokenEstimationResponse,
+                status: 200,
+            };
+            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+
+            // Act
+            const result = await aiApiClient.estimateTokens(mockTokenEstimationRequest, mockToken);
+
+            // Assert
+            expect(result.data).toEqual(mockTokenEstimationResponse);
+            expect(result.status).toBe(200);
+        });
+
+        it('should handle ChatML messages format', async () => {
+            // Arrange
+            const messagesRequest: TokenEstimationRequest = {
+                textOrMessages: [
+                    { role: 'system', content: 'You are a helpful assistant.' },
+                    { role: 'user', content: 'What is the capital of France?' },
+                    { role: 'assistant', content: 'The capital of France is Paris.' }
+                ] as MessageForTokenCounting[],
+                modelConfig: mockModelConfig
+            };
+            const mockResponse: ApiResponse<TokenEstimationResponse> = {
+                data: { estimatedTokens: 41 },
+                status: 200,
+            };
+            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+
+            // Act
+            const result = await aiApiClient.estimateTokens(messagesRequest, mockToken);
+
+            // Assert
+            expect(mockApiClient.post).toHaveBeenCalledWith('tokenEstimator', messagesRequest, { token: mockToken });
+            expect(result.data?.estimatedTokens).toBe(41);
+        });
+
+        it('should return validation error when textOrMessages is missing', async () => {
+            // Arrange
+            const invalidRequest = {
+                modelConfig: mockModelConfig
+            } as TokenEstimationRequest;
+
+            // Act
+            const result = await aiApiClient.estimateTokens(invalidRequest, mockToken);
+
+            // Assert
+            expect(result.error).toBeDefined();
+            expect(result.error?.message).toBe('textOrMessages and modelConfig are required');
+            expect(result.status).toBe(400);
+            expect(mockApiClient.post).not.toHaveBeenCalled();
+        });
+
+        it('should return validation error when modelConfig is missing', async () => {
+            // Arrange
+            const invalidRequest = {
+                textOrMessages: 'test message'
+            } as TokenEstimationRequest;
+
+            // Act
+            const result = await aiApiClient.estimateTokens(invalidRequest, mockToken);
+
+            // Assert
+            expect(result.error).toBeDefined();
+            expect(result.error?.message).toBe('textOrMessages and modelConfig are required');
+            expect(result.status).toBe(400);
+            expect(mockApiClient.post).not.toHaveBeenCalled();
+        });
+
+        it('should return auth error when token is missing', async () => {
+            // Act
+            const result = await aiApiClient.estimateTokens(mockTokenEstimationRequest, '');
+
+            // Assert
+            expect(result.error).toBeDefined();
+            expect(result.error?.message).toBe('Authentication token is required');
+            expect(result.status).toBe(401);
+            expect(mockApiClient.post).not.toHaveBeenCalled();
+        });
+
+        it('should return the error object on failed response from server', async () => {
+            // Arrange
+            const mockErrorResponse: ApiResponse<TokenEstimationResponse> = {
+                error: { code: 'SERVER_ERROR', message: 'Token estimation failed' },
+                status: 500,
+            };
+            (mockApiClient.post as vi.Mock).mockResolvedValue(mockErrorResponse);
+
+            // Act
+            const result = await aiApiClient.estimateTokens(mockTokenEstimationRequest, mockToken);
+
+            // Assert
+            expect(result.error).toBeDefined();
+            expect(result.error?.message).toBe('Token estimation failed');
+            expect(result.status).toBe(500);
+        });
+
+        it('should handle rough character count strategy', async () => {
+            // Arrange
+            const roughCountModelConfig: AiModelExtendedConfig = {
+                api_identifier: 'test-model',
+                input_token_cost_rate: 0.01,
+                output_token_cost_rate: 0.02,
+                hard_cap_output_tokens: 2048,
+                tokenization_strategy: {
+                    type: 'rough_char_count',
+                    chars_per_token_ratio: 4
+                }
+            };
+            const roughCountRequest: TokenEstimationRequest = {
+                textOrMessages: 'This is a test message for rough character counting.',
+                modelConfig: roughCountModelConfig
+            };
+            const mockResponse: ApiResponse<TokenEstimationResponse> = {
+                data: { estimatedTokens: 13 }, // 52 chars / 4 = 13 tokens
+                status: 200,
+            };
+            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+
+            // Act
+            const result = await aiApiClient.estimateTokens(roughCountRequest, mockToken);
+
+            // Assert
+            expect(mockApiClient.post).toHaveBeenCalledWith('tokenEstimator', roughCountRequest, { token: mockToken });
+            expect(result.data?.estimatedTokens).toBe(13);
         });
     });
 }); 

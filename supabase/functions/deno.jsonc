@@ -7,8 +7,9 @@
   },
   "nodeModulesDir": "auto",
   "imports": {
-    "stripe": "npm:stripe@^18.1.0",
-    "@types/node": "npm:@types/node@^20",
-    "@paynless/db-types": "./types_db.ts",
+    "stripe": "npm:stripe@18.0.0",
+    "stripe/": "npm:/stripe@18.0.0/",
+    "@types/node": "npm:@types/node@20",
+    "@paynless/db-types": "./types_db.ts"
   }
-} 
+}

@@ -27,12 +27,19 @@ const checkOrgWalletAffordability = (estimatedTokens: number, balanceString: str
 };
 
 export const ChatAffordabilityIndicator: React.FC<ChatAffordabilityIndicatorProps> = ({ textInput, onAffordabilityChange }) => {
-  const estimatedTokens = useTokenEstimator(textInput);
+  const { estimatedTokens, isLoading } = useTokenEstimator(textInput);
   const { canAffordNext: canAffordNextWithPersonalWallet, lowBalanceWarning: lowBalanceWarningWithPersonalWallet } = useAIChatAffordabilityStatus(estimatedTokens);
   
   const activeWalletInfo = useWalletStore(selectActiveChatWalletInfo);
 
   useEffect(() => {
+    if (isLoading) {
+      // While estimating tokens, we can't determine affordability yet.
+      // Signal this by passing `false` and a loading reason.
+      onAffordabilityChange(false, 'Estimating message size...');
+      return;
+    }
+
     let overallCanAfford = false;
     let affordabilityReason: string | undefined = undefined;
 
@@ -66,7 +73,7 @@ export const ChatAffordabilityIndicator: React.FC<ChatAffordabilityIndicatorProp
     
     onAffordabilityChange(overallCanAfford, affordabilityReason);
 
-  }, [activeWalletInfo, estimatedTokens, canAffordNextWithPersonalWallet, lowBalanceWarningWithPersonalWallet, onAffordabilityChange]);
+  }, [activeWalletInfo, estimatedTokens, isLoading, canAffordNextWithPersonalWallet, lowBalanceWarningWithPersonalWallet, onAffordabilityChange]);
 
   // This component no longer renders any direct UI based on wallet status (consent prompts, errors, etc.)
   // That is handled by WalletSelector and OrgTokenConsentModal.

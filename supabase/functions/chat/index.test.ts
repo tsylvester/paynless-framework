@@ -111,55 +111,45 @@ export const createTestDeps = (
   const mockSupabaseClientSetup = createMockSupabaseClient(testUserId, supaConfig);
   const tokenWalletServiceToUse = createMockTokenWalletService(tokenWalletConfig || {});
 
-  const filterOutHandledDepOverrides = (overrides: CoreDepsOverride): Partial<ChatHandlerDeps> => {
-    const { getAiProviderAdapter, countTokensForMessages, logger, ...rest } = overrides;
-    return rest;
-  };
+  // Start with a fresh copy of default dependencies
+  const deps: ChatHandlerDeps = { ...defaultDeps };
+  
+  // Override createSupabaseClient to use our mock
+  deps.createSupabaseClient = spy(() => mockSupabaseClientSetup.client as unknown as SupabaseClient<Database>) as any;
+  
+  // Inject the mock token wallet service instance
+  deps.tokenWalletService = tokenWalletServiceToUse.instance;
 
-  const tempDepsAsAny: any = { // Use 'any' for easier construction, then cast to ChatHandlerDeps
-    ...defaultDeps,
-    ...(pDepOverrides ? filterOutHandledDepOverrides(pDepOverrides) : {}),
-  };
-
-  tempDepsAsAny.supabaseClient = mockSupabaseClientSetup.client as unknown as SupabaseClient<Database>;
-  tempDepsAsAny.tokenWalletService = tokenWalletServiceToUse.instance;
-  if (pDepOverrides?.getAiProviderAdapter) {
-    tempDepsAsAny.getAiProviderAdapter = pDepOverrides.getAiProviderAdapter;
-  }
-  if (countTokensFnOverride) {
-    tempDepsAsAny.countTokensForMessages = countTokensFnOverride;
-  }
-
-  const baseLogger = defaultDeps.logger;
-  tempDepsAsAny.logger = pDepOverrides?.logger ? { ...baseLogger, ...pDepOverrides.logger } as Logger : baseLogger;
-
-  const initialDeps = tempDepsAsAny as ChatHandlerDeps;
-
+  // Handle AI Provider Adapter mocking
   let mockAdapterSpy: Spy<any[]> | undefined;
-  let finalGetAiProviderAdapter = initialDeps.getAiProviderAdapter;
-
   if (adapterSendMessageResult) {
     const mockAdapter = createMockAiAdapter(adapterSendMessageResult);
     mockAdapterSpy = mockAdapter.sendMessage as Spy<any[]>;
-    // If a mock adapter response is provided, the factory should return this mock adapter
-    const specificMockFactory = (_provider: string): AiProviderAdapter | null => mockAdapter;
-    finalGetAiProviderAdapter = spy(specificMockFactory);
+    // If a mock response is provided, make the factory always return this mock adapter
+    deps.getAiProviderAdapter = spy((_provider: string) => mockAdapter);
   } else {
-    // If no specific adapter result, spy on the existing getAiProviderAdapter from initialDeps
-    // This ensures we can track calls even if it's the real one or one from pDepOverrides
-    finalGetAiProviderAdapter = spy(initialDeps.getAiProviderAdapter);
+    // Otherwise, just spy on the real implementation for tracking calls
+    deps.getAiProviderAdapter = spy(deps.getAiProviderAdapter);
   }
 
-  const spiedCreateSupabaseClientFactory = spy(() => mockSupabaseClientSetup.client as unknown as SupabaseClient<Database>);
+  // Override token counting function if provided
+  if (countTokensFnOverride) {
+    deps.countTokensForMessages = countTokensFnOverride;
+  }
 
-  const finalDeps: ChatHandlerDeps = {
-    ...initialDeps, // Spread the already constructed initialDeps
-    createSupabaseClient: spiedCreateSupabaseClientFactory as any,
-    getAiProviderAdapter: finalGetAiProviderAdapter,
-  };
+  // Override logger if provided
+  if (pDepOverrides?.logger) {
+    deps.logger = { ...deps.logger, ...pDepOverrides.logger } as Logger;
+  }
+
+  // Override any other dependencies
+  if (pDepOverrides) {
+    const { getAiProviderAdapter, countTokensForMessages, logger, ...rest } = pDepOverrides;
+    Object.assign(deps, rest);
+  }
 
   return {
-    deps: finalDeps,
+    deps: deps,
     mockSupabaseClient: mockSupabaseClientSetup.client,
     mockTokenWalletService: tokenWalletServiceToUse,
     clearSupabaseClientStubs: mockSupabaseClientSetup.clearAllStubs,

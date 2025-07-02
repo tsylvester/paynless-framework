@@ -32,9 +32,22 @@ export const selectActiveChatWalletInfo = vi.fn();
 
 // Helper to initialize/reset the mock state for each test
 export const initializeMockWalletStore = (initialState?: Partial<WalletStateValues>) => {
+  // Clear any previous mock implementations or return values
+  mockGetOrLoadOrganizationWallet.mockClear();
+  mockLoadPersonalWallet.mockClear();
+  mockDetermineChatWallet.mockClear();
+  mockSetCurrentChatWalletDecision.mockClear();
+  mockResetForTesting.mockClear();
+  mockLoadTransactionHistory.mockClear();
+  mockInitiatePurchase.mockClear();
+  mockLoadOrganizationWallet.mockClear();
+  mockSetUserOrgTokenConsent.mockClear();
+  mockLoadUserOrgTokenConsent.mockClear();
+  mockClearUserOrgTokenConsent.mockClear();
+  selectActiveChatWalletInfo.mockClear();
+
   // Reset the top-level mock if tests spy on it AND expect per-test reset.
   // However, actions on the store instance are what usually matters.
-  // mockDetermineChatWallet.mockClear(); // Or reset specific mocks as needed
 
   currentMockWalletStoreState = {
     ...initialWalletStateValues,
@@ -42,7 +55,7 @@ export const initializeMockWalletStore = (initialState?: Partial<WalletStateValu
     // Assign mock functions to actions part of the store state
     getOrLoadOrganizationWallet: mockGetOrLoadOrganizationWallet,
     loadPersonalWallet: mockLoadPersonalWallet,
-    determineChatWallet: vi.fn().mockReturnValue({ outcome: 'personal', walletId: 'mock-personal-wallet-id', error: null, consentRequired: false, orgId: null }),
+    determineChatWallet: mockDetermineChatWallet,
     setCurrentChatWalletDecision: mockSetCurrentChatWalletDecision,
     _resetForTesting: mockResetForTesting, 
     loadTransactionHistory: mockLoadTransactionHistory,

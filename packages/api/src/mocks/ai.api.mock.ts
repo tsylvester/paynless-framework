@@ -26,6 +26,7 @@ export const createMockAiApiClient = (): MockedAiApiClient => ({
     getChatHistory: vi.fn() as Mock<Parameters<IAiApiClient['getChatHistory']>, ReturnType<IAiApiClient['getChatHistory']>>,
     getChatWithMessages: vi.fn() as Mock<Parameters<IAiApiClient['getChatWithMessages']>, ReturnType<IAiApiClient['getChatWithMessages']>>,
     deleteChat: vi.fn() as Mock<Parameters<IAiApiClient['deleteChat']>, ReturnType<IAiApiClient['deleteChat']>>,
+    estimateTokens: vi.fn() as Mock<Parameters<IAiApiClient['estimateTokens']>, ReturnType<IAiApiClient['estimateTokens']>>,
     // Cast the entire object to MockedAiApiClient to satisfy the type.
     // This is safe because we are manually constructing the object to match the MockedAiApiClient structure.
 }) as unknown as MockedAiApiClient; // Keep as unknown as MockedAiApiClient for the overall object cast

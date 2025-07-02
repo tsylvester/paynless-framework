@@ -15,30 +15,30 @@ import type {
 import { 
   CHAT_FUNCTION_URL, 
   type ProcessedResourceInfo,
-  currentTestDeps as cTestDeps, // Static import
-  mockAiAdapter as cMockAiAdapter,   // Static import
-  supabaseAdminClient as scAdminClient, // Static import
-  getTestUserAuthToken               // Static import
+  currentTestDeps,
+  mockAiAdapter,
+  supabaseAdminClient,
+  getTestUserAuthToken
 } from "../_shared/_integration.test.utils.ts"; 
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 import type { MockQueryBuilderState, MockResolveQueryResult, MockPGRSTError } from "../_shared/supabase.mock.ts";
-import { handler as cHandler, defaultDeps as cChatDefaultDeps } from "./index.ts"; // Static import
+import { handler, defaultDeps } from "./index.ts"; // Static import
 import type { SupabaseClient } from "npm:@supabase/supabase-js";
 import type { Database, Json } from "../types_db.ts";
 
 // Helper function to create ChatHandlerDeps
 const createDepsForEdgeCaseTest = (): ChatHandlerDeps => {
   const deps: ChatHandlerDeps = {
-    ...cChatDefaultDeps,
-    logger: cTestDeps.logger,
+    ...defaultDeps,
+    logger: currentTestDeps.logger,
     getAiProviderAdapter: (
       _providerApiIdentifier: string,
       _providerDbConfig: Json | null,
       _apiKey: string,
       _loggerFromDep?: ILogger
-    ): AiProviderAdapter => cMockAiAdapter,
-    supabaseClient: cTestDeps.supabaseClient || undefined,
-    createSupabaseClient: cTestDeps.createSupabaseClient || cChatDefaultDeps.createSupabaseClient,
+    ): AiProviderAdapter => mockAiAdapter,
+    supabaseClient: currentTestDeps.supabaseClient || undefined,
+    createSupabaseClient: currentTestDeps.createSupabaseClient || defaultDeps.createSupabaseClient,
   };
   return deps;
 };
@@ -59,12 +59,12 @@ export async function runEdgeCaseTests(
     // Removed dynamic imports, using static ones now
     const currentAuthToken = getTestUserAuthToken();
     assertExists(currentAuthToken, "Test user auth token was not set.");
-    assertExists(scAdminClient, "Shared Supabase Admin Client is not initialized.");
-    assertExists(cTestDeps, "Shared Test Deps are not initialized.");
-    assertExists(cHandler, "Chat handler is not available from utils."); // cHandler is now static
-    assertExists(cMockAiAdapter, "Mock AI adapter is not available from utils.");
+    assertExists(supabaseAdminClient, "Shared Supabase Admin Client is not initialized.");
+    assertExists(currentTestDeps, "Shared Test Deps are not initialized.");
+    assertExists(handler, "Chat handler is not available from utils."); // cHandler is now static
+    assertExists(mockAiAdapter, "Mock AI adapter is not available from utils.");
 
-    const { data: providerData, error: providerError } = await scAdminClient
+    const { data: providerData, error: providerError } = await supabaseAdminClient
       .from("ai_providers")
       .select("id, api_identifier, config")
       .eq("api_identifier", "gpt-3.5-turbo-test")
@@ -86,16 +86,16 @@ export async function runEdgeCaseTests(
       body: JSON.stringify(requestBody),
     });
 
-    const response = await cHandler(request, createDepsForEdgeCaseTest()); // Use helper
+    const response = await handler(request, createDepsForEdgeCaseTest()); // Use helper
 
     const responseJsonForInsufficientBalance = await response.json();
     assertEquals(response.status, 402, "Expected 402 Payment Required due to insufficient funds pre-check. Body: " + JSON.stringify(responseJsonForInsufficientBalance));
     assertStringIncludes(responseJsonForInsufficientBalance.error, "Insufficient token balance");
 
-    const recordedCalls = cMockAiAdapter.getRecordedCalls();
+    const recordedCalls = mockAiAdapter.getRecordedCalls();
     assertEquals(recordedCalls.length, 0, "AI adapter should not have been called.");
 
-    const { data: wallet, error: walletErr } = await scAdminClient
+    const { data: wallet, error: walletErr } = await supabaseAdminClient
       .from("token_wallets")
       .select("balance")
       .eq("user_id", testUserId)
@@ -115,12 +115,12 @@ export async function runEdgeCaseTests(
     // Removed dynamic imports
     const currentAuthToken = getTestUserAuthToken();
     assertExists(currentAuthToken, "Test user auth token was not set for AI error test.");
-    assertExists(scAdminClient, "Shared Supabase Admin Client is not initialized for AI error test.");
-    assertExists(cTestDeps, "Shared Test Deps are not initialized for AI error test.");
-    assertExists(cHandler, "Chat handler is not available from utils for AI error test.");
-    assertExists(cMockAiAdapter, "Mock AI adapter is not available from utils for AI error test.");
+    assertExists(supabaseAdminClient, "Shared Supabase Admin Client is not initialized for AI error test.");
+    assertExists(currentTestDeps, "Shared Test Deps are not initialized for AI error test.");
+    assertExists(handler, "Chat handler is not available from utils for AI error test.");
+    assertExists(mockAiAdapter, "Mock AI adapter is not available from utils for AI error test.");
 
-    const { data: providerData, error: providerError } = await scAdminClient
+    const { data: providerData, error: providerError } = await supabaseAdminClient
       .from("ai_providers")
       .select("id, api_identifier")
       .eq("api_identifier", "gpt-3.5-turbo-test")
@@ -132,7 +132,7 @@ export async function runEdgeCaseTests(
     const providerApiIdentifier = providerData.api_identifier;
 
     const simulatedError = new Error("Simulated AI Provider API Key Error");
-    cMockAiAdapter.setMockError(providerApiIdentifier, simulatedError.message, 502);
+    mockAiAdapter.setMockError(providerApiIdentifier, simulatedError.message, 502);
 
     const requestBody: ChatApiRequest = {
       providerId: actualProviderDbId,
@@ -146,14 +146,14 @@ export async function runEdgeCaseTests(
       body: JSON.stringify(requestBody),
     });
 
-    const response = await cHandler(request, createDepsForEdgeCaseTest()); // Use helper
+    const response = await handler(request, createDepsForEdgeCaseTest()); // Use helper
     const responseJsonForAiError = await response.json();
     assertEquals(response.status, 502, "Expected 502 Bad Gateway due to AI provider error. Body: " + JSON.stringify(responseJsonForAiError));
 
     assertExists(responseJsonForAiError.error, "Response JSON should contain a top-level error field for AI provider errors.");
     assertStringIncludes(responseJsonForAiError.error, simulatedError.message, "Error message in response should include the simulated error message from mock.");
 
-    const { data: wallet, error: walletError } = await scAdminClient
+    const { data: wallet, error: walletError } = await supabaseAdminClient
       .from("token_wallets")
       .select("balance")
       .eq("user_id", testUserId)
@@ -164,7 +164,7 @@ export async function runEdgeCaseTests(
     assertExists(wallet, "Wallet not found for user.");
     assertEquals(wallet.balance, initialBalance, "Wallet balance should not have changed after AI provider error.");
 
-    const { data: userMessages, error: userMessageError } = await scAdminClient
+    const { data: userMessages, error: userMessageError } = await supabaseAdminClient
       .from("chat_messages")
       .select("*")
       .eq("user_id", testUserId)
@@ -176,7 +176,7 @@ export async function runEdgeCaseTests(
     assertNotEquals(userMessages.length, 0, "User message should have been saved.");
     assertEquals(userMessages[0].content, requestBody.message);
 
-    const { data: assistantMessages, error: assistantMessageError } = await scAdminClient
+    const { data: assistantMessages, error: assistantMessageError } = await supabaseAdminClient
       .from("chat_messages")
       .select("*")
       // .eq("user_id", testUserId) // Assistant messages don't have user_id directly populated this way
@@ -192,6 +192,64 @@ export async function runEdgeCaseTests(
     assertStringIncludes(assistantMessages[0].content ?? "", simulatedError.message);
   });
 
+  await t.step("[Edge Case] Insufficient balance AFTER AI call (costlier than expected)", async () => {
+    const initialBalance = 100;
+    const { primaryUserId: testUserId } = await initializeTestGroupEnvironment({
+        userProfile: { first_name: "Post-AI-Insufficient-Balance User" },
+        initialWalletBalance: initialBalance,
+    });
+
+    const currentAuthToken = getTestUserAuthToken();
+    assertExists(currentAuthToken, "Test user auth token was not set.");
+    assertExists(supabaseAdminClient, "Shared Supabase Admin Client is not initialized.");
+    assertExists(currentTestDeps, "Shared Test Deps are not initialized.");
+    assertExists(handler, "Chat handler is not available from utils.");
+    assertExists(mockAiAdapter, "Mock AI adapter is not available from utils.");
+
+    const { data: providerData, error: providerError } = await supabaseAdminClient
+        .from("ai_providers")
+        .select("id, api_identifier, config")
+        .eq("api_identifier", "gpt-3.5-turbo-test")
+        .single();
+    if (providerError) throw providerError;
+    assertExists(providerData, "Provider data for 'gpt-3.5-turbo-test' not found.");
+    const actualProviderDbId = providerData.id;
+    const providerApiIdentifier = providerData.api_identifier;
+
+    // This usage is higher than the initial balance of 100
+    const mockAiTokenUsage: TokenUsage = { prompt_tokens: 50000, completion_tokens: 50000, total_tokens: 100000 };
+    mockAiAdapter.setSimpleMockResponse(providerApiIdentifier, "This response is too expensive.", actualProviderDbId, null, mockAiTokenUsage);
+
+    const requestBody: ChatApiRequest = {
+        providerId: actualProviderDbId,
+        promptId: "__none__",
+        message: "This message will generate a response that is too expensive.",
+    };
+
+    const request = new Request(CHAT_FUNCTION_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentAuthToken}` },
+        body: JSON.stringify(requestBody),
+    });
+
+    const response = await handler(request, createDepsForEdgeCaseTest());
+    const responseJson = await response.json();
+
+    assertEquals(response.status, 402, `Expected 402 Payment Required due to insufficient funds post-check. Body: ${JSON.stringify(responseJson)}`);
+    assertExists(responseJson.error, "Response should contain an error message.");
+    assertStringIncludes(responseJson.error, "Insufficient funds for the actual cost of the AI operation.");
+
+    const { data: wallet, error: walletErr } = await supabaseAdminClient
+        .from("token_wallets")
+        .select("balance")
+        .eq("user_id", testUserId)
+        .is("organization_id", null)
+        .single();
+    if (walletErr) throw walletErr;
+    assertExists(wallet, "Wallet data not found for the user.");
+    assertEquals(wallet.balance, initialBalance, "Wallet balance should remain unchanged after a failed transaction.");
+  });
+
   await t.step("[Edge Case] Database error during message saving (after AI call & debit)", async () => {
     const initialBalance = 10000;
     const { primaryUserId: testUserId } = await initializeTestGroupEnvironment({
@@ -201,12 +259,12 @@ export async function runEdgeCaseTests(
     // Removed dynamic imports
     const currentAuthToken = getTestUserAuthToken();
     assertExists(currentAuthToken);
-    assertExists(scAdminClient);
-    assertExists(cTestDeps);
-    assertExists(cHandler);
-    assertExists(cMockAiAdapter);
+    assertExists(supabaseAdminClient);
+    assertExists(currentTestDeps);
+    assertExists(handler);
+    assertExists(mockAiAdapter);
 
-    const { data: realProviderDataFromDB, error: providerError } = await scAdminClient
+    const { data: realProviderDataFromDB, error: providerError } = await supabaseAdminClient
         .from("ai_providers")
         .select("id, api_identifier, config, name, provider, is_active")
         .eq("api_identifier", "gpt-3.5-turbo-test")
@@ -220,7 +278,7 @@ export async function runEdgeCaseTests(
 
     const mockAiContent = "Mock AI success response content.";
     const mockAiTokenUsage: TokenUsage = { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 };
-    cMockAiAdapter.setSimpleMockResponse(providerApiIdentifier, mockAiContent, actualProviderDbId, null, mockAiTokenUsage);
+    mockAiAdapter.setSimpleMockResponse(providerApiIdentifier, mockAiContent, actualProviderDbId, null, mockAiTokenUsage);
 
     const testMessageContent = "Test message that will trigger DB error for assistant msg";
     const requestBody: ChatApiRequest = {
@@ -348,23 +406,25 @@ export async function runEdgeCaseTests(
         }
     );
     
-    const originalSupabaseClient = cTestDeps.supabaseClient;
-    cTestDeps.supabaseClient = mockSupabaseSetup.client as any; // Set the specific mock client
+    const originalSupabaseClient = currentTestDeps.supabaseClient;
+    currentTestDeps.supabaseClient = mockSupabaseSetup.client as unknown as SupabaseClient<Database>; // Set the specific mock client
     let response;
     try {
-      response = await cHandler(request, createDepsForEdgeCaseTest()); // Use helper
+      response = await handler(request, createDepsForEdgeCaseTest()); // Use helper
     } finally {
-      cTestDeps.supabaseClient = originalSupabaseClient; // Restore original client
+      currentTestDeps.supabaseClient = originalSupabaseClient; // Restore original client
     }
 
     const responseJson = await response.json();
     assertEquals(response.status, 500, "Expected 500 Internal Server Error due to DB failure saving assistant message. Body: " + JSON.stringify(responseJson));
     
     assertExists(responseJson.error, "Response JSON should contain an error field.");
+    assertStringIncludes(responseJson.error, "Database error during message persistence", 
+      `Error message should be from the simulated DB error. Expected to include: 'Database error during message persistence', Got: '${responseJson.error}'`);
     assertStringIncludes(responseJson.error, simulatedAssistantInsertError.message, 
-      `Error message should be from the simulated DB error. Expected to include: '${simulatedAssistantInsertError.message}', Got: '${responseJson.error}'`);
+      `Error message should include details from the simulated DB error. Expected to include: '${simulatedAssistantInsertError.message}', Got: '${responseJson.error}'`);
 
-    const { data: walletAfter, error: walletErrAfter } = await scAdminClient
+    const { data: walletAfter, error: walletErrAfter } = await supabaseAdminClient
       .from("token_wallets")
       .select("balance")
       .eq("user_id", testUserId)
@@ -372,12 +432,9 @@ export async function runEdgeCaseTests(
       .single();
     if (walletErrAfter) throw walletErrAfter;
     assertExists(walletAfter, "Wallet data was null for the user after the operation.");
-    const modelConfig = realProviderDataFromDB.config as unknown as AiModelExtendedConfig;
-    const { calculateActualChatCost: calcCost } = await import("../_shared/utils/cost_utils.ts");
-    const expectedCost = calcCost(mockAiTokenUsage, modelConfig, cTestDeps.logger);
-    const expectedBalanceAfter = initialBalance - expectedCost;
-    assertEquals(walletAfter.balance, expectedBalanceAfter, 
-      `Wallet balance should reflect debit. Expected: ${expectedBalanceAfter}, Got: ${walletAfter.balance}. Cost: ${expectedCost}`);
+    
+    assertEquals(walletAfter.balance, initialBalance, 
+      `Wallet balance should be restored to initial balance after DB error. Expected: ${initialBalance}, Got: ${walletAfter.balance}`);
 
     assertEquals(userMessageInsertCount, 2, "Expected two insert attempts to chat_messages (user, then assistant).");
   });

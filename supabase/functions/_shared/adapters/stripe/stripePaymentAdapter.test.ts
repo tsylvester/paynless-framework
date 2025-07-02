@@ -80,7 +80,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     Deno.env.set('SITE_URL', MOCK_SITE_URL);
     Deno.env.set('STRIPE_WEBHOOK_SECRET', MOCK_WEBHOOK_SECRET);
     mockStripe = createMockStripe();
-    mockSupabaseSetup = createMockSupabaseClient(supabaseConfig);
+    mockSupabaseSetup = createMockSupabaseClient(undefined, supabaseConfig);
     mockTokenWalletService = createMockTokenWalletService();
 
     adapter = new StripePaymentAdapter(

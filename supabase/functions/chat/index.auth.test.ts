@@ -137,7 +137,6 @@ Deno.test("Chat Auth Tests", async (t) => {
           organization_id: null,
           user_id: ChatTestConstants.testUserId
         }),
-        checkBalance: () => Promise.resolve(true),
         recordTransaction: () => Promise.resolve({ 
           transactionId: "txn_123",
           walletId: "test-wallet-id",
@@ -158,7 +157,7 @@ Deno.test("Chat Auth Tests", async (t) => {
             ...mockSupaConfigBase.genericMockResults,
             // Ensure critical selects for a new chat succeed
             'ai_providers': {
-                select: { data: [{ id: ChatTestConstants.testProviderId, name: "Test Provider Active", api_identifier: ChatTestConstants.testApiIdentifier, provider: ChatTestConstants.testProviderString, is_active: true, default_model_id: "some-model", config: { api_identifier: ChatTestConstants.testApiIdentifier, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } } }], error: null, status: 200, count: 1 }
+                select: { data: [{ id: ChatTestConstants.testProviderId, name: "Test Provider Active", api_identifier: ChatTestConstants.testApiIdentifier, provider: ChatTestConstants.testProviderString, is_active: true, default_model_id: "some-model", config: { api_identifier: ChatTestConstants.testApiIdentifier, input_token_cost_rate: 1, output_token_cost_rate: 2, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } } }], error: null, status: 200, count: 1 }
             },
             'system_prompts': {
                 select: { data: [{ id: ChatTestConstants.testPromptId, prompt_text: 'Test system prompt', is_active: true }], error: null, status: 200, count: 1 }
@@ -228,9 +227,6 @@ Deno.test("Chat Auth Tests", async (t) => {
       const getWalletSpy = deps.tokenWalletService!.getWalletForContext as Spy<any, any[], any>;
       assertEquals(getWalletSpy.calls.length, 1);
       // assertEquals(getWalletSpy.calls[0].args, [ChatTestConstants.testUserId, undefined]); // Example arg check
-
-      const checkBalanceSpy = deps.tokenWalletService!.checkBalance as Spy<any, any[], any>;
-      assertEquals(checkBalanceSpy.calls.length, 1);
 
       const recordTransactionSpy = deps.tokenWalletService!.recordTransaction as Spy<any, any[], any>;
       assertEquals(recordTransactionSpy.calls.length, 1);

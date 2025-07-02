@@ -370,14 +370,31 @@ export interface ChatContextPreferences {
 /**
  * Defines the public contract for the AiApiClient.
  */
+/**
+ * Request structure for token estimation.
+ */
+export interface TokenEstimationRequest {
+  textOrMessages: string | MessageForTokenCounting[];
+  modelConfig: AiModelExtendedConfig;
+}
+
+/**
+ * Response structure for token estimation.
+ */
+export interface TokenEstimationResponse {
+  estimatedTokens: number;
+}
+
 export interface IAiApiClient {
   getAiProviders(token?: string): Promise<ApiResponse<AiProvider[]>>;
   getSystemPrompts(token?: string): Promise<ApiResponse<SystemPrompt[]>>;
-  sendChatMessage(data: ChatApiRequest, options?: RequestInit): Promise<ApiResponse<ChatMessage>>;
+  sendChatMessage(data: ChatApiRequest, options?: RequestInit): Promise<ApiResponse<ChatHandlerSuccessResponse>>;
   getChatHistory(token: string, organizationId?: string | null): Promise<ApiResponse<Chat[]>>;
   getChatWithMessages(chatId: string, token: string, organizationId?: string | null): Promise<ApiResponse<{ chat: Chat, messages: ChatMessage[] }>>;
   deleteChat(chatId: string, token: string, organizationId?: string | null): Promise<ApiResponse<void>>;
-  // Add other public methods of AiApiClient here if any
+  
+  // Token estimation methods
+  estimateTokens(data: TokenEstimationRequest, token: string): Promise<ApiResponse<TokenEstimationResponse>>;
 }
 
 // --- Initial State Values (for direct use in create) ---

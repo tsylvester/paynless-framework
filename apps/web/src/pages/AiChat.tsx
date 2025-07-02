@@ -182,11 +182,13 @@ export default function AiChatPage() {
     startNewChat(contextForNewChat);
   };
 
-  const activeContextIdForHistory = newChatContext === undefined ? globalCurrentOrgId : newChatContext;
+  const activeContextIdFromStores = newChatContext === undefined ? globalCurrentOrgId : newChatContext;
+  // Canonize 'personal' as the string identifier for the personal context.
+  const activeContextIdForHistory = activeContextIdFromStores === null ? 'personal' : activeContextIdFromStores;
   
   const contextTitleForHistory = useMemo(() => {
     if (typeof activeContextIdForHistory === 'undefined') return 'Loading History...'; 
-    if (activeContextIdForHistory === null) return 'Personal Chat History';
+    if (activeContextIdForHistory === 'personal') return 'Personal Chat History';
     const org = userOrganizations.find(o => o.id === activeContextIdForHistory);
     return org ? `${org.name} Chat History` : 'Organization Chat History';
   }, [activeContextIdForHistory, userOrganizations]);
@@ -248,29 +250,15 @@ export default function AiChatPage() {
               {isDetailsLoading ? (
                 <>
                   {/* Conditional console.log for debugging */}
-                  {typeof window !== 'undefined' && console.log("AiChatPage: Rendering SKELETONS because isDetailsLoading is true")}
-                  <div className="space-y-4 p-4">
-                    <Skeleton className="h-16 w-3/4" />
-                    <Skeleton className="h-12 w-1/2 self-end ml-auto" />
-                    <Skeleton className="h-20 w-3/4" />
-                    <Skeleton className="h-10 w-2/5 self-end ml-auto" />
+                  {console.log("[AiChatPage] Details are loading, showing skeleton...")}
+                  <div className="space-y-4">
+                    <Skeleton className="h-16 w-full" />
+                    <Skeleton className="h-24 w-full" />
+                    <Skeleton className="h-16 w-3/4 ml-auto" />
                   </div>
                 </>
               ) : (
-                <>
-                  {/* Conditional console.log for debugging */}
-                  {typeof window !== 'undefined' && console.log("AiChatPage: Rendering AiChatbox because isDetailsLoading is false")}
-                  <AiChatbox 
-                    // Example: Disable chatbox based on wallet outcome
-                    disabled={(
-                      effectiveOutcome.outcome === 'user_consent_required' || 
-                      effectiveOutcome.outcome === 'user_consent_refused' || 
-                      effectiveOutcome.outcome === 'org_wallet_not_available_policy_org' ||
-                      effectiveOutcome.outcome === 'loading' ||
-                      effectiveOutcome.outcome === 'error'
-                    ) && !!newChatContext} // only disable if in an org context with these issues
-                  />
-                </>
+                <AiChatbox />
               )}
             </div>
           </div>

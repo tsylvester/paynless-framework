@@ -17,7 +17,7 @@ import {
   type SpyCall,
   type Spy
 } from 'jsr:@std/testing@0.225.1/mock';
-import { createMockStripe, MockStripe } from '../../../stripe.mock.ts';
+import { createMockStripe, MockStripe, createMockInvoicePaymentSucceededEvent, createMockInvoiceLineItem } from '../../../stripe.mock.ts';
 import { createMockSupabaseClient, MockSupabaseClientSetup, MockSupabaseDataConfig, MockQueryBuilderState } from '../../../supabase.mock.ts';
 import { createMockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
 import { Database } from '../../../../types_db.ts';
@@ -27,69 +27,7 @@ import { HandlerContext } from '../../../stripe.mock.ts';
 
 const FREE_TIER_ITEM_ID_INTERNAL_INVOICE_TESTS = 'SYS_FREE_TIER'; // If needed for any logic here
 
-// Helper to create a mock Stripe.InvoicePaymentSucceededEvent
-const createMockInvoicePaymentSucceededEvent = (
-  invoiceData: Partial<Stripe.Invoice>,
-  lineItemPriceId?: string | null, // explicitly pass null if no price for line item
-  id = `evt_inv_paysucceeded_${Date.now()}`
-): Stripe.InvoicePaymentSucceededEvent => {
-  const now = Math.floor(Date.now() / 1000);
-  const subscriptionId = invoiceData.subscription || `sub_default_${Date.now()}`;
 
-  const lineItems: Stripe.InvoiceLineItem[] = [];
-  if (lineItemPriceId !== null) { // Only add line item if priceId is not explicitly null
-    lineItems.push({
-      id: `il_default_${Date.now()}`,
-      object: 'line_item',
-      price: lineItemPriceId ? { 
-        id: lineItemPriceId, 
-        object: 'price', 
-        active: true, 
-        currency: invoiceData.currency || 'usd',
-        product: `prod_default_${Date.now()}`,
-        // Add other Stripe.Price fields if necessary for tests
-      } as Stripe.Price : undefined,
-      quantity: 1,
-      amount: invoiceData.amount_paid || 1000, // Default to 1000 cents
-      currency: invoiceData.currency || 'usd',
-      description: 'Default line item',
-      // Add other Stripe.InvoiceLineItem fields if necessary for tests
-      period: { start: now - 3600, end: now + 3600 },
-      proration: false,
-      subscription: typeof subscriptionId === 'string' ? subscriptionId : subscriptionId?.id,
-      type: 'subscription', // or 'invoiceitem' depending on test case
-    } as Stripe.InvoiceLineItem);
-  }
-  
-  return {
-    id,
-    object: "event",
-    api_version: "2020-08-27",
-    created: now,
-    data: {
-      object: {
-        id: `in_default_${Date.now()}`,
-        object: "invoice",
-        status: "paid",
-        customer: `cus_default_${Date.now()}`,
-        subscription: subscriptionId,
-        currency: 'usd',
-        amount_paid: 1000,
-        lines: {
-          object: 'list',
-          data: lineItems,
-          has_more: false,
-          url: `/v1/invoices/in_default_${Date.now()}/lines`,
-        },
-        ...invoiceData,
-      } as Stripe.Invoice,
-    },
-    livemode: false,
-    pending_webhooks: 0,
-    request: { id: `req_default_${Date.now()}`, idempotency_key: null },
-    type: "invoice.payment_succeeded",
-  } as Stripe.InvoicePaymentSucceededEvent;
-};
 
 // Mock Logger for this suite
 const createMockInvoiceLogger = (): ILogger => {
@@ -149,15 +87,20 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
     const tokensToAwardForPlan = 300; // This will NOT be awarded
     const mockPaymentTxId = 'ptxn_sub_retrieve_fail_789';
 
-    const mockEvent = createMockInvoicePaymentSucceededEvent(
-      {
-        id: mockInvoiceId,
-        customer: mockStripeCustomerId,
-        subscription: mockSubscriptionId,
-        amount_paid: 1500,
-      },
-      mockStripePriceId
-    );
+    const mockEvent = createMockInvoicePaymentSucceededEvent({
+      id: mockInvoiceId,
+      customer: mockStripeCustomerId,
+      amount_paid: 1500,
+      lines: {
+        object: 'list',
+        data: [createMockInvoiceLineItem({ 
+          subscription: mockSubscriptionId,
+          price: { id: mockStripePriceId }
+        } as any)],
+        has_more: false,
+        url: `/v1/invoices/${mockInvoiceId}/lines`,
+      }
+    });
 
     const dbConfig: MockSupabaseDataConfig = {
       genericMockResults: {
@@ -254,7 +197,7 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
 
   await t.step('Error - Idempotency check DB error', async () => {
     const mockInvoiceId = 'in_idempotency_db_error';
-    const mockEvent = createMockInvoicePaymentSucceededEvent({ id: mockInvoiceId }, 'price_irrelevant');
+    const mockEvent = createMockInvoicePaymentSucceededEvent({ id: mockInvoiceId });
     const dbError = { name: 'PostgrestError', message: 'Mock DB error during idempotency check', code: 'XXYYZ' };
 
     setupInvoiceMocks({
@@ -287,7 +230,7 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
   await t.step('Error - User not found (404)', async () => {
     const mockStripeCustomerId = 'cus_user_not_found';
     const mockInvoiceId = 'in_user_not_found';
-    const mockEvent = createMockInvoicePaymentSucceededEvent({ customer: mockStripeCustomerId, id: mockInvoiceId }, 'price_irrelevant');
+    const mockEvent = createMockInvoicePaymentSucceededEvent({ customer: mockStripeCustomerId, id: mockInvoiceId });
     const dbError = { name: 'PostgrestError', message: 'User not found', code: 'PGRST116' }; // Simulate PostgREST "no rows"
 
     setupInvoiceMocks({
@@ -321,7 +264,7 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
     const mockUserId = 'user_wallet_not_found';
     const mockStripeCustomerId = 'cus_wallet_not_found';
     const mockInvoiceId = 'in_wallet_not_found';
-    const mockEvent = createMockInvoicePaymentSucceededEvent({ customer: mockStripeCustomerId, id: mockInvoiceId }, 'price_irrelevant');
+    const mockEvent = createMockInvoicePaymentSucceededEvent({ customer: mockStripeCustomerId, id: mockInvoiceId });
     const dbError = { name: 'PostgrestError', message: 'Wallet not found', code: 'PGRST116' };
 
     setupInvoiceMocks({
@@ -361,9 +304,16 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
       {
         id: mockInvoiceId,
         customer: mockStripeCustomerId,
-        subscription: mockSubscriptionId, 
-      },
-      mockStripePriceId 
+        lines: {
+          object: 'list',
+          data: [createMockInvoiceLineItem({ 
+            subscription: mockSubscriptionId,
+            price: { id: mockStripePriceId }
+          } as any)],
+          has_more: false,
+          url: `/v1/invoices/${mockInvoiceId}/lines`,
+        }
+      }
     );
 
     const dbConfig: MockSupabaseDataConfig = {
@@ -404,7 +354,8 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
           select: async (state: MockQueryBuilderState) => { // This will be called by retrieveSubscriptionPlanDetails
             if (state.filters.some((f: any) => f.column === 'stripe_price_id' && f.value === mockStripePriceId)) {
               console.log(`[Test Mock] subscription_plans.select for ${mockStripePriceId} - simulating plan not found in DB.`);
-              return { data: null, error: null, count: 0, status: 404, statusText: 'Not Found' }; // Plan not found
+              const pgrst116Error = { name: 'PostgrestError', message: 'Query returned no rows', code: 'PGRST116' };
+              return { data: null, error: pgrst116Error as any, count: 0, status: 406, statusText: 'Not Found' }; // Plan not found
             }
             return { data: null, error: new Error('Mock: Unexpected subscription_plans select for plan not found test'), count: 0, status: 500, statusText: 'Error' };
           }
@@ -428,8 +379,7 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
     const recordTxSpy = mockTokenWalletService.stubs.recordTransaction;
 
     // Expect the handler to reject due to the PGRST116 error from retrieveSubscriptionPlanDetails
-    const expectedErrorName = 'PGRST116';
-    const expectedErrorMessage = 'Query returned no rows (data was null after .single())';
+    const expectedErrorMessage = 'Query returned no rows';
 
     await assertRejects(
       () => handleInvoicePaymentSucceeded(handlerContext, mockEvent),
@@ -471,7 +421,7 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
       const errorObj = metadata?.errorObj as any; // errorObj from retrieveSubscriptionPlanDetails's catch
       
       return logMessage.includes(`[retrieveSubscriptionPlanDetails] Error during subscription/plan retrieval for ${mockSubscriptionId}`) &&
-             errorObj && errorObj.name === expectedErrorName && errorObj.message === expectedErrorMessage;
+             errorObj && errorObj.name === 'PostgrestError' && errorObj.code === 'PGRST116';
     });
     
     assert(pgrst116LogFound, 

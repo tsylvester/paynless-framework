@@ -44,7 +44,7 @@ const ChatInput: React.FC<ChatInputProps> = (/* Removed currentChatSession prop 
   const selectedMessages = useAiStore(selectCurrentChatMessages); // Moved to top level
 
   // Token estimation and affordability using local inputMessage
-  const estimatedTokens = useTokenEstimator(inputMessage);
+  const { estimatedTokens, isLoading: isLoadingTokens } = useTokenEstimator(inputMessage);
   const { canAffordNext, lowBalanceWarning, currentBalance } = useAIChatAffordabilityStatus(estimatedTokens);
 
   React.useEffect(() => {
@@ -66,7 +66,7 @@ const ChatInput: React.FC<ChatInputProps> = (/* Removed currentChatSession prop 
 
 
   const handleSend = async () => {
-    if (!inputMessage.trim() || isLoadingAiResponse || !canAffordNext) return;
+    if (!inputMessage.trim() || isLoadingAiResponse || isLoadingTokens || !canAffordNext) return;
     clearAiError();
 
     const { selectedProviderId, selectedPromptId } = useAiStore.getState();
@@ -124,7 +124,7 @@ const ChatInput: React.FC<ChatInputProps> = (/* Removed currentChatSession prop 
     setInputMessage(''); // Clear local inputMessage when cancelling rewind
   };
 
-  const sendButtonDisabled = isLoadingAiResponse || !inputMessage.trim() || !canAffordNext;
+  const sendButtonDisabled = isLoadingAiResponse || isLoadingTokens || !inputMessage.trim() || !canAffordNext;
 
   return (
     <div className="flex flex-col space-y-2">

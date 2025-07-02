@@ -444,7 +444,6 @@ Deno.test('handlePriceUpdated specific tests', async (t) => {
           recurring: {
             interval: newInterval,
             interval_count: newIntervalCount,
-            aggregate_usage: null,
             usage_type: 'licensed',
             trial_period_days: null,
             meter: null, 
@@ -495,7 +494,6 @@ Deno.test('handlePriceUpdated specific tests', async (t) => {
           recurring: { 
             interval: 'month', 
             interval_count: 1, 
-            aggregate_usage: null, 
             usage_type: 'licensed', 
             trial_period_days: null,
             meter: null, 

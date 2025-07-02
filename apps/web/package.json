@@ -117,6 +117,7 @@
     "globals": "^15.8.0",
     "jsdom": "^24.1.1",
     "postcss": "^8.4.35",
+    "rollup-plugin-visualizer": "^6.0.3",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",
     "typescript-eslint": "^7.18.0",

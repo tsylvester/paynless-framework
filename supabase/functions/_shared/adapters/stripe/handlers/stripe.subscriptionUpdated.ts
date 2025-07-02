@@ -71,10 +71,12 @@ export async function handleCustomerSubscriptionUpdated(
     context.logger.warn(`[handleCustomerSubscriptionUpdated] No price ID found on subscription ${subscription.id}. Cannot link to internal plan.`);
   }
 
+  const firstItem = subscription.items.data[0];
+
   const subscriptionUpdateData: Partial<Database['public']['Tables']['user_subscriptions']['Row']> = {
     status: subscription.status,
-    current_period_start: subscription.current_period_start ? new Date(subscription.current_period_start * 1000).toISOString() : undefined,
-    current_period_end: subscription.current_period_end ? new Date(subscription.current_period_end * 1000).toISOString() : undefined,
+    current_period_start: firstItem?.current_period_start ? new Date(firstItem.current_period_start * 1000).toISOString() : undefined,
+    current_period_end: firstItem?.current_period_end ? new Date(firstItem.current_period_end * 1000).toISOString() : undefined,
     cancel_at_period_end: subscription.cancel_at_period_end,
     stripe_customer_id: stripeCustomerId,
     updated_at: new Date().toISOString(),

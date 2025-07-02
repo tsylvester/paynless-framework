@@ -255,10 +255,29 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
       id: stripeSubscriptionId,
       status: 'active',
       customer: stripeCustomerId,
-      current_period_start: Math.floor(Date.now() / 1000) - 3600, // 1 hour ago
-      current_period_end: Math.floor(Date.now() / 1000) + (30 * 24 * 3600) - 3600, // Approx 30 days from now
+      items: {
+        object: 'list',
+        data: [
+          {
+            id: 'si_mock_item',
+            object: 'subscription_item',
+            billing_thresholds: null,
+            created: Math.floor(Date.now() / 1000),
+            metadata: {},
+            plan: { id: 'plan_mock' } as Stripe.Plan,
+            price: { id: 'price_mock' } as Stripe.Price,
+            quantity: 1,
+            subscription: stripeSubscriptionId,
+            tax_rates: [],
+            discounts: [],
+            current_period_start: Math.floor(Date.now() / 1000) - 3600,
+            current_period_end: Math.floor(Date.now() / 1000) + 2592000,
+          } as unknown as Stripe.SubscriptionItem,
+        ],
+        has_more: false,
+        url: `/v1/subscriptions/${stripeSubscriptionId}/items`,
+      },
       cancel_at_period_end: false,
-      // items: { data: [{ plan: { id: 'stripe_plan_id_mock' }, price: { id: 'stripe_price_id_mock' } }] } // if needed
     };
 
     // 1. Mock Stripe Event Data
@@ -942,8 +961,28 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
 
     const mockStripeSub: Partial<Stripe.Subscription> = {
       id: stripeSubscriptionId, status: 'active', customer: stripeCustomerId,
-      current_period_start: Date.now() / 1000, current_period_end: Date.now() / 1000 + 30*24*60*60,
-      items: { data: [{ price: { id: 'price_xyz', product: 'prod_xyz' } }] } as any,
+      items: {
+        object: 'list',
+        data: [
+          {
+            id: 'si_mock_item_plan_lookup_fails',
+            object: 'subscription_item',
+            billing_thresholds: null,
+            created: Math.floor(Date.now() / 1000),
+            metadata: {},
+            plan: { id: 'plan_mock' } as Stripe.Plan,
+            price: { id: 'price_xyz', object: 'price', currency: 'usd', recurring: { interval: 'month' } } as Stripe.Price,
+            quantity: 1,
+            subscription: stripeSubscriptionId,
+            tax_rates: [],
+            discounts: [],
+            current_period_start: Math.floor(Date.now() / 1000),
+            current_period_end: Math.floor(Date.now() / 1000) + 2592000,
+          } as unknown as Stripe.SubscriptionItem,
+        ],
+        has_more: false,
+        url: `/v1/subscriptions/${stripeSubscriptionId}/items`,
+      },
     };
 
     setup({ 
@@ -1011,8 +1050,28 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
 
     const mockStripeSub: Partial<Stripe.Subscription> = {
       id: stripeSubscriptionId, status: 'active', customer: stripeCustomerId,
-      current_period_start: Date.now() / 1000, current_period_end: Date.now() / 1000 + 30*24*60*60,
-      items: { data: [{ price: { id: 'price_abc', product: 'prod_abc' } }] } as any,
+      items: {
+        object: 'list',
+        data: [
+          {
+            id: 'si_mock_item_upsert_fails',
+            object: 'subscription_item',
+            billing_thresholds: null,
+            created: Math.floor(Date.now() / 1000),
+            metadata: {},
+            plan: { id: 'plan_mock' } as Stripe.Plan,
+            price: { id: 'price_abc' } as Stripe.Price,
+            quantity: 1,
+            subscription: stripeSubscriptionId,
+            tax_rates: [],
+            discounts: [],
+            current_period_start: Math.floor(Date.now() / 1000),
+            current_period_end: Math.floor(Date.now() / 1000) + 2592000,
+          } as unknown as Stripe.SubscriptionItem,
+        ],
+        has_more: false,
+        url: `/v1/subscriptions/${stripeSubscriptionId}/items`,
+      },
     };
     
     const userSubUpsertErrorMessage = "Mock Supabase: RLS violation or other DB error";

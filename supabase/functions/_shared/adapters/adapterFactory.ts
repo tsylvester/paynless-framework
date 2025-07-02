@@ -14,7 +14,7 @@ export function getPaymentAdapter(
 ): IPaymentGatewayAdapter | null {
   if (source === 'stripe') {
     // Align with getStripeMode() in stripe-client.ts
-    const isTestMode = Deno.env.get('STRIPE_TEST_MODE') !== 'false'; 
+    const isTestMode = Deno.env.get('VITE_STRIPE_TEST_MODE') === 'true';
     // console.log(`[adapterFactory] stripeTestModeEnv: ${stripeTestModeEnv}, isTestMode: ${isTestMode}`);
 
     let stripeSecretKey: string | undefined;
@@ -72,7 +72,7 @@ export function getPaymentAdapter(
 
     try {
       const stripeInstance = new Stripe(stripeSecretKey, {
-        apiVersion: '2023-10-16', // Specify a fixed API version
+        apiVersion: '2025-03-31.basil', // Specify a fixed API version
         // httpClient: Stripe.createFetchHttpClient(), // Optional: Explicitly use Deno's fetch if needed
       });
       return new StripePaymentAdapter(stripeInstance, adminClient, tokenWalletService, stripeWebhookSecret);

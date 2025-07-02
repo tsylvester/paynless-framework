@@ -115,8 +115,8 @@ describe('aiStore - loadChatHistory', () => {
 
             expect(useAiStore.getState().isLoadingHistoryByContext.personal).toBe(false);
             expect(mockGetChatHistory).toHaveBeenCalledTimes(1);
-            // API called with token and then organizationId (which is undefined for personal)
-            expect(mockGetChatHistory).toHaveBeenCalledWith(mockToken, undefined);
+            // API called with token. For personal history, no second argument is passed.
+            expect(mockGetChatHistory).toHaveBeenCalledWith(mockToken);
         });
 
         it('should update personal chatsByContext and clear error on success', async () => {
@@ -148,10 +148,11 @@ describe('aiStore - loadChatHistory', () => {
                 vi.mocked(useAuthStore.getState).mockReturnValueOnce({ session: null, user: null } as any);
             }
             
-            await act(async () => { await useAiStore.getState().loadChatHistory(); });
+            await act(async () => { await useAiStore.getState().loadChatHistory('personal'); });
 
             const state = useAiStore.getState();
-            expect(state.historyErrorByContext.personal).toBe('Authentication is required to load personal chat history.');
+            // The error message is now standardized in the store.
+            expect(state.historyErrorByContext.personal).toBe('Authentication required to fetch chat history.');
             expect(state.isLoadingHistoryByContext.personal).toBe(false);
             expect(state.chatsByContext.personal).toEqual([]); // Should remain empty or initial state
             expect(mockGetChatHistory).not.toHaveBeenCalled();
@@ -237,20 +238,19 @@ describe('aiStore - loadChatHistory', () => {
             expect(state.isLoadingHistoryByContext.orgs[mockOrgId]).toBe(false);
         });
 
-        it('should not require auth token for org history if API allows (e.g., RLS handles auth)', async () => {
-            // This test assumes the API/RLS might allow fetching org history without a user token in some cases,
-            // or that the token is optional for orgs. The store currently sends it if available.
+        it('should handle AuthRequiredError correctly for org history', async () => {
+            // This test confirms that if the user is not authenticated, the action
+            // fails gracefully before making an API call.
             if (vi.isMockFunction(useAuthStore.getState)) {
                 vi.mocked(useAuthStore.getState).mockReturnValueOnce({ session: null, user: null } as any); // No token
             }
-            mockGetChatHistory.mockResolvedValue({ data: mockOrgChats, status: 200, error: null });
             
             await act(async () => { await useAiStore.getState().loadChatHistory(mockOrgId); });
 
             const state = useAiStore.getState();
-            expect(state.historyErrorByContext.orgs[mockOrgId]).toBeNull();
-            expect(state.chatsByContext.orgs[mockOrgId]).toEqual(mockOrgChats);
-            expect(mockGetChatHistory).toHaveBeenCalledWith(undefined, mockOrgId); // Token would be undefined
+            expect(state.historyErrorByContext.orgs[mockOrgId]).toBe('Authentication required to fetch chat history.');
+            expect(state.isLoadingHistoryByContext.orgs[mockOrgId]).toBe(false);
+            expect(mockGetChatHistory).not.toHaveBeenCalled();
         });
 
         it('should update specific org chats and not affect other contexts (personal or other orgs)', async () => {

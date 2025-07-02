@@ -21,8 +21,7 @@ import {
   // TWS import is not used directly in these tests, can be removed if not needed for type inference elsewhere
   // import * as TWS from '../_shared/services/tokenWalletService.ts';
   import { StripePaymentAdapter } from '../_shared/adapters/stripe/stripePaymentAdapter.ts';
-  import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
-  import { IMockSupabaseClient } from '../_shared/types.ts'; // Corrected import path and type
+  import { createMockSupabaseClient, IMockSupabaseClient } from '../_shared/supabase.mock.ts';
   import { createMockTokenWalletService, MockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
   import Stripe from 'npm:stripe';
   import { Buffer } from 'node:buffer';
