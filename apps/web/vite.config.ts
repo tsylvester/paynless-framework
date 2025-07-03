@@ -48,18 +48,66 @@ export default defineConfig({
   resolve: {
     // Setting preserveSymlinks to false might help resolve hoisted deps
     preserveSymlinks: false,
-    alias: {
-      // Keep aliases for local workspace packages
-      '@paynless/api': path.resolve(__dirname, '../../packages/api/src'),
-      '@paynless/store': path.resolve(__dirname, '../../packages/store/src/index.ts'),
-      // Add aliases for other local packages if needed
-      '@': path.resolve(__dirname, './src'),
-    },
+    alias: [
+      { find: '@paynless/api', replacement: path.resolve(__dirname, '../../packages/api/src') },
+      { find: '@paynless/store', replacement: path.resolve(__dirname, '../../packages/store/src/index.ts') },
+      { find: '@', replacement: path.resolve(__dirname, './src') },
+
+      // Bip39 wordlist optimization using regex
+      // Find any import that goes to a bip39 wordlist directory and is a json file (but not english.json)
+      {
+        find: /.*\/bip39\/src\/wordlists\/(?!english)\w+\.json$/,
+        replacement: path.resolve(__dirname, './src/lib/bip39-empty.ts'),
+      },
+      // Specifically replace the english.json with our module that exports the english wordlist
+      {
+        find: /.*\/bip39\/src\/wordlists\/english\.json$/,
+        replacement: path.resolve(__dirname, './src/lib/bip39-english.ts'),
+      },
+       // Also handle the @scure/bip39 wordlists, just in case
+      {
+        find: /@scure\/bip39\/wordlists\/(?!english)\w+$/,
+        replacement: path.resolve(__dirname, './src/lib/bip39-empty.ts'),
+      },
+    ],
   },
   build: {
     // Output directly to a dist folder inside the desktop app project
     outDir: 'dist',
     emptyOutDir: true, // Ensure it's clean before building
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes('node_modules')) {
+            if (id.includes('@supabase')) {
+              return 'supabase';
+            }
+            if (id.includes('refractor')) {
+              return 'refractor';
+            }
+            if (id.includes('micromark')) {
+              return 'micromark';
+            }
+            if (id.includes('bip39')) {
+              return 'bip39';
+            }
+            if (id.includes('posthog-js')) {
+              return 'posthog';
+            }
+            if (id.includes('zod')) {
+              return 'zod';
+            }
+            if (id.includes('@remix-run/router') || id.includes('react-router')) {
+              return 'router';
+            }
+          }
+          if (id.includes('packages/')) {
+            const pkgName = id.split('packages/')[1].split('/')[0];
+            return `vendor-${pkgName}`;
+          }
+        },
+      },
+    },
   },
   // Ensure server settings don't conflict if they exist
   server: {

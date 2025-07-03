@@ -21,7 +21,8 @@ export function getMaxOutputTokens(
   const { 
     input_token_cost_rate,
     output_token_cost_rate,
-    hard_cap_output_tokens 
+    hard_cap_output_tokens,
+    provider_max_output_tokens,
   } = modelConfig;
 
   if (typeof input_token_cost_rate !== 'number' || input_token_cost_rate < 0) {
@@ -63,14 +64,17 @@ export function getMaxOutputTokens(
   // Determine the dynamic hard cap, now based on the remaining budget for output
   const twenty_percent_balance_as_output_tokens = Math.floor((0.20 * budget_for_output_wallet_tokens) / output_token_cost_rate);
   
-  // Provider's hard cap for output tokens (e.g., 4096, 8192). Use Infinity if not set, implying no provider limit beyond affordability.
-  const provider_hard_cap = typeof hard_cap_output_tokens === 'number' && hard_cap_output_tokens >= 0 
-    ? hard_cap_output_tokens 
-    : Infinity;
+  // Combine hard_cap_output_tokens and provider_max_output_tokens to get the true ceiling.
+  // Use Infinity as a fallback if neither is defined, which is not ideal but safe.
+  const absolute_provider_cap = Math.min(
+    typeof hard_cap_output_tokens === 'number' && hard_cap_output_tokens >= 0 ? hard_cap_output_tokens : Infinity,
+    typeof provider_max_output_tokens === 'number' && provider_max_output_tokens >= 0 ? provider_max_output_tokens : Infinity
+  );
 
-  const dynamic_hard_cap = Math.min(twenty_percent_balance_as_output_tokens, provider_hard_cap);
+  // The dynamic hard cap is the lesser of 20% of the budget and the absolute provider cap.
+  const dynamic_hard_cap = Math.min(twenty_percent_balance_as_output_tokens, absolute_provider_cap);
   
-  // Ensure dynamic_hard_cap is not negative if user_balance_tokens was negative and deficit allowed it to proceed this far
+  // Ensure dynamic_hard_cap is not negative
   const non_negative_dynamic_hard_cap = Math.max(0, dynamic_hard_cap);
 
   // The final max output tokens is the minimum of what can be spent and the dynamic hard cap.

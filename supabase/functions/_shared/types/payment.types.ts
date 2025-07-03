@@ -44,6 +44,8 @@ export interface PaymentOrchestrationContext {
   quantity: number;
   paymentGatewayId: string; // For context, as the factory selected the adapter based on this
   metadata?: Record<string, unknown>; // Original metadata from PurchaseRequest
+  siteUrl?: string;
+  request_origin?: string; // The origin of the request, for constructing redirect URLs.
 
   // Information resolved by the initiate-payment Edge Function (our system's view of the transaction)
   internalPaymentId: string; // Our DB record's ID for this payment attempt

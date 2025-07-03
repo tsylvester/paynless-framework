@@ -101,8 +101,10 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
       const userId = context.userId;
       const organizationId = context.organizationId;
       const quantity = context.quantity;
-      const successUrl = `${Deno.env.get('SITE_URL') || 'http://localhost:5173'}/subscriptionsuccess?payment_id=${internalPaymentId}&session_id={CHECKOUT_SESSION_ID}`;
-      const cancelUrl = `${Deno.env.get('SITE_URL') || 'http://localhost:5173'}/subscription?payment_id=${internalPaymentId}`;
+      const request_origin: string | undefined | unknown = context.metadata?.request_origin;
+      const siteUrl = request_origin;
+      const successUrl = `${siteUrl}/SubscriptionSuccess?payment_id=${internalPaymentId}&session_id={CHECKOUT_SESSION_ID}`;
+      const cancelUrl = `${siteUrl}/subscription?payment_id=${internalPaymentId}`;
 
       const sessionParams: Stripe.Checkout.SessionCreateParams = {
         line_items: [{ price: stripePriceId, quantity: quantity }],
