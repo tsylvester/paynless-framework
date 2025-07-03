@@ -90,7 +90,7 @@ const mockSession: DialecticSession = {
 };
 
 // 1. Define initial state values
-const initialDialecticStateValues: DialecticStateValues = {
+export const initialDialecticStateValues: DialecticStateValues = {
   domains: [],
   isLoadingDomains: false,
   domainsError: null,
@@ -135,6 +135,7 @@ const initialDialecticStateValues: DialecticStateValues = {
   activeSessionDetailError: null,
   contributionGenerationStatus: 'idle',
   generateContributionsError: null,
+  generatingSessions: {},
   isSubmittingStageResponses: false,
   submitStageResponsesError: null,
   isSavingContributionEdit: false,

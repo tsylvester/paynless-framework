@@ -74,9 +74,9 @@ The implementation will strictly follow the Test-Driven Development (TDD) approa
 
 ## Legend
 
-*   `[ ]` Unstarted work step. Each work step will be uniquely named for easy reference.
-    *   `[ ]` Work steps will be nested as shown.
-        *   `[ ]` Nesting can be as deep as logically required.
+*   `[ ]` 1. Unstarted work step. Each work step will be uniquely named for easy reference. We begin with 1.
+    *   `[ ]` 1.a. Work steps will be nested as shown. Substeps use characters, as is typical with legal documents. 
+        *   `[ ]` 1. a. i. Nesting can be as deep as logically required, using roman numerals, according to standard legal document numbering processes.
 *   `[✅]` Represents a completed step or nested set.
 *   `[🚧]` Represents an incomplete or partially completed step or nested set.
 *   `[⏸️]` Represents a paused step where a discovery has been made that requires backtracking or further clarification.

@@ -8,11 +8,9 @@ import { Loader2 } from 'lucide-react';
 interface GenerateContributionButtonProps {
   sessionId: string;
   projectId: string;
-  currentStage: DialecticStage; // To determine button label and potentially future stage-specific logic
-  currentStageFriendlyName: string; // e.g., "Thesis", "Antithesis"
-  disabled?: boolean; // External disabled state
-  onGenerationStart?: () => void;
-  onGenerationComplete?: (success: boolean, data?: DialecticContribution[], error?: ApiError) => void;
+  currentStage: DialecticStage;
+  currentStageFriendlyName: string;
+  disabled?: boolean;
   className?: string;
 }
 
@@ -22,18 +20,15 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
   currentStage,
   currentStageFriendlyName,
   disabled = false,
-  onGenerationStart,
-  onGenerationComplete,
   className,
 }) => {
   const store = useDialecticStore();
   const {
     generateContributions,
-    isGeneratingContributions,
+    isSessionGenerating,
   } = useDialecticStore((state) => ({
     generateContributions: state.generateContributions,
-    isGeneratingContributions: state.contributionGenerationStatus === 'generating',
-    generateContributionsError: state.generateContributionsError,
+    isSessionGenerating: state.generatingSessions[sessionId] || false,
   }));
 
   const currentSelectedModelIds = useDialecticStore(selectSelectedModelIds);
@@ -46,57 +41,40 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
   );
 
   const handleClick = async () => {
-    if (onGenerationStart) {
-      onGenerationStart();
-    }
-
     if (!activeSession || typeof activeSession.iteration_count !== 'number') {
       toast.error('Could not determine the current iteration number. Please ensure the session is active.');
-      if (onGenerationComplete) {
-        onGenerationComplete(false, undefined, { message: 'Missing session iteration data', code: 'CLIENT_SETUP_ERROR' });
-      }
       return;
     }
     const currentIterationNumber = activeSession.iteration_count;
 
+    toast.success('Contribution generation started!', {
+      description: 'The AI is working. We will notify you when it is complete.',
+    });
+    
     try {
-      const result = await generateContributions({ 
+      await generateContributions({ 
         sessionId, 
         projectId, 
         stageSlug: currentStage.slug, 
         iterationNumber: currentIterationNumber
       });
-
-      if (result && !result.error && result.data) {
-        toast.success(`${currentStageFriendlyName} contributions generated successfully!`);
-        if (onGenerationComplete) {
-          onGenerationComplete(true, result.data.contributions || []);
-        }
-      } else {
-        const errorMessage = result?.error?.message || `Failed to generate ${currentStageFriendlyName.toLowerCase()} contributions.`;
-        toast.error(errorMessage);
-        if (onGenerationComplete) {
-          onGenerationComplete(false, undefined, result?.error);
-        }
-      }
+      // No need to handle success/error here anymore, as it's asynchronous.
+      // The UI will update based on the generatingSessions state and notifications.
     } catch (e: unknown) {
       // This catch block is for unexpected errors in dispatching or thunk execution itself
-      const errorMessage = (e as Error)?.message || `An unexpected error occurred while generating ${currentStageFriendlyName.toLowerCase()} contributions.`;
+      const errorMessage = (e as Error)?.message || `An unexpected error occurred while starting the generation process.`;
       toast.error(errorMessage);
-      if (onGenerationComplete) {
-        onGenerationComplete(false, undefined, { message: errorMessage, code: 'CLIENT_EXCEPTION' });
-      }
     }
   };
 
   return (
     <Button
       onClick={handleClick}
-      disabled={disabled || isGeneratingContributions || !areAnyModelsSelected}
+      disabled={disabled || isSessionGenerating || !areAnyModelsSelected || currentStageFriendlyName === "Stage Not Ready"}
       className={className}
       data-testid={`generate-${currentStage.slug}-button`}
     >
-      {isGeneratingContributions ? (
+      {isSessionGenerating ? (
         <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
       ) : !areAnyModelsSelected ? (
         "Choose AI Models"

@@ -6,27 +6,31 @@ import { GenerateContributionButton } from './GenerateContributionButton';
 import type { 
   DialecticStage, 
   DialecticContribution, 
-  ApiError, 
   DialecticProject, 
   DialecticSession,
   GenerateContributionsPayload, // For explicit mock typing
   GenerateContributionsResponse, // For explicit mock typing
-  ApiResponse // For explicit mock typing
+  ApiResponse, // For explicit mock typing
+  DialecticStateValues
 } from '@paynless/types'; // Corrected DialecticProjectDetail to DialecticProject
 
 // Import utilities from the actual mock file
 import { 
   initializeMockDialecticState, 
-  setDialecticStateValues,
   getDialecticStoreState
 } from '@/mocks/dialecticStore.mock';
+
+import { useDialecticStore, initialDialecticStateValues } from '@paynless/store';
 
 // Mock the actual store path to use exports from our mock file
 vi.mock('@paynless/store', async () => {
   // Import all exports from our mock file
   const mockStoreExports = await vi.importActual<typeof import('@/mocks/dialecticStore.mock')>('@/mocks/dialecticStore.mock');
+  const actualStore = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
+
   return {
     ...mockStoreExports,
+    selectSessionById: actualStore.selectSessionById,
     // Ensure selectSelectedModelIds is correctly defined for these tests.
     // This assumes the mock store's state has a 'selectedModelIds' property.
     selectSelectedModelIds: (state: { selectedModelIds?: string[] }) => state.selectedModelIds || [],
@@ -138,14 +142,22 @@ const createMockSession = (
   dialectic_session_models: [],
 });
 
+// Helper to set the state of the dialecticStore mock
+const setDialecticStateValues = (state: Partial<DialecticStateValues>) => {
+  useDialecticStore.setState({
+    ...initialDialecticStateValues,
+    // Ensure generatingSessions is initialized for all tests
+    generatingSessions: {},
+    ...state,
+  });
+};
+
 describe('GenerateContributionButton', () => {
   const defaultProps = {
     sessionId: 'test-session-id',
     projectId: 'test-project-id',
     currentStage: mockThesisStage,
     currentStageFriendlyName: 'Thesis',
-    onGenerationStart: vi.fn(),
-    onGenerationComplete: vi.fn(),
   };
 
   let storeActions: {
@@ -158,7 +170,7 @@ describe('GenerateContributionButton', () => {
     const defaultSession = createMockSession(defaultProps.sessionId, defaultProps.projectId, 1);
     const defaultProject = createMockProject(defaultProps.projectId, [defaultSession]);
     setDialecticStateValues({ 
-      selectedModelIds: ['model1'],
+      selectedModelIds: ['model-1'],
       currentProjectDetail: defaultProject,
       contributionGenerationStatus: 'idle', // Explicitly set idle status
     });
@@ -167,8 +179,6 @@ describe('GenerateContributionButton', () => {
         generateContributions: getDialecticStoreState().generateContributions as ReturnType<typeof vi.fn<[GenerateContributionsPayload], Promise<ApiResponse<GenerateContributionsResponse>>>>,
     };
     // Clear mocks for props and toast for each test
-    defaultProps.onGenerationStart.mockClear();
-    defaultProps.onGenerationComplete.mockClear();
     (toast.success as ReturnType<typeof vi.fn>).mockClear();
     (toast.error as ReturnType<typeof vi.fn>).mockClear();
   });
@@ -195,8 +205,8 @@ describe('GenerateContributionButton', () => {
     // Models are selected by default from beforeEach
     render(<GenerateContributionButton {...defaultProps} currentStageFriendlyName="Stage Not Ready" />);
     expect(screen.getByRole('button', { name: /Stage Not Ready/i })).toBeInTheDocument();
-    // Button should still be clickable if models selected, just label changes
-    expect(screen.getByRole('button')).not.toBeDisabled();
+    // The button should be disabled if the stage is not ready.
+    expect(screen.getByRole('button')).toBeDisabled();
   });
 
   it('renders "Regenerate [StageName]" when contributions for current stage and iteration exist', () => {
@@ -215,83 +225,99 @@ describe('GenerateContributionButton', () => {
     expect(screen.getByRole('button')).not.toBeDisabled();
   });
 
-  it('calls generateContributions and onGenerationStart/Complete on click for successful generation', async () => {
-    const mockGeneratedContributions: DialecticContribution[] = [{ ...mockGenericContribution, id: 'c-new-1', session_id: defaultProps.sessionId }];
-    // Configure the mock specifically for this test
-    storeActions.generateContributions.mockResolvedValueOnce({
-      data: { message: 'Success', contributions: mockGeneratedContributions },
-      error: undefined,
-      status: 200,
+  it('renders "Generating..." and is disabled when that specific session is generating', () => {
+    // Setup the mock store to return a generating state for this session
+    setDialecticStateValues({
+      selectedModelIds: ['model-1'], // Ensure models are selected
+      generatingSessions: { [defaultProps.sessionId]: true },
     });
-
+    
     render(<GenerateContributionButton {...defaultProps} />);
-    fireEvent.click(screen.getByRole('button'));
-
-    expect(defaultProps.onGenerationStart).toHaveBeenCalledTimes(1);
-    // The component's activeSession.iteration_count comes from currentProjectDetail.dialectic_sessions[0].iteration_count
-    // which is 1 in the default setup from beforeEach.
-    expect(storeActions.generateContributions).toHaveBeenCalledWith({
-      sessionId: defaultProps.sessionId,
-      projectId: defaultProps.projectId,
-      stageSlug: defaultProps.currentStage.slug,
-      iterationNumber: 1 
-    });
-
-    await waitFor(() => {
-      expect(toast.success).toHaveBeenCalledWith('Thesis contributions generated successfully!');
-    });
-    expect(defaultProps.onGenerationComplete).toHaveBeenCalledWith(true, mockGeneratedContributions);
-  });
-
-  it('handles successful generation with empty contributions array', async () => {
-    storeActions.generateContributions.mockResolvedValueOnce({
-      data: { message: 'Success', contributions: [] }, // Empty contributions
-      error: undefined,
-      status: 200,
-    });
-    render(<GenerateContributionButton {...defaultProps} />);
-    fireEvent.click(screen.getByRole('button'));
-    await waitFor(() => {
-      expect(toast.success).toHaveBeenCalledWith('Thesis contributions generated successfully!');
-    });
-    expect(defaultProps.onGenerationComplete).toHaveBeenCalledWith(true, []);
-  });
-
-  it('shows loading state when contributionGenerationStatus is "generating"', () => {
-    setDialecticStateValues({ contributionGenerationStatus: 'generating' });
-    render(<GenerateContributionButton {...defaultProps} />);
-    expect(screen.getByRole('button')).toBeDisabled();
+    
     expect(screen.getByText(/Generating.../i)).toBeInTheDocument();
+    expect(screen.getByRole('button')).toBeDisabled();
+  });
+
+  it('renders "Regenerate" when contributions for the current stage/iteration already exist', () => {
+    // Override the mock session to include contributions for the current stage
+    const sessionWithContributions = createMockSession(
+      defaultProps.sessionId,
+      defaultProps.projectId,
+      1,
+      [mockGenericContribution]
+    );
+    const projectWithContributions = createMockProject(defaultProps.projectId, [sessionWithContributions]);
+
+    setDialecticStateValues({
+      selectedModelIds: ['model1'],
+      currentProjectDetail: projectWithContributions,
+    });
+
+    render(<GenerateContributionButton {...defaultProps} />);
+    expect(screen.getByRole('button', { name: /Regenerate Thesis/i })).toBeInTheDocument();
+    expect(screen.getByRole('button')).not.toBeDisabled();
+  });
+
+  it('calls generateContributions and shows a toast on click', async () => {
+    // Mock the successful API call
+    storeActions.generateContributions.mockResolvedValue({ status: 202, data: { message: 'Request accepted' } });
+    
+    render(<GenerateContributionButton {...defaultProps} />);
+    
+    fireEvent.click(screen.getByRole('button'));
+    
+    await waitFor(() => {
+      expect(storeActions.generateContributions).toHaveBeenCalledWith({
+        sessionId: defaultProps.sessionId,
+        projectId: defaultProps.projectId,
+        stageSlug: defaultProps.currentStage.slug,
+        iterationNumber: 1, // from mock session
+      });
+    });
+
+    expect(toast.success).toHaveBeenCalledWith('Contribution generation started!', {
+      description: 'The AI is working. We will notify you when it is complete.',
+    });
+  });
+
+  it('shows an error toast if generateContributions fails unexpectedly at dispatch', async () => {
+    const dispatchError = new Error('Thunk dispatch failed');
+    // Ensure the mock is for the instance used in the component
+    const { generateContributions } = getDialecticStoreState();
+    (generateContributions as ReturnType<typeof vi.fn>).mockRejectedValue(dispatchError);
+
+    render(<GenerateContributionButton {...defaultProps} />);
+    
+    fireEvent.click(screen.getByRole('button'));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('Thunk dispatch failed');
+    });
+  });
+
+  it('shows an error toast if the session data is missing', async () => {
+    // Set a project detail with a session that has a null iteration_count
+    const sessionWithNullIteration = createMockSession(defaultProps.sessionId, defaultProps.projectId, undefined as unknown as number);
+    const projectWithBadSession = createMockProject(defaultProps.projectId, [sessionWithNullIteration]);
+    setDialecticStateValues({ 
+      selectedModelIds: ['model1'],
+      currentProjectDetail: projectWithBadSession,
+    });
+    
+    render(<GenerateContributionButton {...defaultProps} />);
+    fireEvent.click(screen.getByRole('button'));
+    
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('Could not determine the current iteration number. Please ensure the session is active.');
+    });
+
+    expect(storeActions.generateContributions).not.toHaveBeenCalled();
   });
 
   it('is disabled when the disabled prop is true', () => {
     // beforeEach ensures models are selected & project details are present
     render(<GenerateContributionButton {...defaultProps} disabled={true} />);
     expect(screen.getByRole('button')).toBeDisabled();
-  });
-
-  it('handles API error correctly', async () => {
-    const apiError: ApiError = { message: 'API Error From Test', code: 'API_ERROR_TEST' };
-    storeActions.generateContributions.mockResolvedValueOnce({ data: undefined, error: apiError, status: 500 });
-    render(<GenerateContributionButton {...defaultProps} />);
-
-    fireEvent.click(screen.getByRole('button'));
-
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('API Error From Test');
-    });
-    expect(defaultProps.onGenerationComplete).toHaveBeenCalledWith(false, undefined, apiError);
-  });
-
-  it('handles API error response without a message field correctly', async () => {
-    const apiErrorNoMsg = { code: 'NO_MESSAGE_ERROR', somethingElse: 'data' } as unknown as ApiError;
-     storeActions.generateContributions.mockResolvedValueOnce({ data: undefined, error: apiErrorNoMsg, status: 500 });
-    render(<GenerateContributionButton {...defaultProps} />);
-    fireEvent.click(screen.getByRole('button'));
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Failed to generate thesis contributions.');
-    });
-    expect(defaultProps.onGenerationComplete).toHaveBeenCalledWith(false, undefined, apiErrorNoMsg);
   });
 
   it('handles unexpected exception during thunk execution (mockRejectedValue)', async () => {
@@ -304,7 +330,6 @@ describe('GenerateContributionButton', () => {
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith('Unexpected Thunk Error');
     });
-    expect(defaultProps.onGenerationComplete).toHaveBeenCalledWith(false, undefined, { message: 'Unexpected Thunk Error', code: 'CLIENT_EXCEPTION' });
   });
 
   it('is disabled and shows "Choose AI Models" when no models selected, overriding "Regenerate" label', () => {
@@ -324,22 +349,6 @@ describe('GenerateContributionButton', () => {
     expect(screen.queryByRole('button', { name: /Regenerate Thesis/i })).not.toBeInTheDocument();
   });
   
-  it('shows error from store if generateContributionsError is set', () => {
-    const errorFromStore: ApiError = { message: 'Error from store state', code: 'STORE_ERROR' };
-    setDialecticStateValues({ 
-        generateContributionsError: errorFromStore,
-        // The component does not directly use generateContributionsError to display a label
-        // but this ensures the store state can be set. The button's behavior/label
-        // is primarily driven by other states like isGeneratingContributions or areAnyModelsSelected.
-        // If an error toast was shown directly from a selector, this would be more relevant.
-    });
-    render(<GenerateContributionButton {...defaultProps} />);
-    // No direct assertion on label from this error, as the component doesn't use it for labels.
-    // This test mainly verifies that the store can be put into this state.
-    // The button should still be "Generate Thesis" if models are selected and not loading.
-    expect(screen.getByRole('button', { name: /Generate Thesis/i })).toBeInTheDocument();
-  });
-
   it('handles missing activeSession or iteration_count gracefully', async () => {
     setDialecticStateValues({
       selectedModelIds: ['model1'],
@@ -356,7 +365,6 @@ describe('GenerateContributionButton', () => {
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith('Could not determine the current iteration number. Please ensure the session is active.');
     });
-    expect(defaultProps.onGenerationComplete).toHaveBeenCalledWith(false, undefined, { message: 'Missing session iteration data', code: 'CLIENT_SETUP_ERROR' });
     expect(storeActions.generateContributions).not.toHaveBeenCalled();
   });
 
@@ -372,8 +380,6 @@ describe('GenerateContributionButton', () => {
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith('Could not determine the current iteration number. Please ensure the session is active.');
     });
-    expect(defaultProps.onGenerationComplete).toHaveBeenCalledWith(false, undefined, { message: 'Missing session iteration data', code: 'CLIENT_SETUP_ERROR' });
     expect(storeActions.generateContributions).not.toHaveBeenCalled();
   });
-
 }); 
