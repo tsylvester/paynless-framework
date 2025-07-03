@@ -9,7 +9,6 @@ import {
 } from '../_shared/cors-headers.ts'; // Corrected import
 import {
   PurchaseRequest,
-  PaymentInitiationResult,
   PaymentOrchestrationContext,
   IPaymentGatewayAdapter,
 } from '../_shared/types/payment.types.ts';
@@ -31,13 +30,14 @@ if (!stripeKey) {
   // Consider throwing an error here or handling it more gracefully depending on requirements
 }
 const stripe = new Stripe(stripeKey!, {
-  apiVersion: '2023-10-16', // Use a fixed API version
+  apiVersion: '2025-03-31.basil', // Use a fixed API version
   httpClient: Stripe.createFetchHttpClient(), // Required for Deno
 });
 
 // --- Adapter Factory (Simple version for now) ---
 function getPaymentAdapter(
   gatewayId: string,
+  userSupabaseClient: SupabaseClient<Database>,
   adminSupabaseClient: SupabaseClient<Database>,
   // userTokenWalletService: TokenWalletService, // No longer pass user-scoped service here
   // Stripe instance could be passed here if it wasn't global or if adapter needed a specific instance
@@ -49,15 +49,13 @@ function getPaymentAdapter(
       // Potentially return null or throw if this is critical for the adapter's function beyond webhooks
     }
     // Instantiate TokenWalletService with admin client for the adapter's use (e.g., in webhooks)
-    const adminTokenWalletService = new TokenWalletService(adminSupabaseClient);
+    const tokenWalletService = new TokenWalletService(userSupabaseClient, adminSupabaseClient);
 
     // The global `stripe` instance is used by StripePaymentAdapter constructor
-    return new StripePaymentAdapter(stripe, adminSupabaseClient, adminTokenWalletService, stripeWebhookSecret || 'dummy_secret_for_initiate_only');
+    return new StripePaymentAdapter(stripe, adminSupabaseClient, tokenWalletService, stripeWebhookSecret || 'dummy_secret_for_initiate_only');
   }
   // Add other gateways here:
   // else if (gatewayId === 'coinbase') {
-  //   return new CoinbasePaymentAdapter(...);
-  // }
   return null;
 }
 
@@ -68,6 +66,7 @@ async function initiatePaymentHandler(
   createUserClientFn: (authHeader: string) => SupabaseClient<Database>,
   getPaymentAdapterFn: (
     gatewayId: string,
+    userSupabaseClient: SupabaseClient<Database>,
     adminSupabaseClient: SupabaseClient<Database>
     // adminTokenWalletService: TokenWalletService // This was an incorrect thought, getPaymentAdapterFn should create its own adminTWS
   ) => IPaymentGatewayAdapter | null
@@ -175,7 +174,7 @@ async function initiatePaymentHandler(
     // 4. Target Wallet Identification
     // The TokenWalletService uses the user-specific Supabase client passed to its constructor
     // to perform operations within the user's RLS context.
-    const tokenWalletService = new TokenWalletService(userClient); // No 'as any' cast needed if types align
+    const tokenWalletService = new TokenWalletService(userClient, adminClient); // No 'as any' cast needed if types align
     const wallet = await tokenWalletService.getWalletForContext(purchaseRequest.userId, purchaseRequest.organizationId ?? undefined);
 
     if (!wallet) {
@@ -242,57 +241,63 @@ async function initiatePaymentHandler(
     // const adapter = getPaymentAdapterFn(purchaseRequest.paymentGatewayId, adminClient, tokenWalletService); // OLD CALL
 
     // Corrected: getPaymentAdapterFn now only needs adminClient to construct its own admin-scoped services if needed by adapter
-    const adapter = getPaymentAdapterFn(purchaseRequest.paymentGatewayId, adminClient);
+    const adapter = getPaymentAdapterFn(purchaseRequest.paymentGatewayId, userClient, adminClient);
 
     if (!adapter) {
       const errMessage = `Payment gateway '${purchaseRequest.paymentGatewayId}' is not supported.`;
       console.error('[initiate-payment] No adapter found for gateway:', purchaseRequest.paymentGatewayId);
       const updatedMetadata: Record<string, string | number | boolean | null | undefined> = { ...paymentTxMetadata, error_message: 'Invalid payment gateway', adapter_error_details: 'No suitable adapter found' };
+      // Attempt to update the transaction with this failure info
       await adminClient.from('payment_transactions').update({ status: 'FAILED', metadata_json: updatedMetadata }).eq('id', internalPaymentId);
       return createErrorResponse(errMessage, 400, req);
     }
-    console.log('[initiate-payment] Using adapter for gateway:', adapter.gatewayId);
 
-    // 7. Prepare PaymentOrchestrationContext
-    const orchestrationContext: PaymentOrchestrationContext = {
-      // Fields from original PurchaseRequest that adapter might still need
+    const request_origin = req.headers.get('origin');
+
+    // 7. Call Adapter's initiatePayment
+    const paymentOrchestrationContext: PaymentOrchestrationContext = {
       userId: purchaseRequest.userId,
       organizationId: purchaseRequest.organizationId,
-      itemId: purchaseRequest.itemId, 
+      itemId: purchaseRequest.itemId,
       quantity: purchaseRequest.quantity,
       paymentGatewayId: purchaseRequest.paymentGatewayId,
-      metadata: purchaseRequest.metadata,
-      // Resolved information
       internalPaymentId: internalPaymentId,
       targetWalletId: targetWalletId,
       tokensToAward: tokensToAward,
       amountForGateway: amountForGateway,
       currencyForGateway: currencyForGateway,
+      metadata: {
+        ...purchaseRequest.metadata,
+        request_origin: request_origin,
+      },
+      request_origin: request_origin ?? undefined,
     };
-    console.log('[initiate-payment] Prepared PaymentOrchestrationContext:', orchestrationContext);
 
-    // 8. Call Adapter's initiatePayment
-    const initiationResult: PaymentInitiationResult = await adapter.initiatePayment(orchestrationContext);
-    console.log('[initiate-payment] Received PaymentInitiationResult from adapter:', initiationResult);
+    const initiationResult = await adapter.initiatePayment(paymentOrchestrationContext);
 
-    // If the adapter failed, it's possible the payment_transactions record should be updated
-    if (!initiationResult.success) {
-        const updatedMetadata: Record<string, string | number | boolean | null | undefined> = { ...paymentTxMetadata, error_message: 'Adapter failed to initiate payment', adapter_error_details: initiationResult.error };
-        await adminClient
-            .from('payment_transactions')
-            .update({ 
-                status: 'FAILED', 
-                metadata_json: updatedMetadata,
-            })
-            .eq('id', internalPaymentId);
-         console.log('[initiate-payment] Updated payment_transaction to FAILED due to adapter failure.');
-    } else {
+    // After getting the result from the adapter, update our transaction record with the gateway's transaction ID.
+    if (initiationResult.success && initiationResult.paymentGatewayTransactionId) {
        // If adapter returns success but doesn't include its own transaction ID,
        // we might still want to log that or ensure our internal ID is prominent.
        // The current PaymentInitiationResult type includes transactionId (our internal)
        // and paymentGatewayTransactionId (adapter's).
        // If the adapter succeeded, our payment_transactions status is still 'PENDING'
        // It will be updated by the webhook.
+    } else if (!initiationResult.success) {
+      // If the adapter's initiation fails, update our transaction record to FAILED
+      const updatedMetadata = {
+          ...paymentTxMetadata,
+          error_message: 'Adapter initiation failed',
+          adapter_error_details: initiationResult.error || 'No additional details provided'
+      };
+      await adminClient
+          .from('payment_transactions')
+          .update({
+              status: 'FAILED',
+              payment_gateway_txn_id: initiationResult.paymentGatewayTransactionId, // capture even on failure if available
+              metadata_json: updatedMetadata,
+          })
+          .eq('id', internalPaymentId);
     }
 
     // 9. Return Response
