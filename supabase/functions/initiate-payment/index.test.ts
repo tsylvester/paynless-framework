@@ -126,18 +126,18 @@ Deno.test("initiate-payment function tests", async (t) => {
             genericMockResults: {
                 'subscription_plans': {
                     select: spy(async (state) => {
-                        const itemIdFilter = state.filters.find(f => f.column === 'item_id_internal' && f.type === 'eq');
+                        const itemIdFilter = state.filters.find(f => f.column === 'stripe_price_id' && f.type === 'eq');
                         const activeFilter = state.filters.find(f => f.column === 'active' && f.type === 'eq' && f.value === true);
 
                         if (itemIdFilter && activeFilter) {
                             if (itemIdFilter.value === MOCK_ITEM_ID) {
-                                return { data: [{ item_id_internal: MOCK_ITEM_ID, tokens_to_award: MOCK_tokens_to_award, amount: MOCK_ITEM_AMOUNT, currency: MOCK_CURRENCY, active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
+                                return { data: [{ stripe_price_id: MOCK_ITEM_ID, item_id_internal: MOCK_ITEM_ID, tokens_to_award: MOCK_tokens_to_award, amount: MOCK_ITEM_AMOUNT, currency: MOCK_CURRENCY, active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
                             }
                             if (itemIdFilter.value === MOCK_INCOMPLETE_ITEM_ID) {
-                                return { data: [{ item_id_internal: MOCK_INCOMPLETE_ITEM_ID, tokens_to_award: null, amount: MOCK_ITEM_AMOUNT, currency: MOCK_CURRENCY, active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
+                                return { data: [{ stripe_price_id: MOCK_INCOMPLETE_ITEM_ID, item_id_internal: MOCK_INCOMPLETE_ITEM_ID, tokens_to_award: null, amount: MOCK_ITEM_AMOUNT, currency: MOCK_CURRENCY, active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
                             }
                             if (itemIdFilter.value === MOCK_WRONG_CURRENCY_ITEM_ID) {
-                                return { data: [{ item_id_internal: MOCK_WRONG_CURRENCY_ITEM_ID, tokens_to_award: MOCK_tokens_to_award, amount: MOCK_ITEM_AMOUNT, currency: 'eur', active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
+                                return { data: [{ stripe_price_id: MOCK_WRONG_CURRENCY_ITEM_ID, item_id_internal: MOCK_WRONG_CURRENCY_ITEM_ID, tokens_to_award: MOCK_tokens_to_award, amount: MOCK_ITEM_AMOUNT, currency: 'eur', active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
                             }
                             if (itemIdFilter.value === MOCK_INVALID_ITEM_ID) { // Simulate item not found or inactive by returning empty
                                 return { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
@@ -161,8 +161,10 @@ Deno.test("initiate-payment function tests", async (t) => {
             genericMockResults: {
                 'token_wallets': {
                      select: spy(async (state) => {
-                        // Basic mock: if query for userId or orgId, return a wallet
-                        if (state.filters.some(f => (f.column === 'user_id' && f.value === MOCK_USER_ID) || (f.column === 'organization_id' && f.value === MOCK_ORGANIZATION_ID))) {
+                        const userIdFilter = state.filters.find(f => f.column === 'user_id');
+                        const orgIdFilter = state.filters.find(f => f.column === 'organization_id');
+                        // Basic mock: if query for the default test user or a specific org, return a wallet
+                        if ((userIdFilter && userIdFilter.value === 'user') || (orgIdFilter && orgIdFilter.value === MOCK_ORGANIZATION_ID)) {
                             return { data: [{ wallet_id: MOCK_WALLET_ID, user_id: MOCK_USER_ID, balance: '5000', currency: 'AI_TOKEN', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }], error: null, count: 1, status: 200 };
                         }
                         return { data: [], error: null, count: 0, status: 200 }; // No wallet found
@@ -171,8 +173,8 @@ Deno.test("initiate-payment function tests", async (t) => {
             }
         };
 
-        mockUserSbSetup = createMockSupabaseClient(userAuthConfig || defaultUserSupaConfig);
-        mockAdminSbSetup = createMockSupabaseClient(adminSupaConfig || defaultAdminSupaConfig);
+        mockUserSbSetup = createMockSupabaseClient('user', userAuthConfig || defaultUserSupaConfig);
+        mockAdminSbSetup = createMockSupabaseClient('admin', adminSupaConfig || defaultAdminSupaConfig);
         
         mockCreateUserClientFn = spy((_authHeader: string) => mockUserSbSetup.client as any);
 
@@ -206,8 +208,9 @@ Deno.test("initiate-payment function tests", async (t) => {
         }
         
         mockGetPaymentAdapterFn = spy((_gatewayId: string, _adminClient: any) => {
+            console.log('mockGetPaymentAdapterFn', _gatewayId, _adminClient);
             return getAdapterShouldReturnNull ? null : mockPaymentAdapter;
-        }) as Spy<any, [string, any], IPaymentGatewayAdapter | null>;
+        });
     };
 
     const afterEachScoped = () => {
@@ -380,7 +383,7 @@ Deno.test("initiate-payment function tests", async (t) => {
             assert(insertSpy, "payment_transactions insert spy should exist");
             assertSpyCalls(insertSpy, 1);
             const insertArg = insertSpy.calls[0].args[0] as any;
-            assertEquals(insertArg.user_id, MOCK_USER_ID);
+            assertEquals(insertArg.user_id, 'user');
             assertEquals(insertArg.target_wallet_id, MOCK_WALLET_ID);
             assertEquals(insertArg.status, 'PENDING');
             assertEquals(insertArg.tokens_to_award, MOCK_tokens_to_award);

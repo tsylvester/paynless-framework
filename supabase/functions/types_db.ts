@@ -1487,6 +1487,12 @@ export type Database = {
         Args: { p_org_id: string; p_user_id: string }
         Returns: boolean
       }
+      check_user_membership: {
+        Args: { target_org_id: string; target_email: string }
+        Returns: {
+          status: string
+        }[]
+      }
       create_notification_for_user: {
         Args: {
           target_user_id: string
