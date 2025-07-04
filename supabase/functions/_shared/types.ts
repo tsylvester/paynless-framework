@@ -328,7 +328,7 @@ export interface AiModelExtendedConfig {
     | { type: 'none'; }; // If token counting is not applicable or handled externally
 
   hard_cap_output_tokens?: number; // An absolute maximum for output tokens
-  context_window_tokens?: number;   // Provider's max context window (input + output usually)
+  context_window_tokens?: number | null;   // Provider's max context window (input + output usually)
   
   // Defaults that might be applied if the main rates are null (e.g., from a service-level config)
   service_default_input_cost_rate?: number; 

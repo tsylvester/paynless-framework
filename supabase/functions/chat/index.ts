@@ -56,7 +56,7 @@ const AiModelExtendedConfigSchema = z.object({
   output_token_cost_rate: z.number().nullable(),
   tokenization_strategy: TokenizationStrategySchema,
   hard_cap_output_tokens: z.number().optional(),
-  context_window_tokens: z.number().optional(),
+  context_window_tokens: z.number().optional().nullable(),
   service_default_input_cost_rate: z.number().optional(),
   service_default_output_cost_rate: z.number().optional(),
   status: z.enum(['active', 'beta', 'deprecated', 'experimental']).optional(),

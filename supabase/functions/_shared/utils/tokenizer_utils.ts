@@ -38,10 +38,12 @@ export function countTokensForMessages(
     // Determine ChatML rules: Use fallback from config, or infer from api_identifier.
     let ruleModelKey: TiktokenModelForRules | string = tokenization_strategy.tiktoken_model_name_for_rules_fallback || api_identifier;
 
-    // Simplify rule key for startsWith checks (e.g. "gpt-3.5-turbo-test" becomes "gpt-3.5-turbo")
-    if (ruleModelKey.startsWith("gpt-4")) ruleModelKey = "gpt-4";
-    else if (ruleModelKey.startsWith("gpt-3.5-turbo")) ruleModelKey = "gpt-3.5-turbo";
-    else if (ruleModelKey.startsWith("gpt-4o")) ruleModelKey = "gpt-4o";
+    // Simplify rule key for startsWith checks (e.g. "openai-gpt-4" becomes "gpt-4")
+    const simplifiedRuleModelKey = ruleModelKey.split('-').slice(1).join('-');
+
+    if (simplifiedRuleModelKey.startsWith("gpt-4")) ruleModelKey = "gpt-4";
+    else if (simplifiedRuleModelKey.startsWith("gpt-3.5-turbo")) ruleModelKey = "gpt-3.5-turbo";
+    else if (simplifiedRuleModelKey.startsWith("gpt-4o")) ruleModelKey = "gpt-4o";
     // Add other families if needed, e.g., gpt-4-turbo might have specific variations
 
     if (ruleModelKey === "gpt-4o") {

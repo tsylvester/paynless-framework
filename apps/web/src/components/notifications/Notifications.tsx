@@ -75,19 +75,25 @@ export const Notifications: React.FC = () => {
     }, []); // Empty dependency array, function doesn't depend on external state
 
     const handleNotificationClick = useCallback((notification: Notification) => {
-        logger.debug('[Notifications] Notification clicked', { id: notification.id });
-        
-        const targetPath = notification.data?.target_path; 
+        logger.debug('[Notifications] Notification clicked', { notification });
+
+        let targetPath = notification.data?.target_path;
+
+        // If a target_path isn't explicitly provided, construct it
+        if (!targetPath && notification.data?.['projectId'] && notification.data?.['sessionId']) {
+            targetPath = `/dialectic/${notification.data['projectId']}/session/${notification.data['sessionId']}`;
+            logger.debug(`[Notifications] Constructed targetPath: ${targetPath}`);
+        }
 
         if (!notification.read) {
-             markNotificationRead(notification.id);
-             setLocallyReadIds(prev => new Set(prev).add(notification.id));
+            markNotificationRead(notification.id);
+            setLocallyReadIds(prev => new Set(prev).add(notification.id));
         }
         
         if (targetPath) { 
             navigate(targetPath);
         }
-    }, [markNotificationRead, navigate, setLocallyReadIds]);
+    }, [markNotificationRead, navigate]);
 
     const handleMarkReadClick = useCallback((e: React.MouseEvent, notificationId: string) => {
         e.stopPropagation(); 

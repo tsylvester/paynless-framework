@@ -182,18 +182,9 @@ export async function handler(req: Request, deps: NotificationsDeps): Promise<Re
 if (import.meta.main) {
     console.log("Running Notifications GET/PUT/POST function directly (import.meta.main).");
 
-    // Re-add getEnvVar locally if needed
-    function getEnvVarLocal(name: string): string {
-        const value = Deno.env.get(name);
-        if (!value) {
-            throw new Error(`Environment variable ${name} is not set.`);
-        }
-        return value;
-    }
-
     const defaultSupabaseClient = createClient(
-        getEnvVarLocal('SUPABASE_URL'),
-        getEnvVarLocal('SUPABASE_SERVICE_ROLE_KEY'), 
+        getEnvVar('SUPABASE_URL'),
+        getEnvVar('SUPABASE_SERVICE_ROLE_KEY'), 
         {
             auth: {
                 persistSession: false,
@@ -216,8 +207,8 @@ if (import.meta.main) {
              console.log("Direct run: Auth header detected, creating user-context client.");
              try {
                  const userClient = createClient(
-                     getEnvVarLocal('SUPABASE_URL'),
-                     getEnvVarLocal('SUPABASE_ANON_KEY'),
+                     getEnvVar('SUPABASE_URL'),
+                     getEnvVar('SUPABASE_ANON_KEY'),
                      {
                          global: { headers: { Authorization: authHeader } },
                          auth: { 

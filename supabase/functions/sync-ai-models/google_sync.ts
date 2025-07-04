@@ -10,55 +10,38 @@ import { logger } from '../_shared/logger.ts';
 
 const PROVIDER_NAME = 'google';
 
+// Centralized map for model properties
+const modelInfo = {
+  'gemini-2.5-pro': { inputCost: 1.25, outputCost: 5.0, context: 8192000, hardCap: 16384 },
+  'gemini-2.5-flash': { inputCost: 0.075, outputCost: 0.30, context: 8192000, hardCap: 16384 },
+  'gemini-1.5-pro': { inputCost: 1.25, outputCost: 5.0, context: 1048576, hardCap: 8192 },
+  'gemini-1.5-flash': { inputCost: 0.075, outputCost: 0.30, context: 1048576, hardCap: 8192 },
+  'gemini-pro': { inputCost: 1.0, outputCost: 2.0, context: 32768, hardCap: 2048 },
+  // Fallback for any other model
+  'default': { inputCost: 0.5, outputCost: 1.5, context: 32768, hardCap: 2048 }
+};
+
 // Helper function to create a default AiModelExtendedConfig
 export function createDefaultGoogleConfig(modelApiIdentifier: string): AiModelExtendedConfig {
-  const modelId = modelApiIdentifier?.toLowerCase() || '';
-  let inputCostRate = 0.0; // Per token
-  let outputCostRate = 0.0; // Per token
+  const modelId = modelApiIdentifier.toLowerCase();
+  
+  // Find the most specific match, then fallback to broader matches, then to default
+  const bestMatchKey = Object.keys(modelInfo).find(key => modelId.includes(key) && key !== 'default') || 'default';
+  const info = modelInfo[bestMatchKey as keyof typeof modelInfo];
 
-  // Prices per 1 million tokens, will be converted to per-token rate.
-  // Using Vertex AI pricing as a primary source.
-  // Gemini 1.5 Pro: Input $1.25/1M (<=128k context), Output $5.00/1M (<=128k context)
-  // Gemini 1.5 Flash: Input $0.075/1M (<=128k), Output $0.30/1M (<=128k)
-  // Gemini 1.0 Pro (older, often gemini-pro): Input $0.000125/1k chars, Output $0.000375/1k chars
-  // Google uses character count for some older models, and token count for newer ones.
-  // For simplicity, we will use token-based pricing and assume an approximate char:token ratio if needed,
-  // or use token pricing where available (Gemini 1.5+).
-  // For models like 'gemini-pro' (older 1.0), let's use its token equivalent pricing if possible or a placeholder.
-  // Vertex AI lists Gemini 1.0 Pro (e.g. gemini-1.0-pro-001) as $0.00025/1k input chars, $0.0005/1k output chars (multimodal models)
-  // This is different from the text-only pricing. Let's use the multimodal for wider applicability.
-  // Assuming 4 chars per token: Input: $0.00025 * 4 = $0.001 per 1k tokens => $1.0/1M tokens
-  // Output: $0.0005 * 4 = $0.002 per 1k tokens => $2.0/1M tokens
-
-  if (modelId.includes('gemini-1.5-pro')) {
-    inputCostRate = 1.25 / 1000000; // Standard context pricing
-    outputCostRate = 5.0 / 1000000; // Standard context pricing
-  } else if (modelId.includes('gemini-1.5-flash')) {
-    inputCostRate = 0.075 / 1000000; // Standard context pricing
-    outputCostRate = 0.30 / 1000000; // Standard context pricing
-  } else if (modelId.includes('gemini-pro')) { // Catches gemini-pro, gemini-1.0-pro etc.
-    // This is an approximation for older gemini-pro based on character pricing converted
-    inputCostRate = 1.0 / 1000000; // Approximated from character based pricing
-    outputCostRate = 2.0 / 1000000; // Approximated from character based pricing
-  } else {
-    // Fallback for other/unknown Google models
-    inputCostRate = 0.5 / 1000000; // A generic placeholder
-    outputCostRate = 1.5 / 1000000; // A generic placeholder
-  }
-
-  // For Google, token counting is typically handled via their API or specific libraries.
   const tokenizationStrategy: AiModelExtendedConfig['tokenization_strategy'] = {
-    type: 'google_gemini_tokenizer', // Corrected type
+    type: 'google_gemini_tokenizer',
   };
 
   return {
-    api_identifier: modelApiIdentifier, // Added: Ensure api_identifier is part of the returned object
-    input_token_cost_rate: inputCostRate,
-    output_token_cost_rate: outputCostRate,
-    tokenization_strategy: tokenizationStrategy, // Corrected: Use the declared variable
-    // context_window_tokens, hard_cap_output_tokens, provider_max_input_tokens, provider_max_output_tokens
-    // are expected to be populated from the API response (via googleAdapter) or manual DB override for Google.
-    // The sync logic merges these; this function just sets cost defaults.
+    api_identifier: modelApiIdentifier,
+    input_token_cost_rate: info.inputCost / 1000000,
+    output_token_cost_rate: info.outputCost / 1000000,
+    context_window_tokens: info.context,
+    hard_cap_output_tokens: info.hardCap,
+    tokenization_strategy: tokenizationStrategy,
+    provider_max_input_tokens: info.context,
+    provider_max_output_tokens: info.hardCap,
   };
 }
 
