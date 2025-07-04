@@ -1,4 +1,4 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import { SupabaseClient } from 'npm:@supabase/supabase-js';
 import { Database, Json, TablesUpdate, Tables } from '../../../../types_db.ts';
 // import { PaymentTransaction } from '../../types/payment.types.ts'; // Removed incorrect import
 

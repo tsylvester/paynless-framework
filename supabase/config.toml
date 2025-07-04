@@ -282,7 +282,7 @@ enabled = false
 enabled = true
 # Configure one of the supported request policies: `oneshot`, `per_worker`.
 # Use `oneshot` for hot reload, or `per_worker` for load testing.
-policy = "oneshot"
+policy = "per_worker"
 # Port to attach the Chrome inspector for debugging edge functions.
 inspector_port = 8083
 # The Deno major version to use.
@@ -325,9 +325,6 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.reset-password]
-verify_jwt = false
-
-[functions.dialectic-service]
 verify_jwt = false
 
 [functions.session]

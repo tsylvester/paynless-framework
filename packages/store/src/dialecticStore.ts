@@ -84,6 +84,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
   // States for generating contributions
   contributionGenerationStatus: 'idle',
   generateContributionsError: null,
+  generatingSessions: {},
 
   isSubmittingStageResponses: false,
   submitStageResponsesError: null,
@@ -873,30 +874,52 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     set(initialDialecticStateValues);
   },
 
+  _handleGenerationCompleteEvent: (data: { sessionId: string; projectId: string }) => {
+    logger.info('[DialecticStore] Handling contribution generation complete event.', { data });
+    set(state => ({
+      generatingSessions: {
+        ...state.generatingSessions,
+        [data.sessionId]: false,
+      },
+    }));
+
+    // Refresh the project details to pull in new contributions
+    get().fetchDialecticProjectDetails(data.projectId);
+  },
+
   generateContributions: async (payload: GenerateContributionsPayload): Promise<ApiResponse<GenerateContributionsResponse>> => {
-    set({ 
-      contributionGenerationStatus: 'initiating',
-      generateContributionsError: null 
-    });
-    logger.info('[DialecticStore] Generating contributions...', { payload });
+    logger.info('[DialecticStore] Initiating contributions generation...', { payload });
+    set(state => ({
+      contributionGenerationStatus: 'generating',
+      generatingSessions: {
+        ...state.generatingSessions,
+        [payload.sessionId]: true,
+      },
+      generateContributionsError: null,
+    }));
+  
     try {
-      set({ contributionGenerationStatus: 'generating' });
       const response = await api.dialectic().generateContributions(payload);
+  
       if (response.error) {
         logger.error('[DialecticStore] Error generating contributions:', { errorDetails: response.error });
-        set({
+        set(state => ({
           contributionGenerationStatus: 'failed',
           generateContributionsError: response.error,
-        });
+          generatingSessions: {
+            ...state.generatingSessions,
+            [payload.sessionId]: false,
+          },
+        }));
         return { error: response.error } as ApiResponse<never>;
       } else {
-        logger.info('[DialecticStore] Successfully initiated contribution generation:', { responseData: response.data });
+        logger.info('[DialecticStore] Successfully requested contribution generation.', { responseData: response.data });
+        // The process is now asynchronous, so we just reset the global status
+        // The session-specific status remains true until a notification arrives.
         set({
-          contributionGenerationStatus: 'idle',
-          generateContributionsError: null,
+          contributionGenerationStatus: 'idle', 
+          generateContributionsError: null 
         });
-
-        await get().fetchDialecticProjectDetails(payload.projectId);
         return { data: response.data } as ApiResponse<GenerateContributionsResponse>;
       }
     } catch (error: unknown) {
@@ -905,10 +928,14 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
         code: 'NETWORK_ERROR',
       };
       logger.error('[DialecticStore] Network error generating contributions:', { errorDetails: networkError });
-      set({
+      set(state => ({
         contributionGenerationStatus: 'failed',
         generateContributionsError: networkError,
-      });
+        generatingSessions: {
+          ...state.generatingSessions,
+          [payload.sessionId]: false,
+        },
+      }));
       return { error: networkError } as ApiResponse<never>;
     }
   },

@@ -243,6 +243,7 @@ export interface DialecticStateValues {
   // isGeneratingContributions: boolean; // Replaced by contributionGenerationStatus
   contributionGenerationStatus: ContributionGenerationStatus; // New
   generateContributionsError: ApiError | null;
+  generatingSessions: { [sessionId: string]: boolean };
 
   // States for submitting stage responses (as per plan 1.5.6.4)
   isSubmittingStageResponses: boolean; 
@@ -357,6 +358,8 @@ export interface DialecticActions {
   setActiveDialecticWalletId: (walletId: string | null) => void;
 
   _resetForTesting?: () => void;
+  // Internal handler for completion events from notificationStore
+  _handleGenerationCompleteEvent?: (data: { sessionId: string; projectId: string; [key: string]: any }) => void;
   reset: () => void;
 }
 
