@@ -4,7 +4,8 @@ import type {
     ProviderModelInfo, 
     ChatApiRequest, 
     AdapterResponsePayload,
-    ILogger // Added ILogger
+    ILogger, // Added ILogger
+    AiModelExtendedConfig,
 } from '../types.ts';
 import type { Json } from '../../../functions/types_db.ts';
 // REMOVED: import type { VertexAI } from 'npm:@google-cloud/vertexai'; // Remove unused import
@@ -249,65 +250,97 @@ export class GoogleAdapter implements AiProviderAdapter {
     return assistantResponse;
   }
 
-  async listModels(/* apiKey parameter removed */): Promise<ProviderModelInfo[]> {
-    // Note: Google's generativelanguage.googleapis.com/v1beta/models endpoint needs API key in URL query param.
-    const modelsUrl = `${GOOGLE_API_BASE}/models?key=${this.apiKey}`;
-    this.logger.info("[GoogleAdapter] Fetching models from Google Gemini...", { url: modelsUrl });
-
-    const response = await fetch(modelsUrl, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-    this.logger.debug(`[GoogleAdapter] After fetch call for models (Status: ${response.status})`);
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      this.logger.error(`[GoogleAdapter] Google Gemini API error fetching models (${response.status}): ${errorBody}`, { status: response.status });
-      throw new Error(`Google Gemini API request failed fetching models: ${response.status} ${response.statusText}`);
-    }
-
-    this.logger.debug("[GoogleAdapter] Before response.json() call for models");
-    const jsonResponse = await response.json();
-    this.logger.debug("[GoogleAdapter] After response.json() call for models", { responseKeys: Object.keys(jsonResponse) });
-
-    // Check if jsonResponse.models is an array
-    if (!Array.isArray(jsonResponse.models)) {
-      this.logger.error('Google Gemini API response for models is not an array:', jsonResponse);
-      throw new Error('Invalid response format from Google Gemini API when fetching models.');
-    }
-
-    const models: ProviderModelInfo[] = [];
-    jsonResponse.models
-      .filter((model: GoogleModelItem) => 
-        model.supportedGenerationMethods?.includes('generateContent')
-      )
-      .forEach((model: GoogleModelItem) => {
-      const modelIdPart = model.name?.split('/').pop() || model.name;
-      
-      let rawConfigForProviderModelInfo: { provider_max_input_tokens?: number; provider_max_output_tokens?: number } | undefined = undefined;
-
-      if (typeof model.inputTokenLimit === 'number' || typeof model.outputTokenLimit === 'number') {
-        rawConfigForProviderModelInfo = {}; // Initialize if at least one limit is present
-        if (typeof model.inputTokenLimit === 'number') {
-          rawConfigForProviderModelInfo.provider_max_input_tokens = model.inputTokenLimit;
-        }
-        if (typeof model.outputTokenLimit === 'number') {
-          rawConfigForProviderModelInfo.provider_max_output_tokens = model.outputTokenLimit;
-        }
+  /**
+   * Fetches the list of available Google models from the API and enriches them with details.
+   */
+  async listModels(): Promise<ProviderModelInfo[]> {
+    const listModelsUrl = `${GOOGLE_API_BASE}/models?key=${this.apiKey}`;
+    this.logger.info(`Fetching model list from Google: ${listModelsUrl}`);
+    
+    try {
+      const response = await fetch(listModelsUrl);
+      if (!response.ok) {
+        const errorBody = await response.text();
+        this.logger.error(`Failed to fetch Google model list (${response.status}): ${errorBody}`);
+        throw new Error(`Google API error when fetching model list: ${response.status}`);
       }
+      const jsonResponse = await response.json();
+      const models = (jsonResponse.models || []) as GoogleModelItem[];
 
-      models.push({
-        api_identifier: `google-${modelIdPart}`,
-        name: model.displayName || model.name || 'Unknown Google Model',
-        description: model.description,
-        config: rawConfigForProviderModelInfo ? rawConfigForProviderModelInfo as Json : undefined,
+      this.logger.info(`Found ${models.length} models. Supported methods must include 'generateContent'.`);
+
+      // Filter out models that don't support 'generateContent'
+      const supportedModels = models.filter(
+        (model) => model.supportedGenerationMethods?.includes('generateContent')
+      );
+      this.logger.debug(`Found ${supportedModels.length} models supporting 'generateContent'.`, {
+        supportedModels: supportedModels.map(m => m.name),
       });
-    });
 
-    this.logger.info(`[GoogleAdapter] Found ${models.length} usable models from Google Gemini.`);
-    return models;
+      // Fetch detailed info for each supported model
+      const detailedModelsPromises = supportedModels.map(async (model) => {
+        // The model name is expected in the format "models/gemini-1.0-pro"
+        const details = await this.getModelDetails(model.name);
+        if (!details) {
+          this.logger.warn(`Could not retrieve details for model: ${model.name}. It will be excluded.`);
+          return null; // Exclude this model if details could not be fetched
+        }
+
+        // Map details to ProviderModelInfo
+        const config: AiModelExtendedConfig = {
+          api_identifier: `google-${model.name.replace(/^models\//, '')}`, // Create our internal identifier
+          provider_max_input_tokens: details.inputTokenLimit,
+          provider_max_output_tokens: details.outputTokenLimit,
+          // The following are placeholders and should be managed in the database sync logic
+          input_token_cost_rate: 0,
+          output_token_cost_rate: 0,
+          context_window_tokens: details.inputTokenLimit || 0,
+          hard_cap_output_tokens: details.outputTokenLimit,
+          tokenization_strategy: { type: 'google_gemini_tokenizer' },
+        };
+        
+        const providerModelInfo: ProviderModelInfo = {
+          api_identifier: `google-${model.name.replace(/^models\//, '')}`,
+          name: details.displayName || model.name,
+          description: details.description || undefined, // Ensure it's undefined, not null
+          config: config as unknown as Json,
+        };
+        return providerModelInfo;
+      });
+
+      const settledResults = await Promise.all(detailedModelsPromises);
+      // Filter out null results (where getModelDetails failed)
+      const finalModels = settledResults.filter((model): model is ProviderModelInfo => model !== null);
+
+      this.logger.info(`Successfully listed ${finalModels.length} detailed Google models.`);
+      return finalModels;
+
+    } catch (error) {
+      this.logger.error('Error in listModels:', { error: error instanceof Error ? error.message : String(error) });
+      return []; // Return empty on error
+    }
+  }
+
+  /**
+   * Fetches detailed information for a single model.
+   * @param modelName The full name of the model (e.g., 'models/gemini-1.5-pro-latest').
+   * @returns A GoogleModelItem with detailed info, or null on error.
+   */
+  async getModelDetails(modelName: string): Promise<GoogleModelItem | null> {
+    const getModelUrl = `${GOOGLE_API_BASE}/${modelName}?key=${this.apiKey}`;
+    this.logger.debug(`Fetching details for model: ${modelName}`, { url: getModelUrl });
+    try {
+      const response = await fetch(getModelUrl);
+      if (!response.ok) {
+        const errorBody = await response.text();
+        this.logger.warn(`Could not fetch details for model ${modelName} (${response.status}): ${errorBody}`);
+        return null;
+      }
+      return await response.json() as GoogleModelItem;
+    } catch (error) {
+      this.logger.error(`Error fetching model details for ${modelName}:`, { error: error instanceof Error ? error.message : String(error) });
+      return null;
+    }
   }
 }
 

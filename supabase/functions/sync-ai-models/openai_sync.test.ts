@@ -31,7 +31,8 @@ const createMockSyncDeps = (overrides: Partial<SyncOpenAIDeps> = {}): SyncOpenAI
 
 // Helper to generate default OpenAI config for testing consistency
 const getDefaultOpenAIConfig = (apiIdentifier: string, overrides: Partial<AiModelExtendedConfig> = {}) => {
-    const baseConfig = createDefaultOpenAIConfig(apiIdentifier);
+    // For tests, we can use an empty map for capabilities as we are mocking the config anyway.
+    const baseConfig = createDefaultOpenAIConfig(apiIdentifier, new Map());
     
     // Handle overrides, with special care for tokenization_strategy
     const { tokenization_strategy: overrideTokenizationStrategy, ...otherOverrides } = overrides;
@@ -43,7 +44,7 @@ const getDefaultOpenAIConfig = (apiIdentifier: string, overrides: Partial<AiMode
 
     if (overrideTokenizationStrategy) {
         mergedConfig.tokenization_strategy = {
-            ...baseConfig.tokenization_strategy,
+            ...(baseConfig.tokenization_strategy || {}), // Ensure base tokenization_strategy is an object
             ...overrideTokenizationStrategy, // Merge tokenization_strategy specifically
         } as AiModelExtendedConfig['tokenization_strategy']; // Cast to satisfy type
     }

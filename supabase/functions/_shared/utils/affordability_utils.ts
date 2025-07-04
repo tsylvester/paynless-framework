@@ -23,6 +23,7 @@ export function getMaxOutputTokens(
     output_token_cost_rate,
     hard_cap_output_tokens,
     provider_max_output_tokens,
+    context_window_tokens,
   } = modelConfig;
 
   if (typeof input_token_cost_rate !== 'number' || input_token_cost_rate < 0) {
@@ -78,6 +79,18 @@ export function getMaxOutputTokens(
   const non_negative_dynamic_hard_cap = Math.max(0, dynamic_hard_cap);
 
   // The final max output tokens is the minimum of what can be spent and the dynamic hard cap.
-  // Result must also be non-negative.
-  return Math.max(0, Math.min(max_spendable_output_tokens, non_negative_dynamic_hard_cap));
+  const max_affordable_tokens = Math.min(max_spendable_output_tokens, non_negative_dynamic_hard_cap);
+  
+  // Now, factor in the model's context window.
+  // The available space for output is the context window minus the input tokens.
+  // If context_window_tokens is not defined, we can't enforce this limit, so we use Infinity.
+  const available_context_for_output = typeof context_window_tokens === 'number' && context_window_tokens > 0
+    ? context_window_tokens - prompt_input_tokens
+    : Infinity;
+    
+  // The result must be non-negative.
+  const non_negative_available_context = Math.max(0, available_context_for_output);
+
+  // The final result is the minimum of what's affordable and what fits in the remaining context window.
+  return Math.max(0, Math.min(max_affordable_tokens, non_negative_available_context));
 }

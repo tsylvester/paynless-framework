@@ -6,43 +6,115 @@ import { getCurrentDbModels, type SyncResult, type DbAiProvider } from './index.
 import type { Json } from '../types_db.ts';
 
 const PROVIDER_NAME = 'openai';
+const MODEL_CAPABILITIES_URL = 'https://raw.githubusercontent.com/Intelligent-Intern/openai-model-capabilities/refs/heads/main/latest.json';
+
+interface ModelCapability {
+  id: string;
+  max_tokens: number;
+}
+
+// Fetches the model capabilities once and caches them.
+async function getModelCapabilities(logger: ILogger): Promise<Map<string, ModelCapability>> {
+  try {
+    logger.info(`Fetching model capabilities from ${MODEL_CAPABILITIES_URL}`);
+    const response = await fetch(MODEL_CAPABILITIES_URL);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch model capabilities: ${response.statusText}`);
+    }
+    const data = await response.json();
+    const capabilities = new Map<string, ModelCapability>();
+    if (data && Array.isArray(data.data)) {
+      for (const model of data.data) {
+        if (model && typeof model.id === 'string' && typeof model.max_tokens === 'number') {
+          capabilities.set(model.id, { id: model.id, max_tokens: model.max_tokens });
+        }
+      }
+    }
+    logger.info(`Successfully fetched and parsed ${capabilities.size} model capabilities.`);
+    return capabilities;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    logger.error('Error fetching or parsing model capabilities, will use hardcoded defaults.', { error: errorMessage });
+    return new Map(); // Return empty map on error
+  }
+}
 
 // Helper function to create a default AiModelExtendedConfig for OpenAI models
-export function createDefaultOpenAIConfig(modelApiIdentifier: string): Partial<AiModelExtendedConfig> {
-  const modelId = modelApiIdentifier.replace(/^openai-/i, ''); // Raw model ID for cost lookup and tokenization
+export function createDefaultOpenAIConfig(
+  modelApiIdentifier: string,
+  capabilities: Map<string, ModelCapability>
+): Partial<AiModelExtendedConfig> {
+  const modelId = modelApiIdentifier.replace(/^openai-/i, '');
+  const capability = capabilities.get(modelId);
+
   let inputCostRate = 0.0;
   let outputCostRate = 0.0;
+  // Use fetched context window, or a hardcoded default as a fallback.
+  let contextWindow = capability?.max_tokens || 8192; 
+  // Default hard cap is often a fraction of the context window, e.g., 4096 for older models.
+  // We can be more conservative here if the API doesn't specify a separate output max.
+  let hardCapOutput = 4096; 
 
   // --- Cost Rate Logic (Paynless-specific, keep this part) ---
   // Prices per 1 million tokens, convert to per-token rate.
   if (modelId.startsWith('gpt-4o-mini')) {
     inputCostRate = 0.15 / 1000000;
     outputCostRate = 0.6 / 1000000;
+    contextWindow = 128000;
+    hardCapOutput = 16384;
   } else if (modelId.startsWith('gpt-4o')) {
     inputCostRate = 5.0 / 1000000;
     outputCostRate = 15.0 / 1000000;
+    contextWindow = 128000;
+    hardCapOutput = 4096;
   } else if (modelId.startsWith('gpt-4-turbo') || modelId.includes('-turbo-preview') || modelId.includes('gpt-4-0125-preview') || modelId.includes('gpt-4-1106-preview')) {
     inputCostRate = 10.0 / 1000000;
     outputCostRate = 30.0 / 1000000;
+    contextWindow = 128000;
+    hardCapOutput = 4096;
   } else if (modelId.startsWith('gpt-4-32k')) {
     inputCostRate = 60.0 / 1000000;
     outputCostRate = 120.0 / 1000000;
+    contextWindow = 32768;
+    hardCapOutput = 4096;
   } else if (modelId.startsWith('gpt-4')) {
     inputCostRate = 30.0 / 1000000;
     outputCostRate = 60.0 / 1000000;
+    contextWindow = 8192;
+    hardCapOutput = 4096;
   } else if (modelId.startsWith('gpt-3.5-turbo-16k')) {
     inputCostRate = 0.5 / 1000000;
     outputCostRate = 1.5 / 1000000;
+    contextWindow = 16385;
+    hardCapOutput = 4096;
   } else if (modelId.startsWith('gpt-3.5-turbo')) {
     // Specific versions like -0125 are 16k, but general cost is the same.
     inputCostRate = 0.5 / 1000000;
     outputCostRate = 1.5 / 1000000;
+    contextWindow = 16385; // Default for newer gpt-3.5-turbo
+    hardCapOutput = 4096;
   } else {
     // Fallback for other/unknown models - minimal cost
     inputCostRate = 0.1 / 1000000; // Cheaper placeholder
     outputCostRate = 0.1 / 1000000; // Cheaper placeholder
   }
   // --- END Cost Rate Logic ---
+
+  // Refine hardCapOutput based on model knowledge if necessary
+  if (capability) {
+    // For many models, max_tokens from the capabilities endpoint is the context window.
+    // The actual max *output* tokens might be smaller.
+    // Example: gpt-4-turbo's context is 128k, but max output is 4096.
+    if (modelId.startsWith('gpt-4-turbo') || modelId.startsWith('gpt-4o')) {
+      hardCapOutput = 4096; // Explicitly set for these models
+    } else if (modelId.startsWith('gpt-4o-mini')) {
+      hardCapOutput = 16384;
+    } else {
+      // For others, we might assume the max_tokens is the context window and the output cap is that full amount,
+      // or stick with a safe default. Let's be safe.
+      hardCapOutput = Math.min(contextWindow, 4096);
+    }
+  }
 
   // Provide a generic, valid default tokenization strategy.
   // Tiktoken library will use the modelId to apply specific rules.
@@ -57,6 +129,9 @@ export function createDefaultOpenAIConfig(modelApiIdentifier: string): Partial<A
     api_identifier: modelApiIdentifier, // Crucial for linking
     input_token_cost_rate: inputCostRate,
     output_token_cost_rate: outputCostRate,
+    context_window_tokens: contextWindow,
+    hard_cap_output_tokens: hardCapOutput,
+    provider_max_output_tokens: hardCapOutput, // Use hardCap as the provider max
     tokenization_strategy: defaultTokenizationStrategy,
     // Fields like context_window_tokens, provider_max_input_tokens, provider_max_output_tokens,
     // and hard_cap_output_tokens are NOT set here. They will come from:
@@ -113,6 +188,14 @@ export async function syncOpenAIModels(
   const { listProviderModels, getCurrentDbModels, log, error } = deps;
 
   try {
+    const logger = { log, error };
+    const capabilities = await getModelCapabilities({
+      info: log,
+      warn: log,
+      error: error,
+      debug: log
+    });
+
     log(`Fetching models from ${PROVIDER_NAME} API...`);
     const apiModels = await listProviderModels(apiKey);
     log(`Fetched ${apiModels.length} models from ${PROVIDER_NAME} API.`);
@@ -133,7 +216,7 @@ export async function syncOpenAIModels(
       log(`[Diff] Processing API model: ${apiIdentifier}`);
       const dbModel = dbModelMap.get(apiIdentifier);
 
-      const defaultConfig = createDefaultOpenAIConfig(apiIdentifier);
+      const defaultConfig = createDefaultOpenAIConfig(apiIdentifier, capabilities);
       const apiProvidedConfig = (apiModel.config || {}) as Partial<AiModelExtendedConfig>;
 
       if (dbModel) {

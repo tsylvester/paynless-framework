@@ -81,7 +81,7 @@ export interface AiModelExtendedConfig {
   output_token_cost_rate: number;   // How many wallet tokens 1 output token costs (e.g., 3.0)
   hard_cap_output_tokens?: number; // Provider's absolute max output tokens (e.g., 4096, 8192, 200000)
                                     // This is the 'global_max_tokens' or 'hard_cap' in ChatGPT's suggestion.
-  context_window_tokens?: number;   // Provider's max context window (input + output usually)
+  context_window_tokens?: number | null;   // Provider's max context window (input + output usually)
 
   // Input Token Estimation Strategy (for client-side estimateInputTokens)
   tokenization_strategy: {
