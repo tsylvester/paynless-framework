@@ -13,10 +13,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Plus } from 'lucide-react';
 import type { Chat } from '@paynless/types'; // Import Chat type
 import ErrorBoundary from '../components/common/ErrorBoundary'; // Added ErrorBoundary
-import { useChatWalletDecision } from '../hooks/useChatWalletDecision'; // Added
-import { OrgTokenConsentModal } from '../components/modals/OrgTokenConsentModal'; // Added
-// import type { Organization, AiProvider, SystemPrompt } from '@paynless/types'; // Organization, AiProvider, SystemPrompt commented out as they are not used
-// import type { Chat } from '@paynless/types'; // Chat type might no longer be needed here if currentChatHistoryList is removed
 
 export default function AiChatPage() {
   // Get user, session, and loading state from auth store
@@ -28,7 +24,6 @@ export default function AiChatPage() {
     startNewChat,
     currentChatId,
     availablePrompts,
-    checkAndReplayPendingChatAction,
     chatsByContext, 
     isDetailsLoading, 
     selectedPromptId,
@@ -41,7 +36,6 @@ export default function AiChatPage() {
     currentChatId: state.currentChatId,
     availableProviders: state.availableProviders,
     availablePrompts: state.availablePrompts,
-    checkAndReplayPendingChatAction: state.checkAndReplayPendingChatAction,
     chatsByContext: state.chatsByContext,
     isDetailsLoading: state.isDetailsLoading,
     selectedProviderId: state.selectedProviderId,
@@ -59,24 +53,7 @@ export default function AiChatPage() {
     userOrganizations: state.userOrganizations,
   }));
 
-  // Chat Wallet Decision Hook
-  const {
-    isLoadingConsent,
-    effectiveOutcome,
-    isConsentModalOpen,
-    openConsentModal,
-    closeConsentModal,
-    orgIdForModal,
-    resetOrgTokenConsent,
-  } = useChatWalletDecision();
-
-  const orgNameForModal = useMemo(() => {
-    if (!orgIdForModal || !userOrganizations) return undefined;
-    const org = userOrganizations.find(o => o.id === orgIdForModal);
-    return org?.name;
-  }, [orgIdForModal, userOrganizations]);
-
-  console.log("AiChatPage rendering/re-rendering. isDetailsLoading:", isDetailsLoading, "Effective Wallet Outcome:", effectiveOutcome);
+  console.log("AiChatPage rendering/re-rendering. isDetailsLoading:", isDetailsLoading);
 
   useEffect(() => {
     console.log("AiChatPage MOUNTED");
@@ -107,16 +84,6 @@ export default function AiChatPage() {
     console.log('[AiChatPage] Config effect running - attempting to call loadAiConfig');
     if (loadAiConfig) loadAiConfig(); else console.error('[AiChatPage] loadAiConfig is undefined!');
   }, [loadAiConfig]);
-
-  // Check for pending chat action on mount
-  useEffect(() => {
-    console.log('[AiChatPage] Pending action effect running - attempting to call checkAndReplayPendingChatAction');
-    if (checkAndReplayPendingChatAction) { 
-      checkAndReplayPendingChatAction();
-    } else {
-      console.warn('[AiChatPage] checkAndReplayPendingChatAction function not found in aiStore yet.')
-    }
-  }, [checkAndReplayPendingChatAction]); 
 
   // Effect to handle selectedPromptId based on loaded chat or initial default.
   // Default provider selection is handled by loadAiConfig and startNewChat in the store.
@@ -158,20 +125,6 @@ export default function AiChatPage() {
   const handleNewChat = () => {
     const contextForNewChat = newChatContext === undefined ? globalCurrentOrgId : newChatContext;
     logger.info(`[AiChatPage] Starting new chat with context: ${contextForNewChat}`);
-    
-    // Prevent new chat if consent is required but not given for an org context
-    if (contextForNewChat && effectiveOutcome.outcome === 'user_consent_required') {
-      openConsentModal();
-      logger.warn('[AiChatPage] New chat blocked, user consent required for org context.');
-      // Optionally, show a toast or inline message here
-      return;
-    }
-    if (contextForNewChat && effectiveOutcome.outcome === 'user_consent_refused') {
-      // User has actively refused, maybe re-prompt them or show a specific message
-      openConsentModal(); // Or a more specific prompt to change their mind
-      logger.warn('[AiChatPage] New chat blocked, user consent previously refused for org context.');
-      return;
-    }
 
     const contextIdForAnalytics = contextForNewChat === null ? 'personal' : contextForNewChat || 'unknown';
 
@@ -199,38 +152,6 @@ export default function AiChatPage() {
         <div className="container mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-6"> 
           <div className="md:col-span-2 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-y-auto min-h-0 max-h-[calc(100vh-12rem)]"> 
             <div className="p-4 border-b border-border sticky top-0 bg-card z-10 space-y-2">
-              <div>
-                {/* Wallet Outcome / Consent Prompt Area */}
-                {isLoadingConsent && effectiveOutcome.outcome === 'loading' && (
-                  <p className="text-sm text-muted-foreground">Loading wallet configuration...</p>
-                )}
-                {effectiveOutcome.outcome === 'user_consent_required' && orgIdForModal && (
-                  <div className="p-2 my-2 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700">
-                    <p className="font-bold">Action Required</p>
-                    <p>To use your personal tokens for {orgNameForModal || "this organization's"} chats, please provide consent.</p>
-                    <Button variant="link" className="p-0 h-auto text-yellow-700 font-bold" onClick={openConsentModal}>Review Consent</Button>
-                  </div>
-                )}
-                {effectiveOutcome.outcome === 'user_consent_refused' && orgIdForModal && (
-                  <div className="p-2 my-2 bg-red-100 border-l-4 border-red-500 text-red-700">
-                    <p className="font-bold">Chat Disabled</p>
-                    <p>You previously declined to use personal tokens for {orgNameForModal || "this organization's"} chats.</p>
-                    <Button variant="link" className="p-0 h-auto text-red-700 font-bold" onClick={() => {
-                      resetOrgTokenConsent(orgIdForModal);
-                      // The hook's useEffect will then pick up the change, and outcome should become 'user_consent_required'
-                      // which will then show the prompt to open the modal.
-                      // For a more immediate modal opening, call openConsentModal() after a slight delay or manage state differently.
-                    }}>Enable Chat (Review Consent)</Button>
-                  </div>
-                )}
-                 {effectiveOutcome.outcome === 'org_wallet_not_available_policy_org' && orgIdForModal && (
-                  <div className="p-2 my-2 bg-blue-100 border-l-4 border-blue-500 text-blue-700">
-                    <p className="font-bold">Information</p>
-                    <p>{orgNameForModal || "This organization's"} chats use organization tokens, but these are not yet available. Chat may be limited.</p>
-                  </div>
-                )}
-              </div>
-              
               <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
                 <ChatContextSelector
                   // currentContextId={typeof nextChatOrgContext === 'undefined' ? null : nextChatOrgContext}
@@ -272,14 +193,6 @@ export default function AiChatPage() {
           </div>
         </div>
       </div>
-      {orgIdForModal && (
-        <OrgTokenConsentModal
-          isOpen={isConsentModalOpen}
-          onClose={closeConsentModal}
-          orgId={orgIdForModal}
-          orgName={orgNameForModal}
-        />
-      )}
     </ErrorBoundary>
   );
 } 

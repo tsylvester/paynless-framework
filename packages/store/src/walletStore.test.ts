@@ -793,5 +793,164 @@ describe('useWalletStore', () => {
         expect(useWalletStore.getState().isLoadingPurchase).toBe(false);
       });
     });
+
+    describe('Consent Actions', () => {
+      const orgId = 'org-consent-test';
+
+      it('setUserOrgTokenConsent should set consent for an organization to true', () => {
+        useWalletStore.getState().setUserOrgTokenConsent(orgId, true);
+        expect(useWalletStore.getState().userOrgTokenConsent[orgId]).toBe(true);
+      });
+
+      it('setUserOrgTokenConsent should set consent for an organization to false', () => {
+        useWalletStore.getState().setUserOrgTokenConsent(orgId, false);
+        expect(useWalletStore.getState().userOrgTokenConsent[orgId]).toBe(false);
+      });
+
+      it('clearUserOrgTokenConsent should set consent for an organization to null', () => {
+        // First set it to something
+        useWalletStore.getState().setUserOrgTokenConsent(orgId, true);
+        expect(useWalletStore.getState().userOrgTokenConsent[orgId]).toBe(true);
+        // Now clear it
+        useWalletStore.getState().clearUserOrgTokenConsent(orgId);
+        expect(useWalletStore.getState().userOrgTokenConsent[orgId]).toBeNull();
+      });
+
+      it('openConsentModal should set isConsentModalOpen to true', () => {
+        expect(useWalletStore.getState().isConsentModalOpen).toBe(false); // check initial
+        useWalletStore.getState().openConsentModal();
+        expect(useWalletStore.getState().isConsentModalOpen).toBe(true);
+      });
+
+      it('closeConsentModal should set isConsentModalOpen to false', () => {
+        // First open it
+        useWalletStore.getState().openConsentModal();
+        expect(useWalletStore.getState().isConsentModalOpen).toBe(true);
+        // Now close it
+        useWalletStore.getState().closeConsentModal();
+        expect(useWalletStore.getState().isConsentModalOpen).toBe(false);
+      });
+    });
+
+    describe('_handleWalletUpdateNotification', () => {
+      const personalWalletId = 'personal-wallet-for-update';
+      const orgId1 = 'org-for-update-1';
+      const orgWalletId1 = 'org-wallet-for-update-1';
+      const orgId2 = 'org-for-update-2';
+      const orgWalletId2 = 'org-wallet-for-update-2';
+
+      const initialPersonalWallet: TokenWallet = {
+        walletId: personalWalletId,
+        userId: 'user-123',
+        balance: '100',
+        currency: 'AI_TOKEN',
+        createdAt: new Date('2023-01-01T12:00:00Z'),
+        updatedAt: new Date('2023-01-01T12:00:00Z'),
+      };
+
+      const initialOrgWallet1: TokenWallet = {
+        walletId: orgWalletId1,
+        organizationId: orgId1,
+        balance: '1000',
+        currency: 'AI_TOKEN',
+        createdAt: new Date('2023-01-01T12:00:00Z'),
+        updatedAt: new Date('2023-01-01T12:00:00Z'),
+      };
+      
+      const initialOrgWallet2: TokenWallet = {
+        walletId: orgWalletId2,
+        organizationId: orgId2,
+        balance: '2000',
+        currency: 'AI_TOKEN',
+        createdAt: new Date('2023-01-01T12:00:00Z'),
+        updatedAt: new Date('2023-01-01T12:00:00Z'),
+      };
+
+      beforeEach(() => {
+        // Set initial state for these tests
+        useWalletStore.setState({
+          personalWallet: { ...initialPersonalWallet },
+          organizationWallets: {
+            [orgId1]: { ...initialOrgWallet1 },
+            [orgId2]: { ...initialOrgWallet2 },
+          },
+        });
+      });
+
+      it('should update the personal wallet balance and updatedAt timestamp', () => {
+        const newBalance = '250';
+        const notificationPayload = { walletId: personalWalletId, newBalance };
+
+        const beforeState = useWalletStore.getState();
+        const initialUpdatedAt = beforeState.personalWallet?.updatedAt;
+
+        useWalletStore.getState()._handleWalletUpdateNotification(notificationPayload);
+
+        const afterState = useWalletStore.getState();
+        expect(afterState.personalWallet?.balance).toBe(newBalance);
+        expect(afterState.personalWallet?.updatedAt).not.toBe(initialUpdatedAt);
+        // Also check that other wallets are untouched
+        expect(afterState.organizationWallets[orgId1]?.balance).toBe(initialOrgWallet1.balance);
+      });
+
+      it('should update the correct organization wallet balance and updatedAt timestamp', () => {
+        const newBalance = '1500';
+        const notificationPayload = { walletId: orgWalletId1, newBalance };
+
+        const beforeState = useWalletStore.getState();
+        const initialUpdatedAt = beforeState.organizationWallets[orgId1]?.updatedAt;
+
+        useWalletStore.getState()._handleWalletUpdateNotification(notificationPayload);
+        
+        const afterState = useWalletStore.getState();
+        expect(afterState.organizationWallets[orgId1]?.balance).toBe(newBalance);
+        expect(afterState.organizationWallets[orgId1]?.updatedAt).not.toBe(initialUpdatedAt);
+        // Check that other wallets are untouched
+        expect(afterState.personalWallet?.balance).toBe(initialPersonalWallet.balance);
+        expect(afterState.organizationWallets[orgId2]?.balance).toBe(initialOrgWallet2.balance);
+      });
+
+      it('should not update any wallet if the walletId does not match', () => {
+        const newBalance = '9999';
+        const notificationPayload = { walletId: 'unknown-wallet-id', newBalance };
+
+        const beforeState = useWalletStore.getState();
+        
+        useWalletStore.getState()._handleWalletUpdateNotification(notificationPayload);
+        
+        const afterState = useWalletStore.getState();
+        expect(afterState.personalWallet).toEqual(beforeState.personalWallet);
+        expect(afterState.organizationWallets).toEqual(beforeState.organizationWallets);
+      });
+
+      it('should not throw an error if personal wallet is null and update is for it', () => {
+        useWalletStore.setState({ personalWallet: null });
+
+        const newBalance = '500';
+        const notificationPayload = { walletId: personalWalletId, newBalance };
+        
+        // We just expect this not to throw
+        expect(() => useWalletStore.getState()._handleWalletUpdateNotification(notificationPayload)).not.toThrow();
+
+        const afterState = useWalletStore.getState();
+        // The state should be unchanged for other wallets
+        expect(afterState.organizationWallets[orgId1]?.balance).toBe(initialOrgWallet1.balance);
+      });
+
+      it('should not throw an error if org wallet does not exist in state and update is for it', () => {
+        useWalletStore.setState({ organizationWallets: {} });
+
+        const newBalance = '500';
+        const notificationPayload = { walletId: orgWalletId1, newBalance };
+        
+        // We just expect this not to throw
+        expect(() => useWalletStore.getState()._handleWalletUpdateNotification(notificationPayload)).not.toThrow();
+        
+        const afterState = useWalletStore.getState();
+        // Personal wallet should be untouched
+        expect(afterState.personalWallet?.balance).toBe(initialPersonalWallet.balance);
+        expect(afterState.organizationWallets).toEqual({});
+      });
+    });
   });
 }); 

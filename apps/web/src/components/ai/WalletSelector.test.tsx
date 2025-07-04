@@ -43,7 +43,7 @@ vi.mock('@/hooks/useChatWalletDecision');
 const mockUseChatWalletDecision = useChatWalletDecision as MockedFunction<typeof useChatWalletDecision>;
 
 vi.mock('@paynless/store', async () => {
-    const walletMock = await vi.importActual<typeof import('@/mocks/walletStore.mock')>('@/mocks/walletStoreMock');
+    const walletMock = await vi.importActual<typeof import('@/mocks/walletStore.mock')>('@/mocks/walletStore.mock');
     const orgMock = await vi.importActual<typeof import('@/mocks/organizationStore.mock')>('@/mocks/organizationStore.mock');
     return { 
       ...walletMock, 
@@ -67,16 +67,15 @@ describe('WalletSelector', () => {
 
     mockUseChatWalletDecision.mockReturnValue({
       effectiveOutcome: { outcome: 'loading' },
-      giveConsent: vi.fn(),
-      refuseConsent: vi.fn(),
-      isLoadingConsent: false,
-      resetConsent: vi.fn(),
+      openConsentModal: vi.fn(),
+      orgIdForModal: undefined,
+      resetOrgTokenConsent: vi.fn(),
     });
   });
 
   test('renders loading state from useChatWalletDecision', () => {
     render(<WalletSelector {...defaultProps} />);
-    expect(screen.getByText(/Status:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Wallet:/i)).toBeInTheDocument();
     expect(screen.getByText(/Loading.../i)).toBeInTheDocument();
   });
 
@@ -98,15 +97,14 @@ describe('WalletSelector', () => {
 
       mockUseChatWalletDecision.mockReturnValue({
         effectiveOutcome: { outcome: 'use_personal_wallet' },
-        giveConsent: vi.fn(),
-        refuseConsent: vi.fn(),
-        isLoadingConsent: false,
-        resetConsent: vi.fn(),
+        openConsentModal: vi.fn(),
+        orgIdForModal: undefined,
+        resetOrgTokenConsent: vi.fn(),
       });
 
       render(<WalletSelector {...defaultProps} />);
       expect(await screen.findByText(/Personal:/i)).toBeInTheDocument();
-      expect(await screen.findByText(/1\.0K/i)).toBeInTheDocument();
+      expect(await screen.findByText(/1K/i)).toBeInTheDocument();
     });
 
     test('renders personal wallet loading state', async () => {
@@ -117,10 +115,9 @@ describe('WalletSelector', () => {
 
       mockUseChatWalletDecision.mockReturnValue({
           effectiveOutcome: { outcome: 'use_personal_wallet' },
-          giveConsent: vi.fn(),
-          refuseConsent: vi.fn(),
-          isLoadingConsent: false,
-          resetConsent: vi.fn(),
+          openConsentModal: vi.fn(),
+          orgIdForModal: undefined,
+          resetOrgTokenConsent: vi.fn(),
         });
 
       render(<WalletSelector {...defaultProps} />);
@@ -139,10 +136,9 @@ describe('WalletSelector', () => {
   
       mockUseChatWalletDecision.mockReturnValue({
           effectiveOutcome: { outcome: 'use_personal_wallet' }, 
-          giveConsent: vi.fn(),
-          refuseConsent: vi.fn(),
-          isLoadingConsent: false,
-          resetConsent: vi.fn(),
+          openConsentModal: vi.fn(),
+          orgIdForModal: undefined,
+          resetOrgTokenConsent: vi.fn(),
         });
   
       render(<WalletSelector {...defaultProps} />);
@@ -170,15 +166,14 @@ describe('WalletSelector', () => {
 
       mockUseChatWalletDecision.mockReturnValue({
         effectiveOutcome: { outcome: 'use_organization_wallet', orgId },
-        giveConsent: vi.fn(),
-        refuseConsent: vi.fn(),
-        isLoadingConsent: false,
-        resetConsent: vi.fn(),
+        openConsentModal: vi.fn(),
+        orgIdForModal: orgId,
+        resetOrgTokenConsent: vi.fn(),
       });
 
       render(<WalletSelector {...defaultProps} />);
       expect(await screen.findByText(new RegExp(`${orgName}:`, 'i'))).toBeInTheDocument();
-      expect(await screen.findByText(/5\.0M/i)).toBeInTheDocument();
+      expect(await screen.findByText(/5M/i)).toBeInTheDocument();
       expect(mockGetOrLoadOrganizationWallet).not.toHaveBeenCalled(); 
     });
 
@@ -190,10 +185,9 @@ describe('WalletSelector', () => {
   
         mockUseChatWalletDecision.mockReturnValue({
           effectiveOutcome: { outcome: 'use_organization_wallet', orgId },
-          giveConsent: vi.fn(),
-          refuseConsent: vi.fn(),
-          isLoadingConsent: false,
-          resetConsent: vi.fn(),
+          openConsentModal: vi.fn(),
+          orgIdForModal: orgId,
+          resetOrgTokenConsent: vi.fn(),
         });
   
         render(<WalletSelector {...defaultProps} />);
@@ -211,10 +205,9 @@ describe('WalletSelector', () => {
   
         mockUseChatWalletDecision.mockReturnValue({
           effectiveOutcome: { outcome: 'use_organization_wallet', orgId },
-          giveConsent: vi.fn(),
-          refuseConsent: vi.fn(),
-          isLoadingConsent: false,
-          resetConsent: vi.fn(),
+          openConsentModal: vi.fn(),
+          orgIdForModal: orgId,
+          resetOrgTokenConsent: vi.fn(),
         });
   
         render(<WalletSelector {...defaultProps} />); 
@@ -232,10 +225,9 @@ describe('WalletSelector', () => {
 
       mockUseChatWalletDecision.mockReturnValue({
         effectiveOutcome: { outcome: 'use_organization_wallet', orgId },
-        giveConsent: vi.fn(),
-        refuseConsent: vi.fn(),
-        isLoadingConsent: false,
-        resetConsent: vi.fn(),
+        openConsentModal: vi.fn(),
+        orgIdForModal: orgId,
+        resetOrgTokenConsent: vi.fn(),
       });
 
       render(<WalletSelector {...defaultProps} />);
@@ -252,10 +244,9 @@ describe('WalletSelector', () => {
   
         mockUseChatWalletDecision.mockReturnValue({
           effectiveOutcome: { outcome: 'use_organization_wallet', orgId },
-          giveConsent: vi.fn(),
-          refuseConsent: vi.fn(),
-          isLoadingConsent: false,
-          resetConsent: vi.fn(),
+          openConsentModal: vi.fn(),
+          orgIdForModal: orgId,
+          resetOrgTokenConsent: vi.fn(),
         });
   
         render(<WalletSelector {...defaultProps} />);
@@ -263,6 +254,72 @@ describe('WalletSelector', () => {
         expect(await screen.findByText(/N\/A/i)).toBeInTheDocument();
       });
 
+  });
+
+  describe('Other Outcome Scenarios', () => {
+    const orgId = 'org-123';
+    const orgName = 'Mock Org Alpha';
+    
+    test('renders consent required message', async () => {
+      mockUseChatWalletDecision.mockReturnValue({
+        effectiveOutcome: { outcome: 'user_consent_required', orgId },
+        openConsentModal: vi.fn(),
+        orgIdForModal: orgId,
+        resetOrgTokenConsent: vi.fn(),
+      });
+      
+      render(<WalletSelector {...defaultProps} />);
+      expect(await screen.findByText(/Consent Required:/i)).toBeInTheDocument();
+      expect(await screen.findByText(`Use Personal for ${orgName}?`)).toBeInTheDocument();
+    });
+    
+    test('renders consent refused message', async () => {
+      mockUseChatWalletDecision.mockReturnValue({
+        effectiveOutcome: { outcome: 'user_consent_refused', orgId },
+        openConsentModal: vi.fn(),
+        orgIdForModal: orgId,
+        resetOrgTokenConsent: vi.fn(),
+      });
+      
+      render(<WalletSelector {...defaultProps} />);
+      expect(await screen.findByText(/Consent Refused:/i)).toBeInTheDocument();
+      expect(await screen.findByText(`Personal for ${orgName}`)).toBeInTheDocument();
+    });
+
+    test("renders personal wallet for org use case", async () => {
+        const personalWalletData: TokenWallet = { 
+            walletId: 'personal-id', 
+            balance: '12345', 
+            currency: 'AI_TOKEN',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        };
+        initializeMockWalletStore({
+            personalWallet: personalWalletData,
+        });
+
+        mockUseChatWalletDecision.mockReturnValue({
+            effectiveOutcome: { outcome: 'use_personal_wallet_for_org', orgId },
+            openConsentModal: vi.fn(),
+            orgIdForModal: orgId,
+            resetOrgTokenConsent: vi.fn(),
+        });
+        render(<WalletSelector {...defaultProps} />);
+        expect(await screen.findByText(/Personal:/i)).toBeInTheDocument();
+        expect(await screen.findByText(/12.3K/i)).toBeInTheDocument(); // Check formatting
+    });
+
+    test("renders org wallet unavailable due to policy", async () => {
+        mockUseChatWalletDecision.mockReturnValue({
+            effectiveOutcome: { outcome: 'org_wallet_not_available_policy_org', orgId },
+            openConsentModal: vi.fn(),
+            orgIdForModal: orgId,
+            resetOrgTokenConsent: vi.fn(),
+        });
+        render(<WalletSelector {...defaultProps} />);
+        expect(await screen.findByText(new RegExp(`${orgName}:`, 'i'))).toBeInTheDocument();
+        expect(await screen.findByText(/Unavailable \(Policy\)/i)).toBeInTheDocument();
+    });
   });
 
 }); 

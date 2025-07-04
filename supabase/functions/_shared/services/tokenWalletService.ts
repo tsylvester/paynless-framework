@@ -293,6 +293,39 @@ export class TokenWalletService implements ITokenWalletService {
 
     const rpcResult = data[0];
 
+    // After successfully recording the transaction, create a notification.
+    try {
+      const { data: walletData, error: walletError } = await this.supabaseAdminClient
+        .from('token_wallets')
+        .select('user_id')
+        .eq('wallet_id', params.walletId)
+        .single();
+
+      if (walletError) {
+        throw new Error(`Failed to retrieve wallet owner for notification: ${walletError.message}`);
+      }
+
+      if (walletData && walletData.user_id) {
+        await this.supabaseAdminClient.rpc('create_notification_for_user', {
+          target_user_id: walletData.user_id,
+          notification_type: 'WALLET_TRANSACTION',
+          notification_data: {
+            subject: 'Wallet Balance Updated',
+            message: `Your token balance has changed. New balance: ${rpcResult.balance_after_txn}`,
+            target_path: '/transaction-history',
+            walletId: params.walletId,
+            newBalance: rpcResult.balance_after_txn,
+          }
+        });
+      }
+    } catch (notificationError) {
+      // Log the error but do not throw, as the primary transaction succeeded.
+      console.error('[TokenWalletService] Failed to create wallet transaction notification:', {
+        walletId: params.walletId,
+        error: notificationError,
+      });
+    }
+
     return {
       transactionId: rpcResult.transaction_id,
       walletId: rpcResult.wallet_id,
