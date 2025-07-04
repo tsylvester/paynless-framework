@@ -86,14 +86,14 @@ The implementation plan uses the following labels to categorize work steps:
 ## Phase 3: Final Integration and Documentation
 
 ### 6. Integration Testing
-   *   `[ ]` 6.a. [TEST-INT] Write an integration test that covers the flow from the `dialecticStore`'s `generateContributions` action to the backend `generateContributions` function.
-       *   `[ ]` 6.a.i. This test will verify that the API client correctly calls the backend and that the initial state change in the store is correct.
-   *   `[ ]` 6.b. [TEST-E2E] Manually test or update/create an E2E test for the entire workflow:
-       *   `[ ]` 6.b.i. Click the "Generate" button.
-       *   `[ ]` 6.b.ii. Assert that the button enters a loading state.
-       *   `[ ]` 6.b.iii. Assert that an initial "Generation started" toast appears.
-       *   `[ ]` 6.b.iv. Wait for and assert that a "Generation complete" notification appears (via the standard notification bell/popup).
-       *   `[ ]` 6.b.v. Assert that the UI refreshes to show the new contributions.
+   *   `[✅]` 6.a. [TEST-INT] Write an integration test that covers the flow from the `dialecticStore`'s `generateContributions` action to the backend `generateContributions` function.
+       *   `[✅]` 6.a.i. This test will verify that the API client correctly calls the backend and that the initial state change in the store is correct.
+   *   `[✅]` 6.b. [TEST-E2E] Manually test or update/create an E2E test for the entire workflow:
+       *   `[✅]` 6.b.i. Click the "Generate" button.
+       *   `[✅]` 6.b.ii. Assert that the button enters a loading state.
+       *   `[✅]` 6.b.iii. Assert that an initial "Generation started" toast appears.
+       *   `[✅]` 6.b.iv. Wait for and assert that a "Generation complete" notification appears (via the standard notification bell/popup).
+       *   `[✅]` 6.b.v. Assert that the UI refreshes to show the new contributions.
 
 ### 7. Documentation
    *   `[ ]` 7.a. [DOCS] Update the architecture documentation and any relevant READMEs to reflect the new asynchronous, parallel, TDD-driven flow.
@@ -129,6 +129,6 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ]` 11.a. [TEST-UNIT] Write a failing test for `ControlPanel.tsx` that verifies the `GenerateContributionButton` is enabled when the session status is `'<stage>_generation_failed'`.
     *   `[ ]` 11.b. [REFACTOR] In `ControlPanel.tsx` (or directly in the `GenerateContributionButton` if the logic remains there), update the `disabled` logic. The button should be enabled if the session status is `pending_<stage_slug>` OR `${stage.slug}_generation_failed`. This makes the test from `11.a` pass.
     *   `[ ]` 11.c. [REFACTOR] Review the "Regenerate" logic. The button text should display "Regenerate" if contributions for the current stage and iteration *already exist*, regardless of the session status. This allows users to regenerate successful contributions if they are unsatisfied.
-    *   `[ ]` 11.d. [COMMIT] `fix(workflow): Allow contribution generation from failed state and improve regeneration flow`
+    *   `[✅]` 11.d. [COMMIT] `fix(workflow): Allow contribution generation from failed state and improve regeneration flow`
 
 [DEPLOY] Consider deployment after all phases are complete and thoroughly tested. 

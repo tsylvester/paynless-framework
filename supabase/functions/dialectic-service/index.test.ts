@@ -771,10 +771,10 @@ withSupabaseEnv("handleRequest - startSession", async (t) => {
 withSupabaseEnv("handleRequest - generateContributions", async (t) => {
     const sessionId = 'sess-123';
     
-    await t.step("should call generateContributions and return 202 on success", async () => {
-        const mockResponse: GenerateContributionsSuccessResponse = { message: "Processing started", sessionId: 'sess-123', status: "202", contributions: [] };
-        const generateSpy = spy(() => Promise.resolve({ success: true, data: mockResponse }));
-        const mockHandlers = createMockHandlers({ generateContributions: generateSpy as any });
+    await t.step("should dispatch async generation and return 202 on success", async () => {
+        // Spy on the actual handler to ensure it's called asynchronously.
+        const generateSpy = spy(() => Promise.resolve({ success: true, data: {} as any }));
+        const mockHandlers = createMockHandlers({ generateContributions: generateSpy });
         
         const mockToken = "mock-jwt";
         const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
@@ -782,45 +782,66 @@ withSupabaseEnv("handleRequest - generateContributions", async (t) => {
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
 
+        // Mock the global EdgeRuntime object provided by the Supabase environment.
+        const waitUntilSpy = spy();
+        const originalEdgeRuntime = (globalThis as any).EdgeRuntime;
+        (globalThis as any).EdgeRuntime = { waitUntil: waitUntilSpy };
+
         const payload = { sessionId, stageId: 'stage-1' };
         const req = createJsonRequest("generateContributions", payload, mockToken);
-        const response = await handleRequest(
-          req,
-          mockHandlers,
-          mockUserClient as any,
-          mockAdminClient as any
-        );
-
-        assertEquals(response.status, 202);
-        const body = await response.json();
-        assertEquals(body, mockResponse);
-        assertEquals(generateSpy.calls.length, 1);
+        
+        try {
+            const response = await handleRequest(
+              req,
+              mockHandlers,
+              mockUserClient as any,
+              mockAdminClient as any
+            );
+    
+            // 1. Assert the immediate response is correct (202 Accepted).
+            assertEquals(response.status, 202);
+            const body = await response.json();
+            assertEquals(body, { message: "Contribution generation initiated." });
+            
+            // 2. Assert that EdgeRuntime.waitUntil was called exactly once.
+            assertEquals(waitUntilSpy.calls.length, 1);
+            
+            // 3. Await the promise passed to waitUntil to let the async task complete.
+            await waitUntilSpy.calls[0].args[0];
+            
+            // 4. Assert that our actual logic (the spy) was called.
+            assertEquals(generateSpy.calls.length, 1);
+        } finally {
+             // Clean up the global mock to avoid interfering with other tests.
+            (globalThis as any).EdgeRuntime = originalEdgeRuntime;
+        }
     });
 
-    await t.step("should return error if generateContributions fails", async () => {
-        const error: ServiceError = { message: "AI model unavailable", status: 502, code: "AI_ERROR" };
-        const generateSpy = spy(() => Promise.resolve({ success: false, error }));
-        const mockHandlers = createMockHandlers({ generateContributions: generateSpy as any });
+    await t.step("should return 401 if auth token is missing", async () => {
+        const generateSpy = spy(() => Promise.resolve({ success: true, data: {} as any }));
+        const mockHandlers = createMockHandlers({ generateContributions: generateSpy });
 
-        const mockToken = "mock-jwt";
+        // This mock will cause getUserFnForRequest to return an error.
         const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
-            getUserResult: { data: { user: mockUser }, error: null }
+            getUserResult: { data: { user: null }, error: { message: 'Auth failed!', name: 'AuthError' } }
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
 
         const payload = { sessionId, stageId: 'stage-1' };
-        const req = createJsonRequest("generateContributions", payload, mockToken);
+        // No token provided to createJsonRequest, so getUserFnForRequest will fail early.
+        const req = createJsonRequest("generateContributions", payload);
         const response = await handleRequest(
-          req,
-          mockHandlers,
-          mockUserClient as any,
-          mockAdminClient as any
+            req,
+            mockHandlers,
+            mockUserClient as any,
+            mockAdminClient as any
         );
 
-        assertEquals(response.status, 502);
-        const resBody = await response.json();
-        assertEquals(resBody.error, error.message);
-        assertEquals(generateSpy.calls.length, 1);
+        assertEquals(response.status, 401);
+        const body = await response.json();
+        // This message comes from getUserFnForRequest when authHeader is missing.
+        assertEquals(body.error, "User not authenticated"); 
+        assertEquals(generateSpy.calls.length, 0);
     });
 });
 
