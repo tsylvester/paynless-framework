@@ -196,6 +196,34 @@ Deno.test('getMaxOutputTokens', async (t) => {
     assertEquals(result, 0);
   });
 
+  await t.step('should be limited by the model context window', () => {
+    beforeEachStep();
+    const user_balance_tokens = 100000; // High balance, not a limiting factor
+    const prompt_input_tokens = 3000;
+    const modelWithContextWindow: AiModelExtendedConfig = {
+      ...modelConfig,
+      context_window_tokens: 4096, // Standard context window
+      hard_cap_output_tokens: 8192, // High hard cap, not a limiting factor
+    };
+    const result = getMaxOutputTokens(user_balance_tokens, prompt_input_tokens, modelWithContextWindow, mockLogger);
+    
+    // prompt_cost = 3000 * 1 = 3000
+    // budget_for_output = 100000 - 3000 = 97000
+    // max_spendable_output_tokens = floor(97000 / 2) = 48500
+    
+    // twenty_percent_balance_as_output_tokens = floor((0.20 * 97000) / 2) = 9700
+    // absolute_provider_cap = 8192
+    // dynamic_hard_cap = min(9700, 8192) = 8192
+
+    // max_affordable = min(48500, 8192) = 8192
+
+    // available_context = 4096 - 3000 = 1096
+    
+    // The final result must be the minimum of what's affordable and what fits in the context window.
+    // result = min(8192, 1096) = 1096
+    assertEquals(result, 1096);
+  });
+
   await t.step('should be limited by spendable tokens when prompt is large', () => {
     beforeEachStep();
     const user_balance_tokens = 1000;

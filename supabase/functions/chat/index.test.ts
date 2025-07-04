@@ -22,6 +22,12 @@ import {
     type TokenWalletServiceMethodImplementations
 } from "../_shared/services/tokenWalletService.mock.ts";
 import { Logger } from "../_shared/logger.ts";
+import {
+  assertEquals,
+} from "jsr:@std/assert@0.225.3";
+import {
+  assertSpyCalls,
+} from "jsr:@std/testing@0.225.1/mock";
 
 // Re-exporting common testing utilities if needed by other test files
 export { assert, assertEquals, assertExists, assertObjectMatch } from "jsr:@std/assert@0.225.3";
@@ -321,3 +327,197 @@ export const ChatTestConstants = {
 
 // This file no longer contains Deno.test blocks.
 // It serves as a utility module for other test files in this directory.
+
+Deno.test('[Corrected] handlePostRequest should apply a fallback cap when model config is missing a hard cap', async (t) => {
+  await t.step('it should prevent huge token requests for high-balance users if model config is incomplete', async () => {
+    // 1. Setup: The "Perfect Storm"
+    const highUserBalance = 1_000_000;
+    const promptInputTokens = 100;
+    // With a high balance and no hard cap, the old logic would calculate a huge number:
+    // budget_for_output = 1M - (100*1) = 999,900
+    // twenty_percent_cap = floor((0.20 * 999,900) / 2) = 99,990. THIS IS THE BUG.
+    const buggyLargeOutput = 99990; 
+    const FALLBACK_SYSTEM_CAP = 4096; // What we EXPECT the code to fall back to.
+
+    const mockRequestBody: ChatApiRequest = {
+      message: 'Test message for the real bug',
+      providerId: '123e4567-e89b-12d3-a456-426614174000',
+      promptId: '__none__',
+      // CRITICAL: max_tokens_to_generate is UNDEFINED in the request.
+    };
+
+    // CRITICAL: The mock config is missing `hard_cap_output_tokens`.
+    const mockIncompleteProviderConfig = {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        name: 'Test Incomplete Provider',
+        api_identifier: 'test-model-incomplete',
+        provider: 'openai',
+        is_active: true,
+        config: {
+            api_identifier: 'test-model-incomplete',
+            tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+            input_token_cost_rate: 1,
+            output_token_cost_rate: 2,
+            // hard_cap_output_tokens is intentionally missing
+        } as Json,
+    };
+
+    const { deps, mockAdapterSpy, clearSupabaseClientStubs, clearTokenWalletStubs } = createTestDeps(
+      {
+        mockUser: { id: testUserId } as any,
+        genericMockResults: {
+          'ai_providers': { select: { data: [mockIncompleteProviderConfig], error: null, count: 1, status: 200 } },
+          'chats': { insert: { data: [{ id: testChatId }], error: null, count: 1, status: 201 } },
+          'chat_messages': { insert: { data: [mockUserDbRow, mockAssistantDbRow], error: null, count: 2, status: 201 } },
+        }
+      },
+      mockAdapterSuccessResponse,
+      {
+        getWalletForContext: () => Promise.resolve({
+            walletId: 'wallet-uuid-test',
+            balance: String(highUserBalance),
+            ownerId: testUserId, ownerType: 'user', tokenType: 'standard',
+            createdAt: new Date(nowISO), updatedAt: new Date(nowISO),
+            organizationId: undefined, currency: 'AI_TOKEN',
+        }),
+        recordTransaction: () => Promise.resolve({
+            transactionId: 'txn-uuid-test', walletId: 'wallet-uuid-test', type: 'DEBIT_USAGE',
+            amount: '100', balanceAfterTxn: String(highUserBalance - 100),
+            createdAt: nowISO, idempotencyKey: 'idempotency-key', recordedByUserId: testUserId,
+            timestamp: new Date(nowISO),
+        })
+      },
+      () => promptInputTokens
+    );
+
+    // 2. Execution
+    const request = new Request('http://localhost/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-token' },
+      body: JSON.stringify(mockRequestBody),
+    });
+
+    await handler(request, deps);
+
+    // 3. Assertion
+    if (!mockAdapterSpy) throw new Error("Adapter spy is not defined.");
+    assertSpyCalls(mockAdapterSpy, 1);
+
+    const passedChatRequest = mockAdapterSpy.calls[0].args[0] as ChatApiRequest;
+    
+    // This assertion should FAIL with the current code.
+    // The current code will pass `buggyLargeOutput`. We want it to pass `FALLBACK_SYSTEM_CAP`.
+    assertEquals(
+      passedChatRequest.max_tokens_to_generate,
+      FALLBACK_SYSTEM_CAP,
+      `max_tokens_to_generate should be capped at the system fallback (${FALLBACK_SYSTEM_CAP}), not the erroneously calculated large value (${buggyLargeOutput})`
+    );
+
+    // 4. Teardown
+    clearSupabaseClientStubs?.();
+    clearTokenWalletStubs?.();
+  });
+});
+
+Deno.test('handlePostRequest should cap max_tokens_to_generate based on affordability, overriding a larger request value', async () => {
+  // 1. Setup
+  const highRequestedMaxTokens = 4096;
+  const userBalance = 1000;
+  const promptInputTokens = 100;
+
+  // This is the expected value based on the logic in getMaxOutputTokens.
+  // prompt_cost = 100 * 1 (input_rate) = 100
+  // budget_for_output = 1000 (balance) - 100 = 900
+  // max_spendable_output_tokens = 900 / 2 (output_rate) = 450
+  // twenty_percent_cap_raw = (0.20 * 900) / 2 = 90
+  // dynamic_hard_cap = min(90, 4096 (model_hard_cap)) = 90
+  // final_result = min(450, 90) = 90
+  const expectedMaxAllowedOutputTokens = 90;
+
+  const mockRequestBody: ChatApiRequest = {
+    message: 'Test message',
+    providerId: '123e4567-e89b-12d3-a456-426614174000',
+    promptId: '__none__',
+    max_tokens_to_generate: highRequestedMaxTokens, // User requests a large amount
+  };
+
+  const mockProviderConfig = {
+      id: '123e4567-e89b-12d3-a456-426614174000',
+      name: 'Test Capping Provider',
+      api_identifier: 'test-model-capper',
+      provider: 'openai',
+      is_active: true,
+      config: {
+          api_identifier: 'test-model-capper',
+          tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+          input_token_cost_rate: 1,
+          output_token_cost_rate: 2,
+          hard_cap_output_tokens: 4096, // Model's own hard cap
+      } as Json,
+  };
+
+  const { deps, mockAdapterSpy, clearSupabaseClientStubs, clearTokenWalletStubs } = createTestDeps(
+    {
+      mockUser: { id: testUserId } as any,
+      genericMockResults: {
+        'ai_providers': { select: { data: [mockProviderConfig], error: null, count: 1, status: 200 } },
+        'chats': { insert: { data: [{ id: testChatId }], error: null, count: 1, status: 201 } },
+        'chat_messages': { insert: { data: [mockUserDbRow, mockAssistantDbRow], error: null, count: 2, status: 201 } },
+      }
+    },
+    mockAdapterSuccessResponse, // Mock a successful response from the AI
+    {
+      getWalletForContext: () => Promise.resolve({
+          walletId: 'wallet-uuid-test',
+          balance: String(userBalance), // Changed to string
+          ownerId: testUserId,
+          ownerType: 'user',
+          tokenType: 'standard',
+          createdAt: new Date(nowISO),
+          updatedAt: new Date(nowISO),
+          organizationId: undefined,
+          currency: 'AI_TOKEN',
+      }),
+      recordTransaction: () => Promise.resolve({
+          transactionId: 'txn-uuid-test',
+          walletId: 'wallet-uuid-test',
+          type: 'DEBIT_USAGE',
+          amount: '100', // Dummy value
+          balanceAfterTxn: String(userBalance - 100),
+          createdAt: nowISO,
+          idempotencyKey: 'idempotency-key',
+          recordedByUserId: testUserId,
+          timestamp: new Date(nowISO),
+      })
+    },
+    () => promptInputTokens // Mock the token counter to return a fixed value
+  );
+
+  // 2. Execution
+  const request = new Request('http://localhost/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-token' },
+    body: JSON.stringify(mockRequestBody),
+  });
+
+  await handler(request, deps);
+
+  // 3. Assertion
+  if (!mockAdapterSpy) {
+    throw new Error("mockAdapterSpy is not defined. Check test setup.");
+  }
+  assertSpyCalls(mockAdapterSpy, 1);
+
+  const adapterCallArgs = mockAdapterSpy.calls[0].args;
+  const passedChatRequest = adapterCallArgs[0] as ChatApiRequest;
+
+  assertEquals(
+    passedChatRequest.max_tokens_to_generate,
+    expectedMaxAllowedOutputTokens,
+    `max_tokens_to_generate should be capped at the affordable amount (${expectedMaxAllowedOutputTokens}), not the requested amount (${highRequestedMaxTokens})`
+  );
+  
+  // 4. Teardown
+  clearSupabaseClientStubs?.();
+  clearTokenWalletStubs?.();
+});

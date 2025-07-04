@@ -7,64 +7,39 @@ import type { Json } from '../types_db.ts'; // Added import
 
 const PROVIDER_NAME = 'anthropic';
 
+// Centralized map for model properties
+const modelInfo = {
+  'claude-4-sonnet': { inputCost: 3.0, outputCost: 15.0, context: 200000, hardCap: 8192 },
+  'claude-3.7-sonnet': { inputCost: 3.0, outputCost: 15.0, context: 200000, hardCap: 8192 },
+  'claude-3.5-sonnet': { inputCost: 3.0, outputCost: 15.0, context: 200000, hardCap: 8192 },
+  'claude-3-opus': { inputCost: 15.0, outputCost: 75.0, context: 200000, hardCap: 4096 },
+  'claude-3-sonnet': { inputCost: 3.0, outputCost: 15.0, context: 200000, hardCap: 4096 },
+  'claude-3-haiku': { inputCost: 0.25, outputCost: 1.25, context: 200000, hardCap: 4096 },
+  // Fallback for any other model
+  'default': { inputCost: 1.0, outputCost: 1.0, context: 200000, hardCap: 4096 }
+};
+
 // Helper function to create a default AiModelExtendedConfig for Anthropic models
 export function createDefaultAnthropicConfig(modelApiIdentifier: string): AiModelExtendedConfig {
-  const modelId = modelApiIdentifier.toLowerCase(); // Normalize to lowercase for easier matching
-  const contextWindow = 200000; // Standard for current Claude 3 & 3.5 models
-  let hardCapOutput = 4096;   // Default, will be overridden for specific models
-  let inputCostRate = 0.0;    // Placeholder, will be overridden
-  let outputCostRate = 0.0;   // Placeholder, will be overridden
+  const modelId = modelApiIdentifier.toLowerCase();
+  
+  // Find the most specific match, then fallback to broader matches, then to default
+  const bestMatchKey = Object.keys(modelInfo).find(key => modelId.includes(key) && key !== 'default') || 'default';
+  const info = modelInfo[bestMatchKey as keyof typeof modelInfo];
 
-  // Prices per 1 million tokens. Will be converted to per-token rate.
-  // Opus: $15 input, $75 output
-  // Sonnet 3.5: $3 input, $15 output
-  // Haiku: $0.25 input, $1.25 output
-  // Sonnet (older, e.g. claude-3-sonnet-20240229): Treat same as Sonnet 3.5 for now if no specific pricing found.
-
-  if (modelId.includes('opus')) {
-    inputCostRate = 15.0 / 1000000;
-    outputCostRate = 75.0 / 1000000;
-    hardCapOutput = 4096; // Anthropic docs state 4096 for Opus
-  } else if (modelId.includes('claude-3.5-sonnet') || modelId.includes('sonnet-20240620')) { // Catches claude-3.5-sonnet-20240620
-    inputCostRate = 3.0 / 1000000;
-    outputCostRate = 15.0 / 1000000;
-    hardCapOutput = 8192; // Claude 3.5 Sonnet has 8k output
-  } else if (modelId.includes('sonnet')) { // Catches other sonnet versions like claude-3-sonnet-20240229
-    inputCostRate = 3.0 / 1000000; // Assume similar pricing to 3.5 if not specified
-    outputCostRate = 15.0 / 1000000;
-    // Older Sonnet (non-3.5) might have 4096 or other caps, Anthropic site implies 3.5 is 8k, others generally 4k
-    // Web search indicated "Claude Sonnet 4 / 3.7: 64,000 tokens" this requires more clarity from Anthropic for older/non-3.5 Sonnet
-    // For now, sticking to a common Sonnet cap or a conservative one if not 3.5
-    // The anthropic site under models lists "Max output tokens" for Claude 3 Sonnet as 4096.
-    // Let's assume 4096 for non-3.5 Sonnets for now for hard_cap unless API specifies otherwise
-    hardCapOutput = 4096;
-  } else if (modelId.includes('haiku')) {
-    inputCostRate = 0.25 / 1000000;
-    outputCostRate = 1.25 / 1000000;
-    hardCapOutput = 4096; // Claude 3 Haiku has 4k output
-  } else {
-    // Fallback for unknown Anthropic models - use a conservative default or log a warning
-    // These are placeholders and should ideally be updated if new models are common
-    inputCostRate = 1.0 / 1000000;  // Generic placeholder
-    outputCostRate = 1.0 / 1000000; // Generic placeholder
-    // contextWindow and hardCapOutput remain their initial defaults
-  }
-
-  // For Anthropic, token counting is typically handled via their API or specific libraries.
-  // 'claude_tokenizer' is a placeholder for a more specific strategy if one becomes standard.
   const tokenizationStrategy: AiModelExtendedConfig['tokenization_strategy'] = {
-    type: 'claude_tokenizer', 
+    type: 'claude_tokenizer',
   };
 
   return {
-    api_identifier: modelApiIdentifier, // Ensure api_identifier is returned
-    input_token_cost_rate: inputCostRate,
-    output_token_cost_rate: outputCostRate,
-    context_window_tokens: contextWindow,
-    hard_cap_output_tokens: hardCapOutput, // This is our application's hard cap for generation
+    api_identifier: modelApiIdentifier,
+    input_token_cost_rate: info.inputCost / 1000000,
+    output_token_cost_rate: info.outputCost / 1000000,
+    context_window_tokens: info.context,
+    hard_cap_output_tokens: info.hardCap,
     tokenization_strategy: tokenizationStrategy,
-    provider_max_input_tokens: contextWindow, // For Anthropic, context window is effectively max input
-    provider_max_output_tokens: hardCapOutput, // Anthropic's stated max output for the model
+    provider_max_input_tokens: info.context,
+    provider_max_output_tokens: info.hardCap,
   };
 }
 

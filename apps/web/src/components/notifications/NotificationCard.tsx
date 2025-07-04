@@ -23,7 +23,15 @@ export const NotificationCard: React.FC<NotificationCardProps> = ({ notification
 
     const subject = dataObject?.['subject'] as string || 'System Notification';
     const message = dataObject?.['message'] as string || '';
-    const targetPath = dataObject?.['target_path'] as string | undefined;
+    
+    // Check for explicit target_path, then attempt to construct one for Dialectic notifications
+    let targetPath = dataObject?.['target_path'] as string | undefined;
+    const projectId = dataObject?.['projectId'] as string | undefined;
+    const sessionId = dataObject?.['sessionId'] as string | undefined;
+
+    if (!targetPath && projectId && sessionId) {
+        targetPath = `/dialectic/${projectId}/session/${sessionId}`;
+    }
 
     return (
         <Card key={notification.id} data-notification-id={notification.id}>

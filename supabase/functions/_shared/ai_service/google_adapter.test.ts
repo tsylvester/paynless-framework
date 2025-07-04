@@ -1,7 +1,7 @@
 import { assertEquals, assertExists, assertRejects, assertInstanceOf, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { spy, stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { GoogleAdapter } from './google_adapter.ts';
-import type { ChatApiRequest, ILogger } from '../types.ts';
+import type { ChatApiRequest, ILogger, AiModelExtendedConfig } from '../types.ts';
 
 // Mock logger for testing
 const mockLogger: ILogger = {
@@ -376,80 +376,106 @@ Deno.test("GoogleAdapter sendMessage - Finish Reason OTHER", async () => {
 });
 
 Deno.test("GoogleAdapter listModels - Success", async () => {
-    const mockFetch = stub(globalThis, "fetch", () =>
-      Promise.resolve(
-        new Response(JSON.stringify(MOCK_GOOGLE_MODELS_RESPONSE), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      )
-    );
-
-    try {
-        const adapter = new GoogleAdapter(MOCK_API_KEY, mockLogger);
-        const models = await adapter.listModels();
-
-        assertEquals(mockFetch.calls.length, 1);
-        const fetchArgs = mockFetch.calls[0].args;
-        assertEquals(fetchArgs[0], `https://generativelanguage.googleapis.com/v1beta/models?key=${MOCK_API_KEY}`);
-        assertEquals(fetchArgs[1]?.method, 'GET');
-
-        assertEquals(models.length, 2); // text-bison filtered out
-        assertEquals(models[0].api_identifier, 'google-gemini-1.5-pro-latest');
-        assertEquals(models[0].name, 'Gemini 1.5 Pro Latest');
-        assertEquals(models[1].api_identifier, 'google-gemini-1.0-pro');
-        assertEquals(models[1].name, 'Gemini 1.0 Pro');
-
-    } finally {
-        mockFetch.restore();
+  // Mocking the main models list and individual model details
+  const mockFetch = stub(globalThis, "fetch", (input: string | URL | Request) => {
+    const urlString = input.toString();
+    if (urlString.includes('/models?key=')) { // Main list call
+      return Promise.resolve(new Response(JSON.stringify(MOCK_GOOGLE_MODELS_RESPONSE), { status: 200 }));
     }
-});
-
-Deno.test("GoogleAdapter listModels - API Error", async () => {
-    const mockFetch = stub(globalThis, "fetch", () =>
-      Promise.resolve(
-        new Response(JSON.stringify({ error: { message: 'API key expired' } }), {
-          status: 403,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      )
-    );
-
-    try {
-        const adapter = new GoogleAdapter(MOCK_API_KEY, mockLogger);
-        await assertRejects(
-            () => adapter.listModels(),
-            Error,
-            "Google Gemini API request failed fetching models: 403"
-        );
-    } finally {
-        mockFetch.restore();
+    // Individual model detail calls
+    const modelNameMatch = urlString.match(/models\/([^?]+)/);
+    if (modelNameMatch) {
+      const modelId = modelNameMatch[1];
+      const modelData = MOCK_GOOGLE_MODELS_RESPONSE.models.find(m => m.name === `models/${modelId}`);
+      if (modelData) {
+        return Promise.resolve(new Response(JSON.stringify(modelData), { status: 200 }));
+      }
     }
-});
-
-Deno.test("GoogleAdapter sendMessage - API Error (generateContent)", async () => {
-  const mockFetch = stub(globalThis, "fetch", () =>
-    Promise.resolve(
-      new Response(JSON.stringify({ error: { code: 500, message: 'Internal Server Error' } }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    )
-  );
+    // Fallback for unexpected calls
+    return Promise.reject(new Error(`Unexpected fetch call in mock: ${urlString}`));
+  });
 
   try {
     const adapter = new GoogleAdapter(MOCK_API_KEY, mockLogger);
-    await assertRejects(
-      () => adapter.sendMessage(MOCK_CHAT_REQUEST_GOOGLE, MOCK_MODEL_ID),
-      Error,
-      "Google Gemini API request failed: 500"
-    );
+    const models = await adapter.listModels();
+    
+    // We expect 2 models, as one doesn't support 'generateContent'
+    assertEquals(models.length, 2);
+    // 1 list call + 2 get calls for the valid models
+    assertEquals(mockFetch.calls.length, 3); 
+    
+    const geminiPro = models.find(m => m.api_identifier === 'google-gemini-1.5-pro-latest');
+    assertExists(geminiPro);
+    assertEquals(geminiPro.name, "Gemini 1.5 Pro Latest");
+    assertExists(geminiPro.config, "Config should be populated from getModelDetails");
+    
+    const config = geminiPro.config as unknown as AiModelExtendedConfig;
+    assertEquals(config.context_window_tokens, 1048576);
+    assertEquals(config.hard_cap_output_tokens, 8192);
+
   } finally {
     mockFetch.restore();
   }
 });
 
-Deno.test("GoogleAdapter sendMessage - API Error (countTokens)", async () => {
+Deno.test("GoogleAdapter listModels - API Error", async () => {
+  const mockFetch = stub(globalThis, "fetch", () => {
+    // This will cause the initial list fetch to fail
+    return Promise.resolve(new Response("Server Error", { status: 500 }));
+  });
+
+  try {
+    const adapter = new GoogleAdapter(MOCK_API_KEY, mockLogger);
+    // The adapter is designed to handle this gracefully and return an empty array
+    const models = await adapter.listModels();
+    assertEquals(models.length, 0);
+  } finally {
+    mockFetch.restore();
+  }
+});
+
+// Test for when getModelDetails fails for one model but not others
+Deno.test("GoogleAdapter listModels - Partial Failure in getModelDetails", async () => {
+  const mockFetch = stub(globalThis, "fetch", (input: string | URL | Request) => {
+    const urlString = input.toString();
+    if (urlString.includes('/models?key=')) {
+      return Promise.resolve(new Response(JSON.stringify(MOCK_GOOGLE_MODELS_RESPONSE), { status: 200 }));
+    }
+    
+    // This regex now specifically looks for the full model name in the URL
+    const modelNameMatch = urlString.match(/models\/(gemini-1\.5-pro-latest|gemini-1\.0-pro)/);
+    if (modelNameMatch) {
+      const modelId = modelNameMatch[1];
+      // Intentionally fail the getModelDetails call for gemini-1.0-pro
+      if (modelId === 'gemini-1.0-pro') {
+        return Promise.resolve(new Response("Not Found", { status: 404 }));
+      }
+      // Succeed for all other valid models
+      const modelData = MOCK_GOOGLE_MODELS_RESPONSE.models.find(m => m.name === `models/${modelId}`);
+      if (modelData) {
+        return Promise.resolve(new Response(JSON.stringify(modelData), { status: 200 }));
+      }
+    }
+    
+    return Promise.reject(new Error(`Unexpected fetch call in mock: ${urlString}`));
+  });
+
+  try {
+    const adapter = new GoogleAdapter(MOCK_API_KEY, mockLogger);
+    const models = await adapter.listModels();
+    
+    // Should return only the one successful model that supports generateContent
+    assertEquals(models.length, 1);
+    assertEquals(models[0].api_identifier, 'google-gemini-1.5-pro-latest');
+    // 1 list call + 2 get attempts (one success, one failure for the valid models)
+    assertEquals(mockFetch.calls.length, 3); 
+
+  } finally {
+    mockFetch.restore();
+  }
+});
+
+Deno.test("GoogleAdapter sendMessage - API Error (generateContent)", async () => {
   const mockFetch = stub(globalThis, "fetch", (input: string | URL | Request, _options?: RequestInit) => {
     const urlString = input.toString();
     if (urlString.includes(":generateContent")) {
