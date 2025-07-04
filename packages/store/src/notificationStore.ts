@@ -3,6 +3,7 @@ import { api } from '@paynless/api';
 import type { Notification, ApiError } from '@paynless/types';
 import { logger } from '@paynless/utils';
 import { useDialecticStore } from './dialecticStore';
+import { useWalletStore } from './walletStore';
 
 // Define state structure
 export interface NotificationState {
@@ -58,7 +59,19 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                 logger.warn('[NotificationStore] Received contribution_generation_complete event with invalid data.', { data });
             }
         }
-        // --- END NEW ---
+        
+        if (notification.type === 'WALLET_TRANSACTION') {
+            const { data } = notification;
+            if (data && typeof data === 'object' && 'walletId' in data && 'newBalance' in data) {
+                logger.info('[NotificationStore] Handling wallet transaction event.', { data });
+                useWalletStore.getState()._handleWalletUpdateNotification({
+                    walletId: data['walletId'] as string,
+                    newBalance: data['newBalance'] as string,
+                });
+            } else {
+                logger.warn('[NotificationStore] Received WALLET_TRANSACTION event with invalid data.', { data });
+            }
+        }
 
         get().addNotification(notification as Notification);
     };
@@ -229,7 +242,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
             logger.info('[NotificationStore] Subscribing to notifications for user:', { userId });
             try {
                 const notificationApi = api.notifications();
-                const channel = notificationApi.subscribeToNotifications(userId, handleIncomingNotification);
+                const channel = notificationApi.subscribeToNotifications(userId, get().handleIncomingNotification);
 
                 if (channel) {
                     set({ subscribedUserId: userId, error: null });

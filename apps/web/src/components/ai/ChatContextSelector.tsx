@@ -1,9 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useMemo } from 'react';
 import type { Organization } from '@paynless/types';
-// import { useOrganizationStore } from '@paynless/store'; // No longer needed directly if context comes from aiStore
-import { useAiStore, useOrganizationStore } from '@paynless/store'; // Added useAiStore
+import { useAiStore, useOrganizationStore } from '@paynless/store';
 import {
   Select,
   SelectContent,
@@ -12,71 +11,108 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { logger } from '@paynless/utils'; // Added logger for potential debugging
+import { logger } from '@paynless/utils';
+import { useChatWalletDecision } from '@/hooks/useChatWalletDecision';
+import { OrgTokenConsentModal } from '@/components/modals/OrgTokenConsentModal';
 
 interface ChatContextSelectorProps {
-  // currentContextId: string | null; // Removed
-  // onContextChange: (contextId: string | null) => void; // Removed
   className?: string;
-  disabled?: boolean; // Added disabled prop
+  disabled?: boolean;
 }
 
 export const ChatContextSelector: React.FC<ChatContextSelectorProps> = ({
   className,
-  disabled = false, // Added disabled prop
+  disabled = false,
 }) => {
   const { userOrganizations, isLoading: isOrgLoading } = useOrganizationStore(state => ({
     userOrganizations: state.userOrganizations,
     isLoading: state.isLoading,
   }));
 
-  const { 
-    newChatContext, 
-    setNewChatContext,
-  } = useAiStore(state => ({
+  const { newChatContext, setNewChatContext } = useAiStore(state => ({
     newChatContext: state.newChatContext,
     setNewChatContext: state.setNewChatContext,
   }));
 
+  const {
+    effectiveOutcome,
+    isConsentModalOpen,
+    openConsentModal,
+    closeConsentModal,
+    orgIdForModal,
+    resetOrgTokenConsent,
+  } = useChatWalletDecision();
+
+  useEffect(() => {
+    if (effectiveOutcome.outcome === 'user_consent_required') {
+      openConsentModal();
+    }
+  }, [effectiveOutcome.outcome, openConsentModal]);
+
+  const orgNameForModal = useMemo(() => {
+    if (!orgIdForModal || !userOrganizations) return undefined;
+    const org = userOrganizations.find(o => o.id === orgIdForModal);
+    return org?.name;
+  }, [orgIdForModal, userOrganizations]);
+
+  const isValidContext = useMemo(() => 
+    !newChatContext || newChatContext === 'personal' || userOrganizations?.some(org => org.id === newChatContext),
+    [newChatContext, userOrganizations]
+  );
+
   const handleValueChange = (value: string) => {
-    // The value is now either 'personal' or an org ID, which is exactly what the store expects.
     setNewChatContext(value);
     logger.info(`[ChatContextSelector] Context selected for new chat: ${value}`);
   };
 
-  // The value from the store is already 'personal' or an org ID.
-  const currentSelectedValueInStore = newChatContext || 'personal';
-
-
-  const getDisplayName = () => {
-    if (isOrgLoading) return 'Loading contexts...';
-    // Use newChatContext from the store for display
-    if (newChatContext === 'personal') return 'Personal';
-    const selectedOrg = userOrganizations?.find(org => org.id === newChatContext);
-    return selectedOrg?.name || 'Select context'; // Fallback if org not found
-  };
+  const currentSelectedValue = isValidContext ? (newChatContext || 'personal') : 'personal';
 
   return (
-    <Select
-      value={currentSelectedValueInStore}
-      onValueChange={handleValueChange}
-      disabled={disabled || isOrgLoading} // Use passed disabled prop
-    >
-      <SelectTrigger className={cn("w-auto", className)}>
-        <SelectValue placeholder="Select context">
-          {getDisplayName()} 
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent className="bg-background/90 backdrop-blur-md border-border">
-        <SelectItem key="personal" value="personal">
-          Personal
-        </SelectItem>
-        {userOrganizations?.map((org: Organization) => ( // Added type for org
-          <SelectItem key={org.id} value={org.id}>
-            {org.name}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <>
+      <div>
+        <Select
+          value={currentSelectedValue}
+          onValueChange={handleValueChange}
+          disabled={disabled || isOrgLoading}
+        >
+          <SelectTrigger className={cn("w-auto", className)}>
+            <SelectValue placeholder="Select context" />
+          </SelectTrigger>
+          <SelectContent className="bg-background/90 backdrop-blur-md border-border">
+            <SelectItem key="personal" value="personal">
+              Personal
+            </SelectItem>
+            {userOrganizations?.map((org: Organization) => (
+              <SelectItem key={org.id} value={org.id}>
+                {org.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {effectiveOutcome.outcome === 'user_consent_refused' && orgIdForModal === newChatContext && (
+          <div className="text-xs text-red-500 mt-1.5">
+            Consent declined.
+            <button
+              onClick={() => {
+                if (orgIdForModal) {
+                  resetOrgTokenConsent(orgIdForModal);
+                }
+              }}
+              className="ml-1 underline hover:text-red-700 focus:outline-none"
+            >
+              Review?
+            </button>
+          </div>
+        )}
+      </div>
+      {orgIdForModal && (
+        <OrgTokenConsentModal
+          isOpen={isConsentModalOpen}
+          onClose={closeConsentModal}
+          orgName={orgNameForModal}
+          orgId={orgIdForModal}
+        />
+      )}
+    </>
   );
 }; 

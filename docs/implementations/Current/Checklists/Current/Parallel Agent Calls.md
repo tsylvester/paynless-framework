@@ -96,7 +96,7 @@ The implementation plan uses the following labels to categorize work steps:
        *   `[✅]` 6.b.v. Assert that the UI refreshes to show the new contributions.
 
 ### 7. Documentation
-   *   `[ ]` 7.a. [DOCS] Update the architecture documentation and any relevant READMEs to reflect the new asynchronous, parallel, TDD-driven flow.
+   *   `[✅]` 7.a. [DOCS] Update the architecture documentation and any relevant READMEs to reflect the new asynchronous, parallel, TDD-driven flow.
 
 ---
 
