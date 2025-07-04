@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useWalletStore, useAiStore } from '@paynless/store';
 import type { WalletDecisionOutcome } from '@paynless/types';
 import { logger } from '@paynless/utils';
@@ -16,30 +16,25 @@ interface UseChatWalletDecisionReturn {
 export const useChatWalletDecision = (): UseChatWalletDecisionReturn => {
   logger.debug('[useChatWalletDecision] Hook executing/re-evaluating.');
 
-  const determineChatWallet = useWalletStore(state => state.determineChatWallet);
-  const userOrgTokenConsent = useWalletStore(state => state.userOrgTokenConsent);
-  const { 
+  const {
+    determineChatWallet,
+    userOrgTokenConsent,
     clearUserOrgTokenConsent,
-    setCurrentChatWalletDecision,
-  } = useWalletStore.getState();
-  
+    isConsentModalOpen,
+    openConsentModal,
+    closeConsentModal,
+  } = useWalletStore(state => ({
+    determineChatWallet: state.determineChatWallet,
+    userOrgTokenConsent: state.userOrgTokenConsent,
+    clearUserOrgTokenConsent: state.clearUserOrgTokenConsent,
+    isConsentModalOpen: state.isConsentModalOpen,
+    openConsentModal: state.openConsentModal,
+    closeConsentModal: state.closeConsentModal,
+  }));
+
   const newChatContextOrgId = useAiStore(state => state.newChatContext);
   logger.debug('[useChatWalletDecision] newChatContextOrgId', { newChatContextOrgId });
   logger.debug('[useChatWalletDecision] Current userOrgTokenConsent state from store', { consentState: JSON.parse(JSON.stringify(userOrgTokenConsent)) });
-
-  const [isConsentModalOpen, setIsConsentModalOpen] = useState(false);
-
-  const openConsentModal = useCallback(() => {
-    logger.info('[useChatWalletDecision] openConsentModal called', { newChatContextOrgId });
-    if (newChatContextOrgId) {
-      setIsConsentModalOpen(true);
-    }
-  }, [newChatContextOrgId]);
-
-  const closeConsentModal = useCallback(() => {
-    logger.info('[useChatWalletDecision] closeConsentModal called.');
-    setIsConsentModalOpen(false);
-  }, []);
 
   const resetOrgTokenConsent = useCallback((orgIdToReset: string) => {
     logger.info('[useChatWalletDecision] resetOrgTokenConsent called', { orgId: orgIdToReset });
@@ -49,13 +44,8 @@ export const useChatWalletDecision = (): UseChatWalletDecisionReturn => {
   const calculatedOutcome = determineChatWallet(newChatContextOrgId);
 
   const isLoadingConsent = calculatedOutcome.outcome === 'loading';
-  
-  const effectiveOutcome: WalletDecisionOutcome = calculatedOutcome;
 
-  useEffect(() => {
-    logger.debug('[useChatWalletDecision] useEffect for setCurrentChatWalletDecision. Current effectiveOutcome:', effectiveOutcome);
-    setCurrentChatWalletDecision(effectiveOutcome);
-  }, [effectiveOutcome, setCurrentChatWalletDecision]);
+  const effectiveOutcome: WalletDecisionOutcome = calculatedOutcome;
 
   logger.debug('[useChatWalletDecision] Final results', { effectiveOutcome, isLoadingConsent });
 

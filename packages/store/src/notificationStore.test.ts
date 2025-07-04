@@ -1,5 +1,5 @@
 // packages/store/src/notificationStore.test.ts
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { act } from '@testing-library/react';
 // --- Update import: NotificationState might not be exported, adjust if needed ---
 import { useNotificationStore /* NotificationState */ } from './notificationStore';
@@ -14,6 +14,7 @@ import { NotificationApiClient } from '@paynless/api';
 // Import the shared mock factory and reset function
 import { createMockNotificationApiClient, resetMockNotificationApiClient } from '@paynless/api/mocks/notifications.api.mock';
 import { useDialecticStore } from './dialecticStore';
+import { useWalletStore } from './walletStore';
 
 // Mock the dialecticStore to spy on its internal methods
 const mockHandleGenerationComplete = vi.fn();
@@ -23,6 +24,16 @@ vi.mock('./dialecticStore', () => ({
       _handleGenerationCompleteEvent: mockHandleGenerationComplete,
     }),
   },
+}));
+
+// --- NEW: Mock walletStore for wallet transaction events ---
+const mockHandleWalletUpdate = vi.fn();
+vi.mock('./walletStore', () => ({
+    useWalletStore: {
+        getState: () => ({
+            _handleWalletUpdateNotification: mockHandleWalletUpdate,
+        }),
+    },
 }));
 
 // Mock Logger (Keep as is)
@@ -45,6 +56,7 @@ const mockNotificationApi = createMockNotificationApiClient();
 
 // --- Mock the Realtime Channel used by subscribe ---
 const mockRealtimeChannel = {
+    subscribe: vi.fn(),
     unsubscribe: vi.fn(),
 } as unknown as RealtimeChannel;
 
@@ -111,29 +123,38 @@ describe('notificationStore', () => {
         // Use the shared reset function for the mock API client
         resetMockNotificationApiClient(mockNotificationApi);
         
+        // --- NEW: Reset walletStore mock ---
+        mockHandleWalletUpdate.mockClear();
+        
         // Reset Realtime specific mocks
-        mockRealtimeChannel.unsubscribe.mockReset();
+        (mockRealtimeChannel.unsubscribe as Mock).mockReset();
         capturedNotificationCallback = null; // Clear captured callback
 
         // --- Mocks for the API methods are now part of mockNotificationApi ---
         // Default success mock for fetch
-        mockNotificationApi.fetchNotifications.mockResolvedValue({ data: [], status: 200 });
+        vi.mocked(mockNotificationApi.fetchNotifications).mockResolvedValue({ data: [], status: 200 });
         // Default success mock for mark read
-        mockNotificationApi.markNotificationRead.mockResolvedValue({ data: undefined, status: 204 });
+        vi.mocked(mockNotificationApi.markNotificationRead).mockResolvedValue({ data: undefined, status: 204 });
         // Default success mock for mark all read
-        mockNotificationApi.markAllNotificationsAsRead.mockResolvedValue({ data: undefined, status: 204 });
+        vi.mocked(mockNotificationApi.markAllNotificationsAsRead).mockResolvedValue({ data: undefined, status: 204 });
         
-        // Default mock for subscribe - capture callback and return channel/null
-        // Assuming NotificationApiClient has subscribe/unsubscribe methods now
-        // If subscribe/unsubscribe are NOT part of NotificationApiClient, adjust mock setup
-        // mockNotificationApi.subscribeToNotifications.mockImplementation(...);
-        // mockNotificationApi.unsubscribeFromNotifications.mockImplementation(...);
+        // --- NEW: Default mocks for realtime subscription methods ---
+        vi.mocked(mockNotificationApi.subscribeToNotifications).mockImplementation(
+            (userId: string, callback: (notification: Notification) => void) => {
+                if (!userId) return null;
+                capturedNotificationCallback = callback;
+                return mockRealtimeChannel;
+            }
+        );
+        vi.mocked(mockNotificationApi.unsubscribeFromNotifications).mockImplementation(() => {
+            // This is synchronous in the store
+        });
         
         // Reset logger mocks
-        (logger.info as vi.Mock).mockClear();
-        (logger.warn as vi.Mock).mockClear();
-        (logger.error as vi.Mock).mockClear();
-        (logger.debug as vi.Mock).mockClear();
+        (logger.info as Mock).mockClear();
+        (logger.warn as Mock).mockClear();
+        (logger.error as Mock).mockClear();
+        (logger.debug as Mock).mockClear();
     });
 
     afterEach(() => {
@@ -153,7 +174,7 @@ describe('notificationStore', () => {
             it('should set notifications and unread count on successful fetch', async () => {
                 const mockNotifications = [mockNotification1, mockNotification2, mockNotification3];
                 // Use the mock API instance
-                mockNotificationApi.fetchNotifications.mockResolvedValue({ data: mockNotifications, status: 200 });
+                vi.mocked(mockNotificationApi.fetchNotifications).mockResolvedValue({ data: mockNotifications, status: 200 });
                 await act(async () => { await useNotificationStore.getState().fetchNotifications(); });
                 const state = useNotificationStore.getState();
                 expect(state.isLoading).toBe(false);
@@ -165,7 +186,7 @@ describe('notificationStore', () => {
             
             it('should handle null data on successful fetch', async () => {
                  // Use the mock API instance
-                mockNotificationApi.fetchNotifications.mockResolvedValue({ data: null as any, status: 200 });
+                vi.mocked(mockNotificationApi.fetchNotifications).mockResolvedValue({ data: null as any, status: 200 });
                 await act(async () => { await useNotificationStore.getState().fetchNotifications(); });
                 const state = useNotificationStore.getState();
                 expect(state.isLoading).toBe(false);
@@ -179,7 +200,7 @@ describe('notificationStore', () => {
                 const mockNotifications = [mockNotification1];
                 const fetchPromise = new Promise((resolve) => setTimeout(() => resolve({ data: mockNotifications, status: 200 }), 20));
                 // Use the mock API instance
-                mockNotificationApi.fetchNotifications.mockReturnValue(fetchPromise as any);
+                vi.mocked(mockNotificationApi.fetchNotifications).mockReturnValue(fetchPromise as any);
 
                 await act(async () => {
                     const storePromise = useNotificationStore.getState().fetchNotifications();
@@ -193,7 +214,7 @@ describe('notificationStore', () => {
             it('should set error state on failed fetch', async () => {
                  const mockError: ApiError = { code: 'FETCH_ERROR', message: 'Failed to fetch' };
                  // Use the mock API instance
-                 mockNotificationApi.fetchNotifications.mockResolvedValue({ error: mockError, status: 500 });
+                 vi.mocked(mockNotificationApi.fetchNotifications).mockResolvedValue({ error: mockError, status: 500 });
                  await act(async () => { await useNotificationStore.getState().fetchNotifications(); });
                  const state = useNotificationStore.getState();
                  expect(state.isLoading).toBe(false);
@@ -272,6 +293,31 @@ describe('notificationStore', () => {
     
                 addNotificationSpy.mockRestore();
             });
+
+            it('should call walletStore._handleWalletUpdateNotification for wallet transaction notifications', () => {
+                const walletNotification: Notification = {
+                    id: 'uuid-wallet',
+                    user_id: 'user-abc',
+                    type: 'WALLET_TRANSACTION',
+                    data: { walletId: 'wallet-xyz', newBalance: '1000' },
+                    read: false,
+                    created_at: new Date().toISOString(),
+                };
+    
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+    
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(walletNotification);
+                });
+    
+                // It should call the special handler
+                expect(mockHandleWalletUpdate).toHaveBeenCalledWith(walletNotification.data);
+    
+                // It should ALSO still add it to the general notification list
+                expect(addNotificationSpy).toHaveBeenCalledWith(walletNotification);
+    
+                addNotificationSpy.mockRestore();
+            });
         });
 
         describe('markNotificationRead', () => {
@@ -287,7 +333,7 @@ describe('notificationStore', () => {
 
              it('should mark a notification as read, decrement count, and call API', async () => {
                  // Use the mock API instance
-                 mockNotificationApi.markNotificationRead.mockResolvedValue({ status: 204 }); // Success
+                 vi.mocked(mockNotificationApi.markNotificationRead).mockResolvedValue({ status: 204 }); // Success
 
                  await act(async () => { 
                      await useNotificationStore.getState().markNotificationRead(mockNotification1.id);
@@ -325,7 +371,7 @@ describe('notificationStore', () => {
              it('should revert state and set error on API failure', async () => {
                  const mockError: ApiError = { code: 'UPDATE_FAILED', message: 'Could not update' };
                  // Use the mock API instance
-                 mockNotificationApi.markNotificationRead.mockResolvedValue({ error: mockError, status: 500 });
+                 vi.mocked(mockNotificationApi.markNotificationRead).mockResolvedValue({ error: mockError, status: 500 });
 
                  await act(async () => { 
                      await useNotificationStore.getState().markNotificationRead(mockNotification1.id);
@@ -361,7 +407,7 @@ describe('notificationStore', () => {
 
             it('should mark all as read, set count to 0, and call API', async () => {
                 // Use the mock API instance
-                mockNotificationApi.markAllNotificationsAsRead.mockResolvedValue({ status: 204 });
+                vi.mocked(mockNotificationApi.markAllNotificationsAsRead).mockResolvedValue({ status: 204 });
 
                 await act(async () => { 
                     await useNotificationStore.getState().markAllNotificationsAsRead();
@@ -388,7 +434,7 @@ describe('notificationStore', () => {
                 const originalNotifications = [...useNotificationStore.getState().notifications]; // Store original state
                 const mockError: ApiError = { code: 'UPDATE_ALL_FAILED', message: 'Mass update failed' };
                 // Use the mock API instance
-                mockNotificationApi.markAllNotificationsAsRead.mockResolvedValue({ error: mockError, status: 500 });
+                vi.mocked(mockNotificationApi.markAllNotificationsAsRead).mockResolvedValue({ error: mockError, status: 500 });
 
                 await act(async () => { 
                      await useNotificationStore.getState().markAllNotificationsAsRead();
@@ -411,92 +457,105 @@ describe('notificationStore', () => {
             });
         });
         
-        // --- Tests for Realtime Subscription ---
-        // describe('subscribeToNotifications', () => {
-        //     it('should call the API subscribe method and set channel', () => {
-        //         const userId = 'user-for-sub';
-        //         act(() => { useNotificationStore.getState().subscribeToNotifications(userId); });
+        // --- NEW: Tests for Realtime Subscription ---
+        describe('subscribeToUserNotifications and unsubscribeFromUserNotifications', () => {
+            const userId = 'user-for-sub';
 
-        //         expect(mockNotificationApi.subscribeToNotifications).toHaveBeenCalledTimes(1);
-        //         expect(mockNotificationApi.subscribeToNotifications).toHaveBeenCalledWith(userId, expect.any(Function));
-        //         // Assuming the store holds the channel reference
-        //         expect(useNotificationStore.getState().realtimeChannel).toBe(mockRealtimeChannel);
-        //         expect(logger.info).toHaveBeenCalledWith('[notificationStore] Subscribed to notifications', { userId });
-        //     });
+            beforeEach(() => {
+                // This setup is isolated to this describe block
+                vi.mocked(mockNotificationApi.subscribeToNotifications).mockImplementation(
+                    (userId: string, callback: (notification: Notification) => void) => {
+                        if (!userId) return null;
+                        capturedNotificationCallback = callback;
+                        return mockRealtimeChannel;
+                    }
+                );
+                vi.mocked(mockNotificationApi.unsubscribeFromNotifications).mockImplementation(() => {});
+            });
 
-        //     it('should handle API returning null (e.g., no userId)', () => {
-        //         mockNotificationApi.subscribeToNotifications.mockReturnValue(null as any);
-        //         act(() => { useNotificationStore.getState().subscribeToNotifications(''); }); // Pass empty userId
+            it('should subscribe with a valid user ID and set state', () => {
+                act(() => {
+                    useNotificationStore.getState().subscribeToUserNotifications(userId);
+                });
 
-        //         expect(mockNotificationApi.subscribeToNotifications).toHaveBeenCalledTimes(1);
-        //         expect(useNotificationStore.getState().realtimeChannel).toBeNull();
-        //         expect(logger.warn).toHaveBeenCalledWith('[notificationStore] Failed to subscribe, channel not established.');
-        //     });
+                expect(mockNotificationApi.subscribeToNotifications).toHaveBeenCalledWith(userId, expect.any(Function));
+                expect(useNotificationStore.getState().subscribedUserId).toBe(userId);
+                expect(logger.info).toHaveBeenCalledWith('[NotificationStore] Successfully subscribed to notification channel for user:', { userId });
+            });
 
-        //     it('should add notification when callback is triggered', () => {
-        //         const userId = 'user-for-sub';
-        //         act(() => { useNotificationStore.getState().subscribeToNotifications(userId); });
-        //         expect(capturedNotificationCallback).toBeDefined();
+            it('should not subscribe with an empty user ID', () => {
+                act(() => {
+                    useNotificationStore.getState().subscribeToUserNotifications('');
+                });
 
-        //         // Simulate receiving a notification via the captured callback
-        //         act(() => {
-        //             capturedNotificationCallback!(mockNotification1); 
-        //         });
+                expect(mockNotificationApi.subscribeToNotifications).not.toHaveBeenCalled();
+                expect(useNotificationStore.getState().subscribedUserId).toBeNull();
+                expect(logger.error).toHaveBeenCalledWith('User ID is required to subscribe to notifications.');
+            });
 
-        //         const state = useNotificationStore.getState();
-        //         expect(state.notifications).toEqual([mockNotification1]);
-        //         expect(state.unreadCount).toBe(1);
-        //     });
-        // });
+            it('should warn if already subscribed to the same user', () => {
+                act(() => {
+                    useNotificationStore.setState({ subscribedUserId: userId });
+                });
 
-        // describe('unsubscribeFromNotifications', () => {
-        //     it('should call API unsubscribe, clear channel, and reset callback', async () => {
-        //         // Arrange: Simulate a subscribed state
-        //         act(() => { 
-        //             useNotificationStore.setState({ realtimeChannel: mockRealtimeChannel }); 
-        //             // Ensure a callback is captured for testing reset
-        //             capturedNotificationCallback = (n: Notification) => { logger.info('Callback called', n); }; 
-        //         }); 
+                act(() => {
+                    useNotificationStore.getState().subscribeToUserNotifications(userId);
+                });
 
-        //         await act(async () => { 
-        //             await useNotificationStore.getState().unsubscribeFromNotifications();
-        //         });
+                expect(mockNotificationApi.subscribeToNotifications).not.toHaveBeenCalled();
+                expect(logger.warn).toHaveBeenCalledWith('[NotificationStore] Already subscribed to notifications for user:', { userId });
+            });
 
-        //         // Assert API call
-        //         expect(mockNotificationApi.unsubscribeFromNotifications).toHaveBeenCalledTimes(1);
-        //         // Assert channel is cleared in store
-        //         expect(useNotificationStore.getState().realtimeChannel).toBeNull();
-        //         // Assert captured callback is reset (if unsubscribe logic does this)
-        //         // expect(capturedNotificationCallback).toBeNull(); // Depends on mockUnsubscribe impl
-        //         expect(logger.info).toHaveBeenCalledWith('[notificationStore] Unsubscribed from notifications');
-        //     });
-            
-        //      it('should not call API if channel is already null', async () => {
-        //          act(() => { useNotificationStore.setState({ realtimeChannel: null }); }); // Ensure null channel
-        //          await act(async () => { 
-        //             await useNotificationStore.getState().unsubscribeFromNotifications();
-        //         });
-        //         expect(mockNotificationApi.unsubscribeFromNotifications).not.toHaveBeenCalled();
-        //      });
-        // });
+            it('should switch subscriptions if called with a new user ID', () => {
+                const oldUserId = 'user-old';
+                
+                act(() => {
+                    useNotificationStore.setState({ subscribedUserId: oldUserId });
+                });
 
-        // describe('clearNotifications', () => {
-        //     it('should reset notifications and unread count', () => {
-        //         // Arrange: Set some initial state
-        //         act(() => {
-        //             useNotificationStore.setState({ 
-        //                 notifications: [mockNotification1, mockNotification2], 
-        //                 unreadCount: 2 
-        //             });
-        //         });
-        //         // Act
-        //         act(() => { useNotificationStore.getState().clearNotifications(); });
-        //         // Assert
-        //         const state = useNotificationStore.getState();
-        //         expect(state.notifications).toEqual([]);
-        //         expect(state.unreadCount).toBe(0);
-        //         expect(logger.info).toHaveBeenCalledWith('[notificationStore] Cleared notifications');
-        //     });
-        // });
+                act(() => {
+                    useNotificationStore.getState().subscribeToUserNotifications(userId);
+                });
+
+                expect(mockNotificationApi.unsubscribeFromNotifications).toHaveBeenCalledTimes(1);
+                expect(mockNotificationApi.subscribeToNotifications).toHaveBeenCalledWith(userId, expect.any(Function));
+                expect(useNotificationStore.getState().subscribedUserId).toBe(userId);
+                expect(logger.info).toHaveBeenCalledWith(`[NotificationStore] Switching subscription from user ${oldUserId} to ${userId}`);
+            });
+
+            it('should unsubscribe and clear state', () => {
+                act(() => {
+                    useNotificationStore.setState({ subscribedUserId: userId });
+                });
+
+                act(() => {
+                    useNotificationStore.getState().unsubscribeFromUserNotifications();
+                });
+
+                expect(mockNotificationApi.unsubscribeFromNotifications).toHaveBeenCalledTimes(1);
+                expect(useNotificationStore.getState().subscribedUserId).toBeNull();
+                expect(logger.info).toHaveBeenCalledWith('Successfully unsubscribed from notifications for user:', { userId: userId });
+            });
+
+            it('should handle incoming notifications after subscribing', () => {
+                const handleIncomingNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'handleIncomingNotification');
+                
+                act(() => {
+                    useNotificationStore.getState().subscribeToUserNotifications(userId);
+                });
+
+                expect(capturedNotificationCallback).toBeInstanceOf(Function);
+
+                act(() => {
+                    if (capturedNotificationCallback) {
+                        capturedNotificationCallback(mockNotification1);
+                    }
+                });
+
+                expect(handleIncomingNotificationSpy).toHaveBeenCalledWith(mockNotification1);
+                handleIncomingNotificationSpy.mockRestore();
+            });
+        });
+        // ------------------------------------
     });
 }); 

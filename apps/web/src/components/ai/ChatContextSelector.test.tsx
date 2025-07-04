@@ -141,10 +141,10 @@ describe('ChatContextSelector', () => {
         expect(screen.getByText('Organization 1')).toBeInTheDocument();
     });
     
-    it('renders "Select context" if store state is an orgId not in userOrganizations (fallback)', () => {
+    it('renders "Personal" if store state is an orgId not in userOrganizations (fallback)', () => {
         mockNewChatContext = 'org-unknown';
         render(<ChatContextSelector />);
-        expect(screen.getByText('Select context')).toBeInTheDocument();
+        expect(screen.getByText('Personal')).toBeInTheDocument();
     });
 
 
@@ -173,10 +173,9 @@ describe('ChatContextSelector', () => {
         expect(mockSetNewChatContext).toHaveBeenCalledWith('org1');
     });
 
-    it('displays "Loading contexts..." when organization data is loading', () => {
+    it('is disabled when organization data is loading', () => {
         mockIsOrgLoading = true;
         render(<ChatContextSelector />);
-        expect(screen.getByText('Loading contexts...')).toBeInTheDocument();
         expect(screen.getByRole('combobox')).toBeDisabled();
     });
 

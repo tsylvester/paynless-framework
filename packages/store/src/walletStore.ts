@@ -24,6 +24,7 @@ export interface WalletStateValues {
   orgWalletErrors: { [orgId: string]: ApiError | null };
   purchaseError: ApiError | null;
   userOrgTokenConsent: { [orgId: string]: boolean | null };
+  isConsentModalOpen: boolean;
   currentChatWalletDecision: WalletDecisionOutcome | null;
 }
 
@@ -40,7 +41,9 @@ export interface WalletActions {
   determineChatWallet: (newChatContextOrgId: string | null | undefined) => WalletDecisionOutcome; // Kept here as it uses get() internally
   setUserOrgTokenConsent: (orgId: string, consent: boolean) => void;
   clearUserOrgTokenConsent: (orgId: string) => void;
-  setCurrentChatWalletDecision: (decision: WalletDecisionOutcome) => void;
+  openConsentModal: () => void;
+  closeConsentModal: () => void;
+  _handleWalletUpdateNotification: (payload: { walletId: string; newBalance: string }) => void;
 }
 
 export type WalletStore = WalletStateValues & WalletActions;
@@ -57,16 +60,12 @@ export const initialWalletStateValues: WalletStateValues = {
   orgWalletErrors: {},
   purchaseError: null,
   userOrgTokenConsent: {},
-  currentChatWalletDecision: { outcome: 'loading' },
+  isConsentModalOpen: false,
+  currentChatWalletDecision: null,
 };
 
 export const useWalletStore = create<WalletStore>((set, get) => ({
   ...initialWalletStateValues,
-
-  setCurrentChatWalletDecision: (decision: WalletDecisionOutcome) => {
-    set({ currentChatWalletDecision: decision });
-    logger.debug('[walletStore.setCurrentChatWalletDecision] Decision updated:', decision);
-  },
 
   setUserOrgTokenConsent: (orgId: string, consent: boolean) => {
     set(state => ({
@@ -80,6 +79,58 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       userOrgTokenConsent: { ...state.userOrgTokenConsent, [orgId]: null },
     }));
     logger.debug('[walletStore.clearUserOrgTokenConsent] Consent cleared in Zustand state (set to null):', { orgId });
+  },
+
+  openConsentModal: () => {
+    set({ isConsentModalOpen: true });
+    logger.debug('[walletStore.openConsentModal] Consent modal opened.');
+  },
+
+  closeConsentModal: () => {
+    set({ isConsentModalOpen: false });
+    logger.debug('[walletStore.closeConsentModal] Consent modal closed.');
+  },
+
+  _handleWalletUpdateNotification: ({ walletId, newBalance }) => {
+    logger.info('[walletStore] Handling wallet update notification', { walletId, newBalance });
+    set(state => {
+      // Check if it's the personal wallet
+      if (state.personalWallet && state.personalWallet.walletId === walletId) {
+        return {
+          personalWallet: {
+            ...state.personalWallet,
+            balance: newBalance,
+            updatedAt: new Date(),
+          }
+        };
+      }
+      
+      // Check if it's one of the organization wallets
+      const orgWalletEntry = Object.entries(state.organizationWallets).find(
+        ([, wallet]) => wallet?.walletId === walletId
+      );
+
+      if (orgWalletEntry) {
+        const [orgId, orgWallet] = orgWalletEntry;
+        if (orgWallet) {
+          return {
+            organizationWallets: {
+              ...state.organizationWallets,
+              [orgId]: {
+                ...orgWallet,
+                balance: newBalance,
+                updatedAt: new Date(),
+              }
+            }
+          };
+        }
+      }
+
+      // If wallet is not found in state, log it but don't change state.
+      // It might belong to a context that isn't loaded yet.
+      logger.warn('[walletStore] Received update for a wallet not currently in state.', { walletId });
+      return {};
+    });
   },
 
   determineChatWallet: (newChatContextOrgId: string | null | undefined): WalletDecisionOutcome => {

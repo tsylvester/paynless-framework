@@ -12,6 +12,7 @@ import {
   TestSetupConfig,
   coreCreateAndSetupTestUser,
   registerUndoAction,
+  initializeTestDeps,
 } from '../_integration.test.utils.ts';
 import { TokenWalletService } from './tokenWalletService.ts';
 import {
@@ -25,6 +26,7 @@ import {
 import type { Database } from '../../types_db.ts';
 
 Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
+  initializeTestDeps();
   // All old setup helpers and global clients are removed.
   // Each test step will now be self-contained for setup and cleanup.
 
@@ -73,9 +75,8 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
           },
           {
             tableName: 'organization_members',
-            identifier: {}, // Let it be created
+            identifier: { organization_id: { $ref: 'testOrg' } }, // Let it be created
             desiredState: {
-              organization_id: { $ref: 'testOrg' }, // Reference the org created above
               role: 'admin',
               status: 'active'
             },
@@ -148,9 +149,8 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
           },
           {
             tableName: 'organization_members',
-            identifier: {}, // Let it be created
+            identifier: { organization_id: { $ref: 'testOrg' } }, // Let it be created
             desiredState: {
-              organization_id: { $ref: 'testOrg' }, // Reference the org created above
               role: 'admin',
               status: 'active'
             },
@@ -412,9 +412,8 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
             },
             {
               tableName: 'organization_members',
-              identifier: {},
+              identifier: { organization_id: { $ref: 'testOrg' } },
               desiredState: {
-                organization_id: { $ref: 'testOrg' },
                 role: 'admin',
                 status: 'active'
               },
@@ -473,8 +472,8 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
                   },
                   {
                     tableName: 'organization_members',
-                    identifier: {},
-                    desiredState: { organization_id: { $ref: 'org' }, role: 'admin', status: 'active' },
+                    identifier: { organization_id: { $ref: 'org' } }, // Let it be created
+                    desiredState: { role: 'admin', status: 'active' },
                     linkUserId: true
                   }
                 ],
@@ -626,9 +625,8 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
           },
           {
             tableName: 'organization_members',
-            identifier: {}, // Let it be created
+            identifier: { organization_id: { $ref: 'org' } }, // Let it be created
             desiredState: {
-              organization_id: { $ref: 'org' }, 
               role: 'admin',
               status: 'active',
             },
@@ -693,7 +691,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       const config: TestSetupConfig = {
         resources: [
           { tableName: 'organizations', identifier: { name: 'RLSOrgNotAdmin' }, desiredState: {name: 'RLSOrgNotAdmin'}, exportId: 'org' },
-          { tableName: 'organization_members', identifier: {}, desiredState: { organization_id: { $ref: 'org' }, role: 'admin', status: 'active' }, linkUserId: true }
+          { tableName: 'organization_members', identifier: { organization_id: { $ref: 'org' } }, desiredState: { role: 'admin', status: 'active' }, linkUserId: true }
         ]
       };
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
@@ -729,9 +727,8 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
           },
           {
             tableName: 'organization_members',
-            identifier: {},
+            identifier: { organization_id: { $ref: 'org' } },
             desiredState: {
-              organization_id: { $ref: 'org' },
               role: 'admin',
               status: 'active',
             },
@@ -821,7 +818,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       const config: TestSetupConfig = {
         resources: [
           { tableName: 'organizations', identifier: { name: 'GetBalanceOrg' }, desiredState: {name: 'GetBalanceOrg'}, exportId: 'org' },
-          { tableName: 'organization_members', identifier: {}, desiredState: { organization_id: { $ref: 'org' }, role: 'admin', status: 'active' }, linkUserId: true }
+          { tableName: 'organization_members', identifier: { organization_id: { $ref: 'org' } }, desiredState: { role: 'admin', status: 'active' }, linkUserId: true }
         ]
       };
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
@@ -862,7 +859,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       const config: TestSetupConfig = {
         resources: [
           { tableName: 'organizations', identifier: { name: 'GetBalanceOrgNew' }, desiredState: {name: 'GetBalanceOrgNew'}, exportId: 'org' },
-          { tableName: 'organization_members', identifier: {}, desiredState: { organization_id: { $ref: 'org' }, role: 'admin', status: 'active' }, linkUserId: true }
+          { tableName: 'organization_members', identifier: { organization_id: { $ref: 'org' } }, desiredState: { role: 'admin', status: 'active' }, linkUserId: true }
         ]
       };
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
@@ -921,7 +918,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       const config: TestSetupConfig = {
         resources: [
           { tableName: 'organizations', identifier: { name: 'GetBalanceOrgRLS' }, desiredState: {name: 'GetBalanceOrgRLS'}, exportId: 'org' },
-          { tableName: 'organization_members', identifier: {}, desiredState: { organization_id: { $ref: 'org' }, role: 'admin', status: 'active' }, linkUserId: true }
+          { tableName: 'organization_members', identifier: { organization_id: { $ref: 'org' } }, desiredState: { role: 'admin', status: 'active' }, linkUserId: true }
         ]
       };
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
@@ -1016,7 +1013,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       const config: TestSetupConfig = {
         resources: [
           { tableName: 'organizations', identifier: { name: 'GetBalanceOrgRLS' }, desiredState: {name: 'GetBalanceOrgRLS'}, exportId: 'org' },
-          { tableName: 'organization_members', identifier: {}, desiredState: { organization_id: { $ref: 'org' }, role: 'admin', status: 'active' }, linkUserId: true }
+          { tableName: 'organization_members', identifier: { organization_id: { $ref: 'org' } }, desiredState: { role: 'admin', status: 'active' }, linkUserId: true }
         ]
       };
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
@@ -1186,7 +1183,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       const config: TestSetupConfig = {
         resources: [
           { tableName: 'organizations', identifier: { name: 'org-cb-rls-na' }, desiredState: {name: 'org-cb-rls-na'}, exportId: 'org' },
-          { tableName: 'organization_members', identifier: {}, desiredState: { organization_id: { $ref: 'org' }, role: 'admin', status: 'active' }, linkUserId: true }
+          { tableName: 'organization_members', identifier: { organization_id: { $ref: 'org' } }, desiredState: { role: 'admin', status: 'active' }, linkUserId: true }
         ]
       };
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
@@ -1377,8 +1374,8 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
           },
           { 
             tableName: 'organization_members', 
-            identifier: {}, 
-            desiredState: { organization_id: { $ref: 'org' }, role: 'admin', status: 'active' }, 
+            identifier: { organization_id: { $ref: 'org' } }, 
+            desiredState: { role: 'admin', status: 'active' }, 
             linkUserId: true 
           }
         ]
@@ -1546,9 +1543,8 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
           exportId: 'org'
         }, {
           tableName: 'organization_members',
-          identifier: {},
+          identifier: { organization_id: { $ref: 'org' } },
           desiredState: {
-            organization_id: { $ref: 'org' },
             role: 'admin',
             status: 'active'
           },
@@ -1616,7 +1612,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       const config: TestSetupConfig = {
         resources: [
           { tableName: 'organizations', identifier: { name: 'GWBUOrgAdmin' }, desiredState: {name: 'GWBUOrgAdmin'}, exportId: 'org' },
-          { tableName: 'organization_members', identifier: {}, desiredState: { organization_id: { $ref: 'org' }, role: 'admin', status: 'active' }, linkUserId: true }
+          { tableName: 'organization_members', identifier: { organization_id: { $ref: 'org' } }, desiredState: { role: 'admin', status: 'active' }, linkUserId: true }
         ]
       };
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
@@ -1664,7 +1660,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       const config: TestSetupConfig = {
         resources: [
           { tableName: 'organizations', identifier: { name: 'GWBUOrgNotAdmin' }, desiredState: {name: 'GWBUOrgNotAdmin'}, exportId: 'org' },
-          { tableName: 'organization_members', identifier: {}, desiredState: { organization_id: { $ref: 'org' }, role: 'admin', status: 'active' }, linkUserId: true }
+          { tableName: 'organization_members', identifier: { organization_id: { $ref: 'org' } }, desiredState: { role: 'admin', status: 'active' }, linkUserId: true }
         ]
       };
       const { primaryUserId: adminId, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
