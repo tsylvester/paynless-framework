@@ -69,7 +69,8 @@ export function getMaxOutputTokens(
   // Use Infinity as a fallback if neither is defined, which is not ideal but safe.
   const absolute_provider_cap = Math.min(
     typeof hard_cap_output_tokens === 'number' && hard_cap_output_tokens >= 0 ? hard_cap_output_tokens : Infinity,
-    typeof provider_max_output_tokens === 'number' && provider_max_output_tokens >= 0 ? provider_max_output_tokens : Infinity
+    typeof provider_max_output_tokens === 'number' && provider_max_output_tokens >= 0 ? provider_max_output_tokens : Infinity,
+    4096 // Add a hardcoded fallback cap to prevent Infinity
   );
 
   // The dynamic hard cap is the lesser of 20% of the budget and the absolute provider cap.

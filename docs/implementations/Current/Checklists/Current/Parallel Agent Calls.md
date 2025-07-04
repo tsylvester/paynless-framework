@@ -100,6 +100,8 @@ The implementation plan uses the following labels to categorize work steps:
 
 ---
 
+*   [ ]     Ensure user chat reqs have max token dynamically capped by the model cap and lowered by the user's balance if insufficient for the full model cap 
+
 ## Phase 4: UI/UX Refactoring and Process Improvements (TDD)
 
 ### 8. Core UI Structure and Workflow Refactoring
