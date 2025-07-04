@@ -129,6 +129,13 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ]` 11.a. [TEST-UNIT] Write a failing test for `ControlPanel.tsx` that verifies the `GenerateContributionButton` is enabled when the session status is `'<stage>_generation_failed'`.
     *   `[ ]` 11.b. [REFACTOR] In `ControlPanel.tsx` (or directly in the `GenerateContributionButton` if the logic remains there), update the `disabled` logic. The button should be enabled if the session status is `pending_<stage_slug>` OR `${stage.slug}_generation_failed`. This makes the test from `11.a` pass.
     *   `[ ]` 11.c. [REFACTOR] Review the "Regenerate" logic. The button text should display "Regenerate" if contributions for the current stage and iteration *already exist*, regardless of the session status. This allows users to regenerate successful contributions if they are unsatisfied.
-    *   `[✅]` 11.d. [COMMIT] `fix(workflow): Allow contribution generation from failed state and improve regeneration flow`
+    *   `[ ]` 11.d. [COMMIT] `fix(workflow): Allow contribution generation from failed state and improve regeneration flow`
+
+### 12. Notification Link Handling
+    *   `[✅]` 12.a. [REFACTOR] In `Notifications.tsx` (header dropdown), ensure `handleNotificationClick` constructs the `target_path` from `notification.data.projectId` and `notification.data.sessionId` if `target_path` is not already present.
+    *   `[✅]` 12.b. [TEST-UNIT] In `Notifications.test.tsx`, verify that a click on a `contribution_generation_complete` notification correctly navigates to the dialectic session URL.
+    *   `[✅]` 12.c. [REFACTOR] In `NotificationCard.tsx` (used on notifications page), replicate the link construction logic from `12.a` to ensure dialectic notifications are also linked correctly from the main notifications page.
+    *   `[✅]` 12.d. [TEST-UNIT] Create a new test file `NotificationCard.test.tsx` to verify all rendering and link construction logic for the component.
+    *   `[✅]` 12.e. [COMMIT] `feat(ui): Add direct link from completion notification to session`
 
 [DEPLOY] Consider deployment after all phases are complete and thoroughly tested. 
