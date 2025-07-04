@@ -1,4 +1,4 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import { SupabaseClient } from 'npm:@supabase/supabase-js';
 import Stripe from 'npm:stripe';
 import { Buffer } from "node:buffer";
 import { Database } from '../../../types_db.ts'; // Assuming Price & Product might come from here or Stripe SDK

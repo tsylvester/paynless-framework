@@ -270,33 +270,20 @@ describe('useDialecticStore', () => {
                 data: mockSuccessResponse,
                 status: 200,
             });
-            api.dialectic().getProjectDetails.mockResolvedValue({
-                data: mockProjectDetailsAfterGeneration,
-                status: 200,
-            });
-            api.dialectic().fetchProcessTemplate.mockResolvedValue({
-                data: { id: 'pt-1', name: 'Test Template', stages: [], starting_stage_id: 's1' } as any,
-                status: 200
-            });
-
+            // The refetch is now handled by the completion event, not the thunk itself.
+            // So we don't mock getProjectDetails here anymore.
+            
             const { generateContributions } = useDialecticStore.getState();
+            const result = await generateContributions(mockPayload);
             
-            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('idle');
-
-            const promise = generateContributions(mockPayload);
-            
-            // Immediately after call, status should be 'generating'
-            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('generating');
-            
-            const result = await promise;
-
-            expect(api.dialectic().generateContributions).toHaveBeenCalledWith(mockPayload);
             const state = useDialecticStore.getState();
-            expect(state.contributionGenerationStatus).toBe('idle'); 
+            expect(api.dialectic().generateContributions).toHaveBeenCalledWith(mockPayload);
+            expect(state.contributionGenerationStatus).toBe('idle');
+            expect(state.generatingSessions[mockPayload.sessionId]).toBe(true);
             expect(state.generateContributionsError).toBeNull();
             expect(result.data).toEqual(mockSuccessResponse);
-            expect(api.dialectic().getProjectDetails).toHaveBeenCalledWith(mockPayload.projectId);
-            expect(state.currentProjectDetail?.id).toBe(mockProjectDetailsAfterGeneration.id);
+            // This is the key change: the thunk itself no longer triggers the refetch.
+            expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
         });
 
         it('should set error state if API returns an error', async () => {
@@ -319,8 +306,8 @@ describe('useDialecticStore', () => {
             const state = useDialecticStore.getState();
             expect(state.contributionGenerationStatus).toBe('failed');
             expect(state.generateContributionsError).toEqual(mockApiError);
+            expect(state.generatingSessions[mockPayload.sessionId]).toBe(false);
             expect(result.error).toEqual(mockApiError);
-            expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
         });
 
         it('should set network error state if API call throws', async () => {
@@ -339,8 +326,8 @@ describe('useDialecticStore', () => {
             const state = useDialecticStore.getState();
             expect(state.contributionGenerationStatus).toBe('failed');
             expect(state.generateContributionsError).toEqual({ message: networkError.message, code: 'NETWORK_ERROR' });
+            expect(state.generatingSessions[mockPayload.sessionId]).toBe(false);
             expect(result.error).toEqual({ message: networkError.message, code: 'NETWORK_ERROR' });
-            expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
         });
 
         it('should set contributionGenerationStatus through generating > idle/failed path', async () => {

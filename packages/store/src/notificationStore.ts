@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { api } from '@paynless/api';
 import type { Notification, ApiError } from '@paynless/types';
 import { logger } from '@paynless/utils';
+import { useDialecticStore } from './dialecticStore';
 
 // Define state structure
 export interface NotificationState {
@@ -20,6 +21,8 @@ export interface NotificationState {
     subscribeToUserNotifications: (userId: string) => void;
     unsubscribeFromUserNotifications: () => void;
     // --------------------------------------------
+    // Exposed for testing, but considered internal
+    handleIncomingNotification: (notification: Notification) => void;
 }
 
 // Helper function to calculate unread count
@@ -40,7 +43,23 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
             logger.warn('[NotificationStore] Received invalid notification data from subscription.', { payload: notification ?? 'undefined/null' });
             return;
         }
-        logger.debug('[NotificationStore] Received notification via Realtime', { id: notification.id });
+        logger.debug('[NotificationStore] Received notification via Realtime', { id: notification.id, type: notification.type });
+
+        // --- NEW: Special handling for contribution generation ---
+        if (notification.type === 'contribution_generation_complete') {
+            const { data } = notification;
+            if (data && typeof data === 'object' && 'sessionId' in data && 'projectId' in data) {
+                logger.info('[NotificationStore] Handling contribution generation completion event.', { data });
+                useDialecticStore.getState()._handleGenerationCompleteEvent?.({
+                    sessionId: data['sessionId'] as string,
+                    projectId: data['projectId'] as string,
+                });
+            } else {
+                logger.warn('[NotificationStore] Received contribution_generation_complete event with invalid data.', { data });
+            }
+        }
+        // --- END NEW ---
+
         get().addNotification(notification as Notification);
     };
     // -------------------------------------------
@@ -54,6 +73,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
         // --- NEW: Realtime State ---
         subscribedUserId: null,
         // --------------------------
+        handleIncomingNotification, // Exposed for testing
 
         // Actions
         fetchNotifications: async () => {

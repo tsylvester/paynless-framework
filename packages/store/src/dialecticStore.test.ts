@@ -320,8 +320,8 @@ describe('useDialecticStore', () => {
 
     describe('fetchDomains thunk', () => {
         const mockDomains: DialecticDomain[] = [
-            { id: '1', name: 'Software Development', description: 'All about code', parent_domain_id: null },
-            { id: '2', name: 'Finance', description: 'All about money', parent_domain_id: null },
+            { id: '1', name: 'Software Development', description: 'All about code', parent_domain_id: null, is_enabled: true },
+            { id: '2', name: 'Finance', description: 'All about money', parent_domain_id: null, is_enabled: true },
         ];
 
         it('should fetch domains and update state on success', async () => {
@@ -521,13 +521,13 @@ describe('useDialecticStore', () => {
 
         it('should handle successful contribution generation and project detail refresh', async () => {
             getMockDialecticClient().generateContributions.mockResolvedValue({ data: mockSuccessResponse, status: 200 });
+            // This test is now for the ASYNC success case.
+            // It asserts that the immediate state is correct and the final state is handled elsewhere.
             getMockDialecticClient().getProjectDetails.mockResolvedValue({ data: mockProjectDetails, status: 200 });
-            // Add mock for fetchProcessTemplate if it's called
             getMockDialecticClient().fetchProcessTemplate.mockResolvedValue({ 
-                data: mockProjectDetails.dialectic_process_templates as DialecticProcessTemplate, // Use the one from mockProjectDetails
+                data: mockProjectDetails.dialectic_process_templates as DialecticProcessTemplate,
                 status: 200 
             });
-
 
             const { generateContributions } = useDialecticStore.getState();
             expect(useDialecticStore.getState().contributionGenerationStatus).toBe('idle');
@@ -541,16 +541,33 @@ describe('useDialecticStore', () => {
 
             expect(result.data).toEqual(mockSuccessResponse);
             expect(api.dialectic().generateContributions).toHaveBeenCalledWith(mockPayload);
-            expect(api.dialectic().getProjectDetails).toHaveBeenCalledWith(mockPayload.projectId);
+            // We no longer expect getProjectDetails to be called here.
+            expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
             
             const finalState = useDialecticStore.getState();
+            // The global status should return to idle, but the session-specific one remains true.
             expect(finalState.contributionGenerationStatus).toBe('idle');
             expect(finalState.generateContributionsError).toBeNull();
-            expect(finalState.currentProjectDetail?.id).toBe(mockProjectDetails.id);
-            // Ensure fetchProcessTemplate was called if project has template_id
-            if (mockProjectDetails.process_template_id) {
-                expect(getMockDialecticClient().fetchProcessTemplate).toHaveBeenCalledWith({ templateId: mockProjectDetails.process_template_id });
-            }
+            expect(finalState.generatingSessions[mockPayload.sessionId]).toBe(true);
+        });
+
+        it('should immediately set a generating status for the session and not wait for completion', async () => {
+            getMockDialecticClient().generateContributions.mockResolvedValue({ data: mockSuccessResponse, status: 202 });
+            // Note: We do NOT mock getProjectDetails, as the refactored thunk should not call it.
+        
+            const { generateContributions } = useDialecticStore.getState();
+            const initialGeneratingSessions = useDialecticStore.getState().generatingSessions;
+            expect(initialGeneratingSessions[mockPayload.sessionId]).toBeFalsy();
+        
+            // Call the action, but don't await the full promise chain.
+            generateContributions(mockPayload);
+        
+            // Immediately check the state
+            const stateAfterCall = useDialecticStore.getState();
+            expect(stateAfterCall.generatingSessions[mockPayload.sessionId]).toBe(true);
+        
+            // The global status should be 'generating' during the call.
+            expect(stateAfterCall.contributionGenerationStatus).toBe('generating');
         });
 
         it('should set contributionGenerationStatus to "generating" during the API call', async () => {
@@ -594,6 +611,7 @@ describe('useDialecticStore', () => {
             const finalState = useDialecticStore.getState();
             expect(finalState.contributionGenerationStatus).toBe('failed');
             expect(finalState.generateContributionsError).toEqual(mockApiError);
+            expect(finalState.generatingSessions[mockPayload.sessionId]).toBe(false); // Should be reset on error
             expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
         });
 
@@ -611,43 +629,8 @@ describe('useDialecticStore', () => {
             const finalState = useDialecticStore.getState();
             expect(finalState.contributionGenerationStatus).toBe('failed');
             expect(finalState.generateContributionsError).toEqual({ message: networkError.message, code: 'NETWORK_ERROR' });
+            expect(finalState.generatingSessions[mockPayload.sessionId]).toBe(false); // Should be reset on error
             expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
-        });
-
-        it('isLoadingProjectDetail should be true during fetchDialecticProjectDetails call after successful generation', async () => {
-            getMockDialecticClient().generateContributions.mockResolvedValue({ data: mockSuccessResponse, status: 200 });
-            
-            let resolveGetDetails: (value: ApiResponse<DialecticProject>) => void;
-            const getDetailsPromise = new Promise<ApiResponse<DialecticProject>>(resolve => {
-                resolveGetDetails = resolve;
-            });
-
-            // Add projectId parameter to the mock implementation
-            getMockDialecticClient().getProjectDetails.mockImplementation((projectId: string) => { 
-                // Check isLoadingProjectDetail when getProjectDetails is called
-                expect(useDialecticStore.getState().isLoadingProjectDetail).toBe(true);
-                // You can optionally use/assert the projectId if needed for the test logic
-                console.log(`Mocked getProjectDetails called with projectId: ${projectId}`);
-                return getDetailsPromise;
-            });
-
-            getMockDialecticClient().fetchProcessTemplate.mockResolvedValue({ 
-                data: mockProjectDetails.dialectic_process_templates as DialecticProcessTemplate, 
-                status: 200 
-            });
-
-            const { generateContributions } = useDialecticStore.getState();
-            const generationFullPromise = generateContributions(mockPayload);
-            
-            // Allow generateContributions to proceed to call getProjectDetails
-            await vi.advanceTimersByTimeAsync(0); 
-
-            // Resolve getProjectDetails with a valid DialecticProject object
-            resolveGetDetails!({ data: mockProjectDetails, status: 200 });
-            await generationFullPromise;
-
-            expect(useDialecticStore.getState().isLoadingProjectDetail).toBe(false); // Should be false after completion
-            expect(getMockDialecticClient().getProjectDetails).toHaveBeenCalledWith(mockPayload.projectId);
         });
     });
 }); 

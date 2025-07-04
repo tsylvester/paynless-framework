@@ -13,6 +13,17 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { NotificationApiClient } from '@paynless/api'; 
 // Import the shared mock factory and reset function
 import { createMockNotificationApiClient, resetMockNotificationApiClient } from '@paynless/api/mocks/notifications.api.mock';
+import { useDialecticStore } from './dialecticStore';
+
+// Mock the dialecticStore to spy on its internal methods
+const mockHandleGenerationComplete = vi.fn();
+vi.mock('./dialecticStore', () => ({
+  useDialecticStore: {
+    getState: () => ({
+      _handleGenerationCompleteEvent: mockHandleGenerationComplete,
+    }),
+  },
+}));
 
 // Mock Logger (Keep as is)
 vi.mock('@paynless/utils', async (importOriginal) => {
@@ -125,6 +136,11 @@ describe('notificationStore', () => {
         (logger.debug as vi.Mock).mockClear();
     });
 
+    afterEach(() => {
+        // Clear mocks after each test to ensure isolation
+        mockHandleGenerationComplete.mockClear();
+    });
+
     it('should have correct initial state', () => {
         expect(useNotificationStore.getState().notifications).toEqual([]);
         expect(useNotificationStore.getState().unreadCount).toBe(0);
@@ -219,6 +235,43 @@ describe('notificationStore', () => {
                  expect(state.unreadCount).toBe(1);
                  expect(logger.warn).toHaveBeenCalledWith('[notificationStore] Attempted to add duplicate notification', { id: mockNotification1.id });
              });
+        });
+
+        describe('handleIncomingNotification (Internal - called by Realtime subscription callback)', () => {
+            it('should call addNotification for standard notifications', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(mockNotification1);
+                });
+                expect(addNotificationSpy).toHaveBeenCalledWith(mockNotification1);
+                expect(mockHandleGenerationComplete).not.toHaveBeenCalled();
+                addNotificationSpy.mockRestore();
+            });
+    
+            it('should call dialecticStore._handleGenerationCompleteEvent for completion notifications', () => {
+                const completionNotification: Notification = {
+                    id: 'uuid-complete',
+                    user_id: 'user-abc',
+                    type: 'contribution_generation_complete',
+                    data: { sessionId: 'session-xyz', projectId: 'project-123' },
+                    read: false,
+                    created_at: new Date().toISOString(),
+                };
+    
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+    
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(completionNotification);
+                });
+    
+                // It should call the special handler
+                expect(mockHandleGenerationComplete).toHaveBeenCalledWith(completionNotification.data);
+    
+                // It should ALSO still add it to the general notification list
+                expect(addNotificationSpy).toHaveBeenCalledWith(completionNotification);
+    
+                addNotificationSpy.mockRestore();
+            });
         });
 
         describe('markNotificationRead', () => {

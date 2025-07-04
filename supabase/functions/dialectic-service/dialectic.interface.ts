@@ -246,17 +246,13 @@ export interface GenerateContributionsPayload {
 }
 
 export interface GenerateContributionsSuccessResponse {
-  message: string;
   sessionId: string;
-  status: string; 
-  contributions: DialecticContribution[]; 
-  errors?: { 
-    modelId: string; 
-    modelName?: string; 
-    providerName?: string | null;
-    message: string;
-    details?: string;
-  }[];
+  projectId: string;
+  stage: string;
+  iteration: number;
+  status: string;
+  successfulContributions: DialecticContribution[];
+  failedAttempts: FailedAttemptError[];
 }
 
 export interface FailedAttemptError {
@@ -269,6 +265,7 @@ export interface FailedAttemptError {
   inputTokens?: number;
   outputTokens?: number;
   processingTimeMs?: number;
+  api_identifier: string;   
 }
 
 export interface SelectedAiProvider {
@@ -276,6 +273,24 @@ export interface SelectedAiProvider {
   provider: string | null;
   name: string;
   api_identifier: string;   
+}
+
+export interface ResourceDescription {
+  type: 'seed_prompt' | string; // Allow other string types for extensibility
+  session_id: string;
+  stage_slug: string;
+  iteration: number;
+}
+
+export function isResourceDescription(obj: unknown): obj is ResourceDescription {
+  return (
+    obj != null &&
+    typeof obj === 'object' &&
+    'type' in obj && typeof obj.type === 'string' &&
+    'session_id' in obj && typeof obj.session_id === 'string' &&
+    'stage_slug' in obj && typeof obj.stage_slug === 'string' &&
+    'iteration' in obj && typeof obj.iteration === 'number'
+  );
 }
 
 export interface ContributionWithNestedOwner {

@@ -33,7 +33,7 @@ import {
   createErrorResponse,
   createSuccessResponse,
 } from "../_shared/cors-headers.ts";
-import { logger, Logger } from "../_shared/logger.ts";
+import { logger } from "../_shared/logger.ts";
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js';
 import type {
   ServiceError,
@@ -68,7 +68,17 @@ import { handleUpdateSessionModels } from './updateSessionModels.ts';
 import { callUnifiedAIModel } from './callModel.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 
+// Declare EdgeRuntime as a global to satisfy the linter.
+// It is provided by the Supabase Edge Function environment.
+declare const EdgeRuntime: {
+  waitUntil: (promise: Promise<unknown>) => void;
+};
+
 console.log("dialectic-service function started");
+
+export interface RequestEvent {
+  waitUntil: (promise: Promise<unknown>) => void;
+}
 
 export interface DialecticServiceDependencies {
   dbClient: SupabaseClient;
@@ -297,24 +307,39 @@ export async function handleRequest(
           return createSuccessResponse(data, 200, req);
         }
         case "generateContributions": {
-          const payload = requestBody.payload as GenerateContributionsPayload;
-           if (!payload || !payload.sessionId) {
-            return createErrorResponse("sessionId is required for generateContributions.", 400, req, { message: "sessionId is required for generateContributions.", status: 400 });
+          logger.info("[generateContributions handler] Entered handler.");
+          if (!authToken) {
+            logger.error("[generateContributions handler] Auth token missing.");
+            return createErrorResponse("Auth token is required for generateContributions.", 401, req);
           }
+          if (!userForJson) {
+            logger.error("[generateContributions handler] User object missing.");
+            return createErrorResponse("User is required for generateContributions.", 401, req);
+          }
+
+          logger.info("[generateContributions handler] Creating dependencies.");
           const deps: GenerateContributionsDeps = {
-            logger,
-            callUnifiedAIModel,
-            downloadFromStorage,
-            deleteFromStorage: (path: string) => deleteFromStorage(adminClient, 'dialectic-contributions', [path]),
-            getExtensionFromMimeType,
-            randomUUID: crypto.randomUUID,
-            fileManager: new FileManagerService(adminClient),
+            callUnifiedAIModel: callUnifiedAIModel,
+            downloadFromStorage: downloadFromStorage,
+            getExtensionFromMimeType: getExtensionFromMimeType,
+            logger: logger,
+            randomUUID: crypto.randomUUID.bind(crypto),
+            fileManager: fileManager,
+            deleteFromStorage: (path: string) => deleteFromStorage(adminClient, 'dialectic_contributions', [path])
           };
-          const { success, data, error } = await handlers.generateContributions(adminClient, payload, authToken!, deps);
-          if (!success || error) {
-            return createErrorResponse(error?.message || "Generation failed", error?.status || 500, req, error);
-          }
-          return createSuccessResponse(data, 202, req);
+
+          logger.info("[generateContributions handler] Calling EdgeRuntime.waitUntil.");
+          EdgeRuntime.waitUntil(
+            handlers.generateContributions(
+              adminClient,
+              requestBody.payload,
+              authToken,
+              deps,
+            )
+          );
+
+          logger.info("[generateContributions handler] Returning 202 Accepted.");
+          return createSuccessResponse({ message: "Contribution generation initiated." }, 202, req);
         }
         case "getContributionContentData": {
           const payload = requestBody.payload as { contributionId: string };
