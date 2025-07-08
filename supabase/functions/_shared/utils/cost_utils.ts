@@ -29,11 +29,12 @@ export function calculateActualChatCost(
 
   const promptTokens = typeof tokenUsage.prompt_tokens === 'number' ? tokenUsage.prompt_tokens : 0;
   const completionTokens = typeof tokenUsage.completion_tokens === 'number' ? tokenUsage.completion_tokens : 0;
+  const totalTokens = typeof tokenUsage.total_tokens === 'number' ? tokenUsage.total_tokens : 0;
 
-  if (promptTokens === 0 && completionTokens === 0 && typeof tokenUsage.total_tokens === 'number' && tokenUsage.total_tokens > 0) {
+  if (promptTokens === 0 && completionTokens === 0 && totalTokens > 0) {
     logger?.warn(
         '[calculateActualChatCost] prompt_tokens and completion_tokens are zero, but total_tokens is present. ' +
-        'Cost calculation will proceed using specific rates, which might differ from a direct total_tokens debit if rates are not 1.0.',
+        'Using total_tokens for cost calculation.',
         { tokenUsage, modelContext: modelConfig.tokenization_strategy?.type === 'tiktoken' ? modelConfig.tokenization_strategy.tiktoken_encoding_name : 'N/A' }
     );
   }
@@ -57,12 +58,12 @@ export function calculateActualChatCost(
     outputCostRate = DEFAULT_OUTPUT_TOKEN_COST_RATE;
   }
 
-  const calculatedCost = (promptTokens * inputCostRate) + (completionTokens * outputCostRate);
+  const calculatedCost = totalTokens > 0 ? totalTokens : promptTokens + completionTokens;
 
   if (calculatedCost < 0) {
     logger?.warn(
         `[calculateActualChatCost] Calculated cost is negative for model (context: ${modelConfig.tokenization_strategy?.type === 'tiktoken' ? modelConfig.tokenization_strategy.tiktoken_encoding_name : 'N/A'}). Defaulting to 0. This should not happen.`,
-        { promptTokens, completionTokens, inputCostRate, outputCostRate, calculatedCost }
+        { promptTokens, completionTokens, totalTokens, calculatedCost }
     );
     return 0;
   }

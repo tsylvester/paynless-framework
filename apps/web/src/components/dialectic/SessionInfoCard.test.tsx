@@ -1,5 +1,5 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, type MockInstance } from 'vitest';
 import { SessionInfoCard } from './SessionInfoCard';
 import { DialecticSession, DialecticStage, DialecticProjectResource, DialecticProject, DialecticStateValues, ApiError } from '@paynless/types';
 import {
@@ -38,6 +38,22 @@ vi.mock('@paynless/store', async () => {
 
 vi.mock('@/components/common/MarkdownRenderer', () => ({
   MarkdownRenderer: vi.fn(({ content }) => <div data-testid="markdown-renderer-mock">{content}</div>),
+}));
+
+vi.mock('../ai/ChatContextSelector', () => ({
+  ChatContextSelector: vi.fn(() => <div data-testid="mock-chat-context-selector"></div>),
+}));
+
+vi.mock('../ai/WalletSelector', () => ({
+  WalletSelector: vi.fn(() => <div data-testid="mock-wallet-selector"></div>),
+}));
+
+vi.mock('./AIModelSelector', () => ({
+  AIModelSelector: vi.fn(() => <div data-testid="mock-ai-model-selector"></div>),
+}));
+
+vi.mock('./GenerateContributionButton', () => ({
+  GenerateContributionButton: vi.fn(() => <div data-testid="mock-generate-contribution-button"></div>),
 }));
 
 const mockProjectId = 'proj-123';
@@ -255,264 +271,262 @@ const setupMockStore = (
 };
 
 describe('SessionInfoCard', () => {
-
   const renderComponent = () => {
     return render(<SessionInfoCard />);
   };
-  
-  beforeEach(() => {
-    vi.clearAllMocks();
-    resetAiStoreMock();
-    initializeMockWalletStore();
-    setupMockStore({
-      currentProjectDetail: mockProject,
-      activeContextStage: mockStage,
-      contributionGenerationStatus: 'idle', 
-      generateContributionsError: null,
-    }, 
-    true,
-    mockSession
-    ); 
-  });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+  const openAccordionAndWaitForContent = async () => {
+    const accordionTrigger = await screen.findByText(/Review Stage Seed Prompt/i);
+    fireEvent.click(accordionTrigger);
+    // Wait for the content area of the accordion to be present.
+    // This assumes the content has a parent with this test id or similar, which may need to be added.
+    // For now, let's just wait for a known element inside.
+    await screen.findByRole('region'); // The AccordionContent has role="region"
+  };
 
-  it('renders basic session information correctly when stage is ready', async () => {
-    setupMockStore({
-      currentProjectDetail: { ...mockProject, project_name: 'Test Project For Basic Info' },
-      initialPromptContentCache: {
-        [iterationUserPromptResource.id]: { isLoading: false, content: 'Mock prompt content for basic info', error: null }
-      }
-    }, 
-    true,
-    mockSession
-    );
+  describe('when data is loaded', () => {
+    beforeEach(() => {
+      // Clear mocks and reset stores before each test in this block
+      vi.clearAllMocks();
+      resetAiStoreMock();
+      initializeMockWalletStore();
+    });
 
-    renderComponent();
-    
-    const cardTitleElement = await screen.findByTestId(`session-info-title-${mockSession.id}`);
-    expect(cardTitleElement).toBeInTheDocument();
-    expect(cardTitleElement).toHaveTextContent(new RegExp(mockSession.session_description!));
-    expect(cardTitleElement).toHaveTextContent(new RegExp(`Iteration: ${mockSession.iteration_count}`));
-    expect(cardTitleElement).toHaveTextContent(new RegExp(mockSession.status!, 'i'));
+    it('renders basic session information correctly when stage is ready', async () => {
+      setupMockStore(
+        {
+          currentProjectDetail: mockProject,
+          activeContextStage: mockStage,
+          contributionGenerationStatus: 'idle',
+          generateContributionsError: null,
+          initialPromptContentCache: {
+            [iterationUserPromptResource.id]: { isLoading: false, content: 'Mock prompt content', error: null },
+          },
+        },
+        true,
+        mockSession
+      );
+      renderComponent();
+      await openAccordionAndWaitForContent();
 
-    expect(screen.queryByText('Loading Session Information...')).toBeNull();
-    
-    await screen.findByText('Mock prompt content for basic info', {}, { timeout: 3000 });
-  });
+      const cardTitleElement = await screen.findByTestId(`session-info-title-${mockSession.id}`);
+      expect(cardTitleElement).toBeInTheDocument();
+      expect(cardTitleElement).toHaveTextContent(new RegExp(mockSession.session_description!));
+      expect(cardTitleElement).toHaveTextContent(new RegExp(`Iteration: ${mockSession.iteration_count}`));
+      expect(cardTitleElement).toHaveTextContent(new RegExp(mockSession.status!, 'i'));
 
-  it('displays loading state for iteration user prompt initially when stage is ready', async () => {
-    const specificPromptResourceId = 'res-specific-prompt-loading';
-    const specificPromptResource = createMockSeedPromptResource(
-      mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
-    );
-    setupMockStore({
-      currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
-      initialPromptContentCache: {
-        [specificPromptResourceId]: { isLoading: true, content: '', error: null }
-      }
-    }, 
-    true,
-    mockSession
-    );
-    renderComponent();
+      expect(screen.queryByText('Loading Session Information...')).toBeNull();
+      
+      await screen.findByText('Mock prompt content');
+    });
 
-    expect(screen.getByTestId('iteration-prompt-loading')).toBeInTheDocument();
-  });
-  
-  it('fetches iteration user prompt if not in cache and stage is ready', async () => {
-    const mockFetch = vi.fn();
-    const specificPromptResourceId = 'res-specific-prompt-fetch';
-    const specificPromptResource = createMockSeedPromptResource(
-      mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
-    );
-    setupMockStore({
-      currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
-      initialPromptContentCache: {},
-    }, 
-    true, 
-    mockSession 
-    );
-    useDialecticStore.setState({ fetchInitialPromptContent: mockFetch });
+    it('displays loading state for iteration user prompt initially when stage is ready', async () => {
+      const specificPromptResourceId = 'res-specific-prompt-loading';
+      const specificPromptResource = createMockSeedPromptResource(
+        mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
+      );
+      setupMockStore({
+        currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
+        initialPromptContentCache: {
+          [specificPromptResourceId]: { isLoading: true, content: '', error: null }
+        }
+      }, true, mockSession);
+      
+      renderComponent();
 
-    renderComponent();
+      const accordionTrigger = await screen.findByText(/Review Stage Seed Prompt/i);
+      fireEvent.click(accordionTrigger);
 
-    await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith(specificPromptResource.id);
+      expect(await screen.findByTestId('iteration-prompt-loading')).toBeInTheDocument();
+    });
+
+    it('fetches iteration user prompt if not in cache and stage is ready', async () => {
+      const mockFetch = vi.fn();
+      const specificPromptResourceId = 'res-specific-prompt-fetch';
+      const specificPromptResource = createMockSeedPromptResource(
+        mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
+      );
+      setupMockStore({
+        currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
+        initialPromptContentCache: {},
+      }, true, mockSession);
+      useDialecticStore.setState({ fetchInitialPromptContent: mockFetch });
+
+      renderComponent();
+
+      const accordionTrigger = await screen.findByText(/Review Stage Seed Prompt/i);
+      fireEvent.click(accordionTrigger);
+
+      await waitFor(() => {
+        expect(mockFetch).toHaveBeenCalledWith(specificPromptResource.id);
+      });
+    });
+
+    it('displays fetched iteration user prompt content when available and stage is ready', async () => {
+      const promptContent = "Fetched prompt content.";
+      const specificPromptResourceId = 'res-specific-prompt-display';
+      const specificPromptResource = createMockSeedPromptResource(
+        mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
+      );
+      setupMockStore({
+        currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
+        initialPromptContentCache: {
+          [specificPromptResourceId]: { isLoading: false, content: promptContent, error: null }
+        }
+      }, true, mockSession);
+
+      renderComponent();
+      
+      const accordionTrigger = await screen.findByText(/Review Stage Seed Prompt/i);
+      fireEvent.click(accordionTrigger);
+
+      const markdownRenderer = await screen.findByTestId('markdown-renderer-mock');
+      expect(markdownRenderer).toHaveTextContent(promptContent);
+    });
+
+    it('displays error message if fetching iteration user prompt fails and stage is ready', async () => {
+      const error: ApiError = { message: 'Failed to fetch', code: 'FETCH_ERROR' };
+      const specificPromptResourceId = 'res-specific-prompt-error';
+      const specificPromptResource = createMockSeedPromptResource(
+        mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
+      );
+      setupMockStore({
+        currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
+        initialPromptContentCache: {
+          [specificPromptResourceId]: { isLoading: false, content: '', error: error }
+        }
+      }, true, mockSession);
+      
+      renderComponent();
+
+      const accordionTrigger = await screen.findByText(/Review Stage Seed Prompt/i);
+      fireEvent.click(accordionTrigger);
+
+      expect(await screen.findByText('Error Loading Prompt')).toBeInTheDocument();
+    });
+
+    it('renders "Stage Not Ready" message when isStageReady is false', async () => {
+      setupMockStore({ currentProjectDetail: mockProject }, false, mockSession);
+      
+      renderComponent();
+
+      const accordionTrigger = await screen.findByText(/Review Stage Seed Prompt/i);
+      fireEvent.click(accordionTrigger);
+
+      expect(await screen.findByText('Stage Not Ready')).toBeInTheDocument();
+    });
+
+    it('displays generating contributions indicator when status is "initiating"', () => {
+      setupMockStore({ contributionGenerationStatus: 'initiating' }, true, mockSession);
+      renderComponent(); // No accordion needed for this, it's in the header
+      expect(screen.getByTestId('generating-contributions-indicator')).toBeInTheDocument();
+      expect(screen.getByText(/Generating contributions, please wait.../i)).toBeInTheDocument();
+    });
+
+    it('displays generating contributions indicator when status is "generating"', () => {
+      setupMockStore({ contributionGenerationStatus: 'generating' }, true, mockSession);
+      renderComponent();
+      expect(screen.getByTestId('generating-contributions-indicator')).toBeInTheDocument();
+      expect(screen.getByText(/Generating contributions, please wait.../i)).toBeInTheDocument();
+    });
+
+    it('displays generation error if status is "failed" and error is present', () => {
+      const error: ApiError = { message: 'Generation failed hard', code: 'GEN_FAIL' };
+      setupMockStore(
+        { contributionGenerationStatus: 'failed', generateContributionsError: error },
+        true,
+        mockSession
+      );
+      renderComponent();
+      const errorAlert = screen.getByTestId('generate-contributions-error');
+      expect(errorAlert).toBeInTheDocument();
+      expect(within(errorAlert).getByText('Error Generating Contributions')).toBeInTheDocument();
+      expect(within(errorAlert).getByText(error.message)).toBeInTheDocument();
+    });
+
+    it('does not display generation error or indicator if status is "idle"', () => {
+      setupMockStore({ contributionGenerationStatus: 'idle' }, true, mockSession);
+      renderComponent();
+      expect(screen.queryByTestId('generating-contributions-indicator')).toBeNull();
+      expect(screen.queryByTestId('generate-contributions-error')).toBeNull();
+    });
+
+    it('renders "No specific prompt is configured for this iteration/stage." when iterationUserPromptResourceId is null and stage is ready', async () => {
+      setupMockStore(
+        { currentProjectDetail: { ...mockProject, resources: [] } },
+        true,
+        mockSession
+      );
+      renderComponent();
+
+      const accordionTrigger = await screen.findByText(/Review Stage Seed Prompt/i);
+      fireEvent.click(accordionTrigger);
+
+      expect(await screen.findByText('No specific prompt is configured for this iteration/stage.')).toBeInTheDocument();
+    });
+
+    it('renders "Loading iteration prompt..." if resource ID exists but no cache entry and stage is ready', async () => {
+      const specificPromptResourceId = 'res-for-loading-text';
+      const specificPromptResource = createMockSeedPromptResource(
+        mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
+      );
+      setupMockStore(
+        { 
+          currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
+          initialPromptContentCache: {}
+        },
+        true,
+        mockSession
+      );
+      renderComponent();
+
+      const accordionTrigger = await screen.findByText(/Review Stage Seed Prompt/i);
+      fireEvent.click(accordionTrigger);
+
+      expect(await screen.findByText('Loading iteration prompt...', {}, {timeout: 2000})).toBeInTheDocument();
+    });
+
+    it('renders "No specific prompt was set for this iteration." if cache entry exists with null content and no error/loading, and stage is ready', async () => {
+      const specificPromptResourceId = 'res-null-content';
+      const specificPromptResource = createMockSeedPromptResource(
+        mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
+      );
+      setupMockStore(
+        { 
+          currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
+          initialPromptContentCache: {
+            [specificPromptResourceId]: {isLoading: false, content: '', error: null }
+          }
+        },
+        true,
+        mockSession
+      );
+      renderComponent();
+      
+      const accordionTrigger = await screen.findByText(/Review Stage Seed Prompt/i);
+      fireEvent.click(accordionTrigger);
+
+      expect(await screen.findByText('No specific prompt was set for this iteration.')).toBeInTheDocument();
     });
   });
 
-  it('displays fetched iteration user prompt content when available and stage is ready', async () => {
-    const promptContent = "Fetched prompt content.";
-    const specificPromptResourceId = 'res-specific-prompt-display';
-    const specificPromptResource = createMockSeedPromptResource(
-      mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
-    );
-    setupMockStore({
-      currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
-      initialPromptContentCache: {
-        [specificPromptResourceId]: { isLoading: false, content: promptContent, error: null }
-      }
-    }, 
-    true,
-    mockSession
-    );
-    renderComponent();
+  describe('when data is not loaded', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      resetAiStoreMock();
+      initializeMockWalletStore();
+    });
 
-    expect(screen.getByTestId('markdown-renderer-mock')).toHaveTextContent(promptContent);
+    it('renders loading state if session is undefined', () => {
+      setupMockStore({ currentProjectDetail: mockProject }, true, null);
+      renderComponent();
+      expect(screen.getByText('Loading Session Information...')).toBeInTheDocument();
+    });
+
+    it('renders loading state if project is undefined', () => {
+      setupMockStore({ currentProjectDetail: null }, true, mockSession);
+      renderComponent();
+      expect(screen.getByText('Loading Session Information...')).toBeInTheDocument();
+    });
   });
-
-  it('displays error message if fetching iteration user prompt fails and stage is ready', async () => {
-    const error: ApiError = { message: 'Failed to fetch', code: 'FETCH_ERROR' };
-    const specificPromptResourceId = 'res-specific-prompt-error';
-    const specificPromptResource = createMockSeedPromptResource(
-      mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
-    );
-    setupMockStore({
-      currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
-      initialPromptContentCache: {
-        [specificPromptResourceId]: { isLoading: false, content: '', error: error }
-      }
-    }, 
-    true,
-    mockSession
-    );
-    renderComponent();
-
-    expect(screen.getByText('Error Loading Prompt')).toBeInTheDocument();
-  });
-
-  it('renders "Stage Not Ready" message when isStageReady is false', () => {
-    setupMockStore(
-      { currentProjectDetail: mockProject },
-      false,
-      mockSession
-    );
-    renderComponent();
-
-    expect(screen.getByText('Stage Not Ready')).toBeInTheDocument();
-  });
-
-  it('renders loading state if session is undefined', () => {
-    setupMockStore(
-      { currentProjectDetail: mockProject },
-      true,
-      null
-    );
-    renderComponent();
-
-    expect(screen.getByText('Loading Session Information...')).toBeInTheDocument();
-  });
-
-  it('renders loading state if project is undefined', () => {
-    setupMockStore(
-      { currentProjectDetail: null },
-      true,
-      mockSession
-    );
-    renderComponent();
-    expect(screen.getByText('Loading Session Information...')).toBeInTheDocument();
-  });
-
-  it('displays generating contributions indicator when status is "initiating"', () => {
-    setupMockStore(
-      { contributionGenerationStatus: 'initiating' }, 
-      true, 
-      mockSession
-    );
-    renderComponent();
-    expect(screen.getByTestId('generating-contributions-indicator')).toBeInTheDocument();
-    expect(screen.getByText(/Generating contributions, please wait.../i)).toBeInTheDocument();
-  });
-
-  it('displays generating contributions indicator when status is "generating"', () => {
-    setupMockStore(
-      { contributionGenerationStatus: 'generating' },
-      true,
-      mockSession
-      );
-    renderComponent();
-    expect(screen.getByTestId('generating-contributions-indicator')).toBeInTheDocument();
-    expect(screen.getByText(/Generating contributions, please wait.../i)).toBeInTheDocument();
-  });
-
-  it('displays generation error if status is "failed" and error is present', () => {
-    const error: ApiError = { message: 'Generation failed hard', code: 'GEN_FAIL' };
-    setupMockStore(
-      { 
-        contributionGenerationStatus: 'failed',
-        generateContributionsError: error 
-      },
-      true,
-      mockSession
-      );
-    renderComponent();
-    const errorAlert = screen.getByTestId('generate-contributions-error');
-    expect(errorAlert).toBeInTheDocument();
-    expect(within(errorAlert).getByText('Error Generating Contributions')).toBeInTheDocument();
-    expect(within(errorAlert).getByText(error.message)).toBeInTheDocument();
-  });
-
-  it('does not display generation error or indicator if status is "idle"', () => {
-    setupMockStore(
-      { contributionGenerationStatus: 'idle' },
-      true,
-      mockSession
-      );
-    renderComponent();
-    expect(screen.queryByTestId('generating-contributions-indicator')).toBeNull();
-    expect(screen.queryByTestId('generate-contributions-error')).toBeNull();
-  });
-
-  it('renders "No specific prompt is configured for this iteration/stage." when iterationUserPromptResourceId is null and stage is ready', () => {
-    setupMockStore(
-      { 
-        currentProjectDetail: { ...mockProject, resources: [] } 
-      },
-      true,
-      mockSession
-    );
-    renderComponent();
-    expect(screen.getByText('No specific prompt is configured for this iteration/stage.')).toBeInTheDocument();
-  });
-
-  it('renders "Loading iteration prompt..." if resource ID exists but no cache entry and stage is ready', async () => {
-    const specificPromptResourceId = 'res-for-loading-text';
-    const specificPromptResource = createMockSeedPromptResource(
-      mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
-    );
-    setupMockStore(
-      { 
-        currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
-        initialPromptContentCache: {}
-      },
-      true,
-      mockSession
-    );
-    renderComponent();
-    expect(await screen.findByText('Loading iteration prompt...', {}, {timeout: 2000})).toBeInTheDocument();
-  });
-
-
-  it('renders "No specific prompt was set for this iteration." if cache entry exists with null content and no error/loading, and stage is ready', () => {
-    const specificPromptResourceId = 'res-null-content';
-    const specificPromptResource = createMockSeedPromptResource(
-      mockProjectId, mockSessionId, mockStageSlug, mockIterationNumber, specificPromptResourceId
-    );
-    setupMockStore(
-      { 
-        currentProjectDetail: { ...mockProject, resources: [specificPromptResource] },
-        initialPromptContentCache: {
-          [specificPromptResourceId]: {isLoading: false, content: '', error: null }
-        }
-      },
-      true,
-      mockSession
-    );
-    renderComponent();
-    expect(screen.getByText('No specific prompt was set for this iteration.')).toBeInTheDocument();
-  });
-
 }); 

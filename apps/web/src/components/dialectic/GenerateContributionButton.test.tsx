@@ -11,7 +11,8 @@ import type {
   GenerateContributionsPayload, // For explicit mock typing
   GenerateContributionsResponse, // For explicit mock typing
   ApiResponse, // For explicit mock typing
-  DialecticStateValues
+  DialecticStateValues,
+  DialecticProcessTemplate
 } from '@paynless/types'; // Corrected DialecticProjectDetail to DialecticProject
 
 // Import utilities from the actual mock file
@@ -24,16 +25,26 @@ import { useDialecticStore, initialDialecticStateValues } from '@paynless/store'
 
 // Mock the actual store path to use exports from our mock file
 vi.mock('@paynless/store', async () => {
-  // Import all exports from our mock file
   const mockStoreExports = await vi.importActual<typeof import('@/mocks/dialecticStore.mock')>('@/mocks/dialecticStore.mock');
   const actualStore = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
 
+  // These are simple, test-specific selectors that work with our flat mock state.
+  // This isolates the component test from the real store's implementation details.
+  const selectSelectedModelIds = (state: DialecticStateValues) => state.selectedModelIds || [];
+  
+  const selectActiveStage = (state: DialecticStateValues): DialecticStage | null => {
+    const { currentProjectDetail, activeStageSlug } = state;
+    if (!currentProjectDetail || !activeStageSlug || !currentProjectDetail.dialectic_process_templates) return null;
+    const processTemplate = currentProjectDetail.dialectic_process_templates as DialecticProcessTemplate;
+    return processTemplate.stages?.find((s: DialecticStage) => s.slug === activeStageSlug) || null;
+  };
+
   return {
     ...mockStoreExports,
-    selectSessionById: actualStore.selectSessionById,
-    // Ensure selectSelectedModelIds is correctly defined for these tests.
-    // This assumes the mock store's state has a 'selectedModelIds' property.
-    selectSelectedModelIds: (state: { selectedModelIds?: string[] }) => state.selectedModelIds || [],
+    initialDialecticStateValues: actualStore.initialDialecticStateValues,
+    selectSessionById: actualStore.selectSessionById, // This selector is simple enough to work with our mock state
+    selectSelectedModelIds, // Use our test-specific implementation
+    selectActiveStage, // Use our test-specific implementation
   };
 });
 
@@ -89,7 +100,8 @@ const mockGenericContribution: DialecticContribution = {
 // Helper to create a complete DialecticProject mock
 const createMockProject = (
   projectId: string, 
-  sessions: DialecticSession[] = []
+  sessions: DialecticSession[] = [],
+  stages: DialecticStage[] = [mockThesisStage] // Add stages to mock
 ): DialecticProject => ({
   id: projectId,
   user_id: `user-${projectId}`,
@@ -111,7 +123,9 @@ const createMockProject = (
     created_at: new Date().toISOString(), 
     description: 'Description 1', 
     id: 'process-template-1', 
-    starting_stage_id: 'stage-1'},
+    starting_stage_id: 'stage-1',
+    stages: stages, // Correctly use 'stages'
+  },
   contributionGenerationStatus: 'idle',
   generateContributionsError: null,
   isSubmittingStageResponses: false,
@@ -153,12 +167,8 @@ const setDialecticStateValues = (state: Partial<DialecticStateValues>) => {
 };
 
 describe('GenerateContributionButton', () => {
-  const defaultProps = {
-    sessionId: 'test-session-id',
-    projectId: 'test-project-id',
-    currentStage: mockThesisStage,
-    currentStageFriendlyName: 'Thesis',
-  };
+  // This is no longer needed as props are removed.
+  // const defaultProps = { ... };
 
   let storeActions: {
      generateContributions: ReturnType<typeof vi.fn<[GenerateContributionsPayload], Promise<ApiResponse<GenerateContributionsResponse>>>>;
@@ -167,11 +177,13 @@ describe('GenerateContributionButton', () => {
   beforeEach(() => {
     initializeMockDialecticState(); // Reset the mock store
     // Set default state that allows button to be enabled initially for most tests
-    const defaultSession = createMockSession(defaultProps.sessionId, defaultProps.projectId, 1);
-    const defaultProject = createMockProject(defaultProps.projectId, [defaultSession]);
+    const defaultSession = createMockSession('test-session-id', 'test-project-id', 1);
+    const defaultProject = createMockProject('test-project-id', [defaultSession]);
     setDialecticStateValues({ 
       selectedModelIds: ['model-1'],
       currentProjectDetail: defaultProject,
+      activeContextSessionId: 'test-session-id', // New state
+      activeStageSlug: 'thesis', // New state
       contributionGenerationStatus: 'idle', // Explicitly set idle status
     });
     // Retrieve the mock function instance from the initialized store
@@ -188,39 +200,51 @@ describe('GenerateContributionButton', () => {
   });
 
   it('renders "Generate [StageName]" when models are selected and no other conditions met', () => {
-    // beforeEach already sets up models selected and a basic project/session
-    render(<GenerateContributionButton {...defaultProps} />);
+    // beforeEach already sets up models selected and a basic project/session in the store
+    render(<GenerateContributionButton />);
     expect(screen.getByRole('button', { name: /Generate Thesis/i })).toBeInTheDocument();
     expect(screen.getByRole('button')).not.toBeDisabled();
   });
 
   it('renders "Choose AI Models" and is disabled when no models are selected', () => {
-    setDialecticStateValues({ selectedModelIds: [] }); // Override: No models selected
-    render(<GenerateContributionButton {...defaultProps} />);
+    const defaultSession = createMockSession('test-session-id', 'test-project-id', 1);
+    const defaultProject = createMockProject('test-project-id', [defaultSession]);
+    setDialecticStateValues({
+      selectedModelIds: [], // Override: No models selected
+      currentProjectDetail: defaultProject,
+      activeContextSessionId: 'test-session-id',
+      activeStageSlug: 'thesis',
+    });
+    render(<GenerateContributionButton />);
     expect(screen.getByRole('button', { name: /Choose AI Models/i })).toBeInTheDocument();
     expect(screen.getByRole('button')).toBeDisabled();
   });
 
-  it('renders "Stage Not Ready" when currentStageFriendlyName indicates so', () => {
-    // Models are selected by default from beforeEach
-    render(<GenerateContributionButton {...defaultProps} currentStageFriendlyName="Stage Not Ready" />);
+  it('is disabled and shows "Stage Not Ready" when no active stage is selected', () => {
+    setDialecticStateValues({
+      selectedModelIds: ['model-1'],
+      activeStageSlug: null, // No active stage
+      currentProjectDetail: createMockProject('test-project-id', [createMockSession('test-session-id', 'test-project-id', 1)]),
+    });
+    render(<GenerateContributionButton />);
     expect(screen.getByRole('button', { name: /Stage Not Ready/i })).toBeInTheDocument();
-    // The button should be disabled if the stage is not ready.
     expect(screen.getByRole('button')).toBeDisabled();
   });
 
   it('renders "Regenerate [StageName]" when contributions for current stage and iteration exist', () => {
     const currentIter = 1;
-    const existingContribution = { ...mockGenericContribution, stage: mockThesisStage.slug, iteration_number: currentIter, session_id: defaultProps.sessionId };
-    const sessionWithContribution = createMockSession(defaultProps.sessionId, defaultProps.projectId, currentIter, [existingContribution]);
-    const projectWithContribution = createMockProject(defaultProps.projectId, [sessionWithContribution]);
+    const existingContribution = { ...mockGenericContribution, stage: mockThesisStage.slug, iteration_number: currentIter, session_id: 'test-session-id' };
+    const sessionWithContribution = createMockSession('test-session-id', 'test-project-id', currentIter, [existingContribution]);
+    const projectWithContribution = createMockProject('test-project-id', [sessionWithContribution]);
     
     setDialecticStateValues({
-      selectedModelIds: ['model1'], // Ensure models are selected
+      selectedModelIds: ['model1'],
       currentProjectDetail: projectWithContribution,
+      activeContextSessionId: 'test-session-id',
+      activeStageSlug: 'thesis',
     });
 
-    render(<GenerateContributionButton {...defaultProps} currentStage={mockThesisStage} />);
+    render(<GenerateContributionButton />);
     expect(screen.getByRole('button', { name: /Regenerate Thesis/i })).toBeInTheDocument();
     expect(screen.getByRole('button')).not.toBeDisabled();
   });
@@ -229,31 +253,36 @@ describe('GenerateContributionButton', () => {
     // Setup the mock store to return a generating state for this session
     setDialecticStateValues({
       selectedModelIds: ['model-1'], // Ensure models are selected
-      generatingSessions: { [defaultProps.sessionId]: true },
+      generatingSessions: { 'test-session-id': true },
+      activeContextSessionId: 'test-session-id',
+      activeStageSlug: 'thesis',
+      currentProjectDetail: createMockProject('test-project-id', [createMockSession('test-session-id', 'test-project-id', 1)]),
     });
     
-    render(<GenerateContributionButton {...defaultProps} />);
+    render(<GenerateContributionButton />);
     
     expect(screen.getByText(/Generating.../i)).toBeInTheDocument();
     expect(screen.getByRole('button')).toBeDisabled();
   });
 
   it('renders "Regenerate" when contributions for the current stage/iteration already exist', () => {
-    // Override the mock session to include contributions for the current stage
+    // This test is somewhat redundant with the one above, but we keep it for coverage.
     const sessionWithContributions = createMockSession(
-      defaultProps.sessionId,
-      defaultProps.projectId,
+      'test-session-id',
+      'test-project-id',
       1,
       [mockGenericContribution]
     );
-    const projectWithContributions = createMockProject(defaultProps.projectId, [sessionWithContributions]);
+    const projectWithContributions = createMockProject('test-project-id', [sessionWithContributions]);
 
     setDialecticStateValues({
       selectedModelIds: ['model1'],
       currentProjectDetail: projectWithContributions,
+      activeContextSessionId: 'test-session-id',
+      activeStageSlug: 'thesis',
     });
 
-    render(<GenerateContributionButton {...defaultProps} />);
+    render(<GenerateContributionButton />);
     expect(screen.getByRole('button', { name: /Regenerate Thesis/i })).toBeInTheDocument();
     expect(screen.getByRole('button')).not.toBeDisabled();
   });
@@ -262,16 +291,16 @@ describe('GenerateContributionButton', () => {
     // Mock the successful API call
     storeActions.generateContributions.mockResolvedValue({ status: 202, data: { message: 'Request accepted' } });
     
-    render(<GenerateContributionButton {...defaultProps} />);
+    render(<GenerateContributionButton />);
     
     fireEvent.click(screen.getByRole('button'));
     
     await waitFor(() => {
       expect(storeActions.generateContributions).toHaveBeenCalledWith({
-        sessionId: defaultProps.sessionId,
-        projectId: defaultProps.projectId,
-        stageSlug: defaultProps.currentStage.slug,
-        iterationNumber: 1, // from mock session
+        sessionId: 'test-session-id', // from store state
+        projectId: 'test-project-id', // from store state
+        stageSlug: 'thesis', // from store state
+        iterationNumber: 1, // from mock session in store
       });
     });
 
@@ -286,7 +315,7 @@ describe('GenerateContributionButton', () => {
     const { generateContributions } = getDialecticStoreState();
     (generateContributions as ReturnType<typeof vi.fn>).mockRejectedValue(dispatchError);
 
-    render(<GenerateContributionButton {...defaultProps} />);
+    render(<GenerateContributionButton />);
     
     fireEvent.click(screen.getByRole('button'));
 
@@ -297,33 +326,40 @@ describe('GenerateContributionButton', () => {
 
   it('shows an error toast if the session data is missing', async () => {
     // Set a project detail with a session that has a null iteration_count
-    const sessionWithNullIteration = createMockSession(defaultProps.sessionId, defaultProps.projectId, undefined as unknown as number);
-    const projectWithBadSession = createMockProject(defaultProps.projectId, [sessionWithNullIteration]);
+    const sessionWithNullIteration = createMockSession('test-session-id', 'test-project-id', undefined as unknown as number);
+    const projectWithBadSession = createMockProject('test-project-id', [sessionWithNullIteration]);
     setDialecticStateValues({ 
       selectedModelIds: ['model1'],
       currentProjectDetail: projectWithBadSession,
+      activeContextSessionId: 'test-session-id',
+      activeStageSlug: 'thesis',
     });
     
-    render(<GenerateContributionButton {...defaultProps} />);
+    render(<GenerateContributionButton />);
     fireEvent.click(screen.getByRole('button'));
     
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Could not determine the current iteration number. Please ensure the session is active.');
+      expect(toast.error).toHaveBeenCalledWith('Could not determine the required context. Please ensure a project, session, and stage are active.');
     });
 
     expect(storeActions.generateContributions).not.toHaveBeenCalled();
   });
 
-  it('is disabled when the disabled prop is true', () => {
-    // beforeEach ensures models are selected & project details are present
-    render(<GenerateContributionButton {...defaultProps} disabled={true} />);
+  it('is disabled when the active stage cannot be found from the store', () => {
+    setDialecticStateValues({
+      selectedModelIds: ['model-1'],
+      activeStageSlug: 'non-existent-stage', // This stage doesn't exist in the mock project
+      currentProjectDetail: createMockProject('p-id', [createMockSession('s-id', 'p-id', 1)], [mockThesisStage]),
+      activeContextSessionId: 's-id'
+    });
+    render(<GenerateContributionButton />);
     expect(screen.getByRole('button')).toBeDisabled();
   });
 
   it('handles unexpected exception during thunk execution (mockRejectedValue)', async () => {
     const exceptionError = new Error('Unexpected Thunk Error');
     storeActions.generateContributions.mockRejectedValueOnce(exceptionError);
-    render(<GenerateContributionButton {...defaultProps} />);
+    render(<GenerateContributionButton />);
 
     fireEvent.click(screen.getByRole('button'));
 
@@ -334,16 +370,18 @@ describe('GenerateContributionButton', () => {
 
   it('is disabled and shows "Choose AI Models" when no models selected, overriding "Regenerate" label', () => {
     const currentIter = 1;
-    const existingContribution = { ...mockGenericContribution, stage: mockThesisStage.slug, iteration_number: currentIter, session_id: defaultProps.sessionId };
-    const sessionWithContribution = createMockSession(defaultProps.sessionId, defaultProps.projectId, currentIter, [existingContribution]);
-    const projectWithContribution = createMockProject(defaultProps.projectId, [sessionWithContribution]);
+    const existingContribution = { ...mockGenericContribution, stage: mockThesisStage.slug, iteration_number: currentIter, session_id: 'test-session-id' };
+    const sessionWithContribution = createMockSession('test-session-id', 'test-project-id', currentIter, [existingContribution]);
+    const projectWithContribution = createMockProject('test-project-id', [sessionWithContribution]);
 
     setDialecticStateValues({
       selectedModelIds: [], // NO models selected
       currentProjectDetail: projectWithContribution, // Contributions exist
+      activeContextSessionId: 'test-session-id',
+      activeStageSlug: 'thesis',
     });
 
-    render(<GenerateContributionButton {...defaultProps} currentStage={mockThesisStage} />);
+    render(<GenerateContributionButton />);
     expect(screen.getByRole('button', { name: /Choose AI Models/i })).toBeInTheDocument();
     expect(screen.getByRole('button')).toBeDisabled();
     expect(screen.queryByRole('button', { name: /Regenerate Thesis/i })).not.toBeInTheDocument();
@@ -352,34 +390,36 @@ describe('GenerateContributionButton', () => {
   it('handles missing activeSession or iteration_count gracefully', async () => {
     setDialecticStateValues({
       selectedModelIds: ['model1'],
-      currentProjectDetail: createMockProject(defaultProps.projectId, [
-        // Session with missing iteration_count (though our helper enforces it)
-        // More realistically, the session might be missing or currentProjectDetail is null
-        { ...createMockSession(defaultProps.sessionId, defaultProps.projectId, 1), iteration_count: undefined as unknown as number } 
+      currentProjectDetail: createMockProject('test-project-id', [
+        // Session with missing iteration_count
+        { ...createMockSession('test-session-id', 'test-project-id', 1), iteration_count: undefined as unknown as number } 
       ]),
+      activeContextSessionId: 'test-session-id',
+      activeStageSlug: 'thesis',
     });
 
-    render(<GenerateContributionButton {...defaultProps} />);
+    render(<GenerateContributionButton />);
     fireEvent.click(screen.getByRole('button'));
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Could not determine the current iteration number. Please ensure the session is active.');
+      expect(toast.error).toHaveBeenCalledWith('Could not determine the required context. Please ensure a project, session, and stage are active.');
     });
     expect(storeActions.generateContributions).not.toHaveBeenCalled();
   });
 
-   it('handles currentProjectDetail being null gracefully', async () => {
+   it('handles currentProjectDetail being null gracefully by being disabled', () => {
     setDialecticStateValues({
       selectedModelIds: ['model1'],
       currentProjectDetail: null, // Project details not loaded
+      activeContextSessionId: 'test-session-id',
+      activeStageSlug: 'thesis',
     });
 
-    render(<GenerateContributionButton {...defaultProps} />);
-    fireEvent.click(screen.getByRole('button'));
-
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Could not determine the current iteration number. Please ensure the session is active.');
-    });
-    expect(storeActions.generateContributions).not.toHaveBeenCalled();
+    render(<GenerateContributionButton />);
+    
+    // The button should be disabled because there's no project/stage info
+    expect(screen.getByRole('button')).toBeDisabled();
+    // And it should indicate why
+    expect(screen.getByText(/Stage Not Ready/i)).toBeInTheDocument();
   });
 }); 

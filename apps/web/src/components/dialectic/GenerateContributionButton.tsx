@@ -1,48 +1,70 @@
 import React, { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { useDialecticStore, selectSelectedModelIds, selectSessionById } from '@paynless/store';
-import type { ApiError, DialecticContribution, DialecticStage } from '@paynless/types';
+import {
+  useDialecticStore,
+  selectSelectedModelIds,
+  selectSessionById,
+  selectActiveStage,
+} from '@paynless/store';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface GenerateContributionButtonProps {
-  sessionId: string;
-  projectId: string;
-  currentStage: DialecticStage;
-  currentStageFriendlyName: string;
-  disabled?: boolean;
   className?: string;
 }
 
 export const GenerateContributionButton: React.FC<GenerateContributionButtonProps> = ({
-  sessionId,
-  projectId,
-  currentStage,
-  currentStageFriendlyName,
-  disabled = false,
   className,
 }) => {
   const store = useDialecticStore();
   const {
     generateContributions,
-    isSessionGenerating,
+    generatingSessions,
+    currentProjectDetail,
+    activeContextSessionId,
   } = useDialecticStore((state) => ({
     generateContributions: state.generateContributions,
-    isSessionGenerating: state.generatingSessions[sessionId] || false,
+    generatingSessions: state.generatingSessions,
+    currentProjectDetail: state.currentProjectDetail,
+    activeContextSessionId: state.activeContextSessionId,
   }));
 
-  const currentSelectedModelIds = useDialecticStore(selectSelectedModelIds);
-  const areAnyModelsSelected = currentSelectedModelIds && currentSelectedModelIds.length > 0;
-
-  const activeSession = useMemo(() => selectSessionById(store, sessionId), [store, sessionId]);
-
-  const contributionsForStageAndIterationExist = activeSession?.dialectic_contributions?.some(
-    c => c.stage === currentStage.slug && c.iteration_number === activeSession.iteration_count
+  const selectedModelIds = useDialecticStore(selectSelectedModelIds);
+  const activeStage = useMemo(() => selectActiveStage(store), [store]);
+  const activeSession = useMemo(
+    () => (activeContextSessionId ? selectSessionById(store, activeContextSessionId) : null),
+    [store, activeContextSessionId]
   );
 
+  const isSessionGenerating = activeContextSessionId ? generatingSessions[activeContextSessionId] || false : false;
+  const areAnyModelsSelected = selectedModelIds && selectedModelIds.length > 0;
+
+  // Final, correct logic based on user feedback
+  const contributionsForStageAndIterationExist = useMemo(() => {
+    if (!activeSession || !activeStage) return false;
+    return activeSession.dialectic_contributions?.some(
+      (c) => c.stage === activeStage.slug && c.iteration_number === activeSession.iteration_count
+    );
+  }, [activeSession, activeStage]);
+
+  const didGenerationFail = useMemo(() => {
+    if (!activeSession || !activeStage) return false;
+    // As per plan (12.b), the status for a failed stage is dynamic.
+    const failedStatus = `${activeStage.slug}_generation_failed`;
+    return activeSession.status === failedStatus;
+  }, [activeSession, activeStage]);
+
+
   const handleClick = async () => {
-    if (!activeSession || typeof activeSession.iteration_count !== 'number') {
-      toast.error('Could not determine the current iteration number. Please ensure the session is active.');
+    if (
+      !activeSession ||
+      typeof activeSession.iteration_count !== 'number' ||
+      !currentProjectDetail ||
+      !activeStage ||
+      !activeContextSessionId
+    ) {
+      toast.error('Could not determine the required context. Please ensure a project, session, and stage are active.');
       return;
     }
     const currentIterationNumber = activeSession.iteration_count;
@@ -50,41 +72,41 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
     toast.success('Contribution generation started!', {
       description: 'The AI is working. We will notify you when it is complete.',
     });
-    
+
     try {
-      await generateContributions({ 
-        sessionId, 
-        projectId, 
-        stageSlug: currentStage.slug, 
-        iterationNumber: currentIterationNumber
+      await generateContributions({
+        sessionId: activeContextSessionId,
+        projectId: currentProjectDetail.id,
+        stageSlug: activeStage.slug,
+        iterationNumber: currentIterationNumber,
       });
-      // No need to handle success/error here anymore, as it's asynchronous.
-      // The UI will update based on the generatingSessions state and notifications.
     } catch (e: unknown) {
-      // This catch block is for unexpected errors in dispatching or thunk execution itself
       const errorMessage = (e as Error)?.message || `An unexpected error occurred while starting the generation process.`;
       toast.error(errorMessage);
     }
   };
 
+  // The button is only disabled if essential data is missing or a generation is in progress.
+  const isDisabled = isSessionGenerating || !areAnyModelsSelected || !activeStage || !activeSession;
+  const friendlyName = activeStage?.display_name || '...';
+
+  const getButtonText = () => {
+    if (isSessionGenerating) return <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>;
+    if (!areAnyModelsSelected) return 'Choose AI Models';
+    if (!activeStage || !activeSession) return 'Stage Not Ready';
+    if (didGenerationFail) return `Retry ${friendlyName}`;
+    if (contributionsForStageAndIterationExist) return `Regenerate ${friendlyName}`;
+    return `Generate ${friendlyName}`;
+  };
+
   return (
     <Button
       onClick={handleClick}
-      disabled={disabled || isSessionGenerating || !areAnyModelsSelected || currentStageFriendlyName === "Stage Not Ready"}
-      className={className}
-      data-testid={`generate-${currentStage.slug}-button`}
+      disabled={isDisabled}
+      className={cn(className, { 'animate-pulse': !isDisabled && !contributionsForStageAndIterationExist })}
+      data-testid={`generate-${activeStage?.slug || 'unknown'}-button`}
     >
-      {isSessionGenerating ? (
-        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
-      ) : !areAnyModelsSelected ? (
-        "Choose AI Models"
-      ) : currentStageFriendlyName === "Stage Not Ready" ? (
-        "Stage Not Ready"
-      ) : contributionsForStageAndIterationExist ? (
-        `Regenerate ${currentStageFriendlyName}`
-      ) : (
-        `Generate ${currentStageFriendlyName}`
-      )}
+      {getButtonText()}
     </Button>
   );
 }; 

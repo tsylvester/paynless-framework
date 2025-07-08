@@ -22,7 +22,7 @@ vi.mock('@paynless/store', async () => {
     // Override specific selectors to be mock functions for this test suite
     selectIsStageReadyForSessionIteration: vi.fn(),
     selectFeedbackForStageIteration: vi.fn(),
-    selectActiveContextStage: vi.fn(),
+    selectActiveStageSlug: vi.fn(),
     selectCurrentProjectDetail: vi.fn(),
     selectIsLoadingProjectDetail: vi.fn(),
     selectContributionGenerationStatus: vi.fn(),
@@ -43,6 +43,7 @@ import {
   SubmitStageResponsesResponse,
   DialecticFeedback,
   GetProjectResourceContentResponse,
+  DialecticProcessTemplate,
 } from '@paynless/types';
 import { vi, beforeEach, describe, it, expect, type MockInstance } from 'vitest';
 import { initializeMockDialecticState, getDialecticStoreState } from '../../mocks/dialecticStore.mock';
@@ -53,7 +54,7 @@ import {
   selectIsLoadingProjectDetail,
   selectContributionGenerationStatus,
   selectProjectDetailError,
-  selectActiveContextStage,
+  selectActiveStageSlug,
   selectCurrentProjectDetail
 } from '@paynless/store';
 
@@ -77,6 +78,15 @@ const mockAntithesisStage: DialecticStage = {
     input_artifact_rules: {},
     expected_output_artifacts: {},
     created_at: 'now',
+};
+
+const mockProcessTemplate: Omit<DialecticProcessTemplate, 'stages'> & { stages: DialecticStage[] } = {
+  id: 'pt-1',
+  name: 'Standard Dialectic',
+  description: 'A standard template for dialectical processes.',
+  starting_stage_id: 's1',
+  created_at: '2023-10-27T00:00:00Z',
+  stages: [mockThesisStage, mockAntithesisStage],
 };
 
 describe('SessionContributionsDisplayCard', () => {
@@ -230,7 +240,8 @@ describe('SessionContributionsDisplayCard', () => {
       activeStageInStore = mockThesisStage,
       overrides = {},
       isStageReadyOverride = true,
-      mockFeedbackDataOverride = null as DialecticFeedback[] | null
+      mockFeedbackDataOverride = null as DialecticFeedback[] | null,
+      processTemplateInStore = mockProcessTemplate as DialecticProcessTemplate,
     }: {
       projectInStore?: DialecticProject | null;
       activeSessionInStore?: DialecticSession | null;
@@ -238,6 +249,7 @@ describe('SessionContributionsDisplayCard', () => {
       overrides?: Partial<DialecticStateValues>;
       isStageReadyOverride?: boolean;
       mockFeedbackDataOverride?: DialecticFeedback[] | null;
+      processTemplateInStore?: DialecticProcessTemplate;
     } = {}
   ) => {
     const initialState: Partial<DialecticStateValues> = {
@@ -254,6 +266,7 @@ describe('SessionContributionsDisplayCard', () => {
       currentFeedbackFileContent: null,
       isFetchingFeedbackFileContent: false,
       fetchFeedbackFileContentError: null,
+      currentProcessTemplate: processTemplateInStore,
       ...(overrides || {}),
     };
 
@@ -271,7 +284,7 @@ describe('SessionContributionsDisplayCard', () => {
 
     (selectIsStageReadyForSessionIteration as unknown as MockInstance).mockReturnValue(isStageReadyOverride);
     (selectFeedbackForStageIteration as unknown as MockInstance).mockReturnValue(mockFeedbackDataOverride);
-    (selectActiveContextStage as unknown as MockInstance).mockReturnValue(activeStageInStore);
+    (selectActiveStageSlug as unknown as MockInstance).mockReturnValue(activeStageInStore?.slug || null);
     (selectCurrentProjectDetail as unknown as MockInstance).mockReturnValue(projectInStore);
     
     (selectIsLoadingProjectDetail as unknown as MockInstance).mockReturnValue(initialState.isLoadingProjectDetail ?? false);
@@ -294,11 +307,12 @@ describe('SessionContributionsDisplayCard', () => {
         projectDetailError: null,
         isSubmittingStageResponses: false,
         submitStageResponsesError: null,
+        currentProcessTemplate: null,
     });
 
     (selectIsStageReadyForSessionIteration as unknown as MockInstance).mockReturnValue(false);
     (selectFeedbackForStageIteration as unknown as MockInstance).mockReturnValue(null);
-    (selectActiveContextStage as unknown as MockInstance).mockReturnValue(null);
+    (selectActiveStageSlug as unknown as MockInstance).mockReturnValue(null);
     (selectCurrentProjectDetail as unknown as MockInstance).mockReturnValue(null);
     (selectIsLoadingProjectDetail as unknown as MockInstance).mockReturnValue(false);
     (selectContributionGenerationStatus as unknown as MockInstance).mockReturnValue('idle');
@@ -328,7 +342,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeSessionInStore: sessionWithOnlyAntithesis,
         activeStageInStore: mockThesisStage
       });
-      expect(screen.queryByText(/No contributions have been generated for Thesis in this iteration yet./i)).toBeInTheDocument();
+      expect(screen.queryByText(/No contributions available for this stage yet./i)).toBeInTheDocument();
       expect(screen.queryByTestId('generated-contribution-card-c1')).not.toBeInTheDocument();
     });
 
@@ -341,7 +355,7 @@ describe('SessionContributionsDisplayCard', () => {
         activeSessionInStore: sessionWithNoContributions,
         activeStageInStore: mockThesisStage
       });
-      expect(screen.queryByText(/No contributions have been generated for Thesis in this iteration yet./i)).toBeInTheDocument();
+      expect(screen.queryByText(/No contributions available for this stage yet./i)).toBeInTheDocument();
     });
 
     it('should correctly filter contributions based on session iteration_count from store', () => {
@@ -377,8 +391,13 @@ describe('SessionContributionsDisplayCard', () => {
       const textarea = screen.getByTestId(`response-textarea-${mockThesisContrib.original_model_contribution_id}`);
       fireEvent.change(textarea, { target: { value: feedbackText } });
 
-      const submitButton = screen.getByRole('button', { name: /Submit Responses & Proceed/i });
-      fireEvent.click(submitButton);
+      const submitButtons = screen.getAllByRole('button', { name: /Submit Responses & Advance Stage/i });
+      fireEvent.click(submitButtons[0]);
+
+      // The submit button now opens a confirmation dialog. We need to confirm.
+      const confirmationDialog = await screen.findByRole('alertdialog');
+      const continueButton = within(confirmationDialog).getByRole('button', { name: /Continue/i });
+      fireEvent.click(continueButton);
 
       await waitFor(() => {
         expect(mockSubmitStageResponses).toHaveBeenCalledTimes(1);
@@ -399,39 +418,19 @@ describe('SessionContributionsDisplayCard', () => {
 
   describe('Loading and Error States (driven by store)', () => {
     it('should display loading skeletons when isLoadingProjectDetail is true and no contributions are initially displayed', () => {
-      // Ensure no contributions for the active stage to trigger the skeleton loading state
-      const sessionWithNoThesisContributions = {
-        ...mockBaseSession,
-        dialectic_contributions: [mockAntithesisContrib] // Only antithesis, so thesis stage has none
-      };
       setup({ 
         overrides: { 
           isLoadingProjectDetail: true,
-          contributionGenerationStatus: 'idle', // Ensure not generating
-          projectDetailError: null,
         },
-        activeSessionInStore: sessionWithNoThesisContributions,
-        activeStageInStore: mockThesisStage 
       });
-      expect(screen.getByTestId('contributions-loading-skeletons')).toBeInTheDocument();
-      expect(screen.getByText(/Loading new contributions.../i)).toBeInTheDocument();
-      // Also check the card title is still there
-      expect(screen.getByText(`Contributions for: ${mockThesisStage.display_name}`)).toBeInTheDocument();
+      // The component will render a single skeleton card which contains multiple skeleton elements.
+      const skeletons = screen.getAllByRole('status');
+      expect(skeletons.length).toBeGreaterThan(0);
     });
 
-    it('should display "Contributions are being generated" when contributionGenerationStatus is "generating"', () => {
+    it('should display "Generating new contributions..." when contributionGenerationStatus is "generating"', () => {
       setup({ overrides: { contributionGenerationStatus: 'generating' } });
-      const generatingSpinnerContainer = screen.getByTestId('contributions-generating-spinner');
-      expect(generatingSpinnerContainer).toBeInTheDocument();
-      // Use a function to check for the presence of both parts of the text within the specific container
-      expect(within(generatingSpinnerContainer).getByText((content, element) => {
-        if (!element) return false;
-        // Check text within the direct children paragraphs of the container
-        const pElements = Array.from(element.querySelectorAll(':scope > p'));
-        const hasPart1 = pElements.some(p => p.textContent?.includes('Contributions are being generated.'));
-        const hasPart2 = pElements.some(p => p.textContent?.includes('This card will update shortly.'));
-        return hasPart1 && hasPart2;
-      })).toBeInTheDocument();
+      expect(screen.getByText(/Generating new contributions.../i)).toBeInTheDocument();
     });
     
     it('should display project detail error message if projectDetailError is present in store and not generating', () => {
@@ -439,39 +438,27 @@ describe('SessionContributionsDisplayCard', () => {
       setup({ 
         overrides: { 
           projectDetailError: error,
-          isLoadingProjectDetail: false, // Ensure not loading
-          contributionGenerationStatus: 'idle' // Ensure not generating
+          isLoadingProjectDetail: false,
+          contributionGenerationStatus: 'idle'
         } 
       });
-      const fetchErrorContainer = screen.getByTestId('contributions-fetch-error');
-      expect(fetchErrorContainer).toBeInTheDocument();
-      expect(within(fetchErrorContainer).getByText('Error Loading Contributions')).toBeInTheDocument();
-      // MODIFIED: Correctly query for the alert box and then its description
-      const alertBox = fetchErrorContainer.querySelector('[data-slot="alert"]');
+      const alertBox = screen.getByRole('alert');
       expect(alertBox).toBeInTheDocument();
-      const alertDescription = alertBox?.querySelector('[data-slot="alert-description"]');
-      expect(alertDescription).toBeInTheDocument();
-      expect(alertDescription?.textContent).toContain(`Failed to load contributions: ${error.message}. Please try refreshing or generating again.`);
+      expect(within(alertBox).getByText('Error Loading Project')).toBeInTheDocument();
+      expect(within(alertBox).getByText(error.message)).toBeInTheDocument();
     });
 
-    it('should display generate contributions error message if contributionGenerationStatus is "failed" and projectDetailError is present', () => {
+    it('should display generate contributions error message if generateContributionsError is present', () => {
       const error: ApiError = { message: 'Failed to generate contributions', code: 'GENERATION_ERROR' };
       setup({ 
         overrides: { 
-          contributionGenerationStatus: 'failed',
-          projectDetailError: error, 
-          isLoadingProjectDetail: false 
+          generateContributionsError: error,
         } 
       });
-      const generationErrorContainer = screen.getByTestId('contributions-generation-error');
-      expect(generationErrorContainer).toBeInTheDocument();
-      expect(within(generationErrorContainer).getByText('Error Generating Contributions')).toBeInTheDocument();
-      // MODIFIED: Correctly query for the alert box and then its description
-      const alertBox = generationErrorContainer.querySelector('[data-slot="alert"]');
+      const alertBox = screen.getByRole('alert');
       expect(alertBox).toBeInTheDocument();
-      const alertDescription = alertBox?.querySelector('[data-slot="alert-description"]');
-      expect(alertDescription).toBeInTheDocument();
-      expect(alertDescription?.textContent).toContain(`Failed to generate contributions: ${error.message}. Please try again.`);
+      expect(within(alertBox).getByText('Generation Failed')).toBeInTheDocument();
+      expect(within(alertBox).getByText(error.message)).toBeInTheDocument();
     });
   });
 
@@ -486,8 +473,8 @@ describe('SessionContributionsDisplayCard', () => {
         activeSessionInStore: sessionWithOnlyAntithesisContributions,
         activeStageInStore: mockThesisStage, 
       });
-      expect(screen.getByTestId('no-contributions-yet')).toBeInTheDocument();
-      expect(screen.getByText(/No contributions have been generated for Thesis in this iteration yet./i)).toBeInTheDocument();
+      expect(screen.getByText(/No contributions available for this stage yet./i)).toBeInTheDocument();
+      expect(screen.getByText(/Click "Generate" to create new contributions./i)).toBeInTheDocument();
     });
 
     it('should display fetched feedback content in a modal', async () => {
@@ -505,14 +492,16 @@ describe('SessionContributionsDisplayCard', () => {
         return { data: mockFetchedContent, error: null, status: 200 }; // Ensure it returns ApiResponse structure
       });
 
-      const viewButton = screen.getByRole('button', { name: /View Feedback Content/i });
+      const viewButton = screen.getByRole('button', { name: /View Feedback/i });
       fireEvent.click(viewButton);
 
-      const dialog = await screen.findByRole('alertdialog'); // MODIFIED: Wait for alertdialog
+      const dialog = await screen.findByRole('alertdialog'); 
       expect(dialog).toBeInTheDocument();
-      // Corrected modal title assertion
-      expect(within(dialog).getByText(`Feedback Content: ${mockFeedback.file_name}`)).toBeInTheDocument();
-      expect(within(dialog).getByRole('heading', { name: 'Feedback', level: 1 })).toBeInTheDocument();
+      
+      expect(within(dialog).getByText(`Feedback for Iteration ${mockFeedback.iteration_number}`)).toBeInTheDocument();
+      expect(within(dialog).getByText('This is the consolidated feedback that was submitted for this stage.')).toBeInTheDocument();
+      // The markdown content is rendered as separate elements, so we test for them individually.
+      expect(within(dialog).getByRole('heading', { name: /Feedback/i, level: 1 })).toBeInTheDocument();
       expect(within(dialog).getByText('This is the markdown feedback.')).toBeInTheDocument();
     });
 
@@ -530,15 +519,14 @@ describe('SessionContributionsDisplayCard', () => {
         return { data: null, error, status: 500 }; 
       });
 
-      const viewButton = screen.getByRole('button', { name: /View Feedback Content/i });
+      const viewButton = screen.getByRole('button', { name: /View Feedback/i });
       fireEvent.click(viewButton);
       
-      const dialog = await screen.findByRole('alertdialog'); // MODIFIED: Wait for alertdialog
+      const dialog = await screen.findByRole('alertdialog');
       expect(dialog).toBeInTheDocument();
 
-      // Corrected modal title assertion
-      expect(within(dialog).getByText(`Feedback Content: ${mockFeedback.file_name}`)).toBeInTheDocument();
-      expect(within(dialog).getByText('Error Loading Content')).toBeInTheDocument();
+      expect(within(dialog).getByText(`Feedback for Iteration ${mockFeedback.iteration_number}`)).toBeInTheDocument();
+      expect(within(dialog).getByText('Error')).toBeInTheDocument();
       expect(within(dialog).getByText(error.message)).toBeInTheDocument();
     });
 
@@ -554,17 +542,17 @@ describe('SessionContributionsDisplayCard', () => {
         return { data: mockFetchedContent, error: null, status: 200 };
       });
 
-      const viewButton = screen.getByRole('button', { name: /View Feedback Content/i });
+      const viewButton = screen.getByRole('button', { name: /View Feedback/i });
       fireEvent.click(viewButton);
 
-      const dialog = await screen.findByRole('alertdialog'); // MODIFIED: findByRole alertdialog
+      const dialog = await screen.findByRole('alertdialog');
       expect(dialog).toBeInTheDocument();
 
       const closeButton = within(dialog).getByRole('button', { name: /Close/i });
       fireEvent.click(closeButton);
 
       await waitFor(() => {
-        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument(); // MODIFIED: queryByRole alertdialog
+        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
       });
       expect(mockClearCurrentFeedbackFileContent).toHaveBeenCalledTimes(1);
     });
@@ -575,21 +563,21 @@ describe('SessionContributionsDisplayCard', () => {
     it('should display an appropriate message or loading state if activeSessionDetail is null', () => {
       setup({ activeSessionInStore: null });
       // Component shows a specific message when essential context is missing
-      expect(screen.getByText('Loading Contributions...')).toBeInTheDocument();
-      expect(screen.getByText('Waiting for project, active session, and stage context...')).toBeInTheDocument();
+      expect(screen.getByText('Session Not Active')).toBeInTheDocument();
+      expect(screen.getByText('Please select a session to view its contributions.')).toBeInTheDocument();
     });
 
     it('should display an appropriate message if activeContextStage is null but session is present', () => {
       setup({ activeStageInStore: null });
       // Component shows a specific message when essential context is missing
-      expect(screen.getByText('Loading Contributions...')).toBeInTheDocument();
-      expect(screen.getByText('Waiting for project, active session, and stage context...')).toBeInTheDocument();
+      expect(screen.getByText('Stage Not Selected')).toBeInTheDocument();
+      expect(screen.getByText('Please select a stage to view its contributions.')).toBeInTheDocument();
     });
 
     it('should not attempt to render contributions or submit if essential data is missing', () => {
       setup({ activeSessionInStore: null });
       expect(screen.queryByTestId(/generated-contribution-card-/)).toBeNull();
-      const submitButton = screen.queryByRole('button', { name: /Submit Responses & Proceed/i });
+      const submitButton = screen.queryByRole('button', { name: /Submit Responses & Advance Stage/i });
       // The button might be disabled or not rendered. If rendered and disabled:
       // expect(submitButton).toBeDisabled(); 
       // If not rendered:
