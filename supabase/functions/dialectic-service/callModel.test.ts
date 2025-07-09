@@ -252,6 +252,100 @@ Deno.test("callUnifiedAIModel - /chat response missing assistantMessage", async 
   }
 });
 
+Deno.test("callUnifiedAIModel - with continueUntilComplete: true", async () => {
+    const mockAuthToken = "test-auth-token-continue";
+    const mockModelCatalogId = "gpt-4-provider-id-continue";
+    const mockRenderedPrompt = "This is a long prompt that needs continuation.";
+    const mockAssociatedChatId = "chat-uuid-continue-true";
+  
+    const mockChatSuccessResponse: ChatHandlerSuccessResponse = {
+      assistantMessage: { id: "msg-continue-true", content: "Continued response.", role: 'assistant' } as ChatMessage,
+      chatId: mockAssociatedChatId,
+    };
+  
+    const fetchStub = stub(globalThis, "fetch", async () => {
+      return await Promise.resolve(new Response(JSON.stringify(mockChatSuccessResponse), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }));
+    });
+  
+    const denoEnvStub = stub(Deno.env, "get", (variable: string): string | undefined => {
+      if (variable === "SUPABASE_INTERNAL_FUNCTIONS_URL") return "http://localhost:12345";
+      if (variable === "SUPABASE_URL") return "http://localhost:12345";
+      return undefined;
+    });
+  
+    try {
+      await callUnifiedAIModel(
+        mockModelCatalogId,
+        mockRenderedPrompt,
+        mockAssociatedChatId,
+        mockAuthToken,
+        undefined, // options
+        true // continueUntilComplete
+      );
+  
+      assertEquals(fetchStub.calls.length, 1);
+      const firstCall = fetchStub.calls[0];
+      const fetchOptions = firstCall.args[1] as RequestInit;
+      const actualBody = JSON.parse(fetchOptions.body as string);
+  
+      assertEquals(actualBody.continue_until_complete, true);
+  
+    } finally {
+      fetchStub.restore();
+      denoEnvStub.restore();
+    }
+  });
+
+Deno.test("callUnifiedAIModel - with continueUntilComplete: false", async () => {
+    const mockAuthToken = "test-auth-token-continue";
+    const mockModelCatalogId = "gpt-4-provider-id-continue";
+    const mockRenderedPrompt = "This is a short prompt.";
+    const mockAssociatedChatId = "chat-uuid-continue-false";
+
+    const mockChatSuccessResponse: ChatHandlerSuccessResponse = {
+      assistantMessage: { id: "msg-continue-false", content: "Short response.", role: 'assistant' } as ChatMessage,
+      chatId: mockAssociatedChatId,
+    };
+
+    const fetchStub = stub(globalThis, "fetch", async () => {
+      return await Promise.resolve(new Response(JSON.stringify(mockChatSuccessResponse), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }));
+    });
+
+    const denoEnvStub = stub(Deno.env, "get", (variable: string): string | undefined => {
+      if (variable === "SUPABASE_INTERNAL_FUNCTIONS_URL") return "http://localhost:12345";
+      if (variable === "SUPABASE_URL") return "http://localhost:12345";
+      return undefined;
+    });
+
+    try {
+      await callUnifiedAIModel(
+        mockModelCatalogId,
+        mockRenderedPrompt,
+        mockAssociatedChatId,
+        mockAuthToken,
+        undefined, // options
+        false // continueUntilComplete
+      );
+
+      assertEquals(fetchStub.calls.length, 1);
+      const firstCall = fetchStub.calls[0];
+      const fetchOptions = firstCall.args[1] as RequestInit;
+      const actualBody = JSON.parse(fetchOptions.body as string);
+
+      assertEquals(actualBody.continue_until_complete, false);
+
+    } finally {
+      fetchStub.restore();
+      denoEnvStub.restore();
+    }
+});
+
 Deno.test("callUnifiedAIModel - with options.historyMessages", async () => {
   const mockChatFunctionUrl = "http://localhost:12345/functions/v1/chat";
   const mockAuthToken = "test-auth-token";

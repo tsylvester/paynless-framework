@@ -132,7 +132,7 @@ export interface ActionHandlers {
   getSessionDetails: (payload: GetSessionDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetSessionDetailsResponse; error?: ServiceError; status?: number }>;
   getContributionContentHandler: (getUserFn: GetUserFn, dbClient: SupabaseClient, logger: ILogger, payload: { contributionId: string }) => Promise<{ data?: GetContributionContentDataResponse; error?: ServiceError; status?: number }>;
   startSession: (user: User, dbClient: SupabaseClient, payload: StartSessionPayload, dependencies: { logger: ILogger }) => Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }>;
-  generateContributions: (dbClient: SupabaseClient, payload: GenerateContributionsPayload, authToken: string, deps: GenerateContributionsDeps) => Promise<{ success: boolean; data?: GenerateContributionsSuccessResponse; error?: { message: string; status?: number; details?: string | FailedAttemptError[]; code?: string; }; }>;
+  generateContributions: (dbClient: SupabaseClient, payload: GenerateContributionsPayload, authToken: string, deps: GenerateContributionsDeps, continueUntilComplete?: boolean) => Promise<{ success: boolean; data?: GenerateContributionsSuccessResponse; error?: { message: string; status?: number; details?: string | FailedAttemptError[]; code?: string; }; }>;
   listProjects: (user: User, dbClient: SupabaseClient) => Promise<{ data?: DialecticProject[]; error?: ServiceError; status?: number }>;
   listAvailableDomainOverlays: (stageAssociation: string, dbClient: SupabaseClient) => Promise<DomainOverlayDescriptor[]>;
   deleteProject: (dbClient: SupabaseClient, payload: { projectId: string }, userId: string) => Promise<{data?: null, error?: { message: string; details?: string | undefined; }, status?: number}>;
@@ -317,6 +317,8 @@ export async function handleRequest(
             return createErrorResponse("User is required for generateContributions.", 401, req);
           }
 
+          const payload: GenerateContributionsPayload = requestBody.payload;
+
           logger.info("[generateContributions handler] Creating dependencies.");
           const deps: GenerateContributionsDeps = {
             callUnifiedAIModel: callUnifiedAIModel,
@@ -332,7 +334,7 @@ export async function handleRequest(
           EdgeRuntime.waitUntil(
             handlers.generateContributions(
               adminClient,
-              requestBody.payload,
+              payload,
               authToken,
               deps,
             )

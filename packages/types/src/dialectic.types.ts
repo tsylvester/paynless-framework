@@ -452,11 +452,24 @@ export interface GenerateContributionsPayload {
   projectId: string;
   stageSlug: DialecticStage['slug'];
   iterationNumber: number;
+  continueUntilComplete: boolean;
+}
+
+export interface FailedAttemptError {
+  modelId: string;
+  error: string;
+  details?: string;
+  code?: string;
 }
 
 export interface GenerateContributionsResponse {
-  message: string;
-  contributions?: DialecticContribution[];
+  sessionId: string;
+  projectId: string;
+  stage: string;
+  iteration: number;
+  status: string;
+  successfulContributions: DialecticContribution[];
+  failedAttempts: FailedAttemptError[];
 }
 
 export interface ContributionContentSignedUrlResponse {

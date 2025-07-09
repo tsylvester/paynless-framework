@@ -26,7 +26,7 @@ import { useDialecticStore, initialDialecticStateValues } from '@paynless/store'
 // Mock the actual store path to use exports from our mock file
 vi.mock('@paynless/store', async () => {
   const mockStoreExports = await vi.importActual<typeof import('@/mocks/dialecticStore.mock')>('@/mocks/dialecticStore.mock');
-  const actualStore = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
+  const actualPaynlessStore = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
 
   // These are simple, test-specific selectors that work with our flat mock state.
   // This isolates the component test from the real store's implementation details.
@@ -35,14 +35,23 @@ vi.mock('@paynless/store', async () => {
   const selectActiveStage = (state: DialecticStateValues): DialecticStage | null => {
     const { currentProjectDetail, activeStageSlug } = state;
     if (!currentProjectDetail || !activeStageSlug || !currentProjectDetail.dialectic_process_templates) return null;
-    const processTemplate = currentProjectDetail.dialectic_process_templates as DialecticProcessTemplate;
+    const processTemplate: DialecticProcessTemplate = currentProjectDetail.dialectic_process_templates;
     return processTemplate.stages?.find((s: DialecticStage) => s.slug === activeStageSlug) || null;
   };
 
+  const useAiStore = (selector: (state: { continueUntilComplete: boolean }) => void) => {
+    const state = {
+      continueUntilComplete: false,
+      // Add other properties from useAiStore that are needed for tests
+    };
+    return selector(state);
+  };
+  
   return {
     ...mockStoreExports,
-    initialDialecticStateValues: actualStore.initialDialecticStateValues,
-    selectSessionById: actualStore.selectSessionById, // This selector is simple enough to work with our mock state
+    useAiStore,
+    initialDialecticStateValues: actualPaynlessStore.initialDialecticStateValues,
+    selectSessionById: actualPaynlessStore.selectSessionById, // This selector is simple enough to work with our mock state
     selectSelectedModelIds, // Use our test-specific implementation
     selectActiveStage, // Use our test-specific implementation
   };
@@ -289,7 +298,18 @@ describe('GenerateContributionButton', () => {
 
   it('calls generateContributions and shows a toast on click', async () => {
     // Mock the successful API call
-    storeActions.generateContributions.mockResolvedValue({ status: 202, data: { message: 'Request accepted' } });
+    storeActions.generateContributions.mockResolvedValue({ 
+      status: 202, 
+      data: {
+        sessionId: 'test-session-id',
+        projectId: 'test-project-id',
+        stage: 'thesis',
+        iteration: 1,
+        status: 'complete',
+        successfulContributions: [],
+        failedAttempts: [],
+      } 
+    });
     
     render(<GenerateContributionButton />);
     
@@ -301,6 +321,7 @@ describe('GenerateContributionButton', () => {
         projectId: 'test-project-id', // from store state
         stageSlug: 'thesis', // from store state
         iterationNumber: 1, // from mock session in store
+        continueUntilComplete: false,
       });
     });
 

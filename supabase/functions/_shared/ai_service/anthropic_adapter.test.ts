@@ -293,6 +293,35 @@ Deno.test("AnthropicAdapter sendMessage - Request must end with user message (ne
     }
 });
 
+Deno.test("AnthropicAdapter sendMessage - Finish Reason Max Tokens", async () => {
+  const mockMaxTokensResponse = {
+    ...MOCK_ANTHROPIC_SUCCESS_RESPONSE,
+    stop_reason: "max_tokens",
+    content: [{ type: "text", text: "This is a partial response..." }],
+  };
+
+  const mockFetch = stub(globalThis, "fetch", () =>
+    Promise.resolve(
+      new Response(JSON.stringify(mockMaxTokensResponse), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+  );
+
+  try {
+    const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
+    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_WITH_SYSTEM, MOCK_MODEL_ID);
+
+    // Assert that the partial content is returned
+    assertEquals(result.content, "This is a partial response...");
+    // Assert that the standardized finish reason is 'length'
+    assertEquals(result.finish_reason, 'length');
+  } finally {
+    mockFetch.restore();
+  }
+});
+
 Deno.test("AnthropicAdapter listModels - Success", async () => {
   // Mock a successful response from Anthropic's /models endpoint
   const mockModelsResponse = {

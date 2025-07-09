@@ -2,6 +2,7 @@ import React from 'react';
 import { useAiStore } from '@paynless/store';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { logger } from '@paynless/utils';
 
 export const ContinueUntilCompleteToggle: React.FC = () => {
   const continueUntilComplete = useAiStore(state => state.continueUntilComplete);
@@ -9,6 +10,7 @@ export const ContinueUntilCompleteToggle: React.FC = () => {
 
   const handleToggle = (checked: boolean) => {
     setContinueUntilComplete(checked);
+    logger.info(`[ContinueUntilCompleteToggle] Setting continueUntilComplete to: ${checked}`);
   };
 
   return (

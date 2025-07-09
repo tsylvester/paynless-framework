@@ -122,52 +122,52 @@ The implementation plan uses the following labels to categorize work steps:
 
 #### 6. [BE] Update Inter-Service Communication (`dialectic-service`)
 
-*   `[ ]` 6.a. **Update `callUnifiedAIModel` Signature in `callModel.ts`:**
+*   `[✅]` 6.a. **Update `callUnifiedAIModel` Signature in `callModel.ts`:**
     *   **File:** `supabase/functions/dialectic-service/callModel.ts`
-    *   **Action:** Modify the `callUnifiedAIModel` function signature to accept a new optional boolean parameter: `continueUntilComplete?: boolean`.
-*   `[ ]` 6.b. **Pass Flag to `/chat` Invocation:**
+    *   **Action:** Modify the `callUnifiedAIModel` function signature to accept the types' new optional boolean parameter: `continueUntilComplete?: boolean`.
+*   `[✅]` 6.b. **Pass Flag to `/chat` Invocation:**
     *   **File:** `supabase/functions/dialectic-service/callModel.ts`
     *   **Action:** Inside `callUnifiedAIModel`, when constructing the `chatApiRequest` object, include the `continue_until_complete: continueUntilComplete` property. This will pass the flag to the `/chat` edge function.
-*   `[ ]` 6.c. **Update `generateContributions` to Request Continuation:**
+*   `[✅]` 6.c. **Update `generateContributions` to Request Continuation:**
     *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   **Action:** In the `generateContributions` function, locate the call to `deps.callUnifiedAIModel` (inside the `modelPromises.map`) and pass `true` for the new `continueUntilComplete` parameter.
-    *   **Rationale:** The Dialectic Service requires full, uninterrupted responses to function correctly, so this should be enabled by default for all its AI calls.
-*   `[ ]` 6.d. **Acknowledge the `submitStageResponses` Workflow:**
+    *   **Action:** In the `generateContributions` function, locate the call to `deps.callUnifiedAIModel` (inside the `modelPromises.map`) and pass the value for the new `continueUntilComplete` parameter that was passed in from the API.
+    *   **Rationale:** The Dialectic Service requires full, uninterrupted responses to function correctly, so this is enabled by default in the type, but the user can turn it off, so we need to pass their setting in case they decided they don't want the response to continue until complete.
+*   `[✅]` 6.d. **Acknowledge the `submitStageResponses` Workflow:**
     *   `[DOCS]` **File:** `docs/implementations/Current/Checklists/Current/Model Call Refinement.md` (Self-reference)
     *   **Action:** Add a note to this checklist clarifying that `submitStageResponses` is the function that prepares the prompt for the next stage, but `generateContributions` is the function that consumes that prompt and makes the actual AI call. This is a critical context for understanding the end-to-end flow.
 
 #### 7. [API] Update the Frontend API Client
 
-*   `[ ]` 7.a. **Update `ChatApiRequest` Interface in types package:**
+*   `[✅]` 7.a. **Update `ChatApiRequest` Interface in types package:**
     *   **File:** `packages/types/src/api.types.ts` (or equivalent central type definition file)
     *   **Action:** Add the optional `continue_until_complete?: boolean` property to the `ChatApiRequest` interface so that it's available across the frontend packages.
-*   `[ ]` 7.b. **Pass Parameter in `sendChatMessage` Implementation:**
+*   `[✅]` 7.b. **Pass Parameter in `sendChatMessage` Implementation:**
     *   **File:** `packages/api/src/ai.api.ts`
     *   **Action:** The `sendChatMessage` function already accepts a `ChatApiRequest` object. No signature change is needed, but we must ensure the `continue_until_complete` flag, when present in the data object, is correctly passed in the body of the `POST` request to `/chat`.
 
 #### 8. [STORE] Integrate State Management
 
-*   `[ ]` 8.a. **Update `AiState` Interface:**
+*   `[✅]` 8.a. **Update `AiState` Interface:**
     *   **File:** `packages/store/src/aiStore.ts`
     *   **Action:** Add a new state property `continueUntilComplete: boolean` to the `AiState` interface.
-    *   **Action:** Update the `initialAiStateValues` object to include `continueUntilComplete: false` as the default value.
-*   `[ ]` 8.b. **Create New Action/Reducer:**
+    *   **Action:** Update the `initialAiStateValues` object to include `continueUntilComplete: true` as the default value.
+*   `[✅]` 8.b. **Create New Action/Reducer:**
     *   **File:** `packages/store/src/aiStore.ts`
     *   **Action:** Add a `setContinueUntilComplete(shouldContinue: boolean)` action to the `AiStore`. This will be a simple setter: `set({ continueUntilComplete: shouldContinue })`.
-*   `[ ]` 8.c. **Update `handleSendMessage` Logic:**
+*   `[✅]` 8.c. **Update `handleSendMessage` Logic:**
     *   **File:** `packages/store/src/ai.SendMessage.ts`
     *   **Action:** In the `handleSendMessage` function, read the `continueUntilComplete` value from the store's state using `aiStateService.getAiState()`.
     *   **Action:** In the `coreMessageProcessing` function, when constructing the `apiRequest` object, pass the `continue_until_complete` flag from the state.
 
 #### 9. [UI] Integrate the Reusable Toggle Component
 
-*   `[ ]` 9.a. **Integrate into Standard Chat Input:**
+*   `[✅]` 9.a. **Integrate into Standard Chat Input:**
     *   **File:** `apps/web/src/components/ai/ChatInput.tsx`
     *   **Action:** Import and place the `<ContinueUntilCompleteToggle />` component within the main `div` of the chat input, likely alongside the `MessageSelectionControls`.
-*   `[ ]` 9.b. **Integrate into Dialectic Service UI:**
+*   `[✅]` 9.b. **Integrate into Dialectic Service UI:**
     *   **File:** `apps/web/src/components/dialectic/SessionInfoCard.tsx`
     *   **Action:** Import and place the `<ContinueUntilCompleteToggle />` component near the `<GenerateContributionButton />`. This gives the user a clear option to enable full responses before starting a dialectic generation.
-*   `[ ]` 9.c. **Update Dialectic `generateContributions` call:**
+*   `[✅]` 9.c. **Update Dialectic `generateContributions` call:**
     *   **File:** `apps/web/src/components/dialectic/GenerateContributionButton.tsx`
     *   **Action:** The `generateContributions` store action does not need to be changed here, as the flag will be read from the store. However, the `callUnifiedAIModel` in the backend (`dialectic-service`) *should be updated* to check for this flag if it is passed. **Decision:** For the dialectic service, we will force `continue_until_complete: true` on the backend for now to ensure its core logic always gets full responses. The UI toggle will primarily affect the standard user-facing chat. This simplifies the initial implementation.
 
@@ -179,11 +179,11 @@ The implementation plan uses the following labels to categorize work steps:
         2.  Finds and clicks the "Full Response Mode" switch to enable it.
         3.  Sends a message that is known (via mocks) to produce a multi-part response.
         4.  Verifies that the final message displayed in the UI is the complete, concatenated message.
-*   `[ ]` 10.b. **Run All Tests:**
+*   `[✅]` 10.b. **Run All Tests:**
     *   **Action:** Execute all unit, integration, and E2E tests across all affected packages (`supabase/functions`, `packages/api`, `packages/store`, `apps/web`) to ensure no regressions were introduced.
 *   `[ ]` 10.c. **Update All Relevant Documentation:**
     *   `[DOCS]` **Action:** Update API documentation to include the new `continue_until_complete` flag. Update user guides to explain the new "Full Response Mode" feature. Update relevant service READMEs.
-*   `[ ]` 10.d. **Git Commit:**
+*   `[✅]` 10.d. **Git Commit:**
     *   `[COMMIT]` **Action:** Commit the changes with a conventional commit message, e.g., `feat(chat): implement and surface response continuation feature`.
 *   `[ ]` 10.e. **Deployment:**
     *   `[DEPLOY]` **Action:** Deploy the new functionality to staging and then production environments after all tests pass and the code has been reviewed and approved.

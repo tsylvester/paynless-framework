@@ -207,6 +207,7 @@ export interface AdapterResponsePayload {
   system_prompt_id: string | null; // The DB ID of the prompt used (or null)
   token_usage: Database['public']['Tables']['chat_messages']['Row']['token_usage']; // Use specific DB Json type
   created_at?: string;
+  finish_reason?: 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call' | 'error' | 'unknown' | null; // ADDED: Standardized finish reason
 }
 
 /**

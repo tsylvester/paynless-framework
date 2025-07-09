@@ -6,6 +6,8 @@ import {
   selectSessionById,
   selectActiveStage,
 } from '@paynless/store';
+import { GenerateContributionsPayload } from '@paynless/types';
+import { useAiStore } from '@paynless/store';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -29,6 +31,7 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
     currentProjectDetail: state.currentProjectDetail,
     activeContextSessionId: state.activeContextSessionId,
   }));
+  const continueUntilComplete = useAiStore((state) => state.continueUntilComplete);
 
   const selectedModelIds = useDialecticStore(selectSelectedModelIds);
   const activeStage = useMemo(() => selectActiveStage(store), [store]);
@@ -74,12 +77,14 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
     });
 
     try {
-      await generateContributions({
+      const payload: GenerateContributionsPayload = {
         sessionId: activeContextSessionId,
         projectId: currentProjectDetail.id,
         stageSlug: activeStage.slug,
         iterationNumber: currentIterationNumber,
-      });
+        continueUntilComplete,
+      };
+      await generateContributions(payload);
     } catch (e: unknown) {
       const errorMessage = (e as Error)?.message || `An unexpected error occurred while starting the generation process.`;
       toast.error(errorMessage);

@@ -32,7 +32,7 @@ async function coreMessageProcessing(
     effectiveOrganizationId, token, rewindTargetMessageId, continueUntilComplete, callChatApi, logger,
   } = params;
 
-  logger.info('[coreMessageProcessing] Starting...', { targetProviderId, targetChatId });
+  logger.info('[coreMessageProcessing] Starting...', { targetProviderId, targetChatId, continueUntilComplete });
   try {
     const apiRequest: ChatApiRequest = {
       message: messageContent, 
