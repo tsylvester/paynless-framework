@@ -1,36 +1,35 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import type { DialecticStage } from '@paynless/types';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { 
   useDialecticStore, 
   selectSessionById, 
   selectActiveContextSessionId, 
   selectCurrentProjectDetail, 
-  selectIsStageReadyForSessionIteration
+  selectIsStageReadyForSessionIteration,
+  selectSortedStages,
+  selectActiveStageSlug
 } from '@paynless/store';
-import { useMemo } from 'react';
-import { GenerateContributionButton } from './GenerateContributionButton';
-import { AIModelSelector } from './AIModelSelector';
 
-interface StageTabCardProps {
+interface StageCardProps {
   stage: DialecticStage;
-  isActiveStage: boolean;
-  onCardClick: (stage: DialecticStage) => void;
 }
 
-export const StageTabCard: React.FC<StageTabCardProps> = ({ 
-  stage, 
-  isActiveStage,
-  onCardClick,
-}) => {
+const StageCard: React.FC<StageCardProps> = ({ stage }) => {
   // --- Data Fetching from Store ---
-  const store = useDialecticStore(); // Full store state for selectors that need it directly
+  const setActiveStage = useDialecticStore(state => state.setActiveStage);
+  const activeStageSlug = useDialecticStore(selectActiveStageSlug);
   const activeSessionId = useDialecticStore(selectActiveContextSessionId);
-  // Use a stable reference for project if possible, or ensure selectors re-run correctly
   const project = useDialecticStore(selectCurrentProjectDetail); 
-  const session = useMemo(() => activeSessionId ? selectSessionById(store, activeSessionId) : undefined, [store, activeSessionId]);
-  const initialPromptContentCache = useDialecticStore(state => state.initialPromptContentCache); // Get cache directly from state
+  
+  const session = useDialecticStore(state => 
+    activeSessionId ? selectSessionById(state, activeSessionId) : undefined
+  );
+  
+  const initialPromptContentCache = useDialecticStore(state => state.initialPromptContentCache);
+
+  const isActiveStage = stage.slug === activeStageSlug;
 
   const isStageReady = useDialecticStore(state => {
     // Ensure project and session from the state are used for consistency with the selector call
@@ -49,7 +48,6 @@ export const StageTabCard: React.FC<StageTabCardProps> = ({
     );
   });
 
-  let isSeedPromptLoading = false;
   if (project && session && project.resources && isStageReady) {
     const targetResource = project.resources.find(resource => {
       if (typeof resource.resource_description === 'string') {
@@ -68,14 +66,14 @@ export const StageTabCard: React.FC<StageTabCardProps> = ({
       return false;
     });
     if (targetResource && initialPromptContentCache && initialPromptContentCache[targetResource.id]) {
-      isSeedPromptLoading = initialPromptContentCache[targetResource.id].isLoading;
+      // isSeedPromptLoading = initialPromptContentCache[targetResource.id].isLoading;
     }
   }
 
   if (!project || !session) { // Ensure project is also checked here
     return (
-      <Card className={cn("w-48 min-h-[120px] flex flex-col justify-center items-center opacity-50 cursor-not-allowed", isActiveStage ? "border-2 border-primary" : "border")}>
-        <CardHeader className="pb-2 pt-3 px-3">
+      <Card className={cn("w-48 flex flex-col justify-center items-center opacity-50 cursor-not-allowed", isActiveStage ? "border-2 border-primary" : "border")}>
+        <CardHeader>
           <CardTitle className="text-base text-center">{stage.display_name}</CardTitle>
         </CardHeader>
         <CardContent className="flex-grow flex items-center justify-center">
@@ -88,24 +86,17 @@ export const StageTabCard: React.FC<StageTabCardProps> = ({
   const contributionsForStageExist = session.dialectic_contributions?.some(c => c.stage === stage.slug);
 
   const handleCardClick = () => {
-    onCardClick(stage);
+    if (setActiveStage) {
+      setActiveStage(stage.slug);
+    }
   };
 
-  // Logic from plan 2.B.2.2 - updated
-  const finalButtonDisabled = !isActiveStage || (isActiveStage && (!isStageReady || isSeedPromptLoading));
-  let textForButtonPropValue: string;
-
-  if (isActiveStage && !isStageReady) {
-    textForButtonPropValue = "Stage Not Ready";
-  } else {
-    textForButtonPropValue = stage.display_name; // GenerateContributionButton will prepend Generate/Regenerate
-  }
-
   return (
-    <Card 
+    <Card
+      key={stage.id}
       data-testid={`stage-tab-${stage.slug}`}
       className={cn(
-        "w-48 min-h-[120px] flex flex-col cursor-pointer transition-all duration-150 ease-in-out hover:shadow-md", 
+        "flex flex-col cursor-pointer transition-all duration-150 ease-in-out hover:shadow-md justify-center p-2",
         isActiveStage ? "border-2 border-primary shadow-lg" : "border bg-card hover:bg-muted/50",
       )}
       onClick={handleCardClick}
@@ -114,30 +105,58 @@ export const StageTabCard: React.FC<StageTabCardProps> = ({
       aria-controls={`stage-content-${stage.display_name}`}
       tabIndex={isActiveStage ? 0 : -1}
     >
-      <CardHeader className="pb-2 pt-3 px-3">
-        <CardTitle className="text-base text-center">{stage.display_name}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex-grow flex flex-col justify-center items-center text-center px-2">
-        {stage.description && (
-          <p className="text-xs text-muted-foreground">{stage.description}</p>
-        )}
+      <div className="flex items-baseline justify-center gap-x-1.5">
+        <CardTitle className="text-base">
+          {stage.display_name}
+        </CardTitle>
         {contributionsForStageExist && (
-          <p className="text-xs text-green-600">Completed</p>
+          <div className="text-xs text-green-600">Completed</div>
         )}
-      </CardContent>
-      {isActiveStage && (
-        <CardFooter className="p-2 border-t flex-shrink-0 flex flex-col items-center justify-center gap-4">
-          <GenerateContributionButton 
-            currentStageFriendlyName={textForButtonPropValue}
-            currentStage={stage}
-            sessionId={session.id}
-            projectId={project.id} // project is guaranteed non-null here by the check above
-            disabled={finalButtonDisabled}
-            className="w-full"
-          />
-          <AIModelSelector />
-        </CardFooter>
+      </div>
+      {stage.description && (
+        <p className="text-xs text-muted-foreground text-center">{stage.description}</p>
       )}
     </Card>
+  );
+};
+
+export const StageTabCard: React.FC = () => {
+  const stages = useDialecticStore(selectSortedStages);
+  const activeStageSlug = useDialecticStore(selectActiveStageSlug);
+  const setActiveStage = useDialecticStore(state => state.setActiveStage);
+  const activeSessionId = useDialecticStore(selectActiveContextSessionId);
+  
+  const session = useDialecticStore(state => 
+    activeSessionId ? selectSessionById(state, activeSessionId) : undefined
+  );
+
+  useEffect(() => {
+    if (!activeStageSlug && stages && stages.length > 0) {
+      const currentStageFromSession = session?.current_stage_id 
+        ? stages.find(s => s.id === session.current_stage_id)
+        : undefined;
+
+      if (currentStageFromSession) {
+        setActiveStage(currentStageFromSession.slug);
+      } else {
+        setActiveStage(stages[0].slug);
+      }
+    }
+  }, [stages, session, activeStageSlug, setActiveStage]);
+
+  if (!stages || stages.length === 0) {
+    return (
+      <div className="flex justify-center items-center p-4">
+        <p className="text-muted-foreground">No stages available for this process.</p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {stages.map(stage => (
+        <StageCard key={stage.id} stage={stage} />
+      ))}
+    </>
   );
 }; 

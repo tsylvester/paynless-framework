@@ -95,6 +95,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
   activeContextProjectId: null,
   activeContextSessionId: null,
   activeContextStage: null,
+  activeStageSlug: null,
 
   // New initial states for single session fetching
   activeSessionDetail: null,
@@ -1139,12 +1140,18 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     if (needsProjectFetch) {
       logger.info(`[DialecticStore] Project context differs or not set. Fetching project details for ${projectId} before session.`);
       await state.fetchDialecticProjectDetails(projectId);
-      // After project details are fetched, the new state will be available for fetchAndSetCurrentSessionDetails
-      // No need to await a second get() here, as fetchDialecticProjectDetails updates the store internally.
     }
 
     logger.info(`[DialecticStore] Proceeding to fetch session details for ${sessionId}.`);
-    await get().fetchAndSetCurrentSessionDetails(sessionId); // Use get() to ensure the latest state if fetchDialecticProjectDetails was called
+    await get().fetchAndSetCurrentSessionDetails(sessionId);
+
+    // After fetching, get the latest project detail to find the first stage
+    const finalProjectDetail = get().currentProjectDetail;
+    if (finalProjectDetail && finalProjectDetail.dialectic_process_templates?.stages?.length) {
+      const firstStageSlug = finalProjectDetail.dialectic_process_templates.stages[0].slug;
+      logger.info(`[DialecticStore] Setting initial active stage for deep link: ${firstStageSlug}`);
+      get().setActiveStage(firstStageSlug);
+    }
   },
 
   // ADDED: Actions for fetching feedback file content
@@ -1200,5 +1207,10 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
   setActiveDialecticWalletId: (walletId: string | null) => {
     logger.info(`[DialecticStore] Setting active dialectic wallet ID to: ${walletId}`);
     set({ activeDialecticWalletId: walletId });
+  },
+
+  setActiveStage: (slug: string | null) => {
+    logger.info(`[DialecticStore] Setting active stage slug to: ${slug}`);
+    set({ activeStageSlug: slug });
   },
 }));

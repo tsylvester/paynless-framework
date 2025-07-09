@@ -22,7 +22,8 @@ export async function callUnifiedAIModel(
     renderedPrompt: string,
     associatedChatId: string | null | undefined, // MODIFIED: Allow null or undefined
     authToken: string,        // User's JWT for calling /chat
-    options?: CallUnifiedAIModelOptions
+    options?: CallUnifiedAIModelOptions,
+    continueUntilComplete?: boolean, // ADDED: New parameter for continuation
   ): Promise<UnifiedAIResponse> {
     console.log(`callUnifiedAIModel invoked for ai_providers.id (providerId): ${modelCatalogId}, chatId: ${associatedChatId}`);
     const startTime = Date.now();
@@ -46,6 +47,7 @@ export async function callUnifiedAIModel(
         walletId: options?.walletId,
         messages: historyForChatApi,
         max_tokens_to_generate: options?.customParameters?.max_tokens_to_generate,
+        continue_until_complete: continueUntilComplete, // ADDED: Pass the flag here
         // organizationId might be relevant if dialectics are org-specific
     };
   

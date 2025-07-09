@@ -9,9 +9,9 @@ import {
   } from "./dialectic.interface.ts";
   import type { Database } from "../types_db.ts";
   import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
-  import type { PostgrestError } from '@supabase/supabase-js';
-  import type { PathContext, UploadContext } from "../_shared/types/file_manager.types.ts";
+  import type { UploadContext } from "../_shared/types/file_manager.types.ts";
   import { GenerateContributionsDeps } from "./dialectic.interface.ts";
+  import { logger } from "../_shared/logger.ts";
 
   console.log("generateContribution function started");
   
@@ -31,10 +31,11 @@ export async function generateContributions(
     dbClient: SupabaseClient<Database>,
     payload: GenerateContributionsPayload,
     authToken: string, 
-    deps: GenerateContributionsDeps
+    deps: GenerateContributionsDeps,
   ): Promise<{ success: boolean; data?: GenerateContributionsSuccessResponse; error?: { message: string; status?: number; details?: string | FailedAttemptError[]; code?: string } }> {
 
-    const { sessionId, iterationNumber = 1, stageSlug } = payload;
+    const { sessionId, iterationNumber = 1, stageSlug, continueUntilComplete } = payload;
+    logger.info(`[generateContributions] Starting for session ID: ${sessionId}, stage: ${stageSlug}, iteration: ${iterationNumber}, continueUntilComplete: ${continueUntilComplete}`);
     if (!stageSlug) {
       deps.logger.error("[generateContributions] stageSlug is required in the payload.");
       return { success: false, error: { message: "stageSlug is required in the payload.", status: 400 } };
@@ -238,6 +239,8 @@ export async function generateContributions(
               renderedPrompt,
               associatedChatId,
               authToken,
+              undefined, // No options are passed in the original code
+              continueUntilComplete, // ADDED: Pass the flag here
             );
             deps.logger.info(`[generateContributions] AI response received from ${modelIdentifier}`, { hasError: !!aiResponse.error, tokens: {in: aiResponse.inputTokens, out: aiResponse.outputTokens} });
     

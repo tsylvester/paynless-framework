@@ -43,11 +43,7 @@ vi.mock('./SessionInfoCard', () => ({
 }));
 
 vi.mock('./StageTabCard', () => ({
-  StageTabCard: vi.fn(({ stage, isActiveStage }) => (
-    <div data-testid={`mock-stage-tab-card-${stage.slug}`} data-isactive={isActiveStage}>
-      Mock StageTabCard: {stage.display_name}
-    </div>
-  )),
+  StageTabCard: () => <div data-testid="mock-stage-tab-card" />,
 }));
 
 vi.mock('./SessionContributionsDisplayCard', () => ({
@@ -319,21 +315,14 @@ describe('DialecticSessionDetails', () => {
       activeContextStage: mockThesisStage, 
       activeContextProjectId: mockProjectId,
       activeContextSessionId: mockSessionId,
+      activeSessionDetail: mockSession,
     });
 
     render(<DialecticSessionDetails />);
 
-    // Verify mocked SessionInfoCard is rendered
+    // Verify mocked child components are rendered
     expect(screen.getByTestId('mock-session-info-card')).toBeInTheDocument();
-
-    // Verify mocked StageTabCards are rendered with correct props
-    expect(screen.getByTestId(`mock-stage-tab-card-${mockThesisStage.slug}`)).toBeInTheDocument();
-    expect(screen.getByTestId(`mock-stage-tab-card-${mockThesisStage.slug}`)).toHaveAttribute('data-isactive', 'true');
-    
-    expect(screen.getByTestId(`mock-stage-tab-card-${mockAntithesisStage.slug}`)).toBeInTheDocument();
-    expect(screen.getByTestId(`mock-stage-tab-card-${mockAntithesisStage.slug}`)).toHaveAttribute('data-isactive', 'false');
-
-    // Verify mocked SessionContributionsDisplayCard is rendered (since activeContextStage is set)
+    expect(screen.getByTestId('mock-stage-tab-card')).toBeInTheDocument();
     expect(screen.getByTestId('mock-session-contributions-display-card')).toBeInTheDocument();
   });
 
@@ -347,6 +336,7 @@ describe('DialecticSessionDetails', () => {
       activeContextStage: null, // Explicitly null
       activeContextProjectId: mockProjectId,
       activeContextSessionId: mockSessionId,
+      activeSessionDetail: mockSession,
     });
 
     render(<DialecticSessionDetails />);
@@ -370,6 +360,7 @@ describe('DialecticSessionDetails', () => {
       projectDetailError: null,
       currentProcessTemplate: mockProcessTemplate,
       activeContextStage: mockThesisStage,
+      activeSessionDetail: { ...mockSession, dialectic_contributions: [] },
     });
 
     render(<DialecticSessionDetails />);

@@ -257,6 +257,7 @@ export interface DialecticStateValues {
   activeContextProjectId: string | null;
   activeContextSessionId: string | null;
   activeContextStage: DialecticStage | null;
+  activeStageSlug: string | null;
 
   // New state for single session details
   activeSessionDetail: DialecticSession | null;
@@ -345,6 +346,7 @@ export interface DialecticActions {
   setActiveContextSessionId: (id: string | null) => void;
   setActiveContextStage: (stage: DialecticStage | null) => void;
   setActiveDialecticContext: (context: { projectId: string | null; sessionId: string | null; stage: DialecticStage | null }) => void;
+  setActiveStage: (slug: string | null) => void;
 
   // ADDED: Actions for fetching feedback file content
   fetchFeedbackFileContent: (payload: { projectId: string; storagePath: string }) => Promise<void>;
@@ -359,7 +361,7 @@ export interface DialecticActions {
 
   _resetForTesting?: () => void;
   // Internal handler for completion events from notificationStore
-  _handleGenerationCompleteEvent?: (data: { sessionId: string; projectId: string; [key: string]: any }) => void;
+  _handleGenerationCompleteEvent?: (data: { sessionId: string; projectId: string; [key: string]: unknown }) => void;
   reset: () => void;
 }
 
@@ -450,11 +452,24 @@ export interface GenerateContributionsPayload {
   projectId: string;
   stageSlug: DialecticStage['slug'];
   iterationNumber: number;
+  continueUntilComplete: boolean;
+}
+
+export interface FailedAttemptError {
+  modelId: string;
+  error: string;
+  details?: string;
+  code?: string;
 }
 
 export interface GenerateContributionsResponse {
-  message: string;
-  contributions?: DialecticContribution[];
+  sessionId: string;
+  projectId: string;
+  stage: string;
+  iteration: number;
+  status: string;
+  successfulContributions: DialecticContribution[];
+  failedAttempts: FailedAttemptError[];
 }
 
 export interface ContributionContentSignedUrlResponse {

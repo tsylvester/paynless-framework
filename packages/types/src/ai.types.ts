@@ -135,6 +135,7 @@ export interface ChatApiRequest {
   best_of?: number; // Added for best of responses
   logit_bias?: Record<string, number>; // Added for logit bias
   max_tokens?: number; // Added for max tokens
+  continue_until_complete?: boolean;
 }
 
 /**
@@ -268,6 +269,7 @@ export interface AiState {
     chatParticipantsProfiles: { [userId: string]: UserProfile }; 
 
     pendingAction: AiPendingChatAction; // Added missing state property
+    continueUntilComplete: boolean;
 
     // Token Tracking (placeholders, to be detailed in STEP-2.1.8)
     // Example: chatTokenUsage?: { [chatId: string]: { promptTokens: number; completionTokens: number; totalTokens: number } };
@@ -296,6 +298,7 @@ export interface AiActions {
   setSelectedProvider: (providerId: AiProvider['id'] | null) => void;
   setSelectedPrompt: (promptId: SystemPrompt['id'] | null) => void;
   setNewChatContext: (contextId: string | null) => void;
+  setContinueUntilComplete: (shouldContinue: boolean) => void;
 
   // Added for chat context hydration
   setChatContextHydrated: (hydrated: boolean) => void;
@@ -418,6 +421,7 @@ export const initialAiStateValues: AiState = {
   chatParticipantsProfiles: {}, 
   selectedMessagesMap: {},
   pendingAction: null,
+  continueUntilComplete: true,
 };
 // Type definitions for the new selector
 export type ActiveChatWalletInfoStatus = 'ok' | 'loading' | 'error' | 'consent_required' | 'consent_refused' | 'policy_org_wallet_unavailable' | 'policy_member_wallet_unavailable';

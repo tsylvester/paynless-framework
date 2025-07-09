@@ -146,6 +146,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
   isFetchingFeedbackFileContent: false,
   fetchFeedbackFileContentError: null,
   activeDialecticWalletId: null,
+  activeStageSlug: 'thesis',
 };
 
 // 2. Helper function to create a new mock store instance
@@ -233,6 +234,14 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
     activateProjectAndSessionContextForDeepLink: mockActivateProjectAndSessionContextForDeepLink,
     fetchAndSetCurrentSessionDetails: mockFetchAndSetCurrentSessionDetails,
     setActiveDialecticWalletId: vi.fn((id: string | null) => set({ activeDialecticWalletId: id })),
+    setActiveStage: vi.fn((slug: string | null) => {
+      const stages = get().currentProcessTemplate?.stages ?? [];
+      const stage = stages.find(s => s.slug === slug) ?? null;
+      set({ 
+        activeContextStage: stage,
+        activeStageSlug: slug
+      });
+    }),
   }));
 };
 

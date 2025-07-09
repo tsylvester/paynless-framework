@@ -7,13 +7,13 @@ import {
   selectProjectDetailError,
   selectFeedbackForStageIteration,
   selectCurrentProjectDetail,
-  selectActiveContextStage
+  selectActiveStageSlug,
+  selectSortedStages
 } from '@paynless/store';
 import { 
   DialecticContribution, 
   ApiError, 
   DialecticFeedback, 
-  GetProjectResourceContentResponse,
   SubmitStageResponsesPayload
 } from '@paynless/types';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,6 +34,7 @@ import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
+import { cn } from '@/lib/utils';
 
 // Skeleton component for GeneratedContributionCard
 const GeneratedContributionCardSkeleton: React.FC = () => (
@@ -54,59 +55,51 @@ const GeneratedContributionCardSkeleton: React.FC = () => (
 );
 
 export const SessionContributionsDisplayCard: React.FC = () => {
-  console.log('[SessionContributionsDisplayCard] Rendering - Initial Check', {
-    project: useDialecticStore.getState().currentProjectDetail,
-    session: useDialecticStore.getState().activeSessionDetail,
-    activeStage: useDialecticStore.getState().activeContextStage,
-    isLoadingProjectDetail: useDialecticStore.getState().isLoadingProjectDetail,
-    contributionGenerationStatus: useDialecticStore.getState().contributionGenerationStatus,
-    projectDetailError: useDialecticStore.getState().projectDetailError,
-    isStageReady: useDialecticStore.getState().activeSessionDetail && useDialecticStore.getState().activeContextStage ? selectIsStageReadyForSessionIteration(
-      useDialecticStore.getState(),
-      useDialecticStore.getState().currentProjectDetail!.id,
-      useDialecticStore.getState().activeSessionDetail!.id,
-      useDialecticStore.getState().activeContextStage!.slug,
-      useDialecticStore.getState().activeSessionDetail!.iteration_count
-    ) : false
-  });
-
-  // MODIFIED: Get session and activeStage from store
+  // --- Store Data using Reactive Hooks ---
   const project = useDialecticStore(selectCurrentProjectDetail);
-  const session = useDialecticStore(state => state.activeSessionDetail); // Get session from activeSessionDetail
-  const activeStage = useDialecticStore(selectActiveContextStage); // Get activeStage from selectActiveContextStage
+  const session = useDialecticStore(state => state.activeSessionDetail);
+  const activeStageSlug = useDialecticStore(selectActiveStageSlug);
+  const processTemplate = useDialecticStore(state => state.currentProcessTemplate);
+  const sortedStages = useDialecticStore(selectSortedStages);
+  const setActiveStage = useDialecticStore(state => state.setActiveStage);
+
+  const activeStage = useMemo(() => {
+    return processTemplate?.stages?.find(s => s.slug === activeStageSlug) || null;
+  }, [processTemplate, activeStageSlug]);
   
   const submitStageResponses = useDialecticStore(state => state.submitStageResponses);
   const isSubmitting = useDialecticStore(state => state.isSubmittingStageResponses);
-  const submissionError: ApiError | null = useDialecticStore(state => state.submitStageResponsesError || null);
+  const submissionError = useDialecticStore(state => state.submitStageResponsesError);
   const resetSubmitError = useDialecticStore(state => state.resetSubmitStageResponsesError);
 
   // New store states for loading and error handling
   const isLoadingCurrentProjectDetail = useDialecticStore(selectIsLoadingProjectDetail);
   const contributionGenerationStatus = useDialecticStore(selectContributionGenerationStatus);
   const projectDetailError = useDialecticStore(selectProjectDetailError);
+  const generationError = useDialecticStore(state => state.generateContributionsError);
 
   // Store items for feedback content
   const fetchFeedbackFileContent = useDialecticStore(state => state.fetchFeedbackFileContent);
-  const currentFeedbackFileContent: GetProjectResourceContentResponse | null = useDialecticStore(state => state.currentFeedbackFileContent);
+  const currentFeedbackFileContent = useDialecticStore(state => state.currentFeedbackFileContent);
   const isFetchingFeedbackFileContent = useDialecticStore(state => state.isFetchingFeedbackFileContent);
   const fetchFeedbackFileContentError = useDialecticStore(state => state.fetchFeedbackFileContentError);
   const clearCurrentFeedbackFileContent = useDialecticStore(state => state.clearCurrentFeedbackFileContent);
   const resetFetchFeedbackFileContentError = useDialecticStore(state => state.resetFetchFeedbackFileContentError);
 
   const isStageReady = useDialecticStore(state =>
-    project && session && activeStage ? // Use store-derived session and activeStage
+    project && session && activeStage ? 
     selectIsStageReadyForSessionIteration(
         state,
         project.id,
-        session.id, // Use store-derived session
-        activeStage.slug,  // Use store-derived activeStage
-        session.iteration_count // Use store-derived session
+        session.id,
+        activeStage.slug,
+        session.iteration_count
     ) : false
   );
 
   // Select feedback metadata for the current stage and iteration
   const feedbacksForStageIterationArray = useDialecticStore(state => 
-    project && session && activeStage // Use store-derived session and activeStage
+    project && session && activeStage 
       ? selectFeedbackForStageIteration(state, session.id, activeStage.slug, session.iteration_count)
       : null
   );
@@ -127,24 +120,13 @@ export const SessionContributionsDisplayCard: React.FC = () => {
   }, [activeStage, resetSubmitError, submissionError]);
 
   const displayedContributions = useMemo(() => {
-    // MODIFIED: Use session and activeStage from store
-    console.log('[SessionContributionsDisplayCard useMemo] Running. Session:', session, 'ActiveStage:', activeStage);
-
     if (!session?.dialectic_contributions || !session.iteration_count || !activeStage) {
-      console.log('[SessionContributionsDisplayCard useMemo] Early exit: Missing session.dialectic_contributions, session.iteration_count, or activeStage.', {
-        hasDialecticContributions: !!session?.dialectic_contributions,
-        iterationCount: session?.iteration_count,
-        hasActiveStage: !!activeStage
-      });
       return [];
     }
-    console.log('[SessionContributionsDisplayCard useMemo] Initial session.dialectic_contributions:', JSON.parse(JSON.stringify(session.dialectic_contributions)));
-
 
     const contributionsForStageAndIteration = session.dialectic_contributions.filter(
       c => c.stage === activeStage.slug && c.iteration_number === session.iteration_count
     );
-    console.log('[SessionContributionsDisplayCard useMemo] Filtered contributionsForStageAndIteration (count ' + contributionsForStageAndIteration.length + '):', JSON.parse(JSON.stringify(contributionsForStageAndIteration.map(c => ({id: c.id, stage_slug: c.stage, iter: c.iteration_number, original_id: c.original_model_contribution_id, edit_version: c.edit_version, is_latest_edit: c.is_latest_edit})))));
 
     const latestEditsMap = new Map<string, DialecticContribution>();
 
@@ -194,8 +176,6 @@ export const SessionContributionsDisplayCard: React.FC = () => {
     // Deduplicate just in case the logic above had an edge case, ensuring unique IDs
     const uniqueFinalContributions = Array.from(new Map(finalContributions.map(c => [c.id, c])).values());
 
-    console.log('[SessionContributionsDisplayCard useMemo] uniqueFinalContributions before sort (count ' + uniqueFinalContributions.length + '):', uniqueFinalContributions.map(c => ({ id: c.id, original_id: c.original_model_contribution_id, edit_version: c.edit_version, is_latest_edit: c.is_latest_edit, model_name: c.model_name })));
-
     return uniqueFinalContributions.sort((a,b) => (a.model_name || '').localeCompare(b.model_name || ''));
 
   }, [session, activeStage]);
@@ -209,7 +189,6 @@ export const SessionContributionsDisplayCard: React.FC = () => {
   };
 
   const proceedWithSubmission = async () => {
-    // MODIFIED: Use session, activeStage, project from store
     if (!session || !session.iteration_count || !activeStage || !project) return;
     setSubmissionSuccessMessage(null);
     if (submissionError) {
@@ -248,317 +227,252 @@ export const SessionContributionsDisplayCard: React.FC = () => {
     try {
       // Use the constructed payload
       const result = await submitStageResponses(payload);
-      if (result?.data || !result.error) {
-        setSubmissionSuccessMessage('Responses submitted successfully. The next stage is being prepared.');
-        toast.success("Responses Submitted", { description: "The next stage is being prepared." });
-        setStageResponses({});
-      } else {
-        if (result.error?.message) {
-             toast.error("Submission Failed", { description: result.error.message });
-        } else {
-            toast.error("Submission Failed", { description: "An unexpected error occurred." });
+
+      if (result?.error) {
+          throw result.error;
+      }
+      
+      setSubmissionSuccessMessage('Your feedback has been submitted successfully!');
+      toast.success('Feedback submitted!', {
+          description: "The next stage's seed prompt has been generated."
+      });
+      // Do NOT clear stageResponses here so user can see what they wrote
+      if (activeStage && sortedStages && setActiveStage) {
+        const currentIndex = sortedStages.findIndex(s => s.slug === activeStage.slug);
+        if (currentIndex > -1 && currentIndex < sortedStages.length - 1) {
+          const nextStage = sortedStages[currentIndex + 1];
+          setActiveStage(nextStage.slug);
         }
       }
-    } catch (e: unknown) {
-      console.error("Error submitting stage responses:", e);
-      let errorMessage = "An unexpected client-side error occurred.";
-      if (
-        typeof e === 'object' &&
-        e !== null &&
-        'message' in e &&
-        typeof e.message === 'string'
-      ) {
-        errorMessage = e.message;
-      } else if (e instanceof Error) {
-        errorMessage = e.message;
-      }
-      toast.error("Submission Error", { description: errorMessage });
+      
+    } catch (error) {
+      const apiError = error as ApiError;
+      toast.error('Submission Failed', {
+          description: apiError.message || 'An unexpected error occurred.'
+      });
     }
   };
-
+  
   const handleSubmitResponses = async () => {
-    if (!session || !activeStage || !project) return;
+    // Check if any responses have been entered
+    const hasAnyResponses = Object.values(stageResponses).some(text => text && text.trim() !== "");
 
-    const hasUserEdits = displayedContributions.some(
-      c => c.user_id && c.edit_version > 1 
-    );
-    const hasUserResponses = Object.values(stageResponses).some(text => text.trim() !== '');
-
-    if (!hasUserEdits && !hasUserResponses) {
+    if (hasAnyResponses) {
+      // If there are responses, show the confirmation modal
       setShowConfirmationModal(true);
     } else {
+      // If there are no responses, proceed directly with submission
       await proceedWithSubmission();
     }
   };
 
-  const activeStageDisplayName =
-    activeStage?.display_name || 'Current Stage';
+  const renderSubmitButton = () => (
+    <Button 
+        onClick={handleSubmitResponses} 
+        disabled={isSubmitting || !isStageReady}
+        className={cn({ 'animate-pulse': !isSubmitting && isStageReady })}
+    >
+        {isSubmitting ? (
+            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
+        ) : (
+            'Submit Responses & Advance Stage'
+        )}
+    </Button>
+  );
 
-  // --- Conditional Rendering Logic Starts Here ---
+  const handleShowFeedbackContent = (feedback?: DialecticFeedback | null) => {
+    if (feedback?.storage_path && project) {
+      fetchFeedbackFileContent({
+        projectId: project.id,
+        storagePath: feedback.storage_path,
+      });
+      setShowFeedbackContentModal(true);
+    } else {
+      toast.warning('No feedback content to display.', {
+        description: 'The selected feedback record does not have an associated file path.',
+      });
+    }
+  };
 
-  if (!project || !session || !activeStage) {
+  const closeFeedbackModal = () => {
+    setShowFeedbackContentModal(false);
+    clearCurrentFeedbackFileContent?.(); // Clear content when closing
+    resetFetchFeedbackFileContentError?.(); // Clear any errors
+  }
+
+  // Loading state for the entire component
+  if (isLoadingCurrentProjectDetail) {
+    return <GeneratedContributionCardSkeleton />;
+  }
+  
+  // Handle project-level errors
+  if (projectDetailError) {
     return (
-        <Card className="mt-4">
-            <CardHeader><CardTitle>Loading Contributions...</CardTitle></CardHeader>
-            <CardContent><p>Waiting for project, active session, and stage context...</p></CardContent>
-        </Card>
+      <Alert variant="destructive">
+        <AlertTitle>Error Loading Project</AlertTitle>
+        <AlertDescription>{projectDetailError.message}</AlertDescription>
+      </Alert>
     );
   }
 
-  // 1. Generation actively in progress (initiating/generating)
-  if (contributionGenerationStatus === 'initiating' || contributionGenerationStatus === 'generating') {
+  // Handle case where there is no active session
+  if (!session) {
     return (
-      <Card className="mt-4">
+      <Card>
         <CardHeader>
-          <CardTitle>Contributions for: {activeStageDisplayName}</CardTitle>
+          <CardTitle>Session Not Active</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col items-center justify-center text-lg mt-4 p-8" data-testid="contributions-generating-spinner">
-            <Loader2 className="mr-2 h-8 w-8 animate-spin mb-4" data-testid="loader-icon" />
-            <p>Contributions are being generated.</p>
-            <p className="text-sm text-muted-foreground">This card will update shortly.</p>
-          </div>
+          <p>Please select a session to view its contributions.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Handle case where there is no active stage
+  if (!activeStage) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Stage Not Selected</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>Please select a stage to view its contributions.</p>
         </CardContent>
       </Card>
     );
   }
   
-  // Only show stage not ready if not actively generating contributions
-  if (!isStageReady && contributionGenerationStatus === 'idle') {
-    return (
-      <Card className="mt-4">
-        <CardHeader>
-          <CardTitle>Contributions for: {activeStageDisplayName}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Alert variant="default" data-testid="stage-not-ready-alert">
-            <AlertTitle>Stage Not Ready</AlertTitle>
-            <AlertDescription>
-              The seed prompt for this stage and iteration is not yet available. Contributions cannot be displayed or generated.
-            </AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // 2. Loading project details (potentially after generation completed its API call and triggered a refresh)
-  // AND no contributions are yet visible for the current stage/iteration.
-  if (isLoadingCurrentProjectDetail && displayedContributions.length === 0 && contributionGenerationStatus === 'idle') {
-    return (
-      <Card className="mt-4">
-        <CardHeader>
-          <CardTitle>Contributions for: {activeStageDisplayName}</CardTitle>
-        </CardHeader>
-        <CardContent data-testid="contributions-loading-skeletons">
-          <p className="text-sm text-muted-foreground mb-4">Loading new contributions...</p>
-          <GeneratedContributionCardSkeleton />
-          <GeneratedContributionCardSkeleton />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // NEW BLOCK: Error during the contribution generation process itself
-  if (contributionGenerationStatus === 'failed' && projectDetailError) {
-    return (
-      <Card className="mt-4">
-        <CardHeader>
-          <CardTitle>Contributions for: {activeStageDisplayName}</CardTitle>
-        </CardHeader>
-        <CardContent data-testid="contributions-generation-error">
-          <Alert variant="destructive">
-            <AlertTitle>Error Generating Contributions</AlertTitle>
-            <AlertDescription>
-              Failed to generate contributions: {projectDetailError.message}. Please try again.
-            </AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // 3. Error during the project detail refresh (potentially after generation)
-  if (projectDetailError && !isLoadingCurrentProjectDetail && contributionGenerationStatus === 'idle') {
-    return (
-      <Card className="mt-4">
-        <CardHeader>
-          <CardTitle>Contributions for: {activeStageDisplayName}</CardTitle>
-        </CardHeader>
-        <CardContent data-testid="contributions-fetch-error">
-          <Alert variant="destructive">
-            <AlertTitle>Error Loading Contributions</AlertTitle>
-            <AlertDescription>
-              Failed to load contributions: {projectDetailError.message}. Please try refreshing or generating again.
-            </AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
-    );
-  }
+  const isGenerating = contributionGenerationStatus === 'generating';
   
-  const canSubmit = displayedContributions.length > 0 && !isSubmitting;
-
-  // --- Main Display Logic (Contributions or Empty State) ---
   return (
-    <Card className="mt-4">
+    <Card className="w-full">
       <CardHeader>
-        <CardTitle>Contributions for: {activeStageDisplayName}</CardTitle>
-        {submissionSuccessMessage && (
-            <Alert variant="default" className="mt-2">
-                <AlertTitle>Success</AlertTitle>
-                <AlertDescription>{submissionSuccessMessage}</AlertDescription>
-            </Alert>
+        <div className="flex justify-between items-center">
+          <CardTitle>
+            Contributions for: <span className="font-bold text-primary">{activeStage.display_name}</span>
+            <span className="text-sm text-muted-foreground ml-2">(Iteration {session.iteration_count})</span>
+          </CardTitle>
+          {displayedContributions.length > 0 && renderSubmitButton()}
+        </div>
+        {isGenerating && (
+          <div className="flex items-center text-sm text-muted-foreground">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            <span>Generating new contributions...</span>
+          </div>
         )}
-        {submissionError && (
-            <Alert variant="destructive" className="mt-2">
-                <AlertTitle>Submission Error</AlertTitle>
-                <AlertDescription>{submissionError.message}</AlertDescription>
-            </Alert>
-        )}
-        {/* ADDED: Alert for feedback content fetch error within CardHeader for general visibility */}
-        {fetchFeedbackFileContentError && !showFeedbackContentModal && (
-          <Alert variant="destructive" className="mt-2">
-            <AlertTitle>Error Fetching Feedback File</AlertTitle>
-            <AlertDescription>
-              {fetchFeedbackFileContentError.message}
-              <Button variant="link" size="sm" onClick={() => resetFetchFeedbackFileContentError()} className="ml-2 p-0 h-auto">Dismiss</Button>
-            </AlertDescription>
+        {generationError && (
+          <Alert variant="destructive">
+            <AlertTitle>Generation Failed</AlertTitle>
+            <AlertDescription>{generationError.message}</AlertDescription>
           </Alert>
         )}
       </CardHeader>
-      <CardContent className="flex-grow flex flex-col items-center justify-center p-4 space-y-4">
-        {/* Display feedback metadata if available */}
-        {feedbackForStageIteration && (
-          <div className="mb-6 p-4 border rounded-md bg-muted/40" data-testid="stage-feedback-display">
-            <h4 className="font-semibold mb-2 text-md">Stage Feedback Summary</h4>
-            <p className="text-sm text-muted-foreground">
-              Feedback File: <span className="font-medium text-foreground">{feedbackForStageIteration.file_name}</span>
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Submitted on: {new Date(feedbackForStageIteration.created_at).toLocaleString()}
-            </p>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="mt-2"
-              onClick={async () => {
-                if (project && feedbackForStageIteration) {
-                  if (fetchFeedbackFileContentError) resetFetchFeedbackFileContentError?.();
-                  await fetchFeedbackFileContent({ 
-                    projectId: project.id,
-                    storagePath: feedbackForStageIteration.storage_path,
-                  });
-                  setShowFeedbackContentModal(true);
-                }
-              }}
-              disabled={isFetchingFeedbackFileContent}
-            >
-              {isFetchingFeedbackFileContent ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              View Feedback Content
-            </Button>
+      <CardContent>
+        {displayedContributions.length === 0 && !isGenerating && (
+          <div className="text-center text-muted-foreground py-8">
+            <p>No contributions available for this stage yet.</p>
+            <p className="text-sm">Click "Generate" to create new contributions.</p>
           </div>
         )}
+        {isGenerating && displayedContributions.length === 0 && (
+          // Show skeletons when generating for the first time
+          Array.from({ length: 2 }).map((_, index) => <GeneratedContributionCardSkeleton key={index} />)
+        )}
+        {displayedContributions.map(contribution => (
+          <GeneratedContributionCard 
+            key={contribution.id}
+            contributionId={contribution.id}
+            initialResponseText={stageResponses[contribution.original_model_contribution_id || contribution.id] || ''}
+            onResponseChange={handleResponseChange}
+            originalModelContributionIdForResponse={contribution.original_model_contribution_id || contribution.id}
+          />
+        ))}
 
-        {/* Display contributions or "no contributions" message */}
-        {displayedContributions.length > 0 ? (
-          <div className="space-y-4"> 
-            {displayedContributions.map(contribution => (
-              <GeneratedContributionCard
-                key={contribution.id}
-                contributionId={contribution.id}
-                originalModelContributionIdForResponse={contribution.original_model_contribution_id || contribution.id}
-                initialResponseText={stageResponses[contribution.original_model_contribution_id || contribution.id] || ''}
-                onResponseChange={handleResponseChange}
-              />
-            ))}
+        {feedbackForStageIteration && (
+          <div className="mt-6 border-t pt-4">
+            <h4 className="text-lg font-semibold mb-2">Past Feedback</h4>
+            <div className="flex items-center justify-between p-3 bg-muted rounded-md">
+                <div>
+                  <p className="text-sm font-medium">Feedback for Iteration {feedbackForStageIteration.iteration_number}</p>
+                  <p className="text-xs text-muted-foreground">Submitted on: {new Date(feedbackForStageIteration.created_at).toLocaleString()}</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => handleShowFeedbackContent(feedbackForStageIteration)}>
+                  View Feedback
+                </Button>
+            </div>
           </div>
-        ) : (
-          !isLoadingCurrentProjectDetail && contributionGenerationStatus === 'idle' && !projectDetailError && (
-               <div data-testid="no-contributions-yet" className="text-center py-8">
-                  <p className="text-muted-foreground">
-                      No contributions have been generated for {activeStageDisplayName} in this iteration yet.
-                  </p>
-              </div>
-          )
         )}
       </CardContent>
-      {displayedContributions.length > 0 && activeStage.slug !== 'paralysis' && (
-        <CardFooter className="flex justify-end">
-          <Button onClick={handleSubmitResponses} disabled={!canSubmit}>
-            {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" data-testid="loader-icon" /> : null}
-            Submit Responses & Proceed
-          </Button>
+      {displayedContributions.length > 0 && (
+        <CardFooter className="flex justify-end space-x-2">
+            {submissionSuccessMessage && (
+                <div className="text-green-600 mr-auto transition-opacity duration-300">
+                    {submissionSuccessMessage}
+                </div>
+            )}
+            {submissionError && (
+                 <Alert variant="destructive" className="mr-auto">
+                    <AlertTitle>Submission Error</AlertTitle>
+                    <AlertDescription>{submissionError.message}</AlertDescription>
+                </Alert>
+            )}
+
+            {renderSubmitButton()}
         </CardFooter>
       )}
+
+      {/* Confirmation Modal */}
       <AlertDialog open={showConfirmationModal} onOpenChange={setShowConfirmationModal}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Proceed Without Feedback?</AlertDialogTitle>
-            <AlertDialogDescription>
-              You haven't edited any contributions or added any responses for this stage. 
-              Are you sure you want to proceed to the next stage?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={async () => {
-              setShowConfirmationModal(false);
-              await proceedWithSubmission();
-            }}>
-              Proceed
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
+          <AlertDialogContent>
+              <AlertDialogHeader>
+                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                      This will submit your feedback and generate the seed prompt for the next stage. This action cannot be undone.
+                  </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => {
+                      setShowConfirmationModal(false);
+                      proceedWithSubmission();
+                  }}>
+                      Continue
+                  </AlertDialogAction>
+              </AlertDialogFooter>
+          </AlertDialogContent>
       </AlertDialog>
 
-      {/* ADDED: Modal for displaying feedback content */}
-      {showFeedbackContentModal && (
-        <AlertDialog open={showFeedbackContentModal} onOpenChange={(isOpen) => {
-          setShowFeedbackContentModal(isOpen);
-          if (!isOpen) {
-            clearCurrentFeedbackFileContent();
-          }
-        }}>
-          <AlertDialogContent className="max-w-2xl">
+      {/* Feedback Content Modal */}
+      <AlertDialog open={showFeedbackContentModal} onOpenChange={(open) => !open && closeFeedbackModal()}>
+        <AlertDialogContent className="max-w-4xl h-[80vh] flex flex-col">
             <AlertDialogHeader>
-              <AlertDialogTitle>
-                Feedback Content: {currentFeedbackFileContent?.fileName || feedbackForStageIteration?.file_name || 'Loading...'}
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                Content of the submitted feedback file.
-              </AlertDialogDescription>
+                <AlertDialogTitle>Feedback for Iteration {feedbackForStageIteration?.iteration_number}</AlertDialogTitle>
+                <AlertDialogDescription>
+                    This is the consolidated feedback that was submitted for this stage.
+                </AlertDialogDescription>
             </AlertDialogHeader>
-            <div className="my-4 max-h-[60vh] overflow-y-auto p-1 border rounded-md min-h-[200px]">
-              {isFetchingFeedbackFileContent && (
-                <div className="flex items-center justify-center h-full">
-                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                  <p className="ml-2 text-muted-foreground">Loading feedback...</p>
-                </div>
-              )}
-              {!isFetchingFeedbackFileContent && fetchFeedbackFileContentError && (
-                <Alert variant="destructive">
-                  <AlertTitle>Error Loading Content</AlertTitle>
-                  <AlertDescription>{fetchFeedbackFileContentError.message}</AlertDescription>
-                </Alert>
-              )}
-              {!isFetchingFeedbackFileContent && !fetchFeedbackFileContentError && currentFeedbackFileContent && (
-                <MarkdownRenderer content={currentFeedbackFileContent.content} />
-              )}
-              {!isFetchingFeedbackFileContent && !fetchFeedbackFileContentError && !currentFeedbackFileContent && (
-                 <p className="text-muted-foreground text-center py-4">No content to display or content has been cleared.</p>
+            <div className="flex-grow overflow-y-auto pr-4">
+              {isFetchingFeedbackFileContent ? (
+                  <div className="flex justify-center items-center h-full">
+                    <Loader2 className="h-8 w-8 animate-spin" />
+                  </div>
+              ) : fetchFeedbackFileContentError ? (
+                  <Alert variant="destructive">
+                      <AlertTitle>Error</AlertTitle>
+                      <AlertDescription>{fetchFeedbackFileContentError.message}</AlertDescription>
+                  </Alert>
+              ) : currentFeedbackFileContent ? (
+                  <MarkdownRenderer content={currentFeedbackFileContent.content} />
+              ) : (
+                  <p>No content available.</p>
               )}
             </div>
             <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => {
-                  setShowFeedbackContentModal(false);
-              }}>Close</AlertDialogCancel>
+                <Button variant="outline" onClick={closeFeedbackModal}>Close</Button>
             </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 };

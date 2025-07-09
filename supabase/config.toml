@@ -316,10 +316,6 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # [functions]
 # verify_jwt = false
 
-# Disable JWT verification specifically for functions that handle their own auth/public access
-[functions.login]
-verify_jwt = false
-
 # Example: Add similar blocks if register, reset-password etc. also need no JWT check
 [functions.register]
 verify_jwt = false

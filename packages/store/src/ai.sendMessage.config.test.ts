@@ -208,6 +208,44 @@ describe('handleSendMessage', () => {
       }
     });
 
+    it('should pass continue_until_complete flag when state is true', async () => {
+      // 1. Setup
+      testSpecificAiState.continueUntilComplete = true; // Set the flag in our mock state
+
+      const mockAssistantMessage: ChatMessage = {
+        id: 'asst-msg-123',
+        chat_id: 'chat-123',
+        role: 'assistant',
+        content: 'This is a complete response.',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        user_id: null,
+        ai_provider_id: MOCK_AI_PROVIDER.id,
+        system_prompt_id: null,
+        is_active_in_thread: true,
+        error_type: null,
+        token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+        response_to_message_id: 'temp-user-msg-123',
+      };
+      
+      mockCallChatApi.mockResolvedValue({
+        data: {
+          assistantMessage: mockAssistantMessage as ChatMessageRow,
+          chatId: 'chat-123',
+        },
+        error: undefined,
+        status: 200,
+      });
+
+      // 2. Action
+      await handleSendMessage(getDefaultTestServiceParams());
+
+      // 3. Assertions
+      expect(mockCallChatApi).toHaveBeenCalledTimes(1);
+      const apiRequestArg = mockCallChatApi.mock.calls[0][0];
+      expect(apiRequestArg).toHaveProperty('continue_until_complete', true);
+    });
+
     it('should handle server-side config errors gracefully', async () => {
       // 1. Setup
       const errorMessage = 'Server-side error: Model configuration not found for the given provider.';

@@ -123,6 +123,26 @@ export class AnthropicAdapter implements AiProviderAdapter {
         total_tokens: (jsonResponse.usage.input_tokens || 0) + (jsonResponse.usage.output_tokens || 0),
     } : null;
 
+    // Standardize the finish reason from Anthropic's stop_reason
+    let finish_reason: AdapterResponsePayload['finish_reason'] = 'unknown';
+    if (jsonResponse.stop_reason) {
+      switch (jsonResponse.stop_reason) {
+        case 'end_turn':
+        case 'stop_sequence':
+          finish_reason = 'stop';
+          break;
+        case 'max_tokens':
+          finish_reason = 'length';
+          break;
+        case 'tool_use':
+          finish_reason = 'tool_calls';
+          break;
+        default:
+          finish_reason = 'unknown'; // Keep as unknown for any other reason
+          break;
+      }
+    }
+    
     // Construct object matching AdapterResponsePayload
     const adapterResponse: AdapterResponsePayload = {
       role: 'assistant', // Explicitly "assistant" as per interface
@@ -130,6 +150,7 @@ export class AnthropicAdapter implements AiProviderAdapter {
       ai_provider_id: request.providerId, // This is the DB ID of the provider
       system_prompt_id: request.promptId !== '__none__' ? request.promptId : null, // DB ID of system prompt
       token_usage: tokenUsage,
+      finish_reason: finish_reason, // Pass the standardized reason
     };
     this.logger.debug('[AnthropicAdapter] sendMessage successful', { modelApiName });
     return adapterResponse; // Return the correctly typed object

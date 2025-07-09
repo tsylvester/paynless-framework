@@ -77,12 +77,41 @@ export class OpenAiAdapter implements AiProviderAdapter {
 
     const jsonResponse = await response.json();
 
-    const aiContent = jsonResponse.choices?.[0]?.message?.content?.trim();
+    const choice = jsonResponse.choices?.[0];
+    const aiContent = choice?.message?.content?.trim();
+    
     if (!aiContent) {
       this.logger.error("OpenAI fetch response missing message content:", { response: jsonResponse, modelApiName });
       throw new Error('OpenAI response content is empty or missing.');
     }
 
+    const finishReason = choice?.finish_reason;
+    let finish_reason: AdapterResponsePayload['finish_reason'];
+
+    switch (finishReason) {
+      case 'stop':
+        finish_reason = 'stop';
+        break;
+      case 'length':
+        finish_reason = 'length';
+        break;
+      case 'tool_calls':
+        finish_reason = 'tool_calls';
+        break;
+      case 'content_filter':
+        finish_reason = 'content_filter';
+        break;
+      case 'function_call':
+        finish_reason = 'function_call';
+        break;
+      default:
+        finish_reason = 'unknown';
+        if (finishReason) { // Log if we get a new, unexpected reason
+            this.logger.warn(`OpenAI returned an unknown finish reason: ${finishReason}`, { modelApiName, finishReason });
+        }
+        break;
+    }
+    
     const tokenUsage = jsonResponse.usage ? {
       prompt_tokens: jsonResponse.usage.prompt_tokens,
       completion_tokens: jsonResponse.usage.completion_tokens,
@@ -96,6 +125,7 @@ export class OpenAiAdapter implements AiProviderAdapter {
       ai_provider_id: request.providerId, // Pass through the provider DB ID
       system_prompt_id: request.promptId !== '__none__' ? request.promptId : null, // Pass through prompt DB ID
       token_usage: tokenUsage,
+      finish_reason: finish_reason,
       // REMOVED fields not provided by adapter: id, chat_id, created_at, user_id
     };
     this.logger.debug('[OpenAiAdapter] sendMessage successful', { modelApiName });

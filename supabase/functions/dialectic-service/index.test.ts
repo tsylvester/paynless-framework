@@ -4,7 +4,7 @@ import {
   assertNotEquals,
   assert,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { spy } from "https://deno.land/std@0.208.0/testing/mock.ts";
+import { spy, type Spy } from "https://deno.land/std@0.208.0/testing/mock.ts";
 import {
   isValidDomainDefaultFn,
   createSignedUrlDefaultFn,
@@ -843,6 +843,77 @@ withSupabaseEnv("handleRequest - generateContributions", async (t) => {
         assertEquals(body.error, "User not authenticated"); 
         assertEquals(generateSpy.calls.length, 0);
     });
+});
+
+withSupabaseEnv("handleRequest - generateContributions with continueUntilComplete", async (t) => {
+  let mockHandlers: ActionHandlers;
+  let generateContributionsSpy: Spy;
+
+  await t.step("should pass continueUntilComplete: true to the handler", async () => {
+    generateContributionsSpy = spy(() => Promise.resolve({ 
+      success: true, 
+      data: { 
+        message: "ok",
+        sessionId: "s-123",
+        projectId: "p-123",
+        stage: { slug: "test-stage" } as any,
+        iteration: 1,
+        contributions: [],
+        failedContributions: [],
+        results: {} as any,
+      } 
+    }));
+    mockHandlers = createMockHandlers({ generateContributions: generateContributionsSpy as any });
+
+    const payload = { sessionId: 's-123', continueUntilComplete: true };
+    const req = createJsonRequest("generateContributions", payload, "test-token", );
+    
+    const originalEdgeRuntime = (globalThis as any).EdgeRuntime;
+    (globalThis as any).EdgeRuntime = { waitUntil: spy() };
+
+    try {
+        await handleRequest(req, mockHandlers, createMockSupabaseClient('test-user-id', { getUserResult: { data: { user: mockUser }, error: null } }).client as any, createMockSupabaseClient().client as any);
+    
+        assert(generateContributionsSpy.calls.length > 0, "generateContributions handler was not called");
+        const receivedPayload = generateContributionsSpy.calls[0].args[1];
+        assertEquals(receivedPayload.continueUntilComplete, true, "continueUntilComplete was not passed as true in payload");
+    } finally {
+        (globalThis as any).EdgeRuntime = originalEdgeRuntime;
+    }
+  });
+
+  await t.step("should pass continueUntilComplete: false to the handler", async () => {
+    generateContributionsSpy = spy(() => Promise.resolve({
+      success: true,
+      data: {
+        message: "ok",
+        sessionId: "s-456",
+        projectId: "p-456",
+        stage: { slug: "test-stage" } as any,
+        iteration: 1,
+        contributions: [],
+        failedContributions: [],
+        results: {} as any,
+      }
+    }));
+    mockHandlers = createMockHandlers({ generateContributions: generateContributionsSpy as any });
+
+    const payload = { sessionId: 's-456', continueUntilComplete: false };
+    const req = createJsonRequest("generateContributions", payload, "test-token");
+
+    const originalEdgeRuntime = (globalThis as any).EdgeRuntime;
+    (globalThis as any).EdgeRuntime = { waitUntil: spy() };
+
+    try {
+      await handleRequest(req, mockHandlers, createMockSupabaseClient('test-user-id', { getUserResult: { data: { user: mockUser }, error: null } }).client as any, createMockSupabaseClient().client as any);
+
+      assert(generateContributionsSpy.calls.length > 0, "generateContributions handler was not called");
+      const receivedPayload = generateContributionsSpy.calls[0].args[1];
+      assertEquals(receivedPayload.continueUntilComplete, false, "continueUntilComplete was not passed as false in payload");
+    } finally {
+      (globalThis as any).EdgeRuntime = originalEdgeRuntime;
+    }
+  });
 });
 
 withSupabaseEnv("handleRequest - getContributionContentDataHandler", async (t) => {
