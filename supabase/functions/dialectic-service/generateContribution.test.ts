@@ -2,6 +2,7 @@ import { assertEquals, assertExists, assertObjectMatch, assert, assertStringIncl
 import { spy, stub, type Stub, returnsNext } from "jsr:@std/testing@0.225.1/mock";
 import { generateContributions } from "./generateContribution.ts";
 import { 
+    type CallUnifiedAIModelOptions,
     type DialecticStage,
     type GenerateContributionsPayload, 
     type UnifiedAIResponse,
@@ -125,7 +126,7 @@ Deno.test("generateContributions - Happy Path (Single Model, with notification)"
                 logger: logger,
                 randomUUID: spy(() => "uuid-happy"),
                 fileManager: mockFileManager,
-            }
+            },
         );
 
         // Assertions for the main function result
@@ -158,7 +159,197 @@ Deno.test("generateContributions - Happy Path (Single Model, with notification)"
     }
 });
 
+Deno.test("generateContributions - continueUntilComplete flag is true", async () => {
+    const mockAuthToken = "test-auth-token-happy";
+    const mockSessionId = "test-session-id-happy";
+    const mockProjectId = "test-project-id-happy";
+    const mockUserId = "test-user-id-happy";
+    const mockChatId = "test-chat-id-happy";
+    const mockModelProviderId = "model-id-happy";
+
+    const mockPayload: GenerateContributionsPayload = {
+        sessionId: mockSessionId,
+        stageSlug: mockSynthesisStage.slug,
+        iterationNumber: 1,
+        chatId: mockChatId,
+        projectId: mockProjectId,
+        selectedModelIds: [mockModelProviderId],
+        continueUntilComplete: true,
+    };
+
+    const mockSupabase = createMockSupabaseClient(mockChatId, {
+        genericMockResults: {
+            'dialectic_stages': { select: { data: [mockSynthesisStage] } },
+            'dialectic_projects': { select: { data: [{ user_id: mockUserId }] } },
+            'dialectic_project_resources': {
+                select: {
+                    data: [{
+                        storage_bucket: 'dialectic-contributions',
+                        storage_path: `projects/${mockProjectId}/sessions/${mockSessionId}/iteration_1/synthesis`,
+                        file_name: 'seed_prompt.md',
+                        resource_description: JSON.stringify({
+                            type: 'seed_prompt',
+                            session_id: mockSessionId,
+                            stage_slug: 'synthesis',
+                            iteration: 1,
+                        })
+                    }]
+                }
+            },
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        id: mockSessionId,
+                        project_id: mockProjectId,
+                        status: 'pending_synthesis',
+                        associated_chat_id: mockChatId,
+                        selected_model_ids: [mockModelProviderId],
+                    }],
+                },
+                update: { data: [] }
+            },
+            'ai_providers': {
+                select: { data: [{ id: mockModelProviderId, provider: 'p-happy', name: 'm-happy', api_identifier: 'api-happy' }] }
+            }
+        }
+    });
+
+    const mockCallUnifiedAIModel = spy(async (
+        _modelCatalogId: string,
+        _renderedPrompt: string,
+        _associatedChatId: string | null | undefined,
+        _authToken: string,
+        _options?: CallUnifiedAIModelOptions,
+        _continueUntilComplete?: boolean
+    ): Promise<UnifiedAIResponse> => ({
+        content: "Happy path content", error: null
+    }));
+
+    const mockFileManager = new MockFileManagerService();
+    mockFileManager.setUploadAndRegisterFileResponse({ id: 'happy-contrib-id' } as any, null);
+
+    try {
+        await generateContributions(
+            mockSupabase.client as any,
+            mockPayload,
+            mockAuthToken,
+            {
+                callUnifiedAIModel: mockCallUnifiedAIModel,
+                downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => await Promise.resolve({ data: new TextEncoder().encode("seed").buffer as ArrayBuffer, error: null })),
+                deleteFromStorage: spy(async () => await Promise.resolve({ data: [], error: null })),
+                getExtensionFromMimeType: spy(() => ".md"),
+                logger: logger,
+                randomUUID: spy(() => "uuid-happy"),
+                fileManager: mockFileManager,
+            }
+        );
+
+        assert(mockCallUnifiedAIModel.calls.length > 0, "callUnifiedAIModel should have been called");
+        const callArgs = mockCallUnifiedAIModel.calls[0].args;
+        assertEquals(callArgs[5], true, "continueUntilComplete argument should be true");
+
+
+    } finally {
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+Deno.test("generateContributions - continueUntilComplete flag is false", async () => {
+    const mockAuthToken = "test-auth-token-happy";
+    const mockSessionId = "test-session-id-happy";
+    const mockProjectId = "test-project-id-happy";
+    const mockUserId = "test-user-id-happy";
+    const mockChatId = "test-chat-id-happy";
+    const mockModelProviderId = "model-id-happy";
+
+    const mockPayload: GenerateContributionsPayload = {
+        sessionId: mockSessionId,
+        stageSlug: mockSynthesisStage.slug,
+        iterationNumber: 1,
+        chatId: mockChatId,
+        projectId: mockProjectId,
+        selectedModelIds: [mockModelProviderId],
+        continueUntilComplete: false,
+    };
+
+    const mockSupabase = createMockSupabaseClient(mockChatId, {
+        genericMockResults: {
+            'dialectic_stages': { select: { data: [mockSynthesisStage] } },
+            'dialectic_projects': { select: { data: [{ user_id: mockUserId }] } },
+            'dialectic_project_resources': {
+                select: {
+                    data: [{
+                        storage_bucket: 'dialectic-contributions',
+                        storage_path: `projects/${mockProjectId}/sessions/${mockSessionId}/iteration_1/synthesis`,
+                        file_name: 'seed_prompt.md',
+                        resource_description: JSON.stringify({
+                            type: 'seed_prompt',
+                            session_id: mockSessionId,
+                            stage_slug: 'synthesis',
+                            iteration: 1,
+                        })
+                    }]
+                }
+            },
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        id: mockSessionId,
+                        project_id: mockProjectId,
+                        status: 'pending_synthesis',
+                        associated_chat_id: mockChatId,
+                        selected_model_ids: [mockModelProviderId],
+                    }],
+                },
+                update: { data: [] }
+            },
+            'ai_providers': {
+                select: { data: [{ id: mockModelProviderId, provider: 'p-happy', name: 'm-happy', api_identifier: 'api-happy' }] }
+            }
+        }
+    });
+
+    const mockCallUnifiedAIModel = spy(async (
+        _modelCatalogId: string,
+        _renderedPrompt: string,
+        _associatedChatId: string | null | undefined,
+        _authToken: string,
+        _options?: CallUnifiedAIModelOptions,
+        _continueUntilComplete?: boolean
+    ): Promise<UnifiedAIResponse> => ({
+        content: "Happy path content", error: null
+    }));
+
+    const mockFileManager = new MockFileManagerService();
+    mockFileManager.setUploadAndRegisterFileResponse({ id: 'happy-contrib-id' } as any, null);
+
+    try {
+        await generateContributions(
+            mockSupabase.client as any,
+            mockPayload,
+            mockAuthToken,
+            {
+                callUnifiedAIModel: mockCallUnifiedAIModel,
+                downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => await Promise.resolve({ data: new TextEncoder().encode("seed").buffer as ArrayBuffer, error: null })),
+                deleteFromStorage: spy(async () => await Promise.resolve({ data: [], error: null })),
+                getExtensionFromMimeType: spy(() => ".md"),
+                logger: logger,
+                randomUUID: spy(() => "uuid-happy"),
+                fileManager: mockFileManager,
+            }
+        );
+
+        assert(mockCallUnifiedAIModel.calls.length > 0, "callUnifiedAIModel should have been called");
+        const callArgs = mockCallUnifiedAIModel.calls[0].args;
+        assertEquals(callArgs[5], false, "continueUntilComplete argument should be false");
+
+    } finally {
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
 Deno.test("generateContributions - Multiple Models (one success, one fail)", async () => {
+    const localLoggerInfo = spy(logger, 'info');
     const localLoggerError = spy(logger, 'error');
     const mockAuthToken = "test-auth-token-mixed";
     const mockSessionId = "test-session-id-mixed";
@@ -255,6 +446,7 @@ Deno.test("generateContributions - Multiple Models (one success, one fail)", asy
             }
         );
 
+        // Assertions
         assertEquals(result.success, true);
         assertExists(result.data);
         assertEquals(result.data.successfulContributions.length, 1, "Should have one successful contribution");
@@ -276,6 +468,7 @@ Deno.test("generateContributions - Multiple Models (one success, one fail)", asy
         });
 
     } finally {
+        localLoggerInfo.restore();
         localLoggerError.restore();
         mockSupabase.clearAllStubs?.();
         mockCallUnifiedAIModel.restore();
@@ -371,7 +564,7 @@ Deno.test("generateContributions - All Models Fail", async () => {
                 downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => await Promise.resolve({ data: new TextEncoder().encode("seed").buffer as ArrayBuffer, error: null })),
                 deleteFromStorage: spy(async () => await Promise.resolve({ data: [], error: null })),
                 getExtensionFromMimeType: spy(() => ".md"),
-                logger: logger,
+                logger: logger, 
                 randomUUID: spy(() => "uuid-all-fail"),
                 fileManager: mockFileManager,
             }

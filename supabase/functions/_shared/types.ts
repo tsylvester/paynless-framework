@@ -161,6 +161,7 @@ export interface ChatApiRequest {
   organizationId?: string; // uuid, optional for org chats - ADDED
   rewindFromMessageId?: string; // uuid, optional for rewinding - ADDED
   max_tokens_to_generate?: number; // ADDED: Max tokens for the AI to generate in its response
+  continue_until_complete?: boolean; // ADDED: Flag to enable response continuation
 }
 
 /**
@@ -206,6 +207,7 @@ export interface AdapterResponsePayload {
   system_prompt_id: string | null; // The DB ID of the prompt used (or null)
   token_usage: Database['public']['Tables']['chat_messages']['Row']['token_usage']; // Use specific DB Json type
   created_at?: string;
+  finish_reason?: 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call' | 'error' | 'unknown' | null; // ADDED: Standardized finish reason
 }
 
 /**
@@ -382,11 +384,11 @@ export interface ChatHandlerDeps {
 
 export type PerformChatRewindResult = Database['public']['Functions']['perform_chat_rewind']['Returns'];
 
-// Add this new interface
 export interface TokenUsage {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  finish_reason?: 'stop' | 'length';
 }
 
 // Define ChatMessageRole locally for clarity if not available from shared types

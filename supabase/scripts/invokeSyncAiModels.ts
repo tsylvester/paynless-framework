@@ -1,23 +1,59 @@
 // supabase/scripts/invokeSyncAiModels.ts
 
-// Note: The explicit import for 'dotenv/load.ts' has been removed 
-// to avoid strict checking against an .env.example file for this specific script.
-// Ensure SUPABASE_URL and SUPABASE_SERVICE_KEY are available in your environment
-// or .env file, and that your Deno execution loads them (e.g., using --env-file flag or other means).
+// This script invokes the 'sync-ai-models' Supabase Edge Function.
+// It can be run against a local development environment or production.
+//
+// To run against production, use the --production flag:
+// deno run --allow-net --allow-env supabase/scripts/invokeSyncAiModels.ts --production
+//
+// When running in production, ensure the PROD_SUPABASE_SERVICE_ROLE_KEY environment variable is set.
+//
+// For local development, ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are
+// available in your environment or a .env file.
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+const args = Deno.args;
+const isProduction = args.includes("--production");
+
+let SUPABASE_URL: string | undefined;
+let SERVICE_KEY: string | undefined;
+
+if (isProduction) {
+  console.log("Targeting production environment.");
+  SUPABASE_URL = Deno.env.get("SUPABASE_PROD_URL");
+  // For production, the service key should be provided via a specific environment variable
+  // to avoid accidentally using a local development key.
+  SERVICE_KEY = Deno.env.get("SUPABASE_PROD_SRK");
+} else {
+  console.log(
+    "Targeting local environment. Use --production to target production.",
+  );
+  SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+}
+
 const FUNCTION_NAME = "sync-ai-models";
 
 if (!SUPABASE_URL) {
-  console.error("Error: SUPABASE_URL environment variable is not set.");
-  console.error("Please ensure it is defined in your .env file or environment and loaded correctly.");
+  console.error("Error: SUPABASE_URL is not configured.");
+  if (!isProduction) {
+    console.error(
+      "Please ensure it is defined in your .env file or environment.",
+    );
+  }
   Deno.exit(1);
 }
 
 if (!SERVICE_KEY) {
-  console.error("Error: SUPABASE_SERVICE_KEY environment variable is not set.");
-  console.error("Please ensure it is defined in your .env file or environment (this should be your actual service_role key) and loaded correctly.");
+  console.error("Error: Service key is not set.");
+  if (isProduction) {
+    console.error(
+      "Please set the SUPABASE_PROD_SRK environment variable.",
+    );
+  } else {
+    console.error(
+      "Please ensure SUPABASE_SERVICE_ROLE_KEY is defined in your .env file or environment.",
+    );
+  }
   Deno.exit(1);
 }
 

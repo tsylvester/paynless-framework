@@ -24,6 +24,8 @@ import type {
     UpdateSessionModelsPayload,
     GetContributionContentDataResponse,
     GetSessionDetailsResponse,
+    GenerateContributionsPayload,
+    GenerateContributionsResponse,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -607,22 +609,22 @@ export class DialecticApiClient {
      * Triggers the generation of contributions for a given session.
      * Requires authentication.
      */
-    async generateContributions(payload: { sessionId: string }): Promise<ApiResponse<{ message: string; contributions?: DialecticContribution[] }>> {
+    async generateContributions(payload: GenerateContributionsPayload): Promise<ApiResponse<GenerateContributionsResponse>> {
         logger.info('Generating contributions for session', { sessionId: payload.sessionId });
 
         try {
-            const response = await this.apiClient.post<{ message: string; contributions?: DialecticContribution[] }, DialecticServiceActionPayload>(
+            const response = await this.apiClient.post<GenerateContributionsResponse, { action: string; payload: GenerateContributionsPayload }>(
                 'dialectic-service',
                 {
                     action: 'generateContributions',
-                    payload,
-                } as DialecticServiceActionPayload
+                    payload, // payload now contains the full object
+                }
             );
 
             if (response.error) {
                 logger.error('Error generating contributions:', { error: response.error, sessionId: payload.sessionId });
             } else {
-                logger.info('Successfully initiated contribution generation', { sessionId: payload.sessionId, responseData: response.data });
+                logger.info('Successfully started contribution generation process', { sessionId: payload.sessionId });
             }
             return response;
         } catch (error: unknown) {

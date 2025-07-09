@@ -201,6 +201,28 @@ describe('aiStore - Misc Actions', () => {
         });
     }); // End clearAiError describe
 
+    describe('setContinueUntilComplete', () => {
+        it('should set continueUntilComplete to true', () => {
+            expect(useAiStore.getState().continueUntilComplete).toBe(false); // Check initial state
+            act(() => {
+                useAiStore.getState().setContinueUntilComplete(true);
+            });
+            expect(useAiStore.getState().continueUntilComplete).toBe(true);
+        });
+
+        it('should set continueUntilComplete to false', () => {
+            act(() => {
+                useAiStore.setState({ continueUntilComplete: true }); // Set to true first
+            });
+            expect(useAiStore.getState().continueUntilComplete).toBe(true);
+
+            act(() => {
+                useAiStore.getState().setContinueUntilComplete(false);
+            });
+            expect(useAiStore.getState().continueUntilComplete).toBe(false);
+        });
+    });
+
 }); // End main describe block
 
 // --- NEW TEST SUITE FOR _fetchAndStoreUserProfiles ---

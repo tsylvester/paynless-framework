@@ -115,14 +115,7 @@ export const DialecticSessionDetailsPage: React.FC = () => {
       <SessionInfoCard />
 
       <div className="flex space-x-2 my-4 overflow-x-auto pb-2" role="tablist" aria-label="Dialectic Stages">
-        {sortedStages.map(stage => (
-          <StageTabCard
-            key={stage.id}
-            stage={stage}
-            isActiveStage={activeContextStage?.id === stage.id}
-            onCardClick={handleStageCardClick}
-          />
-        ))}
+        <StageTabCard />
       </div>
 
       {activeContextStage && activeSessionDetail && (

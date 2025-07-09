@@ -137,7 +137,7 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
         <DropdownMenuTrigger asChild>
           <InternalDropdownButton
             variant="outline"
-            className="justify-between items-start h-auto py-2 text-left"
+            className="justify-between items-start h-auto py-2 text-left w-48"
             disabled={finalIsDisabled}
             aria-label="Select AI Models"
           >

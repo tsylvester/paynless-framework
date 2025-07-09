@@ -44,4 +44,5 @@ export const getDefaultMockAiState = (): AiState => ({
   selectedMessagesMap: {},
   chatParticipantsProfiles: {},
   pendingAction: null,
+  continueUntilComplete: false,
 });

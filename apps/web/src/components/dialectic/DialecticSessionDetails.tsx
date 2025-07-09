@@ -24,7 +24,6 @@ export const DialecticSessionDetails: React.FC = () => {
   const fetchProjectDetails = useDialecticStore((s: DialecticStore) => s.fetchDialecticProjectDetails);
   const sortedStages = useDialecticStore(selectSortedStages);
   const activeContextStage = useDialecticStore(s => s.activeContextStage);
-  const setActiveContextStage = useDialecticStore(s => s.setActiveContextStage);
 
   useEffect(() => {
     if (projectId && (!projectDetail || projectDetail.id !== projectId)) {
@@ -88,14 +87,7 @@ export const DialecticSessionDetails: React.FC = () => {
       <SessionInfoCard />
 
       <div className="flex space-x-2 overflow-x-auto pb-4">
-        {sortedStages.map((stage) => (
-          <StageTabCard
-            key={stage.id}
-            stage={stage}
-            isActiveStage={activeContextStage?.id === stage.id}
-            onCardClick={(stage) => setActiveContextStage(stage)}
-          />
-        ))}
+        <StageTabCard />
       </div>
       
       {activeContextStage && (

@@ -237,4 +237,38 @@ Deno.test("OpenAiAdapter listModels - API Error", async () => {
     }
 });
 
+Deno.test("OpenAiAdapter sendMessage - Finish Reason Length", async () => {
+    const mockResponse = {
+        ...MOCK_OPENAI_SUCCESS_RESPONSE,
+        choices: [
+            {
+                ...MOCK_OPENAI_SUCCESS_RESPONSE.choices[0],
+                finish_reason: 'length',
+                message: {
+                    role: 'assistant',
+                    content: 'This is a partial response...',
+                },
+            },
+        ],
+    };
+
+    const mockFetch = stub(globalThis, "fetch", () =>
+        Promise.resolve(
+            new Response(JSON.stringify(mockResponse), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            })
+        )
+    );
+
+    try {
+        const adapter = new OpenAiAdapter(MOCK_API_KEY, mockLogger);
+        const result = await adapter.sendMessage(MOCK_CHAT_REQUEST, MOCK_MODEL_ID);
+
+        assertEquals(result.content, 'This is a partial response...');
+        assertEquals(result.finish_reason, 'length');
+    } finally {
+        mockFetch.restore();
+    }
+});
 // Test for exported openAiAdapter instance removed as it's no longer exported directly. 

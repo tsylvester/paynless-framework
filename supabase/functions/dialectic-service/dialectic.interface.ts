@@ -227,7 +227,14 @@ export type DialecticStage = Database['public']['Tables']['dialectic_stages']['R
 
 
 export interface GenerateContributionsDeps {
-  callUnifiedAIModel: (modelId: string, prompt: string, chatId: string | null | undefined, authToken: string, options?: CallUnifiedAIModelOptions) => Promise<UnifiedAIResponse>;
+  callUnifiedAIModel: (
+    modelId: string, 
+    prompt: string, 
+    chatId: string | null | undefined, 
+    authToken: string, 
+    options?: CallUnifiedAIModelOptions, 
+    continueUntilComplete?: boolean
+  ) => Promise<UnifiedAIResponse>;
   downloadFromStorage: typeof downloadFromStorage;
   getExtensionFromMimeType: typeof getExtensionFromMimeType;
   logger: ILogger;
@@ -243,6 +250,7 @@ export interface GenerateContributionsPayload {
   chatId?: string | null;
   selectedModelIds: string[];
   walletId?: string;
+  continueUntilComplete?: boolean;
 }
 
 export interface GenerateContributionsSuccessResponse {

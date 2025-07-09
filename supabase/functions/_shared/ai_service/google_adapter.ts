@@ -41,36 +41,6 @@ export class GoogleAdapter implements AiProviderAdapter {
 
   constructor(private apiKey: string, private logger: ILogger) {}
 
-  private async _countTokens(
-    modelApiName: string,
-    contents: GoogleContent[],
-    fetchFn: typeof fetch = fetch // Allow fetch to be injectable for testing
-  ): Promise<number | null> {
-    const countTokensUrl = `${GOOGLE_API_BASE}/${modelApiName}:countTokens?key=${this.apiKey}`;
-    this.logger.debug(`Counting tokens for model: ${modelApiName} with ${contents.length} content blocks.`, { url: countTokensUrl });
-    try {
-      const response = await fetchFn(countTokensUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ contents }), // API expects { "contents": [...] }
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        this.logger.error(`Google Gemini API error during countTokens (${response.status}): ${errorBody}`, { modelApiName, status: response.status });
-        // Do not throw here, allow main sendMessage to proceed with null tokens
-        return null;
-      }
-      const jsonResponse = await response.json();
-      return jsonResponse.totalTokens as number;
-    } catch (error) {
-      this.logger.error('Failed to count tokens:', { error: error instanceof Error ? error.message : String(error), modelApiName });
-      return null;
-    }
-  }
-
   async sendMessage(
     request: ChatApiRequest,
     modelIdentifier: string, // e.g., "google-gemini-1.5-pro-latest"
@@ -191,49 +161,73 @@ export class GoogleAdapter implements AiProviderAdapter {
     // Extract content - needs careful checking for blocked prompts / safety ratings
     const candidate = jsonResponse.candidates?.[0];
     let assistantMessageContent = '';
-    if (candidate?.finishReason === 'STOP' && candidate.content?.parts?.[0]?.text) {
-        assistantMessageContent = candidate.content.parts[0].text.trim();
-    } else if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
-        // Handle other finish reasons (MAX_TOKENS, SAFETY, RECITATION, OTHER)
-        this.logger.warn(`Google Gemini response finished with reason: ${candidate.finishReason}`, { modelApiName, finishReason: candidate.finishReason });
-        // Potentially return a specific message or throw error based on reason
-        assistantMessageContent = `[Response stopped due to: ${candidate.finishReason}]`; 
+    let finish_reason: AdapterResponsePayload['finish_reason'] = 'unknown';
+
+    if (candidate) {
+        // Always try to get content if it exists, regardless of finish reason
+        if (candidate.content?.parts?.[0]?.text) {
+            assistantMessageContent = candidate.content.parts[0].text.trim();
+        }
+
+        switch (candidate.finishReason) {
+            case 'STOP':
+                finish_reason = 'stop';
+                break;
+            case 'MAX_TOKENS':
+                finish_reason = 'length';
+                this.logger.warn('Google Gemini response was truncated due to max_tokens.', { modelApiName });
+                break;
+            case 'SAFETY':
+                finish_reason = 'content_filter';
+                this.logger.warn('Google Gemini response was blocked for safety reasons.', { modelApiName });
+                assistantMessageContent = '[Response blocked due to safety settings]'; // Overwrite content for safety blocks
+                break;
+            case 'RECITATION':
+                finish_reason = 'content_filter'; // Treat as a content filter issue
+                this.logger.warn('Google Gemini response was blocked for recitation.', { modelApiName });
+                assistantMessageContent = '[Response blocked for recitation]';
+                break;
+            default: // Catches 'OTHER' and any unexpected values
+                finish_reason = 'unknown';
+                this.logger.warn(`Google Gemini response finished with an unknown or unhandled reason: ${candidate.finishReason}`, { modelApiName, finishReason: candidate.finishReason });
+                break;
+        }
+
+        // Override finish_reason to 'length' if output tokens reached the requested limit.
+        // This handles cases where the API returns 'STOP' but still truncates.
+        const usageMetadata = jsonResponse.usageMetadata;
+        if (
+            finish_reason === 'stop' &&
+            request.max_tokens_to_generate &&
+            usageMetadata?.candidatesTokenCount &&
+            usageMetadata.candidatesTokenCount >= request.max_tokens_to_generate
+        ) {
+            finish_reason = 'length';
+            this.logger.warn('Google Gemini response may be truncated; output tokens reached max_tokens_to_generate limit.', { 
+                modelApiName, 
+                outputTokens: usageMetadata.candidatesTokenCount,
+                maxTokens: request.max_tokens_to_generate 
+            });
+        }
     } else {
-        this.logger.error("Google Gemini response missing valid content or finish reason:", { response: jsonResponse, modelApiName });
-        // Consider checking promptFeedback for block reasons
+        // Handle cases where there are no candidates (e.g., prompt blocked)
         const blockReason = jsonResponse.promptFeedback?.blockReason;
         if (blockReason) {
-             throw new Error(`Request blocked by Google Gemini due to: ${blockReason}`);
+            this.logger.error(`Request blocked by Google Gemini due to: ${blockReason}`, { modelApiName, blockReason });
+            throw new Error(`Request blocked by Google Gemini due to: ${blockReason}`);
         }
+        this.logger.error("Google Gemini response missing valid content or finish reason:", { response: jsonResponse, modelApiName });
         throw new Error("Received invalid or empty response from Google Gemini.");
     }
 
     // --- Token Usage ---
-    // Google Gemini API (generateContent) typically doesn't return token count directly in the main response.
-    // You often need to make a separate call to countTokens.
-    // For simplicity here, we'll omit token usage, but it could be added with another API call.
-    // const tokenUsage: Json | null = null;
-    // console.warn("Google Gemini adapter currently does not fetch token usage.");
-
-    let promptTokens: number | null = null;
-    let completionTokens: number | null = null;
-
-    try {
-      promptTokens = await this._countTokens(modelApiName, googlePayload.contents);
-      if (assistantMessageContent) {
-        const completionContents: GoogleContent[] = [{ role: 'model', parts: [{ text: assistantMessageContent }] }];
-        completionTokens = await this._countTokens(modelApiName, completionContents);
-      }
-    } catch (tokenError) {
-      // Log error but don't let token counting failure break the main response
-      this.logger.error("Error during token counting calls:", { error: tokenError instanceof Error ? tokenError.message : String(tokenError), modelApiName });
-    }
-    
-    const tokenUsage: Json | null = (promptTokens !== null || completionTokens !== null) 
+    // Use the usageMetadata from the response directly, which is more efficient.
+    const usageMetadata = jsonResponse.usageMetadata;
+    const tokenUsage: Json | null = usageMetadata
       ? {
-          prompt_tokens: promptTokens || 0,
-          completion_tokens: completionTokens || 0,
-          total_tokens: (promptTokens || 0) + (completionTokens || 0),
+          prompt_tokens: usageMetadata.promptTokenCount || 0,
+          completion_tokens: usageMetadata.candidatesTokenCount || 0,
+          total_tokens: usageMetadata.totalTokenCount || 0,
         }
       : null;
 
@@ -244,6 +238,7 @@ export class GoogleAdapter implements AiProviderAdapter {
       ai_provider_id: request.providerId,
       system_prompt_id: request.promptId !== '__none__' ? request.promptId : null,
       token_usage: tokenUsage, 
+      finish_reason: finish_reason, // Pass the standardized reason
       // REMOVED fields not provided by adapter: id, chat_id, created_at, user_id
     };
     this.logger.debug('[GoogleAdapter] sendMessage successful', { modelApiName });
