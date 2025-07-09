@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, type MockInstance } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import { SessionInfoCard } from './SessionInfoCard';
 import { DialecticSession, DialecticStage, DialecticProjectResource, DialecticProject, DialecticStateValues, ApiError } from '@paynless/types';
 import {
@@ -272,16 +273,18 @@ const setupMockStore = (
 
 describe('SessionInfoCard', () => {
   const renderComponent = () => {
-    return render(<SessionInfoCard />);
+    return render(
+      <MemoryRouter>
+        <SessionInfoCard />
+      </MemoryRouter>
+    );
   };
 
   const openAccordionAndWaitForContent = async () => {
     const accordionTrigger = await screen.findByText(/Review Stage Seed Prompt/i);
     fireEvent.click(accordionTrigger);
-    // Wait for the content area of the accordion to be present.
-    // This assumes the content has a parent with this test id or similar, which may need to be added.
-    // For now, let's just wait for a known element inside.
-    await screen.findByRole('region'); // The AccordionContent has role="region"
+    // The content is now conditionally rendered inside a CardContent, not a specific Accordion component.
+    // The individual tests will wait for specific content to appear.
   };
 
   describe('when data is loaded', () => {

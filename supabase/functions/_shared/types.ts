@@ -161,6 +161,7 @@ export interface ChatApiRequest {
   organizationId?: string; // uuid, optional for org chats - ADDED
   rewindFromMessageId?: string; // uuid, optional for rewinding - ADDED
   max_tokens_to_generate?: number; // ADDED: Max tokens for the AI to generate in its response
+  continue_until_complete?: boolean; // ADDED: Flag to enable response continuation
 }
 
 /**
@@ -382,11 +383,11 @@ export interface ChatHandlerDeps {
 
 export type PerformChatRewindResult = Database['public']['Functions']['perform_chat_rewind']['Returns'];
 
-// Add this new interface
 export interface TokenUsage {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  finish_reason?: 'stop' | 'length';
 }
 
 // Define ChatMessageRole locally for clarity if not available from shared types

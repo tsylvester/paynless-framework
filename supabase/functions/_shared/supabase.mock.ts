@@ -242,6 +242,9 @@ export interface IMockClientSpies {
       rpcResults?: {
           [functionName: string]: { data?: object | object[] | null; error?: Error | null } | (() => Promise<{ data?: object | object[] | null; error?: Error | null }>);
       };
+      mockRpc?: {
+        [functionName: string]: () => Promise<{ data: any; error: any }>;
+      };
       storageMock?: { 
         defaultBucket?: string; 
         uploadResult?: IMockStorageUploadResponse | ((bucketId: string, path: string, body: unknown, options?: IMockStorageFileOptions) => Promise<IMockStorageUploadResponse>);

@@ -30,6 +30,7 @@ import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
 import { calculateActualChatCost } from '../_shared/utils/cost_utils.ts';
 import { getMaxOutputTokens } from '../_shared/utils/affordability_utils.ts';
 import { TokenWallet, TokenWalletTransactionType } from '../_shared/types/tokenWallet.types.ts';
+import { handleContinuationLoop } from './continue.ts';
 
 // --- Zod Schemas for Runtime Validation ---
 const TokenUsageSchema = z.object({
@@ -124,6 +125,7 @@ const ChatApiRequestSchema = z.object({
   organizationId: z.string().uuid({ message: "If provided, organizationId must be a valid UUID." }).optional(),
   rewindFromMessageId: z.string().uuid({ message: "If provided, rewindFromMessageId must be a valid UUID." }).optional(),
   max_tokens_to_generate: z.number().int({ message: "max_tokens_to_generate must be an integer." }).positive({ message: "max_tokens_to_generate must be positive." }).optional(),
+  continue_until_complete: z.boolean().optional(),
 });
 
 // --- Main Handler ---
@@ -176,8 +178,6 @@ export async function handler(req: Request, deps: ChatHandlerDeps = defaultDeps)
   const userId = user.id;
   logger.info('Authenticated user:', { userId });
 
-  const supabaseClientToUse = deps.supabaseClient || supabaseClient;
-
   // Create TokenWalletService with proper user and admin clients
   let tokenWalletService = deps.tokenWalletService;
   if (!tokenWalletService) {
@@ -209,8 +209,8 @@ export async function handler(req: Request, deps: ChatHandlerDeps = defaultDeps)
         const requestBody = parsedResult.data;
 
         logger.info('Received chat POST request (validated):', { body: requestBody });
-        const depsWithTokenWalletService = { ...deps, tokenWalletService };
-        const result = await handlePostRequest(requestBody, supabaseClient, userId, depsWithTokenWalletService);
+        
+        const result = await handlePostRequest(requestBody, supabaseClient, userId, { ...deps, tokenWalletService });
         
         if (result && 'error' in result && result.error) {
             const { message, status } = result.error;
@@ -349,7 +349,8 @@ async function handlePostRequest(
         rewindFromMessageId,
         selectedMessages,
         organizationId,
-        max_tokens_to_generate
+        max_tokens_to_generate,
+        continue_until_complete
     } = requestBody;
 
     // systemPromptDbId will be a UUID string or null.
@@ -996,11 +997,22 @@ async function handlePostRequest(
                     organizationId: organizationId,
                     max_tokens_to_generate: Math.min(max_tokens_to_generate || Infinity, maxAllowedOutputTokens)
                 };
-                adapterResponsePayload = await adapter.sendMessage(
-                    adapterChatRequestNormal,
-                    providerApiIdentifier, 
-                    apiKeyForNormalAdapter // Ensure this is the correct key
-                );
+
+                if (continue_until_complete) {
+                    adapterResponsePayload = await handleContinuationLoop(
+                        adapter,
+                        adapterChatRequestNormal,
+                        providerApiIdentifier,
+                        apiKeyForNormalAdapter,
+                        deps.logger
+                    );
+                } else {
+                    adapterResponsePayload = await adapter.sendMessage(
+                        adapterChatRequestNormal,
+                        providerApiIdentifier, 
+                        apiKeyForNormalAdapter // Ensure this is the correct key
+                    );
+                }
                 logger.info('AI adapter returned successfully (normal path).');
 
                 // --- START: Apply hard_cap_output_tokens if max_tokens_to_generate is not set ---

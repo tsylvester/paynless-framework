@@ -135,6 +135,7 @@ export interface ChatApiRequest {
   best_of?: number; // Added for best of responses
   logit_bias?: Record<string, number>; // Added for logit bias
   max_tokens?: number; // Added for max tokens
+  continue_until_complete?: boolean; // Added for full response mode
 }
 
 /**
