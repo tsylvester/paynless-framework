@@ -20,6 +20,7 @@ vi.mock('@paynless/store', async (importOriginal) => {
 // Mock child components
 vi.mock('./MessageSelectionControls', () => ({ MessageSelectionControls: () => <div data-testid="mock-message-selection-controls"></div> }));
 vi.mock('./CurrentMessageTokenEstimator', () => ({ CurrentMessageTokenEstimator: ({ textInput }: { textInput: string }) => <div data-testid="mock-token-estimator">{textInput}</div> }));
+vi.mock('../common/ContinueUntilCompleteToggle', () => ({ ContinueUntilCompleteToggle: () => <div data-testid="mock-continue-toggle"></div> }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 const mockActions: AiActions = {
@@ -47,6 +48,7 @@ const mockActions: AiActions = {
     _updateChatContextInProfile: vi.fn(),
     _fetchAndStoreUserProfiles: vi.fn(),
     _dangerouslySetStateForTesting: vi.fn(),
+    setContinueUntilComplete: vi.fn(),
 };
 
 describe('ChatInput Component', () => {
@@ -112,6 +114,7 @@ describe('ChatInput Component', () => {
     expect(screen.getByTestId('send-message-button')).toBeInTheDocument();
     expect(screen.getByTestId('mock-message-selection-controls')).toBeInTheDocument();
     expect(screen.getByTestId('mock-token-estimator')).toBeInTheDocument();
+    expect(screen.getByTestId('mock-continue-toggle')).toBeInTheDocument();
   });
 
   it('updates inputMessage state on textarea change', () => {

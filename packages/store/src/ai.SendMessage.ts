@@ -22,13 +22,14 @@ async function coreMessageProcessing(
     effectiveOrganizationId?: string | null;
     token: string; // Auth token is now passed directly
     rewindTargetMessageId?: string | null;
+    continueUntilComplete?: boolean; // Add this line
     callChatApi: HandleSendMessageServiceParams['callChatApi'];
     logger: ILogger;
   }
 ): Promise<InternalProcessResult> {
   const {
     messageContent, targetProviderId, targetPromptId, targetChatId, selectedContextMessages,
-    effectiveOrganizationId, token, rewindTargetMessageId, callChatApi, logger,
+    effectiveOrganizationId, token, rewindTargetMessageId, continueUntilComplete, callChatApi, logger,
   } = params;
 
   logger.info('[coreMessageProcessing] Starting...', { targetProviderId, targetChatId });
@@ -41,6 +42,7 @@ async function coreMessageProcessing(
       ...(effectiveOrganizationId && { organizationId: effectiveOrganizationId }),
       ...(rewindTargetMessageId && { rewindFromMessageId: rewindTargetMessageId }),
       contextMessages: selectedContextMessages,
+      ...(continueUntilComplete && { continue_until_complete: continueUntilComplete }),
     };
     // Use RequestInit for fetch options, token is passed in headers
     const response = await callChatApi(apiRequest, { headers: { Authorization: `Bearer ${token}` } });
@@ -116,6 +118,7 @@ export async function handleSendMessage(
       selectedPromptId,
       messagesByChatId,
       selectedMessagesMap,
+      continueUntilComplete,
   } = aiStateService.getAiState(); // Get AiState via the service
 
   const activeWalletInfo = walletService.getActiveWalletInfo(); // Get wallet info via the service
@@ -205,6 +208,7 @@ export async function handleSendMessage(
       messageContent: message, targetProviderId: selectedProviderId, targetPromptId: apiPromptId,
       targetChatId: effectiveChatIdForApi, selectedContextMessages: finalContextMessages,
       effectiveOrganizationId: organizationIdForApi, token: token, rewindTargetMessageId: currentRewindTargetId,
+      continueUntilComplete: continueUntilComplete, // Pass the flag here
       callChatApi, logger,
   });
 

@@ -283,7 +283,7 @@ export const useAiStore = create<AiStore>()(
                             ...messagesByChatId,
                             [chatIdForOptimistic]: updatedMessagesForChat,
                         };
-
+                    
                         // Automatically select the new replayed optimistic message
                         const updatedSelectedMessagesMap = {
                             ...selectedMessagesMap,
@@ -292,7 +292,7 @@ export const useAiStore = create<AiStore>()(
                                 [tempId]: true,
                             },
                         };
-                    
+
                         set(_state => ({
                             messagesByChatId: updatedMessagesByChatId,
                             selectedMessagesMap: updatedSelectedMessagesMap,
@@ -302,6 +302,10 @@ export const useAiStore = create<AiStore>()(
                         }));
                         logger.info('[aiStore.addOptimisticMessageForReplay] Added optimistic message for replay:', { tempId, chatIdUsed: chatIdForOptimistic });
                         return { tempId, chatIdForOptimistic };
+                    },
+                    setContinueUntilComplete: (shouldContinue: boolean) => {
+                        set({ continueUntilComplete: shouldContinue });
+                        logger.info(`[aiStore.setContinueUntilComplete] Set continueUntilComplete to: ${shouldContinue}`);
                     },
 
                     // --- Public Action Definitions ---

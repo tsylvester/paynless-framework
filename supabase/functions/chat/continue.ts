@@ -27,6 +27,7 @@ import type {
     apiKey: string,
     logger: ILogger,
   ): Promise<AdapterResponsePayload> {
+    logger.info(`[handleContinuationLoop] Starting for provider '${providerApiIdentifier}'. Max continuations: ${MAX_CONTINUATIONS}`);
     let accumulatedContent = "";
     const accumulatedTokenUsage: TokenUsage = {
       prompt_tokens: 0,
@@ -44,28 +45,36 @@ import type {
     let lastResponse: AdapterResponsePayload | null = null;
   
     while (continuationCount <= MAX_CONTINUATIONS) {
-      logger.info(`Continuation loop #${continuationCount}. Making AI call...`, { historyLength: currentRequest.messages.length });
+      logger.info(`[Continue] Loop #${continuationCount}. Making AI call...`, { historyLength: currentRequest.messages.length });
   
       const response = await adapter.sendMessage(
         currentRequest,
         providerApiIdentifier,
         apiKey,
       );
+
+      logger.debug(`[Continue] Loop #${continuationCount}. Received partial response.`, { content: response.content.substring(0, 100) + '...' });
   
       // Correctly accumulate token usage from each call.
       const token_usage = response.token_usage as TokenUsage | null;
       if (token_usage) {
         accumulatedTokenUsage.prompt_tokens += token_usage.prompt_tokens || 0;
         accumulatedTokenUsage.completion_tokens += token_usage.completion_tokens || 0;
+        logger.debug(`[Continue] Loop #${continuationCount}. Accumulated tokens.`, { accumulatedTokenUsage });
       }
   
       accumulatedContent += response.content;
       lastResponse = response;
   
       const finishReason = token_usage?.finish_reason;
-      logger.info(`Continuation loop #${continuationCount}: Finish reason is '${finishReason}'`);
+      logger.info(`[Continue] Loop #${continuationCount}: Finish reason is '${finishReason}'`);
   
       if (finishReason !== "length" || continuationCount >= MAX_CONTINUATIONS) {
+        if (finishReason !== "length") {
+            logger.info(`[Continue] Breaking loop: finish reason is '${finishReason}'.`);
+        } else {
+            logger.warn(`[Continue] Breaking loop: max continuation limit (${MAX_CONTINUATIONS}) reached.`);
+        }
         break; 
       }
   
@@ -73,14 +82,21 @@ import type {
       
       // Add the assistant's partial response to the history for the next call.
       currentRequest.messages.push({ role: "assistant", content: response.content });
+      logger.info(`[Continue] Added partial response to history. New history length: ${currentRequest.messages.length}`);
     }
   
     if (!lastResponse) {
+      logger.error("[Continue] Loop finished without any response from the AI provider.");
       throw new Error("AI provider did not return a response in the continuation loop.");
     }
   
     // Sum up the final token counts.
     accumulatedTokenUsage.total_tokens = accumulatedTokenUsage.prompt_tokens + accumulatedTokenUsage.completion_tokens;
+    logger.info(`[Continue] Loop finished. Finalizing response.`, {
+        total_continuations: continuationCount,
+        final_content_length: accumulatedContent.length,
+        final_token_usage: accumulatedTokenUsage
+    });
   
     // Return a new payload with the combined results.
     return {

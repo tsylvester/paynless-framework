@@ -82,27 +82,27 @@ The implementation plan uses the following labels to categorize work steps:
     *   **Action:** Ensure that the final response object, whether from a single call or the continuation loop, is processed the same way for token debiting, database insertion, and the final success response sent to the client.
 
 #### 4.A. [TEST-UNIT] Enhance Dummy Adapter for Realistic Testing
-*   `[ ]` 4.A.a. **Update Mock Provider Data:**
+*   `[✅]` 4.A.a. **Update Mock Provider Data:**
     *   `[DB]` **Action:** In the test setup for `ai_providers`, add a `config` JSONB column to the mock data. For the dummy provider, populate this with realistic token limits, e.g., `{"provider_max_input_tokens": 4096, "provider_max_output_tokens": 1024}`.
-*   `[ ]` 4.A.b. **Refactor Mock Adapter Logic:**
+*   `[✅]` 4.A.b. **Refactor Mock Adapter Logic:**
     *   `[BE]` `[REFACTOR]` **Action:** Modify the mock adapter used in the test suites. It should now:
         1.  Receive the `config` object as part of the provider details.
         2.  Implement a simple token counting utility (e.g., `content.length / 4` as a rough estimate).
         3.  Before "generating" a response, check if the estimated tokens in the input `messages` exceed `provider_max_input_tokens`. If so, it should throw an error simulating a "context window exceeded" failure from a real API.
         4.  When generating a multi-part response for continuation tests, it should use `provider_max_output_tokens` to decide where to "truncate" the response and return `finish_reason: 'length'`.
-*   `[ ]` 4.A.c. **Implement New Test Case: Input Tokens Exceeded.**
+*   `[✅]` 4.A.c. **Implement New Test Case: Input Tokens Exceeded.**
     *   `[TEST-UNIT]` **Action:** Add a new test case that sends a very large input prompt (exceeding the new mock `provider_max_input_tokens` limit).
     *   **Action:** Verify that the `handlePostRequest` function catches the error from the adapter and returns a graceful error response to the client (e.g., HTTP 413 Payload Too Large).
 
 #### 4.B. [BE] Proactively Validate Input Token Length
-*   `[ ]` 4.B.a. **Refactor `handlePostRequest` to Include Pre-flight Token Check:**
+*   `[✅]` 4.B.a. **Refactor `handlePostRequest` to Include Pre-flight Token Check:**
     *   `[BE]` `[REFACTOR]` **Action:** In `supabase/functions/chat/index.ts`, locate the part of `handlePostRequest` where the final `adapterChatRequestNormal` object has been constructed, but *before* the `if (continue_until_complete)` block.
     *   **Action:**
         1.  Retrieve the `provider_max_input_tokens` value from the `config` object of the fetched provider details.
         2.  Use the existing tokenizer utility (e.g., `countTokensForMessages`) to calculate the total token count of the `adapterChatRequestNormal.messages` array.
         3.  If the calculated token count exceeds `provider_max_input_tokens`, immediately return a specific error (e.g., `{ error: { message: "Input prompt exceeds the model's maximum context size.", status: 413 } }`) without proceeding to call the AI adapter.
-*   `[ ]` 4.B.b. **Add New Test Case for Proactive Validation:**
-    *   `[TEST-UNIT]` **Action:** In the `chat/index.continue.test.ts` suite (or other relevant test file), create a new test case where the input message history is intentionally larger than the `provider_max_input_tokens` set in the mock provider data.
+*   `[✅]` 4.B.b. **Add New Test Case for Proactive Validation:**
+    *   `[TEST-UNIT]` **Action:** In the `chat/index.sendMessage.test.ts` suite (or other relevant test file), create a new test case where the input message history is intentionally larger than the `provider_max_input_tokens` set in the mock provider data.
     *   **Action:** Assert that `adapter.sendMessage` is **never called**.
     *   **Action:** Assert that the function returns the expected 413 (Payload Too Large) error response.
 
@@ -110,13 +110,13 @@ The implementation plan uses the following labels to categorize work steps:
 
 #### 5. [UI] Create a Reusable "Continue Until Complete" Component
 
-*   `[ ]` 5.a. **Create New Component File:**
+*   `[✅]` 5.a. **Create New Component File:**
     *   **File:** `apps/web/src/components/common/ContinueUntilCompleteToggle.tsx`
     *   **Action:** Create a new, self-contained component. It will consist of a `Label` and a `Switch`.
-*   `[ ]` 5.b. **Implement State Logic:**
+*   `[✅]` 5.b. **Implement State Logic:**
     *   **File:** `apps/web/src/components/common/ContinueUntilCompleteToggle.tsx`
     *   **Action:** The component will use the `useAiStore` hook to get the current `continueUntilComplete` boolean state and the `setContinueUntilComplete` action. The `Switch` will be bound to this state.
-*   `[ ]` 5.c. **Add Unit Tests:**
+*   `[✅]` 5.c. **Add Unit Tests:**
     *   `[TEST-UNIT]` **File:** `apps/web/src/components/common/ContinueUntilCompleteToggle.test.tsx`
     *   **Action:** Create a test that renders the component, simulates a click on the switch, and verifies that the `setContinueUntilComplete` action in the mock store is called with the correct value.
 
@@ -252,4 +252,4 @@ This phase implements a two-part solution for the massive context explosion in S
         4.  **Assemble Final Prompt:** Construct a new, compact prompt containing the high-level query and the retrieved chunks as context.
         5.  **Generate Final Synthesis:** Call `deps.callUnifiedAIModel` one last time with this RAG-generated prompt to produce the final, complete Synthesis document for that model.
 *   `[ ]` 13.f. **Test the Full RAG Pipeline:**
-    *   `[TEST-INT]` **Action:** Create integration tests that verify the entire end-to-end pipeline: a set of sub-synthesis documents are indexed, a query retrieves the correct chunks, a final prompt is assembled as expected, and a final synthesis is generated. 
+    *   `[TEST-INT]` **Action:** Create integration tests that verify the entire end-to-end pipeline: a set of sub-synthesis documents are indexed, a query retrieves the correct chunks, a final prompt is assembled as expected, and a final synthesis is generated.

@@ -947,6 +947,15 @@ async function handlePostRequest(
                 }
                 const tokensRequiredForNormal = await countTokensFn(messagesForProvider, modelConfig);
                 logger.info('Estimated tokens for normal prompt.', { tokensRequiredForNormal, model: providerApiIdentifier });
+
+                if (modelConfig.provider_max_input_tokens && tokensRequiredForNormal > modelConfig.provider_max_input_tokens) {
+                    logger.warn('Request exceeds provider max input tokens.', {
+                        tokensRequired: tokensRequiredForNormal,
+                        providerMaxInput: modelConfig.provider_max_input_tokens,
+                        model: providerApiIdentifier
+                    });
+                    return { error: { message: `Your message is too long. The maximum allowed length for this model is ${modelConfig.provider_max_input_tokens} tokens, but your message is ${tokensRequiredForNormal} tokens.`, status: 413 } };
+                }
                 
                 maxAllowedOutputTokens = getMaxOutputTokens(
                     parseFloat(String(wallet.balance)),

@@ -19,6 +19,7 @@ import { CurrentMessageTokenEstimator } from './CurrentMessageTokenEstimator';
 import { useAIChatAffordabilityStatus } from '@/hooks/useAIChatAffordabilityStatus';
 import { useTokenEstimator } from '@/hooks/useTokenEstimator';
 import { AlertCircle, Info } from 'lucide-react';
+import { ContinueUntilCompleteToggle } from '../common/ContinueUntilCompleteToggle';
 
 export interface ChatInputProps {
   // No props for now, revised from previous attempt
@@ -136,6 +137,7 @@ const ChatInput: React.FC<ChatInputProps> = (/* Removed currentChatSession prop 
       )}
       <div className="flex items-center space-x-2 border-t pt-4 border-[rgb(var(--color-border)))]">
         <MessageSelectionControls />
+        <ContinueUntilCompleteToggle />
         <div className="relative flex-grow">
           <Textarea
             placeholder={rewindTargetMessageId ? "Edit your message..." : "Type your message here..."}

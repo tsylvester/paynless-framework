@@ -57,6 +57,10 @@ vi.mock('./GenerateContributionButton', () => ({
   GenerateContributionButton: vi.fn(() => <div data-testid="mock-generate-contribution-button"></div>),
 }));
 
+vi.mock('../common/ContinueUntilCompleteToggle', () => ({
+  ContinueUntilCompleteToggle: vi.fn(() => <div data-testid="mock-continue-toggle"></div>),
+}));
+
 const mockProjectId = 'proj-123';
 const mockSessionId = 'sess-abc';
 const mockStageSlug = 'thesis';
@@ -319,6 +323,7 @@ describe('SessionInfoCard', () => {
       expect(cardTitleElement).toHaveTextContent(new RegExp(mockSession.status!, 'i'));
 
       expect(screen.queryByText('Loading Session Information...')).toBeNull();
+      expect(screen.getByTestId('mock-continue-toggle')).toBeInTheDocument();
       
       await screen.findByText('Mock prompt content');
     });

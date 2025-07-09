@@ -18,9 +18,11 @@ import {
 
 import type { Database, Json } from "../types_db.ts"; 
 import type { 
+    AiModelExtendedConfig,
     AiProviderAdapter, 
     ChatApiRequest,
     ChatHandlerDeps,
+    MessageForTokenCounting,
     AdapterResponsePayload
 } from '../_shared/types.ts'; 
 import type { 
@@ -32,7 +34,7 @@ import { logger } from '../_shared/logger.ts';
 
 import type { ChatHandlerSuccessResponse } from '../_shared/types.ts';
 import { MockSupabaseDataConfig } from "../_shared/supabase.mock.ts";
-import { assertMatch } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertMatch, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
 interface MockAdapterTokenUsage {
   prompt_tokens: number;
@@ -198,7 +200,57 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
             });
             const response = await handler(req, deps);
             assertEquals(response.status, 400);
-            assertEquals((await response.json()).error, 'Invalid request body: message: Required');
+            assertStringIncludes((await response.json()).error, 'message: Required');
+        });
+
+        await t.step("POST request returns 413 if input tokens exceed provider limit", async () => {
+            const supaConfigForTokenLimitTest: MockSupabaseDataConfig = {
+                ...currentTestSupaConfigBase,
+                genericMockResults: {
+                    ...currentTestSupaConfigBase.genericMockResults,
+                    'ai_providers': {
+                        select: {
+                            data: [{
+                                ...currentTestSupaConfigBase.genericMockResults!['ai_providers']!.select.data[0],
+                                config: {
+                                    ...(currentTestSupaConfigBase.genericMockResults!['ai_providers']!.select.data[0].config as Record<string, unknown>),
+                                    provider_max_input_tokens: 50, // Set a specific, low limit for the test
+                                } as Json,
+                            }],
+                            error: null, status: 200, count: 1
+                        }
+                    },
+                }
+            };
+
+            const mockCountTokensFn = (_messages: MessageForTokenCounting[], _config: AiModelExtendedConfig) => 100;
+
+            const { deps, mockAdapterSpy } = createTestDeps(
+                supaConfigForTokenLimitTest,
+                mockAdapterSuccessResponse, // Provide a success response, it shouldn't be called anyway
+                {},
+                mockCountTokensFn,
+            );
+
+            const req = new Request('http://localhost/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+                body: JSON.stringify({
+                    message: "This message is too long and will exceed the token limit.",
+                    providerId: testProviderId,
+                    promptId: testPromptId
+                })
+            });
+
+            const response = await handler(req, deps);
+
+            // Assertions
+            assertEquals(response.status, 413);
+            const errorResponse = await response.json();
+            assert(errorResponse.error.includes("Your message is too long. The maximum allowed length for this model is 50 tokens, but your message is 100 tokens."));
+            
+            assertExists(mockAdapterSpy);
+            assertSpyCalls(mockAdapterSpy, 0);
         });
 
         await t.step("POST request with history fetch error proceeds as new chat", async () => {

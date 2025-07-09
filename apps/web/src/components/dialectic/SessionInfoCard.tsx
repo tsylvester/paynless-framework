@@ -18,6 +18,7 @@ import { AIModelSelector } from './AIModelSelector';
 import { GenerateContributionButton } from './GenerateContributionButton';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { ContinueUntilCompleteToggle } from '../common/ContinueUntilCompleteToggle';
 
 interface SessionInfoCardProps {
   // REMOVED: session?: DialecticSession;
@@ -126,6 +127,7 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (/* REMOVED: { se
             <ChatContextSelector /> |
             <WalletSelector /> |
             <AIModelSelector /> |
+            <ContinueUntilCompleteToggle /> |
             <GenerateContributionButton />
 
           </div>
