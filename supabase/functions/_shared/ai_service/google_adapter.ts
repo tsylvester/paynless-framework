@@ -8,7 +8,7 @@ import type {
     AiModelExtendedConfig,
 } from '../types.ts';
 import type { Json } from '../../../functions/types_db.ts';
-// REMOVED: import type { VertexAI } from 'npm:@google-cloud/vertexai'; // Remove unused import
+import type { GenerateContentResponse, Candidate } from 'npm:@google/genai';
 
 // Google Gemini API constants
 const GOOGLE_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -33,6 +33,84 @@ interface GoogleModelItem {
   // Add other fields if needed
   [key: string]: unknown;
 }
+
+// Improved finish reason handling logic
+function determineFinishReason(
+    candidate: Candidate | undefined,
+    usageMetadata: GenerateContentResponse['usageMetadata'],
+    requestMaxTokens: number | undefined,
+    logger: ILogger,
+    modelApiName: string
+): AdapterResponsePayload['finish_reason'] {
+    
+    // First, check for explicit truncation via token usage
+    const wasExplicitlyTruncated = requestMaxTokens && 
+        usageMetadata?.candidatesTokenCount && 
+        usageMetadata.candidatesTokenCount >= (requestMaxTokens - 5);
+    
+    if (wasExplicitlyTruncated) {
+        logger.warn('Google Gemini response truncated due to max_tokens limit', { 
+            modelApiName, 
+            outputTokens: usageMetadata.candidatesTokenCount,
+            maxTokens: requestMaxTokens,
+            originalFinishReason: candidate?.finishReason
+        });
+        return 'length';
+    }
+    
+    // Then check the API's finish reason
+    const apiFinishReason = candidate?.finishReason;
+    
+    switch (apiFinishReason) {
+        case 'STOP':
+            return 'stop';
+            
+        case 'MAX_TOKENS':
+            logger.warn('Google Gemini response truncated due to model max_tokens', { 
+                modelApiName, 
+                finishReason: apiFinishReason 
+            });
+            return 'length';
+            
+        case 'SAFETY':
+            logger.warn('Google Gemini response blocked for safety reasons', { 
+                modelApiName, 
+                finishReason: apiFinishReason 
+            });
+            return 'content_filter';
+            
+        case 'RECITATION':
+            logger.warn('Google Gemini response blocked for recitation', { 
+                modelApiName, 
+                finishReason: apiFinishReason 
+            });
+            return 'content_filter';
+            
+        case 'OTHER':
+            logger.warn('Google Gemini finished with OTHER reason', { 
+                modelApiName, 
+                finishReason: apiFinishReason 
+            });
+            return 'unknown';
+            
+        default:
+            // This now handles null, undefined, '', and any other unexpected values.
+            logger.error('Google Gemini response has an invalid or missing finish reason', { 
+                modelApiName, 
+                finishReason: apiFinishReason,
+                candidateExists: !!candidate,
+                hasContent: !!candidate?.content?.parts?.[0]?.text
+            });
+            
+            // If we have content but no valid finish reason, assume it was cut off.
+            if (candidate?.content?.parts?.[0]?.text) {
+                logger.warn('Assuming truncation due to invalid/missing finish reason but present content');
+                return 'length';
+            }
+            return 'unknown';
+    }
+}
+
 
 /**
  * Implements AiProviderAdapter for Google Gemini models.
@@ -156,73 +234,44 @@ export class GoogleAdapter implements AiProviderAdapter {
     }
 
     const jsonResponse = await response.json();
-    // console.debug('Google Gemini Response:', JSON.stringify(jsonResponse));
-
-    // Extract content - needs careful checking for blocked prompts / safety ratings
     const candidate = jsonResponse.candidates?.[0];
+    const usageMetadata = jsonResponse.usageMetadata;
+    
     let assistantMessageContent = '';
-    let finish_reason: AdapterResponsePayload['finish_reason'] = 'unknown';
-
+    
     if (candidate) {
-        // Always try to get content if it exists, regardless of finish reason
+        // Extract content if available
         if (candidate.content?.parts?.[0]?.text) {
             assistantMessageContent = candidate.content.parts[0].text.trim();
         }
-
-        switch (candidate.finishReason) {
-            case 'STOP':
-                finish_reason = 'stop';
-                break;
-            case 'MAX_TOKENS':
-                finish_reason = 'length';
-                this.logger.warn('Google Gemini response was truncated due to max_tokens.', { modelApiName });
-                break;
-            case 'SAFETY':
-                finish_reason = 'content_filter';
-                this.logger.warn('Google Gemini response was blocked for safety reasons.', { modelApiName });
-                assistantMessageContent = '[Response blocked due to safety settings]'; // Overwrite content for safety blocks
-                break;
-            case 'RECITATION':
-                finish_reason = 'content_filter'; // Treat as a content filter issue
-                this.logger.warn('Google Gemini response was blocked for recitation.', { modelApiName });
-                assistantMessageContent = '[Response blocked for recitation]';
-                break;
-            default: // Catches 'OTHER' and any unexpected values
-                finish_reason = 'unknown';
-                this.logger.warn(`Google Gemini response finished with an unknown or unhandled reason: ${candidate.finishReason}`, { modelApiName, finishReason: candidate.finishReason });
-                break;
-        }
-
-        // Override finish_reason to 'length' if output tokens reached the requested limit.
-        // This handles cases where the API returns 'STOP' but still truncates.
-        const usageMetadata = jsonResponse.usageMetadata;
-        if (
-            finish_reason === 'stop' &&
-            request.max_tokens_to_generate &&
-            usageMetadata?.candidatesTokenCount &&
-            usageMetadata.candidatesTokenCount >= request.max_tokens_to_generate
-        ) {
-            finish_reason = 'length';
-            this.logger.warn('Google Gemini response may be truncated; output tokens reached max_tokens_to_generate limit.', { 
-                modelApiName, 
-                outputTokens: usageMetadata.candidatesTokenCount,
-                maxTokens: request.max_tokens_to_generate 
-            });
-        }
     } else {
-        // Handle cases where there are no candidates (e.g., prompt blocked)
+        // Handle cases where there are no candidates
         const blockReason = jsonResponse.promptFeedback?.blockReason;
         if (blockReason) {
-            this.logger.error(`Request blocked by Google Gemini due to: ${blockReason}`, { modelApiName, blockReason });
+            this.logger.error(`Request blocked by Google Gemini due to: ${blockReason}`, { 
+                modelApiName, 
+                blockReason 
+            });
             throw new Error(`Request blocked by Google Gemini due to: ${blockReason}`);
         }
-        this.logger.error("Google Gemini response missing valid content or finish reason:", { response: jsonResponse, modelApiName });
-        throw new Error("Received invalid or empty response from Google Gemini.");
+        this.logger.error("Google Gemini response missing candidates", { 
+            response: jsonResponse, 
+            modelApiName 
+        });
+        throw new Error("Received invalid response from Google Gemini: no candidates");
     }
+    
+    // Determine finish reason using improved logic
+    const finish_reason = determineFinishReason(
+        candidate,
+        usageMetadata,
+        request.max_tokens_to_generate,
+        this.logger,
+        modelApiName
+    );
 
     // --- Token Usage ---
     // Use the usageMetadata from the response directly, which is more efficient.
-    const usageMetadata = jsonResponse.usageMetadata;
     const tokenUsage: Json | null = usageMetadata
       ? {
           prompt_tokens: usageMetadata.promptTokenCount || 0,
@@ -241,7 +290,13 @@ export class GoogleAdapter implements AiProviderAdapter {
       finish_reason: finish_reason, // Pass the standardized reason
       // REMOVED fields not provided by adapter: id, chat_id, created_at, user_id
     };
-    this.logger.debug('[GoogleAdapter] sendMessage successful', { modelApiName });
+    
+    this.logger.debug('[GoogleAdapter] sendMessage successful', { 
+        modelApiName, 
+        finish_reason,
+        contentLength: assistantMessageContent.length 
+    });
+    
     return assistantResponse;
   }
 

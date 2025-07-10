@@ -126,8 +126,8 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (/* REMOVED: { se
             </Button> |           
             <ChatContextSelector /> |
             <WalletSelector /> |
-            <AIModelSelector /> |
             <ContinueUntilCompleteToggle /> |
+            <AIModelSelector /> |
             <GenerateContributionButton />
 
           </div>

@@ -196,60 +196,153 @@ This phase addresses the context window limitations inherent in the multi-stage 
 
 #### 11. [BE] [REFACTOR] Implement Task Isolation for Antithesis Stage (Stage 2)
 
-This addresses the "lumping" problem by breaking down the single large critique task into multiple, focused tasks. Instead of each agent receiving all theses at once, each agent will critique each thesis individually.
+This addresses the "lumping" problem by breaking down the single large critique task into multiple, focused tasks. Instead of each agent receiving all theses at once, each agent will critique each thesis individually, ensuring a more focused and effective analysis. The number of models (`n`) is variable based on user selection, and the number of theses (`m`) depends on the output of the previous stage.
 
-*   `[ ]` 11.a. **Refactor `generateContributions` for Antithesis:**
+*   `[ ]` 11.a. **Add Conditional Logic Fork for Antithesis Stage:**
     *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   **Action:** When `stageSlug` is "antithesis", modify the function to iterate through each received Thesis document. For each Thesis, make a separate, individual call to `deps.callUnifiedAIModel`.
-    *   **Prompt Engineering:** The prompt for each call should be focused, containing only the content of the single Thesis to be critiqued and its associated user feedback.
-    *   **Flow Change:** This will change the execution flow from `n` large parallel calls to `n * m` smaller, focused parallel calls (where `n` is the number of models and `m` is the number of theses from the previous stage).
-*   `[ ]` 11.b. **Update Result Aggregation:**
+    *   **Action:** Introduce a conditional block `if (stage.slug === 'antithesis')` after fetching the stage details. The new logic will reside within this block, while the existing logic will be moved to an `else` block to handle all other stages.
+
+*   `[ ]` 11.b. **Fetch Thesis Contributions and Content:**
     *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   **Action:** Ensure the results from all `n * m` calls are correctly collected and structured before being returned. The final output structure must remain consistent with the downstream expectations. Each resulting Antithesis document should be clearly associated with the Thesis it critiques.
-*   `[ ]` 11.c. **Add Focused Unit Tests:**
+    *   **Action:** Within the `antithesis` block, query the `dialectic_contributions` table to get all contributions where `stage` is 'thesis' for the current `session_id` and `iteration_number`.
+    *   **Action:** Iterate through the resulting thesis records and use `deps.downloadFromStorage` to retrieve the content for each one. This will create a collection of `m` thesis documents to be critiqued.
+
+*   `[ ]` 11.c. **Fetch User Feedback for Thesis Stage:**
+    *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+    *   **Action:** Query the `dialectic_feedback` table to find all feedback associated with the `session_id`, `iteration_number`, and `stage_slug` of 'thesis'.
+    *   **Action:** Download the content of all feedback files and concatenate them into a single string to be included in the prompts.
+
+*   `[ ]` 11.d. **Implement `n * m` Call Logic:**
+    *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+    *   **Action:** Create a nested loop structure. The outer loop iterates through the `n` selected models, and the inner loop iterates through the `m` thesis documents.
+    *   **Prompt Engineering:** For each combination of model and thesis, construct a unique prompt. This prompt will combine the base antithesis prompt template, the content of the single thesis to be critiqued, and all relevant user feedback.
+    *   **Execution:** This will result in `n * m` parallel calls to `deps.callUnifiedAIModel`.
+
+*   `[ ]` 11.e. **Update Result Aggregation and Link Contributions:**
+    *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+    *   **Action:** When processing the results from the `n * m` calls, ensure that each new "antithesis" contribution saved to the `dialectic_contributions` table has its `target_contribution_id` field set to the `id` of the specific "thesis" it is critiquing. This preserves the crucial link between a critique and its subject.
+
+*   `[ ]` 11.f. **Add Focused Unit and Integration Tests:**
     *   `[TEST-UNIT]` **File:** `supabase/functions/dialectic-service/generateContribution.test.ts`
-    *   **Action:** Create new unit tests that specifically verify the `n * m` call logic. Mocks should assert that `callUnifiedAIModel` is called the correct number of times and that each call is constructed with the correct, isolated context (one thesis per call).
+    *   **Action:** Create new tests specifically for the "antithesis" logic path.
+    *   **Mocks:** Mock database calls to return sample thesis contributions and user feedback. Mock `downloadFromStorage` to provide content.
+    *   **Assertions:** Verify that `callUnifiedAIModel` is called `n * m` times, each with a correctly constructed prompt containing only one thesis. Assert that the `target_contribution_id` is correctly set on the saved antithesis contributions.
 
 ### Phase 5: Dialectic Process Scaling - Synthesis Stage (Stage 3)
 
-This phase implements a two-part solution for the massive context explosion in Stage 3. First, we slice the initial synthesis into smaller, independent tasks. Second, we use a full RAG (Retrieval-Augmented Generation) pipeline to intelligently recombine the results into a final, coherent synthesis.
+This phase implements a sophisticated, multi-step reduction strategy to manage the massive context explosion in the Synthesis stage. It prioritizes preserving data integrity by using precise, iterative API calls for as long as possible, resorting to a Retrieval-Augmented Generation (RAG) pipeline only for the final, cross-agent combination where context size makes direct calls impossible.
 
-#### 12. [BE] [REFACTOR] Implement Task Isolation for Initial Synthesis (Slicing)
+#### 12. [BE] [REFACTOR] Synthesis Step 1: Pairwise Combination (Slicing)
 
-*   `[ ]` 12.a. **Refactor `generateContributions` for Synthesis:**
+*   `[ ]` 12.a. **Refactor `generateContributions` for Synthesis - Step 1:**
     *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   **Action:** When `stageSlug` is "synthesis", the function should iterate through each original `Thesis` document and its corresponding set of `Antithesis` documents.
-    *   **Prompt Engineering:** For each set, formulate a prompt for `callUnifiedAIModel` that asks the agent to create an initial, "local" synthesis of just that single thesis and its critiques.
-    *   **Flow Change:** This results in `n * m` calls, producing `n * m` intermediate "sub-synthesis" documents instead of a few massive, potentially truncated ones.
-*   `[ ]` 12.b. **Store Intermediate "Sub-Synthesis" Documents:**
+    *   **Action:** When `stageSlug` is "synthesis", the function must first fetch all `m` Thesis documents and all `m * n` Antithesis documents from the previous stages.
+    *   **Action:** It will then group them by the original Thesis. For each Thesis and its associated set of Antitheses, it will perform a nested loop: iterate through each of the `n` Antitheses for a given Thesis, then through each of the `n` selected models.
+    *   **Prompt Engineering:** For each Thesis-Antithesis pair, formulate a prompt for `callUnifiedAIModel`. The prompt should ask the model to create an initial synthesis of that single thesis and its corresponding single critique.
+    *   **Flow Change:** This results in `m * n * n` calls, producing `m * n * n` intermediate "pairwise-synthesis" documents.
+*   `[ ]` 12.b. **Store Intermediate "Pairwise-Synthesis" Documents:**
     *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   **Action:** The resulting `n * m` sub-synthesis documents must be saved to storage. Their metadata should clearly link them to the session, the original thesis, and mark them as intermediate artifacts of the Synthesis stage.
+    *   **Action:** The resulting `m * n * n` documents must be saved to storage. Their metadata must link them to the session, the original Thesis they derive from, and mark them as "synthesis_step1" intermediate artifacts.
 
-#### 13. [BE] [DB] [REFACTOR] Implement RAG for Final Synthesis Recombination
+#### 13. [BE] [REFACTOR] Synthesis Step 2: Per-Thesis Reduction
 
-*   `[ ]` 13.a. **Setup the Vector Database:**
-    *   `[DB]` **Tool:** Supabase SQL Editor.
-    *   `[DB]` **Action:** Enable the `vector` extension if not already enabled (`create extension vector;`).
-    *   `[DB]` **Action:** Create a new table, `dialectic_memory`, to store text chunks and their embeddings. It should include columns like `id` (UUID), `session_id` (FK to `dialectic_sessions`), `source_contribution_id` (FK to `dialectic_contributions`), `content` (text), `metadata` (JSONB), and `embedding` (vector(1536)) for OpenAI's `text-embedding-3-small`.
-*   `[ ]` 13.b. **Implement the Indexing Service:**
-    *   `[BE]` **Recommendation:** Use a library like `langchain-js` (which has Deno support) to simplify text splitting and embedding calls.
-    *   `[BE]` **Action:** Create a new service, e.g., in `supabase/functions/_shared/services/indexing_service.ts`. This service will have a function that:
-        1.  Accepts a document's text, a `session_id`, and `source_contribution_id`.
-        2.  Uses a text splitter (e.g., `RecursiveCharacterTextSplitter`) to break the document into manageable chunks.
-        3.  Calls an embedding model API (e.g., OpenAI's `text-embedding-3-small`) for each chunk.
-        4.  Saves the chunk's content, metadata, and the resulting embedding vector into the `dialectic_memory` table.
-*   `[ ]` 13.c. **Integrate Indexing into the Synthesis Flow:**
+*   `[ ]` 13.a. **Refactor `generateContributions` for Synthesis - Step 2:**
+    *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+    *   **Action:** After Step 1 is complete, group the `m * n * n` "pairwise-synthesis" documents by their source Thesis. This will create `m` groups, each containing `n * n` documents.
+    *   **Action:** For each of the `m` groups, iterate through the `n` selected models.
+    *   **Prompt Engineering:** Combine the `n * n` documents in each group into a single prompt. If this combination exceeds the model's context window, the documents must be intelligently chunked or summarized before being sent.
+    *   **Flow Change:** This step makes `m * n` calls, reducing the `m * n * n` documents down to `m * n` more refined "per-thesis-synthesis" documents.
+*   `[ ]` 13.b. **Store Intermediate "Per-Thesis-Synthesis" Documents:**
+    *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+    *   **Action:** The resulting `m * n` documents must be saved to storage, linked to the session, and marked as "synthesis_step2" intermediate artifacts.
+
+#### 14. [BE] [DB] [REFACTOR] Synthesis Step 3: Final Cross-Agent RAG Recombination
+
+*   `[ ]` 14.a. **Setup the Vector Database:**
+    *   `[DB]` **Action:** Create a `dialectic_memory` table to store text chunks and their embeddings. It needs columns for `id`, `session_id`, `source_contribution_id`, `content`, `metadata` (JSONB), and `embedding` (vector).
+*   `[ ]` 14.b. **Implement the Indexing Service:**
+    *   `[BE]` **Action:** Create a new `indexing_service.ts`. This service will take a document, split it into chunks, call an embedding model API (e.g., OpenAI), and save the content and vector into the `dialectic_memory` table.
+*   `[ ]` 14.c. **Integrate Indexing into the Synthesis Flow:**
     *   `[BE]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   **Action:** After the `n * m` "sub-synthesis" documents are created and saved, trigger the new indexing service asynchronously for each one. This populates the vector store with the knowledge required for recombination.
-*   `[ ]` 13.d. **Implement the Retrieval Service:**
-    *   `[BE]` **Action:** Create a Supabase RPC function, `match_dialectic_chunks(session_id, query_embedding, match_count)`. This function will take a query embedding and a session ID, and use the `<=>` vector distance operator to find and return the `match_count` most similar document chunks from the `dialectic_memory` table for that specific session.
-*   `[ ]` 13.e. **Implement Final Recombination Logic:**
-    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   **Action:** This is the final step of the Synthesis stage. For each of the `n` models:
-        1.  **Formulate Query:** Create a high-level query like: "Based on the provided context, which contains multiple partial analyses of a topic, create a single, unified, and comprehensive synthesis."
-        2.  **Embed Query:** Convert this query string into an embedding using the same model as the indexer.
-        3.  **Retrieve Context:** Call the `match_dialectic_chunks` RPC with the query embedding to retrieve the most relevant context chunks from the vector store.
-        4.  **Assemble Final Prompt:** Construct a new, compact prompt containing the high-level query and the retrieved chunks as context.
-        5.  **Generate Final Synthesis:** Call `deps.callUnifiedAIModel` one last time with this RAG-generated prompt to produce the final, complete Synthesis document for that model.
-*   `[ ]` 13.f. **Test the Full RAG Pipeline:**
-    *   `[TEST-INT]` **Action:** Create integration tests that verify the entire end-to-end pipeline: a set of sub-synthesis documents are indexed, a query retrieves the correct chunks, a final prompt is assembled as expected, and a final synthesis is generated.
+    *   **Action:** After the `m * n` "per-thesis-synthesis" documents are created in Step 2, trigger the new indexing service asynchronously for each one. This populates the vector store with the knowledge required for the final recombination.
+*   `[ ]` 14.d. **Implement the Retrieval Service:**
+    *   `[BE]` **Action:** Create a Supabase RPC function, `match_dialectic_chunks(session_id, query_embedding, match_count)`, that uses the vector distance operator (`<=>`) to find and return the most similar document chunks for a given session.
+*   `[ ]` 14.e. **Implement Final Recombination Logic:**
+    *   `[BE]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+    *   **Action:** This is the final step. For each of the `n` models:
+        1.  **Formulate Query:** Create a high-level query like: "Based on the provided context, create a single, unified, and comprehensive synthesis."
+        2.  **Embed & Retrieve:** Embed the query and call the `match_dialectic_chunks` RPC to get the most relevant context chunks.
+        3.  **Assemble & Generate:** Construct a final prompt with the query and the retrieved chunks, and call `deps.callUnifiedAIModel` one last time to produce the final Synthesis document for that model.
+*   `[ ]` 14.f. **Test the Full RAG Pipeline:**
+    *   `[TEST-INT]` **Action:** Create integration tests that verify the entire end-to-end RAG pipeline, from indexing to retrieval to final generation.
+
+### Phase 6: Real-time Progress Updates via Notification Service
+
+This phase implements real-time progress reporting by leveraging the existing notification service. The backend will dispatch progress updates as a specific type of notification, which the frontend will intercept to update the UI without creating a visible notification for the user.
+
+#### 15. [BE] Instrument `generateContributions` to Send Progress Notifications
+
+*   `[ ]` 15.a. **Calculate Total Steps for Progress Tracking:**
+    *   `[BE]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+    *   `[BE]` **Action:** At the beginning of the `synthesis` logic block, calculate the total number of expected AI calls and other major steps to get a `total_steps` value.
+*   `[ ]` 15.b. **Dispatch Progress Updates via RPC:**
+    *   `[BE]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+    *   `[BE]` **Action:** Throughout the multi-step synthesis process, call the existing `create_notification_for_user` RPC function at key milestones (e.g., after each reduction step, or even within loops for more granularity).
+    *   `[BE]` **Action:** Use a new, dedicated `notification_type`: `'dialectic_progress_update'`.
+    *   `[BE]` **Action:** The `notification_data` payload for this type should be structured to include all necessary information for the UI: `{ "sessionId": "...", "stageSlug": "synthesis", "current_step": 5, "total_steps": 27, "message": "Reducing per-thesis results..." }`.
+
+#### 16. [STORE] [UI] Handle Progress Notifications on the Frontend
+
+*   `[ ]` 16.a. **Update Central Notification Listener:**
+    *   `[UI]` **File:** The central frontend service that listens for and processes incoming real-time notifications.
+    *   `[UI]` **Action:** Add a new `case` or `if` condition to the listener's logic to specifically handle the `'dialectic_progress_update'` type.
+*   `[ ]` 16.b. **Update State Without Creating a Visible Notification:**
+    *   `[STORE]` **Action:** When a `'dialectic_progress_update'` notification is received, the handler should **not** trigger a standard UI notification toast. Instead, it should parse the `notification_data` payload.
+    *   `[STORE]` **Action:** It will then call a new action in the dialectic state store (e.g., `setSessionProgress(payload)`), passing the progress data. The store will update the state for the specific session identified by `payload.sessionId`.
+
+#### 17. [UI] Create and Display the Dynamic Progress Bar
+
+*   `[ ]` 17.a. **Create a `DynamicProgressBar` Component:**
+    *   `[UI]` **File:** `apps/web/src/components/common/DynamicProgressBar.tsx`.
+    *   `[UI]` **Action:** Create a reusable component that takes props like `value` (for the percentage) and `message` (to display the current status).
+*   `[ ]` 17.b. **Integrate into the Session UI:**
+    *   `[UI]` **File:** `apps/web/src/components/dialectic/SessionInfoCard.tsx` (or the relevant component).
+    *   `[UI]` **Action:** The component will subscribe to the dialectic store. When the store indicates a long-running process has started, it will conditionally render the `<DynamicProgressBar />`.
+    *   `[UI]` **Action:** The progress bar's props (`value` and `message`) will be driven by the `sessionProgress` state, which is being updated in real-time by the notification listener.
+
+### Phase 7: Default Granular Contribution Loading
+
+This phase refactors the core contribution generation logic to make real-time, individual contribution loading the **default behavior for all dialectic stages**. Instead of waiting for all models to complete their work, the UI will now render each contribution card as soon as it becomes available. This creates a more dynamic and responsive user experience across the entire application and works in concert with stage-specific UI elements like the Synthesis progress bar.
+
+#### 18. [BE] [REFACTOR] Dispatch Individual Contribution Notifications from All Generation Loops
+
+*   `[ ]` 18.a. **Instrument All Contribution Loops:**
+    *   `[BE]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+    *   `[BE]` **Action:** In every loop that processes and saves a model's output—including the default loop and the specialized loops for `antithesis` and `synthesis`—locate the point where a single contribution is successfully saved by the `FileManagerService`.
+    *   `[BE]` **Action:** Immediately after that successful save, add a call to the `create_notification_for_user` RPC.
+
+*   `[ ]` 18.b. **Define "Contribution Received" Notification Type:**
+    *   `[BE]` **Action:** This notification must use a new, dedicated `notification_type`: `'dialectic_contribution_received'`.
+    *   `[BE]` **Action:** The `notification_data` payload must contain the full data record of the newly created contribution. This gives the frontend all the information it needs to render the card instantly.
+
+#### 19. [STORE] [UI] Handle Individual Contribution Notifications on the Frontend
+
+*   `[ ]` 19.a. **Update Central Notification Listener:**
+    *   `[UI]` **File:** The central frontend service that listens for and processes all real-time notifications.
+    *   `[UI]` **Action:** Add logic to specifically handle the `'dialectic_contribution_received'` type.
+
+*   `[ ]` 19.b. **Update Dialectic State Store:**
+    *   `[STORE]` **Action:** The handler for this notification type should call an idempotent action in the dialectic state store, such as `addOrUpdateContribution(contributionData)`.
+    *   `[STORE]` **Action:** This action will add the new contribution to the list for the relevant session, triggering a reactive UI update.
+
+#### 20. [UI] Ensure Reactive UI for Contribution Display
+
+*   `[ ]` 20.a. **Verify Reactivity of Contribution Display:**
+    *   `[UI]` **File:** The component responsible for displaying the list of contributions (e.g., `SessionContributionsDisplayCard.tsx`).
+    *   `[UI]` **Action:** Confirm that this component correctly subscribes to the list of contributions in the store, ensuring it automatically renders a new contribution card whenever the store's state is updated.
+
+#### 21. [BE] [REFACTOR] Clarify the Role of the Final "Stage Complete" Notification
+
+*   `[ ]` 21.a. **Review "Stage Complete" Notification's Purpose:**
+    *   `[BE]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+    *   `[BE]` **Action:** The final `contribution_generation_complete` notification sent after all promises are settled remains essential. Its purpose is to signal the end of the entire stage. The UI should use this event to finalize the state, such as by hiding progress indicators and updating the overall session status from "generating" to "complete."

@@ -8,6 +8,7 @@
     "@supabase/types": "./functions/types_db.ts",
     "@paynless/types": "../packages/types/src/index.ts",
     "@paynless/db-types": "./functions/types_db.ts",
+    "@google/genai": "npm:@google/genai@^0.13.0",
     "jsr:@std/assert": "jsr:@std/assert@^0.225.3",
     "jsr:@std/testing/bdd": "jsr:@std/testing@0.225.1/bdd",
     "jsr:@std/testing/mock": "jsr:@std/testing@0.225.1/mock",
