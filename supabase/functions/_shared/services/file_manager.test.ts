@@ -60,6 +60,7 @@ Deno.test('FileManagerService', async (t) => {
     mimeType: 'application/pdf',
     sizeBytes: 12345,
     userId: 'user-uuid-789',
+    description: 'test description',
   }
 
   await t.step(
@@ -246,6 +247,7 @@ Deno.test('FileManagerService', async (t) => {
             sessionId: 'session-uuid-456',
             stageSlug: '2_antithesis',
             rawJsonResponseContent: '{"raw":"mock raw json response"}',
+            seedPromptStoragePath: 'projects/project-uuid-123/sessions/session-uuid-456/iteration_2/2_antithesis/seed_prompt.md',
           },
         }
 
@@ -360,6 +362,7 @@ Deno.test('FileManagerService', async (t) => {
             sessionId: 'session-retry-sess',
             stageSlug: 'hypothesis',
             rawJsonResponseContent: '{"raw":"mock for retry"}',
+            seedPromptStoragePath: 'projects/project-retry-proj/sessions/session-retry-sess/iteration_1/hypothesis/seed_prompt.md',
           },
         };
 

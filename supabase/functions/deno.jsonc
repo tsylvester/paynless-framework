@@ -7,6 +7,8 @@
   },
   "nodeModulesDir": "auto",
   "imports": {
+    "openai": "npm:openai@^4.52.7",
+    "@anthropic-ai/sdk": "npm:@anthropic-ai/sdk@0.22.0",
     "std/": "https://deno.land/std@0.208.0/",
     "@supabase/supabase-js": "npm:@supabase/supabase-js@2",
     "stripe": "npm:stripe@18.0.0",

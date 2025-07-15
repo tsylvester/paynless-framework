@@ -43,7 +43,7 @@ export interface UploadContext {
   mimeType: string
   sizeBytes: number
   userId: string | null; // Allow null for system-generated contributions
-  description?: string
+  description: string
 
   // Specific for 'model_contribution_main' fileType
   contributionMetadata?: {
@@ -59,11 +59,14 @@ export interface UploadContext {
     // from the main contribution's originalFileName (e.g., if main is foo.md, raw is foo_raw.json).
     rawJsonResponseContent: string; // The actual JSON string content for the raw AI response.
 
+    // ADDED: For continuation jobs, this signals to update an existing record.
+    target_contribution_id?: string;
+
     // Tokenomics and other metadata for the primary dialectic_contributions record
     tokensUsedInput?: number;
     tokensUsedOutput?: number;
     processingTimeMs?: number;
-    seedPromptStoragePath?: string; // Path to the seed prompt that generated this contribution
+    seedPromptStoragePath: string; // Path to the seed prompt that generated this contribution
     citations?: Json | null;
     contributionType?: string | null; // e.g., 'hypothesis', 'critique', 'synthesis' (align with stage or be more specific)
     errorDetails?: string | null; // If AI model itself reported an error in its generation process

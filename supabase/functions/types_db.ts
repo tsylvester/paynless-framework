@@ -455,6 +455,65 @@ export type Database = {
           },
         ]
       }
+      dialectic_generation_jobs: {
+        Row: {
+          attempt_count: number
+          completed_at: string | null
+          created_at: string
+          error_details: Json | null
+          id: string
+          iteration_number: number
+          max_retries: number
+          payload: Json
+          results: Json | null
+          session_id: string
+          stage_slug: string
+          started_at: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          attempt_count?: number
+          completed_at?: string | null
+          created_at?: string
+          error_details?: Json | null
+          id?: string
+          iteration_number: number
+          max_retries?: number
+          payload: Json
+          results?: Json | null
+          session_id: string
+          stage_slug: string
+          started_at?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          attempt_count?: number
+          completed_at?: string | null
+          created_at?: string
+          error_details?: Json | null
+          id?: string
+          iteration_number?: number
+          max_retries?: number
+          payload?: Json
+          results?: Json | null
+          session_id?: string
+          stage_slug?: string
+          started_at?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_generation_jobs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dialectic_process_templates: {
         Row: {
           created_at: string

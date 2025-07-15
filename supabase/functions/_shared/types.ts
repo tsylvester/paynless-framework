@@ -195,6 +195,8 @@ export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] &
   status?: 'pending' | 'sent' | 'error'; 
 };
 
+export type FinishReason = 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call' | 'error' | 'unknown' | null;
+
 /**
  * Type representing the payload returned *by* an AI Provider Adapter's sendMessage method.
  * This contains only the information the adapter can realistically provide before
@@ -207,7 +209,7 @@ export interface AdapterResponsePayload {
   system_prompt_id: string | null; // The DB ID of the prompt used (or null)
   token_usage: Database['public']['Tables']['chat_messages']['Row']['token_usage']; // Use specific DB Json type
   created_at?: string;
-  finish_reason?: 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call' | 'error' | 'unknown' | null; // ADDED: Standardized finish reason
+  finish_reason?: FinishReason; // ADDED: Standardized finish reason
 }
 
 /**

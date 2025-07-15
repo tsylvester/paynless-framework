@@ -23,11 +23,19 @@ import {
   
   // --- Test Setup: Mock AI Provider Adapter ---
   const createMockAiAdapter = (
-    responses: { content: string; finishReason: TokenUsage['finish_reason'] }[],
-  ): { adapter: AiProviderAdapter, sendMessageSpy: Spy<unknown, [ChatApiRequest], Promise<AdapterResponsePayload>> } => {
+    responses: {
+      content: string;
+      finishReason: AdapterResponsePayload["finish_reason"];
+    }[],
+  ): {
+    adapter: AiProviderAdapter;
+    sendMessageSpy: Spy<any, [ChatApiRequest, string, string], Promise<AdapterResponsePayload>>;
+  } => {
     const sendMessageSpy = spy(
       async (
         _request: ChatApiRequest,
+        _providerApiIdentifier: string,
+        _apiKey: string,
       ): Promise<AdapterResponsePayload> => {
         const responseConfig = responses.shift();
         if (!responseConfig) {
@@ -44,8 +52,8 @@ import {
             prompt_tokens: 10, // Dummy value, we'll assert total below
             completion_tokens: 5, // Dummy value
             total_tokens: 15, // Dummy value
-            finish_reason: finishReason,
           },
+          finish_reason: finishReason,
         };
       },
     );

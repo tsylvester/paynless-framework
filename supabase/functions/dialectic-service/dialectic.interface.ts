@@ -8,6 +8,9 @@ import type { Logger } from '../_shared/logger.ts';
 import type { IFileManager } from '../_shared/types/file_manager.types.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 import type { DeleteStorageResult } from '../_shared/supabase_storage_utils.ts';
+import type {
+  FinishReason
+} from '../_shared/types.ts';
 
 export interface AIModelCatalogEntry {
     id: string;
@@ -34,6 +37,8 @@ export type DialecticContributionSql = Database['public']['Tables']['dialectic_c
 
 // Defines the structured contribution object used within the service and for API responses,
 // aligning with packages/types/src/dialectic.types.ts
+
+//This type needs to be reset to be a row from the database
 export interface DialecticContribution {
   id: string;
   session_id: string;
@@ -74,6 +79,7 @@ export interface DialecticSessionModel {
     ai_provider?: AIModelCatalogEntry;
 }
 
+//This type needs to be reset to be a row from the database
 export interface DialecticSession {
   id: string;
   project_id: string;
@@ -90,6 +96,7 @@ export interface DialecticSession {
 
 export type DialecticProcessTemplate = Database['public']['Tables']['dialectic_process_templates']['Row'];
 
+//This type needs to be reset to be a row from the database
 export interface DialecticProject {
     id: string;
     user_id: string;
@@ -221,6 +228,7 @@ export interface UnifiedAIResponse {
   processingTimeMs?: number;
   contentType?: string; // Added to specify the MIME type of the content
   rawProviderResponse?: Record<string, unknown>; 
+  finish_reason?: FinishReason;
 }
 
 export type DialecticStage = Database['public']['Tables']['dialectic_stages']['Row'];
@@ -251,6 +259,9 @@ export interface GenerateContributionsPayload {
   selectedModelIds: string[];
   walletId?: string;
   continueUntilComplete?: boolean;
+  maxRetries?: number;
+  target_contribution_id?: string;
+  continuation_count?: number;
 }
 
 export interface GenerateContributionsSuccessResponse {

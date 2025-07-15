@@ -9,6 +9,9 @@
     "jsr:@std/testing@*": "0.225.1",
     "jsr:@std/testing@0.225.1": "0.225.1",
     "jsr:@zip-js/zip-js@*": "2.7.62",
+    "npm:@anthropic-ai/sdk@*": "0.22.0",
+    "npm:@anthropic-ai/sdk@0.22": "0.22.0",
+    "npm:@anthropic-ai/sdk@0.22.0": "0.22.0",
     "npm:@google/genai@*": "1.9.0",
     "npm:@supabase/gotrue-js@^2.6.3": "2.70.0",
     "npm:@supabase/postgrest-js@1.15.5": "1.15.5",
@@ -24,6 +27,7 @@
     "npm:js-tiktoken@1.0.7": "1.0.7",
     "npm:openai@*": "4.104.0",
     "npm:openai@^4.52.5": "4.104.0",
+    "npm:openai@^4.52.7": "4.104.0",
     "npm:stripe@*": "18.0.0",
     "npm:stripe@18.0.0": "18.0.0",
     "npm:typescript@5": "5.8.3",
@@ -62,6 +66,19 @@
     }
   },
   "npm": {
+    "@anthropic-ai/sdk@0.22.0": {
+      "integrity": "sha512-dv4BCC6FZJw3w66WNLsHlUFjhu19fS1L/5jMPApwhZLa/Oy1j0A2i3RypmDtHEPp4Wwg3aZkSHksp7VzYWjzmw==",
+      "dependencies": [
+        "@types/node@18.19.115",
+        "@types/node-fetch",
+        "abort-controller",
+        "agentkeepalive",
+        "form-data-encoder",
+        "formdata-node",
+        "node-fetch",
+        "web-streams-polyfill@3.3.3"
+      ]
+    },
     "@google/genai@1.9.0": {
       "integrity": "sha512-w9P93OXKPMs9H1mfAx9+p3zJqQGrWBGdvK/SVc7cLZEXNHr/3+vW2eif7ZShA6wU24rNLn9z9MK2vQFUvNRI2Q==",
       "dependencies": [
@@ -310,7 +327,7 @@
       "integrity": "sha512-0iirZp3uVDjVGt9p49aTaqjk84TrglENEDuqfdlZQ1roC9CWlPk6Avf8EEnZNcAqPonwkG35x4n3ww/1THYAeQ==",
       "dependencies": [
         "node-domexception",
-        "web-streams-polyfill"
+        "web-streams-polyfill@4.0.0-beta.3"
       ]
     },
     "function-bind@1.1.2": {
@@ -571,6 +588,9 @@
     "uuid@9.0.1": {
       "integrity": "sha512-b+1eJOlsR9K8HJpow9Ok3fiWOWSIcIzXodvv0rQjVoOVNpWMpxf1wZNpt4y9h10odCNrqnYp1OBzRktckBe3sA==",
       "bin": true
+    },
+    "web-streams-polyfill@3.3.3": {
+      "integrity": "sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw=="
     },
     "web-streams-polyfill@4.0.0-beta.3": {
       "integrity": "sha512-QW95TCTaHmsYfHDybGMwO5IJIM93I/6vTRk+daHTWFPhwh+C8Cg7j7XyKrwrj8Ib6vYXe0ocYNrmzY4xAAN6ug=="
@@ -845,8 +865,10 @@
   },
   "workspace": {
     "dependencies": [
+      "npm:@anthropic-ai/sdk@0.22.0",
       "npm:@supabase/supabase-js@2",
       "npm:@types/node@20",
+      "npm:openai@^4.52.7",
       "npm:stripe@18.0.0"
     ],
     "packageJson": {

@@ -243,7 +243,7 @@ export interface DialecticStateValues {
   // isGeneratingContributions: boolean; // Replaced by contributionGenerationStatus
   contributionGenerationStatus: ContributionGenerationStatus; // New
   generateContributionsError: ApiError | null;
-  generatingSessions: { [sessionId: string]: boolean };
+  generatingSessions: { [sessionId: string]: string[] };
 
   // States for submitting stage responses (as per plan 1.5.6.4)
   isSubmittingStageResponses: boolean; 
@@ -468,6 +468,7 @@ export interface GenerateContributionsResponse {
   stage: string;
   iteration: number;
   status: string;
+  job_ids?: string[];
   successfulContributions: DialecticContribution[];
   failedAttempts: FailedAttemptError[];
 }
