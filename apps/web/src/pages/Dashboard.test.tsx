@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { DashboardPage } from './Dashboard';
+import { DashboardPage } from './Chat';
 import { useAuthStore, useWalletStore } from '@paynless/store';
 import type { User, UserProfile, TokenWallet } from '@paynless/types';
 
