@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { api } from '@paynless/api';
-import type { Notification, ApiError } from '@paynless/types';
+import type { Notification, ApiError, DialecticLifecycleEvent, DialecticContribution } from '@paynless/types';
 import { logger } from '@paynless/utils';
 import { useDialecticStore } from './dialecticStore';
 import { useWalletStore } from './walletStore';
@@ -36,6 +36,43 @@ const sortNotifications = (notifications: Notification[]): Notification[] => {
     return [...notifications].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 };
 
+const dialecticNotificationTypes = new Set([
+    'contribution_generation_started',
+    'dialectic_contribution_started',
+    'contribution_generation_retrying',
+    'dialectic_contribution_received',
+    'contribution_generation_failed',
+    'contribution_generation_complete',
+]);
+
+function isDialecticLifecycleEventType(type: string): type is DialecticLifecycleEvent['type'] {
+    return dialecticNotificationTypes.has(type);
+}
+
+// Type guard for ApiError
+function isApiError(obj: unknown): obj is ApiError {
+    return (
+        typeof obj === 'object' &&
+        obj !== null &&
+        'code' in obj &&
+        typeof (obj as ApiError).code === 'string' &&
+        'message' in obj &&
+        typeof (obj as ApiError).message === 'string'
+    );
+}
+
+// A minimal type guard for DialecticContribution
+function isDialecticContribution(obj: unknown): obj is DialecticContribution {
+    return (
+        typeof obj === 'object' &&
+        obj !== null &&
+        'id' in obj &&
+        typeof (obj as DialecticContribution).id === 'string' &&
+        'session_id' in obj &&
+        typeof (obj as DialecticContribution).session_id === 'string'
+    );
+}
+
 export const useNotificationStore = create<NotificationState>((set, get) => {
 
     // --- NEW: Internal Realtime Callback Handler ---
@@ -47,33 +84,73 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
         logger.debug('[NotificationStore] Received notification via Realtime', { id: notification.id, type: notification.type });
 
         // --- NEW: Special handling for contribution generation ---
-        if (notification.type === 'contribution_generation_complete') {
-            const { data } = notification;
-            if (data && typeof data === 'object' && 'sessionId' in data && 'projectId' in data) {
-                logger.info('[NotificationStore] Handling contribution generation completion event.', { data });
-                useDialecticStore.getState()._handleGenerationCompleteEvent?.({
-                    sessionId: data['sessionId'] as string,
-                    projectId: data['projectId'] as string,
-                });
-            } else {
-                logger.warn('[NotificationStore] Received contribution_generation_complete event with invalid data.', { data });
+        if (isDialecticLifecycleEventType(notification.type)) {
+            const { type, data } = notification;
+            logger.info(`[NotificationStore] Routing dialectic lifecycle event: ${type}`, { data });
+            
+            if (!data) {
+                logger.warn(`[NotificationStore] Received dialectic event '${type}' with no data.`);
+                return;
             }
+
+            let eventPayload: DialecticLifecycleEvent | null = null;
+
+            switch (type) {
+                case 'contribution_generation_started':
+                    if (typeof data['sessionId'] === 'string') {
+                        eventPayload = { type, sessionId: data['sessionId'] };
+                    }
+                    break;
+                case 'dialectic_contribution_started':
+                    if (typeof data['sessionId'] === 'string' && typeof data['modelId'] === 'string' && typeof data['iterationNumber'] === 'number') {
+                        eventPayload = { type, sessionId: data['sessionId'], modelId: data['modelId'], iterationNumber: data['iterationNumber'] };
+                    }
+                    break;
+                case 'contribution_generation_retrying':
+                    if (typeof data['sessionId'] === 'string' && typeof data['modelId'] === 'string' && typeof data['iterationNumber'] === 'number') {
+                        eventPayload = { type, sessionId: data['sessionId'], modelId: data['modelId'], iterationNumber: data['iterationNumber'], error: typeof data['error'] === 'string' ? data['error'] : undefined };
+                    }
+                    break;
+                case 'dialectic_contribution_received':
+                    if (typeof data['sessionId'] === 'string' && typeof data['job_id'] === 'string' && isDialecticContribution(data['contribution'])) {
+                        eventPayload = { type, sessionId: data['sessionId'], contribution: data['contribution'], job_id: data['job_id'] };
+                    }
+                    break;
+                case 'contribution_generation_failed':
+                    if (typeof data['sessionId'] === 'string' && isApiError(data['error'])) {
+                        eventPayload = { type, sessionId: data['sessionId'], error: data['error'] };
+                    }
+                    break;
+                case 'contribution_generation_complete':
+                    if (typeof data['sessionId'] === 'string' && typeof data['projectId'] === 'string') {
+                        eventPayload = { type, sessionId: data['sessionId'], projectId: data['projectId'] };
+                    }
+                    break;
+            }
+            
+            if (eventPayload) {
+                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(eventPayload);
+            } else {
+                logger.warn(`[NotificationStore] Received dialectic event '${type}' but data format was invalid.`, { data });
+            }
+
+            return;
         }
         
         if (notification.type === 'WALLET_TRANSACTION') {
             const { data } = notification;
-            if (data && typeof data === 'object' && 'walletId' in data && 'newBalance' in data) {
+            if (data && typeof data === 'object' && 'walletId' in data && typeof data['walletId'] === 'string' && 'newBalance' in data && typeof data['newBalance'] === 'string') {
                 logger.info('[NotificationStore] Handling wallet transaction event.', { data });
                 useWalletStore.getState()._handleWalletUpdateNotification({
-                    walletId: data['walletId'] as string,
-                    newBalance: data['newBalance'] as string,
+                    walletId: data['walletId'],
+                    newBalance: data['newBalance'],
                 });
             } else {
                 logger.warn('[NotificationStore] Received WALLET_TRANSACTION event with invalid data.', { data });
             }
         }
 
-        get().addNotification(notification as Notification);
+        get().addNotification(notification);
     };
     // -------------------------------------------
 

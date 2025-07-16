@@ -24,6 +24,7 @@ import type {
     DialecticDomain,
     DialecticProcessTemplate,
     UpdateSessionModelsPayload,
+    GetSessionDetailsResponse,
 } from '@paynless/types'; 
 
 // --- Dialectic Client Mock Setup ---
@@ -49,7 +50,7 @@ export type MockDialecticApiClient = {
     listDomains: ReturnType<typeof vi.fn<[], Promise<ApiResponse<DialecticDomain[]>>>>;
     fetchProcessTemplate: ReturnType<typeof vi.fn<[templateId: string], Promise<ApiResponse<DialecticProcessTemplate>>>>;
     updateSessionModels: ReturnType<typeof vi.fn<[payload: UpdateSessionModelsPayload], Promise<ApiResponse<DialecticSession>>>>;
-    getSessionDetails: ReturnType<typeof vi.fn<[sessionId: string], Promise<ApiResponse<DialecticSession>>>>;
+    getSessionDetails: ReturnType<typeof vi.fn<[sessionId: string], Promise<ApiResponse<GetSessionDetailsResponse>>>>;
 };
 
 // Factory function to create a new mock instance
@@ -76,7 +77,7 @@ export function createMockDialecticClient(): MockDialecticApiClient {
         listDomains: vi.fn<[], Promise<ApiResponse<DialecticDomain[]>>>(),
         fetchProcessTemplate: vi.fn<[string], Promise<ApiResponse<DialecticProcessTemplate>>>(),
         updateSessionModels: vi.fn<[UpdateSessionModelsPayload], Promise<ApiResponse<DialecticSession>>>(),
-        getSessionDetails: vi.fn<[string], Promise<ApiResponse<DialecticSession>>>(),
+        getSessionDetails: vi.fn<[string], Promise<ApiResponse<GetSessionDetailsResponse>>>(),
     };
 }
 

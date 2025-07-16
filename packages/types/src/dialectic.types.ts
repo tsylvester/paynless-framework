@@ -17,6 +17,12 @@ export type DialecticProcessTemplate = Database['public']['Tables']['dialectic_p
   transitions?: DialecticStageTransition[];
 };
 
+export type DialecticProjectRow = Database['public']['Tables']['dialectic_projects']['Row']
+
+export type DialecticSessionRow = Database['public']['Tables']['dialectic_sessions']['Row']
+
+export type DialecticContributionRow = Database['public']['Tables']['dialectic_contributions']['Row']
+
 // New type for contribution generation status
 export type ContributionGenerationStatus = 'idle' | 'initiating' | 'generating' | 'failed';
 
@@ -301,7 +307,7 @@ export interface DialecticActions {
   
   fetchDialecticProjects: () => Promise<void>;
   fetchDialecticProjectDetails: (projectId: string) => Promise<void>;
-  createDialecticProject: (payload: CreateProjectPayload) => Promise<ApiResponse<DialecticProject>>;
+  createDialecticProject: (payload: CreateProjectPayload) => Promise<ApiResponse<DialecticProjectRow>>;
   startDialecticSession: (payload: StartSessionPayload) => Promise<ApiResponse<DialecticSession>>;
   updateSessionModels: (payload: UpdateSessionModelsPayload) => Promise<ApiResponse<DialecticSession>>;
   fetchAIModelCatalog: () => Promise<void>;
@@ -315,7 +321,7 @@ export interface DialecticActions {
   deleteDialecticProject: (projectId: string) => Promise<ApiResponse<void>>;
   cloneDialecticProject: (projectId: string) => Promise<ApiResponse<DialecticProject>>;
   exportDialecticProject: (projectId: string) => Promise<ApiResponse<{ export_url: string }>>;
-  updateDialecticProjectInitialPrompt: (payload: UpdateProjectInitialPromptPayload) => Promise<ApiResponse<DialecticProject>>;
+  updateDialecticProjectInitialPrompt: (payload: UpdateProjectInitialPromptPayload) => Promise<ApiResponse<DialecticProjectRow>>;
   setSelectedModelIds: (modelIds: string[]) => void;
   setModelMultiplicity: (modelId: string, count: number) => void;
   resetSelectedModelId: () => void;
@@ -362,6 +368,8 @@ export interface DialecticActions {
   _resetForTesting?: () => void;
   // Internal handler for completion events from notificationStore
   _handleGenerationCompleteEvent?: (data: { sessionId: string; projectId: string; [key: string]: unknown }) => void;
+  // NEW: Internal handler for all dialectic lifecycle events from notificationStore
+  _handleDialecticLifecycleEvent?: (payload: DialecticLifecycleEvent) => void;
   reset: () => void;
 }
 
@@ -395,7 +403,55 @@ export interface DialecticContribution {
   storage_path: string | null;
   size_bytes: number | null;
   mime_type: string | null;
+  status?: 'pending' | 'generating' | 'retrying' | 'failed'; // Client-side status for placeholders
 }
+
+export interface ContributionGenerationStartedPayload {
+  type: 'contribution_generation_started';
+  sessionId: string;
+}
+
+export interface DialecticContributionStartedPayload {
+  type: 'dialectic_contribution_started';
+  sessionId: string;
+  modelId: string;
+  iterationNumber: number;
+}
+
+export interface ContributionGenerationRetryingPayload {
+  type: 'contribution_generation_retrying';
+  sessionId: string;
+  modelId: string;
+  iterationNumber: number;
+  error?: string;
+}
+
+export interface DialecticContributionReceivedPayload {
+  type: 'dialectic_contribution_received';
+  sessionId: string;
+  contribution: DialecticContribution;
+  job_id: string;
+}
+
+export interface ContributionGenerationFailedPayload {
+  type: 'contribution_generation_failed';
+  sessionId: string;
+  error?: ApiError;
+}
+
+export interface ContributionGenerationCompletePayload {
+  type: 'contribution_generation_complete';
+  sessionId: string;
+  projectId: string;
+}
+
+export type DialecticLifecycleEvent = 
+ContributionGenerationStartedPayload 
+| DialecticContributionStartedPayload 
+| ContributionGenerationRetryingPayload 
+| DialecticContributionReceivedPayload 
+| ContributionGenerationFailedPayload 
+| ContributionGenerationCompletePayload;
 
 export interface DialecticFeedback {
   id: string;

@@ -26,6 +26,7 @@ import type {
     GetSessionDetailsResponse,
     GenerateContributionsPayload,
     GenerateContributionsResponse,
+    DialecticProjectRow,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -275,7 +276,7 @@ export class DialecticApiClient {
      * 'selectedDomain', and 'selectedDomainOverlayId'.
      * Requires authentication.
      */
-    async createProject(payload: FormData): Promise<ApiResponse<DialecticProject>> {
+    async createProject(payload: FormData): Promise<ApiResponse<DialecticProjectRow>> {
         logger.info('Creating new dialectic project using FormData', { 
             projectName: payload.get('projectName'), 
             hasPromptFile: !!payload.get('promptFile') 
@@ -284,7 +285,7 @@ export class DialecticApiClient {
         try {
             // The payload is already FormData and includes the 'action' field.
             // The apiClient.post method should handle FormData correctly.
-            const response = await this.apiClient.post<DialecticProject, FormData>(
+            const response = await this.apiClient.post<DialecticProjectRow, FormData>(
                 'dialectic-service',
                 payload,
             );
@@ -412,10 +413,10 @@ export class DialecticApiClient {
         }
     }
 
-    async updateDialecticProjectInitialPrompt(payload: UpdateProjectInitialPromptPayload): Promise<ApiResponse<DialecticProject>> {
+    async updateDialecticProjectInitialPrompt(payload: UpdateProjectInitialPromptPayload): Promise<ApiResponse<DialecticProjectRow>> {
         logger.info('Updating initial project prompt', { projectId: payload.projectId });
         try {
-            const response = await this.apiClient.post<DialecticProject, { action: string; payload: UpdateProjectInitialPromptPayload }>(
+            const response = await this.apiClient.post<DialecticProjectRow, { action: string; payload: UpdateProjectInitialPromptPayload }>(
                 'dialectic-service',
                 { action: 'updateProjectInitialPrompt', payload },
             );

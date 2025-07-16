@@ -15,13 +15,14 @@ import { NotificationApiClient } from '@paynless/api';
 import { createMockNotificationApiClient, resetMockNotificationApiClient } from '@paynless/api/mocks/notifications.api.mock';
 import { useDialecticStore } from './dialecticStore';
 import { useWalletStore } from './walletStore';
+import type { DialecticLifecycleEvent, NotificationData } from '@paynless/types';
 
-// Mock the dialecticStore to spy on its internal methods
-const mockHandleGenerationComplete = vi.fn();
+// --- Mock the dialecticStore to spy on its internal methods ---
+const mockHandleDialecticLifecycleEvent = vi.fn();
 vi.mock('./dialecticStore', () => ({
   useDialecticStore: {
     getState: () => ({
-      _handleGenerationCompleteEvent: mockHandleGenerationComplete,
+      _handleDialecticLifecycleEvent: mockHandleDialecticLifecycleEvent,
     }),
   },
 }));
@@ -159,7 +160,7 @@ describe('notificationStore', () => {
 
     afterEach(() => {
         // Clear mocks after each test to ensure isolation
-        mockHandleGenerationComplete.mockClear();
+        mockHandleDialecticLifecycleEvent.mockClear();
     });
 
     it('should have correct initial state', () => {
@@ -252,71 +253,75 @@ describe('notificationStore', () => {
                  act(() => { useNotificationStore.setState({ notifications: [mockNotification1], unreadCount: 1 }); });
                  act(() => { useNotificationStore.getState().addNotification(mockNotification1); });
                  const state = useNotificationStore.getState();
-                 expect(state.notifications).toEqual([mockNotification1]);
+                 expect(state.notifications.length).toBe(1);
                  expect(state.unreadCount).toBe(1);
                  expect(logger.warn).toHaveBeenCalledWith('[notificationStore] Attempted to add duplicate notification', { id: mockNotification1.id });
-             });
+            });
         });
 
         describe('handleIncomingNotification (Internal - called by Realtime subscription callback)', () => {
             it('should call addNotification for standard notifications', () => {
                 const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                
                 act(() => {
                     useNotificationStore.getState().handleIncomingNotification(mockNotification1);
                 });
+
                 expect(addNotificationSpy).toHaveBeenCalledWith(mockNotification1);
-                expect(mockHandleGenerationComplete).not.toHaveBeenCalled();
-                addNotificationSpy.mockRestore();
-            });
-    
-            it('should call dialecticStore._handleGenerationCompleteEvent for completion notifications', () => {
-                const completionNotification: Notification = {
-                    id: 'uuid-complete',
-                    user_id: 'user-abc',
-                    type: 'contribution_generation_complete',
-                    data: { sessionId: 'session-xyz', projectId: 'project-123' },
-                    read: false,
-                    created_at: new Date().toISOString(),
-                };
-    
-                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
-    
-                act(() => {
-                    useNotificationStore.getState().handleIncomingNotification(completionNotification);
-                });
-    
-                // It should call the special handler
-                expect(mockHandleGenerationComplete).toHaveBeenCalledWith(completionNotification.data);
-    
-                // It should ALSO still add it to the general notification list
-                expect(addNotificationSpy).toHaveBeenCalledWith(completionNotification);
-    
                 addNotificationSpy.mockRestore();
             });
 
-            it('should call walletStore._handleWalletUpdateNotification for wallet transaction notifications', () => {
-                const walletNotification: Notification = {
-                    id: 'uuid-wallet',
+            // Test for each dialectic notification type
+            it.each`
+                type                                  | data                                                                          | expectedPayload
+                ${'contribution_generation_started'}  | ${{ sessionId: 'sid-123' }}                                                   | ${{ type: 'contribution_generation_started', sessionId: 'sid-123' }}
+                ${'dialectic_contribution_started'}   | ${{ sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1 }}                 | ${{ type: 'dialectic_contribution_started', sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1 }}
+                ${'contribution_generation_retrying'} | ${{ sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1, error: 'fail' }} | ${{ type: 'contribution_generation_retrying', sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1, error: 'fail' }}
+                ${'dialectic_contribution_received'}  | ${{ sessionId: 'sid-123', contribution: { id: 'c-1', session_id: 'sid-123' }, job_id: 'j-1' }} | ${{ type: 'dialectic_contribution_received', sessionId: 'sid-123', contribution: { id: 'c-1', session_id: 'sid-123' }, job_id: 'j-1' }}
+                ${'contribution_generation_failed'}   | ${{ sessionId: 'sid-123', error: { code: 'FAIL', message: 'it failed' } }}     | ${{ type: 'contribution_generation_failed', sessionId: 'sid-123', error: { code: 'FAIL', message: 'it failed' } }}
+                ${'contribution_generation_complete'} | ${{ sessionId: 'sid-123', projectId: 'p-1' }}                                 | ${{ type: 'contribution_generation_complete', sessionId: 'sid-123', projectId: 'p-1' }}
+            `('should route $type to dialecticStore and not call addNotification', ({ type, data, expectedPayload }: { type: DialecticLifecycleEvent['type'], data: NotificationData, expectedPayload: DialecticLifecycleEvent }) => {
+                const testNotification: Notification = {
+                    id: `uuid-${type}`,
                     user_id: 'user-abc',
-                    type: 'WALLET_TRANSACTION',
-                    data: { walletId: 'wallet-xyz', newBalance: '1000' },
+                    type,
+                    data,
                     read: false,
                     created_at: new Date().toISOString(),
                 };
-    
-                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
-    
+
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(testNotification);
+                });
+                
+                // It should call the special handler with the flattened payload
+                expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(expectedPayload);
+
+                // It should NOT call the generic addNotification handler
+                expect(logger.debug).not.toHaveBeenCalledWith(
+                    '[notificationStore] Added notification',
+                    expect.anything()
+                );
+            });
+
+
+            it('should call walletStore._handleWalletUpdateNotification for wallet transaction notifications', () => {
+                const walletNotification: Notification = {
+                    ...mockNotification1,
+                    type: 'WALLET_TRANSACTION',
+                    data: { walletId: 'wallet-xyz', newBalance: '1000' },
+                };
+
                 act(() => {
                     useNotificationStore.getState().handleIncomingNotification(walletNotification);
                 });
-    
+
                 // It should call the special handler
                 expect(mockHandleWalletUpdate).toHaveBeenCalledWith(walletNotification.data);
-    
+
                 // It should ALSO still add it to the general notification list
-                expect(addNotificationSpy).toHaveBeenCalledWith(walletNotification);
-    
-                addNotificationSpy.mockRestore();
+                // This is because wallet updates might be something the user wants to see in their feed
+                expect(useNotificationStore.getState().notifications[0]).toEqual(walletNotification);
             });
         });
 

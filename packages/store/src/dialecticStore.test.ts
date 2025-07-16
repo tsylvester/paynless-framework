@@ -27,21 +27,21 @@ import type {
   GenerateContributionsPayload,
   GenerateContributionsResponse,
   ContributionGenerationStatus,
+  GetSessionDetailsResponse,
+  DialecticLifecycleEvent,
 } from '@paynless/types';
 
 // Add the mock call here
-vi.mock('@paynless/api', async (importOriginal) => {
-    const original = await importOriginal() as Record<string, unknown>;
+vi.mock('@paynless/api', async () => {
     // Import the parts of the mock we need
-    const { api } = await import('@paynless/api/mocks'); 
+    const { api, resetApiMock, getMockDialecticClient } = await import('@paynless/api/mocks'); 
     
     return {
-        ...original, // Spread original to keep any non-mocked exports
         api, // Provide the mocked api object
         initializeApiClient: vi.fn(), 
-        // Provide a mock for initializeApiClient
-        // No need to re-import getMockDialecticClient or resetApiMock here as they are test utilities,
-        // not part of the @paynless/api module's public interface used by the store.
+        // Expose reset and getter for test cleanup and setup
+        resetApiMock,
+        getMockDialecticClient,
     };
 });
 
@@ -148,9 +148,61 @@ describe('useDialecticStore', () => {
             // Modify some state values
             useDialecticStore.setState({
                 isLoadingProjects: true,
-                projects: [{ id: '1' } as any],
-                selectedDomain: { id: 'test-domain' } as any,
-                activeSessionDetail: { id: 'session-reset-test' } as any, // Add a value for new field
+                projects: [{ 
+                    id: '1',
+                    project_name: 'Test Project',
+                    selected_domain_id: 'test-domain',
+                    dialectic_domains: {
+                        name: 'Test Domain',
+                    },
+                    dialectic_process_templates: {
+                        id: 'pt-1',
+                        name: 'Mock Template',
+                        description: 'A mock template',
+                        created_at: new Date().toISOString(),
+                        starting_stage_id: 'stage-1',
+                        stages: [],
+                    },
+                    user_id: 'user-1',
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    status: 'active',
+                    initial_user_prompt: 'Test prompt',
+                    initial_prompt_resource_id: null,
+                    selected_domain_overlay_id: null,
+                    repo_url: null,
+                    process_template_id: 'pt-1',
+                    isLoadingProcessTemplate: false,
+                    processTemplateError: null,
+                    contributionGenerationStatus: 'idle',
+                    generateContributionsError: null,   
+                    isSubmittingStageResponses: false,
+                    submitStageResponsesError: null,
+                    isSavingContributionEdit: false,
+                    saveContributionEditError: null,
+                }],
+                selectedDomain: { 
+                    id: 'test-domain',
+                    name: 'Test Domain',
+                    description: 'Test Domain Description',
+                    parent_domain_id: null,
+                    is_enabled: true,
+                },
+                activeSessionDetail: { 
+                    id: 'session-reset-test',
+                    project_id: '1',
+                    current_stage_id: 'stage-1',
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    selected_model_ids: [],
+                    dialectic_contributions: [],
+                    feedback: [],
+                    session_description: null,
+                    user_input_reference_url: null,
+                    iteration_count: 0,
+                    status: 'active',
+                    associated_chat_id: null,
+                }, // Add a value for new field
             });
 
             let state = useDialecticStore.getState();
@@ -170,7 +222,7 @@ describe('useDialecticStore', () => {
             expect(state.activeSessionDetail).toBe(initialDialecticStateValues.activeSessionDetail); // Check new field is reset
 
             Object.keys(initialDialecticStateValues).forEach(key => {
-                expect((state as any)[key]).toEqual((initialDialecticStateValues as any)[key]);
+                expect((state)[key]).toEqual((initialDialecticStateValues)[key]);
             });
         });
     });
@@ -196,7 +248,16 @@ describe('useDialecticStore', () => {
 
         it('setActiveContextStage should update activeContextStage', () => {
             const { setActiveContextStage } = useDialecticStore.getState();
-            const testStage = { id: 'stage-1', slug: 'test-stage' } as DialecticStage;
+            const testStage: DialecticStage = { 
+                id: 'stage-1', 
+                slug: 'test-stage', 
+                description: 'Test stage description', 
+                created_at: new Date().toISOString(), 
+                display_name: 'Test Stage', 
+                default_system_prompt_id: null, 
+                expected_output_artifacts: {}, 
+                input_artifact_rules: {} 
+            };
             setActiveContextStage(testStage);
             expect(useDialecticStore.getState().activeContextStage).toEqual(testStage);
             setActiveContextStage(null);
@@ -208,7 +269,16 @@ describe('useDialecticStore', () => {
             const testContext = {
                 projectId: 'proj-ctx',
                 sessionId: 'sess-ctx',
-                stage: { id: 'stage-ctx', slug: 'ctx-stage' } as DialecticStage,
+                stage: { 
+                    id: 'stage-ctx', 
+                    slug: 'ctx-stage',
+                    description: 'Test context stage',
+                    created_at: new Date().toISOString(),
+                    display_name: 'Context Stage',
+                    default_system_prompt_id: null,
+                    expected_output_artifacts: {},
+                    input_artifact_rules: {}
+                },
             };
             setActiveDialecticContext(testContext);
             const state = useDialecticStore.getState();
@@ -329,7 +399,7 @@ describe('useDialecticStore', () => {
                 data: mockDomains,
                 status: 200,
             };
-            (api.dialectic().listDomains as Mock).mockResolvedValue(mockResponse);
+            getMockDialecticClient().listDomains.mockResolvedValue(mockResponse);
 
             const fetchDomains = useDialecticStore.getState().fetchDomains;
             await fetchDomains();
@@ -346,7 +416,7 @@ describe('useDialecticStore', () => {
                 error: mockError,
                 status: 500,
             };
-            (api.dialectic().listDomains as Mock).mockResolvedValue(mockResponse);
+            getMockDialecticClient().listDomains.mockResolvedValue(mockResponse);
 
             const fetchDomains = useDialecticStore.getState().fetchDomains;
             await fetchDomains();
@@ -395,8 +465,8 @@ describe('useDialecticStore', () => {
                 data: mockProject,
                 status: 201,
             };
-            (api.dialectic().createProject as Mock).mockResolvedValue(mockResponse);
-            (api.dialectic().listProjects as Mock).mockResolvedValue({
+            getMockDialecticClient().createProject.mockResolvedValue(mockResponse);
+            getMockDialecticClient().listProjects.mockResolvedValue({
                 data: [mockProject],
                 status: 200,
             });
@@ -412,11 +482,14 @@ describe('useDialecticStore', () => {
             expect(result.data).toEqual(mockProject);
             
             // Verify that api.dialectic().createProject was called with FormData
-            const createProjectCall = (api.dialectic().createProject as Mock).mock.calls[0][0];
+            const createProjectCall = getMockDialecticClient().createProject.mock.calls[0][0];
             expect(createProjectCall).toBeInstanceOf(FormData);
-            expect(createProjectCall.get('projectName')).toBe(mockPayload.projectName);
-            expect(createProjectCall.get('initialUserPromptText')).toBe(mockPayload.initialUserPrompt);
-            expect(createProjectCall.get('selectedDomainId')).toBe(mockPayload.selectedDomainId);
+            // This now acts as a type guard for TypeScript
+            if (createProjectCall instanceof FormData) {
+                expect(createProjectCall.get('projectName')).toBe(mockPayload.projectName);
+                expect(createProjectCall.get('initialUserPromptText')).toBe(mockPayload.initialUserPrompt);
+                expect(createProjectCall.get('selectedDomainId')).toBe(mockPayload.selectedDomainId);
+            }
         });
 
         it('should handle API errors when creating a project', async () => {
@@ -425,7 +498,7 @@ describe('useDialecticStore', () => {
                 error: mockError,
                 status: 500,
             };
-            (api.dialectic().createProject as Mock).mockResolvedValue(mockResponse);
+            getMockDialecticClient().createProject.mockResolvedValue(mockResponse);
 
             const createProject = useDialecticStore.getState().createDialecticProject;
             await createProject(mockPayload);
@@ -446,8 +519,8 @@ describe('useDialecticStore', () => {
                 data: mockProject,
                 status: 201,
             };
-            (api.dialectic().createProject as Mock).mockResolvedValue(mockResponse);
-            (api.dialectic().listProjects as Mock).mockResolvedValue({
+            getMockDialecticClient().createProject.mockResolvedValue(mockResponse);
+            getMockDialecticClient().listProjects.mockResolvedValue({
                 data: [mockProject],
                 status: 200,
             });
@@ -458,275 +531,643 @@ describe('useDialecticStore', () => {
             const state = useDialecticStore.getState();
             expect(state.isCreatingProject).toBe(false);
 
-            const createProjectCall = (api.dialectic().createProject as Mock).mock.calls[0][0];
+            const createProjectCall = getMockDialecticClient().createProject.mock.calls[0][0];
             expect(createProjectCall).toBeInstanceOf(FormData);
-            expect(createProjectCall.get('promptFile')).toBe(mockFile);
+            if (createProjectCall instanceof FormData) {
+                expect(createProjectCall.get('projectName')).toBe(payloadWithFile.projectName);
+                expect(createProjectCall.get('initialUserPromptText')).toBe(payloadWithFile.initialUserPrompt);
+                expect(createProjectCall.get('selectedDomainId')).toBe(payloadWithFile.selectedDomainId);
+                expect(createProjectCall.get('promptFile')).toBe(mockFile);
+            }
         });
     });
 
-    // New test suite for generateContributions
     describe('generateContributions action', () => {
         const mockPayload: GenerateContributionsPayload = {
-            sessionId: 'session-123',
-            projectId: 'project-abc',
-            stageSlug: 'thesis',
+            sessionId: 'sess-generate-123',
+            projectId: 'proj-generate-abc',
             iterationNumber: 1,
+            stageSlug: 'thesis',
+            continueUntilComplete: true,
         };
-        const mockSuccessResponse: GenerateContributionsResponse = { message: 'Contributions generated' };
-        const mockProjectDetails: DialecticProject = {
-            id: 'project-abc',
-            user_id: 'user-1',
-            project_name: 'Test Project',
+
+        const mockProject: DialecticProject = {
+            id: mockPayload.projectId,
+            project_name: 'Test Project for Generation',
+            user_id: 'user-123',
             selected_domain_id: 'domain-1',
-            selected_domain_overlay_id: null,
             dialectic_domains: { name: 'Test Domain' },
-            repo_url: null,
-            status: 'active',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            dialectic_sessions: [],
-            resources: [], // Assuming resources is an array
-            process_template_id: 'pt-1',
-            dialectic_process_templates: { // Mock process template details
-                id: 'pt-1',
-                name: 'Test Process',
-                description: 'Mock process template',
+            status: 'active',
+            dialectic_sessions: [{
+                id: mockPayload.sessionId,
+                project_id: mockPayload.projectId,
+                iteration_count: 1,
+                session_description: 'A session for testing generation',
+                selected_model_ids: ['model-1', 'model-2'],
+                dialectic_contributions: [],
+                status: 'active',
+                user_input_reference_url: null,
+                associated_chat_id: null,
+                current_stage_id: null,
                 created_at: new Date().toISOString(),
-                stages: [], // Add stages array
-                transitions: [], // Add transitions array
-                starting_stage_id: null, // Add starting_stage_id
-            },
-            // Add missing fields from DialecticProject that are in initialDialecticStateValues.currentProjectDetail
-            initial_user_prompt: 'Test initial prompt',
-            isLoadingProcessTemplate: false,
-            processTemplateError: null,
+                updated_at: new Date().toISOString(),
+            }],
             contributionGenerationStatus: 'idle',
             generateContributionsError: null,
             isSubmittingStageResponses: false,
             submitStageResponsesError: null,
             isSavingContributionEdit: false,
             saveContributionEditError: null,
+            // Add other required fields for DialecticProject
+            initial_user_prompt: 'initial prompt',
+            initial_prompt_resource_id: null,
+            selected_domain_overlay_id: null,
+            repo_url: null,
+            process_template_id: null,
+            dialectic_process_templates: null,
+            isLoadingProcessTemplate: false,
+            processTemplateError: null,
         };
-        const mockApiError: ApiError = { message: 'API Error', code: 'API_FAIL' };
-        const networkError = new Error('Network Error');
+
+        const mockModelCatalog: AIModelCatalogEntry[] = [
+            { id: 'model-1', model_name: 'Test Model 1', provider_name: 'Provider A', api_identifier: 'm1', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null },
+            { id: 'model-2', model_name: 'Test Model 2', provider_name: 'Provider B', api_identifier: 'm2', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null },
+        ];
+
 
         beforeEach(() => {
-            vi.useFakeTimers();
+            // Set the essential state needed for the action to run
+            useDialecticStore.setState({ 
+                currentProjectDetail: JSON.parse(JSON.stringify(mockProject)),
+                selectedModelIds: ['model-1', 'model-2'],
+                modelCatalog: mockModelCatalog,
+            });
         });
 
-        afterEach(() => {
-            vi.runOnlyPendingTimers();
-            vi.useRealTimers();
-        });
-
-        it('should handle successful contribution generation and project detail refresh', async () => {
-            getMockDialecticClient().generateContributions.mockResolvedValue({ data: mockSuccessResponse, status: 200 });
-            // This test is now for the ASYNC success case.
-            // It asserts that the immediate state is correct and the final state is handled elsewhere.
-            getMockDialecticClient().getProjectDetails.mockResolvedValue({ data: mockProjectDetails, status: 200 });
-            getMockDialecticClient().fetchProcessTemplate.mockResolvedValue({ 
-                data: mockProjectDetails.dialectic_process_templates as DialecticProcessTemplate,
-                status: 200 
+        it('should handle successful contribution generation request and create placeholders', async () => {
+            const mockResponse: GenerateContributionsResponse = {
+                sessionId: mockPayload.sessionId,
+                projectId: mockPayload.projectId,
+                stage: mockPayload.stageSlug,
+                iteration: mockPayload.iterationNumber,
+                status: 'pending',
+                job_ids: ['job-1', 'job-2'],
+                successfulContributions: [],
+                failedAttempts: [],
+            };
+            getMockDialecticClient().generateContributions.mockResolvedValue({
+                data: mockResponse,
+                status: 202,
             });
 
             const { generateContributions } = useDialecticStore.getState();
-            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('idle');
-
-            const promise = generateContributions(mockPayload);
-
-            // Immediately after the call, status should be 'generating'
-            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('generating');
-
-            const result = await promise;
-
-            expect(result.data).toEqual(mockSuccessResponse);
-            expect(api.dialectic().generateContributions).toHaveBeenCalledWith(mockPayload);
-            // We no longer expect getProjectDetails to be called here.
-            expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
             
+            // --- Check initial state ---
+            const initialState = useDialecticStore.getState();
+            const initialContributions = initialState.currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions;
+            expect(initialContributions).toHaveLength(0);
+
+            await generateContributions(mockPayload);
+
             const finalState = useDialecticStore.getState();
-            // The global status should return to idle, but the session-specific one remains true.
-            expect(finalState.contributionGenerationStatus).toBe('idle');
+            const finalContributions = finalState.currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions;
+            
+            // --- Assertions ---
+            expect(finalState.contributionGenerationStatus).toBe('generating');
             expect(finalState.generateContributionsError).toBeNull();
-            expect(finalState.generatingSessions[mockPayload.sessionId]).toBe(true);
+            expect(finalContributions).toHaveLength(2);
+            expect(finalContributions?.[0].status).toBe('pending');
+            expect(finalContributions?.[1].model_name).toBe('Test Model 2');
+            expect(finalState.generatingSessions[mockPayload.sessionId]).toEqual(['job-1', 'job-2']);
         });
 
-        it('should immediately set a generating status for the session and not wait for completion', async () => {
-            getMockDialecticClient().generateContributions.mockResolvedValue({ data: mockSuccessResponse, status: 202 });
-            // Note: We do NOT mock getProjectDetails, as the refactored thunk should not call it.
-        
-            const { generateContributions } = useDialecticStore.getState();
-            const initialGeneratingSessions = useDialecticStore.getState().generatingSessions;
-            expect(initialGeneratingSessions[mockPayload.sessionId]).toBeFalsy();
-        
-            // Call the action, but don't await the full promise chain.
-            generateContributions(mockPayload);
-        
-            // Immediately check the state
-            const stateAfterCall = useDialecticStore.getState();
-            expect(stateAfterCall.generatingSessions[mockPayload.sessionId]).toBe(true);
-        
-            // The global status should be 'generating' during the call.
-            expect(stateAfterCall.contributionGenerationStatus).toBe('generating');
-        });
-
-        it('should set contributionGenerationStatus to "generating" during the API call', async () => {
-            let resolveApi: (value: ApiResponse<GenerateContributionsResponse>) => void;
-            const apiPromise = new Promise<ApiResponse<GenerateContributionsResponse>>(resolve => {
-                resolveApi = resolve;
-            });
-            getMockDialecticClient().generateContributions.mockImplementation(() => apiPromise);
-            // Mock getProjectDetails as it's called in the success path
-            getMockDialecticClient().getProjectDetails.mockResolvedValue({ data: mockProjectDetails, status: 200 });
-            getMockDialecticClient().fetchProcessTemplate.mockResolvedValue({ 
-                data: mockProjectDetails.dialectic_process_templates as DialecticProcessTemplate, 
-                status: 200 
+        it('should create placeholders immediately and handle API response', async () => {
+            getMockDialecticClient().generateContributions.mockResolvedValue({
+                data: { 
+                    job_ids: ['job-abc'],
+                    sessionId: mockPayload.sessionId,
+                    projectId: mockPayload.projectId,
+                    stage: mockPayload.stageSlug,
+                    iteration: mockPayload.iterationNumber,
+                    status: 'pending',
+                    successfulContributions: [],
+                    failedAttempts: [],
+                },
+                status: 202,
             });
 
             const { generateContributions } = useDialecticStore.getState();
-            const generationFullPromise = generateContributions(mockPayload); // Don't await here
-
-            // Immediately after the call, status should be 'generating'
-            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('generating');
-
-            // Resolve the API call
-            resolveApi!({ data: mockSuccessResponse, status: 200 });
-            await generationFullPromise; // Wait for the entire thunk to complete
-
-            // After completion, it should be 'idle'
-            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('idle');
-        });
-
-        it('should handle API error during contribution generation', async () => {
-            getMockDialecticClient().generateContributions.mockResolvedValue({ error: mockApiError, status: 500, data: undefined });
-
-            const { generateContributions } = useDialecticStore.getState();
-            const promise = generateContributions(mockPayload);
             
-            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('generating');
+            // --- Action ---
+            generateContributions(mockPayload); // Don't await, check immediate state change
 
-            const result = await promise;
+            // --- Assertions for immediate state change ---
+            const stateAfterCall = useDialecticStore.getState();
+            expect(stateAfterCall.contributionGenerationStatus).toBe('generating');
+            const contributions = stateAfterCall.currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions;
+            expect(contributions).toHaveLength(2);
+            expect(contributions?.[0].status).toBe('pending');
+        });
 
-            expect(result.error).toEqual(mockApiError);
+        it('should handle API error during contribution generation and mark placeholders as failed', async () => {
+            const mockApiError: ApiError = { code: 'SERVER_ERROR', message: 'Generation failed' };
+            getMockDialecticClient().generateContributions.mockResolvedValue({
+                error: mockApiError,
+                status: 500,
+            });
+
+            const { generateContributions } = useDialecticStore.getState();
+            await generateContributions(mockPayload);
+
             const finalState = useDialecticStore.getState();
+            const finalContributions = finalState.currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions;
+
             expect(finalState.contributionGenerationStatus).toBe('failed');
             expect(finalState.generateContributionsError).toEqual(mockApiError);
-            expect(finalState.generatingSessions[mockPayload.sessionId]).toBe(false); // Should be reset on error
-            expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
+            expect(finalContributions).toHaveLength(2);
+            expect(finalContributions?.[0].status).toBe('failed');
+            expect(finalContributions?.[1].status).toBe('failed');
         });
 
-        it('should handle network error during contribution generation', async () => {
+        it('should handle network error during contribution generation and mark placeholders as failed', async () => {
+            const networkError = new Error('Network connection lost');
             getMockDialecticClient().generateContributions.mockRejectedValue(networkError);
 
             const { generateContributions } = useDialecticStore.getState();
-            const promise = generateContributions(mockPayload);
+            await generateContributions(mockPayload);
 
-            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('generating');
-            
-            const result = await promise;
-
-            expect(result.error).toEqual({ message: networkError.message, code: 'NETWORK_ERROR' });
             const finalState = useDialecticStore.getState();
+            const finalContributions = finalState.currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions;
+
             expect(finalState.contributionGenerationStatus).toBe('failed');
             expect(finalState.generateContributionsError).toEqual({ message: networkError.message, code: 'NETWORK_ERROR' });
-            expect(finalState.generatingSessions[mockPayload.sessionId]).toBe(false); // Should be reset on error
-            expect(api.dialectic().getProjectDetails).not.toHaveBeenCalled();
+            expect(finalContributions).toHaveLength(2);
+            expect(finalContributions?.[0].status).toBe('failed');
+            expect(finalContributions?.[1].status).toBe('failed');
         });
     });
 
     describe('activateProjectAndSessionContextForDeepLink', () => {
-        const mockStages: DialecticStage[] = [
-            { id: 'stage-1', display_name: 'Thesis', slug: 'thesis', created_at: new Date().toISOString(), description: 'Define the initial thesis.', expected_output_artifacts: [], input_artifact_rules: [], default_system_prompt_id: null },
-            { id: 'stage-2', display_name: 'Antithesis', slug: 'antithesis', created_at: new Date().toISOString(), description: 'Challenge the thesis.', expected_output_artifacts: [], input_artifact_rules: [], default_system_prompt_id: null },
-        ];
-
-        const mockSessions: DialecticSession[] = [
-            { id: 'session-1', project_id: 'proj-1', iteration_count: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'stage-1', session_description: 'First session', selected_model_ids: ['model-1'], status: 'active', associated_chat_id: 'chat-1', user_input_reference_url: null },
-            { id: 'session-2', project_id: 'proj-1', iteration_count: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), current_stage_id: 'stage-1', session_description: 'Second session', selected_model_ids: ['model-2'], status: 'active', associated_chat_id: 'chat-2', user_input_reference_url: null },
-        ];
-
+        const mockProjectId = 'proj-1';
+        const mockSessionId = 'session-2';
+        
         const mockProject: DialecticProject = {
-            id: 'proj-1',
-            user_id: 'user-1',
-            project_name: 'Test Project',
+            id: mockProjectId,
+            project_name: 'Deep Link Project',
             selected_domain_id: 'domain-1',
-            dialectic_domains: { name: 'Software' },
-            selected_domain_overlay_id: null,
-            repo_url: null,
-            status: 'active',
+            user_id: 'user-1',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            dialectic_sessions: mockSessions,
-            process_template_id: 'proc-1',
+            status: 'active',
+            initial_user_prompt: 'Test prompt',
+            initial_prompt_resource_id: null,
+            selected_domain_overlay_id: null,
+            repo_url: null,
+            process_template_id: 'pt-1',
+            dialectic_domains: {
+                name: 'Software'
+            },
             dialectic_process_templates: {
-                id: 'proc-1',
-                name: 'Standard Process',
-                description: 'A test process',
+                id: 'pt-1',
+                name: 'Mock Template',
+                description: 'A mock template',
                 created_at: new Date().toISOString(),
                 starting_stage_id: 'stage-1',
-                stages: mockStages,
+                stages: [{ 
+                    id: 'stage-1', 
+                    slug: 'thesis', 
+                    description: 'desc', 
+                    created_at: new Date().toISOString(), 
+                    display_name: 'Thesis', 
+                    default_system_prompt_id: null, 
+                    expected_output_artifacts: {}, 
+                    input_artifact_rules: {} 
+                }]
             },
-            isLoadingProcessTemplate: false,
-            processTemplateError: null,
+            dialectic_sessions: [{ 
+                id: 'session-1', 
+                project_id: mockProjectId, 
+                created_at: new Date().toISOString(), 
+                updated_at: new Date().toISOString(), 
+                current_stage_id: 'stage-1', 
+                selected_model_ids: [], 
+                dialectic_contributions: [], 
+                feedback: [], 
+                session_description: null, 
+                user_input_reference_url: null, 
+                iteration_count: 0, 
+                status: 'active', 
+                associated_chat_id: null,
+                dialectic_session_models: [],
+                },
+                { 
+                id: mockSessionId, 
+                project_id: mockProjectId, 
+                created_at: new Date().toISOString(), 
+                updated_at: new Date().toISOString(), 
+                current_stage_id: 'stage-1', 
+                selected_model_ids: [], 
+                dialectic_contributions: [], 
+                feedback: [], 
+                session_description: null, 
+                user_input_reference_url: null, 
+                iteration_count: 0, 
+                status: 'active', 
+                associated_chat_id: null,
+                dialectic_session_models: [], 
+            }
+            ],
             contributionGenerationStatus: 'idle',
             generateContributionsError: null,
-            isSubmittingStageResponses: false,
-            submitStageResponsesError: null,
+            isLoadingProcessTemplate: false,
             isSavingContributionEdit: false,
+            isSubmittingStageResponses: false,
+            processTemplateError: null,
             saveContributionEditError: null,
+            submitStageResponsesError: null
         };
 
-        it('should fetch project, set active session, and set first stage on success', async () => {
-            const { activateProjectAndSessionContextForDeepLink } = useDialecticStore.getState();
-            (api.dialectic().getProjectDetails as Mock).mockResolvedValue({
+        const mockSession: DialecticSession = {
+            id: mockSessionId,
+            project_id: mockProjectId,
+            current_stage_id: 'stage-1',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            selected_model_ids: [],
+            dialectic_contributions: [],
+            feedback: [],
+            session_description: null,
+            user_input_reference_url: null,
+            iteration_count: 0,
+            status: 'active',
+            associated_chat_id: null,
+            dialectic_session_models: [],
+        };
+
+        const mockStage: DialecticStage = {
+            id: 'stage-1',
+            slug: 'thesis',
+            description: 'desc',
+            created_at: new Date().toISOString(),
+            display_name: 'Thesis',
+            default_system_prompt_id: null,
+            expected_output_artifacts: {},
+            input_artifact_rules: {}
+        };
+
+        it('should fetch project, then session, and set all context', async () => {
+            // Arrange
+            getMockDialecticClient().getProjectDetails.mockResolvedValue({
                 data: mockProject,
-                error: null,
+                status: 200,
             });
-            (api.dialectic().getSessionDetails as Mock).mockResolvedValue({
+
+            getMockDialecticClient().getSessionDetails.mockResolvedValue({
                 data: {
-                    session: mockProject.dialectic_sessions![1],
-                    currentStageDetails: mockProject.dialectic_process_templates!.stages![0],
+                    session: mockSession,
+                    currentStageDetails: mockStage,
                 },
-                error: null,
+                status: 200,
+            });
+            
+            // Mock the template fetch that is triggered by getting project details
+            getMockDialecticClient().fetchProcessTemplate.mockResolvedValue({
+                data: mockProject.dialectic_process_templates ?? undefined,
+                status: 200,
+            });
+            getMockDialecticClient().updateSessionModels.mockResolvedValue({
+                data: mockSession,
+                status: 200,
             });
 
-            const targetSessionId = mockProject.dialectic_sessions![1].id; // Target the second session
-            await activateProjectAndSessionContextForDeepLink(mockProject.id, targetSessionId);
+            // Act
+            const { activateProjectAndSessionContextForDeepLink } = useDialecticStore.getState();
+            await activateProjectAndSessionContextForDeepLink(mockProjectId, mockSessionId);
 
+            // Assert
             const state = useDialecticStore.getState();
-            // Check project details
+            expect(getMockDialecticClient().getProjectDetails).toHaveBeenCalledWith(mockProjectId);
+            expect(getMockDialecticClient().getSessionDetails).toHaveBeenCalledWith(mockSessionId);
+
             expect(state.currentProjectDetail).toEqual(mockProject);
-            expect(state.isLoadingProjectDetail).toBe(false);
-            expect(state.projectDetailError).toBeNull();
-            
-            // Check active session
-            expect(state.activeSessionDetail).toEqual(mockProject.dialectic_sessions![1]);
-            
-            // Check active stage slug
-            expect(state.activeStageSlug).toBe(mockProject.dialectic_process_templates!.stages![0].slug);
+            expect(state.activeSessionDetail).toEqual(expect.objectContaining(mockSession));
+            expect(state.activeContextProjectId).toBe(mockProjectId);
+            expect(state.activeContextSessionId).toBe(mockSessionId);
+            expect(state.activeContextStage).toEqual(mockStage);
+            expect(state.activeStageSlug).toBe(mockStage.slug);
         });
 
         it('should set projectDetailError on failure', async () => {
-            const { activateProjectAndSessionContextForDeepLink } = useDialecticStore.getState();
             const mockError: ApiError = { code: 'NOT_FOUND', message: 'Project not found' };
-            (api.dialectic().getProjectDetails as Mock).mockResolvedValue({
-                data: null,
-                error: mockError,
-            });
-            // Also mock the session call to avoid irrelevant secondary errors
-            (api.dialectic().getSessionDetails as Mock).mockResolvedValue({
-                data: null,
-                error: { code: 'DEPENDENCY_ERROR', message: 'Project fetch failed' }
-            });
+            getMockDialecticClient().getProjectDetails.mockResolvedValue({ error: mockError, status: 404 });
 
-            await activateProjectAndSessionContextForDeepLink('non-existent-project', 'non-existent-session');
+            const { activateProjectAndSessionContextForDeepLink } = useDialecticStore.getState();
+            await activateProjectAndSessionContextForDeepLink(mockProjectId, mockSessionId);
 
             const state = useDialecticStore.getState();
-            expect(state.isLoadingProjectDetail).toBe(false);
             expect(state.projectDetailError).toEqual(mockError);
-            expect(state.currentProjectDetail).toBeNull();
-            expect(state.activeSessionDetail).toBeNull();
-            expect(state.activeStageSlug).toBeNull();
+            expect(getMockDialecticClient().getSessionDetails).not.toHaveBeenCalled(); // Should not proceed if project fetch fails
+        });
+    });
+
+    describe('_handleDialecticLifecycleEvent', () => {
+        beforeEach(() => {
+            // Setup initial state with a project and session
+            useDialecticStore.setState({
+                currentProjectDetail: {
+                    id: 'proj-123',
+                    dialectic_sessions: [{
+                        id: 'session-123',
+                        dialectic_contributions: [],
+                        project_id: 'proj-123',
+                        current_stage_id: 'stage-1',
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        selected_model_ids: [],
+                        feedback: [],
+                        session_description: null,
+                        user_input_reference_url: null,
+                        iteration_count: 0,
+                        status: 'active',
+                        associated_chat_id: null,
+                    }],
+                    project_name: 'Test Project',
+                    selected_domain_id: 'domain-1',
+                    dialectic_domains: { name: 'Software' },
+                    user_id: 'user-123',
+                    created_at: '2025-01-01T00:00:00Z',
+                    updated_at: '2025-01-01T00:00:00Z',
+                    status: 'active',
+                    initial_user_prompt: 'Test prompt',
+                    initial_prompt_resource_id: null,
+                    selected_domain_overlay_id: null,
+                    repo_url: null,
+                    process_template_id: 'pt-1',
+                    dialectic_process_templates: null,
+                    isLoadingProcessTemplate: false,
+                    processTemplateError: null,
+                    contributionGenerationStatus: 'idle',
+                    generateContributionsError: null,
+                    isSubmittingStageResponses: false,
+                    submitStageResponsesError: null,
+                    isSavingContributionEdit: false,
+                    saveContributionEditError: null,
+                }
+            });
+        });
+
+        it('should handle contribution_generation_started', () => {
+            const event: DialecticLifecycleEvent = {
+                type: 'contribution_generation_started',
+                sessionId: 'session-123',
+            };
+            useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+    
+          const state = useDialecticStore.getState();
+          expect(state.contributionGenerationStatus).toBe('generating');
+          expect(state.generateContributionsError).toBeNull();
+        });
+
+        it('should handle dialectic_contribution_started', () => {
+            // Add a placeholder contribution
+            useDialecticStore.setState(state => {
+                if (state.currentProjectDetail?.dialectic_sessions?.[0]) {
+                    state.currentProjectDetail.dialectic_sessions[0].dialectic_contributions = [{ 
+                        id: 'session-123-model-abc-1-0', 
+                        status: 'pending', 
+                        session_id: 'session-123', 
+                        iteration_number: 1, 
+                        model_id: 'model-abc', 
+                        model_name: 'model-abc',
+                        user_id: 'user-123',
+                        stage: 'stage-1',
+                        prompt_template_id_used: 'pt-1',
+                        seed_prompt_url: 'https://example.com/seed',
+                        edit_version: 1,
+                        is_latest_edit: true,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        original_model_contribution_id: 'model-abc-1-0',
+                        raw_response_storage_path: 'https://example.com/raw-response',
+                        target_contribution_id: 'model-abc-1-0',
+                        tokens_used_input: 100,
+                        tokens_used_output: 100,
+                        processing_time_ms: 1000,
+                        error: null,
+                        citations: [],
+                        contribution_type: 'text',
+                        file_name: 'contribution.txt',
+                        storage_bucket: 'test-bucket',
+                        storage_path: 'https://example.com/contribution.txt',
+                        size_bytes: 100,
+                        mime_type: 'text/plain',
+                    }];
+                }
+                return state;
+            });
+
+            const event: DialecticLifecycleEvent = {
+                type: 'dialectic_contribution_started',
+                sessionId: 'session-123',
+                modelId: 'model-abc',
+                iterationNumber: 1,
+            };
+            useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+
+            const contribution = useDialecticStore.getState().currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions?.[0];
+            expect(contribution?.status).toBe('generating');
+        });
+
+        it('should handle contribution_generation_retrying', () => {
+            // Add a placeholder contribution
+            useDialecticStore.setState(state => {
+                if (state.currentProjectDetail?.dialectic_sessions?.[0]) {
+                    state.currentProjectDetail.dialectic_sessions[0].dialectic_contributions = [{ 
+                        id: 'session-123-model-abc-1-0', 
+                        status: 'pending', 
+                        session_id: 'session-123', 
+                        iteration_number: 1, 
+                        model_id: 'model-abc', 
+                        model_name: 'model-abc',
+                        user_id: 'user-123',
+                        stage: 'stage-1',
+                        prompt_template_id_used: 'pt-1',
+                        seed_prompt_url: 'https://example.com/seed',
+                        edit_version: 1,
+                        is_latest_edit: true,   
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        original_model_contribution_id: 'model-abc-1-0',
+                        raw_response_storage_path: 'https://example.com/raw-response',
+                        target_contribution_id: 'model-abc-1-0',
+                        tokens_used_input: 100,
+                        tokens_used_output: 100,
+                        processing_time_ms: 1000,
+                        error: null,
+                        citations: [],
+                        contribution_type: 'text',
+                        file_name: 'contribution.txt',
+                        storage_bucket: 'test-bucket',
+                        storage_path: 'https://example.com/contribution.txt',
+                        size_bytes: 100,
+                        mime_type: 'text/plain',
+                    }];
+                }
+                return state;
+            });
+
+            const event: DialecticLifecycleEvent = {
+                type: 'contribution_generation_retrying',
+                sessionId: 'session-123',
+                modelId: 'model-abc',
+                iterationNumber: 1,
+                error: 'Retrying...',
+            };
+            useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+
+            const contribution = useDialecticStore.getState().currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions?.[0];
+            expect(contribution?.status).toBe('retrying');
+        });
+
+        it('should handle dialectic_contribution_received and replace placeholder', () => {
+            useDialecticStore.setState(state => {
+                if (state.currentProjectDetail?.dialectic_sessions?.[0]) {
+                    state.currentProjectDetail.dialectic_sessions[0].dialectic_contributions = [{ 
+                        id: 'session-123-model-abc-1-0',
+                        status: 'pending',
+                        session_id: 'session-123',
+                        iteration_number: 1,
+                        model_id: 'model-abc',
+                        model_name: 'model-abc',
+                        user_id: 'user-123',
+                        stage: 'stage-1',
+                        prompt_template_id_used: 'pt-1',
+                        seed_prompt_url: 'https://example.com/seed',
+                        edit_version: 1,
+                        is_latest_edit: true,   
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        original_model_contribution_id: 'model-abc-1-0',
+                        raw_response_storage_path: 'https://example.com/raw-response',
+                        target_contribution_id: 'model-abc-1-0',
+                        tokens_used_input: 100,     
+                        tokens_used_output: 100,
+                        processing_time_ms: 1000,
+                        error: null,
+                        citations: [],
+                        contribution_type: 'text',
+                        file_name: 'contribution.txt',
+                        storage_bucket: 'test-bucket',
+                        storage_path: 'https://example.com/contribution.txt',
+                        size_bytes: 100,
+                        mime_type: 'text/plain',
+                    }];
+                }
+                return state;
+            });
+            const event: DialecticLifecycleEvent = {
+                type: 'dialectic_contribution_received',
+                sessionId: 'session-123',
+                contribution: { 
+                    id: 'real-id-1', 
+                    model_id: 'model-abc', 
+                    iteration_number: 1, 
+                    session_id: 'session-123', 
+                    user_id: 'user-123', 
+                    stage: 'stage-1', 
+                    model_name: 'model-abc',
+                    prompt_template_id_used: 'pt-1',
+                    seed_prompt_url: 'https://example.com/seed',
+                    edit_version: 1,
+                    is_latest_edit: true,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    original_model_contribution_id: 'model-abc-1-0',
+                    raw_response_storage_path: 'https://example.com/raw-response',
+                    target_contribution_id: 'model-abc-1-0',
+                    tokens_used_input: 100,
+                    tokens_used_output: 100,
+                    processing_time_ms: 1000,
+                    error: null,
+                    citations: [],
+                    contribution_type: 'text',
+                    file_name: 'contribution.txt',
+                    storage_bucket: 'test-bucket',
+                    storage_path: 'https://example.com/contribution.txt',
+                    size_bytes: 100,    
+                    mime_type: 'text/plain',
+                },
+                job_id: 'job-1',
+            };
+            useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+
+            const contributions = useDialecticStore.getState().currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions;
+            expect(contributions).toHaveLength(1);
+            expect(contributions?.[0].id).toBe('real-id-1');
+        });
+
+        it('should handle contribution_generation_failed and mark placeholders', () => {
+            useDialecticStore.setState(state => {
+                if (state.currentProjectDetail?.dialectic_sessions?.[0]) {
+                    state.currentProjectDetail.dialectic_sessions[0].dialectic_contributions = [{ 
+                        id: 'session-123-model-abc-1-0',
+                        status: 'pending',
+                        session_id: 'session-123',
+                        iteration_number: 1,
+                        model_id: 'model-abc',
+                        model_name: 'model-abc',
+                        user_id: 'user-123',
+                        stage: 'stage-1',
+                        prompt_template_id_used: 'pt-1',
+                        seed_prompt_url: 'https://example.com/seed',
+                        edit_version: 1,
+                        is_latest_edit: true,   
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        original_model_contribution_id: 'model-abc-1-0',
+                        raw_response_storage_path: 'https://example.com/raw-response',
+                        target_contribution_id: 'model-abc-1-0',
+                        tokens_used_input: 100,
+                        tokens_used_output: 100,
+                        processing_time_ms: 1000,
+                        error: null,
+                        citations: [],
+                        contribution_type: 'text',
+                        file_name: 'contribution.txt',
+                        storage_bucket: 'test-bucket',
+                        storage_path: 'https://example.com/contribution.txt',   
+                        size_bytes: 100,
+                        mime_type: 'text/plain',
+                    }];
+                }
+                return state;
+            });
+
+            const event: DialecticLifecycleEvent = {
+                type: 'contribution_generation_failed',
+                sessionId: 'session-123',
+                error: { code: 'FAILED', message: 'It failed' },
+            };
+            useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+
+            const contribution = useDialecticStore.getState().currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions?.[0];
+            expect(contribution?.status).toBe('failed');
+            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('failed');
+        });
+
+        it('should handle contribution_generation_complete and reset status', () => {
+            useDialecticStore.setState({ contributionGenerationStatus: 'generating' });
+
+            const event: DialecticLifecycleEvent = {
+                type: 'contribution_generation_complete',
+                sessionId: 'session-123',
+                projectId: 'proj-1',
+            };
+            useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('idle');
+            expect(getMockDialecticClient().getProjectDetails).toHaveBeenCalledWith('proj-1');
         });
     });
 }); 

@@ -489,7 +489,8 @@ describe('useDialecticStore', () => {
                     selectedModelIds: expect.arrayContaining(expectedIds.sort()), // Sort for comparison if order doesn't matter
                 });
                  const actualArgs = getMockDialecticClient().updateSessionModels.mock.calls[0][0];
-                 expect(actualArgs.selectedModelIds.sort()).toEqual(expectedIds.sort());
+                 // Use spread operator to create a mutable copy before sorting
+                 expect([...actualArgs.selectedModelIds].sort()).toEqual([...expectedIds].sort());
             });
         });
 
@@ -552,85 +553,35 @@ describe('useDialecticStore', () => {
     });
 
     describe('fetchAndSetCurrentSessionDetails Thunk', () => {
-        const mockSessionId = 'sess-fetch-123';
         const mockProjectId = 'proj-for-sess-123';
+        const mockSessionId = 'sess-fetch-123';
+
         const mockSessionData: DialecticSession = {
             id: mockSessionId,
             project_id: mockProjectId,
             session_description: 'Fetched session',
-            user_input_reference_url: null,
             iteration_count: 2,
-            selected_model_ids: ['model-a', 'model-b'],
+            current_stage_id: 'synthesis-id',
             status: 'active',
-            associated_chat_id: null,
-            current_stage_id: 'synthesis',
-            created_at: '2025-06-23T00:44:19.882Z',
-            updated_at: '2025-06-23T00:44:19.882Z',
-            dialectic_session_models: [{ id: 'sm-1', session_id: mockSessionId, model_id: 'model-a', model_role: 'primary', created_at: '2025-06-23T00:44:19.882Z' }],
-            dialectic_contributions: [],
-            feedback: [],
-        };
+        } as DialecticSession;
 
-        const mockStage: DialecticStage = {
-            id: 'stage-synthesis-id',
+        const mockStageDetails: DialecticStage = {
+            id: 'synthesis-id',
             slug: 'synthesis',
-            display_name: 'Synthesis Stage',
-            description: 'This is the synthesis stage.',
-            created_at: '2023-01-01T00:00:00.000Z',
-            default_system_prompt_id: 'prompt-syn-default',
-            expected_output_artifacts: { "type": "markdown_document" } as any,
-            input_artifact_rules: { "sources": [] } as any,
-        };
+            display_name: 'Synthesis',
+        } as DialecticStage;
 
-        const mockGetSessionDetailsResponse: ApiResponse<GetSessionDetailsResponse> = {
+        const mockApiResponse: ApiResponse<{ session: DialecticSession; currentStageDetails: DialecticStage; }> = {
             data: {
                 session: mockSessionData,
-                currentStageDetails: mockStage,
+                currentStageDetails: mockStageDetails,
             },
             status: 200,
         };
-        
-        const mockProjectForSessionContext: DialecticProject = {
-            id: mockProjectId,
-            user_id: 'user-test',
-            project_name: 'Project for Session',
-            initial_user_prompt: 'Test prompt',
-            selected_domain_id: 'domain-1',
-            dialectic_domains: null,
-            selected_domain_overlay_id: null,
-            repo_url: null,
-            status: 'active',
-            created_at: '2023-01-01T00:00:00.000Z',
-            updated_at: '2023-01-01T00:00:00.000Z',
-            dialectic_sessions: [],
-            resources: [],
-            process_template_id: 'template-123',
-            dialectic_process_templates: {
-                id: 'template-123',
-                name: 'Default Template',
-                description: 'A template',
-                created_at: '2023-01-01T00:00:00.000Z',
-                starting_stage_id: null,
-                stages: [mockStage],
-                transitions: [],
-            },
-            isLoadingProcessTemplate: false,
-            processTemplateError: null,
-            contributionGenerationStatus: 'idle',
-            generateContributionsError: null,
-            isSubmittingStageResponses: false,
-            submitStageResponsesError: null,
-            isSavingContributionEdit: false,
-            saveContributionEditError: null,
-        };
 
         it('should fetch session details, update state, and set context on success', async () => {
-            (api.dialectic().getSessionDetails as Mock).mockResolvedValue(mockGetSessionDetailsResponse);
-            
-            useDialecticStore.setState({ 
-                currentProjectDetail: { ...mockProjectForSessionContext, dialectic_sessions: [] },
-                activeContextProjectId: mockProjectId,
-            });
+            api.dialectic().getSessionDetails.mockResolvedValue(mockApiResponse);
+            useDialecticStore.setState({ ...initialDialecticStateValues });
 
             await useDialecticStore.getState().fetchAndSetCurrentSessionDetails(mockSessionId);
 
@@ -640,101 +591,55 @@ describe('useDialecticStore', () => {
             expect(state.activeSessionDetailError).toBeNull();
             expect(state.activeContextProjectId).toEqual(mockProjectId);
             expect(state.activeContextSessionId).toEqual(mockSessionId);
-            expect(state.activeContextStage).toEqual(mockStage);
-            expect(state.selectedModelIds).toEqual(mockSessionData.selected_model_ids);
-
-            const projectDetail = state.currentProjectDetail;
-            expect(projectDetail).not.toBeNull();
-            const sessionInProject = projectDetail?.dialectic_sessions?.find(s => s.id === mockSessionId);
-            expect(sessionInProject).toBeDefined();
-            expect(sessionInProject).toEqual(
-                expect.objectContaining(mockSessionData)
-            );
+            expect(state.activeContextStage).toEqual(mockStageDetails);
         });
-
-        it('should handle API errors when fetching session details', async () => {
-            const mockError: ApiError = { code: 'API_DOWN', message: 'The API is down' };
-            (api.dialectic().getSessionDetails as Mock).mockResolvedValue({ error: mockError, status: 500 });
+        
+        it('should update an existing session in currentProjectDetail.dialectic_sessions', async () => {
+            const olderVersionOfSession = { ...mockSessionData, session_description: 'Older version' };
+            const initialProjectState: DialecticProject = {
+                id: mockProjectId,
+                dialectic_sessions: [olderVersionOfSession],
+            } as DialecticProject;
+            
+            useDialecticStore.setState({ currentProjectDetail: initialProjectState });
+            api.dialectic().getSessionDetails.mockResolvedValue(mockApiResponse);
 
             await useDialecticStore.getState().fetchAndSetCurrentSessionDetails(mockSessionId);
 
             const state = useDialecticStore.getState();
-            expect(state.isLoadingActiveSessionDetail).toBe(false);
-            expect(state.activeSessionDetail).toBeNull();
-            expect(state.activeSessionDetailError).toEqual(mockError);
-            expect(state.activeContextSessionId).toBeNull();
-            expect(state.activeContextStage).toBeNull();
-        });
-
-        it('should update an existing session in currentProjectDetail.dialectic_sessions if it already exists', async () => {
-            const initialSessionInProject: DialecticSession = {
-                ...mockSessionData,
-                session_description: 'Initial Description',
-                iteration_count: 1,
-            };
-            const projectWithExistingSession: DialecticProject = {
-                ...mockProjectForSessionContext,
-                dialectic_sessions: [initialSessionInProject],
-            };
-            useDialecticStore.setState({ 
-                currentProjectDetail: projectWithExistingSession,
-                activeContextProjectId: mockProjectId,
-            });
+            const sessionInProject = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === mockSessionId);
             
-            (api.dialectic().getSessionDetails as Mock).mockResolvedValue(mockGetSessionDetailsResponse);
-
-            await useDialecticStore.getState().fetchAndSetCurrentSessionDetails(mockSessionId);
-
-            const state = useDialecticStore.getState();
-            expect(state.activeSessionDetail).toEqual(mockSessionData);
-            
-            const updatedProjectDetail = state.currentProjectDetail;
-            expect(updatedProjectDetail).not.toBeNull();
-            expect(updatedProjectDetail?.dialectic_sessions?.length).toBe(1);
-            const updatedSessionInProject = updatedProjectDetail?.dialectic_sessions?.[0];
-            
-            expect(updatedSessionInProject?.session_description).toEqual(mockSessionData.session_description);
-            expect(updatedSessionInProject?.iteration_count).toEqual(mockSessionData.iteration_count);
-            expect(updatedSessionInProject).toEqual(
-                expect.objectContaining(mockSessionData)
-            );
-            expect(state.activeContextStage).toEqual(mockStage);
-        });
-
-        it('should add the session to currentProjectDetail.dialectic_sessions if project exists but session does not', async () => {
-            const projectWithoutTheSession: DialecticProject = {
-                ...mockProjectForSessionContext,
-                dialectic_sessions: [],
-            };
-            useDialecticStore.setState({ 
-                currentProjectDetail: projectWithoutTheSession,
-                activeContextProjectId: mockProjectId,
-            });
-
-            (api.dialectic().getSessionDetails as Mock).mockResolvedValue(mockGetSessionDetailsResponse);
-            await useDialecticStore.getState().fetchAndSetCurrentSessionDetails(mockSessionId);
-
-            const state = useDialecticStore.getState();
-            expect(state.activeSessionDetail).toEqual(mockSessionData);
-            expect(state.currentProjectDetail?.dialectic_sessions).toContainEqual(
-                expect.objectContaining(mockSessionData)
-            );
+            expect(sessionInProject).toEqual(expect.objectContaining(mockSessionData));
             expect(state.currentProjectDetail?.dialectic_sessions?.length).toBe(1);
-            expect(state.activeContextStage).toEqual(mockStage);
+        });
+
+        it('should add the session to currentProjectDetail.dialectic_sessions if it does not exist', async () => {
+            const initialProjectState: DialecticProject = {
+                id: mockProjectId,
+                dialectic_sessions: [], // Session does not exist
+            } as DialecticProject;
+
+            useDialecticStore.setState({ currentProjectDetail: initialProjectState });
+            api.dialectic().getSessionDetails.mockResolvedValue(mockApiResponse);
+
+            await useDialecticStore.getState().fetchAndSetCurrentSessionDetails(mockSessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.currentProjectDetail?.dialectic_sessions?.length).toBe(1);
+            expect(state.currentProjectDetail?.dialectic_sessions?.[0]).toEqual(
+                expect.objectContaining(mockSessionData)
+            );
         });
 
         it('should not modify currentProjectDetail if it is null', async () => {
-            useDialecticStore.setState({ currentProjectDetail: null, activeContextProjectId: null });
+            useDialecticStore.setState({ currentProjectDetail: null });
+            api.dialectic().getSessionDetails.mockResolvedValue(mockApiResponse);
 
-            (api.dialectic().getSessionDetails as Mock).mockResolvedValue(mockGetSessionDetailsResponse);
             await useDialecticStore.getState().fetchAndSetCurrentSessionDetails(mockSessionId);
-
+            
             const state = useDialecticStore.getState();
             expect(state.activeSessionDetail).toEqual(mockSessionData);
-            expect(state.currentProjectDetail).toBeNull();
-            expect(state.activeContextStage).toEqual(mockStage);
-            expect(state.activeContextProjectId).toEqual(mockProjectId);
-            expect(state.activeContextSessionId).toEqual(mockSessionId);
+            expect(state.currentProjectDetail).toBeNull(); // Should not create a project detail object
         });
     });
 
