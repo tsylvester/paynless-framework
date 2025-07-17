@@ -23,9 +23,15 @@ import { useNavigate } from "react-router-dom";
 
 const data = {
 	navMain: [
+		// {
+		// 	title: "New Chat",
+		// 	url: "/new",
+		// 	icon: SquareTerminal,
+		// 	isActive: true,
+		// },
 		{
-			title: "New Chat",
-			url: "/new",
+			title: "Dashboard",
+			url: "/dashboard",
 			icon: SquareTerminal,
 			isActive: true,
 		},

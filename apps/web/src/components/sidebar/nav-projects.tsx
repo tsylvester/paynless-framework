@@ -41,7 +41,7 @@ export function NavProjects() {
 				{projects.map((item) => (
 					<SidebarMenuItem key={item.id} className="px-1">
 						<SidebarMenuButton asChild>
-							<a href={`/chat/project/${item.id}`}>
+							<a href={`/dialectic/${item.id}`}>
 								<span>{item.project_name}</span>
 							</a>
 						</SidebarMenuButton>

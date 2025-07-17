@@ -8,6 +8,7 @@ import { WalletBackupDemoCard } from '../components/demos/WalletBackupDemo/Walle
 import { ConfigFileManager } from '@/components/features/ConfigFileManager';
 
 // Lazy load all page components
+const DashboardPage = lazy(() => import('../pages/Dashboard').then(module => ({ default: module.DashboardPage })));
 const LoginPage = lazy(() => import('../pages/Login').then(module => ({ default: module.LoginPage })));
 const RegisterPage = lazy(() => import('../pages/Register').then(module => ({ default: module.RegisterPage })));
 const ChatPage = lazy(() => import('../pages/Chat').then(module => ({ default: module.ChatPage })));
@@ -96,6 +97,14 @@ const routes: RouteObject[] = [
         element: (
           <ProtectedRoute>
             <AiChatPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'dashboard',
+        element: (
+          <ProtectedRoute>
+            <DashboardPage />
           </ProtectedRoute>
         ),
       },
