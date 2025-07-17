@@ -33,7 +33,8 @@ export interface AIModelCatalogEntry {
 }
 
 // Defines the raw structure from the database
-export type DialecticContributionSql = Database['public']['Tables']['dialectic_contributions']['Row'];
+export type DialecticContributionRow = Database['public']['Tables']['dialectic_contributions']['Row'];
+export type DialecticJobRow = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
 // Defines the structured contribution object used within the service and for API responses,
 // aligning with packages/types/src/dialectic.types.ts
@@ -260,9 +261,13 @@ export interface GenerateContributionsPayload {
   walletId?: string;
   continueUntilComplete?: boolean;
   maxRetries?: number;
-  target_contribution_id?: string;
   continuation_count?: number;
+  target_contribution_id?: string;
 }
+
+export type DialecticJobPayload = GenerateContributionsPayload & {
+  prompt?: string;
+};
 
 export interface GenerateContributionsSuccessResponse {
   sessionId: string;
@@ -529,4 +534,20 @@ export interface GetContributionContentDataResponse {
 export interface GetSessionDetailsResponse {
   session: DialecticSession;
   currentStageDetails: DialecticStage | null;
+}
+
+export interface ProgressReporting {
+  message_template: string;
+}
+
+export type ProcessingStrategyType = 'task_isolation';
+export type ProcessingGranularity =
+  | 'per_thesis_contribution'
+  | 'per_pairwise_synthesis';
+
+export interface ProcessingStrategy {
+  type: ProcessingStrategyType;
+  granularity: ProcessingGranularity;
+  description: string;
+  progress_reporting: ProgressReporting;
 }

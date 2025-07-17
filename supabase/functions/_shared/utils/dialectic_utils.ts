@@ -94,4 +94,77 @@ export async function getSeedPromptForStage(
       path: seedPromptDir,
       fileName: seedPromptFileName,
   };
+}
+
+export async function getSourceStage(
+  dbClient: SupabaseClient<Database>,
+  sessionId: string,
+  currentTargetStageId: string
+): Promise<Database['public']['Tables']['dialectic_stages']['Row']> {
+  // 1. Get the project_id from the session
+  const { data: sessionData, error: sessionError } = await dbClient
+    .from('dialectic_sessions')
+    .select('project_id')
+    .eq('id', sessionId)
+    .single();
+
+  if (sessionError) {
+    throw new Error(`Could not fetch session details: ${sessionError.message}`);
+  }
+  if (!sessionData) {
+    throw new Error(`Session with id ${sessionId} not found.`);
+  }
+
+  const { project_id: projectId } = sessionData;
+
+  // 2. Get the process_template_id from the project
+  const { data: projectData, error: projectError } = await dbClient
+    .from('dialectic_projects')
+    .select('process_template_id')
+    .eq('id', projectId)
+    .single();
+
+  if (projectError) {
+    throw new Error(`Could not fetch project details: ${projectError.message}`);
+  }
+  if (!projectData || !projectData.process_template_id) {
+    throw new Error(`Project with id ${projectId} not found or has no process template.`);
+  }
+
+  const { process_template_id: processTemplateId } = projectData;
+
+  // 3. Find the transition where the current stage is the target
+  const { data: transitionData, error: transitionError } = await dbClient
+    .from('dialectic_stage_transitions')
+    .select('source_stage_id')
+    .eq('process_template_id', processTemplateId)
+    .eq('target_stage_id', currentTargetStageId)
+    .single();
+
+  if (transitionError && transitionError.code !== 'PGRST116') {
+    throw new Error(`Error fetching stage transition: ${transitionError.message}`);
+  }
+  if (!transitionData) {
+    throw new Error(
+      `No source stage found for target stage ${currentTargetStageId} in process template ${processTemplateId}.`
+    );
+  }
+
+  const { source_stage_id: sourceStageId } = transitionData;
+
+  // 4. Fetch the full source stage details
+  const { data: sourceStageData, error: sourceStageError } = await dbClient
+    .from('dialectic_stages')
+    .select('*')
+    .eq('id', sourceStageId)
+    .single();
+
+  if (sourceStageError) {
+    throw new Error(`Error fetching source stage details: ${sourceStageError.message}`);
+  }
+  if (!sourceStageData) {
+    throw new Error(`Source stage with id ${sourceStageId} not found.`);
+  }
+
+  return sourceStageData;
 } 

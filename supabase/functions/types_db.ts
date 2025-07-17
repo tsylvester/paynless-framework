@@ -464,6 +464,7 @@ export type Database = {
           id: string
           iteration_number: number
           max_retries: number
+          parent_job_id: string | null
           payload: Json
           results: Json | null
           session_id: string
@@ -480,6 +481,7 @@ export type Database = {
           id?: string
           iteration_number: number
           max_retries?: number
+          parent_job_id?: string | null
           payload: Json
           results?: Json | null
           session_id: string
@@ -496,6 +498,7 @@ export type Database = {
           id?: string
           iteration_number?: number
           max_retries?: number
+          parent_job_id?: string | null
           payload?: Json
           results?: Json | null
           session_id?: string
@@ -505,6 +508,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "dialectic_generation_jobs_parent_job_id_fkey"
+            columns: ["parent_job_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_generation_jobs"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "dialectic_generation_jobs_session_id_fkey"
             columns: ["session_id"]

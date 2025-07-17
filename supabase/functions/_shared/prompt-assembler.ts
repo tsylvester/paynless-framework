@@ -1,12 +1,14 @@
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { Database, Tables } from "../types_db.ts";
+import { Database, Json } from "../types_db.ts";
 import { renderPrompt } from "./prompt-renderer.ts";
-import { FileManagerService } from "./services/file_manager.ts";
 import { parseInputArtifactRules } from "./utils/input-artifact-parser.ts";
 import { downloadFromStorage } from "./supabase_storage_utils.ts";
-import { DialecticContribution, InputArtifactRules, ArtifactSourceRule } from '../dialectic-service/dialectic.interface.ts';
+import { DialecticContributionRow, InputArtifactRules, ArtifactSourceRule } from '../dialectic-service/dialectic.interface.ts';
 import { DynamicContextVariables, ProjectContext, SessionContext, StageContext, RenderPromptFunctionType, DownloadStorageFunctionType } from "./prompt-assembler.interface.ts";
 
+export type ContributionOverride = Partial<DialecticContributionRow> & {
+    content: string;
+};
 
 export class PromptAssembler {
     private dbClient: SupabaseClient<Database>;
@@ -37,26 +39,39 @@ export class PromptAssembler {
         projectInitialUserPrompt: string,
         iterationNumber: number
     ): Promise<string> {
-        let priorStageContributions: string;
-        let priorStageFeedback: string;
+        const context = await this.gatherContext(project, session, stage, projectInitialUserPrompt, iterationNumber);
+        return this.render(stage, context, project.user_domain_overlay_values);
+    }
 
-        try {
-            // 1. Gather inputs from prior stages if applicable
-            const inputs = await this._gatherInputsForStage(stage, project, session, iterationNumber);
-            priorStageContributions = inputs.priorStageContributions;
-            priorStageFeedback = inputs.priorStageFeedback;
-        } catch (inputError) {
-            console.error(
-                `[PromptAssembler.assemble] Error during input gathering: ${ (inputError instanceof Error) ? inputError.message : String(inputError) }`, 
-                { error: inputError, stageSlug: stage.slug, projectId: project.id, sessionId: session.id }
-            );
-            // Re-throw the error to be caught by the calling function (submitStageResponses.ts)
-            throw new Error(`Failed to gather inputs for prompt assembly: ${(inputError instanceof Error) ? inputError.message : String(inputError)}`);
+    async gatherContext(
+        project: ProjectContext,
+        session: SessionContext,
+        stage: StageContext,
+        projectInitialUserPrompt: string,
+        iterationNumber: number,
+        overrideContributions?: ContributionOverride[]
+    ): Promise<DynamicContextVariables> {
+        let priorStageContributions = "";
+        let priorStageFeedback = "";
+
+        if (overrideContributions) {
+            for (const contrib of overrideContributions) {
+                priorStageContributions += `#### Contribution from ${contrib.model_name || 'AI Model'}\n${contrib.content}\n\n`;
+            }
+        } else {
+            try {
+                const inputs = await this.gatherInputsForStage(stage, project, session, iterationNumber);
+                priorStageContributions = inputs.priorStageContributions;
+                priorStageFeedback = inputs.priorStageFeedback;
+            } catch (inputError) {
+                console.error(
+                    `[PromptAssembler.gatherContext] Error during input gathering: ${ (inputError instanceof Error) ? inputError.message : String(inputError) }`, 
+                    { error: inputError, stageSlug: stage.slug, projectId: project.id, sessionId: session.id }
+                );
+                throw new Error(`Failed to gather inputs for prompt assembly: ${(inputError instanceof Error) ? inputError.message : String(inputError)}`);
+            }
         }
 
-        
-        
-        // 2. Assemble Dynamic Context Variables
         const dynamicContextVariables: DynamicContextVariables = {
             user_objective: project.project_name,
             domain: project.dialectic_domains.name,
@@ -71,36 +86,38 @@ export class PromptAssembler {
             deliverable_format: 'Standard markdown format.'
         };
 
-        // 4. Get Overlay values
-        const systemDefaultOverlayValues = stage.domain_specific_prompt_overlays[0]?.overlay_values ?? null;
-        
-        const userProjectOverlayValues = project.user_domain_overlay_values ?? null;
+        return dynamicContextVariables;
+    }
 
-        // 5. Get Base Prompt Text
+    render(
+        stage: StageContext,
+        context: DynamicContextVariables,
+        userProjectOverlayValues: Json | null = null
+    ): string {
+        const systemDefaultOverlayValues = stage.domain_specific_prompt_overlays[0]?.overlay_values ?? null;
         const basePromptText: string | undefined | null = stage.system_prompts?.prompt_text;
+
         if (!basePromptText) {
             throw new Error(`No system prompt template found for stage ${stage.id}`);
         }
 
-        // 6. Render the prompt
         try {
-            const renderedPrompt = this.renderPromptFn(
+            return this.renderPromptFn(
                 basePromptText,
-                dynamicContextVariables,
+                context,
                 systemDefaultOverlayValues,
                 userProjectOverlayValues
             );
-            return renderedPrompt;
         } catch (renderingError) {
             console.error(
-                `[PromptAssembler.assemble] Error during prompt rendering: ${ (renderingError instanceof Error) ? renderingError.message : String(renderingError) }`,
+                `[PromptAssembler.render] Error during prompt rendering: ${ (renderingError instanceof Error) ? renderingError.message : String(renderingError) }`,
                 { error: renderingError }
             );
             throw new Error(`Failed to render prompt: ${(renderingError instanceof Error) ? renderingError.message : 'Unknown rendering error'}`);
         }
     }
 
-    private async _gatherInputsForStage(stage: StageContext, project: ProjectContext, session: SessionContext, iterationNumber: number): Promise<{ priorStageContributions: string; priorStageFeedback: string }> {
+    public async gatherInputsForStage(stage: StageContext, project: ProjectContext, session: SessionContext, iterationNumber: number): Promise<{ priorStageContributions: string; priorStageFeedback: string }> {
         let priorStageContributions = "";
         let priorStageFeedback = "";
         let criticalError: Error | null = null; // Variable to hold a critical error
@@ -190,7 +207,7 @@ export class PromptAssembler {
                         break; // Break from the 'for (const rule of parsedRules.sources)' loop
                     }
 
-                    const typedAiContributions = aiContributions as DialecticContribution[] | null;
+                    const typedAiContributions: DialecticContributionRow[] = aiContributions;
                     let currentRuleContributionsContent = ""; // Accumulates content for *this specific rule's* contributions
 
                     if (typedAiContributions && typedAiContributions.length > 0) {

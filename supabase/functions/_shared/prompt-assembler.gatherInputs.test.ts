@@ -107,7 +107,7 @@ Deno.test("PromptAssembler", async (t) => {
                 };
                 const iterationNumber = 1;
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
+                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
 
                 assertEquals(result.priorStageContributions, "");
                 assertEquals(result.priorStageFeedback, "");
@@ -163,7 +163,7 @@ Deno.test("PromptAssembler", async (t) => {
                 };
                 const iterationNumber = 1;
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
+                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
 
                 assertEquals(result.priorStageContributions, "");
                 assertEquals(result.priorStageFeedback, "");
@@ -222,7 +222,7 @@ Deno.test("PromptAssembler", async (t) => {
                 };
                 const iterationNumber = 1;
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
+                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
 
                 assertEquals(result.priorStageContributions, "");
                 assertEquals(result.priorStageFeedback, "");
@@ -289,7 +289,7 @@ Deno.test("PromptAssembler", async (t) => {
                     expected_output_artifacts: null,
                 };
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, 1);
+                const result = await assembler.gatherInputsForStage(stage, project, session, 1);
 
                 assertEquals(result.priorStageContributions, "");
                 assertEquals(result.priorStageFeedback, "");
@@ -408,7 +408,7 @@ Deno.test("PromptAssembler", async (t) => {
                     expected_output_artifacts: null,
                 };
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
+                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
                 
                 const expectedHeader = "Contributions from some-slug stage\n\n";
                 const expectedContentSegment = `#### Contribution from ${modelName}\n${contribContent}\n\n`;
@@ -516,7 +516,7 @@ Deno.test("PromptAssembler", async (t) => {
                     expected_output_artifacts: null,
                 };
                 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
+                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
                 
                 const expectedFeedback = `---
 ### User Feedback on Previous Stage: ${mockStageDisplayName}
@@ -667,7 +667,7 @@ ${feedbackContent}
                     expected_output_artifacts: null,
                 };
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
+                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
 
                 const expectedContribHeader = "Contributions from contrib-slug-for-both stage\n\n";
                 const expectedContribContent = `#### Contribution from ${modelName}\n${contribContent}\n\n`;
@@ -819,7 +819,7 @@ ${feedbackContent}
                     expected_output_artifacts: null,
                 };
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
+                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
 
                 const expectedContrib = `${customContribHeader}\n\n#### Contribution from ${modelName}\n${contribContent}\n\n`;
 
@@ -934,7 +934,7 @@ ${feedbackContent}
                 let errorThrown = false;
                 let result: { priorStageContributions: string; priorStageFeedback: string } | null = null;
                 try {
-                     result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
+                     result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
                 } catch (e) {
                     errorThrown = true;
                     console.error("Test unexpectedly threw an error:", e)
@@ -1061,7 +1061,7 @@ ${feedbackContent}
 
                 await assertRejects(
                     async () => {
-                        await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
+                        await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
                     },
                     Error,
                     `Failed to download REQUIRED feedback for stage '${requiredFeedbackDisplayName}' (slug: ${requiredFeedbackSlug})`
@@ -1113,7 +1113,7 @@ ${feedbackContent}
                 };
 
                 await assertRejects(
-                    async () => await assembler['_gatherInputsForStage'](stage, project, session, 1),
+                    async () => await assembler.gatherInputsForStage(stage, project, session, 1),
                     Error,
                     `Failed to retrieve REQUIRED AI contributions for stage '${mockStageDisplayName}'.`
                 );
@@ -1161,7 +1161,7 @@ ${feedbackContent}
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, expected_output_artifacts: null,
                 };
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, 1);
+                const result = await assembler.gatherInputsForStage(stage, project, session, 1);
 
                 assertEquals(result.priorStageContributions, "", "priorStageContributions was not empty as expected when optional DB query fails.");
                 assertEquals(result.priorStageFeedback, "");
@@ -1229,7 +1229,7 @@ ${feedbackContent}
                 };
 
                 await assertRejects(
-                    async () => await assembler['_gatherInputsForStage'](stage, project, session, 1),
+                    async () => await assembler.gatherInputsForStage(stage, project, session, 1),
                     Error,
                     `Failed to download REQUIRED content for contribution ${badContentContribId} from stage '${mockStageDisplayName}'.`
                 );
@@ -1301,7 +1301,7 @@ ${feedbackContent}
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, expected_output_artifacts: null,
                 };
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, 1);
+                const result = await assembler.gatherInputsForStage(stage, project, session, 1);
 
                 assertEquals(result.priorStageContributions, "", "priorStageContributions was not empty as expected when optional item misses storage details.");
                 assertEquals(result.priorStageFeedback, "");
@@ -1366,7 +1366,7 @@ ${feedbackContent}
                 };
 
                 await assertRejects(
-                    async () => await assembler['_gatherInputsForStage'](stage, project, session, 1),
+                    async () => await assembler.gatherInputsForStage(stage, project, session, 1),
                     Error,
                     `REQUIRED Contribution ${badContribId} from stage '${mockStageDisplayName}' is missing storage details.`
                 );
@@ -1431,7 +1431,7 @@ ${feedbackContent}
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, expected_output_artifacts: null,
                 };
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, 1);
+                const result = await assembler.gatherInputsForStage(stage, project, session, 1);
 
                 assertEquals(result.priorStageContributions, "", "priorStageContributions was not empty as expected when optional item misses storage details.");
                 assertEquals(result.priorStageFeedback, "");

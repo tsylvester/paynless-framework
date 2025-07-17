@@ -7,7 +7,7 @@ import { spy } from 'jsr:@std/testing@0.225.1/mock';
 import type { Database } from '../../types_db.ts';
 import { createMockSupabaseClient } from '../supabase.mock.ts';
 import type { DownloadStorageResult } from '../supabase_storage_utils.ts';
-import { getSeedPromptForStage } from './dialectic_utils.ts';
+import { getSeedPromptForStage, getSourceStage } from './dialectic_utils.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 const mockSession = {
@@ -142,5 +142,96 @@ Deno.test('getSeedPromptForStage - Throws when resource download fails', async (
         },
         Error,
         'Could not retrieve the seed prompt for this stage.'
+    );
+});
+
+Deno.test('getSourceStage - Happy Path', async () => {
+    // 1. Mocks
+    const mockSessionId = 'session-123';
+    const mockProjectId = 'project-456';
+    const mockProcessTemplateId = 'template-789';
+    const mockTargetStageId = 'stage-target-abc';
+    const mockSourceStageId = 'stage-source-xyz';
+
+    const mockSourceStageData = {
+        id: mockSourceStageId,
+        slug: 'thesis',
+        display_name: 'Thesis',
+        created_at: new Date().toISOString(),
+        description: 'The initial stage',
+        expected_output_artifacts: {},
+        input_artifact_rules: {},
+        default_system_prompt_id: null,
+    };
+
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_sessions': { 
+                select: { data: [{ project_id: mockProjectId }] }
+            },
+            'dialectic_projects': { 
+                select: { data: [{ process_template_id: mockProcessTemplateId }] } 
+            },
+            'dialectic_stage_transitions': { 
+                select: { data: [{ source_stage_id: mockSourceStageId }] } 
+            },
+            'dialectic_stages': {
+                select: { data: [mockSourceStageData] }
+            }
+        }
+    });
+
+    // 2. Execute
+    const result = await getSourceStage(
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockSessionId,
+        mockTargetStageId
+    );
+
+    // 3. Assert
+    assertExists(result);
+    assertEquals(result.id, mockSourceStageId);
+    assertEquals(result.slug, 'thesis');
+    
+    const fromSpy = mockSupabase.spies.fromSpy;
+    assertEquals(fromSpy.calls.length, 4);
+    assertEquals(fromSpy.calls[0].args, ['dialectic_sessions']);
+    assertEquals(fromSpy.calls[1].args, ['dialectic_projects']);
+    assertEquals(fromSpy.calls[2].args, ['dialectic_stage_transitions']);
+    assertEquals(fromSpy.calls[3].args, ['dialectic_stages']);
+});
+
+Deno.test('getSourceStage - Throws when no transition found', async () => {
+    // 1. Mocks
+    const mockSessionId = 'session-1';
+    const mockTargetStageId = 'stage-1';
+    const mockProcessTemplateId = 'template-1';
+    const mockProjectId = 'proj-1';
+
+    const mockSupabase = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+          'dialectic_sessions': { 
+              select: { data: [{ project_id: mockProjectId }] }
+          },
+          'dialectic_projects': { 
+              select: { data: [{ process_template_id: mockProcessTemplateId }] } 
+          },
+          'dialectic_stage_transitions': { 
+              select: { data: [] } // No transition found
+          },
+      }
+    });
+
+    // 2. Execute and Assert
+    await assertRejects(
+        async () => {
+            await getSourceStage(
+                mockSupabase.client as unknown as SupabaseClient<Database>,
+                mockSessionId,
+                mockTargetStageId
+            );
+        },
+        Error,
+        `No source stage found for target stage ${mockTargetStageId} in process template ${mockProcessTemplateId}.`
     );
 }); 
