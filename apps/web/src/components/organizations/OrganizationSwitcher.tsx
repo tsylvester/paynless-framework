@@ -1,6 +1,6 @@
-"use client";
 
-import  { useEffect, useState, useCallback } from "react";
+
+import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { useOrganizationStore } from "@paynless/store";
 import { Button } from "@/components/ui/button";
@@ -40,7 +40,7 @@ export const OrganizationSwitcher: React.FC = () => {
 		fetchUserOrganizations(); // Call without params to use store's current page/limit
 	}, []); // Dependencies
 
-console.log('userOrganizations',userOrganizations)
+	// console.log('userOrganizations',userOrganizations)
 
 	const handleSelectOrganization = (orgId: string | null) => {
 		// If clicking the currently selected org, deselect it (set to null)
@@ -69,7 +69,7 @@ console.log('userOrganizations',userOrganizations)
 	return (
 		<SimpleDropdown
 			align="end"
-			contentClassName="w-full p-1"
+			contentClassName="w-full p-1 animate-slide-down-spring"
 			onOpenChange={handleOpenChange}
 			trigger={
 				<Button
@@ -88,64 +88,60 @@ console.log('userOrganizations',userOrganizations)
 				</Button>
 			}
 		>
-			{/* Content inside SimpleDropdown's children */}
-			<div className="flex flex-col">
-				{/* Organization List */}
-				<div className="flex flex-col space-y-1 p-1 max-h-[200px] overflow-y-auto">
-					{userOrganizations.length > 0
-						? userOrganizations.map((org) => (
-								<button
-									key={org.id}
-									onClick={() => handleSelectOrganization(org.id)}
-									className={cn(itemBaseClasses, "justify-between")}
-								>
-									<div className="flex items-center overflow-hidden">
-										<Building className="mr-2 h-4 w-4 flex-shrink-0" />
-										<span className="truncate">{org.name}</span>
-									</div>
-									{currentOrganizationId === org.id && (
-										<Check className="ml-2 h-4 w-4 flex-shrink-0" />
-									)}
-								</button>
-							))
-						: !isListLoading && (
-								<p className="px-2 py-1.5 text-sm text-muted-foreground">
-									No organizations found.
-								</p>
-							)}
-					{isListLoading && (
-						<p className="px-2 py-1.5 text-sm text-muted-foreground">
-							Loading...
-						</p>
-					)}
-				</div>
-
-				<hr className="my-1 border-border" />
-
-				{/* Manage All Link */}
-				<Link
-					to="/organizations"
-					className={itemBaseClasses}
-					onClick={() => setIsSwitcherOpen(false)} // Close dropdown on click
-				>
-					<Building className="mr-2 h-4 w-4" />
-					Manage
-				</Link>
-
-				<hr className="my-1 border-border" />
-
-				{/* Create New Button */}
-				<button
-					className={itemBaseClasses}
-					onClick={() => {
-						setIsSwitcherOpen(false); // Close dropdown
-						openCreateModal(); // Open the modal
-					}}
-				>
-					<PlusCircle className="mr-2 h-4 w-4" />
-					Create
-				</button>
+			<div className="flex flex-col space-y-1 p-1 max-h-[200px] overflow-y-auto">
+				{userOrganizations.length > 0
+					? userOrganizations.map((org) => (
+							<button
+								key={org.id}
+								onClick={() => handleSelectOrganization(org.id)}
+								className={cn(itemBaseClasses, "justify-between")}
+							>
+								<div className="flex items-center overflow-hidden">
+									<Building className="mr-2 h-4 w-4 flex-shrink-0" />
+									<span className="truncate">{org.name}</span>
+								</div>
+								{currentOrganizationId === org.id && (
+									<Check className="ml-2 h-4 w-4 flex-shrink-0" />
+								)}
+							</button>
+						))
+					: !isListLoading && (
+							<p className="px-2 py-1.5 text-sm text-muted-foreground">
+								No organizations found.
+							</p>
+						)}
+				{isListLoading && (
+					<p className="px-2 py-1.5 text-sm text-muted-foreground">
+						Loading...
+					</p>
+				)}
 			</div>
+
+			<hr className="my-1 border-border" />
+
+			{/* Manage All Link */}
+			<Link
+				to="/organizations"
+				className={itemBaseClasses}
+				onClick={() => setIsSwitcherOpen(false)} // Close dropdown on click
+			>
+				<Building className="mr-2 h-4 w-4" />
+				Manage
+			</Link>
+
+			<hr className="my-1 border-border" />
+
+			{/* Create New Button */}
+			<button
+				className={itemBaseClasses}
+				onClick={() => {
+					setIsSwitcherOpen(false); // Close dropdown
+					openCreateModal(); // Open the modal
+				}}
+			>
+				<PlusCircle className="mr-2 h-4 w-4" />
+				Create
+			</button>
 		</SimpleDropdown>
 	);
 };

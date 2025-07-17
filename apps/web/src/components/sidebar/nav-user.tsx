@@ -1,114 +1,130 @@
-"use client"
+"use client";
+
+import { useState, useCallback } from "react";
 
 import {
-  BadgeCheck,
-  Bell,
-  ChevronsUpDown,
-  CreditCard,
-  LogOut,
-  Sparkles,
-} from "lucide-react"
-
+	BadgeCheck,
+	Bell,
+	ChevronsUpDown,
+	CreditCard,
+	LogOut,
+	Sparkles,
+} from "lucide-react";
+import { SimpleDropdown } from "@/components/ui/SimpleDropdown";
+import { useAuthStore } from "@paynless/store";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@/components/ui/avatar"
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuGroup,
+	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from "@/components/ui/sidebar"
-
+	SidebarMenu,
+	SidebarMenuButton,
+	SidebarMenuItem,
+	useSidebar,
+} from "@/components/ui/sidebar";
+import { useNavigate } from "react-router-dom";
 export function NavUser({
-  user,
+	user,
 }: {
-  user: {
-    name: string
-    email: string
-    avatar: string
-  }
+	user: {
+		email: string;
+	};
 }) {
-  const { isMobile } = useSidebar()
+	// const { isMobile } = useSidebar();
+	const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
 
-  return (
-    <SidebarMenu>
-      <SidebarMenuItem>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <SidebarMenuButton
-              size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-            >
-              <Avatar className="h-8 w-8 rounded-lg">
-                <AvatarImage src={user.avatar} alt={user.name} />
-                <AvatarFallback className="rounded-lg">CN</AvatarFallback>
-              </Avatar>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">{user.name}</span>
-                <span className="truncate text-xs">{user.email}</span>
-              </div>
-              <ChevronsUpDown className="ml-auto size-4" />
-            </SidebarMenuButton>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
-            side={isMobile ? "bottom" : "right"}
-            align="end"
-            sideOffset={4}
-          >
-            <DropdownMenuLabel className="p-0 font-normal">
-              <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                <Avatar className="h-8 w-8 rounded-lg">
-                  <AvatarImage src={user.avatar} alt={user.name} />
-                  <AvatarFallback className="rounded-lg">CN</AvatarFallback>
-                </Avatar>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">{user.name}</span>
-                  <span className="truncate text-xs">{user.email}</span>
-                </div>
-              </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <Sparkles />
-                Upgrade to Pro
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <BadgeCheck />
-                Account
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <CreditCard />
-                Billing
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Bell />
-                Notifications
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <LogOut />
-              Log out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </SidebarMenuItem>
-    </SidebarMenu>
-  )
+	const { logout } = useAuthStore((state) => ({
+		logout: state.logout,
+	}));
+
+	const handleOpenChange = useCallback((open: boolean) => {
+		setIsSwitcherOpen(open);
+		// If closing, maybe clear focus or perform other actions
+	}, []);
+
+	const navigate = useNavigate();
+
+	const handleLogout = async () => {
+		await logout();
+		navigate("/login");
+	};
+
+	return (
+		<SimpleDropdown
+			align="end"
+			contentClassName="w-full p-1 overflow-hidden"
+			onOpenChange={handleOpenChange}
+			trigger={
+				<SidebarMenuButton
+					size="lg"
+					className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground w-full"
+				>
+					<Avatar className="h-8 w-8 rounded-lg">
+						<AvatarImage src={user.avatar} alt={user.name} />
+						<AvatarFallback className="rounded-lg">
+							{(user.email.charAt(0) + user.email.charAt(1)).toUpperCase()}
+						</AvatarFallback>
+					</Avatar>
+					<div className="grid flex-1 text-left text-sm leading-tight w-full overflow-hidden max-w-[103px]">
+						<span className="truncate text-xs">{user.email}</span>
+					</div>
+					<ChevronsUpDown className="ml-auto size-4" />
+				</SidebarMenuButton>
+			}
+		>
+			<div
+				className={"flex flex-col fixed mt-[-250px] animate-slide-up-spring"}
+			>
+				<Button
+					variant="ghost"
+					className="w-full justify-start hover:underline"
+					onClick={() => navigate("/subscription")}
+				>
+					<Sparkles />
+					Upgrade to Pro
+				</Button>
+
+				<Button
+					variant="ghost"
+					className="w-full justify-start hover:underline"
+					onClick={() => navigate("/organizations")}
+				>
+					<BadgeCheck />
+					Account
+				</Button>
+				<Button
+					variant="ghost"
+					className="w-full justify-start hover:underline"
+					onClick={() => navigate("/subscription")}
+				>
+					<CreditCard />
+					Billing
+				</Button>
+				<Button
+					variant="ghost"
+					className="w-full justify-start hover:underline"
+					onClick={() => navigate("/notifications")}
+				>
+					<Bell />
+					Notifications
+				</Button>
+
+				<Button
+					variant="ghost"
+					className="w-full justify-start hover:underline"
+					onClick={handleLogout}
+				>
+					<LogOut />
+					Log out
+				</Button>
+			</div>
+		</SimpleDropdown>
+	);
 }
