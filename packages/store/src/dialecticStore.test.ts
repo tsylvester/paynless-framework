@@ -931,38 +931,40 @@ describe('useDialecticStore', () => {
         });
 
         it('should handle dialectic_contribution_started', () => {
+            const placeholderId = `placeholder-session-123-model-abc-1`;
             // Add a placeholder contribution
             useDialecticStore.setState(state => {
                 if (state.currentProjectDetail?.dialectic_sessions?.[0]) {
                     state.currentProjectDetail.dialectic_sessions[0].dialectic_contributions = [{ 
-                        id: 'session-123-model-abc-1-0', 
+                        id: placeholderId, 
                         status: 'pending', 
                         session_id: 'session-123', 
                         iteration_number: 1, 
                         model_id: 'model-abc', 
                         model_name: 'model-abc',
-                        user_id: 'user-123',
                         stage: 'stage-1',
-                        prompt_template_id_used: 'pt-1',
-                        seed_prompt_url: 'https://example.com/seed',
-                        edit_version: 1,
+                        // Minimal required fields for a placeholder
+                        user_id: null,
+                        prompt_template_id_used: null,
+                        seed_prompt_url: null,
+                        edit_version: 0,
                         is_latest_edit: true,
+                        original_model_contribution_id: null,
+                        raw_response_storage_path: null,
+                        target_contribution_id: null,
+                        tokens_used_input: null,
+                        tokens_used_output: null,
+                        processing_time_ms: null,
+                        error: null,
+                        citations: null,
                         created_at: new Date().toISOString(),
                         updated_at: new Date().toISOString(),
-                        original_model_contribution_id: 'model-abc-1-0',
-                        raw_response_storage_path: 'https://example.com/raw-response',
-                        target_contribution_id: 'model-abc-1-0',
-                        tokens_used_input: 100,
-                        tokens_used_output: 100,
-                        processing_time_ms: 1000,
-                        error: null,
-                        citations: [],
-                        contribution_type: 'text',
-                        file_name: 'contribution.txt',
-                        storage_bucket: 'test-bucket',
-                        storage_path: 'https://example.com/contribution.txt',
-                        size_bytes: 100,
-                        mime_type: 'text/plain',
+                        contribution_type: null,
+                        file_name: null,
+                        storage_bucket: null,
+                        storage_path: null,
+                        size_bytes: null,
+                        mime_type: null,
                     }];
                 }
                 return state;
@@ -981,38 +983,40 @@ describe('useDialecticStore', () => {
         });
 
         it('should handle contribution_generation_retrying', () => {
+            const placeholderId = `placeholder-session-123-model-abc-1`;
             // Add a placeholder contribution
             useDialecticStore.setState(state => {
                 if (state.currentProjectDetail?.dialectic_sessions?.[0]) {
                     state.currentProjectDetail.dialectic_sessions[0].dialectic_contributions = [{ 
-                        id: 'session-123-model-abc-1-0', 
-                        status: 'pending', 
+                        id: placeholderId, 
+                        status: 'generating', // Should be in generating state before retrying
                         session_id: 'session-123', 
                         iteration_number: 1, 
                         model_id: 'model-abc', 
                         model_name: 'model-abc',
-                        user_id: 'user-123',
                         stage: 'stage-1',
-                        prompt_template_id_used: 'pt-1',
-                        seed_prompt_url: 'https://example.com/seed',
-                        edit_version: 1,
-                        is_latest_edit: true,   
+                        // Minimal required fields for a placeholder
+                        user_id: null,
+                        prompt_template_id_used: null,
+                        seed_prompt_url: null,
+                        edit_version: 0,
+                        is_latest_edit: true,
+                        original_model_contribution_id: null,
+                        raw_response_storage_path: null,
+                        target_contribution_id: null,
+                        tokens_used_input: null,
+                        tokens_used_output: null,
+                        processing_time_ms: null,
+                        error: null,
+                        citations: null,
                         created_at: new Date().toISOString(),
                         updated_at: new Date().toISOString(),
-                        original_model_contribution_id: 'model-abc-1-0',
-                        raw_response_storage_path: 'https://example.com/raw-response',
-                        target_contribution_id: 'model-abc-1-0',
-                        tokens_used_input: 100,
-                        tokens_used_output: 100,
-                        processing_time_ms: 1000,
-                        error: null,
-                        citations: [],
-                        contribution_type: 'text',
-                        file_name: 'contribution.txt',
-                        storage_bucket: 'test-bucket',
-                        storage_path: 'https://example.com/contribution.txt',
-                        size_bytes: 100,
-                        mime_type: 'text/plain',
+                        contribution_type: null,
+                        file_name: null,
+                        storage_bucket: null,
+                        storage_path: null,
+                        size_bytes: null,
+                        mime_type: null,
                     }];
                 }
                 return state;
@@ -1029,40 +1033,45 @@ describe('useDialecticStore', () => {
 
             const contribution = useDialecticStore.getState().currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions?.[0];
             expect(contribution?.status).toBe('retrying');
+            expect(contribution?.error).toEqual({
+                message: 'Retrying...',
+                code: 'CONTRIBUTION_RETRYING'
+            });
         });
 
         it('should handle dialectic_contribution_received and replace placeholder', () => {
+            const placeholderId = `placeholder-session-123-model-abc-1`;
             useDialecticStore.setState(state => {
                 if (state.currentProjectDetail?.dialectic_sessions?.[0]) {
                     state.currentProjectDetail.dialectic_sessions[0].dialectic_contributions = [{ 
-                        id: 'session-123-model-abc-1-0',
-                        status: 'pending',
+                        id: placeholderId,
+                        status: 'generating',
                         session_id: 'session-123',
                         iteration_number: 1,
                         model_id: 'model-abc',
                         model_name: 'model-abc',
-                        user_id: 'user-123',
                         stage: 'stage-1',
-                        prompt_template_id_used: 'pt-1',
-                        seed_prompt_url: 'https://example.com/seed',
-                        edit_version: 1,
-                        is_latest_edit: true,   
+                        user_id: null,
+                        prompt_template_id_used: null,
+                        seed_prompt_url: null,
+                        edit_version: 0,
+                        is_latest_edit: true,
+                        original_model_contribution_id: null,
+                        raw_response_storage_path: null,
+                        target_contribution_id: null,
+                        tokens_used_input: null,     
+                        tokens_used_output: null,
+                        processing_time_ms: null,
+                        error: null,
+                        citations: null,
                         created_at: new Date().toISOString(),
                         updated_at: new Date().toISOString(),
-                        original_model_contribution_id: 'model-abc-1-0',
-                        raw_response_storage_path: 'https://example.com/raw-response',
-                        target_contribution_id: 'model-abc-1-0',
-                        tokens_used_input: 100,     
-                        tokens_used_output: 100,
-                        processing_time_ms: 1000,
-                        error: null,
-                        citations: [],
-                        contribution_type: 'text',
-                        file_name: 'contribution.txt',
-                        storage_bucket: 'test-bucket',
-                        storage_path: 'https://example.com/contribution.txt',
-                        size_bytes: 100,
-                        mime_type: 'text/plain',
+                        contribution_type: null,
+                        file_name: null,
+                        storage_bucket: null,
+                        storage_path: null,
+                        size_bytes: null,
+                        mime_type: null,
                     }];
                 }
                 return state;
@@ -1106,40 +1115,88 @@ describe('useDialecticStore', () => {
             const contributions = useDialecticStore.getState().currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions;
             expect(contributions).toHaveLength(1);
             expect(contributions?.[0].id).toBe('real-id-1');
+            expect(contributions?.[0].status).toBe('completed');
         });
 
-        it('should handle contribution_generation_failed and mark placeholders', () => {
+        it('should handle contribution_generation_continued and update placeholder', () => {
+            const placeholderId = `placeholder-session-123-model-abc-1`;
             useDialecticStore.setState(state => {
                 if (state.currentProjectDetail?.dialectic_sessions?.[0]) {
-                    state.currentProjectDetail.dialectic_sessions[0].dialectic_contributions = [{ 
-                        id: 'session-123-model-abc-1-0',
-                        status: 'pending',
+                    state.currentProjectDetail.dialectic_sessions[0].dialectic_contributions = [{
+                        id: placeholderId,
+                        status: 'generating',
                         session_id: 'session-123',
                         iteration_number: 1,
                         model_id: 'model-abc',
                         model_name: 'model-abc',
-                        user_id: 'user-123',
                         stage: 'stage-1',
-                        prompt_template_id_used: 'pt-1',
-                        seed_prompt_url: 'https://example.com/seed',
-                        edit_version: 1,
-                        is_latest_edit: true,   
-                        created_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString(),
-                        original_model_contribution_id: 'model-abc-1-0',
-                        raw_response_storage_path: 'https://example.com/raw-response',
-                        target_contribution_id: 'model-abc-1-0',
-                        tokens_used_input: 100,
-                        tokens_used_output: 100,
-                        processing_time_ms: 1000,
-                        error: null,
-                        citations: [],
-                        contribution_type: 'text',
-                        file_name: 'contribution.txt',
-                        storage_bucket: 'test-bucket',
-                        storage_path: 'https://example.com/contribution.txt',   
-                        size_bytes: 100,
-                        mime_type: 'text/plain',
+                        user_id: null, prompt_template_id_used: null, seed_prompt_url: null, edit_version: 0, is_latest_edit: true, original_model_contribution_id: null, raw_response_storage_path: null, target_contribution_id: null, tokens_used_input: null, tokens_used_output: null, processing_time_ms: null, error: null, citations: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), contribution_type: null, file_name: null, storage_bucket: null, storage_path: null, size_bytes: null, mime_type: null,
+                    }];
+                }
+                return state;
+            });
+
+            const event: DialecticLifecycleEvent = {
+                type: 'contribution_generation_continued',
+                sessionId: 'session-123',
+                contribution: { 
+                    id: 'real-id-1-part-1', 
+                    model_id: 'model-abc', 
+                    iteration_number: 1, 
+                    session_id: 'session-123', 
+                    status: 'continuing',
+                    model_name: 'model-abc',
+                    stage: 'stage-1',
+                    user_id: 'user-123', 
+                    prompt_template_id_used: 'pt-1', 
+                    seed_prompt_url: 'url', 
+                    edit_version: 1, 
+                    is_latest_edit: true, 
+                    original_model_contribution_id: 'real-id-1', 
+                    raw_response_storage_path: 'path', 
+                    target_contribution_id: 'real-id-1', 
+                    tokens_used_input: 10, 
+                    tokens_used_output: 20, 
+                    processing_time_ms: 100, 
+                    error: null, 
+                    citations: [], 
+                    created_at: new Date().toISOString(), 
+                    updated_at: new Date().toISOString(), 
+                    contribution_type: 'text', 
+                    file_name: 'file.txt', 
+                    storage_bucket: 'b',
+                    storage_path: 'p', 
+                    size_bytes: 100, 
+                    mime_type: 'text/plain',
+                },
+                job_id: 'job-1',
+                projectId: 'proj-123',
+                modelId: 'model-abc',
+                continuationNumber: 1,
+            };
+
+            useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
+            
+            const contributions = useDialecticStore.getState().currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions;
+            expect(contributions).toHaveLength(1);
+            const contribution = contributions?.[0];
+            expect(contribution?.id).toBe('real-id-1-part-1');
+            expect(contribution?.status).toBe('continuing');
+        });
+
+        it('should handle contribution_generation_failed and mark placeholders', () => {
+            const placeholderId = `placeholder-session-123-model-abc-1`;
+            useDialecticStore.setState(state => {
+                if (state.currentProjectDetail?.dialectic_sessions?.[0]) {
+                    state.currentProjectDetail.dialectic_sessions[0].dialectic_contributions = [{ 
+                        id: placeholderId,
+                        status: 'generating',
+                        session_id: 'session-123',
+                        iteration_number: 1,
+                        model_id: 'model-abc',
+                        model_name: 'model-abc',
+                        stage: 'stage-1',
+                        user_id: null, prompt_template_id_used: null, seed_prompt_url: null, edit_version: 0, is_latest_edit: true, original_model_contribution_id: null, raw_response_storage_path: null, target_contribution_id: null, tokens_used_input: null, tokens_used_output: null, processing_time_ms: null, error: null, citations: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), contribution_type: null, file_name: null, storage_bucket: null, storage_path: null, size_bytes: null, mime_type: null,
                     }];
                 }
                 return state;
@@ -1154,11 +1211,15 @@ describe('useDialecticStore', () => {
 
             const contribution = useDialecticStore.getState().currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions?.[0];
             expect(contribution?.status).toBe('failed');
+            expect(contribution?.error).toEqual({ code: 'FAILED', message: 'It failed' });
             expect(useDialecticStore.getState().contributionGenerationStatus).toBe('failed');
         });
 
         it('should handle contribution_generation_complete and reset status', () => {
-            useDialecticStore.setState({ contributionGenerationStatus: 'generating' });
+            useDialecticStore.setState({ 
+                contributionGenerationStatus: 'generating',
+                generatingSessions: { 'session-123': ['job-1'] }
+            });
 
             const event: DialecticLifecycleEvent = {
                 type: 'contribution_generation_complete',
@@ -1167,6 +1228,7 @@ describe('useDialecticStore', () => {
             };
             useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
             expect(useDialecticStore.getState().contributionGenerationStatus).toBe('idle');
+            expect(useDialecticStore.getState().generatingSessions['session-123']).toBeUndefined();
             expect(getMockDialecticClient().getProjectDetails).toHaveBeenCalledWith('proj-1');
         });
     });

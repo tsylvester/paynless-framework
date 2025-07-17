@@ -23,8 +23,10 @@ export type DialecticSessionRow = Database['public']['Tables']['dialectic_sessio
 
 export type DialecticContributionRow = Database['public']['Tables']['dialectic_contributions']['Row']
 
+export type DialecticJobRow = Database['public']['Tables']['dialectic_generation_jobs']['Row']
+
 // New type for contribution generation status
-export type ContributionGenerationStatus = 'idle' | 'initiating' | 'generating' | 'failed';
+  export type ContributionGenerationStatus = 'idle' | 'initiating' | 'generating' | 'failed' | 'retrying' | 'pending';
 
 export interface DialecticProject {
     id: string;
@@ -280,6 +282,8 @@ export interface DialecticStateValues {
   fetchFeedbackFileContentError: ApiError | null;
 
   activeDialecticWalletId: string | null;
+
+  sessionProgress: { [sessionId: string]: ProgressData };
 }
 
 export interface InitialPromptCacheEntry {
@@ -370,6 +374,17 @@ export interface DialecticActions {
   _handleGenerationCompleteEvent?: (data: { sessionId: string; projectId: string; [key: string]: unknown }) => void;
   // NEW: Internal handler for all dialectic lifecycle events from notificationStore
   _handleDialecticLifecycleEvent?: (payload: DialecticLifecycleEvent) => void;
+
+  // Private handlers for individual lifecycle events
+  _handleContributionGenerationStarted: (event: ContributionGenerationStartedPayload) => void;
+  _handleDialecticContributionStarted: (event: DialecticContributionStartedPayload) => void;
+  _handleContributionGenerationRetrying: (event: ContributionGenerationRetryingPayload) => void;
+  _handleDialecticContributionReceived: (event: DialecticContributionReceivedPayload) => void;
+  _handleContributionGenerationFailed: (event: ContributionGenerationFailedPayload) => void;
+  _handleContributionGenerationComplete: (event: ContributionGenerationCompletePayload) => void;
+  _handleContributionGenerationContinued: (event: ContributionGenerationContinuedPayload) => void;
+  _handleProgressUpdate: (event: DialecticProgressUpdatePayload) => void;
+  
   reset: () => void;
 }
 
@@ -393,7 +408,8 @@ export interface DialecticContribution {
   tokens_used_input: number | null;
   tokens_used_output: number | null;
   processing_time_ms: number | null;
-  error: string | null;
+  // Make error an object to store more details
+  error: ApiError | null;
   citations: { text: string; url?: string }[] | null;
   created_at: string;
   updated_at: string;
@@ -403,15 +419,17 @@ export interface DialecticContribution {
   storage_path: string | null;
   size_bytes: number | null;
   mime_type: string | null;
-  status?: 'pending' | 'generating' | 'retrying' | 'failed'; // Client-side status for placeholders
+  status?: 'pending' | 'generating' | 'retrying' | 'failed' | 'completed' | 'continuing'; // Client-side status for placeholders
 }
 
 export interface ContributionGenerationStartedPayload {
+  // This is the overall contribution generation for the entire session stage. 
   type: 'contribution_generation_started';
   sessionId: string;
 }
 
 export interface DialecticContributionStartedPayload {
+  // This is the individual contribution generation for a specific model. 
   type: 'dialectic_contribution_started';
   sessionId: string;
   modelId: string;
@@ -419,6 +437,7 @@ export interface DialecticContributionStartedPayload {
 }
 
 export interface ContributionGenerationRetryingPayload {
+  // This is the individual contribution generation for a specific model. 
   type: 'contribution_generation_retrying';
   sessionId: string;
   modelId: string;
@@ -427,6 +446,7 @@ export interface ContributionGenerationRetryingPayload {
 }
 
 export interface DialecticContributionReceivedPayload {
+  // This is the individual contribution generation for a specific model. 
   type: 'dialectic_contribution_received';
   sessionId: string;
   contribution: DialecticContribution;
@@ -434,15 +454,44 @@ export interface DialecticContributionReceivedPayload {
 }
 
 export interface ContributionGenerationFailedPayload {
+  // This is a specific model failing for all of its retries.  
   type: 'contribution_generation_failed';
   sessionId: string;
   error?: ApiError;
 }
 
+export interface ContributionGenerationContinuedPayload {
+  // This is a specific model that is continuing its generation because its internal stop reason was not "stop". 
+  // The most common continuation reasons are "max_tokens_reached" and "length". 
+  type: 'contribution_generation_continued';
+  sessionId: string;
+  contribution: DialecticContribution;
+  projectId: string;
+  modelId: string;
+  continuationNumber: number;
+  job_id: string;
+}
+
 export interface ContributionGenerationCompletePayload {
+  // This is a specific model that has completed its generation. 
   type: 'contribution_generation_complete';
   sessionId: string;
   projectId: string;
+}
+
+export interface DialecticProgressUpdatePayload {
+  type: 'dialectic_progress_update';
+  sessionId: string;
+  stageSlug: string;
+  current_step: number;
+  total_steps: number;
+  message: string;
+}
+
+export interface ProgressData {
+  current_step: number;
+  total_steps: number;
+  message: string;
 }
 
 export type DialecticLifecycleEvent = 
@@ -451,7 +500,9 @@ ContributionGenerationStartedPayload
 | ContributionGenerationRetryingPayload 
 | DialecticContributionReceivedPayload 
 | ContributionGenerationFailedPayload 
-| ContributionGenerationCompletePayload;
+| ContributionGenerationContinuedPayload
+| ContributionGenerationCompletePayload
+| DialecticProgressUpdatePayload;
 
 export interface DialecticFeedback {
   id: string;

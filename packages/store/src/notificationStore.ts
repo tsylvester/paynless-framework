@@ -126,6 +126,11 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                         eventPayload = { type, sessionId: data['sessionId'], projectId: data['projectId'] };
                     }
                     break;
+                case 'contribution_generation_continued':
+                    if (typeof data['sessionId'] === 'string' && typeof data['projectId'] === 'string' && typeof data['modelId'] === 'string' && typeof data['continuationNumber'] === 'number' && isDialecticContribution(data['contribution']) && typeof data['job_id'] === 'string') {
+                        eventPayload = { type, sessionId: data['sessionId'], projectId: data['projectId'], modelId: data['modelId'], continuationNumber: data['continuationNumber'], contribution: data['contribution'], job_id: data['job_id'] };
+                    }
+                    break;
             }
             
             if (eventPayload) {

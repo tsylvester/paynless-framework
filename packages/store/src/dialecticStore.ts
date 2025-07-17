@@ -21,6 +21,13 @@ import type {
   GenerateContributionsResponse,
   DialecticProjectRow,
   DialecticLifecycleEvent,
+  ContributionGenerationStartedPayload,
+  DialecticContributionStartedPayload,
+  ContributionGenerationRetryingPayload,
+  DialecticContributionReceivedPayload,
+  ContributionGenerationFailedPayload,
+  ContributionGenerationCompletePayload,
+  ContributionGenerationContinuedPayload,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
@@ -879,129 +886,186 @@ export const useDialecticStore = create<DialecticStore>()(
     set(initialDialecticStateValues);
   },
 
-  _handleDialecticLifecycleEvent: (event: DialecticLifecycleEvent) => {
-    logger.info(`Processing lifecycle event: ${event.type}`, { event });
-
-    set((state) => {
-      if (!state.currentProjectDetail?.dialectic_sessions) {
-        logger.error('Cannot process event without project details and sessions.', { event });
-        return;
-      }
-
-      const sessionId = event.sessionId;
-      if (!sessionId) {
-        logger.warn(`Event ${event.type} is missing a sessionId.`);
-        return;
-      }
+  // Internal handler for completion events from notificationStore
+  _handleGenerationCompleteEvent: (data: { sessionId: string; projectId: string; [key: string]: unknown }) => {
+    logger.info('[DialecticStore] Handling generation complete event', data);
+    set(state => {
+      // Remove the session from the generating list
+      delete state.generatingSessions[data.sessionId];
       
-      const sessionIndex = state.currentProjectDetail.dialectic_sessions.findIndex(s => s.id === sessionId);
-      if (sessionIndex === -1) {
-        logger.warn(`Could not find session with ID: ${sessionId} for event: ${event.type}`);
-        return;
-      }
-
-      const session = state.currentProjectDetail.dialectic_sessions[sessionIndex];
-      if (!session.dialectic_contributions) {
-        session.dialectic_contributions = [];
-      }
-
-      switch (event.type) {
-        case 'contribution_generation_started':
-          state.contributionGenerationStatus = 'generating';
-          state.generateContributionsError = null;
-          if (state.generatingSessions[sessionId]) {
-            delete state.generatingSessions[sessionId];
-          }
-          break;
-
-        case 'dialectic_contribution_started': {
-          const { modelId, iterationNumber } = event;
-          if (!modelId || typeof iterationNumber === 'undefined') break;
-          
-          const tempId = `${sessionId}-${modelId}-${iterationNumber}-0`;
-          const contribution = session.dialectic_contributions.find(c => c.id === tempId);
-          
-          if (contribution) {
-            contribution.status = 'generating';
-          } else {
-            logger.warn(`Could not find placeholder contribution with tempId: ${tempId} for event: ${event.type}`);
-          }
-          break;
-        }
-        case 'contribution_generation_retrying': {
-          const { modelId, iterationNumber, error } = event;
-          if (!modelId || typeof iterationNumber === 'undefined') break;
-          
-          const tempId = `${sessionId}-${modelId}-${iterationNumber}-0`;
-          const contribution = session.dialectic_contributions.find(c => c.id === tempId);
-          
-          if (contribution) {
-            contribution.status = 'retrying';
-            if (error) {
-              contribution.error = error;
-            }
-          } else {
-            logger.warn(`Could not find placeholder contribution with tempId: ${tempId} for event: ${event.type}`);
-          }
-          break;
-        }
-
-        case 'dialectic_contribution_received': {
-          const { contribution: finalContribution, job_id } = event;
-          if (!finalContribution || !job_id) {
-            logger.error('Received invalid contribution data for dialectic_contribution_received', { event });
-            break;
-          }
-          
-          const tempId = `${sessionId}-${finalContribution.model_id}-${finalContribution.iteration_number}-0`;
-          const contributionIndex = session.dialectic_contributions.findIndex(c => c.id === tempId);
-
-          if (contributionIndex !== -1) {
-            session.dialectic_contributions[contributionIndex] = finalContribution;
-          } else {
-            logger.warn(`Could not find placeholder to replace for contribution ID: ${finalContribution.id}. Adding instead.`);
-            session.dialectic_contributions.push(finalContribution);
-          }
-
-          if (state.generatingSessions[sessionId]) {
-            state.generatingSessions[sessionId] = state.generatingSessions[sessionId].filter((id: string) => id !== job_id);
-          }
-          break;
-        }
-
-        case 'contribution_generation_failed': {
-          state.contributionGenerationStatus = 'failed';
-          const { error: apiError } = event;
-          if (apiError) {
-            state.generateContributionsError = apiError;
-          }
-          session.dialectic_contributions.forEach(c => {
-            if (c.status === 'pending' || c.status === 'generating' || c.status === 'retrying') {
-              c.status = 'failed';
-              if (apiError) {
-                c.error = apiError.message;
-              }
-            }
-          });
-          break;
-        }
-
-        case 'contribution_generation_complete': {
-          state.contributionGenerationStatus = 'idle';
-          if (state.generatingSessions[sessionId]) {
-            delete state.generatingSessions[sessionId];
-          }
-          const { projectId } = event;
-          if (projectId) {
-            get().fetchDialecticProjectDetails(projectId);
-          }
-          break;
-        }
-
-        default:
-          logger.warn(`Unhandled dialectic lifecycle event`, { event });
+      // If no more sessions are generating, update the overall status
+      if (Object.keys(state.generatingSessions).length === 0) {
+        state.contributionGenerationStatus = 'idle';
       }
     });
+    // Trigger a refetch of the project details to get the new contributions
+    get().fetchDialecticProjectDetails(data.projectId);
+  },
+  
+  // NEW: Internal handler for all dialectic lifecycle events from notificationStore
+  _handleDialecticLifecycleEvent: (event: DialecticLifecycleEvent) => {
+    logger.info('[DialecticStore] Routing dialectic lifecycle event:', { event });
+    // Use get() to access other actions within the store
+    const { 
+      _handleContributionGenerationStarted,
+      _handleDialecticContributionStarted,
+      _handleContributionGenerationRetrying,
+      _handleDialecticContributionReceived,
+      _handleContributionGenerationFailed,
+      _handleContributionGenerationComplete,
+      _handleContributionGenerationContinued
+    } = get();
+
+    switch (event.type) {
+      case 'contribution_generation_started':
+        _handleContributionGenerationStarted(event);
+        break;
+      case 'dialectic_contribution_started':
+        _handleDialecticContributionStarted(event);
+        break;
+      case 'contribution_generation_retrying':
+        _handleContributionGenerationRetrying(event);
+        break;
+      case 'dialectic_contribution_received':
+        _handleDialecticContributionReceived(event);
+        break;
+      case 'contribution_generation_failed':
+        _handleContributionGenerationFailed(event);
+        break;
+      case 'contribution_generation_complete':
+        _handleContributionGenerationComplete(event);
+        break;
+      case 'contribution_generation_continued':
+        _handleContributionGenerationContinued(event);
+        break;
+      default:
+        logger.warn('[DialecticStore] Unhandled dialectic lifecycle event', { event });
+    }
+  },
+
+  // --- Private Handlers for Lifecycle Events ---
+  _handleContributionGenerationStarted: (event: ContributionGenerationStartedPayload) => {
+    set({
+      contributionGenerationStatus: 'generating',
+      generateContributionsError: null,
+    });
+  },
+
+  _handleDialecticContributionStarted: (event: DialecticContributionStartedPayload) => {
+    set(state => {
+      const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
+      if (session?.dialectic_contributions) {
+        const placeholderId = `placeholder-${event.sessionId}-${event.modelId}-${event.iterationNumber}`;
+        const idx = session.dialectic_contributions.findIndex(c => c.id.startsWith(placeholderId));
+        if (idx > -1) {
+          session.dialectic_contributions[idx].status = 'generating';
+        }
+      }
+    });
+  },
+
+  _handleContributionGenerationRetrying: (event: ContributionGenerationRetryingPayload) => {
+    set(state => {
+      const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
+      if (session?.dialectic_contributions) {
+        const placeholderId = `placeholder-${event.sessionId}-${event.modelId}-${event.iterationNumber}`;
+        const idx = session.dialectic_contributions.findIndex(c => c.id.startsWith(placeholderId));
+        if (idx > -1) {
+          session.dialectic_contributions[idx].status = 'retrying';
+          session.dialectic_contributions[idx].error = { 
+              message: event.error || 'An error occurred during generation. Retrying...',
+              code: 'CONTRIBUTION_RETRYING' 
+          };
+        }
+      }
+    });
+  },
+
+  _handleDialecticContributionReceived: (event: DialecticContributionReceivedPayload) => {
+    set(state => {
+      const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
+      if (session?.dialectic_contributions) {
+        const placeholderId = `placeholder-${event.sessionId}-${event.contribution.model_id}-${event.contribution.iteration_number}`;
+        const idx = session.dialectic_contributions.findIndex(c => c.id.startsWith(placeholderId));
+        
+        const newContribution = {
+          ...event.contribution,
+          status: 'completed' as const
+        };
+
+        if (idx > -1) {
+          session.dialectic_contributions[idx] = newContribution;
+        } else {
+          // If for some reason the placeholder doesn't exist, add it anyway.
+          session.dialectic_contributions.push(newContribution);
+        }
+      }
+      // Remove the completed job ID from tracking
+      if (state.generatingSessions[event.sessionId] && event.job_id) {
+        state.generatingSessions[event.sessionId] = state.generatingSessions[event.sessionId].filter(id => id !== event.job_id);
+      }
+    });
+  },
+
+  _handleContributionGenerationContinued: (event: ContributionGenerationContinuedPayload) => {
+    set(state => {
+      const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
+      if (session?.dialectic_contributions) {
+        const placeholderId = `placeholder-${event.sessionId}-${event.contribution.model_id}-${event.contribution.iteration_number}`;
+        const idx = session.dialectic_contributions.findIndex(c => c.id.startsWith(placeholderId));
+
+        const continuingContribution = {
+          ...event.contribution,
+          status: 'continuing' as const
+        };
+
+        if (idx > -1) {
+          session.dialectic_contributions[idx] = continuingContribution;
+        } else {
+          // Fallback: if placeholder not found, maybe it's already been replaced. Try finding by real ID.
+          const realIdx = session.dialectic_contributions.findIndex(c => c.id === event.contribution.id);
+          if (realIdx > -1) {
+            session.dialectic_contributions[realIdx] = continuingContribution;
+          } else {
+            session.dialectic_contributions.push(continuingContribution);
+          }
+        }
+      }
+      // Do not remove the job_id from tracking, as the generation is still in progress.
+    });
+  },
+
+  _handleContributionGenerationFailed: (event: ContributionGenerationFailedPayload) => {
+    set(state => {
+      const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
+      if (session?.dialectic_contributions) {
+        // Mark all remaining pending/generating placeholders for this session as failed
+        session.dialectic_contributions.forEach(c => {
+          if (c.status === 'pending' || c.status === 'generating' || c.status === 'retrying') {
+            c.status = 'failed';
+            c.error = event.error || { message: 'Generation failed due to a session-wide error.', code: 'GENERATION_FAILED' };
+          }
+        });
+      }
+      // Clear tracking for this session
+      delete state.generatingSessions[event.sessionId];
+      state.contributionGenerationStatus = 'failed';
+      state.generateContributionsError = event.error || { message: 'Generation failed without a specific error.', code: 'GENERATION_FAILED' };
+    });
+  },
+
+  _handleContributionGenerationComplete: (event: ContributionGenerationCompletePayload) => {
+    set(state => {
+      // Remove the session from the generating list
+      delete state.generatingSessions[event.sessionId];
+      
+      // If no more sessions are generating, update the overall status
+      if (Object.keys(state.generatingSessions).length === 0) {
+        state.contributionGenerationStatus = 'idle';
+      }
+    });
+    // Trigger a refetch of the project details to get the new contributions
+    get().fetchDialecticProjectDetails(event.projectId);
   },
 
   generateContributions: async (payload: GenerateContributionsPayload): Promise<ApiResponse<GenerateContributionsResponse>> => {
@@ -1029,7 +1093,7 @@ export const useDialecticStore = create<DialecticStore>()(
         selectedModelIds.forEach((modelId, index) => {
           // Find model details from catalog to get the name
           const modelDetails = state.modelCatalog.find(m => m.id === modelId);
-          const tempId = `${sessionId}-${modelId}-${iterationNumber}-${index}`;
+          const tempId = `placeholder-${sessionId}-${modelId}-${iterationNumber}-${index}`;
           const placeholder: DialecticContribution = {
             id: tempId,
             session_id: sessionId,
@@ -1083,6 +1147,7 @@ export const useDialecticStore = create<DialecticStore>()(
             session.dialectic_contributions?.forEach(c => {
               if (c.status === 'pending') {
                 c.status = 'failed';
+                c.error = error;
               }
             });
           }
@@ -1117,6 +1182,7 @@ export const useDialecticStore = create<DialecticStore>()(
           session.dialectic_contributions?.forEach(c => {
             if (c.status === 'pending') {
               c.status = 'failed';
+              c.error = networkError;
             }
           });
         }
