@@ -14,14 +14,12 @@ import { logger } from '@paynless/utils';
 interface DomainMultiSelectorProps {
     selectedDomainId: string;
     onSelectionChange: (domainId: string) => void;
-    placeholder?: string;
     disabled?: boolean;
 }
 
 export function DomainMultiSelector({
     selectedDomainId,
     onSelectionChange,
-    placeholder = "Select a domain...",
     disabled = false
 }: DomainMultiSelectorProps) {
     const fetchDomains = useDialecticStore(state => state.fetchDomains);
@@ -72,9 +70,8 @@ export function DomainMultiSelector({
 
     return (
         <div className="space-y-4">
-            <div className="text-sm font-medium text-foreground">
-                {placeholder}
-            </div>
+            
+            
             <ScrollArea className="max-h-[300px] pr-4">
                 <RadioGroup
                     value={selectedDomainId}
@@ -83,13 +80,20 @@ export function DomainMultiSelector({
                     className="space-y-3"
                 >
                     {domains.map((domain: DialecticDomain) => (
-                        <div key={domain.id} className="flex items-start space-x-3 p-3 rounded-lg border border-border hover:bg-accent/50 transition-colors">
+                        <button
+                            key={domain.id}
+                            type="button"
+                            className="flex items-center space-x-3 p-4 rounded-lg border border-border hover:bg-accent/50 transition-colors cursor-pointer text-left w-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                            onClick={() => handleDomainChange(domain.id)}
+                            disabled={disabled}
+                        >
                             <RadioGroupItem 
                                 value={domain.id} 
                                 id={domain.id}
-                                className="mt-0.5"
+                                className="pointer-events-none size-4 mx-1"
+                                
                             />
-                            <div className="flex-1 space-y-1">
+                            <div className="flex-1 space-y-1 pointer-events-none">
                                 <Label 
                                     htmlFor={domain.id}
                                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
@@ -102,7 +106,7 @@ export function DomainMultiSelector({
                                     </p>
                                 )}
                             </div>
-                        </div>
+                        </button>
                     ))}
                 </RadioGroup>
             </ScrollArea>

@@ -1,10 +1,7 @@
 import * as React from "react";
 import {
-	AudioWaveform,
 	BookOpen,
-	Command,
 	Frame,
-	GalleryVerticalEnd,
 	PieChart,
 	User,
 	SquareTerminal,
@@ -24,24 +21,15 @@ import { useAuthStore } from "@paynless/store";
 import { OrganizationSwitcher } from "../organizations/OrganizationSwitcher";
 import { useNavigate } from "react-router-dom";
 
-
 const data = {
-
-	
-	
-	
 	navMain: [
 		{
 			title: "New Chat",
 			url: "/chat",
 			icon: SquareTerminal,
 			isActive: true,
-			
-			
 		},
-		
-		
-		
+
 		{
 			title: "Documentation",
 			url: "#",
@@ -65,7 +53,6 @@ const data = {
 				},
 			],
 		},
-		
 	],
 	projects: [
 		{
@@ -87,18 +74,14 @@ const data = {
 };
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-
-	
 	const navigate = useNavigate();
+
 	const { user, isLoading } = useAuthStore((state) => ({ user: state.user }));
-	
-	
-	
 
 	const state = isLoading ? "LOADING" : !user ? "NO_AUTH" : "AUTHENTICATED";
 
 	return (
-		<Sidebar {...props} className="bg-[#111] text-foreground max-w-[200px]">
+		<Sidebar {...props} className="bg-[#fafafa] dark:bg-[#111] text-foreground max-w-[200px]">
 			{state === "LOADING" ? (
 				<SidebarContent>
 					<div className="flex items-center justify-between p-4">
@@ -128,7 +111,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 					</SidebarHeader>
 					<SidebarContent>
 						<NavMain items={data.navMain} />
-						<NavProjects  />
+						<NavProjects />
 					</SidebarContent>
 					<SidebarFooter>
 						<NavUser user={user} />

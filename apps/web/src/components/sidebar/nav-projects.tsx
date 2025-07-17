@@ -29,8 +29,7 @@ export function NavProjects() {
 	if (isLoading) {
 		return (
 			<div className="flex items-center justify-center h-64">
-				<Loader2 className="h-8 w-8 animate-spin text-primary" />
-				<p className="ml-2 text-lg">Loading projects...</p>
+				<Loader2 className="h-3 w-3 animate-spin" />
 			</div>
 		);
 	}

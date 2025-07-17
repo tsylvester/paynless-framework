@@ -6,10 +6,13 @@ import { useState } from "react";
 
 interface AIModelSelectorProps {
 	disabled?: boolean;
+	onChange: (modelsChecked: string[]) => void;
 }
 
 export const AIModelSelectorList: React.FC<AIModelSelectorProps> = ({
-	disabled,
+	onChange,
+}: {
+	onChange: (modelsChecked: string[]) => void;
 }) => {
 	const [modelsChecked, setModelsChecked] = useState<string[]>([]);
 
@@ -32,24 +35,35 @@ export const AIModelSelectorList: React.FC<AIModelSelectorProps> = ({
 	}, [loadAiConfig, isConfigLoading, availableProviders, aiError]);
 
 	return (
-		<div className="border-gray-200 border-1">
-			<ScrollArea className="max-h-[300px] overflow-y-auto">
+		<div className="border-gray-200 border-1 flex flex-col h-full flex-grow">
+			<ScrollArea className="h-full overflow-y-auto flex-grow w-[330px] mx-auto">
 				{availableProviders
 					.sort((a, b) => a.name.localeCompare(b.name))
 					.map((provider) => (
-						<div
+						<button
+							type="button"
 							key={provider.id}
-							className="flex items-center p-2 rounded-md gap-1"
+							className="flex w-full items-center p-2 rounded-md gap-1 text-left focus:outline-none border border-gray-500/10 hover:cursor-pointer my-2 hover:border-gray-500/50 "
+							onClick={() => {
+								const newModelsChecked = modelsChecked.includes(provider.id)
+									? modelsChecked.filter((id) => id !== provider.id)
+									: [...modelsChecked, provider.id];
+								setModelsChecked(newModelsChecked);
+								onChange(newModelsChecked);
+							}}
+							onKeyDown={(e) => {
+								if (e.key === " " || e.key === "Enter") {
+									e.preventDefault();
+									const newModelsChecked = modelsChecked.includes(provider.id)
+										? modelsChecked.filter((id) => id !== provider.id)
+										: [...modelsChecked, provider.id];
+									setModelsChecked(newModelsChecked);
+									onChange(newModelsChecked);
+								}
+							}}
 						>
 							<div className="flex-shrink-0">
-								<Checkbox
-									onClick={() => {
-										const newModelsChecked = modelsChecked.includes(provider.id)
-											? modelsChecked.filter((id) => id !== provider.id)
-											: [...modelsChecked, provider.id];
-										setModelsChecked(newModelsChecked);
-									}}
-								/>
+								<Checkbox checked={modelsChecked.includes(provider.id)} />
 							</div>
 							<span
 								className="flex-1 min-w-0 ml-2 truncate text-xs font-mono"
@@ -57,7 +71,7 @@ export const AIModelSelectorList: React.FC<AIModelSelectorProps> = ({
 							>
 								{provider.name.toLowerCase()}
 							</span>
-						</div>
+						</button>
 					))}
 			</ScrollArea>
 		</div>
