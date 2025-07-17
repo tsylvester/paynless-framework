@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useMemo } from 'react';
 import { useWalletStore, useAiStore } from '@paynless/store';
 import type { WalletDecisionOutcome } from '@paynless/types';
 import { logger } from '@paynless/utils';
@@ -18,6 +18,7 @@ export const useChatWalletDecision = (): UseChatWalletDecisionReturn => {
 
   const {
     determineChatWallet,
+    setCurrentChatWalletDecision,
     userOrgTokenConsent,
     clearUserOrgTokenConsent,
     isConsentModalOpen,
@@ -25,6 +26,7 @@ export const useChatWalletDecision = (): UseChatWalletDecisionReturn => {
     closeConsentModal,
   } = useWalletStore(state => ({
     determineChatWallet: state.determineChatWallet,
+    setCurrentChatWalletDecision: state.setCurrentChatWalletDecision,
     userOrgTokenConsent: state.userOrgTokenConsent,
     clearUserOrgTokenConsent: state.clearUserOrgTokenConsent,
     isConsentModalOpen: state.isConsentModalOpen,
@@ -41,7 +43,15 @@ export const useChatWalletDecision = (): UseChatWalletDecisionReturn => {
     clearUserOrgTokenConsent(orgIdToReset);
   }, [clearUserOrgTokenConsent]);
 
-  const calculatedOutcome = determineChatWallet(newChatContextOrgId);
+  const calculatedOutcome = useMemo(() => {
+    return determineChatWallet(newChatContextOrgId);
+  }, [determineChatWallet, newChatContextOrgId, userOrgTokenConsent]);
+
+  // Update the store with the calculated outcome
+  useEffect(() => {
+    setCurrentChatWalletDecision(calculatedOutcome);
+    logger.debug('[useChatWalletDecision] Updated store with calculated outcome', { calculatedOutcome });
+  }, [calculatedOutcome, setCurrentChatWalletDecision]);
 
   const isLoadingConsent = calculatedOutcome.outcome === 'loading';
 

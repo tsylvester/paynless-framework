@@ -95,6 +95,14 @@ const routes: RouteObject[] = [
         path: 'chat',
         element: (
           <ProtectedRoute>
+            <AiChatPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'new',
+        element: (
+          <ProtectedRoute>
             <ChatPage />
           </ProtectedRoute>
         ),

@@ -25,34 +25,46 @@ const data = {
 	navMain: [
 		{
 			title: "New Chat",
-			url: "/chat",
+			url: "/new",
 			icon: SquareTerminal,
 			isActive: true,
 		},
-
 		{
-			title: "Documentation",
-			url: "#",
-			icon: BookOpen,
-			items: [
-				{
-					title: "How it works",
-					url: "/docs/how-it-works",
-				},
-				{
-					title: "Pricing",
-					url: "/docs/pricing",
-				},
-				{
-					title: "Tutorials",
-					url: "/docs/tutorials",
-				},
-				{
-					title: "Changelog",
-					url: "/docs/changelog",
-				},
-			],
+			title: "Chat",
+			url: "/chat",
+			icon: User,
+			isActive: true,
 		},
+		{
+			title: "Dialectic",
+			url: "/dialectic",
+			icon: BookOpen,
+			isActive: true,
+		},
+
+		// {
+		// 	title: "Documentation",
+		// 	url: "#",
+		// 	icon: BookOpen,
+		// 	items: [
+		// 		{
+		// 			title: "How it works",
+		// 			url: "/docs/how-it-works",
+		// 		},
+		// 		{
+		// 			title: "Pricing",
+		// 			url: "/docs/pricing",
+		// 		},
+		// 		{
+		// 			title: "Tutorials",
+		// 			url: "/docs/tutorials",
+		// 		},
+		// 		{
+		// 			title: "Changelog",
+		// 			url: "/docs/changelog",
+		// 		},
+		// 	],
+		// },
 	],
 	projects: [
 		{

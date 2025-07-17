@@ -39,6 +39,7 @@ export interface WalletActions {
   initiatePurchase: (request: PurchaseRequest) => Promise<PaymentInitiationResult | null>;
   _resetForTesting: () => void; // For test cleanup
   determineChatWallet: (newChatContextOrgId: string | null | undefined) => WalletDecisionOutcome; // Kept here as it uses get() internally
+  setCurrentChatWalletDecision: (decision: WalletDecisionOutcome) => void;
   setUserOrgTokenConsent: (orgId: string, consent: boolean) => void;
   clearUserOrgTokenConsent: (orgId: string) => void;
   openConsentModal: () => void;
@@ -66,6 +67,11 @@ export const initialWalletStateValues: WalletStateValues = {
 
 export const useWalletStore = create<WalletStore>((set, get) => ({
   ...initialWalletStateValues,
+
+  setCurrentChatWalletDecision: (decision: WalletDecisionOutcome) => {
+    set({ currentChatWalletDecision: decision });
+    logger.debug('[walletStore.setCurrentChatWalletDecision] Decision set in Zustand state:', decision);
+  },
 
   setUserOrgTokenConsent: (orgId: string, consent: boolean) => {
     set(state => ({
