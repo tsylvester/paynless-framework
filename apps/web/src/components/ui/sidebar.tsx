@@ -4,7 +4,8 @@ import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { cva, VariantProps } from "class-variance-authority"
 import { PanelLeftIcon } from "lucide-react"
-import { useAiStore } from '@paynless/store';
+
+
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
@@ -378,7 +379,15 @@ function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
       data-slot="sidebar-content"
       data-sidebar="content"
       className={cn(
-        "flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden",
+        "flex min-h-0 flex-1 flex-col gap-2 overflow-auto w-[190px] group-data-[collapsible=icon]:overflow-hidden",
+        // Custom scrollbar styles
+        "[&::-webkit-scrollbar]:w-2",
+        "[&::-webkit-scrollbar-track]:bg-transparent",
+        "[&::-webkit-scrollbar-thumb]:bg-gray-300/50",
+        "[&::-webkit-scrollbar-thumb]:rounded-full",
+        "[&::-webkit-scrollbar-thumb:hover]:bg-gray-400/60",
+        // Firefox scrollbar styles
+        "scrollbar-thin scrollbar-track-transparent scrollbar-thumb-gray-300/50",
         className
       )}
       {...props}

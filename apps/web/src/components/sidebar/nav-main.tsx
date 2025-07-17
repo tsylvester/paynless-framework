@@ -22,6 +22,8 @@ import { Link } from "react-router-dom";
 
 export function NavMain({
 	items,
+	hideLogo = false,
+	subtitle
 }: {
 	items: {
 		title: string;
@@ -33,9 +35,12 @@ export function NavMain({
 			url: string;
 		}[];
 	}[];
+	hideLogo?: boolean;
+	subtitle?: string;
 }) {
 	return (
 		<SidebarGroup>
+			{!hideLogo && (
 			<Link to="/" className="flex items-center justify-center my-5">
 				<img
 					src="/logos/app_icon_240x240.png"
@@ -43,7 +48,8 @@ export function NavMain({
 					className="h-16 w-16"
 				/>
 			</Link>
-			<SidebarGroupLabel>Platform</SidebarGroupLabel>
+			)}
+			<SidebarGroupLabel>{subtitle}</SidebarGroupLabel>
 			<SidebarMenu>
 				{items.map((item) => (
 					<Collapsible
