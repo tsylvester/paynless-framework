@@ -190,159 +190,372 @@ The implementation plan uses the following labels to categorize work steps:
 
 ---
 
-### Phase 4: Dialectic Process Scaling - Antithesis Stage (Stage 2)
+### Phase 4: Architectural Refactor for Asynchronous Processing
 
-This phase addresses the context window limitations inherent in the multi-stage dialectic process. It introduces immediate fixes for Stage 2 (Antithesis) and a long-term, robust solution for Stage 3 (Synthesis) and beyond.
+This phase addresses the critical 150-second timeout limitation of Supabase Edge Functions by refactoring the `generateContributions` workflow from a synchronous request-response model to an asynchronous, background job-based architecture. This is a foundational change that not only fixes the timeout issue but also enables the complex, long-running processes required for the advanced Dialectic Scaling phases.
 
-#### 11. [BE] [REFACTOR] Implement Task Isolation for Antithesis Stage (Stage 2)
+#### 11. [DB] Create the Job Queue Table
 
-This addresses the "lumping" problem by breaking down the single large critique task into multiple, focused tasks. Instead of each agent receiving all theses at once, each agent will critique each thesis individually, ensuring a more focused and effective analysis. The number of models (`n`) is variable based on user selection, and the number of theses (`m`) depends on the output of the previous stage.
+*   `[✅]` 11.a. **Create Database Migration for `dialectic_generation_jobs`:**
+    *   `[DB]` **Action:** Create a new SQL migration file to define the table that will act as our job queue.
+    *   `[DB]` **Table Schema:** `dialectic_generation_jobs`
+        *   `id`: `uuid`, primary key, default `gen_random_uuid()`
+        *   `session_id`: `uuid`, not null, foreign key to `public.dialectic_sessions`
+        *   `stage_slug`: `text`, not null
+        *   `iteration_number`: `integer`, not null
+        *   `payload`: `jsonb`, not null (stores input parameters like `model_selections`, `continue_until_complete`)
+        *   `status`: `text`, not null, default `'pending'` (e.g., 'pending', 'processing', 'completed', 'failed', 'retrying', 'retry_loop_failed')
+        *   `attempt_count`: `integer`, not null, default `0`
+        *   `max_retries`: `integer`, not null, default `3` (can be overridden by payload)
+        *   `created_at`: `timestamptz`, not null, default `now()`
+        *   `started_at`: `timestamptz`, nullable
+        *   `completed_at`: `timestamptz`, nullable
+        *   `results`: `jsonb`, nullable
+        *   `error_details`: `jsonb`, nullable
 
-*   `[ ]` 11.a. **Add Conditional Logic Fork for Antithesis Stage:**
-    *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   **Action:** Introduce a conditional block `if (stage.slug === 'antithesis')` after fetching the stage details. The new logic will reside within this block, while the existing logic will be moved to an `else` block to handle all other stages.
+#### 12. [BE] Create the Background Worker Function
 
-*   `[ ]` 11.b. **Fetch Thesis Contributions and Content:**
-    *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   **Action:** Within the `antithesis` block, query the `dialectic_contributions` table to get all contributions where `stage` is 'thesis' for the current `session_id` and `iteration_number`.
-    *   **Action:** Iterate through the resulting thesis records and use `deps.downloadFromStorage` to retrieve the content for each one. This will create a collection of `m` thesis documents to be critiqued.
+*   `[✅]` 12.a. **Create a New `dialectic-worker` Edge Function:**
+    *   `[BE]` **Action:** Create a new, separate Edge Function (`supabase/functions/dialectic-worker/index.ts`) dedicated to processing jobs from the queue.
+    *   `[TEST-UNIT]` Write RED unit tests for the new dialectic-worker function that proves it will correctly replace `generateContribution`. Use the existing `generateContribution` test file as a model for what functions to test. 
+    *   `[BE]` Implement the `dialecticWorker` function to replace `generateContribution` functionality. 
+    *   `[TEST-UNIT]` Run GREEN unit tests to prove that `dialecticWorker` passes all tests. 
+    *   `[REFACTOR]` Refactor the `generateContribution` for DRY and SRP. Produce reusable utility functions for repeated logic. Reduce and streamline core `generateContribution` logic while preserving functionality. 
+    *   `[TEST-UNIT]` Write RED unit tests for the logic exported from `generateContribution` into utility files. 
+    *   `[BE]` Implement the utility functions exported from `generateContribution` into utility files. 
+    *   `[TEST-UNIT]` Run GREEN unit tests to prove the utility functions pass. 
+    *   `[TEST-UNIT]` Run GREEN unit tests to prove the `dialecticWorker` function passes and correctly ports existing `generateContribution` function to a job queue / worker structure. 
+*   `[✅]` 12.b. **Implement Granular Notifications and Job Statuses:**
+    *   `[BE]` **Action:** The worker will fetch a pending job, increment its `attempt_count`, and update its database status to `'processing'`.
+    *   `[BE]` **Action:** It will contain the core, long-running logic from the original `generateContributions` function. If the AI call fails, it will check if `attempt_count < max_retries`.
+        *   If it can retry, it updates the status to `'retrying'`, records the error in `error_details`.
+        *   If retries are exhausted, it sets the status to `'retry_loop_failed'`.
+    *   `[BE]` **Action:** On complete success (no continuation needed), it populates `results` and sets the status to `'completed'`.
+    *   `[BE]` **Action:** For each job status change (`'processing'`, `'retrying'`, `'retry_loop_failed'`, `'completed'`), the worker will make an RPC call to `create_notification_for_user` to provide real-time updates to the user.
+*   `[✅]` 12.c. **Implement Job-Based Continuation Logic:**
+    *   `[BE]` **Action:** Refactor `chat/continue.ts` to extract the core continuation logic into a reusable utility function in `_shared/utils/continue_util.ts`. Write RED/GREEN/REFACTOR tests for the new `continue_util` file. Update `chat/continue` to use the new util. Run `continue` tests to verify the function performs exactly as it does now. 
+    *   `[BE]` **Action:** The `dialectic-worker` will no longer use the `handleContinuationLoop` from the `/chat` service. Instead, it will make a single, non-continuing call to `callUnifiedAIModel`.
+    *   `[BE]` **Action:** The `dialectic-worker` will use the `continue_util` function for continuation. 
+        *   `[BE]` **Action:** After receiving a response, it will check the `finish_reason` provided by the AI adapter.
+        *   `[BE]` **Action:** If `finish_reason` is `'length'` and the `continue_until_complete` flag in the job's payload is `true`, the worker will enqueue a **new job** in the `dialectic_generation_jobs` table.
+        *   `[BE]` **Action:** The payload for this new continuation job **must** include the necessary context to resume, such as the `contribution_id` of the record being updated and the full, updated message history (including the partial response just received).
+        *   `[BE]` **Action:** The current job will then be marked as `'completed'`, as its sole responsibility was to process one chunk.
+*   `[✅]` 12.d. **Implement Incremental and Idempotent File Saving:**
+    *   `[REFACTOR]` **Action:** The logic for creating the `uploadContext` and calling the `fileManager` from the old `generateContribution` function will be extracted into a reusable utility to ensure DRY principles are followed.
+    *   `[BE]` **Action:** For a new contribution, the **first** job in a potential continuation chain will be responsible for creating the initial `dialectic_contributions` record. This creates a stable `contribution_id` that serves as the `original_model_contribution_id`.
+    *   `[BE]` **Action:** This `original_model_contribution_id` will be passed in the payload of all subsequent continuation jobs for this contribution, referenced as the `target_contribution_id`.
+    *   `[BE]` **Action:** When a continuation job runs, the `fileManager` uses the `target_contribution_id` to fetch the existing partial file from storage. It then appends the new content from the AI response and **overwrites** the file in storage with the updated, longer content.
+    *   `[BE]` **Action:** Instead of updating the original record, the `fileManager` creates a **new** `dialectic_contributions` record for each continuation. It links these records by setting `original_model_contribution_id` to the ID of the very first contribution and sets `is_latest_edit` to `true` on the newest record, while marking the previous one as `false`. This creates a versioned, immutable history while ensuring only one canonical file exists in storage.
+*   `[✅]` 12.e. **Set Up Database Webhook Trigger:**
+    *   `[BE]` `[DB]` **Action:** The worker function will be invoked automatically via a database webhook/trigger that fires on `INSERT` into the `dialectic_generation_jobs` table. This provides near-instant, event-driven job processing.
+*   `[ ]` 12.f. **Add Focused Unit and Integration Tests for Job Continuation:**
+    *   `[TEST-UNIT]` **File:** `supabase/functions/dialectic-worker/index.test.ts`
+    *   `[TEST-UNIT]` **Action:** Create new tests to verify the job-based continuation.
+    *   `[TEST-UNIT]` **Mocks:** Mock `callUnifiedAIModel` to return a `finish_reason` of `'length'`. Mock the database insert to verify a new job is enqueued.
+    *   `[TEST-UNIT]` **Assertions:** Assert that when a job receives a `'length'` finish reason, it correctly creates a new job with the updated context in its payload. Verify the original job is marked `'completed'`. Test the case where `continue_until_complete` is `false` and ensure no new job is created.
+    *   `[TEST-INT]` **Action:** Write integration tests to verify the file-saving logic. Assert that the first job creates a file and that a subsequent continuation job correctly appends to and overwrites that same file, resulting in a single, concatenated final artifact.
 
-*   `[ ]` 11.c. **Fetch User Feedback for Thesis Stage:**
-    *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   **Action:** Query the `dialectic_feedback` table to find all feedback associated with the `session_id`, `iteration_number`, and `stage_slug` of 'thesis'.
-    *   **Action:** Download the content of all feedback files and concatenate them into a single string to be included in the prompts.
+#### 13. [BE] [REFACTOR] Refactor `generateContributions` to a Job Enqueuer
 
-*   `[ ]` 11.d. **Implement `n * m` Call Logic:**
-    *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   **Action:** Create a nested loop structure. The outer loop iterates through the `n` selected models, and the inner loop iterates through the `m` thesis documents.
-    *   **Prompt Engineering:** For each combination of model and thesis, construct a unique prompt. This prompt will combine the base antithesis prompt template, the content of the single thesis to be critiqued, and all relevant user feedback.
-    *   **Execution:** This will result in `n * m` parallel calls to `deps.callUnifiedAIModel`.
+*   `[✅]` 13.a. **Rewrite `generateContributions` Function:**
+    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+    *   `[BE]` `[REFACTOR]` **Action:** The function's sole responsibility will be to validate the incoming request, construct a comprehensive `payload` object that captures all necessary parameters from the `GenerateContributionsPayload` (ensuring optional fields like `walletId`, `continueUntilComplete`, and custom `max_retries` are preserved), and insert a new job record into the `dialectic_generation_jobs` table with a `pending` status.
+    *   `[BE]` `[REFACTOR]` **Action:** It must immediately return a `202 Accepted` response to the client, including the `job_id` of the newly created record.
 
-*   `[ ]` 11.e. **Update Result Aggregation and Link Contributions:**
-    *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   **Action:** When processing the results from the `n * m` calls, ensure that each new "antithesis" contribution saved to the `dialectic_contributions` table has its `target_contribution_id` field set to the `id` of the specific "thesis" it is critiquing. This preserves the crucial link between a critique and its subject.
+---
 
-*   `[ ]` 11.f. **Add Focused Unit and Integration Tests:**
-    *   `[TEST-UNIT]` **File:** `supabase/functions/dialectic-service/generateContribution.test.ts`
-    *   **Action:** Create new tests specifically for the "antithesis" logic path.
-    *   **Mocks:** Mock database calls to return sample thesis contributions and user feedback. Mock `downloadFromStorage` to provide content.
-    *   **Assertions:** Verify that `callUnifiedAIModel` is called `n * m` times, each with a correctly constructed prompt containing only one thesis. Assert that the `target_contribution_id` is correctly set on the saved antithesis contributions.
+### Phase 5: Backend Notification Verification
 
-### Phase 5: Dialectic Process Scaling - Synthesis Stage (Stage 3)
+#### 14. [TEST-UNIT] Verify Worker Notification Dispatch
+*   `[ ]` 14.a. **Goal:** Read the worker's source code to confirm that it dispatches notifications at every critical step before building the frontend to listen for them.
+*   `[ ]` 14.b. **File:** `supabase/functions/dialectic-worker/index.ts`
+*   `[✅]` 14.c. **Verification Checklist:**
+    *   `[✅]` 14.c.i. **On Contribution Success:** Is a `'dialectic_contribution_received'` notification sent immediately after each individual contribution is successfully saved by the `FileManagerService`?
+    *   `[✅]` 14.c.ii. **On Continuation:** Is a `'continuing'` flag with a continuation value added to a `'dialectic_contribution_received'` notification if the contribution is going to continue? 
+    *   `[✅]` 14.c.iii. **On Job Failure:** In the main error handling block, is a `'contribution_generation_failed'` notification sent with the session ID and error details?
+    *   `[✅]` 14.c.iv. **On Job Completion:** Is the final `'contribution_generation_complete'` notification still sent after all work for a job is finished?
 
-This phase implements a sophisticated, multi-step reduction strategy to manage the massive context explosion in the Synthesis stage. It prioritizes preserving data integrity by using precise, iterative API calls for as long as possible, resorting to a Retrieval-Augmented Generation (RAG) pipeline only for the final, cross-agent combination where context size makes direct calls impossible.
+---
 
-#### 12. [BE] [REFACTOR] Synthesis Step 1: Pairwise Combination (Slicing)
+### Phase 6: Adapt Frontend for Asynchronous Job-Based Flow
 
-*   `[ ]` 12.a. **Refactor `generateContributions` for Synthesis - Step 1:**
-    *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   **Action:** When `stageSlug` is "synthesis", the function must first fetch all `m` Thesis documents and all `m * n` Antithesis documents from the previous stages.
+This phase adapts the frontend to handle the asynchronous, job-based architecture. The core challenge is twofold: 1) The UI must stop waiting for a single, long-running API request and instead react to a series of real-time events. 2) The state management must be robust enough to handle deep, nested updates to its core data objects without the UI missing those changes, a common problem with Zustand's default shallow comparison. This plan addresses both challenges by introducing a job-tracking system, client-side placeholder objects, and the `immer` library for guaranteed immutable updates.
+
+#### 15. [STORE] [REFACTOR] Update Dialectic State Store for Job Tracking
+*   `[✅]` 15.a. `[STORE]` **Modify State and Adopt `immer`:**
+    *   **File:** `packages/store/src/dialecticStore.ts`
+    *   **Action:** Change `generatingSessions` state from `{ [sessionId: string]: boolean }` to `{ [sessionId: string]: string[] }`. This is critical for tracking multiple jobs per session, which is required for both parallel processing (like the `n*m` calls in the Antithesis stage) and chained jobs (like those used for response continuation).
+    *   **Action:** Integrate the existing `immer` dependency as middleware for the Zustand store. This solves the shallow-comparison problem where updates to nested properties (e.g., a contribution's status deep within the `currentProjectDetail` object) do not trigger UI re-renders. `immer` ensures that any update, no matter how deep, produces a new top-level state object, guaranteeing UI reactivity.
+*   `[✅]` 15.b. `[STORE]` `[REFACTOR]` **Update `generateContributions` Action & Introduce Placeholders:**
+    *   **File:** `packages/store/src/dialecticStore.ts`
+    *   **Action:** Modify the `generateContributions` action to handle the `202 Accepted` response, which will return `{ job_ids: string[] }`.
+    *   **Action:** To provide immediate user feedback, this action will use `immer` to instantly add **client-side placeholder contribution objects** to the state *before* the API call completes.
+    *   **Details:** For each model selected, create a placeholder object in the `currentProjectDetail.dialectic_sessions[...].dialectic_contributions` array. This object should contain a predictable temporary ID (e.g., `[sessionId]-[modelId]-[iteration]`), the `model_name`, `model_id`, and a `status: 'pending'`. This allows the UI to render a "pending" card for each expected contribution immediately.
+    *   **Action:** When the API call returns the `job_ids`, append them to the `generatingSessions[sessionId]` array to begin official tracking.
+
+#### 16. [STORE] [REFACTOR] Enhance Notification Handling for Contribution Lifecycle
+*   `[✅]` 16.a. `[STORE]` `[REFACTOR]` **Expand Notification Routing:**
+    *   **File:** `packages/store/src/notificationStore.ts`
+    *   **Action:** Update the `handleIncomingNotification` function to route the full suite of contribution lifecycle notifications to the `dialecticStore` **without** creating visible UI toasts. These events are for internal state updates. This includes: `'contribution_generation_started'`, `'dialectic_contribution_started'`, `'contribution_generation_retrying'`, `'dialectic_contribution_received'`, `'contribution_generation_failed'`, and `'contribution_generation_complete'`.
+*   `[✅]` 16.b. `[STORE]` **Implement `immer`-powered Lifecycle Event Handlers:**
+    *   **File:** `packages/store/src/dialecticStore.ts`
+    *   **Action:** Create a set of internal handler functions, called by the main notification listener, that use `immer` to find and update the state of the placeholder contributions.
+    *   **`_handleContributionStarted(payload)`**: Finds the corresponding placeholder contribution (using its temporary ID) and updates its `status` to `'generating'`. The UI should react by changing the placeholder's appearance (e.g., adding a spinner).
+    *   **`_handleContributionRetrying(payload)`**: Finds the placeholder, updates its `status` to `'retrying'`, and stores the error message from the payload onto the placeholder object so the UI can inform the user about the retry attempt.
+    *   **`_handleContributionReceived(payload)`**: This is the core data update. It finds the matching placeholder and **replaces it entirely** with the complete, real `DialecticContribution` object from the notification's payload. It also removes the completed `job_id` from the `generatingSessions` array. If the `is_continuing: true` flag is present, the overall process status remains `'generating'`, as more data is expected.
+    *   **`_handleGenerationFailed(payload)`**: Handles both partial and catastrophic failures. If the payload contains a `modelId`, it finds that model's placeholder and sets its `status` to `'failed'`, storing the error details. If there is no `modelId`, it finds all non-complete placeholders for the session and marks them as `'failed'`. It then removes the associated `job_id`.
+    *   **`_handleGenerationComplete(payload)`**: This is the final success signal for the entire multi-model job. It clears the overall `contributionGenerationStatus` and removes any remaining completed job IDs from the tracking array.
+
+#### 17. [UI] [TEST-UNIT] Verify UI Reactivity to Asynchronous State Changes
+*   `[✅]` 17.a. `[UI]` **Verify Generate Button State:**
+    *   **File:** `apps/web/src/components/dialectic/GenerateContributionButton.tsx` (or similar).
+    *   **Action:** Read the component to confirm its `disabled` and text states are correctly driven by the presence of a `job_id` in `generatingSessions[sessionId]`. If it's a string, the button should be in a "generating" state.
+*   `[✅]` 17.b. `[UI]` **Verify Contribution Display:**
+    *   **File:** `apps/web/src/components/dialectic/SessionContributionsDisplayCard.tsx` (or similar).
+    *   **Action:** Read the component to confirm it correctly renders the placeholder cards upon job initiation and that their state (e.g., showing a spinner for `'generating'`, an error message for `'retrying'` or `'failed'`) updates in real-time as the various lifecycle notifications are processed by the store.
+*   `[✅]` 17.c `[UI]` **Verify Generate Button Conditionals:**
+    *   Cannot generate when seed prompt does not exist (this means each stage must be completed IN ORDER for the generation button to be active on the next stage)
+    *   Cannot generate when seed prompt is not loaded
+    *   Cannot generate when models aren't chosen
+    *   Can generate when prior stage is complete, models are chosen, and seed prompt exists and is loaded
+    *   Can generate when a stage has failed
+    *   Can generate when a stage has already been generated - **NOTE!** This creates a new iteration! 
+    *   **Future Work:** 
+        *   An iteration switcher is required for the user to backtrack
+        *   A new iteration branches the project session at that point. 
+        *   All future stages use the new iteration. 
+        *   Regenerate a **specific** contribution while preserving the existing contributions 
+---
+
+### Phase 7: [REFACTOR] Implement Asynchronous Task Planning & Orchestration
+
+This phase refactors the worker architecture to support complex, multi-step stages (like Antithesis and Synthesis) by replacing the synchronous `task_isolator` with an asynchronous planning and orchestration model. This model uses the `task_isolator` as a **planner** to break down large jobs into smaller, independent "child" jobs, each with its own dynamically generated prompt. The execution of these jobs is managed by the existing queue system, and their completion is orchestrated by a new database trigger.
+
+```mermaid
+graph TD
+    subgraph "User & API"
+        A["User Clicks 'Generate'"] --> B["API: Creates 'Parent' Job"]
+    end
+
+    subgraph "Database (dialectic_generation_jobs)"
+        B -- "INSERT" --> C(("<font size=5><b>Jobs Table</b></font><br/>id, parent_id, status,<br/><b>payload (prompt, metadata)</b>"))
+        L -- "UPDATE status='completed'" --> C
+        M -- "INSERT new job" --> C
+        L2 -- "UPDATE status='waiting_for_children'" --> C
+        S -- "UPDATE status='pending_next_step'" --> C
+        D((Webhook)) -- "triggers on INSERT/UPDATE" --> E
+        C -- "triggers" --> D
+    end
+
+    subgraph "Dialectic Worker (Orchestrator)"
+        E["Worker Fetches Job"] --> F{"Strategy Router"}
+        
+        F -- "Simple Stage" --> G["<b>Process Job</b><br/>- Uses monolithic seed prompt"]
+        F -- "Complex Stage" --> H["<b>Plan Job</b><br/>(Task Isolator)"]
+
+        G --> I{"Handle AI Result"}
+        I -- Success --> L["Finalize Simple Job"]
+        I -- "Needs Continuation" --> M["Enqueue Continuation Job"]
+        
+        H --> J["<b>1. Generate Child Job Payloads</b><br/>- Calls refactored PromptAssembler<br/>- <u>Dynamically generates a specific prompt for each child</u>"]
+        J --> K["<b>2. Enqueue Child Jobs</b><br/>(Each with its own custom prompt)"]
+        K --> L2["Finalize Parent Job"]
+    end
+
+    subgraph "DB Trigger (on Job status='completed')"
+        C -- on UPDATE --> Q{"Job has a parent_id?"}
+        Q -- Yes --> R{"Are all sibling jobs done?"}
+        R -- Yes --> S["Wake up Parent Job"]
+        R -- No --> T["End"]
+        Q -- No --> T
+    end
+```
+
+#### 18. [BE] [REFACTOR] Make the Prompt Assembler More Flexible
+
+*   `[✅]` 18.a. **Refactor `PromptAssembler` for Granular Use:**
+    *   `[REFACTOR]` **File:** `supabase/functions/_shared/prompt-assembler.ts`
+    *   **Action:** Refactor the class to expose more granular public methods.
+    *   **Action:** Create a new `gatherContext(..., overrideContributions?: DialecticContribution[])` method. This method's core logic will be to assemble the `DynamicContextVariables`. Crucially, if the optional `overrideContributions` array is provided, it will use that array to build the `prior_stage_ai_outputs` variable instead of querying the database based on `input_artifact_rules`. This allows the `task_isolator` to inject precisely scoped inputs.
+    *   **Action:** Create a new `render(stage, context)` method that takes the stage and the generated context object and returns the final rendered prompt string by calling `prompt-renderer.ts`.
+*   `[✅]` 18.b. **Add Unit Tests for Refactored `PromptAssembler`:**
+    *   `[TEST-UNIT]` **Action:** Create new unit tests that verify the `gatherContext` method correctly uses the `overrideContributions` when provided and falls back to the default DB query when it is not.
+
+#### 19. [BE] [REFACTOR] Redefine `task_isolator` as a Planner and Dynamic Prompt Generator
+
+*   `[✅]` 19.a. **Rewrite `task_isolator.ts`:**
+    *   `[REFACTOR]` **File:** `supabase/functions/dialectic-worker/task_isolator.ts`
+    *   `[REFACTOR]` **Action:** Rename the primary exported function to `planComplexStage(...)`. Its new responsibility is **not** to execute AI calls, but to **plan** them.
+    *   `[REFACTOR]` **Action:** The function will receive a "parent" job for a complex stage (e.g., Antithesis). It will first fetch all necessary source documents for the entire stage (e.g., all Thesis contributions).
+    *   `[REFACTOR]` **Action:** It will then loop through the source documents and models according to the `processing_strategy`. In each loop, it will:
+        1.  Call the refactored `promptAssembler.gatherContext()` with a precisely scoped `overrideContributions` array (e.g., just one thesis).
+        2.  Call `promptAssembler.render()` to generate a unique prompt for that specific sub-task.
+        3.  Create a "child" job object, embedding the unique prompt and a `parent_job_id` in its `payload`.
+    *   `[REFACTOR]` **Action:** The function will return an array of these fully-formed child job objects.
+
+#### 20. [BE] [REFACTOR] Refactor Worker into a Strategy-Based Router and Component Modules
+
+This phase refactors the monolithic `processJob` function into a lightweight **Strategy Router**. The router's sole responsibility is to inspect an incoming job and delegate it to the correct processing module based on its configured strategy (`simple` vs. `task_isolation`). This is a pure backend refactoring that follows a strict Test-Driven Development (TDD) cycle to guarantee correctness and prevent regressions.
+
+*   `[✅]` 20.a. **Confirm File Structure:**
+    *   `[REFACTOR]` **Action:** Verify that the following files have been created in `supabase/functions/dialectic-worker/`. The TDD process below will populate them.
+        *   `[✅]` `handleJob.ts` & `handleJob.test.ts` (The current `index.ts` serves as the initial `handleJob`).
+        *   `[✅]` `processJob.ts` & `processJob.test.ts`.
+        *   `[✅]` `processSimpleJob.ts` & `processSimpleJob.test.ts`.
+        *   `[✅]` `processComplexJob.ts` & `processComplexJob.test.ts`.
+        *   `[✅]` `continueJob.ts` & `continueJob.test.ts`.
+        *   `[✅]` `retryJob.ts` & `retryJob.test.ts`.
+
+*   `[✅]` 20.b. **Isolate Simple Job Logic (TDD Cycle 1):**
+    *   `[✅]` 20.b.i. `[TEST-UNIT]` **(RED)** In the new `processSimpleJob.test.ts`, write a failing test by copying a relevant test case for a simple stage (e.g., `hypothesis`) from the original, monolithic test suite. Modify it to call the (currently empty) `processSimpleJob` function directly.
+    *   `[✅]` 20.b.ii. `[BE]` **(GREEN)** Make the test pass by moving the *entire body* of the existing `processJob` function into the `processSimpleJob` function. Add the necessary imports. This transfers the old logic to its new home.
+    **Failure & Retry Logic:**
+    *   **Initial AI Call Failure:** A test where the first call to `deps.callUnifiedAIModel` returns an error, triggering the retry mechanism.
+    *   **Retry Success:** A test where the AI call fails once but succeeds on a subsequent retry attempt.
+    *   **Retry Loop Exhaustion:** A test where a model consistently fails, exhausting all `max_retries` and resulting in a `retry_loop_failed` status for the job.
+    *   **Partial Failure:** A test with multiple `selectedModelIds` where some succeed and others fail after all retries.
+    **Continuation Logic:**
+    *   **Continuation Enqueued:** A test where the AI response has `finish_reason: 'length'`, verifying that `continueJob` is called and a new continuation job is successfully enqueued. The current job should then be marked as `completed`.
+    *   **Continuation Input:** A test for a job that is *itself* a continuation (i.e., `payload.target_contribution_id` is present). This should verify that the worker correctly downloads the previous content and prepends it to the new AI-generated content.
+    *   **Continuation Download Failure:** A test where a continuation job fails because the `downloadFromStorage` call for the previous content fails.
+    **Error Handling and Edge Cases:**
+    *   **Invalid Payload:** Tests where the initial payload is missing required fields like `stageSlug` or `projectId`.
+    *   **Database Errors:** Tests that mock failures from `dbClient` calls (e.g., failing to fetch the session or update the job status) to ensure the main `try/catch` block handles them gracefully.
+
+*   `[✅]` 20.c. **Implement the Strategy Router in `processJob` (TDD Cycle 2):**
+    *   `[✅]` 20.c.i. `[TEST-UNIT]` **(RED)** In `processJob.test.ts`, write a failing test for the "Simple Route". Mock the database call to the `dialectic_stages` table to return a configuration *without* a `task_isolation` strategy. Assert that `processSimpleJob` is called.
+    *   `[✅]` 20.c.ii. `[BE]` **(GREEN)** Make the test pass by deleting the old monolithic logic from `processJob.ts` and implementing the new router logic: fetch the stage config, inspect its `input_artifact_rules`, and call `processSimpleJob`.
+    *   `[✅]` 20.c.iii. `[TEST-UNIT]` **(RED)** In `processJob.test.ts`, write a failing test for the "Complex Route". Mock the database call to return a stage configuration *with* `processing_strategy.type === 'task_isolation'`. Assert that `processComplexJob` is called.
+    *   `[✅]` 20.c.iv. `[BE]` **(GREEN)** Make the test pass by adding the `else` condition to the router in `processJob.ts` to correctly delegate to `processComplexJob`.
+
+*   `[✅]` 20.d. **Implement the Complex Job Planner (TDD Cycle 3):**
+    *   `[✅]` 20.d.i. `[TEST-UNIT]` **(RED)** In `processComplexJob.test.ts`, write a failing test. Mock the `task_isolator.planComplexStage` function to return a predefined array of "child job" objects. Assert that the database is called to `insert` these child jobs and that the original parent job's status is `update`d to `'waiting_for_children'`.
+    *   `[✅]` 20.d.ii. `[BE]` **(GREEN)** Make the test pass by implementing the logic in `processComplexJob.ts`: call the mocked planner, insert the returned child jobs, and update the parent job's status.
+
+*   `[✅]` 20.e. **Final Verification and Cleanup:**
+    *   `[✅]` 20.e.i. `[TEST-INT]` **Prove Functional Equivalence.** Run the entire original `index.test.ts` suite. All tests must pass, proving that the refactoring did not introduce any regressions. This is the most critical validation step.
+    *   `[✅]` 20.e.ii. `[TEST-UNIT]` **Cleanup.** Once equivalence is proven, the business logic tests from `index.test.ts` can be moved to their respective module test files (`handleJob.test.ts`, etc.). The `index.test.ts` suite can be deprecated or simplified to only test that the edge function entry point correctly calls `handleJob`.
+    *   `[✅]` 20.e.iii. `[COMMIT]` **Commit.** Commit the completed refactoring with a message like `refactor(dialectic-worker): decompose worker into modular, testable components`.
+
+#### 21. [DB] [BE] Implement the Parent/Child Job Orchestration Trigger
+
+*   `[ ]` 21.a. **Add `parent_job_id` to Jobs Table:**
+    *   `[DB]` **File:** `supabase/migrations/XXXXXXXX_add_parent_job_id.sql`
+    *   `[DB]` **Action:** Create a new migration to add a nullable `parent_job_id` (UUID, foreign key to `dialectic_generation_jobs.id`) to the `dialectic_generation_jobs` table.
+*   `[ ]` 21.b. **Create Database Orchestration Function:**
+    *   `[DB]` **File:** `supabase/migrations/XXXXXXXX_create_orchestration_trigger.sql`
+    *   **Action:** Create a new PostgreSQL function, e.g., `handle_child_job_completion()`. This function will be triggered whenever a job's `status` is updated to `'completed'`.
+    *   **Function Logic:**
+        1.  Check if the completed job has a `parent_job_id`. If not, exit.
+        2.  If it does, count all "sibling" jobs (those with the same `parent_job_id`).
+        3.  Count all *completed* sibling jobs.
+        4.  If `total_siblings === completed_siblings`, update the parent job's status from `'waiting_for_children'` to `'pending_next_step'`. This change will fire the webhook again, sending the parent job back to the worker for the next phase of a multi-step process (like the reduction step in Synthesis).
+*   `[ ]` 21.c. **Add Integration Test for Orchestration:**
+    *   `[TEST-INT]` **Action:** Write an integration test that simulates the full flow: create a parent job, have the worker plan and insert child jobs, mark all child jobs as complete one-by-one, and assert that the database trigger correctly updates the parent job's status to `'pending_next_step'` only after the final child is complete.
+
+---
+
+### Phase 8: Implement Real-time Progress UI & Apply to Stages
+
+This phase focuses on building the frontend components to consume the generic progress notifications and then activating the new backend architecture for the relevant Dialectic stages by updating their configuration in the database.
+
+#### 22. [STORE] [UI] Handle Generic Progress Notifications on the Frontend
+
+*   `[ ]` 22.a. **Update Central Notification Listener:**
+    *   `[STORE]` **File:** `packages/store/src/notificationStore.ts`
+    *   **Action:** Add a `case` or `if` condition to the `handleIncomingNotification` function to specifically handle the `'dialectic_progress_update'` type. This handler should route the full payload to a new, dedicated handler in the `dialecticStore`.
+*   `[ ]` 22.b. **Update State Without Creating a Visible Notification Toast:**
+    *   `[STORE]` **File:** `packages/store/src/dialecticStore.ts`
+    *   **Action:** When a `'dialectic_progress_update'` notification is received, the handler must **not** trigger a standard UI notification toast. These are for driving the progress bar only.
+    *   `[STORE]` **Action:** Create a new action (e.g., `setSessionProgress(payload)`) that uses `immer` to update a **new, separate piece of state**: `sessionProgress: { [sessionId: string]: ProgressData }`, where `ProgressData` is `{ current_step: number, total_steps: number, message: string }`. This isolates the progress bar's state from the main contribution data state.
+
+#### 23. [UI] Create and Display the Dynamic Progress Bar
+
+*   `[ ]` 23.a. **Create a `DynamicProgressBar` Component:**
+    *   `[UI]` **File:** `apps/web/src/components/common/DynamicProgressBar.tsx`.
+    *   `[UI]` **Action:** Create a reusable component that takes props like `value` (calculated from `current_step` and `total_steps`) and `message` (to display the current status text).
+*   `[ ]` 23.b. **Integrate into the Session UI:**
+    *   `[UI]` **File:** `apps/web/src/components/dialectic/SessionInfoCard.tsx` (or the relevant component).
+    *   `[UI]` **Action:** The component will subscribe specifically to the `sessionProgress` slice of the dialectic store for the active session.
+    *   `[UI]` **Action:** It will conditionally render the `<DynamicProgressBar />` only when `sessionProgress` contains data for the current session and `current_step < total_steps`. When the process is complete, the bar should hide itself.
+
+#### 24. [DB] [BE] Apply Task Isolation Strategy to Dialectic Stages
+
+*   `[✅]` 24.a. **Activate Task Isolation for Antithesis Stage:**
+    *   `[DB]` **Action:** Create or modify a database seed/migration file to update the `antithesis` record in the `dialectic_stages` table.
+    *   `[DB]` **Action:** Populate its `input_artifact_rules` column with the `processing_strategy` JSON object defined in step 18.a. This "switches on" the task isolation and progress reporting feature for the Antithesis stage.
+*   `[✅]` 24.b. **Activate Task Isolation for Synthesis Stage:**
+    *   `[DB]` **Action:** In the same migration, update the `synthesis` record in the `dialectic_stages` table.
+    *   `[DB]` **Action:** Define and add an appropriate `processing_strategy` to its `input_artifact_rules`. The `granularity` might be different (e.g., `"per_pairwise_synthesis"`), but the `type` will be `"task_isolation"`, ensuring it also uses the new generic system. This proactively prepares the Synthesis stage for its own multi-step reduction process outlined in the next phase.
+
+### Phase 9: Dialectic Process Scaling - Synthesis Stage (Stage 3)
+
+This phase implements a sophisticated, multi-step reduction strategy to manage the massive context explosion in the Synthesis stage. It will now build upon the generic task isolation architecture created in Phase 7.
+
+#### 25. [BE] [REFACTOR] Synthesis Step 1: Pairwise Combination (Slicing)
+
+*   `[ ]` 25.a. **Refactor Worker for Synthesis - Step 1:**
+    *   **File:** `supabase/functions/dialectic-worker/task_isolator.ts`
+    *   **Action:** Add logic within `executeIsolatedStage` to handle the specific `granularity` for the "synthesis" stage. The function must first fetch all `m` Thesis documents and all `m * n` Antithesis documents from the previous stages.
     *   **Action:** It will then group them by the original Thesis. For each Thesis and its associated set of Antitheses, it will perform a nested loop: iterate through each of the `n` Antitheses for a given Thesis, then through each of the `n` selected models.
     *   **Prompt Engineering:** For each Thesis-Antithesis pair, formulate a prompt for `callUnifiedAIModel`. The prompt should ask the model to create an initial synthesis of that single thesis and its corresponding single critique.
-    *   **Flow Change:** This results in `m * n * n` calls, producing `m * n * n` intermediate "pairwise-synthesis" documents.
-*   `[ ]` 12.b. **Store Intermediate "Pairwise-Synthesis" Documents:**
-    *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+    *   **Flow Change:** This results in `m * n * n` calls, producing `m * n * n` intermediate "pairwise-synthesis" documents. The `progress_calculator` and `task_isolator` must account for this new calculation.
+*   `[ ]` 25.b. **Store Intermediate "Pairwise-Synthesis" Documents:**
+    *   **File:** `supabase/functions/dialectic-worker/task_isolator.ts`
     *   **Action:** The resulting `m * n * n` documents must be saved to storage. Their metadata must link them to the session, the original Thesis they derive from, and mark them as "synthesis_step1" intermediate artifacts.
 
-#### 13. [BE] [REFACTOR] Synthesis Step 2: Per-Thesis Reduction
+#### 26. [BE] [REFACTOR] Synthesis Step 2: Per-Thesis Reduction
 
-*   `[ ]` 13.a. **Refactor `generateContributions` for Synthesis - Step 2:**
-    *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+*   `[ ]` 26.a. **Refactor Worker for Synthesis - Step 2:**
+    *   **File:** `supabase/functions/dialectic-worker/task_isolator.ts`
     *   **Action:** After Step 1 is complete, group the `m * n * n` "pairwise-synthesis" documents by their source Thesis. This will create `m` groups, each containing `n * n` documents.
     *   **Action:** For each of the `m` groups, iterate through the `n` selected models.
     *   **Prompt Engineering:** Combine the `n * n` documents in each group into a single prompt. If this combination exceeds the model's context window, the documents must be intelligently chunked or summarized before being sent.
     *   **Flow Change:** This step makes `m * n` calls, reducing the `m * n * n` documents down to `m * n` more refined "per-thesis-synthesis" documents.
-*   `[ ]` 13.b. **Store Intermediate "Per-Thesis-Synthesis" Documents:**
-    *   **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+*   `[ ]` 26.b. **Store Intermediate "Per-Thesis-Synthesis" Documents:**
+    *   **File:** `supabase/functions/dialectic-worker/task_isolator.ts`
     *   **Action:** The resulting `m * n` documents must be saved to storage, linked to the session, and marked as "synthesis_step2" intermediate artifacts.
 
-#### 14. [BE] [DB] [REFACTOR] Synthesis Step 3: Final Cross-Agent RAG Recombination
+#### 27. [BE] [DB] [REFACTOR] Synthesis Step 3: Final Cross-Agent RAG Recombination
 
-*   `[ ]` 14.a. **Setup the Vector Database:**
-    *   `[DB]` **Action:** Create a `dialectic_memory` table to store text chunks and their embeddings. It needs columns for `id`, `session_id`, `source_contribution_id`, `content`, `metadata` (JSONB), and `embedding` (vector).
-*   `[ ]` 14.b. **Implement the Indexing Service:**
+*   `[ ]` 27.a. **Setup the Vector Database with Data Lifecycle:**
+    *   `[DB]` **Action:** Create a `dialectic_memory` table to store text chunks and their embeddings. It needs columns for `id`, `session_id`, `source_contribution_id`, `content`, `metadata` (JSONB), `embedding` (vector), and `created_at` (default `now()`).
+    *   `[DB]` **Action:** Implement a data lifecycle policy. This can be achieved via a scheduled SQL function (e.g., using `pg_cron`) that periodically deletes records from `dialectic_memory` older than a specified retention period (e.g., 30 days) to manage storage costs.
+*   `[ ]` 27.b. **Implement the Indexing Service:**
     *   `[BE]` **Action:** Create a new `indexing_service.ts`. This service will take a document, split it into chunks, call an embedding model API (e.g., OpenAI), and save the content and vector into the `dialectic_memory` table.
-*   `[ ]` 14.c. **Integrate Indexing into the Synthesis Flow:**
-    *   `[BE]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+*   `[ ]` 27.c. **Integrate Indexing into the Synthesis Flow:**
+    *   `[BE]` **File:** `supabase/functions/dialectic-worker/task_isolator.ts`
     *   **Action:** After the `m * n` "per-thesis-synthesis" documents are created in Step 2, trigger the new indexing service asynchronously for each one. This populates the vector store with the knowledge required for the final recombination.
-*   `[ ]` 14.d. **Implement the Retrieval Service:**
-    *   `[BE]` **Action:** Create a Supabase RPC function, `match_dialectic_chunks(session_id, query_embedding, match_count)`, that uses the vector distance operator (`<=>`) to find and return the most similar document chunks for a given session.
-*   `[ ]` 14.e. **Implement Final Recombination Logic:**
-    *   `[BE]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+*   `[ ]` 27.d. **Implement the Enhanced Retrieval Service:**
+    *   `[BE]` **Action:** Create a Supabase RPC function, `match_dialectic_chunks(session_id, query_embedding, match_count, metadata_filter)`, that uses the vector distance operator (`<=>`) to find relevant chunks.
+    *   `[BE]` **Action:** The function must also support an optional `metadata_filter` (JSONB) parameter to allow for more precise context retrieval by filtering on metadata keys within the `dialectic_memory` table (e.g., retrieving chunks only from a specific source contribution or stage).
+*   `[ ]` 27.e. **Implement Final Recombination Logic:**
+    *   `[BE]` **File:** `supabase/functions/dialectic-worker/task_isolator.ts`
     *   **Action:** This is the final step. For each of the `n` models:
         1.  **Formulate Query:** Create a high-level query like: "Based on the provided context, create a single, unified, and comprehensive synthesis."
         2.  **Embed & Retrieve:** Embed the query and call the `match_dialectic_chunks` RPC to get the most relevant context chunks.
         3.  **Assemble & Generate:** Construct a final prompt with the query and the retrieved chunks, and call `deps.callUnifiedAIModel` one last time to produce the final Synthesis document for that model.
-*   `[ ]` 14.f. **Test the Full RAG Pipeline:**
+*   `[ ]` 27.f. **Test the Full RAG Pipeline:**
     *   `[TEST-INT]` **Action:** Create integration tests that verify the entire end-to-end RAG pipeline, from indexing to retrieval to final generation.
 
-### Phase 6: Real-time Progress Updates via Notification Service
+### Phase 10: Centralized Configuration Management
 
-This phase implements real-time progress reporting by leveraging the existing notification service. The backend will dispatch progress updates as a specific type of notification, which the frontend will intercept to update the UI without creating a visible notification for the user.
+This phase introduces a centralized configuration system to manage dynamic parameters and feature flags, enhancing the system's flexibility and maintainability without requiring code deployments for simple adjustments.
 
-#### 15. [BE] Instrument `generateContributions` to Send Progress Notifications
+#### 28. [DB] [BE] Implement the Configuration Store
+*   `[ ]` 28.a. **Create `dialectic_configuration` Table:**
+    *   `[DB]` **Action:** Create a new SQL migration for a `dialectic_configuration` table with a simple key-value structure (e.g., `config_key TEXT PRIMARY KEY`, `config_value JSONB`, `description TEXT`).
+    *   `[DB]` **Action:** Populate this table with initial configuration values, such as `{"key": "job_default_max_retries", "value": {"value": 3}}`, `{"key": "rag_data_retention_days", "value": {"value": 30}}`, and `{"key": "antithesis_task_isolation_enabled", "value": {"value": true}}`.
+*   `[ ]` 28.b. **Create a Configuration Service:**
+    *   `[BE]` **Action:** In `supabase/functions/_shared/`, create a new `config_service.ts`. This service will be responsible for fetching configuration values from the database, caching them (e.g., in-memory with a short TTL), and providing a simple `getConfigValue(key)` interface.
 
-*   `[ ]` 15.a. **Calculate Total Steps for Progress Tracking:**
-    *   `[BE]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   `[BE]` **Action:** At the beginning of the `synthesis` logic block, calculate the total number of expected AI calls and other major steps to get a `total_steps` value.
-*   `[ ]` 15.b. **Dispatch Progress Updates via RPC:**
-    *   `[BE]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   `[BE]` **Action:** Throughout the multi-step synthesis process, call the existing `create_notification_for_user` RPC function at key milestones (e.g., after each reduction step, or even within loops for more granularity).
-    *   `[BE]` **Action:** Use a new, dedicated `notification_type`: `'dialectic_progress_update'`.
-    *   `[BE]` **Action:** The `notification_data` payload for this type should be structured to include all necessary information for the UI: `{ "sessionId": "...", "stageSlug": "synthesis", "current_step": 5, "total_steps": 27, "message": "Reducing per-thesis results..." }`.
+#### 29. [BE] [REFACTOR] Refactor Services to Use the Configuration Store
+*   `[ ]` 29.a. **Update Dialectic Worker:**
+    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-worker/index.ts`
+    *   `[BE]` `[REFACTOR]` **Action:** Refactor the worker logic to fetch parameters like `max_retries` and feature flags (e.g., for task isolation) from the new `config_service` instead of using hardcoded values.
+*   `[ ]` 29.b. **Update Job Enqueuer:**
+    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+    *   `[BE]` `[REFACTOR]` **Action:** Update the function to fetch the default `max_retries` from the `config_service` when creating a new job, while still allowing it to be overridden by a value in the request payload.
+*   `[ ]` 29.c. **Update Data Lifecycle Script:**
+    *   `[BE]` `[REFACTOR]` **Action:** Modify the scheduled SQL function for RAG data cleanup to retrieve the `rag_data_retention_days` value from the `dialectic_configuration` table, making the retention period dynamically adjustable.
 
-#### 16. [STORE] [UI] Handle Progress Notifications on the Frontend
-
-*   `[ ]` 16.a. **Update Central Notification Listener:**
-    *   `[UI]` **File:** The central frontend service that listens for and processes incoming real-time notifications.
-    *   `[UI]` **Action:** Add a new `case` or `if` condition to the listener's logic to specifically handle the `'dialectic_progress_update'` type.
-*   `[ ]` 16.b. **Update State Without Creating a Visible Notification:**
-    *   `[STORE]` **Action:** When a `'dialectic_progress_update'` notification is received, the handler should **not** trigger a standard UI notification toast. Instead, it should parse the `notification_data` payload.
-    *   `[STORE]` **Action:** It will then call a new action in the dialectic state store (e.g., `setSessionProgress(payload)`), passing the progress data. The store will update the state for the specific session identified by `payload.sessionId`.
-
-#### 17. [UI] Create and Display the Dynamic Progress Bar
-
-*   `[ ]` 17.a. **Create a `DynamicProgressBar` Component:**
-    *   `[UI]` **File:** `apps/web/src/components/common/DynamicProgressBar.tsx`.
-    *   `[UI]` **Action:** Create a reusable component that takes props like `value` (for the percentage) and `message` (to display the current status).
-*   `[ ]` 17.b. **Integrate into the Session UI:**
-    *   `[UI]` **File:** `apps/web/src/components/dialectic/SessionInfoCard.tsx` (or the relevant component).
-    *   `[UI]` **Action:** The component will subscribe to the dialectic store. When the store indicates a long-running process has started, it will conditionally render the `<DynamicProgressBar />`.
-    *   `[UI]` **Action:** The progress bar's props (`value` and `message`) will be driven by the `sessionProgress` state, which is being updated in real-time by the notification listener.
-
-### Phase 7: Default Granular Contribution Loading
-
-This phase refactors the core contribution generation logic to make real-time, individual contribution loading the **default behavior for all dialectic stages**. Instead of waiting for all models to complete their work, the UI will now render each contribution card as soon as it becomes available. This creates a more dynamic and responsive user experience across the entire application and works in concert with stage-specific UI elements like the Synthesis progress bar.
-
-#### 18. [BE] [REFACTOR] Dispatch Individual Contribution Notifications from All Generation Loops
-
-*   `[ ]` 18.a. **Instrument All Contribution Loops:**
-    *   `[BE]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   `[BE]` **Action:** In every loop that processes and saves a model's output—including the default loop and the specialized loops for `antithesis` and `synthesis`—locate the point where a single contribution is successfully saved by the `FileManagerService`.
-    *   `[BE]` **Action:** Immediately after that successful save, add a call to the `create_notification_for_user` RPC.
-
-*   `[ ]` 18.b. **Define "Contribution Received" Notification Type:**
-    *   `[BE]` **Action:** This notification must use a new, dedicated `notification_type`: `'dialectic_contribution_received'`.
-    *   `[BE]` **Action:** The `notification_data` payload must contain the full data record of the newly created contribution. This gives the frontend all the information it needs to render the card instantly.
-
-#### 19. [STORE] [UI] Handle Individual Contribution Notifications on the Frontend
-
-*   `[ ]` 19.a. **Update Central Notification Listener:**
-    *   `[UI]` **File:** The central frontend service that listens for and processes all real-time notifications.
-    *   `[UI]` **Action:** Add logic to specifically handle the `'dialectic_contribution_received'` type.
-
-*   `[ ]` 19.b. **Update Dialectic State Store:**
-    *   `[STORE]` **Action:** The handler for this notification type should call an idempotent action in the dialectic state store, such as `addOrUpdateContribution(contributionData)`.
-    *   `[STORE]` **Action:** This action will add the new contribution to the list for the relevant session, triggering a reactive UI update.
-
-#### 20. [UI] Ensure Reactive UI for Contribution Display
-
-*   `[ ]` 20.a. **Verify Reactivity of Contribution Display:**
-    *   `[UI]` **File:** The component responsible for displaying the list of contributions (e.g., `SessionContributionsDisplayCard.tsx`).
-    *   `[UI]` **Action:** Confirm that this component correctly subscribes to the list of contributions in the store, ensuring it automatically renders a new contribution card whenever the store's state is updated.
-
-#### 21. [BE] [REFACTOR] Clarify the Role of the Final "Stage Complete" Notification
-
-*   `[ ]` 21.a. **Review "Stage Complete" Notification's Purpose:**
-    *   `[BE]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   `[BE]` **Action:** The final `contribution_generation_complete` notification sent after all promises are settled remains essential. Its purpose is to signal the end of the entire stage. The UI should use this event to finalize the state, such as by hiding progress indicators and updating the overall session status from "generating" to "complete."

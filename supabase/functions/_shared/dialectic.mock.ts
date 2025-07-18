@@ -164,4 +164,48 @@ export const mockSubmitStageResponsesError = (
     error: Error
 ) => {
     serviceInstance.submitStageResponses = () => Promise.reject(error);
-}; 
+};
+
+// --- Job Processors Mock ---
+
+// Import types for the processor functions
+import type { processSimpleJob } from '../dialectic-worker/processSimpleJob.ts';
+import type { processComplexJob } from '../dialectic-worker/processComplexJob.ts';
+import type { planComplexStage } from '../dialectic-worker/task_isolator.ts';
+import type { IJobProcessors } from '../dialectic-worker/processJob.ts';
+
+// Dummy implementation class for job processors
+class _JobProcessorsDummyImpl implements IJobProcessors {
+    // deno-lint-ignore no-explicit-any
+    async processSimpleJob(..._args: any[]): Promise<void> { /* dummy */ }
+    // deno-lint-ignore no-explicit-any
+    async processComplexJob(..._args: any[]): Promise<void> { /* dummy */ }
+    // deno-lint-ignore no-explicit-any
+    async planComplexStage(..._args: any[]): Promise<any> { /* dummy */ }
+}
+
+// A specific type for the spies on our dummy implementation
+export type MockJobProcessorsSpies = {
+    processSimpleJob: Spy<_JobProcessorsDummyImpl, Parameters<typeof _JobProcessorsDummyImpl.prototype.processSimpleJob>, ReturnType<typeof _JobProcessorsDummyImpl.prototype.processSimpleJob>>;
+    processComplexJob: Spy<_JobProcessorsDummyImpl, Parameters<typeof _JobProcessorsDummyImpl.prototype.processComplexJob>, ReturnType<typeof _JobProcessorsDummyImpl.prototype.processComplexJob>>;
+    planComplexStage: Spy<_JobProcessorsDummyImpl, Parameters<typeof _JobProcessorsDummyImpl.prototype.planComplexStage>, ReturnType<typeof _JobProcessorsDummyImpl.prototype.planComplexStage>>;
+};
+
+// Creator function that builds and returns the mock processors and their spies
+export function createMockJobProcessors(): {
+    processors: IJobProcessors;
+    spies: MockJobProcessorsSpies;
+} {
+    const dummyInstance = new _JobProcessorsDummyImpl();
+
+    const spies = {
+        processSimpleJob: spy(dummyInstance, "processSimpleJob"),
+        processComplexJob: spy(dummyInstance, "processComplexJob"),
+        planComplexStage: spy(dummyInstance, "planComplexStage"),
+    };
+
+    return {
+        processors: dummyInstance,
+        spies: spies,
+    };
+} 

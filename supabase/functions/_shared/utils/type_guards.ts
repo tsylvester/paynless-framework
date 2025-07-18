@@ -4,7 +4,8 @@ import type {
     ProcessingStrategy, 
     DialecticContributionRow, 
     GenerateContributionsPayload,
-    DialecticJobPayload 
+    DialecticJobPayload,
+    DialecticJobRow,
 } from '../../dialectic-service/dialectic.interface.ts';
 import type { IIsolatedExecutionDeps } from "../../dialectic-worker/task_isolator.ts";
 import { ProjectContext, StageContext } from "../prompt-assembler.interface.ts";
@@ -98,14 +99,7 @@ export function hasProcessingStrategy(stage: Tables<'dialectic_stages'>): stage 
             strategy !== null &&
             'type' in strategy && 
             typeof strategy.type === 'string' &&
-            'granularity' in strategy &&
-            typeof strategy.granularity === 'string' &&
-            'progress_reporting' in strategy &&
-            typeof strategy.progress_reporting === 'object' &&
-            strategy.progress_reporting !== null &&
-            'message_template' in strategy.progress_reporting &&
-            typeof strategy.progress_reporting.message_template === 'string'
-            ) {
+            strategy.type === 'task_isolation') {
             return true;
         }
     }
@@ -251,4 +245,18 @@ export function isIsolatedExecutionDeps(deps: unknown): deps is IIsolatedExecuti
         }
     }
     return true;
+} 
+
+export function isRecord(item: unknown): item is Record<PropertyKey, unknown> {
+    return (item !== null && typeof item === 'object' && !Array.isArray(item));
+} 
+
+export function isDialecticJobRowArray(arr: unknown): arr is DialecticJobRow[] {
+    if (!Array.isArray(arr)) {
+        return false;
+    }
+    // You can add more specific checks for each item if necessary,
+    // for example, by calling a new 'isDialecticJobRow' guard.
+    // For now, checking if it's an array is a good start.
+    return arr.every(item => typeof item === 'object' && item !== null && 'id' in item && 'session_id' in item);
 } 

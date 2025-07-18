@@ -16,9 +16,23 @@ import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts
 import { logger } from '../_shared/logger.ts';
 import { handleJob } from './index.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+// Import real processor functions for integration testing
+import { processSimpleJob } from './processSimpleJob.ts';
+import { processComplexJob } from './processComplexJob.ts';
+import { planComplexStage } from './task_isolator.ts';
+import type { IJobProcessors } from './processJob.ts';
 
 // Define a type for our mock job for clarity
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
+
+// Helper to create real processors for integration testing
+function createRealProcessors(): IJobProcessors {
+  return {
+    processSimpleJob,
+    processComplexJob,
+    planComplexStage,
+  };
+}
 
 Deno.test('dialectic-worker - Notification Test: Sends all notifications on a successful, non-continuing contribution', async () => {
   // 1. Setup
@@ -28,7 +42,7 @@ Deno.test('dialectic-worker - Notification Test: Sends all notifications on a su
   const mockModelId = 'model-id-notify-success';
   const mockContributionId = 'contribution-id-notify-success';
   const mockProjectId = 'project-id-notify-success';
-
+  const processors = createRealProcessors();
   const mockPayloadJson: Json = {
     sessionId: mockSessionId,
     projectId: mockProjectId,
@@ -51,6 +65,7 @@ Deno.test('dialectic-worker - Notification Test: Sends all notifications on a su
     results: null,
     error_details: null,
     user_id: mockUserId,
+    parent_job_id: null,
   };
 
   const mockSupabaseSetup: MockSupabaseClientSetup = createMockSupabaseClient(
@@ -167,6 +182,7 @@ Deno.test('dialectic-worker - Notification Test: Sends all notifications on a su
       mockJob,
       mockDeps,
       'mock-auth-token',
+      processors,
     );
 
     // 3. Assertions
@@ -214,7 +230,7 @@ Deno.test('dialectic-worker - Notification Test: Sends correct notifications for
     const mockModelId = 'model-id-notify-continue';
     const mockContributionId = 'contribution-id-notify-continue';
     const mockProjectId = 'project-id-notify-continue';
-  
+    const processors = createRealProcessors();
     const mockPayloadJson: Json = {
       sessionId: mockSessionId,
       projectId: mockProjectId,
@@ -238,6 +254,7 @@ Deno.test('dialectic-worker - Notification Test: Sends correct notifications for
       results: null,
       error_details: null,
       user_id: mockUserId,
+      parent_job_id: null,
     };
   
     const mockSupabaseSetup: MockSupabaseClientSetup = createMockSupabaseClient(
@@ -335,6 +352,7 @@ Deno.test('dialectic-worker - Notification Test: Sends correct notifications for
         mockJob,
         mockDeps,
         'mock-auth-token',
+        processors,
       );
   
       const rpcSpy = mockSupabaseSetup.spies.rpcSpy;
@@ -366,7 +384,7 @@ Deno.test('dialectic-worker - Notification Test: Sends failure and retry notific
     const mockSessionId = 'session-id-notify-fail';
     const mockModelId = 'model-id-notify-fail';
     const mockProjectId = 'project-id-notify-fail';
-    
+    const processors = createRealProcessors();
     const mockPayloadJson: Json = {
       sessionId: mockSessionId,
       projectId: mockProjectId,
@@ -389,6 +407,7 @@ Deno.test('dialectic-worker - Notification Test: Sends failure and retry notific
       results: null,
       error_details: null,
       user_id: mockUserId,
+      parent_job_id: null,
     };
 
     const mockSupabaseSetup: MockSupabaseClientSetup = createMockSupabaseClient(
@@ -458,17 +477,22 @@ Deno.test('dialectic-worker - Notification Test: Sends failure and retry notific
         mockJob,
         mockDeps,
         'mock-auth-token',
+        processors,
       );
   
       const rpcSpy = mockSupabaseSetup.spies.rpcSpy;
       assertExists(rpcSpy);
-      assertEquals(rpcSpy.calls.length, 3, `Expected 3 notifications, but got ${rpcSpy.calls.length}: ${rpcSpy.calls.map(c => c.args[1].notification_type).join(', ')}`);
+      assertEquals(rpcSpy.calls.length, 7, `Expected 7 notifications, but got ${rpcSpy.calls.length}: ${rpcSpy.calls.map(c => c.args[1].notification_type).join(', ')}`);
 
-      // Order: Job Started -> Retrying -> Job Failed
+      // Order: Job Started -> Model Started -> Retrying -> Model Started -> Retrying -> Model Started -> Job Failed
       const types = rpcSpy.calls.map(c => c.args[1].notification_type);
       assertEquals(types[0], 'contribution_generation_started');
-      assertEquals(types[1], 'contribution_generation_retrying');
-      assertEquals(types[2], 'contribution_generation_failed');
+      assertEquals(types[1], 'dialectic_contribution_started');
+      assertEquals(types[2], 'contribution_generation_retrying');
+      assertEquals(types[3], 'dialectic_contribution_started');
+      assertEquals(types[4], 'contribution_generation_retrying');
+      assertEquals(types[5], 'dialectic_contribution_started');
+      assertEquals(types[6], 'contribution_generation_failed');
 
       const finalCall = rpcSpy.calls[rpcSpy.calls.length - 1].args[1];
       assertEquals(finalCall.notification_data.sessionId, mockSessionId);
@@ -484,7 +508,7 @@ Deno.test('dialectic-worker - Notification Test: Sends a single failure notifica
   const mockJobId = 'job-id-catastrophic-fail';
   const mockUserId = 'user-id-catastrophic-fail';
   const mockSessionId = 'session-id-catastrophic-fail';
-
+  const processors = createRealProcessors();  
   // Invalid payload: projectId is missing
   const mockPayloadJson: Json = {
     sessionId: mockSessionId,
@@ -507,6 +531,7 @@ Deno.test('dialectic-worker - Notification Test: Sends a single failure notifica
     results: null,
     error_details: null,
     user_id: mockUserId,
+    parent_job_id: null,
   };
 
   const mockSupabaseSetup: MockSupabaseClientSetup = createMockSupabaseClient(
@@ -538,6 +563,7 @@ Deno.test('dialectic-worker - Notification Test: Sends a single failure notifica
       mockJob,
       mockDeps,
       'mock-auth-token',
+      processors,
     );
   
     // 3. Assertions
@@ -563,7 +589,7 @@ Deno.test('dialectic-worker - Notification Test: Handles partial success (one mo
     const failureModelId = 'model-id-failure';
     const mockContributionId = 'contribution-id-partial-success';
     const mockProjectId = 'project-id-partial-success';
-
+    const processors = createRealProcessors();
     const mockPayloadJson: Json = {
         sessionId: mockSessionId,
         projectId: mockProjectId,
@@ -586,6 +612,7 @@ Deno.test('dialectic-worker - Notification Test: Handles partial success (one mo
         results: null,
         error_details: null,
         user_id: mockUserId,
+        parent_job_id: null,
     };
 
     const mockSupabaseSetup: MockSupabaseClientSetup = createMockSupabaseClient(
@@ -693,6 +720,7 @@ Deno.test('dialectic-worker - Notification Test: Handles partial success (one mo
             mockJob,
             mockDeps,
             'mock-auth-token',
+            processors,
         );
 
         // 3. Assertions
@@ -701,13 +729,17 @@ Deno.test('dialectic-worker - Notification Test: Handles partial success (one mo
 
         const notifications = rpcSpy.calls.map(c => c.args[1].notification_type);
         
-        // Expected flow: Job Started -> Contribution Started (Success) -> Contribution Received (Success) -> Job Failed (due to the other model)
-        assertEquals(notifications.length, 4, `Expected 4 notifications, but got ${notifications.length}: ${notifications.join(', ')}`);
+        // Expected flow: Job Started -> Model Started (Success) -> Model Started (Failure) -> Contribution Received (Success) -> Retrying -> Model Started (Retry) -> Job Failed -> Job Complete
+        assertEquals(notifications.length, 8, `Expected 8 notifications, but got ${notifications.length}: ${notifications.join(', ')}`);
         
         assertEquals(notifications[0], 'contribution_generation_started');
         assertEquals(notifications[1], 'dialectic_contribution_started');
-        assertEquals(notifications[2], 'dialectic_contribution_received');
-        assertEquals(notifications[3], 'contribution_generation_failed');
+        assertEquals(notifications[2], 'dialectic_contribution_started');
+        assertEquals(notifications[3], 'dialectic_contribution_received');
+        assertEquals(notifications[4], 'contribution_generation_retrying');
+        assertEquals(notifications[5], 'dialectic_contribution_started');
+        assertEquals(notifications[6], 'contribution_generation_failed');
+        assertEquals(notifications[7], 'contribution_generation_complete');
 
         // Check details for the received contribution
         const receivedNotif = rpcSpy.calls.find(c => c.args[1].notification_type === 'dialectic_contribution_received');

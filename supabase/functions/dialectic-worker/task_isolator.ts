@@ -80,13 +80,26 @@ export async function planComplexStage(
         throw new Error(`Failed to fetch session details for ID: ${sessionId}: ${sessionError?.message}`);
     }
     
-    // 2. Fetch source contributions
+    // 2. Fetch source stage slug dynamically
+    const { data: transitionData, error: transitionError } = await dbClient
+        .from('dialectic_stage_transitions')
+        .select('*, source_stage:dialectic_stages!source_stage_id(slug)')
+        .eq('target_stage_id', stage.id)
+        .single();
+
+    if (transitionError || !transitionData || !transitionData.source_stage) {
+        throw new Error(`Failed to find a source stage transition for target stage ID ${stage.id}: ${transitionError?.message}`);
+    }
+    const sourceStageSlug = transitionData.source_stage.slug;
+
+
+    // 3. Fetch source contributions using the dynamic slug
     const { data: sourceContributions, error: contribError } = await dbClient
         .from('dialectic_contributions')
         .select('*')
         .eq('session_id', sessionId)
         .eq('iteration_number', iterationNumber)
-        .eq('stage', 'thesis') // Note: This is hardcoded for now as per the strategy
+        .eq('stage', sourceStageSlug)
         .eq('is_latest_edit', true);
 
     if (contribError) {
@@ -114,7 +127,7 @@ export async function planComplexStage(
     const validSourceDocuments = sourceDocuments.filter((doc): doc is NonNullable<typeof doc> => doc !== null);
 
 
-    // 3. Fetch selected models
+    // 4. Fetch selected models
     const { data: models, error: modelsError } = await dbClient
         .from('ai_providers')
         .select('*')
@@ -123,7 +136,7 @@ export async function planComplexStage(
     if (modelsError) throw new Error(`Failed to fetch models: ${modelsError.message}`);
     if (!models || models.length === 0) throw new Error('No models found for selected IDs.');
 
-    // 4. Generate child jobs
+    // 5. Generate child jobs
     const childJobs: DialecticJobRow[] = [];
     let jobCounter = 0;
 

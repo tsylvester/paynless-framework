@@ -127,6 +127,9 @@ Deno.test('planComplexStage - Happy Path: Generates correct child job payloads',
                     return Promise.resolve({ data: null, error: new Error('Unexpected select query for dialectic_projects') });
                 }
             },
+            'dialectic_stage_transitions': {
+                select: { data: [{ source_stage: { slug: 'thesis' } }], error: null }
+            },
             'dialectic_sessions': { select: { data: [MOCK_SESSION], error: null } },
             'dialectic_contributions': { select: { data: MOCK_SOURCE_CONTRIBUTIONS, error: null } },
             'ai_providers': { select: { data: MOCK_MODELS, error: null } }
@@ -226,6 +229,9 @@ Deno.test('planComplexStage - Throws if dialectic_projects query fails', async (
             'dialectic_stages': {
                 select: () => Promise.resolve({ data: [MOCK_STAGE], error: null })
             },
+            'dialectic_stage_transitions': {
+                select: { data: [{ source_stage: { slug: 'thesis' } }], error: null }
+            },
             'dialectic_projects': {
                 select: () => Promise.resolve({ data: null, error: new Error('DB Error') })
             }
@@ -258,6 +264,9 @@ Deno.test('planComplexStage - Throws if dialectic_sessions query fails', async (
         genericMockResults: {
             'dialectic_stages': {
                 select: () => Promise.resolve({ data: [MOCK_STAGE], error: null })
+            },
+            'dialectic_stage_transitions': {
+                select: { data: [{ source_stage: { slug: 'thesis' } }], error: null }
             },
             'dialectic_projects': {
                 select: () => Promise.resolve({ data: [MOCK_PROJECT], error: null })
@@ -294,6 +303,9 @@ Deno.test('planComplexStage - Throws if dialectic_contributions query fails', as
         genericMockResults: {
             'dialectic_stages': {
                 select: () => Promise.resolve({ data: [MOCK_STAGE], error: null })
+            },
+            'dialectic_stage_transitions': {
+                select: { data: [{ source_stage: { slug: 'thesis' } }], error: null }
             },
             'dialectic_projects': {
                 select: () => Promise.resolve({ data: [MOCK_PROJECT], error: null })
@@ -333,6 +345,9 @@ Deno.test('planComplexStage - Throws if ai_providers query fails', async () => {
         genericMockResults: {
             'dialectic_stages': {
                 select: () => Promise.resolve({ data: [MOCK_STAGE], error: null })
+            },
+            'dialectic_stage_transitions': {
+                select: { data: [{ source_stage: { slug: 'thesis' } }], error: null }
             },
             'dialectic_projects': {
                 select: () => Promise.resolve({ data: [MOCK_PROJECT], error: null })
@@ -375,6 +390,9 @@ Deno.test('planComplexStage - Throws if downloadFromStorage fails', async () => 
         genericMockResults: {
             'dialectic_stages': {
                 select: () => Promise.resolve({ data: [MOCK_STAGE], error: null })
+            },
+            'dialectic_stage_transitions': {
+                select: { data: [{ source_stage: { slug: 'thesis' } }], error: null }
             },
             'dialectic_projects': {
                 select: () => Promise.resolve({ data: [MOCK_PROJECT], error: null })
@@ -423,6 +441,9 @@ Deno.test('planComplexStage - Handles stage with overlays and prompts', async ()
         genericMockResults: {
             'dialectic_stages': {
                 select: () => Promise.resolve({ data: [MOCK_STAGE_WITH_DATA], error: null })
+            },
+            'dialectic_stage_transitions': {
+                select: { data: [{ source_stage: { slug: 'thesis' } }], error: null }
             },
             'dialectic_projects': {
                 select: () => Promise.resolve({ data: [MOCK_PROJECT], error: null })
@@ -485,6 +506,9 @@ Deno.test('planComplexStage - Returns empty array if no source contributions are
             'dialectic_stages': {
                 select: () => Promise.resolve({ data: [MOCK_STAGE], error: null })
             },
+            'dialectic_stage_transitions': {
+                select: { data: [{ source_stage: { slug: 'thesis' } }], error: null }
+            },
             'dialectic_projects': {
                 select: () => Promise.resolve({ data: [MOCK_PROJECT], error: null })
             },
@@ -523,6 +547,9 @@ Deno.test('planComplexStage - Throws if selectedModelIds is empty', async () => 
             'dialectic_stages': {
                 select: () => Promise.resolve({ data: [MOCK_STAGE], error: null })
             },
+            'dialectic_stage_transitions': {
+                select: { data: [{ source_stage: { slug: 'thesis' } }], error: null }
+            },
             'dialectic_projects': {
                 select: () => Promise.resolve({ data: [MOCK_PROJECT], error: null })
             },
@@ -544,6 +571,144 @@ Deno.test('planComplexStage - Throws if selectedModelIds is empty', async () => 
             mockDb as unknown as SupabaseClient<Database>,
             MOCK_PARENT_JOB,
             { ...MOCK_PAYLOAD, selectedModelIds: [] }, // Empty model IDs
+            'user-123',
+            mockLogger,
+            mockDownloadFromStorage,
+            mockAssembler
+        );
+        assert(false, 'Should have thrown an error');
+    } catch (e) {
+        assert(e instanceof Error, 'Error should be an instance of Error');
+        assert(e.message.includes('No models found for selected IDs'), 'Error message is not as expected');
+    }
+});
+
+Deno.test('planComplexStage - Throws if no stage transition is found', async () => {
+    const { client: mockDb } = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_stages': {
+                select: () => Promise.resolve({ data: [MOCK_STAGE], error: null })
+            },
+            'dialectic_projects': {
+                select: () => Promise.resolve({ data: [MOCK_PROJECT], error: null })
+            },
+            'dialectic_sessions': {
+                select: () => Promise.resolve({ data: [MOCK_SESSION], error: null })
+            },
+            'dialectic_stage_transitions': {
+                select: () => Promise.resolve({ data: [], error: null }) // No transition found
+            }
+        }
+    });
+
+    const mockLogger: ILogger = { info: () => { }, warn: () => { }, error: () => { }, debug: () => { } };
+    const mockDownloadFromStorage: DownloadStorageFunctionType = async () => ({ data: new ArrayBuffer(0), error: null });
+    const mockAssembler = new PromptAssembler(mockDb as unknown as SupabaseClient<Database>);
+
+    try {
+        await planComplexStage(
+            mockDb as unknown as SupabaseClient<Database>,
+            MOCK_PARENT_JOB,
+            MOCK_PAYLOAD,
+            'user-123',
+            mockLogger,
+            mockDownloadFromStorage,
+            mockAssembler
+        );
+        assert(false, 'Should have thrown an error');
+    } catch (e) {
+        assert(e instanceof Error, 'Error should be an instance of Error');
+        assert(e.message.includes('Failed to find a source stage transition for target stage ID'), 'Error message is not as expected');
+    }
+});
+
+Deno.test('planComplexStage - Handles source contributions with missing file_names', async () => {
+    const MOCK_SOURCE_CONTRIBUTIONS_NO_FILENAME: DialecticContributionRow[] = [
+        { ...MOCK_SOURCE_CONTRIBUTIONS[0], file_name: null },
+        { ...MOCK_SOURCE_CONTRIBUTIONS[1], file_name: null },
+    ];
+
+    const { client: mockDb } = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_stages': {
+                select: () => Promise.resolve({ data: [MOCK_STAGE], error: null })
+            },
+            'dialectic_projects': {
+                select: () => Promise.resolve({ data: [MOCK_PROJECT], error: null })
+            },
+            'dialectic_sessions': {
+                select: () => Promise.resolve({ data: [MOCK_SESSION], error: null })
+            },
+            'dialectic_stage_transitions': {
+                select: () => Promise.resolve({ data: [{ source_stage: { slug: 'thesis' } }], error: null })
+            },
+            'dialectic_contributions': {
+                select: () => Promise.resolve({ data: MOCK_SOURCE_CONTRIBUTIONS_NO_FILENAME, error: null })
+            },
+            'ai_providers': {
+                select: () => Promise.resolve({ data: MOCK_MODELS, error: null })
+            }
+        }
+    });
+
+    const mockLogger: ILogger = { info: () => { }, warn: () => { }, error: () => { }, debug: () => { } };
+    const warnSpy = stub(mockLogger, 'warn');
+    const mockDownloadFromStorage: DownloadStorageFunctionType = async () => ({ data: new ArrayBuffer(0), error: null });
+    const mockAssembler = new PromptAssembler(mockDb as unknown as SupabaseClient<Database>);
+
+    try {
+        const childJobs = await planComplexStage(
+            mockDb as unknown as SupabaseClient<Database>,
+            MOCK_PARENT_JOB,
+            MOCK_PAYLOAD,
+            'user-123',
+            mockLogger,
+            mockDownloadFromStorage,
+            mockAssembler
+        );
+
+        assertEquals(childJobs.length, 0, "Should return an empty array as no valid source documents can be processed");
+        assertEquals(warnSpy.calls.length, 2, "Should have logged a warning for each contribution with a missing file_name");
+        assert(warnSpy.calls[0].args[0].includes('is missing a file_name and will be skipped'));
+
+    } finally {
+        warnSpy.restore();
+    }
+}); 
+
+Deno.test('planComplexStage - Throws if no matching models are found for selected IDs', async () => {
+    const { client: mockDb } = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_stages': {
+                select: () => Promise.resolve({ data: [MOCK_STAGE], error: null })
+            },
+            'dialectic_projects': {
+                select: () => Promise.resolve({ data: [MOCK_PROJECT], error: null })
+            },
+            'dialectic_sessions': {
+                select: () => Promise.resolve({ data: [MOCK_SESSION], error: null })
+            },
+            'dialectic_stage_transitions': {
+                select: () => Promise.resolve({ data: [{ source_stage: { slug: 'thesis' } }], error: null })
+            },
+            'dialectic_contributions': {
+                select: () => Promise.resolve({ data: MOCK_SOURCE_CONTRIBUTIONS, error: null })
+            },
+            'ai_providers': {
+                select: () => Promise.resolve({ data: [], error: null }) // No models found
+            }
+        }
+    });
+
+    const mockLogger: ILogger = { info: () => { }, warn: () => { }, error: () => { }, debug: () => { } };
+    const mockDownloadFromStorage: DownloadStorageFunctionType = async () => ({ data: new ArrayBuffer(0), error: null });
+    const mockAssembler = new PromptAssembler(mockDb as unknown as SupabaseClient<Database>);
+
+    try {
+        await planComplexStage(
+            mockDb as unknown as SupabaseClient<Database>,
+            MOCK_PARENT_JOB,
+            MOCK_PAYLOAD, // This payload asks for 'model-1' and 'model-2'
             'user-123',
             mockLogger,
             mockDownloadFromStorage,

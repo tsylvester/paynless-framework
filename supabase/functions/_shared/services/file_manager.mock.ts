@@ -18,16 +18,28 @@ export class MockFileManagerService implements IFileManager {
     [context: UploadContext],
     Promise<FileManagerResponse>
   >;
+  private mockResponse: FileManagerResponse = { record: null, error: { message: 'Default mock error' } };
 
   constructor() {
     this.uploadAndRegisterFile = spy(async (_context: UploadContext) => {
-      // Default mock implementation returns an error to satisfy the new contract.
+      // The spy now returns the mockResponse property of the instance.
+      return await Promise.resolve(this.mockResponse);
+    });
+  }
+
+  /**
+   * Resets the spy for the uploadAndRegisterFile method.
+   * This will still recreate the spy to clear call history.
+   */
+  reset() {
+    this.uploadAndRegisterFile = spy(async (_context: UploadContext) => {
       return await Promise.resolve({ record: null, error: { message: 'Default mock error' } });
     });
   }
 
   /**
    * Configures the mock response for the uploadAndRegisterFile method.
+   * This no longer creates a new spy, preserving the call history.
    * @param record The FileRecord to return on success, or null.
    * @param error The ServiceError to return on failure, or null.
    */
@@ -35,16 +47,14 @@ export class MockFileManagerService implements IFileManager {
     record: FileRecord | null,
     error: ServiceError | null,
   ) {
-    this.uploadAndRegisterFile = spy((_context: UploadContext) => {
-        if (error) {
-            return Promise.resolve({ record: null, error });
-        }
-        if (record) {
-            return Promise.resolve({ record, error: null });
-        }
-        // To satisfy the contract, we must return an error if no record is provided.
-        return Promise.resolve({ record: null, error: { message: 'Mock not configured to return a record.' } });
-    });
+    if (error) {
+      this.mockResponse = { record: null, error };
+    } else if (record) {
+      this.mockResponse = { record, error: null };
+    } else {
+      // To satisfy the contract, we must return an error if no record is provided.
+      this.mockResponse = { record: null, error: { message: 'Mock not configured to return a record.' } };
+    }
   }
 }
 
