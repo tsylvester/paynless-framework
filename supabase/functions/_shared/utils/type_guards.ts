@@ -17,6 +17,12 @@ type StageWithProcessingStrategy = Tables<'dialectic_stages'> & {
     };
 };
 
+// Helper type for the citations array
+export type Citation = {
+  text: string;
+  url?: string;
+};
+
 // Validation function that safely converts Json to GenerateContributionsPayload
 export function validatePayload(payload: Json): GenerateContributionsPayload {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
@@ -149,6 +155,25 @@ export function isProjectContext(obj: unknown): obj is ProjectContext {
 
     return true;
 }
+
+/**
+ * Type guard to check if a value is a valid array of Citation objects.
+ * @param value The value to check.
+ * @returns True if the value is a Citation[], false otherwise.
+ */
+export function isCitationsArray(value: unknown): value is Citation[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item) =>
+        typeof item === 'object' &&
+        item !== null &&
+        'text' in item &&
+        typeof item.text === 'string'
+    )
+  );
+}
+
 
 /**
  * A true type guard that safely checks if a record is a DialecticContribution

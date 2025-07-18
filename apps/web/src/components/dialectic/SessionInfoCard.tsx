@@ -19,6 +19,7 @@ import { GenerateContributionButton } from './GenerateContributionButton';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ContinueUntilCompleteToggle } from '../common/ContinueUntilCompleteToggle';
+import { DynamicProgressBar } from '../common/DynamicProgressBar';
 
 interface SessionInfoCardProps {
   // REMOVED: session?: DialecticSession;
@@ -28,6 +29,7 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (/* REMOVED: { se
   const project: DialecticProject | null = useDialecticStore(state => state.currentProjectDetail);
   const session: DialecticSession | null = useDialecticStore(state => state.activeSessionDetail);
   const activeStage: DialecticStage | null = useDialecticStore(state => state.activeContextStage);
+  const sessionProgress = useDialecticStore(state => session ? state.sessionProgress[session.id] : undefined);
   const fetchInitialPromptContent = useDialecticStore(state => state.fetchInitialPromptContent);
   const contributionGenerationStatus: ContributionGenerationStatus = useDialecticStore(selectContributionGenerationStatus);
   const generateContributionsError = useDialecticStore(selectGenerateContributionsError);
@@ -132,7 +134,14 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (/* REMOVED: { se
 
           </div>
         </CardTitle>
-        {(contributionGenerationStatus === 'initiating' || contributionGenerationStatus === 'generating') && (
+        {sessionProgress && sessionProgress.current_step < sessionProgress.total_steps && (
+            <div className="mt-4">
+                <DynamicProgressBar
+                    sessionId={session.id}
+                />
+            </div>
+        )}
+        {(contributionGenerationStatus === 'initiating' || contributionGenerationStatus === 'generating') && !sessionProgress && (
           <div className="flex items-center text-sm text-muted-foreground mt-2" data-testid="generating-contributions-indicator">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             Generating contributions, please wait...

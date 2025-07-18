@@ -471,6 +471,7 @@ export type Database = {
           stage_slug: string
           started_at: string | null
           status: string
+          target_contribution_id: string | null
           user_id: string
         }
         Insert: {
@@ -488,6 +489,7 @@ export type Database = {
           stage_slug: string
           started_at?: string | null
           status?: string
+          target_contribution_id?: string | null
           user_id: string
         }
         Update: {
@@ -505,6 +507,7 @@ export type Database = {
           stage_slug?: string
           started_at?: string | null
           status?: string
+          target_contribution_id?: string | null
           user_id?: string
         }
         Relationships: [
@@ -520,6 +523,13 @@ export type Database = {
             columns: ["session_id"]
             isOneToOne: false
             referencedRelation: "dialectic_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_generation_jobs_target_contribution_id_fkey"
+            columns: ["target_contribution_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_contributions"
             referencedColumns: ["id"]
           },
         ]
@@ -1686,6 +1696,29 @@ export type Database = {
               p_error_details: string
               p_model_id: string
               p_contribution_type: string
+            }
+          | {
+              p_original_contribution_id: string
+              p_session_id: string
+              p_user_id: string
+              p_stage: string
+              p_iteration_number: number
+              p_storage_bucket: string
+              p_storage_path: string
+              p_mime_type: string
+              p_size_bytes: number
+              p_raw_response_storage_path: string
+              p_tokens_used_input: number
+              p_tokens_used_output: number
+              p_processing_time_ms: number
+              p_citations: Json
+              p_target_contribution_id: string
+              p_edit_version: number
+              p_is_latest_edit: boolean
+              p_original_model_contribution_id: string
+              p_error_details: string
+              p_contribution_type: string
+              p_model_id?: string
             }
           | {
               p_original_contribution_id: string

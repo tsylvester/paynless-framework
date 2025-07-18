@@ -43,6 +43,8 @@ const dialecticNotificationTypes = new Set([
     'dialectic_contribution_received',
     'contribution_generation_failed',
     'contribution_generation_complete',
+    'dialectic_progress_update',
+    'contribution_generation_continued',
 ]);
 
 function isDialecticLifecycleEventType(type: string): type is DialecticLifecycleEvent['type'] {
@@ -113,7 +115,13 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                     break;
                 case 'dialectic_contribution_received':
                     if (typeof data['sessionId'] === 'string' && typeof data['job_id'] === 'string' && isDialecticContribution(data['contribution'])) {
-                        eventPayload = { type, sessionId: data['sessionId'], contribution: data['contribution'], job_id: data['job_id'] };
+                        eventPayload = { 
+                            type, 
+                            sessionId: data['sessionId'], 
+                            contribution: data['contribution'], 
+                            job_id: data['job_id'],
+                            is_continuing: typeof data['is_continuing'] === 'boolean' ? data['is_continuing'] : false,
+                        };
                     }
                     break;
                 case 'contribution_generation_failed':
@@ -124,6 +132,24 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                 case 'contribution_generation_complete':
                     if (typeof data['sessionId'] === 'string' && typeof data['projectId'] === 'string') {
                         eventPayload = { type, sessionId: data['sessionId'], projectId: data['projectId'] };
+                    }
+                    break;
+                case 'dialectic_progress_update':
+                    if (
+                        typeof data['sessionId'] === 'string' &&
+                        typeof data['stageSlug'] === 'string' &&
+                        typeof data['current_step'] === 'number' &&
+                        typeof data['total_steps'] === 'number' &&
+                        typeof data['message'] === 'string'
+                    ) {
+                        eventPayload = {
+                            type,
+                            sessionId: data['sessionId'],
+                            stageSlug: data['stageSlug'],
+                            current_step: data['current_step'],
+                            total_steps: data['total_steps'],
+                            message: data['message'],
+                        };
                     }
                     break;
                 case 'contribution_generation_continued':

@@ -15,7 +15,7 @@ import { FileType } from '../_shared/types/file_manager.types.ts';
 import { getSeedPromptForStage } from '../_shared/utils/dialectic_utils.ts';
 import { hasProcessingStrategy, isDialecticContribution, isProjectContext, isStageContext } from '../_shared/utils/type_guards.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
-import { DownloadStorageFunctionType, ProjectContext, StageContext } from '../_shared/prompt-assembler.interface.ts';
+import { DownloadStorageFunctionType } from '../_shared/prompt-assembler.interface.ts';
 import { ILogger } from '../_shared/types.ts';
 
 export interface IIsolatedExecutionDeps extends GenerateContributionsDeps {
@@ -177,6 +177,7 @@ export async function planComplexStage(
                 completed_at: null,
                 results: null,
                 error_details: null,
+                target_contribution_id: null,
             });
         }
     }

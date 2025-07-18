@@ -2,6 +2,7 @@ import { assert, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.t
 import type { Tables, Json } from "../../types_db.ts";
 import { 
     hasProcessingStrategy, 
+    isCitationsArray,
     isDialecticContribution,
     isDialecticJobPayload,
     isDialecticJobRowArray,
@@ -179,6 +180,41 @@ Deno.test('Type Guard: isProjectContext', async (t) => {
 
     await t.step('should return false for null', () => {
         assert(!isProjectContext(null));
+    });
+});
+
+Deno.test('Type Guard: isCitationsArray', async (t) => {
+    await t.step('should return true for a valid array of Citation objects', () => {
+        const citations = [
+            { text: 'Source 1', url: 'http://example.com/1' },
+            { text: 'Source 2' }
+        ];
+        assert(isCitationsArray(citations));
+    });
+
+    await t.step('should return true for an empty array', () => {
+        assert(isCitationsArray([]));
+    });
+
+    await t.step('should return false if an object is missing the text property', () => {
+        const invalidCitations = [{ url: 'http://example.com/1' }];
+        assert(!isCitationsArray(invalidCitations));
+    });
+
+    await t.step('should return false if text property is not a string', () => {
+        const invalidCitations = [{ text: 123 }];
+        assert(!isCitationsArray(invalidCitations));
+    });
+
+    await t.step('should return false if array contains non-objects', () => {
+        const invalidCitations = [{ text: 'Source 1' }, null, 'string'];
+        assert(!isCitationsArray(invalidCitations));
+    });
+
+    await t.step('should return false for non-array values', () => {
+        assert(!isCitationsArray(null));
+        assert(!isCitationsArray({ text: 'Source 1' }));
+        assert(!isCitationsArray('a string'));
     });
 });
 
@@ -658,6 +694,7 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
                 results: null,
                 error_details: null,
                 parent_job_id: null,
+                target_contribution_id: null,
             },
             {
                 id: 'job-2',
@@ -675,6 +712,7 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
                 results: { success: true },
                 error_details: null,
                 parent_job_id: 'parent-job-1',
+                target_contribution_id: null,
             },
         ];
         assert(isDialecticJobRowArray(jobs));

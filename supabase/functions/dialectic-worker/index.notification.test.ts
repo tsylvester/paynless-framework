@@ -66,6 +66,7 @@ Deno.test('dialectic-worker - Notification Test: Sends all notifications on a su
     error_details: null,
     user_id: mockUserId,
     parent_job_id: null,
+    target_contribution_id: null,
   };
 
   const mockSupabaseSetup: MockSupabaseClientSetup = createMockSupabaseClient(
@@ -255,6 +256,7 @@ Deno.test('dialectic-worker - Notification Test: Sends correct notifications for
       error_details: null,
       user_id: mockUserId,
       parent_job_id: null,
+      target_contribution_id: null,
     };
   
     const mockSupabaseSetup: MockSupabaseClientSetup = createMockSupabaseClient(
@@ -408,6 +410,7 @@ Deno.test('dialectic-worker - Notification Test: Sends failure and retry notific
       error_details: null,
       user_id: mockUserId,
       parent_job_id: null,
+      target_contribution_id: null,
     };
 
     const mockSupabaseSetup: MockSupabaseClientSetup = createMockSupabaseClient(
@@ -532,6 +535,7 @@ Deno.test('dialectic-worker - Notification Test: Sends a single failure notifica
     error_details: null,
     user_id: mockUserId,
     parent_job_id: null,
+    target_contribution_id: null,
   };
 
   const mockSupabaseSetup: MockSupabaseClientSetup = createMockSupabaseClient(
@@ -613,6 +617,7 @@ Deno.test('dialectic-worker - Notification Test: Handles partial success (one mo
         error_details: null,
         user_id: mockUserId,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     const mockSupabaseSetup: MockSupabaseClientSetup = createMockSupabaseClient(

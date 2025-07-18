@@ -18,13 +18,15 @@ Deno.test('processComplexJob - plans and enqueues child jobs', async () => {
         id: 'child-1', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
         payload: { message: 'Child 1' }, iteration_number: 1, status: 'pending',
         attempt_count: 0, max_retries: 3, created_at: new Date().toISOString(), started_at: null,
-        completed_at: null, results: null, error_details: null, parent_job_id: mockParentJobId
+        completed_at: null, results: null, error_details: null, parent_job_id: mockParentJobId,
+        target_contribution_id: null,
     };
     const mockChildJob2: DialecticJobRow = {
         id: 'child-2', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
         payload: { message: 'Child 2' }, iteration_number: 1, status: 'pending',
         attempt_count: 0, max_retries: 3, created_at: new Date().toISOString(), started_at: null,
-        completed_at: null, results: null, error_details: null, parent_job_id: mockParentJobId
+        completed_at: null, results: null, error_details: null, parent_job_id: mockParentJobId,
+        target_contribution_id: null,
     };
 
     const planComplexStageSpy = spy(async (): Promise<DialecticJobRow[]> => {
@@ -68,6 +70,7 @@ Deno.test('processComplexJob - plans and enqueues child jobs', async () => {
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     try {
@@ -142,6 +145,7 @@ Deno.test('processComplexJob - handles planner failure gracefully', async () => 
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     try {
@@ -212,6 +216,7 @@ Deno.test('processComplexJob - completes parent job if planner returns no childr
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     try {
@@ -247,7 +252,8 @@ Deno.test('processComplexJob - fails parent job if child job insert fails', asyn
         id: 'child-1', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
         payload: { message: 'Child 1' }, iteration_number: 1, status: 'pending',
         attempt_count: 0, max_retries: 3, created_at: new Date().toISOString(), started_at: null,
-        completed_at: null, results: null, error_details: null, parent_job_id: mockParentJobId
+        completed_at: null, results: null, error_details: null, parent_job_id: mockParentJobId,
+        target_contribution_id: null,
     };
 
     const planComplexStageSpy = spy(async (): Promise<DialecticJobRow[]> => {
@@ -298,6 +304,7 @@ Deno.test('processComplexJob - fails parent job if child job insert fails', asyn
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     try {
@@ -331,7 +338,8 @@ Deno.test('processComplexJob - fails parent job if status update fails', async (
         id: 'child-1', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
         payload: { message: 'Child 1' }, iteration_number: 1, status: 'pending',
         attempt_count: 0, max_retries: 3, created_at: new Date().toISOString(), started_at: null,
-        completed_at: null, results: null, error_details: null, parent_job_id: mockParentJobId
+        completed_at: null, results: null, error_details: null, parent_job_id: mockParentJobId,
+        target_contribution_id: null,
     };
 
     const planComplexStageSpy = spy(async (): Promise<DialecticJobRow[]> => {
@@ -383,6 +391,7 @@ Deno.test('processComplexJob - fails parent job if status update fails', async (
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     try {

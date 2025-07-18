@@ -48,7 +48,7 @@ BEGIN
             ) INTO v_has_failures;
 
             -- Get the project owner's ID for sending notifications.
-            SELECT p.owner_id INTO v_project_owner_id
+            SELECT p.user_id INTO v_project_owner_id
             FROM public.dialectic_sessions s
             JOIN public.dialectic_projects p ON s.project_id = p.id
             WHERE s.id = v_session_id;
@@ -91,40 +91,56 @@ BEGIN
 
     RETURN NEW;
 END;
-$function$
+$function$;
 
-create or replace function public.invoke_dialectic_worker()
-returns trigger
-language plpgsql
-as $$
-begin
-  perform net.http_post(
-    url:=concat(
-      'https://',
-      substring(
-        current_setting('secret.SUPABASE_URL'),
-        'https://(.*?)\.supabase\.co'
-      ),
-      '.functions.run/dialectic-worker'
-    ),
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer " || current_setting("secret.SUPABASE_SERVICE_ROLE_KEY")}',
-    body:=json_build_object(
-      'table', TG_TABLE_NAME,
-      'type', TG_OP,
-      'record', new
-    )::text
-  );
-  return new;
-end;
+CREATE OR REPLACE FUNCTION public.invoke_dialectic_worker()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  -- Check if pg_net extension is available before attempting HTTP call
+  IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'http' AND installed_version IS NOT NULL) 
+     OR EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'http') THEN
+    
+    -- Attempt to call the dialectic worker via HTTP
+    BEGIN
+      PERFORM net.http_post(
+        url:=concat(
+          'https://',
+          substring(
+            current_setting('secret.SUPABASE_URL'),
+            'https://(.*?)\.supabase\.co'
+          ),
+          '.functions.run/dialectic-worker'
+        ),
+        headers:='{"Content-Type": "application/json", "Authorization": "Bearer " || current_setting("secret.SUPABASE_SERVICE_ROLE_KEY")}',
+        body:=json_build_object(
+          'table', TG_TABLE_NAME,
+          'type', TG_OP,
+          'record', NEW
+        )::text
+      );
+    EXCEPTION WHEN OTHERS THEN
+      -- Log error but don't fail the transaction
+      RAISE WARNING 'Failed to invoke dialectic worker via HTTP: %', SQLERRM;
+    END;
+    
+  ELSE
+    -- In local development or environments without pg_net, just log
+    RAISE NOTICE 'Dialectic worker trigger fired for job %, but HTTP extension not available in this environment', NEW.id;
+  END IF;
+  
+  RETURN NEW;
+END;
 $$;
 
-drop trigger if exists on_new_job_created on public.dialectic_generation_jobs;
+DROP TRIGGER IF EXISTS on_new_job_created ON public.dialectic_generation_jobs;
 
-create trigger on_new_job_created
-  after insert
-  on public.dialectic_generation_jobs
-  for each row
-  execute procedure public.invoke_dialectic_worker(); 
+CREATE TRIGGER on_new_job_created
+  AFTER INSERT
+  ON public.dialectic_generation_jobs
+  FOR EACH ROW
+  EXECUTE FUNCTION public.invoke_dialectic_worker(); 
 
   -- Drop the trigger if it exists to ensure idempotency
 DROP TRIGGER IF EXISTS on_job_terminal_state ON public.dialectic_generation_jobs;

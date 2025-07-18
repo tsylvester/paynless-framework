@@ -45,6 +45,7 @@ Deno.test('processJob - routes to processSimpleJob for simple stages', async () 
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -122,6 +123,7 @@ Deno.test('processJob - routes to processComplexJob for complex stages', async (
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -205,6 +207,7 @@ Deno.test('processJob - throws error when stage not found', async () => {
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -284,6 +287,7 @@ Deno.test('processJob - throws error for unsupported processing strategy', async
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -371,6 +375,7 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -454,6 +459,7 @@ Deno.test('processJob - verifies correct parameters passed to processComplexJob'
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {

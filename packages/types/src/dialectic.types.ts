@@ -28,6 +28,12 @@ export type DialecticJobRow = Database['public']['Tables']['dialectic_generation
 // New type for contribution generation status
   export type ContributionGenerationStatus = 'idle' | 'initiating' | 'generating' | 'failed' | 'retrying' | 'pending';
 
+export const contributionStatuses = ['pending', 'generating', 'retrying', 'failed', 'completed', 'continuing'];
+export type ContributionStatus = typeof contributionStatuses[number];
+export function isContributionStatus(status: unknown): status is ContributionStatus {
+  return typeof status === 'string' && contributionStatuses.includes(status);
+}
+
 export interface DialecticProject {
     id: string;
     user_id: string;
@@ -419,7 +425,7 @@ export interface DialecticContribution {
   storage_path: string | null;
   size_bytes: number | null;
   mime_type: string | null;
-  status?: 'pending' | 'generating' | 'retrying' | 'failed' | 'completed' | 'continuing'; // Client-side status for placeholders
+  status?: ContributionStatus; // Client-side status for placeholders
 }
 
 export interface ContributionGenerationStartedPayload {
@@ -451,6 +457,7 @@ export interface DialecticContributionReceivedPayload {
   sessionId: string;
   contribution: DialecticContribution;
   job_id: string;
+  is_continuing: boolean;
 }
 
 export interface ContributionGenerationFailedPayload {

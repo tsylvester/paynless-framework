@@ -58,6 +58,7 @@ Deno.test('processSimpleJob - Happy Path', async () => {
     error_details: null,
     user_id: mockUserId,
     parent_job_id: null,
+    target_contribution_id: null,
   };
 
   const mockSupabase = createMockSupabaseClient(undefined, {
@@ -231,7 +232,8 @@ Deno.test('processSimpleJob - Retry Success', async () => {
         error_details: null,
         user_id: mockUserId,
         parent_job_id: null,
-    };
+        target_contribution_id: null,
+        };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
         genericMockResults: {
@@ -413,6 +415,7 @@ Deno.test('processSimpleJob - Retry Loop Exhausted', async () => {
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -537,7 +540,8 @@ Deno.test('processSimpleJob - Continuation Enqueued', async () => {
         results: null,
         error_details: null,
         parent_job_id: null,
-    };
+        target_contribution_id: null,
+        };
     
     // We expect an insert and an update
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -704,7 +708,8 @@ Deno.test('processSimpleJob - Is a Continuation Job', async () => {
         results: null,
         error_details: null,
         parent_job_id: null,
-    };
+        target_contribution_id: null,
+        };
     
     const mockSupabase = createMockSupabaseClient(undefined, {
         genericMockResults: {
@@ -855,7 +860,8 @@ Deno.test('processSimpleJob - Continuation Download Failure', async () => {
         results: null,
         error_details: null,
         parent_job_id: null,
-    };
+        target_contribution_id: null,
+        };
     
     const mockSupabase = createMockSupabaseClient(undefined, {
         genericMockResults: {
@@ -1041,6 +1047,7 @@ Deno.test('processSimpleJob - Multi-Part Continuation', async (t) => {
             error_details: null,
             user_id: mockUserId,
             parent_job_id: null,
+            target_contribution_id: null,
         };
 
         const step1Supabase = createMockSupabaseClient(undefined, {
@@ -1116,6 +1123,7 @@ Deno.test('processSimpleJob - Multi-Part Continuation', async (t) => {
             error_details: null,
             user_id: mockUserId,
             parent_job_id: null,
+            target_contribution_id: null,
         };
 
         const step2Supabase = createMockSupabaseClient(undefined, {
@@ -1191,6 +1199,7 @@ Deno.test('processSimpleJob - Multi-Part Continuation', async (t) => {
             error_details: null,
             user_id: mockUserId,
             parent_job_id: null,
+            target_contribution_id: null,
         };
 
         const step3Supabase = createMockSupabaseClient(undefined, {
@@ -1257,6 +1266,7 @@ Deno.test('processSimpleJob - Partial Failure', async () => {
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -1440,6 +1450,7 @@ Deno.test('processSimpleJob - Database Error on Update', async () => {
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     const dbError = new Error('PostgREST Test Error');

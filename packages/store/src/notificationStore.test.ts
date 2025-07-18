@@ -273,16 +273,19 @@ describe('notificationStore', () => {
 
             // Test for each dialectic notification type
             it.each`
-                type                                  | data                                                                          | expectedPayload
-                ${'contribution_generation_started'}  | ${{ sessionId: 'sid-123' }}                                                   | ${{ type: 'contribution_generation_started', sessionId: 'sid-123' }}
-                ${'dialectic_contribution_started'}   | ${{ sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1 }}                 | ${{ type: 'dialectic_contribution_started', sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1 }}
-                ${'contribution_generation_retrying'} | ${{ sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1, error: 'fail' }} | ${{ type: 'contribution_generation_retrying', sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1, error: 'fail' }}
-                ${'dialectic_contribution_received'}  | ${{ sessionId: 'sid-123', contribution: { id: 'c-1', session_id: 'sid-123' }, job_id: 'j-1' }} | ${{ type: 'dialectic_contribution_received', sessionId: 'sid-123', contribution: { id: 'c-1', session_id: 'sid-123' }, job_id: 'j-1' }}
-                ${'contribution_generation_failed'}   | ${{ sessionId: 'sid-123', error: { code: 'FAIL', message: 'it failed' } }}     | ${{ type: 'contribution_generation_failed', sessionId: 'sid-123', error: { code: 'FAIL', message: 'it failed' } }}
-                ${'contribution_generation_complete'} | ${{ sessionId: 'sid-123', projectId: 'p-1' }}                                 | ${{ type: 'contribution_generation_complete', sessionId: 'sid-123', projectId: 'p-1' }}
+                type                                  | data                                                                                             | expectedPayload
+                ${'contribution_generation_started'}  | ${{ sessionId: 'sid-123' }}                                                                      | ${{ type: 'contribution_generation_started', sessionId: 'sid-123' }}
+                ${'dialectic_contribution_started'}   | ${{ sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1 }}                                    | ${{ type: 'dialectic_contribution_started', sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1 }}
+                ${'contribution_generation_retrying'} | ${{ sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1, error: 'fail' }}                     | ${{ type: 'contribution_generation_retrying', sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1, error: 'fail' }}
+                ${'dialectic_contribution_received'}  | ${{ sessionId: 'sid-123', contribution: { id: 'c-1', session_id: 'sid-123' }, job_id: 'j-1' }}       | ${{ type: 'dialectic_contribution_received', sessionId: 'sid-123', contribution: { id: 'c-1', session_id: 'sid-123' }, job_id: 'j-1', is_continuing: false }}
+                ${'dialectic_contribution_received'}  | ${{ sessionId: 'sid-123', contribution: { id: 'c-2', session_id: 'sid-123' }, job_id: 'j-2', is_continuing: true }} | ${{ type: 'dialectic_contribution_received', sessionId: 'sid-123', contribution: { id: 'c-2', session_id: 'sid-123' }, job_id: 'j-2', is_continuing: true }}
+                ${'contribution_generation_failed'}   | ${{ sessionId: 'sid-123', error: { code: 'FAIL', message: 'it failed' } }}                         | ${{ type: 'contribution_generation_failed', sessionId: 'sid-123', error: { code: 'FAIL', message: 'it failed' } }}
+                ${'contribution_generation_complete'} | ${{ sessionId: 'sid-123', projectId: 'p-1' }}                                                    | ${{ type: 'contribution_generation_complete', sessionId: 'sid-123', projectId: 'p-1' }}
+                ${'dialectic_progress_update'}        | ${{ sessionId: 'sid-123', stageSlug: 'test-stage', current_step: 1, total_steps: 10, message: 'In progress...' }} | ${{ type: 'dialectic_progress_update', sessionId: 'sid-123', stageSlug: 'test-stage', current_step: 1, total_steps: 10, message: 'In progress...' }}
+                ${'contribution_generation_continued'} | ${{ sessionId: 'sid-123', projectId: 'p-1', modelId: 'm-1', continuationNumber: 2, contribution: { id: 'c-3', session_id: 'sid-123' }, job_id: 'j-3' }} | ${{ type: 'contribution_generation_continued', sessionId: 'sid-123', projectId: 'p-1', modelId: 'm-1', continuationNumber: 2, contribution: { id: 'c-3', session_id: 'sid-123' }, job_id: 'j-3' }}
             `('should route $type to dialecticStore and not call addNotification', ({ type, data, expectedPayload }: { type: DialecticLifecycleEvent['type'], data: NotificationData, expectedPayload: DialecticLifecycleEvent }) => {
                 const testNotification: Notification = {
-                    id: `uuid-${type}`,
+                    id: `uuid-${type}-${JSON.stringify(data)}`, // Make ID unique for each case
                     user_id: 'user-abc',
                     type,
                     data,

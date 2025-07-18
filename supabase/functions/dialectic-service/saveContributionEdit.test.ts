@@ -11,25 +11,25 @@ import { expect } from 'https://deno.land/x/expect@v0.3.0/mod.ts';
 import {
   coreInitializeTestStep,
   coreCleanupTestResources,
-  registerUndoAction, // Import for manual cleanup registration
+  registerUndoAction,
+  initializeTestDeps, // Import for manual cleanup registration
   // We will get adminClient, primaryUserClient, primaryUserId from coreInitializeTestStep
   // supabaseAdminClient as adminClientFromUtil, // if we need it directly before init for some reason
   // testLogger, // if needed
 } from '../_shared/_integration.test.utils.ts';
 import type { Database } from '../types_db.ts';
 // DialecticContribution is needed for casting the response
-import type { DialecticContribution, SaveContributionEditPayload } from './dialectic.interface.ts';
+import type { DialecticContribution, DialecticContributionRow, SaveContributionEditPayload } from './dialectic.interface.ts';
 
 // Define a local type for the test data we'll manage if not using TestProject etc.
 interface TestSetupData {
   projectId: string;
   sessionId: string;
   aiContributionId: string;
-  initialAiContribution: DialecticContributionSql; // Store the full initial record for assertions
+  initialAiContribution: DialecticContributionRow; // Store the full initial record for assertions
   stageSlug: string; // Added to store the stage slug
 }
 // Helper type from Database for direct DB row manipulation
-type DialecticContributionSql = Database['public']['Tables']['dialectic_contributions']['Row'];
 type DialecticContributionInsert = Database['public']['Tables']['dialectic_contributions']['Insert'];
 
 const SUPABASE_FUNCTION_URL = Deno.env.get('SUPABASE_URL') 
@@ -47,6 +47,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
   let testData: TestSetupData;
 
   beforeAll(async () => {
+    initializeTestDeps();
     // Setup global user, scope 'global' ensures it's cleaned by afterAll with 'all'
     const setupResult = await coreInitializeTestStep({}, 'global'); 
     adminClient = setupResult.adminClient;
@@ -178,7 +179,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
     };
     const { data: aiContribution, error: contributionError } = await adminClient
       .from('dialectic_contributions')
-      .insert(initialContributionData as any) // Cast to any to bypass persistent linter issue
+      .insert(initialContributionData) // Cast to any to bypass persistent linter issue
       .select()
       .single();
     if (contributionError || !aiContribution) throw new Error(`Failed to create AI contribution: ${contributionError?.message}`);
@@ -188,7 +189,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       projectId: project.id,
       sessionId: session.id,
       aiContributionId: aiContribution.id,
-      initialAiContribution: aiContribution as DialecticContributionSql,
+      initialAiContribution: aiContribution,
       stageSlug: stage.slug, // Store the slug
     };
   });
@@ -221,7 +222,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
     });
 
     const rawResponseText = await response.text();
-    const responseBody = JSON.parse(rawResponseText) as DialecticContribution; // Assuming responseBody is the contribution
+    const responseBody = JSON.parse(rawResponseText); // Assuming responseBody is the contribution
 
     expect(response.status).toBe(201);
 
@@ -244,8 +245,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
     
     expect(fetchOriginalError).toBeNull();
     expect(originalAfterEditData).toBeDefined();
-    // Cast to DialecticContributionSql to help TS understand the shape of originalAfterEditData
-    const originalAfterEdit = originalAfterEditData as DialecticContributionSql;
+    const originalAfterEdit = originalAfterEditData!;
     expect(originalAfterEdit.is_latest_edit).toBe(false);
   });
 
@@ -414,7 +414,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
     const firstEditResponseBody = JSON.parse(rawTextFirstEditInMulti);
 
     expect(firstEditResponse.status).toBe(201);
-    const version2Contribution = firstEditResponseBody as DialecticContribution;
+    const version2Contribution = firstEditResponseBody;
 
     expect(version2Contribution.id).not.toBe(originalAIContributionId);
     expect(version2Contribution.edit_version).toBe(testData.initialAiContribution.edit_version + 1);
@@ -442,7 +442,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
     const secondEditResponseBody = JSON.parse(rawTextSecondEdit);
     
     expect(secondEditResponse.status).toBe(201);
-    const version3Contribution = secondEditResponseBody as DialecticContribution;
+    const version3Contribution = secondEditResponseBody;
 
     // 3. Verify Version 3 properties
     expect(version3Contribution.id).not.toBe(version2Contribution.id);
@@ -461,7 +461,8 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       .eq('id', version2Contribution.id)
       .single();
     expect(fetchV2Error).toBeNull();
-    const originalAfterSecondEdit = version2AfterEditData as DialecticContributionSql;
+    expect(version2AfterEditData).toBeDefined();
+    const originalAfterSecondEdit = version2AfterEditData!;
     expect(originalAfterSecondEdit.is_latest_edit).toBe(false);
 
     // 5. Verify Version 1 (original AI contribution) is_latest_edit is also false
@@ -471,7 +472,8 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
       .eq('id', originalAIContributionId)
       .single();
     expect(fetchV1Error).toBeNull();
-    const firstEditAfterSecondEdit = version1AfterEditData!.is_latest_edit === false ? version1AfterEditData as DialecticContributionSql : null;
+    expect(version1AfterEditData).toBeDefined();
+    const firstEditAfterSecondEdit = version1AfterEditData!.is_latest_edit === false ? version1AfterEditData : null;
     expect(firstEditAfterSecondEdit).toBeDefined();
     expect(firstEditAfterSecondEdit!.is_latest_edit).toBe(false);
   });

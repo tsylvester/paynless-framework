@@ -40,6 +40,7 @@ Deno.test('handleJob - fails when job is missing user_id', async () => {
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -112,6 +113,7 @@ Deno.test('handleJob - fails when payload is invalid', async () => {
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -200,6 +202,7 @@ Deno.test('handleJob - successfully processes valid job', async () => {
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -315,6 +318,7 @@ Deno.test('handleJob - handles exceptions during processJob execution', async ()
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -409,6 +413,7 @@ Deno.test('handleJob - validates payload correctly and extracts user info', asyn
         results: null,
         error_details: null,
         parent_job_id: null,
+        target_contribution_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {

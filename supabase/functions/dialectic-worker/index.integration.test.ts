@@ -72,7 +72,8 @@ Deno.test('dialectic-worker - Fails if fetching AI provider details fails', asyn
     results: null,
     error_details: null,
     user_id: mockUserId,
-    parent_job_id: null,  
+    parent_job_id: null, 
+    target_contribution_id: null,
   };
 
   const mockSupabase = createMockSupabaseClient(undefined, {
@@ -189,7 +190,8 @@ Deno.test('dialectic-worker - Fails if AI provider data is mismatched', async ()
     results: null,
     error_details: null,
     user_id: mockUserId,
-    parent_job_id: null,  
+    parent_job_id: null, 
+    target_contribution_id: null,
   };
 
   const mockSupabase = createMockSupabaseClient(undefined, {
@@ -301,7 +303,8 @@ Deno.test('dialectic-worker - Fails if fetching project resources fails', async 
       created_at: new Date().toISOString(),
       user_id: mockUserId,
       started_at: null, completed_at: null, results: null, error_details: null, 
-      parent_job_id: null,  
+      parent_job_id: null, 
+      target_contribution_id: null,
     };
   
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -377,7 +380,8 @@ Deno.test('dialectic-worker - Fails if fetching project resources fails', async 
       completed_at: null, 
       results: null, 
       error_details: null,
-      parent_job_id: null,  
+      parent_job_id: null, 
+      target_contribution_id: null,
     };
   
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -458,7 +462,8 @@ Deno.test('dialectic-worker - Fails if fetching project resources fails', async 
       completed_at: null, 
       results: null, 
       error_details: null,
-      parent_job_id: null,  
+      parent_job_id: null, 
+      target_contribution_id: null,
     };
   
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -578,7 +583,8 @@ Deno.test('dialectic-worker - Happy Path', async () => {
     results: null,
     error_details: null,
     user_id: mockUserId,
-    parent_job_id: null,  
+    parent_job_id: null, 
+    target_contribution_id: null,
   };
 
   const mockSupabase = createMockSupabaseClient(undefined, {
@@ -762,7 +768,8 @@ Deno.test('dialectic-worker - Failure and Retry Exhaustion', async () => {
     results: null,
     error_details: null,
     user_id: mockUserId,
-    parent_job_id: null,  
+    parent_job_id: null, 
+    target_contribution_id: null,
   };
 
   const mockSupabase = createMockSupabaseClient(undefined, {
@@ -927,7 +934,8 @@ Deno.test('dialectic-worker - Invalid Payload', async () => {
         results: null,
         error_details: null,
         user_id: mockUserId,
-        parent_job_id: null,  
+        parent_job_id: null, 
+        target_contribution_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient();
@@ -1015,7 +1023,8 @@ Deno.test('dialectic-worker - Stage Not Found', async () => {
         results: null,
         error_details: null,
         user_id: mockUserId,
-        parent_job_id: null,  
+        parent_job_id: null, 
+        target_contribution_id: null,
     };
     
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -1098,7 +1107,8 @@ Deno.test('dialectic-worker - AI Model Call Fails', async () => {
     results: null,
     error_details: null,
     user_id: mockUserId,
-    parent_job_id: null,  
+    parent_job_id: null, 
+    target_contribution_id: null,
   };
 
   const mockSupabase = createMockSupabaseClient(undefined, {
@@ -1211,7 +1221,8 @@ Deno.test('dialectic-worker - Retries on failure and succeeds', async () => {
         results: null,
         error_details: null,
         user_id: mockUserId,
-        parent_job_id: null,  
+        parent_job_id: null, 
+        target_contribution_id: null,
       };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -1368,7 +1379,8 @@ Deno.test('dialectic-worker - Fails after exhausting retries', async () => {
       results: null,
       error_details: null,
       user_id: mockUserId,
-      parent_job_id: null,  
+      parent_job_id: null, 
+      target_contribution_id: null,
   };
 
   const mockSupabase = createMockSupabaseClient(undefined, {
@@ -1503,7 +1515,8 @@ Deno.test('dialectic-worker - Fails if specific seed prompt resource not found',
     completed_at: null, 
     results: null, 
     error_details: null,
-    parent_job_id: null,  
+    parent_job_id: null, 
+    target_contribution_id: null,
   };
 
   const mockSupabase = createMockSupabaseClient(undefined, {
@@ -1593,7 +1606,8 @@ Deno.test('dialectic-worker - Fails if seed prompt download fails', async () => 
     completed_at: null, 
     results: null, 
     error_details: null,
-    parent_job_id: null,  
+    parent_job_id: null, 
+    target_contribution_id: null,
   };
 
   const mockSupabase = createMockSupabaseClient(undefined, {
@@ -1683,7 +1697,8 @@ Deno.test('dialectic-worker - CRITICAL: Final job status update fails', async ()
     completed_at: null, 
     results: null, 
     error_details: null,
-    parent_job_id: null,  
+    parent_job_id: null, 
+    target_contribution_id: null,
   };
 
   const mockSupabase = createMockSupabaseClient(undefined, {
@@ -1832,7 +1847,8 @@ Deno.test('dialectic-worker - Unhandled generic exception', async () => {
     completed_at: null, 
     results: null, 
     error_details: null,
-    parent_job_id: null,  
+    parent_job_id: null, 
+    target_contribution_id: null,
   };
 
   const mockSupabase = createMockSupabaseClient(undefined, {
@@ -1920,7 +1936,8 @@ Deno.test('dialectic-worker - Handles mixed success and failure results', async 
     completed_at: null, 
     results: null, 
     error_details: null,
-    parent_job_id: null,  
+    parent_job_id: null, 
+    target_contribution_id: null,
   };
 
   const mockSupabase = createMockSupabaseClient(undefined, {
@@ -2103,7 +2120,8 @@ Deno.test('dialectic-worker - Happy Path with dynamic content type and detailed 
     results: null,
     error_details: null,
     user_id: mockUserId,
-    parent_job_id: null,  
+    parent_job_id: null, 
+    target_contribution_id: null,
   };
 
   const mockSupabase = createMockSupabaseClient(undefined, {
@@ -2273,7 +2291,8 @@ Deno.test('dialectic-worker - Enqueues a new job on response continuation', asyn
     completed_at: null,
     results: null,
     error_details: null,
-    parent_job_id: null,  
+    parent_job_id: null, 
+    target_contribution_id: null,
   };
 
   const mockSupabase = createMockSupabaseClient(undefined, {
@@ -2422,7 +2441,8 @@ Deno.test('dialectic-worker - Correctly saves concatenated file on continuation'
     completed_at: null,
     results: null,
     error_details: null,
-    parent_job_id: null,  
+    parent_job_id: null, 
+    target_contribution_id: null,
   };
 
   const mockFirstContributionId = 'contribution-id-concat-1';
@@ -2563,7 +2583,8 @@ Deno.test('dialectic-worker - Correctly saves concatenated file on continuation'
         completed_at: null,
         results: null,
         error_details: null,
-        parent_job_id: null,  
+        parent_job_id: null,    
+        target_contribution_id: null,
       };
 
       // Second Job
@@ -2622,7 +2643,8 @@ Deno.test('dialectic-worker - Routes to task_isolator for task_isolation strateg
       results: null,
       error_details: null,
       user_id: mockUserId,
-      parent_job_id: null,  
+      parent_job_id: null,    
+      target_contribution_id: null,
     };
   
     const mockSupabase = createMockSupabaseClient(undefined, {

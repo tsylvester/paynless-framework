@@ -36,6 +36,7 @@ const MOCK_JOB: DialecticJobRow = {
     results: null,
     error_details: null,
     parent_job_id: null,
+    target_contribution_id: null,
 };
 
 const MOCK_PAYLOAD: GenerateContributionsPayload = {
