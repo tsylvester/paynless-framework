@@ -439,18 +439,19 @@ This phase refactors the monolithic `processJob` function into a lightweight **S
 
 #### 21. [DB] [BE] Implement the Parent/Child Job Orchestration Trigger
 
-*   `[ ]` 21.a. **Add `parent_job_id` to Jobs Table:**
-    *   `[DB]` **File:** `supabase/migrations/XXXXXXXX_add_parent_job_id.sql`
+*   `[✅]` 21.a. **Add `parent_job_id` to Jobs Table:**
+    *   `[DB]` **File:** `supabase/migrations/20250716153526_add_processing_strategy_to_dialectic_stages.sql`
     *   `[DB]` **Action:** Create a new migration to add a nullable `parent_job_id` (UUID, foreign key to `dialectic_generation_jobs.id`) to the `dialectic_generation_jobs` table.
-*   `[ ]` 21.b. **Create Database Orchestration Function:**
-    *   `[DB]` **File:** `supabase/migrations/XXXXXXXX_create_orchestration_trigger.sql`
+*   `[✅]` 21.b. **Create Database Orchestration Function:**
+    *   `[DB]` **File:** `supabase/migrations/20250716153526_add_processing_strategy_to_dialectic_stages.sql`
     *   **Action:** Create a new PostgreSQL function, e.g., `handle_child_job_completion()`. This function will be triggered whenever a job's `status` is updated to `'completed'`.
     *   **Function Logic:**
         1.  Check if the completed job has a `parent_job_id`. If not, exit.
         2.  If it does, count all "sibling" jobs (those with the same `parent_job_id`).
         3.  Count all *completed* sibling jobs.
         4.  If `total_siblings === completed_siblings`, update the parent job's status from `'waiting_for_children'` to `'pending_next_step'`. This change will fire the webhook again, sending the parent job back to the worker for the next phase of a multi-step process (like the reduction step in Synthesis).
-*   `[ ]` 21.c. **Add Integration Test for Orchestration:**
+*   `[✅]` 21.c. **Add Integration Test for Orchestration:**
+    *   `[TEST-INT]` **File:** `supabase/integration_tests/triggers/dialectic_job_orchestration.integration.test.ts`
     *   `[TEST-INT]` **Action:** Write an integration test that simulates the full flow: create a parent job, have the worker plan and insert child jobs, mark all child jobs as complete one-by-one, and assert that the database trigger correctly updates the parent job's status to `'pending_next_step'` only after the final child is complete.
 
 ---
@@ -461,20 +462,26 @@ This phase focuses on building the frontend components to consume the generic pr
 
 #### 22. [STORE] [UI] Handle Generic Progress Notifications on the Frontend
 
-*   `[ ]` 22.a. **Update Central Notification Listener:**
+*   `[✅]` 22.a. **Update Central Notification Listener:**
     *   `[STORE]` **File:** `packages/store/src/notificationStore.ts`
     *   **Action:** Add a `case` or `if` condition to the `handleIncomingNotification` function to specifically handle the `'dialectic_progress_update'` type. This handler should route the full payload to a new, dedicated handler in the `dialecticStore`.
-*   `[ ]` 22.b. **Update State Without Creating a Visible Notification Toast:**
+*   `[✅]` 22.b. **Update State Without Creating a Visible Notification Toast:**
     *   `[STORE]` **File:** `packages/store/src/dialecticStore.ts`
     *   **Action:** When a `'dialectic_progress_update'` notification is received, the handler must **not** trigger a standard UI notification toast. These are for driving the progress bar only.
     *   `[STORE]` **Action:** Create a new action (e.g., `setSessionProgress(payload)`) that uses `immer` to update a **new, separate piece of state**: `sessionProgress: { [sessionId: string]: ProgressData }`, where `ProgressData` is `{ current_step: number, total_steps: number, message: string }`. This isolates the progress bar's state from the main contribution data state.
 
 #### 23. [UI] Create and Display the Dynamic Progress Bar
 
-*   `[ ]` 23.a. **Create a `DynamicProgressBar` Component:**
+*   `[✅]` 23.a. **Create a `DynamicProgressBar` Smart Component:**
     *   `[UI]` **File:** `apps/web/src/components/common/DynamicProgressBar.tsx`.
-    *   `[UI]` **Action:** Create a reusable component that takes props like `value` (calculated from `current_step` and `total_steps`) and `message` (to display the current status text).
-*   `[ ]` 23.b. **Integrate into the Session UI:**
+    *   `[UI]` **Action:** Implement a self-contained "smart" component that independently manages its state by subscribing to the central `dialecticStore`. This ensures the component is maximally independent and reusable.
+        *   `[UI]` i. **Props:** The component will accept a single, essential prop: `sessionId: string`. This ID is the key used to look up the correct progress data within the global store.
+        *   `[UI]` ii. **State Subscription:** The component will directly use the `useDialecticStore` hook to access the `sessionProgress` state map. It will employ a specific selector (e.g., `state => state.sessionProgress[sessionId]`) to ensure that the component only re-renders when the progress data for its particular session is updated, avoiding unnecessary updates from other sessions.
+        *   `[UI]` iii. **Internal State Derivation:** The component will be responsible for deriving its own display values from the subscribed store data (`{ current_step, total_steps, message }`).
+            *   The percentage `value` for the underlying progress bar UI element will be calculated internally via the formula: `(current_step / total_steps) * 100`.
+            *   The `message` text displayed to the user will be sourced directly from the `message` field in the store data.
+        *   `[UI]` iv. **Conditional Rendering Logic:** The component will contain its own logic for visibility. It will only render its UI if active progress data exists for its given `sessionId` in the store. If the lookup (`sessionProgress[sessionId]`) returns `undefined`, the component will render `null`, effectively hiding itself without requiring external logic from a parent component.
+*   `[✅]` 23.b. **Integrate into the Session UI:**
     *   `[UI]` **File:** `apps/web/src/components/dialectic/SessionInfoCard.tsx` (or the relevant component).
     *   `[UI]` **Action:** The component will subscribe specifically to the `sessionProgress` slice of the dialectic store for the active session.
     *   `[UI]` **Action:** It will conditionally render the `<DynamicProgressBar />` only when `sessionProgress` contains data for the current session and `current_step < total_steps`. When the process is complete, the bar should hide itself.
