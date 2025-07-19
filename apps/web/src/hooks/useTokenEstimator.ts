@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAiStore } from '../../../../packages/store/src/aiStore';
 import { useAuthStore } from '../../../../packages/store/src/authStore';
 import type { ChatMessage, AiModelExtendedConfig, MessageForTokenCounting, SystemPrompt } from '@paynless/types'; // Assuming @paynless/types resolves to packages/types/src
@@ -27,6 +27,25 @@ export const useTokenEstimator = (textInput: string): { estimatedTokens: number;
 
   const [estimatedTokens, setEstimatedTokens] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [debouncedTextInput, setDebouncedTextInput] = useState<string>(textInput);
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Debounce the textInput with 500ms delay
+  useEffect(() => {
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+
+    debounceTimeoutRef.current = setTimeout(() => {
+      setDebouncedTextInput(textInput);
+    }, 500);
+
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
+  }, [textInput]);
 
   useEffect(() => {
     const estimateTokensAsync = async (): Promise<void> => {
@@ -81,8 +100,8 @@ export const useTokenEstimator = (textInput: string): { estimatedTokens: number;
             content: msg.content,
           });
         });
-        if (textInput.trim()) {
-          messagesForTokenCounting.push({ role: 'user', content: textInput });
+        if (debouncedTextInput.trim()) {
+          messagesForTokenCounting.push({ role: 'user', content: debouncedTextInput });
         }
         inputForEstimator = messagesForTokenCounting;
         if (inputForEstimator.length === 0) {
@@ -94,8 +113,8 @@ export const useTokenEstimator = (textInput: string): { estimatedTokens: number;
         // For non-ChatML tiktoken or rough_char_count, combine into a single string.
         let combinedText: string = systemPromptContent ? systemPromptContent + '\n' : '';
         combinedText += historyMessages.map(msg => msg.content).join('\n');
-        if (textInput.trim()) {
-          combinedText = combinedText.trim() ? combinedText.trim() + '\n' + textInput : textInput;
+        if (debouncedTextInput.trim()) {
+          combinedText = combinedText.trim() ? combinedText.trim() + '\n' + debouncedTextInput : debouncedTextInput;
         }
         inputForEstimator = combinedText.trim();
         if (!inputForEstimator) {
@@ -141,7 +160,7 @@ export const useTokenEstimator = (textInput: string): { estimatedTokens: number;
     };
 
     estimateTokensAsync();
-  }, [textInput, currentChatId, messagesByChatId, selectedMessagesMap, selectedProviderId, availableProviders, selectedPromptId, availablePrompts]);
+  }, [debouncedTextInput, currentChatId, messagesByChatId, selectedMessagesMap, selectedProviderId, availableProviders, selectedPromptId, availablePrompts]);
 
   return { estimatedTokens, isLoading };
 };

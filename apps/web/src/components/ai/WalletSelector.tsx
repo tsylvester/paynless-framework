@@ -55,6 +55,7 @@ export const WalletSelector: React.FC<WalletSelectorProps> = () => {
     personalWallet: selectPersonalWallet(state),
     personalWalletBalance: state.personalWallet?.balance ?? null,
   }));
+
   const isLoadingPersonalWallet = useWalletStore(selectIsLoadingPersonalWallet);
   const personalWalletError = useWalletStore(selectPersonalWalletError);
 

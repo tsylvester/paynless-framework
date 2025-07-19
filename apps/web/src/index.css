@@ -1,69 +1,87 @@
 /* Define CSS Variables FIRST */
 @layer base {
-  :root {
-    /* Standard Tailwind variables (shadcn/ui might expect these) */
-    --background: 255 255 255;
-    --foreground: 0 0 0;
-    --card: 255 255 255;
-    --card-foreground: 0 0 0;
-    --popover: 255 255 255;
-    --popover-foreground: 0 0 0;
-    --primary: 0 122 255; /* Match your custom below */
-    --primary-foreground: 255 255 255; /* Default white for primary */
-    --secondary: 52 199 89; /* Match your custom below */
-    --secondary-foreground: 255 255 255; /* Default white for secondary */
-    --muted: 242 242 247; /* Similar to your surface */
-    --muted-foreground: 60 60 67; /* Similar to your textSecondary */
-    --accent: 242 242 247; /* Can be similar to surface/muted */
-    --accent-foreground: 0 0 0;
-    --destructive: 255 59 48; /* Default red */
-    --destructive-foreground: 255 255 255;
-    --border: 199 199 204; /* Match your custom below */
-    --input: 199 199 204; /* Often matches border */
-    --ring: 0 122 255; /* Match your custom primary */
-    --radius: 0.5rem; /* Default radius */
+	:root {
+		/* Standard Tailwind variables (shadcn/ui might expect these) */
+		--background: 255 255 255;
+		--foreground: 0 0 0;
+		--card: 255 255 255;
+		--card-foreground: 0 0 0;
+		--popover: 255 255 255;
+		--popover-foreground: 0 0 0;
+		--primary: 0 122 255; /* Match your custom below */
+		--primary-foreground: 255 255 255; /* Default white for primary */
+		--secondary: 52 199 89; /* Match your custom below */
+		--secondary-foreground: 255 255 255; /* Default white for secondary */
+		--muted: 242 242 247; /* Similar to your surface */
+		--muted-foreground: 60 60 67; /* Similar to your textSecondary */
+		--accent: 242 242 247; /* Can be similar to surface/muted */
+		--accent-foreground: 0 0 0;
+		--destructive: 255 59 48; /* Default red */
+		--destructive-foreground: 255 255 255;
+		--border: 199 199 204; /* Match your custom below */
+		--input: 199 199 204; /* Often matches border */
+		--ring: 0 122 255; /* Match your custom primary */
+		--radius: 0.5rem; /* Default radius */
 
-    /* Your custom variables (These will take precedence for your classes) */
-    --color-primary: 0 122 255; /* RGB values for #007AFF */
-    --color-secondary: 52 199 89; /* RGB values for #34C759 */
-    --color-background: 255 255 255; /* RGB values for #FFFFFF */
-    --color-surface: 242 242 247; /* RGB values for #F2F2F7 */
-    --color-textPrimary: 0 0 0; /* RGB values for #000000 */
-    --color-textSecondary: 60 60 67; /* RGB values for #3C3C43 */
-    --color-border: 199 199 204; /* RGB values for #C7C7CC */
-  }
-  
-  .dark {
-    /* Standard Tailwind variables for dark mode */
-    --background: 0 0 0;
-    --foreground: 255 255 255;
-    --card: 28 28 30; /* Similar to your surface */
-    --card-foreground: 255 255 255;
-    --popover: 28 28 30;
-    --popover-foreground: 255 255 255;
-    --primary: 10 132 255; /* Match your custom below */
-    --primary-foreground: 255 255 255;
-    --secondary: 50 215 75; /* Match your custom below */
-    --secondary-foreground: 0 0 0; /* Often black/dark for light green */
-    --muted: 28 28 30;
-    --muted-foreground: 235 235 245; /* Similar to your textSecondary */
-    --accent: 28 28 30;
-    --accent-foreground: 255 255 255;
-    --destructive: 255 69 58; /* Default dark red */
-    --destructive-foreground: 255 255 255;
-    --border: 58 58 60; /* Match your custom below */
-    --input: 58 58 60;
-    --ring: 10 132 255; /* Match your custom primary */
+		/* Your custom variables (These will take precedence for your classes) */
+		--color-primary: 0 122 255; /* RGB values for #007AFF */
+		--color-secondary: 52 199 89; /* RGB values for #34C759 */
+		--color-background: 255 255 255; /* RGB values for #FFFFFF */
+		--color-surface: 242 242 247; /* RGB values for #F2F2F7 */
+		--color-textPrimary: 0 0 0; /* RGB values for #000000 */
+		--color-textSecondary: 60 60 67; /* RGB values for #3C3C43 */
+		--color-border: 199 199 204; /* RGB values for #C7C7CC */
 
-    /* Your custom dark variables (These will take precedence) */
-    --color-primary: 10 132 255; /* RGB values for #0A84FF */
-    --color-secondary: 50 215 75; /* RGB values for #32D74B */
-    --color-background: 0 0 0; /* RGB values for #000000 */
-    --color-surface: 28 28 30; /* RGB values for #1C1C1E */
-    --color-textPrimary: 255 255 255; /* RGB values for #FFFFFF */
-    --color-textSecondary: 235 235 245; /* RGB values for #EBEBF5 */
-    --color-border: 58 58 60; /* RGB values for #3A3A3C */
-  }
+		--sidebar: oklch(0.985 0 0);
+		--sidebar-foreground: oklch(0.145 0 0);
+		--sidebar-primary: oklch(0.205 0 0);
+		--sidebar-primary-foreground: oklch(0.985 0 0);
+		--sidebar-accent: oklch(0.97 0 0);
+		--sidebar-accent-foreground: oklch(0.205 0 0);
+		--sidebar-border: oklch(0.922 0 0);
+		--sidebar-ring: oklch(0.708 0 0);
+	}
+
+	.dark {
+		/* Standard Tailwind variables for dark mode */
+		--background: 0 0 0;
+		--foreground: 255 255 255;
+		--card: 28 28 30; /* Similar to your surface */
+		--card-foreground: 255 255 255;
+		--popover: 28 28 30;
+		--popover-foreground: 255 255 255;
+		--primary: 10 132 255; /* Match your custom below */
+		--primary-foreground: 255 255 255;
+		--secondary: 50 215 75; /* Match your custom below */
+		--secondary-foreground: 0 0 0; /* Often black/dark for light green */
+		--muted: 28 28 30;
+		--muted-foreground: 235 235 245; /* Similar to your textSecondary */
+		--accent: 28 28 30;
+		--accent-foreground: 255 255 255;
+		--destructive: 255 69 58; /* Default dark red */
+		--destructive-foreground: 255 255 255;
+		--border: 58 58 60; /* Match your custom below */
+		--input: 58 58 60;
+		--ring: 10 132 255; /* Match your custom primary */
+
+		/* Your custom dark variables (These will take precedence) */
+		--color-primary: 10 132 255; /* RGB values for #0A84FF */
+		--color-secondary: 50 215 75; /* RGB values for #32D74B */
+		--color-background: 0 0 0; /* RGB values for #000000 */
+		--color-surface: 28 28 30; /* RGB values for #1C1C1E */
+		--color-textPrimary: 255 255 255; /* RGB values for #FFFFFF */
+		--color-textSecondary: 235 235 245; /* RGB values for #EBEBF5 */
+		--color-border: 58 58 60; /* RGB values for #3A3A3C */
+
+		--sidebar: oklch(0.205 0 0);
+		--sidebar-foreground: oklch(0.985 0 0);
+		--sidebar-primary: oklch(0.488 0.243 264.376);
+		--sidebar-primary-foreground: oklch(0.985 0 0);
+		--sidebar-accent: oklch(0.269 0 0);
+		--sidebar-accent-foreground: oklch(0.985 0 0);
+		--sidebar-border: oklch(1 0 0 / 10%);
+		--sidebar-ring: oklch(0.439 0 0);
+	}
 }
 
 /* THEN include Tailwind directives */
@@ -73,44 +91,46 @@
 
 /* Apply general body styles and border defaults if needed */
 @layer base {
-  body {
-    /* @tailwind base already applies bg-background based on :root/dark */
-    /* Apply other base styles if needed, e.g., font smoothing */
-    @apply text-textPrimary transition-colors duration-200;
-    font-feature-settings: "rlig" 1, "calt" 1;
-  }
-  
-  * {
-    @apply border-border;
-  }
+	body {
+		/* @tailwind base already applies bg-background based on :root/dark */
+		/* Apply other base styles if needed, e.g., font smoothing */
+		@apply text-textPrimary transition-colors duration-200;
+		font-feature-settings:
+			"rlig" 1,
+			"calt" 1;
+	}
+
+	* {
+		@apply border-border;
+	}
 }
 
 /* Component utilities */
 @layer components {
-  .btn-primary {
-    @apply bg-primary text-white hover:bg-opacity-90 transition-colors duration-200;
-  }
-  
-  .btn-secondary {
-    @apply bg-secondary text-white hover:bg-opacity-90 transition-colors duration-200;
-  }
-  
-  .card {
-    @apply bg-surface border border-border rounded-lg shadow-sm transition-colors duration-200;
-  }
-  
-  .input {
-    @apply bg-background text-textPrimary border border-border rounded-md shadow-sm focus:border-primary focus:ring focus:ring-primary/20 transition-colors duration-200;
-  }
-  
-  .dropdown-content {
-    @apply bg-surface border border-border rounded-lg shadow-lg transition-colors duration-200;
-  }
+	.btn-primary {
+		@apply bg-primary text-white hover:bg-opacity-90 transition-colors duration-200;
+	}
+
+	.btn-secondary {
+		@apply bg-secondary text-white hover:bg-opacity-90 transition-colors duration-200;
+	}
+
+	.card {
+		@apply bg-surface border border-border rounded-lg shadow-sm transition-colors duration-200;
+	}
+
+	.input {
+		@apply bg-background text-textPrimary border border-border rounded-md shadow-sm focus:border-primary focus:ring focus:ring-primary/20 transition-colors duration-200;
+	}
+
+	.dropdown-content {
+		@apply bg-surface border border-border rounded-lg shadow-lg transition-colors duration-200;
+	}
 }
 
 /* Basic Markdown Styling */
 .markdown-content p {
-  @apply mb-2; /* Tailwind equivalent of margin-bottom: 0.5em */
+	@apply mb-2; /* Tailwind equivalent of margin-bottom: 0.5em */
 }
 
 .markdown-content h1,
@@ -119,61 +139,66 @@
 .markdown-content h4,
 .markdown-content h5,
 .markdown-content h6 {
-  @apply mt-4 mb-2 font-semibold; /* Tailwind equivalents */
+	@apply mt-4 mb-2 font-semibold; /* Tailwind equivalents */
 }
 
-.markdown-content h1 { @apply text-2xl; } /* Tailwind equivalent of 1.5em */
-.markdown-content h2 { @apply text-xl; }  /* Tailwind equivalent of 1.25em */
-.markdown-content h3 { @apply text-lg; }  /* Tailwind equivalent of 1.1em */
+.markdown-content h1 {
+	@apply text-2xl;
+} /* Tailwind equivalent of 1.5em */
+.markdown-content h2 {
+	@apply text-xl;
+} /* Tailwind equivalent of 1.25em */
+.markdown-content h3 {
+	@apply text-lg;
+} /* Tailwind equivalent of 1.1em */
 /* Add more sizes if needed */
 
 .markdown-content ul,
 .markdown-content ol {
-  @apply ml-6 mb-2 pl-2; /* Tailwind equivalents */
+	@apply ml-6 mb-2 pl-2; /* Tailwind equivalents */
 }
 
 .markdown-content ul {
-  @apply list-disc;
+	@apply list-disc;
 }
 
 .markdown-content ol {
-  @apply list-decimal;
+	@apply list-decimal;
 }
 
 .markdown-content li {
-  @apply mb-1; /* Tailwind equivalent of 0.25em */
+	@apply mb-1; /* Tailwind equivalent of 0.25em */
 }
 
 /* Inline code styling (pre > code is handled by SyntaxHighlighter) */
 .markdown-content code:not(pre > code) {
-  @apply bg-slate-500/10 px-1.5 py-0.5 rounded text-[0.9em]; /* Tailwind classes */
+	@apply bg-slate-500/10 px-1.5 py-0.5 rounded text-[0.9em]; /* Tailwind classes */
 }
 
 .markdown-content blockquote {
-  /* Use Tailwind for border, padding, margin, color */
-  @apply border-l-4 border-gray-300 dark:border-gray-600 pl-4 ml-0 mb-2 text-gray-600 dark:text-gray-400 italic;
+	/* Use Tailwind for border, padding, margin, color */
+	@apply border-l-4 border-gray-300 dark:border-gray-600 pl-4 ml-0 mb-2 text-gray-600 dark:text-gray-400 italic;
 }
 
 .markdown-content table {
-  /* Tailwind table styling */
-  @apply table-auto border-collapse border border-gray-300 dark:border-gray-600 mb-4 w-auto;
+	/* Tailwind table styling */
+	@apply table-auto border-collapse border border-gray-300 dark:border-gray-600 mb-4 w-auto;
 }
 
 .markdown-content th,
 .markdown-content td {
-  @apply border border-gray-300 dark:border-gray-600 px-2 py-1 text-left;
+	@apply border border-gray-300 dark:border-gray-600 px-2 py-1 text-left;
 }
 
 .markdown-content th {
-  @apply bg-gray-100 dark:bg-gray-800 font-medium;
+	@apply bg-gray-100 dark:bg-gray-800 font-medium;
 }
 
 .markdown-content a {
-  /* Use Tailwind for color and decoration, leveraging theme variable */
-  @apply text-[rgb(var(--color-primary))] underline;
+	/* Use Tailwind for color and decoration, leveraging theme variable */
+	@apply text-[rgb(var(--color-primary))] underline;
 }
 
 .markdown-content a:hover {
-  @apply no-underline;
+	@apply no-underline;
 }
-

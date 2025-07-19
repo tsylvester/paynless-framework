@@ -8,9 +8,10 @@ import { WalletBackupDemoCard } from '../components/demos/WalletBackupDemo/Walle
 import { ConfigFileManager } from '@/components/features/ConfigFileManager';
 
 // Lazy load all page components
+const DashboardPage = lazy(() => import('../pages/Dashboard').then(module => ({ default: module.DashboardPage })));
 const LoginPage = lazy(() => import('../pages/Login').then(module => ({ default: module.LoginPage })));
 const RegisterPage = lazy(() => import('../pages/Register').then(module => ({ default: module.RegisterPage })));
-const DashboardPage = lazy(() => import('../pages/Dashboard').then(module => ({ default: module.DashboardPage })));
+const ChatPage = lazy(() => import('../pages/Chat').then(module => ({ default: module.ChatPage })));
 const ProfilePage = lazy(() => import('../pages/Profile').then(module => ({ default: module.ProfilePage })));
 const SubscriptionPage = lazy(() => import('../pages/Subscription').then(module => ({ default: module.SubscriptionPage })));
 const SubscriptionSuccessPage = lazy(() => import('../pages/SubscriptionSuccess').then(module => ({ default: module.SubscriptionSuccessPage })));
@@ -100,6 +101,22 @@ const routes: RouteObject[] = [
         ),
       },
       {
+        path: 'dashboard',
+        element: (
+          <ProtectedRoute>
+            <DashboardPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'new',
+        element: (
+          <ProtectedRoute>
+            <ChatPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
         path: 'notifications',
         element: (
           <ProtectedRoute>
@@ -108,10 +125,10 @@ const routes: RouteObject[] = [
         ),
       },
       {
-        path: 'dashboard',
+        path: 'chat/:chatId',
         element: (
           <ProtectedRoute>
-            <DashboardPage />
+            <ChatPage />
           </ProtectedRoute>
         ),
       },
