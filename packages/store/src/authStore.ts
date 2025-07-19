@@ -8,10 +8,9 @@ import {
   SupabaseSession,
   Session,
   User,
-  UserRole,
 } from '@paynless/types'
 import { NavigateFunction } from '@paynless/types'
-import { logger } from '@paynless/utils'
+import { logger, isUserRole } from '@paynless/utils'
 import { api, getApiClient } from '@paynless/api'
 import { analytics } from '@paynless/analytics'
 import { SupabaseClient } from '@supabase/supabase-js'
@@ -40,11 +39,12 @@ const mapSupabaseUser = (supabaseUser: SupabaseUser | null): User | null => {
   if (!supabaseUser) {
     return null;
   }
+
   // Map only the fields needed for the internal User type
   return {
     id: supabaseUser.id,
     email: supabaseUser.email,
-    role: supabaseUser.role as UserRole, // Assuming role exists and casting
+    role: isUserRole(supabaseUser.role) ? supabaseUser.role : undefined,
     created_at: supabaseUser.created_at,
     updated_at: supabaseUser.updated_at,
     // Exclude other Supabase-specific fields like app_metadata, user_metadata
@@ -55,10 +55,10 @@ const mapSupabaseUser = (supabaseUser: SupabaseUser | null): User | null => {
 export const useAuthStore = create<AuthStore>()((set, get) => ({
       user: null,
       session: null,
-      profile: null as UserProfile | null,
+      profile: null,
       isLoading: true,
       error: null,
-      navigate: null as NavigateFunction | null,
+      navigate: null,
 
       setNavigate: (navigateFn: NavigateFunction) => set({ navigate: navigateFn }),
 
@@ -96,13 +96,39 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
           const finalError =
             error instanceof Error ? error : new Error('Unknown login error');
           logger.error('Login error in store', { message: finalError.message });
-          set({
-            isLoading: false,
-            error: finalError,
-          });
-          // No return value needed
+          set({ error: finalError });
         } finally {
              set({ isLoading: false });
+        }
+      },
+
+      loginWithGoogle: async (): Promise<void> => {
+        logger.info('Attempting to login user via Google OAuth');
+        set({ isLoading: true, error: null });
+        try {
+          const supabase = api.getSupabaseClient();
+          if (!supabase) {
+            throw new Error('Supabase client not available');
+          }
+
+          const { error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+              redirectTo: window.location.origin + '/dashboard',
+            },
+          });
+
+          if (error) {
+            throw error;
+          }
+          // On success, Supabase redirects. No state change needed here.
+        } catch (error) {
+          const finalError =
+            error instanceof Error ? error : new Error('Unknown Google login error');
+          logger.error('Google login error in store', { message: finalError.message });
+          set({ error: finalError });
+        } finally {
+          set({ isLoading: false });
         }
       },
 
@@ -133,13 +159,29 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
           logger.error('Register error in store', {
             message: finalError.message,
           });
-          set({
-            isLoading: false,
-            error: finalError,
-          });
-          // No return value needed
+          set({ error: finalError });
         } finally {
             set({ isLoading: false });
+        }
+      },
+
+      subscribeToNewsletter: async (email: string): Promise<void> => {
+        try {
+          const supabase = api.getSupabaseClient();
+          if (!supabase) {
+            throw new Error('Supabase client not available for newsletter subscription.');
+          }
+          const { error } = await supabase.functions.invoke('subscribe-to-newsletter', {
+            body: { email },
+          });
+          if (error) {
+            throw error;
+          }
+          logger.info('Successfully subscribed user to newsletter', { email });
+        } catch (error) {
+          // Log the error but don't bubble it up or set state, as it's a non-critical background task
+          const finalError = error instanceof Error ? error : new Error('Unknown newsletter subscription error');
+          logger.error('Newsletter subscription error in store', { message: finalError.message });
         }
       },
 
@@ -234,13 +276,12 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         }
 
         const keys = Object.keys(profileData);
-        const isOnlyChatContextUpdate = keys.length === 1 && keys[0] === 'chat_context';
-        let wasLoadingSetByThisAction = false;
+        const backgroundUpdateKeys = ['chat_context']; // Define keys that won't trigger the global loader
+        const isBackgroundUpdate = keys.length === 1 && backgroundUpdateKeys.includes(keys[0]);
 
-        // Only set global isLoading for non-background updates
-        if (!isOnlyChatContextUpdate) {
+
+        if (!isBackgroundUpdate) {
           set({ isLoading: true });
-          wasLoadingSetByThisAction = true;
         }
         
         try {
@@ -271,7 +312,7 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
           set({ error: finalError }); 
           return null;
         } finally {
-          if (wasLoadingSetByThisAction) {
+          if (!isBackgroundUpdate) {
             set({ isLoading: false });
           }
         }
@@ -369,6 +410,47 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         // Implementation for updating profile with avatar
         // This is a placeholder and should be implemented
         return null;
+      },
+      showWelcomeModal: false,
+
+      updateSubscriptionAndDismissWelcome: async (subscribe: boolean) => {
+        logger.info(
+          `[AuthStore] Updating subscription status to ${subscribe} and dismissing welcome modal.`
+        );
+        set({ error: null });
+    
+        try {
+          // We can call the existing updateProfile method.
+          // This keeps the logic centralized.
+          const updatedProfile = await get().updateProfile({
+            has_seen_welcome_modal: true,
+            is_subscribed_to_newsletter: subscribe,
+          });
+    
+          if (updatedProfile) {
+            // On successful profile update, hide the modal.
+            set({ showWelcomeModal: false });
+            logger.info(
+              '[AuthStore] Successfully updated profile and hid welcome modal.'
+            );
+          } else {
+            // If updateProfile returns null, it means there was an error.
+            // The error state will already be set by updateProfile.
+            logger.error(
+              '[AuthStore] Failed to update profile via updateSubscriptionAndDismissWelcome.'
+            );
+          }
+        } catch (error) {
+          const finalError =
+            error instanceof Error
+              ? error
+              : new Error('Unknown error during subscription update.');
+          logger.error(
+            '[AuthStore] Unexpected error in updateSubscriptionAndDismissWelcome:',
+            { message: finalError.message }
+          );
+          set({ error: finalError });
+        }
       },
     }))
 

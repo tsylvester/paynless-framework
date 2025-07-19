@@ -255,7 +255,11 @@ export function isSelectedAiProvider(obj: unknown): obj is SelectedAiProviderRow
   }
 
   return true;
-} 
+}
+
+export function isUserRole(role: unknown): role is Database['public']['Enums']['user_role'] {
+  return typeof role === 'string' && ['user', 'admin'].includes(role);
+}
 
 export function isIsolatedExecutionDeps(deps: unknown): deps is IIsolatedExecutionDeps {
     if (typeof deps !== 'object' || deps === null) {
@@ -285,3 +289,17 @@ export function isDialecticJobRowArray(arr: unknown): arr is DialecticJobRow[] {
     // For now, checking if it's an array is a good start.
     return arr.every(item => typeof item === 'object' && item !== null && 'id' in item && 'session_id' in item);
 } 
+
+// --- Type Guard for Success Payload ---
+type SuccessPayload = { success: boolean; message: string };
+
+export function isSuccessPayload(payload: unknown): payload is SuccessPayload {
+    return (
+        typeof payload === 'object' &&
+        payload !== null &&
+        'success' in payload &&
+        'message' in payload &&
+        typeof (payload).success === 'boolean' &&
+        typeof (payload).message === 'string'
+    );
+}

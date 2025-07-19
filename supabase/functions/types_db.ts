@@ -1419,7 +1419,9 @@ export type Database = {
           chat_context: Json | null
           created_at: string
           first_name: string | null
+          has_seen_welcome_modal: boolean
           id: string
+          is_subscribed_to_newsletter: boolean
           last_name: string | null
           last_selected_org_id: string | null
           profile_privacy_setting: string
@@ -1430,7 +1432,9 @@ export type Database = {
           chat_context?: Json | null
           created_at?: string
           first_name?: string | null
+          has_seen_welcome_modal?: boolean
           id: string
+          is_subscribed_to_newsletter?: boolean
           last_name?: string | null
           last_selected_org_id?: string | null
           profile_privacy_setting?: string
@@ -1441,7 +1445,9 @@ export type Database = {
           chat_context?: Json | null
           created_at?: string
           first_name?: string | null
+          has_seen_welcome_modal?: boolean
           id?: string
+          is_subscribed_to_newsletter?: boolean
           last_name?: string | null
           last_selected_org_id?: string | null
           profile_privacy_setting?: string

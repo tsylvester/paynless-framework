@@ -11,6 +11,8 @@ import {
     isRecord,
     isStageContext,
     isSelectedAiProvider,
+    isSuccessPayload,
+    isUserRole,
     validatePayload
 } from './type_guards.ts';
 import type { DialecticContributionRow, DialecticJobRow } from '../../dialectic-service/dialectic.interface.ts';
@@ -800,5 +802,65 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
             { session_id: 'session-1' }, // Missing id
         ];
         assert(!isDialecticJobRowArray(invalidJobs));
+    });
+});
+
+Deno.test('Type Guard: isSuccessPayload', async (t) => {
+    await t.step('should return true for a valid success payload', () => {
+        const payload = { success: true, message: 'Operation was successful.' };
+        assert(isSuccessPayload(payload));
+    });
+
+    await t.step('should return false if success property is missing', () => {
+        const payload = { message: 'Missing success property.' };
+        assert(!isSuccessPayload(payload));
+    });
+
+    await t.step('should return false if message property is missing', () => {
+        const payload = { success: true };
+        assert(!isSuccessPayload(payload));
+    });
+
+    await t.step('should return false if success is not a boolean', () => {
+        const payload = { success: 'true', message: 'Success is a string.' };
+        assert(!isSuccessPayload(payload));
+    });
+
+    await t.step('should return false if message is not a string', () => {
+        const payload = { success: true, message: 123 };
+        assert(!isSuccessPayload(payload));
+    });
+
+    await t.step('should return false for null', () => {
+        assert(!isSuccessPayload(null));
+    });
+
+    await t.step('should return false for a non-object', () => {
+        assert(!isSuccessPayload('a string'));
+    });
+});
+
+
+Deno.test('Type Guard: isUserRole', async (t) => {
+    await t.step('should return true for valid user roles', () => {
+        assert(isUserRole('user'));
+        assert(isUserRole('admin'));
+    });
+
+    await t.step('should return false for invalid string roles', () => {
+        assert(!isUserRole('guest'));
+        assert(!isUserRole('superadmin'));
+        assert(!isUserRole(''));
+        assert(!isUserRole(' authenticated ')); // Check for spaces
+        assert(!isUserRole('Authenticated')); // Check for case sensitivity
+        assert(!isUserRole('user '));
+    });
+
+    await t.step('should return false for non-string values', () => {
+        assert(!isUserRole(null));
+        assert(!isUserRole(undefined));
+        assert(!isUserRole(123));
+        assert(!isUserRole({ role: 'user' }));
+        assert(!isUserRole(['user']));
     });
 });

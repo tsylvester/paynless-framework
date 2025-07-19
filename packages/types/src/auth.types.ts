@@ -48,7 +48,6 @@ export type User = {
 
 // Export the DB enum type under the alias UserRole for easier consumption
 export type UserRole = Database['public']['Enums']['user_role'];
-
 // Define the allowed values for profile privacy settings
 export type ProfilePrivacySetting = 'private' | 'public' | 'members_only';
 
@@ -59,6 +58,8 @@ export type UserProfileUpdate = {
   last_selected_org_id?: string | null; // <<< ADD THIS LINE BACK
   chat_context?: ChatContextPreferences | null; // Added to store user's chat selector preferences
   profile_privacy_setting?: ProfilePrivacySetting; // Added for user profile privacy
+  is_subscribed_to_newsletter?: boolean; // Added for user newsletter subscription
+  has_seen_welcome_modal?: boolean; // Added for user welcome modal seen
 }
 
 // Define UserProfile using the DB type for consistency
@@ -76,7 +77,9 @@ export interface AuthStore {
 
   // Core Auth Actions
   login: (email: string, password: string) => Promise<void>
+  loginWithGoogle: () => Promise<void>;
   register: (email: string, password: string) => Promise<void>
+  subscribeToNewsletter: (email: string) => Promise<void>;
   logout: () => Promise<void>
   updateProfile: (profileData: UserProfileUpdate) => Promise<UserProfile | null> // Uses UserProfile alias
   updateEmail: (email: string) => Promise<boolean>
@@ -85,14 +88,20 @@ export interface AuthStore {
   checkEmailExists: (email: string) => Promise<boolean>
   requestPasswordReset: (email: string) => Promise<boolean>
   handleOAuthLogin: (provider: 'google' | 'github') => Promise<void>
+  updateProfileWithAvatar: (
+    profileData: UserProfileUpdate
+    // file: File | null
+  ) => Promise<UserProfile | null>;
+  updateSubscriptionAndDismissWelcome: (subscribe: boolean) => void;
 
   // State properties
-  session: Session | null // <<< Use mapped Session type
-  user: User | null // <<< Use mapped User type
-  profile: UserProfile | null // Uses UserProfile alias
-  isLoading: boolean
-  error: Error | null
-  navigate: NavigateFunction | null
+  session: Session | null; // <<< Use mapped Session type
+  user: User | null; // <<< Use mapped User type
+  profile: UserProfile | null; // Uses UserProfile alias
+  isLoading: boolean;
+  error: Error | null;
+  navigate: NavigateFunction | null;
+  showWelcomeModal: boolean;
 }
 
 export interface LoginCredentials {

@@ -69,6 +69,9 @@ export interface IMockSupabaseClient {
   auth: IMockSupabaseAuth; 
   rpc: (name: string, params?: object, options?: { head?: boolean, count?: 'exact' | 'planned' | 'estimated' }) => Promise<{ data: unknown | null; error: Error | null; count: number | null; status: number; statusText: string; }>;
   storage: IMockStorageAPI;
+  functions?: {
+    invoke: (fn: string, opts: unknown) => Promise<{ data: unknown, error: unknown }>
+  };
   getLatestBuilder(tableName: string): IMockQueryBuilder | undefined;
   getHistoricBuildersForTable(tableName: string): IMockQueryBuilder[] | undefined;
   clearAllTrackedBuilders(): void;
@@ -714,6 +717,7 @@ class MockSupabaseClient implements IMockSupabaseClient {
     public readonly storage: IMockStorageAPI; // Implement this
     public readonly rpcSpy: Spy<IMockSupabaseClient['rpc']>;
     public readonly fromSpy: Spy<IMockSupabaseClient['from']>;
+    public functions?: { invoke: (fn: string, opts: unknown) => Promise<{ data: unknown, error: unknown }> };
     private _config: MockSupabaseDataConfig;
     private _latestBuilders: Map<string, MockQueryBuilder> = new Map();
     private _historicBuildersByTable: Map<string, MockQueryBuilder[]> = new Map();

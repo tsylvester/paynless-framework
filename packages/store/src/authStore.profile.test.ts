@@ -27,6 +27,8 @@ const mockProfile: UserProfile = {
   last_selected_org_id: null,
   chat_context: null as Json | null, // Explicitly type chat_context
   profile_privacy_setting: 'private' as ProfilePrivacySetting, // Explicitly type profile_privacy_setting
+  has_seen_welcome_modal: false,
+  is_subscribed_to_newsletter: false,
 };
 const profileUpdateData: UserProfileUpdate = { first_name: 'Updated', last_name: 'Name' };
 const updatedProfile: UserProfile = { 
@@ -35,6 +37,8 @@ const updatedProfile: UserProfile = {
   updated_at: 'later',
   chat_context: mockProfile.chat_context, 
   profile_privacy_setting: mockProfile.profile_privacy_setting, 
+  has_seen_welcome_modal: false,
+  is_subscribed_to_newsletter: false,
 };
 
 // Mock the logger
@@ -61,6 +65,10 @@ describe('AuthStore - Update Profile Action', () => {
     vi.mocked(logger.info).mockClear();
     vi.mocked(logger.warn).mockClear();
 
+    // Reset and re-spy on setState for each test
+    if (setStateSpy) {
+      setStateSpy.mockRestore();
+    }
     setStateSpy = vi.spyOn(useAuthStore, 'setState');
 
     useAuthStore.setState({ 
@@ -202,26 +210,30 @@ describe('AuthStore - Update Profile Action', () => {
       statusText: 'OK',
     } as SuccessResponse<UserProfile>);
     
-    useAuthStore.setState({ isLoading: false });
-    // Clear spy calls from beforeEach and the setState above
-    setStateSpy.mockClear(); 
+    // Initial state check
+    expect(useAuthStore.getState().isLoading).toBe(false);
 
-    const result = await useAuthStore.getState().updateProfile(privacyUpdateData);
+    // Act
+    const resultPromise = useAuthStore.getState().updateProfile(privacyUpdateData);
 
-    expect(apiPutSpy).toHaveBeenCalledWith('me', privacyUpdateData, { token: mockSession.access_token });
+    // State check immediately after dispatching (should be loading)
+    // Note: This relies on the action being synchronous up to the first await
+    expect(useAuthStore.getState().isLoading).toBe(true);
+    
+    // Await the completion of the async action
+    await resultPromise;
+
+    // Final state checks
     const finalState = useAuthStore.getState();
     expect(finalState.profile).toEqual(profileWithPrivacyUpdate);
     expect(finalState.error).toBeNull();
+    expect(finalState.isLoading).toBe(false); // Should be false after completion
+    
+    // Check the returned result
+    const result = await resultPromise;
     expect(result).toEqual(profileWithPrivacyUpdate);
-    
-    const setStateCalls = setStateSpy.mock.calls;
-    const isLoadingTrueCallIndex = setStateCalls.findIndex(call => call[0].isLoading === true);
-    const isLoadingFalseCallAfterTrue = setStateCalls.findIndex((call, index) => index > isLoadingTrueCallIndex && call[0].isLoading === false);
 
-    expect(isLoadingTrueCallIndex).toBeGreaterThan(-1); // This should now pass, finding the call at index 0
-    expect(isLoadingFalseCallAfterTrue).toBeGreaterThan(isLoadingTrueCallIndex); // This should find the call at index 1
-    
-    expect(finalState.isLoading).toBe(false); 
+    expect(apiPutSpy).toHaveBeenCalledWith('me', privacyUpdateData, { token: mockSession.access_token });
   });
 
   it('should prioritize auth/profile checks over API call and not set global loading for these errors', async () => {

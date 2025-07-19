@@ -1,102 +1,213 @@
-import { assertEquals, assertExists, assertStringIncludes } from "https://deno.land/std@0.192.0/testing/asserts.ts";
-import { startSupabase, stopSupabase, createUser, createAdminClient, cleanupUser } from "../_shared/supabase.mock.ts";
-
-// Load env vars necessary for test utils
-// (Assuming supabase.mock handles loading from the correct .env.local)
-
-const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || ""; 
-if (!ANON_KEY) {
-    console.error("CRITICAL: SUPABASE_ANON_KEY not found in env. Cannot run /login step.");
-    // Deno.exit(1); // Optional: Exit if critical key is missing
-}
-
-const LOGIN_URL = "http://localhost:54321/functions/v1/login";
-const ME_URL = "http://localhost:54321/functions/v1/me";
+import { assertEquals, assertExists, assertObjectMatch, assertRejects } from "https://deno.land/std@0.192.0/testing/asserts.ts";
+import { spy, assertSpyCall, assertSpyCalls } from "https://deno.land/std@0.192.0/testing/mock.ts";
+import {
+  coreInitializeTestStep,
+  coreCleanupTestResources,
+  initializeTestDeps,
+} from "../_shared/_integration.test.utils.ts";
+import { handleMeRequest, MeHandlerDeps } from './index.ts';
+import { createMockEmailMarketingService } from '../_shared/email_service/email.mock.ts';
+import {
+  createSupabaseClient,
+  createUnauthorizedResponse
+} from '../_shared/auth.ts';
+import { 
+  handleCorsPreflightRequest, 
+  createErrorResponse, 
+  createSuccessResponse 
+} from '../_shared/cors-headers.ts';
+import { TablesUpdate } from "../types_db.ts";
+import { UserProfileUpdate } from "../_shared/types.ts";
 
 Deno.test("/me Integration Tests", async (t) => {
-    await startSupabase();
-    const adminClient = createAdminClient();
-    
-    const testEmail = `test-me-${Date.now()}@example.com`;
-    const testPassword = "password123";
-    let userId = "";
-    let accessToken = "";
+  initializeTestDeps();
+  
+  // --- Test Suite for GET /me ---
+  await t.step("GET /me handler", async (t) => {
+    const mockEmailService = createMockEmailMarketingService();
+    const mockDeps: MeHandlerDeps = {
+      handleCorsPreflightRequest,
+      createUnauthorizedResponse,
+      createErrorResponse,
+      createSuccessResponse,
+      createSupabaseClient,
+      getEmailMarketingService: () => mockEmailService,
+    };
+    let testContext: Awaited<ReturnType<typeof coreInitializeTestStep>>;
 
     await t.step("Setup: Create test user", async () => {
-        const { user, error } = await createUser(testEmail, testPassword);
-        assertEquals(error, null, `Failed to create user: ${error?.message}`);
-        assertExists(user);
-        assertExists(user.id);
-        userId = user.id;
-    });
-
-    await t.step("Setup: Login user to get access token", async () => {
-        const response = await fetch(LOGIN_URL, {
-            method: "POST",
-            headers: { 
-                "Content-Type": "application/json",
-                "apikey": ANON_KEY // Use the correct local anon key as API key
-            },
-            body: JSON.stringify({ email: testEmail, password: testPassword }),
+        testContext = await coreInitializeTestStep({
+            userProfile: { first_name: "MeGetTest" }
         });
-        assertEquals(response.status, 200, "Login request failed");
-        const body = await response.json();
-        assertExists(body.session?.access_token, "Access token not found in login response");
-        accessToken = body.session.access_token;
     });
 
-    await t.step("Success: Call /me with valid token", async () => {
-        const response = await fetch(ME_URL, {
-            method: "GET",
-            headers: {
-                "Authorization": `Bearer ${accessToken}`,
-                "apikey": ANON_KEY // Still needed for edge function routing/auth?
-            },
+    await t.step("Success: Call /me with a valid token returns user and profile", async () => {
+      const req = new Request(`http://localhost/me`, {
+        method: 'GET',
+        headers: {
+          "Authorization": `Bearer ${testContext.primaryUserJwt}`,
+        },
+      });
+
+      const res = await handleMeRequest(req, mockDeps);
+      const body = await res.json();
+
+      assertEquals(res.status, 200);
+      assertExists(body.user);
+      assertExists(body.profile);
+      assertEquals(body.user.id, testContext.primaryUserId);
+      assertEquals(body.profile.id, testContext.primaryUserId);
+      assertEquals(body.profile.first_name, "MeGetTest");
+    });
+
+    await t.step("Failure: Call /me without a token returns 401", async () => {
+        const req = new Request(`http://localhost/me`, { method: 'GET' });
+        const res = await handleMeRequest(req, mockDeps);
+        assertEquals(res.status, 401);
+    });
+
+    await t.step("Cleanup: Remove test user", async () => {
+        await coreCleanupTestResources();
+    });
+  });
+
+  // --- Test Suite for POST /me ---
+  await t.step("POST /me handler", async (t) => {
+    const mockEmailService = createMockEmailMarketingService();
+    const addUserToListSpy = spy(mockEmailService, 'addUserToList');
+    const removeUserSpy = spy(mockEmailService, 'removeUser');
+
+    const mockDeps: MeHandlerDeps = {
+      handleCorsPreflightRequest,
+      createUnauthorizedResponse,
+      createErrorResponse,
+      createSuccessResponse,
+      createSupabaseClient,
+      getEmailMarketingService: () => mockEmailService,
+    };
+    let testContext: Awaited<ReturnType<typeof coreInitializeTestStep>>;
+    let initialProfile: TablesUpdate<'user_profiles'>;
+
+    await t.step("Setup: Create a clean test user for POST tests", async () => {
+        initialProfile = {
+            first_name: 'Initial',
+            last_name: 'User',
+            is_subscribed_to_newsletter: false,
+            has_seen_welcome_modal: false,
+        };
+        testContext = await coreInitializeTestStep({});
+        // Manually update profile to desired initial state
+        await testContext.adminClient.from('user_profiles').update(initialProfile).eq('id', testContext.primaryUserId);
+    });
+
+    await t.step("Basic Update: Can update first_name and last_name", async () => {
+        const payload: UserProfileUpdate = { first_name: "UpdatedFirst", last_name: "UpdatedLast" };
+        const req = new Request('http://localhost/me', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${testContext.primaryUserJwt}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
         });
-        assertEquals(response.status, 200, `Expected 200 OK, got ${response.status}`);
-        const body = await response.json();
-        assertExists(body.user, "Response should contain user object");
-        assertEquals(body.user.id, userId, "User ID in response should match");
-        assertEquals(body.user.email, testEmail.toLowerCase(), "User email in response should match");
-        // TODO: Add assertions for other expected user fields if necessary
+
+        const res = await handleMeRequest(req, mockDeps);
+        const body = await res.json();
+        
+        assertEquals(res.status, 200);
+        assertObjectMatch(body, { first_name: "UpdatedFirst", last_name: "UpdatedLast" });
+
+        const { data: dbProfile } = await testContext.adminClient.from('user_profiles').select('*').eq('id', testContext.primaryUserId).single();
+        assertExists(dbProfile);
+        assertObjectMatch(dbProfile, { first_name: "UpdatedFirst", last_name: "UpdatedLast" });
     });
 
-    await t.step("Failure: Call /me without token", async () => {
-        const response = await fetch(ME_URL, {
-            method: "GET",
-            headers: {
-                "apikey": ANON_KEY 
-            },
+    await t.step("Newsletter: Subscribing calls addUserToList", async () => {
+        const payload: UserProfileUpdate = { is_subscribed_to_newsletter: true };
+        const req = new Request('http://localhost/me', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${testContext.primaryUserJwt}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
         });
-        assertEquals(response.status, 401, "Expected 401 Unauthorized without token");
-        const responseText = await response.text();
-        const expectedText = "Missing authorization header"; 
-        assertStringIncludes(responseText, expectedText, `Response text should indicate missing auth header`);
+
+        await handleMeRequest(req, mockDeps);
+        
+        assertSpyCalls(addUserToListSpy, 1);
+        assertSpyCalls(removeUserSpy, 0);
     });
 
-    await t.step("Failure: Call /me with invalid token", async () => {
-        const invalidToken = accessToken + "invalid";
-        const response = await fetch(ME_URL, {
-            method: "GET",
-            headers: {
-                "Authorization": `Bearer ${invalidToken}`,
-                "apikey": ANON_KEY 
-            },
+    await t.step("Newsletter: Unsubscribing calls removeUser", async () => {
+        await testContext.adminClient.from('user_profiles').update({ is_subscribed_to_newsletter: true }).eq('id', testContext.primaryUserId);
+        
+        const payload: UserProfileUpdate = { is_subscribed_to_newsletter: false };
+        const req = new Request('http://localhost/me', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${testContext.primaryUserJwt}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
         });
-        assertEquals(response.status, 401, "Expected 401 Unauthorized with invalid token");
-        const responseText = await response.text();
-        const expectedText = "Invalid JWT";
-        assertStringIncludes(responseText, expectedText, `Response text should indicate invalid token`);
+        
+        await handleMeRequest(req, mockDeps);
+
+        assertSpyCalls(removeUserSpy, 1);
+        assertSpyCalls(addUserToListSpy, 1); // Not reset from previous test
+    });
+    
+    await t.step("Newsletter: No change in subscription does not call email service", async () => {
+        const payload: UserProfileUpdate = { is_subscribed_to_newsletter: false, first_name: "NoSubChange" };
+        const req = new Request('http://localhost/me', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${testContext.primaryUserJwt}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        await handleMeRequest(req, mockDeps);
+
+        assertSpyCalls(removeUserSpy, 1);
+        assertSpyCalls(addUserToListSpy, 1);
+
+        const { data: dbProfile } = await testContext.adminClient.from('user_profiles').select('*').eq('id', testContext.primaryUserId).single();
+        assertExists(dbProfile);
+        assertEquals(dbProfile.first_name, "NoSubChange");
     });
 
-    // TODO: Add test for calling /me with non-GET method (e.g., POST) -> Expect 405?
+    await t.step("Welcome Modal: Can update has_seen_welcome_modal", async () => {
+        const payload: UserProfileUpdate = { has_seen_welcome_modal: true };
+        const req = new Request('http://localhost/me', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${testContext.primaryUserJwt}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
 
-    // Cleanup
-    await t.step("Cleanup: Delete test user and profile", async () => {
-        // Profile might have been auto-created, delete it first
-        await adminClient.from('user_profiles').delete().eq('id', userId);
-        await cleanupUser(testEmail, adminClient);
+        const res = await handleMeRequest(req, mockDeps);
+        const body = await res.json();
+        
+        assertEquals(res.status, 200);
+        assertEquals(body.has_seen_welcome_modal, true);
+        assertSpyCalls(addUserToListSpy, 1);
+        assertSpyCalls(removeUserSpy, 1);
     });
 
-    await stopSupabase();
-}); 
+    await t.step("Edge Case: Empty payload does not error", async () => {
+        const req = new Request('http://localhost/me', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${testContext.primaryUserJwt}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        });
+
+        const res = await handleMeRequest(req, mockDeps);
+        assertEquals(res.status, 200);
+    });
+
+    await t.step("Security: Unauthorized request fails", async () => {
+        const req = new Request('http://localhost/me', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ first_name: "Unauthorized" }),
+        });
+
+        const res = await handleMeRequest(req, mockDeps);
+        assertEquals(res.status, 401);
+    });
+
+    await t.step("Cleanup: Remove test user", async () => {
+        await coreCleanupTestResources();
+    });
+  });
+});

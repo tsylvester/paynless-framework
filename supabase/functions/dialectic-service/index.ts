@@ -132,7 +132,7 @@ export interface ActionHandlers {
   getSessionDetails: (payload: GetSessionDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetSessionDetailsResponse; error?: ServiceError; status?: number }>;
   getContributionContentHandler: (getUserFn: GetUserFn, dbClient: SupabaseClient, logger: ILogger, payload: { contributionId: string }) => Promise<{ data?: GetContributionContentDataResponse; error?: ServiceError; status?: number }>;
   startSession: (user: User, dbClient: SupabaseClient, payload: StartSessionPayload, dependencies: { logger: ILogger }) => Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }>;
-  generateContributions: (dbClient: SupabaseClient, payload: GenerateContributionsPayload, authToken: string, deps: GenerateContributionsDeps, continueUntilComplete?: boolean) => Promise<{ success: boolean; data?: GenerateContributionsSuccessResponse; error?: { message: string; status?: number; details?: string | FailedAttemptError[]; code?: string; }; }>;
+  generateContributions: (dbClient: SupabaseClient, payload: GenerateContributionsPayload, authToken: string, deps: GenerateContributionsDeps) => Promise<{ success: boolean; data?: { job_id: string; }; error?: { message: string; status?: number; details?: unknown; code?: string; }; }>;
   listProjects: (user: User, dbClient: SupabaseClient) => Promise<{ data?: DialecticProject[]; error?: ServiceError; status?: number }>;
   listAvailableDomainOverlays: (stageAssociation: string, dbClient: SupabaseClient) => Promise<DomainOverlayDescriptor[]>;
   deleteProject: (dbClient: SupabaseClient, payload: { projectId: string }, userId: string) => Promise<{data?: null, error?: { message: string; details?: string | undefined; }, status?: number}>;
@@ -445,18 +445,14 @@ export async function handleRequest(
         { message: `Unsupported Content-Type: ${req.headers.get("content-type")}`, status: 415, code: 'UNSUPPORTED_CONTENT_TYPE' }
       );
     }
-  } catch (e) {
-    const error = e as Error;
-    logger.error("A critical error occurred in the main request handler:", {
-      errorMessage: error.message,
-      stack: error.stack,
-      cause: (error as unknown as { cause: unknown }).cause
-    });
-    return createErrorResponse("An internal server error occurred.", 500, req, { message: error.message, status: 500, code: 'UNHANDLED_EXCEPTION' });
+  } catch (err) {
+    const error = err as Error;
+    logger.error('An unexpected error occurred in the main request handler.', { error: error.message, stack: error.stack });
+    return createErrorResponse('An internal server error occurred.', 500, req, { message: error.message, code: 'UNHANDLED_EXCEPTION' });
   }
 }
 
-const handlers: ActionHandlers = {
+const defaultHandlers: ActionHandlers = {
   createProject,
   listAvailableDomains,
   updateProjectDomain,
@@ -478,30 +474,48 @@ const handlers: ActionHandlers = {
   updateSessionModels: handleUpdateSessionModels,
 };
 
-serve(async (req) => {
-  const preflightResponse = handleCorsPreflightRequest(req);
-  if (preflightResponse) {
-    return preflightResponse;
+export function createDialecticServiceHandler(
+  handlers: ActionHandlers,
+  getSupabaseClient: (token: string | null) => SupabaseClient,
+  adminClient: SupabaseClient,
+) {
+  return async (req: Request): Promise<Response> => {
+    if (req.method === "OPTIONS") {
+      return handleCorsPreflightRequest(req) ?? new Response(null, { status: 204 });
+    }
+    
+    const authHeader = req.headers.get("Authorization");
+    const authToken = authHeader && authHeader.startsWith("Bearer ") ? authHeader.substring(7) : null;
+    const userClient = getSupabaseClient(authToken);
+
+    return await handleRequest(req, handlers, userClient, adminClient);
+  };
+}
+
+
+serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return handleCorsPreflightRequest(req) ?? new Response(null, { status: 204 });
   }
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
-  const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const getSupabaseClient = (token: string | null) => createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_ANON_KEY")!,
+    {
+      global: {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+      auth: {
+        persistSession: false,
+      },
+    }
+  );
 
-  if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
-    logger.error("Missing critical Supabase environment variables.");
-    return createErrorResponse("Server configuration error.", 500, req, { message: "Server configuration error.", status: 500, code: 'CONFIG_ERROR' });
-  }
+  const adminClient = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  );
 
-  const authHeader = req.headers.get("Authorization");
-
-  const userClient = createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { ...(authHeader ? { Authorization: authHeader } : {}) } },
-  });
-
-  const adminClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-
-  return await handleRequest(req, handlers, userClient, adminClient);
+  const handler = createDialecticServiceHandler(defaultHandlers, getSupabaseClient, adminClient);
+  return await handler(req);
 });

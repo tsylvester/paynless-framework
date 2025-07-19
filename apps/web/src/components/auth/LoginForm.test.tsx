@@ -1,45 +1,31 @@
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useAuthStore } from '@paynless/store'; // Import the actual store
+import { useAuthStore } from '@paynless/store';
+import { type AuthStore } from '@paynless/types';
 import { LoginForm } from './LoginForm';
 
-// Mock the login function that will be injected into the store's state
 const mockLogin = vi.fn();
+const mockHandleOAuthLogin = vi.fn();
+const mockNavigate = vi.fn();
 
-// Define a baseline initial state for the store
-// (Adjust if the actual store has a different structure or provides getInitialState)
-const authStoreInitialState = {
-  isLoading: false,
-  error: null as Error | null,
-  user: null, // Assuming user state exists
-  // We will inject mockLogin here in beforeEach
-  login: mockLogin, 
-  // Add other state properties if necessary based on store definition
-};
-
-
-// Mock the store module BUT use the actual hook implementation
+// Mock the store module
 vi.mock('@paynless/store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@paynless/store')>();
   return {
     ...actual,
-    useAuthStore: actual.useAuthStore, // Ensure we're using the real hook
-    // Mock other exports from the store if they are used and need mocking
+    useAuthStore: actual.useAuthStore, 
   };
 });
-
-// Declare other mocks
-const mockNavigate = vi.fn();
 
 // Mock react-router-dom parts
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>();
   return {
-    ...actual, // Keep actual implementations for things like BrowserRouter
+    ...actual,
     useNavigate: () => mockNavigate,
-    Link: ({ to, children, ...props }) => <a href={to} role="link" {...props}>{children}</a>,
+    Link: ({ to, children, ...props }: { to: string; children: React.ReactNode }) => <a href={to} role="link" {...props}>{children}</a>,
   };
 });
 
@@ -49,6 +35,7 @@ vi.mock('@paynless/utils', () => ({
       info: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
+      debug: vi.fn(),
   }
 }));
 
@@ -63,15 +50,40 @@ describe('LoginForm Component', () => {
     );
   };
 
+  const getInitialState = (): Partial<AuthStore> => ({
+    isLoading: false,
+    error: null,
+    user: null,
+    login: mockLogin,
+    handleOAuthLogin: mockHandleOAuthLogin,
+    // Ensure all functions from AuthStore are mocked or included if needed by the component
+    // For example:
+    register: vi.fn(),
+    logout: vi.fn(),
+    updateProfile: vi.fn(),
+    updateEmail: vi.fn(),
+    uploadAvatar: vi.fn(),
+    fetchProfile: vi.fn(),
+    checkEmailExists: vi.fn(),
+    requestPasswordReset: vi.fn(),
+    setUser: vi.fn(),
+    setSession: vi.fn(),
+    setProfile: vi.fn(),
+    setIsLoading: vi.fn(),
+    setError: vi.fn(),
+    setNavigate: vi.fn(),
+    navigate: null,
+    session: null,
+    profile: null,
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockLogin.mockReset();
-    // Reset the ACTUAL store state before each test, injecting the mock login
+    mockHandleOAuthLogin.mockReset();
+    // Reset the store state before each test
     act(() => {
-      useAuthStore.setState({
-        ...authStoreInitialState, // Start with baseline
-        login: mockLogin // Ensure the mock function is in the state
-      }, true); // 'true' replaces the entire state
+      useAuthStore.setState(getInitialState(), true);
     });
   });
 
@@ -81,7 +93,8 @@ describe('LoginForm Component', () => {
     expect(screen.getByPlaceholderText('you@example.com')).toBeInTheDocument();
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
     expect(screen.getByPlaceholderText('••••••••')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /sign in with google/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /forgot password\?/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /sign up/i })).toBeInTheDocument();
   });
@@ -102,194 +115,150 @@ describe('LoginForm Component', () => {
     renderLoginForm();
     const form = screen.getByTestId('login-form');
     fireEvent.submit(form);
-    // The component's internal check should prevent calling the store's login
     expect(mockLogin).not.toHaveBeenCalled(); 
   });
 
   it('should call login and handle loading state on successful submission', async () => {
-    const loginPromise = Promise.resolve({ id: 'user-123' }); // Simulate successful login
+    const loginPromise = Promise.resolve(); 
     mockLogin.mockReturnValue(loginPromise);
 
     renderLoginForm();
-    const emailInput = screen.getByLabelText(/email/i);
-    const passwordInput = screen.getByLabelText(/password/i);
-    const submitButtonInitial = screen.getByRole('button', { name: /^sign in$/i }); 
-
-    await user.type(emailInput, 'test@example.com');
-    await user.type(passwordInput, 'password123');
+    await user.type(screen.getByLabelText(/email/i), 'test@example.com');
+    await user.type(screen.getByLabelText(/password/i), 'password123');
     
-    // This click triggers the component's handleSubmit, which calls the store's login (our mock)
-    // Our mock doesn't automatically set isLoading, the component relies on the store state
-    await user.click(submitButtonInitial);
-
-    // Assert mock was called (happens inside handleSubmit before state change)
-    expect(mockLogin).toHaveBeenCalledTimes(1);
-    expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123');
-
-    // *** Simulate the store's actual behavior: setting isLoading to true ***
-    // This should happen within the *actual* login function, which we've mocked.
-    // So, we manually trigger the state change that the real function would cause.
+    // Trigger the login
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    
+    // The component calls the store's login action.
+    // The action itself should set isLoading to true.
     act(() => {
       useAuthStore.setState({ isLoading: true });
     });
 
-    // Check for loading text using findByRole (waits for re-render)
+    expect(mockLogin).toHaveBeenCalledTimes(1);
+    expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123');
+
+    // Check for loading state
     const loadingButton = await screen.findByRole('button', { name: /signing in.../i });
     expect(loadingButton).toBeInTheDocument();
-    expect(loadingButton).toBeDisabled(); // Check disabled state as well now
+    expect(loadingButton).toBeDisabled();
 
-    // Wait for the mocked login promise to resolve
-    await act(async () => { await loginPromise; });
-
-    // *** Simulate the store's actual behavior: setting isLoading to false ***
-    // The real login function would set this upon completion.
+    // Now, simulate the action completing
     act(() => {
-      useAuthStore.setState({ isLoading: false, error: null }); // Also clear any previous error
+      useAuthStore.setState({ isLoading: false });
     });
     
+    await act(async () => { await loginPromise; });
+    
     // Check button is enabled and text reverted
-    const revertedButton = await screen.findByRole('button', { name: /^sign in$/i });
+    const revertedButton = await screen.findByRole('button', { name: 'Sign in' });
     expect(revertedButton).toBeInTheDocument();
     expect(revertedButton).toBeEnabled();
   });
   
-  it('should call login, handle loading, and call onSuccess prop', async () => {
-    const mockOnSuccess = vi.fn();
-    const loginPromise = Promise.resolve({ id: 'user-123' });
-    mockLogin.mockReturnValue(loginPromise);
+  it('should call handleOAuthLogin when the Google sign-in button is clicked', async () => {
+    const googleLoginPromise = Promise.resolve();
+    mockHandleOAuthLogin.mockReturnValue(googleLoginPromise);
 
-    renderLoginForm({ onSuccess: mockOnSuccess });
-    const emailInput = screen.getByLabelText(/email/i);
-    const passwordInput = screen.getByLabelText(/password/i);
-    const submitButtonInitial = screen.getByRole('button', { name: /^sign in$/i });
+    renderLoginForm();
+    const googleButton = screen.getByRole('button', { name: /sign in with google/i });
+    
+    await user.click(googleButton);
+    
+    act(() => {
+      useAuthStore.setState({ isLoading: true });
+    });
+    
+    expect(mockHandleOAuthLogin).toHaveBeenCalledTimes(1);
+    expect(mockHandleOAuthLogin).toHaveBeenCalledWith('google');
 
-    await user.type(emailInput, 'test@example.com');
-    await user.type(passwordInput, 'password123');
-    await user.click(submitButtonInitial);
+    const loadingButton = await screen.findByRole('button', { name: /signing in.../i });
+    expect(loadingButton).toBeInTheDocument();
+    expect(loadingButton).toBeDisabled();
 
-    expect(mockLogin).toHaveBeenCalledTimes(1);
+    act(() => {
+      useAuthStore.setState({ isLoading: false });
+    });
 
-    // Simulate loading state
-    act(() => { useAuthStore.setState({ isLoading: true }); });
-    await screen.findByRole('button', { name: /signing in.../i }); 
+    await act(async () => { await googleLoginPromise; });
 
-    // Wait for promise and simulate end of loading
-    await act(async () => { await loginPromise; });
-    act(() => { useAuthStore.setState({ isLoading: false, error: null }); });
-
-    // Check onSuccess was called (assuming it's called *after* login resolves)
-    // Note: The component doesn't call onSuccess, the mocked login should if needed
-    // Or we assume the page navigation/redirect implies success
-    // Let's remove this check for now as LoginForm doesn't seem to call onSuccess directly
-    // expect(mockOnSuccess).toHaveBeenCalledTimes(1); 
-
-    // Check button reverted
-    await screen.findByRole('button', { name: /^sign in$/i }); 
+    const revertedButton = await screen.findByRole('button', { name: 'Sign in' });
+    expect(revertedButton).toBeInTheDocument();
+    expect(revertedButton).toBeEnabled();
   });
 
   it('should show error message on failed login (invalid credentials)', async () => {
     const loginErrorMsg = 'Invalid credentials';
     const loginError = new Error(loginErrorMsg);
-    const loginPromise = Promise.reject(loginError);
-    mockLogin.mockReturnValue(loginPromise);
+    mockLogin.mockRejectedValue(loginError);
 
     renderLoginForm();
     
-    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'test@example.com' } });
-    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'wrongpassword' } });
+    await user.type(screen.getByLabelText(/email/i), 'test@example.com');
+    await user.type(screen.getByLabelText(/password/i), 'wrongpassword');
 
-    const submitButton = screen.getByRole('button', { name: /^sign in$/i });
-    fireEvent.click(submitButton);
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    
+    act(() => {
+      useAuthStore.setState({ isLoading: true });
+    });
 
     expect(mockLogin).toHaveBeenCalledTimes(1);
-
-    // Simulate loading state
-    act(() => { useAuthStore.setState({ isLoading: true }); });
-    await screen.findByRole('button', { name: /signing in.../i });
-
-    // Await promise rejection outside act, then update state inside act
-    try {
-      await loginPromise;
-    } catch (e) {
-      // Assert the caught error
-      expect(e).toEqual(loginError);
-      // Simulate store setting error and clearing loading *after* catching, inside act
-      act(() => {
-        useAuthStore.setState({ isLoading: false, error: e as Error }); 
-      });
-    }
-
-    // Check for error message
-    expect(await screen.findByTestId('login-error-message')).toHaveTextContent(loginErrorMsg);
     
-    // Check button is enabled and reverted
-    const revertedButton = await screen.findByRole('button', { name: /^sign in$/i });
-    expect(revertedButton).toBeEnabled();
+    // Simulate store setting error after promise rejection
+    await act(async () => {
+      try {
+        await mockLogin.mock.results[0].value;
+      } catch (e) {
+        useAuthStore.setState({ error: e as Error, isLoading: false });
+      }
+    });
+
+    expect(await screen.findByTestId('login-error-message')).toHaveTextContent(loginErrorMsg);
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled();
   });
 
   it('should show error message on API error during login', async () => {
     const apiErrorMsg = 'Network Error';
     const apiError = new Error(apiErrorMsg);
-    const loginPromise = Promise.reject(apiError);
-    mockLogin.mockReturnValue(loginPromise);
+    mockLogin.mockRejectedValue(apiError);
 
     renderLoginForm();
 
-    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'test@example.com' } });
-    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'password123' } });
+    await user.type(screen.getByLabelText(/email/i), 'test@example.com');
+    await user.type(screen.getByLabelText(/password/i), 'password123');
 
-    const submitButton = screen.getByRole('button', { name: /^sign in$/i });
-    fireEvent.click(submitButton);
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    act(() => {
+      useAuthStore.setState({ isLoading: true });
+    });
 
     expect(mockLogin).toHaveBeenCalledTimes(1);
 
-    // Simulate loading state
-    act(() => { useAuthStore.setState({ isLoading: true }); });
-    await screen.findByRole('button', { name: /signing in.../i });
+    await act(async () => {
+      try {
+        await mockLogin.mock.results[0].value;
+      } catch (e) {
+        useAuthStore.setState({ error: e as Error, isLoading: false });
+      }
+    });
 
-    // Await promise rejection outside act, then update state inside act
-     try {
-      await loginPromise;
-    } catch (e) {
-      // Assert the caught error
-      expect(e).toEqual(apiError);
-      // Simulate store setting error and clearing loading *after* catching, inside act
-      act(() => {
-        useAuthStore.setState({ isLoading: false, error: e as Error }); 
-      });
-    }
-
-    // Check for error message
     expect(await screen.findByTestId('login-error-message')).toHaveTextContent(apiErrorMsg);
-    
-    // Check button is enabled and reverted
-    const revertedButton = await screen.findByRole('button', { name: /^sign in$/i });
-    expect(revertedButton).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled();
   });
 
   it('should disable inputs and button while loading', async () => {
-    // Mock login to return a promise that never resolves for this test
-    mockLogin.mockReturnValue(new Promise(() => {})); 
-
     renderLoginForm();
-    const emailInput = screen.getByLabelText(/email/i);
-    const passwordInput = screen.getByLabelText(/password/i);
-    const submitButton = screen.getByRole('button', { name: /^sign in$/i });
 
-    await user.type(emailInput, 'test@example.com');
-    await user.type(passwordInput, 'password123');
-    await user.click(submitButton);
+    act(() => {
+      useAuthStore.setState({ isLoading: true });
+    });
 
-    // Simulate loading state
-    act(() => { useAuthStore.setState({ isLoading: true }); });
-
-    // Wait for the button text to change to ensure loading state is applied
-    await screen.findByRole('button', { name: /signing in.../i });
-
-    // Now check that elements are disabled
     expect(screen.getByRole('button', { name: /signing in.../i })).toBeDisabled();
     expect(screen.getByLabelText(/email/i)).toBeDisabled();
     expect(screen.getByLabelText(/password/i)).toBeDisabled();
+    expect(screen.getByRole('button', { name: /sign in with google/i })).toBeDisabled();
   });
 
   it('should have correct links for forgot password and sign up', () => {
@@ -297,8 +266,4 @@ describe('LoginForm Component', () => {
     expect(screen.getByRole('link', { name: /forgot password\?/i })).toHaveAttribute('href', '/forgot-password');
     expect(screen.getByRole('link', { name: /sign up/i })).toHaveAttribute('href', '/register');
   });
-
-});
-
-// Helper function for delays
-const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms)); 
+}); 

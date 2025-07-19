@@ -415,3 +415,29 @@ export interface GetUserFn {
 }
 
 // --- END: New/Standardized Interfaces ---
+
+// +++ ADDED Chat Context Preferences Type +++
+/**
+ * Defines the structure for user-specific chat UI preferences,
+ * intended to be stored as JSON in user_profiles.chat_context.
+ */
+export interface ChatContextPreferences {
+  newChatContext?: string | null;      // Corresponds to ChatContextSelector
+  selectedProviderId?: string | null;  // Corresponds to ModelSelector (provider ID)
+  selectedPromptId?: string | null;    // Corresponds to PromptSelector
+}
+// +++ END Chat Context Preferences Type +++
+
+// Define the allowed values for profile privacy settings
+export type ProfilePrivacySetting = 'private' | 'public' | 'members_only';
+
+// Define the type for profile updates - ONLY first/last name
+export type UserProfileUpdate = {
+  first_name?: string | null; // Match DB nullability
+  last_name?: string | null; // Match DB nullability
+  last_selected_org_id?: string | null; // <<< ADD THIS LINE BACK
+  chat_context?: ChatContextPreferences | null; // Added to store user's chat selector preferences
+  profile_privacy_setting?: ProfilePrivacySetting; // Added for user profile privacy
+  is_subscribed_to_newsletter?: boolean; // Added for user newsletter subscription
+  has_seen_welcome_modal?: boolean; // Added for user welcome modal seen
+}
