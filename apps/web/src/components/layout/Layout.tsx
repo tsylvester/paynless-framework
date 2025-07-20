@@ -15,12 +15,9 @@ export function Layout({ children }: LayoutProps) {
 	return (
 		<SidebarProvider>
 			<AppSidebar />
-			<SidebarInset className="peer-data-[state=collapsed]:ml-0 peer-data-[state=expanded]:ml-[calc(178px)] transition-[margin] duration-200 ease-linear bg-background">
-				<div className="flex flex-1 flex-col gap-4 sm:p-0 md:p-4 pt-0">
+			<SidebarInset className="peer-data-[state=collapsed]:ml-0 peer-data-[state=expanded]:ml-[calc(200px)] transition-[margin] duration-200 ease-linear bg-background">
+				<div className="flex flex-1 flex-col gap-4 pt-0">
 					<SidebarTrigger className="ml-2 mt-2 fixed w-10 h-10 z-10" />
-
-					<div className="h-5"></div>
-
 					{children}
 				</div>
 			</SidebarInset>
