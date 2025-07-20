@@ -11,6 +11,7 @@ vi.mock('@paynless/utils', () => ({
     error: vi.fn(),
     debug: vi.fn(),
   },
+  isChatContextPreferences: vi.fn((val) => typeof val === 'object' && val !== null),
 }));
 
 // Mock authStore as its getState().updateProfile is called by _updateChatContextInProfile

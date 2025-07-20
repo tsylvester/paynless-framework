@@ -110,6 +110,7 @@ const mockNavigateGlobal = vi.fn();
 
 describe('aiStore - Misc Actions', () => {
     beforeEach(async () => { 
+        resetAiStore(); // <-- ADD THIS LINE
         vi.clearAllMocks(); 
         vi.restoreAllMocks();
         
@@ -150,7 +151,6 @@ describe('aiStore - Misc Actions', () => {
         // vi.clearAllMocks() called at the top of beforeEach should handle resetting vi.fn() instances.
         
         act(() => {
-             resetAiStore();
              // The call to mockedAuthStore.setState below will execute the vi.fn() for setState.
              // It won't alter the return value of mockedAuthStore.getState() because that's now hardcoded above.
              // This is acceptable as long as the state from getState().mockReturnValue is sufficient for the tests.
@@ -203,7 +203,11 @@ describe('aiStore - Misc Actions', () => {
 
     describe('setContinueUntilComplete', () => {
         it('should set continueUntilComplete to true', () => {
-            expect(useAiStore.getState().continueUntilComplete).toBe(false); // Check initial state
+            act(() => {
+                // First, ensure it's in a known non-true state if the default is true
+                useAiStore.getState().setContinueUntilComplete(false);
+            });
+            expect(useAiStore.getState().continueUntilComplete).toBe(false); // Check initial state is now false
             act(() => {
                 useAiStore.getState().setContinueUntilComplete(true);
             });

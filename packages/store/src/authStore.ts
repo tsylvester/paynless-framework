@@ -59,6 +59,7 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       isLoading: true,
       error: null,
       navigate: null,
+      showWelcomeModal: false,
 
       setNavigate: (navigateFn: NavigateFunction) => set({ navigate: navigateFn }),
 
@@ -73,6 +74,55 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       setError: (error: Error | null) => set({ error }),
 
       clearError: () => set({ error: null }),
+
+      setShowWelcomeModal: (show: boolean) => set({ showWelcomeModal: show }),
+
+      updateSubscriptionAndDismissWelcome: async (subscribe: boolean) => {
+        set({ isLoading: true });
+        try {
+          const updatedProfile = await get().updateProfile({
+            is_subscribed_to_newsletter: subscribe,
+            has_seen_welcome_modal: true,
+          });
+          
+          if (updatedProfile) {
+            set({ showWelcomeModal: false });
+          }
+        } catch (error) {
+          logger.error('Failed to update subscription and dismiss welcome modal', { error });
+          // Optionally, set an error state to be displayed to the user
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      toggleNewsletterSubscription: async (isSubscribed: boolean) => {
+        set({ isLoading: true, error: null });
+        try {
+          // Re-use the existing updateProfile logic for consistency
+          const updatedProfile = await get().updateProfile({
+            is_subscribed_to_newsletter: isSubscribed,
+          });
+
+          if (!updatedProfile) {
+            // updateProfile handles its own errors, but if it returns null,
+            // it indicates a failure (e.g., no session).
+            throw new Error('Failed to update profile for newsletter subscription.');
+          }
+
+          // Success is handled by updateProfile setting the state.
+          // No need to set state here again.
+        } catch (error) {
+          const finalError = error instanceof Error ? error : new Error('Unknown error toggling newsletter subscription');
+          logger.error('Failed to toggle newsletter subscription', { error: finalError.message });
+          // The error state is already set by updateProfile, but we can set it again
+          // to be safe in case the error originated here.
+          set({ error: finalError, isLoading: false });
+        } finally {
+          // updateProfile sets isLoading to false on completion/error.
+          set({ isLoading: false });
+        }
+      },
 
       login: async (email: string, password: string): Promise<void> => {
         logger.info('Attempting to login user via form', { email });
@@ -285,7 +335,7 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         }
         
         try {
-          const response = await api.put<UserProfile, UserProfileUpdate>(
+          const response = await api.post<UserProfile, UserProfileUpdate>(
             'me',
             profileData,
             { token }
@@ -410,47 +460,6 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         // Implementation for updating profile with avatar
         // This is a placeholder and should be implemented
         return null;
-      },
-      showWelcomeModal: false,
-
-      updateSubscriptionAndDismissWelcome: async (subscribe: boolean) => {
-        logger.info(
-          `[AuthStore] Updating subscription status to ${subscribe} and dismissing welcome modal.`
-        );
-        set({ error: null });
-    
-        try {
-          // We can call the existing updateProfile method.
-          // This keeps the logic centralized.
-          const updatedProfile = await get().updateProfile({
-            has_seen_welcome_modal: true,
-            is_subscribed_to_newsletter: subscribe,
-          });
-    
-          if (updatedProfile) {
-            // On successful profile update, hide the modal.
-            set({ showWelcomeModal: false });
-            logger.info(
-              '[AuthStore] Successfully updated profile and hid welcome modal.'
-            );
-          } else {
-            // If updateProfile returns null, it means there was an error.
-            // The error state will already be set by updateProfile.
-            logger.error(
-              '[AuthStore] Failed to update profile via updateSubscriptionAndDismissWelcome.'
-            );
-          }
-        } catch (error) {
-          const finalError =
-            error instanceof Error
-              ? error
-              : new Error('Unknown error during subscription update.');
-          logger.error(
-            '[AuthStore] Unexpected error in updateSubscriptionAndDismissWelcome:',
-            { message: finalError.message }
-          );
-          set({ error: finalError });
-        }
       },
     }))
 

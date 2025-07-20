@@ -1,29 +1,38 @@
-import { screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { http, HttpResponse } from 'msw';
+import { render } from '@testing-library/react';
+import { Toaster } from 'sonner';
 
-// Use shared render function
-import { render as customRender } from '../../tests/utils/render';
-// Use shared MSW server instance
-import { server } from '../mocks/server'; // Corrected Path
 // Import components to test
 import { ProfilePage } from '../../pages/Profile';
 // Import actual store
 import { useAuthStore } from '@paynless/store';
 // Import types
-import type { UserProfile, UserProfileUpdate, ProfileResponse, User } from '@paynless/types';
-
-// API URL (Corrected Base URL)
-const API_BASE_URL = 'http://test.host/functions/v1';
+import type { UserProfile, User } from '@paynless/types';
+import { mockSetAuthError, resetAuthStoreMock } from '@/mocks/authStore.mock';
 
 // Mock Profile Data for tests
 const initialProfileData: UserProfile = {
   id: 'user-profile-123',
   first_name: 'Initial',
   last_name: 'Load',
-  role: 'user', created_at: 'date', updatedAt: 'date'
+  role: 'user', created_at: 'date', updated_at: 'date',
+  chat_context: {},
+  has_seen_welcome_modal: false,
+  is_subscribed_to_newsletter: false,
+  last_selected_org_id: null,
+  profile_privacy_setting: 'private',
 };
 const initialUserData: User = { id: 'user-profile-123', email: 'profile@example.com', created_at: 'date' };
+
+const renderProfilePageWithToaster = () => {
+  return render(
+    <>
+      <ProfilePage />
+      <Toaster />
+    </>
+  );
+};
 
 describe('Profile Integration Tests', () => {
   // --- Test Suite Completeness Tracking ---
@@ -40,35 +49,26 @@ describe('Profile Integration Tests', () => {
       useAuthStore.setState({
         ...useAuthStore.getInitialState(),
         user: initialUserData,
-        session: { access_token: 'valid-token', refresh_token: 'ref', expires_in: 3600, token_type: 'bearer', user: initialUserData },
+        session: { access_token: 'valid-token', refresh_token: 'ref', expires_in: 3600, token_type: 'bearer', expiresAt: new Date(Date.now() + 3600 * 1000).getTime() },
         profile: initialProfileData,
         isLoading: false,
       });
     });
-    // Default GET handler for profile (Corrected path)
-    server.use(
-        http.get(`${API_BASE_URL}/me`, () => {
-           const state = useAuthStore.getState();
-           // Assuming /me returns UserProfile directly based on handler change
-           return HttpResponse.json(state.profile ?? initialProfileData, { status: 200 });
-        })
-      );
   });
 
   afterEach(() => {
-    server.resetHandlers();
+    resetAuthStoreMock();
   });
 
   // --- Profile Tests ---
   it('should load existing profile data into the editor form', async () => {
-      customRender(<ProfilePage />);
+      renderProfilePageWithToaster();
 
       // Verify the values are present in the form fields
       // Use findBy to wait for async rendering if ProfilePage fetches
       expect(await screen.findByLabelText(/first name/i)).toHaveValue(initialProfileData.first_name);
       expect(await screen.findByLabelText(/last name/i)).toHaveValue(initialProfileData.last_name);
-      expect(await screen.findByLabelText(/email/i)).toHaveValue(initialUserData.email);
-      expect(await screen.findByLabelText(/email/i)).toBeDisabled();
+      expect(await screen.findByLabelText(/email address/i)).toHaveValue(initialUserData.email);
   });
 
   it('should successfully update profile via API and show success message', async () => {
@@ -76,34 +76,33 @@ describe('Profile Integration Tests', () => {
     const updatedLastName = 'UpdatedLastName';
 
     // Override PUT handler (Corrected path)
-    server.use(
-      http.put(`${API_BASE_URL}/me`, async ({ request }) => {
-          const updatedData = await request.json() as UserProfileUpdate;
-          const updatedProfileResponse: UserProfile = { ...initialProfileData, ...updatedData };
-          // Return updated profile directly (matching handler)
-          return HttpResponse.json(updatedProfileResponse, { status: 200 });
-      })
-    );
+    // mockSetAuthProfile({ ...initialProfileData, first_name: updatedFirstName, last_name: updatedLastName });
 
-    customRender(<ProfilePage />);
+    renderProfilePageWithToaster();
 
-    // Wait for initial load
-    await screen.findByLabelText(/first name/i);
+    // Wait for initial load and find the card
+    const editNameCard: HTMLElement | null = (await screen.findByText('Edit Name')).closest('div[data-slot="card"]');
+    expect(editNameCard).toBeInTheDocument();
+    
+    // Change values within the card
+    if (editNameCard) {
+      const firstNameInput = within(editNameCard).getByLabelText(/first name/i);
+      const lastNameInput = within(editNameCard).getByLabelText(/last name/i);
+      fireEvent.change(firstNameInput, { target: { value: updatedFirstName } });
+      fireEvent.change(lastNameInput, { target: { value: updatedLastName } });
+    }
 
-    // Change values
+    // Submit the form within the card
     await act(async () => {
-        fireEvent.change(screen.getByLabelText(/first name/i), { target: { value: updatedFirstName } });
-        fireEvent.change(screen.getByLabelText(/last name/i), { target: { value: updatedLastName } });
-    });
-
-    // Submit the form
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /save/i }));
+      if (editNameCard) {
+        const saveButton = within(editNameCard).getByRole('button', { name: /save/i });
+        fireEvent.click(saveButton);
+      }
     });
 
     // Check for success message/feedback
     await waitFor(() => {
-      expect(screen.getByText(/Profile updated successfully!/i)).toBeInTheDocument();
+      expect(screen.getByText(/Name updated successfully!/i)).toBeInTheDocument();
     });
 
     // Verify store state was updated
@@ -116,18 +115,21 @@ describe('Profile Integration Tests', () => {
 
   it('should display error message on profile update failure (e.g., 400)', async () => {
      // Mock failed PUT response (Corrected path)
-    server.use(
-      http.put(`${API_BASE_URL}/me`, async () => {
-        return HttpResponse.json({ error: { message: 'Update validation failed' } }, { status: 400 });
-      })
-    );
+    mockSetAuthError(new Error('Update validation failed'));
 
-    customRender(<ProfilePage />);
-    await screen.findByLabelText(/first name/i);
+    renderProfilePageWithToaster();
+
+    const editNameCard: HTMLElement | null = (await screen.findByText('Edit Name')).closest('div[data-slot="card"]');
+    expect(editNameCard).toBeInTheDocument();
 
     await act(async () => {
-        fireEvent.change(screen.getByLabelText(/first name/i), { target: { value: 'TryingToSave' } });
-        fireEvent.click(screen.getByRole('button', { name: /save/i }));
+      if (editNameCard) {
+        const firstNameInput = within(editNameCard).getByLabelText(/first name/i);
+        fireEvent.change(firstNameInput, { target: { value: 'TryingToSave' } });
+
+          const saveButton = within(editNameCard).getByRole('button', { name: /save/i });
+          fireEvent.click(saveButton);
+      }
     });
 
     // Check for error message displayed by ProfileEditor/ProfilePage

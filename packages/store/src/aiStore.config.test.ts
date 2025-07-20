@@ -98,12 +98,12 @@ describe('aiStore - loadAiConfig', () => {
         });
         
         mockAiApiInstance.getAiProviders.mockResolvedValue({ 
-            data: { providers: [...fullyTypedMockProviders] } as any,
+            data: [...fullyTypedMockProviders],
             status: 200,
             error: undefined
         });
         mockAiApiInstance.getSystemPrompts.mockResolvedValue({ 
-            data: { prompts: [...fullyTypedMockPrompts] } as any,
+            data: [...fullyTypedMockPrompts],
             status: 200, 
             error: undefined
         });
@@ -190,14 +190,14 @@ describe('aiStore - loadAiConfig', () => {
             error: { message: 'Prompt load failure for this part of test', code: 'PROMPT_ERROR' }
         });
         await useAiStore.getState().loadAiConfig();
-        expect(useAiStore.getState().aiError).toBe(errorMsg + " \n" + "Prompt load failure for this part of test");
+        expect(useAiStore.getState().aiError).toBe(errorMsg + " " + "Prompt load failure for this part of test");
 
         mockAiApiInstance.getAiProviders.mockResolvedValue({
-            data: { providers: [...fullyTypedMockProviders] } as any,
+            data: [...fullyTypedMockProviders],
             status: 200, error: undefined
         });
         mockAiApiInstance.getSystemPrompts.mockResolvedValue({
-            data: { prompts: [...fullyTypedMockPrompts] } as any,
+            data: [...fullyTypedMockPrompts],
             status: 200, error: undefined
         });
         await useAiStore.getState().loadAiConfig();
