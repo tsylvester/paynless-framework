@@ -5,7 +5,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { Database, Json } from '../types_db.ts';
 import {
     GenerateContributionsDeps,
-    GenerateContributionsPayload,
+    DialecticJobPayload,
     DialecticContributionRow,
     DialecticJobRow
 } from '../dialectic-service/dialectic.interface.ts';
@@ -27,7 +27,7 @@ export interface IIsolatedExecutionDeps extends GenerateContributionsDeps {
 export async function planComplexStage(
     dbClient: SupabaseClient<Database>,
     parentJob: DialecticJobRow,
-    payload: GenerateContributionsPayload,
+    payload: DialecticJobPayload,
     projectOwnerUserId: string,
     logger: ILogger,
     downloadFromStorage: DownloadStorageFunctionType,
@@ -131,7 +131,7 @@ export async function planComplexStage(
     const { data: models, error: modelsError } = await dbClient
         .from('ai_providers')
         .select('*')
-        .in('id', payload.selectedModelIds);
+        .eq('id', payload.model_id);
 
     if (modelsError) throw new Error(`Failed to fetch models: ${modelsError.message}`);
     if (!models || models.length === 0) throw new Error('No models found for selected IDs.');
@@ -153,9 +153,9 @@ export async function planComplexStage(
 
             const prompt = promptAssembler.render(stage, context, project.user_domain_overlay_values);
 
-            const childPayload: GenerateContributionsPayload = {
+            const childPayload: DialecticJobPayload = {
                 ...payload,
-                selectedModelIds: [model.id], // Isolate to a single model
+                model_id: model.id, // Isolate to a single model
                 target_contribution_id: doc.id // Track the source contribution
             };
 
@@ -190,7 +190,7 @@ export async function planComplexStage(
 export async function executeIsolatedTask(
     dbClient: SupabaseClient<Database>,
     job: DialecticJobRow,
-    payload: GenerateContributionsPayload,
+    payload: DialecticJobPayload,
     projectOwnerUserId: string,
     deps: IIsolatedExecutionDeps,
     authToken: string,
@@ -274,7 +274,7 @@ export async function executeIsolatedTask(
     const { data: models, error: modelsError } = await dbClient
         .from('ai_providers')
         .select('*')
-        .in('id', payload.selectedModelIds);
+        .eq('id', payload.model_id);
     
     if (modelsError) {
         throw new Error(`Failed to fetch selected models: ${modelsError.message}`);

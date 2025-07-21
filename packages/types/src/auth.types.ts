@@ -1,5 +1,6 @@
-import type { Database, Json } from '@paynless/db-types';
+import type { Database } from '@paynless/db-types';
 import { NavigateFunction } from './navigation.types'; // Import NavigateFunction
+import { ChatContextPreferences } from './ai.types';
 // Define interfaces matching the structure of Supabase User/Session objects
 // We only need properties used by our application.
 export interface SupabaseUser {
@@ -55,7 +56,7 @@ export type UserProfileUpdate = {
   first_name?: string | null; // Match DB nullability
   last_name?: string | null; // Match DB nullability
   last_selected_org_id?: string | null; // <<< ADD THIS LINE BACK
-  chat_context?: Json | null; // Added to store user's chat selector preferences
+  chat_context?: ChatContextPreferences | null; // Added to store user's chat selector preferences
   profile_privacy_setting?: ProfilePrivacySetting; // Added for user profile privacy
   is_subscribed_to_newsletter?: boolean; // Added for user newsletter subscription
   has_seen_welcome_modal?: boolean; // Added for user welcome modal seen

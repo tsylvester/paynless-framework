@@ -13,7 +13,7 @@ import type {
  * Its methods are spies that can be configured to return specific values.
  */
 export class MockFileManagerService implements IFileManager {
-  uploadAndRegisterFile: Spy<
+  uploadAndRegisterFileSpy: Spy<
     this,
     [context: UploadContext],
     Promise<FileManagerResponse>
@@ -21,10 +21,16 @@ export class MockFileManagerService implements IFileManager {
   private mockResponse: FileManagerResponse = { record: null, error: { message: 'Default mock error' } };
 
   constructor() {
-    this.uploadAndRegisterFile = spy(async (_context: UploadContext) => {
+    this.uploadAndRegisterFileSpy = spy(async (_context: UploadContext) => {
       // The spy now returns the mockResponse property of the instance.
       return await Promise.resolve(this.mockResponse);
     });
+  }
+
+  // This is the actual method that will be called by the application code.
+  // It's not a spy itself, but it calls the spy.
+  async uploadAndRegisterFile(context: UploadContext): Promise<FileManagerResponse> {
+    return this.uploadAndRegisterFileSpy(context);
   }
 
   /**
@@ -32,7 +38,7 @@ export class MockFileManagerService implements IFileManager {
    * This will still recreate the spy to clear call history.
    */
   reset() {
-    this.uploadAndRegisterFile = spy(async (_context: UploadContext) => {
+    this.uploadAndRegisterFileSpy = spy(async (_context: UploadContext) => {
       return await Promise.resolve({ record: null, error: { message: 'Default mock error' } });
     });
   }

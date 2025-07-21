@@ -1,30 +1,22 @@
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database, Json } from '../types_db.ts';
 import {
-  type GenerateContributionsPayload,
+  type DialecticJobPayload,
   type UnifiedAIResponse,
   type DialecticContributionRow,
+  type IContinueJobDeps,
+  type IContinueJobResult,
 } from '../dialectic-service/dialectic.interface.ts';
 import { shouldContinue } from '../_shared/utils/continue_util.ts';
-import type { ILogger } from '../_shared/types.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 type JobInsert = Database['public']['Tables']['dialectic_generation_jobs']['Insert'];
-
-export interface IContinueJobDeps {
-  logger: ILogger;
-}
-
-export interface IContinueJobResult {
-    enqueued: boolean;
-    error?: Error;
-}
 
 export async function continueJob(
   deps: IContinueJobDeps,
   dbClient: SupabaseClient<Database>,
   job: Job,
-  payload: GenerateContributionsPayload,
+  payload: DialecticJobPayload,
   aiResponse: UnifiedAIResponse,
   savedContribution: DialecticContributionRow,
   projectOwnerUserId: string
@@ -41,7 +33,7 @@ export async function continueJob(
   const newPayload: Json = {
     sessionId: payload.sessionId,
     projectId: payload.projectId,
-    selectedModelIds: payload.selectedModelIds,
+    model_id: payload.model_id,
     stageSlug: payload.stageSlug,
     iterationNumber: payload.iterationNumber,
     continueUntilComplete: payload.continueUntilComplete,

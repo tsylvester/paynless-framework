@@ -6,7 +6,7 @@ import type { Database } from '../types_db.ts';
 import { planComplexStage } from './task_isolator.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 import {
-    GenerateContributionsPayload,
+    DialecticJobPayload,
     DialecticJobRow,
     DialecticStage,
     DialecticContributionRow
@@ -37,12 +37,13 @@ const MOCK_PARENT_JOB: DialecticJobRow = {
     target_contribution_id: null,
 };
 
-const MOCK_PAYLOAD: GenerateContributionsPayload = {
+const MOCK_PAYLOAD: DialecticJobPayload = {
     sessionId: 'session-123',
     projectId: 'project-123',
     stageSlug: 'antithesis',
     iterationNumber: 1,
-    selectedModelIds: ['model-1', 'model-2'],
+    model_id: 'model-1',
+    prompt: 'PROMPT',
 };
 
 const MOCK_STAGE: DialecticStage & { system_prompts: null; domain_specific_prompt_overlays: never[] } = {
@@ -199,8 +200,7 @@ Deno.test('planComplexStage - Happy Path: Generates correct child job payloads',
 
         assertEquals(firstJob.payload.sessionId, MOCK_PAYLOAD.sessionId);
         assertEquals(firstJob.payload.stageSlug, MOCK_PAYLOAD.stageSlug);
-        assertEquals(firstJob.payload.selectedModelIds.length, 1, "Child job should target exactly one model");
-        assertEquals(firstJob.payload.selectedModelIds[0], MOCK_MODELS[0].id);
+        assertEquals(firstJob.payload.model_id, MOCK_PAYLOAD.model_id);
 
         assert(
             firstJob.payload.prompt?.includes("RENDERED_PROMPT: Mocked contribution: Mock content for path: p/f1.md"),
@@ -211,7 +211,7 @@ Deno.test('planComplexStage - Happy Path: Generates correct child job payloads',
         const thirdJob: DialecticJobRow = childJobs[2];
         assert(isDialecticJobPayload(thirdJob.payload), "Third job payload is not a valid DialecticJobPayload");
         
-        assertEquals(thirdJob.payload.selectedModelIds[0], MOCK_MODELS[0].id);
+        assertEquals(thirdJob.payload.model_id, MOCK_PAYLOAD.model_id);
         assert(
             thirdJob.payload.prompt?.includes("RENDERED_PROMPT: Mocked contribution: Mock content for path: p/f2.md"),
             "The dynamically generated prompt is incorrect for the third job"
@@ -571,7 +571,7 @@ Deno.test('planComplexStage - Throws if selectedModelIds is empty', async () => 
         await planComplexStage(
             mockDb as unknown as SupabaseClient<Database>,
             MOCK_PARENT_JOB,
-            { ...MOCK_PAYLOAD, selectedModelIds: [] }, // Empty model IDs
+            { ...MOCK_PAYLOAD, model_id: null } as unknown as DialecticJobPayload, // Empty model IDs
             'user-123',
             mockLogger,
             mockDownloadFromStorage,

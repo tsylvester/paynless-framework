@@ -2,7 +2,7 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database, Json } from '../types_db.ts';
 import type {
-    GenerateContributionsPayload,
+    DialecticJobPayload,
     DialecticJobRow,
 } from '../dialectic-service/dialectic.interface.ts';
 import { planComplexStage } from './task_isolator.ts';
@@ -20,7 +20,7 @@ export interface IPlanComplexJobDeps {
 export async function processComplexJob(
     dbClient: SupabaseClient<Database>,
     job: DialecticJobRow,
-    payload: GenerateContributionsPayload,
+    payload: DialecticJobPayload,
     projectOwnerUserId: string,
     deps: IPlanComplexJobDeps,
 ): Promise<void> {

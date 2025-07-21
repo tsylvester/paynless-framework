@@ -20,7 +20,6 @@ import {
     IWalletService,
     IAiStateService,
     HandleSendMessageServiceParams,
-    Json,
 } from '@paynless/types' // IMPORT NECESSARY TYPES
 
 // Import api AFTER other local/utility imports but BEFORE code that might use types that cause issues with mocking

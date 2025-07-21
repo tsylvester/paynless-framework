@@ -9,6 +9,7 @@
     "jsr:@std/fmt@0.225": "0.225.6",
     "jsr:@std/internal@0.225": "0.225.1",
     "jsr:@std/internal@1": "1.0.7",
+    "jsr:@std/testing@*": "0.225.1",
     "jsr:@std/testing@0.225.1": "0.225.1",
     "jsr:@zip-js/zip-js@*": "2.7.62"
   },

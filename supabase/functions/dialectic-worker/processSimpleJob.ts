@@ -1,455 +1,204 @@
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import type { Database, Json } from '../types_db.ts';
+import type { Database } from '../types_db.ts';
 import {
-  type GenerateContributionsDeps,
-  type GenerateContributionsPayload,
+  type DialecticJobPayload,
   type SelectedAiProvider,
   type FailedAttemptError,
-  type DialecticContributionRow,
   type UnifiedAIResponse,
+  type ProcessSimpleJobDeps,
+  type ModelProcessingResult,
+  type Job,
 } from '../dialectic-service/dialectic.interface.ts';
 import { type UploadContext } from '../_shared/types/file_manager.types.ts';
-import { getSeedPromptForStage } from '../_shared/utils/dialectic_utils.ts';
-import { continueJob } from './continueJob.ts';
-import { retryJob } from './retryJob.ts';
-import { isDialecticContribution, isSelectedAiProvider, validatePayload } from "../_shared/utils/type_guards.ts";
-
-type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
+import { isDialecticContribution, isSelectedAiProvider } from "../_shared/utils/type_guards.ts";
 
 export async function processSimpleJob(
     dbClient: SupabaseClient<Database>,
     job: Job,
-    payload: GenerateContributionsPayload,
+    payload: DialecticJobPayload,
     projectOwnerUserId: string,
-    deps: GenerateContributionsDeps,
+    deps: ProcessSimpleJobDeps,
     authToken: string,
 ) {
-    const { id: jobId } = job;
-
+    const { id: jobId, attempt_count: initialAttemptCount } = job;
     const { 
         iterationNumber = 1, 
         stageSlug, 
         projectId, 
-        selectedModelIds,
+        model_id,
         sessionId,
+        walletId,
+        continueUntilComplete,
     } = payload;
     
     deps.logger.info(`[dialectic-worker] [processJob] Starting for job ID: ${jobId}`);
 
-    const successfulContributions: DialecticContributionRow[] = [];
-    const failedContributionAttempts: FailedAttemptError[] = [];
-    let continuationEnqueued = false;
+    let modelProcessingResult: ModelProcessingResult | undefined;
 
     try {
         if (!stageSlug) throw new Error('stageSlug is required in the payload.');
         if (!projectId) throw new Error('projectId is required in the payload.');
 
-        // This is now redundant as it's fetched for strategy routing
-        // const { data: stage, error: stageError } = await dbClient.from('dialectic_stages').select('*').eq('slug', stageSlug).single();
-        // if (stageError || !stage) throw new Error(`Stage with slug '${stageSlug}' not found.`);
-
         const { data: sessionData, error: sessionError } = await dbClient.from('dialectic_sessions').select('*').eq('id', sessionId).single();
         if (sessionError || !sessionData) throw new Error(`Session ${sessionId} not found.`);
 
-        const renderedPrompt = await getSeedPromptForStage(
-          dbClient,
-          projectId,
-          sessionId,
-          stageSlug,
-          iterationNumber,
-          deps.downloadFromStorage
+        const renderedPrompt = await deps.getSeedPromptForStage(
+          dbClient, projectId, sessionId, stageSlug, iterationNumber, deps.downloadFromStorage
         );
 
-        let modelsToProcess = selectedModelIds || [];
-        let currentAttempt = 0;
+        let providerDetails: SelectedAiProvider | undefined;
+        
+        for (let attempt = 1; attempt <= job.max_retries + 1; attempt++) {
+            try {
+                deps.logger.info(`[dialectic-worker] [processSimpleJob] Processing model ${model_id}, attempt ${attempt}.`);
 
-        for (currentAttempt = 0; currentAttempt <= job.max_retries && modelsToProcess.length > 0; currentAttempt++) {
-            deps.logger.info(`[dialectic-worker] [processJob] Attempt ${currentAttempt + 1} for job ID: ${jobId}`);
-            
-            if (currentAttempt > 0) {
-                const retryResult = await retryJob(
-                    { logger: deps.logger },
-                    dbClient,
-                    job,
-                    currentAttempt,
-                    failedContributionAttempts,
-                    projectOwnerUserId
-                );
-
-                if (retryResult.error) {
-                    // If even updating the retry status fails, we have a bigger problem.
-                    // Throw the error to be caught by the main catch block and fail the job.
-                    throw retryResult.error;
-                }
-            }
-
-            const currentAttemptFailedModels: FailedAttemptError[] = [];
-            
-            const modelPromises = modelsToProcess.map(async (modelCatalogId: string) => {
-              let providerDetails: SelectedAiProvider;
-              try {
-                const { data: providerData, error: providerError } = await dbClient.from('ai_providers').select('*').eq('id', modelCatalogId).single();
-                if (providerError || !providerData) throw new Error(`Failed to fetch provider details for model ID ${modelCatalogId}.`);
-                
-                if (!isSelectedAiProvider(providerData)) {
-                  throw new Error(`Fetched provider data for model ID ${modelCatalogId} does not match expected structure.`);
+                const { data: providerData, error: providerError } = await dbClient.from('ai_providers').select('*').eq('id', model_id).single();
+                if (providerError || !providerData || !isSelectedAiProvider(providerData)) {
+                    throw new Error(`Failed to fetch valid provider details for model ID ${model_id}.`);
                 }
                 providerDetails = providerData;
 
-                // Send started notification for every model we begin processing
-                if (projectOwnerUserId) {
-                  await dbClient.rpc('create_notification_for_user', {
-                    target_user_id: projectOwnerUserId,
-                    notification_type: 'dialectic_contribution_started',
-                    notification_data: {
-                      sessionId,
-                      stageSlug,
-                      model_id: providerDetails.id,
-                    },
-                  });
+                if (attempt === 1 && projectOwnerUserId) {
+                    await dbClient.rpc('create_notification_for_user', {
+                        target_user_id: projectOwnerUserId, notification_type: 'dialectic_contribution_started',
+                        notification_data: { sessionId, stageSlug, model_id: providerDetails.id },
+                    });
                 }
-
-              } catch (e) {
-                const error = e instanceof Error ? e : new Error(String(e));
-                currentAttemptFailedModels.push({ modelId: modelCatalogId, error: error.message, api_identifier: 'unknown' });
-                return;
-              }
-              
-              // --- Start of Continuation Handling Logic ---
-              let previousContent = '';
-              if (payload.target_contribution_id) {
-                try {
-                  deps.logger.info(`[dialectic-worker] [processJob] This is a continuation job. Fetching previous content for contribution ${payload.target_contribution_id}.`);
-                  const { data: prevContribution, error: prevContribError } = await dbClient
-                    .from('dialectic_contributions')
-                    .select('storage_path, storage_bucket, file_name')
-                    .eq('id', payload.target_contribution_id)
-                    .single();
-
-                  if (prevContribError || !prevContribution) {
-                    throw new Error(`Failed to find previous contribution record ${payload.target_contribution_id}: ${prevContribError?.message || 'Not found'}`);
-                  }
-                  
-                  const { data: downloadedData, error: downloadError } = await deps.downloadFromStorage(
-                    dbClient,
-                    prevContribution.storage_bucket,
-                    prevContribution.storage_path && prevContribution.file_name ? `${prevContribution.storage_path}/${prevContribution.file_name}` : ''
-                  );
-
-                  if (downloadError || !downloadedData) {
-                    throw new Error(`Failed to download previous content: ${downloadError?.message || 'No data'}`);
-                  }
-                  
-                  previousContent = new TextDecoder().decode(downloadedData);
-
-                } catch(e) {
-                   const error = e instanceof Error ? e : new Error(String(e));
-                   deps.logger.error(`[dialectic-worker] [processJob] Failed to process continuation for job ${jobId}.`, { error });
-                   currentAttemptFailedModels.push({ modelId: modelCatalogId, api_identifier: providerDetails.api_identifier, error: `Failed to retrieve previous content for continuation: ${error.message}` });
-                   return;
+                
+                let previousContent = '';
+                if (payload.target_contribution_id) {
+                     const { data: prevContribution, error: prevContribError } = await dbClient
+                      .from('dialectic_contributions').select('storage_path, storage_bucket, file_name').eq('id', payload.target_contribution_id).single();
+                    if (prevContribError || !prevContribution) throw new Error(`Failed to find previous contribution record ${payload.target_contribution_id}.`);
+                    
+                    const { data: downloadedData, error: downloadError } = await deps.downloadFromStorage(dbClient, prevContribution.storage_bucket!, `${prevContribution.storage_path!}/${prevContribution.file_name!}`);
+                    if (downloadError || !downloadedData) throw new Error(`Failed to download previous content.`);
+                    previousContent = new TextDecoder().decode(downloadedData);
                 }
-              }
-              // --- End of Continuation Handling Logic ---
-              
-              const fullPrompt = previousContent || renderedPrompt.content;
-              
-              const aiResponse: UnifiedAIResponse = await deps.callUnifiedAIModel(
-                providerDetails.api_identifier, 
-                fullPrompt, 
-                sessionData.associated_chat_id ?? undefined, 
-                authToken, 
-                undefined, 
-                false
-              );
-        
-              if (aiResponse.error || !aiResponse.content) {
-                currentAttemptFailedModels.push({ 
-                    modelId: modelCatalogId, 
-                    api_identifier: providerDetails.api_identifier, 
-                    error: `AI response error: ${aiResponse.error || 'Unknown error'}`, 
-                    code: aiResponse.errorCode ?? undefined,
-                    inputTokens: aiResponse.inputTokens,
-                    outputTokens: aiResponse.outputTokens,
-                    processingTimeMs: aiResponse.processingTimeMs,
-                });
-                return;
-              }
+                
+                const options = {
+                    walletId: walletId,
+                };
 
-              const finalContent = previousContent + (aiResponse.content || '');
-              const determinedContentType = aiResponse.contentType || "text/markdown";
-
-              const uploadContext: UploadContext = {
-                  pathContext: {
-                      projectId: projectId,
-                      fileType: 'model_contribution_main',
-                      sessionId: sessionId,
-                      iteration: iterationNumber,
-                      stageSlug: stageSlug,
-                      modelSlug: providerDetails.api_identifier,
-                      originalFileName: `${providerDetails.api_identifier}_${stageSlug}${deps.getExtensionFromMimeType(determinedContentType)}`,
-                  },
-                  fileContent: finalContent,
-                  mimeType: determinedContentType,
-                  sizeBytes: finalContent.length,
-                  userId: projectOwnerUserId,
-                  description: `Contribution for stage '${stageSlug}' by model ${providerDetails.name}`,
-                  contributionMetadata: {
-                      sessionId: sessionId,
-                      modelIdUsed: providerDetails.id,
-                      modelNameDisplay: providerDetails.name,
-                      stageSlug: stageSlug,
-                      iterationNumber: iterationNumber,
-                      rawJsonResponseContent: JSON.stringify(aiResponse.rawProviderResponse || {}),
-                      tokensUsedInput: aiResponse.inputTokens,
-                      tokensUsedOutput: aiResponse.outputTokens,
-                      processingTimeMs: aiResponse.processingTimeMs,
-                      seedPromptStoragePath: renderedPrompt.fullPath,
-                      target_contribution_id: payload.target_contribution_id,
-                  },
-              };
-         
-               const savedResult = await deps.fileManager.uploadAndRegisterFile(uploadContext);
-
-              if (savedResult.error) {
-                currentAttemptFailedModels.push({ modelId: modelCatalogId, api_identifier: providerDetails.api_identifier, error: `Failed to save contribution: ${savedResult.error.message}` });
-                return;
-              } else if (isDialecticContribution(savedResult.record)) {
-                // The record has been safely validated by the type guard.
-                successfulContributions.push(savedResult.record);
-
-                // --- Continuation Logic ---
-                // Replace the inline logic with a call to the dedicated continueJob function.
-                const continueResult = await continueJob(
-                    { logger: deps.logger },
-                    dbClient,
-                    job,
-                    payload,
-                    aiResponse,
-                    savedResult.record,
-                    projectOwnerUserId
+                const aiResponse: UnifiedAIResponse = await deps.callUnifiedAIModel(
+                    providerDetails.api_identifier, previousContent || renderedPrompt.content, sessionData.associated_chat_id, authToken, options, continueUntilComplete
                 );
+          
+                if (aiResponse.error || !aiResponse.content) {
+                    throw new Error(aiResponse.error || 'AI response was empty.');
+                }
 
-                // The original notification logic is preserved, but now it uses the result from continueJob.
+                const finalContent = previousContent + aiResponse.content;
+                const uploadContext: UploadContext = {
+                    pathContext: {
+                        projectId, fileType: 'model_contribution_main', sessionId, iteration: iterationNumber,
+                        stageSlug, modelSlug: providerDetails.api_identifier,
+                        originalFileName: `${providerDetails.api_identifier}_${stageSlug}${deps.getExtensionFromMimeType(aiResponse.contentType || "text/markdown")}`,
+                    },
+                    fileContent: finalContent, mimeType: aiResponse.contentType || "text/markdown",
+                    sizeBytes: finalContent.length, userId: projectOwnerUserId,
+                    description: `Contribution for stage '${stageSlug}' by model ${providerDetails.name}`,
+                    contributionMetadata: {
+                        sessionId, modelIdUsed: providerDetails.id, modelNameDisplay: providerDetails.name,
+                        stageSlug, iterationNumber, rawJsonResponseContent: JSON.stringify(aiResponse.rawProviderResponse || {}),
+                        tokensUsedInput: aiResponse.inputTokens, tokensUsedOutput: aiResponse.outputTokens,
+                        processingTimeMs: aiResponse.processingTimeMs, seedPromptStoragePath: renderedPrompt.fullPath,
+                        target_contribution_id: payload.target_contribution_id,
+                    },
+                };
+           
+                const savedResult = await deps.fileManager.uploadAndRegisterFile(uploadContext);
+
+                deps.logger.info(`[dialectic-worker] [processSimpleJob] Received record from fileManager: ${JSON.stringify(savedResult.record, null, 2)}`);
+
+                if (savedResult.error || !isDialecticContribution(savedResult.record)) {
+                    throw new Error(`Failed to save contribution: ${savedResult.error?.message || 'Invalid record returned.'}`);
+                }
+
+                const contribution = savedResult.record;
+                const continueResult = await deps.continueJob({ logger: deps.logger }, dbClient, job, payload, aiResponse, contribution, projectOwnerUserId);
+                
                 if (projectOwnerUserId) {
                     await dbClient.rpc('create_notification_for_user', {
-                        target_user_id: projectOwnerUserId,
-                        notification_type: 'dialectic_contribution_received',
-                        notification_data: { 
-                            contribution: { 
-                                id: savedResult.record.id,
-                                session_id: savedResult.record.session_id,
-                                stage: savedResult.record.stage,
-                                model_name: savedResult.record.model_name,
-                                file_name: savedResult.record.file_name,
-                                contribution_type: savedResult.record.contribution_type
-                            },
-                            is_continuing: continueResult.enqueued,
-                        },
+                        target_user_id: projectOwnerUserId, notification_type: 'dialectic_contribution_received',
+                        notification_data: { contribution: { id: contribution.id, session_id: contribution.session_id, stage: contribution.stage, model_name: contribution.model_name, file_name: contribution.file_name, contribution_type: contribution.contribution_type }, is_continuing: continueResult.enqueued, },
                     });
                 }
 
-                // Handle the outcome of the continuation attempt.
-                if (continueResult.enqueued) {
-                    continuationEnqueued = true;
-                    deps.logger.info(`[dialectic-worker] [processJob] Successfully enqueued continuation job for contribution ${savedResult.record.id}.`);
-                } else if (continueResult.error) {
-                    // If enqueuing failed, log it as a failure for this model's attempt.
-                    deps.logger.error(`[dialectic-worker] [processJob] Failed to enqueue continuation job.`, { error: continueResult.error });
-                    currentAttemptFailedModels.push({ 
-                        modelId: modelCatalogId, 
-                        api_identifier: providerDetails.api_identifier, 
-                        error: continueResult.error.message 
-                    });
-                }
-                // --- End Continuation Logic ---
+                modelProcessingResult = { modelId: model_id, status: continueResult.enqueued ? 'needs_continuation' : 'completed', attempts: attempt, contributionId: contribution.id };
+                break; // Success, exit this model's processing loop.
 
-              } else {
-                // This case handles when the record is null or not a valid DialecticContribution.
-                currentAttemptFailedModels.push({
-                  modelId: modelCatalogId,
-                  api_identifier: providerDetails.api_identifier,
-                  error: 'Failed to save contribution: The record returned from storage was invalid or null.',
-                });
-                return;
-              }
-            });
-        
-            await Promise.allSettled(modelPromises);
-
-            if (currentAttemptFailedModels.length > 0) {
-                failedContributionAttempts.push(...currentAttemptFailedModels);
-                modelsToProcess = currentAttemptFailedModels.map(f => f.modelId);
-                if (currentAttempt >= job.max_retries) {
-                    deps.logger.error(`[dialectic-worker] [processJob] Job ${jobId} failed after exhausting all ${job.max_retries} retries.`);
-                }
-            } else {
-                // All models in this attempt succeeded, so we can exit the loop.
-                modelsToProcess = [];
-                // If a continuation was created, we stop processing this job here.
-                if (continuationEnqueued) {
-                    deps.logger.info(`[dialectic-worker] [processJob] Job ${jobId} has enqueued a continuation. Completing current job without sending final notification.`);
-                    
-                    try {
-                        const { error } = await dbClient.from('dialectic_generation_jobs').update({
-                            status: 'completed',
-                            completed_at: new Date().toISOString(),
-                            results: {
-                                successfulContributions: successfulContributions.map(c => ({ ...c })),
-                                status_reason: 'Job completed by dispatching a continuation job.'
-                            },
-                        }).eq('id', jobId);
-
-                        if (error) {
-                            deps.logger.error(`[dialectic-worker] [processJob] FATAL: Failed to update job status to completed for job ${jobId}.`, { error });
-                        }
-                    } catch (updateError) {
-                        deps.logger.error(`[dialectic-worker] [processJob] FATAL: Failed to update job status to 'completed' for continuation job ${jobId}.`, { error: updateError });
-                    }
-                    return; // Exit completely.
+            } catch (e) {
+                const error: FailedAttemptError = {
+                    modelId: model_id,
+                    api_identifier: providerDetails?.api_identifier || 'unknown',
+                    error: e instanceof Error ? e.message : String(e),
+                };
+                deps.logger.warn(`[dialectic-worker] [processSimpleJob] Attempt ${attempt} failed for model ${model_id}: ${error.error}`);
+                
+                if (attempt <= job.max_retries) {
+                    await deps.retryJob({ logger: deps.logger }, dbClient, job, attempt, [error], projectOwnerUserId);
+                } else {
+                    modelProcessingResult = { modelId: model_id, status: 'failed', attempts: attempt, error: error.error };
+                    break; // Failed all retries, exit loop.
                 }
             }
         }
         
-        // --- Final Result Processing ---
-        const successfulModelIds = new Set(successfulContributions.map(c => c.model_id));
-        const finalFailedModels = selectedModelIds.filter(id => !successfulModelIds.has(id));
-
-        // Find the last recorded error for each model that ultimately failed.
-        const finalFailedAttempts: FailedAttemptError[] = finalFailedModels.map(failedId => {
-            return failedContributionAttempts.slice().reverse().find(a => a.modelId === failedId)
-                || { modelId: failedId, error: 'Model failed to produce a contribution after all retries.', api_identifier: 'unknown' };
-        });
-    
-        if (finalFailedAttempts.length === 0) {
-            const resultsJson: Json = {
-              successfulContributions: successfulContributions.map(c => ({ ...c })),
-              failedAttempts: [], // No final failures
-            };
+        // If a job spawns a continuation, its own status is 'completed'. The 'needs_continuation' state is tracked in the results.
+        const finalStatus = modelProcessingResult?.status === 'needs_continuation' ? 'completed' : (modelProcessingResult?.status || 'failed');
+        deps.logger.info(`[dialectic-worker] [processJob] Job ${jobId} finished. Results: ${JSON.stringify(modelProcessingResult)}. Final Status: ${finalStatus}`);
         
-            try {
-                const { error } = await dbClient.from('dialectic_generation_jobs').update({
-                    status: 'completed',
-                    completed_at: new Date().toISOString(),
-                    results: resultsJson,
-                    attempt_count: currentAttempt,
-                  }).eq('id', jobId);
-            
-                if (error) {
-                    deps.logger.error(`[dialectic-worker] [processJob] FATAL: Failed to update job status to completed for job ${jobId}.`, { error });
-                    throw error;
-                }
+        // Final update to the job with results
+        const { error: updateError } = await dbClient.from('dialectic_generation_jobs').update({
+            status: finalStatus,
+            results: JSON.stringify({ modelProcessingResult }),
+            completed_at: new Date().toISOString(),
+            attempt_count: initialAttemptCount + 1,
+        }).eq('id', jobId);
 
-                if (projectOwnerUserId) {
-                    const notificationTitle = `Contribution Generation Complete`;
-                    const notificationMessage = `We've finished generating contributions for stage: ${stageSlug}.`;
-                    await dbClient.rpc('create_notification_for_user', {
-                        target_user_id: projectOwnerUserId,
-                        notification_type: 'contribution_generation_complete',
-                        notification_data: { 
-                            title: notificationTitle,
-                            message: notificationMessage,
-                            sessionId: sessionId,
-                            stageSlug: stageSlug,
-                            finalStatus: `${stageSlug}_generation_complete`,
-                            successful_contributions: successfulContributions.map(c => c.id),
-                            failed_contributions: [],
-                        },
-                    });
-                }
-            } catch (updateError) {
-                // Don't log here as it will be caught and logged by the outer exception handler
-                throw updateError;
-            }
-        } else {
-            const errorDetails = {
-                final_error: `Job failed for ${finalFailedAttempts.length} model(s) after exhausting all ${job.max_retries} retries.`,
-                failedAttempts: finalFailedAttempts.map(e => ({...e})),
-                successfulContributions: successfulContributions.map(c => ({...c})),
-            };
-            const { error } = await dbClient.from('dialectic_generation_jobs').update({
-                status: 'retry_loop_failed',
-                completed_at: new Date().toISOString(),
-                error_details: errorDetails,
-                attempt_count: currentAttempt + 1,
-            }).eq('id', jobId);
+        if (updateError) {
+            deps.logger.error(`[dialectic-worker] [processJob] CRITICAL: Failed to update job ${jobId} with final results.`, { error: updateError });
+        }
 
-            if (error) {
-                deps.logger.error(`[dialectic-worker] [processJob] FATAL: Failed to update job status to retry_loop_failed for job ${jobId}.`, { error });
-            }
+        // Send final notifications based on outcome
+        if (projectOwnerUserId && modelProcessingResult) {
+            const isSuccess = modelProcessingResult.status === 'completed' || modelProcessingResult.status === 'needs_continuation';
+            const isFailure = modelProcessingResult.status === 'failed';
 
-            if (projectOwnerUserId) {
-                const notificationTitle = `Contribution Generation Issues`;
-                let notificationMessage = `Generation for stage '${stageSlug}' finished with ${finalFailedAttempts.length} error(s). Click to review.`;
-                if (successfulContributions.length === 0) {
-                    notificationMessage = `Generation for stage '${stageSlug}' failed for all models. Please review the errors and try again.`;
-                }
-
-                // Send failure notification for the failed models
-                await dbClient.rpc('create_notification_for_user', {
-                    target_user_id: projectOwnerUserId,
-                    notification_type: 'contribution_generation_failed',
-                    notification_data: { 
-                        title: notificationTitle,
-                        message: notificationMessage,
-                        sessionId: sessionId, 
-                        stageSlug: stageSlug, 
-                        error: errorDetails,
-                        successful_contributions: successfulContributions.map(c => c.id),
-                        failed_contributions: finalFailedAttempts.map(f => f.modelId),
-                    },
-                });
-
-                // For partial failures (some succeeded), also send completion notification
-                if (successfulContributions.length > 0) {
-                    const completionTitle = `Contribution Generation Complete`;
-                    const completionMessage = `We've finished generating contributions for stage: ${stageSlug}.`;
-                    await dbClient.rpc('create_notification_for_user', {
-                        target_user_id: projectOwnerUserId,
-                        notification_type: 'contribution_generation_complete',
-                        notification_data: { 
-                            title: completionTitle,
-                            message: completionMessage,
-                            sessionId: sessionId,
-                            stageSlug: stageSlug,
-                            finalStatus: `${stageSlug}_generation_complete`,
-                            successful_contributions: successfulContributions.map(c => c.id),
-                            failed_contributions: finalFailedAttempts.map(f => f.modelId),
-                        },
-                    });
-                }
-            }
+            await dbClient.rpc('create_notification_for_user', {
+                target_user_id: projectOwnerUserId,
+                notification_type: isFailure ? 'contribution_generation_failed' : 'contribution_generation_complete',
+                notification_data: {
+                    message: `Generation for stage '${stageSlug}' has finished.`,
+                    sessionId: sessionId,
+                    stageSlug: stageSlug,
+                    successful_contributions: isSuccess && modelProcessingResult.contributionId ? [modelProcessingResult.contributionId] : [],
+                    failed_contributions: isFailure ? [model_id] : [],
+                },
+            });
         }
 
     } catch (e) {
         const error = e instanceof Error ? e : new Error(String(e));
-        deps.logger.error(`[dialectic-worker] [processJob] Unhandled error in job ${jobId}`, { error });
+        deps.logger.error(`[dialectic-worker] [processJob] Unrecoverable error in job ${jobId}.`, { error: error.message, stack: error.stack });
         
-        const errorDetails = {
-          final_error: error.message,
-          failedAttempts: failedContributionAttempts.map(e => ({...e})),
-        };
+        try {
+            const { error: finalUpdateError } = await dbClient
+                .from('dialectic_generation_jobs')
+                .update({
+                    status: 'failed',
+                    error_details: JSON.stringify({ unrecoverableError: error.message, modelProcessingResult }),
+                    completed_at: new Date().toISOString(),
+                })
+                .eq('id', jobId);
 
-        if (projectOwnerUserId) {
-            await dbClient.rpc('create_notification_for_user', {
-                target_user_id: projectOwnerUserId,
-                notification_type: 'contribution_generation_failed',
-                notification_data: { 
-                    sessionId: payload.sessionId, 
-                    stageSlug: payload.stageSlug, 
-                    error: errorDetails,
-                },
-            });
-        }
-    
-        const { error: finalUpdateError } = await dbClient.from('dialectic_generation_jobs').update({
-            status: 'failed',
-            completed_at: new Date().toISOString(),
-            error_details: errorDetails,
-            attempt_count: job.attempt_count + 1,
-        }).eq('id', jobId);
-
-        if (finalUpdateError) {
-            deps.logger.error(`[dialectic-worker] [processJob] FATAL: Failed to update job ${jobId} to 'failed' status after another error.`, { originalError: error, finalUpdateError });
+            if (finalUpdateError) {
+                throw new Error(`Primary error: ${error.message}. Additionally, failed to mark job as 'failed': ${finalUpdateError.message}`);
+            }
+        } catch (finalError) {
+            const final = finalError instanceof Error ? finalError : new Error(String(finalError));
+            deps.logger.error(`[dialectic-worker] [processJob] CRITICAL: Failed to mark job ${jobId} as 'failed' in the database after another error.`, { finalError: final.message, finalStack: final.stack });
         }
     }
 }

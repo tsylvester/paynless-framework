@@ -11,7 +11,6 @@ import {
   DialecticContribution,
   DomainOverlayDescriptor,
   StartSessionSuccessResponse,
-  GenerateContributionsSuccessResponse,
   GetProjectResourceContentPayload,
   GetProjectResourceContentResponse,
   SaveContributionEditPayload,
@@ -25,7 +24,11 @@ import {
   GetContributionContentDataResponse,
   GetSessionDetailsResponse,
   GenerateContributionsDeps,
-  FailedAttemptError,
+  GetContributionContentDataPayload,
+  DeleteProjectPayload,
+  CloneProjectPayload,
+  ExportProjectPayload,
+  StorageError
 } from "./dialectic.interface.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import {
@@ -116,7 +119,7 @@ export const createSignedUrlDefaultFn: CreateSignedUrlFn = async (client, bucket
     }
     // If it's not an Error instance, create a new one.
     // This handles cases where 'error' might be a Supabase specific error object that isn't a JS Error.
-    const storageError = error as { message?: string; error?: string; statusCode?: string };
+    const storageError: StorageError = error;
     return { signedUrl: null, error: new Error(storageError.message || 'Storage error creating signed URL') };
   }
   return { signedUrl: data?.signedUrl || null, error: null };
@@ -132,7 +135,7 @@ export interface ActionHandlers {
   getSessionDetails: (payload: GetSessionDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetSessionDetailsResponse; error?: ServiceError; status?: number }>;
   getContributionContentHandler: (getUserFn: GetUserFn, dbClient: SupabaseClient, logger: ILogger, payload: { contributionId: string }) => Promise<{ data?: GetContributionContentDataResponse; error?: ServiceError; status?: number }>;
   startSession: (user: User, dbClient: SupabaseClient, payload: StartSessionPayload, dependencies: { logger: ILogger }) => Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }>;
-  generateContributions: (dbClient: SupabaseClient, payload: GenerateContributionsPayload, authToken: string, deps: GenerateContributionsDeps) => Promise<{ success: boolean; data?: { job_id: string; }; error?: { message: string; status?: number; details?: unknown; code?: string; }; }>;
+  generateContributions: (dbClient: SupabaseClient, payload: GenerateContributionsPayload, user: User, deps: GenerateContributionsDeps) => Promise<{ success: boolean; data?: { job_ids: string[]; }; error?: { message: string; status?: number; details?: unknown; code?: string; }; }>;
   listProjects: (user: User, dbClient: SupabaseClient) => Promise<{ data?: DialecticProject[]; error?: ServiceError; status?: number }>;
   listAvailableDomainOverlays: (stageAssociation: string, dbClient: SupabaseClient) => Promise<DomainOverlayDescriptor[]>;
   deleteProject: (dbClient: SupabaseClient, payload: { projectId: string }, userId: string) => Promise<{data?: null, error?: { message: string; details?: string | undefined; }, status?: number}>;
@@ -166,7 +169,10 @@ export async function handleRequest(
     if (error) {
       return { data: { user: null }, error: { message: error.message, status: error.status || 500, code: error.name || 'AUTH_ERROR' } };
     }
-    return { data: { user: user as User | null }, error: null };
+    if (!user) {
+      return { data: { user: null }, error: { message: "User not authenticated", status: 401, code: 'AUTH_TOKEN_MISSING' } };
+    }
+    return { data: { user: user }, error: null };
   };
 
   try {
@@ -174,7 +180,7 @@ export async function handleRequest(
 
     if (req.method === 'POST' && contentType?.startsWith("multipart/form-data")) {
       const formData = await req.formData();
-      const action = formData.get('action') as string | null;
+      const action: FormDataEntryValue | null = formData.get('action');
       logger.info('Multipart POST request received', { actionFromFormData: action });
 
       const { data: userData, error: userError } = await getUserFnForRequest();
@@ -249,7 +255,8 @@ export async function handleRequest(
             return createSuccessResponse(data, 200, req);
         }
         case "fetchProcessTemplate": {
-          const { data, error, status } = await handlers.fetchProcessTemplate(userClient, requestBody.payload as FetchProcessTemplatePayload);
+          const payload: FetchProcessTemplatePayload = requestBody.payload;
+          const { data, error, status } = await handlers.fetchProcessTemplate(userClient, payload);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }
@@ -265,27 +272,29 @@ export async function handleRequest(
           return createSuccessResponse(data, 200, req);
         }
         case "getProjectDetails": {
-          if (!requestBody.payload || !(requestBody.payload as GetProjectDetailsPayload).projectId) {
+          const payload: GetProjectDetailsPayload = requestBody.payload;
+          if (!payload || !payload.projectId) {
             return createErrorResponse("projectId is required for getProjectDetails", 400, req, { message: "projectId is required for getProjectDetails", code: "VALIDATION_ERROR" });
           }
-          const { data, error, status } = await handlers.getProjectDetails(requestBody.payload as GetProjectDetailsPayload, adminClient, userForJson!);
+          const { data, error, status } = await handlers.getProjectDetails(payload, userClient, userForJson!);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }
           return createSuccessResponse(data, status || 200, req);
         }
         case "getSessionDetails": {
-          if (!requestBody.payload || !(requestBody.payload as GetSessionDetailsPayload).sessionId) {
+          const payload: GetSessionDetailsPayload = requestBody.payload;
+          if (!payload || !payload.sessionId) {
             return createErrorResponse("sessionId is required for getSessionDetails", 400, req, { message: "sessionId is required for getSessionDetails", code: "VALIDATION_ERROR"});
           }
-          const { data, error, status } = await handlers.getSessionDetails(requestBody.payload as GetSessionDetailsPayload, adminClient, userForJson!);
+          const { data, error, status } = await handlers.getSessionDetails(payload, adminClient, userForJson!);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }
           return createSuccessResponse(data, status || 200, req);
         }
         case "updateProjectDomain": {
-          const payload = requestBody.payload as UpdateProjectDomainPayload;
+          const payload: UpdateProjectDomainPayload = requestBody.payload;
           if (!payload || !payload.projectId || !payload.selectedDomainId) {
             return createErrorResponse("projectId and domainId are required.", 400, req, { message: "projectId and domainId are required.", status: 400 });
           }
@@ -296,7 +305,7 @@ export async function handleRequest(
           return createSuccessResponse(data, 200, req);
         }
         case "startSession": {
-          const payload = requestBody.payload as StartSessionPayload;
+          const payload: StartSessionPayload = requestBody.payload;
           if (!payload || !payload.projectId) {
             return createErrorResponse("projectId is required.", 400, req, { message: "projectId is required.", status: 400 });
           }
@@ -308,16 +317,16 @@ export async function handleRequest(
         }
         case "generateContributions": {
           logger.info("[generateContributions handler] Entered handler.");
-          if (!authToken) {
-            logger.error("[generateContributions handler] Auth token missing.");
-            return createErrorResponse("Auth token is required for generateContributions.", 401, req);
-          }
           if (!userForJson) {
             logger.error("[generateContributions handler] User object missing.");
             return createErrorResponse("User is required for generateContributions.", 401, req);
           }
 
-          const payload: GenerateContributionsPayload = requestBody.payload;
+          if (requestBody.action !== "generateContributions") {
+            // This check is for type-narrowing and should not be hit in practice.
+            return createErrorResponse("Internal server error: action mismatch.", 500, req);
+          }
+          const payload = requestBody.payload;
 
           logger.info("[generateContributions handler] Creating dependencies.");
           const deps: GenerateContributionsDeps = {
@@ -335,7 +344,7 @@ export async function handleRequest(
             handlers.generateContributions(
               adminClient,
               payload,
-              authToken,
+              userForJson,
               deps,
             )
           );
@@ -344,7 +353,7 @@ export async function handleRequest(
           return createSuccessResponse({ message: "Contribution generation initiated." }, 202, req);
         }
         case "getContributionContentData": {
-          const payload = requestBody.payload as { contributionId: string };
+          const payload: GetContributionContentDataPayload = requestBody.payload;
           if (!payload || !payload.contributionId) {
             return createErrorResponse("contributionId is required.", 400, req, { message: "contributionId is required.", status: 400 });
           }
@@ -355,7 +364,7 @@ export async function handleRequest(
           return createSuccessResponse(data, 200, req);
         }
         case "deleteProject": {
-          const payload = requestBody.payload as { projectId: string };
+          const payload: DeleteProjectPayload = requestBody.payload;
           if (!payload || !payload.projectId) {
             return createErrorResponse("projectId is required for deleteProject.", 400, req, { message: "projectId is required for deleteProject.", status: 400 });
           }
@@ -366,7 +375,7 @@ export async function handleRequest(
           return createSuccessResponse(data, status || 204, req);
         }
         case "cloneProject": {
-          const payload = requestBody.payload as { projectId: string, newProjectName?: string };
+          const payload: CloneProjectPayload = requestBody.payload;
           if (!payload || !payload.projectId) {
               return createErrorResponse("projectId is required for cloneProject.", 400, req, { message: "projectId is required for cloneProject.", status: 400 });
           }
@@ -377,7 +386,7 @@ export async function handleRequest(
           return createSuccessResponse(data, 201, req);
         }
         case "exportProject": {
-          const payload = requestBody.payload as { projectId: string };
+          const payload: ExportProjectPayload = requestBody.payload;
           if (!payload || !payload.projectId) {
             return createErrorResponse("projectId is required for exportProject.", 400, req, { message: "projectId is required for exportProject.", status: 400 });
           }
@@ -392,7 +401,7 @@ export async function handleRequest(
           return createSuccessResponse(data, status || 200, req);
         }
         case "getProjectResourceContent": {
-          const payload = requestBody.payload as GetProjectResourceContentPayload;
+          const payload: GetProjectResourceContentPayload = requestBody.payload;
           if (!payload || !payload.resourceId) {
             return createErrorResponse("resourceId is required.", 400, req, { message: "resourceId is required.", status: 400 });
           }
@@ -403,7 +412,8 @@ export async function handleRequest(
           return createSuccessResponse(data, 200, req);
         }
         case "saveContributionEdit": {
-          const { data, error, status } = await handlers.saveContributionEdit(requestBody.payload as SaveContributionEditPayload, userClient, userForJson!, logger);
+          const payload: SaveContributionEditPayload = requestBody.payload;
+          const { data, error, status } = await handlers.saveContributionEdit(payload, userClient, userForJson!, logger);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }
@@ -415,7 +425,8 @@ export async function handleRequest(
             fileManager,
             downloadFromStorage,
           };
-          const { data, error, status } = await handlers.submitStageResponses(requestBody.payload as SubmitStageResponsesPayload, adminClient, userForJson!, dependencies);
+          const payload: SubmitStageResponsesPayload = requestBody.payload;
+          const { data, error, status } = await handlers.submitStageResponses(payload, adminClient, userForJson!, dependencies);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }
@@ -425,7 +436,8 @@ export async function handleRequest(
           if (!userForJson) {
             return createErrorResponse('User not authenticated for updateSessionModels', 401, req, { message: "User not authenticated", status: 401, code: 'USER_AUTH_FAILED' });
           }
-          const { data, error, status } = await handlers.updateSessionModels(adminClient, requestBody.payload as UpdateSessionModelsPayload, userForJson.id);
+          const payload: UpdateSessionModelsPayload = requestBody.payload;
+          const { data, error, status } = await handlers.updateSessionModels(adminClient, payload, userForJson.id);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }
@@ -433,7 +445,7 @@ export async function handleRequest(
         }
         default: {
           const errorMessage = `Unknown action for application/json.`;
-          logger.warn(errorMessage, { action: (requestBody as { action?: string }).action });
+          logger.warn(errorMessage, { action });
           return createErrorResponse(errorMessage, 400, req, { message: errorMessage, status: 400, code: 'INVALID_JSON_ACTION' });
         }
       }
@@ -446,13 +458,16 @@ export async function handleRequest(
       );
     }
   } catch (err) {
-    const error = err as Error;
-    logger.error('An unexpected error occurred in the main request handler.', { error: error.message, stack: error.stack });
-    return createErrorResponse('An internal server error occurred.', 500, req, { message: error.message, code: 'UNHANDLED_EXCEPTION' });
+    if (err instanceof Error) {
+      logger.error('An unexpected error occurred in the main request handler.', { error: err.message, stack: err.stack });
+      return createErrorResponse('An internal server error occurred.', 500, req, { message: err.message, code: 'UNHANDLED_EXCEPTION' });
+    }
+    // Add a return for the non-Error case to satisfy the linter
+    return createErrorResponse('An unexpected error occurred.', 500, req, { message: 'An unexpected error occurred that was not an instance of Error.' });
   }
 }
 
-const defaultHandlers: ActionHandlers = {
+export const defaultHandlers: ActionHandlers = {
   createProject,
   listAvailableDomains,
   updateProjectDomain,

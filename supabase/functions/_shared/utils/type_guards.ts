@@ -3,9 +3,10 @@ import type { Database, Tables, Json } from "../../types_db.ts";
 import type { 
     ProcessingStrategy, 
     DialecticContributionRow, 
-    GenerateContributionsPayload,
     DialecticJobPayload,
     DialecticJobRow,
+    JobResultsWithModelProcessing,
+    ModelProcessingResult,
 } from '../../dialectic-service/dialectic.interface.ts';
 import type { IIsolatedExecutionDeps } from "../../dialectic-worker/task_isolator.ts";
 import { ProjectContext, StageContext } from "../prompt-assembler.interface.ts";
@@ -23,8 +24,8 @@ export type Citation = {
   url?: string;
 };
 
-// Validation function that safely converts Json to GenerateContributionsPayload
-export function validatePayload(payload: Json): GenerateContributionsPayload {
+// Validation function that safely converts Json to DialecticJobPayload
+export function validatePayload(payload: Json): DialecticJobPayload {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new Error('Payload must be a valid object');
   }
@@ -36,16 +37,18 @@ export function validatePayload(payload: Json): GenerateContributionsPayload {
   if (!('projectId' in payload) || typeof payload.projectId !== 'string') {
     throw new Error('projectId must be a string');
   }
-  if (!('selectedModelIds' in payload) || !Array.isArray(payload.selectedModelIds) || 
-      !payload.selectedModelIds.every((id: unknown) => typeof id === 'string')) {
-    throw new Error('selectedModelIds must be an array of strings');
-  }
   
+  const hasModelId = 'model_id' in payload && typeof payload.model_id === 'string';
+
+  if (!hasModelId) {
+    throw new Error('Payload must have model_id (string)');
+  }
+
   // Build the validated payload with proper types
-  const validatedPayload: GenerateContributionsPayload = {
+  const validatedPayload: DialecticJobPayload = {
     sessionId: payload.sessionId,
     projectId: payload.projectId,
-    selectedModelIds: payload.selectedModelIds,
+    model_id: ('model_id' in payload && typeof payload.model_id === 'string') ? payload.model_id : '',
     stageSlug: ('stageSlug' in payload && typeof payload.stageSlug === 'string') ? payload.stageSlug : undefined,
     iterationNumber: ('iterationNumber' in payload && typeof payload.iterationNumber === 'number') ? payload.iterationNumber : undefined,
     chatId: ('chatId' in payload && (typeof payload.chatId === 'string' || payload.chatId === null)) ? payload.chatId : undefined,
@@ -71,10 +74,15 @@ export function isDialecticJobPayload(payload: Json): payload is Json & Dialecti
     }
 
     try {
-        // First, validate the base properties of GenerateContributionsPayload
-        validatePayload(payload);
+        const hasSessionId = 'sessionId' in payload && typeof payload.sessionId === 'string';
+        const hasProjectId = 'projectId' in payload && typeof payload.projectId === 'string';
+        const hasSelectedModelIds = 'selectedModelIds' in payload && Array.isArray(payload.selectedModelIds) && payload.selectedModelIds.every((id: unknown) => typeof id === 'string');
+        const hasModelId = 'model_id' in payload && typeof payload.model_id === 'string';
 
-        // If base validation passes, check for the optional 'prompt' property.
+        if (!hasSessionId || !hasProjectId || (!hasSelectedModelIds && !hasModelId)) {
+            return false;
+        }
+
         if ('prompt' in payload && typeof payload.prompt !== 'string') {
             return false;
         }
@@ -180,7 +188,9 @@ export function isCitationsArray(value: unknown): value is Citation[] {
  * using runtime property inspection without any type casting.
  */
 export function isDialecticContribution(record: unknown): record is DialecticContributionRow {
+  console.log('[isDialecticContribution] Starting validation for record:', JSON.stringify(record, null, 2));
   if (typeof record !== 'object' || record === null) {
+    console.log('[isDialecticContribution] FAILED: Record is not an object or is null.');
     return false;
   }
 
@@ -200,27 +210,88 @@ export function isDialecticContribution(record: unknown): record is DialecticCon
 
   for (const check of checks) {
     const descriptor = Object.getOwnPropertyDescriptor(record, check.key);
+    console.log(`[isDialecticContribution] Checking key: '${check.key}', Exists: ${!!descriptor}`);
     // Property must exist for non-nullable checks
-    if (!descriptor && !check.nullable) return false;
+    if (!descriptor && !check.nullable) {
+        console.log(`[isDialecticContribution] FAILED: Required key '${check.key}' is missing.`);
+        return false;
+    }
 
     if (descriptor) {
         const value = descriptor.value;
+        const valueType = typeof value;
+        console.log(`[isDialecticContribution]   Value:`, value, `Type: ${valueType}, Expected: ${check.type}`);
         if (check.nullable && value === null) {
+            console.log(`[isDialecticContribution]   PASSED (nullable): Key '${check.key}' is null.`);
             continue; // Null is allowed, so skip to the next check
+        }
+
+        if (valueType !== check.type) {
+            console.log(`[isDialecticContribution]   FAILED: Key '${check.key}' has wrong type. Expected ${check.type}, got ${valueType}.`);
+            return false;
+        }
+    } else if (!check.nullable) {
+        // If the descriptor doesn't exist and it's not nullable, fail.
+        console.log(`[isDialecticContribution] FAILED: Required key '${check.key}' is missing (second check).`);
+        return false;
+    }
+  }
+
+  console.log('[isDialecticContribution] PASSED: All checks passed.');
+  return true;
+}
+
+export function isModelProcessingResult(record: unknown): record is ModelProcessingResult {
+    if (typeof record !== 'object' || record === null) {
+        return false;
+    }
+
+    const checks: { key: keyof ModelProcessingResult, type: string, nullable?: boolean }[] = [
+        { key: 'modelId', type: 'string' },
+        { key: 'status', type: 'string' },
+        { key: 'attempts', type: 'number' },
+        { key: 'contributionId', type: 'string', nullable: true },
+        { key: 'error', type: 'string', nullable: true },
+    ];
+
+    for (const check of checks) {
+        const descriptor = Object.getOwnPropertyDescriptor(record, check.key);
+
+        if (!descriptor) {
+            if (check.nullable) continue;
+            return false;
+        }
+
+        const value = descriptor.value;
+
+        if (check.nullable && (value === null || typeof value === 'undefined')) {
+            continue;
         }
 
         if (typeof value !== check.type) {
             return false;
         }
-    } else if (!check.nullable) {
-        // If the descriptor doesn't exist and it's not nullable, fail.
-        return false;
+        
+        if (check.key === 'status') {
+            if (!['completed', 'failed', 'needs_continuation'].includes(value)) {
+                return false;
+            }
+        }
     }
-  }
-
-  return true;
+    return true;
 }
 
+export function isJobResultsWithModelProcessing(results: unknown): results is JobResultsWithModelProcessing {
+    if (typeof results !== 'object' || results === null || !('modelProcessingResults' in results)) {
+        return false;
+    }
+    const { modelProcessingResults } = results as { modelProcessingResults: unknown };
+    if (!Array.isArray(modelProcessingResults)) {
+        return false;
+    }
+    
+    return modelProcessingResults.every(isModelProcessingResult);
+}
 
 type SelectedAiProviderRow = Database['public']['Tables']['ai_providers']['Row'];
 
@@ -302,4 +373,42 @@ export function isSuccessPayload(payload: unknown): payload is SuccessPayload {
         typeof (payload).success === 'boolean' &&
         typeof (payload).message === 'string'
     );
+}
+
+export function isDialecticJobRow(record: unknown): record is DialecticJobRow {
+    if (typeof record !== 'object' || record === null) {
+      return false;
+    }
+  
+    const checks: { key: keyof DialecticJobRow, type: string, nullable?: boolean }[] = [
+      { key: 'id', type: 'string' },
+      { key: 'session_id', type: 'string' },
+      { key: 'stage_slug', type: 'string' },
+      { key: 'iteration_number', type: 'number' },
+      { key: 'status', type: 'string' },
+      { key: 'payload', type: 'object' },
+      { key: 'user_id', type: 'string' },
+    ];
+  
+    for (const check of checks) {
+      const descriptor = Object.getOwnPropertyDescriptor(record, check.key);
+      if (!descriptor && !check.nullable) {
+          return false;
+      }
+  
+      if (descriptor) {
+          const value = descriptor.value;
+          const valueType = typeof value;
+          if (check.nullable && value === null) {
+              continue;
+          }
+          if (valueType !== check.type) {
+              return false;
+          }
+      } else if (!check.nullable) {
+          return false;
+      }
+    }
+  
+    return true;
 }

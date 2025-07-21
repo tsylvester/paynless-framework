@@ -50,7 +50,7 @@ Deno.test('processComplexJob - plans and enqueues child jobs', async () => {
         sessionId: 'session-id-complex',
         projectId: 'project-id-complex',
         stageSlug: 'antithesis',
-        selectedModelIds: ['model-id-complex'],
+        model_id: 'model-id-complex',
     };
     const validatedPayload = validatePayload(mockPayload);
 
@@ -125,7 +125,7 @@ Deno.test('processComplexJob - handles planner failure gracefully', async () => 
         sessionId: 'session-id-fail',
         projectId: 'project-id-fail',
         stageSlug: 'antithesis',
-        selectedModelIds: ['model-id-fail'],
+        model_id: 'model-id-fail',
     };
     const validatedPayload = validatePayload(mockPayload);
 
@@ -196,7 +196,7 @@ Deno.test('processComplexJob - completes parent job if planner returns no childr
         sessionId: 'session-id-no-children',
         projectId: 'project-id-no-children',
         stageSlug: 'antithesis',
-        selectedModelIds: ['model-id-no-children'],
+        model_id: 'model-id-no-children',
     };
     const validatedPayload = validatePayload(mockPayload);
 
@@ -284,7 +284,7 @@ Deno.test('processComplexJob - fails parent job if child job insert fails', asyn
         sessionId: 'session-id-insert-fail',
         projectId: 'project-id-insert-fail',
         stageSlug: 'antithesis',
-        selectedModelIds: ['model-id-insert-fail'],
+        model_id: 'model-id-insert-fail',
     };
     const validatedPayload = validatePayload(mockPayload);
 
@@ -371,7 +371,7 @@ Deno.test('processComplexJob - fails parent job if status update fails', async (
         sessionId: 'session-id-update-fail',
         projectId: 'project-id-update-fail',
         stageSlug: 'antithesis',
-        selectedModelIds: ['model-id-update-fail'],
+        model_id: 'model-id-update-fail',
     };
     const validatedPayload = validatePayload(mockPayload);
 

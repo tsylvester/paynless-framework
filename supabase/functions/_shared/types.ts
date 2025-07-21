@@ -393,6 +393,19 @@ export interface TokenUsage {
   finish_reason?: 'stop' | 'length';
 }
 
+export function isTokenUsage(obj: unknown): obj is TokenUsage {
+  return (
+    obj !== null &&
+    typeof obj === 'object' &&
+    'prompt_tokens' in obj &&
+    typeof obj.prompt_tokens === 'number' &&
+    'completion_tokens' in obj &&
+    typeof obj.completion_tokens === 'number' &&
+    'total_tokens' in obj &&
+    typeof obj.total_tokens === 'number'
+  );
+}
+
 // Define ChatMessageRole locally for clarity if not available from shared types
 export type ChatMessageRole = 'system' | 'user' | 'assistant';
 

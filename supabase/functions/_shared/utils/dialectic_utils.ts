@@ -1,15 +1,8 @@
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../../types_db.ts';
-import { isResourceDescription } from '../../dialectic-service/dialectic.interface.ts';
+import { isResourceDescription, type SeedPromptData } from '../../dialectic-service/dialectic.interface.ts';
 import type { DownloadFromStorageFn } from '../supabase_storage_utils.ts';
 
-export type SeedPromptData = {
-  content: string;
-  fullPath: string;
-  bucket: string;
-  path: string;
-  fileName: string;
-};
 
 export async function getSeedPromptForStage(
   dbClient: SupabaseClient<Database>,

@@ -12,6 +12,12 @@ import type {
   FinishReason
 } from '../_shared/types.ts';
 
+export type StorageError = {
+  message: string;
+  error?: string;
+  statusCode?: string;
+};
+
 export interface AIModelCatalogEntry {
     id: string;
     provider_name: string;
@@ -113,7 +119,7 @@ export interface DialecticProject {
     status: string;
     created_at: string;
     updated_at: string;
-    sessions?: DialecticSession[];
+    dialectic_sessions?: DialecticSession[];
 }
 
 // --- END: Redefined types ---
@@ -132,7 +138,7 @@ type UpdateProjectDomainAction = { action: 'updateProjectDomain', payload: Updat
 type GetProjectDetailsAction = { action: 'getProjectDetails', payload: GetProjectDetailsPayload };
 type StartSessionAction = { action: 'startSession', payload: StartSessionPayload };
 type GenerateContributionsAction = { action: 'generateContributions', payload: GenerateContributionsPayload };
-type GetContributionContentDataAction = { action: 'getContributionContentData', payload: GetContributionContentSignedUrlPayload };
+type GetContributionContentDataAction = { action: 'getContributionContentData', payload: GetContributionContentDataPayload };
 type DeleteProjectAction = { action: 'deleteProject', payload: DeleteProjectPayload };
 type CloneProjectAction = { action: 'cloneProject', payload: CloneProjectPayload };
 type ExportProjectAction = { action: 'exportProject', payload: ExportProjectPayload };
@@ -195,6 +201,23 @@ export interface GetProjectDetailsPayload {
   projectId: string;
 }
 
+export interface GetContributionContentDataPayload {
+  contributionId: string;
+}
+
+export interface DeleteProjectPayload {
+  projectId: string;
+}
+
+export interface CloneProjectPayload {
+  projectId: string;
+  newProjectName?: string;
+}
+
+export interface ExportProjectPayload {
+  projectId: string;
+}
+
 export interface StartSessionPayload {
   projectId: string;
   sessionDescription?: string | null;
@@ -234,6 +257,17 @@ export interface UnifiedAIResponse {
 
 export type DialecticStage = Database['public']['Tables']['dialectic_stages']['Row'];
 
+export interface ModelProcessingResult {
+  modelId: string;
+  status: 'completed' | 'failed' | 'needs_continuation';
+  attempts: number;
+  contributionId?: string;
+  error?: string;
+}
+
+export interface JobResultsWithModelProcessing {
+    modelProcessingResults: ModelProcessingResult[];
+}
 
 export interface GenerateContributionsDeps {
   callUnifiedAIModel: (
@@ -265,7 +299,8 @@ export interface GenerateContributionsPayload {
   target_contribution_id?: string;
 }
 
-export type DialecticJobPayload = GenerateContributionsPayload & {
+export type DialecticJobPayload = Omit<GenerateContributionsPayload, 'selectedModelIds'> & {
+  model_id: string;
   prompt?: string;
 };
 
@@ -368,27 +403,14 @@ export interface ListAvailableDomainOverlaysPayload {
 }
 
 
-export interface DeleteProjectPayload {
-  projectId: string;
-}
-
 export interface GetContributionContentSignedUrlPayload {
   contributionId: string;
-}
-
-export interface CloneProjectPayload {
-  projectId: string;
-  newProjectName?: string;
 }
 
 export interface CloneProjectSuccessResponse {
   id: string;
   project_name: string;
   created_at: string;
-}
-
-export interface ExportProjectPayload {
-  projectId: string;
 }
 
 export interface ExportProjectSuccessResponse {
@@ -550,4 +572,69 @@ export interface ProcessingStrategy {
   granularity: ProcessingGranularity;
   description: string;
   progress_reporting: ProgressReporting;
+}
+
+export interface DialecticServiceError {
+  message: string;
+  details?: string;
+  status?: number;
+}
+
+export interface DialecticServiceResponse<T> {
+  data?: T;
+  error?: DialecticServiceError;
+}
+
+export type SeedPromptData = {
+  content: string;
+  fullPath: string;
+  bucket: string;
+  path: string;
+  fileName: string;
+};
+export interface ModelProcessingResult {
+  modelId: string;
+  status: 'completed' | 'failed' | 'needs_continuation';
+  attempts: number;
+  contributionId?: string;
+  error?: string;
+}
+
+export interface IContinueJobDeps {
+  logger: ILogger;
+}
+
+export interface IContinueJobResult {
+    enqueued: boolean;
+    error?: Error;
+}
+
+export type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
+
+export interface ProcessSimpleJobDeps extends GenerateContributionsDeps {
+  getSeedPromptForStage: (
+    dbClient: SupabaseClient<Database>,
+    projectId: string,
+    sessionId: string,
+    stageSlug: string,
+    iterationNumber: number,
+    downloadFromStorage: GenerateContributionsDeps['downloadFromStorage']
+  ) => Promise<SeedPromptData>;
+  continueJob: (
+    deps: { logger: ILogger },
+    dbClient: SupabaseClient<Database>,
+    job: Job,
+    payload: DialecticJobPayload,
+    aiResponse: UnifiedAIResponse,
+    savedContribution: DialecticContributionRow,
+    projectOwnerUserId: string
+  ) => Promise<IContinueJobResult>;
+  retryJob: (
+    deps: { logger: ILogger },
+    dbClient: SupabaseClient<Database>,
+    job: Job,
+    currentAttempt: number,
+    failedContributionAttempts: FailedAttemptError[],
+    projectOwnerUserId: string
+  ) => Promise<{ error?: Error }>;
 }

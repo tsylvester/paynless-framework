@@ -5,7 +5,7 @@ import type { Database, Json } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { processJob } from './processJob.ts';
 import { logger } from '../_shared/logger.ts';
-import type { GenerateContributionsDeps, GenerateContributionsPayload } from '../dialectic-service/dialectic.interface.ts';
+import type { GenerateContributionsDeps, GenerateContributionsPayload, ProcessSimpleJobDeps, SeedPromptData, IContinueJobResult } from '../dialectic-service/dialectic.interface.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import type { UnifiedAIResponse } from '../dialectic-service/dialectic.interface.ts';
@@ -14,6 +14,31 @@ import { validatePayload } from '../_shared/utils/type_guards.ts';
 import { createMockJobProcessors } from '../_shared/dialectic.mock.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
+const mockDeps: ProcessSimpleJobDeps = {
+    logger,
+    callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => ({
+        content: 'Happy path AI content',
+        error: null,
+        finish_reason: 'stop',
+    })),
+    downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ data: new ArrayBuffer(0), error: null })),
+    fileManager: new MockFileManagerService(),
+    getExtensionFromMimeType: spy(() => '.md'),
+    randomUUID: spy(() => 'mock-uuid-happy'),
+    deleteFromStorage: spy(async () => await Promise.resolve({ error: null })),
+    getSeedPromptForStage: spy(async (): Promise<SeedPromptData> => ({
+        content: 'Happy path AI content',
+        fullPath: 'happy/path/ai/content.md',
+        bucket: 'happy-path-ai-content',
+        path: 'happy/path/ai/content.md',
+        fileName: 'happy-path-ai-content.md',
+    })),
+    continueJob: spy(async (): Promise<IContinueJobResult> => ({
+        enqueued: true,
+        error: undefined,
+    })),
+    retryJob: spy(async (): Promise<{ error?: Error }> => ({ error: undefined })),
+};
 
 Deno.test('processJob - routes to processSimpleJob for simple stages', async () => {
     // 1. Setup
@@ -24,7 +49,7 @@ Deno.test('processJob - routes to processSimpleJob for simple stages', async () 
         sessionId: 'session-id',
         projectId: 'project-id',
         stageSlug: 'thesis', // A simple stage
-        selectedModelIds: ['model-id'],
+        model_id: 'model-id',
         continueUntilComplete: false,
     };
     const validatedPayload = validatePayload(mockPayload);
@@ -67,20 +92,6 @@ Deno.test('processJob - routes to processSimpleJob for simple stages', async () 
         }
     });
 
-    const mockDeps: GenerateContributionsDeps = {
-        logger,
-        callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => ({
-            content: 'Happy path AI content',
-            error: null,
-            finish_reason: 'stop',
-        })),
-        downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ data: new ArrayBuffer(0), error: null })),
-        fileManager: new MockFileManagerService(),
-        getExtensionFromMimeType: spy(() => '.md'),
-        randomUUID: spy(() => 'mock-uuid-happy'),
-        deleteFromStorage: spy(async () => await Promise.resolve({ error: null })),
-    };
-
     try {
         await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, validatedPayload, 'user-id', mockDeps, 'mock-token', processors);
 
@@ -103,7 +114,7 @@ Deno.test('processJob - routes to processComplexJob for complex stages', async (
         sessionId: 'session-id-complex',
         projectId: 'project-id-complex',
         stageSlug: 'antithesis', // A complex stage
-        selectedModelIds: ['model-id-complex'],
+        model_id: 'model-id-complex',
     };
     const validatedPayload = validatePayload(mockPayload);
 
@@ -149,20 +160,6 @@ Deno.test('processJob - routes to processComplexJob for complex stages', async (
         }
     });
 
-    const mockDeps = {
-        logger,
-        callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => ({
-            content: 'Happy path AI content',
-            error: null,
-            finish_reason: 'stop',
-        })),
-        downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ data: new ArrayBuffer(0), error: null })),
-        fileManager: new MockFileManagerService(),
-        getExtensionFromMimeType: spy(() => '.md'),
-        randomUUID: spy(() => 'mock-uuid-happy'),
-        deleteFromStorage: spy(async () => await Promise.resolve({ error: null })),
-    };
-
     try {
         // 2. Execute
         await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, validatedPayload, 'user-id-complex', mockDeps, 'mock-token', processors);
@@ -187,7 +184,7 @@ Deno.test('processJob - throws error when stage not found', async () => {
         sessionId: 'session-id',
         projectId: 'project-id',
         stageSlug: 'nonexistent-stage',
-        selectedModelIds: ['model-id'],
+        model_id: 'model-id',
     };
     const validatedPayload = validatePayload(mockPayload);
 
@@ -221,20 +218,6 @@ Deno.test('processJob - throws error when stage not found', async () => {
         }
     });
 
-    const mockDeps: GenerateContributionsDeps = {
-        logger,
-        callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => ({
-            content: 'Happy path AI content',
-            error: null,
-            finish_reason: 'stop',
-        })),
-        downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ data: new ArrayBuffer(0), error: null })),
-        fileManager: new MockFileManagerService(),
-        getExtensionFromMimeType: spy(() => '.md'),
-        randomUUID: spy(() => 'mock-uuid-happy'),
-        deleteFromStorage: spy(async () => await Promise.resolve({ error: null })),
-    };
-
     try {
         // 2. Execute & Assert
         let threwError = false;
@@ -267,7 +250,7 @@ Deno.test('processJob - throws error for unsupported processing strategy', async
         sessionId: 'session-id',
         projectId: 'project-id',
         stageSlug: 'custom-stage',
-        selectedModelIds: ['model-id'],
+        model_id: 'model-id',
     };
     const validatedPayload = validatePayload(mockPayload);
 
@@ -308,20 +291,6 @@ Deno.test('processJob - throws error for unsupported processing strategy', async
         }
     });
 
-    const mockDeps: GenerateContributionsDeps = {
-        logger,
-        callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => ({
-            content: 'Happy path AI content',
-            error: null,
-            finish_reason: 'stop',
-        })),
-        downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ data: new ArrayBuffer(0), error: null })),
-        fileManager: new MockFileManagerService(),
-        getExtensionFromMimeType: spy(() => '.md'),
-        randomUUID: spy(() => 'mock-uuid-happy'),
-        deleteFromStorage: spy(async () => await Promise.resolve({ error: null })),
-    };
-
     try {
         // 2. Execute & Assert
         let threwError = false;
@@ -354,7 +323,7 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
         sessionId: 'session-id-params',
         projectId: 'project-id-params',
         stageSlug: 'thesis',
-        selectedModelIds: ['model-id-1', 'model-id-2'],
+        model_id: 'model-id-1',
         continueUntilComplete: true,
     };
     const validatedPayload = validatePayload(mockPayload);
@@ -392,20 +361,6 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
         }
     });
 
-    const mockDeps: GenerateContributionsDeps = {
-        logger,
-        callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => ({
-            content: 'Happy path AI content',
-            error: null,
-            finish_reason: 'stop',
-        })),
-        downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ data: new ArrayBuffer(0), error: null })),
-        fileManager: new MockFileManagerService(),
-        getExtensionFromMimeType: spy(() => '.md'),
-        randomUUID: spy(() => 'mock-uuid-happy'),
-        deleteFromStorage: spy(async () => await Promise.resolve({ error: null })),
-    };
-
     try {
         // 2. Execute
         await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, validatedPayload, 'user-id-params', mockDeps, 'mock-token-params', processors);
@@ -439,7 +394,7 @@ Deno.test('processJob - verifies correct parameters passed to processComplexJob'
         sessionId: 'session-id-complex-params',
         projectId: 'project-id-complex-params',
         stageSlug: 'antithesis',
-        selectedModelIds: ['model-id-complex'],
+        model_id: 'model-id-complex',
     };
     const validatedPayload = validatePayload(mockPayload);
 
@@ -479,20 +434,6 @@ Deno.test('processJob - verifies correct parameters passed to processComplexJob'
             }
         }
     });
-
-    const mockDeps: GenerateContributionsDeps = {
-        logger,
-        callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => ({
-            content: 'Happy path AI content',
-            error: null,
-            finish_reason: 'stop',
-        })),
-        downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ data: new ArrayBuffer(0), error: null })),
-        fileManager: new MockFileManagerService(),
-        getExtensionFromMimeType: spy(() => '.md'),
-        randomUUID: spy(() => 'mock-uuid-happy'),
-        deleteFromStorage: spy(async () => await Promise.resolve({ error: null })),
-    };
 
     try {
         // 2. Execute

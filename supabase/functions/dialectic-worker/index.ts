@@ -1,8 +1,8 @@
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../types_db.ts';
 import {
-  type GenerateContributionsDeps,
-  type GenerateContributionsPayload,
+  type ProcessSimpleJobDeps,
+  DialecticJobPayload,
 } from '../dialectic-service/dialectic.interface.ts';
 import { validatePayload } from "../_shared/utils/type_guards.ts";
 import { processJob, type IJobProcessors } from './processJob.ts';
@@ -12,7 +12,7 @@ type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 export async function handleJob(
   dbClient: SupabaseClient<Database>,
   job: Job,
-  deps: GenerateContributionsDeps,
+  deps: ProcessSimpleJobDeps,
   authToken: string,
   processors: IJobProcessors,
 ): Promise<void> {
@@ -30,7 +30,7 @@ export async function handleJob(
   }
   
   // Validate and convert the payload
-  let validatedPayload: GenerateContributionsPayload;
+  let validatedPayload: DialecticJobPayload;
   try {
     validatedPayload = validatePayload(jobPayload);
   } catch (validationError) {

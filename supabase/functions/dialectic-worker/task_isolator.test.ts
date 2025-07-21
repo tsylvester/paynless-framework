@@ -5,18 +5,16 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../types_db.ts';
 import { executeIsolatedTask, IIsolatedExecutionDeps } from './task_isolator.ts';
 import {
-    GenerateContributionsPayload,
+    DialecticJobPayload,
     DialecticContributionRow,
     DialecticJobRow,
     DialecticStage,
-    UnifiedAIResponse
+    UnifiedAIResponse,
+    type SeedPromptData
 } from '../dialectic-service/dialectic.interface.ts';
 import { type UploadContext, type FileManagerResponse } from '../_shared/types/file_manager.types.ts';
 import { ILogger } from '../_shared/types.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
-import { getSourceStage, type SeedPromptData } from '../_shared/utils/dialectic_utils.ts';
-import { calculateTotalSteps } from '../_shared/utils/progress_calculator.ts';
-import { getSeedPromptForStage } from '../_shared/utils/dialectic_utils.ts';
 
 // --- Mocks and Test Data ---
 
@@ -39,12 +37,13 @@ const MOCK_JOB: DialecticJobRow = {
     target_contribution_id: null,
 };
 
-const MOCK_PAYLOAD: GenerateContributionsPayload = {
+const MOCK_PAYLOAD: DialecticJobPayload = {
     sessionId: 'session-123',
     projectId: 'project-123',
     stageSlug: 'antithesis',
     iterationNumber: 1,
-    selectedModelIds: ['model-1', 'model-2'],
+    model_id: 'model-1',
+    prompt: 'PROMPT',
 };
 
 const MOCK_STAGE: DialecticStage = {

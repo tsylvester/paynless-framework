@@ -1,8 +1,8 @@
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../types_db.ts';
 import {
-  type GenerateContributionsDeps,
-  type GenerateContributionsPayload,
+  type DialecticJobPayload,
+  type ProcessSimpleJobDeps,
 } from '../dialectic-service/dialectic.interface.ts';
 
 import { processSimpleJob } from './processSimpleJob.ts';
@@ -21,9 +21,9 @@ export interface IJobProcessors {
 export async function processJob(
   dbClient: SupabaseClient<Database>,
   job: Job,
-  payload: GenerateContributionsPayload,
+  payload: DialecticJobPayload,
   projectOwnerUserId: string,
-  deps: GenerateContributionsDeps,
+  deps: ProcessSimpleJobDeps,
   authToken: string,
   processors: IJobProcessors,
 ) {
