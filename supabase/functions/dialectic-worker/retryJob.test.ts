@@ -6,6 +6,8 @@ import { createMockSupabaseClient, type MockSupabaseClientSetup } from '../_shar
 import type { Database } from '../types_db.ts';
 import type { FailedAttemptError } from '../dialectic-service/dialectic.interface.ts';
 import { isRecord } from '../_shared/utils/type_guards.ts';
+import { mockNotificationService, resetMockNotificationService } from '../_shared/utils/notification.service.mock.ts';
+import { spy } from 'https://deno.land/std@0.190.0/testing/mock.ts';
 
 type UpdateJobRecord = Database['public']['Tables']['dialectic_generation_jobs']['Update'];
 
@@ -46,10 +48,12 @@ Deno.test('retryJob', async (t) => {
     ];
 
     const setup = (mockOverrides?: any) => {
+        resetMockNotificationService();
         mockSupabase = createMockSupabaseClient(undefined, mockOverrides);
         mockLogger = new MockLogger();
         deps = {
             logger: mockLogger,
+            notificationService: mockNotificationService,
         };
     };
 
@@ -59,7 +63,6 @@ Deno.test('retryJob', async (t) => {
                 'dialectic_generation_jobs': { 
                     update: { data: [{ id: 'job-1' }] } 
                 },
-                rpc: { data: null } // Mock for notification
             },
         });
 
@@ -88,20 +91,11 @@ Deno.test('retryJob', async (t) => {
         }
 
         // Verify notification
-        const rpcSpy = mockSupabase.spies.rpcSpy;
-        assertExists(rpcSpy);
-        assertEquals(rpcSpy.calls.length, 1);
-        assert(rpcSpy.calls[0].args[0] === 'create_notification_for_user');
-        assertObjectMatch(rpcSpy.calls[0].args[1], {
-            target_user_id: 'user-1',
-            notification_type: 'contribution_generation_retrying',
-            notification_data: { 
-                sessionId: 'session-1', 
-                stageSlug: 'test-stage',
-                attempt: currentAttempt + 1,
-                max_attempts: 4, // Fixed: 1 initial + 3 retries = 4 total attempts
-            },
-        });
+        const retryingSpy = mockNotificationService.sendContributionRetryingEvent;
+        assertEquals(retryingSpy.calls.length, 1);
+        const notificationArgs = retryingSpy.calls[0].args[0];
+        assertEquals(notificationArgs.job_id, baseJob.id);
+        assertEquals(notificationArgs.sessionId, baseJob.session_id);
     });
 
     await t.step('should return an error if job update fails', async () => {
@@ -122,8 +116,8 @@ Deno.test('retryJob', async (t) => {
         assertStringIncludes(result.error.message, 'DB connection lost');
 
         // Verify notification was NOT sent
-        const rpcSpy = mockSupabase.spies.rpcSpy;
-        assertEquals(rpcSpy.calls.length, 0);
+        const retryingSpy = mockNotificationService.sendContributionRetryingEvent;
+        assertEquals(retryingSpy.calls.length, 0);
     });
 
     await t.step('should not send notification if user ID is null', async () => {
@@ -145,8 +139,8 @@ Deno.test('retryJob', async (t) => {
         assertEquals(updateSpy.callCount, 1);
         
         // Verify notification was NOT sent
-        const rpcSpy = mockSupabase.spies.rpcSpy;
-        assertEquals(rpcSpy.calls.length, 0);
+        const retryingSpy = mockNotificationService.sendContributionRetryingEvent;
+        assertEquals(retryingSpy.calls.length, 0);
     });
 
     await t.step('should not send notification if user ID is empty string', async () => {
@@ -168,8 +162,8 @@ Deno.test('retryJob', async (t) => {
         assertEquals(updateSpy.callCount, 1);
         
         // Verify notification was NOT sent
-        const rpcSpy = mockSupabase.spies.rpcSpy;
-        assertEquals(rpcSpy.calls.length, 0);
+        const retryingSpy = mockNotificationService.sendContributionRetryingEvent;
+        assertEquals(retryingSpy.calls.length, 0);
     });
 
     await t.step('should handle empty failed attempts array', async () => {
@@ -178,7 +172,6 @@ Deno.test('retryJob', async (t) => {
                 'dialectic_generation_jobs': { 
                     update: { data: [{ id: 'job-1' }] } 
                 },
-                rpc: { data: null }
             },
         });
 
@@ -207,20 +200,27 @@ Deno.test('retryJob', async (t) => {
             throw new Error('error_details not in expected format');
         }
 
-        // Verify notification was sent
-        const rpcSpy = mockSupabase.spies.rpcSpy;
-        assertEquals(rpcSpy.calls.length, 1);
+        // Verify notification was attempted
+        const retryingSpy = mockNotificationService.sendContributionRetryingEvent;
+        assertEquals(retryingSpy.calls.length, 1);
+        const notificationArgs = retryingSpy.calls[0].args[0];
+        assertEquals(notificationArgs.job_id, baseJob.id);
     });
 
     await t.step('should succeed even if notification fails', async () => {
-        const notificationError = new Error('Notification service down');
         setup({
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     update: { data: [{ id: 'job-1' }] } 
                 },
-                rpc: { data: null, error: notificationError }
             },
+        });
+
+        const errorLogSpy = spy(mockLogger, 'error');
+
+        // Temporarily replace the method on the mock service to simulate failure for this one test
+        mockNotificationService.sendContributionRetryingEvent = spy(async (_payload, _userId) => {
+            throw new Error('Notification service down');
         });
 
         const currentAttempt = 1;
@@ -233,9 +233,17 @@ Deno.test('retryJob', async (t) => {
         const updateSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
         assertExists(updateSpy);
         assertEquals(updateSpy.callCount, 1);
-        
-        // Verify notification was attempted
-        const rpcSpy = mockSupabase.spies.rpcSpy;
-        assertEquals(rpcSpy.calls.length, 1);
+
+        // Verify the error was logged
+        assertEquals(errorLogSpy.calls.length, 1);
+        const logArg = errorLogSpy.calls[0].args[0];
+        if (typeof logArg === 'string') {
+            assertStringIncludes(logArg, 'Failed to send notification');
+        } else {
+            // Fails the test if the log argument is not a string
+            assert(false, "Logged message was not a string");
+        }
+
+        errorLogSpy.restore();
     });
 });

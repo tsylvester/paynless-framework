@@ -95,6 +95,10 @@ const mockNotification1: Notification = {
     data: { message: 'Test 1' },
     read: false,
     created_at: new Date(Date.now() - 10000).toISOString(),
+    is_internal_event: false, // For standard notifications
+    title: 'Test Title 1',
+    message: 'Test Message 1',
+    link_path: null,
 };
 const mockNotification2: Notification = {
     id: 'uuid-2',
@@ -103,6 +107,10 @@ const mockNotification2: Notification = {
     data: { message: 'Test 2', target_path: 'some/path' },
     read: false,
     created_at: new Date(Date.now() - 5000).toISOString(),
+    is_internal_event: false, // For standard notifications
+    title: 'Test Title 2',
+    message: 'Test Message 2',
+    link_path: 'some/path',
 };
 const mockNotification3: Notification = {
     id: 'uuid-3',
@@ -111,7 +119,24 @@ const mockNotification3: Notification = {
     data: null,
     read: true, // Already read
     created_at: new Date(Date.now() - 20000).toISOString(),
+    is_internal_event: false, // For standard notifications
+    title: 'Test Title 3',
+    message: 'Test Message 3',
+    link_path: null,
 };
+const mockInternalEventNotification: Notification = {
+    id: 'uuid-internal-1',
+    user_id: 'user-abc',
+    type: 'dialectic_contribution_started',
+    data: { sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1, job_id: 'job-internal-1' },
+    read: true, // Internal events are often implicitly 'read'
+    created_at: new Date().toISOString(),
+    is_internal_event: true, // This is an internal lifecycle event
+    title: null,
+    message: null,
+    link_path: null,
+};
+
 
 // --- Test Suite ---
 describe('notificationStore', () => {
@@ -260,71 +285,60 @@ describe('notificationStore', () => {
         });
 
         describe('handleIncomingNotification (Internal - called by Realtime subscription callback)', () => {
-            it('should call addNotification for standard notifications', () => {
+            it('should call addNotification for standard, user-facing notifications', () => {
                 const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
-                
                 act(() => {
                     useNotificationStore.getState().handleIncomingNotification(mockNotification1);
                 });
-
                 expect(addNotificationSpy).toHaveBeenCalledWith(mockNotification1);
+                expect(mockHandleDialecticLifecycleEvent).not.toHaveBeenCalled();
                 addNotificationSpy.mockRestore();
             });
 
-            // Test for each dialectic notification type
-            it.each`
-                type                                  | data                                                                                             | expectedPayload
-                ${'contribution_generation_started'}  | ${{ sessionId: 'sid-123' }}                                                                      | ${{ type: 'contribution_generation_started', sessionId: 'sid-123' }}
-                ${'dialectic_contribution_started'}   | ${{ sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1 }}                                    | ${{ type: 'dialectic_contribution_started', sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1 }}
-                ${'contribution_generation_retrying'} | ${{ sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1, error: 'fail' }}                     | ${{ type: 'contribution_generation_retrying', sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1, error: 'fail' }}
-                ${'dialectic_contribution_received'}  | ${{ sessionId: 'sid-123', contribution: { id: 'c-1', session_id: 'sid-123' }, job_id: 'j-1' }}       | ${{ type: 'dialectic_contribution_received', sessionId: 'sid-123', contribution: { id: 'c-1', session_id: 'sid-123' }, job_id: 'j-1', is_continuing: false }}
-                ${'dialectic_contribution_received'}  | ${{ sessionId: 'sid-123', contribution: { id: 'c-2', session_id: 'sid-123' }, job_id: 'j-2', is_continuing: true }} | ${{ type: 'dialectic_contribution_received', sessionId: 'sid-123', contribution: { id: 'c-2', session_id: 'sid-123' }, job_id: 'j-2', is_continuing: true }}
-                ${'contribution_generation_failed'}   | ${{ sessionId: 'sid-123', error: { code: 'FAIL', message: 'it failed' } }}                         | ${{ type: 'contribution_generation_failed', sessionId: 'sid-123', error: { code: 'FAIL', message: 'it failed' } }}
-                ${'contribution_generation_complete'} | ${{ sessionId: 'sid-123', projectId: 'p-1' }}                                                    | ${{ type: 'contribution_generation_complete', sessionId: 'sid-123', projectId: 'p-1' }}
-                ${'dialectic_progress_update'}        | ${{ sessionId: 'sid-123', stageSlug: 'test-stage', current_step: 1, total_steps: 10, message: 'In progress...' }} | ${{ type: 'dialectic_progress_update', sessionId: 'sid-123', stageSlug: 'test-stage', current_step: 1, total_steps: 10, message: 'In progress...' }}
-                ${'contribution_generation_continued'} | ${{ sessionId: 'sid-123', projectId: 'p-1', modelId: 'm-1', continuationNumber: 2, contribution: { id: 'c-3', session_id: 'sid-123' }, job_id: 'j-3' }} | ${{ type: 'contribution_generation_continued', sessionId: 'sid-123', projectId: 'p-1', modelId: 'm-1', continuationNumber: 2, contribution: { id: 'c-3', session_id: 'sid-123' }, job_id: 'j-3' }}
-            `('should route $type to dialecticStore and not call addNotification', ({ type, data, expectedPayload }: { type: DialecticLifecycleEvent['type'], data: NotificationData, expectedPayload: DialecticLifecycleEvent }) => {
-                const testNotification: Notification = {
-                    id: `uuid-${type}-${JSON.stringify(data)}`, // Make ID unique for each case
-                    user_id: 'user-abc',
-                    type,
-                    data,
-                    read: false,
-                    created_at: new Date().toISOString(),
-                };
-
-                act(() => {
-                    useNotificationStore.getState().handleIncomingNotification(testNotification);
-                });
+            it('should route internal events to the dialecticStore without creating a visible notification', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
                 
-                // It should call the special handler with the flattened payload
-                expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith(expectedPayload);
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(mockInternalEventNotification);
+                });
 
-                // It should NOT call the generic addNotification handler
-                expect(logger.debug).not.toHaveBeenCalledWith(
-                    '[notificationStore] Added notification',
-                    expect.anything()
-                );
+                // Should be routed to the specific store handler
+                expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith({
+                    type: 'dialectic_contribution_started',
+                    sessionId: 'sid-123',
+                    modelId: 'm-1',
+                    iterationNumber: 1,
+                    job_id: 'job-internal-1',
+                });
+
+                // Should NOT create a visible notification for the user
+                expect(addNotificationSpy).not.toHaveBeenCalled();
+                
+                addNotificationSpy.mockRestore();
             });
-
-
-            it('should call walletStore._handleWalletUpdateNotification for wallet transaction notifications', () => {
+            
+            it('should not process wallet notifications as internal events', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
                 const walletNotification: Notification = {
                     ...mockNotification1,
+                    id: 'wallet-noti-1',
                     type: 'WALLET_TRANSACTION',
                     data: { walletId: 'wallet-xyz', newBalance: '1000' },
+                    is_internal_event: false, // Wallet notifications are user-facing
                 };
 
                 act(() => {
                     useNotificationStore.getState().handleIncomingNotification(walletNotification);
                 });
 
-                // It should call the special handler
+                // Should call the special wallet handler
                 expect(mockHandleWalletUpdate).toHaveBeenCalledWith(walletNotification.data);
-
-                // It should ALSO still add it to the general notification list
-                // This is because wallet updates might be something the user wants to see in their feed
-                expect(useNotificationStore.getState().notifications[0]).toEqual(walletNotification);
+                // Should ALSO still add it to the general notification list
+                expect(addNotificationSpy).toHaveBeenCalledWith(walletNotification);
+                // Should NOT be routed to the dialectic handler
+                expect(mockHandleDialecticLifecycleEvent).not.toHaveBeenCalled();
+                
+                addNotificationSpy.mockRestore();
             });
         });
 

@@ -2,19 +2,13 @@ import type { Database } from '../../types_db.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { ProjectContext } from '../prompt-assembler.interface.ts';
 import type { ILogger } from '../types.ts';
-
-// Define the function signature for downloadFromStorage
-type DownloadFn = (
-    client: SupabaseClient,
-    bucket: string,
-    path: string
-) => Promise<{ data: ArrayBuffer | null, error: Error | null }>;
+import type { DownloadFromStorageFn } from '../../_shared/supabase_storage_utils.ts';
 
 export async function getInitialPromptContent(
     dbClient: SupabaseClient<Database>,
     project: ProjectContext,
     logger: ILogger,
-    downloadFromStorage: DownloadFn
+    downloadFromStorage: DownloadFromStorageFn
 ): Promise<{ content?: string; storagePath?: string; error?: string } | undefined> {
     if (project.initial_user_prompt) {
         logger.info(`[getInitialPromptContent] Using direct initial_user_prompt for project ${project.id}.`);

@@ -17,11 +17,13 @@ import { hasProcessingStrategy, isDialecticContribution, isProjectContext, isSta
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import { ILogger } from '../_shared/types.ts';
+import { NotificationService } from '../_shared/utils/notification.service.ts';
 
 export interface IIsolatedExecutionDeps extends GenerateContributionsDeps {
     getSourceStage: typeof getSourceStage;
     calculateTotalSteps: typeof calculateTotalSteps;
     getSeedPromptForStage: typeof getSeedPromptForStage;
+    notificationService: NotificationService;
 }
 
 export async function planComplexStage(
@@ -294,17 +296,15 @@ export async function executeIsolatedTask(
     const totalSteps = deps.calculateTotalSteps(processingStrategy, models, sourceDocuments);
     let currentStep = 0;
 
-    await dbClient.rpc('create_notification_for_user', {
-        target_user_id: projectOwnerUserId,
-        notification_type: 'dialectic_progress_update',
-        notification_data: {
-            sessionId: sessionId,
-            stageSlug: stageSlug,
-            current_step: currentStep,
-            total_steps: totalSteps,
-            message: `Starting ${stage.display_name} stage...`
-        }
-    });
+    await deps.notificationService.sendDialecticProgressUpdateEvent({
+        type: 'dialectic_progress_update',
+        sessionId: sessionId,
+        stageSlug: stageSlug,
+        current_step: currentStep,
+        total_steps: totalSteps,
+        message: `Starting ${stage.display_name} stage...`,
+        job_id: job.id,
+    }, projectOwnerUserId);
 
     const modelPromises = models.flatMap(model =>
         sourceDocuments.map(async (doc) => {
@@ -327,20 +327,18 @@ export async function executeIsolatedTask(
             );
 
             currentStep++;
-            await dbClient.rpc('create_notification_for_user', {
-                target_user_id: projectOwnerUserId,
-                notification_type: 'dialectic_progress_update',
-                notification_data: {
-                    sessionId: sessionId,
-                    stageSlug: stageSlug,
-                    current_step: currentStep,
-                    total_steps: totalSteps,
-                    message: processingStrategy.progress_reporting.message_template
-                        .replace('{current_item}', currentStep.toString())
-                        .replace('{total_items}', totalSteps.toString())
-                        .replace('{model_name}', model.name)
-                }
-            });
+            await deps.notificationService.sendDialecticProgressUpdateEvent({
+                type: 'dialectic_progress_update',
+                sessionId: sessionId,
+                stageSlug: stageSlug,
+                current_step: currentStep,
+                total_steps: totalSteps,
+                message: processingStrategy.progress_reporting.message_template
+                    .replace('{current_item}', currentStep.toString())
+                    .replace('{total_items}', totalSteps.toString())
+                    .replace('{model_name}', model.name),
+                job_id: job.id,
+            }, projectOwnerUserId);
 
             return result;
         })

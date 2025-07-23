@@ -11,6 +11,7 @@ import type { UnifiedAIResponse } from '../dialectic-service/dialectic.interface
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { validatePayload } from '../_shared/utils/type_guards.ts';
 import { createMockJobProcessors } from '../_shared/dialectic.mock.ts';
+import { NotificationService } from '../_shared/utils/notification.service.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -38,6 +39,11 @@ const mockDeps: ProcessSimpleJobDeps = {
         error: undefined,
     })),
     retryJob: spy(async (): Promise<{ error?: Error }> => ({ error: undefined })),
+    notificationService: new NotificationService(createMockSupabaseClient(undefined, {
+        rpcResults: {
+            create_notification_for_user: { data: null, error: null },
+        },
+    }).client as unknown as SupabaseClient<Database>),
 };
 
 Deno.test('handleJob - fails when job is missing user_id', async () => {
@@ -135,12 +141,20 @@ Deno.test('handleJob - fails when payload is invalid', async () => {
                     error: null,
                 }
             }
-        }
+        },
+        rpcResults: {
+          'create_notification_for_user': { data: null, error: null },
+        },
     });
+
+    const testDeps = {
+        ...mockDeps,
+        notificationService: new NotificationService(mockSupabase.client as unknown as SupabaseClient<Database>),
+    };
 
     try {
         // 2. Execute
-        await handleJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, mockDeps, 'mock-token', processors);
+        await handleJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, testDeps, 'mock-token', processors);
 
         // 3. Verify - MockLogger methods are already spies, so we can check them directly
         // Note: We can't easily verify specific error calls with MockLogger without extending it
@@ -165,6 +179,8 @@ Deno.test('handleJob - fails when payload is invalid', async () => {
         const rpcArgs = rpcCall.args[1];
         assertEquals(rpcArgs.target_user_id, 'user-id');
         assertEquals(rpcArgs.notification_type, 'contribution_generation_failed');
+        const notificationData = JSON.parse(rpcArgs.notification_data);
+        assertEquals(notificationData.notification_data.job_id, 'job-invalid-payload');
 
     } finally {
         mockSupabase.clearAllStubs?.();
@@ -233,12 +249,20 @@ Deno.test('handleJob - successfully processes valid job', async () => {
                     error: null,
                 }
             }
-        }
+        },
+        rpcResults: {
+            'create_notification_for_user': { data: null, error: null },
+        },
     });
+
+    const testDeps = {
+        ...mockDeps,
+        notificationService: new NotificationService(mockSupabase.client as unknown as SupabaseClient<Database>),
+    };
 
     try {
         // 2. Execute
-        await handleJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, mockDeps, 'mock-token', processors);
+        await handleJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, testDeps, 'mock-token', processors);
 
         // 3. Verify
         // Check job status was updated to processing
@@ -257,8 +281,10 @@ Deno.test('handleJob - successfully processes valid job', async () => {
         const notificationArgs = startNotification.args[1];
         assertEquals(notificationArgs.target_user_id, 'user-id');
         assertEquals(notificationArgs.notification_type, 'contribution_generation_started');
-        assertEquals(notificationArgs.notification_data.sessionId, 'session-id');
-        assertEquals(notificationArgs.notification_data.stageSlug, 'thesis');
+
+        const parsedNotificationData = JSON.parse(notificationArgs.notification_data);
+        assertEquals(parsedNotificationData.notification_data.sessionId, 'session-id');
+        assertEquals(parsedNotificationData.notification_data.job_id, 'job-valid');
 
         // Check processJob was called with correct parameters
         // Note: Since processJob is mocked via the processors, we can't directly spy on it
@@ -430,12 +456,20 @@ Deno.test('handleJob - validates payload correctly and extracts user info', asyn
                     error: null,
                 }
             }
-        }
+        },
+        rpcResults: {
+            'create_notification_for_user': { data: null, error: null },
+        },
     });
+
+    const testDeps = {
+        ...mockDeps,
+        notificationService: new NotificationService(mockSupabase.client as unknown as SupabaseClient<Database>),
+    };
 
     try {
         // 2. Execute
-        await handleJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, mockDeps, 'mock-token', processors);
+        await handleJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, testDeps, 'mock-token', processors);
 
         // 3. Verify
         // Verify the payload was validated successfully (no validation errors logged)
@@ -452,8 +486,9 @@ Deno.test('handleJob - validates payload correctly and extracts user info', asyn
         assertEquals(rpcSpy.calls.length, 1, 'RPC should be called once');
         const notification = rpcSpy.calls[0];
         const notificationArgs = notification.args[1];
-        assertEquals(notificationArgs.notification_data.sessionId, 'session-id-validation');
-        assertEquals(notificationArgs.notification_data.stageSlug, 'synthesis');
+        const parsedNotificationData = JSON.parse(notificationArgs.notification_data);
+        assertEquals(parsedNotificationData.notification_data.sessionId, 'session-id-validation');
+        assertEquals(parsedNotificationData.notification_data.job_id, 'job-validation-test');
 
     } finally {
         spies.processSimpleJob.restore();

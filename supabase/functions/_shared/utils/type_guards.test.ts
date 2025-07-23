@@ -16,7 +16,8 @@ import {
     isSelectedAiProvider,
     isSuccessPayload,
     isUserRole,
-    validatePayload
+    validatePayload,
+    isJson,
 } from './type_guards.ts';
 import type { DialecticContributionRow, DialecticJobRow } from '../../dialectic-service/dialectic.interface.ts';
 import type { IIsolatedExecutionDeps } from "../../dialectic-worker/task_isolator.ts";
@@ -1013,5 +1014,65 @@ Deno.test('Type Guard: isDialecticJobRow', async (t) => {
     await t.step('should return false for a non-object', () => {
         assert(!isDialecticJobRow(null));
         assert(!isDialecticJobRow('job'));
+    });
+});
+
+Deno.test('Type Guard: isJson', async (t) => {
+    await t.step('should return true for primitive JSON types', () => {
+        assert(isJson('a string'));
+        assert(isJson(123.45));
+        assert(isJson(true));
+        assert(isJson(false));
+        assert(isJson(null));
+    });
+
+    await t.step('should return true for valid JSON objects', () => {
+        assert(isJson({}));
+        assert(isJson({ key: 'value', number: 1, bool: true, nullable: null }));
+        assert(isJson({ nested: { a: 1 } }));
+    });
+
+    await t.step('should return true for valid JSON arrays', () => {
+        assert(isJson([]));
+        assert(isJson([1, 'two', false, null]));
+        assert(isJson([{ a: 1 }, { b: 2 }]));
+        assert(isJson([1, [2, [3]]]));
+    });
+
+    await t.step('should return true for complex nested structures', () => {
+        const complex = {
+            a: 'string',
+            b: [1, { c: true, d: [null] }],
+            e: { f: { g: 'nested' } }
+        };
+        assert(isJson(complex));
+    });
+
+    await t.step('should return false for non-JSON primitives', () => {
+        assert(!isJson(undefined));
+        assert(!isJson(Symbol('s')));
+        // deno-lint-ignore no-explicit-any
+        assert(!isJson(BigInt(9007199254740991) as any));
+    });
+
+    await t.step('should return false for objects containing non-JSON values', () => {
+        assert(!isJson({ key: undefined }));
+        assert(!isJson({ key: () => 'function' }));
+        assert(!isJson({ key: new Date() }));
+        assert(!isJson({ key: new Map() }));
+    });
+
+    await t.step('should return false for arrays containing non-JSON values', () => {
+        assert(!isJson([1, undefined, 3]));
+        assert(!isJson([new Set()]));
+    });
+
+    await t.step('should return false for class instances', () => {
+        class MyClass {
+            // deno-lint-ignore no-explicit-any
+            constructor(public prop: any) {}
+        }
+        const instance = new MyClass('test');
+        assert(!isJson(instance));
     });
 });

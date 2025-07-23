@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { api } from '@paynless/api';
-import type { Notification, ApiError, DialecticLifecycleEvent, DialecticContribution } from '@paynless/types';
-import { logger } from '@paynless/utils';
+import type { Notification, ApiError, DialecticLifecycleEvent } from '@paynless/types';
+import { logger, isDialecticLifecycleEventType, isDialecticContribution, isApiError } from '@paynless/utils';
 import { useDialecticStore } from './dialecticStore';
 import { useWalletStore } from './walletStore';
 
@@ -36,138 +36,102 @@ const sortNotifications = (notifications: Notification[]): Notification[] => {
     return [...notifications].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 };
 
-const dialecticNotificationTypes = new Set([
-    'contribution_generation_started',
-    'dialectic_contribution_started',
-    'contribution_generation_retrying',
-    'dialectic_contribution_received',
-    'contribution_generation_failed',
-    'contribution_generation_complete',
-    'dialectic_progress_update',
-    'contribution_generation_continued',
-]);
-
-function isDialecticLifecycleEventType(type: string): type is DialecticLifecycleEvent['type'] {
-    return dialecticNotificationTypes.has(type);
-}
-
-// Type guard for ApiError
-function isApiError(obj: unknown): obj is ApiError {
-    return (
-        typeof obj === 'object' &&
-        obj !== null &&
-        'code' in obj &&
-        typeof (obj as ApiError).code === 'string' &&
-        'message' in obj &&
-        typeof (obj as ApiError).message === 'string'
-    );
-}
-
-// A minimal type guard for DialecticContribution
-function isDialecticContribution(obj: unknown): obj is DialecticContribution {
-    return (
-        typeof obj === 'object' &&
-        obj !== null &&
-        'id' in obj &&
-        typeof (obj as DialecticContribution).id === 'string' &&
-        'session_id' in obj &&
-        typeof (obj as DialecticContribution).session_id === 'string'
-    );
-}
-
 export const useNotificationStore = create<NotificationState>((set, get) => {
 
     // --- NEW: Internal Realtime Callback Handler ---
     const handleIncomingNotification = (notification: Notification | null | undefined) => {
-        if (!notification || typeof notification !== 'object' || !notification.id || !notification.user_id || !notification.type || !notification.created_at) {
+        if (!notification || !notification.id || !notification.user_id || !notification.type) {
             logger.warn('[NotificationStore] Received invalid notification data from subscription.', { payload: notification ?? 'undefined/null' });
             return;
         }
         logger.debug('[NotificationStore] Received notification via Realtime', { id: notification.id, type: notification.type });
 
-        // --- NEW: Special handling for contribution generation ---
-        if (isDialecticLifecycleEventType(notification.type)) {
-            const { type, data } = notification;
-            logger.info(`[NotificationStore] Routing dialectic lifecycle event: ${type}`, { data });
+        // --- NEW: Simplified Routing Logic ---
+        if (notification.is_internal_event) {
+            logger.info(`[NotificationStore] Routing internal event: ${notification.type}`, { data: notification.data });
             
-            if (!data) {
-                logger.warn(`[NotificationStore] Received dialectic event '${type}' with no data.`);
-                return;
-            }
+            if (isDialecticLifecycleEventType(notification.type)) {
+                if (notification.data) {
+                    let eventPayload: DialecticLifecycleEvent | null = null;
+                    const { type, data } = notification;
 
-            let eventPayload: DialecticLifecycleEvent | null = null;
+                    // This switch is for type-safe payload construction.
+                    switch (type) {
+                        case 'contribution_generation_started':
+                            if (typeof data['sessionId'] === 'string' && typeof data['modelId'] === 'string' && typeof data['iterationNumber'] === 'number' && typeof data['job_id'] === 'string') {
+                                eventPayload = { type, sessionId: data['sessionId'], modelId: data['modelId'], iterationNumber: data['iterationNumber'], job_id: data['job_id'] };
+                            }
+                            break;
+                        case 'dialectic_contribution_started':
+                             if (typeof data['sessionId'] === 'string' && typeof data['modelId'] === 'string' && typeof data['iterationNumber'] === 'number' && typeof data['job_id'] === 'string') {
+                                eventPayload = { type, sessionId: data['sessionId'], modelId: data['modelId'], iterationNumber: data['iterationNumber'], job_id: data['job_id'] };
+                            }
+                            break;
+                        case 'contribution_generation_retrying':
+                             if (typeof data['sessionId'] === 'string' && typeof data['modelId'] === 'string' && typeof data['iterationNumber'] === 'number' && typeof data['job_id'] === 'string') {
+                                eventPayload = { type, sessionId: data['sessionId'], modelId: data['modelId'], iterationNumber: data['iterationNumber'], job_id: data['job_id'], error: typeof data['error'] === 'string' ? data['error'] : undefined };
+                            }
+                            break;
+                        case 'dialectic_contribution_received':
+                             if (typeof data['sessionId'] === 'string' && typeof data['job_id'] === 'string' && isDialecticContribution(data['contribution'])) {
+                                eventPayload = { 
+                                    type, 
+                                    sessionId: data['sessionId'], 
+                                    contribution: data['contribution'],
+                                    job_id: data['job_id'],
+                                    is_continuing: typeof data['is_continuing'] === 'boolean' ? data['is_continuing'] : false,
+                                };
+                            }
+                            break;
+                        case 'contribution_generation_failed':
+                             if (typeof data['sessionId'] === 'string' && isApiError(data['error'])) {
+                                eventPayload = { type, sessionId: data['sessionId'], error: data['error'], job_id: typeof data['job_id'] === 'string' ? data['job_id'] : undefined, modelId: typeof data['modelId'] === 'string' ? data['modelId'] : undefined };
+                            }
+                            break;
+                        case 'contribution_generation_complete':
+                            if (typeof data['sessionId'] === 'string' && typeof data['projectId'] === 'string') {
+                                eventPayload = { type, sessionId: data['sessionId'], projectId: data['projectId'] };
+                            }
+                            break;
+                        case 'dialectic_progress_update':
+                            if (
+                                typeof data['sessionId'] === 'string' &&
+                                typeof data['stageSlug'] === 'string' &&
+                                typeof data['current_step'] === 'number' &&
+                                typeof data['total_steps'] === 'number' &&
+                                typeof data['message'] === 'string'
+                            ) {
+                                eventPayload = {
+                                    type,
+                                    sessionId: data['sessionId'],
+                                    stageSlug: data['stageSlug'],
+                                    current_step: data['current_step'],
+                                    total_steps: data['total_steps'],
+                                    message: data['message'],
+                                };
+                            }
+                            break;
+                        case 'contribution_generation_continued':
+                             if (typeof data['sessionId'] === 'string' && typeof data['projectId'] === 'string' && typeof data['modelId'] === 'string' && typeof data['continuationNumber'] === 'number' && isDialecticContribution(data['contribution']) && typeof data['job_id'] === 'string') {
+                                eventPayload = { type, sessionId: data['sessionId'], projectId: data['projectId'], modelId: data['modelId'], continuationNumber: data['continuationNumber'], contribution: data['contribution'], job_id: data['job_id'] };
+                            }
+                            break;
+                    }
 
-            switch (type) {
-                case 'contribution_generation_started':
-                    if (typeof data['sessionId'] === 'string') {
-                        eventPayload = { type, sessionId: data['sessionId'] };
+                    if (eventPayload) {
+                        useDialecticStore.getState()._handleDialecticLifecycleEvent?.(eventPayload);
+                    } else {
+                        logger.warn(`[NotificationStore] Internal event '${type}' received, but its data payload did not match the expected format.`, { data });
                     }
-                    break;
-                case 'dialectic_contribution_started':
-                    if (typeof data['sessionId'] === 'string' && typeof data['modelId'] === 'string' && typeof data['iterationNumber'] === 'number') {
-                        eventPayload = { type, sessionId: data['sessionId'], modelId: data['modelId'], iterationNumber: data['iterationNumber'] };
-                    }
-                    break;
-                case 'contribution_generation_retrying':
-                    if (typeof data['sessionId'] === 'string' && typeof data['modelId'] === 'string' && typeof data['iterationNumber'] === 'number') {
-                        eventPayload = { type, sessionId: data['sessionId'], modelId: data['modelId'], iterationNumber: data['iterationNumber'], error: typeof data['error'] === 'string' ? data['error'] : undefined };
-                    }
-                    break;
-                case 'dialectic_contribution_received':
-                    if (typeof data['sessionId'] === 'string' && typeof data['job_id'] === 'string' && isDialecticContribution(data['contribution'])) {
-                        eventPayload = { 
-                            type, 
-                            sessionId: data['sessionId'], 
-                            contribution: data['contribution'], 
-                            job_id: data['job_id'],
-                            is_continuing: typeof data['is_continuing'] === 'boolean' ? data['is_continuing'] : false,
-                        };
-                    }
-                    break;
-                case 'contribution_generation_failed':
-                    if (typeof data['sessionId'] === 'string' && isApiError(data['error'])) {
-                        eventPayload = { type, sessionId: data['sessionId'], error: data['error'] };
-                    }
-                    break;
-                case 'contribution_generation_complete':
-                    if (typeof data['sessionId'] === 'string' && typeof data['projectId'] === 'string') {
-                        eventPayload = { type, sessionId: data['sessionId'], projectId: data['projectId'] };
-                    }
-                    break;
-                case 'dialectic_progress_update':
-                    if (
-                        typeof data['sessionId'] === 'string' &&
-                        typeof data['stageSlug'] === 'string' &&
-                        typeof data['current_step'] === 'number' &&
-                        typeof data['total_steps'] === 'number' &&
-                        typeof data['message'] === 'string'
-                    ) {
-                        eventPayload = {
-                            type,
-                            sessionId: data['sessionId'],
-                            stageSlug: data['stageSlug'],
-                            current_step: data['current_step'],
-                            total_steps: data['total_steps'],
-                            message: data['message'],
-                        };
-                    }
-                    break;
-                case 'contribution_generation_continued':
-                    if (typeof data['sessionId'] === 'string' && typeof data['projectId'] === 'string' && typeof data['modelId'] === 'string' && typeof data['continuationNumber'] === 'number' && isDialecticContribution(data['contribution']) && typeof data['job_id'] === 'string') {
-                        eventPayload = { type, sessionId: data['sessionId'], projectId: data['projectId'], modelId: data['modelId'], continuationNumber: data['continuationNumber'], contribution: data['contribution'], job_id: data['job_id'] };
-                    }
-                    break;
-            }
-            
-            if (eventPayload) {
-                useDialecticStore.getState()._handleDialecticLifecycleEvent?.(eventPayload);
+                } else {
+                    logger.warn(`[NotificationStore] Received internal event '${notification.type}' with no data.`);
+                }
             } else {
-                logger.warn(`[NotificationStore] Received dialectic event '${type}' but data format was invalid.`, { data });
+                logger.warn(`[NotificationStore] Received internal event with an unknown or unhandled type: '${notification.type}'`);
             }
-
             return;
         }
-        
+
         if (notification.type === 'WALLET_TRANSACTION') {
             const { data } = notification;
             if (data && typeof data === 'object' && 'walletId' in data && typeof data['walletId'] === 'string' && 'newBalance' in data && typeof data['newBalance'] === 'string') {
@@ -180,7 +144,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                 logger.warn('[NotificationStore] Received WALLET_TRANSACTION event with invalid data.', { data });
             }
         }
-
+        
         get().addNotification(notification);
     };
     // -------------------------------------------

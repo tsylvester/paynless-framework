@@ -149,7 +149,7 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         downloadFromStorage: downloadFromStorageSpy,
     };
 
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabaseClient as any, MOCK_USER, mockDependencies);
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabaseClient as unknown as SupabaseClient<Database>, MOCK_USER, mockDependencies);
     assertEquals(status, 400, `Test 3.7 failed.`);
     assertStringIncludes(error!.message, `Contribution with ID ${NON_EXISTENT_CONTRIB_ID} not found`);
   });
@@ -174,7 +174,7 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
           select: { data: [mockStageTransitionData('34961bdc-35ec-4f91-821d-7c73f5f76c0f')], error: null }
         },
         'dialectic_project_resources': {
-          select: { data: null, error: { message: "Simulated DB error", code: "500" } as MockPGRSTError }
+          select: { data: null, error: new Error("Simulated DB error") }
         },
         'dialectic_contributions': {
            select: (state) => {
@@ -194,7 +194,7 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         downloadFromStorage: spy(async () => ({ data: new ArrayBuffer(0), error: null })),
     };
 
-    const { error, status } = await submitStageResponses(mockPayload, mockSupabaseClient as any, MOCK_USER, mockDependencies);
+    const { error, status } = await submitStageResponses(mockPayload, mockSupabaseClient as unknown as SupabaseClient<Database>, MOCK_USER, mockDependencies);
 
     assertEquals(status, 500, `Test 4.4 failed.`);
     assertStringIncludes(error!.message, `Could not find prompt resource details for ID ${MOCK_INITIAL_PROMPT_RESOURCE_ID}`);
@@ -231,6 +231,9 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         'dialectic_stage_transitions': { 
           select: { data: [mockStageTransitionData('94cd4fee-b44c-465d-bad0-38e8e2116b5b')], error: null }
         },
+        'system_prompts': {
+          select: { data: [{ prompt_text: 'Mock system prompt text' }], error: null }
+        },
         'dialectic_contributions': {
           select: { data: [
             { id: testContributionId1, storage_path: 'path/to/thesis1.md', file_name: 'thesis1.md', storage_bucket: MOCK_CONTRIBUTIONS_BUCKET, model_name: 'test-model-1' },
@@ -252,8 +255,15 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         file_name: 'user_feedback_thesis.md',
         storage_bucket: MOCK_CONTRIBUTIONS_BUCKET,
         created_at: new Date().toISOString(),
-        feedback_type: 'general'
-    } as Database['public']['Tables']['dialectic_feedback']['Row'], null);
+        feedback_type: 'general',
+        project_id: MOCK_PROJECT_ID,
+        iteration_number: 1,
+        mime_type: 'text/markdown',
+        resource_description: null,
+        size_bytes: 100,
+        stage_slug: mockThesisStage.slug,
+        updated_at: new Date().toISOString()
+    }, null);
 
     const mockDependencies: SubmitStageResponsesDependencies = {
       logger: mockLogger,
@@ -261,17 +271,17 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
       downloadFromStorage: downloadFromStorageSpy,
     };
 
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabaseClient as any, MOCK_USER, mockDependencies);
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabaseClient as unknown as SupabaseClient<Database>, MOCK_USER, mockDependencies);
 
     assertEquals(status, 200, `Test 6.1 failed. Error: ${error?.message}`);
 
     assertEquals(data!.updatedSession.status, 'pending_antithesis');
     assertExists(data!.nextStageSeedPromptPath);
 
-    const uploadCalls = mockFileManager.uploadAndRegisterFile.calls;
+    const uploadCalls = mockFileManager.uploadAndRegisterFileSpy.calls;
     assert(uploadCalls.some((call: any) => {
-      const context = call.args[0] as { pathContext: { originalFileName: string } };
-      return context.pathContext.originalFileName.includes('user_feedback_thesis.md');
+      const context: UploadContext = call.args[0];
+      return context.pathContext.originalFileName && context.pathContext.originalFileName.includes('user_feedback_thesis.md');
     }), 'Expected user feedback file to be saved.');
   });
 
@@ -295,6 +305,9 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         'dialectic_stage_transitions': { 
           select: { data: [mockStageTransitionData('c6aaf630-e80e-4423-9452-b6d02385c2ce')], error: null }
         },
+        'system_prompts': {
+          select: { data: [{ prompt_text: 'Mock system prompt text' }], error: null }
+        },
         'dialectic_contributions': {
           select: { data: [], error: null }
         },
@@ -313,10 +326,17 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         file_name: 'seed_prompt.md',
         storage_bucket: MOCK_CONTRIBUTIONS_BUCKET,
         created_at: new Date().toISOString(),
-        feedback_type: null // Seed prompts do not have a feedback type
-    } as unknown as Database['public']['Tables']['dialectic_project_resources']['Row'], null);
+        feedback_type: 'general',
+        project_id: MOCK_PROJECT_ID,
+        iteration_number: 1,
+        mime_type: 'text/markdown',
+        resource_description: null,
+        size_bytes: 100,
+        stage_slug: mockThesisStage.slug,
+        updated_at: new Date().toISOString()
+    }, null);
 
-    const downloadSpy = spy(async (_client: SupabaseClient, bucket: string, path: string) => {
+    const downloadSpy = spy(async (_client: SupabaseClient, bucket: string, path: string): Promise<{ data: ArrayBuffer | null, error: Error | null }> => {
         let content: string | ArrayBuffer = 'default mock content';
         if (path.endsWith('user_feedback_thesis.md')) {
              content = 'mock user feedback'; // Provide non-empty content
@@ -326,8 +346,9 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
            content = `Mock content for path: ${path}`;
         }
         
-        const buffer = typeof content === 'string' ? new TextEncoder().encode(content).buffer : content;
-        return await Promise.resolve({ data: buffer as ArrayBuffer, error: null });
+        const blob = new Blob([content]);
+        const buffer = await blob.arrayBuffer();
+        return await Promise.resolve({ data: buffer, error: null });
     });
 
     const mockDependencies: SubmitStageResponsesDependencies = {
@@ -336,7 +357,7 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         downloadFromStorage: downloadSpy,
     };
 
-    const { data, status, error } = await submitStageResponses(mockPayload, mockSupabaseClient as any, MOCK_USER, mockDependencies);
+    const { data, status, error } = await submitStageResponses(mockPayload, mockSupabaseClient as unknown as SupabaseClient<Database>, MOCK_USER, mockDependencies);
 
     assertEquals(status, 200, `Test 6.4 failed. Error: ${error?.message}`);
     assertEquals(data!.updatedSession.status, 'pending_antithesis');

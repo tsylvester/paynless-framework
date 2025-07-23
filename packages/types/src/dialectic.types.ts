@@ -426,12 +426,16 @@ export interface DialecticContribution {
   size_bytes: number | null;
   mime_type: string | null;
   status?: ContributionStatus; // Client-side status for placeholders
+  job_id?: string | null; // ID of the generation job that created this contribution
 }
 
 export interface ContributionGenerationStartedPayload {
   // This is the overall contribution generation for the entire session stage. 
   type: 'contribution_generation_started';
   sessionId: string;
+  modelId: string;
+  iterationNumber: number;
+  job_id: string;
 }
 
 export interface DialecticContributionStartedPayload {
@@ -440,6 +444,7 @@ export interface DialecticContributionStartedPayload {
   sessionId: string;
   modelId: string;
   iterationNumber: number;
+  job_id: string;
 }
 
 export interface ContributionGenerationRetryingPayload {
@@ -448,6 +453,7 @@ export interface ContributionGenerationRetryingPayload {
   sessionId: string;
   modelId: string;
   iterationNumber: number;
+  job_id: string;
   error?: string;
 }
 
@@ -464,8 +470,8 @@ export interface ContributionGenerationFailedPayload {
   // This is a specific model failing for all of its retries.  
   type: 'contribution_generation_failed';
   sessionId: string;
-  projectId: string;
-  stageSlug: string;
+  job_id?: string; // The specific job that failed, if applicable
+  modelId?: string; // The specific model that failed, if applicable
   error?: ApiError;
 }
 

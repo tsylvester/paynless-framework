@@ -16,6 +16,7 @@ import type { PostgrestError } from 'npm:@supabase/postgrest-js@1.15.5';
 import { isDialecticJobPayload, isJobResultsWithModelProcessing, isRecord } from '../_shared/utils/type_guards.ts';
 import { processSimpleJob } from './processSimpleJob.ts';
 import type { DialecticJobRow, DialecticJobPayload, UnifiedAIResponse, ModelProcessingResult, DialecticSession, DialecticContributionRow, ProcessSimpleJobDeps } from '../dialectic-service/dialectic.interface.ts';
+import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
 
 // Define a type for our mock job for clarity
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
@@ -115,6 +116,17 @@ const mockContribution: DialecticContributionRow = {
     user_id: 'user-789',
 };
 
+const mockNotificationService: NotificationServiceType = {
+    sendContributionStartedEvent: async () => {},
+    sendDialecticContributionStartedEvent: async () => {},
+    sendContributionRetryingEvent: async () => {},
+    sendContributionReceivedEvent: async () => {},
+    sendContributionGenerationContinuedEvent: async () => {},
+    sendContributionGenerationCompleteEvent: async () => {},
+    sendDialecticProgressUpdateEvent: async () => {},
+    sendContributionFailedNotification: async () => {},
+  };
+
 const setupMockClient = (configOverrides: Record<string, any> = {}) => {
     return createMockSupabaseClient('user-789', {
         genericMockResults: {
@@ -162,6 +174,7 @@ const getMockDeps = (): ProcessSimpleJobDeps => {
       }),
       continueJob: async () => ({ enqueued: false }),
       retryJob: async () => ({}),
+      notificationService: mockNotificationService,
     }
 };
 

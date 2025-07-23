@@ -1,5 +1,16 @@
 import type { Database } from '@paynless/db-types';
 
+export interface NotificationServiceType {
+    sendContributionStartedEvent(payload: ContributionGenerationStartedPayload, targetUserId: string): Promise<void>;
+    sendDialecticContributionStartedEvent(payload: DialecticContributionStartedPayload, targetUserId: string): Promise<void>;
+    sendContributionReceivedEvent(payload: DialecticContributionReceivedPayload, targetUserId: string): Promise<void>;
+    sendContributionRetryingEvent(payload: ContributionGenerationRetryingPayload, targetUserId: string): Promise<void>;
+    sendContributionFailedNotification(payload: ContributionGenerationFailedPayload, targetUserId: string): Promise<void>;
+    sendContributionGenerationCompleteEvent(payload: ContributionGenerationCompletePayload, targetUserId: string): Promise<void>;
+    sendContributionGenerationContinuedEvent(payload: ContributionGenerationContinuedPayload, targetUserId: string): Promise<void>;
+    sendDialecticProgressUpdateEvent(payload: DialecticProgressUpdatePayload, targetUserId: string): Promise<void>;
+}
+
 export interface RpcNotification<T> {
   target_user_id: string;
   notification_type: string;
@@ -9,6 +20,7 @@ export interface RpcNotification<T> {
   link_path?: string;
   notification_data: T;
 }
+
 export type DialecticContributionRow = Database['public']['Tables']['dialectic_contributions']['Row'];
 export type DialecticJobRow = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -23,6 +35,7 @@ export interface ContributionGenerationStartedPayload {
     // This is the overall contribution generation for the entire session stage. 
     type: 'contribution_generation_started';
     sessionId: string;
+    job_id: string;
   }
   
   export interface DialecticContributionStartedPayload {
@@ -31,6 +44,7 @@ export interface ContributionGenerationStartedPayload {
     sessionId: string;
     modelId: string;
     iterationNumber: number;
+    job_id: string;
   }
   
   export interface ContributionGenerationRetryingPayload {
@@ -40,6 +54,7 @@ export interface ContributionGenerationStartedPayload {
     modelId: string;
     iterationNumber: number;
     error?: string;
+    job_id: string;
   }
   
   export interface DialecticContributionReceivedPayload {
@@ -58,6 +73,7 @@ export interface ContributionGenerationStartedPayload {
     projectId: string;
     stageSlug: string;
     error: ApiError;
+    job_id: string;
   }
   
   export interface ContributionGenerationContinuedPayload {
@@ -77,6 +93,7 @@ export interface ContributionGenerationStartedPayload {
     type: 'contribution_generation_complete';
     sessionId: string;
     projectId: string;
+    job_id: string;
   }
   
   export interface DialecticProgressUpdatePayload {
@@ -86,6 +103,7 @@ export interface ContributionGenerationStartedPayload {
     current_step: number;
     total_steps: number;
     message: string;
+    job_id: string;
   }
   
   export interface ProgressData {

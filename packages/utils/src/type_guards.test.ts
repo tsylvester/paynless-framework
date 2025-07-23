@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { isUserRole, isChatContextPreferences } from './type_guards';
+import { 
+    isUserRole, 
+    isChatContextPreferences,
+    isDialecticLifecycleEventType,
+    isDialecticContribution,
+    isApiError 
+} from './type_guards';
 
 describe('isUserRole', () => {
   it('should return true for "user"', () => {
@@ -91,4 +97,74 @@ describe('isChatContextPreferences', () => {
     };
     expect(isChatContextPreferences(obj)).toBe(true);
   });
+});
+
+describe('isDialecticLifecycleEventType', () => {
+    it('should return true for valid dialectic event types', () => {
+        expect(isDialecticLifecycleEventType('contribution_generation_started')).toBe(true);
+        expect(isDialecticLifecycleEventType('dialectic_contribution_received')).toBe(true);
+    });
+
+    it('should return false for invalid event types', () => {
+        expect(isDialecticLifecycleEventType('some_other_event')).toBe(false);
+        expect(isDialecticLifecycleEventType('WALLET_TRANSACTION')).toBe(false);
+        expect(isDialecticLifecycleEventType('')).toBe(false);
+    });
+});
+
+describe('isDialecticContribution', () => {
+    const validContribution = {
+        id: 'c-1',
+        session_id: 's-1',
+        stage: 'test',
+        iteration_number: 1,
+        is_latest_edit: true,
+        // other valid properties can be added here
+    };
+
+    it('should return true for a valid contribution object', () => {
+        expect(isDialecticContribution(validContribution)).toBe(true);
+    });
+
+    it('should return false if a required property is missing', () => {
+        const { id, ...invalid } = validContribution;
+        expect(isDialecticContribution(invalid)).toBe(false);
+    });
+
+    it('should return false if a property has the wrong type', () => {
+        const invalid = { ...validContribution, id: 123 };
+        expect(isDialecticContribution(invalid)).toBe(false);
+    });
+
+    it('should return false for non-object inputs', () => {
+        expect(isDialecticContribution(null)).toBe(false);
+        expect(isDialecticContribution('string')).toBe(false);
+        expect(isDialecticContribution(undefined)).toBe(false);
+    });
+});
+
+describe('isApiError', () => {
+    const validError = {
+        code: 'TEST_ERROR',
+        message: 'This is a test error',
+    };
+
+    it('should return true for a valid API error object', () => {
+        expect(isApiError(validError)).toBe(true);
+    });
+
+    it('should return false if "code" is missing', () => {
+        const invalid = { message: 'test' };
+        expect(isApiError(invalid)).toBe(false);
+    });
+
+    it('should return false if "message" has wrong type', () => {
+        const invalid = { code: 'TEST', message: 123 };
+        expect(isApiError(invalid)).toBe(false);
+    });
+
+    it('should return false for non-object inputs', () => {
+        expect(isApiError(null)).toBe(false);
+        expect(isApiError([])).toBe(false);
+    });
 });

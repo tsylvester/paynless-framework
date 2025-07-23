@@ -16,6 +16,7 @@ import { type UploadContext, type FileManagerResponse } from '../_shared/types/f
 import { ILogger } from '../_shared/types.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { logger } from '../_shared/logger.ts';
+import { NotificationService } from "../_shared/utils/notification.service.ts";
 
 // --- Mocks and Test Data ---
 
@@ -155,15 +156,13 @@ Deno.test('executeIsolatedStage - Happy Path', async () => {
             'ai_providers': {
                 select: { data: MOCK_MODELS, error: null }
             }
-        },
-        rpcResults: {
-            'create_notification_for_user': { data: null, error: null }
         }
     });
 
 
     const mockDeps: IIsolatedExecutionDeps = {
         logger: logger,
+        notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
         downloadFromStorage: () => Promise.resolve({ data: null, error: null }),
         callUnifiedAIModel: () => Promise.resolve({ content: 'AI RESPONSE', error: null, rawProviderResponse: {}, inputTokens: 1, outputTokens: 1, processingTimeMs: 1, contentType: 'text/markdown' }),
         fileManager: {
@@ -183,6 +182,7 @@ Deno.test('executeIsolatedStage - Happy Path', async () => {
         }),
     };
 
+    const notificationSpy = stub(mockDeps.notificationService, 'sendDialecticProgressUpdateEvent');
     const downloadStub = stub(
         mockDeps, 'downloadFromStorage',
         (_bucket: string, path: string) => {
@@ -219,7 +219,7 @@ Deno.test('executeIsolatedStage - Happy Path', async () => {
         assert(firstCallArgs[1].includes('DOC 1 CONTENT'), 'First call prompt should contain doc 1 content');
 
         assertEquals(uploadStub.calls.length, 4, 'Should save 4 new contributions');
-        assertEquals(spies.rpcSpy.calls.length, 5, 'Should send 1 initial and 4 progress notifications');
+        assertEquals(notificationSpy.calls.length, 5, 'Should send 1 initial and 4 progress notifications');
 
     } finally {
         downloadStub.restore();
@@ -239,6 +239,7 @@ Deno.test('executeIsolatedStage - Throws if stage not found', async () => {
 
     const mockDeps: IIsolatedExecutionDeps = {
         logger: logger,
+        notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
         getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
         calculateTotalSteps: () => 0,
         getSeedPromptForStage: () => Promise.reject(new Error('Should not be called')),
@@ -271,6 +272,7 @@ Deno.test('executeIsolatedStage - Throws if stage is missing processing strategy
     try {
         const mockDeps: IIsolatedExecutionDeps = {
             logger: logger,
+            notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
             getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
             calculateTotalSteps: () => 0,
             getSeedPromptForStage: () => Promise.reject(new Error('Should not be called')),
@@ -298,14 +300,14 @@ Deno.test('executeIsolatedStage - Handles AI call failures gracefully', async ()
             'dialectic_stages': { select: { data: [MOCK_STAGE] } },
             'dialectic_contributions': { select: { data: MOCK_SOURCE_CONTRIBUTIONS } },
             'ai_providers': { select: { data: MOCK_MODELS } }
-        },
-        rpcResults: { 'create_notification_for_user': { data: null, error: null } }
+        }
     });
 
     const errorSpy = stub(logger, 'error');
     
     const mockDeps: IIsolatedExecutionDeps = {
         logger: logger,
+        notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
         downloadFromStorage: async () => {
             const blob = new Blob(['content'], { type: 'text/plain' });
             return { data: await blob.arrayBuffer(), error: null };
@@ -321,12 +323,14 @@ Deno.test('executeIsolatedStage - Handles AI call failures gracefully', async ()
     };
 
     const uploadStub = stub(mockDeps.fileManager, 'uploadAndRegisterFile');
+    const notificationSpy = stub(mockDeps.notificationService, 'sendDialecticProgressUpdateEvent');
 
     try {
         await executeIsolatedTask(mockDb as unknown as SupabaseClient<Database>, MOCK_JOB, MOCK_PAYLOAD, 'user-123', mockDeps, 'auth-token');
         
         assertEquals(uploadStub.calls.length, 0, 'Should not save any contributions on AI failure');
         assertEquals(errorSpy.calls.length, 0, "No errors should be logged to the console from the function directly, but passed to the parent");
+        assertEquals(notificationSpy.calls.length, 5, "Should still send all progress notifications even on failure");
     } finally {
         errorSpy.restore();
         uploadStub.restore();
@@ -339,14 +343,14 @@ Deno.test('executeIsolatedStage - Completes with no source contributions', async
             'dialectic_stages': { select: { data: [MOCK_STAGE] } },
             'dialectic_contributions': { select: { data: [] } }, // No sources
             'ai_providers': { select: { data: MOCK_MODELS } }
-        },
-        rpcResults: { 'create_notification_for_user': { data: null, error: null } }
+        }
     });
 
     const infoSpy = stub(logger, 'info');
 
     const mockDeps: IIsolatedExecutionDeps = {
         logger: logger,
+        notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
         downloadFromStorage: () => Promise.reject(new Error('Should not be called')),
         callUnifiedAIModel: () => Promise.reject(new Error('Should not be called')),
         fileManager: { uploadAndRegisterFile: () => Promise.reject(new Error('Should not be called')) },
@@ -359,12 +363,13 @@ Deno.test('executeIsolatedStage - Completes with no source contributions', async
     };
 
     const callAIStub = stub(mockDeps, 'callUnifiedAIModel');
+    const notificationSpy = stub(mockDeps.notificationService, 'sendDialecticProgressUpdateEvent');
 
     try {
         await executeIsolatedTask(mockDb as unknown as SupabaseClient<Database>, MOCK_JOB, MOCK_PAYLOAD, 'user-123', mockDeps, 'auth-token');
 
         assertEquals(callAIStub.calls.length, 0, 'Should not make any AI calls');
-        assertEquals(spies.rpcSpy.calls.length, 1, 'Should only send the initial notification');
+        assertEquals(notificationSpy.calls.length, 1, 'Should only send the initial notification');
         
         const infoLastCall = infoSpy.calls.find(c => c.args[0].toString().includes('Found 0 source contributions to process'));
         assert(infoLastCall, "Should log that no contributions were found");
@@ -381,14 +386,14 @@ Deno.test('executeIsolatedStage - Handles partial AI call success', async () => 
             'dialectic_stages': { select: { data: [MOCK_STAGE] } },
             'dialectic_contributions': { select: { data: MOCK_SOURCE_CONTRIBUTIONS } },
             'ai_providers': { select: { data: MOCK_MODELS } }
-        },
-        rpcResults: { 'create_notification_for_user': { data: null, error: null } }
+        }
     });
 
     const errorSpy = stub(logger, 'error');
 
     const mockDeps: IIsolatedExecutionDeps = {
         logger: logger,
+        notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
         downloadFromStorage: async () => {
             const blob = new Blob(['content'], { type: 'text/plain' });
             return { data: await blob.arrayBuffer(), error: null };
@@ -410,6 +415,7 @@ Deno.test('executeIsolatedStage - Handles partial AI call success', async () => 
     };
 
     const uploadStub = stub(mockDeps.fileManager, 'uploadAndRegisterFile', () => Promise.resolve({ record: MOCK_SOURCE_CONTRIBUTIONS[0], error: null }));
+    const notificationSpy = stub(mockDeps.notificationService, 'sendDialecticProgressUpdateEvent');
 
     try {
         await executeIsolatedTask(mockDb as unknown as SupabaseClient<Database>, MOCK_JOB, MOCK_PAYLOAD, 'user-123', mockDeps, 'auth-token');
@@ -417,6 +423,7 @@ Deno.test('executeIsolatedStage - Handles partial AI call success', async () => 
         // 2 successful calls for the first model (1 per source doc)
         assertEquals(uploadStub.calls.length, 2, 'Should save contributions for successful AI calls');
         assertEquals(errorSpy.calls.length, 0, "No errors should be logged directly");
+        assertEquals(notificationSpy.calls.length, 5, 'Should send all 5 progress notifications');
         
     } finally {
         errorSpy.restore();
@@ -434,6 +441,7 @@ Deno.test('executeIsolatedStage - Throws on source document download failure', a
 
     const mockDeps: IIsolatedExecutionDeps = {
         logger: logger,
+        notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
         downloadFromStorage: () => Promise.resolve({ data: null, error: new Error('Download failed') }), // Simulate failure
         getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
         calculateTotalSteps: () => 0,
@@ -464,6 +472,7 @@ Deno.test('executeIsolatedStage - Throws if no models are selected', async () =>
 
     const mockDeps: IIsolatedExecutionDeps = {
         logger: logger,
+        notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
         getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
         downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(0), error: null }),
         getSeedPromptForStage: () => Promise.resolve({ content: 'SEED', fullPath: 'p', bucket: 'b', path: 'p', fileName: 'f' }),
@@ -488,14 +497,14 @@ Deno.test('executeIsolatedStage - Handles file upload failures gracefully', asyn
             'dialectic_stages': { select: { data: [MOCK_STAGE] } },
             'dialectic_contributions': { select: { data: MOCK_SOURCE_CONTRIBUTIONS } },
             'ai_providers': { select: { data: MOCK_MODELS } }
-        },
-        rpcResults: { 'create_notification_for_user': { data: null, error: null } }
+        }
     });
 
     const infoSpy = stub(logger, 'info');
 
     const mockDeps: IIsolatedExecutionDeps = {
         logger: logger,
+        notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
         downloadFromStorage: async () => ({ data: await (new Blob(['content'])).arrayBuffer(), error: null }),
         callUnifiedAIModel: () => Promise.resolve({ content: 'AI RESPONSE', error: null, rawProviderResponse: {}, inputTokens: 1, outputTokens: 1, processingTimeMs: 1, contentType: 'text/markdown' }),
         fileManager: { 
@@ -515,6 +524,8 @@ Deno.test('executeIsolatedStage - Handles file upload failures gracefully', asyn
         getSeedPromptForStage: (): Promise<SeedPromptData> => Promise.resolve({ content: 'SEED', fullPath: 'p', bucket: 'b', path: 'p', fileName: 'f' }),
     };
 
+    const notificationSpy = stub(mockDeps.notificationService, 'sendDialecticProgressUpdateEvent');
+
     try {
         await executeIsolatedTask(mockDb as unknown as SupabaseClient<Database>, MOCK_JOB, MOCK_PAYLOAD, 'user-123', mockDeps, 'auth-token');
         
@@ -524,6 +535,7 @@ Deno.test('executeIsolatedStage - Handles file upload failures gracefully', asyn
         const summary = finalLog.args[1];
         assertEquals(summary?.saved, 2, 'Should have saved 2 contributions (1 doc * 2 models)');
         assertEquals(summary?.errors, 2, 'Should have 2 processing errors (1 doc * 2 models)');
+        assertEquals(notificationSpy.calls.length, 5, 'Should send all 5 progress notifications');
 
     } finally {
         infoSpy.restore();

@@ -52,10 +52,13 @@ export async function processSimpleJob(
         providerDetails = providerData;
 
         if (currentAttempt === 0 && projectOwnerUserId) {
-            await dbClient.rpc('create_notification_for_user', {
-                target_user_id: projectOwnerUserId, notification_type: 'dialectic_contribution_started',
-                notification_data: { sessionId, stageSlug, model_id: providerDetails.id },
-            });
+            await deps.notificationService.sendDialecticContributionStartedEvent({
+                sessionId, 
+                modelId: providerDetails.id,
+                iterationNumber: iterationNumber,
+                type: 'dialectic_contribution_started',
+                job_id: jobId,
+            }, projectOwnerUserId);
         }
         
         let previousContent = '';
@@ -157,10 +160,13 @@ export async function processSimpleJob(
         }
 
         if (projectOwnerUserId) {
-            await dbClient.rpc('create_notification_for_user', {
-                target_user_id: projectOwnerUserId, notification_type: 'dialectic_contribution_received',
-                notification_data: { contribution: { id: contribution.id, session_id: contribution.session_id, stage: contribution.stage, model_name: contribution.model_name, file_name: contribution.file_name, contribution_type: contribution.contribution_type }, is_continuing: needsContinuation },
-            });
+            await deps.notificationService.sendContributionReceivedEvent({ 
+                contribution,
+                type: 'dialectic_contribution_received',
+                sessionId: sessionId,
+                job_id: jobId,
+                is_continuing: needsContinuation ?? false,
+            }, projectOwnerUserId);
         }
 
         deps.logger.info(`[dialectic-worker] [processJob] Job ${jobId} finished successfully. Results: ${JSON.stringify(modelProcessingResult)}. Final Status: completed`);
@@ -175,7 +181,7 @@ export async function processSimpleJob(
         deps.logger.warn(`[dialectic-worker] [processSimpleJob] Attempt ${currentAttempt + 1} failed for model ${model_id}: ${failedAttempt.error}`);
         
         if (currentAttempt < max_retries) {
-            await deps.retryJob({ logger: deps.logger }, dbClient, job, currentAttempt + 1, [failedAttempt], projectOwnerUserId);
+            await deps.retryJob({ logger: deps.logger, notificationService: deps.notificationService }, dbClient, job, currentAttempt + 1, [failedAttempt], projectOwnerUserId);
             return;
         }
 
@@ -197,17 +203,17 @@ export async function processSimpleJob(
         }
         
         if (projectOwnerUserId) {
-            await dbClient.rpc('create_notification_for_user', {
-                target_user_id: projectOwnerUserId,
-                notification_type: 'contribution_generation_failed',
-                notification_data: {
+            await deps.notificationService.sendContributionFailedNotification({
+                type: 'contribution_generation_failed',
+                sessionId: sessionId,
+                stageSlug: stageSlug ?? 'unknown',
+                projectId: projectId ?? '',
+                error: {
+                    code: 'RETRY_LOOP_FAILED',
                     message: `Generation for stage '${stageSlug}' has failed after all retry attempts.`,
-                    sessionId: sessionId,
-                    stageSlug: stageSlug,
-                    successful_contributions: [],
-                    failed_contributions: [model_id],
                 },
-            });
+                job_id: jobId,
+            }, projectOwnerUserId);
         }
         return;
     }

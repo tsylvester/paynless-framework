@@ -12,6 +12,8 @@ import type { UnifiedAIResponse } from '../dialectic-service/dialectic.interface
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { validatePayload } from '../_shared/utils/type_guards.ts';
 import { createMockJobProcessors } from '../_shared/dialectic.mock.ts';
+import { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
+import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 const mockDeps: ProcessSimpleJobDeps = {
@@ -38,6 +40,7 @@ const mockDeps: ProcessSimpleJobDeps = {
         error: undefined,
     })),
     retryJob: spy(async (): Promise<{ error?: Error }> => ({ error: undefined })),
+    notificationService: mockNotificationService,
 };
 
 Deno.test('processJob - routes to processSimpleJob for simple stages', async () => {

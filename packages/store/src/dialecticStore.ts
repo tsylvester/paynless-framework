@@ -953,10 +953,21 @@ export const useDialecticStore = create<DialecticStore>()(
   },
 
   // --- Private Handlers for Lifecycle Events ---
-  _handleContributionGenerationStarted: (_event: ContributionGenerationStartedPayload) => {
+  _handleContributionGenerationStarted: (event: ContributionGenerationStartedPayload) => {
     set({
       contributionGenerationStatus: 'generating',
       generateContributionsError: null,
+    });
+    // This event is session-wide, but we can also use it to update a specific placeholder
+    // if we want immediate feedback per job.
+    set(state => {
+      const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
+      if (session?.dialectic_contributions) {
+        const placeholder = session.dialectic_contributions.find(c => c.job_id === event.job_id);
+        if (placeholder) {
+          placeholder.status = 'generating';
+        }
+      }
     });
   },
 
@@ -964,12 +975,8 @@ export const useDialecticStore = create<DialecticStore>()(
     set(state => {
       const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
       if (session?.dialectic_contributions) {
-        // Find the first placeholder for this model/iteration that is still pending
-        const placeholder = session.dialectic_contributions.find(c => 
-            c.model_id === event.modelId && 
-            c.iteration_number === event.iterationNumber && 
-            c.status === 'pending'
-        );
+        // Find placeholder by job_id
+        const placeholder = session.dialectic_contributions.find(c => c.job_id === event.job_id);
         if (placeholder) {
           placeholder.status = 'generating';
         }
@@ -981,12 +988,8 @@ export const useDialecticStore = create<DialecticStore>()(
     set(state => {
       const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
       if (session?.dialectic_contributions) {
-        // Find the first placeholder for this model/iteration that is generating (or was pending)
-        const placeholder = session.dialectic_contributions.find(c => 
-            c.model_id === event.modelId && 
-            c.iteration_number === event.iterationNumber && 
-            (c.status === 'generating' || c.status === 'pending')
-        );
+        // Find placeholder by job_id
+        const placeholder = session.dialectic_contributions.find(c => c.job_id === event.job_id);
         if (placeholder) {
           placeholder.status = 'retrying';
           placeholder.error = { 
@@ -1002,14 +1005,10 @@ export const useDialecticStore = create<DialecticStore>()(
     set(state => {
       const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
       if (session?.dialectic_contributions) {
-        // Find the first placeholder for this model/iteration that is not yet completed/failed
-        const idx = session.dialectic_contributions.findIndex(c => 
-            c.model_id === event.contribution.model_id && 
-            c.iteration_number === event.contribution.iteration_number && 
-            (c.status === 'generating' || c.status === 'retrying' || c.status === 'pending')
-        );
+        // Find placeholder by job_id
+        const idx = session.dialectic_contributions.findIndex(c => c.job_id === event.job_id);
         
-        const newStatus = 'completed';
+        const newStatus = event.is_continuing ? 'continuing' : 'completed';
         if (isContributionStatus(newStatus)) {
           const newContribution = {
             ...event.contribution,
@@ -1069,18 +1068,29 @@ export const useDialecticStore = create<DialecticStore>()(
     set(state => {
       const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
       if (session?.dialectic_contributions) {
-        // Mark all remaining pending/generating placeholders for this session as failed
-        session.dialectic_contributions.forEach(c => {
-          if (c.status === 'pending' || c.status === 'generating' || c.status === 'retrying') {
-            c.status = 'failed';
-            c.error = event.error || { message: 'Generation failed due to a session-wide error.', code: 'GENERATION_FAILED' };
-          }
-        });
+        // Find and update placeholder by job_id if a job_id is provided
+        if (event.job_id) {
+            const placeholder = session.dialectic_contributions.find(c => c.job_id === event.job_id);
+            if (placeholder) {
+                placeholder.status = 'failed';
+                placeholder.error = event.error || { message: 'Generation failed for this specific job.', code: 'JOB_FAILED' };
+            }
+        } else {
+            // Catastrophic failure: Mark all remaining pending/generating placeholders for this session as failed
+            session.dialectic_contributions.forEach(c => {
+                if (c.status === 'pending' || c.status === 'generating' || c.status === 'retrying') {
+                    c.status = 'failed';
+                    c.error = event.error || { message: 'Generation failed due to a session-wide error.', code: 'GENERATION_FAILED' };
+                }
+            });
+        }
       }
-      // Clear tracking for this session
-      delete state.generatingSessions[event.sessionId];
-      state.contributionGenerationStatus = 'failed';
-      state.generateContributionsError = event.error || { message: 'Generation failed without a specific error.', code: 'GENERATION_FAILED' };
+      // Clear tracking for this session only if the failure is catastrophic (no job_id)
+      if (!event.job_id) {
+        delete state.generatingSessions[event.sessionId];
+        state.contributionGenerationStatus = 'failed';
+        state.generateContributionsError = event.error || { message: 'Generation failed without a specific error.', code: 'GENERATION_FAILED' };
+      }
     });
   },
 
@@ -1126,6 +1136,7 @@ export const useDialecticStore = create<DialecticStore>()(
           const tempId = `placeholder-${sessionId}-${modelId}-${iterationNumber}-${index}`;
           const placeholder: DialecticContribution = {
             id: tempId,
+            job_id: null, // Initialized to null, will be updated after API call
             session_id: sessionId,
             stage: stageSlug,
             iteration_number: iterationNumber,
@@ -1187,11 +1198,23 @@ export const useDialecticStore = create<DialecticStore>()(
   
       logger.info('[DialecticStore] Successfully enqueued contributions generation job.', { job_ids: response.data.job_ids });
       set(state => {
-        if (!response.data) return;
+        if (!response.data?.job_ids) return;
+
+        // --- Associate job_ids with placeholders ---
+        const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
+        if (session) {
+            const pendingPlaceholders = session.dialectic_contributions?.filter(c => c.status === 'pending' && c.iteration_number === iterationNumber) || [];
+            response.data.job_ids.forEach((jobId, index) => {
+                if (pendingPlaceholders[index]) {
+                    pendingPlaceholders[index].job_id = jobId;
+                }
+            });
+        }
+        
         // --- Track the new job IDs ---
         state.generatingSessions = {
           ...state.generatingSessions,
-          [sessionId]: [...(state.generatingSessions[sessionId] || []), ...response.data.job_ids!],
+          [sessionId]: [...(state.generatingSessions[sessionId] || []), ...response.data.job_ids],
         };
       });
   

@@ -429,3 +429,29 @@ export function isDialecticJobRow(record: unknown): record is DialecticJobRow {
   
     return true;
 }
+
+export function isJson(value: unknown): value is Json {
+    if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
+        return true;
+    }
+
+    if (Array.isArray(value)) {
+        return value.every(isJson);
+    }
+
+    if (typeof value === 'object') {
+        if (value.constructor.name !== 'Object') {
+            return false;
+        }
+        for (const key in value) {
+            if (Object.prototype.hasOwnProperty.call(value, key)) {
+                if (!isJson((value as Record<string, unknown>)[key])) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    return false;
+}

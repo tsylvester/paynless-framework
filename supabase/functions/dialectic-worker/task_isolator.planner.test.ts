@@ -13,8 +13,8 @@ import {
 } from '../dialectic-service/dialectic.interface.ts';
 import { ILogger } from '../_shared/types.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
-import { DownloadStorageFunctionType } from '../_shared/prompt-assembler.interface.ts';
 import { isDialecticJobPayload } from '../_shared/utils/type_guards.ts';
+import { DownloadFromStorageFn } from '../_shared/supabase_storage_utils.ts';
 
 // --- Mocks and Test Data ---
 const MOCK_PAYLOAD: DialecticJobPayload = {
@@ -164,7 +164,7 @@ Deno.test('planComplexStage - Happy Path: Generates correct child job payloads',
         return `RENDERED_PROMPT: ${context.prior_stage_ai_outputs}`;
     });
 
-    const mockDownloadFromStorage: DownloadStorageFunctionType = async (_client, _bucket, path) => {
+    const mockDownloadFromStorage: DownloadFromStorageFn = async (_supabase, bucket, path) => {
         const content = `Mock content for path: ${path}`;
         const uint8array = new TextEncoder().encode(content);
         // Manually create a new ArrayBuffer and copy the data to ensure the type is not ArrayBufferLike
@@ -179,7 +179,7 @@ Deno.test('planComplexStage - Happy Path: Generates correct child job payloads',
             { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
-            mockDownloadFromStorage,
+            (bucket, path) => mockDownloadFromStorage(mockDb as unknown as SupabaseClient<Database>, bucket, path),
             mockAssembler
         );
 
@@ -240,7 +240,14 @@ Deno.test('planComplexStage - Throws if dialectic_projects query fails', async (
     });
 
     const mockLogger: ILogger = { info: () => { }, warn: () => { }, error: () => { }, debug: () => { } };
-    const mockDownloadFromStorage: DownloadStorageFunctionType = async () => ({ data: new ArrayBuffer(0), error: null });
+    const mockDownloadFromStorage: DownloadFromStorageFn = async (_supabase, bucket, path) => {
+        const content = `Mock content for path: ${path}`;
+        const uint8array = new TextEncoder().encode(content);
+        // Manually create a new ArrayBuffer and copy the data to ensure the type is not ArrayBufferLike
+        const arrayBuffer = new ArrayBuffer(uint8array.length);
+        new Uint8Array(arrayBuffer).set(uint8array);
+        return { data: arrayBuffer, error: null };
+    };
     const mockAssembler = new PromptAssembler(mockDb as unknown as SupabaseClient<Database>);
 
     try {
@@ -249,7 +256,7 @@ Deno.test('planComplexStage - Throws if dialectic_projects query fails', async (
             { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
-            mockDownloadFromStorage,
+            (bucket, path) => mockDownloadFromStorage(mockDb as unknown as SupabaseClient<Database>, bucket, path),
             mockAssembler
         );
         assert(false, 'Should have thrown an error');
@@ -278,7 +285,14 @@ Deno.test('planComplexStage - Throws if dialectic_sessions query fails', async (
     });
 
     const mockLogger: ILogger = { info: () => { }, warn: () => { }, error: () => { }, debug: () => { } };
-    const mockDownloadFromStorage: DownloadStorageFunctionType = async () => ({ data: new ArrayBuffer(0), error: null });
+    const mockDownloadFromStorage: DownloadFromStorageFn = async (_supabase, bucket, path) => {
+        const content = `Mock content for path: ${path}`;
+        const uint8array = new TextEncoder().encode(content);
+        // Manually create a new ArrayBuffer and copy the data to ensure the type is not ArrayBufferLike
+        const arrayBuffer = new ArrayBuffer(uint8array.length);
+        new Uint8Array(arrayBuffer).set(uint8array);
+        return { data: arrayBuffer, error: null };
+    };
     const mockAssembler = new PromptAssembler(mockDb as unknown as SupabaseClient<Database>);
 
     try {
@@ -287,7 +301,7 @@ Deno.test('planComplexStage - Throws if dialectic_sessions query fails', async (
             { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
-            mockDownloadFromStorage,
+            (bucket, path) => mockDownloadFromStorage(mockDb as unknown as SupabaseClient<Database>, bucket, path),
             mockAssembler
         );
         assert(false, 'Should have thrown an error');
@@ -319,7 +333,14 @@ Deno.test('planComplexStage - Throws if dialectic_contributions query fails', as
     });
 
     const mockLogger: ILogger = { info: () => { }, warn: () => { }, error: () => { }, debug: () => { } };
-    const mockDownloadFromStorage: DownloadStorageFunctionType = async () => ({ data: new ArrayBuffer(0), error: null });
+    const mockDownloadFromStorage: DownloadFromStorageFn = async (_supabase, bucket, path) => {
+        const content = `Mock content for path: ${path}`;
+        const uint8array = new TextEncoder().encode(content);
+        // Manually create a new ArrayBuffer and copy the data to ensure the type is not ArrayBufferLike
+        const arrayBuffer = new ArrayBuffer(uint8array.length);
+        new Uint8Array(arrayBuffer).set(uint8array);
+        return { data: arrayBuffer, error: null };
+    };
     const mockAssembler = new PromptAssembler(mockDb as unknown as SupabaseClient<Database>);
 
     try {
@@ -328,7 +349,7 @@ Deno.test('planComplexStage - Throws if dialectic_contributions query fails', as
             { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
-            mockDownloadFromStorage,
+            (bucket, path) => mockDownloadFromStorage(mockDb as unknown as SupabaseClient<Database>, bucket, path),
             mockAssembler
         );
         assert(false, 'Should have thrown an error');
@@ -363,7 +384,14 @@ Deno.test('planComplexStage - Throws if ai_providers query fails', async () => {
     });
 
     const mockLogger: ILogger = { info: () => { }, warn: () => { }, error: () => { }, debug: () => { } };
-    const mockDownloadFromStorage: DownloadStorageFunctionType = async () => ({ data: new ArrayBuffer(0), error: null });
+    const mockDownloadFromStorage: DownloadFromStorageFn = async (_supabase, bucket, path) => {
+        const content = `Mock content for path: ${path}`;
+        const uint8array = new TextEncoder().encode(content);
+        // Manually create a new ArrayBuffer and copy the data to ensure the type is not ArrayBufferLike
+        const arrayBuffer = new ArrayBuffer(uint8array.length);
+        new Uint8Array(arrayBuffer).set(uint8array);
+        return { data: arrayBuffer, error: null };
+    };
     const mockAssembler = new PromptAssembler(mockDb as unknown as SupabaseClient<Database>);
 
     try {
@@ -372,7 +400,7 @@ Deno.test('planComplexStage - Throws if ai_providers query fails', async () => {
             { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
-            mockDownloadFromStorage,
+            (bucket, path) => mockDownloadFromStorage(mockDb as unknown as SupabaseClient<Database>, bucket, path),
             mockAssembler
         );
         assert(false, 'Should have thrown an error');
@@ -407,7 +435,9 @@ Deno.test('planComplexStage - Throws if downloadFromStorage fails', async () => 
     });
 
     const mockLogger: ILogger = { info: () => { }, warn: () => { }, error: () => { }, debug: () => { } };
-    const mockDownloadFromStorage: DownloadStorageFunctionType = async () => ({ data: null, error: new Error('Storage Error') });
+    const mockDownloadFromStorage: DownloadFromStorageFn = async (_supabase, bucket, path) => {
+        return { data: null, error: new Error('Storage Error') };
+    };
     const mockAssembler = new PromptAssembler(mockDb as unknown as SupabaseClient<Database>);
 
     try {
@@ -416,7 +446,7 @@ Deno.test('planComplexStage - Throws if downloadFromStorage fails', async () => 
             { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
-            mockDownloadFromStorage,
+            (bucket, path) => mockDownloadFromStorage(mockDb as unknown as SupabaseClient<Database>, bucket, path),
             mockAssembler
         );
         assert(false, 'Should have thrown an error');
@@ -457,7 +487,7 @@ Deno.test('planComplexStage - Handles stage with overlays and prompts', async ()
     });
 
     const mockLogger: ILogger = { info: () => { }, warn: () => { }, error: () => { }, debug: () => { } };
-    const mockDownloadFromStorage: DownloadStorageFunctionType = async (_client, _bucket, path) => {
+    const mockDownloadFromStorage: DownloadFromStorageFn = async (_supabase, bucket, path) => {
         const content = `Content for ${path}`;
         const uint8array = new TextEncoder().encode(content);
         // Manually create a new ArrayBuffer and copy the data to ensure the type is not ArrayBufferLike
@@ -475,7 +505,7 @@ Deno.test('planComplexStage - Handles stage with overlays and prompts', async ()
             { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
-            mockDownloadFromStorage,
+            (bucket, path) => mockDownloadFromStorage(mockDb as unknown as SupabaseClient<Database>, bucket, path),
             mockAssembler
         );
 
@@ -520,7 +550,14 @@ Deno.test('planComplexStage - Returns empty array if no source contributions are
     });
 
     const mockLogger: ILogger = { info: () => { }, warn: () => { }, error: () => { }, debug: () => { } };
-    const mockDownloadFromStorage: DownloadStorageFunctionType = async () => ({ data: new ArrayBuffer(0), error: null });
+    const mockDownloadFromStorage: DownloadFromStorageFn = async (_supabase, bucket, path) => {
+        const content = `Mock content for path: ${path}`;
+        const uint8array = new TextEncoder().encode(content);
+        // Manually create a new ArrayBuffer and copy the data to ensure the type is not ArrayBufferLike
+        const arrayBuffer = new ArrayBuffer(uint8array.length);
+        new Uint8Array(arrayBuffer).set(uint8array);
+        return { data: arrayBuffer, error: null };
+    };
     const mockAssembler = new PromptAssembler(mockDb as unknown as SupabaseClient<Database>);
 
     const childJobs = await planComplexStage(
@@ -528,7 +565,7 @@ Deno.test('planComplexStage - Returns empty array if no source contributions are
         { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
         'user-123',
         mockLogger,
-        mockDownloadFromStorage,
+        (bucket, path) => mockDownloadFromStorage(mockDb as unknown as SupabaseClient<Database>, bucket, path),
         mockAssembler
     );
 
@@ -557,7 +594,14 @@ Deno.test('planComplexStage - Throws if selectedModelIds is empty', async () => 
     });
 
     const mockLogger: ILogger = { info: () => { }, warn: () => { }, error: () => { }, debug: () => { } };
-    const mockDownloadFromStorage: DownloadStorageFunctionType = async () => ({ data: new ArrayBuffer(0), error: null });
+    const mockDownloadFromStorage: DownloadFromStorageFn = async (_supabase, bucket, path) => {
+        const content = `Mock content for path: ${path}`;
+        const uint8array = new TextEncoder().encode(content);
+        // Manually create a new ArrayBuffer and copy the data to ensure the type is not ArrayBufferLike
+        const arrayBuffer = new ArrayBuffer(uint8array.length);
+        new Uint8Array(arrayBuffer).set(uint8array);
+        return { data: arrayBuffer, error: null };
+    };
     const mockAssembler = new PromptAssembler(mockDb as unknown as SupabaseClient<Database>);
 
     try {
@@ -566,7 +610,7 @@ Deno.test('planComplexStage - Throws if selectedModelIds is empty', async () => 
             { ...MOCK_PARENT_JOB, payload: { ...MOCK_PAYLOAD, model_id: null } as unknown as DialecticJobPayload }, // Empty model IDs
             'user-123',
             mockLogger,
-            mockDownloadFromStorage,
+            (bucket, path) => mockDownloadFromStorage(mockDb as unknown as SupabaseClient<Database>, bucket, path),
             mockAssembler
         );
         assert(false, 'Should have thrown an error');
@@ -595,7 +639,14 @@ Deno.test('planComplexStage - Throws if no stage transition is found', async () 
     });
 
     const mockLogger: ILogger = { info: () => { }, warn: () => { }, error: () => { }, debug: () => { } };
-    const mockDownloadFromStorage: DownloadStorageFunctionType = async () => ({ data: new ArrayBuffer(0), error: null });
+    const mockDownloadFromStorage: DownloadFromStorageFn = async (_supabase, bucket, path) => {
+        const content = `Mock content for path: ${path}`;
+        const uint8array = new TextEncoder().encode(content);
+        // Manually create a new ArrayBuffer and copy the data to ensure the type is not ArrayBufferLike
+        const arrayBuffer = new ArrayBuffer(uint8array.length);
+        new Uint8Array(arrayBuffer).set(uint8array);
+        return { data: arrayBuffer, error: null };
+    };
     const mockAssembler = new PromptAssembler(mockDb as unknown as SupabaseClient<Database>);
 
     try {
@@ -604,7 +655,7 @@ Deno.test('planComplexStage - Throws if no stage transition is found', async () 
             { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
-            mockDownloadFromStorage,
+            (bucket, path) => mockDownloadFromStorage(mockDb as unknown as SupabaseClient<Database>, bucket, path),
             mockAssembler
         );
         assert(false, 'Should have thrown an error');
@@ -645,7 +696,14 @@ Deno.test('planComplexStage - Handles source contributions with missing file_nam
 
     const mockLogger: ILogger = { info: () => { }, warn: () => { }, error: () => { }, debug: () => { } };
     const warnSpy = stub(mockLogger, 'warn');
-    const mockDownloadFromStorage: DownloadStorageFunctionType = async () => ({ data: new ArrayBuffer(0), error: null });
+    const mockDownloadFromStorage: DownloadFromStorageFn = async (_supabase, bucket, path) => {
+        const content = `Mock content for path: ${path}`;
+        const uint8array = new TextEncoder().encode(content);
+        // Manually create a new ArrayBuffer and copy the data to ensure the type is not ArrayBufferLike
+        const arrayBuffer = new ArrayBuffer(uint8array.length);
+        new Uint8Array(arrayBuffer).set(uint8array);
+        return { data: arrayBuffer, error: null };
+    };
     const mockAssembler = new PromptAssembler(mockDb as unknown as SupabaseClient<Database>);
 
     try {
@@ -654,7 +712,7 @@ Deno.test('planComplexStage - Handles source contributions with missing file_nam
             { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
-            mockDownloadFromStorage,
+            (bucket, path) => mockDownloadFromStorage(mockDb as unknown as SupabaseClient<Database>, bucket, path),
             mockAssembler
         );
 
@@ -692,7 +750,14 @@ Deno.test('planComplexStage - Throws if no matching models are found for selecte
     });
 
     const mockLogger: ILogger = { info: () => { }, warn: () => { }, error: () => { }, debug: () => { } };
-    const mockDownloadFromStorage: DownloadStorageFunctionType = async () => ({ data: new ArrayBuffer(0), error: null });
+    const mockDownloadFromStorage: DownloadFromStorageFn = async (_supabase, bucket, path) => {
+        const content = `Mock content for path: ${path}`;
+        const uint8array = new TextEncoder().encode(content);
+        // Manually create a new ArrayBuffer and copy the data to ensure the type is not ArrayBufferLike
+        const arrayBuffer = new ArrayBuffer(uint8array.length);
+        new Uint8Array(arrayBuffer).set(uint8array);
+        return { data: arrayBuffer, error: null };
+    };
     const mockAssembler = new PromptAssembler(mockDb as unknown as SupabaseClient<Database>);
 
     try {
@@ -701,7 +766,7 @@ Deno.test('planComplexStage - Throws if no matching models are found for selecte
             { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
-            mockDownloadFromStorage,
+            (bucket, path) => mockDownloadFromStorage(mockDb as unknown as SupabaseClient<Database>, bucket, path),
             mockAssembler
         );
         assert(false, 'Should have thrown an error');

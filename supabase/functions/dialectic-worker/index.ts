@@ -21,7 +21,8 @@ import {
 } from '../_shared/supabase_storage_utils.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
-import { createSupabaseAdminClient } from '../_shared/auth.ts';
+import { createSupabaseAdminClient, } from '../_shared/auth.ts';
+import { NotificationService } from '../_shared/utils/notification.service.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -53,6 +54,7 @@ serve(async (req: Request) => {
     }
     console.log('dialectic-worker serverless function called with auth token', authToken);
     const adminClient: SupabaseClient<Database> = createSupabaseAdminClient();
+    const notificationService = new NotificationService(adminClient);
     //const dbClient: SupabaseClient<Database> = createSupabaseClient(req);
     console.log('dialectic-worker serverless function called with adminClient', adminClient);
     console.log('dialectic-worker serverless function called with req', req);
@@ -67,6 +69,7 @@ serve(async (req: Request) => {
       randomUUID: crypto.randomUUID.bind(crypto),
       fileManager: new FileManagerService(adminClient),
       deleteFromStorage: (bucket: string, paths: string[]) => deleteFromStorage(adminClient, bucket, paths),
+      notificationService,
     };
 
     // We must await the handler to ensure the serverless function
@@ -126,15 +129,22 @@ export async function handleJob(
     console.log(`[handleJob] Job ${jobId} status updated to failed due to invalid payload.`);
 
     if (projectOwnerUserId) {
-        await adminClient.rpc('create_notification_for_user', {
-            target_user_id: projectOwnerUserId,
-            notification_type: 'contribution_generation_failed',
-            notification_data: { 
-                sessionId: job.session_id, // Use from job as payload is invalid
-                stageSlug: job.stage_slug, 
-                reason: `An unexpected error occurred: ${errorMessage}`,
+        let projectId = '';
+        if (job.payload && typeof job.payload === 'object' && !Array.isArray(job.payload) && 'projectId' in job.payload && typeof job.payload['projectId'] === 'string') {
+            projectId = job.payload['projectId'];
+        }
+
+        await deps.notificationService.sendContributionFailedNotification({
+            type: 'contribution_generation_failed',
+            sessionId: job.session_id,
+            projectId: projectId,
+            stageSlug: job.stage_slug,
+            error: {
+                code: 'VALIDATION_ERROR',
+                message: `An unexpected error occurred: ${errorMessage}`,
             },
-        });
+            job_id: jobId,
+        }, projectOwnerUserId);
         console.log(`[handleJob] Failure notification sent for job: ${jobId}`);
     }
     return;
@@ -154,13 +164,13 @@ export async function handleJob(
 
     // Notify user that the job has started
     if (projectOwnerUserId) {
-        console.log(`[handleJob] Sending 'started' notification for job ${jobId}...`);
-        await adminClient.rpc('create_notification_for_user', {
-            target_user_id: projectOwnerUserId,
-            notification_type: 'contribution_generation_started',
-            notification_data: { sessionId: job.payload.sessionId, stageSlug: job.payload.stageSlug },
-        });
-        console.log(`[handleJob] 'Started' notification sent for job ${jobId}.`);
+      console.log(`[handleJob] Sending 'started' notification for job ${jobId}...`);
+      await deps.notificationService.sendContributionStartedEvent({
+        type: 'contribution_generation_started',
+        sessionId: job.payload.sessionId,
+        job_id: jobId,
+      }, projectOwnerUserId);
+      console.log(`[handleJob] 'Started' notification sent for job ${jobId}.`);
     }
 
     const validatedJob: Job & { payload: DialecticJobPayload } = {
@@ -182,15 +192,19 @@ export async function handleJob(
         failedAttempts: [],
       };
 
-      await adminClient.rpc('create_notification_for_user', {
-          target_user_id: projectOwnerUserId,
-          notification_type: 'contribution_generation_failed',
-          notification_data: {
-              sessionId: job.session_id,
-              stageSlug: job.stage_slug,
-              error: errorDetails
-          },
-      });
+      let projectId = '';
+      if (job.payload && typeof job.payload === 'object' && !Array.isArray(job.payload) && 'projectId' in job.payload && typeof job.payload.projectId === 'string') {
+          projectId = job.payload.projectId;
+      }
+
+      await deps.notificationService.sendContributionFailedNotification({
+        type: 'contribution_generation_failed',
+        sessionId: job.session_id,
+        projectId: projectId,
+        stageSlug: job.stage_slug,
+        error: { code: 'UNHANDLED_EXCEPTION', message: error.message },
+        job_id: jobId,
+      }, projectOwnerUserId);
 
       await adminClient.from('dialectic_generation_jobs').update({
           status: 'failed',

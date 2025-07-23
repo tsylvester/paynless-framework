@@ -840,6 +840,30 @@ export type Database = {
           },
         ]
       }
+      dialectic_trigger_logs: {
+        Row: {
+          created_at: string | null
+          error_details: string | null
+          id: number
+          job_id: string
+          log_message: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          error_details?: string | null
+          id?: number
+          job_id: string
+          log_message?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          error_details?: string | null
+          id?: number
+          job_id?: string
+          log_message?: string | null
+        }
+        Relationships: []
+      }
       domain_process_associations: {
         Row: {
           created_at: string
@@ -994,7 +1018,11 @@ export type Database = {
           created_at: string
           data: Json | null
           id: string
+          is_internal_event: boolean
+          link_path: string | null
+          message: string | null
           read: boolean
+          title: string | null
           type: string
           user_id: string
         }
@@ -1002,7 +1030,11 @@ export type Database = {
           created_at?: string
           data?: Json | null
           id?: string
+          is_internal_event?: boolean
+          link_path?: string | null
+          message?: string | null
           read?: boolean
+          title?: string | null
           type: string
           user_id: string
         }
@@ -1010,7 +1042,11 @@ export type Database = {
           created_at?: string
           data?: Json | null
           id?: string
+          is_internal_event?: boolean
+          link_path?: string | null
+          message?: string | null
           read?: boolean
+          title?: string | null
           type?: string
           user_id?: string
         }
@@ -1579,11 +1615,21 @@ export type Database = {
         }[]
       }
       create_notification_for_user: {
-        Args: {
-          target_user_id: string
-          notification_type: string
-          notification_data: Json
-        }
+        Args:
+          | {
+              p_target_user_id: string
+              p_notification_type: string
+              p_notification_data: Json
+              p_title?: string
+              p_message?: string
+              p_link_path?: string
+              p_is_internal_event?: boolean
+            }
+          | {
+              target_user_id: string
+              notification_type: string
+              notification_data: Json
+            }
         Returns: undefined
       }
       create_org_and_admin_member: {

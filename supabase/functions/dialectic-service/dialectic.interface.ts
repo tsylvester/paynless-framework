@@ -11,6 +11,7 @@ import type { DeleteStorageResult, DownloadStorageResult } from '../_shared/supa
 import type {
   FinishReason
 } from '../_shared/types.ts';
+import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
 
 export type StorageError = {
   message: string;
@@ -628,11 +629,12 @@ export interface ProcessSimpleJobDeps extends GenerateContributionsDeps {
     projectOwnerUserId: string
   ) => Promise<IContinueJobResult>;
   retryJob: (
-    deps: { logger: ILogger },
+    deps: { logger: ILogger, notificationService: NotificationServiceType },
     dbClient: SupabaseClient<Database>,
     job: Job & { payload: DialecticJobPayload },
     currentAttempt: number,
     failedContributionAttempts: FailedAttemptError[],
     projectOwnerUserId: string
   ) => Promise<{ error?: Error }>;
+  notificationService: NotificationServiceType;
 }

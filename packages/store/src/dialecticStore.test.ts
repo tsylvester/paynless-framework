@@ -606,7 +606,7 @@ describe('useDialecticStore', () => {
             });
         });
 
-        it('should handle successful contribution generation request and create placeholders', async () => {
+        it('should handle successful contribution generation request and create placeholders with job_ids', async () => {
             const mockResponse: GenerateContributionsResponse = {
                 sessionId: mockPayload.sessionId,
                 projectId: mockPayload.projectId,
@@ -639,7 +639,9 @@ describe('useDialecticStore', () => {
             expect(finalState.generateContributionsError).toBeNull();
             expect(finalContributions).toHaveLength(2);
             expect(finalContributions?.[0].status).toBe('pending');
+            expect(finalContributions?.[0].job_id).toBe('job-1');
             expect(finalContributions?.[1].model_name).toBe('Test Model 2');
+            expect(finalContributions?.[1].job_id).toBe('job-2');
             expect(finalState.generatingSessions[mockPayload.sessionId]).toEqual(['job-1', 'job-2']);
         });
 
@@ -922,6 +924,9 @@ describe('useDialecticStore', () => {
             const event: DialecticLifecycleEvent = {
                 type: 'contribution_generation_started',
                 sessionId: 'session-123',
+                modelId: 'model-abc',
+                iterationNumber: 1,
+                job_id: 'job-1'
             };
             useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
     
@@ -937,6 +942,7 @@ describe('useDialecticStore', () => {
                 if (state.currentProjectDetail?.dialectic_sessions?.[0]) {
                     state.currentProjectDetail.dialectic_sessions[0].dialectic_contributions = [{ 
                         id: placeholderId, 
+                        job_id: 'job-1', // Add the job_id to the placeholder
                         status: 'pending', 
                         session_id: 'session-123', 
                         iteration_number: 1, 
@@ -975,6 +981,7 @@ describe('useDialecticStore', () => {
                 sessionId: 'session-123',
                 modelId: 'model-abc',
                 iterationNumber: 1,
+                job_id: 'job-1'
             };
             useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
 
@@ -989,6 +996,7 @@ describe('useDialecticStore', () => {
                 if (state.currentProjectDetail?.dialectic_sessions?.[0]) {
                     state.currentProjectDetail.dialectic_sessions[0].dialectic_contributions = [{ 
                         id: placeholderId, 
+                        job_id: 'job-xyz', // Add the job_id to the placeholder
                         status: 'generating', // Should be in generating state before retrying
                         session_id: 'session-123', 
                         iteration_number: 1, 
@@ -1027,6 +1035,7 @@ describe('useDialecticStore', () => {
                 sessionId: 'session-123',
                 modelId: 'model-abc',
                 iterationNumber: 1,
+                job_id: 'job-xyz',
                 error: 'Retrying...',
             };
             useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
@@ -1039,12 +1048,13 @@ describe('useDialecticStore', () => {
             });
         });
 
-        it('should handle dialectic_contribution_received and replace placeholder', () => {
+        it('should handle dialectic_contribution_received and replace placeholder by job_id', () => {
             const placeholderId = `placeholder-session-123-model-abc-1`;
             useDialecticStore.setState(state => {
                 if (state.currentProjectDetail?.dialectic_sessions?.[0]) {
                     state.currentProjectDetail.dialectic_sessions[0].dialectic_contributions = [{ 
                         id: placeholderId,
+                        job_id: 'job-to-find', // The key change: placeholder has a job_id
                         status: 'generating',
                         session_id: 'session-123',
                         iteration_number: 1,
@@ -1081,7 +1091,7 @@ describe('useDialecticStore', () => {
                 sessionId: 'session-123',
                 contribution: { 
                     id: 'real-id-1', 
-                    model_id: 'model-abc', 
+                    model_id: 'model-abc', // model_id is still present
                     iteration_number: 1, 
                     session_id: 'session-123', 
                     user_id: 'user-123', 
@@ -1108,7 +1118,8 @@ describe('useDialecticStore', () => {
                     size_bytes: 100,    
                     mime_type: 'text/plain',
                 },
-                job_id: 'job-1',
+                job_id: 'job-to-find', // The event carries the job_id
+                is_continuing: false, // Explicitly add the missing flag
             };
             useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
 
@@ -1118,12 +1129,13 @@ describe('useDialecticStore', () => {
             expect(contributions?.[0].status).toBe('completed');
         });
 
-        it('should handle contribution_generation_continued and update placeholder', () => {
+        it('should handle contribution_generation_continued and update placeholder by job_id', () => {
             const placeholderId = `placeholder-session-123-model-abc-1`;
             useDialecticStore.setState(state => {
                 if (state.currentProjectDetail?.dialectic_sessions?.[0]) {
                     state.currentProjectDetail.dialectic_sessions[0].dialectic_contributions = [{
                         id: placeholderId,
+                        job_id: 'job-to-continue', // The key change: placeholder has a job_id
                         status: 'generating',
                         session_id: 'session-123',
                         iteration_number: 1,
@@ -1169,7 +1181,7 @@ describe('useDialecticStore', () => {
                     size_bytes: 100, 
                     mime_type: 'text/plain',
                 },
-                job_id: 'job-1',
+                job_id: 'job-to-continue',
                 projectId: 'proj-123',
                 modelId: 'model-abc',
                 continuationNumber: 1,
@@ -1184,12 +1196,13 @@ describe('useDialecticStore', () => {
             expect(contribution?.status).toBe('continuing');
         });
 
-        it('should handle contribution_generation_failed and mark placeholders', () => {
+        it('should handle contribution_generation_failed and update placeholder by job_id', () => {
             const placeholderId = `placeholder-session-123-model-abc-1`;
             useDialecticStore.setState(state => {
                 if (state.currentProjectDetail?.dialectic_sessions?.[0]) {
                     state.currentProjectDetail.dialectic_sessions[0].dialectic_contributions = [{ 
                         id: placeholderId,
+                        job_id: 'job-to-fail', // The key change: placeholder has a job_id
                         status: 'generating',
                         session_id: 'session-123',
                         iteration_number: 1,
@@ -1205,6 +1218,8 @@ describe('useDialecticStore', () => {
             const event: DialecticLifecycleEvent = {
                 type: 'contribution_generation_failed',
                 sessionId: 'session-123',
+                modelId: 'model-abc', // A failed event can be model-specific
+                job_id: 'job-to-fail', // The event carries the job_id
                 error: { code: 'FAILED', message: 'It failed' },
             };
             useDialecticStore.getState()._handleDialecticLifecycleEvent?.(event);
@@ -1212,7 +1227,8 @@ describe('useDialecticStore', () => {
             const contribution = useDialecticStore.getState().currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions?.[0];
             expect(contribution?.status).toBe('failed');
             expect(contribution?.error).toEqual({ code: 'FAILED', message: 'It failed' });
-            expect(useDialecticStore.getState().contributionGenerationStatus).toBe('failed');
+            // Overall status should not be 'failed' for a single model failure, just the placeholder
+            expect(useDialecticStore.getState().contributionGenerationStatus).not.toBe('failed');
         });
 
         it('should handle contribution_generation_complete and reset status', () => {
