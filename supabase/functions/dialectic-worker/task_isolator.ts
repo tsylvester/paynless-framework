@@ -15,7 +15,7 @@ import { FileType } from '../_shared/types/file_manager.types.ts';
 import { getSeedPromptForStage } from '../_shared/utils/dialectic_utils.ts';
 import { hasProcessingStrategy, isDialecticContribution, isProjectContext, isStageContext } from '../_shared/utils/type_guards.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
-import { DownloadStorageFunctionType } from '../_shared/prompt-assembler.interface.ts';
+import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import { ILogger } from '../_shared/types.ts';
 
 export interface IIsolatedExecutionDeps extends GenerateContributionsDeps {
@@ -26,15 +26,14 @@ export interface IIsolatedExecutionDeps extends GenerateContributionsDeps {
 
 export async function planComplexStage(
     dbClient: SupabaseClient<Database>,
-    parentJob: DialecticJobRow,
-    payload: DialecticJobPayload,
+    parentJob: DialecticJobRow & { payload: DialecticJobPayload },
     projectOwnerUserId: string,
     logger: ILogger,
-    downloadFromStorage: DownloadStorageFunctionType,
+    downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>,
     promptAssembler: PromptAssembler
 ): Promise<DialecticJobRow[]> {
     logger.info(`[task_isolator] [planComplexStage] Starting for parent job ID: ${parentJob.id}`);
-    const { sessionId, iterationNumber = 1, stageSlug, projectId } = payload;
+    const { sessionId, iterationNumber = 1, stageSlug, projectId } = parentJob.payload;
 
     if (!stageSlug || !projectId) {
         throw new Error("stageSlug and projectId are required for task planning.");
@@ -114,7 +113,7 @@ export async function planComplexStage(
                 return null;
             }
             const fullPath = `${contrib.storage_path}/${contrib.file_name}`;
-            const { data, error } = await downloadFromStorage(dbClient, contrib.storage_bucket, fullPath);
+            const { data, error } = await downloadFromStorage(contrib.storage_bucket, fullPath);
             if (error) throw new Error(`Failed to download content for contribution ${contrib.id} from ${fullPath}: ${error.message}`);
             return {
                 ...contrib,
@@ -131,7 +130,7 @@ export async function planComplexStage(
     const { data: models, error: modelsError } = await dbClient
         .from('ai_providers')
         .select('*')
-        .eq('id', payload.model_id);
+        .eq('id', parentJob.payload.model_id);
 
     if (modelsError) throw new Error(`Failed to fetch models: ${modelsError.message}`);
     if (!models || models.length === 0) throw new Error('No models found for selected IDs.');
@@ -154,7 +153,15 @@ export async function planComplexStage(
             const prompt = promptAssembler.render(stage, context, project.user_domain_overlay_values);
 
             const childPayload: DialecticJobPayload = {
-                ...payload,
+                sessionId: parentJob.payload.sessionId,
+                projectId: parentJob.payload.projectId,
+                stageSlug: parentJob.payload.stageSlug,
+                iterationNumber: parentJob.payload.iterationNumber,
+                chatId: parentJob.payload.chatId,
+                walletId: parentJob.payload.walletId,
+                continueUntilComplete: parentJob.payload.continueUntilComplete,
+                maxRetries: parentJob.payload.maxRetries,
+                continuation_count: parentJob.payload.continuation_count,
                 model_id: model.id, // Isolate to a single model
                 target_contribution_id: doc.id // Track the source contribution
             };
@@ -244,7 +251,7 @@ export async function executeIsolatedTask(
     // 3. Download content for each source contribution
     const sourceDocuments = await Promise.all(
         sourceContributions.map(async (contrib: DialecticContributionRow) => {
-            const { data, error } = await deps.downloadFromStorage(dbClient, contrib.storage_bucket, `${contrib.storage_path}/${contrib.file_name}`);
+            const { data, error } = await deps.downloadFromStorage(contrib.storage_bucket, `${contrib.storage_path}/${contrib.file_name}`);
             if (error) {
                 throw new Error(`Failed to download content for contribution ${contrib.id}: ${error.message}`);
             }

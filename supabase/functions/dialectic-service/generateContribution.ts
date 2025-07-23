@@ -12,10 +12,11 @@ export async function generateContributions(
     dbClient: SupabaseClient<Database>,
     payload: GenerateContributionsPayload,
     user: User,
-    _deps: GenerateContributionsDeps
+    _deps: GenerateContributionsDeps,
+    authToken?: string | null,
 ): Promise<{ success: boolean; data?: { job_ids: string[] }; error?: { message: string; status?: number; details?: string; code?: string } }> {
 
-    const { sessionId, iterationNumber = 1, stageSlug, continueUntilComplete, maxRetries = 3, selectedModelIds } = payload;
+    const { sessionId, iterationNumber = 1, stageSlug, continueUntilComplete, maxRetries = 3 } = payload;
     logger.info(`[generateContributions] Enqueuing job for session ID: ${sessionId}, stage: ${stageSlug}, iteration: ${iterationNumber}, continueUntilComplete: ${continueUntilComplete}`);
 
     if (!stageSlug) {
@@ -30,19 +31,58 @@ export async function generateContributions(
         logger.warn("[generateContributions] userId is required for enqueuing a job.", { payload });
         return { success: false, error: { message: "User could not be identified for job creation.", status: 401 } };
     }
-    if (!selectedModelIds || selectedModelIds.length === 0) {
-        logger.warn("[generateContributions] selectedModelIds must be a non-empty array.", { payload });
-        return { success: false, error: { message: "selectedModelIds must be a non-empty array.", status: 400 } };
-    }
 
     try {
+        // Fetch session details to get the selected models and validate context
+        const { data: sessionData, error: sessionError } = await dbClient
+            .from('dialectic_sessions')
+            .select(`
+                project_id,
+                selected_model_ids,
+                iteration_count,
+                current_stage:current_stage_id(slug)
+            `)
+            .eq('id', sessionId)
+            .single();
+
+        if (sessionError) {
+            logger.error(`[generateContributions] Failed to fetch session details for session ${sessionId}.`, { error: sessionError });
+            return { success: false, error: { message: `Failed to fetch session details: ${sessionError.message}`, status: 500, details: sessionError.details, code: sessionError.code } };
+        }
+
+        // --- Context Validation ---
+        if (sessionData.project_id !== payload.projectId) {
+            const message = "Session's project ID does not match the provided project ID.";
+            logger.warn(`[generateContributions] ${message}`, { sessionId, sessionProjectId: sessionData.project_id, payloadProjectId: payload.projectId });
+            return { success: false, error: { message, status: 400 } };
+        }
+        if (sessionData.iteration_count !== payload.iterationNumber) {
+            const message = "Session's iteration number does not match the provided iteration number.";
+            logger.warn(`[generateContributions] ${message}`, { sessionId, sessionIteration: sessionData.iteration_count, payloadIteration: payload.iterationNumber });
+            return { success: false, error: { message, status: 400 } };
+        }
+        // The joined `dialectic_stages` table is an object if found, or null.
+        if (!sessionData.current_stage || Array.isArray(sessionData.current_stage) || sessionData.current_stage.slug !== payload.stageSlug) {
+            const message = "Session's current stage does not match the provided stage slug.";
+            const sessionStageSlug = (sessionData.current_stage && !Array.isArray(sessionData.current_stage)) ? sessionData.current_stage.slug : 'Not Found';
+            logger.warn(`[generateContributions] ${message}`, { sessionId, sessionStage: sessionStageSlug, payloadStage: payload.stageSlug });
+            return { success: false, error: { message, status: 400 } };
+        }
+        // --- End Context Validation ---
+
+        const selectedModelIds = sessionData?.selected_model_ids;
+        if (!selectedModelIds || selectedModelIds.length === 0) {
+            logger.warn("[generateContributions] The session has no selected models. Cannot create jobs.", { sessionId });
+            return { success: false, error: { message: "The session has no selected models. Please select at least one model.", status: 400 } };
+        }
+        
         const jobIds: string[] = [];
         for (const modelId of selectedModelIds) {
             // Create a discrete payload for each job
-            const { selectedModelIds: _, ...restOfPayload } = payload;
-            const jobPayload: Json = { 
-                ...restOfPayload, 
+            const jobPayload: Json = {
+                ...payload,
                 model_id: modelId,
+                user_jwt: authToken,
             };
 
             const { data: job, error: insertError } = await dbClient

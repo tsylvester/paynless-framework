@@ -75,7 +75,7 @@ Deno.test('processComplexJob - plans and enqueues child jobs', async () => {
 
     try {
         // 2. Execute
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, validatedPayload, 'user-id-complex', mockDeps);
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockParentJob, payload: validatedPayload }, 'user-id-complex', mockDeps);
 
         // 3. Assert
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
@@ -150,7 +150,7 @@ Deno.test('processComplexJob - handles planner failure gracefully', async () => 
 
     try {
         // 2. Execute
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, validatedPayload, 'user-id-fail', mockDeps);
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockParentJob, payload: validatedPayload }, 'user-id-fail', mockDeps);
 
         // 3. Assert
         const updateSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
@@ -221,7 +221,7 @@ Deno.test('processComplexJob - completes parent job if planner returns no childr
 
     try {
         // 2. Execute
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, validatedPayload, 'user-id-no-children', mockDeps);
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockParentJob, payload: validatedPayload }, 'user-id-no-children', mockDeps);
 
         // 3. Assert
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
@@ -309,7 +309,7 @@ Deno.test('processComplexJob - fails parent job if child job insert fails', asyn
 
     try {
         // 2. Execute
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, validatedPayload, 'user-id-insert-fail', mockDeps);
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockParentJob, payload: validatedPayload }, 'user-id-insert-fail', mockDeps);
 
         // 3. Assert
         const updateSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
@@ -396,7 +396,7 @@ Deno.test('processComplexJob - fails parent job if status update fails', async (
 
     try {
         // 2. Execute
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, validatedPayload, 'user-id-update-fail', mockDeps);
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockParentJob, payload: validatedPayload }, 'user-id-update-fail', mockDeps);
 
         // 3. Assert
         const updateSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');

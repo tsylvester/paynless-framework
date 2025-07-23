@@ -93,7 +93,7 @@ Deno.test('processJob - routes to processSimpleJob for simple stages', async () 
     });
 
     try {
-        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, validatedPayload, 'user-id', mockDeps, 'mock-token', processors);
+        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: validatedPayload }, 'user-id', mockDeps, 'mock-token', processors);
 
         assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called once');
         assertEquals(spies.processComplexJob.calls.length, 0, 'processComplexJob should not be called');
@@ -162,7 +162,7 @@ Deno.test('processJob - routes to processComplexJob for complex stages', async (
 
     try {
         // 2. Execute
-        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, validatedPayload, 'user-id-complex', mockDeps, 'mock-token', processors);
+        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: validatedPayload }, 'user-id-complex', mockDeps, 'mock-token', processors);
 
         // 3. Assert
         assertEquals(spies.processSimpleJob.calls.length, 0, 'processSimpleJob should not be called');
@@ -223,7 +223,7 @@ Deno.test('processJob - throws error when stage not found', async () => {
         let threwError = false;
         let errorMessage = '';
         try {
-            await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, validatedPayload, 'user-id', mockDeps, 'mock-token', processors);
+            await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: validatedPayload }, 'user-id', mockDeps, 'mock-token', processors);
         } catch (error) {
             threwError = true;
             errorMessage = error instanceof Error ? error.message : String(error);
@@ -296,7 +296,7 @@ Deno.test('processJob - throws error for unsupported processing strategy', async
         let threwError = false;
         let errorMessage = '';
         try {
-            await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, validatedPayload, 'user-id', mockDeps, 'mock-token', processors);
+            await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: validatedPayload }, 'user-id', mockDeps, 'mock-token', processors);
         } catch (error) {
             threwError = true;
             errorMessage = error instanceof Error ? error.message : String(error);
@@ -363,20 +363,19 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
 
     try {
         // 2. Execute
-        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, validatedPayload, 'user-id-params', mockDeps, 'mock-token-params', processors);
+        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: validatedPayload }, 'user-id-params', mockDeps, 'mock-token-params', processors);
 
         // 3. Assert
         assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called once');
         
         const call = spies.processSimpleJob.calls[0];
-        assertEquals(call.args.length, 6, 'processSimpleJob should be called with 6 arguments');
+        assertEquals(call.args.length, 5, 'processSimpleJob should be called with 5 arguments');
         
         // Verify the parameters passed to processSimpleJob
-        assertEquals(call.args[1], mockJob, 'Second argument should be the job object');
-        assertEquals(call.args[2], validatedPayload, 'Third argument should be the validated payload');
-        assertEquals(call.args[3], 'user-id-params', 'Fourth argument should be projectOwnerUserId');
-        assertEquals(call.args[4], mockDeps, 'Fifth argument should be deps');
-        assertEquals(call.args[5], 'mock-token-params', 'Sixth argument should be authToken');
+        assertEquals(call.args[1], { ...mockJob, payload: validatedPayload }, 'Second argument should be the job object and its payload');
+        assertEquals(call.args[2], 'user-id-params', 'Third argument should be projectOwnerUserId');
+        assertEquals(call.args[3], mockDeps, 'Fourth argument should be deps');
+        assertEquals(call.args[4], 'mock-token-params', 'Fifth argument should be authToken');
 
     } finally {
         spies.processSimpleJob.restore();
@@ -437,21 +436,20 @@ Deno.test('processJob - verifies correct parameters passed to processComplexJob'
 
     try {
         // 2. Execute
-        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, validatedPayload, 'user-id-complex-params', mockDeps, 'mock-token-complex', processors);
+        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: validatedPayload }, 'user-id-complex-params', mockDeps, 'mock-token-complex', processors);
 
         // 3. Assert
         assertEquals(spies.processComplexJob.calls.length, 1, 'processComplexJob should be called once');
         
         const call = spies.processComplexJob.calls[0];
-        assertEquals(call.args.length, 5, 'processComplexJob should be called with 5 arguments');
+        assertEquals(call.args.length, 4, 'processComplexJob should be called with 4 arguments');
         
         // Verify the parameters passed to processComplexJob
-        assertEquals(call.args[1], mockJob, 'Second argument should be the job object');
-        assertEquals(call.args[2], validatedPayload, 'Third argument should be the validated payload');
-        assertEquals(call.args[3], 'user-id-complex-params', 'Fourth argument should be projectOwnerUserId');
+        assertEquals(call.args[1], { ...mockJob, payload: validatedPayload }, 'Second argument should be the job object and its payload');
+        assertEquals(call.args[2], 'user-id-complex-params', 'Third argument should be projectOwnerUserId');
         
         // Verify that complexDeps contains the expected properties
-        const complexDeps = call.args[4];
+        const complexDeps = call.args[3];
         assertExists(complexDeps.logger, 'complexDeps should have logger');
         assertExists(complexDeps.planComplexStage, 'complexDeps should have planComplexStage');
         assertExists(complexDeps.promptAssembler, 'complexDeps should have promptAssembler');

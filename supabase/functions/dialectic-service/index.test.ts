@@ -771,9 +771,10 @@ withSupabaseEnv("handleRequest - startSession", async (t) => {
 withSupabaseEnv("handleRequest - generateContributions", async (t) => {
     const sessionId = 'sess-123';
     
-    await t.step("should dispatch async generation and return 202 on success", async () => {
-        // Spy on the actual handler to ensure it's called asynchronously.
-        const generateSpy = spy(() => Promise.resolve({ success: true, data: {} as any }));
+    await t.step("should call handler and return 200 with job IDs on success", async () => {
+        // Spy on the actual handler to ensure it's called.
+        const mockJobIds = ['job-id-1', 'job-id-2'];
+        const generateSpy = spy(() => Promise.resolve({ success: true, data: { job_ids: mockJobIds } }));
         const mockHandlers = createMockHandlers({ generateContributions: generateSpy });
         
         const mockToken = "mock-jwt";
@@ -782,39 +783,24 @@ withSupabaseEnv("handleRequest - generateContributions", async (t) => {
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
 
-        // Mock the global EdgeRuntime object provided by the Supabase environment.
-        const waitUntilSpy = spy();
-        const originalEdgeRuntime = (globalThis as any).EdgeRuntime;
-        (globalThis as any).EdgeRuntime = { waitUntil: waitUntilSpy };
-
         const payload = { sessionId, stageId: 'stage-1' };
         const req = createJsonRequest("generateContributions", payload, mockToken);
         
-        try {
-            const response = await handleRequest(
-              req,
-              mockHandlers,
-              mockUserClient as any,
-              mockAdminClient as any
-            );
-    
-            // 1. Assert the immediate response is correct (202 Accepted).
-            assertEquals(response.status, 202);
-            const body = await response.json();
-            assertEquals(body, { message: "Contribution generation initiated." });
-            
-            // 2. Assert that EdgeRuntime.waitUntil was called exactly once.
-            assertEquals(waitUntilSpy.calls.length, 1);
-            
-            // 3. Await the promise passed to waitUntil to let the async task complete.
-            await waitUntilSpy.calls[0].args[0];
-            
-            // 4. Assert that our actual logic (the spy) was called.
-            assertEquals(generateSpy.calls.length, 1);
-        } finally {
-             // Clean up the global mock to avoid interfering with other tests.
-            (globalThis as any).EdgeRuntime = originalEdgeRuntime;
-        }
+        const response = await handleRequest(
+            req,
+            mockHandlers,
+            mockUserClient as any,
+            mockAdminClient as any
+        );
+
+        // 1. Assert the response is correct.
+        assertEquals(response.status, 200);
+        const body = await response.json();
+        assertExists(body.job_ids);
+        assertEquals(body.job_ids, mockJobIds);
+        
+        // 2. Assert that our actual logic (the spy) was called.
+        assertEquals(generateSpy.calls.length, 1);
     });
 
     await t.step("should return 401 if auth token is missing", async () => {
@@ -850,69 +836,39 @@ withSupabaseEnv("handleRequest - generateContributions with continueUntilComplet
   let generateContributionsSpy: Spy;
 
   await t.step("should pass continueUntilComplete: true to the handler", async () => {
+    const mockJobIds = ['job-id-3'];
     generateContributionsSpy = spy(() => Promise.resolve({ 
       success: true, 
-      data: { 
-        message: "ok",
-        sessionId: "s-123",
-        projectId: "p-123",
-        stage: { slug: "test-stage" } as any,
-        iteration: 1,
-        contributions: [],
-        failedContributions: [],
-        results: {} as any,
-      } 
+      data: { job_ids: mockJobIds }
     }));
     mockHandlers = createMockHandlers({ generateContributions: generateContributionsSpy as any });
 
     const payload = { sessionId: 's-123', continueUntilComplete: true };
-    const req = createJsonRequest("generateContributions", payload, "test-token", );
+    const req = createJsonRequest("generateContributions", payload, "test-token" );
     
-    const originalEdgeRuntime = (globalThis as any).EdgeRuntime;
-    (globalThis as any).EdgeRuntime = { waitUntil: spy() };
+    await handleRequest(req, mockHandlers, createMockSupabaseClient('test-user-id', { getUserResult: { data: { user: mockUser }, error: null } }).client as any, createMockSupabaseClient().client as any);
 
-    try {
-        await handleRequest(req, mockHandlers, createMockSupabaseClient('test-user-id', { getUserResult: { data: { user: mockUser }, error: null } }).client as any, createMockSupabaseClient().client as any);
-    
-        assert(generateContributionsSpy.calls.length > 0, "generateContributions handler was not called");
-        const receivedPayload = generateContributionsSpy.calls[0].args[1];
-        assertEquals(receivedPayload.continueUntilComplete, true, "continueUntilComplete was not passed as true in payload");
-    } finally {
-        (globalThis as any).EdgeRuntime = originalEdgeRuntime;
-    }
+    assert(generateContributionsSpy.calls.length > 0, "generateContributions handler was not called");
+    const receivedPayload = generateContributionsSpy.calls[0].args[1];
+    assertEquals(receivedPayload.continueUntilComplete, true, "continueUntilComplete was not passed as true in payload");
   });
 
   await t.step("should pass continueUntilComplete: false to the handler", async () => {
+    const mockJobIds = ['job-id-4'];
     generateContributionsSpy = spy(() => Promise.resolve({
       success: true,
-      data: {
-        message: "ok",
-        sessionId: "s-456",
-        projectId: "p-456",
-        stage: { slug: "test-stage" } as any,
-        iteration: 1,
-        contributions: [],
-        failedContributions: [],
-        results: {} as any,
-      }
+      data: { job_ids: mockJobIds }
     }));
     mockHandlers = createMockHandlers({ generateContributions: generateContributionsSpy as any });
 
     const payload = { sessionId: 's-456', continueUntilComplete: false };
     const req = createJsonRequest("generateContributions", payload, "test-token");
 
-    const originalEdgeRuntime = (globalThis as any).EdgeRuntime;
-    (globalThis as any).EdgeRuntime = { waitUntil: spy() };
+    await handleRequest(req, mockHandlers, createMockSupabaseClient('test-user-id', { getUserResult: { data: { user: mockUser }, error: null } }).client as any, createMockSupabaseClient().client as any);
 
-    try {
-      await handleRequest(req, mockHandlers, createMockSupabaseClient('test-user-id', { getUserResult: { data: { user: mockUser }, error: null } }).client as any, createMockSupabaseClient().client as any);
-
-      assert(generateContributionsSpy.calls.length > 0, "generateContributions handler was not called");
-      const receivedPayload = generateContributionsSpy.calls[0].args[1];
-      assertEquals(receivedPayload.continueUntilComplete, false, "continueUntilComplete was not passed as false in payload");
-    } finally {
-      (globalThis as any).EdgeRuntime = originalEdgeRuntime;
-    }
+    assert(generateContributionsSpy.calls.length > 0, "generateContributions handler was not called");
+    const receivedPayload = generateContributionsSpy.calls[0].args[1];
+    assertEquals(receivedPayload.continueUntilComplete, false, "continueUntilComplete was not passed as false in payload");
   });
 });
 

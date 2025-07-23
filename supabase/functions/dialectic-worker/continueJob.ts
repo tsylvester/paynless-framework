@@ -15,14 +15,13 @@ type JobInsert = Database['public']['Tables']['dialectic_generation_jobs']['Inse
 export async function continueJob(
   deps: IContinueJobDeps,
   dbClient: SupabaseClient<Database>,
-  job: Job,
-  payload: DialecticJobPayload,
+  job: Job & { payload: DialecticJobPayload },
   aiResponse: UnifiedAIResponse,
   savedContribution: DialecticContributionRow,
   projectOwnerUserId: string
 ): Promise<IContinueJobResult> {
   
-  const willContinue = shouldContinue(aiResponse.finish_reason ?? null, payload.continuation_count ?? 0, 5) && payload.continueUntilComplete;
+  const willContinue = shouldContinue(aiResponse.finish_reason ?? null, job.payload.continuation_count ?? 0, 5) && job.payload.continueUntilComplete;
   
   if (!willContinue) {
     return { enqueued: false };
@@ -30,26 +29,27 @@ export async function continueJob(
 
   deps.logger.info(`[dialectic-worker] [continueJob] Continuation required for job ${job.id}. Enqueuing new job.`);
 
-  const newPayload: Json = {
-    sessionId: payload.sessionId,
-    projectId: payload.projectId,
-    model_id: payload.model_id,
-    stageSlug: payload.stageSlug,
-    iterationNumber: payload.iterationNumber,
-    continueUntilComplete: payload.continueUntilComplete,
+  const newPayload: DialecticJobPayload = {
+    // These properties are essential for the job processing logic itself
+    sessionId: job.payload.sessionId, 
+    projectId: job.payload.projectId,
+    model_id: job.payload.model_id,
+    stageSlug: job.payload.stageSlug,
+    iterationNumber: job.payload.iterationNumber,
+    // Core continuation fields
+    continueUntilComplete: job.payload.continueUntilComplete,
     target_contribution_id: savedContribution.id,
-    continuation_count: (payload.continuation_count ?? 0) + 1,
+    continuation_count: (job.payload.continuation_count ?? 0) + 1,
+    // Optional fields that need to be passed through
+    chatId: job.payload.chatId,
+    walletId: job.payload.walletId,
+    maxRetries: job.payload.maxRetries,
   };
 
-  if (payload.chatId) {
-    newPayload.chatId = payload.chatId;
-  }
-  if (payload.walletId) {
-    newPayload.walletId = payload.walletId;
-  }
-  if (payload.maxRetries) {
-    newPayload.maxRetries = payload.maxRetries;
-  }
+  // Ensure that optional fields are not included in the payload if they are undefined.
+  if (newPayload.chatId === undefined) delete newPayload.chatId;
+  if (newPayload.walletId === undefined) delete newPayload.walletId;
+  if (newPayload.maxRetries === undefined) delete newPayload.maxRetries;
 
   const newJobToInsert: JobInsert = {
     session_id: job.session_id,
@@ -57,7 +57,7 @@ export async function continueJob(
     stage_slug: job.stage_slug,
     iteration_number: job.iteration_number,
     payload: newPayload,
-    status: 'pending',
+    status: 'pending_continuation',
     attempt_count: 0,
     max_retries: job.max_retries,
     parent_job_id: job.parent_job_id,

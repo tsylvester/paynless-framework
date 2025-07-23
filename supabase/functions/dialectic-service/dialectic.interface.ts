@@ -7,7 +7,7 @@ import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
 import type { Logger } from '../_shared/logger.ts';
 import type { IFileManager } from '../_shared/types/file_manager.types.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
-import type { DeleteStorageResult } from '../_shared/supabase_storage_utils.ts';
+import type { DeleteStorageResult, DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import type {
   FinishReason
 } from '../_shared/types.ts';
@@ -278,12 +278,12 @@ export interface GenerateContributionsDeps {
     options?: CallUnifiedAIModelOptions, 
     continueUntilComplete?: boolean
   ) => Promise<UnifiedAIResponse>;
-  downloadFromStorage: typeof downloadFromStorage;
+  downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>;
   getExtensionFromMimeType: typeof getExtensionFromMimeType;
   logger: ILogger;
   randomUUID: () => string;
   fileManager: IFileManager;
-  deleteFromStorage: (path: string) => Promise<DeleteStorageResult>;
+  deleteFromStorage: (bucket: string, paths: string[]) => Promise<DeleteStorageResult>;
 }
 export interface GenerateContributionsPayload {
   sessionId: string;
@@ -291,7 +291,6 @@ export interface GenerateContributionsPayload {
   stageSlug?: DialecticStage['slug'];
   iterationNumber?: number;
   chatId?: string | null;
-  selectedModelIds: string[];
   walletId?: string;
   continueUntilComplete?: boolean;
   maxRetries?: number;
@@ -623,8 +622,7 @@ export interface ProcessSimpleJobDeps extends GenerateContributionsDeps {
   continueJob: (
     deps: { logger: ILogger },
     dbClient: SupabaseClient<Database>,
-    job: Job,
-    payload: DialecticJobPayload,
+    job: Job & { payload: DialecticJobPayload },
     aiResponse: UnifiedAIResponse,
     savedContribution: DialecticContributionRow,
     projectOwnerUserId: string
@@ -632,7 +630,7 @@ export interface ProcessSimpleJobDeps extends GenerateContributionsDeps {
   retryJob: (
     deps: { logger: ILogger },
     dbClient: SupabaseClient<Database>,
-    job: Job,
+    job: Job & { payload: DialecticJobPayload },
     currentAttempt: number,
     failedContributionAttempts: FailedAttemptError[],
     projectOwnerUserId: string

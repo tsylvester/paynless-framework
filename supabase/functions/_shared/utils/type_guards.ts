@@ -188,30 +188,48 @@ export function isCitationsArray(value: unknown): value is Citation[] {
  * using runtime property inspection without any type casting.
  */
 export function isDialecticContribution(record: unknown): record is DialecticContributionRow {
-  console.log('[isDialecticContribution] Starting validation for record:', JSON.stringify(record, null, 2));
+  //console.log('[isDialecticContribution] Starting validation for record:', JSON.stringify(record, null, 2));
   if (typeof record !== 'object' || record === null) {
     console.log('[isDialecticContribution] FAILED: Record is not an object or is null.');
     return false;
   }
 
-  // Define checks based on DialecticContributionRow properties.
-  // This avoids using properties from the local DialecticContribution interface,
-  // which was the source of the type mismatch.
   const checks: { key: keyof DialecticContributionRow, type: string, nullable?: boolean }[] = [
+    // Non-nullable fields
     { key: 'id', type: 'string' },
-    { key: 'session_id', type: 'string' },
-    { key: 'stage', type: 'string' }, // stage must be a non-null string as per the error.
-    { key: 'iteration_number', type: 'number' },
-    { key: 'model_id', type: 'string', nullable: true }, 
+    { key: 'created_at', type: 'string' },
     { key: 'edit_version', type: 'number' },
     { key: 'is_latest_edit', type: 'boolean' },
-    { key: 'citations', type: 'object', nullable: true }, // citations is of type Json, which can be object or null.
+    { key: 'iteration_number', type: 'number' },
+    { key: 'mime_type', type: 'string' },
+    { key: 'session_id', type: 'string' },
+    { key: 'stage', type: 'string' },
+    { key: 'storage_bucket', type: 'string' },
+    { key: 'storage_path', type: 'string' },
+    { key: 'updated_at', type: 'string' },
+
+    // Nullable fields
+    { key: 'citations', type: 'object', nullable: true }, // Json can be object or null
+    { key: 'contribution_type', type: 'string', nullable: true },
+    { key: 'error', type: 'string', nullable: true },
+    { key: 'file_name', type: 'string', nullable: true },
+    { key: 'model_id', type: 'string', nullable: true },
+    { key: 'model_name', type: 'string', nullable: true },
+    { key: 'original_model_contribution_id', type: 'string', nullable: true },
+    { key: 'processing_time_ms', type: 'number', nullable: true },
+    { key: 'prompt_template_id_used', type: 'string', nullable: true },
+    { key: 'raw_response_storage_path', type: 'string', nullable: true },
+    { key: 'seed_prompt_url', type: 'string', nullable: true },
+    { key: 'size_bytes', type: 'number', nullable: true },
+    { key: 'target_contribution_id', type: 'string', nullable: true },
+    { key: 'tokens_used_input', type: 'number', nullable: true },
+    { key: 'tokens_used_output', type: 'number', nullable: true },
+    { key: 'user_id', type: 'string', nullable: true },
   ];
 
   for (const check of checks) {
     const descriptor = Object.getOwnPropertyDescriptor(record, check.key);
-    console.log(`[isDialecticContribution] Checking key: '${check.key}', Exists: ${!!descriptor}`);
-    // Property must exist for non-nullable checks
+    //console.log(`[isDialecticContribution] Checking key: '${check.key}', Exists: ${!!descriptor}`);
     if (!descriptor && !check.nullable) {
         console.log(`[isDialecticContribution] FAILED: Required key '${check.key}' is missing.`);
         return false;
@@ -220,10 +238,10 @@ export function isDialecticContribution(record: unknown): record is DialecticCon
     if (descriptor) {
         const value = descriptor.value;
         const valueType = typeof value;
-        console.log(`[isDialecticContribution]   Value:`, value, `Type: ${valueType}, Expected: ${check.type}`);
+        //console.log(`[isDialecticContribution]   Value:`, value, `Type: ${valueType}, Expected: ${check.type}`);
         if (check.nullable && value === null) {
-            console.log(`[isDialecticContribution]   PASSED (nullable): Key '${check.key}' is null.`);
-            continue; // Null is allowed, so skip to the next check
+            //console.log(`[isDialecticContribution]   PASSED (nullable): Key '${check.key}' is null.`);
+            continue;
         }
 
         if (valueType !== check.type) {
@@ -231,7 +249,6 @@ export function isDialecticContribution(record: unknown): record is DialecticCon
             return false;
         }
     } else if (!check.nullable) {
-        // If the descriptor doesn't exist and it's not nullable, fail.
         console.log(`[isDialecticContribution] FAILED: Required key '${check.key}' is missing (second check).`);
         return false;
     }

@@ -54,12 +54,22 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
         stageSlug: 'thesis',
         iterationNumber: 1,
         projectId: mockProjectId,
-        selectedModelIds: mockModelIds,
         continueUntilComplete: true,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
         genericMockResults: {
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        project_id: mockProjectId,
+                        selected_model_ids: mockModelIds,
+                        iteration_count: 1,
+                        current_stage: { slug: 'thesis' }
+                    }],
+                    error: null
+                }
+            },
             'dialectic_generation_jobs': {
                 insert: (_state: MockQueryBuilderState) => {
                     const job_id = mockJobIds[insertCallCount];
@@ -139,12 +149,22 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
         stageSlug: 'thesis',
         iterationNumber: 1,
         projectId: mockProjectId,
-        selectedModelIds: [mockModelId],
         continueUntilComplete: true,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
         genericMockResults: {
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        project_id: mockProjectId,
+                        selected_model_ids: [mockModelId],
+                        iteration_count: 1,
+                        current_stage: { slug: 'thesis' }
+                    }],
+                    error: null
+                }
+            },
             'dialectic_generation_jobs': {
                 insert: { data: [{ id: mockJobId }] }
             },
@@ -213,13 +233,24 @@ Deno.test("generateContributions - Failure Path: Fails to enqueue a job", async 
         sessionId: mockSessionId,
         stageSlug: 'thesis',
         projectId: mockProjectId,
-        selectedModelIds: ['model-id-fail'],
+        iterationNumber: 1, // Add the missing iteration number
     };
 
     const dbError = { name: 'DBError', message: "Database permission denied", details: "RLS policy violation", code: "42501" };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
         genericMockResults: {
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        project_id: mockProjectId,
+                        selected_model_ids: ['model-id-fail'], // Must provide models to get to the insert step
+                        iteration_count: 1,
+                        current_stage: { slug: 'thesis' }
+                    }],
+                    error: null
+                }
+            },
             'dialectic_generation_jobs': {
                 insert: { data: null, error: dbError }
             },
@@ -263,7 +294,6 @@ Deno.test("generateContributions - Validation: Fails if stageSlug is missing", a
     const mockPayload: GenerateContributionsPayload = {
         sessionId: 'session-123',
         projectId: 'project-123',
-        selectedModelIds: ['model-123'],
         // stageSlug is intentionally omitted
     };
 
@@ -297,7 +327,6 @@ Deno.test("generateContributions - Validation: Fails if sessionId is missing", a
     const mockPayload = {
         stageSlug: 'thesis',
         projectId: 'project-123',
-        selectedModelIds: ['model-123'],
         // sessionId is intentionally omitted
     } as GenerateContributionsPayload; // Cast to satisfy the function signature for the test
 
@@ -331,7 +360,6 @@ Deno.test("generateContributions - Validation: Fails if userId is missing", asyn
         sessionId: 'session-123',
         stageSlug: 'thesis',
         projectId: 'project-123',
-        selectedModelIds: ['model-123'],
     };
 
     const mockSupabase = createMockSupabaseClient();
@@ -361,14 +389,30 @@ Deno.test("generateContributions - Validation: Fails if userId is missing", asyn
 });
 
 Deno.test("generateContributions - Validation: Fails if selectedModelIds is empty or missing", async () => {
+    const mockSessionId = 'session-123';
+    const mockProjectId = 'project-123';
     const mockPayload: GenerateContributionsPayload = {
-        sessionId: 'session-123',
+        sessionId: mockSessionId,
         stageSlug: 'thesis',
-        projectId: 'project-123',
-        selectedModelIds: [], // Empty array
+        projectId: mockProjectId,
+        iterationNumber: 1,
     };
 
-    const mockSupabase = createMockSupabaseClient(); // No DB calls should be made
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        project_id: mockProjectId,
+                        selected_model_ids: [], // Explicitly empty array
+                        iteration_count: 1,
+                        current_stage: { slug: 'thesis' }
+                    }],
+                    error: null
+                }
+            }
+        }
+    });
 
     const result = await generateContributions(
         mockSupabase.client as unknown as SupabaseClient<Database>,
@@ -389,6 +433,6 @@ Deno.test("generateContributions - Validation: Fails if selectedModelIds is empt
 
     assertEquals(result.success, false);
     assertExists(result.error);
-    assertEquals(result.error.message, "selectedModelIds must be a non-empty array.");
+    assertEquals(result.error.message, "The session has no selected models. Please select at least one model.");
     assertEquals(result.error.status, 400);
 });

@@ -5,8 +5,11 @@ import {
     isCitationsArray,
     isDialecticContribution,
     isDialecticJobPayload,
+    isDialecticJobRow,
     isDialecticJobRowArray,
     isIsolatedExecutionDeps,
+    isJobResultsWithModelProcessing,
+    isModelProcessingResult,
     isProjectContext,
     isRecord,
     isStageContext,
@@ -398,19 +401,19 @@ Deno.test('Type Guard: validatePayload', async (t) => {
         const payload: Json = {
             sessionId: 'test-session',
             projectId: 'test-project',
-            selectedModelIds: ['model-1', 'model-2'],
+            model_id: 'model-1',
         };
         const validated = validatePayload(payload);
         assert(validated.sessionId === 'test-session');
         assert(validated.projectId === 'test-project');
-        assert(Array.isArray(validated.selectedModelIds));
+        assert(validated.model_id === 'model-1');
     });
 
     await t.step('should correctly handle all optional fields', () => {
         const payload: Json = {
             sessionId: 'test-session',
             projectId: 'test-project',
-            selectedModelIds: ['model-1'],
+            model_id: 'model-1',
             stageSlug: 'test-stage',
             iterationNumber: 1,
             chatId: 'test-chat',
@@ -442,7 +445,7 @@ Deno.test('Type Guard: validatePayload', async (t) => {
     await t.step('should throw an error if sessionId is missing', () => {
         const payload: Json = {
             projectId: 'test-project',
-            selectedModelIds: ['model-1'],
+            model_id: 'model-1',
         };
         assertThrows(() => validatePayload(payload), Error, 'sessionId must be a string');
     });
@@ -450,26 +453,26 @@ Deno.test('Type Guard: validatePayload', async (t) => {
     await t.step('should throw an error if projectId is missing', () => {
         const payload: Json = {
             sessionId: 'test-session',
-            selectedModelIds: ['model-1'],
+            model_id: 'model-1',
         };
         assertThrows(() => validatePayload(payload), Error, 'projectId must be a string');
     });
 
-    await t.step('should throw an error if selectedModelIds is not an array of strings', () => {
+    await t.step('should throw an error if model_id is not a string', () => {
         const payload: Json = {
             sessionId: 'test-session',
             projectId: 'test-project',
-            selectedModelIds: [1, 2, 3], // not strings
+            model_id: 123, // not a string
         };
-        assertThrows(() => validatePayload(payload), Error, 'selectedModelIds must be an array of strings');
+        assertThrows(() => validatePayload(payload), Error, 'Payload must have model_id (string)');
     });
 
-    await t.step('should throw an error if selectedModelIds is missing', () => {
+    await t.step('should throw an error if model_id is missing', () => {
         const payload: Json = {
             sessionId: 'test-session',
             projectId: 'test-project',
         };
-        assertThrows(() => validatePayload(payload), Error, 'selectedModelIds must be an array of strings');
+        assertThrows(() => validatePayload(payload), Error, 'Payload must have model_id (string)');
     });
 });
 
@@ -478,7 +481,7 @@ Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
         const payload: Json = {
             sessionId: 'test-session',
             projectId: 'test-project',
-            selectedModelIds: ['model-1', 'model-2'],
+            model_id: 'model-1',
             stageSlug: 'thesis',
             iterationNumber: 1,
         };
@@ -489,7 +492,7 @@ Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
         const payload: Json = {
             sessionId: 'test-session',
             projectId: 'test-project',
-            selectedModelIds: ['model-1'],
+            model_id: 'model-1',
             stageSlug: 'antithesis',
             iterationNumber: 2,
             prompt: 'Custom prompt for this job',
@@ -503,7 +506,7 @@ Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
         const payload: Json = {
             sessionId: 'test-session',
             projectId: 'test-project',
-            selectedModelIds: ['model-1'],
+            model_id: 'model-1',
             stageSlug: 'synthesis',
             iterationNumber: 1,
             chatId: 'chat-123',
@@ -521,7 +524,7 @@ Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
         const payload: Json = {
             sessionId: 'test-session',
             projectId: 'test-project',
-            selectedModelIds: ['model-1'],
+            model_id: 'model-1',
             stageSlug: 'thesis',
             iterationNumber: 1,
             prompt: 123, // Invalid: not a string
@@ -529,11 +532,11 @@ Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
         assert(!isDialecticJobPayload(payload));
     });
 
-    await t.step('should return false when underlying GenerateContributionsPayload validation fails', () => {
+    await t.step('should return false when a required field is missing', () => {
         const payload: Json = {
             sessionId: 'test-session',
             // Missing projectId
-            selectedModelIds: ['model-1'],
+            model_id: 'model-1',
             stageSlug: 'thesis',
             iterationNumber: 1,
             prompt: 'Valid prompt',
@@ -555,11 +558,11 @@ Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
         assert(!isDialecticJobPayload(['array', 'of', 'values']));
     });
 
-    await t.step('should return false when selectedModelIds contains non-strings', () => {
+    await t.step('should return false when model_id contains a non-string', () => {
         const payload: Json = {
             sessionId: 'test-session',
             projectId: 'test-project',
-            selectedModelIds: ['model-1', 123, 'model-2'], // Invalid: contains number
+            model_id: 123, // Invalid: contains number
             prompt: 'Valid prompt',
         };
         assert(!isDialecticJobPayload(payload));
@@ -862,5 +865,153 @@ Deno.test('Type Guard: isUserRole', async (t) => {
         assert(!isUserRole(123));
         assert(!isUserRole({ role: 'user' }));
         assert(!isUserRole(['user']));
+    });
+});
+
+Deno.test('Type Guard: isModelProcessingResult', async (t) => {
+    await t.step('should return true for a complete, successful result', () => {
+        const result = {
+            modelId: 'm1',
+            status: 'completed',
+            attempts: 1,
+            contributionId: 'c1',
+        };
+        assert(isModelProcessingResult(result));
+    });
+
+    await t.step('should return true for a failed result with an error message', () => {
+        const result = {
+            modelId: 'm2',
+            status: 'failed',
+            attempts: 3,
+            error: 'AI timed out',
+        };
+        assert(isModelProcessingResult(result));
+    });
+
+    await t.step('should return true for a result needing continuation', () => {
+        const result = {
+            modelId: 'm3',
+            status: 'needs_continuation',
+            attempts: 1,
+            contributionId: 'c2-partial',
+        };
+        assert(isModelProcessingResult(result));
+    });
+
+    await t.step('should return false if modelId is missing', () => {
+        const result = { status: 'completed', attempts: 1, contributionId: 'c1' };
+        assert(!isModelProcessingResult(result));
+    });
+
+    await t.step('should return false if status is invalid', () => {
+        const result = { modelId: 'm1', status: 'pending', attempts: 1 };
+        assert(!isModelProcessingResult(result));
+    });
+
+    await t.step('should return false if attempts is not a number', () => {
+        const result = { modelId: 'm1', status: 'completed', attempts: 'one' };
+        assert(!isModelProcessingResult(result));
+    });
+
+    await t.step('should return false for non-objects', () => {
+        assert(!isModelProcessingResult(null));
+        assert(!isModelProcessingResult('a string'));
+    });
+});
+
+Deno.test('Type Guard: isJobResultsWithModelProcessing', async (t) => {
+    await t.step('should return true for a valid result object with a valid array', () => {
+        const results = {
+            modelProcessingResults: [
+                { modelId: 'm1', status: 'completed', attempts: 1, contributionId: 'c1' },
+                { modelId: 'm2', status: 'failed', attempts: 3, error: 'Failed' },
+            ],
+        };
+        assert(isJobResultsWithModelProcessing(results));
+    });
+
+    await t.step('should return true for a result object with an empty array', () => {
+        const results = { modelProcessingResults: [] };
+        assert(isJobResultsWithModelProcessing(results));
+    });
+
+    await t.step('should return false if modelProcessingResults is not an array', () => {
+        const results = { modelProcessingResults: { modelId: 'm1' } };
+        assert(!isJobResultsWithModelProcessing(results));
+    });
+
+    await t.step('should return false if the array contains invalid items', () => {
+        const results = {
+            modelProcessingResults: [
+                { modelId: 'm1', status: 'completed', attempts: 1 },
+                { status: 'failed', attempts: 3 }, // missing modelId
+            ],
+        };
+        assert(!isJobResultsWithModelProcessing(results));
+    });
+
+    await t.step('should return false if modelProcessingResults key is missing', () => {
+        const results = { otherKey: [] };
+        assert(!isJobResultsWithModelProcessing(results));
+    });
+
+    await t.step('should return false for non-objects', () => {
+        assert(!isJobResultsWithModelProcessing(null));
+        assert(!isJobResultsWithModelProcessing([]));
+    });
+});
+
+Deno.test('Type Guard: isDialecticJobRow', async (t) => {
+    await t.step('should return true for a valid job row object', () => {
+        const job: DialecticJobRow = {
+            id: 'j1',
+            session_id: 's1',
+            user_id: 'u1',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            payload: { model_id: 'm1', projectId: 'p1', sessionId: 's1' },
+            status: 'pending',
+            attempt_count: 0,
+            max_retries: 3,
+            created_at: new Date().toISOString(),
+            started_at: null,
+            completed_at: null,
+            results: null,
+            error_details: null,
+            parent_job_id: null,
+            target_contribution_id: null,
+        };
+        assert(isDialecticJobRow(job));
+    });
+
+    await t.step('should return false if a required field is missing (e.g., status)', () => {
+        const job = {
+            id: 'j2',
+            session_id: 's1',
+            user_id: 'u1',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            payload: {},
+        };
+        assert(!isDialecticJobRow(job));
+    });
+
+    await t.step('should return false if payload is not an object', () => {
+        const job = {
+            id: 'j3',
+            session_id: 's1',
+            user_id: 'u1',
+            stage_slug: 'thesis',
+            iteration_number: 1,
+            payload: 'a string',
+            status: 'pending',
+        };
+        assert(!isDialecticJobRow(job));
+    });
+
+    await t.step('should return false for a non-object', () => {
+        assert(!isDialecticJobRow(null));
+        assert(!isDialecticJobRow('job'));
     });
 });

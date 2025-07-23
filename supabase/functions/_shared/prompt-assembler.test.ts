@@ -4,8 +4,8 @@ import {
     PromptAssembler,
     ContributionOverride,
 } from "./prompt-assembler.ts";
-import { ProjectContext, SessionContext, StageContext, DownloadStorageFunctionType, DynamicContextVariables } from "./prompt-assembler.interface.ts";
-import { createMockSupabaseClient, type MockSupabaseDataConfig, type IMockSupabaseClient, type IMockClientSpies, type MockSupabaseClientSetup } from "./supabase.mock.ts";
+import { ProjectContext, SessionContext, StageContext, DynamicContextVariables } from "./prompt-assembler.interface.ts";
+import { createMockSupabaseClient, type MockSupabaseDataConfig, type MockSupabaseClientSetup } from "./supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Json, Database } from "../types_db.ts";
 

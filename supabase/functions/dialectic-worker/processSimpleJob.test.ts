@@ -3,8 +3,9 @@ import {
   assertExists,
   assertObjectMatch,
   assert,
+  fail,
 } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
-import { spy, stub } from 'jsr:@std/testing@0.225.1/mock';
+import { spy, stub, type Stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
 import type { Database, Json, Tables } from '../types_db.ts';
 import { createMockSupabaseClient, type MockSupabaseClientSetup } from '../_shared/supabase.mock.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
@@ -164,15 +165,22 @@ const getMockDeps = (): ProcessSimpleJobDeps => {
     }
 };
 
+const getMockJob = (overrides: Partial<DialecticJobRow> = {}) => {
+    return {
+        ...mockJob,
+        ...overrides,
+    };
+};
+
 
 Deno.test('processSimpleJob - Happy Path', async (t) => {
     const { client: dbClient, spies, clearAllStubs } = setupMockClient();
     const deps = getMockDeps();
 
-    const fileManagerSpy = (deps.fileManager as MockFileManagerService).uploadAndRegisterFileSpy;
+    const fileManagerSpy = spy(deps.fileManager, 'uploadAndRegisterFile');
     
     await t.step('should run to completion successfully', async () => {
-        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, mockJob, mockPayload, 'user-789', deps, 'auth-token');
+        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', deps, 'auth-token');
 
         assert(fileManagerSpy.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
         
@@ -188,48 +196,33 @@ Deno.test('processSimpleJob - Happy Path', async (t) => {
     clearAllStubs?.();
 });
 
-Deno.test('processSimpleJob - Retry Success', async (t) => {
+Deno.test('processSimpleJob - Failure with Retries Remaining', async (t) => {
     const { client: dbClient, spies, clearAllStubs } = setupMockClient();
     const deps = getMockDeps();
 
-    let callCount = 0;
     const callUnifiedAIModelStub = stub(deps, 'callUnifiedAIModel', async () => {
-        callCount++;
-        if (callCount === 1) {
-            throw new Error('AI model failed');
-        }
-        return {
-            content: 'AI response content',
-            contentType: 'text/plain',
-            inputTokens: 10,
-            outputTokens: 20,
-            processingTimeMs: 100,
-        };
+        throw new Error('AI model failed');
     });
 
     const retryJobSpy = spy(deps, 'retryJob');
 
-    await t.step('should succeed after one failed attempt', async () => {
-        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, mockJob, mockPayload, 'user-789', deps, 'auth-token');
+    await t.step('should call retryJob when an attempt fails', async () => {
+        // Ensure the job has retries left (attempt_count 0, max_retries 3)
+        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', deps, 'auth-token');
 
-        assertEquals(callCount, 2, 'Expected callUnifiedAIModel to be called twice');
-        assertEquals(retryJobSpy.calls.length, 1, 'Expected retryJob to be called once');
-
-        const historicSpies = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
-        assertExists(historicSpies, "Job update spies should exist");
+        assertEquals(retryJobSpy.calls.length, 1, 'Expected retryJob to be called exactly once');
         
-        const finalUpdateCallArgs = historicSpies.callsArgs.find(args => {
-            const payload = args[0];
-            return isRecord(payload) && payload.status === 'completed';
-        });
-        assertExists(finalUpdateCallArgs, "Final job status should be 'completed'");
+        // Ensure the job's final status is NOT updated by processSimpleJob itself
+        const historicSpies = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
+        const callCount = historicSpies ? historicSpies.callCount : 0;
+        assertEquals(callCount, 0, "processSimpleJob should not update the job status when delegating to retryJob");
     });
     
     clearAllStubs?.();
     callUnifiedAIModelStub.restore();
 });
 
-Deno.test('processSimpleJob - Retry Loop Exhausted', async (t) => {
+Deno.test('processSimpleJob - Failure with No Retries Remaining', async (t) => {
     const { client: dbClient, spies, clearAllStubs } = setupMockClient();
     const deps = getMockDeps();
 
@@ -238,21 +231,21 @@ Deno.test('processSimpleJob - Retry Loop Exhausted', async (t) => {
     });
 
     const retryJobSpy = spy(deps, 'retryJob');
+    const jobWithNoRetries: DialecticJobRow = { ...mockJob, attempt_count: 3, max_retries: 3 };
 
-    await t.step('should fail after exhausting all retries', async () => {
-        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, max_retries: 1 }, mockPayload, 'user-789', deps, 'auth-token');
+    await t.step('should mark job as failed after exhausting all retries', async () => {
+        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...jobWithNoRetries, payload: mockPayload }, 'user-789', deps, 'auth-token');
 
-        assertEquals(callUnifiedAIModelStub.calls.length, 2, 'Expected callUnifiedAIModel to be called for initial attempt + 1 retry');
-        assertEquals(retryJobSpy.calls.length, 1, 'Expected retryJob to be called once');
+        assertEquals(retryJobSpy.calls.length, 0, 'Expected retryJob NOT to be called when retries are exhausted');
 
         const historicSpies = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
         assertExists(historicSpies, "Job update spies should exist");
         
         const finalUpdateCallArgs = historicSpies.callsArgs.find(args => {
             const payload = args[0];
-            return isRecord(payload) && payload.status === 'failed';
+            return isRecord(payload) && payload.status === 'retry_loop_failed';
         });
-        assertExists(finalUpdateCallArgs, "Final job status should be 'failed'");
+        assertExists(finalUpdateCallArgs, "Final job status should be 'retry_loop_failed'");
     });
 
     clearAllStubs?.();
@@ -274,7 +267,7 @@ Deno.test('processSimpleJob - Continuation Enqueued', async (t) => {
     const jobWithContinuationPayload = { ...mockJob, payload: { ...mockPayload, continueUntilComplete: true } };
 
     await t.step('should enqueue a continuation job', async () => {
-        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, jobWithContinuationPayload, mockPayload, 'user-789', deps, 'auth-token');
+        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, jobWithContinuationPayload, 'user-789', deps, 'auth-token');
 
         assertEquals(continueJobStub.calls.length, 1, 'Expected continueJob to be called');
         
@@ -307,7 +300,7 @@ Deno.test('processSimpleJob - Is a Continuation Job', async (t) => {
     const jobWithContinuationPayload = { ...mockJob, payload: continuationPayload };
 
     await t.step('should download previous content for a continuation job', async () => {
-        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, jobWithContinuationPayload, continuationPayload, 'user-789', deps, 'auth-token');
+        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...jobWithContinuationPayload, payload: continuationPayload }, 'user-789', deps, 'auth-token');
         
         // Corrected expectation: The seed prompt is mocked, so we only expect one *additional* download
         // for the previous contribution content.
@@ -318,38 +311,40 @@ Deno.test('processSimpleJob - Is a Continuation Job', async (t) => {
 });
 
 Deno.test('processSimpleJob - Continuation Download Failure', async (t) => {
-    const { client: dbClient, spies, clearAllStubs } = setupMockClient();
-    const deps = getMockDeps();
+    await t.step('should call retryJob if downloading previous content fails', async () => {
+        const { client: dbClient, spies, clearAllStubs } = setupMockClient();
+        const deps = getMockDeps();
+        const retryJobSpy = spy(deps, 'retryJob');
 
-    const downloadFromStorageStub = stub(deps, 'downloadFromStorage', async (_client, _bucket, path): Promise<DownloadStorageResult> => {
-        if (typeof path === 'string' && mockContribution.file_name && path.includes(mockContribution.file_name)) {
-            return { data: null, error: new Error('Download failed') };
-        }
-        return { data: new ArrayBuffer(0), error: null };
-    });
+        // Arrange: Create a consistent payload for a continuation job
+        const continuationPayload = { 
+            ...mockPayload, 
+            target_contribution_id: 'contrib-123' 
+        };
 
-    const continuationPayload: DialecticJobPayload = {
-        ...mockPayload,
-        target_contribution_id: mockContribution.id,
-    };
-    
-    const jobWithContinuationPayload = { ...mockJob, payload: continuationPayload };
-
-    await t.step('should fail the job if downloading previous content fails', async () => {
-        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, jobWithContinuationPayload, continuationPayload, 'user-789', deps, 'auth-token');
-
-        const historicSpies = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
-        assertExists(historicSpies, "Job update spies should exist");
-
-        const finalUpdateCallArgs = historicSpies.callsArgs.find(args => {
-            const payload = args[0];
-            return isRecord(payload) && payload.status === 'failed';
+        // Arrange: Stub the downloadFromStorage dependency to throw an error
+        const downloadStub = stub(deps, 'downloadFromStorage', () => {
+            return Promise.resolve({ error: new Error("Simulated download failure"), data: null });
         });
-        assertExists(finalUpdateCallArgs, "Final job status should be 'failed' due to download error.");
-    });
 
-    clearAllStubs?.();
-    downloadFromStorageStub.restore();
+        // Act
+        try {
+            await processSimpleJob(
+                dbClient as unknown as SupabaseClient<Database>, 
+                { ...getMockJob(), payload: continuationPayload }, 
+                'user-789', 
+                deps, 
+                'auth-token'
+            );
+        } finally {
+            // Cleanup
+            downloadStub.restore();
+            clearAllStubs?.();
+        }
+
+        // Assert
+        assertEquals(retryJobSpy.calls.length, 1, "Expected retryJob to be called on download failure.");
+    });
 });
 
 Deno.test('processSimpleJob - Multi-Part Continuation', async (t) => {
@@ -365,29 +360,15 @@ Deno.test('processSimpleJob - Model Failure', async (t) => {
     }));
 
     await t.step('should fail the job if the model returns an error', async () => {
-        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, max_retries: 0 }, mockPayload, 'user-789', deps, 'auth-token');
+        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, max_retries: 0, payload: mockPayload }, 'user-789', deps, 'auth-token');
 
-        const historicSpies = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
-        assertExists(historicSpies, "Job update spies should exist");
+        // Assert
+        const updateSpy = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update')!;
+        assertEquals(updateSpy.callCount, 1, "Expected final job status to be updated once.");
 
-        const finalUpdateCallArgs = historicSpies.callsArgs.find(args => {
-            const payload = args[0];
-            return isRecord(payload) && payload.status === 'failed';
-        });
-        assertExists(finalUpdateCallArgs, "Final job status should be 'failed'");
-        
-        const [updatePayload] = finalUpdateCallArgs;
-        assert(isRecord(updatePayload) && 'results' in updatePayload, 'Update payload should have results');
-        
-        const results = typeof updatePayload.results === 'string' 
-            ? JSON.parse(updatePayload.results) 
-            : updatePayload.results;
-            
-        assert(isRecord(results) && 'modelProcessingResult' in results, 'Results should contain model processing result');
-        
-        const modelProcessingResult = results.modelProcessingResult;
-        assert(isRecord(modelProcessingResult) && 'error' in modelProcessingResult, "Model processing result should have an error");
-        assertEquals(modelProcessingResult.error, 'AI response was empty.');
+        const finalUpdateCall = updateSpy.callsArgs[0][0];
+        assert(isRecord(finalUpdateCall), "Final update call should be a record object.");
+        assertEquals(finalUpdateCall.status, 'retry_loop_failed', "Final job status should be 'retry_loop_failed'");
     });
 
     clearAllStubs?.();
@@ -395,33 +376,33 @@ Deno.test('processSimpleJob - Model Failure', async (t) => {
 });
 
 Deno.test('processSimpleJob - Database Error on Update', async (t) => {
-    const { client: dbClient, spies, clearAllStubs } = setupMockClient({
-        dialectic_generation_jobs: {
-            update: () => Promise.resolve({ data: null, error: new Error("DB Update Failed"), count: 0, status: 500, statusText: 'Internal Server Error' })
-        }
-    });
-    const deps = getMockDeps();
-
     await t.step('should log an error if the final job update fails', async () => {
-        // This test is tricky because the error happens after the main logic.
-        // We expect the function to complete, but the final DB state will be wrong.
-        // The function itself doesn't throw, but it logs a critical error.
-        const loggerSpy = spy(deps.logger, 'error');
-        
-        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, mockJob, mockPayload, 'user-789', deps, 'auth-token');
-
-        assert(loggerSpy.calls.some(call => {
-            const firstArg = call.args[0];
-            if (typeof firstArg === 'string') {
-                return firstArg.includes('CRITICAL: Failed to update job');
-            } else if (firstArg instanceof Error) {
-                return firstArg.message.includes('CRITICAL: Failed to update job');
+        const { client: dbClient, clearAllStubs } = setupMockClient({
+            'dialectic_generation_jobs': {
+                update: () => { throw new Error('DB Update Failed'); }
             }
-            return false;
-        }), "Expected a critical error log for failing to update the job status.");
+        });
+        const deps = getMockDeps();
         
-        loggerSpy.restore();
-    });
+        let criticalErrorLogged = false;
+        const originalErrorLogger = deps.logger.error;
+        deps.logger.error = (message: string | Error, ...args: unknown[]) => {
+            if (typeof message === 'string' && message.includes('CRITICAL')) {
+                criticalErrorLogged = true;
+            } else if (message instanceof Error && message.message.includes('CRITICAL')) {
+                criticalErrorLogged = true;
+            }
+            // deno-lint-ignore no-explicit-any
+            (originalErrorLogger as any)(message, ...args);
+        };
 
-    clearAllStubs?.();
+        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', deps, 'auth-token');
+
+        // Assert
+        assert(criticalErrorLogged, "Expected a critical error log for failing to update the job status.");
+
+        // Cleanup
+        deps.logger.error = originalErrorLogger;
+        clearAllStubs?.();
+    });
 });

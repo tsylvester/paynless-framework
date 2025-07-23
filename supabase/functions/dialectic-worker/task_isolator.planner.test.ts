@@ -17,6 +17,14 @@ import { DownloadStorageFunctionType } from '../_shared/prompt-assembler.interfa
 import { isDialecticJobPayload } from '../_shared/utils/type_guards.ts';
 
 // --- Mocks and Test Data ---
+const MOCK_PAYLOAD: DialecticJobPayload = {
+    sessionId: 'session-123',
+    projectId: 'project-123',
+    stageSlug: 'antithesis',
+    iterationNumber: 1,
+    model_id: 'model-1',
+    prompt: 'PROMPT',
+};
 
 const MOCK_PARENT_JOB: DialecticJobRow = {
     id: 'job-parent-456',
@@ -25,7 +33,7 @@ const MOCK_PARENT_JOB: DialecticJobRow = {
     user_id: 'user-123',
     stage_slug: 'antithesis',
     iteration_number: 1,
-    payload: {},
+    payload: MOCK_PAYLOAD,
     status: 'processing',
     attempt_count: 1,
     max_retries: 3,
@@ -37,14 +45,7 @@ const MOCK_PARENT_JOB: DialecticJobRow = {
     target_contribution_id: null,
 };
 
-const MOCK_PAYLOAD: DialecticJobPayload = {
-    sessionId: 'session-123',
-    projectId: 'project-123',
-    stageSlug: 'antithesis',
-    iterationNumber: 1,
-    model_id: 'model-1',
-    prompt: 'PROMPT',
-};
+
 
 const MOCK_STAGE: DialecticStage & { system_prompts: null; domain_specific_prompt_overlays: never[] } = {
     id: 'stage-antithesis-id',
@@ -175,8 +176,7 @@ Deno.test('planComplexStage - Happy Path: Generates correct child job payloads',
     try {
         const childJobs = await planComplexStage(
             mockDb as unknown as SupabaseClient<Database>,
-            MOCK_PARENT_JOB,
-            MOCK_PAYLOAD,
+            { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
             mockDownloadFromStorage,
@@ -246,8 +246,7 @@ Deno.test('planComplexStage - Throws if dialectic_projects query fails', async (
     try {
         await planComplexStage(
             mockDb as unknown as SupabaseClient<Database>,
-            MOCK_PARENT_JOB,
-            MOCK_PAYLOAD,
+            { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
             mockDownloadFromStorage,
@@ -285,8 +284,7 @@ Deno.test('planComplexStage - Throws if dialectic_sessions query fails', async (
     try {
         await planComplexStage(
             mockDb as unknown as SupabaseClient<Database>,
-            MOCK_PARENT_JOB,
-            MOCK_PAYLOAD,
+            { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
             mockDownloadFromStorage,
@@ -327,8 +325,7 @@ Deno.test('planComplexStage - Throws if dialectic_contributions query fails', as
     try {
         await planComplexStage(
             mockDb as unknown as SupabaseClient<Database>,
-            MOCK_PARENT_JOB,
-            MOCK_PAYLOAD,
+            { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
             mockDownloadFromStorage,
@@ -372,8 +369,7 @@ Deno.test('planComplexStage - Throws if ai_providers query fails', async () => {
     try {
         await planComplexStage(
             mockDb as unknown as SupabaseClient<Database>,
-            MOCK_PARENT_JOB,
-            MOCK_PAYLOAD,
+            { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
             mockDownloadFromStorage,
@@ -417,8 +413,7 @@ Deno.test('planComplexStage - Throws if downloadFromStorage fails', async () => 
     try {
         await planComplexStage(
             mockDb as unknown as SupabaseClient<Database>,
-            MOCK_PARENT_JOB,
-            MOCK_PAYLOAD,
+            { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
             mockDownloadFromStorage,
@@ -477,8 +472,7 @@ Deno.test('planComplexStage - Handles stage with overlays and prompts', async ()
     try {
         await planComplexStage(
             mockDb as unknown as SupabaseClient<Database>,
-            MOCK_PARENT_JOB,
-            MOCK_PAYLOAD,
+            { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
             mockDownloadFromStorage,
@@ -531,8 +525,7 @@ Deno.test('planComplexStage - Returns empty array if no source contributions are
 
     const childJobs = await planComplexStage(
         mockDb as unknown as SupabaseClient<Database>,
-        MOCK_PARENT_JOB,
-        MOCK_PAYLOAD,
+        { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
         'user-123',
         mockLogger,
         mockDownloadFromStorage,
@@ -570,8 +563,7 @@ Deno.test('planComplexStage - Throws if selectedModelIds is empty', async () => 
     try {
         await planComplexStage(
             mockDb as unknown as SupabaseClient<Database>,
-            MOCK_PARENT_JOB,
-            { ...MOCK_PAYLOAD, model_id: null } as unknown as DialecticJobPayload, // Empty model IDs
+            { ...MOCK_PARENT_JOB, payload: { ...MOCK_PAYLOAD, model_id: null } as unknown as DialecticJobPayload }, // Empty model IDs
             'user-123',
             mockLogger,
             mockDownloadFromStorage,
@@ -609,8 +601,7 @@ Deno.test('planComplexStage - Throws if no stage transition is found', async () 
     try {
         await planComplexStage(
             mockDb as unknown as SupabaseClient<Database>,
-            MOCK_PARENT_JOB,
-            MOCK_PAYLOAD,
+            { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
             mockDownloadFromStorage,
@@ -660,8 +651,7 @@ Deno.test('planComplexStage - Handles source contributions with missing file_nam
     try {
         const childJobs = await planComplexStage(
             mockDb as unknown as SupabaseClient<Database>,
-            MOCK_PARENT_JOB,
-            MOCK_PAYLOAD,
+            { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
             mockDownloadFromStorage,
@@ -708,8 +698,7 @@ Deno.test('planComplexStage - Throws if no matching models are found for selecte
     try {
         await planComplexStage(
             mockDb as unknown as SupabaseClient<Database>,
-            MOCK_PARENT_JOB,
-            MOCK_PAYLOAD, // This payload asks for 'model-1' and 'model-2'
+            { ...MOCK_PARENT_JOB, payload: MOCK_PAYLOAD },
             'user-123',
             mockLogger,
             mockDownloadFromStorage,

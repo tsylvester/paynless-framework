@@ -69,7 +69,6 @@ Deno.test('getSeedPromptForStage - Happy Path', async () => {
 
     assertEquals(mockDownloadFromStorage.calls.length, 1);
     assertEquals(mockDownloadFromStorage.calls[0].args, [
-        mockSupabase.client,
         'test-bucket',
         'prompts/prompt.md'
     ]);

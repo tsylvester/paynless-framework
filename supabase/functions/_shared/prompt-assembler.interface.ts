@@ -1,5 +1,6 @@
 import { SupabaseClient } from "npm:@supabase/supabase-js";
 import { Database, Tables } from "../types_db.ts";
+import { DownloadStorageResult } from "./supabase_storage_utils.ts";
 
 export type DynamicContextVariables = {
     user_objective: string,
@@ -34,9 +35,3 @@ export type RenderPromptFunctionType = (
     systemDefaultOverlayValues?: Tables<'domain_specific_prompt_overlays'>['overlay_values'] | null,
     userProjectOverlayValues?: Tables<'domain_specific_prompt_overlays'>['overlay_values'] | null
 ) => string;
-
-export type DownloadStorageFunctionType = (
-    client: SupabaseClient<Database>,
-    bucket: string,
-    path: string,
-) => Promise<{ data: ArrayBuffer | null; error: Error | null }>;

@@ -20,8 +20,7 @@ export interface IJobProcessors {
 
 export async function processJob(
   dbClient: SupabaseClient<Database>,
-  job: Job,
-  payload: DialecticJobPayload,
+  job: Job & { payload: DialecticJobPayload },
   projectOwnerUserId: string,
   deps: ProcessSimpleJobDeps,
   authToken: string,
@@ -30,7 +29,7 @@ export async function processJob(
   const { id: jobId } = job;
   const {
     stageSlug,
-  } = payload;
+  } = job.payload;
 
   deps.logger.info(`[dialectic-worker] [processJob] Starting for job ID: ${jobId}`);
 
@@ -43,11 +42,11 @@ export async function processJob(
     stageData.input_artifact_rules && 
     typeof stageData.input_artifact_rules === 'object' && 
     !Array.isArray(stageData.input_artifact_rules) &&
-    'processing_strategy' in stageData.input_artifact_rules &&
+    'processing_strategy' in stageData.input_artifact_rules && 
     stageData.input_artifact_rules.processing_strategy &&
     typeof stageData.input_artifact_rules.processing_strategy === 'object' &&
     !Array.isArray(stageData.input_artifact_rules.processing_strategy) &&
-    'type' in stageData.input_artifact_rules.processing_strategy &&
+    'type' in stageData.input_artifact_rules.processing_strategy && 
     typeof stageData.input_artifact_rules.processing_strategy.type === 'string'
   ) ? stageData.input_artifact_rules.processing_strategy.type : undefined;
 
@@ -62,10 +61,10 @@ export async function processJob(
         downloadFromStorage: deps.downloadFromStorage,
     };
     
-    await processors.processComplexJob(dbClient, job, payload, projectOwnerUserId, complexDeps);
+    await processors.processComplexJob(dbClient, job, projectOwnerUserId, complexDeps);
   } else if (processingStrategyType === undefined) {
     // Simple path - no processing strategy defined
-    await processors.processSimpleJob(dbClient, job, payload, projectOwnerUserId, deps, authToken);
+    await processors.processSimpleJob(dbClient, job, projectOwnerUserId, deps, authToken);
   } else {
     // Error for unrecognized processing strategy
     throw new Error(`Unsupported processing strategy encountered: ${processingStrategyType}`);

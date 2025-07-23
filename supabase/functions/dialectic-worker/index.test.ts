@@ -154,6 +154,7 @@ Deno.test('handleJob - fails when payload is invalid', async () => {
         assertEquals(updatePayload.status, 'failed');
         const errorDetailsMessage = updatePayload.error_details?.message || '';
         assertEquals(typeof errorDetailsMessage === 'string' && errorDetailsMessage.includes('Invalid payload:'), true);
+        assertEquals(errorDetailsMessage, 'Invalid payload: Job payload is invalid or missing required fields.');
         assertExists(updatePayload.completed_at);
 
         // Verify notification was sent - use existing rpcSpy from mock
@@ -161,7 +162,7 @@ Deno.test('handleJob - fails when payload is invalid', async () => {
         assertEquals(rpcSpy.calls.length, 1, 'RPC should be called once for notification');
         const rpcCall = rpcSpy.calls[0];
         assertEquals(rpcCall.args[0], 'create_notification_for_user');
-        const rpcArgs = rpcCall.args[1] as any;
+        const rpcArgs = rpcCall.args[1];
         assertEquals(rpcArgs.target_user_id, 'user-id');
         assertEquals(rpcArgs.notification_type, 'contribution_generation_failed');
 
@@ -253,7 +254,7 @@ Deno.test('handleJob - successfully processes valid job', async () => {
         assertEquals(rpcSpy.calls.length, 1, 'RPC should be called once for start notification');
         const startNotification = rpcSpy.calls[0];
         assertEquals(startNotification.args[0], 'create_notification_for_user');
-        const notificationArgs = startNotification.args[1] as any;
+        const notificationArgs = startNotification.args[1];
         assertEquals(notificationArgs.target_user_id, 'user-id');
         assertEquals(notificationArgs.notification_type, 'contribution_generation_started');
         assertEquals(notificationArgs.notification_data.sessionId, 'session-id');
@@ -316,7 +317,7 @@ Deno.test('handleJob - handles exceptions during processJob execution', async ()
     });
 
     const mockDeps: GenerateContributionsDeps = {
-        logger: mockLogger,
+        logger: new MockLogger(),
         callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => ({
             content: 'Mock content',
             error: null,
@@ -450,7 +451,7 @@ Deno.test('handleJob - validates payload correctly and extracts user info', asyn
         const rpcSpy = mockSupabase.spies.rpcSpy;
         assertEquals(rpcSpy.calls.length, 1, 'RPC should be called once');
         const notification = rpcSpy.calls[0];
-        const notificationArgs = notification.args[1] as any;
+        const notificationArgs = notification.args[1];
         assertEquals(notificationArgs.notification_data.sessionId, 'session-id-validation');
         assertEquals(notificationArgs.notification_data.stageSlug, 'synthesis');
 

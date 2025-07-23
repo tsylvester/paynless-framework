@@ -44,6 +44,7 @@ const getCorsHeadersForRequest = (request: Request): Record<string, string> => {
   if (isOriginAllowed(origin)) {
     headers["Access-Control-Allow-Origin"] = origin!; // Dynamic origin
     console.log(`[cors-headers] Added Access-Control-Allow-Origin: ${origin}`);
+    //console.log('[cors-headers] Processing request object:', request);
   } else {
     console.log(`[cors-headers] Origin not in allowed list. Not adding Access-Control-Allow-Origin.`);
   }

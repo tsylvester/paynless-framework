@@ -1,4 +1,4 @@
-import { assert, assertExists, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { type Stub, stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { type SupabaseClient, type User, type PostgrestSingleResponse } from "npm:@supabase/supabase-js@2";
 import {
@@ -21,6 +21,7 @@ import {
   type StartSessionSuccessResponse,
   type StartSessionPayload,
   ProcessSimpleJobDeps,
+  DialecticJobPayload,
 } from "../../functions/dialectic-service/dialectic.interface.ts";
 import { generateContributions } from "../../functions/dialectic-service/generateContribution.ts";
 import { isJobResultsWithModelProcessing, isDialecticJobPayload, isDialecticJobRow } from "../../functions/_shared/utils/type_guards.ts";
@@ -30,6 +31,8 @@ import { processSimpleJob } from "../../functions/dialectic-worker/processSimple
 import { processComplexJob } from "../../functions/dialectic-worker/processComplexJob.ts";
 import { planComplexStage } from "../../functions/dialectic-worker/task_isolator.ts";
 import { handleJob } from "../../functions/dialectic-worker/index.ts";
+import { retryJob } from "../../functions/dialectic-worker/retryJob.ts";
+import { continueJob } from "../../functions/dialectic-worker/continueJob.ts";
 import { FileManagerService } from "../../functions/_shared/services/file_manager.ts";
 import { createProject } from "../../functions/dialectic-service/createProject.ts";
 import { startSession } from "../../functions/dialectic-service/startSession.ts";
@@ -57,6 +60,31 @@ const pollForCondition = async (
   throw new Error(`Timeout waiting for condition: ${timeoutMessage}`);
 };
 
+const pollForJobStatus = async (
+    jobId: string,
+    expectedStatus: string,
+    timeoutMessage: string,
+    interval = 500,
+    timeout = 10000,
+): Promise<DialecticJobRow> => {
+    let job: DialecticJobRow | null = null;
+    await pollForCondition(async () => {
+        const { data, error } = await adminClient.from('dialectic_generation_jobs').select('*').eq('id', jobId).single();
+        if (error) {
+            testLogger.warn(`[pollForJobStatus] Error fetching job ${jobId}: ${error.message}`);
+            return false;
+        }
+        job = data;
+        return job?.status === expectedStatus;
+    }, timeoutMessage, interval, timeout);
+
+    assertExists(job, `Job ${jobId} was not found after polling.`);
+    if (!isDialecticJobRow(job)) {
+        throw new Error("Polled data is not a valid DialecticJobRow");
+    }
+    return job;
+};
+
 const executePendingDialecticJobs = async (
     sessionId: string,
     deps: ProcessSimpleJobDeps,
@@ -67,7 +95,7 @@ const executePendingDialecticJobs = async (
         .from('dialectic_generation_jobs')
         .select('*')
         .eq('session_id', sessionId)
-        .in('status', ['pending', 'retrying']);
+        .in('status', ['pending', 'retrying', 'pending_continuation']);
 
     assert(!error, `Failed to fetch pending jobs: ${error?.message}`);
     assertExists(pendingJobs, "No pending jobs found to execute.");
@@ -119,23 +147,41 @@ Deno.test(
         assertExists(domain, "The 'Software Development' domain must exist in the database for this test to run.");
         testDomainId = domain.id;
 
-        const { data: modelA, error: modelAError } = await adminClient
-          .from('ai_providers')
-          .select('id')
-          .eq('api_identifier', 'gpt-4-turbo')
-          .single();
-        assert(!modelAError, `Failed to fetch gpt-4-turbo provider: ${modelAError?.message}`);
-        assertExists(modelA, "The 'gpt-4-turbo' AI provider must exist in the database.");
-        modelAId = modelA.id;
+        // --- Upsert AI Providers to ensure test is self-contained ---
+        type AiProviderInsert = Database['public']['Tables']['ai_providers']['Insert'];
+        const providersToEnsure: AiProviderInsert[] = [
+          {
+            api_identifier: 'gpt-4-turbo',
+            name: 'GPT-4 Turbo',
+            provider: 'openai',
+            config: { provider_max_input_tokens: 128000, provider_max_output_tokens: 4096 },
+          },
+          {
+            api_identifier: 'claude-3-opus',
+            name: 'Claude 3 Opus',
+            provider: 'anthropic',
+            config: { provider_max_input_tokens: 200000, provider_max_output_tokens: 4096 },
+          },
+        ];
 
-        const { data: modelB, error: modelBError } = await adminClient
+        const { data: upsertedProviders, error: upsertError } = await adminClient
           .from('ai_providers')
-          .select('id')
-          .eq('api_identifier', 'claude-3-opus')
-          .single();
-        assert(!modelBError, `Failed to fetch claude-3-opus provider: ${modelBError?.message}`);
-        assertExists(modelB, "The 'claude-3-opus' AI provider must exist in the database.");
+          .upsert(providersToEnsure, { onConflict: 'api_identifier' })
+          .select('id, api_identifier');
+        
+        assert(!upsertError, `Failed to upsert AI providers: ${upsertError?.message}`);
+        assertExists(upsertedProviders, "Upserting providers did not return data.");
+        assertEquals(upsertedProviders.length, 2, "Expected to upsert exactly 2 providers.");
+
+        const modelA = upsertedProviders.find(p => p.api_identifier === 'gpt-4-turbo');
+        const modelB = upsertedProviders.find(p => p.api_identifier === 'claude-3-opus');
+
+        assertExists(modelA, "The 'gpt-4-turbo' AI provider could not be upserted.");
+        modelAId = modelA.id;
+        
+        assertExists(modelB, "The 'claude-3-opus' AI provider could not be upserted.");
         modelBId = modelB.id;
+        // --- End of AI Provider Upsert ---
 
         factoryStub = stub(
             { getAiProviderAdapter },
@@ -187,8 +233,8 @@ Deno.test(
                 path: "seed-prompt.md",
                 fileName: "seed-prompt.md",
             }),
-            continueJob: () => Promise.resolve({ enqueued: true, error: undefined }),
-            retryJob: () => Promise.resolve({ error: undefined }),
+            continueJob,
+            retryJob,
         };
     };
 
@@ -257,18 +303,22 @@ Deno.test(
         return;
       }
 
-      // Configure mock AI adapter for failures and continuations
-      mockAiAdapter.setFailureForModel(modelAId, 1, new Error("Test-induced AI failure"));
-      mockAiAdapter.setContinuationForModel(modelBId, 1, "This is the final continued part.");
+      // --- Arrange ---
+      // FIX: Configure the mock using the API identifier strings, not the UUIDs.
+      mockAiAdapter.setFailureForModel('gpt-4-turbo', 1, new Error("Test-induced AI failure"));
+      mockAiAdapter.setContinuationForModel('claude-3-opus', 1, "This is the final continued part.");
 
       const generatePayload: GenerateContributionsPayload = {
         sessionId: testSession.id,
         stageSlug: "thesis",
         iterationNumber: 1,
         projectId: testSession.project_id,
-        selectedModelIds: testSession.selected_model_ids || [],
+        continueUntilComplete: true,
       };
+      
+      const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
 
+      // --- Act & Assert: Job Creation & Initial Processing ---
       const { data: jobData, error: creationError } = await generateContributions(
         adminClient,
         generatePayload,
@@ -277,15 +327,60 @@ Deno.test(
       );
       assert(!creationError, `Error creating jobs: ${creationError?.message}`);
       assertExists(jobData, "Job creation did not return data");
-      assertExists(jobData?.job_ids, "Job creation data did not include job_ids");
-      assertEquals(jobData?.job_ids?.length, generatePayload.selectedModelIds.length, "The number of created jobs does not match the number of selected models.");
-
-      // Manually invoke the worker for all created jobs, simulating the DB webhook.
-      const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
-      await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+      
+      if (jobData && jobData.job_ids) {
+        assertEquals(jobData.job_ids.length, 2, "Expected exactly two jobs to be created.");
         
-      // Now, poll until ALL jobs for this session are resolved.
-      // This validates that the initial jobs, retries, AND any trigger-invoked continuation jobs have completed.
+        const jobA_id = jobData.job_ids[0];
+        const jobB_id = jobData.job_ids[1];
+
+        assertExists(jobA_id, "Job A ID must exist.");
+        assertExists(jobB_id, "Job B ID must exist.");
+
+        testLogger.info(`[Test] >>> Executing first run for initial jobs...`);
+        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+
+        // --- Verify Retry and Continuation Creation ---
+        // After the first run, Job A should be 'retrying' and Job B should be 'completed' (having enqueued a continuation).
+        const retryingJobA = await pollForJobStatus(jobA_id, 'retrying', `Job A (${jobA_id}) should have status 'retrying' after first failed attempt.`);
+        assertEquals(retryingJobA.attempt_count, 1, "Job A attempt count should be 1 after first failure.");
+
+        await pollForJobStatus(jobB_id, 'completed', `Original Job B (${jobB_id}) should be 'completed' after processing its first chunk.`);
+        
+        // Now, verify that the continuation job was created BEFORE the next execution run.
+        const { data: continuationJobData, error: continuationJobError } = await adminClient
+          .from('dialectic_generation_jobs')
+          .select('*')
+          .eq('session_id', testSession.id)
+          .eq('status', 'pending_continuation')
+          .single();
+        
+        assert(!continuationJobError, `Error fetching continuation job: ${continuationJobError?.message}`);
+        assertExists(continuationJobData, "A new continuation job should have been created.");
+
+        // Correct the assertion to look inside the payload object using a type guard.
+        if (isDialecticJobPayload(continuationJobData.payload)) {
+            assertExists(continuationJobData.payload.target_contribution_id, "Continuation job must have a target_contribution_id in its payload.");
+            assertEquals(typeof continuationJobData.payload.target_contribution_id, 'string', "target_contribution_id should be a string.");
+        } else {
+            assert(false, "The continuation job's payload was not a valid DialecticJobPayload.");
+        }
+
+        // --- Execute Second Run to Process Retries and Continuations ---
+        testLogger.info(`[Test] >>> Executing second run for retrying job and continuation job...`);
+        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+        
+        // --- Verify Final States ---
+        const completedJobA = await pollForJobStatus(jobA_id, 'completed', `Job A (${jobA_id}) should have status 'completed' after successful retry.`);
+        assertEquals(completedJobA.attempt_count, 2, "Job A attempt count should be 2 after successful retry.");
+
+        await pollForJobStatus(continuationJobData.id, 'completed', `Continuation job (${continuationJobData.id}) should have 'completed' status.`);
+
+      } else {
+        assert(false, "jobData or job_ids were not created correctly.");
+      }
+      
+      // --- Act & Assert: Final State Verification ---
       await pollForCondition(async () => {
         if (!testSession) return false;
         const { data: pendingJobs } = await adminClient
@@ -296,24 +391,38 @@ Deno.test(
         return pendingJobs !== null && pendingJobs.length === 0;
       }, "All jobs for the session, including continuations, should be completed");
 
-      // Fetch the generated contributions to prepare for submission
-      const { data: contributions, error: contribError } = await adminClient
+      const { data: finalContributions, error: finalContribError } = await adminClient
         .from('dialectic_contributions')
-        .select('*')
+        .select('*, file_name, storage_bucket, storage_path')
         .eq('session_id', testSession.id)
-        .eq('stage', 'thesis');
+        .eq('stage', 'thesis')
+        .eq('is_latest_edit', true);
 
-      assert(!contribError, `Error fetching contributions: ${contribError?.message}`);
-      assertExists(contributions, "No contributions were generated for the thesis stage.");
-      assert(contributions.length > 0, "Contribution array is empty.");
+      assert(!finalContribError, `Error fetching final contributions: ${finalContribError?.message}`);
+      assertExists(finalContributions, "No final contributions were found.");
+      assertEquals(finalContributions.length, 2, "Expected exactly two final contributions where is_latest_edit is true.");
 
-      // Submit the responses
+      const contributionB = finalContributions.find(c => c.model_id === modelBId);
+      assertExists(contributionB, "Contribution for Model B not found.");
+      
+      const { data: downloadedData, error: downloadError } = await downloadFromStorage(adminClient, contributionB.storage_bucket, `${contributionB.storage_path}/${contributionB.file_name}`);
+      assert(!downloadError, `Failed to download final content for contribution B: ${downloadError?.message}`);
+      
+      if (downloadedData) {
+        const finalContent = new TextDecoder().decode(downloadedData);
+        const expectedContent = "This is a partial response for claude-3-opus.This is the final continued part.";
+        assertEquals(finalContent, expectedContent, "The final content of the continued contribution is incorrect.");
+      } else {
+        assert(false, "Downloaded content for contribution B was null.");
+      }
+      
+      // --- Act: Submit Responses ---
       const submitPayload: SubmitStageResponsesPayload = {
         sessionId: testSession.id,
         projectId: testSession.project_id,
         stageSlug: 'thesis',
         currentIterationNumber: 1,
-        responses: contributions.map(c => ({
+        responses: finalContributions.map(c => ({
           originalContributionId: c.id,
           responseText: `This is the selected response for contribution ${c.id}.`
         }))
@@ -337,6 +446,8 @@ Deno.test(
     });
 
     await t.step("4. should FAIL to generate contributions for Antithesis stage", async () => {
+      // Do not pay attention to this test. It cannot be implemented until the Thesis test is fixed. 
+      // This is TDD RED stage for this and all remaining tests. 
        if (!testSession) {
         assert(testSession, "Cannot test antithesis without a session.");
         return;
@@ -347,7 +458,6 @@ Deno.test(
         stageSlug: "antithesis",
         iterationNumber: 1,
         projectId: testSession.project_id,
-        selectedModelIds: testSession.selected_model_ids || [],
       };
 
       try {

@@ -135,7 +135,22 @@ export interface ActionHandlers {
   getSessionDetails: (payload: GetSessionDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetSessionDetailsResponse; error?: ServiceError; status?: number }>;
   getContributionContentHandler: (getUserFn: GetUserFn, dbClient: SupabaseClient, logger: ILogger, payload: { contributionId: string }) => Promise<{ data?: GetContributionContentDataResponse; error?: ServiceError; status?: number }>;
   startSession: (user: User, dbClient: SupabaseClient, payload: StartSessionPayload, dependencies: { logger: ILogger }) => Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }>;
-  generateContributions: (dbClient: SupabaseClient, payload: GenerateContributionsPayload, user: User, deps: GenerateContributionsDeps) => Promise<{ success: boolean; data?: { job_ids: string[]; }; error?: { message: string; status?: number; details?: unknown; code?: string; }; }>;
+  generateContributions: (
+    dbClient: SupabaseClient,
+    payload: GenerateContributionsPayload,
+    user: User,
+    deps: GenerateContributionsDeps,
+    authToken?: string | null
+  ) => Promise<{
+    success: boolean;
+    data?: { job_ids: string[] };
+    error?: {
+      message: string;
+      status?: number;
+      details?: unknown;
+      code?: string;
+    };
+  }>;
   listProjects: (user: User, dbClient: SupabaseClient) => Promise<{ data?: DialecticProject[]; error?: ServiceError; status?: number }>;
   listAvailableDomainOverlays: (stageAssociation: string, dbClient: SupabaseClient) => Promise<DomainOverlayDescriptor[]>;
   deleteProject: (dbClient: SupabaseClient, payload: { projectId: string }, userId: string) => Promise<{data?: null, error?: { message: string; details?: string | undefined; }, status?: number}>;
@@ -331,7 +346,7 @@ export async function handleRequest(
           logger.info("[generateContributions handler] Creating dependencies.");
           const deps: GenerateContributionsDeps = {
             callUnifiedAIModel: callUnifiedAIModel,
-            downloadFromStorage: downloadFromStorage,
+            downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
             getExtensionFromMimeType: getExtensionFromMimeType,
             logger: logger,
             randomUUID: crypto.randomUUID.bind(crypto),
@@ -339,18 +354,22 @@ export async function handleRequest(
             deleteFromStorage: (path: string) => deleteFromStorage(adminClient, 'dialectic_contributions', [path])
           };
 
-          logger.info("[generateContributions handler] Calling EdgeRuntime.waitUntil.");
-          EdgeRuntime.waitUntil(
-            handlers.generateContributions(
-              adminClient,
-              payload,
-              userForJson,
-              deps,
-            )
+          logger.info("[generateContributions handler] Awaiting job creation...");
+          const result = await handlers.generateContributions(
+            adminClient,
+            payload,
+            userForJson,
+            deps,
+            authToken,
           );
 
-          logger.info("[generateContributions handler] Returning 202 Accepted.");
-          return createSuccessResponse({ message: "Contribution generation initiated." }, 202, req);
+          if (result.success) {
+            logger.info("[generateContributions handler] Successfully created jobs. Returning 200 OK.", { job_ids: result.data?.job_ids });
+            return createSuccessResponse(result.data, 200, req);
+          } else {
+            logger.error("[generateContributions handler] Failed to create jobs.", { error: result.error });
+            return createErrorResponse(result.error?.message || 'Failed to generate contributions', result.error?.status || 500, req, result.error);
+          }
         }
         case "getContributionContentData": {
           const payload: GetContributionContentDataPayload = requestBody.payload;

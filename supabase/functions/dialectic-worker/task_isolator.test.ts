@@ -15,6 +15,7 @@ import {
 import { type UploadContext, type FileManagerResponse } from '../_shared/types/file_manager.types.ts';
 import { ILogger } from '../_shared/types.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
+import { logger } from '../_shared/logger.ts';
 
 // --- Mocks and Test Data ---
 
@@ -161,12 +162,8 @@ Deno.test('executeIsolatedStage - Happy Path', async () => {
     });
 
 
-    const mockLogger: ILogger = {
-        info: () => {}, warn: () => {}, error: () => {}, debug: () => {}
-    };
-
     const mockDeps: IIsolatedExecutionDeps = {
-        logger: mockLogger,
+        logger: logger,
         downloadFromStorage: () => Promise.resolve({ data: null, error: null }),
         callUnifiedAIModel: () => Promise.resolve({ content: 'AI RESPONSE', error: null, rawProviderResponse: {}, inputTokens: 1, outputTokens: 1, processingTimeMs: 1, contentType: 'text/markdown' }),
         fileManager: {
@@ -188,7 +185,7 @@ Deno.test('executeIsolatedStage - Happy Path', async () => {
 
     const downloadStub = stub(
         mockDeps, 'downloadFromStorage',
-        (_client, _bucket, path) => {
+        (_bucket: string, path: string) => {
             let content: string | null = null;
             if (path.includes('seed_prompt')) {
                 content = 'SEED PROMPT';
@@ -240,9 +237,8 @@ Deno.test('executeIsolatedStage - Throws if stage not found', async () => {
         }
     });
 
-    const mockLogger: ILogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
     const mockDeps: IIsolatedExecutionDeps = {
-        logger: mockLogger,
+        logger: logger,
         getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
         calculateTotalSteps: () => 0,
         getSeedPromptForStage: () => Promise.reject(new Error('Should not be called')),
@@ -271,25 +267,29 @@ Deno.test('executeIsolatedStage - Throws if stage is missing processing strategy
         }
     });
 
-    const mockLogger: ILogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
-     const mockDeps: IIsolatedExecutionDeps = {
-        logger: mockLogger,
-        getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
-        calculateTotalSteps: () => 0,
-        getSeedPromptForStage: () => Promise.reject(new Error('Should not be called')),
-        downloadFromStorage: () => Promise.reject(new Error('Should not be called')),
-        callUnifiedAIModel: () => Promise.reject(new Error('Should not be called')),
-        fileManager: { uploadAndRegisterFile: () => Promise.reject(new Error('Should not be called')) },
-        getExtensionFromMimeType: () => '.md',
-        randomUUID: () => '',
-        deleteFromStorage: () => Promise.reject(new Error('Should not be called')),
-    };
-    
-    await assertRejects(
-        () => executeIsolatedTask(mockDb as unknown as SupabaseClient<Database>, MOCK_JOB, MOCK_PAYLOAD, 'user-123', mockDeps, 'auth-token'),
-        Error,
-        'No valid processing_strategy found for stage antithesis'
-    );
+    const errorSpy = stub(logger, 'error');
+    try {
+        const mockDeps: IIsolatedExecutionDeps = {
+            logger: logger,
+            getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
+            calculateTotalSteps: () => 0,
+            getSeedPromptForStage: () => Promise.reject(new Error('Should not be called')),
+            downloadFromStorage: () => Promise.reject(new Error('Should not be called')),
+            callUnifiedAIModel: () => Promise.reject(new Error('Should not be called')),
+            fileManager: { uploadAndRegisterFile: () => Promise.reject(new Error('Should not be called')) },
+            getExtensionFromMimeType: () => '.md',
+            randomUUID: () => '',
+            deleteFromStorage: () => Promise.reject(new Error('Should not be called')),
+        };
+
+        await assertRejects(
+            () => executeIsolatedTask(mockDb as unknown as SupabaseClient<Database>, MOCK_JOB, MOCK_PAYLOAD, 'user-123', mockDeps, 'auth-token'),
+            Error,
+            'No valid processing_strategy found for stage antithesis'
+        );
+    } finally {
+        errorSpy.restore();
+    }
 });
 
 Deno.test('executeIsolatedStage - Handles AI call failures gracefully', async () => {
@@ -302,11 +302,10 @@ Deno.test('executeIsolatedStage - Handles AI call failures gracefully', async ()
         rpcResults: { 'create_notification_for_user': { data: null, error: null } }
     });
 
-    const mockLogger: ILogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
-    const errorSpy = stub(mockLogger, 'error');
+    const errorSpy = stub(logger, 'error');
     
     const mockDeps: IIsolatedExecutionDeps = {
-        logger: mockLogger,
+        logger: logger,
         downloadFromStorage: async () => {
             const blob = new Blob(['content'], { type: 'text/plain' });
             return { data: await blob.arrayBuffer(), error: null };
@@ -344,11 +343,10 @@ Deno.test('executeIsolatedStage - Completes with no source contributions', async
         rpcResults: { 'create_notification_for_user': { data: null, error: null } }
     });
 
-    const mockLogger: ILogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
-    const infoSpy = stub(mockLogger, 'info');
+    const infoSpy = stub(logger, 'info');
 
     const mockDeps: IIsolatedExecutionDeps = {
-        logger: mockLogger,
+        logger: logger,
         downloadFromStorage: () => Promise.reject(new Error('Should not be called')),
         callUnifiedAIModel: () => Promise.reject(new Error('Should not be called')),
         fileManager: { uploadAndRegisterFile: () => Promise.reject(new Error('Should not be called')) },
@@ -387,11 +385,10 @@ Deno.test('executeIsolatedStage - Handles partial AI call success', async () => 
         rpcResults: { 'create_notification_for_user': { data: null, error: null } }
     });
 
-    const mockLogger: ILogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
-    const errorSpy = stub(mockLogger, 'error');
+    const errorSpy = stub(logger, 'error');
 
     const mockDeps: IIsolatedExecutionDeps = {
-        logger: mockLogger,
+        logger: logger,
         downloadFromStorage: async () => {
             const blob = new Blob(['content'], { type: 'text/plain' });
             return { data: await blob.arrayBuffer(), error: null };
@@ -435,9 +432,8 @@ Deno.test('executeIsolatedStage - Throws on source document download failure', a
         }
     });
 
-    const mockLogger: ILogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
     const mockDeps: IIsolatedExecutionDeps = {
-        logger: mockLogger,
+        logger: logger,
         downloadFromStorage: () => Promise.resolve({ data: null, error: new Error('Download failed') }), // Simulate failure
         getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
         calculateTotalSteps: () => 0,
@@ -464,11 +460,10 @@ Deno.test('executeIsolatedStage - Throws if no models are selected', async () =>
         }
     });
 
-    const mockLogger: ILogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
     const payloadWithNoModels = { ...MOCK_PAYLOAD, selectedModelIds: [] };
 
     const mockDeps: IIsolatedExecutionDeps = {
-        logger: mockLogger,
+        logger: logger,
         getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
         downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(0), error: null }),
         getSeedPromptForStage: () => Promise.resolve({ content: 'SEED', fullPath: 'p', bucket: 'b', path: 'p', fileName: 'f' }),
@@ -497,11 +492,10 @@ Deno.test('executeIsolatedStage - Handles file upload failures gracefully', asyn
         rpcResults: { 'create_notification_for_user': { data: null, error: null } }
     });
 
-    const mockLogger: ILogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
-    const infoSpy = stub(mockLogger, 'info');
+    const infoSpy = stub(logger, 'info');
 
     const mockDeps: IIsolatedExecutionDeps = {
-        logger: mockLogger,
+        logger: logger,
         downloadFromStorage: async () => ({ data: await (new Blob(['content'])).arrayBuffer(), error: null }),
         callUnifiedAIModel: () => Promise.resolve({ content: 'AI RESPONSE', error: null, rawProviderResponse: {}, inputTokens: 1, outputTokens: 1, processingTimeMs: 1, contentType: 'text/markdown' }),
         fileManager: { 

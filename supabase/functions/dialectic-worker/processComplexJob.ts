@@ -8,19 +8,18 @@ import type {
 import { planComplexStage } from './task_isolator.ts';
 import type { ILogger } from '../_shared/types.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
-import type { DownloadStorageFunctionType } from '../_shared/prompt-assembler.interface.ts';
+import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 
 export interface IPlanComplexJobDeps {
     logger: ILogger;
     planComplexStage: typeof planComplexStage;
     promptAssembler: PromptAssembler;
-    downloadFromStorage: DownloadStorageFunctionType;
+    downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>;
 }
 
 export async function processComplexJob(
     dbClient: SupabaseClient<Database>,
-    job: DialecticJobRow,
-    payload: DialecticJobPayload,
+    job: DialecticJobRow & { payload: DialecticJobPayload },
     projectOwnerUserId: string,
     deps: IPlanComplexJobDeps,
 ): Promise<void> {
@@ -32,7 +31,6 @@ export async function processComplexJob(
         const childJobs = await deps.planComplexStage(
             dbClient,
             job,
-            payload,
             projectOwnerUserId,
             deps.logger,
             deps.downloadFromStorage,

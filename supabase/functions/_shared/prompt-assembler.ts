@@ -4,7 +4,8 @@ import { renderPrompt } from "./prompt-renderer.ts";
 import { parseInputArtifactRules } from "./utils/input-artifact-parser.ts";
 import { downloadFromStorage } from "./supabase_storage_utils.ts";
 import { DialecticContributionRow, InputArtifactRules, ArtifactSourceRule } from '../dialectic-service/dialectic.interface.ts';
-import { DynamicContextVariables, ProjectContext, SessionContext, StageContext, RenderPromptFunctionType, DownloadStorageFunctionType } from "./prompt-assembler.interface.ts";
+import { DynamicContextVariables, ProjectContext, SessionContext, StageContext, RenderPromptFunctionType } from "./prompt-assembler.interface.ts";
+import type { DownloadStorageResult } from "./supabase_storage_utils.ts";
 
 export type ContributionOverride = Partial<DialecticContributionRow> & {
     content: string;
@@ -14,16 +15,16 @@ export class PromptAssembler {
     private dbClient: SupabaseClient<Database>;
     private storageBucket: string;
     private renderPromptFn: RenderPromptFunctionType;
-    private downloadFromStorageFn: DownloadStorageFunctionType;
+    private downloadFromStorageFn: (bucket: string, path: string) => Promise<DownloadStorageResult>;
 
     constructor(
         dbClient: SupabaseClient<Database>, 
-        downloadFn?: DownloadStorageFunctionType,
+        downloadFn?: (bucket: string, path: string) => Promise<DownloadStorageResult>,
         renderPromptFn?: RenderPromptFunctionType
     ) {
         this.dbClient = dbClient;
         this.renderPromptFn = renderPromptFn || renderPrompt;
-        this.downloadFromStorageFn = downloadFn || downloadFromStorage;
+        this.downloadFromStorageFn = downloadFn || ((bucket, path) => downloadFromStorage(this.dbClient, bucket, path));
 
         const bucketFromEnv = Deno.env.get("SB_CONTENT_STORAGE_BUCKET");
         if (!bucketFromEnv) {
@@ -224,7 +225,6 @@ export class PromptAssembler {
 
                                 const { data: content, error: downloadError } =
                                     await this.downloadFromStorageFn(
-                                        this.dbClient,
                                         contrib.storage_bucket,
                                         pathToDownload,
                                     );
@@ -287,7 +287,7 @@ export class PromptAssembler {
                     const feedbackPath =
                         `projects/${project.id}/sessions/${session.id}/iteration_${iterationNumber}/${rule.stage_slug}/${feedbackFileName}`;
                     
-                    const { data: feedbackContent, error: feedbackDownloadError } = await this.downloadFromStorageFn(this.dbClient, this.storageBucket, feedbackPath);
+                    const { data: feedbackContent, error: feedbackDownloadError } = await this.downloadFromStorageFn(this.storageBucket, feedbackPath);
 
                     if (feedbackContent && !feedbackDownloadError) {
                         const content = new TextDecoder().decode(feedbackContent);
