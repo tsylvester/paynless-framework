@@ -2,10 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   useDialecticStore,
   selectIsStageReadyForSessionIteration,
-  selectContributionGenerationStatus,
   selectGenerateContributionsError,
+  selectGeneratingSessionsForSession,
 } from '@paynless/store';
-import { DialecticProject, DialecticSession, DialecticStage, ContributionGenerationStatus } from '@paynless/types';
+import { DialecticProject, DialecticSession, DialecticStage } from '@paynless/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -31,10 +31,15 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (/* REMOVED: { se
   const activeStage: DialecticStage | null = useDialecticStore(state => state.activeContextStage);
   const sessionProgress = useDialecticStore(state => session ? state.sessionProgress[session.id] : undefined);
   const fetchInitialPromptContent = useDialecticStore(state => state.fetchInitialPromptContent);
-  const contributionGenerationStatus: ContributionGenerationStatus = useDialecticStore(selectContributionGenerationStatus);
   const generateContributionsError = useDialecticStore(selectGenerateContributionsError);
   const navigate = useNavigate();
   const [isPromptOpen, setIsPromptOpen] = useState(false);
+
+  // Use the new, more specific selector. This is the key to reactivity.
+  const generatingJobs = useDialecticStore(state => 
+    session ? selectGeneratingSessionsForSession(state, session.id) : []
+  );
+  const isGenerating = generatingJobs.length > 0;
 
   const isStageReady = useDialecticStore(state => {
     if (!project || !session || !activeStage) {
@@ -141,13 +146,13 @@ export const SessionInfoCard: React.FC<SessionInfoCardProps> = (/* REMOVED: { se
                 />
             </div>
         )}
-        {(contributionGenerationStatus === 'initiating' || contributionGenerationStatus === 'generating') && !sessionProgress && (
+        {isGenerating && !sessionProgress && (
           <div className="flex items-center text-sm text-muted-foreground mt-2" data-testid="generating-contributions-indicator">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Generating contributions, please wait...
+            Generating contributions, please wait... ({generatingJobs.length} running)
           </div>
         )}
-        {contributionGenerationStatus === 'failed' && generateContributionsError && (
+        {generateContributionsError && (
           <Alert variant="destructive" className="mt-2" data-testid="generate-contributions-error">
             <AlertTitle>Error Generating Contributions</AlertTitle>
             <AlertDescription>{generateContributionsError.message}</AlertDescription>

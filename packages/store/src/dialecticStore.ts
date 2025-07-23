@@ -129,6 +129,12 @@ export const initialDialecticStateValues: DialecticStateValues = {
   sessionProgress: {},
 };
 
+export type DialecticState = DialecticStateValues & DialecticStore;
+
+export const selectGeneratingSessionsForSession = (state: DialecticState, sessionId: string): string[] => {
+  return state.generatingSessions[sessionId] || [];
+};
+
 export const useDialecticStore = create<DialecticStore>()(
   immer((set, get) => ({
     ...initialDialecticStateValues,
@@ -921,6 +927,7 @@ export const useDialecticStore = create<DialecticStore>()(
   
   // NEW: Internal handler for all dialectic lifecycle events from notificationStore
   _handleDialecticLifecycleEvent: (payload: DialecticLifecycleEvent) => {
+    logger.info('[DialecticStore] Received lifecycle event from notificationStore:', { payload });
     const handlers = get();
     switch (payload.type) {
         case 'contribution_generation_started':
@@ -968,6 +975,10 @@ export const useDialecticStore = create<DialecticStore>()(
           placeholder.status = 'generating';
         }
       }
+      // Sync with activeSessionDetail if it's the same session
+      if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
+        state.activeSessionDetail = { ...session };
+      }
     });
   },
 
@@ -980,6 +991,10 @@ export const useDialecticStore = create<DialecticStore>()(
         if (placeholder) {
           placeholder.status = 'generating';
         }
+      }
+      // Sync with activeSessionDetail if it's the same session
+      if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
+        state.activeSessionDetail = { ...session };
       }
     });
   },
@@ -998,12 +1013,24 @@ export const useDialecticStore = create<DialecticStore>()(
           };
         }
       }
+      // Sync with activeSessionDetail if it's the same session
+      if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
+        state.activeSessionDetail = { ...session };
+      }
     });
   },
 
   _handleDialecticContributionReceived: (event: DialecticContributionReceivedPayload) => {
+    logger.info('[DialecticStore] Handling contribution received. About to update state.', { event });
+    let wasGenerationCompleted = false;
+    let projectIdForRefetch: string | null = null;
+
     set(state => {
       const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
+      if (session) {
+        projectIdForRefetch = state.currentProjectDetail?.id || null;
+      }
+      
       if (session?.dialectic_contributions) {
         // Find placeholder by job_id
         const idx = session.dialectic_contributions.findIndex(c => c.job_id === event.job_id);
@@ -1013,21 +1040,41 @@ export const useDialecticStore = create<DialecticStore>()(
           const newContribution = {
             ...event.contribution,
             status: newStatus,
+            job_id: event.job_id,
           };
 
           if (idx > -1) {
             session.dialectic_contributions[idx] = newContribution;
           } else {
-            // If for some reason the placeholder doesn't exist, add it anyway.
             session.dialectic_contributions.push(newContribution);
           }
         }
       }
+      
+      // Sync with activeSessionDetail if it's the same session
+      if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
+        state.activeSessionDetail = { ...session };
+      }
+
       // Remove the completed job ID from tracking
       if (state.generatingSessions[event.sessionId] && event.job_id) {
         state.generatingSessions[event.sessionId] = state.generatingSessions[event.sessionId].filter(id => id !== event.job_id);
+        
+        if (state.generatingSessions[event.sessionId].length === 0) {
+          wasGenerationCompleted = true;
+          delete state.generatingSessions[event.sessionId];
+        }
+      }
+      
+      if (wasGenerationCompleted && Object.keys(state.generatingSessions).length === 0) {
+        state.contributionGenerationStatus = 'idle';
       }
     });
+
+    if (wasGenerationCompleted && projectIdForRefetch) {
+      logger.info(`[DialecticStore] All jobs for session ${event.sessionId} are complete. Triggering project detail refetch.`);
+      get().fetchDialecticProjectDetails(projectIdForRefetch);
+    }
   },
 
   _handleContributionGenerationContinued: (event: ContributionGenerationContinuedPayload) => {
@@ -1060,6 +1107,10 @@ export const useDialecticStore = create<DialecticStore>()(
             }
         }
       }
+      // Sync with activeSessionDetail if it's the same session
+      if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
+        state.activeSessionDetail = { ...session };
+      }
       // Do not remove the job_id from tracking, as the generation is still in progress.
     });
   },
@@ -1084,6 +1135,10 @@ export const useDialecticStore = create<DialecticStore>()(
                 }
             });
         }
+      }
+      // Sync with activeSessionDetail if it's the same session
+      if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
+        state.activeSessionDetail = { ...session };
       }
       // Clear tracking for this session only if the failure is catastrophic (no job_id)
       if (!event.job_id) {
@@ -1204,9 +1259,13 @@ export const useDialecticStore = create<DialecticStore>()(
         const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
         if (session) {
             const pendingPlaceholders = session.dialectic_contributions?.filter(c => c.status === 'pending' && c.iteration_number === iterationNumber) || [];
+            
+            // FIX 2: More robust matching
             response.data.job_ids.forEach((jobId, index) => {
-                if (pendingPlaceholders[index]) {
-                    pendingPlaceholders[index].job_id = jobId;
+                const modelIdForThisJob = selectedModelIds[index];
+                const placeholder = pendingPlaceholders.find(p => p.model_id === modelIdForThisJob && !p.job_id);
+                if (placeholder) {
+                    placeholder.job_id = jobId;
                 }
             });
         }

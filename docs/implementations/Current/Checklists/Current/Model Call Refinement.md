@@ -255,12 +255,36 @@ This phase addresses the critical 150-second timeout limitation of Supabase Edge
     *   `[TEST-UNIT]` **Assertions:** Assert that when a job receives a `'length'` finish reason, it correctly creates a new job with the updated context in its payload. Verify the original job is marked `'completed'`. Test the case where `continue_until_complete` is `false` and ensure no new job is created.
     *   `[TEST-INT]` **Action:** Write integration tests to verify the file-saving logic. Assert that the first job creates a file and that a subsequent continuation job correctly appends to and overwrites that same file, resulting in a single, concatenated final artifact.
 
-#### 13. [BE] [REFACTOR] Refactor `generateContributions` to a Job Enqueuer
+#### 13. [REFACTOR] [BE] [TEST-UNIT] [TEST-INT] Job Enqueuing and Processing Architecture Refinement
 
-*   `[✅]` 13.a. **Rewrite `generateContributions` Function:**
-    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   `[BE]` `[REFACTOR]` **Action:** The function's sole responsibility will be to validate the incoming request, construct a comprehensive `payload` object that captures all necessary parameters from the `GenerateContributionsPayload` (ensuring optional fields like `walletId`, `continueUntilComplete`, and custom `max_retries` are preserved), and insert a new job record into the `dialectic_generation_jobs` table with a `pending` status.
-    *   `[BE]` `[REFACTOR]` **Action:** It must immediately return a `202 Accepted` response to the client, including the `job_id` of the newly created record.
+*   `[✅]` **a. [BE] [REFACTOR] Refactor `generateContributions` to a Multi-Job Enqueuer**
+    *   `[✅]` i. **Update Return Type:** The function's TypeScript return type signature in `supabase/functions/dialectic-service/generateContribution.ts` must be `Promise<{ success: boolean; data?: { job_ids: string[] }; error?: ... }>`.
+    *   `[✅]` ii. **Implement Iteration:** The function's logic must iterate through the `selectedModelIds` array provided in the `payload`.
+    *   `[✅]` iii. **Create Discrete Job Payloads:** Inside the loop, for each `modelId`, a new, specific `jobPayload` must be created. This payload should be a copy of the original request payload, with two critical changes:
+        1.  The `selectedModelIds` array property must be **removed**.
+        2.  A new property, **`model_id: string`**, must be added, containing the single `modelId` for that specific job.
+    *   `[✅]` iv. **Enqueue Discrete Jobs:** For each model, execute a separate `dbClient.from('dialectic_generation_jobs').insert(...)` call to create a distinct job record in the database.
+    *   `[✅]` v. **Aggregate Job IDs:** Collect each new `job.id` into a `jobIds` array.
+    *   `[✅]` vi. **Return Array of Job IDs:** After the loop completes, the function must return a `202 Accepted` response to the client with a body containing the array of all created job IDs, in the format: `{ data: { job_ids: string[] } }`.
+
+*   `[✅]` **b. [BE] [REFACTOR] Simplify `dialectic-worker` for Discrete Jobs**
+    *   `[✅]` i. **Identify File:** `supabase/functions/dialectic-worker/processSimpleJob.ts`.
+    *   `[✅]` ii. **Refactor Action:** The `processSimpleJob` function must be refactored to process only a single model. The `for...of` loop that iterates over a `selectedModelIds` property must be removed.
+    *   `[✅]` iii. **Simplification Action:** All logic within the function should be simplified to directly use the new, unambiguous string property from the payload: **`job.payload.model_id`**.
+
+*   `[✅]` **c. [TEST-UNIT] [TEST-INT] Update All Tests to Validate the New Architecture**
+    *   `[✅]` i. **Update `generateContributions` Unit Tests:**
+        1.  **File:** `supabase/functions/dialectic-service/generateContribution.test.ts`
+        2.  **Action:** The unit tests must be modified to assert that when the function is called with multiple model IDs, the database `insert` method is invoked multiple times and that the function's return value is an object containing an array of job IDs.
+    *   `[✅]` ii. **Update `processSimpleJob` Unit Tests:**
+        1.  **File:** `supabase/functions/dialectic-worker/processSimpleJob.test.ts`
+        2.  **Action:** The tests must be refactored to reflect the worker's simplified logic. Each test should set up a job payload that contains the new `model_id` string property instead of the `selectedModelIds` array.
+    *   `[✅]` iii. **Update the End-to-End Integration Test:**
+        1.  **File:** `supabase/integration_tests/services/dialectic_pipeline.integration.test.ts`
+        2.  **Action:** The integration test must be updated to validate the correct architecture.
+            *   a. When invoking the `dialectic-service`, the test must assert that the immediate HTTP response contains the `{ data: { job_ids: [...] } }` structure.
+            *   b. The `executePendingDialecticJobs` test helper must expect to find **multiple** pending job records in the database after the service call.
+            *   c. The test assertions must confirm that the worker is invoked for **each** of these discrete jobs and that the final contributions are all created successfully.
 
 ---
 
@@ -469,6 +493,31 @@ This phase focuses on building the frontend components to consume the generic pr
     *   `[STORE]` **File:** `packages/store/src/dialecticStore.ts`
     *   **Action:** When a `'dialectic_progress_update'` notification is received, the handler must **not** trigger a standard UI notification toast. These are for driving the progress bar only.
     *   `[STORE]` **Action:** Create a new action (e.g., `setSessionProgress(payload)`) that uses `immer` to update a **new, separate piece of state**: `sessionProgress: { [sessionId: string]: ProgressData }`, where `ProgressData` is `{ current_step: number, total_steps: number, message: string }`. This isolates the progress bar's state from the main contribution data state.
+*   `[ ]` 22.c. **Refine Notification System for Robustness and Architectural Alignment:**
+    *   `[✅]` 22.c.i. **Phase 1: Backend - Formalize Notification Creation and Payloads.**
+        *   `[✅]` 22.c.i.1. **Create Centralized Notification Service.**
+            *   `[✅]` 22.c.i.1.a. `[TEST-UNIT]` **(RED)** Create a new test file, `supabase/functions/_shared/utils/notification.service.test.ts`. Write failing tests that attempt to instantiate a `NotificationService` and call its methods (e.g., `createContributionStartedEvent`), asserting that the returned objects have the correct, complete structure for both internal events and user-facing notifications.
+            *   `[✅]` 22.c.i.1.b. `[BE]` `[REFACTOR]` **(GREEN)** Create the file `supabase/functions/_shared/utils/notification.service.ts`. Implement the `NotificationService` class with strongly-typed public methods that construct and return complete, validated payloads for every notification and event type.
+            *   `[✅]` 22.c.i.1.c. `[TEST-UNIT]` **(PROVE)** Run the tests in `notification.service.test.ts` to prove they pass.
+        *   `[✅]` 22.c.i.2. **Enhance `notifications` Table for Rich Data.**
+            *   `[✅]` 22.c.i.2.a. `[DB]` Create a new database migration file.
+            *   `[✅` 22.c.i.2.b. `[DB]` In the migration, alter the `public.notifications` table to add the following nullable columns: `title TEXT`, `message TEXT`, and `link_path TEXT`. Add a non-nullable column: `is_internal_event BOOLEAN NOT NULL DEFAULT FALSE`.
+        *   `[✅]` 22.c.i.3. **Refactor `dialectic-worker` to Use Notification Service.**
+            *   `[✅]` 22.c.i.3.a. `[TEST-UNIT]` **(RED)** Update unit tests for all relevant files in `supabase/functions/dialectic-worker/` (e.g., `index.test.ts`, `processSimpleJob.test.ts`). Modify the tests to assert that the new `NotificationService` is called instead of the raw RPC `create_notification_for_user`.
+            *   `[✅]` 22.c.i.3.b. `[BE]` `[REFACTOR]` **(GREEN)** In the `dialectic-worker` source files, refactor the code to import and use the `NotificationService`. Replace all direct RPC calls for notifications with calls to the appropriate service method, passing the resulting payload to the RPC.
+            *   `[✅]` 22.c.i.3.c. `[TEST-UNIT]` **(PROVE)** Run the updated worker tests to prove they pass.
+    *   `[✅]` 22.c.ii. **Phase 2: Frontend - Harden State Management and Event Handling.**
+        *   `[✅]` 22.c.ii.1. **Simplify `notificationStore.ts` for Robust Routing.**
+            *   `[✅]` 22.c.ii.1.a. `[TEST-UNIT]` **(RED)** Update the unit tests in `packages/store/src/notificationStore.test.ts`. The tests should now send mock notifications where `is_internal_event` is `true` and assert that `_handleDialecticLifecycleEvent` in the `dialecticStore` mock is called, while `addNotification` is **not**. Then, test with `is_internal_event: false` and assert the opposite.
+            *   `[✅]` 22.c.ii.1.b. `[STORE]` `[REFACTOR]` **(GREEN)** Radically simplify the `handleIncomingNotification` function in `packages/store/src/notificationStore.ts`. Remove the large `switch` statement and replace it with a simple `if (notification.is_internal_event)` block that routes to the `dialecticStore` and returns, or else calls `addNotification`.
+            *   `[✅]` 22.c.ii.1.c. `[TEST-UNIT]` **(PROVE)** Run the updated `notificationStore` tests to prove they pass.
+        *   `[ ]` 22.c.ii.2. **Make `dialecticStore.ts` State Updates Resilient.**
+            *   `[✅]` 22.c.ii.2.a. `[TEST-UNIT]` **(RED)** Update unit tests in `packages/store/src/dialecticStore.test.ts`. The `generateContributions` test should now assert that a `job_id` is added to the placeholder object. The lifecycle event handler tests (e.g., `_handleDialecticContributionReceived`) should be modified to assert that the store finds and updates the placeholder by `job_id`, not by other properties.
+            *   `[✅]` 22.c.ii.2.b. `[STORE]` `[REFACTOR]` **(GREEN)** In `packages/store/src/dialecticStore.ts`, modify the `generateContributions` action to store the `job_id` on the client-side placeholder object it creates. Refactor the internal lifecycle event handlers (`_handle...`) to use this `job_id` as the sole unique key for finding and updating placeholder contributions.
+            *   `[✅]` 22.c.ii.2.c. `[TEST-UNIT]` **(PROVE)** Run the updated `dialecticStore` tests to prove they pass.
+    *   `[✅]` 22.c.iii. **Phase 3: Final Verification.**
+        *   `[✅]` 22.c.iii.1. `[TEST-INT]` **Update Integration Tests.** Modify the end-to-end integration test (`dialectic_pipeline.integration.test.ts`) to validate the new, complete notification payloads are being created correctly in the database and that the frontend state updates reliably based on the `job_id`.
+        *   `[ ]` 22.c.iii.2. `[DOCS]` **Update Documentation.** Add a new section to this document (`Model Call Refinement.md`) to formally describe the refined notification architecture, the role of the `NotificationService`, and the robust `job_id`-based state management flow.
 
 #### 23. [UI] Create and Display the Dynamic Progress Bar
 
@@ -494,6 +543,35 @@ This phase focuses on building the frontend components to consume the generic pr
 *   `[✅]` 24.b. **Activate Task Isolation for Synthesis Stage:**
     *   `[DB]` **Action:** In the same migration, update the `synthesis` record in the `dialectic_stages` table.
     *   `[DB]` **Action:** Define and add an appropriate `processing_strategy` to its `input_artifact_rules`. The `granularity` might be different (e.g., `"per_pairwise_synthesis"`), but the `type` will be `"task_isolation"`, ensuring it also uses the new generic system. This proactively prepares the Synthesis stage for its own multi-step reduction process outlined in the next phase.
+*   `[ ]` 24.c. **Add End-to-End Integration Test for Service-to-Worker Flow:**
+    *   `[TEST-INT]` **Goal:** To create a comprehensive integration test that validates the entire asynchronous workflow, from an initial API call to the `dialectic-service` through the `dialectic-worker`'s complete processing, including complex orchestration, retries, and continuations. This test proves the core mechanics of the Mermaid diagram are functioning correctly.
+    *   `[TEST-INT]` **File Location:** `supabase/integration_tests/services/dialectic_pipeline.integration.test.ts`
+    *   `[TEST-INT]` **Core Framework:**
+        *   **Setup/Teardown:** Utilize the `coreInitializeTestStep` and `coreCleanupTestResources` from `_shared/_integration.test.utils.ts` to create a hermetically sealed test environment. This includes seeding a test user, project, session, and the `thesis`/`antithesis` stage configurations.
+        *   **Mocking:** Use Deno's spies to replace the real AI adapter with the `MockAiProviderAdapter` from `_shared/ai_service/ai_provider.mock.ts`. The test will gain full control over the AI's behavior.
+            *   The mock will be configured on a per-test basis to simulate specific scenarios by telling it which model should fail, how many times it should fail before succeeding, and which model should return a `finish_reason: 'length'` to trigger continuations.
+        *   **Asynchronous Invocation:** Since the test environment does not have database webhooks, the test will manually trigger the `dialectic-worker` after the `dialectic-service` enqueues a job. This is accomplished by calling a new test utility, `executePendingDialecticJobs()`, which finds pending jobs in the database and invokes the worker handler for each one, thereby simulating the production environment's event-driven architecture.
+    *   `[TEST-INT]` **Test Case 1: Simple Stage (Thesis) with Failures & Continuations:**
+        *   **Arrange:**
+            1.  Configure the `thesis` stage with a `simple` processing strategy.
+            2.  Configure the mock AI provider: Model 'A' will fail once then succeed. Model 'B' will require one continuation.
+        *   **Act:** Invoke the `dialectic-service` HTTP endpoint to generate contributions for the Thesis stage with models 'A' and 'B'.
+        *   **Assert (via Database Polling):**
+            1.  Poll the `dialectic_generation_jobs` table to observe the job for Model 'A' transition through `processing` -> `retrying` -> `completed` with an `attempt_count` of 2.
+            2.  Poll to observe the job for Model 'B' complete and correctly enqueue a *new* continuation job (with a `target_contribution_id`).
+            3.  Poll until all jobs are `completed`.
+            4.  Verify the final `dialectic_contributions` records and their content in storage are correct.
+    *   `[TEST-INT]` **Test Case 2: Complex Stage (Antithesis) with Task Isolation:**
+        *   **Arrange:**
+            1.  Seed a completed `thesis` contribution as input.
+            2.  Configure the `antithesis` stage with `processing_strategy.type: 'task_isolation'`.
+            3.  Configure the mock AI provider to trigger a continuation on one of the dynamically generated child jobs.
+        *   **Act:** Invoke the `dialectic-service` to generate contributions for the Antithesis stage.
+        *   **Assert (via Database Polling):**
+            1.  Poll the jobs table to observe the initial "parent" job get created and transition to `status: 'waiting_for_children'`.
+            2.  Verify that multiple "child" jobs (with `parent_job_id` set) are created by the `task_isolator`.
+            3.  Observe the processing of child jobs, including the successful handling of the continuation scenario on one of them.
+            4.  After the last child job completes, assert that the orchestration trigger fires and updates the parent job's status to `pending_next_step` (or `completed`), proving the parent was "woken up" correctly.
 
 ### Phase 9: Dialectic Process Scaling - Synthesis Stage (Stage 3)
 

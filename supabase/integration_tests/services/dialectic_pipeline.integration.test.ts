@@ -193,7 +193,7 @@ Deno.test(
         testDeps = {
             logger: testLogger,
             fileManager: new FileManagerService(adminClient),
-            downloadFromStorage: (client, bucket, path) => downloadFromStorage(client, bucket, path),
+            downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
             deleteFromStorage: () => Promise.resolve({ error: null }), // Can remain a mock for now
             getExtensionFromMimeType: () => ".md",
             randomUUID: () => crypto.randomUUID(),
@@ -235,6 +235,16 @@ Deno.test(
             }),
             continueJob,
             retryJob,
+            notificationService: {
+                sendContributionStartedEvent: () => Promise.resolve(),
+                sendDialecticContributionStartedEvent: () => Promise.resolve(),
+                sendContributionReceivedEvent: () => Promise.resolve(),
+                sendContributionRetryingEvent: () => Promise.resolve(),
+                sendContributionFailedNotification: () => Promise.resolve(),
+                sendContributionGenerationCompleteEvent: () => Promise.resolve(),
+                sendContributionGenerationContinuedEvent: () => Promise.resolve(),
+                sendDialecticProgressUpdateEvent: () => Promise.resolve(),
+            },
         };
     };
 
@@ -432,7 +442,7 @@ Deno.test(
         submitPayload,
         adminClient,
         primaryUser,
-        { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage: testDeps.downloadFromStorage }
+        { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage }
       );
       
       assert(!submitError, `Error submitting responses: ${JSON.stringify(submitError)}`);

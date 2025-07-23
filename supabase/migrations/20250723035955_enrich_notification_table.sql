@@ -4,6 +4,9 @@ ADD COLUMN message TEXT,
 ADD COLUMN link_path TEXT,
 ADD COLUMN is_internal_event BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Drop the old, ambiguous function signature
+DROP FUNCTION IF EXISTS public.create_notification_for_user(UUID, TEXT, JSONB);
+
 -- Update the RPC function to handle the new columns
 CREATE OR REPLACE FUNCTION public.create_notification_for_user(
   p_target_user_id UUID,

@@ -154,6 +154,7 @@ describe('Dialectic Store Notification Handlers', () => {
       sessionId: 'session-1',
       modelId: 'model-2', // Specifically targeting the second model
       iterationNumber: 1,
+      job_id: 'job-2', // This is the critical missing piece
     };
 
     if (_handleDialecticLifecycleEvent) {
@@ -310,6 +311,7 @@ describe('Dialectic Store Notification Handlers', () => {
       sessionId: 'session-1',
       modelId: 'model-1',
       iterationNumber: 1,
+      job_id: 'job-1', // This is the critical missing piece
     });
 
     const retryingNotification: DialecticLifecycleEvent = {
@@ -317,7 +319,8 @@ describe('Dialectic Store Notification Handlers', () => {
         sessionId: 'session-1',
         modelId: 'model-1',
         iterationNumber: 1,
-        error: 'Model timed out'
+        error: 'Model timed out',
+        job_id: 'job-1', // This is the critical missing piece
     };
     
     _handleDialecticLifecycleEvent?.(retryingNotification);
@@ -507,6 +510,7 @@ describe('Dialectic Store Notification Handlers', () => {
         sessionId: 'session-1',
         modelId: 'model-1',
         iterationNumber: 1,
+        job_id: 'job-1', // This is the critical missing piece
     });
 
     let state = useDialecticStore.getState();
@@ -520,6 +524,7 @@ describe('Dialectic Store Notification Handlers', () => {
         sessionId: 'session-1',
         modelId: 'model-1',
         iterationNumber: 1,
+        job_id: 'job-2', // This is the critical missing piece
     });
 
     state = useDialecticStore.getState();

@@ -40,6 +40,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
 
     // --- NEW: Internal Realtime Callback Handler ---
     const handleIncomingNotification = (notification: Notification | null | undefined) => {
+        logger.info('[NotificationStore] Raw incoming notification from Supabase Realtime:', { notification });
         if (!notification || !notification.id || !notification.user_id || !notification.type) {
             logger.warn('[NotificationStore] Received invalid notification data from subscription.', { payload: notification ?? 'undefined/null' });
             return;
