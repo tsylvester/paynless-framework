@@ -464,6 +464,8 @@ export interface ContributionGenerationFailedPayload {
   // This is a specific model failing for all of its retries.  
   type: 'contribution_generation_failed';
   sessionId: string;
+  projectId: string;
+  stageSlug: string;
   error?: ApiError;
 }
 
