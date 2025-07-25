@@ -299,10 +299,25 @@ export interface GenerateContributionsPayload {
   target_contribution_id?: string;
 }
 
-export type DialecticJobPayload = Omit<GenerateContributionsPayload, 'selectedModelIds'> & {
-  model_id: string;
-  prompt?: string;
-};
+export interface DialecticJobPayload extends Omit<GenerateContributionsPayload, 'selectedModelIds'> {
+    model_id: string; // Individual model ID for this specific job
+    prompt?: string; // Optional: For jobs that receive a direct, pre-rendered prompt
+    job_type?: 'plan' | 'execute' | 'combine' | 'simple';
+}
+
+export interface DialecticCombinationJobPayload extends DialecticJobPayload {
+  job_type?: 'plan' | 'execute' | 'combine';
+  inputs?: {
+    document_ids?: string[];
+    [key: string]: unknown; // Allow other properties
+  };
+  prompt_template_name?: string;
+  step_info?: {
+    current_step: number;
+    total_steps: number;
+    status: 'pending' | 'in-progress' | 'completed' | 'failed';
+  };
+}
 
 export interface GenerateContributionsSuccessResponse {
   sessionId: string;
@@ -610,7 +625,17 @@ export interface IContinueJobResult {
 }
 
 export type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
-
+export interface ExecuteModelCallAndSaveParams {
+  dbClient: SupabaseClient<Database>;
+  deps: ProcessSimpleJobDeps;
+  authToken: string;
+  job: Job & { payload: DialecticJobPayload };
+  projectOwnerUserId: string;
+  providerDetails: SelectedAiProvider;
+  renderedPrompt: { content: string; fullPath: string };
+  previousContent: string;
+  sessionData: { id: string, associated_chat_id: string | null };
+}
 export interface ProcessSimpleJobDeps extends GenerateContributionsDeps {
   getSeedPromptForStage: (
     dbClient: SupabaseClient<Database>,
@@ -637,4 +662,5 @@ export interface ProcessSimpleJobDeps extends GenerateContributionsDeps {
     projectOwnerUserId: string
   ) => Promise<{ error?: Error }>;
   notificationService: NotificationServiceType;
+  executeModelCallAndSave: (params: ExecuteModelCallAndSaveParams) => Promise<void>;
 }

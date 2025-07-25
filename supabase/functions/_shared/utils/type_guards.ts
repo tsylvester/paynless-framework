@@ -7,9 +7,11 @@ import type {
     DialecticJobRow,
     JobResultsWithModelProcessing,
     ModelProcessingResult,
+    DialecticCombinationJobPayload,
 } from '../../dialectic-service/dialectic.interface.ts';
 import type { IIsolatedExecutionDeps } from "../../dialectic-worker/task_isolator.ts";
 import { ProjectContext, StageContext } from "../prompt-assembler.interface.ts";
+import { FailedAttemptError } from "../../dialectic-service/dialectic.interface.ts";
 
 // Helper type to represent the structure we're checking for.
 type StageWithProcessingStrategy = Tables<'dialectic_stages'> & {
@@ -94,6 +96,21 @@ export function isDialecticJobPayload(payload: Json): payload is Json & Dialecti
     }
 }
 
+export function isDialecticCombinationJobPayload(payload: unknown): payload is DialecticCombinationJobPayload {
+    if (!isJson(payload) || !isDialecticJobPayload(payload)) {
+        return false;
+    }
+
+    // `payload` is now `Json & DialecticJobPayload`, so we can safely check properties.
+    return (
+        'job_type' in payload && payload.job_type === 'combine' &&
+        'prompt_template_name' in payload && typeof payload.prompt_template_name === 'string' &&
+        'inputs' in payload && isRecord(payload.inputs) &&
+        'document_ids' in payload.inputs && Array.isArray(payload.inputs.document_ids) &&
+        payload.inputs.document_ids.every((id: unknown) => typeof id === 'string')
+    );
+}
+
 /**
  * A true type guard that checks if a stage's input_artifact_rules contain a valid processing_strategy.
  * This function validates the structure at runtime to ensure type safety.
@@ -121,7 +138,7 @@ export function hasProcessingStrategy(stage: Tables<'dialectic_stages'>): stage 
 }
 
 export function isStageContext(obj: unknown): obj is StageContext {
-    if (typeof obj !== 'object' || obj === null) return false;
+    if (!isRecord(obj)) return false;
 
     const checks = [
         { key: 'id', type: 'string' },
@@ -132,7 +149,7 @@ export function isStageContext(obj: unknown): obj is StageContext {
 
     for (const check of checks) {
         if (!Object.prototype.hasOwnProperty.call(obj, check.key)) return false;
-        const value = (obj as Record<string, unknown>)[check.key];
+        const value = obj[check.key];
         
         if (value === null) {
             // This is valid only if the field is not one of our specifically checked objects/arrays
@@ -151,29 +168,6 @@ export function isStageContext(obj: unknown): obj is StageContext {
             return false;
         }
     }
-
-    return true;
-}
-
-export function isProjectContext(obj: unknown): obj is ProjectContext {
-    if (typeof obj !== 'object' || obj === null) return false;
-
-    const checks = [
-        { key: 'id', type: 'string' },
-        { key: 'project_name', type: 'string' },
-        { key: 'initial_user_prompt', type: 'string' },
-        { key: 'dialectic_domains', type: 'object' }, // Not null
-    ];
-
-    for (const check of checks) {
-        if (!Object.prototype.hasOwnProperty.call(obj, check.key)) return false;
-        const value = (obj as Record<string, unknown>)[check.key];
-        if (value === null) return false; // None of these are nullable
-        if (typeof value !== check.type) return false;
-    }
-    
-    // Check nested property
-    if (typeof (obj as ProjectContext).dialectic_domains.name !== 'string') return false;
 
     return true;
 }
@@ -316,7 +310,7 @@ export function isJobResultsWithModelProcessing(results: unknown): results is Jo
     if (typeof results !== 'object' || results === null || !('modelProcessingResults' in results)) {
         return false;
     }
-    const { modelProcessingResults } = results as { modelProcessingResults: unknown };
+    const { modelProcessingResults } = results;
     if (!Array.isArray(modelProcessingResults)) {
         return false;
     }
@@ -449,23 +443,82 @@ export function isJson(value: unknown): value is Json {
         return true;
     }
 
-    if (Array.isArray(value)) {
-        return value.every(isJson);
-    }
-
     if (typeof value === 'object') {
-        if (value.constructor.name !== 'Object') {
-            return false;
-        }
-        for (const key in value) {
-            if (Object.prototype.hasOwnProperty.call(value, key)) {
-                if (!isJson((value as Record<string, unknown>)[key])) {
-                    return false;
+        if (Array.isArray(value)) {
+            return value.every(isJson);
+        } else {
+            // Rule out class instances and other non-plain objects.
+            if (!isRecord(value) || value.constructor !== Object) return false;
+            
+            for (const key in value) {
+                if (Object.prototype.hasOwnProperty.call(value, key)) {
+                    // Explicitly check for undefined, which is not valid in JSON.
+                    if (value[key] === undefined) {
+                        return false;
+                    }
+                    if (!isJson(value[key])) {
+                        return false;
+                    }
                 }
             }
+            return true;
         }
-        return true;
+    }
+    return false;
+}
+
+/**
+ * A true type guard that safely checks if an object is a ProjectContext
+ * using runtime property inspection without any type casting.
+ * @param obj The object to check.
+ * @returns True if the object is a valid ProjectContext, false otherwise.
+ */
+export function isProjectContext(obj: unknown): obj is ProjectContext {
+    if (!isRecord(obj)) return false;
+
+    const checks: { key: keyof ProjectContext, type: string, nullable?: boolean }[] = [
+        { key: 'id', type: 'string' },
+        { key: 'project_name', type: 'string' },
+        { key: 'initial_user_prompt', type: 'string' },
+        { key: 'dialectic_domains', type: 'object', nullable: true }, // Can be null in some contexts
+    ];
+
+    for (const check of checks) {
+        const descriptor = Object.getOwnPropertyDescriptor(obj, check.key);
+
+        if (!descriptor) {
+            if (check.nullable) continue;
+            return false;
+        }
+
+        const value = descriptor.value;
+
+        if (check.nullable && (value === null || typeof value === 'undefined')) {
+            continue;
+        }
+
+        if (check.key === 'dialectic_domains') {
+            if (value !== null && typeof value !== 'object') return false;
+            if (value && isRecord(value)) {
+                if(!('name' in value) || typeof value.name !== 'string') return false;
+            }
+        } else if (typeof value !== check.type) {
+            return false;
+        }
     }
 
-    return false;
+    return true;
+}
+
+export function isFailedAttemptError(record: unknown): record is FailedAttemptError {
+    if (!isRecord(record)) return false;
+    return (
+        'error' in record && typeof record.error === 'string' &&
+        'modelId' in record && typeof record.modelId === 'string' &&
+        'api_identifier' in record && typeof record.api_identifier === 'string'
+    );
+}
+
+export function isFailedAttemptErrorArray(records: unknown): records is FailedAttemptError[] {
+    return Array.isArray(records) && records.every(isFailedAttemptError);
 }

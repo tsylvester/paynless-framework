@@ -466,6 +466,7 @@ export type Database = {
           max_retries: number
           parent_job_id: string | null
           payload: Json
+          prerequisite_job_id: string | null
           results: Json | null
           session_id: string
           stage_slug: string
@@ -484,6 +485,7 @@ export type Database = {
           max_retries?: number
           parent_job_id?: string | null
           payload: Json
+          prerequisite_job_id?: string | null
           results?: Json | null
           session_id: string
           stage_slug: string
@@ -502,6 +504,7 @@ export type Database = {
           max_retries?: number
           parent_job_id?: string | null
           payload?: Json
+          prerequisite_job_id?: string | null
           results?: Json | null
           session_id?: string
           stage_slug?: string
@@ -514,6 +517,13 @@ export type Database = {
           {
             foreignKeyName: "dialectic_generation_jobs_parent_job_id_fkey"
             columns: ["parent_job_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_generation_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_generation_jobs_prerequisite_job_id_fkey"
+            columns: ["prerequisite_job_id"]
             isOneToOne: false
             referencedRelation: "dialectic_generation_jobs"
             referencedColumns: ["id"]
@@ -1615,21 +1625,15 @@ export type Database = {
         }[]
       }
       create_notification_for_user: {
-        Args:
-          | {
-              p_target_user_id: string
-              p_notification_type: string
-              p_notification_data: Json
-              p_title?: string
-              p_message?: string
-              p_link_path?: string
-              p_is_internal_event?: boolean
-            }
-          | {
-              target_user_id: string
-              notification_type: string
-              notification_data: Json
-            }
+        Args: {
+          p_target_user_id: string
+          p_notification_type: string
+          p_notification_data: Json
+          p_title?: string
+          p_message?: string
+          p_link_path?: string
+          p_is_internal_event?: boolean
+        }
         Returns: undefined
       }
       create_org_and_admin_member: {

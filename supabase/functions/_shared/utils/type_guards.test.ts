@@ -7,6 +7,8 @@ import {
     isDialecticJobPayload,
     isDialecticJobRow,
     isDialecticJobRowArray,
+    isFailedAttemptError,
+    isFailedAttemptErrorArray,
     isIsolatedExecutionDeps,
     isJobResultsWithModelProcessing,
     isModelProcessingResult,
@@ -19,7 +21,7 @@ import {
     validatePayload,
     isJson,
 } from './type_guards.ts';
-import type { DialecticContributionRow, DialecticJobRow } from '../../dialectic-service/dialectic.interface.ts';
+import type { DialecticContributionRow, DialecticJobRow, FailedAttemptError } from '../../dialectic-service/dialectic.interface.ts';
 import type { IIsolatedExecutionDeps } from "../../dialectic-worker/task_isolator.ts";
 import { ProjectContext, StageContext } from '../prompt-assembler.interface.ts';
 
@@ -701,6 +703,7 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
                 error_details: null,
                 parent_job_id: null,
                 target_contribution_id: null,
+                prerequisite_job_id: null,
             },
             {
                 id: 'job-2',
@@ -719,6 +722,7 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
                 error_details: null,
                 parent_job_id: 'parent-job-1',
                 target_contribution_id: null,
+                prerequisite_job_id: null,
             },
         ];
         assert(isDialecticJobRowArray(jobs));
@@ -982,6 +986,7 @@ Deno.test('Type Guard: isDialecticJobRow', async (t) => {
             error_details: null,
             parent_job_id: null,
             target_contribution_id: null,
+            prerequisite_job_id: null,
         };
         assert(isDialecticJobRow(job));
     });
@@ -1074,5 +1079,93 @@ Deno.test('Type Guard: isJson', async (t) => {
         }
         const instance = new MyClass('test');
         assert(!isJson(instance));
+    });
+});
+
+
+Deno.test('Type Guard: isFailedAttemptError', async (t) => {
+    await t.step('should return true for a valid FailedAttemptError object', () => {
+        const validError: FailedAttemptError = {
+            error: 'Something went wrong',
+            modelId: 'model-123',
+            api_identifier: 'api-xyz',
+        };
+        assert(isFailedAttemptError(validError));
+    });
+
+    await t.step('should return false if error property is missing', () => {
+        const invalidError = {
+            modelId: 'model-123',
+            api_identifier: 'api-xyz',
+        };
+        assert(!isFailedAttemptError(invalidError));
+    });
+    
+    await t.step('should return false if modelId property is missing', () => {
+        const invalidError = {
+            error: 'Something went wrong',
+            api_identifier: 'api-xyz',
+        };
+        assert(!isFailedAttemptError(invalidError));
+    });
+
+    await t.step('should return false if api_identifier property is missing', () => {
+        const invalidError = {
+            error: 'Something went wrong',
+            modelId: 'model-123',
+        };
+        assert(!isFailedAttemptError(invalidError));
+    });
+
+    await t.step('should return false if a property has the wrong type', () => {
+        const invalidError = {
+            error: 'Something went wrong',
+            modelId: 123, // should be a string
+            api_identifier: 'api-xyz',
+        };
+        assert(!isFailedAttemptError(invalidError));
+    });
+
+    await t.step('should return false for non-object inputs', () => {
+        assert(!isFailedAttemptError(null));
+        assert(!isFailedAttemptError('a string'));
+        assert(!isFailedAttemptError(123));
+        assert(!isFailedAttemptError([]));
+    });
+});
+
+Deno.test('Type Guard: isFailedAttemptErrorArray', async (t) => {
+    await t.step('should return true for a valid array of FailedAttemptError objects', () => {
+        const validArray: FailedAttemptError[] = [
+            { error: 'Error 1', modelId: 'model-1', api_identifier: 'api-1' },
+            { error: 'Error 2', modelId: 'model-2', api_identifier: 'api-2' },
+        ];
+        assert(isFailedAttemptErrorArray(validArray));
+    });
+
+    await t.step('should return true for an empty array', () => {
+        assert(isFailedAttemptErrorArray([]));
+    });
+
+    await t.step('should return false if the array contains an invalid object', () => {
+        const invalidArray = [
+            { error: 'Error 1', modelId: 'model-1', api_identifier: 'api-1' },
+            { modelId: 'model-2', api_identifier: 'api-2' }, // Missing 'error' property
+        ];
+        assert(!isFailedAttemptErrorArray(invalidArray));
+    });
+
+    await t.step('should return false if the array contains non-objects', () => {
+        const invalidArray = [
+            { error: 'Error 1', modelId: 'model-1', api_identifier: 'api-1' },
+            null,
+        ];
+        assert(!isFailedAttemptErrorArray(invalidArray));
+    });
+
+    await t.step('should return false for a non-array input', () => {
+        assert(!isFailedAttemptErrorArray({ error: 'Error 1', modelId: 'model-1', api_identifier: 'api-1' }));
+        assert(!isFailedAttemptErrorArray('a string'));
+        assert(!isFailedAttemptErrorArray(null));
     });
 });

@@ -4,6 +4,7 @@ import type { Database } from '../types_db.ts';
 import {
   type ProcessSimpleJobDeps,
   type DialecticJobPayload,
+  type ExecuteModelCallAndSaveParams,
 } from '../dialectic-service/dialectic.interface.ts';
 import { isDialecticJobPayload } from '../_shared/utils/type_guards.ts';
 import { processJob, type IJobProcessors } from './processJob.ts';
@@ -23,6 +24,8 @@ import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { createSupabaseAdminClient, } from '../_shared/auth.ts';
 import { NotificationService } from '../_shared/utils/notification.service.ts';
+import { processCombinationJob } from './processCombinationJob.ts';
+import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -30,6 +33,7 @@ const processors: IJobProcessors = {
   processSimpleJob,
   processComplexJob,
   planComplexStage,
+  processCombinationJob,
 };
 
 serve(async (req: Request) => {
@@ -70,6 +74,7 @@ serve(async (req: Request) => {
       fileManager: new FileManagerService(adminClient),
       deleteFromStorage: (bucket: string, paths: string[]) => deleteFromStorage(adminClient, bucket, paths),
       notificationService,
+      executeModelCallAndSave: (params: ExecuteModelCallAndSaveParams) => executeModelCallAndSave(params),
     };
 
     // We must await the handler to ensure the serverless function

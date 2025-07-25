@@ -43,19 +43,29 @@ This phase implements the critical, tiered strategy for managing model context w
 
 #### 25. [BE] [DB] Create and Integrate Prerequisite "Combination" Job Logic
 
-*   `[ ]` 25.a. **Enhance Jobs Table for Prerequisite Tracking:**
+*   `[✅]` 25.a. **Enhance Jobs Table for Prerequisite Tracking:**
     *   `[DB]` **Action:** In a new migration, add a `prerequisite_job_id` (nullable, UUID, foreign key to `dialectic_generation_jobs.id`) to the `dialectic_generation_jobs` table.
     *   `[DB]` **Action:** Add a new job status: `'waiting_for_prerequisite'`.
-*   `[ ]` 25.b. **Implement Combination Prompt Strategy:**
+*   `[✅]` 25.b. **Implement Combination Prompt Strategy:**
     *   `[BE]` `[PROMPT]` **Action:** In the `system_prompts` table, create a new entry for the combination job. It should be along the lines of: *"You are a document synthesis agent. Combine the following documents into a single, coherent text. You must preserve every unique fact, requirement, argument, and detail. Eliminate only redundant phrasing or conversational filler."*
-*   `[ ]` 25.c. **Implement `processCombinationJob` Module:**
-    *   `[BE]` `[TEST-UNIT]` **Action:** Create `processCombinationJob.ts` and its test file. This module is a simplified version of the main worker. It is a utility job processor that:
-        1. Fetches a job with a specific `job_type` of `'combine'`.
-        2. Fetches source documents listed in its payload.
-        3. Uses the specific "combination" system prompt.
-        4. Calls the AI model and saves the single resulting artifact.
-        5. Upon completion, its status change will trigger the orchestration function.
-*   `[ ]` 25.d. **Implement Orchestration for Prerequisite Jobs:**
+*   `[✅]` 25.c. **[REFACTOR] Implement a Modular, Reusable Model Execution Utility:**
+    *   `[✅]` 25.c.i. **Goal:** To refactor the shared logic for calling AI models and saving results into a single, reusable utility, adhering to DRY and SRP principles.
+    *   `[✅]` 25.c.ii. **Create Generic `executeModelCallAndSave` Utility:**
+        *   `[BE]` `[TEST-UNIT]` **(RED)** Create a new test file: `supabase/functions/dialectic-worker/executeModelCallAndSave.test.ts`. Write a failing test that calls a mock of this utility, providing a prepared prompt and context. Assert that the AI adapter is called and that the `FileManager` is invoked to save the result.
+        *   `[BE]` `[REFACTOR]` **(GREEN)** Create the file: `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`. Move the common logic from `processSimpleJob.ts` (the part that calls `callUnifiedAIModel`, handles the response, and then calls the `FileManager` to save the contribution) into this new function.
+        *   `[TEST-UNIT]` **(PROVE)** Prove the unit tests for the new utility pass.
+    *   `[✅]` 25.c.iii. **Refactor `processSimpleJob` into a "Preparer":**
+        *   `[BE]` `[TEST-UNIT]` **(RED)** Update the tests in `processSimpleJob.test.ts`. They should no longer assert that the AI adapter or `FileManager` are called directly. Instead, they should assert that `processSimpleJob` correctly performs its setup (using `PromptAssembler` with stage recipes) and then calls the new `executeModelCallAndSave` utility with the correctly prepared parameters.
+        *   `[BE]` `[REFACTOR]` **(GREEN)** Refactor `processSimpleJob.ts`. Remove the logic that was just moved and replace it with a call to the new utility. Its sole responsibility is now preparing the context for a stage-based job.
+        *   `[TEST-UNIT]` **(PROVE)** Prove the refactored `processSimpleJob` tests pass.
+    *   `[✅]` 25.c.iv. **Implement `processCombinationJob` as a "Preparer":**
+        *   `[BE]` `[TEST-UNIT]` **(RED)** Create a new test file: `supabase/functions/dialectic-worker/processCombinationJob.test.ts`. Write a failing test that asserts this new function correctly prepares the context for a utility combination job (fetches the specific 'Tier 2 Document Combiner' prompt, gets documents from the payload) and then calls `executeModelCallAndSave`.
+        *   `[BE]` `[REFACTOR]` **(GREEN)** Create the file: `supabase/functions/dialectic-worker/processCombinationJob.ts`. Implement the simple setup logic and have it call the shared `executeModelCallAndSave` utility.
+        *   `[TEST-UNIT]` **(PROVE)** Prove the `processCombinationJob` tests pass.
+    *   `[✅]` 25.c.v. **Update the Main Worker Router:**
+        *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-worker/processJob.ts`.
+        *   `[BE]` `[REFACTOR]` **Action:** The main router must be updated to delegate to the new `processCombinationJob` module when a job with `job_type: 'combine'` is received.
+*   `[✅]` 25.d. **Implement Orchestration for Prerequisite Jobs:**
     *   `[DB]` **File:** The `handle_child_job_completion()` PostgreSQL function.
     *   `[DB]` `[REFACTOR]` **Action:** The trigger function must be enhanced to be a more generic `handle_job_completion()` orchestrator. When a job completes, it must check both of the following:
         1.  **Parent/Child:** Does this job have a `parent_job_id`? If so, check if all siblings are complete to wake the parent.
@@ -87,7 +97,7 @@ This phase refactors the worker to use pre-defined, reusable prompt templates fo
 
 #### 27. [DB] [BE] Formalize Step Recipes and Prompts
 
-*   `[ ]` 27.a. **Create Database Migration/Seed File:**
+*   `[✅]` 27.a. **Create Database Migration/Seed File:**
     *   `[DB]` **Action:** Create a new migration or seed file.
     *   `[DB]` **Action:** Seed the `system_prompts` table with specific, reusable prompt templates for each step of a complex stage.
         *   **Example 1 (`synthesis_step1_pairwise`):** *"As an expert synthesizer, your task is to analyze the following user prompt, an original thesis written to address it, and a single antithesis that critiques the thesis. Combine the thesis and antithesis into a more complete and accurate response that is more fit-for-purpose against the original user prompt. Preserve all critical details."*

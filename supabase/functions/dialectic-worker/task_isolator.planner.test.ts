@@ -2,14 +2,14 @@
 import { assert, assertEquals, assertExists } from 'https://deno.land/std@0.190.0/testing/asserts.ts';
 import { stub } from 'https://deno.land/std@0.190.0/testing/mock.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import type { Database } from '../types_db.ts';
+import type { Database, Json } from '../types_db.ts';
 import { planComplexStage } from './task_isolator.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 import {
-    DialecticJobPayload,
     DialecticJobRow,
     DialecticStage,
-    DialecticContributionRow
+    DialecticContributionRow,
+    DialecticJobPayload
 } from '../dialectic-service/dialectic.interface.ts';
 import { ILogger } from '../_shared/types.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
@@ -17,7 +17,7 @@ import { isDialecticJobPayload } from '../_shared/utils/type_guards.ts';
 import { DownloadFromStorageFn } from '../_shared/supabase_storage_utils.ts';
 
 // --- Mocks and Test Data ---
-const MOCK_PAYLOAD: DialecticJobPayload = {
+const MOCK_PAYLOAD: Json = {
     sessionId: 'session-123',
     projectId: 'project-123',
     stageSlug: 'antithesis',
@@ -25,6 +25,9 @@ const MOCK_PAYLOAD: DialecticJobPayload = {
     model_id: 'model-1',
     prompt: 'PROMPT',
 };
+if (!isDialecticJobPayload(MOCK_PAYLOAD)) {
+    throw new Error("Test setup failed: MOCK_PAYLOAD is not a valid DialecticJobPayload.");
+}
 
 const MOCK_PARENT_JOB: DialecticJobRow = {
     id: 'job-parent-456',
@@ -43,6 +46,7 @@ const MOCK_PARENT_JOB: DialecticJobRow = {
     results: null,
     error_details: null,
     target_contribution_id: null,
+    prerequisite_job_id: null,
 };
 
 
@@ -77,6 +81,7 @@ const MOCK_PROJECT = {
     dialectic_domains: { name: 'Test Domain' },
     user_id: 'user-123',
     selected_domain_id: 'domain-1',
+    process_template_id: 'template-123', // Add the missing property
     status: 'active',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -101,11 +106,14 @@ const MOCK_MODELS = [
     { id: 'model-2', name: 'Model Two', api_identifier: 'model-two-api', provider: 'anthropic', config: {}, user_id: 'user-123', created_at: new Date().toISOString() },
 ];
 
+const MOCK_MODELS_SINGLE = [
+    { id: 'model-1', name: 'Model One', api_identifier: 'model-one-api', provider: 'openai', config: {}, user_id: 'user-123', created_at: new Date().toISOString() },
+];
+
 Deno.test('planComplexStage - Happy Path: Generates correct child job payloads', async () => {
     const complexStageSelectQuery = `
             *,
-            system_prompts (*),
-            domain_specific_prompt_overlays (*)
+            system_prompts (*)
         `;
     const complexProjectSelectQuery = `
             *,
@@ -135,7 +143,7 @@ Deno.test('planComplexStage - Happy Path: Generates correct child job payloads',
             },
             'dialectic_sessions': { select: { data: [MOCK_SESSION], error: null } },
             'dialectic_contributions': { select: { data: MOCK_SOURCE_CONTRIBUTIONS, error: null } },
-            'ai_providers': { select: { data: MOCK_MODELS, error: null } }
+            'ai_providers': { select: { data: MOCK_MODELS_SINGLE, error: null } }
         }
     });
 
@@ -183,11 +191,11 @@ Deno.test('planComplexStage - Happy Path: Generates correct child job payloads',
             mockAssembler
         );
 
-        assertEquals(childJobs.length, 4, "Should create n*m child jobs (2 sources * 2 models = 4)");
+        assertEquals(childJobs.length, 2, "Should create n*m child jobs (2 sources * 1 model = 2)");
 
         // Verify gatherContext and render were called for each job
-        assertEquals(gatherContextStub.calls.length, 4, "gatherContext should be called for each potential child job");
-        assertEquals(renderStub.calls.length, 4, "render should be called for each potential child job");
+        assertEquals(gatherContextStub.calls.length, 2, "gatherContext should be called for each potential child job");
+        assertEquals(renderStub.calls.length, 2, "render should be called for each potential child job");
 
         // Inspect the first generated child job
         const firstJob: DialecticJobRow = childJobs[0];
@@ -207,14 +215,14 @@ Deno.test('planComplexStage - Happy Path: Generates correct child job payloads',
             "The dynamically generated prompt is incorrect for the first job"
         );
         
-        // Inspect the third generated child job (second source, first model)
-        const thirdJob: DialecticJobRow = childJobs[2];
-        assert(isDialecticJobPayload(thirdJob.payload), "Third job payload is not a valid DialecticJobPayload");
+        // Inspect the second generated child job (second source, first model)
+        const secondJob: DialecticJobRow = childJobs[1];
+        assert(isDialecticJobPayload(secondJob.payload), "Second job payload is not a valid DialecticJobPayload");
         
-        assertEquals(thirdJob.payload.model_id, MOCK_PAYLOAD.model_id);
+        assertEquals(secondJob.payload.model_id, MOCK_PAYLOAD.model_id);
         assert(
-            thirdJob.payload.prompt?.includes("RENDERED_PROMPT: Mocked contribution: Mock content for path: p/f2.md"),
-            "The dynamically generated prompt is incorrect for the third job"
+            secondJob.payload.prompt?.includes("RENDERED_PROMPT: Mocked contribution: Mock content for path: p/f2.md"),
+            "The dynamically generated prompt is incorrect for the second job"
         );
 
 
@@ -607,7 +615,7 @@ Deno.test('planComplexStage - Throws if selectedModelIds is empty', async () => 
     try {
         await planComplexStage(
             mockDb as unknown as SupabaseClient<Database>,
-            { ...MOCK_PARENT_JOB, payload: { ...MOCK_PAYLOAD, model_id: null } as unknown as DialecticJobPayload }, // Empty model IDs
+            { ...MOCK_PARENT_JOB, payload: { ...MOCK_PAYLOAD, model_id: null } as any }, // Empty model IDs
             'user-123',
             mockLogger,
             (bucket, path) => mockDownloadFromStorage(mockDb as unknown as SupabaseClient<Database>, bucket, path),

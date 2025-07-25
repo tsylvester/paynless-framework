@@ -5,14 +5,13 @@ import type { Database, Json } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { processJob } from './processJob.ts';
 import { logger } from '../_shared/logger.ts';
-import type { GenerateContributionsDeps, GenerateContributionsPayload, ProcessSimpleJobDeps, SeedPromptData, IContinueJobResult } from '../dialectic-service/dialectic.interface.ts';
+import type { DialecticJobPayload, ProcessSimpleJobDeps, SeedPromptData, IContinueJobResult } from '../dialectic-service/dialectic.interface.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import type { UnifiedAIResponse } from '../dialectic-service/dialectic.interface.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { validatePayload } from '../_shared/utils/type_guards.ts';
+import { isDialecticCombinationJobPayload, isDialecticJobPayload } from '../_shared/utils/type_guards.ts';
 import { createMockJobProcessors } from '../_shared/dialectic.mock.ts';
-import { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
 import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
@@ -41,7 +40,74 @@ const mockDeps: ProcessSimpleJobDeps = {
     })),
     retryJob: spy(async (): Promise<{ error?: Error }> => ({ error: undefined })),
     notificationService: mockNotificationService,
+    executeModelCallAndSave: spy(async (): Promise<void> => { /* dummy */ }),
 };
+
+Deno.test('processJob - routes to processCombinationJob for combine job type', async () => {
+    // 1. Setup
+    const { processors, spies } = createMockJobProcessors();
+
+    const mockJobId = 'job-id-combine-route';
+    const mockPayload: Json = {
+        sessionId: 'session-id-combine',
+        projectId: 'project-id-combine',
+        stageSlug: 'synthesis',
+        model_id: 'model-id-combine',
+        job_type: 'combine',
+        prompt_template_name: 'test-template',
+        inputs: {
+            document_ids: ['doc1', 'doc2'],
+        },
+    };
+
+    if (!isDialecticCombinationJobPayload(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid DialecticCombinationJobPayload');
+    }
+
+    const mockJob: MockJob = {
+        id: mockJobId,
+        user_id: 'user-id-combine',
+        session_id: 'session-id-combine',
+        stage_slug: 'synthesis',
+        payload: mockPayload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+    };
+
+    const mockSupabase = createMockSupabaseClient();
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload: mockPayload },
+            'user-id-combine',
+            mockDeps,
+            'mock-token',
+            processors
+        );
+
+        assertEquals(spies.processCombinationJob.calls.length, 1, 'processCombinationJob should be called once');
+        assertEquals(spies.processSimpleJob.calls.length, 0, 'processSimpleJob should not be called');
+        assertEquals(spies.processComplexJob.calls.length, 0, 'processComplexJob should not be called');
+
+    } finally {
+        spies.processCombinationJob.restore();
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
 
 Deno.test('processJob - routes to processSimpleJob for simple stages', async () => {
     // 1. Setup
@@ -55,7 +121,10 @@ Deno.test('processJob - routes to processSimpleJob for simple stages', async () 
         model_id: 'model-id',
         continueUntilComplete: false,
     };
-    const validatedPayload = validatePayload(mockPayload);
+    
+    if (!isDialecticJobPayload(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid DialecticJobPayload');
+    }
 
     const mockJob: MockJob = {
         id: mockJobId,
@@ -74,6 +143,7 @@ Deno.test('processJob - routes to processSimpleJob for simple stages', async () 
         error_details: null,
         parent_job_id: null,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -96,7 +166,7 @@ Deno.test('processJob - routes to processSimpleJob for simple stages', async () 
     });
 
     try {
-        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: validatedPayload }, 'user-id', mockDeps, 'mock-token', processors);
+        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-id', mockDeps, 'mock-token', processors);
 
         assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called once');
         assertEquals(spies.processComplexJob.calls.length, 0, 'processComplexJob should not be called');
@@ -119,7 +189,10 @@ Deno.test('processJob - routes to processComplexJob for complex stages', async (
         stageSlug: 'antithesis', // A complex stage
         model_id: 'model-id-complex',
     };
-    const validatedPayload = validatePayload(mockPayload);
+
+    if (!isDialecticJobPayload(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid DialecticJobPayload');
+    }
 
     const mockJob: MockJob = {
         id: mockJobId,
@@ -138,6 +211,7 @@ Deno.test('processJob - routes to processComplexJob for complex stages', async (
         error_details: null,
         parent_job_id: null,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -165,7 +239,7 @@ Deno.test('processJob - routes to processComplexJob for complex stages', async (
 
     try {
         // 2. Execute
-        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: validatedPayload }, 'user-id-complex', mockDeps, 'mock-token', processors);
+        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-id-complex', mockDeps, 'mock-token', processors);
 
         // 3. Assert
         assertEquals(spies.processSimpleJob.calls.length, 0, 'processSimpleJob should not be called');
@@ -189,7 +263,10 @@ Deno.test('processJob - throws error when stage not found', async () => {
         stageSlug: 'nonexistent-stage',
         model_id: 'model-id',
     };
-    const validatedPayload = validatePayload(mockPayload);
+    
+    if (!isDialecticJobPayload(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid DialecticJobPayload');
+    }
 
     const mockJob: MockJob = {
         id: mockJobId,
@@ -208,6 +285,7 @@ Deno.test('processJob - throws error when stage not found', async () => {
         error_details: null,
         parent_job_id: null,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -226,7 +304,7 @@ Deno.test('processJob - throws error when stage not found', async () => {
         let threwError = false;
         let errorMessage = '';
         try {
-            await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: validatedPayload }, 'user-id', mockDeps, 'mock-token', processors);
+            await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-id', mockDeps, 'mock-token', processors);
         } catch (error) {
             threwError = true;
             errorMessage = error instanceof Error ? error.message : String(error);
@@ -255,7 +333,10 @@ Deno.test('processJob - throws error for unsupported processing strategy', async
         stageSlug: 'custom-stage',
         model_id: 'model-id',
     };
-    const validatedPayload = validatePayload(mockPayload);
+    
+    if (!isDialecticJobPayload(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid DialecticJobPayload');
+    }
 
     const mockJob: MockJob = {
         id: mockJobId,
@@ -274,6 +355,7 @@ Deno.test('processJob - throws error for unsupported processing strategy', async
         error_details: null,
         parent_job_id: null,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -299,7 +381,7 @@ Deno.test('processJob - throws error for unsupported processing strategy', async
         let threwError = false;
         let errorMessage = '';
         try {
-            await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: validatedPayload }, 'user-id', mockDeps, 'mock-token', processors);
+            await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-id', mockDeps, 'mock-token', processors);
         } catch (error) {
             threwError = true;
             errorMessage = error instanceof Error ? error.message : String(error);
@@ -329,7 +411,10 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
         model_id: 'model-id-1',
         continueUntilComplete: true,
     };
-    const validatedPayload = validatePayload(mockPayload);
+    
+    if (!isDialecticJobPayload(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid DialecticJobPayload');
+    }
 
     const mockJob: MockJob = {
         id: mockJobId,
@@ -348,6 +433,7 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
         error_details: null,
         parent_job_id: null,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -366,7 +452,7 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
 
     try {
         // 2. Execute
-        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: validatedPayload }, 'user-id-params', mockDeps, 'mock-token-params', processors);
+        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-id-params', mockDeps, 'mock-token-params', processors);
 
         // 3. Assert
         assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called once');
@@ -375,7 +461,7 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
         assertEquals(call.args.length, 5, 'processSimpleJob should be called with 5 arguments');
         
         // Verify the parameters passed to processSimpleJob
-        assertEquals(call.args[1], { ...mockJob, payload: validatedPayload }, 'Second argument should be the job object and its payload');
+        assertEquals(call.args[1], { ...mockJob, payload: mockPayload }, 'Second argument should be the job object and its payload');
         assertEquals(call.args[2], 'user-id-params', 'Third argument should be projectOwnerUserId');
         assertEquals(call.args[3], mockDeps, 'Fourth argument should be deps');
         assertEquals(call.args[4], 'mock-token-params', 'Fifth argument should be authToken');
@@ -398,7 +484,10 @@ Deno.test('processJob - verifies correct parameters passed to processComplexJob'
         stageSlug: 'antithesis',
         model_id: 'model-id-complex',
     };
-    const validatedPayload = validatePayload(mockPayload);
+    
+    if (!isDialecticJobPayload(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid DialecticJobPayload');
+    }
 
     const mockJob: MockJob = {
         id: mockJobId,
@@ -417,6 +506,7 @@ Deno.test('processJob - verifies correct parameters passed to processComplexJob'
         error_details: null,
         parent_job_id: null,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -439,7 +529,7 @@ Deno.test('processJob - verifies correct parameters passed to processComplexJob'
 
     try {
         // 2. Execute
-        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: validatedPayload }, 'user-id-complex-params', mockDeps, 'mock-token-complex', processors);
+        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-id-complex-params', mockDeps, 'mock-token-complex', processors);
 
         // 3. Assert
         assertEquals(spies.processComplexJob.calls.length, 1, 'processComplexJob should be called once');
@@ -448,7 +538,7 @@ Deno.test('processJob - verifies correct parameters passed to processComplexJob'
         assertEquals(call.args.length, 4, 'processComplexJob should be called with 4 arguments');
         
         // Verify the parameters passed to processComplexJob
-        assertEquals(call.args[1], { ...mockJob, payload: validatedPayload }, 'Second argument should be the job object and its payload');
+        assertEquals(call.args[1], { ...mockJob, payload: mockPayload }, 'Second argument should be the job object and its payload');
         assertEquals(call.args[2], 'user-id-complex-params', 'Third argument should be projectOwnerUserId');
         
         // Verify that complexDeps contains the expected properties

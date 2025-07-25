@@ -1,17 +1,14 @@
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { type Logger } from '../_shared/logger.ts';
 import { type Database } from '../types_db.ts';
 import {
   type DialecticJobPayload,
   type SelectedAiProvider,
   type FailedAttemptError,
-  type UnifiedAIResponse,
   type ProcessSimpleJobDeps,
   type ModelProcessingResult,
   type Job,
 } from '../dialectic-service/dialectic.interface.ts';
-import { type UploadContext } from '../_shared/types/file_manager.types.ts';
-import { isDialecticContribution, isSelectedAiProvider } from "../_shared/utils/type_guards.ts";
+import { isSelectedAiProvider } from "../_shared/utils/type_guards.ts";
 
 export async function processSimpleJob(
     dbClient: SupabaseClient<Database>,
@@ -27,8 +24,6 @@ export async function processSimpleJob(
         projectId, 
         model_id,
         sessionId,
-        walletId,
-        continueUntilComplete,
     } = job.payload;
     
     deps.logger.info(`[dialectic-worker] [processSimpleJob] Starting attempt ${currentAttempt + 1}/${max_retries + 1} for job ID: ${jobId}`);
@@ -37,6 +32,7 @@ export async function processSimpleJob(
     try {
         if (!stageSlug) throw new Error('stageSlug is required in the payload.');
         if (!projectId) throw new Error('projectId is required in the payload.');
+        if (!sessionId) throw new Error('sessionId is required in the payload.');
 
         const { data: sessionData, error: sessionError } = await dbClient.from('dialectic_sessions').select('*').eq('id', sessionId).single();
         if (sessionError || !sessionData) throw new Error(`Session ${sessionId} not found.`);
@@ -86,90 +82,17 @@ export async function processSimpleJob(
             previousContent = new TextDecoder().decode(downloadedData);
         }
         
-        const options = {
-            walletId: walletId,
-        };
-
-        const aiResponse: UnifiedAIResponse = await deps.callUnifiedAIModel(
-            providerDetails.id, previousContent || renderedPrompt.content, sessionData.associated_chat_id, authToken, options
-        );
-  
-        if (aiResponse.error || !aiResponse.content) {
-            throw new Error(aiResponse.error || 'AI response was empty.');
-        }
-
-        const finalContent = previousContent + aiResponse.content;
-        const uploadContext: UploadContext = {
-            pathContext: {
-                projectId, fileType: 'model_contribution_main', sessionId, iteration: iterationNumber,
-                stageSlug, modelSlug: providerDetails.api_identifier,
-                originalFileName: `${providerDetails.api_identifier}_${stageSlug}${deps.getExtensionFromMimeType(aiResponse.contentType || "text/markdown")}`,
-            },
-            fileContent: finalContent, mimeType: aiResponse.contentType || "text/markdown",
-            sizeBytes: finalContent.length, userId: projectOwnerUserId,
-            description: `Contribution for stage '${stageSlug}' by model ${providerDetails.name}`,
-            contributionMetadata: {
-                sessionId, modelIdUsed: providerDetails.id, modelNameDisplay: providerDetails.name,
-                stageSlug, iterationNumber, rawJsonResponseContent: JSON.stringify(aiResponse.rawProviderResponse || {}),
-                tokensUsedInput: aiResponse.inputTokens, tokensUsedOutput: aiResponse.outputTokens,
-                processingTimeMs: aiResponse.processingTimeMs, seedPromptStoragePath: renderedPrompt.fullPath,
-                target_contribution_id: job.payload.target_contribution_id,
-            },
-        };
-   
-        const savedResult = await deps.fileManager.uploadAndRegisterFile(uploadContext);
-
-        deps.logger.info(`[dialectic-worker] [processSimpleJob] Received record from fileManager: ${JSON.stringify(savedResult.record, null, 2)}`);
-
-        if (savedResult.error || !isDialecticContribution(savedResult.record)) {
-            throw new Error(`Failed to save contribution: ${savedResult.error?.message || 'Invalid record returned.'}`);
-        }
-
-        const contribution = savedResult.record;
-        
-        // First, determine if a continuation is needed based on the AI response.
-        const needsContinuation = job.payload.continueUntilComplete && (aiResponse.finish_reason === 'length');
-
-        // Then, mark the current job as completed. Its task is done.
-        const modelProcessingResult: ModelProcessingResult = { 
-            modelId: model_id, 
-            status: needsContinuation ? 'needs_continuation' : 'completed', 
-            attempts: currentAttempt + 1, 
-            contributionId: contribution.id 
-        };
-
-        const { error: finalUpdateError } = await dbClient
-            .from('dialectic_generation_jobs')
-            .update({
-                status: 'completed', // This job's task is done, so it is always marked 'completed'.
-                results: JSON.stringify({ modelProcessingResult }),
-                completed_at: new Date().toISOString(),
-                attempt_count: currentAttempt + 1,
-            })
-            .eq('id', jobId);
-        
-        if (finalUpdateError) {
-            // Log a critical error but proceed to notification and continuation logic,
-            // as the core AI work was successful.
-            deps.logger.error(`[dialectic-worker] [processSimpleJob] CRITICAL: Failed to mark job as 'completed'.`, { finalUpdateError });
-        }
-        
-        // Now, after the current job is finalized, enqueue the next one if needed.
-        if (needsContinuation) {
-            await deps.continueJob({ logger: deps.logger }, dbClient, job, aiResponse, contribution, projectOwnerUserId);
-        }
-
-        if (projectOwnerUserId) {
-            await deps.notificationService.sendContributionReceivedEvent({ 
-                contribution,
-                type: 'dialectic_contribution_received',
-                sessionId: sessionId,
-                job_id: jobId,
-                is_continuing: needsContinuation ?? false,
-            }, projectOwnerUserId);
-        }
-
-        deps.logger.info(`[dialectic-worker] [processJob] Job ${jobId} finished successfully. Results: ${JSON.stringify(modelProcessingResult)}. Final Status: completed`);
+        await deps.executeModelCallAndSave({
+            dbClient,
+            deps,
+            authToken,
+            job,
+            projectOwnerUserId,
+            providerDetails,
+            renderedPrompt,
+            previousContent,
+            sessionData,
+        });
 
     } catch (e) {
         const error = e instanceof Error ? e : new Error(String(e));
@@ -205,12 +128,12 @@ export async function processSimpleJob(
         if (projectOwnerUserId) {
             await deps.notificationService.sendContributionFailedNotification({
                 type: 'contribution_generation_failed',
-                sessionId: sessionId,
-                stageSlug: stageSlug ?? 'unknown',
-                projectId: projectId ?? '',
+                sessionId: job.payload.sessionId ?? 'unknown',
+                stageSlug: job.payload.stageSlug ?? 'unknown',
+                projectId: job.payload.projectId ?? '',
                 error: {
                     code: 'RETRY_LOOP_FAILED',
-                    message: `Generation for stage '${stageSlug}' has failed after all retry attempts.`,
+                    message: `Generation for stage '${job.payload.stageSlug}' has failed after all retry attempts.`,
                 },
                 job_id: jobId,
             }, projectOwnerUserId);

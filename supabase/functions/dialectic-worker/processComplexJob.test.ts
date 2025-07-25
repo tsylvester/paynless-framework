@@ -3,8 +3,8 @@ import { spy } from 'jsr:@std/testing@0.225.1/mock';
 import type { Database, Json } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { processComplexJob, type IPlanComplexJobDeps } from './processComplexJob.ts';
-import type { DialecticJobRow, GenerateContributionsPayload } from '../dialectic-service/dialectic.interface.ts';
-import { validatePayload } from '../_shared/utils/type_guards.ts';
+import type { DialecticJobRow, DialecticJobPayload } from '../dialectic-service/dialectic.interface.ts';
+import { isDialecticJobPayload } from '../_shared/utils/type_guards.ts';
 import { logger } from '../_shared/logger.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
@@ -20,6 +20,7 @@ Deno.test('processComplexJob - plans and enqueues child jobs', async () => {
         attempt_count: 0, max_retries: 3, created_at: new Date().toISOString(), started_at: null,
         completed_at: null, results: null, error_details: null, parent_job_id: mockParentJobId,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
     const mockChildJob2: DialecticJobRow = {
         id: 'child-2', user_id: 'user-1', session_id: 'session-1', stage_slug: 'antithesis',
@@ -27,6 +28,7 @@ Deno.test('processComplexJob - plans and enqueues child jobs', async () => {
         attempt_count: 0, max_retries: 3, created_at: new Date().toISOString(), started_at: null,
         completed_at: null, results: null, error_details: null, parent_job_id: mockParentJobId,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     const planComplexStageSpy = spy(async (): Promise<DialecticJobRow[]> => {
@@ -52,7 +54,9 @@ Deno.test('processComplexJob - plans and enqueues child jobs', async () => {
         stageSlug: 'antithesis',
         model_id: 'model-id-complex',
     };
-    const validatedPayload = validatePayload(mockPayload);
+    if (!isDialecticJobPayload(mockPayload)) {
+        throw new Error("Test setup failed: mockPayload is not a valid DialecticJobPayload");
+    }
 
     const mockParentJob: DialecticJobRow = {
         id: mockParentJobId,
@@ -71,11 +75,12 @@ Deno.test('processComplexJob - plans and enqueues child jobs', async () => {
         error_details: null,
         parent_job_id: null,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     try {
         // 2. Execute
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockParentJob, payload: validatedPayload }, 'user-id-complex', mockDeps);
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockParentJob, payload: mockPayload }, 'user-id-complex', mockDeps);
 
         // 3. Assert
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
@@ -127,7 +132,9 @@ Deno.test('processComplexJob - handles planner failure gracefully', async () => 
         stageSlug: 'antithesis',
         model_id: 'model-id-fail',
     };
-    const validatedPayload = validatePayload(mockPayload);
+    if (!isDialecticJobPayload(mockPayload)) {
+        throw new Error("Test setup failed: mockPayload is not a valid DialecticJobPayload");
+    }
 
     const mockParentJob: DialecticJobRow = {
         id: mockParentJobId,
@@ -146,11 +153,12 @@ Deno.test('processComplexJob - handles planner failure gracefully', async () => 
         error_details: null,
         parent_job_id: null,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     try {
         // 2. Execute
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockParentJob, payload: validatedPayload }, 'user-id-fail', mockDeps);
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockParentJob, payload: mockPayload }, 'user-id-fail', mockDeps);
 
         // 3. Assert
         const updateSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
@@ -198,7 +206,9 @@ Deno.test('processComplexJob - completes parent job if planner returns no childr
         stageSlug: 'antithesis',
         model_id: 'model-id-no-children',
     };
-    const validatedPayload = validatePayload(mockPayload);
+    if (!isDialecticJobPayload(mockPayload)) {
+        throw new Error("Test setup failed: mockPayload is not a valid DialecticJobPayload");
+    }
 
     const mockParentJob: DialecticJobRow = {
         id: mockParentJobId,
@@ -217,11 +227,12 @@ Deno.test('processComplexJob - completes parent job if planner returns no childr
         error_details: null,
         parent_job_id: null,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     try {
         // 2. Execute
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockParentJob, payload: validatedPayload }, 'user-id-no-children', mockDeps);
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockParentJob, payload: mockPayload }, 'user-id-no-children', mockDeps);
 
         // 3. Assert
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
@@ -254,6 +265,7 @@ Deno.test('processComplexJob - fails parent job if child job insert fails', asyn
         attempt_count: 0, max_retries: 3, created_at: new Date().toISOString(), started_at: null,
         completed_at: null, results: null, error_details: null, parent_job_id: mockParentJobId,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     const planComplexStageSpy = spy(async (): Promise<DialecticJobRow[]> => {
@@ -286,7 +298,9 @@ Deno.test('processComplexJob - fails parent job if child job insert fails', asyn
         stageSlug: 'antithesis',
         model_id: 'model-id-insert-fail',
     };
-    const validatedPayload = validatePayload(mockPayload);
+    if (!isDialecticJobPayload(mockPayload)) {
+        throw new Error("Test setup failed: mockPayload is not a valid DialecticJobPayload");
+    }
 
     const mockParentJob: DialecticJobRow = {
         id: mockParentJobId,
@@ -305,11 +319,12 @@ Deno.test('processComplexJob - fails parent job if child job insert fails', asyn
         error_details: null,
         parent_job_id: null,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     try {
         // 2. Execute
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockParentJob, payload: validatedPayload }, 'user-id-insert-fail', mockDeps);
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockParentJob, payload: mockPayload }, 'user-id-insert-fail', mockDeps);
 
         // 3. Assert
         const updateSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
@@ -340,6 +355,7 @@ Deno.test('processComplexJob - fails parent job if status update fails', async (
         attempt_count: 0, max_retries: 3, created_at: new Date().toISOString(), started_at: null,
         completed_at: null, results: null, error_details: null, parent_job_id: mockParentJobId,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     const planComplexStageSpy = spy(async (): Promise<DialecticJobRow[]> => {
@@ -373,7 +389,9 @@ Deno.test('processComplexJob - fails parent job if status update fails', async (
         stageSlug: 'antithesis',
         model_id: 'model-id-update-fail',
     };
-    const validatedPayload = validatePayload(mockPayload);
+    if (!isDialecticJobPayload(mockPayload)) {
+        throw new Error("Test setup failed: mockPayload is not a valid DialecticJobPayload");
+    }
 
     const mockParentJob: DialecticJobRow = {
         id: mockParentJobId,
@@ -392,11 +410,12 @@ Deno.test('processComplexJob - fails parent job if status update fails', async (
         error_details: null,
         parent_job_id: null,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     try {
         // 2. Execute
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockParentJob, payload: validatedPayload }, 'user-id-update-fail', mockDeps);
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockParentJob, payload: mockPayload }, 'user-id-update-fail', mockDeps);
 
         // 3. Assert
         const updateSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');

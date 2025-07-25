@@ -8,6 +8,7 @@ import {
   type IContinueJobResult,
 } from '../dialectic-service/dialectic.interface.ts';
 import { shouldContinue } from '../_shared/utils/continue_util.ts';
+import { isDialecticJobPayload } from '../_shared/utils/type_guards.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 type JobInsert = Database['public']['Tables']['dialectic_generation_jobs']['Insert'];
@@ -29,27 +30,34 @@ export async function continueJob(
 
   deps.logger.info(`[dialectic-worker] [continueJob] Continuation required for job ${job.id}. Enqueuing new job.`);
 
-  const newPayload: DialecticJobPayload = {
-    // These properties are essential for the job processing logic itself
-    sessionId: job.payload.sessionId, 
+  // Construct as a generic object first that conforms to the Json type.
+  const payloadObject: { [key: string]: Json | undefined } = {
+    sessionId: job.payload.sessionId,
     projectId: job.payload.projectId,
     model_id: job.payload.model_id,
     stageSlug: job.payload.stageSlug,
     iterationNumber: job.payload.iterationNumber,
-    // Core continuation fields
     continueUntilComplete: job.payload.continueUntilComplete,
     target_contribution_id: savedContribution.id,
     continuation_count: (job.payload.continuation_count ?? 0) + 1,
-    // Optional fields that need to be passed through
     chatId: job.payload.chatId,
     walletId: job.payload.walletId,
     maxRetries: job.payload.maxRetries,
   };
+  
+  // Remove undefined keys to keep the payload clean. JSON.stringify would do this anyway,
+  // but this is more explicit and ensures we don't pass undefined values where a DB function
+  // might not expect them.
+  Object.keys(payloadObject).forEach(key => payloadObject[key] === undefined && delete payloadObject[key]);
 
-  // Ensure that optional fields are not included in the payload if they are undefined.
-  if (newPayload.chatId === undefined) delete newPayload.chatId;
-  if (newPayload.walletId === undefined) delete newPayload.walletId;
-  if (newPayload.maxRetries === undefined) delete newPayload.maxRetries;
+  const newPayload: Json = payloadObject;
+
+  // Although we just constructed it, we run it through the type guard to satisfy
+  // TypeScript's strict checking and ensure we've built a valid payload.
+  if (!isDialecticJobPayload(newPayload)) {
+    deps.logger.error('[dialectic-worker] [continueJob] Failed to construct a valid continuation payload.', { payload: newPayload });
+    return { enqueued: false, error: new Error('Failed to construct a valid continuation payload.') };
+  }
 
   const newJobToInsert: JobInsert = {
     session_id: job.session_id,

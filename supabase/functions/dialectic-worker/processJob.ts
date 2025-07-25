@@ -9,6 +9,8 @@ import { processSimpleJob } from './processSimpleJob.ts';
 import { type IPlanComplexJobDeps, processComplexJob } from './processComplexJob.ts';
 import { planComplexStage } from './task_isolator.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
+import { processCombinationJob } from "./processCombinationJob.ts";
+import { isDialecticCombinationJobPayload } from '../_shared/utils/type_guards.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -16,6 +18,7 @@ export interface IJobProcessors {
     processSimpleJob: typeof processSimpleJob;
     processComplexJob: typeof processComplexJob;
     planComplexStage: typeof planComplexStage;
+    processCombinationJob: typeof processCombinationJob;
 }
 
 export async function processJob(
@@ -29,9 +32,18 @@ export async function processJob(
   const { id: jobId } = job;
   const {
     stageSlug,
+    job_type,
   } = job.payload;
 
-  deps.logger.info(`[dialectic-worker] [processJob] Starting for job ID: ${jobId}`);
+  deps.logger.info(`[dialectic-worker] [processJob] Starting for job ID: ${jobId}, Type: ${job_type || 'simple'}`);
+
+  if (job_type === 'combine') {
+    if (!isDialecticCombinationJobPayload(job.payload)) {
+      throw new Error('Job payload is not a valid DialecticCombinationJobPayload');
+    }
+    await processors.processCombinationJob(dbClient, { ...job, payload: job.payload }, projectOwnerUserId, deps, authToken);
+    return;
+  }
 
   // --- Strategy-based routing ---
   const { data: stageData, error: stageError } = await dbClient.from('dialectic_stages').select('*').eq('slug', stageSlug!).single();

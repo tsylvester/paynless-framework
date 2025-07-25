@@ -210,6 +210,7 @@ export async function planComplexStage(
                 results: null,
                 error_details: null,
                 target_contribution_id: null,
+                prerequisite_job_id: null,
             });
         }
     }

@@ -1,4 +1,4 @@
-import { assertEquals, assertExists } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
+import { assertEquals, assertExists, assert } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import { spy } from 'jsr:@std/testing@0.225.1/mock';
 import type { Database, Json } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
@@ -44,6 +44,7 @@ const mockDeps: ProcessSimpleJobDeps = {
             create_notification_for_user: { data: null, error: null },
         },
     }).client as unknown as SupabaseClient<Database>),
+    executeModelCallAndSave: spy(async (): Promise<void> => { /* dummy */ }),
 };
 
 Deno.test('handleJob - fails when job is missing user_id', async () => {
@@ -72,6 +73,7 @@ Deno.test('handleJob - fails when job is missing user_id', async () => {
         error_details: null,
         parent_job_id: null,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -117,7 +119,8 @@ Deno.test('handleJob - fails when payload is invalid', async () => {
         session_id: 'session-id',
         stage_slug: 'thesis',
         payload: {
-            // Missing required fields - invalid payload
+            // Still invalid, but include projectId for the notification link.
+            projectId: 'project-for-invalid-job',
             invalidField: 'invalid'
         },
         iteration_number: 1,
@@ -131,6 +134,7 @@ Deno.test('handleJob - fails when payload is invalid', async () => {
         error_details: null,
         parent_job_id: null,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -177,10 +181,14 @@ Deno.test('handleJob - fails when payload is invalid', async () => {
         const rpcCall = rpcSpy.calls[0];
         assertEquals(rpcCall.args[0], 'create_notification_for_user');
         const rpcArgs = rpcCall.args[1];
-        assertEquals(rpcArgs.target_user_id, 'user-id');
-        assertEquals(rpcArgs.notification_type, 'contribution_generation_failed');
-        const notificationData = JSON.parse(rpcArgs.notification_data);
-        assertEquals(notificationData.notification_data.job_id, 'job-invalid-payload');
+        assertEquals(rpcArgs.p_target_user_id, mockJob.user_id);
+        assertEquals(rpcArgs.p_notification_type, 'contribution_generation_failed');
+        
+        // Ensure notification_data is a valid JSON object
+        assert(typeof rpcArgs.p_notification_data === 'object' && rpcArgs.p_notification_data !== null, "notification_data should be a valid object");
+        
+        const notificationData = rpcArgs.p_notification_data;
+        assertEquals(notificationData.job_id, 'job-invalid-payload');
 
     } finally {
         mockSupabase.clearAllStubs?.();
@@ -217,6 +225,7 @@ Deno.test('handleJob - successfully processes valid job', async () => {
         error_details: null,
         parent_job_id: null,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -279,12 +288,13 @@ Deno.test('handleJob - successfully processes valid job', async () => {
         const startNotification = rpcSpy.calls[0];
         assertEquals(startNotification.args[0], 'create_notification_for_user');
         const notificationArgs = startNotification.args[1];
-        assertEquals(notificationArgs.target_user_id, 'user-id');
-        assertEquals(notificationArgs.notification_type, 'contribution_generation_started');
+        assertEquals(notificationArgs.p_target_user_id, mockJob.user_id);
+        assertEquals(notificationArgs.p_notification_type, 'contribution_generation_started');
 
-        const parsedNotificationData = JSON.parse(notificationArgs.notification_data);
-        assertEquals(parsedNotificationData.notification_data.sessionId, 'session-id');
-        assertEquals(parsedNotificationData.notification_data.job_id, 'job-valid');
+        assert(typeof notificationArgs.p_notification_data === 'object' && notificationArgs.p_notification_data !== null, "notification_data should be an object");
+        const parsedNotificationData = notificationArgs.p_notification_data;
+        assertEquals(parsedNotificationData.sessionId, 'session-id');
+        assertEquals(parsedNotificationData.job_id, 'job-valid');
 
         // Check processJob was called with correct parameters
         // Note: Since processJob is mocked via the processors, we can't directly spy on it
@@ -329,6 +339,7 @@ Deno.test('handleJob - handles exceptions during processJob execution', async ()
         error_details: null,
         parent_job_id: null,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -424,6 +435,7 @@ Deno.test('handleJob - validates payload correctly and extracts user info', asyn
         error_details: null,
         parent_job_id: null,
         target_contribution_id: null,
+        prerequisite_job_id: null,
     };
 
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -486,9 +498,11 @@ Deno.test('handleJob - validates payload correctly and extracts user info', asyn
         assertEquals(rpcSpy.calls.length, 1, 'RPC should be called once');
         const notification = rpcSpy.calls[0];
         const notificationArgs = notification.args[1];
-        const parsedNotificationData = JSON.parse(notificationArgs.notification_data);
-        assertEquals(parsedNotificationData.notification_data.sessionId, 'session-id-validation');
-        assertEquals(parsedNotificationData.notification_data.job_id, 'job-validation-test');
+
+        assert(typeof notificationArgs.p_notification_data === 'object' && notificationArgs.p_notification_data !== null, "notification_data should be an object");
+        const parsedNotificationData = notificationArgs.p_notification_data;
+        assertEquals(parsedNotificationData.sessionId, 'session-id-validation');
+        assertEquals(parsedNotificationData.job_id, 'job-validation-test');
 
     } finally {
         spies.processSimpleJob.restore();
