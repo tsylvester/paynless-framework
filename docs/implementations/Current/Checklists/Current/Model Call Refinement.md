@@ -563,84 +563,19 @@ This phase focuses on building the frontend components to consume the generic pr
             4.  Verify the final `dialectic_contributions` records and their content in storage are correct.
     *   `[TEST-INT]` **Test Case 2: Complex Stage (Antithesis) with Task Isolation:**
         *   **Arrange:**
-            1.  Seed a completed `thesis` contribution as input.
+            1.  Seed two completed `thesis` contributions as input.
             2.  Configure the `antithesis` stage with `processing_strategy.type: 'task_isolation'`.
-            3.  Configure the mock AI provider to trigger a continuation on one of the dynamically generated child jobs.
-        *   **Act:** Invoke the `dialectic-service` to generate contributions for the Antithesis stage.
-        *   **Assert (via Database Polling):**
-            1.  Poll the jobs table to observe the initial "parent" job get created and transition to `status: 'waiting_for_children'`.
-            2.  Verify that multiple "child" jobs (with `parent_job_id` set) are created by the `task_isolator`.
-            3.  Observe the processing of child jobs, including the successful handling of the continuation scenario on one of them.
-            4.  After the last child job completes, assert that the orchestration trigger fires and updates the parent job's status to `pending_next_step` (or `completed`), proving the parent was "woken up" correctly.
-
-### Phase 9: Dialectic Process Scaling - Synthesis Stage (Stage 3)
-
-This phase implements a sophisticated, multi-step reduction strategy to manage the massive context explosion in the Synthesis stage. It will now build upon the generic task isolation architecture created in Phase 7.
-
-#### 25. [BE] [REFACTOR] Synthesis Step 1: Pairwise Combination (Slicing)
-
-*   `[ ]` 25.a. **Refactor Worker for Synthesis - Step 1:**
-    *   **File:** `supabase/functions/dialectic-worker/task_isolator.ts`
-    *   **Action:** Add logic within `executeIsolatedStage` to handle the specific `granularity` for the "synthesis" stage. The function must first fetch all `m` Thesis documents and all `m * n` Antithesis documents from the previous stages.
-    *   **Action:** It will then group them by the original Thesis. For each Thesis and its associated set of Antitheses, it will perform a nested loop: iterate through each of the `n` Antitheses for a given Thesis, then through each of the `n` selected models.
-    *   **Prompt Engineering:** For each Thesis-Antithesis pair, formulate a prompt for `callUnifiedAIModel`. The prompt should ask the model to create an initial synthesis of that single thesis and its corresponding single critique.
-    *   **Flow Change:** This results in `m * n * n` calls, producing `m * n * n` intermediate "pairwise-synthesis" documents. The `progress_calculator` and `task_isolator` must account for this new calculation.
-*   `[ ]` 25.b. **Store Intermediate "Pairwise-Synthesis" Documents:**
-    *   **File:** `supabase/functions/dialectic-worker/task_isolator.ts`
-    *   **Action:** The resulting `m * n * n` documents must be saved to storage. Their metadata must link them to the session, the original Thesis they derive from, and mark them as "synthesis_step1" intermediate artifacts.
-
-#### 26. [BE] [REFACTOR] Synthesis Step 2: Per-Thesis Reduction
-
-*   `[ ]` 26.a. **Refactor Worker for Synthesis - Step 2:**
-    *   **File:** `supabase/functions/dialectic-worker/task_isolator.ts`
-    *   **Action:** After Step 1 is complete, group the `m * n * n` "pairwise-synthesis" documents by their source Thesis. This will create `m` groups, each containing `n * n` documents.
-    *   **Action:** For each of the `m` groups, iterate through the `n` selected models.
-    *   **Prompt Engineering:** Combine the `n * n` documents in each group into a single prompt. If this combination exceeds the model's context window, the documents must be intelligently chunked or summarized before being sent.
-    *   **Flow Change:** This step makes `m * n` calls, reducing the `m * n * n` documents down to `m * n` more refined "per-thesis-synthesis" documents.
-*   `[ ]` 26.b. **Store Intermediate "Per-Thesis-Synthesis" Documents:**
-    *   **File:** `supabase/functions/dialectic-worker/task_isolator.ts`
-    *   **Action:** The resulting `m * n` documents must be saved to storage, linked to the session, and marked as "synthesis_step2" intermediate artifacts.
-
-#### 27. [BE] [DB] [REFACTOR] Synthesis Step 3: Final Cross-Agent RAG Recombination
-
-*   `[ ]` 27.a. **Setup the Vector Database with Data Lifecycle:**
-    *   `[DB]` **Action:** Create a `dialectic_memory` table to store text chunks and their embeddings. It needs columns for `id`, `session_id`, `source_contribution_id`, `content`, `metadata` (JSONB), `embedding` (vector), and `created_at` (default `now()`).
-    *   `[DB]` **Action:** Implement a data lifecycle policy. This can be achieved via a scheduled SQL function (e.g., using `pg_cron`) that periodically deletes records from `dialectic_memory` older than a specified retention period (e.g., 30 days) to manage storage costs.
-*   `[ ]` 27.b. **Implement the Indexing Service:**
-    *   `[BE]` **Action:** Create a new `indexing_service.ts`. This service will take a document, split it into chunks, call an embedding model API (e.g., OpenAI), and save the content and vector into the `dialectic_memory` table.
-*   `[ ]` 27.c. **Integrate Indexing into the Synthesis Flow:**
-    *   `[BE]` **File:** `supabase/functions/dialectic-worker/task_isolator.ts`
-    *   **Action:** After the `m * n` "per-thesis-synthesis" documents are created in Step 2, trigger the new indexing service asynchronously for each one. This populates the vector store with the knowledge required for the final recombination.
-*   `[ ]` 27.d. **Implement the Enhanced Retrieval Service:**
-    *   `[BE]` **Action:** Create a Supabase RPC function, `match_dialectic_chunks(session_id, query_embedding, match_count, metadata_filter)`, that uses the vector distance operator (`<=>`) to find relevant chunks.
-    *   `[BE]` **Action:** The function must also support an optional `metadata_filter` (JSONB) parameter to allow for more precise context retrieval by filtering on metadata keys within the `dialectic_memory` table (e.g., retrieving chunks only from a specific source contribution or stage).
-*   `[ ]` 27.e. **Implement Final Recombination Logic:**
-    *   `[BE]` **File:** `supabase/functions/dialectic-worker/task_isolator.ts`
-    *   **Action:** This is the final step. For each of the `n` models:
-        1.  **Formulate Query:** Create a high-level query like: "Based on the provided context, create a single, unified, and comprehensive synthesis."
-        2.  **Embed & Retrieve:** Embed the query and call the `match_dialectic_chunks` RPC to get the most relevant context chunks.
-        3.  **Assemble & Generate:** Construct a final prompt with the query and the retrieved chunks, and call `deps.callUnifiedAIModel` one last time to produce the final Synthesis document for that model.
-*   `[ ]` 27.f. **Test the Full RAG Pipeline:**
-    *   `[TEST-INT]` **Action:** Create integration tests that verify the entire end-to-end RAG pipeline, from indexing to retrieval to final generation.
-
-### Phase 10: Centralized Configuration Management
-
-This phase introduces a centralized configuration system to manage dynamic parameters and feature flags, enhancing the system's flexibility and maintainability without requiring code deployments for simple adjustments.
-
-#### 28. [DB] [BE] Implement the Configuration Store
-*   `[ ]` 28.a. **Create `dialectic_configuration` Table:**
-    *   `[DB]` **Action:** Create a new SQL migration for a `dialectic_configuration` table with a simple key-value structure (e.g., `config_key TEXT PRIMARY KEY`, `config_value JSONB`, `description TEXT`).
-    *   `[DB]` **Action:** Populate this table with initial configuration values, such as `{"key": "job_default_max_retries", "value": {"value": 3}}`, `{"key": "rag_data_retention_days", "value": {"value": 30}}`, and `{"key": "antithesis_task_isolation_enabled", "value": {"value": true}}`.
-*   `[ ]` 28.b. **Create a Configuration Service:**
-    *   `[BE]` **Action:** In `supabase/functions/_shared/`, create a new `config_service.ts`. This service will be responsible for fetching configuration values from the database, caching them (e.g., in-memory with a short TTL), and providing a simple `getConfigValue(key)` interface.
-
-#### 29. [BE] [REFACTOR] Refactor Services to Use the Configuration Store
-*   `[ ]` 29.a. **Update Dialectic Worker:**
-    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-worker/index.ts`
-    *   `[BE]` `[REFACTOR]` **Action:** Refactor the worker logic to fetch parameters like `max_retries` and feature flags (e.g., for task isolation) from the new `config_service` instead of using hardcoded values.
-*   `[ ]` 29.b. **Update Job Enqueuer:**
-    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
-    *   `[BE]` `[REFACTOR]` **Action:** Update the function to fetch the default `max_retries` from the `config_service` when creating a new job, while still allowing it to be overridden by a value in the request payload.
-*   `[ ]` 29.c. **Update Data Lifecycle Script:**
-    *   `[BE]` `[REFACTOR]` **Action:** Modify the scheduled SQL function for RAG data cleanup to retrieve the `rag_data_retention_days` value from the `dialectic_configuration` table, making the retention period dynamically adjustable.
+            3.  Configure the mock AI provider to return a successful response for all child jobs.
+        *   **Act & Assert (Step 1: Planning):**
+            1.  Invoke the `dialectic-service` to generate contributions for the Antithesis stage.
+            2.  Assert that the immediate HTTP response is `202 Accepted` and contains the parent job's ID.
+            3.  Poll the jobs table to observe the parent job get created and transition to `status: 'waiting_for_children'`.
+            4.  Verify that the correct number of "child" jobs (with `parent_job_id` set) are created by the `task_isolator`.
+        *   **Act & Assert (Step 2: Execution):**
+            1.  Call the `executePendingDialecticJobs()` test helper to process the pending child jobs.
+            2.  Poll the jobs table and observe all child jobs transition to `status: 'completed'`.
+        *   **Act & Assert (Step 3: Orchestration & Verification):**
+            1.  Poll the jobs table and assert that the orchestration trigger fires after the last child job completes, updating the parent job's status to `'completed'`.
+            2.  Query the `dialectic_contributions` table and assert that the correct number of antithesis contributions have been created.
+            3.  (Optional) Download the content of one or more contributions from storage and verify it matches the mock AI's output.
 

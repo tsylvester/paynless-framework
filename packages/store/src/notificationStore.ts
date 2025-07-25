@@ -174,9 +174,11 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                     set({ error: response.error, isLoading: false, notifications: [], unreadCount: 0 });
                 } else {
                     const fetchedNotifications = response.data ?? [];
-                    const sortedNotifications = sortNotifications(fetchedNotifications);
+                    // Filter out internal events that should not be displayed in the UI.
+                    const userFacingNotifications = fetchedNotifications.filter(n => !n.is_internal_event);
+                    const sortedNotifications = sortNotifications(userFacingNotifications);
                     const unreadCount = calculateUnreadCount(sortedNotifications);
-                    logger.info(`[notificationStore] Fetched ${sortedNotifications.length} notifications, ${unreadCount} unread.`);
+                    logger.info(`[notificationStore] Fetched ${fetchedNotifications.length} total notifications, showing ${userFacingNotifications.length} user-facing notifications. ${unreadCount} are unread.`);
                     set({
                         notifications: sortedNotifications,
                         unreadCount: unreadCount,

@@ -42,21 +42,19 @@ export async function planComplexStage(
     }
 
     // 1. Fetch stage, project, and session details
-    const { data: stageData, error: stageError } = await dbClient
+    const { data: stageResultData, error: stageError } = await dbClient
         .from('dialectic_stages')
         .select(`
             *,
-            system_prompts (*),
-            domain_specific_prompt_overlays (*)
+            system_prompts (*)
         `)
         .eq('slug', stageSlug)
         .single();
 
-    if (stageError || !stageData || !isStageContext(stageData)) {
-        throw new Error(`Failed to fetch valid stage details for slug: ${stageSlug}: ${stageError?.message}`);
+    if (stageError) {
+        throw new Error(`Failed to fetch stage details for slug: ${stageSlug}: ${stageError.message}`);
     }
-    const stage = stageData;
-
+        
     const { data: projectData, error: projectError } = await dbClient
         .from('dialectic_projects')
         .select(`
@@ -71,6 +69,27 @@ export async function planComplexStage(
     }
     const project = projectData;
 
+    const { data: overlayData, error: overlayError } = await dbClient
+        .from('domain_specific_prompt_overlays')
+        .select('*')
+        .eq('id', project.selected_domain_overlay_id ?? '')
+        .single();
+
+    if (overlayError && project.selected_domain_overlay_id) {
+        logger.warn(`Could not fetch selected domain overlay ${project.selected_domain_overlay_id}: ${overlayError.message}`);
+    }
+
+    // Manually construct the full stage context for the type guard
+    const fullStageContext = stageResultData ? {
+        ...stageResultData,
+        domain_specific_prompt_overlays: overlayData ? [overlayData] : [] 
+    } : null;
+
+    if (!fullStageContext || !isStageContext(fullStageContext)) {
+        throw new Error(`Failed to construct valid stage details for slug: ${stageSlug}`);
+    }
+    const stage = fullStageContext;
+
     const { data: sessionData, error: sessionError } = await dbClient
         .from('dialectic_sessions')
         .select('*')
@@ -82,14 +101,19 @@ export async function planComplexStage(
     }
     
     // 2. Fetch source stage slug dynamically
+    if (!project.process_template_id) {
+        throw new Error(`Project ${project.id} does not have a process_template_id.`);
+    }
+
     const { data: transitionData, error: transitionError } = await dbClient
         .from('dialectic_stage_transitions')
         .select('*, source_stage:dialectic_stages!source_stage_id(slug)')
+        .eq('process_template_id', project.process_template_id)
         .eq('target_stage_id', stage.id)
         .single();
 
     if (transitionError || !transitionData || !transitionData.source_stage) {
-        throw new Error(`Failed to find a source stage transition for target stage ID ${stage.id}: ${transitionError?.message}`);
+        throw new Error(`Failed to find a source stage transition for target stage ID ${stage.id} and process template ID ${project.process_template_id}: ${transitionError?.message ?? 'Unknown error'}`);
     }
     const sourceStageSlug = transitionData.source_stage.slug;
 
@@ -139,7 +163,6 @@ export async function planComplexStage(
 
     // 5. Generate child jobs
     const childJobs: DialecticJobRow[] = [];
-    let jobCounter = 0;
 
     for (const doc of validSourceDocuments) {
         for (const model of models) {
@@ -171,7 +194,7 @@ export async function planComplexStage(
             const jobPayload: Json = { ...childPayload, prompt };
 
             childJobs.push({
-                id: `child-job-${parentJob.id}-${jobCounter++}`,
+                id: crypto.randomUUID(),
                 parent_job_id: parentJob.id,
                 session_id: sessionId,
                 user_id: projectOwnerUserId,

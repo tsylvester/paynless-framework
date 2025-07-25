@@ -127,15 +127,29 @@ export function isStageContext(obj: unknown): obj is StageContext {
         { key: 'id', type: 'string' },
         { key: 'slug', type: 'string' },
         { key: 'system_prompts', type: 'object' }, // Can be null
-        { key: 'domain_specific_prompt_overlays', type: 'object' }, // Is an array
+        { key: 'domain_specific_prompt_overlays', type: 'array' }, // Is an array
     ];
 
     for (const check of checks) {
         if (!Object.prototype.hasOwnProperty.call(obj, check.key)) return false;
         const value = (obj as Record<string, unknown>)[check.key];
-        if (value === null) continue; // Allow null for nullable fields
-        if (check.key === 'domain_specific_prompt_overlays' && !Array.isArray(value)) return false;
-        if (typeof value !== check.type) return false;
+        
+        if (value === null) {
+            // This is valid only if the field is not one of our specifically checked objects/arrays
+             if (check.key !== 'system_prompts' && check.key !== 'domain_specific_prompt_overlays') {
+                continue;
+            }
+        }
+
+        if (check.type === 'array') {
+            if (!Array.isArray(value)) return false;
+        } else if (typeof value !== check.type) {
+            // Allow null for system_prompts which is type 'object'
+            if (check.key === 'system_prompts' && value === null) {
+                continue;
+            }
+            return false;
+        }
     }
 
     return true;

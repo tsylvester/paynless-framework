@@ -7,6 +7,7 @@ DECLARE
     v_session_id uuid;
     v_stage_slug text;
     v_iteration_number int;
+    v_job_id uuid;
     v_is_stage_complete boolean;
     v_has_failures boolean;
     v_final_session_status text;
@@ -18,6 +19,8 @@ BEGIN
     -- The trigger's WHEN clause already filters for this, but this is a safety check.
     IF NEW.status IN ('completed', 'retry_loop_failed', 'failed') THEN
         
+        v_job_id := NEW.id;
+
         -- Extract key identifiers from the job's payload.
         -- We use COALESCE for iterationNumber to safely handle cases where it might be omitted, defaulting to 1.
         v_session_id := (NEW.payload ->> 'sessionId')::uuid;
@@ -69,7 +72,8 @@ BEGIN
                 v_notification_data := jsonb_build_object(
                     'session_id', v_session_id,
                     'stage_slug', v_stage_slug,
-                    'iteration_number', v_iteration_number
+                    'iteration_number', v_iteration_number,
+                    'job_id', v_job_id
                 );
             END IF;
 

@@ -106,7 +106,7 @@ const executePendingDialecticJobs = async (
         if (!isDialecticJobRow(job)) {
             throw new Error(`Fetched job is not a valid DialecticJobRow: ${JSON.stringify(job)}`);
         }
-        testLogger.info(`[Test Helper] Executing job ${job.id} with status ${job.status}`);
+        testLogger.info(`[Test Helper] >>>> Executing job ${job.id} | Status: ${job.status} | Parent: ${job.parent_job_id || 'None'}`);
         await handleJob(adminClient, job, deps, authToken, mockProcessors);
     }
 };
@@ -197,7 +197,7 @@ Deno.test(
             deleteFromStorage: () => Promise.resolve({ error: null }), // Can remain a mock for now
             getExtensionFromMimeType: () => ".md",
             randomUUID: () => crypto.randomUUID(),
-            callUnifiedAIModel: (modelId, prompt, chatId, authToken, options) => {
+            callUnifiedAIModel: async (modelId, prompt, chatId, authToken, options) => {
                 const request: ChatApiRequest = {
                     message: prompt,
                     providerId: modelId,
@@ -206,8 +206,12 @@ Deno.test(
                     walletId: options?.walletId,
                     max_tokens_to_generate: options?.customParameters?.max_tokens_to_generate,
                 };
+
+                // Find the api_identifier that corresponds to the modelId UUID
+                const model = upsertedProviders.find(p => p.id === modelId);
+                const modelIdentifier = model ? model.api_identifier : modelId; // Fallback to modelId if not found
                 
-                return mockAiAdapter.sendMessage(request, modelId, authToken)
+                return mockAiAdapter.sendMessage(request, modelIdentifier, authToken)
                     .then(response => {
                         const tokenUsage = isTokenUsage(response.token_usage) ? response.token_usage : null;
                         return {
@@ -314,9 +318,9 @@ Deno.test(
       }
 
       // --- Arrange ---
-      // FIX: Configure the mock using the API identifier strings, not the UUIDs.
-      mockAiAdapter.setFailureForModel('gpt-4-turbo', 1, new Error("Test-induced AI failure"));
-      mockAiAdapter.setContinuationForModel('claude-3-opus', 1, "This is the final continued part.");
+      // FIX: Configure the mock using the correct model UUIDs.
+      mockAiAdapter.setFailureForModel(modelAId, 1, new Error("Test-induced AI failure"));
+      mockAiAdapter.setContinuationForModel(modelBId, 1, "This is the final continued part.");
 
       const generatePayload: GenerateContributionsPayload = {
         sessionId: testSession.id,
@@ -455,52 +459,103 @@ Deno.test(
       }
     });
 
-    await t.step("4. should FAIL to generate contributions for Antithesis stage", async () => {
-      // Do not pay attention to this test. It cannot be implemented until the Thesis test is fixed. 
-      // This is TDD RED stage for this and all remaining tests. 
-       if (!testSession) {
+    await t.step("4. should plan child jobs for the Antithesis stage", async () => {
+      // Step 1: Planning
+      if (!testSession) {
         assert(testSession, "Cannot test antithesis without a session.");
         return;
       }
-      
+
+      // --- Arrange ---
       const generatePayload: GenerateContributionsPayload = {
         sessionId: testSession.id,
         stageSlug: "antithesis",
         iterationNumber: 1,
         projectId: testSession.project_id,
       };
+      
+      // --- Act ---
+      const { data: jobData, error: creationError } = await generateContributions(
+        adminClient,
+        generatePayload,
+        primaryUser,
+        testDeps,
+      );
 
-      try {
-        const { data: jobData, error: creationError } = await generateContributions(
-          adminClient,
-          generatePayload,
-          primaryUser,
-          testDeps,
-        );
-        assert(!creationError);
-        assertExists(jobData);
-
-        if (jobData) {
-          const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
-          await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
-        }
+      // --- Assert ---
+      assert(!creationError, `Error creating parent job for antithesis: ${creationError?.message}`);
+      assertExists(jobData, "Parent job creation did not return data");
+      
+      if (jobData && jobData.job_ids) {
+        assertEquals(jobData.job_ids.length, 2, "Expected two parent jobs to be created for the antithesis stage (one per model).");
         
-        assert(false, "Antithesis generation was expected to fail but succeeded.");
+        const [parentJobIdA, parentJobIdB] = jobData.job_ids;
+        const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
 
-      } catch (e) {
-        if (e instanceof Error) {
-          assert(e.message.includes("Task Isolation strategy not yet implemented"), `Error message did not match expected failure reason. Got: ${e.message}`);
-        } else {
-          assert(false, "An unexpected non-Error type was thrown.");
-        }
+        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+
+        await pollForJobStatus(parentJobIdA, 'waiting_for_children', `Parent job A (${parentJobIdA}) should have status 'waiting_for_children'.`);
+        await pollForJobStatus(parentJobIdB, 'waiting_for_children', `Parent job B (${parentJobIdB}) should have status 'waiting_for_children'.`);
+
+        const { data: childJobs, error: childJobError } = await adminClient
+          .from('dialectic_generation_jobs')
+          .select('id')
+          .in('parent_job_id', [parentJobIdA, parentJobIdB]);
+        
+        assert(!childJobError, `Error fetching child jobs: ${childJobError?.message}`);
+        assertExists(childJobs, "Child jobs were not created.");
+        assertEquals(childJobs.length, 4, "Expected 4 child jobs to be created for the antithesis stage (2 theses * 2 models).");
+      } else {
+        assert(false, "jobData or job_ids were not returned from generateContributions");
       }
     });
 
-    await t.step("5. should submit antithesis responses", async () => {
+    await t.step("5. should execute child jobs and verify parent job completion", async () => {
+      if (!testSession) {
+        assert(testSession, "Cannot test antithesis without a session.");
+        return;
+      }
+      const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
+
+      // Act: Execute the pending child jobs
+      await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+      
+      // Assert: Verify all jobs (parents and children) are completed
+      await pollForCondition(async () => {
+        if (!testSession) return false;
+        const { data: pendingJobs } = await adminClient
+          .from('dialectic_generation_jobs')
+          .select('id')
+          .eq('session_id', testSession.id)
+          .eq('stage_slug', 'antithesis')
+          .in('status', ['pending', 'processing', 'pending_continuation', 'retrying', 'waiting_for_children']);
+        return pendingJobs !== null && pendingJobs.length === 0;
+      }, "All jobs for the antithesis stage, including parents, should be completed");
+    });
+    
+    await t.step("6. should verify the final antithesis artifacts", async () => {
+      if (!testSession) {
+        assert(testSession, "Cannot test antithesis without a session.");
+        return;
+      }
+      
+      const { data: finalContributions, error: finalContribError } = await adminClient
+        .from('dialectic_contributions')
+        .select('id')
+        .eq('session_id', testSession.id)
+        .eq('stage', 'antithesis')
+        .eq('is_latest_edit', true);
+
+      assert(!finalContribError, `Error fetching final antithesis contributions: ${finalContribError?.message}`);
+      assertExists(finalContributions, "No final antithesis contributions were found.");
+      assertEquals(finalContributions.length, 4, "Expected exactly four final antithesis contributions.");
+    });
+
+    await t.step("7. should submit antithesis responses", async () => {
       assert(false, "Not yet implemented");
     });
 
-    await t.step("6. should generate contributions for Synthesis stage", async () => {
+    await t.step("8. should generate contributions for Synthesis stage", async () => {
       assert(false, "Not yet implemented");
     });
 

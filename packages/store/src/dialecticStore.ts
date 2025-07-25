@@ -515,6 +515,13 @@ export const useDialecticStore = create<DialecticStore>()(
   },
 
   fetchContributionContent: async (contributionId: string) => {
+    // A placeholder contribution is generated on the client-side for immediate UI feedback.
+    // Its ID will always start with "placeholder-". It does not exist in the backend,
+    // so we must prevent any attempt to fetch its content.
+    if (contributionId.startsWith('placeholder-')) {
+      return;
+    }
+
     const currentCache = get().contributionContentCache;
     const entry = currentCache[contributionId];
 
