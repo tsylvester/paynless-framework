@@ -14,6 +14,7 @@ import { isDialecticJobPayload, isRecord } from '../_shared/utils/type_guards.ts
 import { processSimpleJob } from './processSimpleJob.ts';
 import type { DialecticJobRow, DialecticJobPayload, DialecticSession, DialecticContributionRow, ProcessSimpleJobDeps, SelectedAiProvider } from '../dialectic-service/dialectic.interface.ts';
 import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
+import { ContextWindowError } from '../_shared/utils/errors.ts';
 
 const mockPayload: Json = {
   projectId: 'project-abc',
@@ -221,6 +222,34 @@ Deno.test('processSimpleJob - Failure with No Retries Remaining', async (t) => {
             return isRecord(payload) && payload.status === 'retry_loop_failed';
         });
         assertExists(finalUpdateCallArgs, "Final job status should be 'retry_loop_failed'");
+    });
+
+    clearAllStubs?.();
+    executorStub.restore();
+});
+
+Deno.test('processSimpleJob - ContextWindowError Handling', async (t) => {
+    const { client: dbClient, spies, clearAllStubs } = setupMockClient();
+    const deps = getMockDeps();
+
+    const executorStub = stub(deps, 'executeModelCallAndSave', () => {
+        return Promise.reject(new ContextWindowError('Token limit exceeded during execution.'));
+    });
+
+    const retryJobSpy = spy(deps, 'retryJob');
+
+    await t.step('should fail the job immediately without retrying', async () => {
+        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', deps, 'auth-token');
+
+        assertEquals(retryJobSpy.calls.length, 0, 'Expected retryJob NOT to be called for a ContextWindowError');
+
+        const updateSpy = spies.getLatestQueryBuilderSpies('dialectic_generation_jobs')?.update;
+        assert(updateSpy, "Update spy should exist for dialectic_generation_jobs table");
+        assertEquals(updateSpy.calls.length, 1, 'Expected a single update call to fail the job');
+        
+        const [updatePayload] = updateSpy.calls[0].args;
+        assertEquals(updatePayload.status, 'failed');
+        assert(isRecord(updatePayload.error_details) && typeof updatePayload.error_details.message === 'string' && updatePayload.error_details.message.includes('Context window limit exceeded'));
     });
 
     clearAllStubs?.();

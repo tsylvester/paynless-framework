@@ -1,5 +1,5 @@
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { type Database } from '../types_db.ts';
+import { type Database, type Json } from '../types_db.ts';
 import {
   type ProcessSimpleJobDeps,
   type Job,
@@ -10,6 +10,7 @@ import {
 } from '../dialectic-service/dialectic.interface.ts';
 import { isSelectedAiProvider } from '../_shared/utils/type_guards.ts';
 import { isRecord } from '../_shared/utils/type_guards.ts';
+import { ContextWindowError } from '../_shared/utils/errors.ts';
 
 // Type guard to ensure the payload has the specific fields needed for a combination job.
 function hasCombinationInputs(payload: DialecticCombinationJobPayload): payload is DialecticCombinationJobPayload & { inputs: { document_ids: string[] }, prompt_template_name: string } {
@@ -92,6 +93,18 @@ export async function processCombinationJob(
 
     } catch (e) {
         const error = e instanceof Error ? e : new Error(String(e));
+
+        if (e instanceof ContextWindowError) {
+            deps.logger.error(`[dialectic-worker] [processCombinationJob] Context window error for job ${jobId}`, { error });
+            // Fail the job immediately, don't retry
+            await dbClient.from('dialectic_generation_jobs').update({
+                status: 'failed',
+                error_details: { message: `Context window error: ${error.message}` },
+                completed_at: new Date().toISOString(),
+            }).eq('id', jobId);
+            return; // Exit without retry
+        }
+
         const failedAttempt: FailedAttemptError = {
             modelId: model_id,
             api_identifier: providerDetails?.api_identifier || 'unknown',

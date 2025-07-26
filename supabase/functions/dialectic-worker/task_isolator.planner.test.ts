@@ -102,12 +102,12 @@ const MOCK_SOURCE_CONTRIBUTIONS: DialecticContributionRow[] = [
 ];
 
 const MOCK_MODELS = [
-    { id: 'model-1', name: 'Model One', api_identifier: 'model-one-api', provider: 'openai', config: {}, user_id: 'user-123', created_at: new Date().toISOString() },
-    { id: 'model-2', name: 'Model Two', api_identifier: 'model-two-api', provider: 'anthropic', config: {}, user_id: 'user-123', created_at: new Date().toISOString() },
+    { id: 'model-1', name: 'Model One', api_identifier: 'model-one-api', provider: 'openai', config: { tokenization_strategy: { type: 'rough_char_count' }, max_context_window_tokens: 10000 }, user_id: 'user-123', created_at: new Date().toISOString() },
+    { id: 'model-2', name: 'Model Two', api_identifier: 'model-two-api', provider: 'anthropic', config: { tokenization_strategy: { type: 'rough_char_count' }, max_context_window_tokens: 10000 }, user_id: 'user-123', created_at: new Date().toISOString() },
 ];
 
 const MOCK_MODELS_SINGLE = [
-    { id: 'model-1', name: 'Model One', api_identifier: 'model-one-api', provider: 'openai', config: {}, user_id: 'user-123', created_at: new Date().toISOString() },
+    { id: 'model-1', name: 'Model One', api_identifier: 'model-one-api', provider: 'openai', config: { tokenization_strategy: { type: 'rough_char_count' }, max_context_window_tokens: 10000 }, user_id: 'user-123', created_at: new Date().toISOString() },
 ];
 
 Deno.test('planComplexStage - Happy Path: Generates correct child job payloads', async () => {
@@ -782,4 +782,67 @@ Deno.test('planComplexStage - Throws if no matching models are found for selecte
         assert(e instanceof Error, 'Error should be an instance of Error');
         assert(e.message.includes('No models found for selected IDs'), 'Error message is not as expected');
     }
+}); 
+
+Deno.test('planComplexStage - Context Window Management', async () => {
+    const MOCK_MODEL_LIMITED_CONTEXT = [
+        { id: 'model-limited', name: 'Limited Context Model', api_identifier: 'limited-api', provider: 'openai', config: { tokenization_strategy: { type: 'rough_char_count' }, max_context_window_tokens: 10 }, user_id: 'user-123', created_at: new Date().toISOString() },
+    ];
+
+    const MOCK_LARGE_SOURCE_CONTRIBUTIONS: DialecticContributionRow[] = [
+        { ...MOCK_SOURCE_CONTRIBUTIONS[0], id: 'large-contrib-1' }, // Content will be mocked as large
+    ];
+
+    await Deno.test('should create a prerequisite job if context exceeds limit', async () => {
+        const { client: mockDb, spies } = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                'dialectic_stages': { select: { data: [MOCK_STAGE], error: null } },
+                'dialectic_projects': { select: { data: [MOCK_PROJECT], error: null } },
+                'dialectic_stage_transitions': { select: { data: [{ source_stage: { slug: 'thesis' } }], error: null } },
+                'dialectic_sessions': { select: { data: [MOCK_SESSION], error: null } },
+                'dialectic_contributions': { select: { data: MOCK_LARGE_SOURCE_CONTRIBUTIONS, error: null } },
+                'ai_providers': { select: { data: MOCK_MODEL_LIMITED_CONTEXT, error: null } },
+                'dialectic_generation_jobs': {
+                    insert: () => Promise.resolve({ data: [{ id: 'new-combine-job' }], error: null }),
+                    update: () => Promise.resolve({ data: [{ id: MOCK_PARENT_JOB.id }], error: null }),
+                }
+            }
+        });
+
+        const mockLogger: ILogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
+        const mockAssembler = new PromptAssembler(mockDb as unknown as SupabaseClient<Database>);
+        const mockDownloadFromStorage: DownloadFromStorageFn = async (_supabase, bucket, path) => {
+            const content = "This is a very long string designed to exceed the small token limit of our test model.";
+            const uint8array = new TextEncoder().encode(content);
+            const arrayBuffer = new ArrayBuffer(uint8array.length);
+            new Uint8Array(arrayBuffer).set(uint8array);
+            return { data: arrayBuffer, error: null };
+        };
+
+        const childJobs = await planComplexStage(
+            mockDb as unknown as SupabaseClient<Database>,
+            { ...MOCK_PARENT_JOB, payload: { ...MOCK_PAYLOAD, model_id: 'model-limited' } },
+            'user-123',
+            mockLogger,
+            (bucket, path) => mockDownloadFromStorage(mockDb as unknown as SupabaseClient<Database>, bucket, path),
+            mockAssembler
+        );
+
+        assertEquals(childJobs.length, 0, "Should return no child jobs when a prerequisite is created");
+        
+        const insertSpy = spies.getLatestQueryBuilderSpies('dialectic_generation_jobs')?.insert;
+        assertExists(insertSpy);
+        assertEquals(insertSpy.calls.length, 1);
+        const insertedJob = insertSpy.calls[0].args[0];
+        assertEquals(insertedJob.stage_slug, 'utility');
+        assert(isDialecticJobPayload(insertedJob.payload));
+        assertEquals(insertedJob.payload.job_type, 'combine');
+
+        const updateSpy = spies.getLatestQueryBuilderSpies('dialectic_generation_jobs')?.update;
+        assertExists(updateSpy);
+        assertEquals(updateSpy.calls.length, 1);
+        const updatedJob = updateSpy.calls[0].args[0];
+        assertEquals(updatedJob.status, 'waiting_for_prerequisite');
+        assertExists(updatedJob.prerequisite_job_id);
+    });
 }); 

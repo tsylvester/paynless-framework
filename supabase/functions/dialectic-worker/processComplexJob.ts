@@ -9,6 +9,7 @@ import { planComplexStage } from './task_isolator.ts';
 import type { ILogger } from '../_shared/types.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
+import { ContextWindowError } from '../_shared/utils/errors.ts';
 
 export interface IPlanComplexJobDeps {
     logger: ILogger;
@@ -42,7 +43,7 @@ export async function processComplexJob(
             await dbClient.from('dialectic_generation_jobs').update({
                 status: 'completed',
                 completed_at: new Date().toISOString(),
-                results: { status_reason: 'Planner generated no child jobs to execute.' } as Json
+                results: { status_reason: 'Planner generated no child jobs to execute.' }
             }).eq('id', parentJobId);
             return;
         }
@@ -70,11 +71,15 @@ export async function processComplexJob(
         const error = e instanceof Error ? e : new Error(String(e));
         deps.logger.error(`[processComplexJob] Error processing complex job ${parentJobId}`, { error });
         
+        const failureReason = e instanceof ContextWindowError 
+            ? `Context window limit exceeded: ${error.message}`
+            : `Failed to plan or enqueue child jobs: ${error.message}`;
+
         // If planning or enqueuing fails, mark the parent job as failed.
         await dbClient.from('dialectic_generation_jobs').update({
             status: 'failed',
             completed_at: new Date().toISOString(),
-            error_details: { message: `Failed to plan or enqueue child jobs: ${error.message}` } as Json
+            error_details: { message: failureReason }
         }).eq('id', parentJobId);
     }
 }

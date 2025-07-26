@@ -16,8 +16,10 @@ import {
   import {
     isDialecticCombinationJobPayload,
     isDialecticJobRow,
-    isFailedAttemptErrorArray
+    isFailedAttemptErrorArray,
+    isRecord,
   } from '../_shared/utils/type_guards.ts';
+  import { ContextWindowError } from '../_shared/utils/errors.ts';
   
   const mockCombinationPayload: Json = {
     projectId: 'project-abc',
@@ -310,4 +312,38 @@ Deno.test('processCombinationJob - Error Handling Scenarios', async (t) => {
         assert(isFailedAttemptErrorArray(failedAttempts) && failedAttempts[0].error.includes('Failed to download document content from'));
     });
 
+});
+
+Deno.test('processCombinationJob - ContextWindowError Handling', async (t) => {
+    const { client: dbClient, spies, clearAllStubs } = setupMockClient();
+    const deps = getMockDeps();
+
+    const executorStub = stub(deps, 'executeModelCallAndSave', () => {
+        return Promise.reject(new ContextWindowError('Prompt too large for model.'));
+    });
+    
+    const retryJobSpy = spy(deps, 'retryJob');
+
+    await t.step('should fail the job immediately without retrying', async () => {
+        if (!isDialecticCombinationJobPayload(mockCombinationJob.payload)) {
+            fail('Mock job payload is not a valid DialecticCombinationJobPayload');
+        }
+        const job: DialecticJobRow & { payload: DialecticCombinationJobPayload } = {
+          ...mockCombinationJob,
+          payload: mockCombinationJob.payload,
+        };
+        await processCombinationJob(dbClient as unknown as SupabaseClient<Database>, job, 'user-789', deps, 'auth-token');
+
+        assertEquals(retryJobSpy.calls.length, 0, 'Expected retryJob NOT to be called for a ContextWindowError');
+
+        const updateSpy = spies.getLatestQueryBuilderSpies('dialectic_generation_jobs')?.update;
+        assert(updateSpy, "Update spy should exist for dialectic_generation_jobs table");
+        assertEquals(updateSpy.calls.length, 1, 'Expected a single update call to fail the job');
+        const [updatePayload] = updateSpy.calls[0].args;
+        assertEquals(updatePayload.status, 'failed');
+        assert(isRecord(updatePayload.error_details) && typeof updatePayload.error_details.message === 'string' && updatePayload.error_details.message.includes('Context window error'));
+    });
+    
+    clearAllStubs?.();
+    executorStub.restore();
 });

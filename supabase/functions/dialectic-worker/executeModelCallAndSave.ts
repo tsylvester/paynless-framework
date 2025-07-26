@@ -5,7 +5,10 @@ import {
   type ExecuteModelCallAndSaveParams,
 } from '../dialectic-service/dialectic.interface.ts';
 import { type UploadContext } from '../_shared/types/file_manager.types.ts';
-import { isDialecticContribution } from "../_shared/utils/type_guards.ts";
+import { isDialecticContribution, isAiModelExtendedConfig } from "../_shared/utils/type_guards.ts";
+import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
+import { type AiModelExtendedConfig, type MessageForTokenCounting } from '../_shared/types.ts';
+import { ContextWindowError } from '../_shared/utils/errors.ts';
 
 export async function executeModelCallAndSave(
     params: ExecuteModelCallAndSaveParams,
@@ -35,12 +38,46 @@ export async function executeModelCallAndSave(
         sessionId,
         walletId,
     } = job.payload;
-    
+
     if (!stageSlug) {
         throw new Error(`Job ${jobId} is missing required stageSlug in its payload.`);
     }
 
+    const { data: fullProviderData, error: providerError } = await dbClient
+        .from('ai_providers')
+        .select('*')
+        .eq('id', providerDetails.id)
+        .single();
+    
+    if (providerError || !fullProviderData) {
+        throw new Error(`Could not fetch full provider details for ID ${providerDetails.id}.`);
+    }
+
     deps.logger.info(`[dialectic-worker] [executeModelCallAndSave] Executing model call for job ID: ${jobId}`);
+
+    // Final Context Window Validation
+    const modelConfig = fullProviderData.config;
+    if (!isAiModelExtendedConfig(modelConfig)) {
+        throw new Error(`Model ${fullProviderData.id} has invalid or missing configuration.`);
+    }
+
+    const extendedModelConfig: AiModelExtendedConfig = {
+        model_id: fullProviderData.id,
+        api_identifier: fullProviderData.api_identifier,
+        input_token_cost_rate: modelConfig.input_token_cost_rate,
+        output_token_cost_rate: modelConfig.output_token_cost_rate,
+        tokenization_strategy: modelConfig.tokenization_strategy,
+        context_window_tokens: modelConfig.context_window_tokens,
+        max_context_window_tokens: modelConfig.max_context_window_tokens,
+    };
+
+    const messages: MessageForTokenCounting[] = [{ role: 'user', content: previousContent || renderedPrompt.content }];
+    const finalTokenCount = countTokensForMessages(messages, extendedModelConfig);
+    const maxTokens = extendedModelConfig.max_context_window_tokens || extendedModelConfig.context_window_tokens;
+
+    if (maxTokens && finalTokenCount > maxTokens) {
+        throw new ContextWindowError(`Final prompt token count (${finalTokenCount}) exceeds model limit (${maxTokens}) for job ${jobId}.`);
+    }
 
     const options = {
         walletId: walletId,

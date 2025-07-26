@@ -71,23 +71,69 @@ This phase implements the critical, tiered strategy for managing model context w
         1.  **Parent/Child:** Does this job have a `parent_job_id`? If so, check if all siblings are complete to wake the parent.
         2.  **Prerequisite/Waiting:** Does any other job list this job's `id` in its `prerequisite_job_id` field? If so, update the waiting job's status from `'waiting_for_prerequisite'` to `'pending'`.
 
-#### 26. [BE] [REFACTOR] Integrate Tiered Logic into the Worker
+#### 26. [BE] [REFACTOR] Integrate Tiered Context Window Management
 
-*   `[ ]` 26.a. **Refactor Planner and Executor Modules:**
-    *   `[BE]` `[REFACTOR]` **Files:** `processSimpleJob.ts`, `processComplexJob.ts`.
-    *   `[BE]` `[REFACTOR]` **Action:** Before preparing a prompt for an AI call, inject a call to a new utility function, e.g., `resolveContext(docs, model, parentJob)`.
-*   `[ ]` 26.b. **Implement `resolveContext` Utility:**
-    *   `[BE]` `[TEST-UNIT]` **Action:** Create the `resolveContext` utility and its test file.
-    *   `[BE]` **Logic:**
-        1.  It receives the documents, the target model's details (including `max_input_tokens`), and the parent job's context.
-        2.  It uses a tokenizer to estimate the total token count.
-        3.  **Tier 1:** If tokens are within the limit, it returns `{ status: 'ok', documents: [...] }`.
-        4.  **Tier 2:** If tokens moderately exceed the limit, it enqueues a new job with `job_type: 'combine'`, sets the original job's status to `'waiting_for_prerequisite'`, links it via `prerequisite_job_id`, and returns `{ status: 'waiting' }`. This triggers the use of the `processCombinationJob` method. 
-        5.  **Tier 3:** If tokens significantly exceed the limit, it initiates the RAG process and returns `{ status: 'ok', documents: [...] }` with the RAG-retrieved context.
-        6.  **Tier 4:** If no strategy is viable, it throws a specific `ContextWindowError`.
-*   `[ ]` 26.c. **Update Worker Error Handling:**
-    *   `[BE]` **Action:** In the main `try/catch` block of the worker modules, add a specific `catch` for the `ContextWindowError`.
-    *   `[BE]` **Action:** When this error is caught, the job should be marked as `'failed'`, and a specific, user-facing notification should be dispatched explaining the context limitation.
+This step implements a hybrid, two-layer defense mechanism to manage model context windows, ensuring both efficient orchestration and absolute safety against API errors. The strategy involves an initial check at the "planning" stage and a final validation at the "execution" stage.
+
+*   `[✅]` 26.a. **Create `ContextWindowError` Custom Error:**
+    *   `[BE]` **File:** `supabase/functions/_shared/utils/errors.ts`.
+    *   `[BE]` **Action:** Create and export a new custom error class, `ContextWindowError`, that extends the base `Error` class. This allows for specific `catch` blocks in the worker logic.
+    *   **Implementation Detail:**
+        ```typescript
+        // In supabase/functions/_shared/utils/errors.ts
+        export class ContextWindowError extends Error {
+          constructor(message: string) {
+            super(message);
+            this.name = 'ContextWindowError';
+          }
+        }
+        ```
+
+*   `[✅]` 26.b. **Implement Tier 2 Orchestration in the Complex Job Planner:**
+    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-worker/task_isolator.ts`.
+    *   `[BE]` `[REFACTOR]` **Action:** The `planComplexStage` function will be modified to perform a pre-emptive check on the collected source documents *before* it attempts to plan child jobs.
+    *   **Logic:**
+        1.  **Location:** The new logic will be placed after the `validSourceDocuments` array is populated.
+        2.  **Token Estimation:**
+            *   Import `countTokensForMessages` from `supabase/functions/_shared/utils/tokenizer_utils.ts`.
+            *   Fetch the `ai_providers` record for the `parentJob.payload.model_id` to get its `max_input_tokens` and `tokenization_strategy`.
+            *   Map the `validSourceDocuments` to the `MessageForTokenCounting` format (`[{ role: 'user', content: doc.content }]`).
+            *   Calculate the `estimatedTokens` for the entire collection of documents.
+        3.  **Tier 1 (Context is OK):** If `estimatedTokens` is less than `max_input_tokens`, the function proceeds with its existing logic to plan and return child jobs.
+        4.  **Tier 2 (Context is Too Large):** If `estimatedTokens` exceeds `max_input_tokens`:
+            *   The function will create a *new* prerequisite job.
+            *   **New Job Payload:**
+                *   `job_type`: `'combine'`
+                *   `payload`: Contains the `resource_ids` of all documents in `validSourceDocuments`. This gives the `processCombinationJob` worker the information it needs to fetch the content later.
+                *   Inherit necessary fields from the `parentJob` (e.g., `sessionId`, `projectId`, `user_id`).
+            *   **Database Operations:**
+                *   Use `dbClient` to `insert` the new "combine" job into `dialectic_generation_jobs`.
+                *   Use `dbClient` to `update` the original `parentJob`, setting its `status` to `'waiting_for_prerequisite'` and `prerequisite_job_id` to the ID of the new combine job.
+            *   The function will then log this action and `return []`, halting the planning process for the current parent job until the prerequisite is met.
+
+*   `[✅]` 26.c. **Implement Final Validation in the Model Executor:**
+    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`.
+    *   `[BE]` `[REFACTOR]` **Action:** This function will be modified to act as the final safeguard, validating the token count of the *fully rendered prompt* just before making the API call.
+    *   **Logic:**
+        1.  **Location:** The new logic will be placed immediately before the call to `deps.callUnifiedAIModel`.
+        2.  **Token Calculation:**
+            *   Import `countTokensForMessages` from `supabase/functions/_shared/utils/tokenizer_utils.ts`.
+            *   Construct the `MessageForTokenCounting` array from the `renderedPrompt.content` and `previousContent`.
+            *   Calculate the `finalTokenCount` using the `providerDetails` (which is an `AiModelExtendedConfig`).
+        3.  **Validation:**
+            *   If `finalTokenCount` exceeds `providerDetails.max_input_tokens`, the function will `throw new ContextWindowError(...)` with a detailed message. This is a hard failure, as the context is too large even after potential planning and combination. The check should account for a small buffer if necessary (e.g., `max_input_tokens * 0.98`).
+
+*   `[✅]` 26.d. **Update Worker Error Handling:**
+    *   `[BE]` `[REFACTOR]` **Files:** `supabase/functions/dialectic-worker/processSimpleJob.ts` and `supabase/functions/dialectic-worker/processComplexJob.ts`.
+    *   `[BE]` `[REFACTOR]` **Action:** The top-level `try/catch` block in these worker files must be updated to specifically handle the `ContextWindowError`.
+    *   **Logic:**
+        1.  Add `import { ContextWindowError } from '../_shared/utils/errors.ts';`.
+        2.  Inside the `catch (e)` block, add a specific check: `if (e instanceof ContextWindowError) { ... }`.
+        3.  **On Catch:**
+            *   Log the specific error.
+            *   Update the job's status to `'failed'`.
+            *   Set the `error_details` field with a clear message explaining that the context window was exceeded and no strategy could resolve it.
+            *   Use the `notificationService` to dispatch a user-facing failure notification. This ensures the user is informed about why the job could not be completed.
 
 ---
 

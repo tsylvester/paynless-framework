@@ -10,12 +10,13 @@ import {
   import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
   import { logger } from '../_shared/logger.ts';
   import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-  import { isDialecticJobPayload, isRecord } from '../_shared/utils/type_guards.ts';
+  import { isDialecticJobPayload, isRecord, isJson } from '../_shared/utils/type_guards.ts';
   import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
   import type { DialecticJobRow, UnifiedAIResponse, DialecticSession, DialecticContributionRow, ProcessSimpleJobDeps, SelectedAiProvider, ExecuteModelCallAndSaveParams, DialecticJobPayload } from '../dialectic-service/dialectic.interface.ts';
   import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
   import type { LogMetadata } from '../_shared/types.ts';
-  
+  import { ContextWindowError } from '../_shared/utils/errors.ts';
+
   const mockPayload: Json = {
     projectId: 'project-abc',
     sessionId: 'session-456',
@@ -70,6 +71,25 @@ import {
       name: 'Mock AI',
       api_identifier: 'mock-ai-v1',
   };
+
+  const mockFullProviderData: Tables<'ai_providers'> = {
+    id: 'model-def',
+    provider: 'mock-provider',
+    name: 'Mock AI',
+    api_identifier: 'mock-ai-v1',
+    created_at: new Date().toISOString(),
+    config: {
+        tokenization_strategy: { type: 'rough_char_count' },
+        max_context_window_tokens: 10000,
+        context_window_tokens: 8000,
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
+    },
+    description: null,
+    is_active: true,
+    is_enabled: true,
+    updated_at: new Date().toISOString(),
+  }
   
   const mockContribution: DialecticContributionRow = {
       id: 'contrib-123',
@@ -148,7 +168,11 @@ import {
   };
   
   Deno.test('executeModelCallAndSave - Happy Path', async (t) => {
-    const { client: dbClient, spies, clearAllStubs } = setupMockClient();
+    const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        }
+    });
     const deps: ProcessSimpleJobDeps = getMockDeps();
 
     const fileManagerSpy = spy(deps.fileManager, 'uploadAndRegisterFile');
@@ -182,7 +206,11 @@ import {
   });
   
   Deno.test('executeModelCallAndSave - Continuation Enqueued', async (t) => {
-    const { client: dbClient, spies, clearAllStubs } = setupMockClient();
+    const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        }
+    });
     const deps: ProcessSimpleJobDeps = getMockDeps();
 
     const continueJobStub = stub(deps, 'continueJob', async () => ({ enqueued: true }));
@@ -232,7 +260,11 @@ import {
   
   
   Deno.test('executeModelCallAndSave - Throws on AI Error', async (t) => {
-    const { client: dbClient, clearAllStubs } = setupMockClient();
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        }
+    });
     const deps: ProcessSimpleJobDeps = getMockDeps();
 
     const callUnifiedAIModelStub = stub(deps, 'callUnifiedAIModel', async () => ({
@@ -271,6 +303,9 @@ import {
         const { client: dbClient, clearAllStubs } = setupMockClient({
             'dialectic_generation_jobs': {
                 update: () => { throw new Error('DB Update Failed'); }
+            },
+            'ai_providers': {
+                select: { data: [mockFullProviderData], error: null }
             }
         });
         const deps: ProcessSimpleJobDeps = getMockDeps();
@@ -309,7 +344,11 @@ import {
   Deno.test('executeModelCallAndSave - Notifications', async (t) => {
     
     await t.step('should send Received and Complete notifications for a non-continuing job', async () => {
-        const { client: dbClient, spies, clearAllStubs } = setupMockClient();
+        const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+            'ai_providers': {
+                select: { data: [mockFullProviderData], error: null }
+            }
+        });
         const deps: ProcessSimpleJobDeps = getMockDeps();
         
         const sendReceivedSpy = spy(deps.notificationService, 'sendContributionReceivedEvent');
@@ -337,7 +376,11 @@ import {
     });
 
     await t.step('should send Continued notification for a continuing job', async () => {
-        const { client: dbClient, spies, clearAllStubs } = setupMockClient();
+        const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+            'ai_providers': {
+                select: { data: [mockFullProviderData], error: null }
+            }
+        });
         const deps: ProcessSimpleJobDeps = getMockDeps();
 
         stub(deps, 'callUnifiedAIModel', async (): Promise<UnifiedAIResponse> => ({
@@ -368,5 +411,55 @@ import {
         assertEquals(sendContinuedSpy.calls.length, 1, 'Expected sendContributionGenerationContinuedEvent to be called once');
         clearAllStubs?.();
     });
+});
+
+Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
+    const limitedConfigObject = {
+        tokenization_strategy: { type: 'rough_char_count' },
+        max_context_window_tokens: 10, // very small limit
+        context_window_tokens: 10,
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
+    };
+
+    if (!isJson(limitedConfigObject)) {
+        throw new Error("Test setup failed: mock config is not valid Json.");
+    }
+
+    const mockLimitedProvider: Tables<'ai_providers'> = {
+        ...mockFullProviderData,
+        config: limitedConfigObject,
+    };
+
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockLimitedProvider], error: null }
+        }
+    });
+    const deps: ProcessSimpleJobDeps = getMockDeps();
+
+    await t.step('should throw ContextWindowError if prompt exceeds token limit', async () => {
+        let errorThrown = false;
+        try {
+            const params: ExecuteModelCallAndSaveParams = {
+                dbClient: dbClient as unknown as SupabaseClient<Database>,
+                deps,
+                authToken: 'auth-token',
+                job: { ...mockJob, payload: mockPayload },
+                projectOwnerUserId: 'user-789',
+                providerDetails: mockProviderData,
+                renderedPrompt: { content: 'This is a prompt that is definitely going to be longer than ten tokens.', fullPath: 'prompts/seed.txt' },
+                previousContent: '',
+                sessionData: mockSessionData,
+            };
+            await executeModelCallAndSave(params);
+        } catch (e) {
+            errorThrown = true;
+            assert(e instanceof ContextWindowError, "Expected error to be a ContextWindowError.");
+        }
+        assert(errorThrown, "Expected executeModelCallAndSave to throw an error.");
+    });
+
+    clearAllStubs?.();
 });
   

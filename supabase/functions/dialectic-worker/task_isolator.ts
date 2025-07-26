@@ -13,11 +13,14 @@ import { getSourceStage } from '../_shared/utils/dialectic_utils.ts';
 import { calculateTotalSteps } from '../_shared/utils/progress_calculator.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import { getSeedPromptForStage } from '../_shared/utils/dialectic_utils.ts';
-import { hasProcessingStrategy, isDialecticContribution, isProjectContext, isStageContext } from '../_shared/utils/type_guards.ts';
+import { hasProcessingStrategy, isDialecticContribution, isProjectContext, isStageContext, isSelectedAiProvider, isAiModelExtendedConfig } from '../_shared/utils/type_guards.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import { ILogger } from '../_shared/types.ts';
 import { NotificationService } from '../_shared/utils/notification.service.ts';
+import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
+import { type AiModelExtendedConfig, type MessageForTokenCounting } from '../_shared/types.ts';
+import { ContextWindowError } from '../_shared/utils/errors.ts';
 
 export interface IIsolatedExecutionDeps extends GenerateContributionsDeps {
     getSourceStage: typeof getSourceStage;
@@ -160,6 +163,85 @@ export async function planComplexStage(
 
     if (modelsError) throw new Error(`Failed to fetch models: ${modelsError.message}`);
     if (!models || models.length === 0) throw new Error('No models found for selected IDs.');
+
+    // Pre-emptive Context Window Check (Tier 2 Orchestration)
+    const model = models[0];
+    
+    // Combine the DB row with the parsed JSONB 'config' field to create the full extended config.
+    const modelConfig = model.config;
+    if (!isAiModelExtendedConfig(modelConfig)) {
+        throw new Error(`Model ${model.id} has invalid or missing configuration.`);
+    }
+
+    const extendedModelConfig: AiModelExtendedConfig = {
+        model_id: model.id,
+        api_identifier: model.api_identifier,
+        input_token_cost_rate: modelConfig.input_token_cost_rate,
+        output_token_cost_rate: modelConfig.output_token_cost_rate,
+        tokenization_strategy: modelConfig.tokenization_strategy,
+        context_window_tokens: modelConfig.context_window_tokens,
+        max_context_window_tokens: modelConfig.max_context_window_tokens,
+    };
+
+    const messagesForTokenCounting: MessageForTokenCounting[] = validSourceDocuments.map(doc => ({
+        role: 'user',
+        content: doc.content,
+    }));
+
+    const estimatedTokens = countTokensForMessages(messagesForTokenCounting, extendedModelConfig);
+    const maxTokens = extendedModelConfig.max_context_window_tokens || extendedModelConfig.context_window_tokens;
+
+    if (maxTokens && estimatedTokens > maxTokens) {
+        logger.warn(`[task_isolator] Estimated token count (${estimatedTokens}) exceeds model limit (${maxTokens}). Initiating Tier 2 'combine' job.`);
+
+        const combineJobPayload: Json = {
+            job_type: 'combine',
+            resource_ids: validSourceDocuments.map(doc => doc.id),
+            parent_job_id: parentJob.id,
+            sessionId: parentJob.payload.sessionId,
+            projectId: parentJob.payload.projectId,
+            target_model_id: model.id,
+        };
+
+        const newCombineJob: DialecticJobRow = {
+            id: crypto.randomUUID(),
+            parent_job_id: parentJob.id,
+            session_id: sessionId,
+            user_id: projectOwnerUserId,
+            stage_slug: 'utility',
+            iteration_number: iterationNumber,
+            payload: combineJobPayload,
+            status: 'pending',
+            max_retries: parentJob.max_retries,
+            attempt_count: 0,
+            created_at: new Date().toISOString(),
+            started_at: null,
+            completed_at: null,
+            results: null,
+            error_details: null,
+            target_contribution_id: null,
+            prerequisite_job_id: null,
+        };
+
+        const { error: insertError } = await dbClient.from('dialectic_generation_jobs').insert(newCombineJob);
+        if (insertError) {
+            throw new Error(`Failed to insert prerequisite 'combine' job: ${insertError.message}`);
+        }
+
+        const { error: updateError } = await dbClient.from('dialectic_generation_jobs').update({
+            status: 'waiting_for_prerequisite',
+            prerequisite_job_id: newCombineJob.id,
+        }).eq('id', parentJob.id);
+
+        if (updateError) {
+            // Attempt to roll back or handle inconsistency? For now, just error out.
+            throw new Error(`Failed to update parent job ${parentJob.id} status to 'waiting_for_prerequisite': ${updateError.message}`);
+        }
+
+        logger.info(`[task_isolator] Successfully created combine job ${newCombineJob.id} and set parent job ${parentJob.id} to 'waiting_for_prerequisite'.`);
+        return []; // Halt planning for this job.
+    }
+
 
     // 5. Generate child jobs
     const childJobs: DialecticJobRow[] = [];

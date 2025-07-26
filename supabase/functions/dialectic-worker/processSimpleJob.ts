@@ -9,6 +9,8 @@ import {
   type Job,
 } from '../dialectic-service/dialectic.interface.ts';
 import { isSelectedAiProvider } from "../_shared/utils/type_guards.ts";
+import { ContextWindowError } from '../_shared/utils/errors.ts';
+import { type Json } from '../types_db.ts';
 
 export async function processSimpleJob(
     dbClient: SupabaseClient<Database>,
@@ -96,6 +98,18 @@ export async function processSimpleJob(
 
     } catch (e) {
         const error = e instanceof Error ? e : new Error(String(e));
+        
+        if (e instanceof ContextWindowError) {
+            deps.logger.error(`[dialectic-worker] [processSimpleJob] ContextWindowError for job ${jobId}: ${error.message}`);
+            await dbClient.from('dialectic_generation_jobs').update({
+                status: 'failed',
+                completed_at: new Date().toISOString(),
+                error_details: { message: `Context window limit exceeded: ${error.message}` },
+            }).eq('id', jobId);
+            // Optionally, send a specific notification for this failure type.
+            return;
+        }
+
         const failedAttempt: FailedAttemptError = {
             modelId: model_id,
             api_identifier: providerDetails?.api_identifier || 'unknown',

@@ -12,6 +12,7 @@ import type {
 import type { IIsolatedExecutionDeps } from "../../dialectic-worker/task_isolator.ts";
 import { ProjectContext, StageContext } from "../prompt-assembler.interface.ts";
 import { FailedAttemptError } from "../../dialectic-service/dialectic.interface.ts";
+import { AiModelExtendedConfig } from "../types.ts";
 
 // Helper type to represent the structure we're checking for.
 type StageWithProcessingStrategy = Tables<'dialectic_stages'> & {
@@ -521,4 +522,26 @@ export function isFailedAttemptError(record: unknown): record is FailedAttemptEr
 
 export function isFailedAttemptErrorArray(records: unknown): records is FailedAttemptError[] {
     return Array.isArray(records) && records.every(isFailedAttemptError);
+}
+
+export function isAiModelExtendedConfig(obj: unknown): obj is AiModelExtendedConfig {
+    if (!isRecord(obj)) return false;
+
+    // Check for a few key properties to be reasonably sure it's the right type.
+    // This isn't exhaustive but prevents the most common errors.
+    const hasTokenization = 'tokenization_strategy' in obj && isRecord(obj.tokenization_strategy);
+    if (!hasTokenization) return false;
+
+    const strategy = obj.tokenization_strategy;
+    if (!isRecord(strategy) || typeof strategy.type !== 'string') return false;
+
+    if (strategy.type === 'tiktoken' && typeof strategy.tiktoken_encoding_name !== 'string') {
+        return false;
+    }
+
+    if (strategy.type === 'rough_char_count' && strategy.chars_per_token_ratio && typeof strategy.chars_per_token_ratio !== 'number') {
+        return false;
+    }
+
+    return true;
 }

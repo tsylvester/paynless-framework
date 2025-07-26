@@ -4,11 +4,12 @@ import type { Database, Json } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { processComplexJob, type IPlanComplexJobDeps } from './processComplexJob.ts';
 import type { DialecticJobRow, DialecticJobPayload } from '../dialectic-service/dialectic.interface.ts';
-import { isDialecticJobPayload } from '../_shared/utils/type_guards.ts';
+import { isDialecticJobPayload, isRecord } from '../_shared/utils/type_guards.ts';
 import { logger } from '../_shared/logger.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
+import { ContextWindowError } from '../_shared/utils/errors.ts';
 
 Deno.test('processComplexJob - plans and enqueues child jobs', async () => {
     // 1. Setup
@@ -43,7 +44,7 @@ Deno.test('processComplexJob - plans and enqueues child jobs', async () => {
         planComplexStage: planComplexStageSpy,
         promptAssembler,
         downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ 
-            data: new TextEncoder().encode('Mock content').buffer as ArrayBuffer, 
+            data: await new Blob(['Mock content']).arrayBuffer(), 
             error: null 
         })),
     };
@@ -121,7 +122,7 @@ Deno.test('processComplexJob - handles planner failure gracefully', async () => 
         planComplexStage: planComplexStageSpy,
         promptAssembler,
         downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ 
-            data: new TextEncoder().encode('Mock content').buffer as ArrayBuffer, 
+            data: await new Blob(['Mock content']).arrayBuffer(), 
             error: null 
         })),
     };
@@ -195,7 +196,7 @@ Deno.test('processComplexJob - completes parent job if planner returns no childr
         planComplexStage: planComplexStageSpy,
         promptAssembler,
         downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ 
-            data: new TextEncoder().encode('Mock content').buffer as ArrayBuffer, 
+            data: await new Blob(['Mock content']).arrayBuffer(), 
             error: null 
         })),
     };
@@ -287,7 +288,7 @@ Deno.test('processComplexJob - fails parent job if child job insert fails', asyn
         planComplexStage: planComplexStageSpy,
         promptAssembler,
         downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ 
-            data: new TextEncoder().encode('Mock content').buffer as ArrayBuffer, 
+            data: await new Blob(['Mock content']).arrayBuffer(), 
             error: null 
         })),
     };
@@ -378,7 +379,7 @@ Deno.test('processComplexJob - fails parent job if status update fails', async (
         planComplexStage: planComplexStageSpy,
         promptAssembler,
         downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ 
-            data: new TextEncoder().encode('Mock content').buffer as ArrayBuffer, 
+            data: await new Blob(['Mock content']).arrayBuffer(), 
             error: null 
         })),
     };
@@ -436,6 +437,77 @@ Deno.test('processComplexJob - fails parent job if status update fails', async (
         } else {
             throw new Error('Second update call was not for failure.');
         }
+
+    } finally {
+        // 4. Teardown
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+Deno.test('processComplexJob - handles ContextWindowError gracefully', async () => {
+    // 1. Setup
+    const mockParentJobId = 'job-id-context-window-fail';
+
+    const planComplexStageSpy = spy(async (): Promise<DialecticJobRow[]> => {
+        return await Promise.reject(new ContextWindowError('Planning failed due to context window size.'));
+    });
+
+    const mockSupabase = createMockSupabaseClient();
+    const promptAssembler = new PromptAssembler(mockSupabase.client as unknown as SupabaseClient<Database>);
+
+    const mockDeps: IPlanComplexJobDeps = {
+        logger,
+        planComplexStage: planComplexStageSpy,
+        promptAssembler,
+        downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ 
+            data: await new Blob(['Mock content']).arrayBuffer(), 
+            error: null 
+        })),
+    };
+
+    const mockPayload: Json = {
+        sessionId: 'session-id-fail',
+        projectId: 'project-id-fail',
+        stageSlug: 'antithesis',
+        model_id: 'model-id-fail',
+    };
+    if (!isDialecticJobPayload(mockPayload)) {
+        throw new Error("Test setup failed: mockPayload is not a valid DialecticJobPayload");
+    }
+
+    const mockParentJob: DialecticJobRow = {
+        id: mockParentJobId,
+        user_id: 'user-id-fail',
+        session_id: 'session-id-fail',
+        stage_slug: 'antithesis',
+        payload: mockPayload,
+        iteration_number: 1,
+        status: 'processing',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: new Date().toISOString(),
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+    };
+
+    try {
+        // 2. Execute
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockParentJob, payload: mockPayload }, 'user-id-fail', mockDeps);
+
+        // 3. Assert
+        const updateSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
+        assertExists(updateSpy);
+        assertEquals(updateSpy.callCount, 1, 'Should have updated the parent job status to failed');
+        
+        const updateArgs = updateSpy.callsArgs[0][0];
+        assert(isRecord(updateArgs) && 'status' in updateArgs && 'error_details' in updateArgs, 'Update call did not have the expected shape for a failure.');
+        assertEquals(updateArgs.status, 'failed');
+        assert(isRecord(updateArgs.error_details) && typeof updateArgs.error_details.message === 'string' && updateArgs.error_details.message.includes('Context window limit exceeded'));
 
     } finally {
         // 4. Teardown

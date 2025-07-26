@@ -20,8 +20,10 @@ import {
     isUserRole,
     validatePayload,
     isJson,
+    isAiModelExtendedConfig,
 } from './type_guards.ts';
 import type { DialecticContributionRow, DialecticJobRow, FailedAttemptError } from '../../dialectic-service/dialectic.interface.ts';
+import type { AiModelExtendedConfig } from '../types.ts';
 import type { IIsolatedExecutionDeps } from "../../dialectic-worker/task_isolator.ts";
 import { ProjectContext, StageContext } from '../prompt-assembler.interface.ts';
 
@@ -1167,5 +1169,77 @@ Deno.test('Type Guard: isFailedAttemptErrorArray', async (t) => {
         assert(!isFailedAttemptErrorArray({ error: 'Error 1', modelId: 'model-1', api_identifier: 'api-1' }));
         assert(!isFailedAttemptErrorArray('a string'));
         assert(!isFailedAttemptErrorArray(null));
+    });
+});
+
+Deno.test('Type Guard: isAiModelExtendedConfig', async (t) => {
+    await t.step('should return true for a valid config with tiktoken strategy', () => {
+        const config: AiModelExtendedConfig = {
+            api_identifier: 'gpt-4',
+            input_token_cost_rate: 0.01,
+            output_token_cost_rate: 0.03,
+            tokenization_strategy: {
+                type: 'tiktoken',
+                tiktoken_encoding_name: 'cl100k_base',
+            },
+        };
+        assert(isAiModelExtendedConfig(config));
+    });
+
+    await t.step('should return true for a valid config with rough_char_count strategy', () => {
+        const config: AiModelExtendedConfig = {
+            api_identifier: 'claude-3',
+            input_token_cost_rate: 0.005,
+            output_token_cost_rate: 0.015,
+            tokenization_strategy: {
+                type: 'rough_char_count',
+                chars_per_token_ratio: 3.5,
+            },
+        };
+        assert(isAiModelExtendedConfig(config));
+    });
+
+    await t.step('should return false if tokenization_strategy is missing', () => {
+        const config = {
+            api_identifier: 'gpt-4',
+            input_token_cost_rate: 0.01,
+        };
+        assert(!isAiModelExtendedConfig(config));
+    });
+
+    await t.step('should return false if tokenization_strategy is not an object', () => {
+        const config = {
+            api_identifier: 'gpt-4',
+            tokenization_strategy: 'tiktoken',
+        };
+        assert(!isAiModelExtendedConfig(config));
+    });
+
+    await t.step('should return false if tiktoken_encoding_name is missing for tiktoken strategy', () => {
+        const config = {
+            api_identifier: 'gpt-4',
+            tokenization_strategy: {
+                type: 'tiktoken',
+            },
+        };
+        assert(!isAiModelExtendedConfig(config));
+    });
+
+    await t.step('should return false if chars_per_token_ratio is not a number', () => {
+        const config = {
+            api_identifier: 'claude-3',
+            tokenization_strategy: {
+                type: 'rough_char_count',
+                chars_per_token_ratio: 'four',
+            },
+        };
+        assert(!isAiModelExtendedConfig(config));
+    });
+
+    await t.step('should return false for null or non-object input', () => {
+        assert(!isAiModelExtendedConfig(null));
+        assert(!isAiModelExtendedConfig('a string'));
+        assert(!isAiModelExtendedConfig(123));
+        assert(!isAiModelExtendedConfig([]));
     });
 });
