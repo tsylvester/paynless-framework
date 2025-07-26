@@ -110,3 +110,47 @@ SET
     prompt_text = EXCLUDED.prompt_text,
     is_active = EXCLUDED.is_active,
     version = EXCLUDED.version;
+
+-- Step 27.b: Populate the recipe for the 'synthesis' stage by merging into existing rules
+UPDATE public.dialectic_stages
+SET
+    input_artifact_rules = COALESCE(input_artifact_rules, '{}'::jsonb) || '{
+        "steps": [
+            {
+                "step_number": 1,
+                "step_name": "Step 1: Generate Pairwise Syntheses (Map)",
+                "description": "For each Thesis, synthesize it with each of its corresponding Antitheses to create focused chunks.",
+                "granularity_strategy": "pairwise_by_origin",
+                "inputs_required": [
+                    { "type": "contribution", "stage_slug": "thesis" },
+                    { "type": "contribution", "stage_slug": "antithesis" }
+                ],
+                "output_type": "pairwise_synthesis_chunk",
+                "job_type_to_create": "execute"
+            },
+            {
+                "step_number": 2,
+                "step_name": "Step 2: Consolidate Per-Thesis Syntheses (Reduce)",
+                "description": "Combine all pairwise synthesis chunks for a given original thesis into a single synthesized document.",
+                "granularity_strategy": "per_source_group",
+                "inputs_required": [
+                    { "type": "pairwise_synthesis_chunk" }
+                ],
+                "output_type": "reduced_synthesis",
+                "job_type_to_create": "execute"
+            },
+            {
+                "step_number": 3,
+                "step_name": "Step 3: Generate Final Synthesis (Final Combination)",
+                "description": "Combine all of the reduced syntheses into a final, single synthesis document for each agent.",
+                "granularity_strategy": "all_to_one",
+                "inputs_required": [
+                    { "type": "reduced_synthesis" }
+                ],
+                "output_type": "synthesis",
+                "job_type_to_create": "execute"
+            }
+        ]
+    }'::jsonb
+WHERE
+    slug = 'synthesis';

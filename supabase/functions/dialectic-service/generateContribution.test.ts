@@ -16,6 +16,18 @@ type JobInsert = {
     [key: string]: unknown;
 };
 
+// A more specific type guard for the job insert payload with the new recipe-aware fields.
+type PlanJobInsert = JobInsert & {
+    payload: {
+        job_type: 'plan';
+        step_info: {
+            current_step: number;
+            total_steps: number;
+            status: string;
+        }
+    }
+}
+
 // Type guard for our specific insert payload, written without any type casting.
 function isJobInsert(item: unknown): item is JobInsert {
     if (typeof item !== 'object' || item === null) {
@@ -33,6 +45,25 @@ function isJobInsert(item: unknown): item is JobInsert {
 
     const modelIdValue = modelIdDescriptor.value;
     if (typeof modelIdValue !== 'string') return false;
+
+    return true;
+}
+
+function isPlanJobInsert(item: unknown): item is PlanJobInsert {
+    if (!isJobInsert(item)) return false;
+
+    const payload = item.payload;
+
+    if (typeof payload !== 'object' || payload === null) return false;
+
+    if (!('job_type' in payload) || payload.job_type !== 'plan') return false;
+
+    if (!('step_info' in payload) || typeof payload.step_info !== 'object' || payload.step_info === null) return false;
+
+    const stepInfo = payload.step_info;
+    if (!('current_step' in stepInfo) || typeof stepInfo.current_step !== 'number') return false;
+    if (!('total_steps' in stepInfo) || typeof stepInfo.total_steps !== 'number') return false;
+    if (!('status' in stepInfo) || typeof stepInfo.status !== 'string') return false;
 
     return true;
 }
@@ -66,6 +97,21 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
                         selected_model_ids: mockModelIds,
                         iteration_count: 1,
                         current_stage: { slug: 'thesis' }
+                    }],
+                    error: null
+                }
+            },
+            'dialectic_stages': {
+                select: {
+                    data: [{
+                        id: 'stage-1',
+                        slug: 'thesis',
+                        input_artifact_rules: { steps: [{}]}, // Simple 1-step recipe
+                        created_at: new Date().toISOString(),
+                        default_system_prompt_id: 'prompt-1',
+                        description: 'Test stage',
+                        display_name: 'Thesis',
+                        expected_output_artifacts: {},
                     }],
                     error: null
                 }
@@ -110,20 +156,20 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues multiple jo
 
         // Assert the shape of the data passed to the first insert call
         const firstInsertCallArgs = insertSpy.callsArgs[0][0];
-        if (isJobInsert(firstInsertCallArgs)) {
+        if (isPlanJobInsert(firstInsertCallArgs)) {
             const firstInsertPayload = firstInsertCallArgs.payload;
             assertEquals(firstInsertPayload.model_id, mockModelIds[0]);
-            assertEquals(firstInsertPayload.selectedModelIds, undefined);
+            assertEquals(firstInsertPayload.job_type, 'plan');
+            assertEquals(firstInsertPayload.step_info.total_steps, 1);
         } else {
             throw new Error(`First insert call did not have the expected payload shape. Got: ${JSON.stringify(firstInsertCallArgs)}`);
         }
 
         // Assert the shape of the data passed to the second insert call
         const secondInsertCallArgs = insertSpy.callsArgs[1][0];
-        if (isJobInsert(secondInsertCallArgs)) {
+        if (isPlanJobInsert(secondInsertCallArgs)) {
             const secondInsertPayload = secondInsertCallArgs.payload;
             assertEquals(secondInsertPayload.model_id, mockModelIds[1]);
-            assertEquals(secondInsertPayload.selectedModelIds, undefined);
         } else {
             throw new Error(`Second insert call did not have the expected payload shape. Got: ${JSON.stringify(secondInsertCallArgs)}`);
         }
@@ -165,6 +211,21 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
                     error: null
                 }
             },
+            'dialectic_stages': {
+                select: {
+                    data: [{
+                        id: 'stage-1',
+                        slug: 'thesis',
+                        input_artifact_rules: { steps: [{}, {}, {}] }, // 3-step recipe
+                        created_at: new Date().toISOString(),
+                        default_system_prompt_id: 'prompt-1',
+                        description: 'Test stage',
+                        display_name: 'Thesis',
+                        expected_output_artifacts: {},
+                    }],
+                    error: null
+                }
+            },
             'dialectic_generation_jobs': {
                 insert: { data: [{ id: mockJobId }] }
             },
@@ -202,14 +263,17 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
         // Assert the shape of the data passed to insert
         const insertArgs = insertSpy.callsArgs[0][0];
 
-        if (isJobInsert(insertArgs)) {
+        if (isPlanJobInsert(insertArgs)) {
             assertObjectMatch(insertArgs, {
                 session_id: mockSessionId,
                 user_id: mockUserId,
                 stage_slug: 'thesis',
                 status: 'pending'
             });
-            assertEquals(insertArgs.payload.model_id, mockModelId)
+            assertEquals(insertArgs.payload.model_id, mockModelId);
+            assertEquals(insertArgs.payload.job_type, 'plan');
+            assertEquals(insertArgs.payload.step_info.current_step, 1);
+            assertEquals(insertArgs.payload.step_info.total_steps, 3);
         } else {
             throw new Error(`insert was not called with an object of the expected shape. Got: ${JSON.stringify(insertArgs)}`);
         }
@@ -220,6 +284,57 @@ Deno.test("generateContributions - Happy Path: Successfully enqueues a single jo
     }
 });
 
+
+Deno.test("generateContributions - Failure Path: Fails if stage recipe lookup fails", async () => {
+    const mockPayload: GenerateContributionsPayload = {
+        sessionId: 'session-123',
+        projectId: 'project-123',
+        stageSlug: 'thesis',
+        iterationNumber: 1, // Add the required iteration number
+    };
+    const dbError = { name: 'DBError', message: "Stage not found", details: "Query returned no rows", code: "PGRST116" };
+
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_sessions': {
+                select: {
+                    data: [{
+                        project_id: 'project-123',
+                        selected_model_ids: ['model-A'],
+                        iteration_count: 1,
+                        current_stage: { slug: 'thesis' }
+                    }],
+                    error: null
+                }
+            },
+            'dialectic_stages': {
+                select: { data: null, error: dbError }
+            }
+        }
+    });
+
+    const result = await generateContributions(
+        mockSupabase.client as unknown as SupabaseClient<Database>,
+        mockPayload,
+        { id: 'user-123', app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() },
+        {
+            callUnifiedAIModel: () => Promise.resolve({ content: 'test-content', error: null }),
+            downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(100), error: null }),
+            getExtensionFromMimeType: () => '.txt',
+            logger,
+            randomUUID: () => 'mock-uuid',
+            fileManager: {
+                uploadAndRegisterFile: () => Promise.resolve({ record: { id: 'test-file-id', created_at: new Date().toISOString(), file_name: 'test-file-name', mime_type: 'text/plain', project_id: 'test-project-id', resource_description: {}, size_bytes: 100, storage_bucket: 'test-bucket', storage_path: 'test-path', updated_at: new Date().toISOString(), user_id: 'user-123' }, error: null }),
+            },
+            deleteFromStorage: () => Promise.resolve({ error: null }),
+        }
+    );
+
+    assertEquals(result.success, false);
+    assertExists(result.error);
+    assertEquals(result.error.message, "Could not find recipe for stage thesis.");
+    assertEquals(result.error.status, 500);
+});
 
 Deno.test("generateContributions - Failure Path: Fails to enqueue a job", async () => {
     const localLoggerError = spy(logger, 'error');
@@ -247,6 +362,21 @@ Deno.test("generateContributions - Failure Path: Fails to enqueue a job", async 
                         selected_model_ids: ['model-id-fail'], // Must provide models to get to the insert step
                         iteration_count: 1,
                         current_stage: { slug: 'thesis' }
+                    }],
+                    error: null
+                }
+            },
+            'dialectic_stages': {
+                select: {
+                    data: [{
+                        id: 'stage-1',
+                        slug: 'thesis',
+                        input_artifact_rules: { steps: [{}]}, // Simple 1-step recipe
+                        created_at: new Date().toISOString(),
+                        default_system_prompt_id: 'prompt-1',
+                        description: 'Test stage',
+                        display_name: 'Thesis',
+                        expected_output_artifacts: {},
                     }],
                     error: null
                 }

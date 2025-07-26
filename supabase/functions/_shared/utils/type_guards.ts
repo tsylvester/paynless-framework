@@ -545,3 +545,20 @@ export function isAiModelExtendedConfig(obj: unknown): obj is AiModelExtendedCon
 
     return true;
 }
+
+// Helper type to represent the structure we're checking for.
+type StageWithStepsRecipe = Tables<'dialectic_stages'> & {
+    input_artifact_rules: {
+        steps: unknown[];
+    };
+};
+
+export function hasStepsRecipe(stage: Tables<'dialectic_stages'>): stage is StageWithStepsRecipe {
+    if (stage.input_artifact_rules &&
+        isRecord(stage.input_artifact_rules) &&
+        'steps' in stage.input_artifact_rules &&
+        Array.isArray(stage.input_artifact_rules.steps)) {
+        return true;
+    }
+    return false;
+}

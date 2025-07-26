@@ -148,11 +148,11 @@ This phase refactors the worker to use pre-defined, reusable prompt templates fo
     *   `[DB]` **Action:** Seed the `system_prompts` table with specific, reusable prompt templates for each step of a complex stage.
         *   **Example 1 (`synthesis_step1_pairwise`):** *"As an expert synthesizer, your task is to analyze the following user prompt, an original thesis written to address it, and a single antithesis that critiques the thesis. Combine the thesis and antithesis into a more complete and accurate response that is more fit-for-purpose against the original user prompt. Preserve all critical details."*
         *   **Example 2 (`synthesis_step2_combine`):** *"As an expert editor, your task is to analyze the following user prompt and a set of preliminary syntheses. Combine these documents into a single, unified synthesis that is maximally fit-for-purpose against the original user prompt. You must eliminate redundancy and conflicting information while ensuring every unique and critical detail is preserved."*
-*   `[ ]` 27.b. **Enhance Stage Recipe Schema:**
-    *   `[DB]` **Action:** In a new migration, update the schema definition for the `input_artifact_rules` JSONB object. Each object within the `steps` array must now include a `prompt_template_name` field (e.g., `"prompt_template_name": "synthesis_step1_pairwise"`).
-*   `[ ]` 27.c. **Populate `synthesis` Recipe in DB:**
-    *   `[DB]` **Action:** In the seed file, update the `synthesis` stage's `input_artifact_rules` to include the correct `prompt_template_name` for each of its three steps.
-*   `[ ]` 27.d. **[BE] [REFACTOR] Update Job Enqueuer for Recipe Awareness:**
+*   `[✅]` 27.b. **Populate `synthesis` Stage with Recipe Data:**
+    *   `[DB]` **Action:** Create a new, single-purpose migration file to populate the `synthesis` stage with its formal, multi-step recipe. This enables the worker to follow a pre-defined plan instead of using hardcoded logic.
+    *   `[DB]` **Action:** In the new migration file, write an `UPDATE` statement for the `dialectic_stages` table, targeting the row where `slug = 'synthesis'`.
+    *   `[DB]` **Implementation Detail:** The `UPDATE` statement will set the `input_artifact_rules` JSONB value to a new structure containing a `steps` array. Each object within this array will define a step, including a `prompt_template_name` that references the prompts seeded in step `27.a`. This action effectively applies the new recipe schema to the `synthesis` stage.
+*   `[✅]` 27.c. **[BE] [REFACTOR] Update Job Enqueuer for Recipe Awareness:**
     *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
     *   `[BE]` `[REFACTOR]` **Action:** The logic must be updated to first fetch the stage recipe before creating the parent job. This is critical for populating the `step_info` object correctly.
     *   **Implementation Detail:**

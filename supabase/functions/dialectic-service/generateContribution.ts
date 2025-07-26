@@ -7,6 +7,7 @@ import type { Database, Json } from "../types_db.ts";
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { logger } from "../_shared/logger.ts";
 import { User } from "npm:@supabase/supabase-js@2";
+import { hasStepsRecipe } from "../_shared/utils/type_guards.ts";
   
 export async function generateContributions(
     dbClient: SupabaseClient<Database>,
@@ -76,13 +77,34 @@ export async function generateContributions(
             return { success: false, error: { message: "The session has no selected models. Please select at least one model.", status: 400 } };
         }
         
+        // 1. Fetch the recipe for the stage
+        const { data: stageDef, error: recipeError } = await dbClient
+            .from('dialectic_stages')
+            .select('*')
+            .eq('slug', stageSlug)
+            .single();
+
+        if (recipeError || !stageDef) {
+            logger.error(`[generateContributions] Could not find recipe for stage ${stageSlug}.`, { error: recipeError });
+            return { success: false, error: { message: `Could not find recipe for stage ${stageSlug}.`, status: 500 } };
+        }
+        
+        // 2. Calculate total steps from the recipe
+        const totalSteps = hasStepsRecipe(stageDef) ? stageDef.input_artifact_rules.steps.length : 1;
+        
         const jobIds: string[] = [];
         for (const modelId of selectedModelIds) {
-            // Create a discrete payload for each job
+            // 3. Create a formal 'plan' payload for each job
             const jobPayload: Json = {
                 ...payload,
                 model_id: modelId,
                 user_jwt: authToken,
+                job_type: 'plan',
+                step_info: {
+                    current_step: 1,
+                    total_steps: totalSteps,
+                    status: 'pending',
+                }
             };
 
             const { data: job, error: insertError } = await dbClient

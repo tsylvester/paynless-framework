@@ -21,6 +21,7 @@ import {
     validatePayload,
     isJson,
     isAiModelExtendedConfig,
+    hasStepsRecipe,
 } from './type_guards.ts';
 import type { DialecticContributionRow, DialecticJobRow, FailedAttemptError } from '../../dialectic-service/dialectic.interface.ts';
 import type { AiModelExtendedConfig } from '../types.ts';
@@ -1241,5 +1242,88 @@ Deno.test('Type Guard: isAiModelExtendedConfig', async (t) => {
         assert(!isAiModelExtendedConfig('a string'));
         assert(!isAiModelExtendedConfig(123));
         assert(!isAiModelExtendedConfig([]));
+    });
+});
+
+Deno.test('Type Guard: hasStepsRecipe', async (t) => {
+    await t.step('should return true for a stage with a valid steps array', () => {
+        const stage: Tables<'dialectic_stages'> = {
+            id: '1',
+            created_at: new Date().toISOString(),
+            default_system_prompt_id: 'p1',
+            display_name: 'Synthesis',
+            slug: 'synthesis',
+            description: 'Combine all the things.',
+            input_artifact_rules: {
+                steps: [
+                    { step_number: 1, step_name: 'Step One' },
+                    { step_number: 2, step_name: 'Step Two' },
+                ]
+            },
+            expected_output_artifacts: []
+        };
+        assert(hasStepsRecipe(stage));
+    });
+
+    await t.step('should return true for a stage with an empty steps array', () => {
+        const stage: Tables<'dialectic_stages'> = {
+            id: '2',
+            created_at: new Date().toISOString(),
+            default_system_prompt_id: 'p2',
+            display_name: 'Empty Stage',
+            slug: 'empty-stage',
+            description: 'A stage with no steps.',
+            input_artifact_rules: {
+                steps: []
+            },
+            expected_output_artifacts: []
+        };
+        assert(hasStepsRecipe(stage));
+    });
+
+    await t.step('should return false if steps property is missing', () => {
+        const stage: Tables<'dialectic_stages'> = {
+            id: '3',
+            created_at: new Date().toISOString(),
+            default_system_prompt_id: 'p3',
+            display_name: 'Thesis',
+            slug: 'thesis',
+            description: 'Initial idea.',
+            input_artifact_rules: {
+                sources: [{ type: 'prompt' }]
+            },
+            expected_output_artifacts: []
+        };
+        assert(!hasStepsRecipe(stage));
+    });
+
+    await t.step('should return false if steps property is not an array', () => {
+        const stage: Tables<'dialectic_stages'> = {
+            id: '4',
+            created_at: new Date().toISOString(),
+            default_system_prompt_id: 'p4',
+            display_name: 'Malformed Stage',
+            slug: 'malformed-stage',
+            description: 'Test stage.',
+            input_artifact_rules: {
+                steps: { '0': 'not an array' }
+            },
+            expected_output_artifacts: []
+        };
+        assert(!hasStepsRecipe(stage));
+    });
+
+    await t.step('should return false if input_artifact_rules is null', () => {
+        const stage: Tables<'dialectic_stages'> = {
+            id: '5',
+            created_at: new Date().toISOString(),
+            default_system_prompt_id: 'p5',
+            display_name: 'Simple Stage',
+            slug: 'simple-stage',
+            description: 'A simple stage.',
+            input_artifact_rules: null,
+            expected_output_artifacts: []
+        };
+        assert(!hasStepsRecipe(stage));
     });
 });
