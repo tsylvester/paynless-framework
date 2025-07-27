@@ -189,20 +189,24 @@ This phase refactors the worker to use pre-defined, reusable prompt templates fo
         // ...
         ```
 
-#### 28. [BE] Implement Core Granularity Strategy Functions
+#### 28. [BE] [TEST-UNIT] Implement Core Granularity Strategy Functions
 
-*   `[ ]` 28.a. **Create Granularity Strategy Module:**
-    *   `[BE]` **Action:** Create a new file: `supabase/functions/dialectic-worker/strategies/granularity.strategies.ts`.
-    *   `[BE]` **Action:** In this file, create a strategy registry map to associate the string from the recipe with a function.
+This step implements the core "Strategy" pattern for the complex job planner. It decouples the orchestration logic in `processComplexJob` from the specific logic of how to break down a task by creating a set of modular, testable "planner" functions. Each function aligns with a `granularity_strategy` defined in the stage recipes. The implementation will follow a strict Test-Driven Development (TDD) methodology.
+
+*   `[✅]` 28.a. **Create Granularity Strategy Module & Directory Structure:**
+    *   `[BE]` **Action:** Create a new directory: `supabase/functions/dialectic-worker/strategies/`. This will serve as the home for all planner-related logic.
+    *   `[BE]` **Action:** Inside the new directory, create another directory: `planners/`. This will contain the individual planner function files.
+    *   `[BE]` **Action:** Create the main strategy registry file: `supabase/functions/dialectic-worker/strategies/granularity.strategies.ts`.
+    *   `[BE]` **Action:** In this file, define and export the `granularityStrategyMap` and the `getGranularityPlanner` function as specified in `A Computable Determinant for Task Isolation.md`. This map will associate strategy strings (e.g., `'pairwise_by_origin'`) with the actual planner function implementations.
     *   **Implementation Detail:**
         ```typescript
         // In granularity.strategies.ts
-        import { planPairwiseByOrigin, planPerSourceDocument, planAllToOne } from './planners';
+        import { planPairwiseByOrigin, planPerSourceDocument, planAllToOne, planPerSourceGroup } from './planners';
 
         export const granularityStrategyMap = {
           'per_source_document': planPerSourceDocument,
           'pairwise_by_origin': planPairwiseByOrigin,
-          'per_source_group': planPerSourceGroup, // To be implemented
+          'per_source_group': planPerSourceGroup,
           'all_to_one': planAllToOne,
         };
 
@@ -210,8 +214,15 @@ This phase refactors the worker to use pre-defined, reusable prompt templates fo
             return granularityStrategyMap[strategyId] || planPerSourceDocument; // Default strategy
         }
         ```
-*   `[ ]` 28.b. **Implement Initial Set of Planner Functions:**
-    *   `[BE]` `[TEST-UNIT]` **Action:** Create the planner functions (e.g., `planPairwiseByOrigin`) and their corresponding unit tests. These functions will contain the core logic for looping through source documents and generating the array of child job payloads.
+
+*   `[✅]` 28.b. **Implement `planPairwiseByOrigin` Strategy (Map):**
+    *   `[BE]` `[TEST-UNIT]` **(RED)** In the `strategies/planners/` directory, create a new test file: `planPairwiseByOrigin.test.ts`. Write a failing unit test that defines the function's contract.
+        *   **Test Case:** Provide a mock set of source documents (e.g., 2 `thesis` contributions and 3 related `antithesis` contributions) and a mock parent job context.
+        *   **Assertion:** Assert that the planner function returns the correct number of child job payloads and that each payload is correctly formed (e.g., `job_type: 'execute'`, correct `prompt_template_name`, and correctly paired `thesis_id` and `antithesis_id` in the `inputs`).
+    *   `[BE]` `[TEST-UNIT]` **(RED)** Create helper utility tests. For example, in a new `strategy.helpers.test.ts` file, write failing tests for `groupSourceDocumentsByType` and `findRelatedContributions`.
+    *   `[BE]` `[REFACTOR]` **(GREEN)** Create `strategy.helpers.ts` and implement the helper functions to make the tests pass. These helpers will be responsible for sorting input documents by type and finding related documents based on `source_contribution_id`.
+    *   `[BE]` **(GREEN)** In the `strategies/planners/` directory, create `planPairwiseByOrigin.ts`. Implement the planner function logic as described in the documentation, using the tested helpers. The function will loop through `thesis` documents, find their corresponding `antithesis` documents, and generate a child job payload for each pair.
+    *   `[TEST-UNIT]` **(PROVE)** Prove that all unit tests in `planPairwiseByOrigin.test.ts` now pass.
     *   **Implementation Detail (Skeleton):**
         ```typescript
         // In a file like /strategies/planners/planPairwiseByOrigin.ts
@@ -239,6 +250,26 @@ This phase refactors the worker to use pre-defined, reusable prompt templates fo
             return childJobs;
         }
         ```
+
+*   `[✅]` 28.c. **Implement `planPerSourceDocument` Strategy (Map):**
+    *   `[BE]` `[TEST-UNIT]` **(RED)** Create `planPerSourceDocument.test.ts`. Write a failing test that provides a list of source documents and asserts that the function returns a child job for each one.
+    *   `[BE]` **(GREEN)** Create `planPerSourceDocument.ts`. Implement the simple logic to loop through the inputs and create a job for each.
+    *   `[TEST-UNIT]` **(PROVE)** Prove the test passes.
+
+*   `[✅]` 28.d. **Implement `planPerSourceGroup` Strategy (Reduce):**
+    *   `[BE]` `[TEST-UNIT]` **(RED)** Create `planPerSourceGroup.test.ts`. Write a failing test.
+        *   **Test Case:** Provide a list of intermediate artifacts (e.g., `pairwise_synthesis_chunk`) that share a common `source_contribution_id`.
+        *   **Assertion:** Assert that the function groups these artifacts correctly and generates a single child job for each group, with all grouped `resource_id`s in the `inputs`.
+    *   `[BE]` **(GREEN)** Create `planPerSourceGroup.ts`. Implement the logic to group documents by `source_contribution_id` and generate one job per group.
+    *   `[TEST-UNIT]` **(PROVE)** Prove the test passes.
+
+*   `[✅]` 28.e. **Implement `planAllToOne` Strategy (Reduce):**
+    *   `[BE]` `[TEST-UNIT]` **(RED)** Create `planAllToOne.test.ts`. Write a failing test that provides a list of inputs and asserts that the function returns exactly one child job containing all input `resource_id`s.
+    *   `[BE]` **(GREEN)** Create `planAllToOne.ts`. Implement the straightforward logic.
+    *   `[TEST-UNIT]` **(PROVE)** Prove the test passes.
+
+*   `[✅]` 28.f. **[COMMIT] `feat(worker): implement granularity strategy planners`**
+    *   **Action:** Commit the completed, fully tested granularity strategy module.
 
 #### 29. [BE] [REFACTOR] Enhance Planner for Multi-Step Recipe Execution
 

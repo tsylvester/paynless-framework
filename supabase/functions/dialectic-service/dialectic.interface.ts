@@ -664,3 +664,23 @@ export interface ProcessSimpleJobDeps extends GenerateContributionsDeps {
   notificationService: NotificationServiceType;
   executeModelCallAndSave: (params: ExecuteModelCallAndSaveParams) => Promise<void>;
 }
+export type RecipeStep = {
+    step_name: string;
+    description: string;
+    granularity_strategy: string;
+    inputs_required: { type: string; stage_slug?: string }[];
+    output_type: string;
+    job_type_to_create: 'plan' | 'execute';
+    prompt_template_name: string;
+}
+
+export type SourceDocument = DialecticContributionRow & { content: string };
+export type ChildJobPayload = DialecticJobPayload & { prompt_resource_id: string };
+
+export type GranularityPlannerFn = (
+    sourceDocs: SourceDocument[],
+    parentJob: DialecticJobRow & { payload: DialecticCombinationJobPayload },
+    recipeStep: RecipeStep
+) => (Omit<DialecticJobRow, 'id' | 'created_at' | 'started_at' | 'completed_at' | 'results' | 'error_details' | 'attempt_count' | 'status' | 'prerequisite_job_id' | 'payload'> & { payload: DialecticCombinationJobPayload })[];
+
+export type GranularityStrategyMap = Map<string, GranularityPlannerFn>; 
