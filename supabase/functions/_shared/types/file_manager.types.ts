@@ -44,6 +44,7 @@ export interface UploadContext {
   sizeBytes: number
   userId: string | null; // Allow null for system-generated contributions
   description: string
+  resourceTypeForDb?: string; // To directly populate dialectic_project_resources.resource_type
 
   // Specific for 'model_contribution_main' fileType
   contributionMetadata?: {

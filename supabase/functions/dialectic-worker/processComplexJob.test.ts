@@ -1,15 +1,25 @@
 import { assertEquals, assertExists, assert } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import { spy } from 'jsr:@std/testing@0.225.1/mock';
-import type { Database, Json } from '../types_db.ts';
+import type { Database, Json, Tables } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { processComplexJob, type IPlanComplexJobDeps } from './processComplexJob.ts';
-import type { DialecticJobRow, DialecticJobPayload } from '../dialectic-service/dialectic.interface.ts';
-import { isDialecticJobPayload, isRecord } from '../_shared/utils/type_guards.ts';
+import type { DialecticJobRow, GranularityPlannerFn, DialecticPlanJobPayload } from '../dialectic-service/dialectic.interface.ts';
+import { isRecord, isJson } from '../_shared/utils/type_guards.ts';
 import { logger } from '../_shared/logger.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
+
+const mockStage: Pick<Tables<'dialectic_stages'>, 'input_artifact_rules'> = {
+    input_artifact_rules: {
+        processing_strategy: { type: 'task_isolation' },
+        steps: [
+            { step: 1, prompt_template_name: 'test-prompt', granularity_strategy: 'full_text', output_type: 'test-output', inputs_required: [] },
+            { step: 2, prompt_template_name: 'test-prompt-2', granularity_strategy: 'full_text', output_type: 'test-output-2', inputs_required: [] },
+        ]
+    }
+};
 
 Deno.test('processComplexJob - plans and enqueues child jobs', async () => {
     // 1. Setup
@@ -36,7 +46,9 @@ Deno.test('processComplexJob - plans and enqueues child jobs', async () => {
         return await Promise.resolve([mockChildJob1, mockChildJob2]);
     });
 
-    const mockSupabase = createMockSupabaseClient();
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: { 'dialectic_stages': { select: { data: [mockStage], error: null } } }
+    });
     const promptAssembler = new PromptAssembler(mockSupabase.client as unknown as SupabaseClient<Database>);
 
     const mockDeps: IPlanComplexJobDeps = {
@@ -47,16 +59,21 @@ Deno.test('processComplexJob - plans and enqueues child jobs', async () => {
             data: await new Blob(['Mock content']).arrayBuffer(), 
             error: null 
         })),
+        getGranularityPlanner: spy((_strategyId: string): GranularityPlannerFn | undefined => {
+            return undefined;
+        }),
     };
 
-    const mockPayload: Json = {
+    const mockPayload: DialecticPlanJobPayload = {
+        job_type: 'plan',
+        step_info: { current_step: 1, total_steps: 2 },
         sessionId: 'session-id-complex',
         projectId: 'project-id-complex',
         stageSlug: 'antithesis',
         model_id: 'model-id-complex',
     };
-    if (!isDialecticJobPayload(mockPayload)) {
-        throw new Error("Test setup failed: mockPayload is not a valid DialecticJobPayload");
+    if (!isJson(mockPayload)) {
+        throw new Error("Test setup failed: mockPayload is not a valid Json");
     }
 
     const mockParentJob: DialecticJobRow = {
@@ -114,7 +131,9 @@ Deno.test('processComplexJob - handles planner failure gracefully', async () => 
         return await Promise.reject(new Error('Planner failed!'));
     });
 
-    const mockSupabase = createMockSupabaseClient();
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: { 'dialectic_stages': { select: { data: [mockStage], error: null } } }
+    });
     const promptAssembler = new PromptAssembler(mockSupabase.client as unknown as SupabaseClient<Database>);
 
     const mockDeps: IPlanComplexJobDeps = {
@@ -125,16 +144,19 @@ Deno.test('processComplexJob - handles planner failure gracefully', async () => 
             data: await new Blob(['Mock content']).arrayBuffer(), 
             error: null 
         })),
+        getGranularityPlanner: spy((_strategyId: string) => undefined),
     };
 
-    const mockPayload: Json = {
+    const mockPayload: DialecticPlanJobPayload = {
+        job_type: 'plan',
+        step_info: { current_step: 1, total_steps: 1 },
         sessionId: 'session-id-fail',
         projectId: 'project-id-fail',
         stageSlug: 'antithesis',
         model_id: 'model-id-fail',
     };
-    if (!isDialecticJobPayload(mockPayload)) {
-        throw new Error("Test setup failed: mockPayload is not a valid DialecticJobPayload");
+    if (!isJson(mockPayload)) {
+        throw new Error("Test setup failed: mockPayload is not a valid Json");
     }
 
     const mockParentJob: DialecticJobRow = {
@@ -188,7 +210,9 @@ Deno.test('processComplexJob - completes parent job if planner returns no childr
         return await Promise.resolve([]); // Planner returns an empty array
     });
 
-    const mockSupabase = createMockSupabaseClient();
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: { 'dialectic_stages': { select: { data: [mockStage], error: null } } }
+    });
     const promptAssembler = new PromptAssembler(mockSupabase.client as unknown as SupabaseClient<Database>);
 
     const mockDeps: IPlanComplexJobDeps = {
@@ -199,16 +223,19 @@ Deno.test('processComplexJob - completes parent job if planner returns no childr
             data: await new Blob(['Mock content']).arrayBuffer(), 
             error: null 
         })),
+        getGranularityPlanner: spy((_strategyId: string) => undefined),
     };
 
-    const mockPayload: Json = {
+    const mockPayload: DialecticPlanJobPayload = {
+        job_type: 'plan',
+        step_info: { current_step: 1, total_steps: 1 },
         sessionId: 'session-id-no-children',
         projectId: 'project-id-no-children',
         stageSlug: 'antithesis',
         model_id: 'model-id-no-children',
     };
-    if (!isDialecticJobPayload(mockPayload)) {
-        throw new Error("Test setup failed: mockPayload is not a valid DialecticJobPayload");
+    if (!isJson(mockPayload)) {
+        throw new Error("Test setup failed: mockPayload is not a valid Json");
     }
 
     const mockParentJob: DialecticJobRow = {
@@ -275,6 +302,7 @@ Deno.test('processComplexJob - fails parent job if child job insert fails', asyn
 
     const mockSupabase = createMockSupabaseClient(undefined, {
         genericMockResults: {
+            'dialectic_stages': { select: { data: [mockStage], error: null } },
             'dialectic_generation_jobs': {
                 insert: () => Promise.resolve({ data: null, error: new Error('Insert failed!') })
             }
@@ -291,16 +319,19 @@ Deno.test('processComplexJob - fails parent job if child job insert fails', asyn
             data: await new Blob(['Mock content']).arrayBuffer(), 
             error: null 
         })),
+        getGranularityPlanner: spy((_strategyId: string) => undefined),
     };
 
-    const mockPayload: Json = {
+    const mockPayload: DialecticPlanJobPayload = {
+        job_type: 'plan',
+        step_info: { current_step: 1, total_steps: 1 },
         sessionId: 'session-id-insert-fail',
         projectId: 'project-id-insert-fail',
         stageSlug: 'antithesis',
         model_id: 'model-id-insert-fail',
     };
-    if (!isDialecticJobPayload(mockPayload)) {
-        throw new Error("Test setup failed: mockPayload is not a valid DialecticJobPayload");
+    if (!isJson(mockPayload)) {
+        throw new Error("Test setup failed: mockPayload is not a valid Json");
     }
 
     const mockParentJob: DialecticJobRow = {
@@ -365,6 +396,7 @@ Deno.test('processComplexJob - fails parent job if status update fails', async (
 
     const mockSupabase = createMockSupabaseClient(undefined, {
         genericMockResults: {
+            'dialectic_stages': { select: { data: [mockStage], error: null } },
             'dialectic_generation_jobs': {
                 insert: () => Promise.resolve({ data: [mockChildJob], error: null }),
                 update: () => Promise.resolve({ data: null, error: new Error('Update failed!') })
@@ -382,16 +414,19 @@ Deno.test('processComplexJob - fails parent job if status update fails', async (
             data: await new Blob(['Mock content']).arrayBuffer(), 
             error: null 
         })),
+        getGranularityPlanner: spy((_strategyId: string) => undefined),
     };
 
-    const mockPayload: Json = {
+    const mockPayload: DialecticPlanJobPayload = {
+        job_type: 'plan',
+        step_info: { current_step: 1, total_steps: 1 },
         sessionId: 'session-id-update-fail',
         projectId: 'project-id-update-fail',
         stageSlug: 'antithesis',
         model_id: 'model-id-update-fail',
     };
-    if (!isDialecticJobPayload(mockPayload)) {
-        throw new Error("Test setup failed: mockPayload is not a valid DialecticJobPayload");
+    if (!isJson(mockPayload)) {
+        throw new Error("Test setup failed: mockPayload is not a valid Json");
     }
 
     const mockParentJob: DialecticJobRow = {
@@ -452,7 +487,9 @@ Deno.test('processComplexJob - handles ContextWindowError gracefully', async () 
         return await Promise.reject(new ContextWindowError('Planning failed due to context window size.'));
     });
 
-    const mockSupabase = createMockSupabaseClient();
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: { 'dialectic_stages': { select: { data: [mockStage], error: null } } }
+    });
     const promptAssembler = new PromptAssembler(mockSupabase.client as unknown as SupabaseClient<Database>);
 
     const mockDeps: IPlanComplexJobDeps = {
@@ -463,16 +500,19 @@ Deno.test('processComplexJob - handles ContextWindowError gracefully', async () 
             data: await new Blob(['Mock content']).arrayBuffer(), 
             error: null 
         })),
+        getGranularityPlanner: spy((_strategyId: string) => undefined),
     };
 
-    const mockPayload: Json = {
+    const mockPayload: DialecticPlanJobPayload = {
+        job_type: 'plan',
+        step_info: { current_step: 1, total_steps: 1 },
         sessionId: 'session-id-fail',
         projectId: 'project-id-fail',
         stageSlug: 'antithesis',
         model_id: 'model-id-fail',
     };
-    if (!isDialecticJobPayload(mockPayload)) {
-        throw new Error("Test setup failed: mockPayload is not a valid DialecticJobPayload");
+    if (!isJson(mockPayload)) {
+        throw new Error("Test setup failed: mockPayload is not a valid Json");
     }
 
     const mockParentJob: DialecticJobRow = {

@@ -3,7 +3,7 @@
 ALTER TABLE public.dialectic_generation_jobs
 ADD COLUMN prerequisite_job_id UUID NULL REFERENCES public.dialectic_generation_jobs(id) ON DELETE SET NULL;
 
--- Step 25.d & 29.f: Implement Orchestration for Prerequisite and Failed Child Jobs
+-- Step 25.d & 29.f & 29.g: Implement Orchestration for Prerequisite, Failed Child, and Multi-Step Jobs
 -- We refactor the existing function to be a more generic orchestrator.
 CREATE OR REPLACE FUNCTION public.handle_job_completion()
 RETURNS TRIGGER AS $$
@@ -13,6 +13,9 @@ DECLARE
     total_siblings INTEGER;
     terminal_siblings INTEGER;
     failed_siblings INTEGER;
+    parent_payload JSONB;
+    current_step INTEGER;
+    total_steps INTEGER;
 BEGIN
     -- Only act on jobs entering a terminal state.
     IF NEW.status NOT IN ('completed', 'failed', 'retry_loop_failed') THEN
@@ -72,10 +75,32 @@ BEGIN
                 error_details = jsonb_build_object('reason', 'One or more child jobs failed.')
             WHERE id = parent_id_val AND status = 'waiting_for_children';
         ELSE
-            -- All children completed successfully, wake up the parent for the next step.
-            UPDATE public.dialectic_generation_jobs
-            SET status = 'pending_next_step'
-            WHERE id = parent_id_val AND status = 'waiting_for_children';
+            -- All children completed successfully. Check if it's the final step of a multi-step job.
+            SELECT payload INTO parent_payload
+            FROM public.dialectic_generation_jobs
+            WHERE id = parent_id_val;
+
+            IF parent_payload IS NOT NULL AND jsonb_path_exists(parent_payload, '$.step_info.current_step') AND jsonb_path_exists(parent_payload, '$.step_info.total_steps') THEN
+                current_step := (parent_payload->'step_info'->>'current_step')::INTEGER;
+                total_steps := (parent_payload->'step_info'->>'total_steps')::INTEGER;
+
+                IF current_step >= total_steps THEN
+                    -- This was the final step, so the parent job is now complete.
+                    UPDATE public.dialectic_generation_jobs
+                    SET status = 'completed'
+                    WHERE id = parent_id_val AND status = 'waiting_for_children';
+                ELSE
+                    -- There are more steps, wake up the parent for the next one.
+                    UPDATE public.dialectic_generation_jobs
+                    SET status = 'pending_next_step'
+                    WHERE id = parent_id_val AND status = 'waiting_for_children';
+                END IF;
+            ELSE
+                -- Not a multi-step job, or payload is missing info. Default to waking parent.
+                UPDATE public.dialectic_generation_jobs
+                SET status = 'pending_next_step'
+                WHERE id = parent_id_val AND status = 'waiting_for_children';
+            END IF;
         END IF;
     END IF;
 

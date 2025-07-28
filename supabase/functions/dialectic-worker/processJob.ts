@@ -10,7 +10,8 @@ import { type IPlanComplexJobDeps, processComplexJob } from './processComplexJob
 import { planComplexStage } from './task_isolator.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 import { processCombinationJob } from "./processCombinationJob.ts";
-import { isDialecticCombinationJobPayload } from '../_shared/utils/type_guards.ts';
+import { isDialecticCombinationJobPayload, isDialecticPlanJobPayload } from '../_shared/utils/type_guards.ts';
+import { getGranularityPlanner } from './strategies/granularity.strategies.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -65,15 +66,22 @@ export async function processJob(
   if (processingStrategyType === 'task_isolation') {
     deps.logger.info(`[dialectic-worker] [processJob] Delegating job ${jobId} to task_isolator.`);
     
+    if (!isDialecticPlanJobPayload(job.payload)) {
+        throw new Error(`Job ${jobId} has 'task_isolation' strategy but an invalid payload for a plan job.`);
+    }
+
     const promptAssembler = new PromptAssembler(dbClient, deps.downloadFromStorage);
     const complexDeps: IPlanComplexJobDeps = {
         logger: deps.logger,
         planComplexStage: processors.planComplexStage,
         promptAssembler: promptAssembler,
         downloadFromStorage: deps.downloadFromStorage,
+        getGranularityPlanner: getGranularityPlanner,
     };
     
-    await processors.processComplexJob(dbClient, job, projectOwnerUserId, complexDeps);
+    const complexJob = { ...job, payload: job.payload };
+    await processors.processComplexJob(dbClient, complexJob, projectOwnerUserId, complexDeps);
+
   } else if (processingStrategyType === undefined) {
     // Simple path - no processing strategy defined
     await processors.processSimpleJob(dbClient, job, projectOwnerUserId, deps, authToken);

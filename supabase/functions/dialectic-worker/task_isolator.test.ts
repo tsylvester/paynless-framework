@@ -1,544 +1,473 @@
 // supabase/functions/dialectic-worker/task_isolator.test.ts
-import { assert, assertEquals, assertRejects } from 'https://deno.land/std@0.190.0/testing/asserts.ts';
-import { stub, type Stub } from 'https://deno.land/std@0.190.0/testing/mock.ts';
+import {
+    describe,
+    it,
+    beforeEach,
+} from 'https://deno.land/std@0.190.0/testing/bdd.ts';
+import {
+    assert,
+    assertEquals,
+    assertRejects,
+} from 'jsr:@std/assert@0.225.3';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../types_db.ts';
-import { executeIsolatedTask, IIsolatedExecutionDeps } from './task_isolator.ts';
 import {
-    DialecticJobPayload,
-    DialecticContributionRow,
     DialecticJobRow,
-    DialecticStage,
-    UnifiedAIResponse,
-    type SeedPromptData
+    DialecticPlanJobPayload,
+    DialecticRecipeStep,
+    DialecticContributionRow,
+    DialecticExecuteJobPayload,
+    DialecticCombinationJobPayload,
+    GranularityPlannerFn,
 } from '../dialectic-service/dialectic.interface.ts';
-import { type UploadContext, type FileManagerResponse } from '../_shared/types/file_manager.types.ts';
 import { ILogger } from '../_shared/types.ts';
-import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
-import { logger } from '../_shared/logger.ts';
-import { NotificationService } from "../_shared/utils/notification.service.ts";
+import { IPlanComplexJobDeps } from './processComplexJob.ts';
+import { planComplexStage } from './task_isolator.ts';
+import {
+    isDialecticCombinationJobPayload,
+    isDialecticExecuteJobPayload,
+} from '../_shared/utils/type_guards.ts';
+import { PromptAssembler } from '../_shared/prompt-assembler.ts';
+import { createMockSupabaseClient, MockQueryBuilderState } from '../_shared/supabase.mock.ts';
 
-// --- Mocks and Test Data ---
+type SourceDocument = DialecticContributionRow & { content: string };
 
-const MOCK_JOB: DialecticJobRow = {
-    id: 'job-123',
-    session_id: 'session-123',
-    user_id: 'user-123',
-    stage_slug: 'antithesis',
-    iteration_number: 1,
-    payload: {},
-    status: 'processing',
-    attempt_count: 1,
-    max_retries: 3,
-    created_at: new Date().toISOString(),
-    started_at: new Date().toISOString(),
-    completed_at: null,
-    results: null,
-    error_details: null,
-    parent_job_id: null,
-    target_contribution_id: null,
-    prerequisite_job_id: null,
-};
+describe('planComplexStage', () => {
+    let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
+    let mockLogger: ILogger;
+    let mockDeps: IPlanComplexJobDeps;
+    let mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload };
+    let mockRecipeStep: DialecticRecipeStep;
 
-const MOCK_PAYLOAD: DialecticJobPayload = {
-    sessionId: 'session-123',
-    projectId: 'project-123',
-    stageSlug: 'antithesis',
-    iterationNumber: 1,
-    model_id: 'model-1',
-    prompt: 'PROMPT',
-};
-
-const MOCK_STAGE: DialecticStage = {
-    id: 'stage-antithesis',
-    slug: 'antithesis',
-    display_name: 'Antithesis',
-    input_artifact_rules: {
-        processing_strategy: {
-            type: 'task_isolation',
-            granularity: 'per_thesis_contribution',
-            description: '',
-            progress_reporting: {
-                message_template: 'Critiquing {current_item}/{total_items} using {model_name}'
-            }
+    const mockContributions: DialecticContributionRow[] = [
+        {
+            id: 'doc-1-thesis',
+            session_id: 'sess-1',
+            user_id: 'user-123',
+            stage: 'test-stage',
+            iteration_number: 1,
+            model_id: 'model-1',
+            model_name: 'Test Model',
+            prompt_template_id_used: 'prompt-1',
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: 10,
+            tokens_used_output: 20,
+            processing_time_ms: 100,
+            error: null,
+            citations: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: 'thesis',
+            file_name: 'doc1.txt',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage',
+            size_bytes: 123,
+            mime_type: 'text/plain',
         },
-        sources: [{ type: 'contribution', stage_slug: 'thesis' }]
-    },
-    expected_output_artifacts: [],
-    created_at: new Date().toISOString(),
-    default_system_prompt_id: 'sp-1',
-    description: ''
-};
-
-const MOCK_SOURCE_STAGE: DialecticStage = { id: 'stage-thesis', slug: 'thesis', display_name: 'Thesis', input_artifact_rules: {}, expected_output_artifacts: [], created_at: new Date().toISOString(), default_system_prompt_id: 'sp-1', description: '' };
-
-const MOCK_SOURCE_CONTRIBUTIONS: DialecticContributionRow[] = [
-    {
-        id: 'contrib-1',
-        session_id: 'session-123',
-        user_id: 'user-123',
-        stage: 'thesis',
-        iteration_number: 1,
-        model_id: 'model-1',
-        model_name: 'Model One',
-        prompt_template_id_used: 'pt-1',
-        seed_prompt_url: 'prompts/seed1.txt',
-        edit_version: 1,
-        is_latest_edit: true,
-        original_model_contribution_id: null,
-        raw_response_storage_path: 'raw/resp1.json',
-        target_contribution_id: null,
-        tokens_used_input: 100,
-        tokens_used_output: 200,
-        processing_time_ms: 500,
-        error: null,
-        citations: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        contribution_type: 'thesis',
-        file_name: 'f1.md',
-        storage_bucket: 'b',
-        storage_path: 'p/f1.md',
-        size_bytes: 100,
-        mime_type: 'text/markdown'
-    },
-    {
-        id: 'contrib-2',
-        session_id: 'session-123',
-        user_id: 'user-123',
-        stage: 'thesis',
-        iteration_number: 1,
-        model_id: 'model-1',
-        model_name: 'Model One',
-        prompt_template_id_used: 'pt-1',
-        seed_prompt_url: 'prompts/seed2.txt',
-        edit_version: 1,
-        is_latest_edit: true,
-        original_model_contribution_id: null,
-        raw_response_storage_path: 'raw/resp2.json',
-        target_contribution_id: null,
-        tokens_used_input: 110,
-        tokens_used_output: 220,
-        processing_time_ms: 550,
-        error: null,
-        citations: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        contribution_type: 'thesis',
-        file_name: 'f2.md',
-        storage_bucket: 'b',
-        storage_path: 'p/f2.md',
-        size_bytes: 120,
-        mime_type: 'text/markdown'
-    },
-];
-
-const MOCK_MODELS = [
-    { id: 'model-1', name: 'Model One', api_identifier: 'model-one-api', provider: 'openai', config: {}, user_id: 'user-123', created_at: new Date().toISOString() },
-    { id: 'model-2', name: 'Model Two', api_identifier: 'model-two-api', provider: 'anthropic', config: {}, user_id: 'user-123', created_at: new Date().toISOString() },
-];
-
-Deno.test('executeIsolatedStage - Happy Path', async () => {
-    // A simplified mock that handles the specific queries made by the function
-    const { client: mockDb, spies } = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'dialectic_stages': {
-                select: (state) => {
-                    const slugFilter = state.filters.find(f => f.column === 'slug' && f.type === 'eq');
-                    if (slugFilter?.value === 'antithesis') {
-                        return Promise.resolve({ data: [MOCK_STAGE], error: null, count: 1, status: 200, statusText: 'OK' });
-                    }
-                    return Promise.resolve({ data: [], error: new Error(`Unhandled query on dialectic_stages: ${JSON.stringify(state)}`), count: 0, status: 404, statusText: 'Not Found' });
-                }
-            },
-            'dialectic_contributions': {
-                select: { data: MOCK_SOURCE_CONTRIBUTIONS, error: null }
-            },
-            'ai_providers': {
-                select: { data: MOCK_MODELS, error: null }
-            }
-        }
-    });
-
-
-    const mockDeps: IIsolatedExecutionDeps = {
-        logger: logger,
-        notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
-        downloadFromStorage: () => Promise.resolve({ data: null, error: null }),
-        callUnifiedAIModel: () => Promise.resolve({ content: 'AI RESPONSE', error: null, rawProviderResponse: {}, inputTokens: 1, outputTokens: 1, processingTimeMs: 1, contentType: 'text/markdown' }),
-        fileManager: {
-            uploadAndRegisterFile: (_context: UploadContext): Promise<FileManagerResponse> => Promise.resolve({ record: MOCK_SOURCE_CONTRIBUTIONS[0], error: null })
+        {
+            id: 'doc-2-antithesis',
+            session_id: 'sess-1',
+            user_id: 'user-123',
+            stage: 'test-stage',
+            iteration_number: 1,
+            model_id: 'model-1',
+            model_name: 'Test Model',
+            prompt_template_id_used: 'prompt-1',
+            seed_prompt_url: null,
+            edit_version: 1,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: 10,
+            tokens_used_output: 20,
+            processing_time_ms: 100,
+            error: null,
+            citations: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: 'antithesis',
+            file_name: 'doc2.txt',
+            storage_bucket: 'test-bucket',
+            storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage',
+            size_bytes: 123,
+            mime_type: 'text/plain',
         },
-        getExtensionFromMimeType: () => '.md',
-        randomUUID: () => crypto.randomUUID(),
-        deleteFromStorage: () => Promise.resolve({ error: null, data: { path: '' } }),
-        getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
-        calculateTotalSteps: () => 4, // 2 models * 2 contributions
-        getSeedPromptForStage: (): Promise<SeedPromptData> => Promise.resolve({
-            content: 'SEED PROMPT',
-            fullPath: 'prompts/seed.txt',
-            bucket: 'test-bucket',
-            path: 'prompts/',
-            fileName: 'seed.txt'
-        }),
-    };
+    ];
 
-    const notificationSpy = stub(mockDeps.notificationService, 'sendDialecticProgressUpdateEvent');
-    const downloadStub = stub(
-        mockDeps, 'downloadFromStorage',
-        (_bucket: string, path: string) => {
-            let content: string | null = null;
-            if (path.includes('seed_prompt')) {
-                content = 'SEED PROMPT';
-            } else if (path.includes('f1')) {
-                content = 'DOC 1 CONTENT';
-            } else if (path.includes('f2')) {
-                content = 'DOC 2 CONTENT';
-            }
+    beforeEach(() => {
+        mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: (state: MockQueryBuilderState) => {
+                        const typeFilter = state.filters.find(f => f.column === 'contribution_type');
+                        if (typeFilter) {
+                            const filteredData = mockContributions.filter(c => c.contribution_type === typeFilter.value);
+                            return Promise.resolve({ data: filteredData, error: null, count: filteredData.length, status: 200, statusText: 'OK' });
+                        }
+                        // Default if no type filter is applied, though our code under test always applies one.
+                        return Promise.resolve({ data: mockContributions, error: null, count: mockContributions.length, status: 200, statusText: 'OK' });
+                    },
+                },
+            },
+        });
 
-            if (content) {
-                const encoder = new TextEncoder();
-                const uint8array = encoder.encode(content);
-                const arrayBuffer = new ArrayBuffer(uint8array.length);
-                new Uint8Array(arrayBuffer).set(uint8array);
-                return Promise.resolve({ data: arrayBuffer, error: null });
-            }
-
-            return Promise.resolve({ data: null, error: new Error('File not found') });
-        }
-    );
-    const callAIStub = stub(mockDeps, 'callUnifiedAIModel', () => Promise.resolve({ content: 'AI RESPONSE', error: null, rawProviderResponse: {}, inputTokens: 1, outputTokens: 1, processingTimeMs: 1, contentType: 'text/markdown' }));
-    const uploadStub = stub(mockDeps.fileManager, 'uploadAndRegisterFile', () => Promise.resolve({ record: { ...MOCK_SOURCE_CONTRIBUTIONS[0], id: 'new-contrib' }, error: null }));
-
-    try {
-        await executeIsolatedTask(mockDb as unknown as SupabaseClient<Database>, MOCK_JOB, MOCK_PAYLOAD, 'user-123', mockDeps, 'auth-token');
-
-        assertEquals(callAIStub.calls.length, 4, 'Should call AI model n*m times (2*2=4)');
-        
-        const firstCallArgs = callAIStub.calls[0].args;
-        assert(firstCallArgs[1].includes('SEED PROMPT'), 'Prompt should contain seed prompt content');
-        assert(firstCallArgs[1].includes('DOC 1 CONTENT'), 'First call prompt should contain doc 1 content');
-
-        assertEquals(uploadStub.calls.length, 4, 'Should save 4 new contributions');
-        assertEquals(notificationSpy.calls.length, 5, 'Should send 1 initial and 4 progress notifications');
-
-    } finally {
-        downloadStub.restore();
-        callAIStub.restore();
-        uploadStub.restore();
-    }
-});
-
-Deno.test('executeIsolatedStage - Throws if stage not found', async () => {
-    const { client: mockDb } = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'dialectic_stages': {
-                select: { data: null, error: new Error('Not found') }
-            }
-        }
-    });
-
-    const mockDeps: IIsolatedExecutionDeps = {
-        logger: logger,
-        notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
-        getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
-        calculateTotalSteps: () => 0,
-        getSeedPromptForStage: () => Promise.reject(new Error('Should not be called')),
-        downloadFromStorage: () => Promise.reject(new Error('Should not be called')),
-        callUnifiedAIModel: () => Promise.reject(new Error('Should not be called')),
-        fileManager: { uploadAndRegisterFile: () => Promise.reject(new Error('Should not be called')) },
-        getExtensionFromMimeType: () => '.md',
-        randomUUID: () => '',
-        deleteFromStorage: () => Promise.reject(new Error('Should not be called')),
-    };
-
-    await assertRejects(
-        () => executeIsolatedTask(mockDb as unknown as SupabaseClient<Database>, MOCK_JOB, MOCK_PAYLOAD, 'user-123', mockDeps, 'auth-token'),
-        Error,
-        'Failed to fetch stage details for slug: antithesis'
-    );
-});
-
-Deno.test('executeIsolatedStage - Throws if stage is missing processing strategy', async () => {
-    const stageWithoutStrategy = { ...MOCK_STAGE, input_artifact_rules: {} };
-    const { client: mockDb } = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'dialectic_stages': {
-                select: { data: [stageWithoutStrategy] }
-            }
-        }
-    });
-
-    const errorSpy = stub(logger, 'error');
-    try {
-        const mockDeps: IIsolatedExecutionDeps = {
-            logger: logger,
-            notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
-            getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
-            calculateTotalSteps: () => 0,
-            getSeedPromptForStage: () => Promise.reject(new Error('Should not be called')),
-            downloadFromStorage: () => Promise.reject(new Error('Should not be called')),
-            callUnifiedAIModel: () => Promise.reject(new Error('Should not be called')),
-            fileManager: { uploadAndRegisterFile: () => Promise.reject(new Error('Should not be called')) },
-            getExtensionFromMimeType: () => '.md',
-            randomUUID: () => '',
-            deleteFromStorage: () => Promise.reject(new Error('Should not be called')),
+        mockLogger = {
+            info: () => {},
+            warn: () => {},
+            error: () => {},
+            debug: () => {},
         };
 
-        await assertRejects(
-            () => executeIsolatedTask(mockDb as unknown as SupabaseClient<Database>, MOCK_JOB, MOCK_PAYLOAD, 'user-123', mockDeps, 'auth-token'),
-            Error,
-            'No valid processing_strategy found for stage antithesis'
-        );
-    } finally {
-        errorSpy.restore();
-    }
-});
+        mockParentJob = {
+            id: 'parent-job-123',
+            status: 'pending',
+            payload: {
+                job_type: 'plan',
+                step_info: { current_step: 1, total_steps: 2 },
+                model_id: 'model-1',
+                projectId: 'proj-1',
+                sessionId: 'sess-1',
+                stageSlug: 'test-stage',
+                iterationNumber: 1,
+                walletId: 'wallet-1',
+                continueUntilComplete: false,
+                maxRetries: 3,
+                continuation_count: 0,
+            },
+            created_at: new Date().toISOString(),
+            user_id: 'user-123',
+            attempt_count: 0,
+            max_retries: 3,
+            completed_at: null,
+            error_details: null,
+            iteration_number: 1,
+            parent_job_id: null,
+            prerequisite_job_id: null,
+            results: null,
+            session_id: 'sess-1',
+            started_at: null,
+            stage_slug: 'test-stage',
+            target_contribution_id: null
+        };
 
-Deno.test('executeIsolatedStage - Handles AI call failures gracefully', async () => {
-    const { client: mockDb, spies } = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'dialectic_stages': { select: { data: [MOCK_STAGE] } },
-            'dialectic_contributions': { select: { data: MOCK_SOURCE_CONTRIBUTIONS } },
-            'ai_providers': { select: { data: MOCK_MODELS } }
-        }
+        mockRecipeStep = {
+            step: 1,
+            name: 'Test Step',
+            prompt_template_name: 'test-prompt',
+            inputs_required: [{ type: 'thesis' }],
+            granularity_strategy: 'per_source_document',
+            output_type: 'test_artifact',
+        };
+
+        const mockPromptAssembler = new PromptAssembler(mockSupabase.client as unknown as SupabaseClient<Database>);
+
+        mockDeps = {
+            logger: mockLogger,
+            planComplexStage: () => Promise.resolve([]),
+            promptAssembler: mockPromptAssembler,
+            downloadFromStorage: (bucket, path) => {
+                const doc = mockContributions.find(c => `${c.storage_path}/${c.file_name}` === path);
+                const contentBuffer = doc ? new TextEncoder().encode(`content for ${doc.id}`).buffer : new ArrayBuffer(0);
+                // Ensure it's a concrete ArrayBuffer
+                const data = contentBuffer instanceof ArrayBuffer ? contentBuffer : new ArrayBuffer(0);
+                return Promise.resolve({ data, error: null });
+            },
+            getGranularityPlanner: () => undefined, // Default to undefined
+        };
     });
-
-    const errorSpy = stub(logger, 'error');
     
-    const mockDeps: IIsolatedExecutionDeps = {
-        logger: logger,
-        notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
-        downloadFromStorage: async () => {
-            const blob = new Blob(['content'], { type: 'text/plain' });
-            return { data: await blob.arrayBuffer(), error: null };
-        },
-        callUnifiedAIModel: () => Promise.resolve({ content: null, error: 'AI_ERROR' }), // Simulate failure
-        fileManager: { uploadAndRegisterFile: () => Promise.resolve({ record: MOCK_SOURCE_CONTRIBUTIONS[0], error: null }) },
-        getExtensionFromMimeType: () => '.md',
-        randomUUID: () => crypto.randomUUID(),
-        deleteFromStorage: () => Promise.resolve({ error: null, data: { path: '' } }),
-        getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
-        calculateTotalSteps: () => 4,
-        getSeedPromptForStage: (): Promise<SeedPromptData> => Promise.resolve({ content: 'SEED', fullPath: 'p', bucket: 'b', path: 'p', fileName: 'f' }),
-    };
+    it('should throw an error if no planner is found for the strategy', async () => {
+        // This test relies on the default mock for getGranularityPlanner returning undefined.
+        await assertRejects(
+            () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep),
+            Error,
+            `No planner found for granularity strategy: ${mockRecipeStep.granularity_strategy}`,
+        );
+    });
 
-    const uploadStub = stub(mockDeps.fileManager, 'uploadAndRegisterFile');
-    const notificationSpy = stub(mockDeps.notificationService, 'sendDialecticProgressUpdateEvent');
+    it('should correctly create child jobs for an "execute" planner', async () => {
+        const mockExecutePayload: DialecticExecuteJobPayload = {
+            job_type: 'execute',
+            step_info: { current_step: 1, total_steps: 2 },
+            prompt_template_name: 'test-prompt',
+            output_type: 'test_artifact',
+            inputs: { documentId: 'doc-1-thesis' },
+            model_id: 'model-1',
+            projectId: 'proj-1',
+            sessionId: 'sess-1',
+            stageSlug: 'test-stage',
+            iterationNumber: 1,
+            walletId: 'wallet-1',
+            continueUntilComplete: false,
+            maxRetries: 3,
+            continuation_count: 0,
+        };
+        const plannerFn: GranularityPlannerFn = () => [mockExecutePayload];
+        mockDeps.getGranularityPlanner = () => plannerFn;
 
-    try {
-        await executeIsolatedTask(mockDb as unknown as SupabaseClient<Database>, MOCK_JOB, MOCK_PAYLOAD, 'user-123', mockDeps, 'auth-token');
+        const childJobs = await planComplexStage(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockDeps,
+            mockRecipeStep,
+        );
+
+        assertEquals(childJobs.length, 1);
+        const childJob = childJobs[0];
+        assertEquals(childJob.parent_job_id, mockParentJob.id);
+        assertEquals(childJob.status, 'pending');
         
-        assertEquals(uploadStub.calls.length, 0, 'Should not save any contributions on AI failure');
-        assertEquals(errorSpy.calls.length, 0, "No errors should be logged to the console from the function directly, but passed to the parent");
-        assertEquals(notificationSpy.calls.length, 5, "Should still send all progress notifications even on failure");
-    } finally {
-        errorSpy.restore();
-        uploadStub.restore();
-    }
-});
-
-Deno.test('executeIsolatedStage - Completes with no source contributions', async () => {
-    const { client: mockDb, spies } = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'dialectic_stages': { select: { data: [MOCK_STAGE] } },
-            'dialectic_contributions': { select: { data: [] } }, // No sources
-            'ai_providers': { select: { data: MOCK_MODELS } }
+        assert(childJob.payload);
+        if (isDialecticExecuteJobPayload(childJob.payload)) {
+            assertEquals(childJob.payload.job_type, 'execute');
+            assertEquals(childJob.payload.inputs.documentId, 'doc-1-thesis');
+            assertEquals(childJob.payload.output_type, 'test_artifact');
+        } else {
+            assert(false, 'Payload is not of type DialecticExecuteJobPayload');
         }
     });
 
-    const infoSpy = stub(logger, 'info');
+    it('should correctly create child jobs for a "combine" planner', async () => {
+        const mockCombinePayload: DialecticCombinationJobPayload = {
+            job_type: 'combine',
+            inputs: { document_ids: ['doc-1-thesis'] },
+            model_id: 'model-1',
+            projectId: 'proj-1',
+            sessionId: 'sess-1',
+            stageSlug: 'test-stage',
+            iterationNumber: 1,
+            walletId: 'wallet-1',
+            continueUntilComplete: false,
+            maxRetries: 3,
+            continuation_count: 0,
+        };
 
-    const mockDeps: IIsolatedExecutionDeps = {
-        logger: logger,
-        notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
-        downloadFromStorage: () => Promise.reject(new Error('Should not be called')),
-        callUnifiedAIModel: () => Promise.reject(new Error('Should not be called')),
-        fileManager: { uploadAndRegisterFile: () => Promise.reject(new Error('Should not be called')) },
-        getExtensionFromMimeType: () => '.md',
-        randomUUID: () => '',
-        deleteFromStorage: () => Promise.reject(new Error('Should not be called')),
-        getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
-        calculateTotalSteps: () => 0,
-        getSeedPromptForStage: () => Promise.resolve({ content: 'SEED', fullPath: 'p', bucket: 'b', path: 'p', fileName: 'f' }),
-    };
-
-    const callAIStub = stub(mockDeps, 'callUnifiedAIModel');
-    const notificationSpy = stub(mockDeps.notificationService, 'sendDialecticProgressUpdateEvent');
-
-    try {
-        await executeIsolatedTask(mockDb as unknown as SupabaseClient<Database>, MOCK_JOB, MOCK_PAYLOAD, 'user-123', mockDeps, 'auth-token');
-
-        assertEquals(callAIStub.calls.length, 0, 'Should not make any AI calls');
-        assertEquals(notificationSpy.calls.length, 1, 'Should only send the initial notification');
+        const plannerFn: GranularityPlannerFn = () => [mockCombinePayload];
+        mockDeps.getGranularityPlanner = () => plannerFn;
         
-        const infoLastCall = infoSpy.calls.find(c => c.args[0].toString().includes('Found 0 source contributions to process'));
-        assert(infoLastCall, "Should log that no contributions were found");
+        const childJobs = await planComplexStage(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockDeps,
+            mockRecipeStep,
+        );
 
-    } finally {
-        infoSpy.restore();
-        callAIStub.restore();
-    }
-}); 
+        assertEquals(childJobs.length, 1);
+        const childJob = childJobs[0];
+        assertEquals(childJob.parent_job_id, mockParentJob.id);
 
-Deno.test('executeIsolatedStage - Handles partial AI call success', async () => {
-    const { client: mockDb, spies } = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'dialectic_stages': { select: { data: [MOCK_STAGE] } },
-            'dialectic_contributions': { select: { data: MOCK_SOURCE_CONTRIBUTIONS } },
-            'ai_providers': { select: { data: MOCK_MODELS } }
-        }
+        assert(childJob.payload);
+        assert(isDialecticCombinationJobPayload(childJob.payload));
+        assertEquals(childJob.payload.job_type, 'combine');
+        assertEquals(childJob.payload.inputs?.document_ids, ['doc-1-thesis']);
     });
 
-    const errorSpy = stub(logger, 'error');
-
-    const mockDeps: IIsolatedExecutionDeps = {
-        logger: logger,
-        notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
-        downloadFromStorage: async () => {
-            const blob = new Blob(['content'], { type: 'text/plain' });
-            return { data: await blob.arrayBuffer(), error: null };
-        },
-        // Succeed for the first model, fail for the second
-        callUnifiedAIModel: (modelIdentifier) => {
-            if (modelIdentifier === MOCK_MODELS[0].api_identifier) {
-                return Promise.resolve({ content: 'AI RESPONSE', error: null, rawProviderResponse: {}, inputTokens: 1, outputTokens: 1, processingTimeMs: 1, contentType: 'text/markdown' });
-            }
-            return Promise.resolve({ content: null, error: 'AI_ERROR_2' });
-        },
-        fileManager: { uploadAndRegisterFile: () => Promise.resolve({ record: MOCK_SOURCE_CONTRIBUTIONS[0], error: null }) },
-        getExtensionFromMimeType: () => '.md',
-        randomUUID: () => crypto.randomUUID(),
-        deleteFromStorage: () => Promise.resolve({ error: null, data: { path: '' } }),
-        getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
-        calculateTotalSteps: () => 4,
-        getSeedPromptForStage: (): Promise<SeedPromptData> => Promise.resolve({ content: 'SEED', fullPath: 'p', bucket: 'b', path: 'p', fileName: 'f' }),
-    };
-
-    const uploadStub = stub(mockDeps.fileManager, 'uploadAndRegisterFile', () => Promise.resolve({ record: MOCK_SOURCE_CONTRIBUTIONS[0], error: null }));
-    const notificationSpy = stub(mockDeps.notificationService, 'sendDialecticProgressUpdateEvent');
-
-    try {
-        await executeIsolatedTask(mockDb as unknown as SupabaseClient<Database>, MOCK_JOB, MOCK_PAYLOAD, 'user-123', mockDeps, 'auth-token');
+    it('should throw an error if fetching source contributions fails', async () => {
+        mockRecipeStep.inputs_required = [{ type: 'thesis' }];
         
-        // 2 successful calls for the first model (1 per source doc)
-        assertEquals(uploadStub.calls.length, 2, 'Should save contributions for successful AI calls');
-        assertEquals(errorSpy.calls.length, 0, "No errors should be logged directly");
-        assertEquals(notificationSpy.calls.length, 5, 'Should send all 5 progress notifications');
+        if (mockSupabase.genericMockResults?.dialectic_contributions) {
+            mockSupabase.genericMockResults.dialectic_contributions.select = () => {
+                return Promise.resolve({ data: null, error: new Error('DB Read Error'), count: 0, status: 500, statusText: 'Internal Server Error' });
+            };
+        }
+
+        await assertRejects(
+            () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep),
+            Error,
+            "Failed to fetch source contributions for type 'thesis': DB Read Error",
+        );
+    });
+
+    it('should throw an error if downloading a document fails', async () => {
+        mockDeps.downloadFromStorage = () => Promise.resolve({
+            data: null,
+            error: new Error('Storage Download Error'),
+        });
         
-    } finally {
-        errorSpy.restore();
-        uploadStub.restore();
-    }
-});
+        const plannerFn: GranularityPlannerFn = () => [];
+        mockDeps.getGranularityPlanner = () => plannerFn;
 
-Deno.test('executeIsolatedStage - Throws on source document download failure', async () => {
-    const { client: mockDb } = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'dialectic_stages': { select: { data: [MOCK_STAGE] } },
-            'dialectic_contributions': { select: { data: MOCK_SOURCE_CONTRIBUTIONS } },
-        }
+        await assertRejects(
+            () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep),
+            Error,
+            'Failed to download content for contribution doc-1-thesis from projects/proj-1/sessions/sess-1/iteration_1/test-stage/doc1.txt: Storage Download Error',
+        );
     });
+    
+    it('should skip contributions that are missing a file_name', async () => {
+        const localMockContributions = [
+            ...mockContributions,
+            { ...mockContributions[0], id: 'doc-3', file_name: null }
+        ];
 
-    const mockDeps: IIsolatedExecutionDeps = {
-        logger: logger,
-        notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
-        downloadFromStorage: () => Promise.resolve({ data: null, error: new Error('Download failed') }), // Simulate failure
-        getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
-        calculateTotalSteps: () => 0,
-        getSeedPromptForStage: () => Promise.reject(new Error('Should not be called')),
-        callUnifiedAIModel: () => Promise.reject(new Error('Should not be called')),
-        fileManager: { uploadAndRegisterFile: () => Promise.reject(new Error('Should not be called')) },
-        getExtensionFromMimeType: () => '.md',
-        randomUUID: () => '',
-        deleteFromStorage: () => Promise.reject(new Error('Should not be called')),
-    };
-
-    await assertRejects(
-        () => executeIsolatedTask(mockDb as unknown as SupabaseClient<Database>, MOCK_JOB, MOCK_PAYLOAD, 'user-123', mockDeps, 'auth-token'),
-        Error,
-        'Failed to download content for contribution'
-    );
-});
-
-Deno.test('executeIsolatedStage - Throws if no models are selected', async () => {
-    const { client: mockDb } = createMockSupabaseClient(undefined, {
-         genericMockResults: {
-            'dialectic_stages': { select: { data: [MOCK_STAGE] } },
-            'dialectic_contributions': { select: { data: MOCK_SOURCE_CONTRIBUTIONS } },
-        }
-    });
-
-    const payloadWithNoModels = { ...MOCK_PAYLOAD, selectedModelIds: [] };
-
-    const mockDeps: IIsolatedExecutionDeps = {
-        logger: logger,
-        notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
-        getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
-        downloadFromStorage: () => Promise.resolve({ data: new ArrayBuffer(0), error: null }),
-        getSeedPromptForStage: () => Promise.resolve({ content: 'SEED', fullPath: 'p', bucket: 'b', path: 'p', fileName: 'f' }),
-        calculateTotalSteps: () => 0,
-        callUnifiedAIModel: () => Promise.reject(new Error('Should not be called')),
-        fileManager: { uploadAndRegisterFile: () => Promise.reject(new Error('Should not be called')) },
-        getExtensionFromMimeType: () => '.md',
-        randomUUID: () => '',
-        deleteFromStorage: () => Promise.reject(new Error('Should not be called')),
-    };
-
-    await assertRejects(
-        () => executeIsolatedTask(mockDb as unknown as SupabaseClient<Database>, MOCK_JOB, payloadWithNoModels, 'user-123', mockDeps, 'auth-token'),
-        Error,
-        'No models found for the selected IDs.'
-    );
-});
-
-Deno.test('executeIsolatedStage - Handles file upload failures gracefully', async () => {
-    const { client: mockDb } = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'dialectic_stages': { select: { data: [MOCK_STAGE] } },
-            'dialectic_contributions': { select: { data: MOCK_SOURCE_CONTRIBUTIONS } },
-            'ai_providers': { select: { data: MOCK_MODELS } }
-        }
-    });
-
-    const infoSpy = stub(logger, 'info');
-
-    const mockDeps: IIsolatedExecutionDeps = {
-        logger: logger,
-        notificationService: new NotificationService(mockDb as unknown as SupabaseClient<Database>),
-        downloadFromStorage: async () => ({ data: await (new Blob(['content'])).arrayBuffer(), error: null }),
-        callUnifiedAIModel: () => Promise.resolve({ content: 'AI RESPONSE', error: null, rawProviderResponse: {}, inputTokens: 1, outputTokens: 1, processingTimeMs: 1, contentType: 'text/markdown' }),
-        fileManager: { 
-            // Succeed for the first doc, fail for the second
-            uploadAndRegisterFile: (ctx) => {
-                if (ctx.contributionMetadata?.target_contribution_id === MOCK_SOURCE_CONTRIBUTIONS[0].id) {
-                    return Promise.resolve({ record: MOCK_SOURCE_CONTRIBUTIONS[0], error: null });
+        if (mockSupabase.genericMockResults?.dialectic_contributions) {
+            mockSupabase.genericMockResults.dialectic_contributions.select = (state: MockQueryBuilderState) => {
+                const typeFilter = state.filters.find(f => f.column === 'contribution_type');
+                if (typeFilter?.value === 'thesis') {
+                    const data = localMockContributions.filter(c => c.contribution_type === 'thesis');
+                    return Promise.resolve({ data, error: null, count: data.length, status: 200, statusText: 'OK' });
                 }
-                return Promise.resolve({ record: null, error: new Error('Upload failed') });
-            } 
-        },
-        getExtensionFromMimeType: () => '.md',
-        randomUUID: () => crypto.randomUUID(),
-        deleteFromStorage: () => Promise.resolve({ error: null, data: { path: '' } }),
-        getSourceStage: () => Promise.resolve(MOCK_SOURCE_STAGE),
-        calculateTotalSteps: () => 4,
-        getSeedPromptForStage: (): Promise<SeedPromptData> => Promise.resolve({ content: 'SEED', fullPath: 'p', bucket: 'b', path: 'p', fileName: 'f' }),
-    };
-
-    const notificationSpy = stub(mockDeps.notificationService, 'sendDialecticProgressUpdateEvent');
-
-    try {
-        await executeIsolatedTask(mockDb as unknown as SupabaseClient<Database>, MOCK_JOB, MOCK_PAYLOAD, 'user-123', mockDeps, 'auth-token');
+                return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
+            };
+        }
         
-        const finalLog = infoSpy.calls.find(c => c.args[0].toString().includes('Finished processing all results'));
-        assert(finalLog, "Should log a final summary");
+        const plannerFn: GranularityPlannerFn = (sourceDocs) => {
+            assertEquals(sourceDocs.length, 1);
+            assert(!sourceDocs.some(doc => doc.id === 'doc-3'));
+            return [];
+        };
+        mockDeps.getGranularityPlanner = () => plannerFn;
+        
+        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
+    });
 
-        const summary = finalLog.args[1];
-        assertEquals(summary?.saved, 2, 'Should have saved 2 contributions (1 doc * 2 models)');
-        assertEquals(summary?.errors, 2, 'Should have 2 processing errors (1 doc * 2 models)');
-        assertEquals(notificationSpy.calls.length, 5, 'Should send all 5 progress notifications');
+    it('should not call the planner if no source documents are found', async () => {
+        mockRecipeStep.inputs_required = [{ type: 'non_existent_type' }];
+        
+        let plannerCalled = false;
+        const plannerFn: GranularityPlannerFn = () => {
+            plannerCalled = true;
+            return [];
+        };
+        mockDeps.getGranularityPlanner = () => plannerFn;
 
-    } finally {
-        infoSpy.restore();
-    }
+        const childJobs = await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
+
+        assertEquals(childJobs.length, 0);
+        assertEquals(plannerCalled, false);
+    });
+
+    it('should return an empty array if the planner returns no payloads', async () => {
+        const plannerFn: GranularityPlannerFn = () => [];
+        mockDeps.getGranularityPlanner = () => plannerFn;
+        
+        const childJobs = await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
+
+        assertEquals(childJobs.length, 0);
+    });
+
+    it('should correctly create a mix of execute and combine jobs', async () => {
+        mockRecipeStep.inputs_required = [{ type: 'thesis' }];
+        const mockExecutePayload: DialecticExecuteJobPayload = {
+            job_type: 'execute',
+            step_info: { current_step: 1, total_steps: 2 },
+            prompt_template_name: 'test-prompt',
+            output_type: 'test_artifact',
+            inputs: { documentId: 'doc-1-thesis' },
+            model_id: 'model-1',
+            projectId: 'proj-1',
+            sessionId: 'sess-1',
+            stageSlug: 'test-stage',
+            iterationNumber: 1,
+            walletId: 'wallet-1',
+            continueUntilComplete: false,
+            maxRetries: 3,
+            continuation_count: 0,
+        };
+        const mockCombinePayload: DialecticCombinationJobPayload = {
+            job_type: 'combine',
+            inputs: { document_ids: ['doc-1-thesis'] },
+            model_id: 'model-1',
+            projectId: 'proj-1',
+            sessionId: 'sess-1',
+            stageSlug: 'test-stage',
+            iterationNumber: 1,
+            walletId: 'wallet-1',
+            continueUntilComplete: false,
+            maxRetries: 3,
+            continuation_count: 0,
+        };
+
+        const plannerFn: GranularityPlannerFn = () => [mockExecutePayload, mockCombinePayload];
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        const childJobs = await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
+
+        assertEquals(childJobs.length, 2);
+        
+        const executeJob = childJobs.find(job => isDialecticExecuteJobPayload(job.payload));
+        const combineJob = childJobs.find(job => isDialecticCombinationJobPayload(job.payload));
+
+        assert(executeJob, 'Execute job should be created');
+        assert(combineJob, 'Combine job should be created');
+    });
+
+    it('should skip contributions that are missing storage_bucket or storage_path', async () => {
+        const localMockContributions = [
+            ...mockContributions,
+            { ...mockContributions[0], id: 'doc-3', storage_bucket: null },
+            { ...mockContributions[0], id: 'doc-4', storage_path: null },
+        ];
+
+        if (mockSupabase.genericMockResults?.dialectic_contributions) {
+            mockSupabase.genericMockResults.dialectic_contributions.select = (state: MockQueryBuilderState) => {
+                const typeFilter = state.filters.find(f => f.column === 'contribution_type');
+                 if (typeFilter?.value === 'thesis') {
+                    const data = localMockContributions.filter(c => c.contribution_type === 'thesis');
+                    return Promise.resolve({ data, error: null, count: data.length, status: 200, statusText: 'OK' });
+                }
+                return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
+            };
+        }
+        
+        const plannerFn: GranularityPlannerFn = (sourceDocs) => {
+            assertEquals(sourceDocs.length, 1);
+            assert(!sourceDocs.some(doc => doc.id === 'doc-3' || doc.id === 'doc-4'));
+            return [];
+        };
+        mockDeps.getGranularityPlanner = () => plannerFn;
+        
+        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
+    });
+
+    it('should handle downloaded files that are empty', async () => {
+        mockDeps.downloadFromStorage = () => Promise.resolve({ data: new ArrayBuffer(0), error: null });
+
+        let receivedDocs: SourceDocument[] = [];
+        const plannerFn: GranularityPlannerFn = (sourceDocs) => {
+            receivedDocs = sourceDocs;
+            return [];
+        };
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
+
+        assertEquals(receivedDocs.length, 1);
+        assertEquals(receivedDocs[0].content, '');
+    });
+
+    it('should gracefully skip malformed payloads from the planner', async () => {
+        const mockExecutePayload: DialecticExecuteJobPayload = {
+            job_type: 'execute',
+            step_info: { current_step: 1, total_steps: 2 },
+            prompt_template_name: 'test-prompt',
+            output_type: 'test_artifact',
+            inputs: { documentId: 'doc-1-thesis' },
+            model_id: 'model-1',
+            projectId: 'proj-1',
+            sessionId: 'sess-1',
+            stageSlug: 'test-stage',
+            iterationNumber: 1,
+            walletId: 'wallet-1',
+            continueUntilComplete: false,
+            maxRetries: 3,
+            continuation_count: 0,
+        };
+        const malformedPayload = { an_invalid: 'payload' };
+
+        // We are explicitly violating the type here for testing purposes
+        const plannerFn: GranularityPlannerFn = () => [mockExecutePayload, malformedPayload as any];
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        const childJobs = await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
+
+        assertEquals(childJobs.length, 1);
+        assert(isDialecticExecuteJobPayload(childJobs[0].payload));
+    });
 }); 

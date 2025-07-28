@@ -143,6 +143,7 @@ export interface IMockClientSpies {
     client: IMockSupabaseClient;
     spies: IMockClientSpies;
     clearAllStubs?: () => void;
+    genericMockResults: MockSupabaseDataConfig['genericMockResults'];
   }
   
 
@@ -983,6 +984,7 @@ export function createMockSupabaseClient(
         client: mockClientInstance as unknown as IMockSupabaseClient,
         spies: clientSpies,
         clearAllStubs,
+        genericMockResults: config.genericMockResults,
     };
 }
 

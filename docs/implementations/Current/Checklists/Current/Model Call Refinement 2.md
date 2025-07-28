@@ -273,41 +273,248 @@ This step implements the core "Strategy" pattern for the complex job planner. It
 
 #### 29. [BE] [REFACTOR] Enhance Planner for Multi-Step Recipe Execution
 
-*   `[ ]` 29.a. **Refactor `processComplexJob`:**
-    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-worker/processComplexJob.ts`.
-    *   `[BE]` `[REFACTOR]` **Action:** When a job is processed, it must now read `job.payload.step_info.current_step`. This value will determine which step from the stage's `input_artifact_rules` recipe to execute.
-*   `[ ]` 29.b. **Refactor `task_isolator.ts` (`planComplexStage`):**
-    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-worker/task_isolator.ts`.
-    *   `[BE]` `[REFACTOR]` **Action:** The planner must be enhanced to read the recipe for the `current_step`. It will use the `inputs_required` to query for source documents and the `granularity_strategy` to select the correct planner function.
-*   `[ ]` 29.c. **Ensure Original Prompt is Always Included:**
-    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/_shared/prompt-assembler.ts` (or equivalent data-gathering utility).
-    *   `[BE]` **Action:** The utility responsible for gathering context for a prompt (`gatherContext`) must be updated. For any job whose `stageSlug` is `'antithesis'` or `'synthesis'`, it is **mandatory** to fetch the project's original user prompt text.
-    *   `[BE]` **Action:** This original prompt text must be passed to the `prompt-renderer` as a distinct, top-level variable (e.g., `original_user_request`), ensuring it's available to be injected into any step's prompt template.
-*   `[ ]` 29.d. **Tag Intermediate Artifacts:**
-    *   `[BE]` **File:** `supabase/functions/dialectic-worker/processSimpleJob.ts` (or where artifacts are saved).
-    *   `[BE]` **Action:** When saving the output of a recipe step, the worker must use the `output_type` value from the recipe (e.g., `'pairwise_synthesis_chunk'`) to tag the artifact in the `dialectic_project_resources` table.
+This step refactors the complex job worker to be driven by a formal, multi-step recipe defined in the database. The implementation maintains strict type safety from end to end by defining clear interfaces and using TypeScript's type guard system, completely avoiding type casting.
+
+##### Phase 29.1: Establish the Type-Safe Foundation
+
+Before modifying logic, we must define the new data structures that will drive the multi-step process.
+
+*   `[✅]` 29.a. **Define Recipe and Step Interfaces:**
+    *   `[BE]` **File:** `supabase/functions/dialectic-service/dialectic.interface.ts`.
+    *   `[BE]` **Action:** Add new interfaces to represent the recipe structure stored in the `dialectic_stages.input_artifact_rules` JSONB column.
     *   **Implementation Detail:**
         ```typescript
-        // Inside the worker, when saving a file:
-        await fileManager.uploadAndRegisterFile({
-            // ... other context
-            resourceTypeForDb: parentJob.payload.recipe_step.output_type, // The recipe step should be in the payload
-            description: `Intermediate artifact for ${parentJob.id}, step ${parentJob.payload.step_info.current_step}`,
-        });
+        // In supabase/functions/dialectic-service/dialectic.interface.ts
+
+        /**
+         * Describes a single step within a multi-step job recipe.
+         */
+        export interface DialecticRecipeStep {
+            step: number;
+            name: string;
+            prompt_template_name: string;
+            inputs_required: {
+                type: string;
+                origin_type?: string; // e.g., 'thesis' for antithesis inputs
+            }[];
+            granularity_strategy: 'per_source_document' | 'pairwise_by_origin' | 'per_source_group' | 'all_to_one';
+            output_type: string; // e.g., 'pairwise_synthesis_chunk'
+        }
+
+        /**
+         * Describes the complete recipe for a complex, multi-step stage.
+         */
+        export interface DialecticStageRecipe {
+            processing_strategy: {
+                type: 'task_isolation';
+            };
+            steps: DialecticRecipeStep[];
+        }
         ```
-*   `[ ]` 29.e. **Update Parent Job Orchestration Logic:**
-    *   `[DB]` **File:** The `handle_job_completion()` PostgreSQL function.
-    *   `[BE]` **File:** `supabase/functions/dialectic-worker/processComplexJob.ts`.
-    *   `[BE]` **Action:** When all children for a step are complete, the trigger wakes the parent job. The `processComplexJob` worker will see that the job has `status = 'pending_next_step'`.
-    *   `[BE]` **Action:** The worker will then increment `payload.step_info.current_step`. If `current_step` is less than or equal to `total_steps`, it will re-call the planner for the next step. If `current_step` exceeds `total_steps`, it will mark the parent job as `'completed'`.
-*   `[ ]` 29.f. **Define Multi-Step Error Handling Strategy:**
-    *   `[BE]` `[REFACTOR]` **Action:** If any child job for a given step fails permanently (exhausts all retries), it must report its failure to the parent.
-    *   `[BE]` **Action:** The orchestration trigger (`handle_job_completion`) should be updated to check for child failures. If a child fails, the parent job's `status` should immediately be set to `'failed'`, and `step_info.status` should also be marked `'failed'`. This prevents the process from getting stuck waiting for a job that will never complete.
-    *   `[DOCS]` **Action:** Note for future enhancement: A more sophisticated strategy could allow for retrying an entire failed step from the parent job. For the initial implementation, failing the entire parent process is the safest approach.
+    *   `[BE]` **File:** `supabase/functions/_shared/utils/type_guards.ts`.
+    *   `[BE]` **Action:** Add a corresponding type guard to safely validate the recipe structure at runtime.
+    *   **Implementation Detail:**
+        ```typescript
+        // In supabase/functions/_shared/utils/type_guards.ts
+        export function isDialecticStageRecipe(value: unknown): value is DialecticStageRecipe {
+            const recipe = value;
+            return (
+                recipe?.processing_strategy?.type === 'task_isolation' &&
+                Array.isArray(recipe.steps) &&
+                recipe.steps.every(
+                    (step) =>
+                        typeof step.step === 'number' &&
+                        typeof step.prompt_template_name === 'string' &&
+                        typeof step.granularity_strategy === 'string' &&
+                        typeof step.output_type === 'string' &&
+                        Array.isArray(step.inputs_required)
+                )
+            );
+        }
+        ```
 
-#### 30. [TEST-INT] Create the End-to-End Synthesis Pipeline Test
+*   `[✅]` 29.b. **Update Job Payload Types:**
+    *   `[BE]` **File:** `supabase/functions/dialectic-service/dialectic.interface.ts`.
+    *   `[BE]` **Action:** Introduce new, strictly-typed payloads for parent (`'plan'`) jobs and child (`'execute'`) jobs, along with a `step_info` tracker. Update the main `DialecticJobPayload` to be a discriminated union of all possible payload types.
+    *   **Implementation Detail:**
+        ```typescript
+        // In supabase/functions/dialectic-service/dialectic.interface.ts
 
-*   `[ ]` 30.a. **Create New Integration Test File:**
+        /**
+         * Tracks the progress of a multi-step job.
+         */
+        export interface DialecticStepInfo {
+            current_step: number;
+            total_steps: number;
+        }
+
+        /**
+         * The base payload containing information common to all job types.
+         */
+        export interface DialecticBaseJobPayload extends Omit<GenerateContributionsPayload, 'selectedModelIds'> {
+            model_id: string; // Individual model ID for this specific job
+        }
+
+        /**
+         * The payload for a parent job that plans steps based on a recipe.
+         */
+        export interface DialecticPlanJobPayload extends DialecticBaseJobPayload {
+            job_type: 'plan';
+            step_info: DialecticStepInfo;
+        }
+
+        /**
+         * The payload for a child job that executes a single model call.
+         */
+        export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
+            job_type: 'execute';
+            step_info: DialecticStepInfo; // Pass down for context
+            prompt_template_name: string;
+            output_type: string; // The type of artifact this job will produce
+            inputs: {
+                // Key-value store for resource_ids needed by the prompt
+                [key: string]: string; 
+            };
+        }
+        
+        // Update the main union type
+        export type DialecticJobPayload =
+            | DialecticSimpleJobPayload // Assuming this exists for non-complex jobs
+            | DialecticPlanJobPayload
+            | DialecticExecuteJobPayload
+            | DialecticCombinationJobPayload;
+        ```
+    *   `[BE]` **File:** `supabase/functions/_shared/utils/type_guards.ts`.
+    *   `[BE]` **Action:** Create type guards for the new payloads.
+    *   **Implementation Detail:**
+        ```typescript
+        // In supabase/functions/_shared/utils/type_guards.ts
+        export function isDialecticPlanJobPayload(payload: unknown): payload is DialecticPlanJobPayload {
+            const p: DialecticPlanJobPayload = payload;
+            return p?.job_type === 'plan' && typeof p.step_info?.current_step === 'number';
+        }
+
+        export function isDialecticExecuteJobPayload(payload: unknown): payload is DialecticExecuteJobPayload {
+            const p = payload as DialecticExecuteJobPayload;
+            return p?.job_type === 'execute' && typeof p.prompt_template_name === 'string' && typeof p.inputs === 'object';
+        }
+        ```
+
+##### Phase 29.2: Implement the Recipe-Driven Logic
+
+*   `[✅]` 29.c. **Refactor `processComplexJob` as the Orchestrator:**
+    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-worker/processComplexJob.ts`.
+    *   `[BE]` `[REFACTOR]` **Action:** Refactor `processComplexJob` to be the master orchestrator. It is responsible for reading the job's `step_info`, fetching the stage recipe, determining the current step, and delegating to the planner.
+    *   **Implementation Detail:**
+        ```typescript
+        // In supabase/functions/dialectic-worker/processComplexJob.ts
+        export async function processComplexJob(
+            dbClient: SupabaseClient<Database>,
+            // The intersection type asserts this job has a plannable payload
+            job: DialecticJobRow & { payload: DialecticJobPayload },
+            // ... deps
+        ): Promise<void> {
+            // Use the type guard to safely narrow the payload
+            if (!isDialecticPlanJobPayload(job.payload)) {
+                // This is a logic error, the job router should not send other job types here.
+                throw new Error(`Job ${job.id} has an invalid payload for complex processing.`);
+            }
+            
+            // From here, `job.payload` is a strongly-typed `DialecticPlanJobPayload`
+            const { step_info, stageSlug } = job.payload;
+            deps.logger.info(`[processComplexJob] Processing step ${step_info.current_step}/${step_info.total_steps} for job ${job.id}`);
+
+            // 1. Fetch the recipe and validate its structure with a type guard
+            const { data: stageData } = await dbClient.from('dialectic_stages').select('input_artifact_rules').eq('slug', stageSlug!).single();
+            if (!isDialecticStageRecipe(stageData?.input_artifact_rules)) {
+                throw new Error(`Stage '${stageSlug}' has an invalid or missing recipe.`);
+            }
+            const recipe = stageData.input_artifact_rules;
+            
+            // 2. Determine the current step's recipe
+            const currentRecipeStep = recipe.steps.find(s => s.step === step_info.current_step);
+            if (!currentRecipeStep) {
+                throw new Error(`Could not find recipe for step ${step_info.current_step}.`);
+            }
+
+            // 3. Delegate to the planner to create child jobs for this specific step
+            const childJobsToInsert = await deps.planComplexStage(dbClient, job, deps, currentRecipeStep);
+            
+            // ... (rest of the logic to insert child jobs and update parent status to 'waiting_for_children')
+        }
+        ```
+*   `[✅]` 29.d. **Refactor `task_isolator.ts` as the Step Planner:**
+    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-worker/task_isolator.ts`.
+    *   `[BE]` `[REFACTOR]` **Action:** The `planComplexStage` function is refactored to be a pure "step planner". It no longer orchestrates but is instead called *by* the orchestrator (`processComplexJob`) to plan a single step based on the provided recipe.
+    *   **Implementation Detail:**
+        ```typescript
+        // In supabase/functions/dialectic-worker/task_isolator.ts
+        export async function planComplexStage(
+            dbClient: SupabaseClient<Database>,
+            parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
+            deps: IPlanComplexJobDeps,
+            // The specific recipe for the current step is now passed in
+            recipeStep: DialecticRecipeStep,
+        ): Promise<ChildJobInsert[]> { // ChildJobInsert is the type for a new DB row
+            
+            // 1. Use recipeStep.inputs_required to query for source documents.
+            const sourceDocuments = await findSourceDocuments(dbClient, parentJob.payload.projectId, recipeStep.inputs_required);
+
+            // 2. Get the correct planner function using the strategy from the recipe.
+            const planner = getGranularityPlanner(recipeStep.granularity_strategy);
+
+            // 3. Execute the planner to get the strongly-typed child job payloads.
+            const childJobPayloads: DialecticExecuteJobPayload[] = planner(sourceDocuments, parentJob.payload, recipeStep);
+
+            // 4. Map to full job rows for DB insertion, maintaining type safety.
+            const childJobsToInsert = childJobPayloads.map(payload => ({
+                parent_job_id: parentJob.id,
+                // ... other fields from parent ...
+                status: 'pending',
+                payload: payload, // `payload` is already a valid, typed `DialecticExecuteJobPayload`
+            }));
+            
+            return childJobsToInsert;
+        }
+        ```
+*   `[✅]` 29.e. **Ensure Original Prompt is Always Included:**
+    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/_shared/prompt-assembler.ts`.
+    *   `[BE]` **Action:** The `gatherContext` utility must be updated to always fetch the project's original user prompt for any job belonging to a complex stage (e.g., `'synthesis'`). This prompt text must be passed to the prompt renderer as a distinct, top-level variable (`original_user_request`) to ensure it's available for injection into any step's prompt template.
+*   `[✅]` 29.f. **Tag Intermediate Artifacts in the Executor:**
+    *   `[BE]` **File:** `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`.
+    *   `[BE]` **Action:** When saving the output of a child job, the worker must use the `output_type` from the strongly-typed payload to tag the new artifact in `dialectic_project_resources`.
+    *   **Implementation Detail:**
+        ```typescript
+        // In supabase/functions/dialectic-worker/executeModelCallAndSave.ts
+        export async function executeModelCallAndSave(
+            // The job here is a child job with a strongly-typed 'execute' payload
+            job: DialecticJobRow & { payload: DialecticExecuteJobPayload },
+            // ... other parameters
+        ) {
+            // ... logic to call the AI model ...
+            const modelOutput = await deps.callUnifiedAIModel(...);
+
+            // When saving the result, the output_type comes directly from the typed payload.
+            await fileManager.uploadAndRegisterFile({
+                // ... other context
+                resourceTypeForDb: job.payload.output_type,
+                description: `Intermediate artifact for ${job.id}, step ${job.payload.step_info.current_step}`,
+            });
+        }
+        ```
+*   `[✅]` 29.g. **Update Parent Job Orchestration Logic:**
+    *   `[DB]` `[BE]` **File:** The `handle_job_completion()` PostgreSQL function and `supabase/functions/dialectic-worker/processComplexJob.ts`.
+    *   `[BE]` **Action:** The state machine is orchestrated as follows:
+        1.  When all child jobs for a step complete, the `handle_job_completion()` trigger wakes the parent job by setting its status to `'pending_next_step'`.
+        2.  The `processComplexJob` worker picks up this parent job. Its first action is to check for this status.
+        3.  If the status is `pending_next_step`, it increments `payload.step_info.current_step` and updates the job in the database.
+        4.  It then proceeds with the planning logic. If `current_step > total_steps`, it marks the parent job as `'completed'`. Otherwise, it re-calls the planner for the new step.
+*   `[✅]` 29.h. **Define Multi-Step Error Handling Strategy:**
+    *   `[BE]` `[REFACTOR]` **Action:** If any child job (type `'execute'`) fails permanently, it must report its failure to the parent. The `handle_job_completion` trigger will detect this child failure and immediately set the parent job's `status` to `'failed'`, also marking `step_info.status` as `'failed'`. This fail-fast approach prevents the process from getting stuck waiting for a job that will never complete.
+
+#### 30. [TEST-INT] Create the End-to-End Antithesis and Synthesis Pipeline Tests
+
+*   `[ ]` 30.a. **Create New Synthesis Integration Test File:**
     *   `[TEST-INT]` **File:** `supabase/integration_tests/services/dialectic_synthesis_pipeline.integration.test.ts`.
 *   `[ ]` 30.b. **Test Setup:**
     *   `[TEST-INT]` **Action:** Seed a test user, project, and session. Seed completed `thesis` and `antithesis` contributions.

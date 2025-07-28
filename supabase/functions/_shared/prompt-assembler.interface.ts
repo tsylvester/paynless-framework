@@ -1,12 +1,11 @@
-import { SupabaseClient } from "npm:@supabase/supabase-js";
-import { Database, Tables } from "../types_db.ts";
-import { DownloadStorageResult } from "./supabase_storage_utils.ts";
+import { Tables } from "../types_db.ts";
 
 export type DynamicContextVariables = {
     user_objective: string,
     domain: string,
     agent_count: number,
     context_description: string,
+    original_user_request: string | null;
     prior_stage_ai_outputs: string,
     prior_stage_user_feedback: string,
     deployment_context: string | null,

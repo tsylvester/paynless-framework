@@ -8,7 +8,7 @@ import {
   type IContinueJobResult,
 } from '../dialectic-service/dialectic.interface.ts';
 import { shouldContinue } from '../_shared/utils/continue_util.ts';
-import { isDialecticJobPayload } from '../_shared/utils/type_guards.ts';
+import { isDialecticJobPayload, isDialecticPlanJobPayload, isJson } from '../_shared/utils/type_guards.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 type JobInsert = Database['public']['Tables']['dialectic_generation_jobs']['Insert'];
@@ -16,12 +16,18 @@ type JobInsert = Database['public']['Tables']['dialectic_generation_jobs']['Inse
 export async function continueJob(
   deps: IContinueJobDeps,
   dbClient: SupabaseClient<Database>,
-  job: Job & { payload: DialecticJobPayload },
+  job: Job,
   aiResponse: UnifiedAIResponse,
   savedContribution: DialecticContributionRow,
   projectOwnerUserId: string
 ): Promise<IContinueJobResult> {
   
+  if (!isDialecticJobPayload(job.payload)) {
+    const error = new Error('Invalid job payload');
+    deps.logger.error('Cannot continue job due to invalid payload.', { jobId: job.id, payload: job.payload, error: error.message });
+    return { enqueued: false, error };
+  }
+
   const willContinue = shouldContinue(aiResponse.finish_reason ?? null, job.payload.continuation_count ?? 0, 5) && job.payload.continueUntilComplete;
   
   if (!willContinue) {
@@ -30,8 +36,7 @@ export async function continueJob(
 
   deps.logger.info(`[dialectic-worker] [continueJob] Continuation required for job ${job.id}. Enqueuing new job.`);
 
-  // Construct as a generic object first that conforms to the Json type.
-  const payloadObject: { [key: string]: Json | undefined } = {
+  const payloadObject: DialecticJobPayload = {
     sessionId: job.payload.sessionId,
     projectId: job.payload.projectId,
     model_id: job.payload.model_id,
@@ -40,21 +45,28 @@ export async function continueJob(
     continueUntilComplete: job.payload.continueUntilComplete,
     target_contribution_id: savedContribution.id,
     continuation_count: (job.payload.continuation_count ?? 0) + 1,
-    chatId: job.payload.chatId,
     walletId: job.payload.walletId,
     maxRetries: job.payload.maxRetries,
   };
   
   // Remove undefined keys to keep the payload clean. JSON.stringify would do this anyway,
-  // but this is more explicit and ensures we don't pass undefined values where a DB function
-  // might not expect them.
-  Object.keys(payloadObject).forEach(key => payloadObject[key] === undefined && delete payloadObject[key]);
+  // but this makes the new payload object explicit and easier to debug.
+  const newPayload: { [key: string]: Json | undefined } = {};
+  for (const [key, value] of Object.entries(payloadObject)) {
+    if (value !== undefined) {
+      newPayload[key] = value;
+    }
+  }
 
-  const newPayload: Json = payloadObject;
+  if (!isJson(newPayload)) {
+    // This should be theoretically impossible since we construct it from Json-compatible parts.
+    // This check satisfies the compiler's strictness.
+    const error = new Error('Constructed payload is not valid JSON.');
+    deps.logger.error('Failed to create valid JSON payload for continuation.', { jobId: job.id, newPayload });
+    return { enqueued: false, error };
+  }
 
-  // Although we just constructed it, we run it through the type guard to satisfy
-  // TypeScript's strict checking and ensure we've built a valid payload.
-  if (!isDialecticJobPayload(newPayload)) {
+  if (!isDialecticJobPayload(newPayload) && !isDialecticPlanJobPayload(newPayload)) {
     deps.logger.error('[dialectic-worker] [continueJob] Failed to construct a valid continuation payload.', { payload: newPayload });
     return { enqueued: false, error: new Error('Failed to construct a valid continuation payload.') };
   }

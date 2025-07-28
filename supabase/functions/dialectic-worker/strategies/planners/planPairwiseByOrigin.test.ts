@@ -1,7 +1,8 @@
 // supabase/functions/dialectic-worker/strategies/planners/planPairwiseByOrigin.test.ts
-import { assertEquals, assertExists } from 'https://deno.land/std@0.224.0/assert/mod.ts';
-import type { DialecticJobRow, RecipeStep, SourceDocument, DialecticCombinationJobPayload } from '../../../dialectic-service/dialectic.interface.ts';
+import { assertEquals, assertExists, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts';
+import type { DialecticJobRow, SourceDocument, DialecticPlanJobPayload, DialecticRecipeStep } from '../../../dialectic-service/dialectic.interface.ts';
 import { planPairwiseByOrigin } from './planPairwiseByOrigin.ts';
+import { isDialecticExecuteJobPayload } from '../../../_shared/utils/type_guards.ts';
 
 // Mock Data
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
@@ -12,18 +13,23 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
     { id: 'antithesis-2a', target_contribution_id: 'thesis-2', content: 'Antithesis 2a content', session_id: 'session-abc', user_id: 'user-def', stage: 'antithesis', iteration_number: 1, edit_version: 1, is_latest_edit: true, created_at: '', updated_at: '', file_name: '', storage_bucket: '', storage_path: '', model_id: 'model-mno', model_name: 'Model MNO', prompt_template_id_used: 'template-112', seed_prompt_url: null, original_model_contribution_id: null, raw_response_storage_path: null, tokens_used_input: 300, tokens_used_output: 400, processing_time_ms: 3000, error: null, citations: null, contribution_type: 'antithesis', size_bytes: 3000, mime_type: 'text/plain' },
 ];
 
-const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticCombinationJobPayload } = {
+const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
     id: 'parent-job-123',
     session_id: 'session-abc',
     user_id: 'user-def',
     stage_slug: 'synthesis',
     iteration_number: 1,
     payload: {
+        job_type: 'plan',
         projectId: 'project-xyz',
         sessionId: 'session-abc',
         stageSlug: 'synthesis',
         iterationNumber: 1,
         model_id: 'model-ghi',
+        step_info: {
+            current_step: 1,
+            total_steps: 1,
+        },
     },
     attempt_count: 0,
     completed_at: null,
@@ -38,58 +44,58 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticCombinationJobPaylo
     target_contribution_id: null,
 };
 
-const MOCK_RECIPE_STEP: RecipeStep = {
-    step_name: 'Generate Pairwise Syntheses',
+const MOCK_RECIPE_STEP: DialecticRecipeStep = {
+    step: 1,
+    name: 'Generate Pairwise Syntheses',
     prompt_template_name: 'synthesis_step1_pairwise',
-    description: 'Generate Pairwise Syntheses',
-    granularity_strategy: 'pairwise_by_origin',
     inputs_required: [{ type: 'thesis' }, { type: 'antithesis' }],
-    output_type: 'synthesis',
-    job_type_to_create: 'execute',
+    granularity_strategy: 'pairwise_by_origin',
+    output_type: 'pairwise_synthesis_chunk',
 };
 
 Deno.test('planPairwiseByOrigin should create one child job for each thesis-antithesis pair', () => {
-    const childJobs = planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childPayloads = planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
 
-    assertEquals(childJobs.length, 3, "Should create 3 child jobs for the 3 pairs");
+    assertEquals(childPayloads.length, 3, "Should create 3 child jobs for the 3 pairs");
     
     // Check Job 1 (thesis-1 vs antithesis-1a)
-    const job1 = childJobs.find(j => j.payload.inputs?.antithesis_id === 'antithesis-1a');
-    assertExists(job1, "Job for antithesis-1a should exist");
-    assertEquals(job1.parent_job_id, 'parent-job-123');
-    assertEquals(job1.session_id, 'session-abc');
-    assertEquals(job1.user_id, 'user-def');
-    const job1Payload = job1.payload;
+    const job1Payload = childPayloads.find(p => isDialecticExecuteJobPayload(p) && p.inputs?.antithesis_id === 'antithesis-1a');
+    assertExists(job1Payload, "Payload for antithesis-1a should exist");
+    assert(isDialecticExecuteJobPayload(job1Payload)); // Type guard assertion
+    
     assertEquals(job1Payload.job_type, 'execute');
     assertEquals(job1Payload.prompt_template_name, 'synthesis_step1_pairwise');
     assertEquals(job1Payload.inputs?.thesis_id, 'thesis-1');
+    assertEquals(job1Payload.output_type, 'pairwise_synthesis_chunk');
     
     // Check Job 2 (thesis-1 vs antithesis-1b)
-    const job2 = childJobs.find(j => j.payload?.inputs?.antithesis_id === 'antithesis-1b');
-    assertExists(job2, "Job for antithesis-1b should exist");
-    assertEquals(job2.payload?.inputs?.thesis_id, 'thesis-1');
+    const job2Payload = childPayloads.find(p => isDialecticExecuteJobPayload(p) && p.inputs?.antithesis_id === 'antithesis-1b');
+    assertExists(job2Payload, "Payload for antithesis-1b should exist");
+    assert(isDialecticExecuteJobPayload(job2Payload));
+    assertEquals(job2Payload.inputs?.thesis_id, 'thesis-1');
     
     // Check Job 3 (thesis-2 vs antithesis-2a)
-    const job3 = childJobs.find(j => j.payload?.inputs?.antithesis_id === 'antithesis-2a');
-    assertExists(job3, "Job for antithesis-2a should exist");
-    assertEquals(job3.payload?.inputs?.thesis_id, 'thesis-2');
+    const job3Payload = childPayloads.find(p => isDialecticExecuteJobPayload(p) && p.inputs?.antithesis_id === 'antithesis-2a');
+    assertExists(job3Payload, "Payload for antithesis-2a should exist");
+    assert(isDialecticExecuteJobPayload(job3Payload));
+    assertEquals(job3Payload.inputs?.thesis_id, 'thesis-2');
 });
 
 Deno.test('planPairwiseByOrigin should return an empty array if there are no theses', () => {
     const noTheses = MOCK_SOURCE_DOCS.filter(d => d.contribution_type !== 'thesis');
-    const childJobs = planPairwiseByOrigin(noTheses, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
-    assertEquals(childJobs.length, 0);
+    const childPayloads = planPairwiseByOrigin(noTheses, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    assertEquals(childPayloads.length, 0);
 });
 
 Deno.test('planPairwiseByOrigin should return an empty array if there are no antitheses', () => {
     const noAntitheses = MOCK_SOURCE_DOCS.filter(d => d.contribution_type !== 'antithesis');
-    const childJobs = planPairwiseByOrigin(noAntitheses, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
-    assertEquals(childJobs.length, 0);
+    const childPayloads = planPairwiseByOrigin(noAntitheses, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    assertEquals(childPayloads.length, 0);
 });
 
 Deno.test('planPairwiseByOrigin should return an empty array for empty source documents', () => {
-    const childJobs = planPairwiseByOrigin([], MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
-    assertEquals(childJobs.length, 0);
+    const childPayloads = planPairwiseByOrigin([], MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    assertEquals(childPayloads.length, 0);
 });
 
 Deno.test('should return an empty array if theses exist but no antitheses are related', () => {
@@ -98,12 +104,12 @@ Deno.test('should return an empty array if theses exist but no antitheses are re
     ] as SourceDocument[];
     const thesesOnly = MOCK_SOURCE_DOCS.filter(d => d.contribution_type === 'thesis');
 
-    const childJobs = planPairwiseByOrigin([...thesesOnly, ...unrelatedAntitheses], MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
-    assertEquals(childJobs.length, 0, "Should create no jobs if no antitheses match the theses");
+    const childPayloads = planPairwiseByOrigin([...thesesOnly, ...unrelatedAntitheses], MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    assertEquals(childPayloads.length, 0, "Should create no jobs if no antitheses match the theses");
 });
 
 Deno.test('should return an empty array if antitheses exist but no matching theses are found', () => {
     const antithesesOnly = MOCK_SOURCE_DOCS.filter(d => d.contribution_type === 'antithesis');
-    const childJobs = planPairwiseByOrigin(antithesesOnly, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
-    assertEquals(childJobs.length, 0, "Should create no jobs if no theses are present to match against");
+    const childPayloads = planPairwiseByOrigin(antithesesOnly, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    assertEquals(childPayloads.length, 0, "Should create no jobs if no theses are present to match against");
 }); 

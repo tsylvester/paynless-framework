@@ -8,8 +8,11 @@ import type {
     JobResultsWithModelProcessing,
     ModelProcessingResult,
     DialecticCombinationJobPayload,
+    DialecticStageRecipe,
+    DialecticPlanJobPayload,
+    DialecticExecuteJobPayload,
+    DialecticRecipeStep,
 } from '../../dialectic-service/dialectic.interface.ts';
-import type { IIsolatedExecutionDeps } from "../../dialectic-worker/task_isolator.ts";
 import { ProjectContext, StageContext } from "../prompt-assembler.interface.ts";
 import { FailedAttemptError } from "../../dialectic-service/dialectic.interface.ts";
 import { AiModelExtendedConfig } from "../types.ts";
@@ -54,7 +57,6 @@ export function validatePayload(payload: Json): DialecticJobPayload {
     model_id: ('model_id' in payload && typeof payload.model_id === 'string') ? payload.model_id : '',
     stageSlug: ('stageSlug' in payload && typeof payload.stageSlug === 'string') ? payload.stageSlug : undefined,
     iterationNumber: ('iterationNumber' in payload && typeof payload.iterationNumber === 'number') ? payload.iterationNumber : undefined,
-    chatId: ('chatId' in payload && (typeof payload.chatId === 'string' || payload.chatId === null)) ? payload.chatId : undefined,
     walletId: ('walletId' in payload && typeof payload.walletId === 'string') ? payload.walletId : undefined,
     continueUntilComplete: ('continueUntilComplete' in payload && typeof payload.continueUntilComplete === 'boolean') ? payload.continueUntilComplete : undefined,
     maxRetries: ('maxRetries' in payload && typeof payload.maxRetries === 'number') ? payload.maxRetries : undefined,
@@ -71,7 +73,11 @@ export function validatePayload(payload: Json): DialecticJobPayload {
  * @param payload The JSON object to validate.
  * @returns boolean indicating if the payload is a valid DialecticJobPayload.
  */
-export function isDialecticJobPayload(payload: Json): payload is Json & DialecticJobPayload {
+export function isDialecticJobPayload(payload: unknown): payload is DialecticJobPayload {
+    if (!isJson(payload)) {
+        return false;
+    }
+
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
         return false;
     }
@@ -103,13 +109,26 @@ export function isDialecticCombinationJobPayload(payload: unknown): payload is D
     }
 
     // `payload` is now `Json & DialecticJobPayload`, so we can safely check properties.
-    return (
-        'job_type' in payload && payload.job_type === 'combine' &&
-        'prompt_template_name' in payload && typeof payload.prompt_template_name === 'string' &&
-        'inputs' in payload && isRecord(payload.inputs) &&
-        'document_ids' in payload.inputs && Array.isArray(payload.inputs.document_ids) &&
-        payload.inputs.document_ids.every((id: unknown) => typeof id === 'string')
-    );
+    if (!('job_type' in payload) || payload.job_type !== 'combine') {
+        return false;
+    }
+
+    if ('prompt_template_name' in payload && typeof payload.prompt_template_name !== 'string') {
+        return false;
+    }
+    
+    if ('inputs' in payload) {
+        if (!isRecord(payload.inputs)) {
+            return false;
+        }
+        if ('document_ids' in payload.inputs) {
+            if (!Array.isArray(payload.inputs.document_ids) || !payload.inputs.document_ids.every((id: unknown) => typeof id === 'string')) {
+                return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 /**
@@ -358,7 +377,7 @@ export function isUserRole(role: unknown): role is Database['public']['Enums']['
   return typeof role === 'string' && ['user', 'admin'].includes(role);
 }
 
-export function isIsolatedExecutionDeps(deps: unknown): deps is IIsolatedExecutionDeps {
+/*export function isIsolatedExecutionDeps(deps: unknown): deps is IIsolatedExecutionDeps {
     if (typeof deps !== 'object' || deps === null) {
         return false;
     }
@@ -371,7 +390,7 @@ export function isIsolatedExecutionDeps(deps: unknown): deps is IIsolatedExecuti
         }
     }
     return true;
-} 
+}*/ 
 
 export function isRecord(item: unknown): item is Record<PropertyKey, unknown> {
     return (item !== null && typeof item === 'object' && !Array.isArray(item));
@@ -561,4 +580,40 @@ export function hasStepsRecipe(stage: Tables<'dialectic_stages'>): stage is Stag
         return true;
     }
     return false;
+}
+
+export function isDialecticStageRecipe(value: unknown): value is DialecticStageRecipe {
+    if (!isRecord(value)) return false;
+
+    return (
+        isRecord(value.processing_strategy) &&
+        value.processing_strategy.type === 'task_isolation' &&
+        Array.isArray(value.steps) &&
+        value.steps.every(
+            (step: DialecticRecipeStep) =>
+                typeof step.step === 'number' &&
+                typeof step.prompt_template_name === 'string' &&
+                typeof step.granularity_strategy === 'string' &&
+                typeof step.output_type === 'string' &&
+                Array.isArray(step.inputs_required)
+        )
+    );
+}
+
+export function isDialecticPlanJobPayload(payload: unknown): payload is DialecticPlanJobPayload {
+    if (!isRecord(payload)) return false;
+    return (
+        payload.job_type === 'plan' &&
+        isRecord(payload.step_info) &&
+        typeof payload.step_info.current_step === 'number'
+    );
+}
+
+export function isDialecticExecuteJobPayload(payload: unknown): payload is DialecticExecuteJobPayload {
+    if (!isRecord(payload)) return false;
+    return (
+        payload.job_type === 'execute' &&
+        typeof payload.prompt_template_name === 'string' &&
+        isRecord(payload.inputs)
+    );
 }

@@ -299,14 +299,59 @@ export interface GenerateContributionsPayload {
   target_contribution_id?: string;
 }
 
-export interface DialecticJobPayload extends Omit<GenerateContributionsPayload, 'selectedModelIds'> {
-    model_id: string; // Individual model ID for this specific job
-    prompt?: string; // Optional: For jobs that receive a direct, pre-rendered prompt
-    job_type?: 'plan' | 'execute' | 'combine' | 'simple';
+/**
+ * Tracks the progress of a multi-step job.
+ */
+export interface DialecticStepInfo {
+    current_step: number;
+    total_steps: number;
 }
 
-export interface DialecticCombinationJobPayload extends DialecticJobPayload {
-  job_type?: 'plan' | 'execute' | 'combine';
+/**
+ * The base payload containing information common to all job types.
+ */
+export interface DialecticBaseJobPayload extends Omit<GenerateContributionsPayload, 'selectedModelIds' | 'chatId'> {
+    model_id: string; // Individual model ID for this specific job
+}
+
+/**
+ * The payload for a simple, single-call job.
+ */
+export interface DialecticSimpleJobPayload extends DialecticBaseJobPayload {
+    job_type?: 'simple';
+}
+
+/**
+ * The payload for a parent job that plans steps based on a recipe.
+ */
+export interface DialecticPlanJobPayload extends DialecticBaseJobPayload {
+    job_type: 'plan';
+    step_info: DialecticStepInfo;
+}
+
+/**
+ * The payload for a child job that executes a single model call.
+ */
+export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
+    job_type: 'execute';
+    step_info: DialecticStepInfo; // Pass down for context
+    prompt_template_name: string;
+    output_type: string; // The type of artifact this job will produce
+    inputs: {
+        // Key-value store for resource_ids needed by the prompt
+        [key: string]: string;
+    };
+}
+
+// Update the main union type
+export type DialecticJobPayload =
+    | DialecticSimpleJobPayload // Assuming this exists for non-complex jobs
+    | DialecticPlanJobPayload
+    | DialecticExecuteJobPayload
+    | DialecticCombinationJobPayload;
+
+export interface DialecticCombinationJobPayload extends DialecticBaseJobPayload {
+  job_type: 'combine';
   inputs?: {
     document_ids?: string[];
     [key: string]: unknown; // Allow other properties
@@ -629,7 +674,7 @@ export interface ExecuteModelCallAndSaveParams {
   dbClient: SupabaseClient<Database>;
   deps: ProcessSimpleJobDeps;
   authToken: string;
-  job: Job & { payload: DialecticJobPayload };
+  job: DialecticJobRow;
   projectOwnerUserId: string;
   providerDetails: SelectedAiProvider;
   renderedPrompt: { content: string; fullPath: string };
@@ -648,7 +693,7 @@ export interface ProcessSimpleJobDeps extends GenerateContributionsDeps {
   continueJob: (
     deps: { logger: ILogger },
     dbClient: SupabaseClient<Database>,
-    job: Job & { payload: DialecticJobPayload },
+    job: DialecticJobRow,
     aiResponse: UnifiedAIResponse,
     savedContribution: DialecticContributionRow,
     projectOwnerUserId: string
@@ -656,7 +701,7 @@ export interface ProcessSimpleJobDeps extends GenerateContributionsDeps {
   retryJob: (
     deps: { logger: ILogger, notificationService: NotificationServiceType },
     dbClient: SupabaseClient<Database>,
-    job: Job & { payload: DialecticJobPayload },
+    job: DialecticJobRow,
     currentAttempt: number,
     failedContributionAttempts: FailedAttemptError[],
     projectOwnerUserId: string
@@ -675,12 +720,36 @@ export type RecipeStep = {
 }
 
 export type SourceDocument = DialecticContributionRow & { content: string };
-export type ChildJobPayload = DialecticJobPayload & { prompt_resource_id: string };
 
 export type GranularityPlannerFn = (
     sourceDocs: SourceDocument[],
-    parentJob: DialecticJobRow & { payload: DialecticCombinationJobPayload },
-    recipeStep: RecipeStep
-) => (Omit<DialecticJobRow, 'id' | 'created_at' | 'started_at' | 'completed_at' | 'results' | 'error_details' | 'attempt_count' | 'status' | 'prerequisite_job_id' | 'payload'> & { payload: DialecticCombinationJobPayload })[];
+    parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
+    recipeStep: DialecticRecipeStep
+) => (DialecticExecuteJobPayload | DialecticCombinationJobPayload)[];
 
-export type GranularityStrategyMap = Map<string, GranularityPlannerFn>; 
+export type GranularityStrategyMap = Map<string, GranularityPlannerFn>;
+
+/**
+ * Describes a single step within a multi-step job recipe.
+ */
+export interface DialecticRecipeStep {
+    step: number;
+    name: string;
+    prompt_template_name: string;
+    inputs_required: {
+        type: string;
+        origin_type?: string; // e.g., 'thesis' for antithesis inputs
+    }[];
+    granularity_strategy: 'per_source_document' | 'pairwise_by_origin' | 'per_source_group' | 'all_to_one';
+    output_type: string; // e.g., 'pairwise_synthesis_chunk'
+}
+
+/**
+ * Describes the complete recipe for a complex, multi-step stage.
+ */
+export interface DialecticStageRecipe {
+    processing_strategy: {
+        type: 'task_isolation';
+    };
+    steps: DialecticRecipeStep[];
+} 

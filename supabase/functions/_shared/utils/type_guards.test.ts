@@ -5,11 +5,11 @@ import {
     isCitationsArray,
     isDialecticContribution,
     isDialecticJobPayload,
+    isDialecticCombinationJobPayload,
     isDialecticJobRow,
     isDialecticJobRowArray,
     isFailedAttemptError,
     isFailedAttemptErrorArray,
-    isIsolatedExecutionDeps,
     isJobResultsWithModelProcessing,
     isModelProcessingResult,
     isProjectContext,
@@ -22,10 +22,12 @@ import {
     isJson,
     isAiModelExtendedConfig,
     hasStepsRecipe,
+    isDialecticStageRecipe,
+    isDialecticPlanJobPayload,
+    isDialecticExecuteJobPayload,
 } from './type_guards.ts';
 import type { DialecticContributionRow, DialecticJobRow, FailedAttemptError } from '../../dialectic-service/dialectic.interface.ts';
 import type { AiModelExtendedConfig } from '../types.ts';
-import type { IIsolatedExecutionDeps } from "../../dialectic-worker/task_isolator.ts";
 import { ProjectContext, StageContext } from '../prompt-assembler.interface.ts';
 
 Deno.test('Type Guard: hasProcessingStrategy', async (t) => {
@@ -422,7 +424,6 @@ Deno.test('Type Guard: validatePayload', async (t) => {
             model_id: 'model-1',
             stageSlug: 'test-stage',
             iterationNumber: 1,
-            chatId: 'test-chat',
             walletId: 'test-wallet',
             continueUntilComplete: true,
             maxRetries: 5,
@@ -432,7 +433,6 @@ Deno.test('Type Guard: validatePayload', async (t) => {
         const validated = validatePayload(payload);
         assert(validated.stageSlug === 'test-stage');
         assert(validated.iterationNumber === 1);
-        assert(validated.chatId === 'test-chat');
         assert(validated.walletId === 'test-wallet');
         assert(validated.continueUntilComplete === true);
         assert(validated.maxRetries === 5);
@@ -572,117 +572,6 @@ Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
             prompt: 'Valid prompt',
         };
         assert(!isDialecticJobPayload(payload));
-    });
-});
-
-Deno.test('Type Guard: isIsolatedExecutionDeps', async (t) => {
-    await t.step('should return true for valid IIsolatedExecutionDeps object', () => {
-        const mockSeedPromptData = {
-            content: 'test prompt content',
-            fullPath: 'bucket/path/file.md',
-            bucket: 'test-bucket',
-            path: 'path/file.md',
-            fileName: 'file.md'
-        };
-        const mockStrategy = { type: 'task_isolation', granularity: 'per_thesis_contribution', progress_reporting: { message_template: 'test' } };
-        
-        const deps = {
-            getSourceStage: async () => ({ id: '1', slug: 'test' }),
-            calculateTotalSteps: (strategy: unknown, models: unknown[], contributions: unknown[]) => models.length * contributions.length,
-            getSeedPromptForStage: async () => mockSeedPromptData,
-        };
-        assert(isIsolatedExecutionDeps(deps));
-    });
-
-    await t.step('should return true for object with additional properties beyond required functions', () => {
-        const mockSeedPromptData = {
-            content: 'test prompt content',
-            fullPath: 'bucket/path/file.md',
-            bucket: 'test-bucket',
-            path: 'path/file.md',
-            fileName: 'file.md'
-        };
-        
-        const deps = {
-            getSourceStage: async () => ({ id: '1', slug: 'test' }),
-            calculateTotalSteps: (strategy: unknown, models: unknown[], contributions: unknown[]) => 42,
-            getSeedPromptForStage: async () => mockSeedPromptData,
-            extraProperty: 'this should not break validation',
-            anotherFunction: () => 'additional function',
-        };
-        assert(isIsolatedExecutionDeps(deps));
-    });
-
-    await t.step('should return false when getSourceStage is missing', () => {
-        const mockSeedPromptData = {
-            content: 'test prompt content',
-            fullPath: 'bucket/path/file.md',
-            bucket: 'test-bucket',
-            path: 'path/file.md',
-            fileName: 'file.md'
-        };
-        
-        const deps = {
-            calculateTotalSteps: (strategy: unknown, models: unknown[], contributions: unknown[]) => 42,
-            getSeedPromptForStage: async () => mockSeedPromptData,
-        };
-        assert(!isIsolatedExecutionDeps(deps));
-    });
-
-    await t.step('should return false when calculateTotalSteps is missing', () => {
-        const mockSeedPromptData = {
-            content: 'test prompt content',
-            fullPath: 'bucket/path/file.md',
-            bucket: 'test-bucket',
-            path: 'path/file.md',
-            fileName: 'file.md'
-        };
-        
-        const deps = {
-            getSourceStage: async () => ({ id: '1', slug: 'test' }),
-            getSeedPromptForStage: async () => mockSeedPromptData,
-        };
-        assert(!isIsolatedExecutionDeps(deps));
-    });
-
-    await t.step('should return false when getSeedPromptForStage is missing', () => {
-        const deps = {
-            getSourceStage: async () => ({ id: '1', slug: 'test' }),
-            calculateTotalSteps: (strategy: unknown, models: unknown[], contributions: unknown[]) => 42,
-        };
-        assert(!isIsolatedExecutionDeps(deps));
-    });
-
-    await t.step('should return false when required property is not a function', () => {
-        const mockSeedPromptData = {
-            content: 'test prompt content',
-            fullPath: 'bucket/path/file.md',
-            bucket: 'test-bucket',
-            path: 'path/file.md',
-            fileName: 'file.md'
-        };
-        
-        const deps = {
-            getSourceStage: 'not a function', // Invalid: not a function
-            calculateTotalSteps: (strategy: unknown, models: unknown[], contributions: unknown[]) => 42,
-            getSeedPromptForStage: async () => mockSeedPromptData,
-        };
-        assert(!isIsolatedExecutionDeps(deps));
-    });
-
-    await t.step('should return false for null', () => {
-        assert(!isIsolatedExecutionDeps(null));
-    });
-
-    await t.step('should return false for non-object types', () => {
-        assert(!isIsolatedExecutionDeps('string'));
-        assert(!isIsolatedExecutionDeps(123));
-        assert(!isIsolatedExecutionDeps(true));
-        assert(!isIsolatedExecutionDeps([]));
-    });
-
-    await t.step('should return false for empty object', () => {
-        assert(!isIsolatedExecutionDeps({}));
     });
 });
 
@@ -1325,5 +1214,136 @@ Deno.test('Type Guard: hasStepsRecipe', async (t) => {
             expected_output_artifacts: []
         };
         assert(!hasStepsRecipe(stage));
+    });
+});
+
+Deno.test('Type Guard: isDialecticCombinationJobPayload', async (t) => {
+    await t.step('should return true for a valid combination job payload', () => {
+        const payload = {
+            job_type: 'combine',
+            sessionId: 's1',
+            projectId: 'p1',
+            model_id: 'm1',
+            inputs: {
+                document_ids: ['doc1', 'doc2']
+            }
+        };
+        assert(isDialecticCombinationJobPayload(payload));
+    });
+
+    await t.step('should return true if inputs is missing', () => {
+        const payload = {
+            job_type: 'combine',
+            sessionId: 's1',
+            projectId: 'p1',
+            model_id: 'm1'
+        };
+        assert(isDialecticCombinationJobPayload(payload));
+    });
+
+    await t.step('should return false if job_type is not combine', () => {
+        const payload = {
+            job_type: 'execute',
+            sessionId: 's1',
+            projectId: 'p1',
+            model_id: 'm1'
+        };
+        assert(!isDialecticCombinationJobPayload(payload));
+    });
+
+    await t.step('should return false if document_ids is not an array of strings', () => {
+        const payload = {
+            job_type: 'combine',
+            sessionId: 's1',
+            projectId: 'p1',
+            model_id: 'm1',
+            inputs: {
+                document_ids: ['doc1', 123]
+            }
+        };
+        assert(!isDialecticCombinationJobPayload(payload));
+    });
+});
+
+Deno.test('Type Guard: isDialecticStageRecipe', async (t) => {
+    await t.step('should return true for a valid recipe', () => {
+        const recipe = {
+            processing_strategy: { type: 'task_isolation' },
+            steps: [
+                { step: 1, prompt_template_name: 'p1', granularity_strategy: 'g1', output_type: 'o1', inputs_required: [] }
+            ]
+        };
+        assert(isDialecticStageRecipe(recipe));
+    });
+    
+    await t.step('should return false if processing_strategy is wrong', () => {
+        const recipe = {
+            processing_strategy: { type: 'wrong_type' },
+            steps: []
+        };
+        assert(!isDialecticStageRecipe(recipe));
+    });
+
+    await t.step('should return false if a step is malformed', () => {
+        const recipe = {
+            processing_strategy: { type: 'task_isolation' },
+            steps: [
+                { prompt_template_name: 'p1' }
+            ]
+        };
+        assert(!isDialecticStageRecipe(recipe));
+    });
+});
+
+Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
+    await t.step('should return true for a valid plan job payload', () => {
+        const payload = {
+            job_type: 'plan',
+            step_info: { current_step: 1 }
+        };
+        assert(isDialecticPlanJobPayload(payload));
+    });
+
+    await t.step('should return false if job_type is wrong', () => {
+        const payload = {
+            job_type: 'execute',
+            step_info: { current_step: 1 }
+        };
+        assert(!isDialecticPlanJobPayload(payload));
+    });
+    
+    await t.step('should return false if step_info is missing', () => {
+        const payload = {
+            job_type: 'plan'
+        };
+        assert(!isDialecticPlanJobPayload(payload));
+    });
+});
+
+Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
+    await t.step('should return true for a valid execute job payload', () => {
+        const payload = {
+            job_type: 'execute',
+            prompt_template_name: 'p1',
+            inputs: {}
+        };
+        assert(isDialecticExecuteJobPayload(payload));
+    });
+
+    await t.step('should return false if job_type is wrong', () => {
+        const payload = {
+            job_type: 'plan',
+            prompt_template_name: 'p1',
+            inputs: {}
+        };
+        assert(!isDialecticExecuteJobPayload(payload));
+    });
+
+    await t.step('should return false if inputs is missing', () => {
+        const payload = {
+            job_type: 'execute',
+            prompt_template_name: 'p1'
+        };
+        assert(!isDialecticExecuteJobPayload(payload));
     });
 });

@@ -5,7 +5,7 @@ import {
   type ExecuteModelCallAndSaveParams,
 } from '../dialectic-service/dialectic.interface.ts';
 import { type UploadContext } from '../_shared/types/file_manager.types.ts';
-import { isDialecticContribution, isAiModelExtendedConfig } from "../_shared/utils/type_guards.ts";
+import { isDialecticContribution, isAiModelExtendedConfig, isDialecticExecuteJobPayload } from "../_shared/utils/type_guards.ts";
 import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
 import { type AiModelExtendedConfig, type MessageForTokenCounting } from '../_shared/types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
@@ -24,6 +24,10 @@ export async function executeModelCallAndSave(
         previousContent, 
         sessionData 
     } = params;
+    
+    if (!isDialecticExecuteJobPayload(job.payload)) {
+        throw new Error(`Job ${job.id} does not have a valid 'execute' payload.`);
+    }
     
     const { 
         id: jobId, 
@@ -111,6 +115,7 @@ export async function executeModelCallAndSave(
         sizeBytes: finalContent.length, 
         userId: projectOwnerUserId,
         description: `Contribution for stage '${stageSlug}' by model ${providerDetails.name}`,
+        resourceTypeForDb: job.payload.output_type,
         contributionMetadata: {
             sessionId, 
             modelIdUsed: providerDetails.id, 

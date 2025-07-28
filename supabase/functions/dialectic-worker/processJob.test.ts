@@ -5,12 +5,12 @@ import type { Database, Json } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { processJob } from './processJob.ts';
 import { logger } from '../_shared/logger.ts';
-import type { DialecticJobPayload, ProcessSimpleJobDeps, SeedPromptData, IContinueJobResult } from '../dialectic-service/dialectic.interface.ts';
+import type { DialecticJobPayload, ProcessSimpleJobDeps, SeedPromptData, IContinueJobResult, DialecticPlanJobPayload } from '../dialectic-service/dialectic.interface.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import type { UnifiedAIResponse } from '../dialectic-service/dialectic.interface.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { isDialecticCombinationJobPayload, isDialecticJobPayload } from '../_shared/utils/type_guards.ts';
+import { isDialecticCombinationJobPayload, isJson } from '../_shared/utils/type_guards.ts';
 import { createMockJobProcessors } from '../_shared/dialectic.mock.ts';
 import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 
@@ -114,7 +114,7 @@ Deno.test('processJob - routes to processSimpleJob for simple stages', async () 
     const { processors, spies } = createMockJobProcessors();
 
     const mockJobId = 'job-id-simple-route';
-    const mockPayload: Json = {
+    const mockPayload: DialecticJobPayload = {
         sessionId: 'session-id',
         projectId: 'project-id',
         stageSlug: 'thesis', // A simple stage
@@ -122,8 +122,8 @@ Deno.test('processJob - routes to processSimpleJob for simple stages', async () 
         continueUntilComplete: false,
     };
     
-    if (!isDialecticJobPayload(mockPayload)) {
-        throw new Error('Test setup failed: mockPayload is not a valid DialecticJobPayload');
+    if (!isJson(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid Json');
     }
 
     const mockJob: MockJob = {
@@ -183,15 +183,17 @@ Deno.test('processJob - routes to processComplexJob for complex stages', async (
     const { processors, spies } = createMockJobProcessors();
 
     const mockJobId = 'job-id-complex-route';
-    const mockPayload: Json = {
+    const mockPayload: DialecticPlanJobPayload = {
+        job_type: 'plan',
+        step_info: { current_step: 1, total_steps: 1 },
         sessionId: 'session-id-complex',
         projectId: 'project-id-complex',
         stageSlug: 'antithesis', // A complex stage
         model_id: 'model-id-complex',
     };
 
-    if (!isDialecticJobPayload(mockPayload)) {
-        throw new Error('Test setup failed: mockPayload is not a valid DialecticJobPayload');
+    if (!isJson(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid Json');
     }
 
     const mockJob: MockJob = {
@@ -257,15 +259,15 @@ Deno.test('processJob - throws error when stage not found', async () => {
     const { processors, spies } = createMockJobProcessors();
 
     const mockJobId = 'job-id-stage-not-found';
-    const mockPayload: Json = {
+    const mockPayload: DialecticJobPayload = {
         sessionId: 'session-id',
         projectId: 'project-id',
         stageSlug: 'nonexistent-stage',
         model_id: 'model-id',
     };
     
-    if (!isDialecticJobPayload(mockPayload)) {
-        throw new Error('Test setup failed: mockPayload is not a valid DialecticJobPayload');
+    if (!isJson(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid Json');
     }
 
     const mockJob: MockJob = {
@@ -327,15 +329,15 @@ Deno.test('processJob - throws error for unsupported processing strategy', async
     const { processors, spies } = createMockJobProcessors();
 
     const mockJobId = 'job-id-unsupported-strategy';
-    const mockPayload: Json = {
+    const mockPayload: DialecticJobPayload = {
         sessionId: 'session-id',
         projectId: 'project-id',
         stageSlug: 'custom-stage',
         model_id: 'model-id',
     };
     
-    if (!isDialecticJobPayload(mockPayload)) {
-        throw new Error('Test setup failed: mockPayload is not a valid DialecticJobPayload');
+    if (!isJson(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid Json');
     }
 
     const mockJob: MockJob = {
@@ -404,7 +406,7 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
     const { processors, spies } = createMockJobProcessors();
 
     const mockJobId = 'job-id-verify-params';
-    const mockPayload: Json = {
+    const mockPayload: DialecticJobPayload = {
         sessionId: 'session-id-params',
         projectId: 'project-id-params',
         stageSlug: 'thesis',
@@ -412,8 +414,8 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
         continueUntilComplete: true,
     };
     
-    if (!isDialecticJobPayload(mockPayload)) {
-        throw new Error('Test setup failed: mockPayload is not a valid DialecticJobPayload');
+    if (!isJson(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid Json');
     }
 
     const mockJob: MockJob = {
@@ -478,15 +480,17 @@ Deno.test('processJob - verifies correct parameters passed to processComplexJob'
     const { processors, spies } = createMockJobProcessors();
 
     const mockJobId = 'job-id-verify-complex-params';
-    const mockPayload: Json = {
+    const mockPayload: DialecticPlanJobPayload = {
+        job_type: 'plan',
+        step_info: { current_step: 1, total_steps: 1 },
         sessionId: 'session-id-complex-params',
         projectId: 'project-id-complex-params',
         stageSlug: 'antithesis',
         model_id: 'model-id-complex',
     };
     
-    if (!isDialecticJobPayload(mockPayload)) {
-        throw new Error('Test setup failed: mockPayload is not a valid DialecticJobPayload');
+    if (!isJson(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid Json');
     }
 
     const mockJob: MockJob = {

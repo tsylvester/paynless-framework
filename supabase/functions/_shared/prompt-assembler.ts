@@ -6,6 +6,7 @@ import { downloadFromStorage } from "./supabase_storage_utils.ts";
 import { DialecticContributionRow, InputArtifactRules, ArtifactSourceRule } from '../dialectic-service/dialectic.interface.ts';
 import { DynamicContextVariables, ProjectContext, SessionContext, StageContext, RenderPromptFunctionType } from "./prompt-assembler.interface.ts";
 import type { DownloadStorageResult } from "./supabase_storage_utils.ts";
+import { hasProcessingStrategy } from "./utils/type_guards.ts";
 
 export type ContributionOverride = Partial<DialecticContributionRow> & {
     content: string;
@@ -78,6 +79,7 @@ export class PromptAssembler {
             domain: project.dialectic_domains.name,
             agent_count: session.selected_model_ids?.length ?? 1,
             context_description: projectInitialUserPrompt,
+            original_user_request: hasProcessingStrategy(stage) ? projectInitialUserPrompt : null,
             prior_stage_ai_outputs: priorStageContributions,
             prior_stage_user_feedback: priorStageFeedback,
             deployment_context: null,

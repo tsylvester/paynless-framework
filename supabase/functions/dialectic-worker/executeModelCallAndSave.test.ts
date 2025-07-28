@@ -7,17 +7,63 @@ import {
   import type { Database, Tables, Json } from '../types_db.ts';
   import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
   import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
-  import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
   import { logger } from '../_shared/logger.ts';
   import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-  import { isDialecticJobPayload, isRecord, isJson } from '../_shared/utils/type_guards.ts';
+  import {
+    isJson,
+    isRecord,
+} from '../_shared/utils/type_guards.ts';
   import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
-  import type { DialecticJobRow, UnifiedAIResponse, DialecticSession, DialecticContributionRow, ProcessSimpleJobDeps, SelectedAiProvider, ExecuteModelCallAndSaveParams, DialecticJobPayload } from '../dialectic-service/dialectic.interface.ts';
+  import type { 
+    DialecticJobRow, 
+    UnifiedAIResponse, 
+    DialecticSession, 
+    DialecticContributionRow, 
+    ProcessSimpleJobDeps, 
+    SelectedAiProvider, 
+    ExecuteModelCallAndSaveParams, 
+    DialecticJobPayload 
+} from '../dialectic-service/dialectic.interface.ts';
   import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
   import type { LogMetadata } from '../_shared/types.ts';
   import { ContextWindowError } from '../_shared/utils/errors.ts';
 
-  const mockPayload: Json = {
+  // Helper function to create a valid DialecticJobRow for testing
+  function createMockJob(payload: DialecticJobPayload, overrides: Partial<DialecticJobRow> = {}): DialecticJobRow {
+    if (!isJson(payload)) {
+        throw new Error("Test payload is not valid JSON. Please check the mock payload object.");
+    }
+  
+    const baseJob: DialecticJobRow = {
+        id: 'job-id-123',
+        session_id: 'session-id-123',
+        stage_slug: 'test-stage',
+        iteration_number: 1,
+        status: 'pending',
+        user_id: 'user-id-123',
+        attempt_count: 0,
+        completed_at: null,
+        created_at: new Date().toISOString(),
+        error_details: null,
+        max_retries: 3,
+        parent_job_id: null,
+        prerequisite_job_id: null,
+        results: null,
+        started_at: null,
+        target_contribution_id: null,
+        payload: payload,
+        ...overrides,
+    };
+  
+    return baseJob;
+  }
+
+  const testPayload: DialecticJobPayload = {
+    job_type: 'execute',
+    step_info: { current_step: 1, total_steps: 1 },
+    prompt_template_name: 'test-prompt',
+    inputs: {},
+    output_type: 'test-output',
     projectId: 'project-abc',
     sessionId: 'session-456',
     stageSlug: 'test-stage',
@@ -25,30 +71,6 @@ import {
     iterationNumber: 1,
     continueUntilComplete: false,
     walletId: 'wallet-ghi'
-  };
-
-  if (!isDialecticJobPayload(mockPayload)) {
-    throw new Error("Test setup failed: mockPayload is not a valid DialecticJobPayload");
-  }
-
-  const mockJob: DialecticJobRow = {
-    id: 'job-123',
-    session_id: 'session-456',
-    user_id: 'user-789',
-    stage_slug: 'test-stage',
-    iteration_number: 1,
-    payload: mockPayload,
-    status: 'pending',
-    attempt_count: 0,
-    max_retries: 3,
-    created_at: new Date().toISOString(),
-    parent_job_id: null,
-    results: null,
-    completed_at: null,
-    error_details: null,
-    started_at: null,
-    target_contribution_id: null,
-    prerequisite_job_id: null,
   };
   
   const mockSessionData: DialecticSession = {
@@ -182,7 +204,7 @@ import {
             dbClient: dbClient as unknown as SupabaseClient<Database>,
             deps,
             authToken: 'auth-token',
-            job: { ...mockJob, payload: mockPayload },
+            job: createMockJob(testPayload),
             projectOwnerUserId: 'user-789',
             providerDetails: mockProviderData,
             renderedPrompt: { content: 'Seed prompt content', fullPath: 'prompts/seed.txt' },
@@ -221,11 +243,8 @@ import {
         contentType: 'text/plain',
     }));
     
-    const continuationPayload: Json = { ...mockPayload, continueUntilComplete: true };
-    if (!isDialecticJobPayload(continuationPayload)) {
-      throw new Error("Test setup failed: continuationPayload is not a valid DialecticJobPayload.");
-    }
-    const jobWithContinuationPayload = { ...mockJob, payload: continuationPayload };
+    const continuationPayload: DialecticJobPayload = { ...testPayload, continueUntilComplete: true };
+    const jobWithContinuationPayload = createMockJob(continuationPayload);
 
     await t.step('should enqueue a continuation job', async () => {
         const params: ExecuteModelCallAndSaveParams = {
@@ -279,7 +298,7 @@ import {
                 dbClient: dbClient as unknown as SupabaseClient<Database>,
                 deps,
                 authToken: 'auth-token',
-                job: { ...mockJob, payload: mockPayload },
+                job: createMockJob(testPayload),
                 projectOwnerUserId: 'user-789',
                 providerDetails: mockProviderData,
                 renderedPrompt: { content: 'Seed prompt content', fullPath: 'prompts/seed.txt' },
@@ -325,7 +344,7 @@ import {
             dbClient: dbClient as unknown as SupabaseClient<Database>,
             deps,
             authToken: 'auth-token',
-            job: { ...mockJob, payload: mockPayload },
+            job: createMockJob(testPayload),
             projectOwnerUserId: 'user-789',
             providerDetails: mockProviderData,
             renderedPrompt: { content: 'Seed prompt content', fullPath: 'prompts/seed.txt' },
@@ -344,7 +363,7 @@ import {
   Deno.test('executeModelCallAndSave - Notifications', async (t) => {
     
     await t.step('should send Received and Complete notifications for a non-continuing job', async () => {
-        const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+        const { client: dbClient, clearAllStubs } = setupMockClient({
             'ai_providers': {
                 select: { data: [mockFullProviderData], error: null }
             }
@@ -354,14 +373,13 @@ import {
         const sendReceivedSpy = spy(deps.notificationService, 'sendContributionReceivedEvent');
         const sendCompleteSpy = spy(deps.notificationService, 'sendContributionGenerationCompleteEvent');
 
-        const testPayload: Json = { ...mockPayload, continueUntilComplete: false };
-        if (!isDialecticJobPayload(testPayload)) throw new Error("Invalid payload");
-
+        const nonContinuingPayload: DialecticJobPayload = { ...testPayload, continueUntilComplete: false };
+        
         const params: ExecuteModelCallAndSaveParams = {
             dbClient: dbClient as unknown as SupabaseClient<Database>,
             deps,
             authToken: 'auth-token',
-            job: { ...mockJob, payload: testPayload },
+            job: createMockJob(nonContinuingPayload),
             projectOwnerUserId: 'user-789',
             providerDetails: mockProviderData,
             renderedPrompt: { content: 'Seed prompt content', fullPath: 'prompts/seed.txt' },
@@ -376,7 +394,7 @@ import {
     });
 
     await t.step('should send Continued notification for a continuing job', async () => {
-        const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+        const { client: dbClient, clearAllStubs } = setupMockClient({
             'ai_providers': {
                 select: { data: [mockFullProviderData], error: null }
             }
@@ -391,9 +409,8 @@ import {
 
         const sendContinuedSpy = spy(deps.notificationService, 'sendContributionGenerationContinuedEvent');
         
-        const continuationPayload: Json = { ...mockPayload, continueUntilComplete: true };
-        if (!isDialecticJobPayload(continuationPayload)) throw new Error("Invalid payload");
-        const jobWithContinuationPayload = { ...mockJob, payload: continuationPayload };
+        const continuationPayload: DialecticJobPayload = { ...testPayload, continueUntilComplete: true };
+        const jobWithContinuationPayload = createMockJob(continuationPayload);
 
         const params: ExecuteModelCallAndSaveParams = {
             dbClient: dbClient as unknown as SupabaseClient<Database>,
@@ -445,7 +462,7 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
                 dbClient: dbClient as unknown as SupabaseClient<Database>,
                 deps,
                 authToken: 'auth-token',
-                job: { ...mockJob, payload: mockPayload },
+                job: createMockJob(testPayload),
                 projectOwnerUserId: 'user-789',
                 providerDetails: mockProviderData,
                 renderedPrompt: { content: 'This is a prompt that is definitely going to be longer than ten tokens.', fullPath: 'prompts/seed.txt' },

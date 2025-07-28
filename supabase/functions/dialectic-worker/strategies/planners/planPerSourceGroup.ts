@@ -6,7 +6,7 @@ export const planPerSourceGroup: GranularityPlannerFn = (
     parentJob,
     recipeStep
 ) => {
-    const childJobs = [];
+    const childPayloads: DialecticCombinationJobPayload[] = [];
     
     // 1. Group documents by their target_contribution_id
     const docsByGroup = sourceDocs.reduce<Record<string, SourceDocument[]>>((acc, doc) => {
@@ -31,9 +31,13 @@ export const planPerSourceGroup: GranularityPlannerFn = (
             stageSlug: parentJob.payload.stageSlug,
             iterationNumber: parentJob.payload.iterationNumber,
             model_id: parentJob.payload.model_id,
+            step_info: {
+                ...parentJob.payload.step_info,
+                status: 'pending',
+            },
             
             // Set job-specific properties
-            job_type: 'execute',
+            job_type: 'combine',
             prompt_template_name: recipeStep.prompt_template_name,
             inputs: {
                 source_group_id: groupId,
@@ -41,17 +45,8 @@ export const planPerSourceGroup: GranularityPlannerFn = (
             }
         };
 
-        childJobs.push({
-            parent_job_id: parentJob.id,
-            session_id: parentJob.session_id,
-            user_id: parentJob.user_id,
-            stage_slug: parentJob.stage_slug,
-            iteration_number: parentJob.iteration_number,
-            max_retries: parentJob.max_retries,
-            payload: newPayload,
-            target_contribution_id: null,
-        });
+        childPayloads.push(newPayload);
     }
 
-    return childJobs;
+    return childPayloads;
 }; 

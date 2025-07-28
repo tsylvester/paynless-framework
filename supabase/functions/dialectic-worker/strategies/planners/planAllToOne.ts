@@ -19,25 +19,18 @@ export const planAllToOne: GranularityPlannerFn = (
         stageSlug: parentJob.payload.stageSlug,
         iterationNumber: parentJob.payload.iterationNumber,
         model_id: parentJob.payload.model_id,
+        step_info: {
+            ...parentJob.payload.step_info,
+            status: 'pending',
+        },
         
         // Set job-specific properties
-        job_type: 'execute',
+        job_type: 'combine',
         prompt_template_name: recipeStep.prompt_template_name,
         inputs: {
             document_ids: documentIds,
         }
     };
 
-    const childJob = {
-        parent_job_id: parentJob.id,
-        session_id: parentJob.session_id,
-        user_id: parentJob.user_id,
-        stage_slug: parentJob.stage_slug,
-        iteration_number: parentJob.iteration_number,
-        max_retries: parentJob.max_retries,
-        payload: newPayload,
-        target_contribution_id: null,
-    };
-
-    return [childJob];
+    return [newPayload];
 }; 
