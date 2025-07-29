@@ -14,11 +14,11 @@ import type { SourceDocument } from '../../dialectic-service/dialectic.interface
  */
 export function groupSourceDocumentsByType(documents: SourceDocument[]): Record<string, SourceDocument[]> {
     return documents.reduce<Record<string, SourceDocument[]>>((acc, doc) => {
-        if (doc.contribution_type) {
-            if (!acc[doc.contribution_type]) {
-                acc[doc.contribution_type] = [];
+        if (doc.stage) {
+            if (!acc[doc.stage]) {
+                acc[doc.stage] = [];
             }
-            acc[doc.contribution_type].push(doc);
+            acc[doc.stage].push(doc);
         }
         return acc;
     }, {});
@@ -35,5 +35,11 @@ export function groupSourceDocumentsByType(documents: SourceDocument[]): Record<
  * @returns An array of `SourceDocument` objects that are related to the target ID.
  */
 export function findRelatedContributions(documents: SourceDocument[], targetId: string | null): SourceDocument[] {
-    return documents.filter(doc => doc.target_contribution_id === targetId);
+    return documents.filter(doc => {
+        if (!doc.document_relationships || typeof doc.document_relationships !== 'object' || Array.isArray(doc.document_relationships)) {
+            return false;
+        }
+        const relationships = doc.document_relationships as { source?: string };
+        return relationships.source === targetId;
+    });
 } 

@@ -7,10 +7,13 @@ import {
   type ModelProcessingResult,
   type SelectedAiProvider,
   type DialecticCombinationJobPayload,
+  type DialecticExecuteJobPayload,
 } from '../dialectic-service/dialectic.interface.ts';
 import { isSelectedAiProvider } from '../_shared/utils/type_guards.ts';
 import { isRecord } from '../_shared/utils/type_guards.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
+import { isDialecticJobRow } from '../_shared/utils/type_guards.ts';
+import { isContributionType } from '../_shared/utils/type_guards.ts';
 
 // Type guard to ensure the payload has the specific fields needed for a combination job.
 function hasCombinationInputs(payload: DialecticCombinationJobPayload): payload is DialecticCombinationJobPayload & { inputs: { document_ids: string[] }, prompt_template_name: string } {
@@ -57,7 +60,7 @@ export async function processCombinationJob(
         if (promptError || !promptTemplate) throw new Error(`Could not find system prompt named '${prompt_template_name}'.`);
 
         // 4. Fetch the metadata for all documents to be combined.
-        const { data: documents, error: docError } = await dbClient.from('dialectic_project_resources').select('storage_bucket, storage_path, file_name').in('id', document_ids);
+        const { data: documents, error: docError } = await dbClient.from('dialectic_contributions').select('storage_bucket, storage_path, file_name').in('id', document_ids);
         if (docError || !documents || documents.length !== document_ids.length) throw new Error(`Failed to fetch all document records for IDs: ${document_ids.join(', ')}.`);
 
         // 5. Download the content of each document.
@@ -78,12 +81,35 @@ export async function processCombinationJob(
         // 7. Render the final prompt.
         const renderedPromptContent = promptTemplate.prompt_text.replace('{{documents}}', combinedDocumentsText);
         
-        // 8. Delegate to the executor.
+        // 8. Transform the job to an 'execute' job in-memory and delegate.
+        if (!job.payload.output_type || !isContributionType(job.payload.output_type)) {
+            throw new Error(`Combination job ${job.id} is missing a valid 'output_type' in its payload.`);
+        }
+
+        const executePayload: DialecticExecuteJobPayload = {
+            job_type: 'execute',
+            projectId: job.payload.projectId,
+            sessionId: job.payload.sessionId,
+            stageSlug: job.payload.stageSlug,
+            iterationNumber: job.payload.iterationNumber,
+            model_id: job.payload.model_id,
+            step_info: job.payload.step_info ?? { current_step: 0, total_steps: 0 },
+            output_type: job.payload.output_type,
+            prompt_template_name: job.payload.prompt_template_name,
+            inputs: { combined_document_ids: document_ids.join(',') },
+        };
+        
+        const transformedJob = { ...job, payload: executePayload };
+
+        if (!isDialecticJobRow(transformedJob)) {
+            throw new Error(`Failed to transform combine job ${job.id} to a valid execute job.`);
+        }
+
         await deps.executeModelCallAndSave({
             dbClient,
             deps,
             authToken,
-            job,
+            job: transformedJob,
             projectOwnerUserId,
             providerDetails,
             renderedPrompt: { content: renderedPromptContent, fullPath: `system_prompt:${prompt_template_name}` },

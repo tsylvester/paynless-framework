@@ -184,7 +184,7 @@ function estimateInputTokens(
       return Math.ceil(textToEstimate.length / ratio);
     }
 
-    case 'claude_tokenizer':
+    case 'anthropic_tokenizer':
     case 'google_gemini_tokenizer':
     case 'none':
     default: {

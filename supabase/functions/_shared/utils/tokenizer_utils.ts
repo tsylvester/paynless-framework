@@ -1,5 +1,6 @@
-import { type TiktokenModel, getEncoding, encodingForModel } from "https://esm.sh/js-tiktoken@1.0.10";
+import { getEncoding } from "https://esm.sh/js-tiktoken@1.0.10";
 import type { MessageForTokenCounting, AiModelExtendedConfig, TiktokenModelForRules } from "../types.ts";
+import { countTokens } from "npm:@anthropic-ai/tokenizer@0.0.4";
 
 /**
  * Counts the number of tokens in a list of messages based on the provided model configuration.
@@ -99,27 +100,39 @@ export function countTokensForMessages(
     // encoding.free(); // js-tiktoken's getEncoding doesn't require manual free if not using WASM directly.
     return numTokens;
 
-  } else if (tokenization_strategy.type === "rough_char_count" || tokenization_strategy.type === "claude_tokenizer" || tokenization_strategy.type === "google_gemini_tokenizer") {
-    if (tokenization_strategy.type !== "rough_char_count") {
-      console.warn(`[countTokensForMessages] Using 'rough_char_count' as a fallback for '${tokenization_strategy.type}' on model "${api_identifier}".`);
-    }
+  } else if (tokenization_strategy.type === "anthropic_tokenizer") {
+    // The official Anthropic tokenizer from the `@anthropic-ai/tokenizer` package.
+    return countTokens(messages.map(m => m.content || "").join("\\n"));
+
+  } else if (tokenization_strategy.type === "google_gemini_tokenizer") {
+    console.warn(`[countTokensForMessages] Using 'rough_char_count' as a fallback for '${tokenization_strategy.type}' on model "${api_identifier}".`);
     let totalChars = 0;
     for (const message of messages) {
       if (message.role) totalChars += message.role.length;
       if (message.content) totalChars += message.content.length;
       if (message.name) totalChars += message.name.length;
     }
-    const ratio = (tokenization_strategy as { chars_per_token_ratio?: number }).chars_per_token_ratio || 4.0; // Default to 4 chars/token
+    return Math.ceil(totalChars / 4.0); // Default to 4 chars/token for fallback
+
+  } else if (tokenization_strategy.type === "rough_char_count") {
+    let totalChars = 0;
+    for (const message of messages) {
+      if (message.role) totalChars += message.role.length;
+      if (message.content) totalChars += message.content.length;
+      if (message.name) totalChars += message.name.length;
+    }
+    const ratio = tokenization_strategy.chars_per_token_ratio || 4.0; // Default to 4 chars/token
     return Math.ceil(totalChars / ratio);
 
   } else if (tokenization_strategy.type === "none") {
     console.warn(`[countTokensForMessages] Tokenization strategy is 'none' for model "${api_identifier}". Returning 0 tokens.`);
     return 0;
   
-  // TODO: Implement other strategies like 'claude_tokenizer', 'google_gemini_tokenizer' when available/needed.
-  
   } else {
-    console.error(`[countTokensForMessages] Unsupported tokenization strategy type: ${(tokenization_strategy as any).type} for model "${api_identifier}".`);
-    throw new Error(`Unsupported tokenization strategy for ${api_identifier}: ${(tokenization_strategy as any).type}`);
+    // This block should be unreachable if all members of the discriminated union are handled above.
+    // The `never` type assertion helps catch missing cases at compile time.
+    const unhandled: never = tokenization_strategy;
+    console.error(`[countTokensForMessages] Unhandled tokenization strategy: ${JSON.stringify(unhandled)}`);
+    throw new Error(`Unsupported tokenization strategy for ${api_identifier}.`);
   }
 } 

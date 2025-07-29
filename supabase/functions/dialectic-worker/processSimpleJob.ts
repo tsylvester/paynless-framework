@@ -10,7 +10,6 @@ import {
 } from '../dialectic-service/dialectic.interface.ts';
 import { isSelectedAiProvider } from "../_shared/utils/type_guards.ts";
 import { ContextWindowError } from '../_shared/utils/errors.ts';
-import { type Json } from '../types_db.ts';
 
 export async function processSimpleJob(
     dbClient: SupabaseClient<Database>,

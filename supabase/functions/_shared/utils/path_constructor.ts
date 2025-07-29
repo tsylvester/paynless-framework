@@ -147,6 +147,29 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       return { storagePath: `${basePathForStageFiles}/documents`, fileName: sanitizeForPath(originalFileName) };
     }
 
+    // --- Intermediate Artifacts ---
+    case 'pairwise_synthesis_chunk': {
+      if (!basePathForStageFiles || !originalFileName) {
+        throw new Error('projectId, sessionId, iteration, stageSlug, and originalFileName are required for pairwise_synthesis_chunk.');
+      }
+      return { storagePath: `${basePathForStageFiles}/_work/pairwise_synthesis_chunks`, fileName: sanitizeForPath(originalFileName) };
+    }
+
+    case 'reduced_synthesis': {
+      if (!basePathForStageFiles || !originalFileName) {
+        throw new Error('projectId, sessionId, iteration, stageSlug, and originalFileName are required for reduced_synthesis.');
+      }
+      return { storagePath: `${basePathForStageFiles}/_work/reduced_synthesis_chunks`, fileName: sanitizeForPath(originalFileName) };
+    }
+
+    case 'final_synthesis': {
+      if (!basePathForStageFiles || !originalFileName) {
+        throw new Error('projectId, sessionId, iteration, stageSlug, and originalFileName are required for final_synthesis.');
+      }
+      // Note: This is still considered a "work" product before becoming a final, user-facing synthesis document.
+      return { storagePath: `${basePathForStageFiles}/_work/final_synthesis`, fileName: sanitizeForPath(originalFileName) };
+    }
+
     default: {
       // This will cause a compile-time error if fileType is not exhausted,
       // ensuring all defined FileTypes are handled.

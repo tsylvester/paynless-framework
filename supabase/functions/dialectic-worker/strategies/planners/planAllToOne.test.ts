@@ -1,14 +1,82 @@
 // supabase/functions/dialectic-worker/strategies/planners/planAllToOne.test.ts
 import { assertEquals, assertExists } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import type { DialecticJobRow, SourceDocument, DialecticPlanJobPayload, DialecticRecipeStep } from '../../../dialectic-service/dialectic.interface.ts';
+import type { ContributionType } from '../../../dialectic-service/dialectic.interface.ts';
 import { planAllToOne } from './planAllToOne.ts';
 
 // Mock Data
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
-    { id: 'doc-1', content: '', citations: [], error: null, mime_type: 'text/plain', original_model_contribution_id: null, raw_response_storage_path: null, tokens_used_input: 0, tokens_used_output: 0, processing_time_ms: 0, contribution_type: 'reduced_synthesis', size_bytes: 0, target_contribution_id: 't', seed_prompt_url: null },
-    { id: 'doc-2', content: '', citations: [], error: null, mime_type: 'text/plain', original_model_contribution_id: null, raw_response_storage_path: null, tokens_used_input: 0, tokens_used_output: 0, processing_time_ms: 0, contribution_type: 'reduced_synthesis', size_bytes: 0, target_contribution_id: 't', seed_prompt_url: null },
-    { id: 'doc-3', content: '', citations: [], error: null, mime_type: 'text/plain', original_model_contribution_id: null, raw_response_storage_path: null, tokens_used_input: 0, tokens_used_output: 0, processing_time_ms: 0, contribution_type: 'reduced_synthesis', size_bytes: 0, target_contribution_id: 't', seed_prompt_url: null },
-].map(d => ({ ...d, contribution_type: 'reduced_synthesis', session_id: 's1', user_id: 'u1', stage: 'synthesis', iteration_number: 1, edit_version: 1, is_latest_edit: true, created_at: 't', updated_at: 't', file_name: 'f', storage_bucket: 'b', storage_path: 'p', model_id: 'm', model_name: 'M', prompt_template_id_used: 'p', target_contribution_id: 't' }));
+    { 
+        id: 'doc-1', 
+        content: '', 
+        citations: [], 
+        error: null, 
+        mime_type: 'text/plain', 
+        original_model_contribution_id: null, 
+        raw_response_storage_path: null, 
+        tokens_used_input: 0, 
+        tokens_used_output: 0, 
+        processing_time_ms: 0, 
+        contribution_type: 'reduced_synthesis', 
+        size_bytes: 0, 
+        target_contribution_id: 't', 
+        seed_prompt_url: null,
+        document_relationships: null,
+    },
+    { 
+        id: 'doc-2', 
+        content: '', 
+        citations: [], 
+        error: null, 
+        mime_type: 'text/plain', 
+        original_model_contribution_id: null, 
+        raw_response_storage_path: null, 
+        tokens_used_input: 0, 
+        tokens_used_output: 0, 
+        processing_time_ms: 0, 
+        contribution_type: 'reduced_synthesis', 
+        size_bytes: 0, 
+        target_contribution_id: 't', 
+        seed_prompt_url: null,
+        document_relationships: null,
+    },
+    { 
+        id: 'doc-3', 
+        content: '', 
+        citations: [], 
+        error: null, 
+        mime_type: 'text/plain', 
+        original_model_contribution_id: null, 
+        raw_response_storage_path: null, 
+        tokens_used_input: 0, 
+        tokens_used_output: 0, 
+        processing_time_ms: 0, 
+        contribution_type: 'reduced_synthesis', 
+        size_bytes: 0, 
+        target_contribution_id: 't', 
+        seed_prompt_url: null,
+        document_relationships: null,
+    },
+].map(d => ({ 
+    ...d, 
+    contribution_type: 'reduced_synthesis', 
+    session_id: 's1', 
+    user_id: 'u1', 
+    stage: 'synthesis', 
+    iteration_number: 1, 
+    edit_version: 1, 
+    is_latest_edit: true, 
+    created_at: 't', 
+    updated_at: 't', 
+    file_name: 'f', 
+    storage_bucket: 'b', 
+    storage_path: 'p', 
+    model_id: 'm', 
+    model_name: 'M', 
+    prompt_template_id_used: 'p', 
+    target_contribution_id: 't',
+    document_relationships: null,
+}));
 
 const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
     id: 'parent-job-123',
@@ -37,7 +105,7 @@ const MOCK_RECIPE_STEP: DialecticRecipeStep = {
     prompt_template_name: 'synthesis_step3_final',
     inputs_required: [],
     granularity_strategy: 'all_to_one',
-    output_type: 'synthesis_chunk',
+    output_type: 'final_synthesis',
 };
 
 Deno.test('planAllToOne should create exactly one child job payload', () => {

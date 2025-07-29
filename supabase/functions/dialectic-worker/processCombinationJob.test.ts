@@ -9,7 +9,7 @@ import {
   import { logger } from '../_shared/logger.ts';
   import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
   import { processCombinationJob } from './processCombinationJob.ts';
-  import type { DialecticJobRow, DialecticJobPayload, DialecticSession, ProcessSimpleJobDeps, SelectedAiProvider, DialecticProjectResource, DialecticCombinationJobPayload } from '../dialectic-service/dialectic.interface.ts';
+  import type { DialecticJobRow, DialecticJobPayload, DialecticSession, ProcessSimpleJobDeps, SelectedAiProvider, DialecticCombinationJobPayload } from '../dialectic-service/dialectic.interface.ts';
   import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
   import { MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
   import type { DownloadStorageResult } from "../_shared/supabase_storage_utils.ts";
@@ -32,6 +32,7 @@ import {
         document_ids: ['doc-1', 'doc-2'],
     },
     prompt_template_name: 'tier2_document_combiner',
+    output_type: 'reduced_synthesis',
   };
 
   if (!isDialecticCombinationJobPayload(mockCombinationPayload)) {
@@ -86,9 +87,67 @@ import {
       stage_association: 'utility',
   };
   
-  const mockDocuments: DialecticProjectResource[] = [
-      { id: 'doc-1', storage_bucket: 'test', storage_path: 'docs/1', file_name: 'doc1.txt', project_id: 'project-abc', user_id: 'user-789', mime_type: 'text/plain', size_bytes: 100, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), resource_description: 'Document 1' },
-      { id: 'doc-2', storage_bucket: 'test', storage_path: 'docs/2', file_name: 'doc2.txt', project_id: 'project-abc', user_id: 'user-789', mime_type: 'text/plain', size_bytes: 100, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), resource_description: 'Document 2' },
+  const mockDocuments: Tables<'dialectic_contributions'>[] = [
+      { 
+          id: 'doc-1', 
+          storage_bucket: 'test', 
+          storage_path: 'docs/1', 
+          file_name: 'doc1.txt', 
+          user_id: 'user-789', 
+          mime_type: 'text/plain', 
+          size_bytes: 100, 
+          created_at: new Date().toISOString(), 
+          updated_at: new Date().toISOString(), 
+          contribution_type: 'source', 
+          citations: null, 
+          edit_version: 0, 
+          error: null, 
+          is_latest_edit: true, 
+          iteration_number: 0, 
+          model_id: null, 
+          model_name: null, 
+          original_model_contribution_id: null, 
+          prompt_template_id_used: null, 
+          raw_response_storage_path: null, 
+          seed_prompt_url: null, 
+          session_id: 'session-456', 
+          stage: 'source', 
+          target_contribution_id: null, 
+          tokens_used_input: null, 
+          tokens_used_output: null, 
+          document_relationships: null,
+          processing_time_ms: null,
+      },
+      { 
+          id: 'doc-2', 
+          storage_bucket: 'test', 
+          storage_path: 'docs/2', 
+          file_name: 'doc2.txt', 
+          user_id: 'user-789', 
+          mime_type: 'text/plain', 
+          size_bytes: 100, 
+          created_at: new Date().toISOString(), 
+          updated_at: new Date().toISOString(), 
+          contribution_type: 'source', 
+          citations: null, 
+          edit_version: 0, 
+          error: null, 
+          is_latest_edit: true, 
+          iteration_number: 0, 
+          model_id: null, 
+          model_name: null, 
+          original_model_contribution_id: null, 
+          prompt_template_id_used: null, 
+          raw_response_storage_path: null, 
+          seed_prompt_url: null, 
+          session_id: 'session-456', 
+          stage: 'source', 
+          target_contribution_id: null, 
+          tokens_used_input: null, 
+          tokens_used_output: null, 
+          document_relationships: null,
+          processing_time_ms: null,
+      },
   ];
   
   const mockNotificationService: NotificationServiceType = {
@@ -108,7 +167,7 @@ import {
               dialectic_sessions: { select: () => Promise.resolve({ data: [mockSessionData], error: null }) },
               ai_providers: { select: () => Promise.resolve({ data: [mockProviderData], error: null }) },
               system_prompts: { select: () => Promise.resolve({ data: [mockSystemPrompt], error: null }) },
-              dialectic_project_resources: { select: () => Promise.resolve({ data: mockDocuments, error: null }) },
+              dialectic_contributions: { select: () => Promise.resolve({ data: mockDocuments, error: null }) },
               ...configOverrides,
           },
       });
@@ -208,9 +267,9 @@ import {
 Deno.test('processCombinationJob - Error Handling Scenarios', async (t) => {
     
     await t.step('should throw a communicative error if session query fails', async () => {
-        const { client: mockDb } = createMockSupabaseClient(undefined, {
+        const { client: mockDb } = createMockSupabaseClient('user-789', {
             genericMockResults: {
-                'dialectic_sessions': { select: { data: null, error: new Error('DB session error') } },
+                'dialectic_sessions': { select: () => Promise.resolve({ data: null, error: new Error('DB session error') }) },
             },
         });
         const deps = getMockDeps();
@@ -227,10 +286,10 @@ Deno.test('processCombinationJob - Error Handling Scenarios', async (t) => {
     });
 
     await t.step('should throw a communicative error if provider query fails', async () => {
-        const { client: mockDb } = createMockSupabaseClient(undefined, {
+        const { client: mockDb } = createMockSupabaseClient('user-789', {
             genericMockResults: {
-                'dialectic_sessions': { select: { data: [mockSessionData], error: null } },
-                'ai_providers': { select: { data: null, error: new Error('DB provider error') } },
+                'dialectic_sessions': { select: () => Promise.resolve({ data: [mockSessionData], error: null }) },
+                'ai_providers': { select: () => Promise.resolve({ data: null, error: new Error('DB provider error') }) },
             },
         });
         const deps = getMockDeps();
@@ -247,11 +306,11 @@ Deno.test('processCombinationJob - Error Handling Scenarios', async (t) => {
     });
 
     await t.step('should throw a communicative error if system_prompts query fails', async () => {
-        const { client: mockDb } = createMockSupabaseClient(undefined, {
+        const { client: mockDb } = createMockSupabaseClient('user-789', {
             genericMockResults: {
-                'dialectic_sessions': { select: { data: [mockSessionData], error: null } },
-                'ai_providers': { select: { data: [mockProviderData], error: null } },
-                'system_prompts': { select: { data: null, error: new Error('DB prompt error') } },
+                'dialectic_sessions': { select: () => Promise.resolve({ data: [mockSessionData], error: null }) },
+                'ai_providers': { select: () => Promise.resolve({ data: [mockProviderData], error: null }) },
+                'system_prompts': { select: () => Promise.resolve({ data: null, error: new Error('DB prompt error') }) },
             },
         });
         const deps = getMockDeps();
@@ -268,12 +327,12 @@ Deno.test('processCombinationJob - Error Handling Scenarios', async (t) => {
     });
     
     await t.step('should throw if number of fetched docs does not match requested IDs', async () => {
-        const { client: mockDb } = createMockSupabaseClient(undefined, {
+        const { client: mockDb } = createMockSupabaseClient('user-789', {
             genericMockResults: {
-                'dialectic_sessions': { select: { data: [mockSessionData], error: null } },
-                'ai_providers': { select: { data: [mockProviderData], error: null } },
-                'system_prompts': { select: { data: [mockSystemPrompt], error: null } },
-                'dialectic_project_resources': { select: { data: [mockDocuments[0]], error: null } }, // Only return one doc
+                'dialectic_sessions': { select: () => Promise.resolve({ data: [mockSessionData], error: null }) },
+                'ai_providers': { select: () => Promise.resolve({ data: [mockProviderData], error: null }) },
+                'system_prompts': { select: () => Promise.resolve({ data: [mockSystemPrompt], error: null }) },
+                'dialectic_contributions': { select: () => Promise.resolve({ data: [mockDocuments[0]], error: null }) }, // Only return one doc
             },
         });
         const deps = getMockDeps();
@@ -290,12 +349,12 @@ Deno.test('processCombinationJob - Error Handling Scenarios', async (t) => {
     });
 
     await t.step('should throw a communicative error if downloadFromStorage fails', async () => {
-        const { client: mockDb } = createMockSupabaseClient(undefined, {
+        const { client: mockDb } = createMockSupabaseClient('user-789', {
             genericMockResults: {
-                'dialectic_sessions': { select: { data: [mockSessionData], error: null } },
-                'ai_providers': { select: { data: [mockProviderData], error: null } },
-                'system_prompts': { select: { data: [mockSystemPrompt], error: null } },
-                'dialectic_project_resources': { select: { data: mockDocuments, error: null } },
+                'dialectic_sessions': { select: () => Promise.resolve({ data: [mockSessionData], error: null }) },
+                'ai_providers': { select: () => Promise.resolve({ data: [mockProviderData], error: null }) },
+                'system_prompts': { select: () => Promise.resolve({ data: [mockSystemPrompt], error: null }) },
+                'dialectic_contributions': { select: () => Promise.resolve({ data: mockDocuments, error: null }) },
             },
         });
         const deps = getMockDeps();

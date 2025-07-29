@@ -83,6 +83,7 @@ export const mockContributionRow: DialecticContributionRow = {
     storage_path: 'path/to/contribution.md',
     size_bytes: 1234,
     mime_type: 'text/markdown',
+    document_relationships: null,
     };
 
     export const mockDialecticContributionReceivedPayload: DialecticContributionReceivedPayload = {

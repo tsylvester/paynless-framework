@@ -1,4 +1,5 @@
 // supabase/functions/dialectic-worker/strategies/planners/planPerSourceGroup.ts
+import { isStringRecord } from "../../../_shared/utils/type_guards.ts";
 import type { DialecticCombinationJobPayload, GranularityPlannerFn, SourceDocument } from "../../../dialectic-service/dialectic.interface.ts";
 
 export const planPerSourceGroup: GranularityPlannerFn = (
@@ -8,13 +9,14 @@ export const planPerSourceGroup: GranularityPlannerFn = (
 ) => {
     const childPayloads: DialecticCombinationJobPayload[] = [];
     
-    // 1. Group documents by their target_contribution_id
+    // 1. Group documents by their source_group_id from document_relationships
     const docsByGroup = sourceDocs.reduce<Record<string, SourceDocument[]>>((acc, doc) => {
-        if (doc.target_contribution_id) {
-            if (!acc[doc.target_contribution_id]) {
-                acc[doc.target_contribution_id] = [];
+        if (isStringRecord(doc.document_relationships) && typeof doc.document_relationships.source_group === 'string') {
+            const sourceGroupId = doc.document_relationships.source_group;
+            if (!acc[sourceGroupId]) {
+                acc[sourceGroupId] = [];
             }
-            acc[doc.target_contribution_id].push(doc);
+            acc[sourceGroupId].push(doc);
         }
         return acc;
     }, {});
@@ -39,6 +41,7 @@ export const planPerSourceGroup: GranularityPlannerFn = (
             // Set job-specific properties
             job_type: 'combine',
             prompt_template_name: recipeStep.prompt_template_name,
+            output_type: recipeStep.output_type,
             inputs: {
                 source_group_id: groupId,
                 document_ids: documentIds,

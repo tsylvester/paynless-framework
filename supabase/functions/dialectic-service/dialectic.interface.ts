@@ -77,6 +77,16 @@ export interface DialecticContribution {
   mime_type: string | null;
 }
 
+export type ContributionType =
+  | 'thesis'
+  | 'antithesis'
+  | 'synthesis'
+  | 'parenthesis'
+  | 'paralysis'
+  | 'pairwise_synthesis_chunk'
+  | 'reduced_synthesis'
+  | 'final_synthesis';
+
 
 export interface DialecticSessionModel {
     id: string;
@@ -336,11 +346,13 @@ export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
     job_type: 'execute';
     step_info: DialecticStepInfo; // Pass down for context
     prompt_template_name: string;
-    output_type: string; // The type of artifact this job will produce
+    output_type: ContributionType; // The type of artifact this job will produce
+    originalFileName?: string; // Optional: A descriptive filename for the output artifact
     inputs: {
         // Key-value store for resource_ids needed by the prompt
         [key: string]: string;
     };
+    document_relationships?: Json | null;
 }
 
 // Update the main union type
@@ -357,6 +369,7 @@ export interface DialecticCombinationJobPayload extends DialecticBaseJobPayload 
     [key: string]: unknown; // Allow other properties
   };
   prompt_template_name?: string;
+  output_type?: ContributionType; // Added for combination job
   step_info?: {
     current_step: number;
     total_steps: number;
@@ -738,10 +751,10 @@ export interface DialecticRecipeStep {
     prompt_template_name: string;
     inputs_required: {
         type: string;
-        origin_type?: string; // e.g., 'thesis' for antithesis inputs
+        stage_slug?: string; // e.g., 'thesis' for antithesis inputs
     }[];
     granularity_strategy: 'per_source_document' | 'pairwise_by_origin' | 'per_source_group' | 'all_to_one';
-    output_type: string; // e.g., 'pairwise_synthesis_chunk'
+    output_type: ContributionType; // e.g., 'pairwise_synthesis_chunk'
 }
 
 /**

@@ -113,7 +113,17 @@ Deno.test("PromptAssembler", async (t) => {
         const config: MockSupabaseDataConfig = {
             genericMockResults: {
                 dialectic_stages: { select: () => Promise.resolve({ data: [], error: null }) },
-                dialectic_contributions: { select: () => Promise.resolve({ data: [], error: null }) }
+                dialectic_contributions: { select: () => Promise.resolve({ data: [], error: null }) },
+                dialectic_feedback: {
+                    select: () => Promise.resolve({
+                        data: [{
+                            storage_bucket: 'test-bucket',
+                            storage_path: 'path/to/feedback',
+                            file_name: 'user_feedback.md'
+                        }],
+                        error: null
+                    })
+                }
             },
         };
 
@@ -171,6 +181,16 @@ Deno.test("PromptAssembler", async (t) => {
                         }], 
                         error: null 
                     })
+                },
+                dialectic_feedback: {
+                    select: () => Promise.resolve({
+                        data: [{
+                            storage_bucket: 'test-bucket',
+                            storage_path: 'path/to/feedback',
+                            file_name: 'user_feedback.md'
+                        }],
+                        error: null
+                    })
                 }
             },
             storageMock: {
@@ -189,7 +209,7 @@ Deno.test("PromptAssembler", async (t) => {
         const expectedRenderedPrompt = "Mocked Subsequent Stage Output";
         const renderPromptMockFn: RenderPromptMock = () => expectedRenderedPrompt;
 
-        const { assembler } = setup(config, renderPromptMockFn);
+        const { assembler, spies } = setup(config, renderPromptMockFn);
         
         try {
             const subsequentStage: StageContext = {
@@ -207,6 +227,10 @@ Deno.test("PromptAssembler", async (t) => {
             const result = await assembler.assemble(defaultProject, defaultSession, subsequentStage, defaultProject.initial_user_prompt, 1);
             
             assertEquals(result, expectedRenderedPrompt);
+
+            // Add assertions to verify that the spy for download was called for feedback
+            const downloadSpy = spies.storage.from('test-bucket').downloadSpy;
+            assert(downloadSpy.calls.some(call => call.args[0].includes('user_feedback')), "Download was not called for feedback file");
 
         } finally {
             teardown();
@@ -237,6 +261,12 @@ Deno.test("PromptAssembler", async (t) => {
                 dialectic_stages: { select: () => Promise.resolve({ data: [{slug: 'failing-stage', display_name: 'Failing Stage'}], error: null }) },
                 dialectic_contributions: {
                     select: () => Promise.resolve({ data: null, error: new Error(originalErrorMessage) })
+                },
+                dialectic_feedback: {
+                    select: () => Promise.resolve({
+                        data: [],
+                        error: null
+                    })
                 }
             }
         };
@@ -363,6 +393,12 @@ Deno.test("PromptAssembler", async (t) => {
                             model_name: 'Test Model',
                         }], 
                         error: null 
+                    })
+                },
+                dialectic_feedback: {
+                    select: () => Promise.resolve({
+                        data: [],
+                        error: null
                     })
                 }
             },

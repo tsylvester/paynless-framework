@@ -39,6 +39,9 @@ export function deconstructStoragePath(
   const projectSettingsFilePatternString = "^([^/]+)/project_settings\\.json$";
   const generalResourcePatternString = "^([^/]+)/general_resource/([^/]+)$";
   const initialUserPromptPatternString = "^([^/]+)/((?!sessions/|general_resource/|project_readme\\.md$|project_settings\\.json$)[^/]+)$";
+  const pairwiseSynthesisChunkPatternString = "^([^/]+)/sessions/([^/]+)/iteration_(\\d+)/([^/]+)/_work/pairwise_synthesis_chunks/([^/]+)$";
+  const reducedSynthesisPatternString = "^([^/]+)/sessions/([^/]+)/iteration_(\\d+)/([^/]+)/_work/reduced_synthesis_chunks/([^/]+)$";
+  const finalSynthesisPatternString = "^([^/]+)/sessions/([^/]+)/iteration_(\\d+)/([^/]+)/_work/final_synthesis/([^/]+)$";
 
   // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/raw_responses/{modelSlugSanitized}_{attemptCount}_{stageSlugSanitized}_raw.json
   let matches = fullPath.match(new RegExp(modelContribRawPatternString));
@@ -88,6 +91,45 @@ export function deconstructStoragePath(
     info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
     info.parsedFileNameFromPath = matches[5];
     info.fileTypeGuess = 'contribution_document';
+    return info as DeconstructedPathInfo;
+  }
+
+  // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/_work/pairwise_synthesis_chunks/{sanitizedOriginalFileName}
+  matches = fullPath.match(new RegExp(pairwiseSynthesisChunkPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.parsedFileNameFromPath = matches[5];
+    info.fileTypeGuess = 'pairwise_synthesis_chunk';
+    return info as DeconstructedPathInfo;
+  }
+
+  // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/_work/reduced_synthesis_chunks/{sanitizedOriginalFileName}
+  matches = fullPath.match(new RegExp(reducedSynthesisPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.parsedFileNameFromPath = matches[5];
+    info.fileTypeGuess = 'reduced_synthesis';
+    return info as DeconstructedPathInfo;
+  }
+
+  // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/_work/final_synthesis/{sanitizedOriginalFileName}
+  matches = fullPath.match(new RegExp(finalSynthesisPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.parsedFileNameFromPath = matches[5];
+    info.fileTypeGuess = 'final_synthesis';
     return info as DeconstructedPathInfo;
   }
 

@@ -38,6 +38,9 @@ import { createProject } from "../../functions/dialectic-service/createProject.t
 import { startSession } from "../../functions/dialectic-service/startSession.ts";
 import { submitStageResponses } from "../../functions/dialectic-service/submitStageResponses.ts";
 import { downloadFromStorage } from "../../functions/_shared/supabase_storage_utils.ts";
+import { executeModelCallAndSave } from "../../functions/dialectic-worker/executeModelCallAndSave.ts";
+import { processCombinationJob } from "../../functions/dialectic-worker/processCombinationJob.ts";
+import { type UploadContext, IFileManager } from "../../functions/_shared/types/file_manager.types.ts";
 
 // --- Test Suite Setup ---
 let adminClient: SupabaseClient<Database>;
@@ -95,7 +98,7 @@ const executePendingDialecticJobs = async (
         .from('dialectic_generation_jobs')
         .select('*')
         .eq('session_id', sessionId)
-        .in('status', ['pending', 'retrying', 'pending_continuation']);
+        .in('status', ['pending', 'retrying', 'pending_continuation', 'pending_next_step']);
 
     assert(!error, `Failed to fetch pending jobs: ${error?.message}`);
     assertExists(pendingJobs, "No pending jobs found to execute.");
@@ -110,6 +113,42 @@ const executePendingDialecticJobs = async (
         await handleJob(adminClient, job, deps, authToken, mockProcessors);
     }
 };
+
+const submitMockFeedback = async (
+    sessionId: string,
+    projectId: string,
+    stageSlug: string,
+    iterationNumber: number,
+    userId: string,
+    fileManager: IFileManager
+) => {
+    testLogger.info(`[Test Helper] Submitting mock feedback for stage: ${stageSlug}`);
+    const feedbackContent = `This is mock user feedback for the ${stageSlug} stage.`;
+    const uploadContext: UploadContext = {
+        pathContext: {
+            projectId,
+            sessionId,
+            iteration: iterationNumber,
+            stageSlug,
+            fileType: 'user_feedback',
+            originalFileName: `user_feedback_${stageSlug}.md`
+        },
+        fileContent: feedbackContent,
+        mimeType: 'text/markdown',
+        sizeBytes: feedbackContent.length,
+        userId: userId,
+        description: `Mock feedback for ${stageSlug}`,
+        feedbackTypeForDb: 'consolidated_feedback',
+    };
+
+    const { record, error } = await fileManager.uploadAndRegisterFile(uploadContext);
+    assert(!error, `Failed to upload mock feedback: ${error?.message}`);
+    assertExists(record, "Mock feedback record was not created.");
+    if (record) {
+        testLogger.info(`[Test Helper] Mock feedback submitted successfully for stage: ${stageSlug}. Record ID: ${record.id}`);
+    }
+};
+
 
 Deno.test(
   "Dialectic Pipeline Integration Test Suite",
@@ -154,13 +193,27 @@ Deno.test(
             api_identifier: 'gpt-4-turbo',
             name: 'GPT-4 Turbo',
             provider: 'openai',
-            config: { provider_max_input_tokens: 128000, provider_max_output_tokens: 4096 },
+            config: { 
+                provider_max_input_tokens: 128000, 
+                provider_max_output_tokens: 4096,
+                tokenization_strategy: {
+                    type: 'tiktoken',
+                    tiktoken_encoding_name: 'cl100k_base'
+                }
+            },
           },
           {
             api_identifier: 'claude-3-opus',
             name: 'Claude 3 Opus',
             provider: 'anthropic',
-            config: { provider_max_input_tokens: 200000, provider_max_output_tokens: 4096 },
+            config: { 
+                provider_max_input_tokens: 200000, 
+                provider_max_output_tokens: 4096,
+                tokenization_strategy: {
+                    type: 'anthropic_tokenizer',
+                    model: 'claude-3-opus-20240229'
+                }
+            },
           },
         ];
 
@@ -249,6 +302,7 @@ Deno.test(
                 sendContributionGenerationContinuedEvent: () => Promise.resolve(),
                 sendDialecticProgressUpdateEvent: () => Promise.resolve(),
             },
+            executeModelCallAndSave,
         };
     };
 
@@ -330,7 +384,7 @@ Deno.test(
         continueUntilComplete: true,
       };
       
-      const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
+      const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage, processCombinationJob };
 
       // --- Act & Assert: Job Creation & Initial Processing ---
       const { data: jobData, error: creationError } = await generateContributions(
@@ -490,7 +544,7 @@ Deno.test(
         assertEquals(jobData.job_ids.length, 2, "Expected two parent jobs to be created for the antithesis stage (one per model).");
         
         const [parentJobIdA, parentJobIdB] = jobData.job_ids;
-        const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
+        const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage, processCombinationJob };
 
         await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
 
@@ -515,7 +569,7 @@ Deno.test(
         assert(testSession, "Cannot test antithesis without a session.");
         return;
       }
-      const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
+      const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage, processCombinationJob };
 
       // Act: Execute the pending child jobs
       await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
@@ -552,11 +606,128 @@ Deno.test(
     });
 
     await t.step("7. should submit antithesis responses", async () => {
-      assert(false, "Not yet implemented");
+      if (!testSession) {
+        assert(testSession, "Cannot test antithesis without a session.");
+        return;
+      }
+      
+      const { data: antithesisContributions, error: contribError } = await adminClient
+        .from('dialectic_contributions')
+        .select('id')
+        .eq('session_id', testSession.id)
+        .eq('stage', 'antithesis')
+        .eq('is_latest_edit', true);
+
+      assert(!contribError, `Error fetching antithesis contributions for submission: ${contribError?.message}`);
+      assertExists(antithesisContributions, "Could not find antithesis contributions to submit feedback for.");
+      assertEquals(antithesisContributions.length, 4, "Incorrect number of antithesis contributions found for feedback submission.");
+
+      const submitPayload: SubmitStageResponsesPayload = {
+        sessionId: testSession.id,
+        projectId: testSession.project_id,
+        stageSlug: 'antithesis',
+        currentIterationNumber: 1,
+        responses: antithesisContributions.map(c => ({
+          originalContributionId: c.id,
+          responseText: `This is my feedback for antithesis contribution ${c.id}.`
+        }))
+      };
+      
+      const { data: submitData, error: submitError } = await submitStageResponses(
+        submitPayload,
+        adminClient,
+        primaryUser,
+        { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage }
+      );
+
+      assert(!submitError, `Error submitting antithesis responses: ${JSON.stringify(submitError)}`);
+      assertExists(submitData, "Antithesis submission did not return data.");
+      
+      if (submitData && submitData.updatedSession) {
+        assert(submitData.updatedSession.status === 'pending_synthesis', `Session status should be pending_synthesis, but was ${submitData.updatedSession.status}`);
+        testSession = submitData.updatedSession;
+
+        // SUBMIT MOCK FEEDBACK FOR THE NEXT STAGE
+        await submitMockFeedback(testSession.id, testSession.project_id, 'antithesis', 1, primaryUserId, testDeps.fileManager);
+
+      } else {
+        assert(false, "Submission of antithesis responses failed to return an updated session.");
+      }
     });
 
-    await t.step("8. should generate contributions for Synthesis stage", async () => {
-      assert(false, "Not yet implemented");
+    await t.step("8. should execute the multi-step Synthesis stage", async () => {
+        if (!testSession) {
+            assert(testSession, "Cannot test synthesis without a session.");
+            return;
+        }
+
+        const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage, processCombinationJob };
+        
+        // --- Invoke Synthesis Planner (Step 1: pairwise_by_origin) ---
+        const generatePayload: GenerateContributionsPayload = {
+            sessionId: testSession.id,
+            stageSlug: "synthesis",
+            iterationNumber: 1,
+            projectId: testSession.project_id,
+        };
+        const { data: jobData, error: creationError } = await generateContributions(adminClient, generatePayload, primaryUser, testDeps);
+        assert(!creationError, `Error creating parent job for synthesis: ${creationError?.message}`);
+        assertExists(jobData?.job_ids, "Parent job creation for synthesis did not return job IDs.");
+        
+        if (jobData) {
+            assertEquals(jobData.job_ids.length, 2, "Expected 2 parent synthesis jobs (one per model).");
+    
+            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+            
+            const { data: step1ChildJobs, error: step1ChildError } = await adminClient.from('dialectic_generation_jobs').select('id, parent_job_id').in('parent_job_id', jobData.job_ids);
+            assert(!step1ChildError, `Error fetching step 1 child jobs: ${step1ChildError?.message}`);
+            assertEquals(step1ChildJobs?.length, 8, "Expected 8 child jobs for Synthesis Step 1 (2 theses * 2 antitheses per thesis * 2 models = 8 pairs).");
+            
+            // --- Simulate Step 1 Completion & Wake Parent ---
+            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+            for (const parentJobId of jobData.job_ids) {
+                await pollForJobStatus(parentJobId, 'pending_next_step', `Parent job ${parentJobId} should be pending_next_step after Step 1.`);
+            }
+    
+            // --- Invoke Synthesis Planner (Step 2: per_source_group) ---
+            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+            const { data: step2ChildJobs, error: step2ChildError } = await adminClient.from('dialectic_generation_jobs').select('id').in('parent_job_id', jobData.job_ids).eq('status', 'pending');
+            assert(!step2ChildError, `Error fetching step 2 child jobs: ${step2ChildError?.message}`);
+            assertEquals(step2ChildJobs?.length, 4, "Expected 4 child jobs for Synthesis Step 2 (2 original thesis groups * 2 models).");
+    
+            // --- Simulate Step 2 Completion & Wake Parent ---
+            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+            for (const parentJobId of jobData.job_ids) {
+                await pollForJobStatus(parentJobId, 'pending_next_step', `Parent job ${parentJobId} should be pending_next_step after Step 2.`);
+            }
+    
+            // --- Invoke Synthesis Planner (Step 3: all_to_one) ---
+            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+            const { data: step3ChildJobs, error: step3ChildError } = await adminClient.from('dialectic_generation_jobs').select('id').in('parent_job_id', jobData.job_ids).eq('status', 'pending');
+            assert(!step3ChildError, `Error fetching step 3 child jobs: ${step3ChildError?.message}`);
+            assertEquals(step3ChildJobs?.length, 2, "Expected 2 child jobs for Synthesis Step 3 (one per model, all_to_one).");
+            
+            // --- Simulate Final Step Completion ---
+            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+    
+            // --- Final Assertions ---
+            await pollForCondition(async () => {
+                if (!testSession) return false;
+                const { data: pendingJobs } = await adminClient.from('dialectic_generation_jobs').select('id').eq('session_id', testSession.id).eq('stage_slug', 'synthesis').in('status', ['pending', 'processing', 'retrying', 'waiting_for_children', 'pending_next_step']);
+                return pendingJobs !== null && pendingJobs.length === 0;
+            }, "All jobs for the synthesis stage should be completed.");
+            
+            const { data: finalContributions, error: finalContribError } = await adminClient.from('dialectic_contributions').select('id, contribution_type').eq('session_id', testSession.id).eq('is_latest_edit', true);
+            assert(!finalContribError, "Error fetching final contributions for synthesis verification.");
+            
+            const pairwiseChunks = finalContributions?.filter(c => c.contribution_type === 'pairwise_synthesis_chunk');
+            const reducedSyntheses = finalContributions?.filter(c => c.contribution_type === 'reduced_synthesis');
+            const finalSyntheses = finalContributions?.filter(c => c.contribution_type === 'synthesis');
+    
+            assertEquals(pairwiseChunks?.length, 8, "Expected 8 intermediate 'pairwise_synthesis_chunk' contributions.");
+            assertEquals(reducedSyntheses?.length, 4, "Expected 4 intermediate 'reduced_synthesis' contributions.");
+            assertEquals(finalSyntheses?.length, 2, "Expected 2 final 'synthesis' contributions.");
+        }
     });
 
 

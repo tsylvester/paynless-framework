@@ -327,7 +327,7 @@ export interface AiModelExtendedConfig {
   tokenization_strategy: 
     | { type: 'tiktoken'; tiktoken_encoding_name: TiktokenEncoding; tiktoken_model_name_for_rules_fallback?: TiktokenModelForRules; is_chatml_model?: boolean; api_identifier_for_tokenization?: string; } 
     | { type: 'rough_char_count'; chars_per_token_ratio?: number; }
-    | { type: 'claude_tokenizer'; } // Placeholder for Anthropic's official tokenizer
+    | { type: 'anthropic_tokenizer'; model: string }
     | { type: 'google_gemini_tokenizer'; } // Placeholder for Google's official tokenizer
     | { type: 'none'; }; // If token counting is not applicable or handled externally
 

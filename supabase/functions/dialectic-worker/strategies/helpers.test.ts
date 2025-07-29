@@ -5,18 +5,209 @@ import { groupSourceDocumentsByType, findRelatedContributions } from './helpers.
 
 // Mock Data
 const MOCK_SOURCE_DOCUMENTS: SourceDocument[] = [
-    { id: 'thesis-1', contribution_type: 'thesis', target_contribution_id: null },
-    { id: 'thesis-2', contribution_type: 'thesis', target_contribution_id: null },
-    { id: 'antithesis-1a', contribution_type: 'antithesis', target_contribution_id: 'thesis-1' },
-    { id: 'antithesis-1b', contribution_type: 'antithesis', target_contribution_id: 'thesis-1' },
-    { id: 'antithesis-2a', contribution_type: 'antithesis', target_contribution_id: 'thesis-2' },
-    { id: 'synthesis-1', contribution_type: 'synthesis', target_contribution_id: 'some-other-id' },
-    // A document with a null contribution_type to test graceful handling
-    { id: 'null-type-1', contribution_type: null, target_contribution_id: 'thesis-1' },
+    { 
+        id: 'thesis-1', 
+        contribution_type: 'thesis', 
+        stage: 'thesis',
+        target_contribution_id: null,
+        document_relationships: null,
+        citations: [],
+        created_at: '',
+        edit_version: 0,
+        error: null,
+        file_name: '',
+        is_latest_edit: false,
+        model_id: '',
+        model_name: '',
+        raw_response_storage_path: '',
+        session_id: '',
+        size_bytes: 0,
+        storage_bucket: '',
+        storage_path: '',
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        user_id: '',
+        updated_at: '',
+        mime_type: 'text/plain',
+        original_model_contribution_id: null,
+        prompt_template_id_used: '',
+        seed_prompt_url: null,
+        iteration_number: 0,
+        content: '',
+    },
+    { 
+        id: 'thesis-2', 
+        contribution_type: 'thesis', 
+        stage: 'thesis',
+        target_contribution_id: null, 
+        document_relationships: null,
+        citations: [], 
+        created_at: '', 
+        edit_version: 0, 
+        error: null, 
+        file_name: '', 
+        is_latest_edit: false, 
+        model_id: '', 
+        model_name: '', 
+        raw_response_storage_path: '', 
+        session_id: '', 
+        size_bytes: 0, 
+        storage_bucket: '', 
+        storage_path: '', 
+        tokens_used_input: 0, 
+        tokens_used_output: 0, 
+        processing_time_ms: 0, 
+        user_id: '', 
+        updated_at: '', 
+        mime_type: 'text/plain',
+        original_model_contribution_id: null,
+        prompt_template_id_used: '',
+        seed_prompt_url: null,
+        iteration_number: 0,
+        content: '',
+    },
+    { 
+        id: 'antithesis-1a', 
+        contribution_type: 'antithesis',
+        stage: 'antithesis',
+        target_contribution_id: 'thesis-1',
+        document_relationships: { source: 'thesis-1' },
+        citations: [],
+        created_at: '',
+        edit_version: 0,
+        error: null,
+        file_name: '',
+        is_latest_edit: false,
+        model_id: '',
+        model_name: '',
+        raw_response_storage_path: '',
+        session_id: '',
+        size_bytes: 0,
+        storage_bucket: '',
+        storage_path: '',
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        user_id: '',
+        updated_at: '',
+        mime_type: 'text/plain',
+        original_model_contribution_id: null,
+        prompt_template_id_used: '',
+        seed_prompt_url: null,
+        iteration_number: 0,
+        content: '',
+    },
+    { 
+        id: 'antithesis-1b', 
+        contribution_type: 'antithesis', 
+        stage: 'antithesis',
+        target_contribution_id: 'thesis-1',
+        document_relationships: { source: 'thesis-1' },
+        citations: [],
+        created_at: '',
+        edit_version: 0,
+        error: null,
+        file_name: '',
+        is_latest_edit: false,
+        model_id: '',
+        model_name: '',
+        raw_response_storage_path: '',
+        session_id: '',
+        size_bytes: 0,
+        storage_bucket: '',
+        storage_path: '',
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        user_id: '',
+        updated_at: '',
+        mime_type: 'text/plain',
+        original_model_contribution_id: null,
+        prompt_template_id_used: '',
+        seed_prompt_url: null,
+        iteration_number: 0,
+        content: '',
+    },
+    { 
+        id: 'antithesis-2a', 
+        contribution_type: 'antithesis', 
+        stage: 'antithesis',
+        target_contribution_id: 'thesis-2',
+        document_relationships: { source: 'thesis-2' },
+        citations: [],
+        created_at: '',
+        edit_version: 0,
+        error: null,
+        file_name: '',
+        is_latest_edit: false,
+        model_id: '',
+        model_name: '',
+        raw_response_storage_path: '',
+        session_id: '',
+        size_bytes: 0,
+        storage_bucket: '',
+        storage_path: '',
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        user_id: '',
+        updated_at: '',
+        mime_type: 'text/plain',
+        original_model_contribution_id: null,
+        prompt_template_id_used: '',
+        seed_prompt_url: null,
+        iteration_number: 0,
+        content: '',
+    },
+    { 
+        id: 'synthesis-1', 
+        contribution_type: 'synthesis', 
+        stage: 'synthesis',
+        target_contribution_id: 'some-other-id',
+        document_relationships: { source: 'some-other-id' },
+        citations: [],
+        created_at: '',
+        edit_version: 0,
+        error: null,
+        file_name: '',
+        is_latest_edit: false,
+        model_id: '',
+        model_name: '',
+        raw_response_storage_path: '',
+        session_id: '',
+        size_bytes: 0,
+        storage_bucket: '',
+        storage_path: '',
+        tokens_used_input: 0,
+        tokens_used_output: 0,
+        processing_time_ms: 0,
+        user_id: '',
+        updated_at: '',
+        mime_type: 'text/plain',
+        original_model_contribution_id: null,
+        prompt_template_id_used: '',
+        seed_prompt_url: null,
+        iteration_number: 0,
+        content: '',
+    },
+];
+
+const MOCK_NULL_TYPE_DOCUMENT: SourceDocument[] = [
+    {
+        id: 'null-type-1',
+        contribution_type: null,
+        target_contribution_id: 'thesis-1',
+    },
+    {
+        id: 'null-type-2',
+        contribution_type: null,
+        target_contribution_id: 'thesis-2',
+    },
 ] as unknown as SourceDocument[];
 
 
-Deno.test('groupSourceDocumentsByType should correctly group documents by their contribution_type', () => {
+Deno.test('groupSourceDocumentsByType should correctly group documents by their stage', () => {
     const grouped = groupSourceDocumentsByType(MOCK_SOURCE_DOCUMENTS);
 
     assertExists(grouped.thesis, "Thesis group should exist");
@@ -41,7 +232,7 @@ Deno.test('groupSourceDocumentsByType should handle an empty input array', () =>
 });
 
 Deno.test('groupSourceDocumentsByType should handle an array with only one type of document', () => {
-    const onlyTheses = MOCK_SOURCE_DOCUMENTS.filter(d => d.contribution_type === 'thesis');
+    const onlyTheses = MOCK_SOURCE_DOCUMENTS.filter(d => d.stage === 'thesis');
     const grouped = groupSourceDocumentsByType(onlyTheses);
     
     assertEquals(Object.keys(grouped).length, 1, "Should only have one key for 'thesis'");
@@ -50,17 +241,13 @@ Deno.test('groupSourceDocumentsByType should handle an array with only one type 
 });
 
 Deno.test('groupSourceDocumentsByType should return an empty object if all documents have null contribution_type', () => {
-    const nullTypes: SourceDocument[] = [
-        { id: 'null-1', contribution_type: null },
-        { id: 'null-2', contribution_type: null },
-    ] as unknown as SourceDocument[];
-    const grouped = groupSourceDocumentsByType(nullTypes);
+    const grouped = groupSourceDocumentsByType(MOCK_NULL_TYPE_DOCUMENT);
     assertEquals(Object.keys(grouped).length, 0);
 });
 
 
-Deno.test('findRelatedContributions should return documents with a matching target_contribution_id', () => {
-    const antitheses = MOCK_SOURCE_DOCUMENTS.filter(doc => doc.contribution_type === 'antithesis');
+Deno.test('findRelatedContributions should return documents with a matching source', () => {
+    const antitheses = MOCK_SOURCE_DOCUMENTS.filter(doc => doc.stage === 'antithesis');
     const relatedToThesis1 = findRelatedContributions(antitheses, 'thesis-1');
     
     assertEquals(relatedToThesis1.length, 2, "Should find 2 antitheses related to thesis-1");
@@ -72,23 +259,22 @@ Deno.test('findRelatedContributions should return documents with a matching targ
     assertEquals(relatedToThesis2[0].id, 'antithesis-2a');
 });
 
-Deno.test('findRelatedContributions should correctly find documents with a null target_contribution_id', () => {
-    const docsWithNullTarget = [
-        ...MOCK_SOURCE_DOCUMENTS,
-        { id: 'related-to-null', target_contribution_id: null, contribution_type: 'some_type' }
-    ] as unknown as SourceDocument[];
+Deno.test('findRelatedContributions should correctly find documents with a null source', () => {
+    const docsWithNullSource = [
+        { ...MOCK_SOURCE_DOCUMENTS[0], id: 'rel-null-1', document_relationships: { source: null } },
+        { ...MOCK_SOURCE_DOCUMENTS[1], id: 'rel-null-2', document_relationships: { source: null } },
+        { ...MOCK_SOURCE_DOCUMENTS[2], id: 'rel-not-null', document_relationships: { source: 'thesis-1' } }
+    ] as SourceDocument[];
     
-    const related = findRelatedContributions(docsWithNullTarget, null);
+    const related = findRelatedContributions(docsWithNullSource, null);
     
-    // It should find the two original theses and the new 'related-to-null' doc.
-    assertEquals(related.length, 3, "Should find all documents where target_contribution_id is null");
-    assertExists(related.find(d => d.id === 'thesis-1'));
-    assertExists(related.find(d => d.id === 'thesis-2'));
-    assertExists(related.find(d => d.id === 'related-to-null'));
+    assertEquals(related.length, 2, "Should find all documents where document_relationships.source is explicitly null");
+    assertExists(related.find(d => d.id === 'rel-null-1'));
+    assertExists(related.find(d => d.id === 'rel-null-2'));
 });
 
 Deno.test('findRelatedContributions should return an empty array if no matches are found', () => {
-    const antitheses = MOCK_SOURCE_DOCUMENTS.filter(doc => doc.contribution_type === 'antithesis');
+    const antitheses = MOCK_SOURCE_DOCUMENTS.filter(doc => doc.stage === 'antithesis');
     const relatedToNonExistent = findRelatedContributions(antitheses, 'non-existent-id');
     assertEquals(relatedToNonExistent.length, 0, "Should return an empty array for a non-existent source ID");
 });

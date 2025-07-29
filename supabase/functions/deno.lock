@@ -11,6 +11,8 @@
     "jsr:@std/internal@0.225": "0.225.1",
     "jsr:@std/internal@1": "1.0.9",
     "jsr:@std/internal@^1.0.6": "1.0.9",
+    "jsr:@std/internal@^1.0.9": "1.0.9",
+    "jsr:@std/path@*": "1.1.1",
     "jsr:@std/testing@*": "0.225.1",
     "jsr:@std/testing@0.225.1": "0.225.1",
     "jsr:@std/testing@0.225.3": "0.225.3",
@@ -19,6 +21,7 @@
     "npm:@anthropic-ai/sdk@*": "0.22.0",
     "npm:@anthropic-ai/sdk@0.22": "0.22.0",
     "npm:@anthropic-ai/sdk@0.22.0": "0.22.0",
+    "npm:@anthropic-ai/tokenizer@0.0.4": "0.0.4",
     "npm:@google/genai@*": "1.9.0",
     "npm:@supabase/gotrue-js@^2.6.3": "2.70.0",
     "npm:@supabase/postgrest-js@1.15.5": "1.15.5",
@@ -89,6 +92,12 @@
     "@std/internal@1.0.9": {
       "integrity": "bdfb97f83e4db7a13e8faab26fb1958d1b80cc64366501af78a0aee151696eb8"
     },
+    "@std/path@1.1.1": {
+      "integrity": "fe00026bd3a7e6a27f73709b83c607798be40e20c81dde655ce34052fd82ec76",
+      "dependencies": [
+        "jsr:@std/internal@^1.0.9"
+      ]
+    },
     "@std/testing@0.225.1": {
       "integrity": "1a11119553fc33410abe8566731ae513c53e73db040cedbf901858fbd7587819",
       "dependencies": [
@@ -123,6 +132,13 @@
         "formdata-node",
         "node-fetch",
         "web-streams-polyfill@3.3.3"
+      ]
+    },
+    "@anthropic-ai/tokenizer@0.0.4": {
+      "integrity": "sha512-EHRKbxlxlc8W4KCBEseByJ7YwyYCmgu9OyN59H9+IYIGPoKv8tXyQXinkeGDI+cI8Tiuz9wk2jZb/kK7AyvL7g==",
+      "dependencies": [
+        "@types/node@18.19.115",
+        "tiktoken"
       ]
     },
     "@google/genai@1.9.0": {
@@ -679,6 +695,9 @@
       "dependencies": [
         "real-require"
       ]
+    },
+    "tiktoken@1.0.21": {
+      "integrity": "sha512-/kqtlepLMptX0OgbYD9aMYbM7EFrMZCL7EoHM8Psmg2FuhXoo/bH64KqOiZGGwa6oS9TPdSEDKBnV2LuB8+5vQ=="
     },
     "tr46@0.0.3": {
       "integrity": "sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw=="

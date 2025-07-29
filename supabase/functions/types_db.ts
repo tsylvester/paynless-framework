@@ -246,6 +246,7 @@ export type Database = {
           stage: string
           storage_bucket: string
           storage_path: string
+          document_relationships: Json | null
           target_contribution_id: string | null
           tokens_used_input: number | null
           tokens_used_output: number | null
@@ -275,6 +276,7 @@ export type Database = {
           stage: string
           storage_bucket?: string
           storage_path: string
+          document_relationships?: Json | null
           target_contribution_id?: string | null
           tokens_used_input?: number | null
           tokens_used_output?: number | null
@@ -304,6 +306,7 @@ export type Database = {
           stage?: string
           storage_bucket?: string
           storage_path?: string
+          document_relationships?: Json | null
           target_contribution_id?: string | null
           tokens_used_input?: number | null
           tokens_used_output?: number | null

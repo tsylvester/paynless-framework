@@ -4,6 +4,7 @@ import type {
   Json
 } from '../../types_db.ts'
 import type { ServiceError } from '../types.ts';
+import type { ContributionType } from '../../dialectic-service/dialectic.interface.ts';
 
 /**
  * A union of all possible file types the system can manage.
@@ -19,6 +20,10 @@ export type FileType =
   | 'project_settings_file'
   | 'general_resource' // A general file resource uploaded by a user for an iteration (in 0_seed_inputs/general_resource).
   | 'seed_prompt' // The fully constructed prompt sent to a model for a specific stage.
+  // Intermediate artifacts for multi-step stages
+  | 'pairwise_synthesis_chunk'
+  | 'reduced_synthesis'
+  | 'final_synthesis'
 
 /**
  * The context required to construct a unique, deterministic storage path for a file.
@@ -62,6 +67,7 @@ export interface UploadContext {
 
     // ADDED: For continuation jobs, this signals to update an existing record.
     target_contribution_id?: string;
+    document_relationships?: Json | null; // ADDED: For derivative jobs, flexible JSONB for relationships.
 
     // Tokenomics and other metadata for the primary dialectic_contributions record
     tokensUsedInput?: number;
@@ -69,10 +75,9 @@ export interface UploadContext {
     processingTimeMs?: number;
     seedPromptStoragePath: string; // Path to the seed prompt that generated this contribution
     citations?: Json | null;
-    contributionType?: string | null; // e.g., 'hypothesis', 'critique', 'synthesis' (align with stage or be more specific)
+    contributionType?: ContributionType | null; // e.g., 'hypothesis', 'critique', 'synthesis' (align with stage or be more specific)
     errorDetails?: string | null; // If AI model itself reported an error in its generation process
     promptTemplateIdUsed?: string | null; // FK to system_prompts.id
-    targetContributionId?: string | null; // For linking critiques or threaded responses
     
     // Fields for edit tracking, typically set by the service managing edits, 
     // but defaults can be provided for new contributions.
@@ -83,7 +88,7 @@ export interface UploadContext {
 
   // Specific for 'user_feedback' fileType
   feedbackTypeForDb?: string; // To directly populate dialectic_feedback.feedback_type
-  resourceDescriptionForDb?: Record<string, unknown> | null; // To directly populate dialectic_feedback.resource_description (jsonb)
+  resourceDescriptionForDb?: Json | null; // To directly populate dialectic_feedback.resource_description (jsonb)
 }
 
 /**

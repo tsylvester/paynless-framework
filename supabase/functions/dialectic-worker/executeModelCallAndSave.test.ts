@@ -63,7 +63,7 @@ import {
     step_info: { current_step: 1, total_steps: 1 },
     prompt_template_name: 'test-prompt',
     inputs: {},
-    output_type: 'test-output',
+    output_type: 'thesis',
     projectId: 'project-abc',
     sessionId: 'session-456',
     stageSlug: 'test-stage',
@@ -141,6 +141,7 @@ import {
       tokens_used_output: 20,
       updated_at: new Date().toISOString(),
       user_id: 'user-789',
+      document_relationships: null,
   };
   
   const mockNotificationService: NotificationServiceType = {

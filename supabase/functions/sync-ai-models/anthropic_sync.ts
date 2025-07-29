@@ -28,7 +28,7 @@ export function createDefaultAnthropicConfig(modelApiIdentifier: string): AiMode
   const info = modelInfo[bestMatchKey as keyof typeof modelInfo];
 
   const tokenizationStrategy: AiModelExtendedConfig['tokenization_strategy'] = {
-    type: 'claude_tokenizer',
+    type: 'anthropic_tokenizer',
   };
 
   return {

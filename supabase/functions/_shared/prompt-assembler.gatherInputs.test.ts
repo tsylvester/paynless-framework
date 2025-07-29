@@ -10,6 +10,8 @@ import { createMockSupabaseClient, type MockSupabaseDataConfig, type IMockSupaba
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Json, Tables } from "../types_db.ts";
 import { Database } from "../types_db.ts";
+import { constructStoragePath } from './utils/path_constructor.ts';
+import { join } from "jsr:@std/path/join";
 
 Deno.test("PromptAssembler", async (t) => {
     await t.step("_gatherInputsForStage tests", async (tCtx) => {
@@ -55,8 +57,8 @@ Deno.test("PromptAssembler", async (t) => {
             currentConsoleErrorSpy = null;
             currentConsoleInfoSpy = null;
             currentConsoleWarnSpy = null;
-            if (mockSupabaseSetup && typeof (mockSupabaseSetup as any).clearAllStubs === 'function') {
-                (mockSupabaseSetup as any).clearAllStubs();
+            if (mockSupabaseSetup && typeof mockSupabaseSetup.clearAllStubs === 'function') {
+                mockSupabaseSetup.clearAllStubs();
             }
             mockSupabaseSetup = null;
         };
@@ -344,7 +346,8 @@ Deno.test("PromptAssembler", async (t) => {
                 },
                 storageMock: {
                     downloadResult: async (bucketId: string, path: string) => {
-                        if (bucketId === "test-bucket" && path === `${storagePath}/${fileName}`) {
+                        const expectedPath = join(storagePath, fileName);
+                        if (bucketId === "test-bucket" && path === expectedPath) {
                             return { data: new Blob([contribContent]), error: null };
                         }
                         return { data: null, error: new Error("Unexpected download path in mock") };
@@ -425,7 +428,7 @@ Deno.test("PromptAssembler", async (t) => {
                 
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
                 assertEquals(downloadSpies.calls.length, 1);
-                assertEquals(downloadSpies.calls[0].args[0], `${storagePath}/${fileName}`);
+                assertEquals(downloadSpies.calls[0].args[0], join(storagePath, fileName));
             } finally {
                 teardown();
             }
@@ -436,9 +439,18 @@ Deno.test("PromptAssembler", async (t) => {
             const mockStageDisplayName = "Previous Feedback Stage";
             const feedbackContent = "This is user feedback content.";
             const projectId = "p100";
+            const userId = "u100";
             const sessionId = "s100";
             const iteration = 2;
-            const expectedFeedbackPath = `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/${feedbackStageSlug}/user_feedback_${feedbackStageSlug}.md`;
+
+            const feedbackPathParts = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iteration - 1, // Feedback is from previous iteration
+                stageSlug: feedbackStageSlug,
+                fileType: 'user_feedback',
+            });
+            const expectedFeedbackPath = join(feedbackPathParts.storagePath, feedbackPathParts.fileName);
 
             const config: MockSupabaseDataConfig = {
                 genericMockResults: {
@@ -449,6 +461,18 @@ Deno.test("PromptAssembler", async (t) => {
                                 return { data: [{ slug: feedbackStageSlug, display_name: mockStageDisplayName }], error: null, count: 1, status: 200, statusText: "OK" };
                             }
                             return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                        }
+                    },
+                    'dialectic_feedback': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const sessionFilter = state.filters.find(f => f.column === 'session_id' && f.value === sessionId);
+                            const stageFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === feedbackStageSlug);
+                            const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === iteration - 1);
+                            const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === userId);
+                            if (sessionFilter && stageFilter && iterFilter && userFilter) {
+                                return { data: [{ storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: null, error: Object.assign(new Error("Not Found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" };
                         }
                     }
                 },
@@ -466,7 +490,7 @@ Deno.test("PromptAssembler", async (t) => {
             try {
                 const project: ProjectContext = { 
                     id: projectId,
-                    user_id: 'u100',
+                    user_id: userId,
                     project_name: "Test Project P100",
                     initial_user_prompt: "Initial prompt for P100",
                     initial_prompt_resource_id: null,
@@ -556,7 +580,15 @@ ${feedbackContent}
             const iteration = 3;
             const contribStoragePath = "path/to";
             const contribFileName = "contrib-both.md";
-            const expectedFeedbackPath = `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/${feedbackSlug}/user_feedback_${feedbackSlug}.md`;
+
+            const feedbackPathParts = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iteration - 1,
+                stageSlug: feedbackSlug,
+                fileType: 'user_feedback'
+            });
+            const expectedFeedbackPath = join(feedbackPathParts.storagePath, feedbackPathParts.fileName);
 
             const config: MockSupabaseDataConfig = {
                 genericMockResults: {
@@ -579,7 +611,7 @@ ${feedbackContent}
                                 return { 
                                     data: [{
                                         id: "contrib-both", storage_path: contribStoragePath, file_name: contribFileName,
-                                        storage_bucket: "test-bucket", model_name: modelName, session_id: sessionId, iteration_number: iteration, stage: contribSlug, is_latest_edit: true, created_at: new Date().toISOString(), user_id: 'u1', content_type: 'text/markdown', raw_text_content: null, word_count: null, token_count: null, dialectic_project_id: projectId,
+                                        storage_bucket: "test-bucket", model_name: modelName, session_id: sessionId, iteration_number: iteration, stage: contribSlug, is_latest_edit: true, created_at: new Date().toISOString(), user_id: 'u200', content_type: 'text/markdown', raw_text_content: null, word_count: null, token_count: null, dialectic_project_id: projectId,
                                         model_id: "model-gamma-id", prompt_template_id_used: null, seed_prompt_url: null, edit_version: 1,
                                         original_model_contribution_id: null, raw_response_storage_path: null, target_contribution_id: null,
                                         tokens_used_input: null, tokens_used_output: null, processing_time_ms: null, error: null, citations: null,
@@ -590,11 +622,24 @@ ${feedbackContent}
                             }
                             return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
                         }
+                    },
+                    'dialectic_feedback': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const sessionFilter = state.filters.find(f => f.column === 'session_id' && f.value === sessionId);
+                            const stageFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === feedbackSlug);
+                            const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === iteration - 1);
+                            const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === 'u200');
+                            if (sessionFilter && stageFilter && iterFilter && userFilter) {
+                                return { data: [{ storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: null, error: Object.assign(new Error("Not Found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" };
+                        }
                     }
                 },
                 storageMock: {
                     downloadResult: async (bucketId: string, path: string) => {
-                        if (bucketId === "test-bucket" && path === `${contribStoragePath}/${contribFileName}`) {
+                        const expectedContribPath = join(contribStoragePath, contribFileName);
+                        if (bucketId === "test-bucket" && path === expectedContribPath) {
                             return { data: new Blob([contribContent]), error: null };
                         }
                         if (bucketId === "test-bucket" && path === expectedFeedbackPath) {
@@ -712,7 +757,15 @@ ${feedbackContent}
             const iteration = 1;
             const contribStoragePath = "path";
             const contribFileName = "ch.md";
-            const expectedFeedbackPath = `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/${feedbackSlug}/user_feedback_${feedbackSlug}.md`;
+            const feedbackPathParts = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: 1, // Feedback is from previous iteration, which is 1
+                stageSlug: feedbackSlug,
+                fileType: 'user_feedback'
+            });
+            const expectedFeedbackPath = join(feedbackPathParts.storagePath, feedbackPathParts.fileName);
+            const expectedContribPath = join(contribStoragePath, contribFileName);
 
             const config: MockSupabaseDataConfig = {
                 genericMockResults: {
@@ -746,11 +799,23 @@ ${feedbackContent}
                             }
                              return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
                         }
+                    },
+                    'dialectic_feedback': {
+                         select: async (state: MockQueryBuilderState) => {
+                            const sessionFilter = state.filters.find(f => f.column === 'session_id' && f.value === sessionId);
+                            const stageFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === feedbackSlug);
+                            const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === 1); // targetIteration is 1 when iteration is 1
+                            const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === 'u300');
+                            if (sessionFilter && stageFilter && iterFilter && userFilter) {
+                                return { data: [{ storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: null, error: Object.assign(new Error("Not Found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" };
+                        }
                     }
                 },
                 storageMock: {
                     downloadResult: async (bucketId: string, path: string) => {
-                        if (bucketId === "test-bucket" && path === `${contribStoragePath}/${contribFileName}`) return { data: new Blob([contribContent]), error: null };
+                        if (bucketId === "test-bucket" && path === expectedContribPath) return { data: new Blob([contribContent]), error: null };
                         if (bucketId === "test-bucket" && path === expectedFeedbackPath) return { data: new Blob([feedbackContent]), error: null };
                         return { data: null, error: new Error(`Unexpected download path (custom header): ${path}`) };
                     }
@@ -851,9 +916,9 @@ ${feedbackContent}
             const optionalFeedbackSlug = "prev-stage-optional-feedback";
             const optionalFeedbackDisplayName = "Optional Feedback Stage";
             const projectId = "p400";
+            const userId = 'u400';
             const sessionId = "s400";
             const iteration = 1;
-            const expectedFeedbackPath = `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/${optionalFeedbackSlug}/user_feedback_${optionalFeedbackSlug}.md`;
 
             const config: MockSupabaseDataConfig = {
                 genericMockResults: {
@@ -865,14 +930,21 @@ ${feedbackContent}
                             }
                             return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
                         }
+                    },
+                    'dialectic_feedback': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === userId);
+                            if (!userFilter) {
+                                // If the filter is missing, return something unexpected to make the test fail in a clear way.
+                                return { data: [], error: new Error("Missing user_id filter in feedback query mock") };
+                            }
+                            return { data: null, error: Object.assign(new Error("Not Found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" };
+                        }
                     }
                 },
                 storageMock: {
-                    downloadResult: async (bucketId: string, path: string) => {
-                        if (bucketId === "test-bucket" && path === expectedFeedbackPath) {
-                            return { data: null, error: null };
-                        }
-                        return { data: null, error: new Error(`Unexpected download path (optional feedback): ${path}`) };
+                    downloadResult: async () => {
+                        return { data: null, error: new Error(`Download should not be called`) };
                     }
                 }
             };
@@ -881,7 +953,7 @@ ${feedbackContent}
             try {
                 const project: ProjectContext = { 
                     id: projectId,
-                    user_id: 'u400',
+                    user_id: userId,
                     project_name: "Test Project P400",
                     initial_user_prompt: "Initial prompt for P400",
                     initial_prompt_resource_id: null,
@@ -951,25 +1023,17 @@ ${feedbackContent}
                     }
 
                     const messageString = call.args[0];
-                    const detailsObject = call.args[1] as { error?: { message?: string }, rule?: ArtifactSourceRule }; // Type assertion for easier access
+                    const detailsObject = call.args[1];
 
-                    const pathCheck = messageString.includes(`[PromptAssembler._gatherInputsForStage] Failed to download feedback file. Path: ${expectedFeedbackPath}`);
-                    const errorMessageCheck = detailsObject.error?.message?.includes("No data returned from storage download");
+                    const messageCheck = messageString.includes(`Could not find feedback record for stage '${optionalFeedbackSlug}'`);
+                    const ruleCheck = detailsObject.rule?.stage_slug === optionalFeedbackSlug && detailsObject.rule?.required === false;
                     
-                    const ruleCheck = call.args.some(arg => { // This part can remain as it checks any argument for the rule structure
-                        if (typeof arg === 'object' && arg !== null && (arg as {rule?: ArtifactSourceRule}).rule) {
-                            const ruleArg = (arg as {rule: ArtifactSourceRule}).rule;
-                            return ruleArg.stage_slug === optionalFeedbackSlug && ruleArg.required === false;
-                        }
-                        return false;
-                    });
-
-                    return pathCheck && errorMessageCheck && ruleCheck;
+                    return messageCheck && ruleCheck;
                 });
-                assertEquals(!!errorLogCall, true, "Expected console.error log for failed optional feedback download not found or incorrect.");
+                assertEquals(!!errorLogCall, true, "Expected console.error log for missing optional feedback record not found or incorrect.");
                 
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
-                assertEquals(downloadSpies.calls.length, 1);
+                assertEquals(downloadSpies.calls.length, 0);
             } finally {
                 teardown();
             }
@@ -979,9 +1043,9 @@ ${feedbackContent}
             const requiredFeedbackSlug = "prev-stage-req-feedback";
             const requiredFeedbackDisplayName = "Required Feedback Stage";
             const projectId = "p500";
+            const userId = 'u500';
             const sessionId = "s500";
             const iteration = 1;
-            const expectedFeedbackPath = `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/${requiredFeedbackSlug}/user_feedback_${requiredFeedbackSlug}.md`;
 
             const config: MockSupabaseDataConfig = {
                 genericMockResults: {
@@ -992,14 +1056,20 @@ ${feedbackContent}
                                 return { data: [{ slug: requiredFeedbackSlug, display_name: requiredFeedbackDisplayName }], error: null, count: 1, status: 200, statusText: "OK" };
                             }
                             return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                       }
+                    },
+                    'dialectic_feedback': {
+                        select: async (state: MockQueryBuilderState) => {
+                             const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === userId);
+                            if (!userFilter) {
+                                return { data: [], error: new Error("Missing user_id filter in required feedback query mock") };
+                            }
+                            return { data: null, error: Object.assign(new Error("Not Found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" };
                         }
                     }
                 },
                 storageMock: {
                     downloadResult: async (bucketId: string, path: string) => {
-                        if (bucketId === "test-bucket" && path === expectedFeedbackPath) {
-                            return { data: null, error: null };
-                        }
                         return { data: null, error: new Error(`Unexpected download path (required feedback): ${path}`) };
                     }
                 }
@@ -1009,7 +1079,7 @@ ${feedbackContent}
             try {
                 const project: ProjectContext = { 
                     id: projectId,
-                    user_id: 'u500',
+                    user_id: userId,
                     project_name: "Test Project P500",
                     initial_user_prompt: "Initial prompt for P500",
                     initial_prompt_resource_id: null,
@@ -1064,11 +1134,11 @@ ${feedbackContent}
                         await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
                     },
                     Error,
-                    `Failed to download REQUIRED feedback for stage '${requiredFeedbackDisplayName}' (slug: ${requiredFeedbackSlug})`
+                    `Required feedback for stage '${requiredFeedbackDisplayName}' was not found.`
                 );
                 
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
-                assertEquals(downloadSpies.calls.length, 1);
+                assertEquals(downloadSpies.calls.length, 0);
             } finally {
                 teardown();
             }

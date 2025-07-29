@@ -100,6 +100,7 @@ const mockContribution: DialecticContributionRow = {
     tokens_used_output: 20,
     updated_at: new Date().toISOString(),
     user_id: 'user-789',
+    document_relationships: null,
 };
 
 const mockNotificationService: NotificationServiceType = {

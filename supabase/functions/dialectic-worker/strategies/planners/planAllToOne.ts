@@ -27,6 +27,7 @@ export const planAllToOne: GranularityPlannerFn = (
         // Set job-specific properties
         job_type: 'combine',
         prompt_template_name: recipeStep.prompt_template_name,
+        output_type: recipeStep.output_type,
         inputs: {
             document_ids: documentIds,
         }

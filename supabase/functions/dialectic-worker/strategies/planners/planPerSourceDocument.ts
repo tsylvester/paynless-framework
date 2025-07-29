@@ -22,6 +22,7 @@ export const planPerSourceDocument: GranularityPlannerFn = (
             job_type: 'execute',
             prompt_template_name: recipeStep.prompt_template_name,
             output_type: recipeStep.output_type,
+            document_relationships: { source: doc.id },
             inputs: {
                 source_id: doc.id,
             }

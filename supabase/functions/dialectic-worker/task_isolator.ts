@@ -2,17 +2,15 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { Database } from '../types_db.ts';
 import {
-    DialecticContributionRow,
     DialecticJobRow,
     DialecticPlanJobPayload,
     DialecticRecipeStep,
+    SourceDocument,
 } from '../dialectic-service/dialectic.interface.ts';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import { ILogger } from '../_shared/types.ts';
 import { IPlanComplexJobDeps } from './processComplexJob.ts';
 import { isDialecticCombinationJobPayload, isDialecticExecuteJobPayload } from '../_shared/utils/type_guards.ts';
-
-type SourceDocument = DialecticContributionRow & { content: string };
 
 async function findSourceDocuments(
     dbClient: SupabaseClient<Database>,
@@ -26,13 +24,19 @@ async function findSourceDocuments(
     const allSourceDocuments: SourceDocument[] = [];
 
     for (const rule of inputsRequired) {
-        const { data: sourceContributions, error: contribError } = await dbClient
+        let query = dbClient
             .from('dialectic_contributions')
             .select('*')
             .eq('session_id', parentJob.session_id)
             .eq('iteration_number', parentJob.iteration_number)
             .eq('is_latest_edit', true)
             .eq('contribution_type', rule.type);
+
+        if (rule.stage_slug) {
+            query = query.eq('stage', rule.stage_slug);
+        }
+
+        const { data: sourceContributions, error: contribError } = await query;
 
         if (contribError) {
             throw new Error(`Failed to fetch source contributions for type '${rule.type}': ${contribError.message}`);
@@ -149,6 +153,7 @@ export async function planComplexStage(
                     continueUntilComplete: payload.continueUntilComplete,
                     maxRetries: payload.maxRetries,
                     continuation_count: payload.continuation_count,
+                    ...(payload.document_relationships && { document_relationships: payload.document_relationships }),
                     ...(payload.target_contribution_id && { target_contribution_id: payload.target_contribution_id }),
                 },
             };

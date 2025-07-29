@@ -280,6 +280,11 @@ While the project is advancing well, these three areas represent fundamental, un
             │   └── documents/                    (Optional refined documents, e.g., PRDs from each model)
             │       └── (generated from .json object located at Database['dialectic_stages']['row']['expected_output_artifacts'])                
             ├── 3_synthesis/
+            │   ├── _work/          (Storage for intermediate, machine-generated artifacts that are not final outputs)
+            │   │   ├── pairwise_synthesis_chunks/
+            │   │   │   └── {source_thesis_id_short}_{source_antithesis_id_short}_{model_slug}_pairwise.md
+            │   │   └── reduced_synthesis_chunks/
+            │   │       └── {source_thesis_id_short}_{model_slug}_reduced.md
             │   ├── raw_responses
             │   │   └──{model_name_slug}_{n}_{stage_slug}_raw.json
             │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)

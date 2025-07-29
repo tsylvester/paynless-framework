@@ -45,7 +45,7 @@ const TiktokenModelForRulesSchema = z.enum(['gpt-4', 'gpt-3.5-turbo', 'gpt-4o', 
 const TokenizationStrategySchema = z.union([
     z.object({ type: z.literal('tiktoken'), tiktoken_encoding_name: TiktokenEncodingSchema, tiktoken_model_name_for_rules_fallback: TiktokenModelForRulesSchema.optional(), is_chatml_model: z.boolean().optional(), api_identifier_for_tokenization: z.string().optional() }),
     z.object({ type: z.literal('rough_char_count'), chars_per_token_ratio: z.number().optional() }),
-    z.object({ type: z.literal('claude_tokenizer') }),
+    z.object({ type: z.literal('anthropic_tokenizer'), model: z.string() }),
     z.object({ type: z.literal('google_gemini_tokenizer') }),
     z.object({ type: z.literal('none') }),
 ]);

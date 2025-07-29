@@ -295,7 +295,7 @@ Before modifying logic, we must define the new data structures that will drive t
             prompt_template_name: string;
             inputs_required: {
                 type: string;
-                origin_type?: string; // e.g., 'thesis' for antithesis inputs
+                stage_slug?: string; // e.g., 'thesis' for antithesis inputs
             }[];
             granularity_strategy: 'per_source_document' | 'pairwise_by_origin' | 'per_source_group' | 'all_to_one';
             output_type: string; // e.g., 'pairwise_synthesis_chunk'
@@ -512,22 +512,90 @@ Before modifying logic, we must define the new data structures that will drive t
 *   `[✅]` 29.h. **Define Multi-Step Error Handling Strategy:**
     *   `[BE]` `[REFACTOR]` **Action:** If any child job (type `'execute'`) fails permanently, it must report its failure to the parent. The `handle_job_completion` trigger will detect this child failure and immediately set the parent job's `status` to `'failed'`, also marking `step_info.status` as `'failed'`. This fail-fast approach prevents the process from getting stuck waiting for a job that will never complete.
 
-#### 30. [TEST-INT] Create the End-to-End Antithesis and Synthesis Pipeline Tests
+---
 
-*   `[ ]` 30.a. **Create New Synthesis Integration Test File:**
-    *   `[TEST-INT]` **File:** `supabase/integration_tests/services/dialectic_synthesis_pipeline.integration.test.ts`.
-*   `[ ]` 30.b. **Test Setup:**
-    *   `[TEST-INT]` **Action:** Seed a test user, project, and session. Seed completed `thesis` and `antithesis` contributions.
-*   `[ ]` 30.c. **Test Execution Simulation:**
-    *   `[TEST-INT]` **Action:** The test will need a loop that simulates the entire process:
-        1.  Invoke the `dialectic-service` to start the `synthesis` stage. Assert the parent job is created.
-        2.  Call `executePendingDialecticJobs()`. Assert that child jobs for **Step 1** are created and the parent is `waiting_for_children`.
-        3.  Manually mark all Step 1 child jobs as `completed`. Assert the DB trigger fires and the parent job is now `pending_next_step`.
-        4.  Call `executePendingDialecticJobs()` again. The worker should pick up the parent job, increment its step, and plan **Step 2**. Assert new child jobs are created.
-        5.  Repeat this process for all three steps of the synthesis recipe.
-*   `[ ]` 30.d. **Final Assertions:**
-    *   `[TEST-INT]` **Action:** Assert that the parent job is finally marked as `completed`.
-    *   `[TEST-INT]` **Action:** Query the database and storage to ensure the correct number of intermediate artifacts (`pairwise_synthesis_chunk`, `reduced_synthesis`) and the final `synthesis` contributions were created correctly.
+### Phase 11: [REFACTOR] Implement `_work` Directory for Intermediate Artifacts
+
+This phase addresses a critical filename collision issue discovered during integration testing of multi-step stages (`synthesis`). It introduces a `_work` subdirectory to house intermediate artifacts, ensuring final, user-facing deliverables have clean, predictable paths while guaranteeing unique paths for all generated files.
+
+#### 30. [BE] [ARCH] Implement `_work` Directory Strategy
+
+*   `[ ]` 30.a. **Update Core Type Definitions:**
+    *   `[TYPES]` **File:** `supabase/functions/_shared/types/file_manager.types.ts`.
+    *   `[TYPES]` **Action:** Add a new optional boolean property, `isIntermediate?: boolean`, to the `PathContext` interface. This flag will signal to the path constructor that the file is a temporary or intermediate artifact.
+
+*   `[ ]` 30.b. **Modify Path Constructor Logic:**
+    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/_shared/utils/path_constructor.ts`.
+    *   `[BE]` `[REFACTOR]` **Action:** Update the `constructStoragePath` function. When it builds the path for a `FileType` of `'model_contribution_main'`, it must check for the `isIntermediate` flag in the `PathContext`.
+        *   If `isIntermediate` is `true`, it must insert the `_work/` segment into the storage path immediately after the stage directory (e.g., `.../3_synthesis/_work/`).
+        *   If `isIntermediate` is `false` or undefined, the path should be constructed as before, placing the file in the stage's root.
+    *   `[TEST-UNIT]` **(RED)** Update `path_constructor.test.ts` to include test cases for this new logic. Test both scenarios (`isIntermediate: true` and `isIntermediate: false`) to ensure the `_work` directory is added correctly and only when required.
+    *   `[TEST-UNIT]` **(GREEN)** Prove the updated `path_constructor` passes all tests.
+
+*   `[ ]` 30.c. **Update Planners to Signal Intermediate Artifacts:**
+    *   `[BE]` `[REFACTOR]` **Files:** All relevant granularity strategy planners (`planPairwiseByOrigin.ts`, `planPerSourceGroup.ts`, `planAllToOne.ts`).
+    *   `[BE]` `[REFACTOR]` **Action:** When these planners construct the `PathContext` for a child job's payload, they must now determine if the `output_type` is an intermediate artifact.
+        *   The logic will be: if the `output_type` is `'pairwise_synthesis_chunk'` or `'reduced_synthesis'`, set `isIntermediate: true` in the `PathContext`.
+        *   If the `output_type` is `'synthesis'` (the final deliverable), `isIntermediate` should be `false` or omitted.
+    *   `[TEST-UNIT]` **(RED/GREEN)** Update the unit tests for each planner to assert that the `isIntermediate` flag is correctly set in the generated job payloads based on the `output_type` of the recipe step.
+
+*   `[ ]` 30.d. **Update Documentation:**
+    *   `[DOCS]` **File:** `docs/implementations/Current/Checklists/Current/AI Dialectic Implementation Plan Phase 2.md`.
+    *   `[DOCS]` **Action:** Update the "File Structure for Supabase Storage and Export Tools" diagram and description to include the new `_work` subdirectory within the `synthesis` stage, explaining its purpose.
+
+*   `[ ]` 30.e. **[COMMIT] `feat(worker): implement _work directory for intermediate artifacts`**
+
+#### 31. [TEST-INT] Create the End-to-End Antithesis and Synthesis Pipeline Tests
+
+**Goal:** To create a single, comprehensive integration test file that validates the entire multi-stage, multi-step asynchronous workflow. This test will simulate the process from the end of the `Thesis` stage through the planning and execution of the `Antithesis` stage, and finally through the multi-step "map-reduce" process of the `Synthesis` stage. It will validate the core mechanics of recipe-driven planning, child job execution, and database trigger-based orchestration.
+
+*   `[ ]` 31.a. **Enhance Existing Integration Test File:**
+    *   `[TEST-INT]` **File:** `supabase/integration_tests/services/dialectic_pipeline.integration.test.ts`.
+    *   `[TEST-INT]` **Action:** This test will be extended. The existing logic that successfully completes the `Thesis` stage and prepares for `Antithesis` will serve as the foundation. We will add new, sequential test steps within the same `Deno.test` block to continue the workflow.
+
+*   `[ ]` 31.b. **Test Setup and Seeding:**
+    *   `[TEST-INT]` **Action:** The existing test setup is already seeding the necessary users, projects, and AI models. Ensure that the `dialectic_stages` table is seeded with the correct, detailed `input_artifact_rules` (recipes) for both the `antithesis` and `synthesis` stages, as defined in `A Computable Determinant for Task Isolation.md`.
+        *   The `antithesis` recipe should be a single-step plan with a `granularity_strategy` of `'per_source_document'`.
+        *   The `synthesis` recipe must be the formal, multi-step recipe with three steps using `'pairwise_by_origin'`, `'per_source_group'`, and `'all_to_one'` strategies, respectively.
+
+*   `[ ]` 31.c. **Test Execution: Antithesis Stage (Single-Step Complex Job)**
+    *   `[TEST-INT]` **Action:** Building on the state where `Thesis` is complete and `antithesis` is pending:
+        1.  **Invoke Planner:** Call the `dialectic-service` to start the `antithesis` stage. This will create one parent `'plan'` job for each model.
+        2.  **Execute Planner:** Call `executePendingDialecticJobs()`.
+        3.  **Assert Planning:**
+            *   Assert that the parent jobs transition to `'waiting_for_children'`.
+            *   Assert that the correct number of child `'execute'` jobs are created. Given 2 `thesis` contributions and 2 models, this should result in 4 child jobs (`2 theses * 2 models`), each with a `parent_job_id`.
+        4.  **Execute Child Jobs:** Call `executePendingDialecticJobs()` again to process the newly created child jobs.
+        5.  **Assert Orchestration & Completion:**
+            *   Assert that all child jobs are marked `'completed'`.
+            *   Assert that the database trigger fires and updates the parent jobs to `'completed'`.
+            *   Query the `dialectic_contributions` table and assert that exactly 4 `antithesis` contributions now exist.
+
+*   `[ ]` 31.d. **Test Execution: Synthesis Stage (Multi-Step Map-Reduce Job)**
+    *   `[TEST-INT]` **Action:** The test will now simulate the entire multi-step synthesis process:
+        1.  **Submit Antithesis Feedback:** Invoke the `submitStageResponses` function to simulate user feedback on the `antithesis` contributions. Assert that the session status advances and the seed prompt for the `synthesis` stage is created.
+        2.  **Invoke Synthesis Planner (Step 1):**
+            *   Invoke the `dialectic-service` to start the `synthesis` stage. Assert the parent `'plan'` job is created (one per model).
+            *   Call `executePendingDialecticJobs()`.
+            *   Assert parent job is `'waiting_for_children'` and child jobs for **Step 1 (`pairwise_by_origin`)** are created. Given 2 `thesis` and 4 `antithesis` (2 per thesis), this should create 4 child jobs (`2 thesis * 2 antithesis/thesis`).
+        3.  **Simulate Step 1 Completion & Wake Parent:**
+            *   Call `executePendingDialecticJobs()` to complete the Step 1 child jobs.
+            *   Poll the database to assert the trigger fires and the parent job's status becomes `'pending_next_step'`.
+        4.  **Invoke Synthesis Planner (Step 2):**
+            *   Call `executePendingDialecticJobs()` again. The worker will pick up the parent job, increment its `step_info.current_step` to 2, and re-delegate to the planner.
+            *   Assert the parent job returns to `'waiting_for_children'` and child jobs for **Step 2 (`per_source_group`)** are created. Given 4 `pairwise_synthesis_chunk` artifacts grouped by 2 original theses, this should result in 2 child jobs.
+        5.  **Simulate Step 2 Completion & Wake Parent:**
+            *   Repeat the process: execute the Step 2 child jobs and assert the parent job returns to `'pending_next_step'`.
+        6.  **Invoke Synthesis Planner (Step 3):**
+            *   Call `executePendingDialecticJobs()` one last time. The worker will increment the step to 3.
+            *   Assert the parent job returns to `'waiting_for_children'` and child jobs for **Step 3 (`all_to_one`)** are created. Given 2 `reduced_synthesis` artifacts, this will create 2 child jobs (one per model, each taking all reduced syntheses as input).
+        7.  **Simulate Final Step Completion:**
+            *   Execute the final child jobs.
+            *   Assert that the database trigger now marks the parent job as `'completed'`, as `current_step` now equals `total_steps`.
+
+*   `[ ]` 31.e. **Final Assertions:**
+    *   `[TEST-INT]` **Action:** Query the `dialectic_generation_jobs` table and assert that all parent and child jobs for the `synthesis` stage are `'completed'`.
+    *   `[TEST-INT]` **Action:** Query the `dialectic_contributions` table and storage. Verify that the correct number of intermediate artifacts (`pairwise_synthesis_chunk`, `reduced_synthesis`) and the final `synthesis` contributions were created correctly and are linked to the session.
 
 ### Phase 13: Centralized Configuration Management
 

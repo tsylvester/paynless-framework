@@ -68,7 +68,7 @@ Deno.test('continueJob', async (t) => {
         step_info: { current_step: 0, total_steps: 1 },
         prompt_template_name: 'test_template',
         inputs: { source: 'some_input' },
-        output_type: 'markdown',
+        output_type: 'thesis',
         continueUntilComplete: true, 
         continuation_count: 0,
         walletId: 'wallet-1',
@@ -105,6 +105,7 @@ Deno.test('continueJob', async (t) => {
         tokens_used_output: null,
         updated_at: new Date().toISOString(),
         user_id: null,
+        document_relationships: null,
     };
 
     const setup = (mockOverrides?: any) => {
@@ -432,7 +433,7 @@ Deno.test('continueJob', async (t) => {
             step_info: { current_step: 0, total_steps: 1 },
             prompt_template_name: 'test_template',
             inputs: { source: 'some_input' },
-            output_type: 'markdown',
+            output_type: 'thesis',
             continueUntilComplete: true, 
             continuation_count: 0,
         };
@@ -474,7 +475,7 @@ Deno.test('continueJob', async (t) => {
             step_info: { current_step: 0, total_steps: 1 },
             prompt_template_name: 'test_template',
             inputs: { source: 'some_input' },
-            output_type: 'markdown',
+            output_type: 'thesis',
             continueUntilComplete: true, 
             continuation_count: 0,
             walletId: 'only-wallet-id' 

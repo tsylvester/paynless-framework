@@ -12,6 +12,8 @@ import type {
     DialecticPlanJobPayload,
     DialecticExecuteJobPayload,
     DialecticRecipeStep,
+    DialecticStepInfo,
+    ContributionType,
 } from '../../dialectic-service/dialectic.interface.ts';
 import { ProjectContext, StageContext } from "../prompt-assembler.interface.ts";
 import { FailedAttemptError } from "../../dialectic-service/dialectic.interface.ts";
@@ -616,4 +618,53 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
         typeof payload.prompt_template_name === 'string' &&
         isRecord(payload.inputs)
     );
+}
+
+export function isContinuablePayload(payload: unknown): payload is {
+    sessionId: string;
+    projectId: string;
+    model_id: string;
+    stageSlug: string;
+    iterationNumber: number;
+    continueUntilComplete?: boolean;
+    continuation_count?: number;
+    walletId?: string;
+    maxRetries?: number;
+} {
+    if (!isRecord(payload)) return false;
+    return (
+        typeof payload.sessionId === 'string' &&
+        typeof payload.projectId === 'string' &&
+        typeof payload.model_id === 'string' &&
+        typeof payload.stageSlug === 'string' &&
+        typeof payload.iterationNumber === 'number'
+    );
+}
+
+export function isStringRecord(obj: unknown): obj is Record<string, string> {
+    if (!isRecord(obj)) return false;
+    return Object.values(obj).every(value => typeof value === 'string');
+}
+
+export function isDialecticStepInfo(obj: unknown): obj is DialecticStepInfo {
+    if (!isRecord(obj)) return false;
+    return (
+        typeof obj.current_step === 'number' &&
+        typeof obj.total_steps === 'number'
+    );
+}
+
+const validContributionTypes: ContributionType[] = [
+    'thesis',
+    'antithesis',
+    'synthesis',
+    'parenthesis',
+    'paralysis',
+    'pairwise_synthesis_chunk',
+    'reduced_synthesis',
+    'final_synthesis'
+];
+
+export function isContributionType(value: string): value is ContributionType {
+    return validContributionTypes.some((type) => type === value);
 }

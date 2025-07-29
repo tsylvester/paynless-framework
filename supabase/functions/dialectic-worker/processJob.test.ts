@@ -115,6 +115,8 @@ Deno.test('processJob - routes to processSimpleJob for simple stages', async () 
 
     const mockJobId = 'job-id-simple-route';
     const mockPayload: DialecticJobPayload = {
+        job_type: 'plan',
+        step_info: { current_step: 1, total_steps: 1 },
         sessionId: 'session-id',
         projectId: 'project-id',
         stageSlug: 'thesis', // A simple stage
@@ -153,6 +155,7 @@ Deno.test('processJob - routes to processSimpleJob for simple stages', async () 
                     data: [{
                         id: 'stage-id-thesis',
                         slug: 'thesis',
+                        display_name: 'Thesis',
                         input_artifact_rules: null,
                     }]
                 }
@@ -260,6 +263,8 @@ Deno.test('processJob - throws error when stage not found', async () => {
 
     const mockJobId = 'job-id-stage-not-found';
     const mockPayload: DialecticJobPayload = {
+        job_type: 'plan',
+        step_info: { current_step: 1, total_steps: 1 },
         sessionId: 'session-id',
         projectId: 'project-id',
         stageSlug: 'nonexistent-stage',
@@ -324,15 +329,17 @@ Deno.test('processJob - throws error when stage not found', async () => {
     }
 });
 
-Deno.test('processJob - throws error for unsupported processing strategy', async () => {
+Deno.test('processJob - routes to simple processor for unsupported processing strategy', async () => {
     // 1. Setup
     const { processors, spies } = createMockJobProcessors();
 
     const mockJobId = 'job-id-unsupported-strategy';
-    const mockPayload: DialecticJobPayload = {
+    const mockPayload: DialecticPlanJobPayload = {
+        job_type: 'plan',
+        step_info: { current_step: 1, total_steps: 1 },
         sessionId: 'session-id',
         projectId: 'project-id',
-        stageSlug: 'custom-stage',
+        stageSlug: 'thesis', // Use a valid slug
         model_id: 'model-id',
     };
     
@@ -344,7 +351,7 @@ Deno.test('processJob - throws error for unsupported processing strategy', async
         id: mockJobId,
         user_id: 'user-id',
         session_id: 'session-id',
-        stage_slug: 'custom-stage',
+        stage_slug: 'thesis',
         payload: mockPayload,
         iteration_number: 1,
         status: 'pending',
@@ -366,7 +373,8 @@ Deno.test('processJob - throws error for unsupported processing strategy', async
                 select: {
                     data: [{
                         id: 'stage-id-custom',
-                        slug: 'custom-stage',
+                        slug: 'thesis',
+                        display_name: 'Thesis',
                         input_artifact_rules: {
                             processing_strategy: {
                                 type: 'unsupported_strategy' // Not 'task_isolation'
@@ -379,19 +387,11 @@ Deno.test('processJob - throws error for unsupported processing strategy', async
     });
 
     try {
-        // 2. Execute & Assert
-        let threwError = false;
-        let errorMessage = '';
-        try {
-            await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-id', mockDeps, 'mock-token', processors);
-        } catch (error) {
-            threwError = true;
-            errorMessage = error instanceof Error ? error.message : String(error);
-        }
-
-        assertEquals(threwError, true, 'Should throw an error for unsupported processing strategy');
-        assertEquals(errorMessage, 'Unsupported processing strategy encountered: unsupported_strategy');
-        assertEquals(spies.processSimpleJob.calls.length, 0, 'processSimpleJob should not be called');
+        // 2. Execute
+        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-id', mockDeps, 'mock-token', processors);
+        
+        // 3. Assert
+        assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called for unsupported strategy');
         assertEquals(spies.processComplexJob.calls.length, 0, 'processComplexJob should not be called');
 
     } finally {
@@ -406,11 +406,14 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
     const { processors, spies } = createMockJobProcessors();
 
     const mockJobId = 'job-id-verify-params';
-    const mockPayload: DialecticJobPayload = {
+    const mockPayload: DialecticPlanJobPayload = {
+        job_type: 'plan',
+        step_info: { current_step: 1, total_steps: 1 },
         sessionId: 'session-id-params',
         projectId: 'project-id-params',
         stageSlug: 'thesis',
         model_id: 'model-id-1',
+        iterationNumber: 1,
         continueUntilComplete: true,
     };
     
@@ -445,6 +448,7 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
                     data: [{
                         id: 'stage-id-thesis',
                         slug: 'thesis',
+                        display_name: 'Thesis',
                         input_artifact_rules: null, // Simple stage
                     }]
                 }
@@ -463,7 +467,26 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
         assertEquals(call.args.length, 5, 'processSimpleJob should be called with 5 arguments');
         
         // Verify the parameters passed to processSimpleJob
-        assertEquals(call.args[1], { ...mockJob, payload: mockPayload }, 'Second argument should be the job object and its payload');
+        const transformedPayload = {
+            job_type: 'execute',
+            model_id: mockPayload.model_id,
+            sessionId: mockPayload.sessionId,
+            projectId: mockPayload.projectId,
+            stageSlug: mockPayload.stageSlug,
+            iterationNumber: mockPayload.iterationNumber,
+            walletId: undefined,
+            continueUntilComplete: mockPayload.continueUntilComplete,
+            maxRetries: undefined,
+            continuation_count: undefined,
+            target_contribution_id: undefined,
+            step_info: mockPayload.step_info,
+            prompt_template_name: 'default_seed_prompt',
+            output_type: 'thesis',
+            inputs: {},
+        };
+        const expectedJob = { ...mockJob, payload: transformedPayload };
+
+        assertEquals(call.args[1], expectedJob, 'Second argument should be the transformed job object');
         assertEquals(call.args[2], 'user-id-params', 'Third argument should be projectOwnerUserId');
         assertEquals(call.args[3], mockDeps, 'Fourth argument should be deps');
         assertEquals(call.args[4], 'mock-token-params', 'Fifth argument should be authToken');

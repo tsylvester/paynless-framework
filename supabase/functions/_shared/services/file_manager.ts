@@ -3,10 +3,8 @@ import { constructStoragePath } from '../utils/path_constructor.ts'
 import type {
   Database,
   TablesInsert,
-  Json
 } from '../../types_db.ts'
-import type { FileManagerResponse, UploadContext, PathContext, FileRecord } from '../types/file_manager.types.ts'
-import { downloadFromStorage } from '../supabase_storage_utils.ts';
+import type { FileManagerResponse, UploadContext, PathContext } from '../types/file_manager.types.ts'
 
 const MAX_UPLOAD_ATTEMPTS = 5; // Max attempts for filename collision resolution
 
@@ -21,6 +19,9 @@ function getTableForFileType(
   switch (fileType) {
     case 'model_contribution_main':
     case 'contribution_document':
+    case 'pairwise_synthesis_chunk':
+    case 'reduced_synthesis':
+    case 'final_synthesis':
       return 'dialectic_contributions'
     case 'user_feedback':
       return 'dialectic_feedback'
@@ -167,6 +168,9 @@ export class FileManagerService {
           const pathParts = constructStoragePath(attemptPathContext);
           const fullPathForUpload = `${pathParts.storagePath}/${pathParts.fileName}`;
 
+          console.log(`[FileManagerService] Attempting to upload to: ${fullPathForUpload}`);
+          console.log(`[FileManagerService] Content snippet: ${(typeof context.fileContent === 'string' ? context.fileContent : new TextDecoder().decode(context.fileContent)).substring(0, 100)}`);
+
           const uploadResult = await this.supabase.storage
             .from(this.storageBucket)
             .upload(fullPathForUpload, context.fileContent, {
@@ -175,6 +179,10 @@ export class FileManagerService {
             });
 
           mainUploadError = uploadResult.error;
+
+          if (mainUploadError) {
+            console.error(`[FileManagerService] Storage upload failed for path ${fullPathForUpload}. Error:`, JSON.stringify(mainUploadError, null, 2));
+          }
 
           if (!mainUploadError) {
             finalMainContentFilePath = pathParts.storagePath; // Directory path
@@ -243,150 +251,156 @@ export class FileManagerService {
             rawJsonResponseFullStoragePath = null; 
           }
         } catch (e: unknown) {
-          console.warn(`Error processing raw JSON for ${finalFileName}: ${(e as Error).message}.`);
+          console.warn(`Error processing raw JSON for ${finalFileName}: ${e instanceof Error ? e.message : 'Unknown error'}`);
           rawJsonResponseFullStoragePath = null;
         }
       }
 
       const targetTable = getTableForFileType(context.pathContext.fileType)
 
-      let recordData:
-        | TablesInsert<'dialectic_project_resources'>
-        | TablesInsert<'dialectic_contributions'>
-        | TablesInsert<'dialectic_feedback'>;
-
-      if (targetTable === 'dialectic_project_resources') {
-        let finalDescriptionString: string | null = null;
-        if (typeof context.description === 'string') {
-          try {
-            const parsedJson = JSON.parse(context.description);
-            const descriptionObject = typeof parsedJson === 'object' && parsedJson !== null 
-              ? { ...parsedJson, type: context.pathContext.fileType }
-              : { type: context.pathContext.fileType, originalDescription: context.description };
-            finalDescriptionString = JSON.stringify(descriptionObject);
-          } catch (e) {
-            finalDescriptionString = JSON.stringify({ type: context.pathContext.fileType, originalDescription: context.description });
+      try {
+        if (targetTable === 'dialectic_project_resources') {
+          let finalDescriptionString: string | null = null;
+          if (typeof context.description === 'string') {
+            try {
+              const parsedJson = JSON.parse(context.description);
+              const descriptionObject = typeof parsedJson === 'object' && parsedJson !== null 
+                ? { ...parsedJson, type: context.pathContext.fileType }
+                : { type: context.pathContext.fileType, originalDescription: context.description };
+              finalDescriptionString = JSON.stringify(descriptionObject);
+            } catch (e) {
+              finalDescriptionString = JSON.stringify({ type: context.pathContext.fileType, originalDescription: context.description });
+            }
+          } else {
+            finalDescriptionString = null;
           }
-        } else {
-          finalDescriptionString = null;
-        }
 
-      recordData = {
-        project_id: context.pathContext.projectId,
-        user_id: context.userId!,
-        file_name: finalFileName, 
-        mime_type: context.mimeType,
-        size_bytes: context.sizeBytes,
-        storage_bucket: this.storageBucket,
-        storage_path: finalMainContentFilePath, // Should be directory path now
-        resource_description: finalDescriptionString,
-      };
-    } else if (targetTable === 'dialectic_contributions') {
-      if (!context.contributionMetadata || !context.pathContext.sessionId || context.contributionMetadata.iterationNumber === undefined || !context.pathContext.stageSlug || !context.pathContext.modelSlug) {
-        // Construct full path for removal if needed
-        const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
-        if (!mainUploadError) { 
-            await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]);
-            if (rawJsonResponseFullStoragePath) { await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFullStoragePath]); }
-        }
-        return { record: null, error: { message: 'Missing required metadata for contribution.' }};
-      }
-      const meta = context.contributionMetadata;
-      recordData = {
-        session_id: context.pathContext.sessionId,
-        model_id: meta.modelIdUsed,
-        model_name: meta.modelNameDisplay,
-        user_id: context.userId,
-        stage: context.pathContext.stageSlug, 
-        iteration_number: meta.iterationNumber,
-        storage_bucket: this.storageBucket,
-        storage_path: finalMainContentFilePath, // Should be directory path now
-        mime_type: context.mimeType,
-        size_bytes: context.sizeBytes,
-        file_name: finalFileName, 
-        raw_response_storage_path: rawJsonResponseFullStoragePath, // Stores full path
-        tokens_used_input: meta.tokensUsedInput,
-        tokens_used_output: meta.tokensUsedOutput,
-        processing_time_ms: meta.processingTimeMs,
-        seed_prompt_url: meta.seedPromptStoragePath,
-        prompt_template_id_used: meta.promptTemplateIdUsed,
-        citations: meta.citations,
-        contribution_type: meta.contributionType,
-        error: meta.errorDetails,
-        target_contribution_id: meta.targetContributionId,
-        edit_version: meta.editVersion ?? 1,
-        is_latest_edit: meta.isLatestEdit ?? true,
-        original_model_contribution_id: meta.originalModelContributionId,
-      };
-    } else {  targetTable === 'dialectic_feedback'
-      if (!context.pathContext.projectId || !context.userId || !context.pathContext.stageSlug || context.pathContext.iteration === undefined || !context.pathContext.sessionId ) {
-        const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
-        if (!mainUploadError) { await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]); }
-        return { record: null, error: { message: 'Missing required fields for feedback record.' } };
-      }
+          const recordData: TablesInsert<'dialectic_project_resources'> = {
+            project_id: context.pathContext.projectId,
+            user_id: context.userId!,
+            file_name: finalFileName, 
+            mime_type: context.mimeType,
+            size_bytes: context.sizeBytes,
+            storage_bucket: this.storageBucket,
+            storage_path: finalMainContentFilePath,
+            resource_description: finalDescriptionString,
+          };
+          const { data: newRecord, error: insertError } = await this.supabase
+            .from(targetTable)
+            .insert(recordData)
+            .select()
+            .single();
 
-        if (typeof context.feedbackTypeForDb !== 'string' || !context.feedbackTypeForDb) {
-          const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
-          if (!mainUploadError) { await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]); }
-          return { record: null, error: { message: "'feedbackTypeForDb' is missing in UploadContext for user_feedback."}};
-        }
-
-        const feedbackInsertData: TablesInsert<'dialectic_feedback'> = {
-          project_id: context.pathContext.projectId, 
-          session_id: context.pathContext.sessionId,
-          user_id: context.userId, 
-          stage_slug: context.pathContext.stageSlug,
-          iteration_number: context.pathContext.iteration,
-          storage_bucket: this.storageBucket,
-          storage_path: finalMainContentFilePath, 
-          file_name: finalFileName, 
-          mime_type: context.mimeType,
-          size_bytes: context.sizeBytes,
-          feedback_type: context.feedbackTypeForDb, 
-          resource_description: (context.resourceDescriptionForDb as Json) || null,
-        };
-        recordData = feedbackInsertData;
-      }
-
-      let newRecordResult;
-      if (targetTable === 'dialectic_project_resources') {
-        newRecordResult = await this.supabase
-          .from(targetTable)
-          .insert(recordData as TablesInsert<'dialectic_project_resources'>)
-          .select()
-          .single();
-      } else if (targetTable === 'dialectic_contributions') {
-        newRecordResult = await this.supabase
-          .from(targetTable)
-          .insert(recordData as TablesInsert<'dialectic_contributions'>)
-          .select()
-          .single();
-      } else { // dialectic_feedback
-        newRecordResult = await this.supabase
-          .from(targetTable)
-          .insert(recordData as TablesInsert<'dialectic_feedback'>) 
-          .select()
-          .single();
-      }
-
-      const { data: newRecord, error: insertError } = newRecordResult;
-
-    if (insertError) {
-      // Only remove if main upload succeeded but DB insert failed.
-      // If mainUploadError was already set, the file might not have been uploaded or the path is wrong.
-      if (!mainUploadError) {
-          await this.supabase.storage.from(this.storageBucket).remove([finalMainContentFilePath]);
-          if (rawJsonResponseFullStoragePath) {
-            await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFullStoragePath]);
+          if (insertError) {
+            throw insertError;
           }
-      }
-      return {
-        record: null,
-        error: { message: "Database registration failed after successful upload.", details: insertError.message },
-      }
-    }
+          return { record: newRecord, error: null };
 
-      return { record: newRecord as FileRecord, error: null }
+        } else if (targetTable === 'dialectic_contributions') {
+          if (!context.contributionMetadata || !context.pathContext.sessionId || context.contributionMetadata.iterationNumber === undefined || !context.pathContext.stageSlug || !context.pathContext.modelSlug) {
+            const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
+            if (!mainUploadError) { 
+                await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]);
+                if (rawJsonResponseFullStoragePath) { await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFullStoragePath]); }
+            }
+            return { record: null, error: { message: 'Missing required metadata for contribution.' }};
+          }
+          const meta = context.contributionMetadata;
+          const recordData: TablesInsert<'dialectic_contributions'> = {
+            session_id: context.pathContext.sessionId,
+            model_id: meta.modelIdUsed,
+            model_name: meta.modelNameDisplay,
+            user_id: context.userId,
+            stage: context.pathContext.stageSlug, 
+            iteration_number: meta.iterationNumber,
+            storage_bucket: this.storageBucket,
+            storage_path: finalMainContentFilePath,
+            mime_type: context.mimeType,
+            size_bytes: context.sizeBytes,
+            file_name: finalFileName, 
+            raw_response_storage_path: rawJsonResponseFullStoragePath,
+            tokens_used_input: meta.tokensUsedInput,
+            tokens_used_output: meta.tokensUsedOutput,
+            processing_time_ms: meta.processingTimeMs,
+            seed_prompt_url: meta.seedPromptStoragePath,
+            prompt_template_id_used: meta.promptTemplateIdUsed,
+            citations: meta.citations,
+            contribution_type: meta.contributionType,
+            error: meta.errorDetails,
+            target_contribution_id: meta.target_contribution_id,
+            document_relationships: meta.document_relationships,
+            edit_version: meta.editVersion ?? 1,
+            is_latest_edit: meta.isLatestEdit ?? true,
+            original_model_contribution_id: meta.originalModelContributionId,
+          };
+          const { data: newRecord, error: insertError } = await this.supabase
+            .from(targetTable)
+            .insert(recordData)
+            .select()
+            .single();
+          
+          if (insertError) {
+            throw insertError;
+          }
+          return { record: newRecord, error: null };
+
+        } else { // dialectic_feedback
+          if (!context.pathContext.projectId || !context.userId || !context.pathContext.stageSlug || context.pathContext.iteration === undefined || !context.pathContext.sessionId ) {
+            const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
+            if (!mainUploadError) { await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]); }
+            return { record: null, error: { message: 'Missing required fields for feedback record.' } };
+          }
+    
+          if (typeof context.feedbackTypeForDb !== 'string' || !context.feedbackTypeForDb) {
+            const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
+            if (!mainUploadError) { await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]); }
+            return { record: null, error: { message: "'feedbackTypeForDb' is missing in UploadContext for user_feedback."}};
+          }
+    
+          const recordData: TablesInsert<'dialectic_feedback'> = {
+            project_id: context.pathContext.projectId, 
+            session_id: context.pathContext.sessionId,
+            user_id: context.userId, 
+            stage_slug: context.pathContext.stageSlug,
+            iteration_number: context.pathContext.iteration,
+            storage_bucket: this.storageBucket,
+            storage_path: finalMainContentFilePath, 
+            file_name: finalFileName, 
+            mime_type: context.mimeType,
+            size_bytes: context.sizeBytes,
+            feedback_type: context.feedbackTypeForDb, 
+            resource_description: (context.resourceDescriptionForDb) || null,
+          };
+          const { data: newRecord, error: insertError } = await this.supabase
+            .from(targetTable)
+            .insert(recordData) 
+            .select()
+            .single();
+          
+          if (insertError) {
+            throw insertError;
+          }
+          return { record: newRecord, error: null };
+        }
+      } catch(e) {
+        if (!mainUploadError) {
+          const { data: files, error: listError } = await this.supabase.storage
+            .from(this.storageBucket)
+            .list(finalMainContentFilePath);
+
+          if (listError) {
+            console.error(`[FileManager] Failed to list files for cleanup at path: ${finalMainContentFilePath}. Manual cleanup may be required.`, listError);
+          } else if (files && files.length > 0) {
+            const pathsToRemove = files.map(file => `${finalMainContentFilePath}/${file.name}`);
+            await this.supabase.storage.from(this.storageBucket).remove(pathsToRemove);
+          }
+        }
+        const errorMessage = e instanceof Error ? e.message : 'Unknown database error';
+        return {
+          record: null,
+          error: { message: "Database registration failed after successful upload.", details: errorMessage },
+        }
+      }
     }
   }
 

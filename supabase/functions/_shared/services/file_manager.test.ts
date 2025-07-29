@@ -10,11 +10,14 @@ import {
   createMockSupabaseClient,
   type MockSupabaseClientSetup,
   type MockSupabaseDataConfig,
+  type IMockStorageFileOptions,
 } from '../supabase.mock.ts'
 import { FileManagerService } from './file_manager.ts'
 import type { UploadContext, PathContext } from '../types/file_manager.types.ts'
 import { constructStoragePath } from '../utils/path_constructor.ts'
 import type { TablesInsert, Json } from '../../types_db.ts'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '../../types_db.ts'
 
 Deno.test('FileManagerService', async (t) => {
   let setup: MockSupabaseClientSetup
@@ -32,7 +35,7 @@ Deno.test('FileManagerService', async (t) => {
     })
 
     setup = createMockSupabaseClient('test-user-id', config)
-    fileManager = new FileManagerService(setup.client as any)
+    fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>)
   }
 
   const afterEach = () => {
@@ -78,7 +81,7 @@ Deno.test('FileManagerService', async (t) => {
         });
 
         assertRejects(
-          async () => new FileManagerService(mockSupabase.client as any),
+          async () => new FileManagerService(mockSupabase.client as unknown as SupabaseClient<Database>),
           Error,
           'SB_CONTENT_STORAGE_BUCKET environment variable is not set.',
         );
@@ -156,14 +159,14 @@ Deno.test('FileManagerService', async (t) => {
         assertEquals(setup.spies.fromSpy.calls[0].args[0], 'dialectic_project_resources')
         const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.insert
         assertExists(insertSpy);
-        const insertData = insertSpy.calls[0].args[0] as TablesInsert<'dialectic_project_resources'>;
+        const insertData = insertSpy.calls[0].args[0];
         assertEquals(insertData.project_id, 'project-uuid-123')
         
         // constructStoragePath now returns an object
         const expectedPathParts = constructStoragePath(context.pathContext);
         assertEquals(insertData.storage_path, expectedPathParts.storagePath);
         assertEquals(insertData.file_name, expectedPathParts.fileName);
-        assertEquals(insertData.resource_description, JSON.stringify({ type: context.pathContext.fileType, originalDescription: context.description }) as Json);
+        assertEquals(insertData.resource_description, JSON.stringify({ type: context.pathContext.fileType, originalDescription: context.description }));
       } finally {
         afterEach()
       }
@@ -216,13 +219,13 @@ Deno.test('FileManagerService', async (t) => {
         setup.client.storage.from = (bucketName: string) => {
             const bucket = originalStorageFrom(bucketName);
             const originalUpload = bucket.upload;
-            (bucket as any).upload = async (path: string, content: any, options: any) => {
+            bucket.upload = async (path: string, content: unknown, options?: IMockStorageFileOptions) => {
                 if (path === expectedFullRawUploadPathAttempt0) {
                     rawJsonUploadCalledCorrectly = true;
                     return { data: { path: expectedFullRawUploadPathAttempt0 }, error: null };
                 }
-                if (path === expectedFullUploadPathAttempt0 && options.contentType !== 'application/json') {
-                    return config.storageMock?.uploadResult ?? {data: {path}, error: null} ;
+                if (path === expectedFullUploadPathAttempt0 && options?.contentType !== 'application/json') {
+                    return { data: { path }, error: null };
                 }
                 return originalUpload.call(bucket, path, content, options);
             };
@@ -262,7 +265,7 @@ Deno.test('FileManagerService', async (t) => {
 
         const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_contributions')?.insert
         assertExists(insertSpy);
-        const insertData = insertSpy.calls[0].args[0] as TablesInsert<'dialectic_contributions'>;
+        const insertData = insertSpy.calls[0].args[0];
         assertEquals(insertData.session_id, 'session-uuid-456')
         assertEquals(insertData.stage, '2_antithesis')
         assertEquals(insertData.file_name, expectedPathPartsAttempt0.fileName);
@@ -332,7 +335,7 @@ Deno.test('FileManagerService', async (t) => {
         const mockUploadFn = async (path: string, _content: any, options: any) => {
           uploadCallCount++;
           if (uploadCallCount === 1 && path === expectedFullFailedPath0) {
-            return { error: { message: 'The resource already exists', name: 'StorageConflict', status: 409 } as any, data: null }; // Cast to any for custom error
+            return { error: { message: 'The resource already exists', name: 'StorageConflict', status: 409 }, data: null };
           }
           if (uploadCallCount === 2 && path === expectedFullSuccessfulMainPath1) {
             return { error: null, data: { path: expectedFullSuccessfulMainPath1 } }; 
@@ -341,13 +344,13 @@ Deno.test('FileManagerService', async (t) => {
             return { error: null, data: { path: expectedFullSuccessfulRawJsonPath1 } };
           }
           console.error(`mockUploadFn: Unexpected upload call: count ${uploadCallCount}, path ${path}, contentType ${options?.contentType}`);
-          return { error: {message: "Unexpected upload call pattern in mockUploadFn", name: "TestError"} as any, data: null };
+          return { error: {message: "Unexpected upload call pattern in mockUploadFn", name: "TestError"}, data: null };
         };
 
         const originalStorageFrom = setup.client.storage.from;
         setup.client.storage.from = (bucketName: string) => {
           const bucket = originalStorageFrom(bucketName);
-          (bucket as any).upload = mockUploadFn; 
+          bucket.upload = mockUploadFn; 
           return bucket;
         };
 
@@ -375,7 +378,7 @@ Deno.test('FileManagerService', async (t) => {
 
         const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_contributions')?.insert;
         assertExists(insertSpy);
-        const insertData = insertSpy.calls[0].args[0] as TablesInsert<'dialectic_contributions'>;
+        const insertData = insertSpy.calls[0].args[0];
         assertEquals(insertData.file_name, expectedSuccessfulMainFileName1);
         assertEquals(insertData.storage_path, expectedSuccessfulPathParts1.storagePath); 
         assertEquals(insertData.raw_response_storage_path, expectedFullSuccessfulRawJsonPath1);
@@ -435,7 +438,7 @@ Deno.test('FileManagerService', async (t) => {
 
         const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_feedback')?.insert;
         assertExists(insertSpy, "Insert spy for 'dialectic_feedback' not found");
-        const insertData = insertSpy.calls[0].args[0] as TablesInsert<'dialectic_feedback'>;
+        const insertData = insertSpy.calls[0].args[0];
 
         assertEquals(insertData.project_id, context.pathContext.projectId);
         assertEquals(insertData.session_id, context.pathContext.sessionId);
@@ -444,7 +447,7 @@ Deno.test('FileManagerService', async (t) => {
         assertEquals(insertData.user_id, context.userId);
         assertEquals(insertData.feedback_type, context.feedbackTypeForDb);
         
-        const expectedResourceDesc: Json = context.resourceDescriptionForDb! as unknown as Json;
+        const expectedResourceDesc: Json = context.resourceDescriptionForDb!;
         assertEquals(insertData.resource_description, expectedResourceDesc);
         
         const derivedFileName = expectedPath.fileName;
@@ -505,7 +508,15 @@ Deno.test('FileManagerService', async (t) => {
           },
           storageMock: {
             uploadResult: { data: { path: expectedFullPath }, error: null }, // Upload succeeds
-            removeResult: { data: [{name: 'test-bucket'}] , error: null} // Cleanup remove succeeds
+            listResult: { data: [{ 
+              name: expectedPathParts.fileName, 
+              id: 'file-id-for-cleanup',
+              updated_at: new Date().toISOString(),
+              created_at: new Date().toISOString(),
+              last_accessed_at: new Date().toISOString(),
+              metadata: { 'e-tag': 'abc'} 
+            }], error: null }, // Mock the list call
+            removeResult: { data: [{ name: 'test-bucket' }], error: null }, // Mock the subsequent remove call
           },
         };
         beforeEach(config);
@@ -517,17 +528,15 @@ Deno.test('FileManagerService', async (t) => {
         assertEquals(error?.details, 'Simulated DB insert error');
         assertEquals(record, null);
 
-        // Check that storage.remove was called for cleanup
+        // Check that storage.list was called for cleanup
+        const listSpy = setup.spies.storage.from('test-bucket').listSpy;
+        assertExists(listSpy);
+        assertEquals(listSpy.calls[0].args[0], expectedPathParts.storagePath);
+        
+        // Check that storage.remove was called with the correct file path
         const removeSpy = setup.spies.storage.from('test-bucket').removeSpy;
         assertExists(removeSpy);
-        // TODO: Investigate mock behavior. The SUT (uploadAndRegisterFile) calculates the full path
-        // (e.g., "project-db-error/db_error_test.txt") for removal.
-        // However, the removeSpy.calls[0].args[0] is observed to be just the directory part 
-        // (e.g., ["project-db-error"]), as also indicated by the MockStorageBucketAPI's
-        // "performRemoveInternal called with paths: [...]" log.
-        // This assertion is changed to match the observed mock/spy behavior.
-        // The original assertion was: assertEquals(removeSpy.calls[0].args[0], [expectedFullPath]);
-        assertEquals(removeSpy.calls[0].args[0], [expectedPathParts.storagePath]);
+        assertEquals(removeSpy.calls[0].args[0], [expectedFullPath]);
 
       } finally {
         afterEach();

@@ -188,6 +188,79 @@ Deno.test('[path_deconstructor] direct - initial_user_prompt', () => {
   assertEquals(info.error, undefined);
 });
 
+Deno.test('[path_deconstructor] direct - pairwise_synthesis_chunk', () => {
+  const projectId = 'proj-psc';
+  const sessionId = 'sess-psc-uuid';
+  const shortSessionId = generateShortId(sessionId);
+  const iteration = 1;
+  const stageSlug = 'synthesis';
+  const mappedStageDir = mapStageSlugToDirName(stageSlug);
+  const originalFileName = 'chunk_1_pair_AB.json';
+  const sanitizedFileName = sanitizeForPath(originalFileName);
+
+  const dirPart = `${projectId}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}/_work/pairwise_synthesis_chunks`;
+  const filePart = sanitizedFileName;
+  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: dirPart, fileName: filePart, dbOriginalFileName: originalFileName });
+
+  assertEquals(info.originalProjectId, projectId);
+  assertEquals(info.shortSessionId, shortSessionId);
+  assertEquals(info.iteration, iteration);
+  assertEquals(info.stageDirName, mappedStageDir);
+  assertEquals(info.stageSlug, stageSlug);
+  assertEquals(info.parsedFileNameFromPath, sanitizedFileName);
+  assertEquals(info.fileTypeGuess, 'pairwise_synthesis_chunk');
+  assertEquals(info.error, undefined);
+});
+
+Deno.test('[path_deconstructor] direct - reduced_synthesis', () => {
+  const projectId = 'proj-rs';
+  const sessionId = 'sess-rs-uuid';
+  const shortSessionId = generateShortId(sessionId);
+  const iteration = 2;
+  const stageSlug = 'synthesis';
+  const mappedStageDir = mapStageSlugToDirName(stageSlug);
+  const originalFileName = 'reduced_chunk_group_1.json';
+  const sanitizedFileName = sanitizeForPath(originalFileName);
+
+  const dirPart = `${projectId}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}/_work/reduced_synthesis_chunks`;
+  const filePart = sanitizedFileName;
+  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: dirPart, fileName: filePart, dbOriginalFileName: originalFileName });
+
+  assertEquals(info.originalProjectId, projectId);
+  assertEquals(info.shortSessionId, shortSessionId);
+  assertEquals(info.iteration, iteration);
+  assertEquals(info.stageDirName, mappedStageDir);
+  assertEquals(info.stageSlug, stageSlug);
+  assertEquals(info.parsedFileNameFromPath, sanitizedFileName);
+  assertEquals(info.fileTypeGuess, 'reduced_synthesis');
+  assertEquals(info.error, undefined);
+});
+
+Deno.test('[path_deconstructor] direct - final_synthesis', () => {
+  const projectId = 'proj-fs';
+  const sessionId = 'sess-fs-uuid';
+  const shortSessionId = generateShortId(sessionId);
+  const iteration = 3;
+  const stageSlug = 'synthesis';
+  const mappedStageDir = mapStageSlugToDirName(stageSlug);
+  const originalFileName = 'Final_Synthesis_Output.md';
+  const sanitizedFileName = sanitizeForPath(originalFileName);
+
+  const dirPart = `${projectId}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}/_work/final_synthesis`;
+  const filePart = sanitizedFileName;
+  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: dirPart, fileName: filePart, dbOriginalFileName: originalFileName });
+
+  assertEquals(info.originalProjectId, projectId);
+  assertEquals(info.shortSessionId, shortSessionId);
+  assertEquals(info.iteration, iteration);
+  assertEquals(info.stageDirName, mappedStageDir);
+  assertEquals(info.stageSlug, stageSlug);
+  assertEquals(info.parsedFileNameFromPath, sanitizedFileName);
+  assertEquals(info.fileTypeGuess, 'final_synthesis');
+  assertEquals(info.error, undefined);
+});
+
+
 Deno.test('[path_deconstructor] handles unknown path structure gracefully', () => {
   const dirPart = 'some/completely/unknown/path/structure';
   const filePart = 'file.txt';
@@ -320,6 +393,45 @@ const constructDeconstructTestCases: Array<{
     },
     checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug'],
     expectedSanitizedFileName: 'final_output_plan.docx'
+  },
+  {
+    name: 'pairwise_synthesis_chunk',
+    context: {
+      projectId: 'yy-psc',
+      fileType: 'pairwise_synthesis_chunk',
+      sessionId: 'session-yy-psc',
+      iteration: 0,
+      stageSlug: 'synthesis',
+      originalFileName: 'Pair_A_vs_B.json',
+    },
+    checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug'],
+    expectedSanitizedFileName: 'pair_a_vs_b.json'
+  },
+    {
+    name: 'reduced_synthesis',
+    context: {
+      projectId: 'yy-rs',
+      fileType: 'reduced_synthesis',
+      sessionId: 'session-yy-rs',
+      iteration: 1,
+      stageSlug: 'synthesis',
+      originalFileName: 'Reduced_Group_1.json',
+    },
+    checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug'],
+    expectedSanitizedFileName: 'reduced_group_1.json'
+  },
+  {
+    name: 'final_synthesis',
+    context: {
+      projectId: 'yy-fs',
+      fileType: 'final_synthesis',
+      sessionId: 'session-yy-fs',
+      iteration: 2,
+      stageSlug: 'synthesis',
+      originalFileName: 'The Final Document.md',
+    },
+    checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug'],
+    expectedSanitizedFileName: 'the_final_document.md'
   },
 ];
 
@@ -460,6 +572,42 @@ const deconstructReconstructTestCases: DeconstructReconstructTestCase[] = [
       shortSessionId: 'sess005',
       iteration: 0,
       stageSlug: 'paralysis',
+    },
+  },
+  {
+    name: 'pairwise_synthesis_chunk',
+    samplePath: 'proj_kappa/sessions/sess006/iteration_1/3_synthesis/_work/pairwise_synthesis_chunks/pairwise_result.json',
+    dbOriginalFileName: 'Pairwise Result.json',
+    expectedFileType: 'pairwise_synthesis_chunk',
+    expectedContextParts: {
+      originalProjectId: 'proj_kappa',
+      shortSessionId: 'sess006',
+      iteration: 1,
+      stageSlug: 'synthesis',
+    },
+  },
+    {
+    name: 'reduced_synthesis',
+    samplePath: 'proj_lambda/sessions/sess007/iteration_2/3_synthesis/_work/reduced_synthesis_chunks/reduction_output.json',
+    dbOriginalFileName: 'Reduction Output.json',
+    expectedFileType: 'reduced_synthesis',
+    expectedContextParts: {
+      originalProjectId: 'proj_lambda',
+      shortSessionId: 'sess007',
+      iteration: 2,
+      stageSlug: 'synthesis',
+    },
+  },
+  {
+    name: 'final_synthesis',
+    samplePath: 'proj_mu/sessions/sess008/iteration_3/3_synthesis/_work/final_synthesis/final_doc.md',
+    dbOriginalFileName: 'Final Doc.md',
+    expectedFileType: 'final_synthesis',
+    expectedContextParts: {
+      originalProjectId: 'proj_mu',
+      shortSessionId: 'sess008',
+      iteration: 3,
+      stageSlug: 'synthesis',
     },
   },
 ];

@@ -86,7 +86,7 @@ const defaultTestAiProviders: TestResourceRequirement<any>[] = [
       provider: "anthropic",
       is_active: true,
       config: {
-        tokenization_strategy: { type: "claude_tokenizer" } as AiModelExtendedConfig['tokenization_strategy'],
+        tokenization_strategy: { type: "anthropic_tokenizer" } as AiModelExtendedConfig['tokenization_strategy'],
         input_token_cost_rate: 0.008,
         output_token_cost_rate: 0.024,
         requires_api_key: false,

@@ -5,7 +5,7 @@ import {
   type ExecuteModelCallAndSaveParams,
 } from '../dialectic-service/dialectic.interface.ts';
 import { type UploadContext } from '../_shared/types/file_manager.types.ts';
-import { isDialecticContribution, isAiModelExtendedConfig, isDialecticExecuteJobPayload } from "../_shared/utils/type_guards.ts";
+import { isDialecticContribution, isAiModelExtendedConfig, isDialecticExecuteJobPayload, isContributionType } from "../_shared/utils/type_guards.ts";
 import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
 import { type AiModelExtendedConfig, type MessageForTokenCounting } from '../_shared/types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
@@ -108,26 +108,28 @@ export async function executeModelCallAndSave(
             iteration: iterationNumber,
             stageSlug, 
             modelSlug: providerDetails.api_identifier,
-            originalFileName: `${providerDetails.api_identifier}_${stageSlug}${deps.getExtensionFromMimeType(aiResponse.contentType || "text/markdown")}`,
+            originalFileName: job.payload.originalFileName || `${providerDetails.api_identifier}_${stageSlug}${deps.getExtensionFromMimeType(aiResponse.contentType || "text/markdown")}`,
         },
         fileContent: finalContent, 
         mimeType: aiResponse.contentType || "text/markdown",
         sizeBytes: finalContent.length, 
         userId: projectOwnerUserId,
         description: `Contribution for stage '${stageSlug}' by model ${providerDetails.name}`,
-        resourceTypeForDb: job.payload.output_type,
+        resourceTypeForDb: 'contribution', // <-- This is the fix
         contributionMetadata: {
             sessionId, 
             modelIdUsed: providerDetails.id, 
             modelNameDisplay: providerDetails.name,
             stageSlug, 
             iterationNumber, 
+            contributionType: isContributionType(job.payload.output_type) ? job.payload.output_type : undefined,
             rawJsonResponseContent: JSON.stringify(aiResponse.rawProviderResponse || {}),
             tokensUsedInput: aiResponse.inputTokens, 
             tokensUsedOutput: aiResponse.outputTokens,
             processingTimeMs: aiResponse.processingTimeMs, 
             seedPromptStoragePath: renderedPrompt.fullPath,
             target_contribution_id: job.payload.target_contribution_id,
+            document_relationships: job.payload.document_relationships,
         },
     };
 

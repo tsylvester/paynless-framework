@@ -261,7 +261,8 @@ Deno.test('Type Guard: isDialecticContribution', async (t) => {
             raw_response_storage_path: null,
             seed_prompt_url: null,
             size_bytes: 123,
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
+            document_relationships: null
         };
         assert(isDialecticContribution(contribution));
     });
@@ -294,7 +295,8 @@ Deno.test('Type Guard: isDialecticContribution', async (t) => {
             raw_response_storage_path: null,
             seed_prompt_url: null,
             size_bytes: 456,
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
+            document_relationships: null
         };
         assert(isDialecticContribution(contribution));
     });

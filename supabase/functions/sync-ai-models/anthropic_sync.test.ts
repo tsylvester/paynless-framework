@@ -52,15 +52,15 @@ const getDefaultAnthropicConfig = (apiIdentifier: string, overrides: Partial<AiM
         };
     }
     
-    // Ensure the type is 'claude_tokenizer' if it somehow got changed or wasn't set by base/override.
-    // The baseConfig from actualCreateDefaultAnthropicConfig should already correctly set this to 'claude_tokenizer'.
+    // Ensure the type is 'anthropic_tokenizer' if it somehow got changed or wasn't set by base/override.
+    // The baseConfig from actualCreateDefaultAnthropicConfig should already correctly set this to 'anthropic_tokenizer'.
     // This check is more of a safeguard or for if overrides change the type.
-    if (mergedConfig.tokenization_strategy?.type !== 'claude_tokenizer') {
+    if (mergedConfig.tokenization_strategy?.type !== 'anthropic_tokenizer') {
       // If the override changed the type, or if baseConfig was faulty (it shouldn't be)
       // we correct it here. But we must preserve other potentially overridden strategy fields.
       (mergedConfig as AiModelExtendedConfig).tokenization_strategy = {
         ...(mergedConfig.tokenization_strategy || {}), // keep existing fields from override or base
-        type: 'claude_tokenizer', // Ensure type is correct
+        type: 'anthropic_tokenizer', // Ensure type is correct
       };
     }
 
@@ -221,7 +221,7 @@ Deno.test("syncAnthropicModels", {
                 context_window_tokens: 200000,
                 hard_cap_output_tokens: 4096,
                 tokenization_strategy: {
-                    type: 'claude_tokenizer',
+                    type: 'anthropic_tokenizer',
                 },
                 provider_max_input_tokens: 200000,
                 provider_max_output_tokens: 4096,

@@ -36,6 +36,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
         processing_time_ms: 0,
         size_bytes: 0,
         seed_prompt_url: null,
+        document_relationships: { source_group: 'thesis-1' },
     },
     { id: 'chunk-1b', content: '', contribution_type: 'pairwise_synthesis_chunk', target_contribution_id: 'thesis-1',
         session_id: 's1', 
@@ -62,6 +63,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
         processing_time_ms: 0,
         size_bytes: 0,
         seed_prompt_url: null,
+        document_relationships: { source_group: 'thesis-1' },
     },
     { id: 'chunk-1c', content: '', contribution_type: 'pairwise_synthesis_chunk', target_contribution_id: 'thesis-1',
         session_id: 's1', 
@@ -88,6 +90,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
         processing_time_ms: 0,
         size_bytes: 0,
         seed_prompt_url: null,
+        document_relationships: { source_group: 'thesis-1' },
     },
     // Group 2: Related to original thesis 'thesis-2'
     { id: 'chunk-2a', content: '', contribution_type: 'pairwise_synthesis_chunk', target_contribution_id: 'thesis-2',
@@ -115,6 +118,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
         processing_time_ms: 0,
         size_bytes: 0,
         seed_prompt_url: null,
+        document_relationships: { source_group: 'thesis-2' },
     },
     { id: 'chunk-2b', content: '', contribution_type: 'pairwise_synthesis_chunk', target_contribution_id: 'thesis-2',
         session_id: 's1', 
@@ -141,6 +145,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
         processing_time_ms: 0,
         size_bytes: 0,
         seed_prompt_url: null,
+        document_relationships: { source_group: 'thesis-2' },
     },
     // Group 3: Related to original thesis 'thesis-3'
     { id: 'chunk-3a', content: '', contribution_type: 'pairwise_synthesis_chunk', target_contribution_id: 'thesis-3',
@@ -168,6 +173,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
         processing_time_ms: 0,
         size_bytes: 0,
         seed_prompt_url: null,
+        document_relationships: { source_group: 'thesis-3' },
     },
     // A document with a null target_contribution_id, which should be ignored by this planner
     { id: 'chunk-null', content: '', contribution_type: 'pairwise_synthesis_chunk', target_contribution_id: null,
@@ -195,6 +201,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
         processing_time_ms: 0,
         size_bytes: 0,
         seed_prompt_url: null,
+        document_relationships: null,
     },
 ];
 
@@ -265,7 +272,7 @@ Deno.test('planPerSourceGroup should create one child job for each group of rela
 });
 
 Deno.test('planPerSourceGroup should return an empty array if no documents have a source id', () => {
-    const noSourceIds = MOCK_SOURCE_DOCS.map(d => ({ ...d, target_contribution_id: null }));
+    const noSourceIds = MOCK_SOURCE_DOCS.map(d => ({ ...d, document_relationships: null }));
     const childPayloads = planPerSourceGroup(noSourceIds, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
     assertEquals(childPayloads.length, 0);
 });
@@ -307,6 +314,7 @@ Deno.test('planPerSourceGroup should create a single job when all documents belo
         processing_time_ms: 0,
         size_bytes: 0,
         seed_prompt_url: null,
+        document_relationships: { source_group: d.target_contribution_id! },
     }));
 
     const childPayloads = planPerSourceGroup(singleGroupDocs, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
@@ -353,6 +361,7 @@ Deno.test('planPerSourceGroup should create one job per document when each is in
         processing_time_ms: 0,
         size_bytes: 0,
         seed_prompt_url: null,
+        document_relationships: { source_group: d.target_contribution_id! },
     }));
 
     const childPayloads = planPerSourceGroup(uniqueGroupDocs, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);

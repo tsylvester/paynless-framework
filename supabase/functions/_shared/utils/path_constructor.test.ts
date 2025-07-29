@@ -134,6 +134,36 @@ Deno.test('constructStoragePath', async (t) => {
     assertEquals(path.fileName, 'prd_document.md');
   });
 
+  await t.step('should construct path for pairwise_synthesis_chunk', () => {
+    const path = constructStoragePath({
+      ...sessionBaseContext,
+      fileType: 'pairwise_synthesis_chunk',
+      originalFileName: 'pairwise_chunk_1.json',
+    });
+    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/_work/pairwise_synthesis_chunks`);
+    assertEquals(path.fileName, 'pairwise_chunk_1.json');
+  });
+
+  await t.step('should construct path for reduced_synthesis', () => {
+    const path = constructStoragePath({
+      ...sessionBaseContext,
+      fileType: 'reduced_synthesis',
+      originalFileName: 'Reduced Chunk A.json',
+    });
+    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/_work/reduced_synthesis_chunks`);
+    assertEquals(path.fileName, 'reduced_chunk_a.json');
+  });
+
+  await t.step('should construct path for final_synthesis', () => {
+    const path = constructStoragePath({
+      ...sessionBaseContext,
+      fileType: 'final_synthesis',
+      originalFileName: 'Final Synthesis Document.md',
+    });
+    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/_work/final_synthesis`);
+    assertEquals(path.fileName, 'final_synthesis_document.md');
+  });
+
   await t.step('should throw error if originalFileName is missing for initial_user_prompt', () => {
     assertThrows(() => {
       constructStoragePath({
@@ -194,6 +224,33 @@ Deno.test('constructStoragePath', async (t) => {
         fileType: 'contribution_document',
       });
     }, Error, 'projectId, sessionId, iteration, stageSlug, and originalFileName are required for contribution_document.');
+  });
+
+  await t.step('should throw error if originalFileName is missing for pairwise_synthesis_chunk', () => {
+    assertThrows(() => {
+      constructStoragePath({
+        ...sessionBaseContext,
+        fileType: 'pairwise_synthesis_chunk',
+      });
+    }, Error, 'projectId, sessionId, iteration, stageSlug, and originalFileName are required for pairwise_synthesis_chunk.');
+  });
+
+  await t.step('should throw error if originalFileName is missing for reduced_synthesis', () => {
+    assertThrows(() => {
+      constructStoragePath({
+        ...sessionBaseContext,
+        fileType: 'reduced_synthesis',
+      });
+    }, Error, 'projectId, sessionId, iteration, stageSlug, and originalFileName are required for reduced_synthesis.');
+  });
+
+  await t.step('should throw error if originalFileName is missing for final_synthesis', () => {
+    assertThrows(() => {
+      constructStoragePath({
+        ...sessionBaseContext,
+        fileType: 'final_synthesis',
+      });
+    }, Error, 'projectId, sessionId, iteration, stageSlug, and originalFileName are required for final_synthesis.');
   });
 
   await t.step('should sanitize complex file names for initial_user_prompt', () => {

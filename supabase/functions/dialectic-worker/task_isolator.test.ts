@@ -68,6 +68,7 @@ describe('planComplexStage', () => {
             storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage',
             size_bytes: 123,
             mime_type: 'text/plain',
+            document_relationships: null,
         },
         {
             id: 'doc-2-antithesis',
@@ -97,6 +98,7 @@ describe('planComplexStage', () => {
             storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage',
             size_bytes: 123,
             mime_type: 'text/plain',
+            document_relationships: null,
         },
     ];
 
@@ -162,7 +164,7 @@ describe('planComplexStage', () => {
             prompt_template_name: 'test-prompt',
             inputs_required: [{ type: 'thesis' }],
             granularity_strategy: 'per_source_document',
-            output_type: 'test_artifact',
+            output_type: 'thesis',
         };
 
         const mockPromptAssembler = new PromptAssembler(mockSupabase.client as unknown as SupabaseClient<Database>);
@@ -196,7 +198,7 @@ describe('planComplexStage', () => {
             job_type: 'execute',
             step_info: { current_step: 1, total_steps: 2 },
             prompt_template_name: 'test-prompt',
-            output_type: 'test_artifact',
+            output_type: 'thesis',
             inputs: { documentId: 'doc-1-thesis' },
             model_id: 'model-1',
             projectId: 'proj-1',
@@ -227,7 +229,7 @@ describe('planComplexStage', () => {
         if (isDialecticExecuteJobPayload(childJob.payload)) {
             assertEquals(childJob.payload.job_type, 'execute');
             assertEquals(childJob.payload.inputs.documentId, 'doc-1-thesis');
-            assertEquals(childJob.payload.output_type, 'test_artifact');
+            assertEquals(childJob.payload.output_type, 'thesis');
         } else {
             assert(false, 'Payload is not of type DialecticExecuteJobPayload');
         }
@@ -358,7 +360,7 @@ describe('planComplexStage', () => {
             job_type: 'execute',
             step_info: { current_step: 1, total_steps: 2 },
             prompt_template_name: 'test-prompt',
-            output_type: 'test_artifact',
+            output_type: 'thesis',
             inputs: { documentId: 'doc-1-thesis' },
             model_id: 'model-1',
             projectId: 'proj-1',
@@ -447,7 +449,7 @@ describe('planComplexStage', () => {
             job_type: 'execute',
             step_info: { current_step: 1, total_steps: 2 },
             prompt_template_name: 'test-prompt',
-            output_type: 'test_artifact',
+            output_type: 'thesis',
             inputs: { documentId: 'doc-1-thesis' },
             model_id: 'model-1',
             projectId: 'proj-1',

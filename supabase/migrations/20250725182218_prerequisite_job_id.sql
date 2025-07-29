@@ -125,10 +125,10 @@ CREATE TRIGGER trigger_handle_job_completion_on_insert
 -- Steps 25.b & 27.a: Seed the combination and synthesis prompts
 INSERT INTO public.system_prompts (id, name, prompt_text, is_active, version)
 VALUES
-    ('a2b3c4d5-e6f7-4a1b-8c9d-0e1f2a3b4c5d', 'Tier 2 Document Combiner', 'You are a document synthesis agent. Your task is to combine the following documents into a single, coherent text. You MUST preserve every unique fact, requirement, argument, and detail. You must ONLY eliminate redundant phrasing, repeated sentences, or conversational filler. The final output must be a complete and faithful representation of all unique information present in the source documents.', true, 1),
-    ('b3c4d5e6-f7a1-4b8c-9d0e-1f2a3b4c5d6e', 'Synthesis Step 1: Pairwise', 'As an expert synthesizer, your task is to analyze the following user prompt, an original thesis written to address it, and a single antithesis that critiques the thesis. Combine the thesis and antithesis into a more complete and accurate response that is more fit-for-purpose against the original user prompt. Preserve all critical details.', true, 1),
-    ('c4d5e6f7-a1b8-4c9d-0e1f-2a3b4c5d6e7f', 'Synthesis Step 2: Combine Per-Thesis', 'As an expert editor, your task is to analyze the following user prompt and a set of preliminary syntheses that were all derived from the same original thesis. Combine these documents into a single, unified synthesis that is maximally fit-for-purpose against the original user prompt. You must eliminate redundancy and conflicting information while ensuring every unique and critical detail is preserved.', true, 1),
-    ('d5e6f7a1-b8c9-4d0e-1f2a-3b4c5d6e7f80', 'Synthesis Step 3: Final Combination', 'As a master synthesizer, your task is to analyze the following user prompt and a set of refined syntheses. Each refined synthesis was created from a different original thesis. Combine these documents into a single, final, and comprehensive document that is maximally fit-for-purpose against the original user prompt. The final output should be a polished, professional, and complete response that incorporates the best aspects of all provided materials.', true, 1)
+    ('a2b3c4d5-e6f7-4a1b-8c9d-0e1f2a3b4c5d', 'tier2_document_combiner', 'You are a document synthesis agent. Your task is to combine the following documents into a single, coherent text. You MUST preserve every unique fact, requirement, argument, and detail. You must ONLY eliminate redundant phrasing, repeated sentences, or conversational filler. The final output must be a complete and faithful representation of all unique information present in the source documents.', true, 1),
+    ('b3c4d5e6-f7a1-4b8c-9d0e-1f2a3b4c5d6e', 'synthesis_step1_pairwise', 'As an expert synthesizer, your task is to analyze the following user prompt, an original thesis written to address it, and a single antithesis that critiques the thesis. Combine the thesis and antithesis into a more complete and accurate response that is more fit-for-purpose against the original user prompt. Preserve all critical details.', true, 1),
+    ('c4d5e6f7-a1b8-4c9d-0e1f-2a3b4c5d6e7f', 'synthesis_step2_per_thesis', 'As an expert editor, your task is to analyze the following user prompt and a set of preliminary syntheses that were all derived from the same original thesis. Combine these documents into a single, unified synthesis that is maximally fit-for-purpose against the original user prompt. You must eliminate redundancy and conflicting information while ensuring every unique and critical detail is preserved.', true, 1),
+    ('d5e6f7a1-b8c9-4d0e-1f2a-3b4c5d6e7f80', 'synthesis_step3_final', 'As a master synthesizer, your task is to analyze the following user prompt and a set of refined syntheses. Each refined synthesis was created from a different original thesis. Combine these documents into a single, final, and comprehensive document that is maximally fit-for-purpose against the original user prompt. The final output should be a polished, professional, and complete response that incorporates the best aspects of all provided materials.', true, 1)
 ON CONFLICT (id) DO UPDATE
 SET
     name = EXCLUDED.name,
@@ -140,42 +140,68 @@ SET
 UPDATE public.dialectic_stages
 SET
     input_artifact_rules = COALESCE(input_artifact_rules, '{}'::jsonb) || '{
+        "processing_strategy": {
+            "type": "task_isolation"
+        },
         "steps": [
             {
-                "step_number": 1,
-                "step_name": "Step 1: Generate Pairwise Syntheses (Map)",
+                "step": 1,
+                "name": "Step 1: Generate Pairwise Syntheses (Map)",
+                "prompt_template_name": "synthesis_step1_pairwise",
                 "description": "For each Thesis, synthesize it with each of its corresponding Antitheses to create focused chunks.",
                 "granularity_strategy": "pairwise_by_origin",
                 "inputs_required": [
                     { "type": "contribution", "stage_slug": "thesis" },
                     { "type": "contribution", "stage_slug": "antithesis" }
                 ],
-                "output_type": "pairwise_synthesis_chunk",
-                "job_type_to_create": "execute"
+                "output_type": "pairwise_synthesis_chunk"
             },
             {
-                "step_number": 2,
-                "step_name": "Step 2: Consolidate Per-Thesis Syntheses (Reduce)",
+                "step": 2,
+                "name": "Step 2: Consolidate Per-Thesis Syntheses (Reduce)",
+                "prompt_template_name": "synthesis_step2_per_thesis",
                 "description": "Combine all pairwise synthesis chunks for a given original thesis into a single synthesized document.",
                 "granularity_strategy": "per_source_group",
                 "inputs_required": [
                     { "type": "pairwise_synthesis_chunk" }
                 ],
-                "output_type": "reduced_synthesis",
-                "job_type_to_create": "execute"
+                "output_type": "reduced_synthesis"
             },
             {
-                "step_number": 3,
-                "step_name": "Step 3: Generate Final Synthesis (Final Combination)",
+                "step": 3,
+                "name": "Step 3: Generate Final Synthesis (Final Combination)",
+                "prompt_template_name": "synthesis_step3_final",
                 "description": "Combine all of the reduced syntheses into a final, single synthesis document for each agent.",
                 "granularity_strategy": "all_to_one",
                 "inputs_required": [
                     { "type": "reduced_synthesis" }
                 ],
-                "output_type": "synthesis",
-                "job_type_to_create": "execute"
+                "output_type": "synthesis"
             }
         ]
     }'::jsonb
 WHERE
     slug = 'synthesis';
+
+-- Add the missing recipe for the 'antithesis' stage
+UPDATE public.dialectic_stages
+SET
+    input_artifact_rules = COALESCE(input_artifact_rules, '{}'::jsonb) || '{
+        "processing_strategy": {
+            "type": "task_isolation"
+        },
+        "steps": [
+            {
+                "step": 1,
+                "name": "Generate Antithesis Critiques",
+                "prompt_template_name": "default_critique_prompt",
+                "inputs_required": [
+                    { "type": "contribution", "stage_slug": "thesis" }
+                ],
+                "granularity_strategy": "per_source_document",
+                "output_type": "antithesis"
+            }
+        ]
+    }'::jsonb
+WHERE
+    slug = 'antithesis';

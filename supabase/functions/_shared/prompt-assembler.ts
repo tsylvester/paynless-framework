@@ -7,6 +7,7 @@ import { DialecticContributionRow, InputArtifactRules, ArtifactSourceRule } from
 import { DynamicContextVariables, ProjectContext, SessionContext, StageContext, RenderPromptFunctionType } from "./prompt-assembler.interface.ts";
 import type { DownloadStorageResult } from "./supabase_storage_utils.ts";
 import { hasProcessingStrategy } from "./utils/type_guards.ts";
+import { join } from "jsr:@std/path/join";
 
 export type ContributionOverride = Partial<DialecticContributionRow> & {
     content: string;
@@ -218,12 +219,7 @@ export class PromptAssembler {
                             if (criticalError) break; // If a critical error occurred, stop processing contributions
 
                             if (contrib.storage_path && contrib.storage_bucket) {
-                                let pathToDownload = contrib.storage_path;
-                                if (contrib.file_name && !contrib.storage_path.endsWith('/')) {
-                                    pathToDownload = contrib.storage_path + '/' + contrib.file_name;
-                                } else if (contrib.file_name) {
-                                    pathToDownload = contrib.storage_path + contrib.file_name;
-                                }
+                                const pathToDownload = join(contrib.storage_path, contrib.file_name || '');
 
                                 const { data: content, error: downloadError } =
                                     await this.downloadFromStorageFn(
@@ -285,11 +281,32 @@ export class PromptAssembler {
                     if (criticalError) break;
 
                 } else if (rule.type === 'feedback') {
-                    const feedbackFileName = `user_feedback_${rule.stage_slug}.md`;
-                    const feedbackPath =
-                        `projects/${project.id}/sessions/${session.id}/iteration_${iterationNumber}/${rule.stage_slug}/${feedbackFileName}`;
+                    const targetIteration = iterationNumber > 1 ? iterationNumber - 1 : 1;
+                    const { data: feedbackRecord, error: feedbackError } = await this.dbClient
+                        .from('dialectic_feedback')
+                        .select('storage_bucket, storage_path, file_name')
+                        .eq('session_id', session.id)
+                        .eq('stage_slug', rule.stage_slug)
+                        .eq('iteration_number', targetIteration)
+                        .eq('user_id', project.user_id)
+                        .limit(1)
+                        .single();
+
+                    if (feedbackError || !feedbackRecord) {
+                        console.error(
+                            `[PromptAssembler._gatherInputsForStage] Could not find feedback record for stage '${rule.stage_slug}'.`,
+                            { error: feedbackError, rule, projectId: project.id, sessionId: session.id, iterationNumber },
+                        );
+                        if (rule.required !== false) {
+                            criticalError = new Error(`Required feedback for stage '${displayName}' was not found.`);
+                            break;
+                        }
+                        continue; // Skip optional feedback if not found
+                    }
                     
-                    const { data: feedbackContent, error: feedbackDownloadError } = await this.downloadFromStorageFn(this.storageBucket, feedbackPath);
+                    const feedbackPath = join(feedbackRecord.storage_path, feedbackRecord.file_name);
+                    
+                    const { data: feedbackContent, error: feedbackDownloadError } = await this.downloadFromStorageFn(feedbackRecord.storage_bucket, feedbackPath);
 
                     if (feedbackContent && !feedbackDownloadError) {
                         const content = new TextDecoder().decode(feedbackContent);
