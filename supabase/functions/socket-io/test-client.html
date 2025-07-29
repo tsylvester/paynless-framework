@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Socket.IO Test Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        .section {
+            flex: 1;
+            border: 1px solid #ccc;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        button {
+            background: #007cba;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #005a8b;
+        }
+        input, select {
+            margin: 5px;
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+        #messages {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background: #f9f9f9;
+            white-space: pre-wrap;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <h1>Socket.IO Edge Function Test Client</h1>
+    
+    <div class="status" id="status">Disconnected</div>
+    
+    <div class="container">
+        <div class="section">
+            <h3>Connection</h3>
+            <input type="text" id="serverUrl" placeholder="WebSocket URL" 
+                   value="ws://localhost:54321/functions/v1/socket-io">
+            <br>
+            <input type="text" id="userId" placeholder="User ID" value="user123">
+            <br>
+            <button onclick="connect()">Connect</button>
+            <button onclick="disconnect()">Disconnect</button>
+        </div>
+        
+        <div class="section">
+            <h3>Room Management</h3>
+            <input type="text" id="roomName" placeholder="Room name" value="test-room">
+            <br>
+            <button onclick="joinRoom()">Join Room</button>
+            <button onclick="leaveRoom()">Leave Room</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="section">
+            <h3>Send Messages</h3>
+            <select id="messageType">
+                <option value="chat-message">Chat Message</option>
+                <option value="broadcast">Broadcast</option>
+                <option value="custom">Custom Event</option>
+            </select>
+            <br>
+            <input type="text" id="messageText" placeholder="Message text" value="Hello World!">
+            <br>
+            <input type="text" id="customEvent" placeholder="Custom event name" value="my-event">
+            <br>
+            <button onclick="sendMessage()">Send Message</button>
+        </div>
+        
+        <div class="section">
+            <h3>Quick Actions</h3>
+            <button onclick="sendEcho()">Send Echo Test</button>
+            <button onclick="getStatus()">Get Server Status</button>
+            <button onclick="clearMessages()">Clear Messages</button>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>Messages</h3>
+        <div id="messages"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        let connectionId = null;
+
+        function log(message) {
+            const messages = document.getElementById('messages');
+            const timestamp = new Date().toLocaleTimeString();
+            messages.textContent += `[${timestamp}] ${message}\n`;
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function updateStatus(connected) {
+            const status = document.getElementById('status');
+            if (connected) {
+                status.textContent = `Connected (ID: ${connectionId || 'unknown'})`;
+                status.className = 'status connected';
+            } else {
+                status.textContent = 'Disconnected';
+                status.className = 'status disconnected';
+            }
+        }
+
+        function connect() {
+            const url = document.getElementById('serverUrl').value;
+            const userId = document.getElementById('userId').value;
+            
+            if (ws) {
+                log('Already connected. Disconnect first.');
+                return;
+            }
+
+            // For local development, include the anon key as URL parameter
+            // WebSocket doesn't support custom headers in browsers, so we use URL params
+            const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
+            
+            // Add userId and auth as query parameters
+            let wsUrl = url;
+            const params = new URLSearchParams();
+            if (userId) params.append('userId', userId);
+            params.append('apikey', anonKey);
+            
+            // Also try adding as authorization parameter for WebSocket
+            params.append('authorization', `Bearer ${anonKey}`);
+            
+            wsUrl += '?' + params.toString();
+            
+            log(`Connecting to ${wsUrl}...`);
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                log('WebSocket connection opened');
+                updateStatus(true);
+            };
+            
+            ws.onmessage = (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    log(`Received: ${JSON.stringify(message, null, 2)}`);
+                    
+                    // Handle connection message
+                    if (message.type === 'connect' && message.data?.id) {
+                        connectionId = message.data.id;
+                        updateStatus(true);
+                    }
+                } catch (error) {
+                    log(`Error parsing message: ${error.message}`);
+                    log(`Raw message: ${event.data}`);
+                }
+            };
+            
+            ws.onclose = () => {
+                log('WebSocket connection closed');
+                updateStatus(false);
+                ws = null;
+                connectionId = null;
+            };
+            
+            ws.onerror = (error) => {
+                log(`WebSocket error: ${error}`);
+                updateStatus(false);
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+            }
+        }
+
+        function sendSocketMessage(type, event, data) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('Not connected to WebSocket');
+                return;
+            }
+            
+            const message = { type, event, data };
+            log(`Sending: ${JSON.stringify(message)}`);
+            ws.send(JSON.stringify(message));
+        }
+
+        function joinRoom() {
+            const roomName = document.getElementById('roomName').value;
+            if (!roomName) {
+                log('Please enter a room name');
+                return;
+            }
+            
+            sendSocketMessage('event', 'join-room', { room: roomName });
+        }
+
+        function leaveRoom() {
+            const roomName = document.getElementById('roomName').value;
+            if (!roomName) {
+                log('Please enter a room name');
+                return;
+            }
+            
+            sendSocketMessage('event', 'leave-room', { room: roomName });
+        }
+
+        function sendMessage() {
+            const messageType = document.getElementById('messageType').value;
+            const messageText = document.getElementById('messageText').value;
+            const roomName = document.getElementById('roomName').value;
+            const customEvent = document.getElementById('customEvent').value;
+            
+            if (!messageText) {
+                log('Please enter message text');
+                return;
+            }
+            
+            let eventName, data;
+            
+            switch (messageType) {
+                case 'chat-message':
+                    if (!roomName) {
+                        log('Please enter a room name for chat messages');
+                        return;
+                    }
+                    eventName = 'chat-message';
+                    data = { room: roomName, message: messageText };
+                    break;
+                    
+                case 'broadcast':
+                    if (!roomName) {
+                        log('Please enter a room name for broadcast');
+                        return;
+                    }
+                    eventName = 'broadcast';
+                    data = { room: roomName, message: messageText };
+                    break;
+                    
+                case 'custom':
+                    if (!customEvent) {
+                        log('Please enter a custom event name');
+                        return;
+                    }
+                    eventName = customEvent;
+                    data = { message: messageText };
+                    break;
+            }
+            
+            sendSocketMessage('event', eventName, data);
+        }
+
+        function sendEcho() {
+            sendSocketMessage('event', 'echo-test', { 
+                message: 'This is an echo test',
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        function getStatus() {
+            // Send HTTP request to status endpoint
+            const serverUrl = document.getElementById('serverUrl').value;
+            const httpUrl = serverUrl.replace('ws://', 'http://').replace('wss://', 'https://');
+            
+            fetch(`${httpUrl}/status`)
+                .then(response => response.json())
+                .then(data => {
+                    log(`Server status: ${JSON.stringify(data, null, 2)}`);
+                })
+                .catch(error => {
+                    log(`Error getting status: ${error.message}`);
+                });
+        }
+
+        function clearMessages() {
+            document.getElementById('messages').textContent = '';
+        }
+
+        // Initialize
+        updateStatus(false);
+        log('Socket.IO test client ready. Click Connect to start.');
+    </script>
+</body>
+</html>
