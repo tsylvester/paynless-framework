@@ -161,6 +161,7 @@ export class FileManagerService {
         for (currentAttemptCount = 0; currentAttemptCount < MAX_UPLOAD_ATTEMPTS; currentAttemptCount++) {
           const attemptPathContext: PathContext = {
             ...context.pathContext,
+            isWorkInProgress: context.contributionMetadata?.isIntermediate,
             attemptCount: currentAttemptCount,
             modelSlug: context.pathContext.modelSlug!,
             stageSlug: context.pathContext.stageSlug!,
@@ -203,7 +204,11 @@ export class FileManagerService {
           }
         }
       } else {
-        const pathParts = constructStoragePath(context.pathContext);
+        const pathContextWithWorkFlag: PathContext = {
+          ...context.pathContext,
+          isWorkInProgress: context.contributionMetadata?.isIntermediate,
+        };
+        const pathParts = constructStoragePath(pathContextWithWorkFlag);
         const fullPathForUpload = `${pathParts.storagePath}/${pathParts.fileName}`;
         finalMainContentFilePath = pathParts.storagePath; // Directory path
         finalFileName = pathParts.fileName;          // Filename
@@ -232,6 +237,7 @@ export class FileManagerService {
             fileType: 'model_contribution_raw_json',
             originalFileName: finalFileName.replace(/(\.\w+)$/, '_raw.json'), 
             attemptCount: currentAttemptCount, 
+            isWorkInProgress: context.contributionMetadata?.isIntermediate,
             modelSlug: context.pathContext.modelSlug!, 
             stageSlug: context.pathContext.stageSlug!,
           };

@@ -353,6 +353,7 @@ export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
         [key: string]: string;
     };
     document_relationships?: Json | null;
+    isIntermediate?: boolean;
 }
 
 // Update the main union type
@@ -522,7 +523,7 @@ export interface DialecticFeedback {
   mime_type: string; // Added
   size_bytes: number; // Added
   feedback_type: string; // Kept, ensure it's used for the file's purpose type
-  resource_description?: Record<string, unknown> | null; // Added, replaces feedback_value_structured
+  resource_description?: Json | null; // Added, replaces feedback_value_structured
   created_at: string;
   updated_at: string;
   // contribution_id: string | null; // Removed
@@ -545,7 +546,7 @@ export interface SubmitStageResponsesPayload {
   userStageFeedback?: { 
     content: string; 
     feedbackType: string; 
-    resourceDescription?: Record<string, unknown>; 
+    resourceDescription?: Json | null; 
   };
 }
 

@@ -217,18 +217,21 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
     assertEquals(job1Payload.prompt_template_name, 'synthesis_step1_pairwise');
     assertEquals(job1Payload.inputs?.thesis_id, 'thesis-1');
     assertEquals(job1Payload.output_type, 'pairwise_synthesis_chunk');
+    assertEquals(job1Payload.isIntermediate, true, "Job 1 should be marked as intermediate");
     
     // Check Job 2 (thesis-1 vs antithesis-1b)
     const job2Payload = childPayloads.find(p => isDialecticExecuteJobPayload(p) && p.inputs?.antithesis_id === 'antithesis-1b');
     assertExists(job2Payload, "Payload for antithesis-1b should exist");
     assert(isDialecticExecuteJobPayload(job2Payload));
     assertEquals(job2Payload.inputs?.thesis_id, 'thesis-1');
+    assertEquals(job2Payload.isIntermediate, true, "Job 2 should be marked as intermediate");
     
     // Check Job 3 (thesis-2 vs antithesis-2a)
     const job3Payload = childPayloads.find(p => isDialecticExecuteJobPayload(p) && p.inputs?.antithesis_id === 'antithesis-2a');
     assertExists(job3Payload, "Payload for antithesis-2a should exist");
     assert(isDialecticExecuteJobPayload(job3Payload));
     assertEquals(job3Payload.inputs?.thesis_id, 'thesis-2');
+    assertEquals(job3Payload.isIntermediate, true, "Job 3 should be marked as intermediate");
 });
 
 Deno.test('planPairwiseByOrigin should return an empty array if there are no theses', () => {

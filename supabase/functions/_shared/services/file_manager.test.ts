@@ -280,6 +280,52 @@ Deno.test('FileManagerService', async (t) => {
   )
 
   await t.step(
+    'uploadAndRegisterFile should place intermediate files in a _work directory',
+    async () => {
+      try {
+        beforeEach();
+
+        const context: UploadContext = {
+          ...baseUploadContext,
+          pathContext: {
+            fileType: 'pairwise_synthesis_chunk',
+            projectId: 'project-intermediate',
+            sessionId: 'session-intermediate',
+            iteration: 1,
+            stageSlug: 'synthesis',
+            modelSlug: 'test-model',
+            originalFileName: 'intermediate.md',
+          },
+          contributionMetadata: {
+            iterationNumber: 1,
+            modelIdUsed: 'model-id-123',
+            modelNameDisplay: 'Test Model',
+            sessionId: 'session-intermediate',
+            stageSlug: 'synthesis',
+            rawJsonResponseContent: '{}',
+            seedPromptStoragePath: 'path/to/seed',
+            isIntermediate: true, // This is the key flag
+          },
+        };
+
+        // We need to spy on the internal call to constructStoragePath
+        // This is a bit tricky, so we'll just check the final upload path
+        const expectedPathParts = constructStoragePath({ ...context.pathContext, isWorkInProgress: true });
+        const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+        
+        await fileManager.uploadAndRegisterFile(context);
+
+        const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
+        assertExists(uploadSpy, "Upload spy should exist");
+        assertEquals(uploadSpy.calls[0].args[0], expectedFullPath, "File was not uploaded to the expected _work directory path.");
+
+      } finally {
+        afterEach();
+      }
+    },
+  );
+
+  await t.step(
     'uploadAndRegisterFile for model_contribution_main should handle filename collision and retry',
     async () => {
       try {

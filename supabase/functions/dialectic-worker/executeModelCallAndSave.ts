@@ -130,6 +130,7 @@ export async function executeModelCallAndSave(
             seedPromptStoragePath: renderedPrompt.fullPath,
             target_contribution_id: job.payload.target_contribution_id,
             document_relationships: job.payload.document_relationships,
+            isIntermediate: job.payload.isIntermediate,
         },
     };
 

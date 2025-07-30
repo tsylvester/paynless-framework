@@ -45,7 +45,8 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
                 inputs: {
                     thesis_id: thesisDoc.id,
                     antithesis_id: antithesisDoc.id,
-                }
+                },
+                isIntermediate: true,
             };
 
             childPayloads.push(newPayload);

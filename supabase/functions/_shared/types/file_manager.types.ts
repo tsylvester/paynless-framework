@@ -37,6 +37,7 @@ export interface PathContext {
   modelSlug?: string
   attemptCount?: number
   originalFileName?: string // Made optional, validation per fileType
+  isWorkInProgress?: boolean // ADDED: If true, file is placed in a `_work` subdirectory within its stage.
 }
 
 /**
@@ -68,6 +69,7 @@ export interface UploadContext {
     // ADDED: For continuation jobs, this signals to update an existing record.
     target_contribution_id?: string;
     document_relationships?: Json | null; // ADDED: For derivative jobs, flexible JSONB for relationships.
+    isIntermediate?: boolean; // ADDED: Signals that this is a work-in-progress file.
 
     // Tokenomics and other metadata for the primary dialectic_contributions record
     tokensUsedInput?: number;

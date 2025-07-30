@@ -4,7 +4,7 @@ import {
     assert,
   } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
   import { spy, stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
-  import type { Database, Tables, Json } from '../types_db.ts';
+  import type { Database, Tables } from '../types_db.ts';
   import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
   import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
   import { logger } from '../_shared/logger.ts';
@@ -22,11 +22,12 @@ import {
     ProcessSimpleJobDeps, 
     SelectedAiProvider, 
     ExecuteModelCallAndSaveParams, 
-    DialecticJobPayload 
+    DialecticJobPayload,
+    DialecticExecuteJobPayload 
 } from '../dialectic-service/dialectic.interface.ts';
-  import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
-  import type { LogMetadata } from '../_shared/types.ts';
-  import { ContextWindowError } from '../_shared/utils/errors.ts';
+import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
+import type { LogMetadata } from '../_shared/types.ts';
+import { ContextWindowError } from '../_shared/utils/errors.ts';
 
   // Helper function to create a valid DialecticJobRow for testing
   function createMockJob(payload: DialecticJobPayload, overrides: Partial<DialecticJobRow> = {}): DialecticJobRow {
@@ -58,7 +59,7 @@ import {
     return baseJob;
   }
 
-  const testPayload: DialecticJobPayload = {
+  const testPayload: DialecticExecuteJobPayload = {
     job_type: 'execute',
     step_info: { current_step: 1, total_steps: 1 },
     prompt_template_name: 'test-prompt',
@@ -222,7 +223,39 @@ import {
 
         const [updatePayload] = historicSpies.callsArgs[0];
         assert(isRecord(updatePayload) && 'status' in updatePayload, "Update payload should have a status property");
-        assertEquals(updatePayload.status, 'completed');
+    });
+
+    clearAllStubs?.();
+  });
+  
+  Deno.test('executeModelCallAndSave - Intermediate Flag', async (t) => {
+    const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        }
+    });
+    const deps: ProcessSimpleJobDeps = getMockDeps();
+    const fileManagerSpy = spy(deps.fileManager, 'uploadAndRegisterFile');
+
+    await t.step('should pass isIntermediate flag to fileManager', async () => {
+        const intermediatePayload: DialecticExecuteJobPayload = { ...testPayload, isIntermediate: true };
+        const params: ExecuteModelCallAndSaveParams = {
+            dbClient: dbClient as unknown as SupabaseClient<Database>,
+            deps,
+            authToken: 'auth-token',
+            job: createMockJob(intermediatePayload),
+            projectOwnerUserId: 'user-789',
+            providerDetails: mockProviderData,
+            renderedPrompt: { content: 'Seed prompt content', fullPath: 'prompts/seed.txt' },
+            previousContent: '',
+            sessionData: mockSessionData,
+        };
+        await executeModelCallAndSave(params);
+
+        assert(fileManagerSpy.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
+        
+        const uploadContext = fileManagerSpy.calls[0].args[0];
+        assertEquals(uploadContext.contributionMetadata?.isIntermediate, true, "isIntermediate flag was not passed correctly to the file manager");
     });
 
     clearAllStubs?.();

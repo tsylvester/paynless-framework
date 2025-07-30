@@ -124,6 +124,18 @@ Deno.test('constructStoragePath', async (t) => {
     assertEquals(path.fileName, `user_feedback_${sanitizeForPath(sessionBaseContext.stageSlug!)}.md`);
   });
   
+  await t.step('should construct path with /_work when isWorkInProgress is true', () => {
+    const context: PathContext = {
+      ...sessionBaseContext,
+      fileType: 'model_contribution_main',
+      attemptCount: 0,
+      isWorkInProgress: true,
+    };
+    const path = constructStoragePath(context);
+    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/_work`);
+    assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.stageSlug!)}.md`);
+  });
+
   await t.step('should construct path for contribution_document', () => {
     const path = constructStoragePath({
       ...sessionBaseContext,
@@ -134,33 +146,36 @@ Deno.test('constructStoragePath', async (t) => {
     assertEquals(path.fileName, 'prd_document.md');
   });
 
-  await t.step('should construct path for pairwise_synthesis_chunk', () => {
+  await t.step('should construct path for pairwise_synthesis_chunk in _work dir', () => {
     const path = constructStoragePath({
       ...sessionBaseContext,
       fileType: 'pairwise_synthesis_chunk',
       originalFileName: 'pairwise_chunk_1.json',
+      isWorkInProgress: true,
     });
-    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/_work/pairwise_synthesis_chunks`);
+    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/_work`);
     assertEquals(path.fileName, 'pairwise_chunk_1.json');
   });
 
-  await t.step('should construct path for reduced_synthesis', () => {
+  await t.step('should construct path for reduced_synthesis in _work dir', () => {
     const path = constructStoragePath({
       ...sessionBaseContext,
       fileType: 'reduced_synthesis',
       originalFileName: 'Reduced Chunk A.json',
+      isWorkInProgress: true,
     });
-    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/_work/reduced_synthesis_chunks`);
+    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/_work`);
     assertEquals(path.fileName, 'reduced_chunk_a.json');
   });
 
-  await t.step('should construct path for final_synthesis', () => {
+  await t.step('should construct path for final_synthesis (not in _work dir)', () => {
     const path = constructStoragePath({
       ...sessionBaseContext,
       fileType: 'final_synthesis',
       originalFileName: 'Final Synthesis Document.md',
+      isWorkInProgress: false, // Explicitly not a work file
     });
-    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/_work/final_synthesis`);
+    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}`);
     assertEquals(path.fileName, 'final_synthesis_document.md');
   });
 
@@ -232,7 +247,7 @@ Deno.test('constructStoragePath', async (t) => {
         ...sessionBaseContext,
         fileType: 'pairwise_synthesis_chunk',
       });
-    }, Error, 'projectId, sessionId, iteration, stageSlug, and originalFileName are required for pairwise_synthesis_chunk.');
+    }, Error, 'projectId, sessionId, iteration, stageSlug, and originalFileName are required for synthesis artifacts.');
   });
 
   await t.step('should throw error if originalFileName is missing for reduced_synthesis', () => {
@@ -241,7 +256,7 @@ Deno.test('constructStoragePath', async (t) => {
         ...sessionBaseContext,
         fileType: 'reduced_synthesis',
       });
-    }, Error, 'projectId, sessionId, iteration, stageSlug, and originalFileName are required for reduced_synthesis.');
+    }, Error, 'projectId, sessionId, iteration, stageSlug, and originalFileName are required for synthesis artifacts.');
   });
 
   await t.step('should throw error if originalFileName is missing for final_synthesis', () => {
@@ -250,7 +265,7 @@ Deno.test('constructStoragePath', async (t) => {
         ...sessionBaseContext,
         fileType: 'final_synthesis',
       });
-    }, Error, 'projectId, sessionId, iteration, stageSlug, and originalFileName are required for final_synthesis.');
+    }, Error, 'projectId, sessionId, iteration, stageSlug, and originalFileName are required for synthesis artifacts.');
   });
 
   await t.step('should sanitize complex file names for initial_user_prompt', () => {

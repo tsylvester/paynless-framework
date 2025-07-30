@@ -520,11 +520,11 @@ This phase addresses a critical filename collision issue discovered during integ
 
 #### 30. [BE] [ARCH] Implement `_work` Directory Strategy
 
-*   `[ ]` 30.a. **Update Core Type Definitions:**
+*   `[✅]` 30.a. **Update Core Type Definitions:**
     *   `[TYPES]` **File:** `supabase/functions/_shared/types/file_manager.types.ts`.
     *   `[TYPES]` **Action:** Add a new optional boolean property, `isIntermediate?: boolean`, to the `PathContext` interface. This flag will signal to the path constructor that the file is a temporary or intermediate artifact.
 
-*   `[ ]` 30.b. **Modify Path Constructor Logic:**
+*   `[✅]` 30.b. **Modify Path Constructor Logic:**
     *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/_shared/utils/path_constructor.ts`.
     *   `[BE]` `[REFACTOR]` **Action:** Update the `constructStoragePath` function. When it builds the path for a `FileType` of `'model_contribution_main'`, it must check for the `isIntermediate` flag in the `PathContext`.
         *   If `isIntermediate` is `true`, it must insert the `_work/` segment into the storage path immediately after the stage directory (e.g., `.../3_synthesis/_work/`).
@@ -532,18 +532,18 @@ This phase addresses a critical filename collision issue discovered during integ
     *   `[TEST-UNIT]` **(RED)** Update `path_constructor.test.ts` to include test cases for this new logic. Test both scenarios (`isIntermediate: true` and `isIntermediate: false`) to ensure the `_work` directory is added correctly and only when required.
     *   `[TEST-UNIT]` **(GREEN)** Prove the updated `path_constructor` passes all tests.
 
-*   `[ ]` 30.c. **Update Planners to Signal Intermediate Artifacts:**
+*   `[✅]` 30.c. **Update Planners to Signal Intermediate Artifacts:**
     *   `[BE]` `[REFACTOR]` **Files:** All relevant granularity strategy planners (`planPairwiseByOrigin.ts`, `planPerSourceGroup.ts`, `planAllToOne.ts`).
     *   `[BE]` `[REFACTOR]` **Action:** When these planners construct the `PathContext` for a child job's payload, they must now determine if the `output_type` is an intermediate artifact.
         *   The logic will be: if the `output_type` is `'pairwise_synthesis_chunk'` or `'reduced_synthesis'`, set `isIntermediate: true` in the `PathContext`.
         *   If the `output_type` is `'synthesis'` (the final deliverable), `isIntermediate` should be `false` or omitted.
     *   `[TEST-UNIT]` **(RED/GREEN)** Update the unit tests for each planner to assert that the `isIntermediate` flag is correctly set in the generated job payloads based on the `output_type` of the recipe step.
 
-*   `[ ]` 30.d. **Update Documentation:**
+*   `[✅]` 30.d. **Update Documentation:**
     *   `[DOCS]` **File:** `docs/implementations/Current/Checklists/Current/AI Dialectic Implementation Plan Phase 2.md`.
     *   `[DOCS]` **Action:** Update the "File Structure for Supabase Storage and Export Tools" diagram and description to include the new `_work` subdirectory within the `synthesis` stage, explaining its purpose.
 
-*   `[ ]` 30.e. **[COMMIT] `feat(worker): implement _work directory for intermediate artifacts`**
+*   `[✅]` 30.e. **[COMMIT] `feat(worker): implement _work directory for intermediate artifacts`**
 
 #### 31. [TEST-INT] Create the End-to-End Antithesis and Synthesis Pipeline Tests
 

@@ -68,6 +68,7 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
   const {
     projectId,
     fileType,
+    isWorkInProgress, // ADDED
     originalFileName, // Optional in PathContext, validated per case
     sessionId: rawSessionId,
     iteration,
@@ -85,6 +86,10 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
   let basePathForStageFiles = "";
   if (projectRoot && shortSessionId && iteration !== undefined && mappedStageDir) {
     basePathForStageFiles = `${projectRoot}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}`;
+    // If it's a work-in-progress file, append the _work directory.
+    if (isWorkInProgress) {
+      basePathForStageFiles += '/_work';
+    }
   }
 
   switch (fileType) {
@@ -148,26 +153,15 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     }
 
     // --- Intermediate Artifacts ---
-    case 'pairwise_synthesis_chunk': {
-      if (!basePathForStageFiles || !originalFileName) {
-        throw new Error('projectId, sessionId, iteration, stageSlug, and originalFileName are required for pairwise_synthesis_chunk.');
-      }
-      return { storagePath: `${basePathForStageFiles}/_work/pairwise_synthesis_chunks`, fileName: sanitizeForPath(originalFileName) };
-    }
-
-    case 'reduced_synthesis': {
-      if (!basePathForStageFiles || !originalFileName) {
-        throw new Error('projectId, sessionId, iteration, stageSlug, and originalFileName are required for reduced_synthesis.');
-      }
-      return { storagePath: `${basePathForStageFiles}/_work/reduced_synthesis_chunks`, fileName: sanitizeForPath(originalFileName) };
-    }
-
+    // The specific subdirectories are now handled by the `isWorkInProgress` flag
+    // and the filename itself, making the logic more generic.
+    case 'pairwise_synthesis_chunk':
+    case 'reduced_synthesis':
     case 'final_synthesis': {
       if (!basePathForStageFiles || !originalFileName) {
-        throw new Error('projectId, sessionId, iteration, stageSlug, and originalFileName are required for final_synthesis.');
+        throw new Error('projectId, sessionId, iteration, stageSlug, and originalFileName are required for synthesis artifacts.');
       }
-      // Note: This is still considered a "work" product before becoming a final, user-facing synthesis document.
-      return { storagePath: `${basePathForStageFiles}/_work/final_synthesis`, fileName: sanitizeForPath(originalFileName) };
+      return { storagePath: basePathForStageFiles, fileName: sanitizeForPath(originalFileName) };
     }
 
     default: {
