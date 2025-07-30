@@ -29,11 +29,12 @@ async function findSourceDocuments(
             .select('*')
             .eq('session_id', parentJob.session_id)
             .eq('iteration_number', parentJob.iteration_number)
-            .eq('is_latest_edit', true)
-            .eq('contribution_type', rule.type);
+            .eq('is_latest_edit', true);
 
-        if (rule.stage_slug) {
-            query = query.eq('stage', rule.stage_slug);
+        if (rule.type === 'contribution' && rule.stage_slug) {
+            query = query.eq('contribution_type', rule.stage_slug);
+        } else {
+            query = query.eq('contribution_type', rule.type);
         }
 
         const { data: sourceContributions, error: contribError } = await query;
@@ -155,6 +156,7 @@ export async function planComplexStage(
                     continuation_count: payload.continuation_count,
                     ...(payload.document_relationships && { document_relationships: payload.document_relationships }),
                     ...(payload.target_contribution_id && { target_contribution_id: payload.target_contribution_id }),
+                    ...(payload.isIntermediate && { isIntermediate: payload.isIntermediate }),
                 },
             };
         } else if (isDialecticCombinationJobPayload(payload)) {
@@ -182,7 +184,8 @@ export async function planComplexStage(
                     continuation_count: payload.continuation_count,
                     ...(payload.step_info && { step_info: payload.step_info }),
                     ...(payload.prompt_template_name && { prompt_template_name: payload.prompt_template_name }),
-                    ...(payload.target_contribution_id && { target_contribution_id: payload.target_contribution_id }),
+                    ...(payload.output_type && { output_type: payload.output_type }),
+                    ...(payload.isIntermediate && { isIntermediate: payload.isIntermediate }),
                 },
             };
         }

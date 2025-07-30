@@ -45,7 +45,8 @@ export const planPerSourceGroup: GranularityPlannerFn = (
             inputs: {
                 source_group_id: groupId,
                 document_ids: documentIds,
-            }
+            },
+            isIntermediate: true,
         };
 
         childPayloads.push(newPayload);

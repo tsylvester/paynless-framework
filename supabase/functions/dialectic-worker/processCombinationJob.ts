@@ -97,6 +97,7 @@ export async function processCombinationJob(
             output_type: job.payload.output_type,
             prompt_template_name: job.payload.prompt_template_name,
             inputs: { combined_document_ids: document_ids.join(',') },
+            isIntermediate: job.payload.isIntermediate,
         };
         
         const transformedJob = { ...job, payload: executePayload };

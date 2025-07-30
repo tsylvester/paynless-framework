@@ -120,6 +120,7 @@ Deno.test('planAllToOne should include all source document IDs in the single chi
 
     assertEquals(payload.job_type, 'combine');
     assertEquals(payload.prompt_template_name, MOCK_RECIPE_STEP.prompt_template_name);
+    assertEquals(payload.isIntermediate, false, "The final artifact should not be intermediate");
     
     const docIds = payload.inputs?.document_ids;
     assertEquals(docIds?.length, 3);

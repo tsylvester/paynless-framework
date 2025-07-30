@@ -28,9 +28,10 @@ export const planAllToOne: GranularityPlannerFn = (
         job_type: 'combine',
         prompt_template_name: recipeStep.prompt_template_name,
         output_type: recipeStep.output_type,
-        inputs: {
-            document_ids: documentIds,
-        }
+                    inputs: {
+                document_ids: documentIds,
+            },
+            isIntermediate: false,
     };
 
     return [newPayload];

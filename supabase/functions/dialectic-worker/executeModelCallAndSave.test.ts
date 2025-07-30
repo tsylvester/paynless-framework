@@ -261,6 +261,60 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
     clearAllStubs?.();
   });
   
+  Deno.test('executeModelCallAndSave - Final Artifact Flag', async (t) => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        }
+    });
+    const deps: ProcessSimpleJobDeps = getMockDeps();
+    const fileManagerSpy = spy(deps.fileManager, 'uploadAndRegisterFile');
+  
+    await t.step('should pass isIntermediate: false to fileManager when explicitly set', async () => {
+        const finalPayload: DialecticExecuteJobPayload = { ...testPayload, isIntermediate: false };
+        const params: ExecuteModelCallAndSaveParams = {
+            dbClient: dbClient as unknown as SupabaseClient<Database>,
+            deps,
+            authToken: 'auth-token',
+            job: createMockJob(finalPayload),
+            projectOwnerUserId: 'user-789',
+            providerDetails: mockProviderData,
+            renderedPrompt: { content: 'Seed prompt content', fullPath: 'prompts/seed.txt' },
+            previousContent: '',
+            sessionData: mockSessionData,
+        };
+        await executeModelCallAndSave(params);
+  
+        assert(fileManagerSpy.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
+        const uploadContext = fileManagerSpy.calls[0].args[0];
+        assertEquals(uploadContext.contributionMetadata?.isIntermediate, false, "isIntermediate flag should be false");
+    });
+  
+    await t.step('should default isIntermediate to false if not present on payload', async () => {
+        const undefinedPayload: DialecticExecuteJobPayload = { ...testPayload };
+        // We know `isIntermediate` is not on the base `testPayload`, so no need to delete it.
+  
+        const params: ExecuteModelCallAndSaveParams = {
+            dbClient: dbClient as unknown as SupabaseClient<Database>,
+            deps,
+            authToken: 'auth-token',
+            job: createMockJob(undefinedPayload),
+            projectOwnerUserId: 'user-789',
+            providerDetails: mockProviderData,
+            renderedPrompt: { content: 'Seed prompt content', fullPath: 'prompts/seed.txt' },
+            previousContent: '',
+            sessionData: mockSessionData,
+        };
+        await executeModelCallAndSave(params);
+  
+        assert(fileManagerSpy.calls.length > 1, 'Expected fileManager.uploadAndRegisterFile to be called a second time');
+        const uploadContext = fileManagerSpy.calls[1].args[0]; // Check the second call
+        assertEquals(uploadContext.contributionMetadata?.isIntermediate, false, "isIntermediate flag should default to false");
+    });
+  
+    clearAllStubs?.();
+  });
+  
   Deno.test('executeModelCallAndSave - Continuation Enqueued', async (t) => {
     const { client: dbClient, spies, clearAllStubs } = setupMockClient({
         'ai_providers': {

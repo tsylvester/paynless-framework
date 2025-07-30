@@ -69,7 +69,7 @@ export interface DialecticContribution {
   citations: { text: string; url?: string }[] | null;
   created_at: string;
   updated_at: string;
-  contribution_type: string | null;
+  contribution_type: ContributionType | null;
   file_name: string | null;
   storage_bucket: string | null;
   storage_path: string | null;
@@ -376,6 +376,7 @@ export interface DialecticCombinationJobPayload extends DialecticBaseJobPayload 
     total_steps: number;
     status: 'pending' | 'in-progress' | 'completed' | 'failed';
   };
+  isIntermediate?: boolean;
 }
 
 export interface GenerateContributionsSuccessResponse {

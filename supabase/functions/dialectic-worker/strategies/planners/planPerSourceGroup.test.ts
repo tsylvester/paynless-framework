@@ -247,6 +247,7 @@ Deno.test('planPerSourceGroup should create one child job for each group of rela
     assert(isDialecticCombinationJobPayload(job1Payload));
     assertEquals(job1Payload.job_type, 'combine');
     assertEquals(job1Payload.prompt_template_name, 'synthesis_step2_combine');
+    assertEquals(job1Payload.isIntermediate, true, "Job for group 1 should be intermediate");
     const job1Inputs = job1Payload.inputs?.document_ids;
     assertEquals(job1Inputs?.length, 3);
     assertExists(job1Inputs?.find((id: string) => id === 'chunk-1a'));
@@ -259,6 +260,7 @@ Deno.test('planPerSourceGroup should create one child job for each group of rela
     assert(isDialecticCombinationJobPayload(job2Payload));
     const job2Inputs = job2Payload.inputs?.document_ids;
     assertEquals(job2Inputs?.length, 2);
+    assertEquals(job2Payload.isIntermediate, true, "Job for group 2 should be intermediate");
     assertExists(job2Inputs?.find((id: string) => id === 'chunk-2a'));
     assertExists(job2Inputs?.find((id: string) => id === 'chunk-2b'));
 
@@ -268,6 +270,7 @@ Deno.test('planPerSourceGroup should create one child job for each group of rela
     assert(isDialecticCombinationJobPayload(job3Payload));
     const job3Inputs = job3Payload.inputs?.document_ids;
     assertEquals(job3Inputs?.length, 1);
+    assertEquals(job3Payload.isIntermediate, true, "Job for group 3 should be intermediate");
     assertExists(job3Inputs?.find((id: string) => id === 'chunk-3a'));
 });
 

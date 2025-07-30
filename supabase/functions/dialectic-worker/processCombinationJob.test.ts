@@ -15,6 +15,7 @@ import {
   import type { DownloadStorageResult } from "../_shared/supabase_storage_utils.ts";
   import {
     isDialecticCombinationJobPayload,
+    isDialecticExecuteJobPayload,
     isDialecticJobRow,
     isFailedAttemptErrorArray,
     isRecord,
@@ -405,4 +406,53 @@ Deno.test('processCombinationJob - ContextWindowError Handling', async (t) => {
     
     clearAllStubs?.();
     executorStub.restore();
+});
+
+Deno.test('processCombinationJob - Intermediate Flag Propagation', async (t) => {
+    
+  await t.step('should pass isIntermediate: true from combine to execute job', async () => {
+      const { client: dbClient, clearAllStubs } = setupMockClient();
+      const deps = getMockDeps();
+      const executeSpy = spy(deps, 'executeModelCallAndSave');
+
+      const intermediatePayload = { ...mockCombinationPayload, isIntermediate: true };
+      if (!isDialecticCombinationJobPayload(intermediatePayload)) {
+          fail('Test setup failed: intermediatePayload is not a valid DialecticCombinationJobPayload');
+      }
+      const job = { ...mockCombinationJob, payload: intermediatePayload };
+      if (!isDialecticJobRow(job)) {
+        fail('Test setup failed: job is not a valid DialecticJobRow');
+      }
+      await processCombinationJob(dbClient as unknown as SupabaseClient<Database>, job, 'user-789', deps, 'auth-token');
+
+      assertEquals(executeSpy.calls.length, 1);
+      const [executorParams] = executeSpy.calls[0].args;
+      assert(isDialecticExecuteJobPayload(executorParams.job.payload), 'Transformed job should have an execute payload');
+      assertEquals(executorParams.job.payload.isIntermediate, true);
+      
+      clearAllStubs?.();
+  });
+
+  await t.step('should pass isIntermediate: false from combine to execute job', async () => {
+      const { client: dbClient, clearAllStubs } = setupMockClient();
+      const deps = getMockDeps();
+      const executeSpy = spy(deps, 'executeModelCallAndSave');
+      
+      const finalPayload = { ...mockCombinationPayload, isIntermediate: false };
+      if (!isDialecticCombinationJobPayload(finalPayload)) {
+          fail('Test setup failed: finalPayload is not a valid DialecticCombinationJobPayload');
+      }
+      const job = { ...mockCombinationJob, payload: finalPayload };
+      if (!isDialecticJobRow(job)) {
+        fail('Test setup failed: job is not a valid DialecticJobRow');
+      }
+      await processCombinationJob(dbClient as unknown as SupabaseClient<Database>, job, 'user-789', deps, 'auth-token');
+
+      assertEquals(executeSpy.calls.length, 1);
+      const [executorParams] = executeSpy.calls[0].args;
+      assert(isDialecticExecuteJobPayload(executorParams.job.payload), 'Transformed job should have an execute payload');
+      assertEquals(executorParams.job.payload.isIntermediate, false);
+
+      clearAllStubs?.();
+  });
 });

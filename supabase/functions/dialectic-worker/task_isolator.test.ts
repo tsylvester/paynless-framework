@@ -200,6 +200,7 @@ describe('planComplexStage', () => {
             prompt_template_name: 'test-prompt',
             output_type: 'thesis',
             inputs: { documentId: 'doc-1-thesis' },
+            isIntermediate: true, // ADDED FOR TEST
             model_id: 'model-1',
             projectId: 'proj-1',
             sessionId: 'sess-1',
@@ -230,6 +231,7 @@ describe('planComplexStage', () => {
             assertEquals(childJob.payload.job_type, 'execute');
             assertEquals(childJob.payload.inputs.documentId, 'doc-1-thesis');
             assertEquals(childJob.payload.output_type, 'thesis');
+            assertEquals(childJob.payload.isIntermediate, true); // ADDED ASSERTION
         } else {
             assert(false, 'Payload is not of type DialecticExecuteJobPayload');
         }
@@ -239,6 +241,7 @@ describe('planComplexStage', () => {
         const mockCombinePayload: DialecticCombinationJobPayload = {
             job_type: 'combine',
             inputs: { document_ids: ['doc-1-thesis'] },
+            isIntermediate: true, // ADDED FOR TEST
             model_id: 'model-1',
             projectId: 'proj-1',
             sessionId: 'sess-1',
@@ -268,6 +271,7 @@ describe('planComplexStage', () => {
         assert(isDialecticCombinationJobPayload(childJob.payload));
         assertEquals(childJob.payload.job_type, 'combine');
         assertEquals(childJob.payload.inputs?.document_ids, ['doc-1-thesis']);
+        assertEquals(childJob.payload.isIntermediate, true); // ADDED ASSERTION
     });
 
     it('should throw an error if fetching source contributions fails', async () => {
@@ -362,6 +366,7 @@ describe('planComplexStage', () => {
             prompt_template_name: 'test-prompt',
             output_type: 'thesis',
             inputs: { documentId: 'doc-1-thesis' },
+            isIntermediate: true, // ADDED FOR TEST
             model_id: 'model-1',
             projectId: 'proj-1',
             sessionId: 'sess-1',
@@ -375,6 +380,7 @@ describe('planComplexStage', () => {
         const mockCombinePayload: DialecticCombinationJobPayload = {
             job_type: 'combine',
             inputs: { document_ids: ['doc-1-thesis'] },
+            isIntermediate: true, // ADDED FOR TEST
             model_id: 'model-1',
             projectId: 'proj-1',
             sessionId: 'sess-1',
@@ -451,6 +457,7 @@ describe('planComplexStage', () => {
             prompt_template_name: 'test-prompt',
             output_type: 'thesis',
             inputs: { documentId: 'doc-1-thesis' },
+            isIntermediate: true, // ADDED FOR TEST
             model_id: 'model-1',
             projectId: 'proj-1',
             sessionId: 'sess-1',
