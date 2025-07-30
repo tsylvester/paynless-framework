@@ -26,6 +26,17 @@ import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 import { submitStageResponses } from './submitStageResponses.ts';
 import { logger } from "../_shared/logger.ts";
 
+// Type guard to verify the shape of resourceDescription for tests without casting.
+function isResourceDescriptionWithSummary(
+  value: unknown,
+): value is { summary: string } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'summary' in value
+  );
+}
+
 const MOCK_DEFAULT_DOMAIN = {
   id: "default-domain-id",
   name: "Default Test Domain",
@@ -159,12 +170,13 @@ Deno.test('submitStageResponses', async (t) => {
             file_name: pathContext.originalFileName || 'test.md',
             mime_type: mimeType || 'text/markdown',
             size_bytes: buffer.byteLength,
-            resource_description: pathContext.fileType === 'user_feedback'
-              ? JSON.stringify(context.resourceDescriptionForDb)
-              : 'Mocked response from file manager',
-            feedback_type: pathContext.fileType === 'user_feedback' ? context.feedbackTypeForDb : undefined,
+            resource_description: context.resourceDescriptionForDb ?? null,
+            feedback_type: context.feedbackTypeForDb ?? '',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            iteration_number: pathContext.iteration!,
+            session_id: pathContext.sessionId!,
+            stage_slug: pathContext.stageSlug!,
           },
           error: null,
         });
@@ -247,7 +259,15 @@ Deno.test('submitStageResponses', async (t) => {
           }
         },
         dialectic_feedback: {
+          select: { data: [{
+            storage_bucket: 'dialectic-contributions',
+            storage_path: `projects/${testProjectId}/sessions/${testSessionId}/iteration_1/${mockThesisStage.slug}`,
+            file_name: `user_feedback_${mockThesisStage.slug}.md`
+          }]},
           insert: { data: [{ id: crypto.randomUUID(), session_id: testSessionId, user_id: testUserId, feedback_type: "FileManagerCreatedFeedback_v1" }] }
+        },
+        dialectic_stages: {
+          select: { data: [{ slug: 'thesis', display_name: 'Thesis' }] }
         },
         dialectic_contributions: {
           select: (state: any) => {
@@ -292,13 +312,14 @@ Deno.test('submitStageResponses', async (t) => {
       },
       storageMock: {
         downloadResult: async (bucket: string, path: string) => {
-          if (bucket === 'test-bucket' && path === 'path/to/content1.md') {
+          const normalizedPath = path.replace(/\\/g, "/");
+          if (bucket === 'test-bucket' && normalizedPath === 'path/to/content1.md') {
             return { data: new Blob([new TextEncoder().encode("AI content from ModelA")]), error: null };
           }
-          if (bucket === 'test-bucket' && path === 'path/to/content2.md') {
+          if (bucket === 'test-bucket' && normalizedPath === 'path/to/content2.md') {
             return { data: new Blob([new TextEncoder().encode("AI content from ModelB")]), error: null };
           }
-          if (bucket === 'dialectic-contributions' && path === priorStageFeedbackPathForScope) {
+          if (bucket === 'dialectic-contributions' && normalizedPath === priorStageFeedbackPathForScope) {
              return { data: new Blob([new TextEncoder().encode(priorStageFeedbackContentForScope)]), error: null };
           }
           logger.error(`[Test 1.1 storageMock] Unhandled path: bucket '${bucket}', path '${path}'`);
@@ -368,11 +389,10 @@ Deno.test('submitStageResponses', async (t) => {
       assertEquals(feedbackUploadContext.mimeType, 'text/markdown');
       assertEquals(feedbackUploadContext.feedbackTypeForDb, "StageReviewSummary_v1_test");
       
-      // Explicitly type and check resourceDescriptionForDb before accessing .summary
       const resourceDesc = feedbackUploadContext.resourceDescriptionForDb;
       assertExists(resourceDesc, "resourceDescriptionForDb should exist in feedbackUploadContext");
-      const typedResDesc = resourceDesc;
-      assertEquals(typedResDesc.summary, "Test summary for resourceDescription");
+      assert(isResourceDescriptionWithSummary(resourceDesc), "resourceDescriptionForDb should be an object with a summary property");
+      assertEquals(resourceDesc.summary, "Test summary for resourceDescription");
 
       // 1.4 Verifies content of the consolidated feedback file
       const feedbackFileContent = feedbackUploadContext.fileContent;
@@ -466,12 +486,13 @@ Deno.test('submitStageResponses', async (t) => {
             file_name: pathContext.originalFileName || 'test.md',
             mime_type: mimeType || 'text/markdown',
             size_bytes: buffer.byteLength,
-            resource_description: pathContext.fileType === 'user_feedback'
-              ? JSON.stringify(context.resourceDescriptionForDb)
-              : 'Mocked response from file manager',
-            feedback_type: pathContext.fileType === 'user_feedback' ? context.feedbackTypeForDb : undefined,
+            resource_description: context.resourceDescriptionForDb ?? null,
+            feedback_type: context.feedbackTypeForDb ?? '',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            iteration_number: pathContext.iteration!,
+            session_id: pathContext.sessionId!,
+            stage_slug: pathContext.stageSlug!,
           },
           error: null,
         });
@@ -579,12 +600,13 @@ Deno.test('submitStageResponses', async (t) => {
             file_name: pathContext.originalFileName || 'test.md',
             mime_type: mimeType || 'text/markdown',
             size_bytes: buffer.byteLength,
-            resource_description: pathContext.fileType === 'user_feedback'
-              ? JSON.stringify(context.resourceDescriptionForDb)
-              : 'Mocked response from file manager for overlay test',
-            feedback_type: pathContext.fileType === 'user_feedback' ? context.feedbackTypeForDb : undefined,
+            resource_description: context.resourceDescriptionForDb ?? null,
+            feedback_type: context.feedbackTypeForDb ?? '',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            iteration_number: pathContext.iteration!,
+            session_id: pathContext.sessionId!,
+            stage_slug: pathContext.stageSlug!,
           },
           error: null,
         });
@@ -666,7 +688,15 @@ Deno.test('submitStageResponses', async (t) => {
           }
         },
         dialectic_feedback: {
+          select: { data: [{
+            storage_bucket: 'dialectic-contributions',
+            storage_path: `projects/${testProjectId}/sessions/${testSessionId}/iteration_1/${mockThesisStage.slug}`,
+            file_name: `user_feedback_${mockThesisStage.slug}.md`
+          }]},
           insert: { data: [{ id: crypto.randomUUID(), session_id: testSessionId, user_id: testUserId, feedback_type: "FileManagerCreatedFeedback_v1_overlay" }] }
+        },
+        dialectic_stages: {
+          select: { data: [{ slug: 'thesis', display_name: 'Thesis' }] }
         },
         dialectic_contributions: {
           select: (state: any) => {
@@ -711,10 +741,11 @@ Deno.test('submitStageResponses', async (t) => {
       },
       storageMock: {
         downloadResult: async (bucket: string, path: string) => {
-          if (bucket === 'test-bucket' && path === 'path/to/overlay_content.md') {
+          const normalizedPath = path.replace(/\\/g, "/");
+          if (bucket === 'test-bucket' && normalizedPath === 'path/to/overlay_content.md') {
             return { data: new Blob([new TextEncoder().encode("AI content specific to overlay test")]), error: null };
           }
-          if (bucket === 'dialectic-contributions' && path === priorStageFeedbackPathForScope) {
+          if (bucket === 'dialectic-contributions' && normalizedPath === priorStageFeedbackPathForScope) {
              return { data: new Blob([new TextEncoder().encode(priorStageFeedbackContentForScope)]), error: null };
           }
           logger.error(`[Test 6.1 storageMock] Unhandled path: bucket '${bucket}', path '${path}'`);

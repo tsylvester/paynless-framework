@@ -9,6 +9,7 @@ import type { Stream } from 'npm:openai/streaming';
 import type { ChatCompletionChunk } from 'npm:openai/resources/chat/completions';
 import { OpenAiAdapter } from './openai_adapter.ts';
 import type { ChatApiRequest, ILogger } from '../types.ts';
+import type { CreateEmbeddingResponse } from 'npm:openai/resources/embeddings';
 
 // Mock logger for testing
 const mockLogger: ILogger = {
@@ -21,6 +22,11 @@ const mockLogger: ILogger = {
 function createMockChatCompletionPromise(completion: ChatCompletion): APIPromise<ChatCompletion> {
     return Promise.resolve(completion) as APIPromise<ChatCompletion>;
 }
+
+function createMockEmbeddingPromise(embeddingResponse: CreateEmbeddingResponse): APIPromise<CreateEmbeddingResponse> {
+    return Promise.resolve(embeddingResponse) as APIPromise<CreateEmbeddingResponse>;
+}
+
 
 // Define an interface for the expected token usage structure
 interface MockTokenUsage {
@@ -93,6 +99,22 @@ const MOCK_OPENAI_MODELS_RESPONSE_DATA: Model[] = [
         owned_by: "openai-internal"
     }
 ];
+
+const MOCK_EMBEDDING_SUCCESS_RESPONSE: CreateEmbeddingResponse = {
+    object: 'list',
+    data: [
+        {
+            object: 'embedding',
+            embedding: [0.01, 0.02, 0.03],
+            index: 0,
+        },
+    ],
+    model: 'text-embedding-3-small',
+    usage: {
+        prompt_tokens: 5,
+        total_tokens: 5,
+    },
+};
 
 
 // --- Tests ---
@@ -243,4 +265,40 @@ Deno.test("OpenAiAdapter sendMessage - Finish Reason Length", async () => {
     } finally {
         createStub.restore();
     }
-}); 
+});
+
+Deno.test("OpenAiAdapter getEmbedding - Success", async () => {
+    const createStub = stub(OpenAI.Embeddings.prototype, "create", () => createMockEmbeddingPromise(MOCK_EMBEDDING_SUCCESS_RESPONSE));
+
+    try {
+        const adapter = new OpenAiAdapter(MOCK_API_KEY, mockLogger);
+        const result = await adapter.getEmbedding("Hello world");
+
+        assertEquals(createStub.calls.length, 1);
+        const callArgs = createStub.calls[0].args[0];
+        assertEquals(callArgs.model, 'text-embedding-3-small');
+        assertEquals(callArgs.input, 'Hello world');
+        
+        assertExists(result);
+        assertEquals(result, MOCK_EMBEDDING_SUCCESS_RESPONSE);
+
+    } finally {
+        createStub.restore();
+    }
+});
+
+Deno.test("OpenAiAdapter getEmbedding - API Error", async () => {
+    const apiError = new OpenAI.APIError(401, { error: { message: 'Invalid API key' } }, 'Error message', {});
+    const createStub = stub(OpenAI.Embeddings.prototype, "create", () => Promise.reject(apiError) as APIPromise<CreateEmbeddingResponse>);
+
+    try {
+        const adapter = new OpenAiAdapter(MOCK_API_KEY, mockLogger);
+        await assertRejects(
+            () => adapter.getEmbedding("Hello world"),
+            Error,
+            "OpenAI API request failed: 401 Error"
+        );
+    } finally {
+        createStub.restore();
+    }
+});

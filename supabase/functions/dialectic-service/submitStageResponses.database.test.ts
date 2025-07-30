@@ -242,6 +242,13 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         'dialectic_stages': {
           select: { data: [{ slug: 'thesis', display_name: 'Thesis'}], error: null }
         },
+        'dialectic_feedback': {
+          select: { data: [{
+            storage_bucket: MOCK_CONTRIBUTIONS_BUCKET,
+            storage_path: 'mock/path/to/feedback.md',
+            file_name: 'user_feedback_thesis.md'
+          }], error: null }
+        },
       }
     };
 
@@ -302,8 +309,29 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
           select: { data: [createTestSessionData(testSessionId, MOCK_PROJECT_ID, 'DB Test Project 6.4', 'mock-repo-url-6.4')], error: null },
           update: { data: [{ id: testSessionId, status: 'pending_antithesis', current_stage_id: 'c6aaf630-e80e-4423-9452-b6d02385c2ce' }], error: null }
         },
-        'dialectic_stage_transitions': { 
-          select: { data: [mockStageTransitionData('c6aaf630-e80e-4423-9452-b6d02385c2ce')], error: null }
+        'dialectic_stage_transitions': {
+          select: {
+            data: [{
+              target_stage: {
+                id: 'c6aaf630-e80e-4423-9452-b6d02385c2ce',
+                slug: 'antithesis',
+                display_name: 'Antithesis',
+                default_system_prompt_id: 'fe6ec604-3cc1-41e5-ad75-8044247476c4',
+                input_artifact_rules: {
+                  sources: [
+                    { type: 'contribution', stage_slug: 'thesis', required: false },
+                    { type: 'feedback', stage_slug: 'thesis', required: false }
+                  ]
+                },
+                system_prompts: {
+                  id: 'fe6ec604-3cc1-41e5-ad75-8044247476c4',
+                  prompt_text: 'Mock system prompt text'
+                },
+                domain_specific_prompt_overlays: []
+              }
+            }],
+            error: null
+          }
         },
         'system_prompts': {
           select: { data: [{ prompt_text: 'Mock system prompt text' }], error: null }

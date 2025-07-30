@@ -71,7 +71,7 @@ Deno.test('submitStageResponses', async (t) => {
       slug: 'antithesis',
       display_name: 'Antithesis',
       default_system_prompt_id: testSystemPromptId, // This is the one we'll fetch
-      input_artifact_rules: { sources: [{ type: 'contribution', stage_slug: 'thesis' }, { type: 'feedback', stage_slug: 'thesis'}] },
+      input_artifact_rules: { sources: [{ type: 'contribution', stage_slug: 'thesis' }, { type: 'feedback', stage_slug: 'thesis', required: false }] },
       created_at: new Date().toISOString(),
       description: null,
       expected_output_artifacts: {},
@@ -407,32 +407,33 @@ Deno.test('submitStageResponses', async (t) => {
       },
       storageMock: {
         downloadResult: (bucketId: string, path: string): Promise<IMockStorageDownloadResponse> => {
+          const normalizedPath = path.replace(/\\/g, '/');
           // Define expected path for AI contribution download failure INSIDE the mock using pathPosix.join
           const currentExpectedFailedPathUsingPosix = posix.join(contributionFileDirectory5_3, contributionFileName5_3);
 
           // --- BEGIN DEBUG LOGS (can be removed after test passes) ---
           console.log(`[Test 5.3 Mock Storage Debug] Comparing paths for bucket: ${bucketId}`);
-          console.log(`[Test 5.3 Mock Storage Debug]   Received Path: "${path}" (Length: ${path.length})`);
-          console.log(`[Test 5.3 Mock Storage Debug]   Expected Fail Path (posix): "${currentExpectedFailedPathUsingPosix}" (Length: ${currentExpectedFailedPathUsingPosix.length})`);
-          console.log(`[Test 5.3 Mock Storage Debug]   Is Match? ${path === currentExpectedFailedPathUsingPosix}`);
+          console.log(`[Test 5.3 Mock Storage Debug]   Received Path: "${path}" (Normalized: "${normalizedPath}")`);
+          console.log(`[Test 5.3 Mock Storage Debug]   Expected Fail Path (posix): "${currentExpectedFailedPathUsingPosix}"`);
+          console.log(`[Test 5.3 Mock Storage Debug]   Is Match? ${normalizedPath === currentExpectedFailedPathUsingPosix}`);
           // --- END DEBUG LOGS ---
 
-          if (bucketId === 'test-bucket' && path === currentExpectedFailedPathUsingPosix) { 
-            console.log(`[Test 5.3 Mock Storage] Intentionally failing download for AI contribution: ${bucketId}/${path}`);
+          if (bucketId === 'test-bucket' && normalizedPath === currentExpectedFailedPathUsingPosix) { 
+            console.log(`[Test 5.3 Mock Storage] Intentionally failing download for AI contribution: ${bucketId}/${normalizedPath}`);
             return Promise.resolve({ data: null, error: new Error('Simulated download failure for AI contribution in test 5.3') });
           }
-          if (bucketId === 'test-bucket' && path === initialPromptStoragePath5_3) {
-            console.log(`[Test 5.3 Mock Storage] Successfully downloading initial prompt: ${bucketId}/${path}`);
+          if (bucketId === 'test-bucket' && normalizedPath === initialPromptStoragePath5_3) {
+            console.log(`[Test 5.3 Mock Storage] Successfully downloading initial prompt: ${bucketId}/${normalizedPath}`);
             const contentBuffer = new TextEncoder().encode("Mock initial project prompt for 5.3").buffer;
             return Promise.resolve({ data: new Blob([new Uint8Array(contentBuffer)]), error: null });
           }
-          if (bucketId === 'dialectic-contributions' && path === userFeedbackStoragePath5_3) {
-             console.log(`[Test 5.3 Mock Storage] Successfully downloading user feedback: ${bucketId}/${path}`);
+          if (bucketId === 'dialectic-contributions' && normalizedPath === userFeedbackStoragePath5_3) {
+             console.log(`[Test 5.3 Mock Storage] Successfully downloading user feedback: ${bucketId}/${normalizedPath}`);
              const feedbackBuffer = new TextEncoder().encode("Mock user feedback content for 5.3").buffer;
             return Promise.resolve({ data: new Blob([new Uint8Array(feedbackBuffer)]), error: null });
           }
-          console.warn(`[Test 5.3 Mock Storage] Unexpected download attempt in test 5.3: ${bucketId}/${path}`);
-          return Promise.resolve({ data: null, error: new Error(`Unexpected download path in test 5.3: ${path}`) });
+          console.warn(`[Test 5.3 Mock Storage] Unexpected download attempt in test 5.3: ${bucketId}/${normalizedPath}`);
+          return Promise.resolve({ data: null, error: new Error(`Unexpected download path in test 5.3: ${normalizedPath}`) });
         }
       }
     };

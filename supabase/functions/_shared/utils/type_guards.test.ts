@@ -25,6 +25,11 @@ import {
     isDialecticStageRecipe,
     isDialecticPlanJobPayload,
     isDialecticExecuteJobPayload,
+    isContinuablePayload,
+    isStringRecord,
+    isDialecticStepInfo,
+    isContributionType,
+    isDialecticChunkMetadata,
 } from './type_guards.ts';
 import type { DialecticContributionRow, DialecticJobRow, FailedAttemptError } from '../../dialectic-service/dialectic.interface.ts';
 import type { AiModelExtendedConfig } from '../types.ts';
@@ -951,7 +956,7 @@ Deno.test('Type Guard: isJson', async (t) => {
         assert(!isJson(undefined));
         assert(!isJson(Symbol('s')));
         // deno-lint-ignore no-explicit-any
-        assert(!isJson(BigInt(9007199254740991) as any));
+        assert(!isJson(BigInt(9007199254740991)));
     });
 
     await t.step('should return false for objects containing non-JSON values', () => {
@@ -1347,5 +1352,156 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
             prompt_template_name: 'p1'
         };
         assert(!isDialecticExecuteJobPayload(payload));
+    });
+});
+
+Deno.test('Type Guard: isContinuablePayload', async (t) => {
+    await t.step('should return true for a valid continuable payload', () => {
+        const payload = {
+            sessionId: 's1',
+            projectId: 'p1',
+            model_id: 'm1',
+            stageSlug: 'someslug',
+            iterationNumber: 1,
+            continueUntilComplete: true,
+            continuation_count: 2,
+            walletId: 'w1',
+            maxRetries: 3
+        };
+        assert(isContinuablePayload(payload));
+    });
+
+    await t.step('should return true for a minimal valid continuable payload', () => {
+        const payload = {
+            sessionId: 's1',
+            projectId: 'p1',
+            model_id: 'm1',
+            stageSlug: 'someslug',
+            iterationNumber: 1
+        };
+        assert(isContinuablePayload(payload));
+    });
+
+    await t.step('should return false if sessionId is missing', () => {
+        const payload = {
+            projectId: 'p1',
+            model_id: 'm1',
+            stageSlug: 'someslug',
+            iterationNumber: 1
+        };
+        assert(!isContinuablePayload(payload));
+    });
+
+    await t.step('should return false if iterationNumber is not a number', () => {
+        const payload = {
+            sessionId: 's1',
+            projectId: 'p1',
+            model_id: 'm1',
+            stageSlug: 'someslug',
+            iterationNumber: '1'
+        };
+        assert(!isContinuablePayload(payload));
+    });
+
+    await t.step('should return false for a non-object', () => {
+        assert(!isContinuablePayload(null));
+        assert(!isContinuablePayload('a string'));
+    });
+});
+
+Deno.test('Type Guard: isStringRecord', async (t) => {
+    await t.step('should return true for a record with only string values', () => {
+        const record = { key1: 'value1', key2: 'value2' };
+        assert(isStringRecord(record));
+    });
+
+    await t.step('should return true for an empty record', () => {
+        const record = {};
+        assert(isStringRecord(record));
+    });
+
+    await t.step('should return false for a record with a non-string value', () => {
+        const record = { key1: 'value1', key2: 123 };
+        assert(!isStringRecord(record));
+    });
+
+    await t.step('should return false for a non-object', () => {
+        assert(!isStringRecord(null));
+        assert(!isStringRecord('a string'));
+        assert(!isStringRecord(['a', 'b']));
+    });
+});
+
+Deno.test('Type Guard: isDialecticStepInfo', async (t) => {
+    await t.step('should return true for a valid step info object', () => {
+        const stepInfo = { current_step: 1, total_steps: 5 };
+        assert(isDialecticStepInfo(stepInfo));
+    });
+
+    await t.step('should return false if current_step is missing', () => {
+        const stepInfo = { total_steps: 5 };
+        assert(!isDialecticStepInfo(stepInfo));
+    });
+
+    await t.step('should return false if total_steps is not a number', () => {
+        const stepInfo = { current_step: 1, total_steps: '5' };
+        assert(!isDialecticStepInfo(stepInfo));
+    });
+
+    await t.step('should return false for a non-object', () => {
+        assert(!isDialecticStepInfo(null));
+    });
+});
+
+Deno.test('Type Guard: isContributionType', async (t) => {
+    const validTypes = [
+        'thesis',
+        'antithesis',
+        'synthesis',
+        'parenthesis',
+        'paralysis',
+        'pairwise_synthesis_chunk',
+        'reduced_synthesis',
+        'final_synthesis'
+    ];
+
+    for (const type of validTypes) {
+        await t.step(`should return true for valid contribution type: ${type}`, () => {
+            assert(isContributionType(type));
+        });
+    }
+
+    await t.step('should return false for an invalid contribution type', () => {
+        assert(!isContributionType('invalid_type'));
+    });
+
+    await t.step('should return false for a non-string value', () => {
+        assert(!isContributionType(null as unknown as string));
+        assert(!isContributionType(123 as unknown as string));
+    });
+});
+
+Deno.test('Type Guard: isDialecticChunkMetadata', async (t) => {
+    await t.step('should return true for a valid chunk metadata object', () => {
+        const metadata = {
+            source_contribution_id: 'some-id',
+            another_prop: 'some-value'
+        };
+        assert(isDialecticChunkMetadata(metadata));
+    });
+
+    await t.step('should return false if source_contribution_id is missing', () => {
+        const metadata = { another_prop: 'some-value' };
+        assert(!isDialecticChunkMetadata(metadata));
+    });
+
+    await t.step('should return false if source_contribution_id is not a string', () => {
+        const metadata = { source_contribution_id: 123 };
+        assert(!isDialecticChunkMetadata(metadata));
+    });
+
+    await t.step('should return false for a non-object', () => {
+        assert(!isDialecticChunkMetadata(null));
+        assert(!isDialecticChunkMetadata('a string'));
     });
 });

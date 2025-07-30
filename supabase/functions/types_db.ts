@@ -227,6 +227,7 @@ export type Database = {
           citations: Json | null
           contribution_type: string | null
           created_at: string
+          document_relationships: Json | null
           edit_version: number
           error: string | null
           file_name: string | null
@@ -246,7 +247,6 @@ export type Database = {
           stage: string
           storage_bucket: string
           storage_path: string
-          document_relationships: Json | null
           target_contribution_id: string | null
           tokens_used_input: number | null
           tokens_used_output: number | null
@@ -257,6 +257,7 @@ export type Database = {
           citations?: Json | null
           contribution_type?: string | null
           created_at?: string
+          document_relationships?: Json | null
           edit_version?: number
           error?: string | null
           file_name?: string | null
@@ -276,7 +277,6 @@ export type Database = {
           stage: string
           storage_bucket?: string
           storage_path: string
-          document_relationships?: Json | null
           target_contribution_id?: string | null
           tokens_used_input?: number | null
           tokens_used_output?: number | null
@@ -287,6 +287,7 @@ export type Database = {
           citations?: Json | null
           contribution_type?: string | null
           created_at?: string
+          document_relationships?: Json | null
           edit_version?: number
           error?: string | null
           file_name?: string | null
@@ -306,7 +307,6 @@ export type Database = {
           stage?: string
           storage_bucket?: string
           storage_path?: string
-          document_relationships?: Json | null
           target_contribution_id?: string | null
           tokens_used_input?: number | null
           tokens_used_output?: number | null
@@ -541,6 +541,54 @@ export type Database = {
           {
             foreignKeyName: "dialectic_generation_jobs_target_contribution_id_fkey"
             columns: ["target_contribution_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_contributions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_memory: {
+        Row: {
+          content: string
+          created_at: string
+          embedding: string | null
+          fts: unknown | null
+          id: string
+          metadata: Json | null
+          session_id: string
+          source_contribution_id: string | null
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          embedding?: string | null
+          fts?: unknown | null
+          id?: string
+          metadata?: Json | null
+          session_id: string
+          source_contribution_id?: string | null
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          embedding?: string | null
+          fts?: unknown | null
+          id?: string
+          metadata?: Json | null
+          session_id?: string
+          source_contribution_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_memory_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_memory_source_contribution_id_fkey"
+            columns: ["source_contribution_id"]
             isOneToOne: false
             referencedRelation: "dialectic_contributions"
             referencedColumns: ["id"]
@@ -1679,6 +1727,23 @@ export type Database = {
           required_role?: string
         }
         Returns: boolean
+      }
+      match_dialectic_chunks: {
+        Args: {
+          query_embedding: string
+          query_text: string
+          match_threshold: number
+          match_count: number
+          session_id_filter: string
+          rrf_k?: number
+        }
+        Returns: {
+          id: string
+          content: string
+          metadata: Json
+          similarity: number
+          rank: number
+        }[]
       }
       perform_chat_rewind: {
         Args: {

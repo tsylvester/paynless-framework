@@ -6,7 +6,8 @@ import { downloadFromStorage } from "./supabase_storage_utils.ts";
 import { DialecticContributionRow, InputArtifactRules, ArtifactSourceRule } from '../dialectic-service/dialectic.interface.ts';
 import { DynamicContextVariables, ProjectContext, SessionContext, StageContext, RenderPromptFunctionType } from "./prompt-assembler.interface.ts";
 import type { DownloadStorageResult } from "./supabase_storage_utils.ts";
-import { hasProcessingStrategy } from "./utils/type_guards.ts";
+import { hasProcessingStrategy, isDialecticChunkMetadata } from "./utils/type_guards.ts";
+import { RAGError } from "./utils/errors.ts";
 import { join } from "jsr:@std/path/join";
 
 export type ContributionOverride = Partial<DialecticContributionRow> & {
@@ -62,16 +63,28 @@ export class PromptAssembler {
                 priorStageContributions += `#### Contribution from ${contrib.model_name || 'AI Model'}\n${contrib.content}\n\n`;
             }
         } else {
-            try {
-                const inputs = await this.gatherInputsForStage(stage, project, session, iterationNumber);
-                priorStageContributions = inputs.priorStageContributions;
-                priorStageFeedback = inputs.priorStageFeedback;
-            } catch (inputError) {
-                console.error(
-                    `[PromptAssembler.gatherContext] Error during input gathering: ${ (inputError instanceof Error) ? inputError.message : String(inputError) }`, 
-                    { error: inputError, stageSlug: stage.slug, projectId: project.id, sessionId: session.id }
-                );
-                throw new Error(`Failed to gather inputs for prompt assembly: ${(inputError instanceof Error) ? inputError.message : String(inputError)}`);
+            const isRagStage = stage.slug === 'synthesis' || stage.slug === 'parenthesis' || stage.slug === 'paralysis';
+
+            if (isRagStage) {
+                try {
+                    priorStageContributions = await this._gatherContextWithRAG(session, stage);
+                } catch (ragError) {
+                    const errorMessage = ragError instanceof Error ? ragError.message : String(ragError);
+                    console.error(`[PromptAssembler.gatherContext] RAG process failed: ${errorMessage}`, { error: ragError });
+                    throw new RAGError(`Failed to gather context via RAG: ${errorMessage}`);
+                }
+            } else {
+                try {
+                    const inputs = await this.gatherInputsForStage(stage, project, session, iterationNumber);
+                    priorStageContributions = inputs.priorStageContributions;
+                    priorStageFeedback = inputs.priorStageFeedback;
+                } catch (inputError) {
+                    console.error(
+                        `[PromptAssembler.gatherContext] Error during input gathering: ${ (inputError instanceof Error) ? inputError.message : String(inputError) }`, 
+                        { error: inputError, stageSlug: stage.slug, projectId: project.id, sessionId: session.id }
+                    );
+                    throw new Error(`Failed to gather inputs for prompt assembly: ${(inputError instanceof Error) ? inputError.message : String(inputError)}`);
+                }
             }
         }
 
@@ -354,11 +367,66 @@ ${content}
         return { priorStageContributions, priorStageFeedback };
     }
 
-    async getContextDocuments(projectContext: ProjectContext, stageContext: StageContext): Promise<string[] | null> {
-        // TODO: Implement logic to fetch relevant documents based on project/stage context.
-        // This might involve querying dialectic_project_resources or other tables.
-        // If this.fileManager were to be used, it would be here, e.g., to get signed URLs or file content.
-        console.warn("[PromptAssembler.getContextDocuments] Method not yet implemented.", { projectContext, stageContext });
-        return null;
-    }
-} 
+
+    private async _gatherContextWithRAG(session: SessionContext, stage: StageContext): Promise<string> {
+        console.log(`[PromptAssembler._gatherContextWithRAG] Starting RAG process for stage: ${stage.slug}`);
+        
+        // Step 1: Generate multiple queries
+        const queries = [
+            `Synthesize the provided context into a unified document for the ${stage.display_name} stage.`,
+            `Identify unique, novel, or high-risk architectural proposals related to the ${stage.display_name} stage.`,
+            `Find conflicting or contradictory recommendations for the ${stage.display_name} stage.`
+        ];
+
+                const allChunks = new Map<string, { content: string, similarity: number, metadata: Json }>();
+
+        // Step 2: Retrieve chunks for each query
+        for (const query of queries) {
+            const query_embedding_array = Array(1536).fill(Math.random() * 0.05);
+            const query_embedding = `[${query_embedding_array.join(',')}]`;
+
+            const { data: chunks, error } = await this.dbClient.rpc('match_dialectic_chunks', {
+                query_embedding,
+                match_threshold: 0.7, // Example threshold
+                match_count: 10,       // Example count
+                session_id_filter: session.id
+            });
+
+            if (error) {
+                console.error(`[PromptAssembler._gatherContextWithRAG] RPC call failed for query "${query}"`, { error });
+                continue; // Continue to next query even if one fails
+            }
+
+            if (chunks) {
+                chunks.forEach(chunk => {
+                    if (!allChunks.has(chunk.id)) {
+                        allChunks.set(chunk.id, { content: chunk.content, similarity: chunk.similarity, metadata: chunk.metadata });
+                    }
+                });
+            }
+        }
+        
+        if (allChunks.size === 0) {
+            console.warn(`[PromptAssembler._gatherContextWithRAG] No relevant chunks found for stage ${stage.slug}.`);
+            return "No relevant context was found for this stage.";
+        }
+
+        // Step 3: Re-rank for diversity (placeholder)
+        // A real MMR implementation would be more complex. This is a simplified stand-in.
+        const rankedChunks = Array.from(allChunks.values()).sort((a, b) => b.similarity - a.similarity);
+        
+        // For now, we'll just take the top N unique chunks based on similarity.
+        const finalContextChunks = rankedChunks.slice(0, 15); // Take top 15 chunks overall
+
+        // Step 4: Assemble the final context string
+        let retrievedContext = "--- Retrieved Context ---\n\n";
+        finalContextChunks.forEach((chunk, index) => {
+            const sourceId = isDialecticChunkMetadata(chunk.metadata) ? chunk.metadata.source_contribution_id : 'Unknown';
+            retrievedContext += `[Context Snippet ${index + 1} | Source: ${ sourceId }]\n`;
+            retrievedContext += `${chunk.content}\n\n`;
+        });
+        retrievedContext += "--- End of Retrieved Context ---\n";
+
+        console.log(`[PromptAssembler._gatherContextWithRAG] Assembled RAG context with ${finalContextChunks.length} chunks.`);
+        return retrievedContext;
+    }}

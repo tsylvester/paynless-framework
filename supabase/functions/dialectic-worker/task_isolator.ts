@@ -31,10 +31,10 @@ async function findSourceDocuments(
             .eq('iteration_number', parentJob.iteration_number)
             .eq('is_latest_edit', true);
 
-        if (rule.type === 'contribution' && rule.stage_slug) {
-            query = query.eq('contribution_type', rule.stage_slug);
+                if (rule.stage_slug) {
+          query = query.eq('contribution_type', rule.stage_slug);
         } else {
-            query = query.eq('contribution_type', rule.type);
+          query = query.eq('contribution_type', rule.type);
         }
 
         const { data: sourceContributions, error: contribError } = await query;

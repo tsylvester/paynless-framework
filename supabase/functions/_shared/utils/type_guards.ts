@@ -668,3 +668,16 @@ const validContributionTypes: ContributionType[] = [
 export function isContributionType(value: string): value is ContributionType {
     return validContributionTypes.some((type) => type === value);
 }
+
+export interface DialecticChunkMetadata {
+  source_contribution_id: string;
+  [key: string]: unknown; // Allow other properties
+}
+
+export function isDialecticChunkMetadata(obj: unknown): obj is DialecticChunkMetadata {
+    if (!isRecord(obj)) return false;
+    return (
+        'source_contribution_id' in obj &&
+        typeof obj.source_contribution_id === 'string'
+    );
+}

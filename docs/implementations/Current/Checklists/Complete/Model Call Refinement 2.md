@@ -545,7 +545,7 @@ This phase addresses a critical filename collision issue discovered during integ
 
 *   `[✅]` 30.e. **[COMMIT] `feat(worker): implement _work directory for intermediate artifacts`**
 
-#### 31. [TEST-INT] Create the End-to-End Antithesis and Synthesis Pipeline Tests
+`[✅]` 31. [TEST-INT] Create the End-to-End Antithesis and Synthesis Pipeline Tests
 
 **Goal:** To create a single, comprehensive integration test file that validates the entire multi-stage, multi-step asynchronous workflow. This test will simulate the process from the end of the `Thesis` stage through the planning and execution of the `Antithesis` stage, and finally through the multi-step "map-reduce" process of the `Synthesis` stage. It will validate the core mechanics of recipe-driven planning, child job execution, and database trigger-based orchestration.
 
@@ -596,62 +596,3 @@ This phase addresses a critical filename collision issue discovered during integ
 *   `[✅]` 31.e. **Final Assertions:**
     *   `[TEST-INT]` **Action:** Query the `dialectic_generation_jobs` table and assert that all parent and child jobs for the `synthesis` stage are `'completed'`.
     *   `[TEST-INT]` **Action:** Query the `dialectic_contributions` table and storage. Verify that the correct number of intermediate artifacts (`pairwise_synthesis_chunk`, `reduced_synthesis`) and the final `synthesis` contributions were created correctly and are linked to the session.
-
----
-
-### Phase 12: [ARCH] [REFACTOR] Implement Convergent Dialectic and Sophisticated RAG Pipeline
-
-**Design Philosophy:** This phase addresses two critical insights. First, the dialectic process must converge towards a single output in later stages. Second, the RAG pipeline enabling this must be sophisticated enough to prevent the "averaging effect" and preserve unique, novel details.
-
-#### 32. [BE] [DB] [REFACTOR] Implement a Sophisticated RAG Pipeline
-
-This implements a full Retrieval-Augmented Generation pipeline to manage the massive context explosion in Stage 3 and beyond, ensuring that novel ideas and fine details are preserved.
-
-*   `[ ]` 32.a. **Setup the Vector Database:**
-    *   `[DB]` **Tool:** Supabase SQL Editor.
-    *   `[DB]` **Action:** Enable the `vector` extension in your Supabase project (`create extension vector;`).
-    *   `[DB]` **Action:** Create a new table, `dialectic_memory`, to store text chunks and their embeddings. It should include columns like `id` (UUID), `session_id` (FK to `dialectic_sessions`), `source_contribution_id` (FK to `dialectic_contributions`), `content` (text), `metadata` (JSONB), and `embedding` (vector(1536)) -- assuming OpenAI's `text-embedding-3-small`.
-*   `[ ]` 32.b. **Implement the Indexing Service with Semantic Chunking:**
-    *   `[BE]` **Recommendation:** Use a library like `langchain-js` (which has Deno support) to simplify text splitting and embedding calls.
-    *   `[BE]` **File:** `supabase/functions/_shared/services/indexing_service.ts`.
-    *   `[BE]` **Action:** Create a new service that:
-        1.  Takes a document's text and metadata.
-        2.  Uses a text splitter (e.g., `RecursiveCharacterTextSplitter`) configured for **semantic chunking**. The goal is to split documents at points of topical shift to create focused, potent vectors that preserve unique ideas rather than using naive fixed-size chunks.
-        3.  Calls an embedding model API (e.g., OpenAI's `text-embedding-3-small`) for each chunk.
-        4.  Saves the chunk's content, metadata, and the resulting embedding vector into the `dialectic_memory` table.
-*   `[ ]` 32.c. **Integrate Indexing into the Dialectic Flow:**
-    *   `[BE]` **File:** `supabase/functions/dialectic-service/submitStageResponses.ts`.
-    *   `[BE]` **Action:** After a stage's contributions are finalized and submitted by the user (e.g., `Antithesis` completes), asynchronously trigger the new indexing service for all the finalized documents that will serve as the corpus for the next stage.
-*   `[ ]` 32.d. **Implement a Hybrid Retrieval Service:**
-    *   `[BE]` **Action:** Create an RPC function in Supabase, e.g., `match_dialectic_chunks`. This function must support **hybrid search**. It should accept a query and be able to return results based on a combination of vector similarity (`<M=>` operator) and traditional keyword matching (e.g., `to_tsvector`) to ensure both semantically relevant and literally exact information is retrieved.
-*   `[ ]` 32.e. **Refactor Prompt Assembler for Advanced, Multi-Query RAG:**
-    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/_shared/prompt-assembler.ts`.
-    *   `[BE]` `[REFACTOR]` **Action:** For stages 3+, completely change the prompt assembly logic:
-        1.  **Generate Multiple Queries:** Programmatically generate several queries to capture different "angles" of the required information (e.g., a broad synthesis query, a query specifically asking for "novel or unique approaches", and a query asking for "conflicting recommendations").
-        2.  **Retrieve:** Call the `match_dialectic_chunks` RPC for each query to get a superset of potentially relevant chunks.
-        3.  **Re-rank for Diversity:** Use a **re-ranking algorithm like Maximal Marginal Relevance (MMR)** on the combined result set. This will select a final list of chunks that are both highly relevant to the queries and semantically diverse, ensuring unique perspectives are not drowned out by more common themes.
-        4.  **Assemble Final Prompt:** Create the final, compact prompt containing the re-ranked, diverse chunks, which will then be passed to the model.
-
-#### 33. [BE] [REFACTOR] Implement Convergent Logic for Final Stages
-
-*   `[ ]` 33.a. **Update `Parenthesis` and `Paralysis` Stage Recipes and Prompts:**
-    *   `[DB]` `[PROMPT]` **Action:** The stage recipes and system prompts for `Parenthesis` and `Paralysis` will be updated to be convergent. The prompt will explicitly instruct the models to synthesize a single, unified document from the diverse context provided by the advanced RAG pipeline, which is sourced from *all* relevant documents from the prior stage.
-*   `[ ]` 33.b. **Implement the Final "Arbiter" Job:**
-    *   `[BE]` **Action:** Create a new job type, `'arbiter'`, and a corresponding `processArbiterJob.ts` worker.
-    *   `[BE]` **Action:** After the `Paralysis` stage completes, the `submitStageResponses` function will enqueue a single `arbiter` job.
-    *   `[BE]` **Action:** This job will use the RAG pipeline to retrieve context from all `paralysis` documents and instruct a single, high-capability model to produce the final, canonical output for the user. This job's output is considered the final deliverable of the dialectic session.
-
-#### 34. [TEST-INT] Create RAG-Powered Context Stress Test
-
-*   `[ ]` 34.a. **Configure `dummy_adapter` for Stress Testing:**
-    *   `[BE]` `[CONFIG]` **File:** `supabase/integration_tests/services/dialectic_pipeline.stress.test.ts`.
-    *   `[BE]` **Action:** Create a new, dedicated test file. In the test setup, configure an instance of the `dummy_adapter.ts` to be used. Set its mode to `'echo'`, which guarantees that the output of each model call includes the full input, ensuring exponential context growth to realistically simulate real-world conditions.
-*   `[ ]` 34.b. **Develop the Stress Test Case:**
-    *   `[TEST-INT]` **Action:** Create a test that runs the dialectic from `Synthesis` through the final `Arbiter` job.
-    *   **Assertions:**
-        1.  **Verify RAG Activation:** Assert that the context-limiting logic (e.g., the `Tier 2 Orchestration` that creates `combine` jobs, or a new RAG-specific check) is correctly triggered when the echoed context from the `dummy_adapter` exceeds the model's configured `provider_max_input_tokens`.
-        2.  **Verify RAG Efficacy:** Assert that the final prompts sent to the models remain within the context limits, proving the RAG pipeline successfully managed the oversized context.
-        3.  **Verify Convergence:** Assert that the `Parenthesis`, `Paralysis`, and `Arbiter` jobs each produce the expected number of outputs (e.g., one final contribution for the `Arbiter` job).
-*   `[ ]` 34.c. **[COMMIT] `docs(plan): add convergent RAG strategy`**
-*   `[ ]` 34.d. **[COMMIT] `test(pipeline): implement RAG stress test`**
-

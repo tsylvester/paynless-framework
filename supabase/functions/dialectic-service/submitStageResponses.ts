@@ -1,7 +1,7 @@
 // supabase/functions/dialectic-service/submitStageResponses.ts
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
 import type { ServiceError } from '../_shared/types.ts';
-import type { Database, Tables, Json } from '../types_db.ts';
+import type { Database } from '../types_db.ts';
 import {
   SubmitStageResponsesPayload,
   type SubmitStageResponsesDependencies,

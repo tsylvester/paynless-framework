@@ -6,7 +6,7 @@ import {
   } from "npm:@supabase/supabase-js@^2.43.4";
   import type { User } from "npm:@supabase/gotrue-js@^2.6.3";
   // Revert to deno.land/std for spy/stub to diagnose callCount issue
-  import { spy, stub, type Spy } from "https://deno.land/std@0.190.0/testing/mock.ts";
+  import { spy, stub, type Spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
   import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
 
 

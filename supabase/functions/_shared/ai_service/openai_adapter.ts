@@ -1,7 +1,6 @@
 import OpenAI from 'npm:openai';
 import type { ChatCompletionMessageParam } from 'npm:openai/resources/chat/completions';
 import type { AiProviderAdapter, ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig } from '../types.ts';
-import type { Json } from '../../../functions/types_db.ts';
 
 /**
  * Implements AiProviderAdapter for OpenAI models.
@@ -23,7 +22,7 @@ export class OpenAiAdapter implements AiProviderAdapter {
     const openaiMessages: ChatCompletionMessageParam[] = (request.messages ?? []).map(msg => ({
       role: msg.role,
       content: msg.content,
-    })).filter(msg => msg.content) as ChatCompletionMessageParam[];
+    })).filter(msg => msg.content);
 
     if (request.message) {
       openaiMessages.push({ role: 'user', content: request.message });
@@ -100,7 +99,11 @@ export class OpenAiAdapter implements AiProviderAdapter {
         this.logger.error(`OpenAI API error (${error.status}): ${error.message}`, { modelApiName, status: error.status });
         throw new Error(`OpenAI API request failed: ${error.status} ${error.name}`);
       }
-      this.logger.error(`Error sending message to OpenAI: ${(error as Error).message}`, { modelApiName, error });
+      if (error instanceof Error) {
+        this.logger.error(`Error sending message to OpenAI: ${error.message}`, { modelApiName, error });
+      } else {
+        this.logger.error(`Error sending message to OpenAI: ${error}`, { modelApiName, error });
+      }
       throw error;
     }
   }
@@ -123,7 +126,7 @@ export class OpenAiAdapter implements AiProviderAdapter {
             api_identifier: `openai-${model.id}`,
             name: `OpenAI ${model.id}`,
             description: `Owned by: ${model.owned_by}`,
-            config: Object.keys(config).length > 0 ? config as Json : undefined,
+            config: Object.keys(config).length > 0 ? config : undefined,
           });
         }
       }
@@ -134,9 +137,37 @@ export class OpenAiAdapter implements AiProviderAdapter {
       if (error instanceof OpenAI.APIError) {
         this.logger.error(`[OpenAiAdapter] OpenAI API error fetching models (${error.status}): ${error.message}`, { status: error.status });
       } else {
-        this.logger.error(`[OpenAiAdapter] Error fetching models: ${(error as Error).message}`, { error });
+        if (error instanceof Error) {
+          this.logger.error(`[OpenAiAdapter] Error fetching models: ${error.message}`, { error });
+        } else {
+          this.logger.error(`[OpenAiAdapter] Error fetching models: ${error}`, { error });
+        }
       }
       throw new Error(`Failed to fetch models from OpenAI.`);
+    }
+  }
+
+  async getEmbedding(text: string, model = 'text-embedding-3-small') {
+    this.logger.info(`[OpenAiAdapter] Getting embedding for text with model ${model}`);
+    try {
+      const embedding = await this.client.embeddings.create({
+        model: model,
+        input: text,
+        encoding_format: 'float',
+      });
+      this.logger.debug('[OpenAiAdapter] getEmbedding successful');
+      return embedding;
+    } catch (error) {
+      if (error instanceof OpenAI.APIError) {
+        this.logger.error(`[OpenAiAdapter] OpenAI API error getting embedding (${error.status}): ${error.message}`, { status: error.status });
+        throw new Error(`OpenAI API request failed: ${error.status} ${error.name}`);
+      }
+      if (error instanceof Error) {
+        this.logger.error(`[OpenAiAdapter] Error getting embedding: ${error.message}`, { error });
+      } else {
+        this.logger.error(`[OpenAiAdapter] Error getting embedding: ${error}`, { error });
+      }
+      throw error;
     }
   }
 } 

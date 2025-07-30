@@ -107,12 +107,18 @@ describe('planComplexStage', () => {
             genericMockResults: {
                 dialectic_contributions: {
                     select: (state: MockQueryBuilderState) => {
+                        const stageSlugFilter = state.filters.find(f => f.column === 'stage_slug');
+                        if (stageSlugFilter) {
+                            const filteredData = mockContributions.filter(c => c.stage === stageSlugFilter.value);
+                            return Promise.resolve({ data: filteredData, error: null, count: filteredData.length, status: 200, statusText: 'OK' });
+                        }
+
                         const typeFilter = state.filters.find(f => f.column === 'contribution_type');
                         if (typeFilter) {
                             const filteredData = mockContributions.filter(c => c.contribution_type === typeFilter.value);
                             return Promise.resolve({ data: filteredData, error: null, count: filteredData.length, status: 200, statusText: 'OK' });
                         }
-                        // Default if no type filter is applied, though our code under test always applies one.
+                        
                         return Promise.resolve({ data: mockContributions, error: null, count: mockContributions.length, status: 200, statusText: 'OK' });
                     },
                 },
@@ -478,5 +484,39 @@ describe('planComplexStage', () => {
 
         assertEquals(childJobs.length, 1);
         assert(isDialecticExecuteJobPayload(childJobs[0].payload));
+    });
+
+    it('should query by stage_slug when present in the rule', async () => {
+        mockRecipeStep.inputs_required = [{ type: 'some_generic_type', stage_slug: 'thesis' }];
+        
+        let receivedDocs: SourceDocument[] = [];
+        const plannerFn: GranularityPlannerFn = (sourceDocs) => {
+            receivedDocs = sourceDocs;
+            return [];
+        };
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
+
+        assertEquals(receivedDocs.length, 1);
+        assertEquals(receivedDocs[0].contribution_type, 'thesis');
+        assertEquals(receivedDocs[0].id, 'doc-1-thesis');
+    });
+
+    it('should query by type when stage_slug is not present in the rule', async () => {
+        mockRecipeStep.inputs_required = [{ type: 'antithesis' }];
+        
+        let receivedDocs: SourceDocument[] = [];
+        const plannerFn: GranularityPlannerFn = (sourceDocs) => {
+            receivedDocs = sourceDocs;
+            return [];
+        };
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
+
+        assertEquals(receivedDocs.length, 1);
+        assertEquals(receivedDocs[0].contribution_type, 'antithesis');
+        assertEquals(receivedDocs[0].id, 'doc-2-antithesis');
     });
 }); 

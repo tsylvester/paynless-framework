@@ -1066,18 +1066,6 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
     *   `test(dialectic-ui): update tests for SessionInfoCard and SessionContributionsDisplayCard loading states`
         *   *Status: Not applicable for AI to verify commits.*
 
-*   [ ] Fix Clone so it works again. 
-*   [ ] Fix Export so that it exports the entire project. 
-*   [ ] Fix Delete to use the new path structuring
-*   [X] Fix path_constructor so it does NOT append a filename to storage_path in "finalMainContentFilePath". 
-    *    [X] For files that need filenames constructed, return the path and file name separately, not as a single string. 
-*   [ ] Fix PromptParser to construct all stage prompts correctly
-    *    [ ] Fill in all {variable} elements from the project details
-    *    [ ] Append all prompt resources to the actual prompt sent 
-*   [ ] Update all the prompts with the right content 
-*   [ ] Add the sync/export button to the Paralysis stage   
-*   [ ] Add a slice button to the Paralysis stage to take the selected plan, slice it according to an algorithm, then create a new project for each slice 
-
 ---
 
 `[✅] 1. [BE] Design and Implement `path_deconstructor.ts` Utility**
@@ -1323,8 +1311,8 @@ This new section `2.X.2.3` provides a detailed plan for refactoring `generateCon
 *   [X] Update Domains to have is_enabled flag
 *   [X] Update DomainSelector to check is_enabled and only fetch enabled domains
 *   [X] Fix Gemini window/div breaking
-*   [ ] Fix Agent selector dropdown location
-*   [ ] Fix "invalid state" complaints so if a generation fails or is completed, user can regenerate anyway
+*   [X] Fix Agent selector dropdown location
+*   [X] Fix "invalid state" complaints so if a generation fails or is completed, user can regenerate anyway
 
 **Integration Test Plan: Full Dialectic Workflow**
 
@@ -1822,3 +1810,37 @@ This is where your system can really shine. Even with these improved prompts:
 *   **Paralysis:** Different models might interpret "logical order" or the "first mention" rule slightly differently, especially for complex interdependencies. Comparing their reordered plans and synthesizing a final order (perhaps with some human oversight for tricky sections) will likely yield the most robust sequence.
 
 You are essentially using the AI ensemble to overcome individual model limitations in deep, long-range planning. This is a very advanced and effective way to use current AI capabilities.
+
+
+### Phase 13: Centralized Configuration Management
+
+This phase introduces a centralized configuration system to manage dynamic parameters and feature flags, enhancing the system's flexibility and maintainability without requiring code deployments for simple adjustments.
+
+#### 33. [DB] [BE] Implement the Configuration Store
+*   `[ ]` 33.a. **Create `dialectic_configuration` Table:**
+    *   `[DB]` **Action:** Create a new SQL migration for a `dialectic_configuration` table with a simple key-value structure (e.g., `config_key TEXT PRIMARY KEY`, `config_value JSONB`, `description TEXT`).
+    *   `[DB]` **Action:** Populate this table with initial configuration values, such as `{"key": "job_default_max_retries", "value": {"value": 3}}`, `{"key": "rag_data_retention_days", "value": {"value": 30}}`, and `{"key": "antithesis_task_isolation_enabled", "value": {"value": true}}`.
+*   `[ ]` 33.b. **Create a Configuration Service:**
+    *   `[BE]` **Action:** In `supabase/functions/_shared/`, create a new `config_service.ts`. This service will be responsible for fetching configuration values from the database, caching them (e.g., in-memory with a short TTL), and providing a simple `getConfigValue(key)` interface.
+#### 34. [BE] [REFACTOR] Refactor Services to Use the Configuration Store
+*   `[ ]` 34.a. **Update Dialectic Worker:**
+    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-worker/index.ts`
+    *   `[BE]` `[REFACTOR]` **Action:** Refactor the worker logic to fetch parameters like `max_retries` and feature flags (e.g., for task isolation) from the new `config_service` instead of using hardcoded values.
+*   `[ ]` 34.b. **Update Job Enqueuer:**
+    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-service/generateContribution.ts`
+    *   `[BE]` `[REFACTOR]` **Action:** Update the function to fetch the default `max_retries` from the `config_service` when creating a new job, while still allowing it to be overridden by a value in the request payload.
+*   `[ ]` 34.c. **Update Data Lifecycle Script:**
+    *   `[BE]` `[REFACTOR]` **Action:** Modify the scheduled SQL function for RAG data cleanup to retrieve the `rag_data_retention_days` value from the `dialectic_configuration` table, making the retention period dynamically adjustable.
+
+
+*   [ ] Fix Clone so it works again. 
+*   [ ] Fix Export so that it exports the entire project. 
+*   [ ] Fix Delete to use the new path structuring
+*   [X] Fix path_constructor so it does NOT append a filename to storage_path in "finalMainContentFilePath". 
+    *    [X] For files that need filenames constructed, return the path and file name separately, not as a single string. 
+*   [ ] Fix PromptParser to construct all stage prompts correctly
+    *    [ ] Fill in all {variable} elements from the project details
+    *    [ ] Append all prompt resources to the actual prompt sent 
+*   [ ] Update all the prompts with the right content 
+*   [ ] Add the sync/export button to the Paralysis stage   
+*   [ ] Add a slice button to the Paralysis stage to take the selected plan, slice it according to an algorithm, then create a new project for each slice 

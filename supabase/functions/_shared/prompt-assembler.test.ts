@@ -296,18 +296,7 @@ Deno.test("PromptAssembler", async (t) => {
         }
     });
 
-    await t.step("getContextDocuments should return null and log a warning", async () => {
-        const { assembler } = setup();
-        try {
-            const result = await assembler.getContextDocuments(defaultProject, defaultStage);
-            assertEquals(result, null);
-            assert(consoleSpies.warn);
-            assertEquals(consoleSpies.warn.calls.length, 1);
-            assertEquals(consoleSpies.warn.calls[0].args[0], "[PromptAssembler.getContextDocuments] Method not yet implemented.");
-        } finally {
-            teardown();
-        }
-    });
+
 
     await t.step("should throw an error if rendering the prompt fails", async () => {
         const renderPromptMockFn_ThrowsError = () => {

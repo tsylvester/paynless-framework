@@ -730,6 +730,161 @@ Deno.test(
         }
     });
 
+    await t.step("9. should execute the Parenthesis stage", async () => {
+        if (!testSession) {
+            assert(testSession, "Cannot test parenthesis without a session.");
+            return;
+        }
+
+        // --- Arrange ---
+        const { data: synthesisContributions, error: contribError } = await adminClient
+            .from('dialectic_contributions')
+            .select('id')
+            .eq('session_id', testSession.id)
+            .eq('stage', 'synthesis')
+            .eq('is_latest_edit', true);
+
+        assert(!contribError, "Error fetching synthesis contributions for submission.");
+        assertExists(synthesisContributions, "Could not find synthesis contributions to submit feedback for.");
+
+        const submitPayload: SubmitStageResponsesPayload = {
+            sessionId: testSession.id,
+            projectId: testSession.project_id,
+            stageSlug: 'synthesis',
+            currentIterationNumber: 1,
+            responses: synthesisContributions.map(c => ({
+                originalContributionId: c.id,
+                responseText: `This is feedback for synthesis contribution ${c.id}.`
+            }))
+        };
+
+        const { data: submitData, error: submitError } = await submitStageResponses(
+            submitPayload,
+            adminClient,
+            primaryUser,
+            { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage }
+        );
+
+        assert(!submitError, `Error submitting synthesis responses: ${JSON.stringify(submitError)}`);
+        assert(submitData?.updatedSession?.status === 'pending_parenthesis', `Session status should be pending_parenthesis, but was ${submitData?.updatedSession?.status}`);
+        testSession = submitData.updatedSession;
+        
+        // --- Act ---
+        const generatePayload: GenerateContributionsPayload = {
+            sessionId: testSession.id,
+            stageSlug: "parenthesis",
+            iterationNumber: 1,
+            projectId: testSession.project_id,
+        };
+        const { data: jobData, error: creationError } = await generateContributions(adminClient, generatePayload, primaryUser, testDeps);
+        assert(!creationError, `Error creating parent job for parenthesis: ${creationError?.message}`);
+        assertExists(jobData?.job_ids, "Parent job creation for parenthesis did not return job IDs.");
+
+        const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage, processCombinationJob };
+        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+
+        // --- Assert ---
+        await pollForCondition(async () => {
+            if (!testSession) return false;
+            const { data: pendingJobs } = await adminClient
+                .from('dialectic_generation_jobs')
+                .select('id')
+                .eq('session_id', testSession.id)
+                .eq('stage_slug', 'parenthesis')
+                .in('status', ['pending', 'processing', 'retrying', 'waiting_for_children', 'pending_next_step']);
+            return pendingJobs !== null && pendingJobs.length === 0;
+        }, "All jobs for the parenthesis stage should be completed.");
+
+        const { data: finalContributions, error: finalContribError } = await adminClient
+            .from('dialectic_contributions')
+            .select('id')
+            .eq('session_id', testSession.id)
+            .eq('stage', 'parenthesis')
+            .eq('is_latest_edit', true);
+
+        assert(!finalContribError, "Error fetching final parenthesis contributions.");
+                assertEquals(finalContributions?.length, 2, "Expected 2 final 'parenthesis' contributions (1 per model for a simple stage).");
+    });
+
+    await t.step("10. should execute the Paralysis stage", async () => {
+        if (!testSession) {
+            assert(testSession, "Cannot test paralysis without a session.");
+            return;
+        }
+
+        // --- Arrange ---
+        const { data: parenthesisContributions, error: contribError } = await adminClient
+            .from('dialectic_contributions')
+            .select('id')
+            .eq('session_id', testSession.id)
+            .eq('stage', 'parenthesis')
+            .eq('is_latest_edit', true);
+
+        assert(!contribError, "Error fetching parenthesis contributions for submission.");
+        assertExists(parenthesisContributions, "Could not find parenthesis contributions to submit feedback for.");
+        
+        const submitPayload: SubmitStageResponsesPayload = {
+            sessionId: testSession.id,
+            projectId: testSession.project_id,
+            stageSlug: 'parenthesis',
+            currentIterationNumber: 1,
+            responses: parenthesisContributions.map(c => ({
+                originalContributionId: c.id,
+                responseText: `This is feedback for parenthesis contribution ${c.id}.`
+            }))
+        };
+
+        const { data: submitData, error: submitError } = await submitStageResponses(
+            submitPayload,
+            adminClient,
+            primaryUser,
+            { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage }
+        );
+
+        assert(!submitError, `Error submitting parenthesis responses: ${JSON.stringify(submitError)}`);
+        assert(submitData?.updatedSession?.status === 'pending_paralysis', `Session status should be pending_paralysis, but was ${submitData?.updatedSession?.status}`);
+        testSession = submitData.updatedSession;
+        
+        // --- Act ---
+        const generatePayload: GenerateContributionsPayload = {
+            sessionId: testSession.id,
+            stageSlug: "paralysis",
+            iterationNumber: 1,
+            projectId: testSession.project_id,
+        };
+        const { data: jobData, error: creationError } = await generateContributions(adminClient, generatePayload, primaryUser, testDeps);
+        assert(!creationError, `Error creating parent job for paralysis: ${creationError?.message}`);
+        assertExists(jobData?.job_ids, "Parent job creation for paralysis did not return job IDs.");
+
+        const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage, processCombinationJob };
+        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+
+        // --- Assert ---
+        await pollForCondition(async () => {
+            if (!testSession) return false;
+            const { data: pendingJobs } = await adminClient
+                .from('dialectic_generation_jobs')
+                .select('id')
+                .eq('session_id', testSession.id)
+                .eq('stage_slug', 'paralysis')
+                .in('status', ['pending', 'processing', 'retrying', 'waiting_for_children', 'pending_next_step']);
+            return pendingJobs !== null && pendingJobs.length === 0;
+        }, "All jobs for the paralysis stage should be completed.");
+
+        const { data: finalContributions, error: finalContribError } = await adminClient
+            .from('dialectic_contributions')
+            .select('id')
+            .eq('session_id', testSession.id)
+            .eq('stage', 'paralysis')
+            .eq('is_latest_edit', true);
+
+        assert(!finalContribError, "Error fetching final paralysis contributions.");
+        assertEquals(finalContributions?.length, 2, "Expected 2 final 'paralysis' contributions.");
+    });
+
+
 
     await t.step("Teardown", teardown);
   },
