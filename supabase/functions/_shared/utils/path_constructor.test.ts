@@ -6,6 +6,7 @@ import {
   mapStageSlugToDirName
 } from './path_constructor.ts'
 import type { PathContext, FileType } from '../types/file_manager.types.ts'
+import type { ContributionType } from '../../dialectic-service/dialectic.interface.ts';
 
 Deno.test('constructStoragePath', async (t) => {
   const projectBaseContext: Pick<PathContext, 'projectId'> = {
@@ -17,6 +18,7 @@ Deno.test('constructStoragePath', async (t) => {
     sessionId: 'session-uuid-4567890',
     iteration: 1,
     stageSlug: 'test-stage',
+    contributionType: 'synthesis',
     modelSlug: 'test-model',
     attemptCount: 0,
   };
@@ -79,7 +81,7 @@ Deno.test('constructStoragePath', async (t) => {
     };
     const path = constructStoragePath(context);
     assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}`);
-    assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.stageSlug!)}.md`);
+        assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.contributionType!)}.md`);
   });
   
   await t.step('should construct path for model_contribution_main with attemptCount 1', () => {
@@ -90,7 +92,7 @@ Deno.test('constructStoragePath', async (t) => {
     };
     const path = constructStoragePath(context);
     assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}`);
-    assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.stageSlug!)}.md`);
+        assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.contributionType!)}.md`);
   });
 
   await t.step('should construct path for model_contribution_raw_json with attemptCount 0', () => {
@@ -101,7 +103,7 @@ Deno.test('constructStoragePath', async (t) => {
     };
     const path = constructStoragePath(context);
     assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/raw_responses`);
-    assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.stageSlug!)}_raw.json`);
+        assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.contributionType!)}_raw.json`);
   });
 
   await t.step('should construct path for model_contribution_raw_json with attemptCount 2', () => {
@@ -112,7 +114,7 @@ Deno.test('constructStoragePath', async (t) => {
     };
     const path = constructStoragePath(context);
     assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/raw_responses`);
-    assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.stageSlug!)}_raw.json`);
+        assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.contributionType!)}_raw.json`);
   });
   
   await t.step('should construct path for user_feedback', () => {
@@ -133,7 +135,7 @@ Deno.test('constructStoragePath', async (t) => {
     };
     const path = constructStoragePath(context);
     assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/_work`);
-    assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.stageSlug!)}.md`);
+        assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.contributionType!)}.md`);
   });
 
   await t.step('should construct path for contribution_document', () => {
@@ -216,7 +218,7 @@ Deno.test('constructStoragePath', async (t) => {
         attemptCount: 0,
         fileType: 'model_contribution_main',
       });
-    }, Error, 'projectId, sessionId, iteration, stageSlug, modelSlug, and attemptCount are required for model_contribution_main.');
+        }, Error, 'projectId, sessionId, iteration, stageSlug, modelSlug, contributionType and attemptCount are required for model_contribution_main.');
   });
 
   await t.step('should throw error if required context (attemptCount) is missing for model_contribution_main', () => {
@@ -229,7 +231,7 @@ Deno.test('constructStoragePath', async (t) => {
         modelSlug: 'test-model',
         fileType: 'model_contribution_main',
       });
-    }, Error, 'projectId, sessionId, iteration, stageSlug, modelSlug, and attemptCount are required for model_contribution_main.');
+        }, Error, 'projectId, sessionId, iteration, stageSlug, modelSlug, contributionType and attemptCount are required for model_contribution_main.');
   });
 
   await t.step('should throw error if originalFileName is missing for contribution_document', () => {
@@ -296,6 +298,20 @@ Deno.test('constructStoragePath', async (t) => {
     });
     assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/documents`);
     assertEquals(path.fileName, 'documents__with__spaces.pdf');
+  });
+
+  await t.step('should throw error if required context (contributionType) is missing for model_contribution_main', () => {
+    assertThrows(() => {
+      constructStoragePath({
+        projectId: 'project-uuid-123',
+        sessionId: 'session-uuid-456',
+        iteration: 1,
+        stageSlug: 'test-stage',
+        modelSlug: 'test-model',
+        attemptCount: 0,
+        fileType: 'model_contribution_main',
+      });
+    }, Error, 'projectId, sessionId, iteration, stageSlug, modelSlug, contributionType and attemptCount are required for model_contribution_main.');
   });
 });
 

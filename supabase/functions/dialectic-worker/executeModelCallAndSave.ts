@@ -109,13 +109,14 @@ export async function executeModelCallAndSave(
             stageSlug, 
             modelSlug: providerDetails.api_identifier,
             originalFileName: job.payload.originalFileName || `${providerDetails.api_identifier}_${stageSlug}${deps.getExtensionFromMimeType(aiResponse.contentType || "text/markdown")}`,
+            contributionType: job.payload.output_type || stageSlug,
         },
         fileContent: finalContent, 
         mimeType: aiResponse.contentType || "text/markdown",
         sizeBytes: finalContent.length, 
         userId: projectOwnerUserId,
         description: `Contribution for stage '${stageSlug}' by model ${providerDetails.name}`,
-        resourceTypeForDb: 'contribution', // <-- This is the fix
+        resourceTypeForDb: job.payload.output_type || stageSlug,
         contributionMetadata: {
             sessionId, 
             modelIdUsed: providerDetails.id, 

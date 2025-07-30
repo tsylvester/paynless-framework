@@ -33,7 +33,8 @@ export interface PathContext {
   fileType: FileType
   sessionId?: string
   iteration?: number
-  stageSlug?: string
+    stageSlug?: string
+  contributionType?: ContributionType | null; // e.g., 'hypothesis', 'critique', 'synthesis' (align with stage or be more specific)
   modelSlug?: string
   attemptCount?: number
   originalFileName?: string // Made optional, validation per fileType

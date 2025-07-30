@@ -127,22 +127,22 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       return { storagePath: basePathForStageFiles, fileName: `user_feedback_${sanitizeForPath(rawStageSlug)}.md` };
 
     case 'model_contribution_main': {
-      if (!basePathForStageFiles || !rawModelSlug || !rawStageSlug || attemptCount === undefined || attemptCount === null) {
-        throw new Error('projectId, sessionId, iteration, stageSlug, modelSlug, and attemptCount are required for model_contribution_main.');
+      if (!basePathForStageFiles || !rawModelSlug || !context.contributionType || attemptCount === undefined || attemptCount === null) {
+        throw new Error('projectId, sessionId, iteration, stageSlug, modelSlug, contributionType and attemptCount are required for model_contribution_main.');
       }
       const modelSlugSanitized = sanitizeForPath(rawModelSlug);
-      const stageSlugSanitized = sanitizeForPath(rawStageSlug);
-      return { storagePath: basePathForStageFiles, fileName: `${modelSlugSanitized}_${attemptCount}_${stageSlugSanitized}.md` };
+      const contributionTypeSanitized = sanitizeForPath(context.contributionType);
+      return { storagePath: basePathForStageFiles, fileName: `${modelSlugSanitized}_${attemptCount}_${contributionTypeSanitized}.md` };
     }
 
     case 'model_contribution_raw_json': {
-      if (!basePathForStageFiles || !rawModelSlug || !rawStageSlug || attemptCount === undefined || attemptCount === null) {
-        throw new Error('projectId, sessionId, iteration, stageSlug, modelSlug, and attemptCount are required for model_contribution_raw_json.');
+      if (!basePathForStageFiles || !rawModelSlug || !context.contributionType || attemptCount === undefined || attemptCount === null) {
+        throw new Error('projectId, sessionId, iteration, stageSlug, modelSlug, contributionType and attemptCount are required for model_contribution_raw_json.');
       }
       const rawResponsesPath = `${basePathForStageFiles}/raw_responses`;
       const modelSlugSanitizedRaw = sanitizeForPath(rawModelSlug);
-      const stageSlugSanitizedRaw = sanitizeForPath(rawStageSlug);
-      return { storagePath: rawResponsesPath, fileName: `${modelSlugSanitizedRaw}_${attemptCount}_${stageSlugSanitizedRaw}_raw.json` };
+      const contributionTypeSanitized = sanitizeForPath(context.contributionType);
+      return { storagePath: rawResponsesPath, fileName: `${modelSlugSanitizedRaw}_${attemptCount}_${contributionTypeSanitized}_raw.json` };
     }
       
     case 'contribution_document': {
