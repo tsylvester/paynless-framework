@@ -7,7 +7,7 @@ import { DialecticContributionRow, InputArtifactRules, ArtifactSourceRule } from
 import { DynamicContextVariables, ProjectContext, SessionContext, StageContext, RenderPromptFunctionType } from "./prompt-assembler.interface.ts";
 import type { DownloadStorageResult } from "./supabase_storage_utils.ts";
 import { hasProcessingStrategy, isDialecticChunkMetadata } from "./utils/type_guards.ts";
-import { RAGError } from "./utils/errors.ts";
+import { RagServiceError } from "./utils/errors.ts";
 import { join } from "jsr:@std/path/join";
 
 export type ContributionOverride = Partial<DialecticContributionRow> & {
@@ -71,7 +71,7 @@ export class PromptAssembler {
                 } catch (ragError) {
                     const errorMessage = ragError instanceof Error ? ragError.message : String(ragError);
                     console.error(`[PromptAssembler.gatherContext] RAG process failed: ${errorMessage}`, { error: ragError });
-                    throw new RAGError(`Failed to gather context via RAG: ${errorMessage}`);
+                    throw new RagServiceError(`Failed to gather context via RAG: ${errorMessage}`);
                 }
             } else {
                 try {
@@ -389,7 +389,8 @@ ${content}
                 query_embedding,
                 match_threshold: 0.7, // Example threshold
                 match_count: 10,       // Example count
-                session_id_filter: session.id
+                session_id_filter: session.id,
+                query_text: query
             });
 
             if (error) {

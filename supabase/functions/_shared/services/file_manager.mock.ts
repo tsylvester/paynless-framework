@@ -70,4 +70,4 @@ export class MockFileManagerService implements IFileManager {
  */
 export function createMockFileManagerService() {
   return new MockFileManagerService();
-} 
+}

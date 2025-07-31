@@ -4,13 +4,14 @@ import {
     it,
     beforeEach,
 } from 'https://deno.land/std@0.190.0/testing/bdd.ts';
+import { stub } from 'https://deno.land/std@0.190.0/testing/mock.ts';
 import {
     assert,
     assertEquals,
     assertRejects,
 } from 'jsr:@std/assert@0.225.3';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import type { Database } from '../types_db.ts';
+import type { Database, Tables } from '../types_db.ts';
 import {
     DialecticJobRow,
     DialecticPlanJobPayload,
@@ -29,6 +30,9 @@ import {
 } from '../_shared/utils/type_guards.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 import { createMockSupabaseClient, MockQueryBuilderState } from '../_shared/supabase.mock.ts';
+import { AiModelExtendedConfig } from '../_shared/types.ts';
+import { MockRagService } from '../_shared/services/rag_service.mock.ts';
+import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 
 type SourceDocument = DialecticContributionRow & { content: string };
 
@@ -187,6 +191,22 @@ describe('planComplexStage', () => {
                 return Promise.resolve({ data, error: null });
             },
             getGranularityPlanner: () => undefined, // Default to undefined
+            ragService: new MockRagService(),
+            fileManager: new MockFileManagerService(),
+            countTokens: () => 0,
+            getAiProviderConfig: () => Promise.resolve({
+                api_identifier: 'mock-api-identifier',
+                input_token_cost_rate: 0,
+                output_token_cost_rate: 0,
+                provider_max_input_tokens: 8192,
+                tokenization_strategy: {
+                    type: 'tiktoken',
+                    tiktoken_encoding_name: 'cl100k_base',
+                    tiktoken_model_name_for_rules_fallback: 'gpt-4o',
+                    is_chatml_model: false,
+                    api_identifier_for_tokenization: 'mock-api-identifier',
+                },
+            }),
         };
     });
     
@@ -518,5 +538,60 @@ describe('planComplexStage', () => {
         assertEquals(receivedDocs.length, 1);
         assertEquals(receivedDocs[0].contribution_type, 'antithesis');
         assertEquals(receivedDocs[0].id, 'doc-2-antithesis');
+    });
+
+    it('should invoke RAG service when token count exceeds the limit', async () => {
+        // Arrange: Force token count to exceed the limit
+        mockDeps.countTokens = () => 9000; // Exceeds the mock limit of 8192
+
+        if (!(mockDeps.ragService instanceof MockRagService)) {
+            assert(false, 'Dependency ragService is not a MockRagService instance');
+            return;
+        }
+        mockDeps.ragService.setConfig({ mockContextResult: 'Mocked RAG context' });
+
+        const mockFileRecord: Tables<'dialectic_project_resources'> = {
+            id: 'mock-file-record-id',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            project_id: 'proj-1',
+            file_name: 'rag_summary_for_job_parent-job-123.txt',
+            mime_type: 'text/plain',
+            size_bytes: 123,
+            storage_bucket: 'test-bucket',
+            storage_path: '/path/to',
+            user_id: 'user-123',
+            resource_description: { description: 'RAG summary' }
+        };
+        const fileManagerStub = stub(mockDeps.fileManager, 'uploadAndRegisterFile', () => Promise.resolve({ record: mockFileRecord, error: null }));
+        
+        // Act
+        const childJobs = await planComplexStage(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockDeps,
+            mockRecipeStep
+        );
+
+        // Assert
+        // 1. RAG service was called
+        assertEquals(mockDeps.ragService.getContextForModelSpy.calls.length, 1);
+        
+        // 2. File manager was called to save the RAG context
+        assertEquals(fileManagerStub.calls.length, 1);
+        const lastUploadContext = fileManagerStub.calls[0].args[0];
+        assert(lastUploadContext);
+        assertEquals(lastUploadContext.resourceTypeForDb, 'rag_context_summary');
+        assertEquals(lastUploadContext.fileContent, 'Mocked RAG context');
+        assertEquals(lastUploadContext.pathContext.fileType, 'rag_context_summary');
+
+        // 3. A single child job was created
+        assertEquals(childJobs.length, 1);
+        const childJob = childJobs[0];
+        assert(isDialecticExecuteJobPayload(childJob.payload));
+        
+        // 4. The child job has the correct inputs pointing to the RAG artifact
+        assertEquals(childJob.payload.inputs.rag_summary_id, 'mock-file-record-id');
+        assertEquals(childJob.payload.job_type, 'execute');
     });
 }); 

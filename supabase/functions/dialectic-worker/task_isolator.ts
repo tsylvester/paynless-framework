@@ -1,16 +1,18 @@
-// supabase/functions/dialectic-worker/task_isolator.ts
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { Database } from '../types_db.ts';
 import {
+    DialecticCombinationJobPayload,
+    DialecticExecuteJobPayload,
     DialecticJobRow,
     DialecticPlanJobPayload,
     DialecticRecipeStep,
     SourceDocument,
 } from '../dialectic-service/dialectic.interface.ts';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
-import { ILogger } from '../_shared/types.ts';
+import { ILogger, MessageForTokenCounting } from '../_shared/types.ts';
 import { IPlanComplexJobDeps } from './processComplexJob.ts';
-import { isDialecticCombinationJobPayload, isDialecticExecuteJobPayload } from '../_shared/utils/type_guards.ts';
+import { isDialecticCombinationJobPayload, isDialecticExecuteJobPayload, isDialecticPlanJobPayload, isJson } from '../_shared/utils/type_guards.ts';
+import { ContextWindowError } from '../_shared/utils/errors.ts';
+import { Database, Tables } from '../types_db.ts';
 
 async function findSourceDocuments(
     dbClient: SupabaseClient<Database>,
@@ -51,7 +53,7 @@ async function findSourceDocuments(
         logger.info(`[task_isolator] [findSourceDocuments] Found ${sourceContributions.length} contributions for type '${rule.type}'.`);
 
         const documents = await Promise.all(
-            sourceContributions.map(async (contrib) => {
+            sourceContributions.map(async (contrib: Tables<'dialectic_contributions'>) => {
                 if (!contrib.file_name || !contrib.storage_bucket || !contrib.storage_path) {
                     logger.warn(`Contribution ${contrib.id} is missing required storage information (file_name, storage_bucket, or storage_path) and will be skipped.`);
                     return null;
@@ -68,7 +70,7 @@ async function findSourceDocuments(
             })
         );
         
-        const validDocuments = documents.filter((doc): doc is NonNullable<typeof doc> => doc !== null);
+        const validDocuments = documents.filter((doc: SourceDocument | null): doc is SourceDocument => doc !== null);
         allSourceDocuments.push(...validDocuments);
     }
     
@@ -98,103 +100,117 @@ export async function planComplexStage(
         return [];
     }
 
-    // TODO: Tier 2 Context Check
-    
-    // 2. Get the correct planner function.
-    const planner = deps.getGranularityPlanner(recipeStep.granularity_strategy);
-    if (!planner) {
-        throw new Error(`No planner found for granularity strategy: ${recipeStep.granularity_strategy}`);
+    // 2. Perform token estimation and check against the model's limit.
+    const modelConfig = await deps.getAiProviderConfig(dbClient, parentJob.payload.model_id);
+    const maxTokens = modelConfig.provider_max_input_tokens;
+
+    if (!maxTokens) {
+        throw new Error(`Model ${parentJob.payload.model_id} does not have provider_max_input_tokens configured.`);
     }
 
-    // 3. Execute the planner to get the child job payloads.
-    const childJobPayloads = planner(sourceDocuments, parentJob, recipeStep);
+    const messagesForTokenCounting: MessageForTokenCounting[] = sourceDocuments.map(doc => ({ role: 'user', content: doc.content }));
+    const estimatedTokens = deps.countTokens(messagesForTokenCounting, modelConfig);
 
-    // 4. Map to full job rows for DB insertion, handling each payload type safely.
-    const childJobsToInsert: DialecticJobRow[] = [];
+    let childJobPayloads: (DialecticExecuteJobPayload | DialecticCombinationJobPayload)[];
 
-    for (const payload of childJobPayloads) {
-        let jobRow: DialecticJobRow | null = null;
-        const baseJobProps = {
-            id: crypto.randomUUID(),
-            parent_job_id: parentJob.id,
-            session_id: parentJob.session_id,
-            user_id: parentJob.user_id,
-            stage_slug: parentJob.stage_slug,
-            iteration_number: parentJob.iteration_number,
-            status: 'pending',
-            max_retries: parentJob.max_retries,
-            attempt_count: 0,
-            created_at: new Date().toISOString(),
-            started_at: null,
-            completed_at: null,
-            results: null,
-            error_details: null,
-            target_contribution_id: null,
-            prerequisite_job_id: null,
-        };
-
-        if (isDialecticExecuteJobPayload(payload)) {
-            jobRow = {
-                ...baseJobProps,
-                payload: {
-                    job_type: payload.job_type,
-                    step_info: {
-                        current_step: payload.step_info.current_step,
-                        total_steps: payload.step_info.total_steps,
-                    },
-                    prompt_template_name: payload.prompt_template_name,
-                    output_type: payload.output_type,
-                    inputs: payload.inputs,
-                    model_id: payload.model_id,
-                    projectId: payload.projectId,
-                    sessionId: payload.sessionId,
-                    stageSlug: payload.stageSlug,
-                    iterationNumber: payload.iterationNumber,
-                    walletId: payload.walletId,
-                    continueUntilComplete: payload.continueUntilComplete,
-                    maxRetries: payload.maxRetries,
-                    continuation_count: payload.continuation_count,
-                    ...(payload.document_relationships && { document_relationships: payload.document_relationships }),
-                    ...(payload.target_contribution_id && { target_contribution_id: payload.target_contribution_id }),
-                    ...(payload.isIntermediate && { isIntermediate: payload.isIntermediate }),
-                },
-            };
-        } else if (isDialecticCombinationJobPayload(payload)) {
-            const inputs: { document_ids?: string[], source_group_id?: string } = {};
-            if (payload.inputs?.document_ids) {
-                inputs.document_ids = payload.inputs.document_ids;
-            }
-            if (payload.inputs?.source_group_id && typeof payload.inputs.source_group_id === 'string') {
-                inputs.source_group_id = payload.inputs.source_group_id;
-            }
-            
-            jobRow = {
-                ...baseJobProps,
-                payload: {
-                    job_type: payload.job_type,
-                    inputs: inputs,
-                    model_id: payload.model_id,
-                    projectId: payload.projectId,
-                    sessionId: payload.sessionId,
-                    stageSlug: payload.stageSlug,
-                    iterationNumber: payload.iterationNumber,
-                    walletId: payload.walletId,
-                    continueUntilComplete: payload.continueUntilComplete,
-                    maxRetries: payload.maxRetries,
-                    continuation_count: payload.continuation_count,
-                    ...(payload.step_info && { step_info: payload.step_info }),
-                    ...(payload.prompt_template_name && { prompt_template_name: payload.prompt_template_name }),
-                    ...(payload.output_type && { output_type: payload.output_type }),
-                    ...(payload.isIntermediate && { isIntermediate: payload.isIntermediate }),
-                },
-            };
-        }
+    if (estimatedTokens > maxTokens) {
+        deps.logger.info(`[task_isolator] Context for job ${parentJob.id} exceeds token limit (${estimatedTokens} > ${maxTokens}). Invoking RAG service.`);
         
-        if (jobRow) {
-            childJobsToInsert.push(jobRow);
+        const ragResult = await deps.ragService.getContextForModel(
+            sourceDocuments.map(doc => ({ id: doc.id, content: doc.content })),
+            modelConfig,
+            parentJob.session_id,
+            parentJob.stage_slug || ''
+        );
+
+        if (ragResult.error || !ragResult.context) {
+            throw new ContextWindowError(`RAG service failed to compress context for job ${parentJob.id}: ${ragResult.error?.message || 'No context returned'}`);
+        }
+
+        // Persist the RAG context as a new temporary resource
+        const { record: ragResource, error: fileError } = await deps.fileManager.uploadAndRegisterFile({
+            pathContext: {
+                projectId: parentJob.payload.projectId,
+                sessionId: parentJob.session_id,
+                fileType: 'rag_context_summary',
+                isWorkInProgress: true, // Place it in the _work directory
+                originalFileName: `rag_summary_for_job_${parentJob.id}.txt`,
+            },
+            fileContent: ragResult.context,
+            mimeType: 'text/plain',
+            sizeBytes: new TextEncoder().encode(ragResult.context).length,
+            userId: parentJob.user_id,
+            description: `RAG-generated context for step ${recipeStep.step} of job ${parentJob.id}`,
+            resourceTypeForDb: 'rag_context_summary',
+        });
+
+        if (fileError || !ragResource) {
+            throw new Error(`Failed to save RAG context to storage: ${fileError?.message}`);
+        }
+
+        if (!isDialecticPlanJobPayload(parentJob.payload)) {
+            // This should be an unreachable state, but it satisfies the compiler.
+            throw new Error('Invalid parent job payload for RAG planning.');
+        }
+
+        // Create a single child job using the RAG-generated context.
+        const newPayload: DialecticExecuteJobPayload = {
+            job_type: 'execute',
+            step_info: parentJob.payload.step_info,
+            model_id: parentJob.payload.model_id,
+            projectId: parentJob.payload.projectId,
+            sessionId: parentJob.payload.sessionId,
+            stageSlug: parentJob.payload.stageSlug,
+            iterationNumber: parentJob.payload.iterationNumber,
+            walletId: parentJob.payload.walletId,
+            continueUntilComplete: parentJob.payload.continueUntilComplete,
+            maxRetries: parentJob.payload.maxRetries,
+            continuation_count: parentJob.payload.continuation_count,
+            prompt_template_name: recipeStep.prompt_template_name,
+            output_type: recipeStep.output_type,
+            inputs: {
+                rag_summary_id: ragResource.id,
+            },
+        };
+        childJobPayloads = [newPayload];
+
+    } else {
+        // 3. If tokens are within limits, proceed with normal planning.
+        const planner = deps.getGranularityPlanner(recipeStep.granularity_strategy);
+        if (!planner) {
+            throw new Error(`No planner found for granularity strategy: ${recipeStep.granularity_strategy}`);
+        }
+        childJobPayloads = planner(sourceDocuments, parentJob, recipeStep);
+    }
+
+    // 4. Map to full job rows for DB insertion.
+    const childJobsToInsert: DialecticJobRow[] = [];
+    for (const payload of childJobPayloads) {
+        if ((isDialecticExecuteJobPayload(payload) || isDialecticCombinationJobPayload(payload)) && isJson(payload)) {
+            childJobsToInsert.push({
+                id: crypto.randomUUID(),
+                parent_job_id: parentJob.id,
+                session_id: parentJob.session_id,
+                user_id: parentJob.user_id,
+                stage_slug: parentJob.stage_slug,
+                iteration_number: parentJob.iteration_number,
+                status: 'pending',
+                max_retries: parentJob.max_retries,
+                attempt_count: 0,
+                created_at: new Date().toISOString(),
+                started_at: null,
+                completed_at: null,
+                results: null,
+                error_details: null,
+                target_contribution_id: null,
+                prerequisite_job_id: null,
+                payload: payload,
+            });
         }
     }
 
     deps.logger.info(`[task_isolator] [planComplexStage] Planned ${childJobsToInsert.length} child jobs for step "${recipeStep.name}".`);
     return childJobsToInsert;
 }
+
+

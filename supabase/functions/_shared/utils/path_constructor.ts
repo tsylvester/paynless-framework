@@ -164,6 +164,13 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       return { storagePath: basePathForStageFiles, fileName: sanitizeForPath(originalFileName) };
     }
 
+    case 'rag_context_summary': {
+      if (!basePathForStageFiles || !originalFileName) {
+        throw new Error('projectId, sessionId, iteration, stageSlug, and originalFileName are required for rag_context_summary.');
+      }
+      return { storagePath: basePathForStageFiles, fileName: sanitizeForPath(originalFileName) };
+    }
+
     default: {
       // This will cause a compile-time error if fileType is not exhausted,
       // ensuring all defined FileTypes are handled.

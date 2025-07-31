@@ -603,15 +603,16 @@ This phase addresses a critical filename collision issue discovered during integ
 
 **Design Philosophy:** This phase addresses two critical insights. First, the dialectic process must converge towards a single output in later stages. Second, the RAG pipeline enabling this must be sophisticated enough to prevent the "averaging effect" and preserve unique, novel details.
 
-#### 32. [BE] [DB] [REFACTOR] Implement a Sophisticated RAG Pipeline
+#### 32. [BE] [DB] [REFACTOR] Implement a Dynamic, On-Demand RAG Service
 
-This implements a full Retrieval-Augmented Generation pipeline to manage the massive context explosion in Stage 3 and beyond, ensuring that novel ideas and fine details are preserved.
+This section refactors the RAG pipeline to be a dynamic, on-demand "context compression" service. Instead of being reflexively tied to specific stages, RAG will be invoked by any part of the system that prepares data for a model call whenever it detects that the proposed input context exceeds the model's token limit. This creates a more robust, efficient, and architecturally sound system.
 
-*   `[ ]` 32.a. **Setup the Vector Database:**
+*   `[✅]` 32.a. **Setup the Vector Database:**
     *   `[DB]` **Tool:** Supabase SQL Editor.
     *   `[DB]` **Action:** Enable the `vector` extension in your Supabase project (`create extension vector;`).
     *   `[DB]` **Action:** Create a new table, `dialectic_memory`, to store text chunks and their embeddings. It should include columns like `id` (UUID), `session_id` (FK to `dialectic_sessions`), `source_contribution_id` (FK to `dialectic_contributions`), `content` (text), `metadata` (JSONB), and `embedding` (vector(1536)) -- assuming OpenAI's `text-embedding-3-small`.
-*   `[ ]` 32.b. **Implement the Indexing Service with Semantic Chunking:**
+
+*   `[✅]` 32.b. **Implement the Indexing Service with Semantic Chunking:**
     *   `[BE]` **Recommendation:** Use a library like `langchain-js` (which has Deno support) to simplify text splitting and embedding calls.
     *   `[BE]` **File:** `supabase/functions/_shared/services/indexing_service.ts`.
     *   `[BE]` **Action:** Create a new service that:
@@ -619,18 +620,58 @@ This implements a full Retrieval-Augmented Generation pipeline to manage the mas
         2.  Uses a text splitter (e.g., `RecursiveCharacterTextSplitter`) configured for **semantic chunking**. The goal is to split documents at points of topical shift to create focused, potent vectors that preserve unique ideas rather than using naive fixed-size chunks.
         3.  Calls an embedding model API (e.g., OpenAI's `text-embedding-3-small`) for each chunk.
         4.  Saves the chunk's content, metadata, and the resulting embedding vector into the `dialectic_memory` table.
-*   `[ ]` 32.c. **Integrate Indexing into the Dialectic Flow:**
-    *   `[BE]` **File:** `supabase/functions/dialectic-service/submitStageResponses.ts`.
-    *   `[BE]` **Action:** After a stage's contributions are finalized and submitted by the user (e.g., `Antithesis` completes), asynchronously trigger the new indexing service for all the finalized documents that will serve as the corpus for the next stage.
-*   `[ ]` 32.d. **Implement a Hybrid Retrieval Service:**
-    *   `[BE]` **Action:** Create an RPC function in Supabase, e.g., `match_dialectic_chunks`. This function must support **hybrid search**. It should accept a query and be able to return results based on a combination of vector similarity (`<M=>` operator) and traditional keyword matching (e.g., `to_tsvector`) to ensure both semantically relevant and literally exact information is retrieved.
-*   `[ ]` 32.e. **Refactor Prompt Assembler for Advanced, Multi-Query RAG:**
+
+*   `[✅]` 32.c. **Refactor Indexing to be a "Just-in-Time" Process:**
+    *   `[BE]` `[REFACTOR]` **Action:** The current approach of reflexively indexing all documents from certain stages is inefficient. Indexing should be performed dynamically, on-demand, only when a RAG operation is actually required.
+    *   **Implementation - Step 1: Remove Reflexive Indexing:**
+        *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-service/submitStageResponses.ts`.
+        *   `[BE]` `[REFACTOR]` **Action:** Delete the entire logic block that triggers the `IndexingService` based on the current stage slug. Indexing should no longer be a part of the stage transition process.
+    *   **Implementation - Step 2: Implement Just-in-Time Indexing in `RagService`:**
+        *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/_shared/services/rag_service.ts`.
+        *   `[BE]` `[REFACTOR]` **Action:** Enhance the `getContextForModel` method. Before this method executes its multi-query retrieval logic, it must first ensure that all source documents it needs to query have been indexed.
+        *   `[BE]` **Logic:**
+            1.  The service receives a list of source document IDs.
+            2.  It queries the `dialectic_memory` table to see which chunks corresponding to these document IDs already exist.
+            3.  For any document IDs that do *not* have corresponding chunks in the vector store, the `RagService` will invoke the `IndexingService` to chunk and embed them.
+            4.  Only once all required documents are confirmed to be in the vector store will the `RagService` proceed with its retrieval, re-ranking, and assembly logic.
+
+*   `[✅]` 32.d. **Create a Central, Reusable `RagService` with Advanced Retrieval:**
+    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/_shared/services/rag_service.ts`.
+    *   `[BE]` `[REFACTOR]` **Action:** Create a new, dedicated `RagService` to encapsulate all logic for retrieving and synthesizing context. Its primary method, `getContextForModel`, will accept a collection of source document texts/IDs and the target `AiModelExtendedConfig`.
+    *   **Implementation - Step 1: Hybrid Search RPC:**
+        *   `[DB]` **Action:** Create an RPC function in Supabase, e.g., `match_dialectic_chunks`. This function is critical and must support **hybrid search**. It will accept a query and return results based on a combination of vector similarity (`<->` operator) and traditional keyword matching (e.g., `to_tsvector`). This ensures both semantically relevant and literally exact information is retrieved, preventing important but non-standard terms from being missed by vector search alone.
+    *   **Implementation - Step 2: Multi-Query, Re-ranking, and Assembly Logic:**
+        *   `[BE]` **Action:** Inside the `getContextForModel` method, implement a sophisticated, multi-step retrieval process:
+        1.  **Generate Multiple Queries:** Programmatically generate several queries to capture different "angles" of the required information. For example: a broad synthesis query, a query specifically asking for "novel or unique approaches", and another asking for "conflicting recommendations".
+        2.  **Retrieve Superset:** Call the `match_dialectic_chunks` RPC for *each* generated query to gather a superset of potentially relevant chunks from the `dialectic_memory` table.
+        3.  **Re-rank for Diversity:** Use a **re-ranking algorithm like Maximal Marginal Relevance (MMR)** on the combined result set. This is crucial for preventing the "averaging effect." MMR will select a final list of chunks that are both highly relevant to the queries and semantically diverse, ensuring that unique, outlier perspectives are not drowned out by more common, redundant themes.
+        4.  **Assemble Final Prompt:** Create the final, compact prompt containing the re-ranked, diverse chunks. This string is the distilled, token-constrained context that will be returned by the service.
+
+*   `[ ]` 32.e. **Refactor `task_isolator.ts` for Dynamic RAG-based Planning:**
+    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-worker/task_isolator.ts`.
+    *   `[BE]` `[REFACTOR]` **Action:** Modify the `planComplexStage` function to be RAG-aware.
+    *   **Logic:**
+        1.  After gathering source documents, perform the token estimation check as defined in `Phase 9, Step 26.b`.
+        2.  **If tokens are within limits:** Proceed with the existing job planning logic.
+        3.  **If tokens exceed limits:**
+            *   **Remove** the logic that creates prerequisite `'combine'` jobs.
+            *   **Instead**, invoke the new `RagService` with the oversized collection of documents.
+            *   Use the single, RAG-generated context string to create a single child job. This is more efficient and eliminates the need for complex prerequisite job orchestration.
+
+*   `[ ]` 32.f. **Refactor `prompt-assembler.ts` for Dynamic RAG-based Assembly:**
     *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/_shared/prompt-assembler.ts`.
-    *   `[BE]` `[REFACTOR]` **Action:** For stages 3+, completely change the prompt assembly logic:
-        1.  **Generate Multiple Queries:** Programmatically generate several queries to capture different "angles" of the required information (e.g., a broad synthesis query, a query specifically asking for "novel or unique approaches", and a query asking for "conflicting recommendations").
-        2.  **Retrieve:** Call the `match_dialectic_chunks` RPC for each query to get a superset of potentially relevant chunks.
-        3.  **Re-rank for Diversity:** Use a **re-ranking algorithm like Maximal Marginal Relevance (MMR)** on the combined result set. This will select a final list of chunks that are both highly relevant to the queries and semantically diverse, ensuring unique perspectives are not drowned out by more common themes.
-        4.  **Assemble Final Prompt:** Create the final, compact prompt containing the re-ranked, diverse chunks, which will then be passed to the model.
+    *   `[BE]` `[REFACTOR]` **Action:** Modify the `gatherContext` method to use RAG on-demand.
+    *   **Logic:**
+        1.  **Remove** the reflexive `isRagStage` check.
+        2.  First, attempt to gather the complete, unabridged context for the stage using `gatherInputsForStage`.
+        3.  After retrieving all content, calculate the estimated token count for the assembled text.
+        4.  **If the token count exceeds the target model's `max_input_tokens`:** Invoke the `RagService` to distill the context down to a manageable size.
+        5.  **If the token count is within limits:** Use the full, unabridged context.
+
+*   `[ ]` 32.g. **Confirm `executeModelCallAndSave.ts` as a Final Safeguard:**
+    *   `[BE]` `[REFACTOR]` **File:** `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`.
+    *   `[BE]` `[REFACTOR]` **Action:** The plan explicitly confirms that the token check in this executor function remains the final, fatal safeguard.
+    *   **Logic:** If the token count of the fully rendered prompt still exceeds the model's limit, it signifies an upstream bug in token estimation or prompt rendering. The function **must** `throw new ContextWindowError`. It will **not** attempt a last-second RAG call, as this would hide upstream issues and lead to unpredictable behavior.
 
 #### 33. [BE] [REFACTOR] Implement Convergent Logic for Final Stages
 

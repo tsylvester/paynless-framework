@@ -28,6 +28,8 @@ export function deconstructStoragePath(
   // For the new system, storageDir and fileName should always be distinct parts.
   const fullPath = storageDir ? `${storageDir}/${fileName}` : fileName;
 
+  info.isWorkInProgress = fullPath.includes('/_work/');
+
 
   // Regex patterns defined as strings
   const modelContribRawPatternString = "^([^/]+)/sessions/([^/]+)/iteration_(\\d+)/([^/]+)/raw_responses/(.+)_(\\d+)_([^_]+)_raw\\.json$";
@@ -39,9 +41,7 @@ export function deconstructStoragePath(
   const projectSettingsFilePatternString = "^([^/]+)/project_settings\\.json$";
   const generalResourcePatternString = "^([^/]+)/general_resource/([^/]+)$";
   const initialUserPromptPatternString = "^([^/]+)/((?!sessions/|general_resource/|project_readme\\.md$|project_settings\\.json$)[^/]+)$";
-  const pairwiseSynthesisChunkPatternString = "^([^/]+)/sessions/([^/]+)/iteration_(\\d+)/([^/]+)/_work/pairwise_synthesis_chunks/([^/]+)$";
-  const reducedSynthesisPatternString = "^([^/]+)/sessions/([^/]+)/iteration_(\\d+)/([^/]+)/_work/reduced_synthesis_chunks/([^/]+)$";
-  const finalSynthesisPatternString = "^([^/]+)/sessions/([^/]+)/iteration_(\\d+)/([^/]+)/_work/final_synthesis/([^/]+)$";
+  const intermediateFilePatternString = "^([^/]+)/sessions/([^/]+)/iteration_(\\d+)/([^/]+)/_work/([^/]+)$";
 
   // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/raw_responses/{modelSlugSanitized}_{attemptCount}_{stageSlugSanitized}_raw.json
   let matches = fullPath.match(new RegExp(modelContribRawPatternString));
@@ -54,12 +54,13 @@ export function deconstructStoragePath(
     const modelSlugPart = matches[5];
     info.modelSlug = modelSlugPart;
     info.attemptCount = parseInt(matches[6], 10);
+    info.contributionType = matches[7];
     info.parsedFileNameFromPath = `${modelSlugPart}_${matches[6]}_${matches[7]}_raw.json`;
     info.fileTypeGuess = 'model_contribution_raw_json';
     if (dbOriginalFileName && dbOriginalFileName !== info.parsedFileNameFromPath) {
       console.warn(`[deconstructStoragePath] dbOriginalFileName mismatch for model_contribution_raw_json: ${dbOriginalFileName} vs ${info.parsedFileNameFromPath}`);
     }
-    return info as DeconstructedPathInfo;
+    return info;
   }
 
   // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/{modelSlugSanitized}_{attemptCount}_{stageSlugSanitized}.md
@@ -73,12 +74,13 @@ export function deconstructStoragePath(
     const modelSlugPart = matches[5];
     info.modelSlug = modelSlugPart;
     info.attemptCount = parseInt(matches[6], 10);
+    info.contributionType = matches[7];
     info.parsedFileNameFromPath = `${modelSlugPart}_${matches[6]}_${matches[7]}.md`;
     info.fileTypeGuess = 'model_contribution_main';
     if (dbOriginalFileName && dbOriginalFileName !== info.parsedFileNameFromPath) {
         console.warn(`[deconstructStoragePath] dbOriginalFileName mismatch for model_contribution_main: ${dbOriginalFileName} vs ${info.parsedFileNameFromPath}`);
     }
-    return info as DeconstructedPathInfo;
+    return info;
   }
   
   // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/documents/{sanitizedOriginalFileName}
@@ -91,11 +93,11 @@ export function deconstructStoragePath(
     info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
     info.parsedFileNameFromPath = matches[5];
     info.fileTypeGuess = 'contribution_document';
-    return info as DeconstructedPathInfo;
+    return info;
   }
 
-  // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/_work/pairwise_synthesis_chunks/{sanitizedOriginalFileName}
-  matches = fullPath.match(new RegExp(pairwiseSynthesisChunkPatternString));
+  // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/_work/{sanitizedOriginalFileName}
+  matches = fullPath.match(new RegExp(intermediateFilePatternString));
   if (matches) {
     info.originalProjectId = matches[1];
     info.shortSessionId = matches[2];
@@ -103,34 +105,19 @@ export function deconstructStoragePath(
     info.stageDirName = matches[4];
     info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
     info.parsedFileNameFromPath = matches[5];
-    info.fileTypeGuess = 'pairwise_synthesis_chunk';
-    return info as DeconstructedPathInfo;
-  }
+    
+    // Guess file type based on filename conventions
+    if (info.parsedFileNameFromPath.startsWith('rag_summary_for_job_')) {
+      info.fileTypeGuess = 'rag_context_summary';
+    } else if (info.parsedFileNameFromPath.startsWith('pairwise_synthesis')) {
+      info.fileTypeGuess = 'pairwise_synthesis_chunk';
+    } else if (info.parsedFileNameFromPath.startsWith('reduced_synthesis')) {
+      info.fileTypeGuess = 'reduced_synthesis';
+    } else if (info.parsedFileNameFromPath.startsWith('final_synthesis')) {
+        info.fileTypeGuess = 'final_synthesis';
+    }
 
-  // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/_work/reduced_synthesis_chunks/{sanitizedOriginalFileName}
-  matches = fullPath.match(new RegExp(reducedSynthesisPatternString));
-  if (matches) {
-    info.originalProjectId = matches[1];
-    info.shortSessionId = matches[2];
-    info.iteration = parseInt(matches[3], 10);
-    info.stageDirName = matches[4];
-    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
-    info.parsedFileNameFromPath = matches[5];
-    info.fileTypeGuess = 'reduced_synthesis';
-    return info as DeconstructedPathInfo;
-  }
-
-  // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/_work/final_synthesis/{sanitizedOriginalFileName}
-  matches = fullPath.match(new RegExp(finalSynthesisPatternString));
-  if (matches) {
-    info.originalProjectId = matches[1];
-    info.shortSessionId = matches[2];
-    info.iteration = parseInt(matches[3], 10);
-    info.stageDirName = matches[4];
-    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
-    info.parsedFileNameFromPath = matches[5];
-    info.fileTypeGuess = 'final_synthesis';
-    return info as DeconstructedPathInfo;
+    return info;
   }
 
   // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/user_feedback_{sanitizedStageSlug}.md
@@ -143,7 +130,7 @@ export function deconstructStoragePath(
     info.stageSlug = mapDirNameToStageSlug(info.stageDirName); 
     info.parsedFileNameFromPath = `user_feedback_${matches[5]}.md`;
     info.fileTypeGuess = 'user_feedback';
-    return info as DeconstructedPathInfo;
+    return info;
   }
 
   // Path: {projectId}/sessions/{shortSessionId}/iteration_{iteration}/{mappedStageDir}/seed_prompt.md
@@ -156,7 +143,7 @@ export function deconstructStoragePath(
     info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
     info.parsedFileNameFromPath = 'seed_prompt.md';
     info.fileTypeGuess = 'seed_prompt';
-    return info as DeconstructedPathInfo;
+    return info;
   }
 
   // --- Project Root Level Files ---
@@ -167,7 +154,7 @@ export function deconstructStoragePath(
     info.originalProjectId = matches[1];
     info.parsedFileNameFromPath = 'project_readme.md';
     info.fileTypeGuess = 'project_readme';
-    return info as DeconstructedPathInfo;
+    return info;
   }
 
   // Path: {projectId}/project_settings.json
@@ -176,7 +163,7 @@ export function deconstructStoragePath(
     info.originalProjectId = matches[1];
     info.parsedFileNameFromPath = 'project_settings.json';
     info.fileTypeGuess = 'project_settings_file';
-    return info as DeconstructedPathInfo;
+    return info;
   }
 
   // Path: {projectId}/general_resource/{sanitizedOriginalFileName}
@@ -185,7 +172,7 @@ export function deconstructStoragePath(
     info.originalProjectId = matches[1];
     info.parsedFileNameFromPath = matches[2]; 
     info.fileTypeGuess = 'general_resource';
-    return info as DeconstructedPathInfo;
+    return info;
   }
   
   // Path: {projectId}/{sanitizedOriginalFileName}
@@ -194,9 +181,9 @@ export function deconstructStoragePath(
     info.originalProjectId = matches[1];
     info.parsedFileNameFromPath = matches[2]; 
     info.fileTypeGuess = 'initial_user_prompt';
-    return info as DeconstructedPathInfo;
+    return info;
   }
 
   info.error = 'Path did not match any known deconstruction patterns.';
-  return info as DeconstructedPathInfo;
+  return info;
 }

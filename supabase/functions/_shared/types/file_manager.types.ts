@@ -24,6 +24,7 @@ export type FileType =
   | 'pairwise_synthesis_chunk'
   | 'reduced_synthesis'
   | 'final_synthesis'
+  | 'rag_context_summary'
 
 /**
  * The context required to construct a unique, deterministic storage path for a file.

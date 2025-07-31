@@ -181,6 +181,16 @@ Deno.test('constructStoragePath', async (t) => {
     assertEquals(path.fileName, 'final_synthesis_document.md');
   });
 
+  await t.step('should construct path for rag_context_summary', () => {
+    const path = constructStoragePath({
+      ...sessionBaseContext,
+      fileType: 'rag_context_summary',
+      originalFileName: 'rag_summary.txt',
+    });
+    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}`);
+    assertEquals(path.fileName, 'rag_summary.txt');
+  });
+
   await t.step('should throw error if originalFileName is missing for initial_user_prompt', () => {
     assertThrows(() => {
       constructStoragePath({
@@ -268,6 +278,15 @@ Deno.test('constructStoragePath', async (t) => {
         fileType: 'final_synthesis',
       });
     }, Error, 'projectId, sessionId, iteration, stageSlug, and originalFileName are required for synthesis artifacts.');
+  });
+
+  await t.step('should throw error if originalFileName is missing for rag_context_summary', () => {
+    assertThrows(() => {
+      constructStoragePath({
+        ...sessionBaseContext,
+        fileType: 'rag_context_summary',
+      });
+    }, Error, 'projectId, sessionId, iteration, stageSlug, and originalFileName are required for rag_context_summary.');
   });
 
   await t.step('should sanitize complex file names for initial_user_prompt', () => {

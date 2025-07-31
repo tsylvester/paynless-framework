@@ -571,12 +571,46 @@ Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
         assert(!isDialecticJobPayload(['array', 'of', 'values']));
     });
 
-    await t.step('should return false when model_id contains a non-string', () => {
+       await t.step('should return false when model_id contains a non-string', () => {
+       const payload: Json = {
+           sessionId: 'test-session',
+           projectId: 'test-project',
+           model_id: 123, // Invalid: contains number
+           prompt: 'Valid prompt',
+       };
+       assert(!isDialecticJobPayload(payload));
+   });
+
+    await t.step('should return true for a valid job payload with selectedModelIds', () => {
         const payload: Json = {
             sessionId: 'test-session',
             projectId: 'test-project',
-            model_id: 123, // Invalid: contains number
-            prompt: 'Valid prompt',
+            selectedModelIds: ['model-1', 'model-2'],
+        };
+        assert(isDialecticJobPayload(payload));
+    });
+
+    await t.step('should return false when selectedModelIds is not an array of strings', () => {
+        const payload: Json = {
+            sessionId: 'test-session',
+            projectId: 'test-project',
+            selectedModelIds: ['model-1', 123],
+        };
+        assert(!isDialecticJobPayload(payload));
+    });
+
+    await t.step('should return false when sessionId is missing', () => {
+        const payload: Json = {
+            projectId: 'test-project',
+            model_id: 'model-1',
+        };
+        assert(!isDialecticJobPayload(payload));
+    });
+
+    await t.step('should return false when both model_id and selectedModelIds are missing', () => {
+        const payload: Json = {
+            sessionId: 'test-session',
+            projectId: 'test-project',
         };
         assert(!isDialecticJobPayload(payload));
     });
@@ -1270,6 +1304,17 @@ Deno.test('Type Guard: isDialecticCombinationJobPayload', async (t) => {
         };
         assert(!isDialecticCombinationJobPayload(payload));
     });
+
+    await t.step('should return false if prompt_template_name is not a string', () => {
+        const payload = {
+            job_type: 'combine',
+            sessionId: 's1',
+            projectId: 'p1',
+            model_id: 'm1',
+            prompt_template_name: 123,
+        };
+        assert(!isDialecticCombinationJobPayload(payload));
+    });
 });
 
 Deno.test('Type Guard: isDialecticStageRecipe', async (t) => {
@@ -1300,6 +1345,16 @@ Deno.test('Type Guard: isDialecticStageRecipe', async (t) => {
         };
         assert(!isDialecticStageRecipe(recipe));
     });
+
+    await t.step('should return false if inputs_required is not an array', () => {
+        const recipe = {
+            processing_strategy: { type: 'task_isolation' },
+            steps: [
+                { step: 1, prompt_template_name: 'p1', granularity_strategy: 'g1', output_type: 'o1', inputs_required: 'not-an-array' }
+            ]
+        };
+        assert(!isDialecticStageRecipe(recipe));
+    });
 });
 
 Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
@@ -1322,6 +1377,14 @@ Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
     await t.step('should return false if step_info is missing', () => {
         const payload = {
             job_type: 'plan'
+        };
+        assert(!isDialecticPlanJobPayload(payload));
+    });
+
+    await t.step('should return false if current_step is not a number', () => {
+        const payload = {
+            job_type: 'plan',
+            step_info: { current_step: '1' }
         };
         assert(!isDialecticPlanJobPayload(payload));
     });
@@ -1350,6 +1413,24 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
         const payload = {
             job_type: 'execute',
             prompt_template_name: 'p1'
+        };
+        assert(!isDialecticExecuteJobPayload(payload));
+    });
+
+    await t.step('should return false if prompt_template_name is not a string', () => {
+        const payload = {
+            job_type: 'execute',
+            prompt_template_name: 123,
+            inputs: {}
+        };
+        assert(!isDialecticExecuteJobPayload(payload));
+    });
+
+    await t.step('should return false if inputs is not a record', () => {
+        const payload = {
+            job_type: 'execute',
+            prompt_template_name: 'p1',
+            inputs: 'not-a-record'
         };
         assert(!isDialecticExecuteJobPayload(payload));
     });

@@ -85,7 +85,8 @@ export type ContributionType =
   | 'paralysis'
   | 'pairwise_synthesis_chunk'
   | 'reduced_synthesis'
-  | 'final_synthesis';
+  | 'final_synthesis'
+  | 'rag_context_summary';
 
 
 export interface DialecticSessionModel {

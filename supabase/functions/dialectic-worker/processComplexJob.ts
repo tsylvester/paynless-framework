@@ -7,12 +7,42 @@ import type {
     DialecticRecipeStep,
     GranularityPlannerFn,
 } from '../dialectic-service/dialectic.interface.ts';
-import { planComplexStage } from './task_isolator.ts';
 import type { ILogger } from '../_shared/types.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
-import { isDialecticPlanJobPayload, isDialecticStageRecipe, isJson } from '../_shared/utils/type_guards.ts';
+import { isDialecticPlanJobPayload, isDialecticStageRecipe, isJson, isRecord, isAiModelExtendedConfig } from '../_shared/utils/type_guards.ts';
+import { IRagService } from '../_shared/services/rag_service.interface.ts';
+import { IFileManager } from '../_shared/types/file_manager.types.ts';
+import { AiModelExtendedConfig, MessageForTokenCounting } from '../_shared/types.ts';
+
+export async function getAiProviderConfig(dbClient: SupabaseClient<Database>, modelId: string): Promise<AiModelExtendedConfig> {
+    const { data: providerData, error: providerError } = await dbClient
+        .from('ai_providers')
+        .select('config, api_identifier')
+        .eq('id', modelId)
+        .single();
+
+    if (providerError || !providerData) {
+        throw new Error(`Failed to fetch provider details for model ID ${modelId}: ${providerError?.message}`);
+    }
+    
+    if (!isRecord(providerData.config)) {
+        throw new Error(`Invalid configuration for provider ID '${modelId}'. Config is not a valid object.`);
+    }
+
+    const potentialConfig = {
+        ...providerData.config,
+        api_identifier: providerData.api_identifier,
+        model_id: modelId,
+    };
+
+    if (!isAiModelExtendedConfig(potentialConfig)) {
+        throw new Error(`Invalid configuration for provider ID '${modelId}'. The config object does not match the expected structure.`);
+    }
+    
+    return potentialConfig;
+}
 
 export interface IPlanComplexJobDeps {
     logger: ILogger;
@@ -25,6 +55,10 @@ export interface IPlanComplexJobDeps {
     promptAssembler: PromptAssembler;
     downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>;
     getGranularityPlanner: (strategyId: string) => GranularityPlannerFn | undefined;
+    ragService: IRagService;
+    fileManager: IFileManager;
+    countTokens: (messages: MessageForTokenCounting[], modelConfig: AiModelExtendedConfig) => number;
+    getAiProviderConfig: (dbClient: SupabaseClient<Database>, modelId: string) => Promise<AiModelExtendedConfig>;
 }
 
 export async function processComplexJob(
