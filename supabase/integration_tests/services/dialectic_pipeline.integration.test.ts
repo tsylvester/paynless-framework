@@ -19,7 +19,7 @@ import {
   type SubmitStageResponsesPayload,
   type StartSessionSuccessResponse,
   type StartSessionPayload,
-  ProcessSimpleJobDeps,
+  IDialecticJobDeps,
 } from "../../functions/dialectic-service/dialectic.interface.ts";
 import { generateContributions } from "../../functions/dialectic-service/generateContribution.ts";
 import { isDialecticJobPayload, isDialecticJobRow } from "../../functions/_shared/utils/type_guards.ts";
@@ -38,11 +38,15 @@ import { submitStageResponses } from "../../functions/dialectic-service/submitSt
 import { downloadFromStorage } from "../../functions/_shared/supabase_storage_utils.ts";
 import { executeModelCallAndSave } from "../../functions/dialectic-worker/executeModelCallAndSave.ts";
 import { type UploadContext, IFileManager } from "../../functions/_shared/types/file_manager.types.ts";
+import { MockRagService } from "../../functions/_shared/services/rag_service.mock.ts";
+import { MockIndexingService } from "../../functions/_shared/services/indexing_service.mock.ts";
+import { IEmbeddingClient, IIndexingService } from "../../functions/_shared/services/indexing_service.interface.ts";
+import { IRagService } from "../../functions/_shared/services/rag_service.interface.ts";
 
 // --- Test Suite Setup ---
 let adminClient: SupabaseClient<Database>;
 const mockAiAdapter = new MockAiProviderAdapter();
-let testDeps: ProcessSimpleJobDeps;
+let testDeps: IDialecticJobDeps;
 
 const pollForCondition = async (
   condition: () => Promise<boolean>,
@@ -87,7 +91,7 @@ const pollForJobStatus = async (
 
 const executePendingDialecticJobs = async (
     sessionId: string,
-    deps: ProcessSimpleJobDeps,
+    deps: IDialecticJobDeps,
     authToken: string,
     mockProcessors: IJobProcessors
 ) => {
@@ -160,6 +164,9 @@ Deno.test(
     let testSession: StartSessionSuccessResponse | null = null;
     let modelAId: string;
     let modelBId: string;
+    let mockRagService: IRagService;
+    let mockIndexingService: IIndexingService;
+    let mockEmbeddingClient: IEmbeddingClient;
 
     const setup = async () => {
         adminClient = initializeSupabaseAdminClient();
@@ -240,6 +247,12 @@ Deno.test(
         );
         mockAiAdapter.reset();
 
+        mockRagService = new MockRagService();
+        mockIndexingService = new MockIndexingService();
+        mockEmbeddingClient = {
+            createEmbedding: () => Promise.resolve(Array(1536).fill(0.1)),
+        };
+
         testDeps = {
             logger: testLogger,
             fileManager: new FileManagerService(adminClient),
@@ -300,6 +313,9 @@ Deno.test(
                 sendDialecticProgressUpdateEvent: () => Promise.resolve(),
             },
             executeModelCallAndSave,
+            ragService: mockRagService,
+            indexingService: mockIndexingService,
+            embeddingClient: mockEmbeddingClient,
         };
     };
 
@@ -481,7 +497,7 @@ Deno.test(
         assert(false, "Downloaded content for contribution B was null.");
       }
       
-      // --- Act: Submit Responses ---
+            // --- Act: Submit Responses ---
       const submitPayload: SubmitStageResponsesPayload = {
         sessionId: testSession.id,
         projectId: testSession.project_id,
@@ -493,18 +509,21 @@ Deno.test(
         }))
       };
 
+      const submitDeps = { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage, indexingService: mockIndexingService, embeddingClient: mockEmbeddingClient };
       const { data: submitData, error: submitError } = await submitStageResponses(
         submitPayload,
         adminClient,
         primaryUser,
-        { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage }
+        submitDeps
       );
       
       assert(!submitError, `Error submitting responses: ${JSON.stringify(submitError)}`);
       assertExists(submitData, "Submission did not return data.");
+  
       if (submitData && submitData.updatedSession) {
         assert(submitData.updatedSession.status === 'pending_antithesis', `Session status is not pending_antithesis, but ${submitData.updatedSession.status}`);
         testSession = submitData.updatedSession;
+ 
       } else {
         assert(false, "Submission failed to return an updated session.");
       }
@@ -630,11 +649,12 @@ Deno.test(
         }))
       };
       
+      const submitDeps = { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage, indexingService: mockIndexingService, embeddingClient: mockEmbeddingClient };
       const { data: submitData, error: submitError } = await submitStageResponses(
         submitPayload,
         adminClient,
         primaryUser,
-        { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage }
+        submitDeps
       );
 
       assert(!submitError, `Error submitting antithesis responses: ${JSON.stringify(submitError)}`);
@@ -755,16 +775,20 @@ Deno.test(
             }))
         };
 
+        const submitDeps = { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage, indexingService: mockIndexingService, embeddingClient: mockEmbeddingClient };
         const { data: submitData, error: submitError } = await submitStageResponses(
             submitPayload,
             adminClient,
             primaryUser,
-            { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage }
+            submitDeps
         );
 
+        if (submitData && submitData.updatedSession) {
         assert(!submitError, `Error submitting synthesis responses: ${JSON.stringify(submitError)}`);
-        assert(submitData?.updatedSession?.status === 'pending_parenthesis', `Session status should be pending_parenthesis, but was ${submitData?.updatedSession?.status}`);
-        testSession = submitData.updatedSession;
+        assertExists(submitData, "Submission did not return data.");
+            assert(submitData?.updatedSession?.status === 'pending_parenthesis', `Session status should be pending_parenthesis, but was ${submitData?.updatedSession?.status}`);
+            testSession = submitData.updatedSession;
+        }
         
         // --- Act ---
         const generatePayload: GenerateContributionsPayload = {
@@ -832,16 +856,20 @@ Deno.test(
             }))
         };
 
+        const submitDeps = { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage, indexingService: mockIndexingService, embeddingClient: mockEmbeddingClient };
         const { data: submitData, error: submitError } = await submitStageResponses(
             submitPayload,
             adminClient,
             primaryUser,
-            { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage }
+            submitDeps
         );
 
+        if (submitData && submitData.updatedSession) {
         assert(!submitError, `Error submitting parenthesis responses: ${JSON.stringify(submitError)}`);
-        assert(submitData?.updatedSession?.status === 'pending_paralysis', `Session status should be pending_paralysis, but was ${submitData?.updatedSession?.status}`);
-        testSession = submitData.updatedSession;
+        assertExists(submitData, "Submission did not return data.");
+            assert(submitData?.updatedSession?.status === 'pending_paralysis', `Session status should be pending_paralysis, but was ${submitData?.updatedSession?.status}`);
+            testSession = submitData.updatedSession;
+        }
         
         // --- Act ---
         const generatePayload: GenerateContributionsPayload = {

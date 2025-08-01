@@ -15,6 +15,7 @@ import type { NotificationServiceType } from '../_shared/types/notification.serv
 import type { IIndexingService, IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
 import type { IRagService } from '../_shared/services/rag_service.interface.ts';
 import type { MessageForTokenCounting, AiModelExtendedConfig } from '../_shared/types.ts';
+import type { IPromptAssembler } from '../_shared/prompt-assembler.interface.ts';
 
 export type StorageError = {
   message: string;
@@ -769,4 +770,12 @@ export interface DialecticStageRecipe {
         type: 'task_isolation';
     };
     steps: DialecticRecipeStep[];
+}
+
+
+export interface StartSessionDeps {
+  logger: ILogger;
+  fileManager: IFileManager;
+  promptAssembler: IPromptAssembler;
+  randomUUID: () => string;
 }

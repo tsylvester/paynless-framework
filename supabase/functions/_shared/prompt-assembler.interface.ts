@@ -1,4 +1,42 @@
-import { Tables } from "../types_db.ts";
+import { Json, Tables } from "../types_db.ts";
+import { AiModelExtendedConfig } from "./types.ts";
+
+export interface IPromptAssembler {
+    assemble(
+        project: ProjectContext, 
+        session: SessionContext,
+        stage: StageContext,
+        projectInitialUserPrompt: string,
+        iterationNumber: number,
+        modelConfigForTokenization: AiModelExtendedConfig,
+        minTokenLimit: number
+    ): Promise<string>;
+
+    gatherContext(
+        project: ProjectContext,
+        session: SessionContext,
+        stage: StageContext,
+        projectInitialUserPrompt: string,
+        iterationNumber: number,
+        overrideContributions?: ContributionOverride[],
+        modelConfigForTokenization?: AiModelExtendedConfig,
+        minTokenLimit?: number
+    ): Promise<DynamicContextVariables>;
+
+    render(
+        stage: StageContext,
+        context: DynamicContextVariables,
+        userProjectOverlayValues?: Json | null
+    ): string;
+
+    gatherInputsForStage(
+        stage: StageContext, 
+        project: ProjectContext, 
+        session: SessionContext, 
+        iterationNumber: number
+    ): Promise<SourceDocument[]>;
+}
+
 export type DynamicContextVariables = {
     user_objective: string,
     domain: string,

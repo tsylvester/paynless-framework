@@ -6,14 +6,15 @@ import { downloadFromStorage } from "./supabase_storage_utils.ts";
 import { DialecticContributionRow, InputArtifactRules, ArtifactSourceRule } from '../dialectic-service/dialectic.interface.ts';
 import { DynamicContextVariables, ProjectContext, SessionContext, StageContext, RenderPromptFunctionType, ContributionOverride, SourceDocument } from "./prompt-assembler.interface.ts";
 import type { DownloadStorageResult } from "./supabase_storage_utils.ts";
-import { hasProcessingStrategy, isDialecticChunkMetadata } from "./utils/type_guards.ts";
+import { hasProcessingStrategy } from "./utils/type_guards.ts";
 import { join } from "jsr:@std/path/join";
 import { AiModelExtendedConfig, MessageForTokenCounting } from "./types.ts";
 import { IRagServiceDependencies, IRagService } from "./services/rag_service.interface.ts";
 import { RagService } from "./services/rag_service.ts";
 import { countTokensForMessages } from "./utils/tokenizer_utils.ts";
+import type { IPromptAssembler } from "./prompt-assembler.interface.ts";
 
-export class PromptAssembler {
+export class PromptAssembler implements IPromptAssembler {
     private dbClient: SupabaseClient<Database>;
     private storageBucket: string;
     private renderPromptFn: RenderPromptFunctionType;

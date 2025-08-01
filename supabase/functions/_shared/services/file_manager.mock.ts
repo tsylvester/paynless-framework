@@ -1,5 +1,7 @@
 // supabase/functions/_shared/services/file_manager.mock.ts
 import { spy, type Spy } from 'https://deno.land/std@0.218.2/testing/mock.ts';
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import type { Database } from '../../types_db.ts';
 import type { ServiceError } from '../types.ts';
 import type {
   FileRecord,
@@ -13,39 +15,36 @@ import type {
  * Its methods are spies that can be configured to return specific values.
  */
 export class MockFileManagerService implements IFileManager {
-  uploadAndRegisterFileSpy: Spy<
-    this,
-    [context: UploadContext],
-    Promise<FileManagerResponse>
-  >;
-  private mockResponse: FileManagerResponse = { record: null, error: { message: 'Default mock error' } };
+  supabase: SupabaseClient<Database>;
+  storageBucket = 'mock-bucket';
+
+  uploadAndRegisterFile: Spy<this, [context: UploadContext], Promise<FileManagerResponse>>;
+  getFileSignedUrl: Spy<this, [fileId: string, table: 'dialectic_project_resources' | 'dialectic_contributions' | 'dialectic_feedback'], Promise<{ signedUrl: string | null; error: Error | null; }>>;
 
   constructor() {
-    this.uploadAndRegisterFileSpy = spy(async (_context: UploadContext) => {
-      // The spy now returns the mockResponse property of the instance.
-      return await Promise.resolve(this.mockResponse);
+    this.supabase = {} as SupabaseClient<Database>; // Mock Supabase client
+    this.uploadAndRegisterFile = spy(async (_context: UploadContext) => {
+      return await Promise.resolve({ record: null, error: { message: 'Default mock error' } });
+    });
+    this.getFileSignedUrl = spy(async (_fileId: string, _table: 'dialectic_project_resources' | 'dialectic_contributions' | 'dialectic_feedback') => {
+        return await Promise.resolve({ signedUrl: 'http://mock.url/file', error: null });
     });
   }
 
-  // This is the actual method that will be called by the application code.
-  // It's not a spy itself, but it calls the spy.
-  async uploadAndRegisterFile(context: UploadContext): Promise<FileManagerResponse> {
-    return this.uploadAndRegisterFileSpy(context);
-  }
-
   /**
-   * Resets the spy for the uploadAndRegisterFile method.
-   * This will still recreate the spy to clear call history.
+   * Resets the spies for all methods.
    */
   reset() {
-    this.uploadAndRegisterFileSpy = spy(async (_context: UploadContext) => {
-      return await Promise.resolve({ record: null, error: { message: 'Default mock error' } });
+    this.uploadAndRegisterFile = spy(async (_context: UploadContext) => {
+        return await Promise.resolve({ record: null, error: { message: 'Default mock error' } });
+    });
+    this.getFileSignedUrl = spy(async (_fileId: string, _table: 'dialectic_project_resources' | 'dialectic_contributions' | 'dialectic_feedback') => {
+        return await Promise.resolve({ signedUrl: 'http://mock.url/file', error: null });
     });
   }
 
   /**
    * Configures the mock response for the uploadAndRegisterFile method.
-   * This no longer creates a new spy, preserving the call history.
    * @param record The FileRecord to return on success, or null.
    * @param error The ServiceError to return on failure, or null.
    */
@@ -53,14 +52,11 @@ export class MockFileManagerService implements IFileManager {
     record: FileRecord | null,
     error: ServiceError | null,
   ) {
-    if (error) {
-      this.mockResponse = { record: null, error };
-    } else if (record) {
-      this.mockResponse = { record, error: null };
-    } else {
-      // To satisfy the contract, we must return an error if no record is provided.
-      this.mockResponse = { record: null, error: { message: 'Mock not configured to return a record.' } };
-    }
+      this.uploadAndRegisterFile = spy(async (_context: UploadContext) => {
+          if(error) return await Promise.resolve({ record: null, error });
+          if(record) return await Promise.resolve({ record, error: null });
+          return await Promise.resolve({ record: null, error: { message: 'Mock not configured to return a record.' } });
+      });
   }
 }
 
