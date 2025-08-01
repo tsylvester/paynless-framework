@@ -12,9 +12,15 @@ import { logger } from '../_shared/logger.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { isDialecticJobPayload, isRecord } from '../_shared/utils/type_guards.ts';
 import { processSimpleJob } from './processSimpleJob.ts';
-import type { DialecticJobRow, DialecticJobPayload, DialecticSession, DialecticContributionRow, ProcessSimpleJobDeps, SelectedAiProvider } from '../dialectic-service/dialectic.interface.ts';
+import type { DialecticJobRow, DialecticJobPayload, DialecticSession, DialecticContributionRow, IDialecticJobDeps, SelectedAiProvider } from '../dialectic-service/dialectic.interface.ts';
 import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
+import { MockRagService } from '../_shared/services/rag_service.mock.ts';
+import { getAiProviderConfig } from './processComplexJob.ts';
+import { getGranularityPlanner } from './strategies/granularity.strategies.ts';
+import { planComplexStage } from './task_isolator.ts';
+import { IndexingService, LangchainTextSplitter, OpenAIEmbeddingClient } from '../_shared/services/indexing_service.ts';
+import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
 
 const mockPayload: Json = {
   projectId: 'project-abc',
@@ -131,7 +137,13 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
     });
 };
 
-const getMockDeps = (): ProcessSimpleJobDeps => {
+const getMockDeps = (): IDialecticJobDeps => {
+    const mockSupabaseClient = createMockSupabaseClient().client as unknown as SupabaseClient<Database>;
+    const openAiAdapter = new OpenAiAdapter(Deno.env.get('OPENAI_API_KEY')!, logger);
+    const embeddingClient = new OpenAIEmbeddingClient(openAiAdapter);
+    const textSplitter = new LangchainTextSplitter();
+    const indexingService = new IndexingService(mockSupabaseClient, logger, textSplitter, embeddingClient);
+    
     return {
       logger: logger,
       downloadFromStorage: async (): Promise<DownloadStorageResult> => ({
@@ -147,14 +159,20 @@ const getMockDeps = (): ProcessSimpleJobDeps => {
       }),
       retryJob: async () => ({}),
       notificationService: mockNotificationService,
-      // The old dependencies are no longer needed here as they are used by the executor
-      callUnifiedAIModel: async () => ({ content: '' }),
+      callUnifiedAIModel: async () => ({ content: '', finish_reason: 'stop' }),
       fileManager: new MockFileManagerService(),
       getExtensionFromMimeType: () => '.txt',
       randomUUID: () => 'random-uuid',
       deleteFromStorage: async () => ({ data: null, error: null }),
       continueJob: async () => ({ enqueued: false }),
       executeModelCallAndSave: async () => {},
+      ragService: new MockRagService(),
+      countTokens: () => 100,
+      getAiProviderConfig: getAiProviderConfig,
+      getGranularityPlanner: getGranularityPlanner,
+      planComplexStage: planComplexStage,
+      indexingService,
+      embeddingClient,
     }
 };
 

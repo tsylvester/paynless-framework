@@ -2,8 +2,8 @@ import { assertEquals, assertExists, assert } from 'https://deno.land/std@0.170.
 import { spy } from 'jsr:@std/testing@0.225.1/mock';
 import type { Database, Json, Tables } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
-import { processComplexJob, type IPlanComplexJobDeps } from './processComplexJob.ts';
-import type { DialecticJobRow, GranularityPlannerFn, DialecticPlanJobPayload } from '../dialectic-service/dialectic.interface.ts';
+import { processComplexJob } from './processComplexJob.ts';
+import type { DialecticJobRow, GranularityPlannerFn, DialecticPlanJobPayload, IDialecticJobDeps, UnifiedAIResponse } from '../dialectic-service/dialectic.interface.ts';
 import { isRecord, isJson } from '../_shared/utils/type_guards.ts';
 import { logger } from '../_shared/logger.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
@@ -13,6 +13,7 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 import { describe, it, beforeEach } from 'https://deno.land/std@0.170.0/testing/bdd.ts';
+import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 
 const mockStage: Pick<Tables<'dialectic_stages'>, 'input_artifact_rules'> = {
     input_artifact_rules: {
@@ -26,14 +27,20 @@ const mockStage: Pick<Tables<'dialectic_stages'>, 'input_artifact_rules'> = {
 
 describe('processComplexJob', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
-    let mockDeps: IPlanComplexJobDeps;
+    let mockDeps: IDialecticJobDeps;
     let mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload };
     
     beforeEach(() => {
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: { 'dialectic_stages': { select: { data: [mockStage], error: null } } }
         });
-        const promptAssembler = new PromptAssembler(mockSupabase.client as unknown as SupabaseClient<Database>);
+        const ragServiceDeps = {
+            dbClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+            logger: logger,
+            indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+            embeddingClient: { createEmbedding: () => Promise.resolve([]) },
+        };
+        const promptAssembler = new PromptAssembler(mockSupabase.client as unknown as SupabaseClient<Database>, ragServiceDeps);
 
         const mockPayload: DialecticPlanJobPayload = {
             job_type: 'plan',
@@ -68,31 +75,46 @@ describe('processComplexJob', () => {
             prerequisite_job_id: null,
         };
 
-        mockDeps = {
-            logger,
-            planComplexStage: spy(async () => Promise.resolve([])),
-            promptAssembler,
-            downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ 
-                data: await new Blob(['Mock content']).arrayBuffer(), 
-                error: null 
-            })),
-            getGranularityPlanner: spy((_strategyId: string): GranularityPlannerFn | undefined => undefined),
-            ragService: new MockRagService(),
-            fileManager: new MockFileManagerService(),
-            countTokens: spy(() => 0),
-            getAiProviderConfig: spy(async () => Promise.resolve({
-                api_identifier: 'mock-api',
-                input_token_cost_rate: 0,
-                output_token_cost_rate: 0,
-                provider_max_input_tokens: 8192,
-                tokenization_strategy: { 
-                    type: 'tiktoken', 
-                    tiktoken_encoding_name: 'cl100k_base', 
-                    tiktoken_model_name_for_rules_fallback: 'gpt-4o', 
-                    is_chatml_model: false, 
-                    api_identifier_for_tokenization: 'mock-api' },
-            })),
-        };
+            const mockUnifiedAIResponse: UnifiedAIResponse = { content: 'mock', finish_reason: 'stop' };
+            mockDeps = {
+                logger,
+                planComplexStage: spy(async () => Promise.resolve([])),
+                downloadFromStorage: spy(async (): Promise<DownloadStorageResult> => ({ 
+                    data: await new Blob(['Mock content']).arrayBuffer(), 
+                    error: null 
+                })),
+                getGranularityPlanner: spy((_strategyId: string): GranularityPlannerFn | undefined => undefined),
+                ragService: new MockRagService(),
+                fileManager: new MockFileManagerService(),
+                countTokens: spy(() => 0),
+                getAiProviderConfig: spy(async () => Promise.resolve({
+                    api_identifier: 'mock-api',
+                    input_token_cost_rate: 0,
+                    output_token_cost_rate: 0,
+                    provider_max_input_tokens: 8192,
+                    tokenization_strategy: { 
+                        type: 'tiktoken', 
+                        tiktoken_encoding_name: 'cl100k_base', 
+                        tiktoken_model_name_for_rules_fallback: 'gpt-4o', 
+                        is_chatml_model: false, 
+                        api_identifier_for_tokenization: 'mock-api' },
+                })),
+                callUnifiedAIModel: spy(async () => mockUnifiedAIResponse),
+                getSeedPromptForStage: spy(async () => ({ 
+                    content: 'mock', 
+                    fullPath: 'mock', 
+                    bucket: 'mock', 
+                    path: 'mock', 
+                    fileName: 'mock' 
+                })),
+                continueJob: spy(async () => ({ enqueued: true })),
+                retryJob: spy(async () => ({})),
+                notificationService: mockNotificationService,
+                executeModelCallAndSave: spy(async () => {}),
+                getExtensionFromMimeType: spy(() => '.txt'),
+                randomUUID: spy(() => 'mock-uuid'),
+                deleteFromStorage: spy(async () => ({ data: [], error: null })),
+            };
     });
 
     it('plans and enqueues child jobs', async () => {

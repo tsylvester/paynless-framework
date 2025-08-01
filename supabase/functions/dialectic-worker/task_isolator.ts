@@ -1,16 +1,15 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import {
-    DialecticCombinationJobPayload,
     DialecticExecuteJobPayload,
     DialecticJobRow,
     DialecticPlanJobPayload,
     DialecticRecipeStep,
     SourceDocument,
+    IDialecticJobDeps
 } from '../dialectic-service/dialectic.interface.ts';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import { ILogger, MessageForTokenCounting } from '../_shared/types.ts';
-import { IPlanComplexJobDeps } from './processComplexJob.ts';
-import { isDialecticCombinationJobPayload, isDialecticExecuteJobPayload, isDialecticPlanJobPayload, isJson } from '../_shared/utils/type_guards.ts';
+import { isDialecticExecuteJobPayload, isDialecticPlanJobPayload, isJson } from '../_shared/utils/type_guards.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { Database, Tables } from '../types_db.ts';
 
@@ -81,7 +80,7 @@ async function findSourceDocuments(
 export async function planComplexStage(
     dbClient: SupabaseClient<Database>,
     parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
-    deps: IPlanComplexJobDeps,
+    deps: IDialecticJobDeps,
     recipeStep: DialecticRecipeStep,
 ): Promise<DialecticJobRow[]> {
     deps.logger.info(`[task_isolator] [planComplexStage] Planning step "${recipeStep.name}" for parent job ID: ${parentJob.id}`);
@@ -101,7 +100,7 @@ export async function planComplexStage(
     }
 
     // 2. Perform token estimation and check against the model's limit.
-    const modelConfig = await deps.getAiProviderConfig(dbClient, parentJob.payload.model_id);
+    const modelConfig = await deps.getAiProviderConfig!(dbClient, parentJob.payload.model_id);
     const maxTokens = modelConfig.provider_max_input_tokens;
 
     if (!maxTokens) {
@@ -109,14 +108,14 @@ export async function planComplexStage(
     }
 
     const messagesForTokenCounting: MessageForTokenCounting[] = sourceDocuments.map(doc => ({ role: 'user', content: doc.content }));
-    const estimatedTokens = deps.countTokens(messagesForTokenCounting, modelConfig);
+    const estimatedTokens = deps.countTokens!(messagesForTokenCounting, modelConfig);
 
-    let childJobPayloads: (DialecticExecuteJobPayload | DialecticCombinationJobPayload)[];
+    let childJobPayloads: DialecticExecuteJobPayload[];
 
     if (estimatedTokens > maxTokens) {
         deps.logger.info(`[task_isolator] Context for job ${parentJob.id} exceeds token limit (${estimatedTokens} > ${maxTokens}). Invoking RAG service.`);
         
-        const ragResult = await deps.ragService.getContextForModel(
+        const ragResult = await deps.ragService!.getContextForModel(
             sourceDocuments.map(doc => ({ id: doc.id, content: doc.content })),
             modelConfig,
             parentJob.session_id,
@@ -176,7 +175,7 @@ export async function planComplexStage(
 
     } else {
         // 3. If tokens are within limits, proceed with normal planning.
-        const planner = deps.getGranularityPlanner(recipeStep.granularity_strategy);
+        const planner = deps.getGranularityPlanner!(recipeStep.granularity_strategy);
         if (!planner) {
             throw new Error(`No planner found for granularity strategy: ${recipeStep.granularity_strategy}`);
         }
@@ -186,7 +185,7 @@ export async function planComplexStage(
     // 4. Map to full job rows for DB insertion.
     const childJobsToInsert: DialecticJobRow[] = [];
     for (const payload of childJobPayloads) {
-        if ((isDialecticExecuteJobPayload(payload) || isDialecticCombinationJobPayload(payload)) && isJson(payload)) {
+        if (isDialecticExecuteJobPayload(payload) && isJson(payload)) {
             childJobsToInsert.push({
                 id: crypto.randomUUID(),
                 parent_job_id: parentJob.id,

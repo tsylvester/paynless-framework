@@ -1,10 +1,8 @@
 // supabase/functions/dialectic-worker/strategies/granularity.strategies.test.ts
 import { assertEquals, assertExists } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { getGranularityPlanner, granularityStrategyMap } from './granularity.strategies.ts';
-import { planAllToOne } from './planners/planAllToOne.ts';
 import { planPairwiseByOrigin } from './planners/planPairwiseByOrigin.ts';
 import { planPerSourceDocument } from './planners/planPerSourceDocument.ts';
-import { planPerSourceGroup } from './planners/planPerSourceGroup.ts';
 
 Deno.test('granularityStrategyMap should contain all core planners', () => {
     assertExists(granularityStrategyMap.get('per_source_document'));
@@ -12,12 +10,6 @@ Deno.test('granularityStrategyMap should contain all core planners', () => {
 
     assertExists(granularityStrategyMap.get('pairwise_by_origin'));
     assertEquals(granularityStrategyMap.get('pairwise_by_origin'), planPairwiseByOrigin);
-
-    assertExists(granularityStrategyMap.get('per_source_group'));
-    assertEquals(granularityStrategyMap.get('per_source_group'), planPerSourceGroup);
-
-    assertExists(granularityStrategyMap.get('all_to_one'));
-    assertEquals(granularityStrategyMap.get('all_to_one'), planAllToOne);
 });
 
 Deno.test('getGranularityPlanner should return the correct function for each valid strategy', () => {
@@ -26,12 +18,6 @@ Deno.test('getGranularityPlanner should return the correct function for each val
 
     const planner2 = getGranularityPlanner('pairwise_by_origin');
     assertEquals(planner2, planPairwiseByOrigin);
-
-    const planner3 = getGranularityPlanner('per_source_group');
-    assertEquals(planner3, planPerSourceGroup);
-
-    const planner4 = getGranularityPlanner('all_to_one');
-    assertEquals(planner4, planAllToOne);
 });
 
 Deno.test('getGranularityPlanner should return the default planner for an invalid strategy', () => {

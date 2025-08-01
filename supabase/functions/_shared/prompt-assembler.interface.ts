@@ -1,5 +1,4 @@
 import { Tables } from "../types_db.ts";
-
 export type DynamicContextVariables = {
     user_objective: string,
     domain: string,
@@ -34,3 +33,19 @@ export type RenderPromptFunctionType = (
     systemDefaultOverlayValues?: Tables<'domain_specific_prompt_overlays'>['overlay_values'] | null,
     userProjectOverlayValues?: Tables<'domain_specific_prompt_overlays'>['overlay_values'] | null
 ) => string;
+
+export type ContributionOverride = {
+    content: string;
+
+};
+// Define a granular document type
+export interface SourceDocument {
+	id: string;
+	type: 'contribution' | 'feedback';
+	content: string;
+	metadata: {
+		displayName: string;
+		header?: string;
+		modelName?: string;
+	}
+}

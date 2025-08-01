@@ -7,7 +7,6 @@ import type {
     DialecticJobRow,
     JobResultsWithModelProcessing,
     ModelProcessingResult,
-    DialecticCombinationJobPayload,
     DialecticStageRecipe,
     DialecticPlanJobPayload,
     DialecticExecuteJobPayload,
@@ -103,34 +102,6 @@ export function isDialecticJobPayload(payload: unknown): payload is DialecticJob
         // If validatePayload throws, it's not a valid payload.
         return false;
     }
-}
-
-export function isDialecticCombinationJobPayload(payload: unknown): payload is DialecticCombinationJobPayload {
-    if (!isJson(payload) || !isDialecticJobPayload(payload)) {
-        return false;
-    }
-
-    // `payload` is now `Json & DialecticJobPayload`, so we can safely check properties.
-    if (!('job_type' in payload) || payload.job_type !== 'combine') {
-        return false;
-    }
-
-    if ('prompt_template_name' in payload && typeof payload.prompt_template_name !== 'string') {
-        return false;
-    }
-    
-    if ('inputs' in payload) {
-        if (!isRecord(payload.inputs)) {
-            return false;
-        }
-        if ('document_ids' in payload.inputs) {
-            if (!Array.isArray(payload.inputs.document_ids) || !payload.inputs.document_ids.every((id: unknown) => typeof id === 'string')) {
-                return false;
-            }
-        }
-    }
-
-    return true;
 }
 
 /**

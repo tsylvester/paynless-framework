@@ -47,6 +47,7 @@ const MOCK_USER: User = { id: MOCK_USER_ID, app_metadata: {}, user_metadata: {},
 const MOCK_PROJECT_ID = '767ef5cd-16b1-438b-9ac3-8fe8d263c5cb';
 const MOCK_PROCESS_TEMPLATE_ID = 'bb1115db-0918-4bbd-a400-b200f280c3e8';
 const MOCK_CONTRIBUTIONS_BUCKET = 'dialectic-contributions';
+const MOCK_MODEL_ID = 'model-id-1';
 
   const mockThesisStage: DialecticStage = {
     id: '97fa6f30-3674-4f32-bdb4-dff963423bbf',
@@ -64,6 +65,7 @@ function createTestSessionData(sessionId: string, projectId: string, projectName
   return {
     id: sessionId,
     iteration_count: 1,
+    selected_model_ids: [MOCK_MODEL_ID],
     project: {
       id: projectId,
       user_id: MOCK_USER_ID,
@@ -147,7 +149,9 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         logger: mockLogger,
         fileManager: createMockFileManagerService(),
         downloadFromStorage: downloadFromStorageSpy,
-    };
+        indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+        embeddingClient: { createEmbedding: () => Promise.resolve([]) }
+      };
 
     const { error, status } = await submitStageResponses(mockPayload, mockSupabaseClient as unknown as SupabaseClient<Database>, MOCK_USER, mockDependencies);
     assertEquals(status, 400, `Test 3.7 failed.`);
@@ -192,7 +196,9 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         logger: mockLogger,
         fileManager: createMockFileManagerService(),
         downloadFromStorage: spy(async () => ({ data: new ArrayBuffer(0), error: null })),
-    };
+        indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+        embeddingClient: { createEmbedding: () => Promise.resolve([]) }
+      };
 
     const { error, status } = await submitStageResponses(mockPayload, mockSupabaseClient as unknown as SupabaseClient<Database>, MOCK_USER, mockDependencies);
 
@@ -227,6 +233,9 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         'dialectic_sessions': {
           select: { data: [createTestSessionData(testSessionId, MOCK_PROJECT_ID, 'DB Test Project 6.1')], error: null },
           update: { data: [{ id: testSessionId, status: 'pending_antithesis', current_stage_id: '94cd4fee-b44c-465d-bad0-38e8e2116b5b' }], error: null }
+        },
+        'ai_providers': {
+          select: { data: [{ config: { provider_max_input_tokens: 8000, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } }, api_identifier: 'mock-api-id' }], error: null }
         },
         'dialectic_stage_transitions': { 
           select: { data: [mockStageTransitionData('94cd4fee-b44c-465d-bad0-38e8e2116b5b')], error: null }
@@ -276,6 +285,8 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
       logger: mockLogger,
       fileManager: mockFileManager,
       downloadFromStorage: downloadFromStorageSpy,
+      indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+      embeddingClient: { createEmbedding: () => Promise.resolve([]) }
     };
 
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabaseClient as unknown as SupabaseClient<Database>, MOCK_USER, mockDependencies);
@@ -308,6 +319,9 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         'dialectic_sessions': { 
           select: { data: [createTestSessionData(testSessionId, MOCK_PROJECT_ID, 'DB Test Project 6.4', 'mock-repo-url-6.4')], error: null },
           update: { data: [{ id: testSessionId, status: 'pending_antithesis', current_stage_id: 'c6aaf630-e80e-4423-9452-b6d02385c2ce' }], error: null }
+        },
+        'ai_providers': {
+          select: { data: [{ config: { provider_max_input_tokens: 8000, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } }, api_identifier: 'mock-api-id' }], error: null }
         },
         'dialectic_stage_transitions': {
           select: {
@@ -383,6 +397,8 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         logger: mockLogger,
         fileManager: mockFileManager,
         downloadFromStorage: downloadSpy,
+        indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+        embeddingClient: { createEmbedding: () => Promise.resolve([]) }
     };
 
     const { data, status, error } = await submitStageResponses(mockPayload, mockSupabaseClient as unknown as SupabaseClient<Database>, MOCK_USER, mockDependencies);

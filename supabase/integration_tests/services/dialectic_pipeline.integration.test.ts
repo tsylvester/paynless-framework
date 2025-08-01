@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { type Stub, stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
-import { type SupabaseClient, type User, type PostgrestSingleResponse } from "npm:@supabase/supabase-js@2";
+import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import {
   coreCleanupTestResources,
   coreCreateAndSetupTestUser,
@@ -9,11 +9,10 @@ import {
   setSharedAdminClient,
   testLogger,
 } from "../../functions/_shared/_integration.test.utils.ts";
-import { type Database, type Json } from "../../functions/types_db.ts";
+import { type Database } from "../../functions/types_db.ts";
 import { getAiProviderAdapter } from "../../functions/_shared/ai_service/factory.ts";
 import { MockAiProviderAdapter } from "../../functions/_shared/ai_service/ai_provider.mock.ts";
 import {
-  type GenerateContributionsDeps,
   type GenerateContributionsPayload,
   type DialecticJobRow,
   type DialecticProject,
@@ -21,10 +20,9 @@ import {
   type StartSessionSuccessResponse,
   type StartSessionPayload,
   ProcessSimpleJobDeps,
-  DialecticJobPayload,
 } from "../../functions/dialectic-service/dialectic.interface.ts";
 import { generateContributions } from "../../functions/dialectic-service/generateContribution.ts";
-import { isJobResultsWithModelProcessing, isDialecticJobPayload, isDialecticJobRow } from "../../functions/_shared/utils/type_guards.ts";
+import { isDialecticJobPayload, isDialecticJobRow } from "../../functions/_shared/utils/type_guards.ts";
 import { isTokenUsage, type ChatApiRequest } from "../../functions/_shared/types.ts";
 import { type IJobProcessors } from "../../functions/dialectic-worker/processJob.ts";
 import { processSimpleJob } from "../../functions/dialectic-worker/processSimpleJob.ts";
@@ -39,7 +37,6 @@ import { startSession } from "../../functions/dialectic-service/startSession.ts"
 import { submitStageResponses } from "../../functions/dialectic-service/submitStageResponses.ts";
 import { downloadFromStorage } from "../../functions/_shared/supabase_storage_utils.ts";
 import { executeModelCallAndSave } from "../../functions/dialectic-worker/executeModelCallAndSave.ts";
-import { processCombinationJob } from "../../functions/dialectic-worker/processCombinationJob.ts";
 import { type UploadContext, IFileManager } from "../../functions/_shared/types/file_manager.types.ts";
 
 // --- Test Suite Setup ---
@@ -384,7 +381,7 @@ Deno.test(
         continueUntilComplete: true,
       };
       
-      const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage, processCombinationJob };
+      const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
 
       // --- Act & Assert: Job Creation & Initial Processing ---
       const { data: jobData, error: creationError } = await generateContributions(
@@ -544,7 +541,7 @@ Deno.test(
         assertEquals(jobData.job_ids.length, 2, "Expected two parent jobs to be created for the antithesis stage (one per model).");
         
         const [parentJobIdA, parentJobIdB] = jobData.job_ids;
-        const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage, processCombinationJob };
+        const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
 
         await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
 
@@ -569,7 +566,7 @@ Deno.test(
         assert(testSession, "Cannot test antithesis without a session.");
         return;
       }
-      const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage, processCombinationJob };
+        const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
 
       // Act: Execute the pending child jobs
       await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
@@ -661,7 +658,7 @@ Deno.test(
             return;
         }
 
-        const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage, processCombinationJob };
+        const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
         
         // --- Invoke Synthesis Planner (Step 1: pairwise_by_origin) ---
         const generatePayload: GenerateContributionsPayload = {
@@ -780,7 +777,7 @@ Deno.test(
         assert(!creationError, `Error creating parent job for parenthesis: ${creationError?.message}`);
         assertExists(jobData?.job_ids, "Parent job creation for parenthesis did not return job IDs.");
 
-        const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage, processCombinationJob };
+        const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
         await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
         await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
 
@@ -857,7 +854,7 @@ Deno.test(
         assert(!creationError, `Error creating parent job for paralysis: ${creationError?.message}`);
         assertExists(jobData?.job_ids, "Parent job creation for paralysis did not return job IDs.");
 
-        const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage, processCombinationJob };
+        const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
         await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
         await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
 

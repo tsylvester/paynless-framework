@@ -1,5 +1,4 @@
 // supabase/functions/_shared/services/rag_service.mock.ts
-import { spy, type Spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import type { IRagService, IRagContextResult, IRagSourceDocument } from './rag_service.interface.ts';
 import type { AiModelExtendedConfig } from '../types.ts';
 import { RagServiceError } from '../utils/errors.ts';
@@ -11,9 +10,6 @@ export interface MockRagServiceConfig {
 }
 
 export class MockRagService implements IRagService {
-    // Let TypeScript infer the complex type of the spy.
-    // The `implements IRagService` clause already enforces the method's signature.
-    public getContextForModelSpy;
     private config: MockRagServiceConfig;
 
     constructor(config: MockRagServiceConfig = {}) {
@@ -23,7 +19,6 @@ export class MockRagService implements IRagService {
             errorMessage: 'Mock RAG service error',
             ...config,
         };
-        this.getContextForModelSpy = spy(this, 'getContextForModel');
     }
 
     public async getContextForModel(
@@ -38,9 +33,9 @@ export class MockRagService implements IRagService {
             };
         }
 
-        return {
+        return Promise.resolve({
             context: this.config.mockContextResult!,
-        };
+        });
     }
 
     public setConfig(newConfig: MockRagServiceConfig): void {

@@ -18,14 +18,13 @@ import {
     DialecticRecipeStep,
     DialecticContributionRow,
     DialecticExecuteJobPayload,
-    DialecticCombinationJobPayload,
     GranularityPlannerFn,
+    IDialecticJobDeps
 } from '../dialectic-service/dialectic.interface.ts';
 import { ILogger } from '../_shared/types.ts';
-import { IPlanComplexJobDeps } from './processComplexJob.ts';
 import { planComplexStage } from './task_isolator.ts';
 import {
-    isDialecticCombinationJobPayload,
+    isDialecticPlanJobPayload,
     isDialecticExecuteJobPayload,
 } from '../_shared/utils/type_guards.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
@@ -33,13 +32,15 @@ import { createMockSupabaseClient, MockQueryBuilderState } from '../_shared/supa
 import { AiModelExtendedConfig } from '../_shared/types.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
+import { IRagContextResult, IRagServiceDependencies } from '../_shared/services/rag_service.interface.ts';
+import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
 
 type SourceDocument = DialecticContributionRow & { content: string };
 
 describe('planComplexStage', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
     let mockLogger: ILogger;
-    let mockDeps: IPlanComplexJobDeps;
+    let mockDeps: IDialecticJobDeps;
     let mockParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload };
     let mockRecipeStep: DialecticRecipeStep;
 
@@ -177,12 +178,17 @@ describe('planComplexStage', () => {
             output_type: 'thesis',
         };
 
-        const mockPromptAssembler = new PromptAssembler(mockSupabase.client as unknown as SupabaseClient<Database>);
+        const mockRagDeps: IRagServiceDependencies = {
+            dbClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+            logger: mockLogger,
+            indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+            embeddingClient: { createEmbedding: () => Promise.resolve([]) },
+        };
+        const mockPromptAssembler = new PromptAssembler(mockSupabase.client as unknown as SupabaseClient<Database>, mockRagDeps, undefined);
 
         mockDeps = {
             logger: mockLogger,
             planComplexStage: () => Promise.resolve([]),
-            promptAssembler: mockPromptAssembler,
             downloadFromStorage: (bucket, path) => {
                 const doc = mockContributions.find(c => `${c.storage_path}/${c.file_name}` === path);
                 const contentBuffer = doc ? new TextEncoder().encode(`content for ${doc.id}`).buffer : new ArrayBuffer(0);
@@ -207,6 +213,15 @@ describe('planComplexStage', () => {
                     api_identifier_for_tokenization: 'mock-api-identifier',
                 },
             }),
+            getSeedPromptForStage: () => Promise.resolve({ content: '', fullPath: '', bucket: '', path: '', fileName: '' }),
+            continueJob: () => Promise.resolve({ enqueued: false }),
+            retryJob: () => Promise.resolve({ error: undefined }),
+            notificationService: mockNotificationService,
+            executeModelCallAndSave: () => Promise.resolve(),
+            callUnifiedAIModel: () => Promise.resolve({ content: '', finish_reason: 'stop' }),
+            getExtensionFromMimeType: () => '.txt',
+            randomUUID: () => 'random-uuid',
+            deleteFromStorage: () => Promise.resolve({ data: null, error: null }),
         };
     });
     
@@ -261,43 +276,6 @@ describe('planComplexStage', () => {
         } else {
             assert(false, 'Payload is not of type DialecticExecuteJobPayload');
         }
-    });
-
-    it('should correctly create child jobs for a "combine" planner', async () => {
-        const mockCombinePayload: DialecticCombinationJobPayload = {
-            job_type: 'combine',
-            inputs: { document_ids: ['doc-1-thesis'] },
-            isIntermediate: true, // ADDED FOR TEST
-            model_id: 'model-1',
-            projectId: 'proj-1',
-            sessionId: 'sess-1',
-            stageSlug: 'test-stage',
-            iterationNumber: 1,
-            walletId: 'wallet-1',
-            continueUntilComplete: false,
-            maxRetries: 3,
-            continuation_count: 0,
-        };
-
-        const plannerFn: GranularityPlannerFn = () => [mockCombinePayload];
-        mockDeps.getGranularityPlanner = () => plannerFn;
-        
-        const childJobs = await planComplexStage(
-            mockSupabase.client as unknown as SupabaseClient<Database>,
-            mockParentJob,
-            mockDeps,
-            mockRecipeStep,
-        );
-
-        assertEquals(childJobs.length, 1);
-        const childJob = childJobs[0];
-        assertEquals(childJob.parent_job_id, mockParentJob.id);
-
-        assert(childJob.payload);
-        assert(isDialecticCombinationJobPayload(childJob.payload));
-        assertEquals(childJob.payload.job_type, 'combine');
-        assertEquals(childJob.payload.inputs?.document_ids, ['doc-1-thesis']);
-        assertEquals(childJob.payload.isIntermediate, true); // ADDED ASSERTION
     });
 
     it('should throw an error if fetching source contributions fails', async () => {
@@ -382,54 +360,6 @@ describe('planComplexStage', () => {
         const childJobs = await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
 
         assertEquals(childJobs.length, 0);
-    });
-
-    it('should correctly create a mix of execute and combine jobs', async () => {
-        mockRecipeStep.inputs_required = [{ type: 'thesis' }];
-        const mockExecutePayload: DialecticExecuteJobPayload = {
-            job_type: 'execute',
-            step_info: { current_step: 1, total_steps: 2 },
-            prompt_template_name: 'test-prompt',
-            output_type: 'thesis',
-            inputs: { documentId: 'doc-1-thesis' },
-            isIntermediate: true, // ADDED FOR TEST
-            model_id: 'model-1',
-            projectId: 'proj-1',
-            sessionId: 'sess-1',
-            stageSlug: 'test-stage',
-            iterationNumber: 1,
-            walletId: 'wallet-1',
-            continueUntilComplete: false,
-            maxRetries: 3,
-            continuation_count: 0,
-        };
-        const mockCombinePayload: DialecticCombinationJobPayload = {
-            job_type: 'combine',
-            inputs: { document_ids: ['doc-1-thesis'] },
-            isIntermediate: true, // ADDED FOR TEST
-            model_id: 'model-1',
-            projectId: 'proj-1',
-            sessionId: 'sess-1',
-            stageSlug: 'test-stage',
-            iterationNumber: 1,
-            walletId: 'wallet-1',
-            continueUntilComplete: false,
-            maxRetries: 3,
-            continuation_count: 0,
-        };
-
-        const plannerFn: GranularityPlannerFn = () => [mockExecutePayload, mockCombinePayload];
-        mockDeps.getGranularityPlanner = () => plannerFn;
-
-        const childJobs = await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
-
-        assertEquals(childJobs.length, 2);
-        
-        const executeJob = childJobs.find(job => isDialecticExecuteJobPayload(job.payload));
-        const combineJob = childJobs.find(job => isDialecticCombinationJobPayload(job.payload));
-
-        assert(executeJob, 'Execute job should be created');
-        assert(combineJob, 'Combine job should be created');
     });
 
     it('should skip contributions that are missing storage_bucket or storage_path', async () => {
@@ -541,14 +471,10 @@ describe('planComplexStage', () => {
     });
 
     it('should invoke RAG service when token count exceeds the limit', async () => {
-        // Arrange: Force token count to exceed the limit
+        const ragServiceStub = new MockRagService();
+        const getContextForModelStub = stub(ragServiceStub, 'getContextForModel', () => Promise.resolve({ context: 'Mocked RAG context' }));
+        mockDeps.ragService = ragServiceStub;
         mockDeps.countTokens = () => 9000; // Exceeds the mock limit of 8192
-
-        if (!(mockDeps.ragService instanceof MockRagService)) {
-            assert(false, 'Dependency ragService is not a MockRagService instance');
-            return;
-        }
-        mockDeps.ragService.setConfig({ mockContextResult: 'Mocked RAG context' });
 
         const mockFileRecord: Tables<'dialectic_project_resources'> = {
             id: 'mock-file-record-id',
@@ -575,7 +501,7 @@ describe('planComplexStage', () => {
 
         // Assert
         // 1. RAG service was called
-        assertEquals(mockDeps.ragService.getContextForModelSpy.calls.length, 1);
+        assertEquals(getContextForModelStub.calls.length, 1);
         
         // 2. File manager was called to save the RAG context
         assertEquals(fileManagerStub.calls.length, 1);

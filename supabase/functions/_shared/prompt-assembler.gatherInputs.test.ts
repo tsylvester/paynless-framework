@@ -3,7 +3,7 @@ import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
 import { 
     PromptAssembler, 
 } from "./prompt-assembler.ts";
-import { ProjectContext, SessionContext, StageContext } from "./prompt-assembler.interface.ts";
+import { ProjectContext, SessionContext, StageContext, SourceDocument } from "./prompt-assembler.interface.ts";
 import { FileManagerService } from "./services/file_manager.ts";
 import { type InputArtifactRules, type ArtifactSourceRule, type DialecticContribution } from '../dialectic-service/dialectic.interface.ts';
 import { createMockSupabaseClient, type MockSupabaseDataConfig, type IMockSupabaseClient, type IMockClientSpies, type MockSupabaseClientSetup, type MockQueryBuilderState } from "./supabase.mock.ts";
@@ -44,7 +44,12 @@ Deno.test("PromptAssembler", async (t) => {
             if (currentConsoleWarnSpy) currentConsoleWarnSpy.restore();
             currentConsoleWarnSpy = spy(console, "warn");
 
-            const assembler = new PromptAssembler(mockSupabaseSetup.client as unknown as SupabaseClient<Database>);
+            const assembler = new PromptAssembler(mockSupabaseSetup.client as unknown as SupabaseClient<Database>, {
+                dbClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+                logger: console,
+                indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+                embeddingClient: { createEmbedding: () => Promise.resolve([]) },
+            });
             return { assembler, mockSupabaseClient: mockSupabaseSetup.client, spies: mockSupabaseSetup.spies };
         };
 
@@ -111,8 +116,8 @@ Deno.test("PromptAssembler", async (t) => {
 
                 const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
 
-                assertEquals(result.priorStageContributions, "");
-                assertEquals(result.priorStageFeedback, "");
+                assertEquals(Array.isArray(result), true);
+                assertEquals(result.length, 0);
             } finally {
                 teardown();
             }
@@ -167,8 +172,8 @@ Deno.test("PromptAssembler", async (t) => {
 
                 const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
 
-                assertEquals(result.priorStageContributions, "");
-                assertEquals(result.priorStageFeedback, "");
+                assertEquals(Array.isArray(result), true);
+                assertEquals(result.length, 0);
                 
                 const stagesTableSpies = spies.getHistoricQueryBuilderSpies('dialectic_stages', 'in');
                 assertEquals(stagesTableSpies?.callCount, 0, "Expected dbClient.from('dialectic_stages')...in() not to be called");
@@ -226,8 +231,8 @@ Deno.test("PromptAssembler", async (t) => {
 
                 const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
 
-                assertEquals(result.priorStageContributions, "");
-                assertEquals(result.priorStageFeedback, "");
+                assertEquals(Array.isArray(result), true);
+                assertEquals(result.length, 0);
                 
                 assertEquals(currentConsoleErrorSpy!.calls.length > 0, true, "Expected console.error to be called for invalid JSON rules");
 
@@ -293,8 +298,8 @@ Deno.test("PromptAssembler", async (t) => {
 
                 const result = await assembler.gatherInputsForStage(stage, project, session, 1);
 
-                assertEquals(result.priorStageContributions, "");
-                assertEquals(result.priorStageFeedback, "");
+                assertEquals(Array.isArray(result), true);
+                assertEquals(result.length, 0);
                 assertEquals(currentConsoleErrorSpy!.calls.length > 0, true, "Expected console.error to be called for semantically invalid rule");
 
             } finally {
@@ -413,18 +418,19 @@ Deno.test("PromptAssembler", async (t) => {
 
                 const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
                 
-                const expectedHeader = "Contributions from some-slug stage\n\n";
-                const expectedContentSegment = `#### Contribution from ${modelName}\n${contribContent}\n\n`;
-
                 console.log("--- TEST LOG: should fetch and format only contributions ---");
-                console.log("ACTUAL:", JSON.stringify(result.priorStageContributions));
-                console.log("EXPECTED HEADER:", JSON.stringify(expectedHeader));
-                console.log("EXPECTED CONTENT:", JSON.stringify(expectedContentSegment));
+                console.log("ACTUAL:", JSON.stringify(result));
+                console.log("EXPECTED CONTENT:", JSON.stringify(contribContent));
                 console.log("--- END TEST LOG ---");
 
-                assertEquals(result.priorStageContributions.includes(expectedHeader), true, `Contribution section header missing or incorrect. Got: ${result.priorStageContributions}`);
-                assertEquals(result.priorStageContributions.includes(expectedContentSegment), true, `Contribution content missing or incorrect. Got: ${result.priorStageContributions}`);
-                assertEquals(result.priorStageFeedback, "");
+                assertEquals(result.length, 1);
+                const doc = result[0];
+                assertEquals(doc.id, "contrib1");
+                assertEquals(doc.type, "contribution");
+                assertEquals(doc.content, contribContent);
+                assertEquals(doc.metadata.modelName, modelName);
+                assertEquals(doc.metadata.displayName, mockStageDisplayName);
+                assertEquals(doc.metadata.header, "Contributions from some-slug stage");
                 
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
                 assertEquals(downloadSpies.calls.length, 1);
@@ -470,7 +476,7 @@ Deno.test("PromptAssembler", async (t) => {
                             const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === iteration - 1);
                             const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === userId);
                             if (sessionFilter && stageFilter && iterFilter && userFilter) {
-                                return { data: [{ storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
+                                return { data: [{ id: 'fb-1', storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
                             }
                             return { data: null, error: Object.assign(new Error("Not Found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" };
                         }
@@ -542,21 +548,18 @@ Deno.test("PromptAssembler", async (t) => {
                 
                 const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
                 
-                const expectedFeedback = `---
-### User Feedback on Previous Stage: ${mockStageDisplayName}
----
-
-${feedbackContent}
-
----
-`;
                 console.log("--- TEST LOG: should fetch and format only feedback ---");
-                console.log("ACTUAL:", JSON.stringify(result.priorStageFeedback));
-                console.log("EXPECTED:", JSON.stringify(expectedFeedback));
+                console.log("ACTUAL:", JSON.stringify(result));
+                console.log("EXPECTED:", JSON.stringify(feedbackContent));
                 console.log("--- END TEST LOG ---");
 
-                assertEquals(result.priorStageFeedback, expectedFeedback, `Feedback content mismatch. Got: ${JSON.stringify(result.priorStageFeedback)}`);
-                assertEquals(result.priorStageContributions, "", "Contributions should be empty, but was not.");
+                assertEquals(result.length, 1);
+                const doc = result[0];
+                assertEquals(doc.id, 'fb-1');
+                assertEquals(doc.type, "feedback");
+                assertEquals(doc.content, feedbackContent);
+                assertEquals(doc.metadata.displayName, mockStageDisplayName);
+                assertEquals(doc.metadata.header, undefined); // No header defined in rule
 
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
                 assertEquals(downloadSpies.calls.length, 1);
@@ -630,7 +633,7 @@ ${feedbackContent}
                             const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === iteration - 1);
                             const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === 'u200');
                             if (sessionFilter && stageFilter && iterFilter && userFilter) {
-                                return { data: [{ storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
+                                return { data: [{ id: 'fb-both', storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
                             }
                             return { data: null, error: Object.assign(new Error("Not Found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" };
                         }
@@ -714,29 +717,28 @@ ${feedbackContent}
 
                 const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
 
-                const expectedContribHeader = "Contributions from contrib-slug-for-both stage\n\n";
-                const expectedContribContent = `#### Contribution from ${modelName}\n${contribContent}\n\n`;
-                const expectedFeedback = `Feedback from feedback-slug-for-both stage
----
-
-${feedbackContent}
-
----
-`;
-
                 console.log("--- TEST LOG: should fetch and format both contributions and feedback ---");
-                console.log("ACTUAL (Contrib):", JSON.stringify(result.priorStageContributions));
-                console.log("EXPECTED (Contrib Header):", JSON.stringify(expectedContribHeader));
-                console.log("EXPECTED (Contrib Content):", JSON.stringify(expectedContribContent));
-                console.log("ACTUAL (Feedback):", JSON.stringify(result.priorStageFeedback));
-                console.log("EXPECTED (Feedback):", JSON.stringify(expectedFeedback));
+                console.log("ACTUAL:", JSON.stringify(result));
                 console.log("--- END TEST LOG ---");
 
-                assertEquals(result.priorStageContributions.includes(expectedContribHeader), true, `Contribution header mismatch. Got: ${result.priorStageContributions}`);
-                assertEquals(result.priorStageContributions.includes(expectedContribContent), true);
+                assertEquals(result.length, 2);
                 
-                assertEquals(result.priorStageFeedback, expectedFeedback);
-                
+                const contribDoc = result.find(d => d.type === 'contribution');
+                const feedbackDoc = result.find(d => d.type === 'feedback');
+
+                assertEquals(!!contribDoc, true, "Contribution document not found in result");
+                assertEquals(contribDoc?.id, "contrib-both");
+                assertEquals(contribDoc?.content, contribContent);
+                assertEquals(contribDoc?.metadata.header, "Contributions from contrib-slug-for-both stage");
+                assertEquals(contribDoc?.metadata.displayName, contribDisplayName);
+                assertEquals(contribDoc?.metadata.modelName, modelName);
+
+                assertEquals(!!feedbackDoc, true, "Feedback document not found in result");
+                assertEquals(feedbackDoc?.id, "fb-both");
+                assertEquals(feedbackDoc?.content, feedbackContent);
+                assertEquals(feedbackDoc?.metadata.header, "Feedback from feedback-slug-for-both stage");
+                assertEquals(feedbackDoc?.metadata.displayName, feedbackDisplayName);
+
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
                 assertEquals(downloadSpies.calls.length, 2, "Expected two download calls");
             } finally {
@@ -886,25 +888,23 @@ ${feedbackContent}
 
                 const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
 
-                const expectedContrib = `${customContribHeader}\n\n#### Contribution from ${modelName}\n${contribContent}\n\n`;
-
-                const expectedFeedback = `${customFeedbackHeader}
----
-
-${feedbackContent}
-
----
-`;
                 console.log("--- TEST LOG: should use custom section_headers ---");
-                console.log("ACTUAL (Contrib):", JSON.stringify(result.priorStageContributions));
-                console.log("EXPECTED (Contrib):", JSON.stringify(expectedContrib));
-                console.log("ACTUAL (Feedback):", JSON.stringify(result.priorStageFeedback));
-                console.log("EXPECTED (Feedback):", JSON.stringify(expectedFeedback));
+                console.log("ACTUAL:", JSON.stringify(result));
                 console.log("--- END TEST LOG ---");
 
-                assertEquals(result.priorStageContributions, expectedContrib, `Contribution content mismatch. Got: ${JSON.stringify(result.priorStageContributions)}`);
-                assertEquals(result.priorStageFeedback, expectedFeedback, `Feedback content mismatch. Got: ${JSON.stringify(result.priorStageFeedback)}`);
-                
+                assertEquals(result.length, 2);
+
+                const contribDoc = result.find(d => d.type === 'contribution');
+                const feedbackDoc = result.find(d => d.type === 'feedback');
+
+                assertEquals(!!contribDoc, true, "Custom header contribution document not found");
+                assertEquals(contribDoc?.content, contribContent);
+                assertEquals(contribDoc?.metadata.header, customContribHeader);
+
+                assertEquals(!!feedbackDoc, true, "Custom header feedback document not found");
+                assertEquals(feedbackDoc?.content, feedbackContent);
+                assertEquals(feedbackDoc?.metadata.header, customFeedbackHeader);
+
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
                 assertEquals(downloadSpies.calls.length, 2, "Expected two download calls for custom headers test");
             } finally {
@@ -1004,7 +1004,7 @@ ${feedbackContent}
                 };
 
                 let errorThrown = false;
-                let result: { priorStageContributions: string; priorStageFeedback: string } | null = null;
+                let result: SourceDocument[] | null = null;
                 try {
                      result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
                 } catch (e) {
@@ -1013,24 +1013,7 @@ ${feedbackContent}
                 }
                 
                 assertEquals(errorThrown, false, "Error was unexpectedly thrown for missing optional feedback.");
-                assertEquals(result?.priorStageContributions, "");
-                
-                assertEquals(result?.priorStageFeedback, "", "Feedback content was not empty as expected.");
-                
-                const errorLogCall = currentConsoleErrorSpy!.calls.find(call => {
-                    if (!(call.args.length > 1 && typeof call.args[0] === 'string' && typeof call.args[1] === 'object' && call.args[1] !== null)) {
-                        return false;
-                    }
-
-                    const messageString = call.args[0];
-                    const detailsObject = call.args[1];
-
-                    const messageCheck = messageString.includes(`Could not find feedback record for stage '${optionalFeedbackSlug}'`);
-                    const ruleCheck = detailsObject.rule?.stage_slug === optionalFeedbackSlug && detailsObject.rule?.required === false;
-                    
-                    return messageCheck && ruleCheck;
-                });
-                assertEquals(!!errorLogCall, true, "Expected console.error log for missing optional feedback record not found or incorrect.");
+                assertEquals(result?.length, 0, "Result should be empty");
                 
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
                 assertEquals(downloadSpies.calls.length, 0);
@@ -1233,8 +1216,7 @@ ${feedbackContent}
 
                 const result = await assembler.gatherInputsForStage(stage, project, session, 1);
 
-                assertEquals(result.priorStageContributions, "", "priorStageContributions was not empty as expected when optional DB query fails.");
-                assertEquals(result.priorStageFeedback, "");
+                assertEquals(result.length, 0, "Result should be empty");
                 assertEquals(currentConsoleErrorSpy!.calls.some(call => call.args[0].includes("Failed to retrieve AI contributions")), true, "Expected console.error for DB failure");
             } finally {
                 teardown();
@@ -1373,8 +1355,7 @@ ${feedbackContent}
 
                 const result = await assembler.gatherInputsForStage(stage, project, session, 1);
 
-                assertEquals(result.priorStageContributions, "", "priorStageContributions was not empty as expected when optional item misses storage details.");
-                assertEquals(result.priorStageFeedback, "");
+                assertEquals(result.length, 0, "Result should be empty");
                 assertEquals(currentConsoleErrorSpy!.calls.some(call => 
                     call.args.length > 0 &&
                     typeof call.args[0] === 'string' &&
@@ -1443,7 +1424,7 @@ ${feedbackContent}
                 assertEquals(currentConsoleWarnSpy!.calls.some(call => 
                     call.args.length > 0 && 
                     typeof call.args[0] === 'string' && 
-                    call.args[0].includes(`Contribution ${badContribId} is missing storage_path or storage_bucket`)
+                    call.args[0].includes(`Contribution ${badContribId} is missing storage details`)
                 ), true, "Expected console.warn for missing storage details");
             } finally {
                 teardown();
@@ -1503,13 +1484,12 @@ ${feedbackContent}
 
                 const result = await assembler.gatherInputsForStage(stage, project, session, 1);
 
-                assertEquals(result.priorStageContributions, "", "priorStageContributions was not empty as expected when optional item misses storage details.");
-                assertEquals(result.priorStageFeedback, "");
+                assertEquals(result.length, 0, "Result should be empty");
                 assertEquals(currentConsoleWarnSpy!.calls.some(call => 
                     call.args.length > 0 &&
                     typeof call.args[0] === 'string' &&
-                    call.args[0].includes(`Contribution ${badContribId} is missing storage_path or storage_bucket`)
-                ), true, "Expected console.warn for missing storage details");
+                    call.args[0].includes(`Contribution ${badContribId} is missing storage details`)
+                ), true, "Expected console.warn for missing storage details on optional item");
             } finally {
                 teardown();
             }

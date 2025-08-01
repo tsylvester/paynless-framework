@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../types_db.ts';
 import {
-  type ProcessSimpleJobDeps,
+  type IDialecticJobDeps,
   type DialecticJobPayload,
   type ExecuteModelCallAndSaveParams,
 } from '../dialectic-service/dialectic.interface.ts';
@@ -10,7 +10,7 @@ import { isDialecticJobPayload } from '../_shared/utils/type_guards.ts';
 import { processJob, type IJobProcessors } from './processJob.ts';
 import { logger } from '../_shared/logger.ts';
 import { processSimpleJob } from './processSimpleJob.ts';
-import { processComplexJob } from './processComplexJob.ts';
+import { getAiProviderConfig, processComplexJob } from './processComplexJob.ts';
 import { planComplexStage } from './task_isolator.ts';
 import { getSeedPromptForStage } from '../_shared/utils/dialectic_utils.ts';
 import { continueJob } from './continueJob.ts';
@@ -24,8 +24,12 @@ import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { createSupabaseAdminClient, } from '../_shared/auth.ts';
 import { NotificationService } from '../_shared/utils/notification.service.ts';
-import { processCombinationJob } from './processCombinationJob.ts';
 import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
+import { getGranularityPlanner } from './strategies/granularity.strategies.ts';
+import { RagService } from '../_shared/services/rag_service.ts';
+import { IndexingService, LangchainTextSplitter, OpenAIEmbeddingClient } from '../_shared/services/indexing_service.ts';
+import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
+import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -33,7 +37,6 @@ const processors: IJobProcessors = {
   processSimpleJob,
   processComplexJob,
   planComplexStage,
-  processCombinationJob,
 };
 
 serve(async (req: Request) => {
@@ -59,10 +62,18 @@ serve(async (req: Request) => {
     console.log('dialectic-worker serverless function called with auth token', authToken);
     const adminClient: SupabaseClient<Database> = createSupabaseAdminClient();
     const notificationService = new NotificationService(adminClient);
-    //const dbClient: SupabaseClient<Database> = createSupabaseClient(req);
+    
+    // --- Instantiate all services for the unified dependency object ---
+    const fileManager = new FileManagerService(adminClient);
+    const openAiAdapter = new OpenAiAdapter(Deno.env.get('OPENAI_API_KEY')!, logger);
+    const embeddingClient = new OpenAIEmbeddingClient(openAiAdapter);
+    const textSplitter = new LangchainTextSplitter();
+    const indexingService = new IndexingService(adminClient, logger, textSplitter, embeddingClient);
+    const ragService = new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient });
+
     console.log('dialectic-worker serverless function called with adminClient', adminClient);
     console.log('dialectic-worker serverless function called with req', req);
-    const deps: ProcessSimpleJobDeps = {
+    const deps: IDialecticJobDeps = {
       logger,
       getSeedPromptForStage,
       continueJob,
@@ -71,10 +82,18 @@ serve(async (req: Request) => {
       downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
       getExtensionFromMimeType,
       randomUUID: crypto.randomUUID.bind(crypto),
-      fileManager: new FileManagerService(adminClient),
+      fileManager: fileManager,
       deleteFromStorage: (bucket: string, paths: string[]) => deleteFromStorage(adminClient, bucket, paths),
       notificationService,
       executeModelCallAndSave: (params: ExecuteModelCallAndSaveParams) => executeModelCallAndSave(params),
+      // Add the new dependencies for complex jobs
+      ragService,
+      countTokens: countTokensForMessages,
+      getAiProviderConfig: (dbClient: SupabaseClient<Database>, modelId: string) => getAiProviderConfig(dbClient, modelId),
+      getGranularityPlanner,
+      planComplexStage,
+      indexingService,
+      embeddingClient
     };
 
     // We must await the handler to ensure the serverless function
@@ -98,7 +117,7 @@ serve(async (req: Request) => {
 export async function handleJob(
   adminClient: SupabaseClient<Database>,
   job: Job,
-  deps: ProcessSimpleJobDeps,
+  deps: IDialecticJobDeps,
   authToken: string,
   processors: IJobProcessors,
 ): Promise<void> {

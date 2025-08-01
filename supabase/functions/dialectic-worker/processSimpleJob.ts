@@ -4,7 +4,7 @@ import {
   type DialecticJobPayload,
   type SelectedAiProvider,
   type FailedAttemptError,
-  type ProcessSimpleJobDeps,
+  type IDialecticJobDeps,
   type ModelProcessingResult,
   type Job,
 } from '../dialectic-service/dialectic.interface.ts';
@@ -15,7 +15,7 @@ export async function processSimpleJob(
     dbClient: SupabaseClient<Database>,
     job: Job & { payload: DialecticJobPayload },
     projectOwnerUserId: string,
-    deps: ProcessSimpleJobDeps,
+    deps: IDialecticJobDeps,
     authToken: string,
 ) {
     const { id: jobId, attempt_count: currentAttempt, max_retries } = job;

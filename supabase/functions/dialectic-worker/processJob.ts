@@ -2,17 +2,14 @@ import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../types_db.ts';
 import {
   type DialecticJobPayload,
-  type ProcessSimpleJobDeps,
+  type IDialecticJobDeps,
   type DialecticExecuteJobPayload,
 } from '../dialectic-service/dialectic.interface.ts';
 
 import { processSimpleJob } from './processSimpleJob.ts';
-import { type IPlanComplexJobDeps, processComplexJob } from './processComplexJob.ts';
+import { processComplexJob } from './processComplexJob.ts';
 import { planComplexStage } from './task_isolator.ts';
-import { PromptAssembler } from '../_shared/prompt-assembler.ts';
-import { processCombinationJob } from "./processCombinationJob.ts";
-import { isDialecticCombinationJobPayload, isDialecticPlanJobPayload, isDialecticExecuteJobPayload, isDialecticJobRow } from '../_shared/utils/type_guards.ts';
-import { getGranularityPlanner } from './strategies/granularity.strategies.ts';
+import { isDialecticPlanJobPayload, isDialecticExecuteJobPayload, isDialecticJobRow } from '../_shared/utils/type_guards.ts';
 import { isContributionType } from '../_shared/utils/type_guards.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
@@ -21,14 +18,13 @@ export interface IJobProcessors {
     processSimpleJob: typeof processSimpleJob;
     processComplexJob: typeof processComplexJob;
     planComplexStage: typeof planComplexStage;
-    processCombinationJob: typeof processCombinationJob;
 }
 
 export async function processJob(
   dbClient: SupabaseClient<Database>,
   job: Job & { payload: DialecticJobPayload },
   projectOwnerUserId: string,
-  deps: ProcessSimpleJobDeps,
+  deps: IDialecticJobDeps,
   authToken: string,
   processors: IJobProcessors,
 ) {
@@ -43,12 +39,6 @@ export async function processJob(
   if (isDialecticExecuteJobPayload(job.payload)) {
       deps.logger.info(`[dialectic-worker] [processJob] Job ${jobId} is an 'execute' job. Delegating to executor.`);
       await processors.processSimpleJob(dbClient, { ...job, payload: job.payload }, projectOwnerUserId, deps, authToken);
-      return;
-  }
-  
-  if (isDialecticCombinationJobPayload(job.payload)) {
-      deps.logger.info(`[dialectic-worker] [processJob] Job ${jobId} is a 'combine' job. Delegating to combination processor.`);
-      await processors.processCombinationJob(dbClient, { ...job, payload: job.payload }, projectOwnerUserId, deps, authToken);
       return;
   }
   
@@ -77,16 +67,8 @@ export async function processJob(
 
       if (processingStrategyType === 'task_isolation') {
           deps.logger.info(`[dialectic-worker] [processJob] Delegating 'plan' job ${jobId} to complex planner.`);
-          const promptAssembler = new PromptAssembler(dbClient, deps.downloadFromStorage);
-          const complexDeps: IPlanComplexJobDeps = {
-              logger: deps.logger,
-              planComplexStage: processors.planComplexStage,
-              promptAssembler: promptAssembler,
-              downloadFromStorage: deps.downloadFromStorage,
-              getGranularityPlanner: getGranularityPlanner,
-          };
-          
-          await processors.processComplexJob(dbClient, { ...job, payload: job.payload }, projectOwnerUserId, complexDeps);
+          // The main deps object now contains everything needed, so we can pass it directly.
+          await processors.processComplexJob(dbClient, { ...job, payload: job.payload }, projectOwnerUserId, deps);
       } else {
           deps.logger.info(`[dialectic-worker] [processJob] Job ${jobId} is a 'plan' job for a simple stage. Transforming to 'execute' job in-memory.`);
           

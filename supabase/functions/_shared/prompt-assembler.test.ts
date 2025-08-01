@@ -2,12 +2,14 @@ import { assertEquals, assertRejects, assert } from "jsr:@std/assert@0.225.3";
 import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
 import { 
     PromptAssembler,
-    ContributionOverride,
 } from "./prompt-assembler.ts";
-import { ProjectContext, SessionContext, StageContext, DynamicContextVariables } from "./prompt-assembler.interface.ts";
+import { ProjectContext, SessionContext, StageContext, DynamicContextVariables, SourceDocument } from "./prompt-assembler.interface.ts";
 import { createMockSupabaseClient, type MockSupabaseDataConfig, type MockSupabaseClientSetup } from "./supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Json, Database } from "../types_db.ts";
+import type { AiModelExtendedConfig } from "./types.ts";
+import { MockRagService } from './services/rag_service.mock.ts';
+import { IRagServiceDependencies } from "./services/rag_service.interface.ts";
 
 // Define a type for the mock implementation of renderPrompt
 type RenderPromptMock = (
@@ -22,7 +24,19 @@ Deno.test("PromptAssembler", async (t) => {
     let denoEnvStub: any = null;
     const consoleSpies: { error?: Spy<Console>, warn?: Spy<Console> } = {};
 
-    const setup = (config: MockSupabaseDataConfig = {}, renderPromptFn?: RenderPromptMock) => {
+    const mockModelConfig: AiModelExtendedConfig = {
+        api_identifier: 'test-model',
+        tokenization_strategy: { type: 'rough_char_count', chars_per_token_ratio: 1 },
+        input_token_cost_rate: 0.0001,
+        output_token_cost_rate: 0.0002,
+        hard_cap_output_tokens: 1000,
+        context_window_tokens: 1000,
+        provider_max_input_tokens: 1000,
+        provider_max_output_tokens: 1000,
+        default_temperature: 0.5,
+    };
+
+    const setup = (config: MockSupabaseDataConfig = {}, renderPromptFn?: RenderPromptMock, countTokensFn?: () => number) => {
         denoEnvStub = stub(Deno.env, "get", (key: string) => {
             if (key === "SB_CONTENT_STORAGE_BUCKET") {
                 return "test-bucket";
@@ -35,10 +49,19 @@ Deno.test("PromptAssembler", async (t) => {
         consoleSpies.error = spy(console, "error");
         consoleSpies.warn = spy(console, "warn");
 
+        const mockRagDeps: IRagServiceDependencies = {
+            dbClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            logger: console,
+            indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+            embeddingClient: { createEmbedding: () => Promise.resolve([]) },
+        }
+
         const assembler = new PromptAssembler(
             mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            mockRagDeps,
             undefined, // Use default download function
-            renderPromptFn
+            renderPromptFn,
+            countTokensFn
         );
         return { assembler, spies: mockSupabaseSetup.spies };
     };
@@ -130,7 +153,7 @@ Deno.test("PromptAssembler", async (t) => {
         const { assembler } = setup(config, renderPromptMockFn);
 
         try {
-            const result = await assembler.assemble(defaultProject, defaultSession, defaultStage, defaultProject.initial_user_prompt, 1);
+            const result = await assembler.assemble(defaultProject, defaultSession, defaultStage, defaultProject.initial_user_prompt, 1, mockModelConfig, 10000);
             
             assertEquals(result, expectedRenderedPrompt);
             assertEquals(renderPromptCallCount, 1);
@@ -224,7 +247,7 @@ Deno.test("PromptAssembler", async (t) => {
                 }
             };
 
-            const result = await assembler.assemble(defaultProject, defaultSession, subsequentStage, defaultProject.initial_user_prompt, 1);
+            const result = await assembler.assemble(defaultProject, defaultSession, subsequentStage, defaultProject.initial_user_prompt, 1, mockModelConfig, 10000);
             
             assertEquals(result, expectedRenderedPrompt);
 
@@ -244,7 +267,7 @@ Deno.test("PromptAssembler", async (t) => {
             
             await assertRejects(
                 async () => {
-                    await assembler.assemble(defaultProject, defaultSession, stageWithMissingPrompt, defaultProject.initial_user_prompt, 1);
+                    await assembler.assemble(defaultProject, defaultSession, stageWithMissingPrompt, defaultProject.initial_user_prompt, 1, mockModelConfig, 10000);
                 },
                 Error,
                 `No system prompt template found for stage ${stageWithMissingPrompt.id}`
@@ -337,12 +360,8 @@ Deno.test("PromptAssembler", async (t) => {
         const { assembler, spies } = setup();
 
         try {
-            const overrideContributions: ContributionOverride[] = [
+            const overrideContributions = [
                 {
-                    id: 'override-c1',
-                    storage_path: 'path/to/override.md',
-                    storage_bucket: 'test-bucket',
-                    model_name: 'Override Model',
                     content: 'This is the override content.'
                 }
             ];
@@ -475,4 +494,93 @@ Deno.test("PromptAssembler", async (t) => {
             teardown();
         }
     });
-}); 
+    
+    await t.step("Dynamic Granular RAG Invocation", async (t) => {
+        const testModelConfig: AiModelExtendedConfig = {
+             ...mockModelConfig,
+             provider_max_input_tokens: 100
+        };
+        const minTokenLimit = 100;
+
+		const mockSourceDocuments: SourceDocument[] = [
+			{
+				id: 'contrib-1',
+				type: 'contribution',
+				content: 'This is the first contribution.',
+				metadata: { displayName: 'Thesis Stage', modelName: 'Model A' }
+			},
+			{
+				id: 'contrib-2',
+				type: 'contribution',
+				content: 'This is the second, much longer contribution that will be used to exceed the token limit.',
+				metadata: { displayName: 'Thesis Stage', modelName: 'Model B' }
+			},
+			{
+				id: 'feedback-1',
+				type: 'feedback',
+				content: 'This is user feedback on the previous stage.',
+				metadata: { displayName: 'Thesis Stage', header: '### User Feedback' }
+			}
+		];
+
+        await t.step("Context Under Limit: should not call RAG and should format from individual documents", async () => {
+            const mockRagService = new MockRagService();
+            const ragSpy = spy(mockRagService, 'getContextForModel');
+
+            // Setup with a token count well below the limit
+            const { assembler } = setup({}, undefined, () => 50); 
+            assembler.ragService = mockRagService;
+            
+            const gatherInputsSpy = stub(assembler, "gatherInputsForStage", () => Promise.resolve([mockSourceDocuments[0]])); // Only one short doc
+
+            try {
+                const context = await assembler.gatherContext(
+                    defaultProject, defaultSession, defaultStage, defaultProject.initial_user_prompt, 1, undefined, testModelConfig, minTokenLimit
+                );
+                
+                assertEquals(ragSpy.calls.length, 0, "RAG service should not have been called.");
+                assert(context.prior_stage_ai_outputs.includes("This is the first contribution."), "The formatted output should contain the contribution content.");
+				assertEquals(context.prior_stage_user_feedback, "", "Feedback should be empty as it was not in the source docs for this test.");
+
+            } finally {
+                gatherInputsSpy.restore();
+                ragSpy.restore();
+                teardown();
+            }
+        });
+
+        await t.step("Context Over Limit: should call RAG with granular documents", async () => {
+            const mockRagService = new MockRagService({ mockContextResult: "--- RAG Context ---" });
+            const ragSpy = spy(mockRagService, 'getContextForModel');
+            
+            // Setup with a token count that exceeds the limit
+            const { assembler } = setup({}, undefined, () => 200); 
+            assembler.ragService = mockRagService;
+
+            const gatherInputsSpy = stub(assembler, "gatherInputsForStage", () => Promise.resolve(mockSourceDocuments));
+
+            try {
+                const context = await assembler.gatherContext(
+                    defaultProject, defaultSession, defaultStage, defaultProject.initial_user_prompt, 1, undefined, testModelConfig, minTokenLimit
+                );
+                
+                assertEquals(ragSpy.calls.length, 1, "RAG service should have been called once.");
+                assertEquals(context.prior_stage_ai_outputs, "--- RAG Context ---", "The output should be the compressed context from RAG.");
+				assertEquals(context.prior_stage_user_feedback, "", "Feedback should be empty after RAG compression.");
+
+                // Assert that the RAG service was called with the correct granular data
+                const ragCallArgs = ragSpy.calls[0].args[0];
+                assertEquals(ragCallArgs.length, 3, "RAG service should have been called with 3 individual documents.");
+                assertEquals(ragCallArgs[0].id, 'contrib-1');
+                assertEquals(ragCallArgs[1].id, 'contrib-2');
+                assertEquals(ragCallArgs[2].id, 'feedback-1');
+                assert(ragCallArgs[1].content.includes("much longer contribution"), "The content of the documents passed to RAG should be correct.");
+                
+            } finally {
+                gatherInputsSpy.restore();
+                ragSpy.restore();
+                teardown();
+            }
+        });
+    });
+});

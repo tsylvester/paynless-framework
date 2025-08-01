@@ -19,11 +19,11 @@ import {
     UnifiedAIResponse, 
     DialecticSession, 
     DialecticContributionRow, 
-    ProcessSimpleJobDeps, 
     SelectedAiProvider, 
     ExecuteModelCallAndSaveParams, 
     DialecticJobPayload,
-    DialecticExecuteJobPayload 
+    DialecticExecuteJobPayload,
+    IDialecticJobDeps
 } from '../dialectic-service/dialectic.interface.ts';
 import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
 import type { LogMetadata } from '../_shared/types.ts';
@@ -165,7 +165,7 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
   };
   
   // This is a partial mock, only includes deps needed by executeModelCallAndSave
-  const getMockDeps = (): ProcessSimpleJobDeps => {
+  const getMockDeps = (): IDialecticJobDeps => {
       const fileManager = new MockFileManagerService();
       fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
       
@@ -197,7 +197,7 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
             select: { data: [mockFullProviderData], error: null }
         }
     });
-    const deps: ProcessSimpleJobDeps = getMockDeps();
+    const deps: IDialecticJobDeps = getMockDeps();
 
     const fileManagerSpy = spy(deps.fileManager, 'uploadAndRegisterFile');
     
@@ -234,7 +234,7 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
             select: { data: [mockFullProviderData], error: null }
         }
     });
-    const deps: ProcessSimpleJobDeps = getMockDeps();
+    const deps: IDialecticJobDeps = getMockDeps();
     const fileManagerSpy = spy(deps.fileManager, 'uploadAndRegisterFile');
 
     await t.step('should pass isIntermediate flag to fileManager', async () => {
@@ -267,7 +267,7 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
             select: { data: [mockFullProviderData], error: null }
         }
     });
-    const deps: ProcessSimpleJobDeps = getMockDeps();
+    const deps: IDialecticJobDeps = getMockDeps();
     const fileManagerSpy = spy(deps.fileManager, 'uploadAndRegisterFile');
   
     await t.step('should pass isIntermediate: false to fileManager when explicitly set', async () => {
@@ -321,7 +321,7 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
             select: { data: [mockFullProviderData], error: null }
         }
     });
-    const deps: ProcessSimpleJobDeps = getMockDeps();
+    const deps: IDialecticJobDeps = getMockDeps();
 
     const continueJobStub = stub(deps, 'continueJob', async () => ({ enqueued: true }));
 
@@ -372,7 +372,7 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
             select: { data: [mockFullProviderData], error: null }
         }
     });
-    const deps: ProcessSimpleJobDeps = getMockDeps();
+    const deps: IDialecticJobDeps = getMockDeps();
 
     const callUnifiedAIModelStub = stub(deps, 'callUnifiedAIModel', async () => ({
         content: null,
@@ -415,7 +415,7 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
                 select: { data: [mockFullProviderData], error: null }
             }
         });
-        const deps: ProcessSimpleJobDeps = getMockDeps();
+        const deps: IDialecticJobDeps = getMockDeps();
         
         let criticalErrorLogged = false;
         const originalErrorLogger = deps.logger.error;
@@ -456,7 +456,7 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
                 select: { data: [mockFullProviderData], error: null }
             }
         });
-        const deps: ProcessSimpleJobDeps = getMockDeps();
+        const deps: IDialecticJobDeps = getMockDeps();
         
         const sendReceivedSpy = spy(deps.notificationService, 'sendContributionReceivedEvent');
         const sendCompleteSpy = spy(deps.notificationService, 'sendContributionGenerationCompleteEvent');
@@ -487,7 +487,7 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
                 select: { data: [mockFullProviderData], error: null }
             }
         });
-        const deps: ProcessSimpleJobDeps = getMockDeps();
+        const deps: IDialecticJobDeps = getMockDeps();
 
         stub(deps, 'callUnifiedAIModel', async (): Promise<UnifiedAIResponse> => ({
             content: 'Partial content',
@@ -541,7 +541,7 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
             select: { data: [mockLimitedProvider], error: null }
         }
     });
-    const deps: ProcessSimpleJobDeps = getMockDeps();
+    const deps: IDialecticJobDeps = getMockDeps();
 
     await t.step('should throw ContextWindowError if prompt exceeds token limit', async () => {
         let errorThrown = false;

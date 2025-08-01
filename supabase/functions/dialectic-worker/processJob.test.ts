@@ -1,21 +1,22 @@
 
 import { assertEquals, assertExists } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import { spy } from 'jsr:@std/testing@0.225.1/mock';
-import type { Database, Json } from '../types_db.ts';
+import type { Database } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { processJob } from './processJob.ts';
 import { logger } from '../_shared/logger.ts';
-import type { DialecticJobPayload, ProcessSimpleJobDeps, SeedPromptData, IContinueJobResult, DialecticPlanJobPayload } from '../dialectic-service/dialectic.interface.ts';
+import type { DialecticJobPayload, IDialecticJobDeps, SeedPromptData, IContinueJobResult, DialecticPlanJobPayload } from '../dialectic-service/dialectic.interface.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import type { UnifiedAIResponse } from '../dialectic-service/dialectic.interface.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { isDialecticCombinationJobPayload, isJson } from '../_shared/utils/type_guards.ts';
+import { isJson } from '../_shared/utils/type_guards.ts';
 import { createMockJobProcessors } from '../_shared/dialectic.mock.ts';
 import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
+import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
-const mockDeps: ProcessSimpleJobDeps = {
+const mockDeps: IDialecticJobDeps = {
     logger,
     callUnifiedAIModel: spy(async (): Promise<UnifiedAIResponse> => ({
         content: 'Happy path AI content',
@@ -41,73 +42,16 @@ const mockDeps: ProcessSimpleJobDeps = {
     retryJob: spy(async (): Promise<{ error?: Error }> => ({ error: undefined })),
     notificationService: mockNotificationService,
     executeModelCallAndSave: spy(async (): Promise<void> => { /* dummy */ }),
+    ragService: new MockRagService(),
+    countTokens: spy(() => 100),
+    getAiProviderConfig: spy(async () => await Promise.resolve({ 
+        api_identifier: 'mock-model', 
+        input_token_cost_rate: 0, 
+        output_token_cost_rate: 0, 
+        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'p50k_base' } })),
+    getGranularityPlanner: spy(() => () => []),
+    planComplexStage: spy(async () => await Promise.resolve([])),
 };
-
-Deno.test('processJob - routes to processCombinationJob for combine job type', async () => {
-    // 1. Setup
-    const { processors, spies } = createMockJobProcessors();
-
-    const mockJobId = 'job-id-combine-route';
-    const mockPayload: Json = {
-        sessionId: 'session-id-combine',
-        projectId: 'project-id-combine',
-        stageSlug: 'synthesis',
-        model_id: 'model-id-combine',
-        job_type: 'combine',
-        prompt_template_name: 'test-template',
-        inputs: {
-            document_ids: ['doc1', 'doc2'],
-        },
-    };
-
-    if (!isDialecticCombinationJobPayload(mockPayload)) {
-        throw new Error('Test setup failed: mockPayload is not a valid DialecticCombinationJobPayload');
-    }
-
-    const mockJob: MockJob = {
-        id: mockJobId,
-        user_id: 'user-id-combine',
-        session_id: 'session-id-combine',
-        stage_slug: 'synthesis',
-        payload: mockPayload,
-        iteration_number: 1,
-        status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-    };
-
-    const mockSupabase = createMockSupabaseClient();
-
-    try {
-        await processJob(
-            mockSupabase.client as unknown as SupabaseClient<Database>,
-            { ...mockJob, payload: mockPayload },
-            'user-id-combine',
-            mockDeps,
-            'mock-token',
-            processors
-        );
-
-        assertEquals(spies.processCombinationJob.calls.length, 1, 'processCombinationJob should be called once');
-        assertEquals(spies.processSimpleJob.calls.length, 0, 'processSimpleJob should not be called');
-        assertEquals(spies.processComplexJob.calls.length, 0, 'processComplexJob should not be called');
-
-    } finally {
-        spies.processCombinationJob.restore();
-        spies.processSimpleJob.restore();
-        spies.processComplexJob.restore();
-        mockSupabase.clearAllStubs?.();
-    }
-});
-
 
 Deno.test('processJob - routes to processSimpleJob for simple stages', async () => {
     // 1. Setup
@@ -567,12 +511,14 @@ Deno.test('processJob - verifies correct parameters passed to processComplexJob'
         // Verify the parameters passed to processComplexJob
         assertEquals(call.args[1], { ...mockJob, payload: mockPayload }, 'Second argument should be the job object and its payload');
         assertEquals(call.args[2], 'user-id-complex-params', 'Third argument should be projectOwnerUserId');
+        assertEquals(call.args[3], mockDeps, 'Fourth argument should be the unified deps object');
         
         // Verify that complexDeps contains the expected properties
-        const complexDeps = call.args[3];
-        assertExists(complexDeps.logger, 'complexDeps should have logger');
-        assertExists(complexDeps.planComplexStage, 'complexDeps should have planComplexStage');
-        assertExists(complexDeps.promptAssembler, 'complexDeps should have promptAssembler');
+        const passedDeps = call.args[3];
+        assertExists(passedDeps.logger, 'deps should have logger');
+        assertExists(passedDeps.planComplexStage, 'deps should have planComplexStage');
+        assertExists(passedDeps.ragService, 'deps should have ragService');
+        assertExists(passedDeps.fileManager, 'deps should have fileManager');
 
     } finally {
         spies.processSimpleJob.restore();

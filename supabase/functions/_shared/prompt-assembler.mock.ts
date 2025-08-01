@@ -6,20 +6,30 @@ import type {
 	SessionContext,
 	StageContext,
 	DynamicContextVariables,
+	SourceDocument,
+	ContributionOverride,
 } from './prompt-assembler.interface.ts';
-import type { ContributionOverride } from './prompt-assembler.ts';
 import { PromptAssembler } from './prompt-assembler.ts';
+import { IRagServiceDependencies } from './services/rag_service.interface.ts';
+import { AiModelExtendedConfig } from './types.ts';
+import { createMockSupabaseClient } from './supabase.mock.ts';
 
 export class MockPromptAssembler extends PromptAssembler {
 	public override assemble: Spy<PromptAssembler['assemble']>;
 	public override gatherContext: Spy<PromptAssembler['gatherContext']>;
 	public override render: Spy<PromptAssembler['render']>;
 	public override gatherInputsForStage: Spy<PromptAssembler['gatherInputsForStage']>;
-	public override getContextDocuments: Spy<PromptAssembler['getContextDocuments']>;
 
 	constructor(supabaseClient?: SupabaseClient<Database>) {
-		// deno-lint-ignore no-explicit-any
-		super(supabaseClient as any, undefined, undefined);
+        const clientToUse = supabaseClient || createMockSupabaseClient().client;
+		const mockRagDeps: IRagServiceDependencies = {
+            dbClient: clientToUse as unknown as SupabaseClient<Database>,
+            logger: console,
+            indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+            embeddingClient: { createEmbedding: () => Promise.resolve([]) },
+        };
+
+		super(clientToUse as unknown as SupabaseClient<Database>, mockRagDeps, undefined);
 
 		this.assemble = spy(async (
 			_project: ProjectContext,
@@ -27,6 +37,8 @@ export class MockPromptAssembler extends PromptAssembler {
 			_stage: StageContext,
 			_projectInitialUserPrompt: string,
 			_iterationNumber: number,
+            _modelConfigForTokenization: AiModelExtendedConfig,
+            _minTokenLimit: number
 		): Promise<string> => {
 			return await Promise.resolve('mock assembled prompt');
 		});
@@ -37,12 +49,15 @@ export class MockPromptAssembler extends PromptAssembler {
 			_projectInitialUserPrompt: string,
 			_iterationNumber: number,
 			_overrideContributions?: ContributionOverride[],
+            _modelConfigForTokenization?: AiModelExtendedConfig,
+            _minTokenLimit?: number
 		): Promise<DynamicContextVariables> => {
 			return await Promise.resolve({
 				user_objective: 'mock user objective',
 				domain: 'mock domain',
 				agent_count: 1,
 				context_description: 'mock context description',
+                original_user_request: 'mock original user request',
 				prior_stage_ai_outputs: 'mock prior stage ai outputs',
 				prior_stage_user_feedback: 'mock prior stage user feedback',
 				deployment_context: null,
@@ -67,21 +82,9 @@ export class MockPromptAssembler extends PromptAssembler {
 			_project: ProjectContext,
 			_session: SessionContext,
 			_iterationNumber: number,
-		): Promise<{ priorStageContributions: string; priorStageFeedback: string }> => {
-			return await Promise.resolve({
-				priorStageContributions: 'mock prior stage contributions',
-				priorStageFeedback: 'mock prior stage feedback',
-			});
+		): Promise<any[]> => { // Changed to Promise<any[]> to match new structure
+			return await Promise.resolve([]);
 		});
-
-		this.getContextDocuments = spy(
-			async (
-				_projectContext: ProjectContext,
-				_stageContext: StageContext,
-			): Promise<string[] | null> => {
-				return await Promise.resolve(['mock document 1', 'mock document 2']);
-			},
-		);
 	}
 }
 

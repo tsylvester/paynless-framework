@@ -12,6 +12,9 @@ import type {
   FinishReason
 } from '../_shared/types.ts';
 import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
+import type { IIndexingService, IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
+import type { IRagService } from '../_shared/services/rag_service.interface.ts';
+import type { MessageForTokenCounting, AiModelExtendedConfig } from '../_shared/types.ts';
 
 export type StorageError = {
   message: string;
@@ -362,23 +365,6 @@ export type DialecticJobPayload =
     | DialecticSimpleJobPayload // Assuming this exists for non-complex jobs
     | DialecticPlanJobPayload
     | DialecticExecuteJobPayload
-    | DialecticCombinationJobPayload;
-
-export interface DialecticCombinationJobPayload extends DialecticBaseJobPayload {
-  job_type: 'combine';
-  inputs?: {
-    document_ids?: string[];
-    [key: string]: unknown; // Allow other properties
-  };
-  prompt_template_name?: string;
-  output_type?: ContributionType; // Added for combination job
-  step_info?: {
-    current_step: number;
-    total_steps: number;
-    status: 'pending' | 'in-progress' | 'completed' | 'failed';
-  };
-  isIntermediate?: boolean;
-}
 
 export interface GenerateContributionsSuccessResponse {
   sessionId: string;
@@ -588,6 +574,8 @@ export interface SubmitStageResponsesDependencies {
     downloadFromStorage: typeof downloadFromStorage;
     logger: ILogger;
     fileManager: IFileManager;
+    indexingService: IIndexingService;
+    embeddingClient: IEmbeddingClient;
 }
 
 export type DialecticStageTransition = Database['public']['Tables']['dialectic_stage_transitions']['Row'];
@@ -688,7 +676,7 @@ export interface IContinueJobResult {
 export type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 export interface ExecuteModelCallAndSaveParams {
   dbClient: SupabaseClient<Database>;
-  deps: ProcessSimpleJobDeps;
+  deps: IDialecticJobDeps;
   authToken: string;
   job: DialecticJobRow;
   projectOwnerUserId: string;
@@ -697,7 +685,7 @@ export interface ExecuteModelCallAndSaveParams {
   previousContent: string;
   sessionData: { id: string, associated_chat_id: string | null };
 }
-export interface ProcessSimpleJobDeps extends GenerateContributionsDeps {
+export interface IDialecticJobDeps extends GenerateContributionsDeps {
   getSeedPromptForStage: (
     dbClient: SupabaseClient<Database>,
     projectId: string,
@@ -724,6 +712,19 @@ export interface ProcessSimpleJobDeps extends GenerateContributionsDeps {
   ) => Promise<{ error?: Error }>;
   notificationService: NotificationServiceType;
   executeModelCallAndSave: (params: ExecuteModelCallAndSaveParams) => Promise<void>;
+  // Properties from the former IPlanComplexJobDeps
+  planComplexStage?: (
+      dbClient: SupabaseClient<Database>,
+      parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
+      deps: IDialecticJobDeps, // Self-reference
+      recipeStep: DialecticRecipeStep
+  ) => Promise<(DialecticJobRow)[]>;
+  getGranularityPlanner?: (strategyId: string) => GranularityPlannerFn | undefined;
+  ragService?: IRagService;
+  countTokens?: (messages: MessageForTokenCounting[], modelConfig: AiModelExtendedConfig) => number;
+  getAiProviderConfig?: (dbClient: SupabaseClient<Database>, modelId: string) => Promise<AiModelExtendedConfig>;
+  indexingService?: IIndexingService;
+  embeddingClient?: IEmbeddingClient;
 }
 export type RecipeStep = {
     step_name: string;
@@ -741,7 +742,7 @@ export type GranularityPlannerFn = (
     sourceDocs: SourceDocument[],
     parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
     recipeStep: DialecticRecipeStep
-) => (DialecticExecuteJobPayload | DialecticCombinationJobPayload)[];
+) => DialecticExecuteJobPayload[];
 
 export type GranularityStrategyMap = Map<string, GranularityPlannerFn>;
 
@@ -768,4 +769,4 @@ export interface DialecticStageRecipe {
         type: 'task_isolation';
     };
     steps: DialecticRecipeStep[];
-} 
+}

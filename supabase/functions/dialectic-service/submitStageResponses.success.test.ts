@@ -55,6 +55,8 @@ const MOCK_SUCCESS_TEST_DOMAIN = {
   description: "A mock domain for testing."
 };
 
+const MOCK_MODEL_ID = 'model-id-1';
+
 Deno.test('submitStageResponses', async (t) => {
   const testUserId = crypto.randomUUID();
   const testProjectId = crypto.randomUUID();
@@ -223,7 +225,8 @@ Deno.test('submitStageResponses', async (t) => {
                 description: MOCK_SUCCESS_TEST_DOMAIN.description
               }
             },
-            stage: mockThesisStage
+            stage: mockThesisStage,
+            selected_model_ids: [MOCK_MODEL_ID],
           }] },
           update: { data: [{ id: testSessionId, status: `pending_${mockAntithesisStage.slug}` }] },
         },
@@ -308,7 +311,10 @@ Deno.test('submitStageResponses', async (t) => {
         },
         dialectic_process_templates: {
             select: { data: [mockProcessTemplate] }
-        }
+        },
+        'ai_providers': {
+            select: { data: [{ id: MOCK_MODEL_ID, config: { provider_max_input_tokens: 8000, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } }, api_identifier: 'mock-api-id' }], error: null }
+        },
       },
       storageMock: {
         downloadResult: async (bucket: string, path: string) => {
@@ -345,7 +351,9 @@ Deno.test('submitStageResponses', async (t) => {
             }
             const arrayBuffer = await blob.arrayBuffer();
             return { data: arrayBuffer, error: null, mimeType: blob.type };
-        }
+        },
+        indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+        embeddingClient: { createEmbedding: () => Promise.resolve([]) }
     };
 
     const assembleSpy = spy(PromptAssembler.prototype, "assemble");
@@ -519,6 +527,7 @@ Deno.test('submitStageResponses', async (t) => {
           select: { data: [{
             id: testSessionId,
             iteration_count: 1,
+            selected_model_ids: [MOCK_MODEL_ID],
             project: {
               id: testProjectId,
               user_id: testUserId,
@@ -544,6 +553,9 @@ Deno.test('submitStageResponses', async (t) => {
         },
         // No dialectic_contributions needed if responses array is empty
         // No system_prompts needed if no next stage
+        'ai_providers': {
+          select: { data: [{ config: { provider_max_input_tokens: 8000, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } }, api_identifier: 'mock-api-id' }], error: null }
+        },
       }
     };
     
@@ -552,6 +564,8 @@ Deno.test('submitStageResponses', async (t) => {
       logger,
       downloadFromStorage: spy((_client: SupabaseClient, _bucket: string, _path: string): Promise<{ data: ArrayBuffer | null; error: Error | null; }> => Promise.resolve({ data: new ArrayBuffer(0), error: null })),
       fileManager: mockFileManager,
+      indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+      embeddingClient: { createEmbedding: () => Promise.resolve([]) }
     };
 
     const { data, status, error } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient<Database>, mockUser, mockDependencies);
@@ -651,7 +665,8 @@ Deno.test('submitStageResponses', async (t) => {
                 description: MOCK_OVERLAY_DOMAIN.description
               }
             },
-            stage: mockThesisStage
+            stage: mockThesisStage,
+            selected_model_ids: [MOCK_MODEL_ID],
           }] },
           update: { data: [{ id: testSessionId, status: `pending_${mockAntithesisStage.slug}` }] },
         },
@@ -737,7 +752,10 @@ Deno.test('submitStageResponses', async (t) => {
         },
         dialectic_process_templates: {
             select: { data: [mockProcessTemplate] }
-        }
+        },
+        'ai_providers': {
+            select: { data: [{ id: MOCK_MODEL_ID, config: { provider_max_input_tokens: 8000, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } }, api_identifier: 'mock-api-id' }], error: null }
+        },
       },
       storageMock: {
         downloadResult: async (bucket: string, path: string) => {
@@ -770,7 +788,9 @@ Deno.test('submitStageResponses', async (t) => {
             }
             const arrayBuffer = await blob.arrayBuffer();
             return { data: arrayBuffer, error: null, mimeType: blob.type };
-        }
+          },
+        indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+        embeddingClient: { createEmbedding: () => Promise.resolve([]) }
     };
 
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient<Database>, mockUser, mockDependencies);
@@ -840,7 +860,7 @@ Deno.test('submitStageResponses', async (t) => {
     };
     const mockDbConfig: MockSupabaseDataConfig = {
       genericMockResults: {
-        dialectic_sessions: {
+        dialectic_sessions: { 
           select: { data: [{
             id: testSessionId,
             iteration_count: 1,
@@ -875,7 +895,10 @@ Deno.test('submitStageResponses', async (t) => {
         },
         dialectic_process_templates: {
           select: { data: [mockProcessTemplate] }
-        }
+        },
+        'ai_providers': {
+          select: { data: [{ config: { provider_max_input_tokens: 8000, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } }, api_identifier: 'mock-api-id' }], error: null }
+        },
       }
     };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
@@ -883,7 +906,7 @@ Deno.test('submitStageResponses', async (t) => {
       // This spy should not be called because there's no next stage to prepare a seed for.
       throw new Error("Should not be called when finalizing a session");
     });
-    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorage, fileManager: mockFileManager };
+    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorage, fileManager: mockFileManager, indexingService: { indexDocument: () => Promise.resolve({ success: true }) }, embeddingClient: { createEmbedding: () => Promise.resolve([]) } };
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient<Database>, mockUser, mockDependencies);
 
     assertEquals(status, 200);
@@ -932,7 +955,10 @@ Deno.test('submitStageResponses', async (t) => {
         dialectic_feedback: { insert: { data: [{ id: crypto.randomUUID(), feedback_value_text: 'text', session_id: testSessionId, user_id: testUserId, contribution_id: testContributionId1, feedback_type: 'text_response', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }] } },
         dialectic_stage_transitions: { select: { data: null, error: null } }, // No transition from Paralysis
         dialectic_process_templates: { select: { data: [mockProcessTemplate] } },
-        dialectic_stages: { select: { data: [mockParalysisStage] } }
+        dialectic_stages: { select: { data: [mockParalysisStage] } },
+        'ai_providers': {
+          select: { data: [{ config: { provider_max_input_tokens: 8000, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } }, api_identifier: 'mock-api-id' }], error: null }
+        },
       },
       storageMock: {
         downloadResult: (bucket, path) => {
@@ -959,7 +985,9 @@ Deno.test('submitStageResponses', async (t) => {
           const ab = await data.arrayBuffer();
           return { data: ab, error: null, mimeType: data.type };
         },
-        fileManager: mockFileManager 
+        fileManager: mockFileManager,
+        indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+        embeddingClient: { createEmbedding: () => Promise.resolve([]) }
       });
 
     assertEquals(status, 200);
@@ -991,7 +1019,7 @@ Deno.test('submitStageResponses', async (t) => {
       }
     };
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorageGlobalSpy, fileManager: mockFileManager };
+    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorageGlobalSpy, fileManager: mockFileManager, indexingService: { indexDocument: () => Promise.resolve({ success: true }) }, embeddingClient: { createEmbedding: () => Promise.resolve([]) }  };
 
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient<Database>, mockUser, mockDependencies);
 
@@ -1025,11 +1053,14 @@ Deno.test('submitStageResponses', async (t) => {
                 const id = state.filters.find((f: { column: string; value: any; }) => f.column === 'id')?.value;
                 return Promise.resolve({ data: [{ id: id, model_name: `Model for ${id}`, session_id: testSessionId }] });
             }
-        }
+        },
+        'ai_providers': {
+          select: { data: [{ config: { provider_max_input_tokens: 8000, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } }, api_identifier: 'mock-api-id' }], error: null }
+        },
       },
     };
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorageGlobalSpy, fileManager: mockFileManager };
+    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorageGlobalSpy, fileManager: mockFileManager, indexingService: { indexDocument: () => Promise.resolve({ success: true }) }, embeddingClient: { createEmbedding: () => Promise.resolve([]) } };
 
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient<Database>, mockUser, mockDependencies);
     assertEquals(status, 500);
@@ -1094,7 +1125,7 @@ Deno.test('submitStageResponses', async (t) => {
       },
     };
     const mockSupabase = createMockSupabaseClient(testUserId, mockDbConfig);
-    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorageGlobalSpy, fileManager: mockFileManager };
+    const mockDependencies = { logger, downloadFromStorage: mockDownloadFromStorageGlobalSpy, fileManager: mockFileManager, indexingService: { indexDocument: () => Promise.resolve({ success: true }) }, embeddingClient: { createEmbedding: () => Promise.resolve([]) } };
 
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient<Database>, mockUser, mockDependencies);
     assertEquals(status, 500);
@@ -1176,7 +1207,9 @@ Deno.test('submitStageResponses', async (t) => {
     const mockDependencies = {
         logger,
         downloadFromStorage: mockDownloadFromStorageSpy,
-        fileManager: mockFileManager
+        fileManager: mockFileManager,
+        indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+        embeddingClient: { createEmbedding: () => Promise.resolve([]) }
     };
 
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient<Database>, mockUser, mockDependencies);

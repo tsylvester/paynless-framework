@@ -5,7 +5,6 @@ import {
     isCitationsArray,
     isDialecticContribution,
     isDialecticJobPayload,
-    isDialecticCombinationJobPayload,
     isDialecticJobRow,
     isDialecticJobRowArray,
     isFailedAttemptError,
@@ -1255,65 +1254,6 @@ Deno.test('Type Guard: hasStepsRecipe', async (t) => {
             expected_output_artifacts: []
         };
         assert(!hasStepsRecipe(stage));
-    });
-});
-
-Deno.test('Type Guard: isDialecticCombinationJobPayload', async (t) => {
-    await t.step('should return true for a valid combination job payload', () => {
-        const payload = {
-            job_type: 'combine',
-            sessionId: 's1',
-            projectId: 'p1',
-            model_id: 'm1',
-            inputs: {
-                document_ids: ['doc1', 'doc2']
-            }
-        };
-        assert(isDialecticCombinationJobPayload(payload));
-    });
-
-    await t.step('should return true if inputs is missing', () => {
-        const payload = {
-            job_type: 'combine',
-            sessionId: 's1',
-            projectId: 'p1',
-            model_id: 'm1'
-        };
-        assert(isDialecticCombinationJobPayload(payload));
-    });
-
-    await t.step('should return false if job_type is not combine', () => {
-        const payload = {
-            job_type: 'execute',
-            sessionId: 's1',
-            projectId: 'p1',
-            model_id: 'm1'
-        };
-        assert(!isDialecticCombinationJobPayload(payload));
-    });
-
-    await t.step('should return false if document_ids is not an array of strings', () => {
-        const payload = {
-            job_type: 'combine',
-            sessionId: 's1',
-            projectId: 'p1',
-            model_id: 'm1',
-            inputs: {
-                document_ids: ['doc1', 123]
-            }
-        };
-        assert(!isDialecticCombinationJobPayload(payload));
-    });
-
-    await t.step('should return false if prompt_template_name is not a string', () => {
-        const payload = {
-            job_type: 'combine',
-            sessionId: 's1',
-            projectId: 'p1',
-            model_id: 'm1',
-            prompt_template_name: 123,
-        };
-        assert(!isDialecticCombinationJobPayload(payload));
     });
 });
 

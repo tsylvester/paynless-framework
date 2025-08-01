@@ -46,6 +46,7 @@ Deno.test('submitStageResponses', async (t) => {
   const testAntithesisStageId = crypto.randomUUID();
   const testParalysisStageId = crypto.randomUUID();
   const mockUser: User = { id: testUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() };
+  const MOCK_MODEL_ID = crypto.randomUUID();
 
   const mockProcessTemplate = {
     id: testProcessTemplateId,
@@ -114,6 +115,7 @@ Deno.test('submitStageResponses', async (t) => {
         dialectic_sessions: { select: { data: [{ 
             id: testSessionId,
             iteration_count: 1,
+            selected_model_ids: [MOCK_MODEL_ID],
             project: { 
               id: testProjectId, 
               user_id: testUserId,
@@ -149,7 +151,9 @@ Deno.test('submitStageResponses', async (t) => {
     const mockDependencies = {
         logger,
         downloadFromStorage: spy((): Promise<{ data: ArrayBuffer | null; error: Error | null; }> => Promise.resolve({data: null, error: null})),
-        fileManager: mockFileManager
+        fileManager: mockFileManager,
+        indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+        embeddingClient: { createEmbedding: () => Promise.resolve([]) }
     };
 
     // Act
@@ -208,6 +212,7 @@ Deno.test('submitStageResponses', async (t) => {
                     data: [{
                         id: testSessionId,
                         iteration_count: 1,
+                        selected_model_ids: [MOCK_MODEL_ID],
                         project: {
                             id: testProjectId,
                             user_id: testUserId,
@@ -232,6 +237,9 @@ Deno.test('submitStageResponses', async (t) => {
                         status: `pending_${mockAntithesisStage.slug}`,
                     }],
                 },
+            },
+            ai_providers: {
+              select: { data: [{ config: { provider_max_input_tokens: 8000, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } }, api_identifier: 'mock-api-id' }], error: null }
             },
             dialectic_feedback: { insert: { data: [{id: 'fb-id'}] } },
             dialectic_contributions: { select: { data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId, storage_bucket: 'test-bucket', storage_path: 'ai_contributions', file_name: 'contribution.md' }] } },
@@ -267,6 +275,8 @@ Deno.test('submitStageResponses', async (t) => {
       logger,
       downloadFromStorage: mockDownloadFromStorage,
       fileManager: mockFileManager,
+      indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+      embeddingClient: { createEmbedding: () => Promise.resolve([]) }
     });
     
     // 5.2.3 Assert
@@ -317,6 +327,7 @@ Deno.test('submitStageResponses', async (t) => {
                 data: [{
                   id: testSessionId5_3,
                   iteration_count: 1,
+                  selected_model_ids: [MOCK_MODEL_ID],
                   project: {
                     id: testProjectId5_3,
                     user_id: testUserId5_3,
@@ -336,6 +347,9 @@ Deno.test('submitStageResponses', async (t) => {
             return Promise.resolve({ data: null, error: new Error("Session not found in 5.3 mock"), status: 404, count: 0 });
           },
           update: () => Promise.resolve({ data: [{ id: testSessionId5_3 }], error: null, status: 200, count: 1 }) // Should not be reached if download fails
+        },
+        ai_providers: {
+          select: { data: [{ config: { provider_max_input_tokens: 8000, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } }, api_identifier: 'mock-api-id' }], error: null }
         },
         dialectic_stage_transitions: {
           select: () => Promise.resolve({ // Transition from thesis to antithesis
@@ -447,7 +461,7 @@ Deno.test('submitStageResponses', async (t) => {
       mockPayload5_3,
       mockSupabaseClient5_3 as unknown as SupabaseClient<Database>,
       mockUserInstance5_3,
-      { logger, fileManager: mockFileManager5_3, downloadFromStorage }
+      { logger, fileManager: mockFileManager5_3, downloadFromStorage, indexingService: { indexDocument: () => Promise.resolve({ success: true }) }, embeddingClient: { createEmbedding: () => Promise.resolve([]) } }
     );
 
     // 5.3.3 Assert
@@ -480,6 +494,7 @@ Deno.test('submitStageResponses', async (t) => {
             select: { data: [{ 
                 id: testSessionId,
                 iteration_count: 1,
+                selected_model_ids: [MOCK_MODEL_ID],
                 project: { 
                   id: testProjectId, 
                   user_id: testUserId,
@@ -498,6 +513,9 @@ Deno.test('submitStageResponses', async (t) => {
                 stage: mockThesisStage
             }] },
             update: { data: [{ id: testSessionId, status: `pending_${mockAntithesisStage.slug}` }] } // Mock for session update to next stage
+        },
+        ai_providers: {
+          select: { data: [{ config: { provider_max_input_tokens: 8000, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } }, api_identifier: 'mock-api-id' }], error: null }
         },
         // If feedback file upload fails, the dialectic_feedback insert via fileManager might not occur or might be part of a rolled-back transaction.
         // For this test, we assume the function continues and attempts other operations.
@@ -523,6 +541,8 @@ Deno.test('submitStageResponses', async (t) => {
       logger,
       downloadFromStorage: spy((): Promise<{ data: ArrayBuffer | null; error: Error | null; }> => Promise.resolve({data: new ArrayBuffer(0), error: null})),
       fileManager: mockFileManager,
+      indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+      embeddingClient: { createEmbedding: () => Promise.resolve([]) }
     });
     
     // Assert based on current function behavior (returns 500 on feedback save failure)

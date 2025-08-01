@@ -4,17 +4,11 @@ import type { Database } from '../types_db.ts';
 import type {
     DialecticJobRow,
     DialecticPlanJobPayload,
-    DialecticRecipeStep,
-    GranularityPlannerFn,
+    IDialecticJobDeps,
 } from '../dialectic-service/dialectic.interface.ts';
-import type { ILogger } from '../_shared/types.ts';
-import { PromptAssembler } from '../_shared/prompt-assembler.ts';
-import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { isDialecticPlanJobPayload, isDialecticStageRecipe, isJson, isRecord, isAiModelExtendedConfig } from '../_shared/utils/type_guards.ts';
-import { IRagService } from '../_shared/services/rag_service.interface.ts';
-import { IFileManager } from '../_shared/types/file_manager.types.ts';
-import { AiModelExtendedConfig, MessageForTokenCounting } from '../_shared/types.ts';
+import { AiModelExtendedConfig } from '../_shared/types.ts';
 
 export async function getAiProviderConfig(dbClient: SupabaseClient<Database>, modelId: string): Promise<AiModelExtendedConfig> {
     const { data: providerData, error: providerError } = await dbClient
@@ -44,28 +38,12 @@ export async function getAiProviderConfig(dbClient: SupabaseClient<Database>, mo
     return potentialConfig;
 }
 
-export interface IPlanComplexJobDeps {
-    logger: ILogger;
-    planComplexStage: (
-        dbClient: SupabaseClient<Database>,
-        parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
-        deps: IPlanComplexJobDeps,
-        recipeStep: DialecticRecipeStep
-    ) => Promise<(DialecticJobRow)[]>;
-    promptAssembler: PromptAssembler;
-    downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>;
-    getGranularityPlanner: (strategyId: string) => GranularityPlannerFn | undefined;
-    ragService: IRagService;
-    fileManager: IFileManager;
-    countTokens: (messages: MessageForTokenCounting[], modelConfig: AiModelExtendedConfig) => number;
-    getAiProviderConfig: (dbClient: SupabaseClient<Database>, modelId: string) => Promise<AiModelExtendedConfig>;
-}
 
 export async function processComplexJob(
     dbClient: SupabaseClient<Database>,
     job: DialecticJobRow & { payload: DialecticPlanJobPayload },
     projectOwnerUserId: string,
-    deps: IPlanComplexJobDeps,
+    deps: IDialecticJobDeps,
 ): Promise<void> {
     const { id: parentJobId } = job;
     
@@ -117,6 +95,9 @@ export async function processComplexJob(
     }
 
     try {
+        if (!deps.planComplexStage) {
+            throw new Error("planComplexStage dependency is missing.");
+        }
         // 5. Delegate to the planner to get the child jobs.
         const childJobs = await deps.planComplexStage(
             dbClient,
