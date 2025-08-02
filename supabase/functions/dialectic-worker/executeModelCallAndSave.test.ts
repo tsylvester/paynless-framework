@@ -28,6 +28,7 @@ import {
 import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
 import type { LogMetadata } from '../_shared/types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
 
   // Helper function to create a valid DialecticJobRow for testing
   function createMockJob(payload: DialecticJobPayload, overrides: Partial<DialecticJobRow> = {}): DialecticJobRow {
@@ -71,7 +72,10 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
     model_id: 'model-def',
     iterationNumber: 1,
     continueUntilComplete: false,
-    walletId: 'wallet-ghi'
+    walletId: 'wallet-ghi',
+    canonicalPathParams: {
+        contributionType: 'thesis',
+    }
   };
   
   const mockSessionData: DialecticSession = {
@@ -197,9 +201,30 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
             select: { data: [mockFullProviderData], error: null }
         }
     });
-    const deps: IDialecticJobDeps = getMockDeps();
 
-    const fileManagerSpy = spy(deps.fileManager, 'uploadAndRegisterFile');
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+
+    const deps: IDialecticJobDeps = {
+      callUnifiedAIModel: async () => ({
+        content: 'AI response content',
+        contentType: 'text/plain',
+        inputTokens: 10,
+        outputTokens: 20,
+        processingTimeMs: 100,
+      }),
+      getExtensionFromMimeType: () => '.txt',
+      logger: logger,
+      fileManager: fileManager,
+      continueJob: async () => ({ enqueued: false }),
+      notificationService: mockNotificationService,
+      getSeedPromptForStage: async () => ({ content: 'Seed prompt content', fullPath: 'test/path/seed.txt', bucket: 'test-bucket', path: 'test/path', fileName: 'seed.txt' }),
+      retryJob: async () => ({}),
+      downloadFromStorage: async () => ({ data: new ArrayBuffer(100), error: null }),
+      randomUUID: () => '123',
+      deleteFromStorage: async () => ({ error: null }),
+      executeModelCallAndSave: async () => {},
+    };
     
     await t.step('should run to completion successfully', async () => {
         const params: ExecuteModelCallAndSaveParams = {
@@ -215,7 +240,7 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
         };
         await executeModelCallAndSave(params);
 
-        assert(fileManagerSpy.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
+        assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
         
         const historicSpies = spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
         assertExists(historicSpies, "Job update spies should exist");
@@ -234,8 +259,30 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
             select: { data: [mockFullProviderData], error: null }
         }
     });
-    const deps: IDialecticJobDeps = getMockDeps();
-    const fileManagerSpy = spy(deps.fileManager, 'uploadAndRegisterFile');
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+
+    const deps: IDialecticJobDeps = {
+      callUnifiedAIModel: async () => ({
+        content: 'AI response content',
+        contentType: 'text/plain',
+        inputTokens: 10,
+        outputTokens: 20,
+        processingTimeMs: 100,
+      }),
+      getExtensionFromMimeType: () => '.txt',
+      logger: logger,
+      fileManager: fileManager,
+      continueJob: async () => ({ enqueued: false }),
+      notificationService: mockNotificationService,
+      getSeedPromptForStage: async () => ({ content: 'Seed prompt content', fullPath: 'test/path/seed.txt', bucket: 'test-bucket', path: 'test/path', fileName: 'seed.txt' }),
+      retryJob: async () => ({}),
+      downloadFromStorage: async () => ({ data: new ArrayBuffer(100), error: null }),
+      randomUUID: () => '123',
+      deleteFromStorage: async () => ({ error: null }),
+      executeModelCallAndSave: async () => {},
+    };
 
     await t.step('should pass isIntermediate flag to fileManager', async () => {
         const intermediatePayload: DialecticExecuteJobPayload = { ...testPayload, isIntermediate: true };
@@ -252,9 +299,9 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
         };
         await executeModelCallAndSave(params);
 
-        assert(fileManagerSpy.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
+        assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
         
-        const uploadContext = fileManagerSpy.calls[0].args[0];
+        const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
         assertEquals(uploadContext.contributionMetadata?.isIntermediate, true, "isIntermediate flag was not passed correctly to the file manager");
     });
 
@@ -267,8 +314,30 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
             select: { data: [mockFullProviderData], error: null }
         }
     });
-    const deps: IDialecticJobDeps = getMockDeps();
-    const fileManagerSpy = spy(deps.fileManager, 'uploadAndRegisterFile');
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+
+    const deps: IDialecticJobDeps = {
+      callUnifiedAIModel: async () => ({
+        content: 'AI response content',
+        contentType: 'text/plain',
+        inputTokens: 10,
+        outputTokens: 20,
+        processingTimeMs: 100,
+      }),
+      getExtensionFromMimeType: () => '.txt',
+      logger: logger,
+      fileManager: fileManager,
+      continueJob: async () => ({ enqueued: false }),
+      notificationService: mockNotificationService,
+      getSeedPromptForStage: async () => ({ content: 'Seed prompt content', fullPath: 'test/path/seed.txt', bucket: 'test-bucket', path: 'test/path', fileName: 'seed.txt' }),
+      retryJob: async () => ({}),
+      downloadFromStorage: async () => ({ data: new ArrayBuffer(100), error: null }),
+      randomUUID: () => '123',
+      deleteFromStorage: async () => ({ error: null }),
+      executeModelCallAndSave: async () => {},
+    };
   
     await t.step('should pass isIntermediate: false to fileManager when explicitly set', async () => {
         const finalPayload: DialecticExecuteJobPayload = { ...testPayload, isIntermediate: false };
@@ -285,8 +354,8 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
         };
         await executeModelCallAndSave(params);
   
-        assert(fileManagerSpy.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
-        const uploadContext = fileManagerSpy.calls[0].args[0];
+        assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
+        const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
         assertEquals(uploadContext.contributionMetadata?.isIntermediate, false, "isIntermediate flag should be false");
     });
   
@@ -307,8 +376,8 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
         };
         await executeModelCallAndSave(params);
   
-        assert(fileManagerSpy.calls.length > 1, 'Expected fileManager.uploadAndRegisterFile to be called a second time');
-        const uploadContext = fileManagerSpy.calls[1].args[0]; // Check the second call
+        assert(fileManager.uploadAndRegisterFile.calls.length > 1, 'Expected fileManager.uploadAndRegisterFile to be called a second time');
+        const uploadContext = fileManager.uploadAndRegisterFile.calls[1].args[0]; // Check the second call
         assertEquals(uploadContext.contributionMetadata?.isIntermediate, false, "isIntermediate flag should default to false");
     });
   

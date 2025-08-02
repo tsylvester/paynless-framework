@@ -38,10 +38,14 @@ import { submitStageResponses } from "../../functions/dialectic-service/submitSt
 import { downloadFromStorage } from "../../functions/_shared/supabase_storage_utils.ts";
 import { executeModelCallAndSave } from "../../functions/dialectic-worker/executeModelCallAndSave.ts";
 import { type UploadContext, IFileManager } from "../../functions/_shared/types/file_manager.types.ts";
-import { MockRagService } from "../../functions/_shared/services/rag_service.mock.ts";
-import { MockIndexingService } from "../../functions/_shared/services/indexing_service.mock.ts";
+import { RagService } from "../../functions/_shared/services/rag_service.ts";
+import { IndexingService, LangchainTextSplitter, OpenAIEmbeddingClient } from "../../functions/_shared/services/indexing_service.ts";
 import { IEmbeddingClient, IIndexingService } from "../../functions/_shared/services/indexing_service.interface.ts";
 import { IRagService } from "../../functions/_shared/services/rag_service.interface.ts";
+import { getGranularityPlanner } from '../../functions/dialectic-worker/strategies/granularity.strategies.ts';
+import { countTokensForMessages } from '../../functions/_shared/utils/tokenizer_utils.ts';
+import { getAiProviderConfig } from '../../functions/dialectic-worker/processComplexJob.ts';
+import { OpenAiAdapter } from "../../functions/_shared/ai_service/openai_adapter.ts";
 
 // --- Test Suite Setup ---
 let adminClient: SupabaseClient<Database>;
@@ -164,9 +168,6 @@ Deno.test(
     let testSession: StartSessionSuccessResponse | null = null;
     let modelAId: string;
     let modelBId: string;
-    let mockRagService: IRagService;
-    let mockIndexingService: IIndexingService;
-    let mockEmbeddingClient: IEmbeddingClient;
 
     const setup = async () => {
         adminClient = initializeSupabaseAdminClient();
@@ -247,11 +248,16 @@ Deno.test(
         );
         mockAiAdapter.reset();
 
-        mockRagService = new MockRagService();
-        mockIndexingService = new MockIndexingService();
-        mockEmbeddingClient = {
-            createEmbedding: () => Promise.resolve(Array(1536).fill(0.1)),
-        };
+        const openAiAdapter = new OpenAiAdapter("sk-test-fake-key", testLogger);
+        const embeddingClient = new OpenAIEmbeddingClient(openAiAdapter);
+        const textSplitter = new LangchainTextSplitter();
+        const indexingService = new IndexingService(adminClient, testLogger, textSplitter, embeddingClient);
+        const ragService = new RagService({
+            dbClient: adminClient,
+            logger: testLogger,
+            indexingService,
+            embeddingClient,
+        });
 
         testDeps = {
             logger: testLogger,
@@ -313,9 +319,13 @@ Deno.test(
                 sendDialecticProgressUpdateEvent: () => Promise.resolve(),
             },
             executeModelCallAndSave,
-            ragService: mockRagService,
-            indexingService: mockIndexingService,
-            embeddingClient: mockEmbeddingClient,
+            ragService: ragService,
+            indexingService: indexingService,
+            embeddingClient: embeddingClient,
+            planComplexStage,
+            getGranularityPlanner,
+            countTokens: countTokensForMessages,
+            getAiProviderConfig,
         };
     };
 
@@ -509,7 +519,7 @@ Deno.test(
         }))
       };
 
-      const submitDeps = { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage, indexingService: mockIndexingService, embeddingClient: mockEmbeddingClient };
+      const submitDeps = { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage, indexingService: testDeps.indexingService!, embeddingClient: testDeps.embeddingClient! };
       const { data: submitData, error: submitError } = await submitStageResponses(
         submitPayload,
         adminClient,
@@ -649,7 +659,7 @@ Deno.test(
         }))
       };
       
-      const submitDeps = { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage, indexingService: mockIndexingService, embeddingClient: mockEmbeddingClient };
+      const submitDeps = { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage, indexingService: testDeps.indexingService!, embeddingClient: testDeps.embeddingClient! };
       const { data: submitData, error: submitError } = await submitStageResponses(
         submitPayload,
         adminClient,
@@ -775,7 +785,14 @@ Deno.test(
             }))
         };
 
-        const submitDeps = { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage, indexingService: mockIndexingService, embeddingClient: mockEmbeddingClient };
+        const submitDeps = { 
+          logger: testLogger, 
+          fileManager: testDeps.fileManager, 
+          downloadFromStorage, 
+          indexingService: testDeps.indexingService!, 
+          embeddingClient: testDeps.embeddingClient!,
+          ragService: testDeps.ragService!
+        };
         const { data: submitData, error: submitError } = await submitStageResponses(
             submitPayload,
             adminClient,
@@ -856,7 +873,14 @@ Deno.test(
             }))
         };
 
-        const submitDeps = { logger: testLogger, fileManager: testDeps.fileManager, downloadFromStorage, indexingService: mockIndexingService, embeddingClient: mockEmbeddingClient };
+        const submitDeps = { 
+          logger: testLogger, 
+          fileManager: testDeps.fileManager, 
+          downloadFromStorage, 
+          indexingService: testDeps.indexingService!, 
+          embeddingClient: testDeps.embeddingClient!, 
+          ragService: testDeps.ragService! 
+        };
         const { data: submitData, error: submitError } = await submitStageResponses(
             submitPayload,
             adminClient,

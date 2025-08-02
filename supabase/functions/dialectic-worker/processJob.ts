@@ -107,6 +107,9 @@ export async function processJob(
               prompt_template_name: 'default_seed_prompt',
               output_type: stageSlug,
               inputs: {},
+              canonicalPathParams: {
+                contributionType: stageSlug,
+              },
           };
 
 

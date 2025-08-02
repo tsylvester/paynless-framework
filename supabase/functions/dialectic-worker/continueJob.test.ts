@@ -11,7 +11,7 @@ import {
   type DialecticJobPayload,
   type IContinueJobDeps,
 } from '../dialectic-service/dialectic.interface.ts';
-import { isDialecticJobPayload, isRecord, isJson } from '../_shared/utils/type_guards.ts';
+import { isDialecticJobPayload, isRecord, isJson, isDialecticExecuteJobPayload } from '../_shared/utils/type_guards.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 type JobInsert = Database['public']['Tables']['dialectic_generation_jobs']['Insert'];
@@ -59,21 +59,24 @@ Deno.test('continueJob', async (t) => {
     let deps: IContinueJobDeps;
 
     const basePayload: DialecticJobPayload = { 
-        job_type: 'execute',
-        sessionId: 'session-1',
-        projectId: 'project-1',
-        model_id: 'model-1',
-        stageSlug: 'test-stage',
-        iterationNumber: 1,
-        step_info: { current_step: 0, total_steps: 1 },
-        prompt_template_name: 'test_template',
-        inputs: { source: 'some_input' },
-        output_type: 'thesis',
-        continueUntilComplete: true, 
-        continuation_count: 0,
-        walletId: 'wallet-1',
-        maxRetries: 5,
-    };
+    job_type: 'execute',
+    sessionId: 'session-1',
+    projectId: 'project-1',
+    model_id: 'model-1',
+    stageSlug: 'test-stage',
+    iterationNumber: 1,
+    step_info: { current_step: 0, total_steps: 1 },
+    prompt_template_name: 'test_template',
+    inputs: { source: 'some_input' },
+    output_type: 'thesis',
+    continueUntilComplete: true, 
+    continuation_count: 0,
+    walletId: 'wallet-1',
+    maxRetries: 5,
+    canonicalPathParams: {
+        contributionType: 'thesis'
+    },
+};
     
     const baseJob = createMockJob(basePayload);
 
@@ -376,7 +379,7 @@ Deno.test('continueJob', async (t) => {
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
         const newJobData = insertSpy!.callsArgs[0][0];
         assert(isJobInsert(newJobData));
-        if (isDialecticJobPayload(newJobData.payload)) {
+        if (isDialecticExecuteJobPayload(newJobData.payload)) {
             assertEquals(newJobData.payload.continuation_count, 1);
         } else {
             assert(false, 'Payload is not a valid DialecticJobPayload');
@@ -407,7 +410,7 @@ Deno.test('continueJob', async (t) => {
         const newJobData = insertSpy!.callsArgs[0][0];
         assert(isJobInsert(newJobData));
 
-        if (isDialecticJobPayload(newJobData.payload)) {
+        if (isDialecticExecuteJobPayload(newJobData.payload)) {
             assertEquals(newJobData.payload.walletId, 'wallet-1');
             assertEquals(newJobData.payload.maxRetries, 5);
         } else {
@@ -436,6 +439,9 @@ Deno.test('continueJob', async (t) => {
             output_type: 'thesis',
             continueUntilComplete: true, 
             continuation_count: 0,
+            canonicalPathParams: {
+                contributionType: 'thesis'
+            },
         };
         
         const testJob = createMockJob(testPayload);
@@ -449,7 +455,7 @@ Deno.test('continueJob', async (t) => {
         const newJobData = insertSpy!.callsArgs[0][0];
         assert(isJobInsert(newJobData));
 
-        if (isDialecticJobPayload(newJobData.payload)) {
+        if (isDialecticExecuteJobPayload(newJobData.payload)) {
             assertEquals('walletId' in newJobData.payload, false);
             assertEquals('maxRetries' in newJobData.payload, false);
         } else {
@@ -478,7 +484,10 @@ Deno.test('continueJob', async (t) => {
             output_type: 'thesis',
             continueUntilComplete: true, 
             continuation_count: 0,
-            walletId: 'only-wallet-id' 
+            walletId: 'only-wallet-id',
+            canonicalPathParams: {
+                contributionType: 'thesis'
+            },
         };
 
         const testJob = createMockJob(testPayload);
@@ -491,7 +500,7 @@ Deno.test('continueJob', async (t) => {
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
         const newJobData = insertSpy!.callsArgs[0][0];
         assert(isJobInsert(newJobData));
-        if (isDialecticJobPayload(newJobData.payload)) {
+        if (isDialecticExecuteJobPayload(newJobData.payload)) {
             assertEquals(newJobData.payload.walletId, 'only-wallet-id');
             assertEquals('maxRetries' in newJobData.payload, false);
         } else {
@@ -620,7 +629,7 @@ Deno.test('continueJob', async (t) => {
         assert(isJobInsert(newJobData));
         assert(isDialecticJobPayload(newJobData.payload));
         
-        if (isDialecticJobPayload(newJobData.payload)) {
+        if (isDialecticExecuteJobPayload(newJobData.payload)) {
             const newPayload = newJobData.payload;
             
             assertEquals(newPayload.target_contribution_id, 'contrib-1');
@@ -631,6 +640,12 @@ Deno.test('continueJob', async (t) => {
             assertEquals(newPayload.stageSlug, basePayload.stageSlug);
             assertEquals(newPayload.iterationNumber, basePayload.iterationNumber);
             assertEquals(newPayload.continueUntilComplete, basePayload.continueUntilComplete);
+
+            // Assert that the new canonical path params are correctly formed for a simple continuation
+            assertExists(newPayload.canonicalPathParams);
+            assertEquals(newPayload.canonicalPathParams.contributionType, basePayload.output_type);
+            assertEquals(newPayload.canonicalPathParams.sourceModelSlugs, undefined);
+            assertEquals(newPayload.canonicalPathParams.sourceContributionIdShort, undefined);
         } else {
             assert(false, 'Payload is not a valid DialecticJobPayload');
         }
@@ -664,7 +679,7 @@ Deno.test('continueJob', async (t) => {
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
         const newJobData = insertSpy!.callsArgs[0][0];
         assert(isJobInsert(newJobData));
-        if (isDialecticJobPayload(newJobData.payload)) {
+        if (isDialecticExecuteJobPayload(newJobData.payload)) {
             assertEquals(newJobData.payload.continuation_count, 4);
         } else {
             assert(false, 'Payload is not a valid DialecticJobPayload');

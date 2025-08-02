@@ -10,6 +10,7 @@ import {
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import { ILogger, MessageForTokenCounting } from '../_shared/types.ts';
 import { isDialecticExecuteJobPayload, isDialecticPlanJobPayload, isJson } from '../_shared/utils/type_guards.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { Database, Tables } from '../types_db.ts';
 
@@ -127,20 +128,23 @@ export async function planComplexStage(
         }
 
         // Persist the RAG context as a new temporary resource
-        const { record: ragResource, error: fileError } = await deps.fileManager.uploadAndRegisterFile({
+            const sourceModelSlugs = [...new Set(sourceDocuments.map(doc => doc.model_name).filter(Boolean))].sort();
+
+            const { record: ragResource, error: fileError } = await deps.fileManager.uploadAndRegisterFile({
             pathContext: {
                 projectId: parentJob.payload.projectId,
                 sessionId: parentJob.session_id,
-                fileType: 'rag_context_summary',
-                isWorkInProgress: true, // Place it in the _work directory
-                originalFileName: `rag_summary_for_job_${parentJob.id}.txt`,
+                fileType: FileType.RagContextSummary,
+                modelSlug: modelConfig.api_identifier,
+                sourceModelSlugs: sourceModelSlugs.filter((slug): slug is string => slug !== null),
+                sourceContributionIdShort: parentJob.id,
             },
             fileContent: ragResult.context,
             mimeType: 'text/plain',
             sizeBytes: new TextEncoder().encode(ragResult.context).length,
             userId: parentJob.user_id,
             description: `RAG-generated context for step ${recipeStep.step} of job ${parentJob.id}`,
-            resourceTypeForDb: 'rag_context_summary',
+            resourceTypeForDb: FileType.RagContextSummary,
         });
 
         if (fileError || !ragResource) {
@@ -169,6 +173,9 @@ export async function planComplexStage(
             output_type: recipeStep.output_type,
             inputs: {
                 rag_summary_id: ragResource.id,
+            },
+            canonicalPathParams: {
+                contributionType: recipeStep.output_type,
             },
         };
         childJobPayloads = [newPayload];

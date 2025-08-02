@@ -16,6 +16,7 @@ import {
   isDialecticStepInfo,
   isStringRecord,
   isContributionType,
+  isRecord,
 } from '../_shared/utils/type_guards.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
@@ -75,6 +76,11 @@ export async function continueJob(
     inputs: 'inputs' in job.payload && isStringRecord(job.payload.inputs)
         ? job.payload.inputs
         : {},
+    canonicalPathParams: {
+      // Carry over the original canonical context if it exists, but ensure the output type is correct.
+      ...('canonicalPathParams' in job.payload && isRecord(job.payload.canonicalPathParams) ? job.payload.canonicalPathParams : {}),
+      contributionType: job.payload.output_type,
+    },
   };
   
   // Remove undefined keys to keep the payload clean. JSON.stringify would do this anyway,

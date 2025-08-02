@@ -10,21 +10,35 @@ import type { ContributionType } from '../../dialectic-service/dialectic.interfa
  * A union of all possible file types the system can manage.
  * This is the primary driver for path construction and database registration logic.
  */
-export type FileType =
-  | 'project_readme' // The main README for a dialectic project.
-  | 'initial_user_prompt' // The initial user-provided prompt file for a project.
-  | 'user_feedback' // User's consolidated feedback on a stage.
-  | 'model_contribution_main' // For the primary content (e.g., Markdown) of an AI model's output for a stage.
-  | 'model_contribution_raw_json' // For the raw JSON response from the AI provider for a stage.
-  | 'contribution_document' // A refined/derived document (e.g., PRD, checklist) within a stage's 'documents' folder.
-  | 'project_settings_file'
-  | 'general_resource' // A general file resource uploaded by a user for an iteration (in 0_seed_inputs/general_resource).
-  | 'seed_prompt' // The fully constructed prompt sent to a model for a specific stage.
+export enum FileType {
+  ProjectReadme = 'project_readme', // The main README for a dialectic project.
+  MasterPlan = 'master_plan',
+  PendingFile = 'pending_file',
+  CurrentFile = 'current_file',
+  CompleteFile = 'complete_file',
+  InitialUserPrompt = 'initial_user_prompt', // The initial user-provided prompt file for a project.
+  UserFeedback = 'user_feedback', // User's consolidated feedback on a stage.
+  ModelContributionMain = 'model_contribution_main', // For the primary content (e.g., Markdown) of an AI model's output for a stage.
+  ModelContributionRawJson = 'model_contribution_raw_json', // For the raw JSON response from the AI provider for a stage.
+  ContributionDocument = 'contribution_document', // A refined/derived document (e.g., PRD, checklist) within a stage's 'documents' folder.
+  ProjectSettingsFile = 'project_settings_file',
+  GeneralResource = 'general_resource', // A general file resource uploaded by a user for an iteration (in 0_seed_inputs/general_resource).
+  SeedPrompt = 'seed_prompt', // The fully constructed prompt sent to a model for a specific stage.
   // Intermediate artifacts for multi-step stages
-  | 'pairwise_synthesis_chunk'
-  | 'reduced_synthesis'
-  | 'final_synthesis'
-  | 'rag_context_summary'
+  PairwiseSynthesisChunk = 'pairwise_synthesis_chunk',
+  ReducedSynthesis = 'reduced_synthesis',
+  FinalSynthesis = 'final_synthesis',
+  RagContextSummary = 'rag_context_summary',
+}
+
+/**
+ * The formal contract for path-related context, ensuring canonical parameter generation.
+ */
+export interface CanonicalPathParams {
+  contributionType: string;
+  sourceModelSlugs?: string[]; // Guaranteed to be alphabetically sorted
+  sourceContributionIdShort?: string;
+}
 
 /**
  * The context required to construct a unique, deterministic storage path for a file.
@@ -39,7 +53,8 @@ export interface PathContext {
   modelSlug?: string
   attemptCount?: number
   originalFileName?: string // Made optional, validation per fileType
-  isWorkInProgress?: boolean // ADDED: If true, file is placed in a `_work` subdirectory within its stage.
+  sourceModelSlugs?: string[];
+  sourceContributionIdShort?: string;
 }
 
 /**

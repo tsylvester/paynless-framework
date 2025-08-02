@@ -29,6 +29,7 @@ import {
     isDialecticStepInfo,
     isContributionType,
     isDialecticChunkMetadata,
+    isFileType,
 } from './type_guards.ts';
 import type { DialecticContributionRow, DialecticJobRow, FailedAttemptError } from '../../dialectic-service/dialectic.interface.ts';
 import type { AiModelExtendedConfig } from '../types.ts';
@@ -1331,20 +1332,71 @@ Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
 });
 
 Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
-    await t.step('should return true for a valid execute job payload', () => {
+    const basePayload = {
+        job_type: 'execute',
+        prompt_template_name: 'p1',
+        inputs: {},
+        output_type: 'thesis',
+    };
+
+    await t.step('should return true for a valid execute job payload with minimal canonical params', () => {
         const payload = {
-            job_type: 'execute',
-            prompt_template_name: 'p1',
-            inputs: {}
+            ...basePayload,
+            canonicalPathParams: {
+                contributionType: 'thesis',
+            },
         };
         assert(isDialecticExecuteJobPayload(payload));
     });
 
+    await t.step('should return true for a valid execute job payload with full canonical params', () => {
+        const payload = {
+            ...basePayload,
+            canonicalPathParams: {
+                contributionType: 'synthesis',
+                sourceModelSlugs: ['model-1', 'model-2'],
+                sourceContributionIdShort: 'abcdef',
+            },
+        };
+        assert(isDialecticExecuteJobPayload(payload));
+    });
+    
     await t.step('should return false if job_type is wrong', () => {
         const payload = {
             job_type: 'plan',
             prompt_template_name: 'p1',
-            inputs: {}
+            inputs: {},
+            canonicalPathParams: { contributionType: 'thesis' },
+        };
+        assert(!isDialecticExecuteJobPayload(payload));
+    });
+
+    await t.step('should return false if canonicalPathParams is missing', () => {
+        const payload = { ...basePayload };
+        assert(!isDialecticExecuteJobPayload(payload));
+    });
+
+    await t.step('should return false if canonicalPathParams is not an object', () => {
+        const payload = {
+            ...basePayload,
+            canonicalPathParams: 'invalid',
+        };
+        assert(!isDialecticExecuteJobPayload(payload));
+    });
+
+    await t.step('should return false if canonicalPathParams is missing contributionType', () => {
+        const payload = {
+            ...basePayload,
+            canonicalPathParams: {},
+        };
+        assert(!isDialecticExecuteJobPayload(payload));
+    });
+
+    await t.step('should return false if it contains the legacy originalFileName property', () => {
+        const payload = {
+            ...basePayload,
+            canonicalPathParams: { contributionType: 'thesis' },
+            originalFileName: 'legacy-file.txt',
         };
         assert(!isDialecticExecuteJobPayload(payload));
     });
@@ -1352,7 +1404,8 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
     await t.step('should return false if inputs is missing', () => {
         const payload = {
             job_type: 'execute',
-            prompt_template_name: 'p1'
+            prompt_template_name: 'p1',
+            canonicalPathParams: { contributionType: 'thesis' },
         };
         assert(!isDialecticExecuteJobPayload(payload));
     });
@@ -1361,7 +1414,8 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
         const payload = {
             job_type: 'execute',
             prompt_template_name: 123,
-            inputs: {}
+            inputs: {},
+            canonicalPathParams: { contributionType: 'thesis' },
         };
         assert(!isDialecticExecuteJobPayload(payload));
     });
@@ -1370,7 +1424,8 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
         const payload = {
             job_type: 'execute',
             prompt_template_name: 'p1',
-            inputs: 'not-a-record'
+            inputs: 'not-a-record',
+            canonicalPathParams: { contributionType: 'thesis' },
         };
         assert(!isDialecticExecuteJobPayload(payload));
     });
@@ -1526,3 +1581,31 @@ Deno.test('Type Guard: isDialecticChunkMetadata', async (t) => {
         assert(!isDialecticChunkMetadata('a string'));
     });
 });
+
+import { FileType } from '../types/file_manager.types.ts';
+
+Deno.test('Type Guard: isFileType', async (t) => {
+    for (const type of Object.values(FileType)) {
+        await t.step(`should return true for valid file type: ${type}`, () => {
+            assert(isFileType(type));
+        });
+    }
+
+    await t.step('should return false for an invalid file type string', () => {
+        assert(!isFileType('invalid_file_type'));
+    });
+
+    await t.step('should return false for a non-string value', () => {
+        assert(!isFileType(null));
+        assert(!isFileType(undefined));
+        assert(!isFileType(123));
+        assert(!isFileType({}));
+        assert(!isFileType([]));
+    });
+
+    await t.step('should return false for a string that is a valid ContributionType but not a FileType', () => {
+        assert(!isFileType('thesis'));
+        assert(!isFileType('antithesis'));
+    });
+});
+

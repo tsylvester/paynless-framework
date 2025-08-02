@@ -4,11 +4,13 @@ import {
     it,
     beforeEach,
 } from 'https://deno.land/std@0.190.0/testing/bdd.ts';
-import { stub } from 'https://deno.land/std@0.190.0/testing/mock.ts';
+import { stub, spy } from 'https://deno.land/std@0.190.0/testing/mock.ts';
+import type { Spy } from 'https://deno.land/std@0.190.0/testing/mock.ts';
 import {
     assert,
     assertEquals,
     assertRejects,
+    assertExists,
 } from 'jsr:@std/assert@0.225.3';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database, Tables } from '../types_db.ts';
@@ -19,7 +21,8 @@ import {
     DialecticContributionRow,
     DialecticExecuteJobPayload,
     GranularityPlannerFn,
-    IDialecticJobDeps
+    IDialecticJobDeps,
+    ContributionType,
 } from '../dialectic-service/dialectic.interface.ts';
 import { ILogger } from '../_shared/types.ts';
 import { planComplexStage } from './task_isolator.ts';
@@ -234,14 +237,14 @@ describe('planComplexStage', () => {
         );
     });
 
-    it('should correctly create child jobs for an "execute" planner', async () => {
+    it('should correctly create child jobs for an "execute" planner creating an intermediate artifact', async () => {
         const mockExecutePayload: DialecticExecuteJobPayload = {
             job_type: 'execute',
             step_info: { current_step: 1, total_steps: 2 },
             prompt_template_name: 'test-prompt',
-            output_type: 'thesis',
+            output_type: 'pairwise_synthesis_chunk',
             inputs: { documentId: 'doc-1-thesis' },
-            isIntermediate: true, // ADDED FOR TEST
+            isIntermediate: true,
             model_id: 'model-1',
             projectId: 'proj-1',
             sessionId: 'sess-1',
@@ -251,6 +254,11 @@ describe('planComplexStage', () => {
             continueUntilComplete: false,
             maxRetries: 3,
             continuation_count: 0,
+            canonicalPathParams: {
+                contributionType: 'pairwise_synthesis_chunk',
+                sourceModelSlugs: ['Test Model'],
+                sourceContributionIdShort: 'doc-1-th', // Based on ID 'doc-1-thesis'
+            },
         };
         const plannerFn: GranularityPlannerFn = () => [mockExecutePayload];
         mockDeps.getGranularityPlanner = () => plannerFn;
@@ -265,17 +273,20 @@ describe('planComplexStage', () => {
         assertEquals(childJobs.length, 1);
         const childJob = childJobs[0];
         assertEquals(childJob.parent_job_id, mockParentJob.id);
-        assertEquals(childJob.status, 'pending');
         
-        assert(childJob.payload);
-        if (isDialecticExecuteJobPayload(childJob.payload)) {
-            assertEquals(childJob.payload.job_type, 'execute');
-            assertEquals(childJob.payload.inputs.documentId, 'doc-1-thesis');
-            assertEquals(childJob.payload.output_type, 'thesis');
-            assertEquals(childJob.payload.isIntermediate, true); // ADDED ASSERTION
-        } else {
-            assert(false, 'Payload is not of type DialecticExecuteJobPayload');
-        }
+        assert(isDialecticExecuteJobPayload(childJob.payload));
+        const payload = childJob.payload;
+
+        assertEquals(payload.job_type, 'execute');
+        assertEquals(payload.output_type, 'pairwise_synthesis_chunk');
+        assertEquals(payload.isIntermediate, true);
+        
+        // Assert the full canonical path params are passed through correctly
+        assertExists(payload.canonicalPathParams);
+        const params = payload.canonicalPathParams;
+        assertEquals(params.contributionType, 'pairwise_synthesis_chunk');
+        assertEquals(params.sourceModelSlugs, ['Test Model']);
+        assertEquals(params.sourceContributionIdShort, 'doc-1-th');
     });
 
     it('should throw an error if fetching source contributions fails', async () => {
@@ -423,6 +434,7 @@ describe('planComplexStage', () => {
             continueUntilComplete: false,
             maxRetries: 3,
             continuation_count: 0,
+            canonicalPathParams: { contributionType: 'thesis' },
         };
         const malformedPayload = { an_invalid: 'payload' };
 
@@ -471,9 +483,9 @@ describe('planComplexStage', () => {
     });
 
     it('should invoke RAG service when token count exceeds the limit', async () => {
-        const ragServiceStub = new MockRagService();
-        const getContextForModelStub = stub(ragServiceStub, 'getContextForModel', () => Promise.resolve({ context: 'Mocked RAG context' }));
-        mockDeps.ragService = ragServiceStub;
+        const mockRagService = new MockRagService({ mockContextResult: 'Mocked RAG context' });
+        const getContextForModelSpy = spy(mockRagService, 'getContextForModel');
+        mockDeps.ragService = mockRagService;
         mockDeps.countTokens = () => 9000; // Exceeds the mock limit of 8192
 
         const mockFileRecord: Tables<'dialectic_project_resources'> = {
@@ -489,8 +501,10 @@ describe('planComplexStage', () => {
             user_id: 'user-123',
             resource_description: { description: 'RAG summary' }
         };
-        const fileManagerStub = stub(mockDeps.fileManager, 'uploadAndRegisterFile', () => Promise.resolve({ record: mockFileRecord, error: null }));
+        mockDeps.fileManager.uploadAndRegisterFile = () => Promise.resolve({ record: mockFileRecord, error: null });
         
+        const uploadSpy = spy(mockDeps.fileManager, 'uploadAndRegisterFile');
+
         // Act
         const childJobs = await planComplexStage(
             mockSupabase.client as unknown as SupabaseClient<Database>,
@@ -501,15 +515,16 @@ describe('planComplexStage', () => {
 
         // Assert
         // 1. RAG service was called
-        assertEquals(getContextForModelStub.calls.length, 1);
+        assertEquals(getContextForModelSpy.calls.length, 1);
         
         // 2. File manager was called to save the RAG context
-        assertEquals(fileManagerStub.calls.length, 1);
-        const lastUploadContext = fileManagerStub.calls[0].args[0];
-        assert(lastUploadContext);
-        assertEquals(lastUploadContext.resourceTypeForDb, 'rag_context_summary');
-        assertEquals(lastUploadContext.fileContent, 'Mocked RAG context');
-        assertEquals(lastUploadContext.pathContext.fileType, 'rag_context_summary');
+        assertEquals(uploadSpy.calls.length, 1);
+        const uploadContext = uploadSpy.calls[0].args[0];
+
+        assertExists(uploadContext);
+        assertEquals(uploadContext.resourceTypeForDb, 'rag_context_summary');
+        assertEquals(uploadContext.fileContent, 'Mocked RAG context');
+        assertEquals(uploadContext.pathContext.fileType, 'rag_context_summary');
 
         // 3. A single child job was created
         assertEquals(childJobs.length, 1);
@@ -519,5 +534,12 @@ describe('planComplexStage', () => {
         // 4. The child job has the correct inputs pointing to the RAG artifact
         assertEquals(childJob.payload.inputs.rag_summary_id, 'mock-file-record-id');
         assertEquals(childJob.payload.job_type, 'execute');
+
+        // 5. Assert the canonical path params are correct for a RAG-generated job
+        assertExists(childJob.payload.canonicalPathParams);
+        const params = childJob.payload.canonicalPathParams;
+        assertEquals(params.contributionType, mockRecipeStep.output_type);
+        assertEquals(params.sourceModelSlugs, undefined);
+        assertEquals(params.sourceContributionIdShort, undefined);
     });
 }); 

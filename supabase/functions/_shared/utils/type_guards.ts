@@ -14,6 +14,7 @@ import type {
     DialecticStepInfo,
     ContributionType,
 } from '../../dialectic-service/dialectic.interface.ts';
+import { FileType } from "../types/file_manager.types.ts";
 import { ProjectContext, StageContext } from "../prompt-assembler.interface.ts";
 import { FailedAttemptError } from "../../dialectic-service/dialectic.interface.ts";
 import { AiModelExtendedConfig } from "../types.ts";
@@ -584,10 +585,22 @@ export function isDialecticPlanJobPayload(payload: unknown): payload is Dialecti
 
 export function isDialecticExecuteJobPayload(payload: unknown): payload is DialecticExecuteJobPayload {
     if (!isRecord(payload)) return false;
+
+    // Check for the new contract
+    const hasCanonicalParams = 'canonicalPathParams' in payload &&
+        isRecord(payload.canonicalPathParams) &&
+        'contributionType' in payload.canonicalPathParams &&
+        typeof payload.canonicalPathParams.contributionType === 'string';
+
+    // Check for the legacy property (which should NOT be present)
+    const hasLegacyFileName = 'originalFileName' in payload;
+
     return (
         payload.job_type === 'execute' &&
         typeof payload.prompt_template_name === 'string' &&
-        isRecord(payload.inputs)
+        isRecord(payload.inputs) &&
+        hasCanonicalParams &&
+        !hasLegacyFileName
     );
 }
 
@@ -644,6 +657,18 @@ export function isContributionType(value: string): value is ContributionType {
 export interface DialecticChunkMetadata {
   source_contribution_id: string;
   [key: string]: unknown; // Allow other properties
+}
+
+export function isFileType(value: unknown): value is FileType {
+    if (typeof value !== 'string') {
+        return false;
+    }
+    for (const type of Object.values(FileType)) {
+        if (type === value) {
+            return true;
+        }
+    }
+    return false;
 }
 
 export function isDialecticChunkMetadata(obj: unknown): obj is DialecticChunkMetadata {

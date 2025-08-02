@@ -1,396 +1,251 @@
 import { assertEquals, assertThrows } from 'https://deno.land/std@0.177.0/testing/asserts.ts'
 import {
   constructStoragePath,
-  sanitizeForPath,
   generateShortId,
-  mapStageSlugToDirName
 } from './path_constructor.ts'
-import type { PathContext, FileType } from '../types/file_manager.types.ts'
-import type { ContributionType } from '../../dialectic-service/dialectic.interface.ts';
+import type { PathContext } from '../types/file_manager.types.ts'
 
 Deno.test('constructStoragePath', async (t) => {
-  const projectBaseContext: Pick<PathContext, 'projectId'> = {
-    projectId: 'project-uuid-123',
+  const projectId = 'project-uuid-123';
+  const sessionId = 'session-uuid-4567890';
+  const iteration = 1;
+  const modelSlug = 'gpt-4-turbo';
+  const sourceModelSlugs = ['claude-3-opus', 'gemini-1.5-pro'].sort();
+  const sourceContributionIdShort = 'a1b2c3d4';
+  const attemptCount = 0;
+  const shortSessionId = generateShortId(sessionId);
+
+  const baseContext: Omit<PathContext, 'fileType' | 'stageSlug' | 'contributionType'> = {
+    projectId,
+    sessionId,
+    iteration,
+    modelSlug,
+    attemptCount,
+    sourceModelSlugs,
+    sourceContributionIdShort,
   };
 
-  const sessionBaseContext: Omit<PathContext, 'fileType' | 'originalFileName'> = {
-    projectId: 'project-uuid-123',
-    sessionId: 'session-uuid-4567890',
-    iteration: 1,
-    stageSlug: 'test-stage',
-    contributionType: 'synthesis',
-    modelSlug: 'test-model',
-    attemptCount: 0,
-  };
-
-  const expectedShortSessionId = generateShortId(sessionBaseContext.sessionId!);
-  const expectedMappedStageDir = mapStageSlugToDirName(sessionBaseContext.stageSlug!);
-
-  await t.step('should construct path for project_readme', () => {
-    const path = constructStoragePath({
-      ...projectBaseContext,
-      fileType: 'project_readme',
+  await t.step('should handle project-level files correctly', async (t) => {
+    await t.step('constructs path for project_readme', () => {
+      const { storagePath, fileName } = constructStoragePath({ projectId, fileType: 'project_readme' });
+      assertEquals(storagePath, projectId);
+      assertEquals(fileName, 'project_readme.md');
     });
-    assertEquals(path.storagePath, 'project-uuid-123');
-    assertEquals(path.fileName, 'project_readme.md');
+
+    await t.step('constructs path for master_plan', () => {
+      const { storagePath, fileName } = constructStoragePath({ projectId, fileType: 'master_plan' });
+      assertEquals(storagePath, projectId);
+      assertEquals(fileName, 'Master_Plan.md');
+    });
+
+    await t.step('constructs path for pending_file', () => {
+      const { storagePath, fileName } = constructStoragePath({ projectId, fileType: 'pending_file', originalFileName: 'task-abc.md' });
+      assertEquals(storagePath, `${projectId}/Pending`);
+      assertEquals(fileName, 'task-abc.md');
+    });
+
+    await t.step('constructs path for current_file', () => {
+      const { storagePath, fileName } = constructStoragePath({ projectId, fileType: 'current_file', originalFileName: 'in-progress.md' });
+      assertEquals(storagePath, `${projectId}/Current`);
+      assertEquals(fileName, 'in-progress.md');
+    });
+
+    await t.step('constructs path for complete_file', () => {
+      const { storagePath, fileName } = constructStoragePath({ projectId, fileType: 'complete_file', originalFileName: 'done.md' });
+      assertEquals(storagePath, `${projectId}/Complete`);
+      assertEquals(fileName, 'done.md');
+    });
+
+    await t.step('constructs path for initial_user_prompt', () => {
+      const { storagePath, fileName } = constructStoragePath({ projectId, fileType: 'initial_user_prompt', originalFileName: 'My Great Idea.txt' });
+      assertEquals(storagePath, projectId);
+      assertEquals(fileName, 'my_great_idea.txt');
+    });
+
+    await t.step('constructs path for project_settings_file', () => {
+        const { storagePath, fileName } = constructStoragePath({ projectId, fileType: 'project_settings_file' });
+        assertEquals(storagePath, projectId);
+        assertEquals(fileName, 'project_settings.json');
+    });
+
+    await t.step('constructs path for general_resource', () => {
+        const { storagePath, fileName } = constructStoragePath({ projectId, fileType: 'general_resource', originalFileName: 'API Docs.pdf' });
+        assertEquals(storagePath, `${projectId}/general_resource`);
+        assertEquals(fileName, 'api_docs.pdf');
+    });
   });
 
-  await t.step('should construct path for initial_user_prompt and sanitize file name', () => {
-    const path = constructStoragePath({
-      ...projectBaseContext,
-      fileType: 'initial_user_prompt',
-      originalFileName: 'My Initial Prompt.txt',
+  await t.step('should handle model contributions with correct naming conventions', async (t) => {
+    const thesisContext: PathContext = { ...baseContext, stageSlug: 'thesis', contributionType: 'thesis', fileType: 'model_contribution_main' };
+    const antithesisContext: PathContext = { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: 'model_contribution_main', sourceModelSlugs: ['claude-3-opus'] };
+    const pairwiseContext: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'pairwise_synthesis_chunk', fileType: 'model_contribution_main' };
+    const reducedContext: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'reduced_synthesis', fileType: 'model_contribution_main' };
+    const finalContext: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'final_synthesis', fileType: 'model_contribution_main' };
+    const parenthesisContext: PathContext = { ...baseContext, stageSlug: 'parenthesis', contributionType: 'parenthesis', fileType: 'model_contribution_main' };
+    const paralysisContext: PathContext = { ...baseContext, stageSlug: 'paralysis', contributionType: 'paralysis', fileType: 'model_contribution_main' };
+
+    await t.step('constructs path for simple contributions (thesis)', () => {
+      const { storagePath, fileName } = constructStoragePath(thesisContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/1_thesis`);
+      assertEquals(fileName, 'gpt-4-turbo_0_thesis.md');
     });
-    assertEquals(path.storagePath, 'project-uuid-123');
-    assertEquals(path.fileName, 'my_initial_prompt.txt');
+
+    await t.step('constructs path for antithesis', () => {
+      const { storagePath, fileName } = constructStoragePath(antithesisContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis`);
+      assertEquals(fileName, 'gpt-4-turbo_critiquing_claude-3-opus_0_antithesis.md');
+    });
+
+    await t.step('constructs path for pairwise_synthesis_chunk', () => {
+        const { storagePath, fileName } = constructStoragePath(pairwiseContext);
+        assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work`);
+        assertEquals(fileName, 'gpt-4-turbo_from_claude-3-opus_and_gemini-1.5-pro_0_pairwise_synthesis_chunk.md');
+    });
+
+    await t.step('constructs path for reduced_synthesis', () => {
+        const { storagePath, fileName } = constructStoragePath(reducedContext);
+        assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work`);
+        assertEquals(fileName, 'gpt-4-turbo_reducing_a1b2c3d4_0_reduced_synthesis.md');
+    });
+    
+    await t.step('constructs path for final_synthesis', () => {
+        const { storagePath, fileName } = constructStoragePath(finalContext);
+        assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis`);
+        assertEquals(fileName, 'gpt-4-turbo_0_final_synthesis.md');
+    });
+
+    await t.step('constructs path for parenthesis', () => {
+        const { storagePath, fileName } = constructStoragePath(parenthesisContext);
+        assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/4_parenthesis`);
+        assertEquals(fileName, 'gpt-4-turbo_0_parenthesis.md');
+    });
+
+    await t.step('constructs path for paralysis', () => {
+        const { storagePath, fileName } = constructStoragePath(paralysisContext);
+        assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/5_paralysis`);
+        assertEquals(fileName, 'gpt-4-turbo_0_paralysis.md');
+    });
   });
 
-  await t.step('should construct path for project_settings_file', () => {
-    const path = constructStoragePath({
-      ...projectBaseContext,
-      fileType: 'project_settings_file',
+  await t.step('should handle raw JSON contributions with correct naming conventions', async (t) => {
+    const thesisRawContext: PathContext = { ...baseContext, stageSlug: 'thesis', contributionType: 'thesis', fileType: 'model_contribution_raw_json' };
+    const antithesisRawContext: PathContext = { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: 'model_contribution_raw_json', sourceModelSlugs: ['claude-3-opus'] };
+    const pairwiseRawContext: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'pairwise_synthesis_chunk', fileType: 'model_contribution_raw_json' };
+    const reducedRawContext: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'reduced_synthesis', fileType: 'model_contribution_raw_json' };
+    const finalSynthesisRawContext: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'final_synthesis', fileType: 'model_contribution_raw_json' };
+    const parenthesisRawContext: PathContext = { ...baseContext, stageSlug: 'parenthesis', contributionType: 'parenthesis', fileType: 'model_contribution_raw_json' };
+    const paralysisRawContext: PathContext = { ...baseContext, stageSlug: 'paralysis', contributionType: 'paralysis', fileType: 'model_contribution_raw_json' };
+
+    await t.step('constructs raw path for simple contributions (thesis)', () => {
+      const { storagePath, fileName } = constructStoragePath(thesisRawContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/raw_responses`);
+      assertEquals(fileName, 'gpt-4-turbo_0_thesis_raw.json');
     });
-    assertEquals(path.storagePath, 'project-uuid-123');
-    assertEquals(path.fileName, 'project_settings.json');
+
+    await t.step('constructs raw path for antithesis', () => {
+        const { storagePath, fileName } = constructStoragePath(antithesisRawContext);
+        assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/raw_responses`);
+        assertEquals(fileName, 'gpt-4-turbo_critiquing_claude-3-opus_0_antithesis_raw.json');
+    });
+
+    await t.step('constructs raw path for pairwise_synthesis_chunk', () => {
+        const { storagePath, fileName } = constructStoragePath(pairwiseRawContext);
+        assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/raw_responses`);
+        assertEquals(fileName, 'gpt-4-turbo_from_claude-3-opus_and_gemini-1.5-pro_0_pairwise_synthesis_chunk_raw.json');
+    });
+
+    await t.step('constructs raw path for reduced_synthesis', () => {
+        const { storagePath, fileName } = constructStoragePath(reducedRawContext);
+        assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/raw_responses`);
+        assertEquals(fileName, 'gpt-4-turbo_reducing_a1b2c3d4_0_reduced_synthesis_raw.json');
+    });
+
+    await t.step('constructs raw path for final_synthesis', () => {
+        const { storagePath, fileName } = constructStoragePath(finalSynthesisRawContext);
+        assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/raw_responses`);
+        assertEquals(fileName, 'gpt-4-turbo_0_final_synthesis_raw.json');
+    });
+
+    await t.step('constructs raw path for parenthesis', () => {
+        const { storagePath, fileName } = constructStoragePath(parenthesisRawContext);
+        assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/4_parenthesis/raw_responses`);
+        assertEquals(fileName, 'gpt-4-turbo_0_parenthesis_raw.json');
+    });
+
+    await t.step('constructs raw path for paralysis', () => {
+        const { storagePath, fileName } = constructStoragePath(paralysisRawContext);
+        assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/5_paralysis/raw_responses`);
+        assertEquals(fileName, 'gpt-4-turbo_0_paralysis_raw.json');
+    });
   });
 
-  await t.step('should construct path for general_resource at project root and sanitize file name', () => {
-    const path = constructStoragePath({
-      ...projectBaseContext,
-      fileType: 'general_resource',
-      originalFileName: 'My Shared Document.pdf',
-    });
-    assertEquals(path.storagePath, 'project-uuid-123/general_resource');
-    assertEquals(path.fileName, 'my_shared_document.pdf');
-  });
-
-  await t.step('should construct path for seed_prompt', () => {
-    const path = constructStoragePath({
-      ...sessionBaseContext,
-      fileType: 'seed_prompt',
-    });
-    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}`);
-    assertEquals(path.fileName, 'seed_prompt.md');
-  });
-
-  await t.step('should construct path for model_contribution_main with attemptCount 0', () => {
-    const context: PathContext = {
-      ...sessionBaseContext,
-      fileType: 'model_contribution_main',
-      attemptCount: 0,
+  await t.step('should handle other stage-level files', async (t) => {
+    const stageContext = {
+      projectId,
+      sessionId,
+      iteration,
+      stageSlug: 'thesis',
     };
-    const path = constructStoragePath(context);
-    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}`);
-        assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.contributionType!)}.md`);
-  });
-  
-  await t.step('should construct path for model_contribution_main with attemptCount 1', () => {
-    const context: PathContext = {
-      ...sessionBaseContext,
-      fileType: 'model_contribution_main',
-      attemptCount: 1,
-    };
-    const path = constructStoragePath(context);
-    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}`);
-        assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.contributionType!)}.md`);
-  });
 
-  await t.step('should construct path for model_contribution_raw_json with attemptCount 0', () => {
-    const context: PathContext = {
-      ...sessionBaseContext,
-      fileType: 'model_contribution_raw_json',
-      attemptCount: 0,
-    };
-    const path = constructStoragePath(context);
-    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/raw_responses`);
-        assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.contributionType!)}_raw.json`);
-  });
-
-  await t.step('should construct path for model_contribution_raw_json with attemptCount 2', () => {
-    const context: PathContext = {
-      ...sessionBaseContext,
-      fileType: 'model_contribution_raw_json',
-      attemptCount: 2,
-    };
-    const path = constructStoragePath(context);
-    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/raw_responses`);
-        assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.contributionType!)}_raw.json`);
-  });
-  
-  await t.step('should construct path for user_feedback', () => {
-    const path = constructStoragePath({
-      ...sessionBaseContext,
-      fileType: 'user_feedback',
+    await t.step('constructs path for seed_prompt', () => {
+      const { storagePath, fileName } = constructStoragePath({ ...stageContext, fileType: 'seed_prompt' });
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/1_thesis`);
+      assertEquals(fileName, 'seed_prompt.md');
     });
-    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}`);
-    assertEquals(path.fileName, `user_feedback_${sanitizeForPath(sessionBaseContext.stageSlug!)}.md`);
-  });
-  
-  await t.step('should construct path with /_work when isWorkInProgress is true', () => {
-    const context: PathContext = {
-      ...sessionBaseContext,
-      fileType: 'model_contribution_main',
-      attemptCount: 0,
-      isWorkInProgress: true,
-    };
-    const path = constructStoragePath(context);
-    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/_work`);
-        assertEquals(path.fileName, `${sanitizeForPath(sessionBaseContext.modelSlug!)}_${context.attemptCount}_${sanitizeForPath(sessionBaseContext.contributionType!)}.md`);
-  });
 
-  await t.step('should construct path for contribution_document', () => {
-    const path = constructStoragePath({
-      ...sessionBaseContext,
-      fileType: 'contribution_document',
-      originalFileName: 'prd_document.md',
+    await t.step('constructs path for user_feedback', () => {
+      const { storagePath, fileName } = constructStoragePath({ ...stageContext, fileType: 'user_feedback' });
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/1_thesis`);
+      assertEquals(fileName, 'user_feedback_thesis.md');
     });
-    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/documents`);
-    assertEquals(path.fileName, 'prd_document.md');
-  });
 
-  await t.step('should construct path for pairwise_synthesis_chunk in _work dir', () => {
-    const path = constructStoragePath({
-      ...sessionBaseContext,
-      fileType: 'pairwise_synthesis_chunk',
-      originalFileName: 'pairwise_chunk_1.json',
-      isWorkInProgress: true,
+    await t.step('constructs path for contribution_document', () => {
+      const { storagePath, fileName } = constructStoragePath({ ...stageContext, fileType: 'contribution_document', originalFileName: 'Product Spec.docx' });
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/documents`);
+      assertEquals(fileName, 'product_spec.docx');
     });
-    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/_work`);
-    assertEquals(path.fileName, 'pairwise_chunk_1.json');
-  });
 
-  await t.step('should construct path for reduced_synthesis in _work dir', () => {
-    const path = constructStoragePath({
-      ...sessionBaseContext,
-      fileType: 'reduced_synthesis',
-      originalFileName: 'Reduced Chunk A.json',
-      isWorkInProgress: true,
+    await t.step('constructs path for rag_context_summary', () => {
+      const ragContext: PathContext = { ...baseContext, stageSlug: 'synthesis', fileType: 'rag_context_summary' };
+      const { storagePath, fileName } = constructStoragePath(ragContext);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work`);
+      assertEquals(fileName, 'gpt-4-turbo_compressing_claude-3-opus_and_gemini-1.5-pro_rag_summary.txt');
     });
-    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/_work`);
-    assertEquals(path.fileName, 'reduced_chunk_a.json');
   });
 
-  await t.step('should construct path for final_synthesis (not in _work dir)', () => {
-    const path = constructStoragePath({
-      ...sessionBaseContext,
-      fileType: 'final_synthesis',
-      originalFileName: 'Final Synthesis Document.md',
-      isWorkInProgress: false, // Explicitly not a work file
+  await t.step('should throw errors for missing context', async (t) => {
+    await t.step('throws if originalFileName is missing for file types that require it', () => {
+      assertThrows(() => constructStoragePath({ projectId, fileType: 'pending_file' } as PathContext), Error, 'originalFileName is required for pending_file.');
+      assertThrows(() => constructStoragePath({ projectId, fileType: 'current_file' } as PathContext), Error, 'originalFileName is required for current_file.');
+      assertThrows(() => constructStoragePath({ projectId, fileType: 'complete_file' } as PathContext), Error, 'originalFileName is required for complete_file.');
+      assertThrows(() => constructStoragePath({ projectId, fileType: 'initial_user_prompt' } as PathContext), Error, 'originalFileName is required for initial_user_prompt.');
+      assertThrows(() => constructStoragePath({ projectId, fileType: 'general_resource' } as PathContext), Error, 'originalFileName is required for general_resource.');
     });
-    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}`);
-    assertEquals(path.fileName, 'final_synthesis_document.md');
-  });
 
-  await t.step('should construct path for rag_context_summary', () => {
-    const path = constructStoragePath({
-      ...sessionBaseContext,
-      fileType: 'rag_context_summary',
-      originalFileName: 'rag_summary.txt',
+    await t.step('throws if base path context is missing for stage files', () => {
+        assertThrows(() => constructStoragePath({ fileType: 'seed_prompt' } as PathContext), Error, 'Base path context required for seed_prompt.');
+        assertThrows(() => constructStoragePath({ fileType: 'user_feedback' } as PathContext), Error, 'Base path context and stageSlug required for user_feedback.');
+        assertThrows(() => constructStoragePath({ fileType: 'contribution_document', originalFileName: 'test' } as PathContext), Error, 'Base path and originalFileName required for contribution_document.');
     });
-    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}`);
-    assertEquals(path.fileName, 'rag_summary.txt');
-  });
 
-  await t.step('should throw error if originalFileName is missing for initial_user_prompt', () => {
-    assertThrows(() => {
-      constructStoragePath({
-        ...projectBaseContext,
-        fileType: 'initial_user_prompt',
-      });
-    }, Error, 'originalFileName is required for initial_user_prompt file type.');
-  });
-
-  await t.step('should throw error if originalFileName is missing for general_resource', () => {
-    assertThrows(() => {
-      constructStoragePath({
-        ...projectBaseContext,
-        fileType: 'general_resource',
-      });
-    }, Error, 'originalFileName is required for general_resource file type.');
-  });
-  
-  await t.step('should throw error if required context is missing for seed_prompt', () => {
-    assertThrows(() => {
-      constructStoragePath({
-        projectId: 'project-uuid-123',
-        fileType: 'seed_prompt',
-      });
-    }, Error, 'projectId, sessionId, iteration, and stageSlug are required for seed_prompt file type.');
-  });
-  
-  await t.step('should throw error if required context (modelSlug) is missing for model_contribution_main', () => {
-    assertThrows(() => {
-      constructStoragePath({
-        projectId: 'project-uuid-123',
-        sessionId: 'session-uuid-456',
-        iteration: 1,
-        stageSlug: 'test-stage',
-        attemptCount: 0,
-        fileType: 'model_contribution_main',
-      });
-        }, Error, 'projectId, sessionId, iteration, stageSlug, modelSlug, contributionType and attemptCount are required for model_contribution_main.');
-  });
-
-  await t.step('should throw error if required context (attemptCount) is missing for model_contribution_main', () => {
-    assertThrows(() => {
-      constructStoragePath({
-        projectId: 'project-uuid-123',
-        sessionId: 'session-uuid-456',
-        iteration: 1,
-        stageSlug: 'test-stage',
-        modelSlug: 'test-model',
-        fileType: 'model_contribution_main',
-      });
-        }, Error, 'projectId, sessionId, iteration, stageSlug, modelSlug, contributionType and attemptCount are required for model_contribution_main.');
-  });
-
-  await t.step('should throw error if originalFileName is missing for contribution_document', () => {
-    assertThrows(() => {
-      constructStoragePath({
-        ...sessionBaseContext,
-        fileType: 'contribution_document',
-      });
-    }, Error, 'projectId, sessionId, iteration, stageSlug, and originalFileName are required for contribution_document.');
-  });
-
-  await t.step('should throw error if originalFileName is missing for pairwise_synthesis_chunk', () => {
-    assertThrows(() => {
-      constructStoragePath({
-        ...sessionBaseContext,
-        fileType: 'pairwise_synthesis_chunk',
-      });
-    }, Error, 'projectId, sessionId, iteration, stageSlug, and originalFileName are required for synthesis artifacts.');
-  });
-
-  await t.step('should throw error if originalFileName is missing for reduced_synthesis', () => {
-    assertThrows(() => {
-      constructStoragePath({
-        ...sessionBaseContext,
-        fileType: 'reduced_synthesis',
-      });
-    }, Error, 'projectId, sessionId, iteration, stageSlug, and originalFileName are required for synthesis artifacts.');
-  });
-
-  await t.step('should throw error if originalFileName is missing for final_synthesis', () => {
-    assertThrows(() => {
-      constructStoragePath({
-        ...sessionBaseContext,
-        fileType: 'final_synthesis',
-      });
-    }, Error, 'projectId, sessionId, iteration, stageSlug, and originalFileName are required for synthesis artifacts.');
-  });
-
-  await t.step('should throw error if originalFileName is missing for rag_context_summary', () => {
-    assertThrows(() => {
-      constructStoragePath({
-        ...sessionBaseContext,
-        fileType: 'rag_context_summary',
-      });
-    }, Error, 'projectId, sessionId, iteration, stageSlug, and originalFileName are required for rag_context_summary.');
-  });
-
-  await t.step('should sanitize complex file names for initial_user_prompt', () => {
-    const path = constructStoragePath({
-      ...projectBaseContext,
-      fileType: 'initial_user_prompt',
-      originalFileName: 'File With ALL CAPS & Special Chars!@#$.zip',
+    await t.step('throws if context is missing for model contributions', () => {
+        const incompleteContext: Partial<PathContext> = { projectId, sessionId, iteration, stageSlug: 'thesis', fileType: 'model_contribution_main' };
+        assertThrows(() => constructStoragePath(incompleteContext as PathContext), Error, 'Required context missing for model contribution file.');
     });
-    assertEquals(path.storagePath, 'project-uuid-123');
-    assertEquals(path.fileName, 'file_with_all_caps__special_chars.zip');
-  });
-
-  await t.step('should sanitize complex file names for general_resource', () => {
-    const path = constructStoragePath({
-      ...projectBaseContext,
-      fileType: 'general_resource',
-      originalFileName: 'Another Complex! Name.docx',
+    
+    await t.step('throws if sourceModelSlugs is missing for antithesis', () => {
+        const context: PathContext = { ...baseContext, stageSlug: 'antithesis', contributionType: 'antithesis', fileType: 'model_contribution_main', sourceModelSlugs: [] };
+        assertThrows(() => constructStoragePath(context), Error, 'Antithesis requires exactly one sourceModelSlug.');
     });
-    assertEquals(path.storagePath, 'project-uuid-123/general_resource');
-    assertEquals(path.fileName, 'another_complex_name.docx');
-  });
 
-  await t.step('should sanitize complex file names for contribution_document', () => {
-    const path = constructStoragePath({
-      ...sessionBaseContext,
-      fileType: 'contribution_document',
-      originalFileName: 'Documents ! With % Spaces.pdf',
+    await t.step('throws if sourceModelSlugs is missing for pairwise synthesis', () => {
+        const context: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'pairwise_synthesis_chunk', fileType: 'model_contribution_main', sourceModelSlugs: [] };
+        assertThrows(() => constructStoragePath(context), Error, 'Required sourceModelSlugs missing for pairwise_synthesis_chunk.');
     });
-    assertEquals(path.storagePath, `${sessionBaseContext.projectId}/sessions/${expectedShortSessionId}/iteration_${sessionBaseContext.iteration}/${expectedMappedStageDir}/documents`);
-    assertEquals(path.fileName, 'documents__with__spaces.pdf');
-  });
 
-  await t.step('should throw error if required context (contributionType) is missing for model_contribution_main', () => {
-    assertThrows(() => {
-      constructStoragePath({
-        projectId: 'project-uuid-123',
-        sessionId: 'session-uuid-456',
-        iteration: 1,
-        stageSlug: 'test-stage',
-        modelSlug: 'test-model',
-        attemptCount: 0,
-        fileType: 'model_contribution_main',
-      });
-    }, Error, 'projectId, sessionId, iteration, stageSlug, modelSlug, contributionType and attemptCount are required for model_contribution_main.');
+    await t.step('throws if sourceContributionIdShort is missing for reduced synthesis', () => {
+        const context: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'reduced_synthesis', fileType: 'model_contribution_main', sourceContributionIdShort: undefined };
+        assertThrows(() => constructStoragePath(context), Error, 'Required sourceContributionIdShort missing for reduced_synthesis.');
+    });
   });
 });
-
-Deno.test('sanitizeForPath', async (t) => {
-  await t.step('should convert to lowercase', () => {
-    assertEquals(sanitizeForPath('UPPERCASE'), 'uppercase');
-  });
-
-  await t.step('should replace spaces with underscores', () => {
-    assertEquals(sanitizeForPath('with spaces'), 'with_spaces');
-  });
-
-  await t.step('should remove special characters except . - _', () => {
-    assertEquals(sanitizeForPath('special!@#$%^&*()+=[]{}|\\:;\'"<>,?/chars.zip'), 'specialchars.zip');
-  });
-
-  await t.step('should handle mixed case, spaces, and special chars', () => {
-    assertEquals(sanitizeForPath('MixEd CaSe & Chars! 123.txt'), 'mixed_case__chars_123.txt');
-  });
-
-  await t.step('should handle leading/trailing spaces by trimming first', () => {
-    assertEquals(sanitizeForPath('  leading and trailing  '), 'leading_and_trailing');
-  });
-});
-
-Deno.test('generateShortId', async (t) => {
-  const uuid = 'abcdef12-3456-7890-cdef-1234567890ab';
-  await t.step('should generate a short ID of default length 8', () => {
-    assertEquals(generateShortId(uuid).length, 8);
-    assertEquals(generateShortId(uuid), 'abcdef12');
-  });
-
-  await t.step('should generate a short ID of specified length', () => {
-    assertEquals(generateShortId(uuid, 4).length, 4);
-    assertEquals(generateShortId(uuid, 4), 'abcd');
-  });
-
-  await t.step('should remove hyphens', () => {
-    assertEquals(generateShortId('abc-def', 6), 'abcdef');
-  });
-});
-
-Deno.test('mapStageSlugToDirName', async (t) => {
-  await t.step('should map thesis to 1_thesis', () => {
-    assertEquals(mapStageSlugToDirName('thesis'), '1_thesis');
-    assertEquals(mapStageSlugToDirName('THESIS'), '1_thesis');
-  });
-  await t.step('should map antithesis to 2_antithesis', () => {
-    assertEquals(mapStageSlugToDirName('antithesis'), '2_antithesis');
-  });
-  await t.step('should map synthesis to 3_synthesis', () => {
-    assertEquals(mapStageSlugToDirName('synthesis'), '3_synthesis');
-  });
-  await t.step('should map parenthesis to 4_parenthesis', () => {
-    assertEquals(mapStageSlugToDirName('parenthesis'), '4_parenthesis');
-  });
-  await t.step('should map paralysis to 5_paralysis', () => {
-    assertEquals(mapStageSlugToDirName('paralysis'), '5_paralysis');
-  });
-  await t.step('should return original slug if no mapping exists', () => {
-    assertEquals(mapStageSlugToDirName('unknown_stage'), 'unknown_stage');
-  });
-}); 

@@ -427,6 +427,9 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
             prompt_template_name: 'default_seed_prompt',
             output_type: 'thesis',
             inputs: {},
+            canonicalPathParams: {
+                contributionType: 'thesis',
+            },
         };
         const expectedJob = { ...mockJob, payload: transformedPayload };
 

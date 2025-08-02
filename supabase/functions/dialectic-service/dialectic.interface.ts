@@ -5,7 +5,7 @@ import {
 } from '../_shared/supabase_storage_utils.ts';
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
 import type { Logger } from '../_shared/logger.ts';
-import type { IFileManager } from '../_shared/types/file_manager.types.ts';
+import type { IFileManager, CanonicalPathParams } from '../_shared/types/file_manager.types.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 import type { DeleteStorageResult, DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import type {
@@ -352,7 +352,7 @@ export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
     step_info: DialecticStepInfo; // Pass down for context
     prompt_template_name: string;
     output_type: ContributionType; // The type of artifact this job will produce
-    originalFileName?: string; // Optional: A descriptive filename for the output artifact
+    canonicalPathParams: CanonicalPathParams; // The new formal contract for path context
     inputs: {
         // Key-value store for resource_ids needed by the prompt
         [key: string]: string;

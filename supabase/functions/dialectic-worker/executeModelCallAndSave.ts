@@ -4,8 +4,8 @@ import {
   type ModelProcessingResult,
   type ExecuteModelCallAndSaveParams,
 } from '../dialectic-service/dialectic.interface.ts';
-import { type UploadContext } from '../_shared/types/file_manager.types.ts';
-import { isDialecticContribution, isAiModelExtendedConfig, isDialecticExecuteJobPayload, isContributionType } from "../_shared/utils/type_guards.ts";
+import { type UploadContext, FileType } from '../_shared/types/file_manager.types.ts';
+import { isDialecticContribution, isAiModelExtendedConfig, isDialecticExecuteJobPayload, isContributionType, isFileType } from "../_shared/utils/type_guards.ts";
 import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
 import { type AiModelExtendedConfig, type MessageForTokenCounting } from '../_shared/types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
@@ -41,6 +41,7 @@ export async function executeModelCallAndSave(
         model_id,
         sessionId,
         walletId,
+        output_type,
     } = job.payload;
 
     if (!stageSlug) {
@@ -100,22 +101,34 @@ export async function executeModelCallAndSave(
     }
 
     const finalContent = previousContent + aiResponse.content;
+    const contributionType = isContributionType(job.payload.canonicalPathParams.contributionType)
+        ? job.payload.canonicalPathParams.contributionType
+        : undefined;
+
+    const fileType: FileType = isFileType(output_type) 
+        ? output_type
+        : FileType.ModelContributionMain;
+
+    const description = fileType === FileType.ModelContributionMain
+        ? `Contribution for stage '${stageSlug}' by model ${providerDetails.name}`
+        : `Intermediate artifact '${output_type}' for stage '${stageSlug}' by model ${providerDetails.name}`;
+
     const uploadContext: UploadContext = {
         pathContext: {
-            projectId, 
-            fileType: 'model_contribution_main', 
-            sessionId, 
+            projectId,
+            fileType,
+            sessionId,
             iteration: iterationNumber,
-            stageSlug, 
+            stageSlug,
             modelSlug: providerDetails.api_identifier,
-            originalFileName: job.payload.originalFileName || `${providerDetails.api_identifier}_${stageSlug}${deps.getExtensionFromMimeType(aiResponse.contentType || "text/markdown")}`,
-            contributionType: job.payload.output_type || stageSlug,
+            ...job.payload.canonicalPathParams,
+            contributionType,
         },
         fileContent: finalContent, 
         mimeType: aiResponse.contentType || "text/markdown",
         sizeBytes: finalContent.length, 
         userId: projectOwnerUserId,
-        description: `Contribution for stage '${stageSlug}' by model ${providerDetails.name}`,
+        description,
         resourceTypeForDb: job.payload.output_type || stageSlug,
         contributionMetadata: {
             sessionId, 
