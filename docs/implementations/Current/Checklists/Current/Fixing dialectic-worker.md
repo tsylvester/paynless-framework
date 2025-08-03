@@ -68,47 +68,83 @@ The implementation plan uses the following labels to categorize work steps:
 
 **Objective:** Based on the grep results from step 1.d, update all consumers of the `DialecticExecuteJobPayload` interface to correctly use the new `canonicalPathParams` contract instead of the deprecated `originalFileName` property.
 
-*   `[ ]` 3. **[BE] [REFACTOR] Update Planner and Worker Logic**
+*   `[✅]` 3. **[BE] [REFACTOR] Update Planner and Worker Logic**
     *   `[✅]` 3.a. `[BE]` Modify `supabase/functions/dialectic-worker/continueJob.ts` to construct and pass the `canonicalPathParams` object in the new payload it creates.
-    *   `[ ]` 3.b. `[BE]` Modify `supabase/functions/dialectic-worker/processJob.ts` where it transforms a simple job into an execute job (line 93) to correctly create the `canonicalPathParams` object. For simple jobs, this will be a basic object containing just the `contributionType`.
-*   `[ ]` 4. **[TEST-UNIT] [REFACTOR] Update Test Files**
-    *   `[ ]` 4.a. `[TEST-UNIT]` In `supabase/functions/dialectic-worker/executeModelCallAndSave.test.ts`, update all instances of mock `DialecticExecuteJobPayload` objects to remove `originalFileName` and include a mock `canonicalPathParams` object.
-    *   `[ ]` 4.b. `[TEST-UNIT]` In `supabase/functions/dialectic-worker/task_isolator.test.ts`, update mock payloads to use the new `canonicalPathParams` structure.
-    *   `[ ]` 4.c. `[TEST-UNIT]` In `supabase/functions/_shared/utils/type_guards.test.ts`, update the test cases for `isDialecticExecuteJobPayload` to check for the presence of `canonicalPathParams` and the absence of `originalFileName`.
-*   `[ ]` 5. **[BE] [REFACTOR] Update Type Guards and Verifiers**
-    *   `[ ]` 5.a. `[BE]` In `supabase/functions/_shared/utils/type_guards.ts`, update the `isDialecticExecuteJobPayload` type guard to validate the new structure (checking for `canonicalPathParams` object).
-    *   `[ ]` 5.b. `[BE]` In `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`, review the logic that consumes the payload to ensure it aligns with the new contract.
-    *   `[ ]` 5.c. `[BE]` In `supabase/functions/dialectic-worker/task_isolator.ts`, ensure the mapping of planner-generated payloads to final job rows correctly handles the `canonicalPathParams` object.
-*   `[ ]` 6. **[COMMIT] `refactor(worker): update all consumers of DialecticExecuteJobPayload to use canonical contract`**
+    *   `[✅]` 3.b. `[BE]` Modify `supabase/functions/dialectic-worker/processJob.ts` where it transforms a simple job into an execute job (line 93) to correctly create the `canonicalPathParams` object. For simple jobs, this will be a basic object containing just the `contributionType`.
+*   `[✅]` 4. **[TEST-UNIT] [REFACTOR] Update Test Files**
+    *   `[✅]` 4.a. `[TEST-UNIT]` In `supabase/functions/dialectic-worker/executeModelCallAndSave.test.ts`, update all instances of mock `DialecticExecuteJobPayload` objects to remove `originalFileName` and include a mock `canonicalPathParams` object.
+    *   `[✅]` 4.b. `[TEST-UNIT]` In `supabase/functions/dialectic-worker/task_isolator.test.ts`, update mock payloads to use the new `canonicalPathParams` structure.
+    *   `[✅]` 4.c. `[TEST-UNIT]` In `supabase/functions/_shared/utils/type_guards.test.ts`, update the test cases for `isDialecticExecuteJobPayload` to check for the presence of `canonicalPathParams` and the absence of `originalFileName`.
+*   `[✅]` 5. **[BE] [REFACTOR] Update Type Guards and Verifiers**
+    *   `[✅]` 5.a. `[BE]` In `supabase/functions/_shared/utils/type_guards.ts`, update the `isDialecticExecuteJobPayload` type guard to validate the new structure (checking for `canonicalPathParams` object).
+    *   `[✅]` 5.b. `[BE]` In `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`, review the logic that consumes the payload to ensure it aligns with the new contract.
+    *   `[✅]` 5.c. `[BE]` In `supabase/functions/dialectic-worker/task_isolator.ts`, ensure the mapping of planner-generated payloads to final job rows correctly handles the `canonicalPathParams` object.
+*   `[✅]` 6. **[COMMIT] `refactor(worker): update all consumers of DialecticExecuteJobPayload to use canonical contract`**
 
 
-*   `[ ]` 7. **[BE] [REFACTOR] Refactor Planners to Use the Contract**
-    *   `[ ]` 7.a. `[BE]` In `planPairwiseByOrigin.ts`:
-        *   `[ ]` 7.a.i. **Action:** Remove all manual filename generation logic.
-        *   `[ ]` 7.a.ii. **Action:** For each job it generates, it must now call the new `createCanonicalPathParams` function, passing the relevant source documents (e.g., the thesis/antithesis pair) to get the `canonicalPathParams` object for the payload.
-        *   `[ ]` 7.a.iii. **Action:** Refactor the hardcoded `document_relationships` and `inputs` to use dynamic keys based on the `contribution_type` of the source documents. It is critical that the `source_group` key continues to be correctly populated with the ID of the primary originating document (e.g., the `thesis` document's ID).
-    *   `[ ]` 7.b. `[BE]` In `planPerSourceDocument.ts`, perform the same refactoring: for each document, call `createCanonicalPathParams` to generate the payload's `canonicalPathParams`.
-    *   `[ ]` 7.c. `[TEST-UNIT]` Update the unit tests for both planners. The tests should no longer assert anything about filenames. Instead, they must assert that `createCanonicalPathParams` is called with the correct set of source documents and that the resulting `canonicalPathParams` object is correctly placed in the generated job payload.
+---
 
-*   `[ ]` 8. **[BE] [REFACTOR] Update Path Constructor to Consume the Contract**
-    *   `[ ]` 8.a. `[BE]` In `path_constructor.ts`, refactor the `constructStoragePath` function. For all contribution-related `FileType`s (`model_contribution_main`, `pairwise_synthesis_chunk`, etc.), completely remove any logic that reads or depends on the `originalFileName` field from the `PathContext`.
-    *   `[ ]` 8.b. `[BE]` Implement the new filename generation logic. This logic must generate filenames *solely* from the canonical context primitives now available in the `PathContext` (`modelSlug`, `contributionType`, `sourceModelSlugs`, `sourceContributionIdShort`, etc.), strictly adhering to the formats defined in `path_constructor.readme.md`.
-    *   `[ ]` 8.c. `[TEST-UNIT]` Update `path_constructor.test.ts`. Add new, comprehensive test cases that pass a `PathContext` containing the new canonical primitives and assert that the full, descriptive, and unique filenames are generated correctly for all relevant scenarios (critique, pairwise synthesis, etc.).
-    *   `[ ]` 8.d. `[DOCUMENT]` `path_constructor.readme.md` is the canonical expression of the file tree and file name construction method. The `path_constructor.ts` must produce these outputs exactly under all conditions for the tests to pass. 
+## Phase 2: Evolve the Contract for Dynamic, Human-Readable Uniqueness (TDD)
 
-*   `[ ]` 5. **[COMMIT] `feat(worker): implement formal contract for canonical path context`**
+**Objective:** To resolve the filename collision by enhancing the canonical contract with dynamic, descriptive primitives. Instead of hardcoding for a "thesis," we will identify the primary "Anchor Document" by its role, making the system robust and adaptable. We will follow a strict TDD workflow.
 
-## Phase 2: Resolve Parenthesis Stage Logic Bomb
+*   `[✅]` 7. **[BE] [REFACTOR] Evolve the Canonical Interfaces for Dynamic Anchors**
+    *   `[✅]` 7.a. `[BE]` In `supabase/functions/_shared/types/file_manager.types.ts`, update the `CanonicalPathParams` interface to use generic "anchor" properties:
+        *   **Action:** Remove `sourceContributionIdShort?: string`.
+        *   **Action:** Add `sourceAnchorType?: string;` (e.g., 'thesis', 'outline')
+        *   **Action:** Add `sourceAnchorModelSlug?: string;` (e.g., 'claude-3-opus')
+    *   `[✅]` 7.b. `[BE]` In the same file, update the `PathContext` interface to match:
+        *   **Action:** Remove `sourceContributionIdShort?: string`.
+        *   **Action:** Add `sourceAnchorType?: string;`
+        *   **Action:** Add `sourceAnchorModelSlug?: string;`
 
-**Objective:** To correct the behavior of the Parenthesis stage so that it only *reads* from the Synthesis stage to create its own new, unique documents, instead of attempting to re-upload them.
+*   `[✅]` 8. **[DOCS] [TEST-UNIT] Update Specifications and Tests for Dynamic Anchors**
+    *   `[✅]` 8.a. `[DOCS]` In `supabase/functions/_shared/utils/path_constructor.readme.md`, update the `pairwise_synthesis_chunk` primitive to be fully dynamic:
+        *   **New Primitive:** `{model_slug}_from_{source_model_slugs}_on_{source_anchor_type}_by_{source_anchor_model_slug}_{n}_{contribution_type}.md`
+    *   `[✅]` 8.b. `[TEST-UNIT]` In `canonical_context_builder.test.ts`, write a **new, failing test**. This test must assert that when `createCanonicalPathParams` is called with a set of documents *and an explicitly provided anchor document*, it correctly extracts the anchor's `contribution_type` into `sourceAnchorType` and `model_name` into `sourceAnchorModelSlug`.
+    *   `[✅]` 8.c. `[TEST-UNIT]` In `path_constructor.test.ts`, update the `pairwise_synthesis_chunk` test to **expect the new, dynamic filename**. This test should now pass a `PathContext` containing `sourceAnchorType` and `sourceAnchorModelSlug` and assert the filename matches the new primitive. This test must also **fail**.
 
-*   `[ ]` 9. **[BE] [REFACTOR] Correct Prompt Assembly and Job Creation Logic**
-    *   `[ ]` 9.a. `[BE]` The primary focus is ensuring a clean separation between "context for a prompt" and "context for a new file". Verify in `supabase/functions/_shared/prompt-assembler.ts` that `gatherInputsForStage` correctly identifies `Synthesis` documents as the source context for the `Parenthesis` stage.
-    *   `[ ]` 9.b. `[BE]` When a job for the `Parenthesis` stage is created by the worker, it is critical that it does not inherit any file-creation context (like `document_relationships` or the new `canonicalPathParams`) from the `Synthesis` documents it used for its prompt. The `canonicalPathParams` for a Parenthesis job must be generated fresh, based on its *own* context (which will be simple, likely without `sourceModelSlugs`), resulting in a clean filename like `{model_slug}_{n}_parenthesis.md`.
-    *   `[ ]` 9.c. `[TEST-UNIT]` Enhance tests for `prompt-assembler.ts` and the worker's job creation logic to specifically cover the Parenthesis stage transition. Assert that input gathering is correct and that the created job payload is clean of any legacy file-creation context from the previous stage.
-    *   `[ ]` 9.d. `[TEST-INT]` Prove that the Parenthesis stage does not attempt to re-upload Synthesis stage documents. 
+*   `[✅]` 9. **[BE] [REFACTOR] Implement Changes to Pass Failing Tests**
+    *   `[✅]` 9.a. `[BE]` In `canonical_context_builder.ts`, modify the `createCanonicalPathParams` function.
+        *   **Action:** Change its signature to explicitly require the anchor document: `(sourceDocs: SourceDocument[], outputType: string, anchorDoc: SourceDocument): CanonicalPathParams`.
+        *   **Action:** The implementation will no longer search for a 'thesis'. It will directly pull `contribution_type` and `model_name` from the provided `anchorDoc`.
+        *   **Outcome:** The test from step 8.b should now pass.
+    *   `[✅]` 9.b. `[BE]` In `path_constructor.ts`, modify `constructStoragePath`.
+        *   **Action:** Update the `case` for `pairwise_synthesis_chunk` to use `sourceAnchorType` and `sourceAnchorModelSlug` to build the new filename. Add validation to ensure both are present for this file type.
+        *   **Outcome:** The test from step 8.c should now pass.
 
-*   `[ ]` 10. **[COMMIT] `fix(service): prevent parenthesis stage from re-uploading synthesis documents`**
+*   `[✅]` 10. **[BE] [REFACTOR] Update Planners to Fulfill the Evolved Contract**
+    *   `[✅]` 10.a. `[BE]` In `planPairwiseByOrigin.ts`, update the logic to identify the anchor document (the `thesis`) from its inputs and pass it as the new required argument to `createCanonicalPathParams`.
+    *   `[✅]` 10.b. `[BE]` In `planPerSourceDocument.ts`, update its logic to call `createCanonicalPathParams`, passing the source document itself as the `anchorDoc`.
+    *   `[✅]` 10.c. `[TEST-UNIT]` Update the unit tests for both planners. The tests must now assert that `createCanonicalPathParams` is called with the correct `anchorDoc`.
+
+*   `[✅]` 11. **[COMMIT] `feat(worker): implement dynamic, human-readable unique filenames`**
+
+---
+
+*   `[✅]` 8. **[BE] [REFACTOR] Update Path Constructor to Consume the Contract**
+    *   `[✅]` 8.a. `[BE]` In `path_constructor.ts`, refactor the `constructStoragePath` function. For all contribution-related `FileType`s (`model_contribution_main`, `pairwise_synthesis_chunk`, etc.), completely remove any logic that reads or depends on the `originalFileName` field from the `PathContext`.
+    *   `[✅]` 8.b. `[BE]` Implement the new filename generation logic. This logic must generate filenames *solely* from the canonical context primitives now available in the `PathContext` (`modelSlug`, `contributionType`, `sourceModelSlugs`, `sourceContributionIdShort`, etc.), strictly adhering to the formats defined in `path_constructor.readme.md`.
+    *   `[✅]` 8.c. `[TEST-UNIT]` Update `path_constructor.test.ts`. Add new, comprehensive test cases that pass a `PathContext` containing the new canonical primitives and assert that the full, descriptive, and unique filenames are generated correctly for all relevant scenarios (critique, pairwise synthesis, etc.).
+    *   `[✅]` 8.d. `[DOCUMENT]` `path_constructor.readme.md` is the canonical expression of the file tree and file name construction method. The `path_constructor.ts` must produce these outputs exactly under all conditions for the tests to pass. 
+
+*   `[✅]` 5. **[COMMIT] `feat(worker): implement formal contract for canonical path context`**
+
+## Phase 3: Resolve Parenthesis Stage Logic Bomb
+
+**Objective:** To correct the job creation logic for simple stages (like `Parenthesis`) by ensuring the `target_contribution_id` is not incorrectly passed from a `plan` job to a transformed `execute` job. This prevents the file manager from incorrectly incrementing file attempt numbers and causing `409 Conflict` errors.
+
+*   `[✅]` 12. **[TEST-UNIT] Create a Failing Test to Prove the Logic Bomb**
+    *   `[✅]` 12.a. `[TEST-UNIT]` In the existing file `supabase/functions/dialectic-worker/processJob.test.ts`, add a new test case named `'should clear target_contribution_id when transforming a simple plan job'`.
+        *   **Action:** This test simulates the worker processing a `plan` job for a simple stage which has a `target_contribution_id`.
+        *   **Assertion:** The test must assert that when `processSimpleJob` is called with the transformed `execute` payload, the `target_contribution_id` property on the payload is `undefined`.
+        *   **Outcome:** This test failed as expected, proving that the `target_contribution_id` was being incorrectly passed down.
+
+*   `[✅]` 13. **[BE] Fix `processJob` to Clear `target_contribution_id`**
+    *   `[✅]` 13.a. `[BE]` In `supabase/functions/dialectic-worker/processJob.ts`, modify the logic that creates the `executePayload` for simple stages.
+        *   **Action:** When destructuring the `plan` payload and building the `execute` payload, explicitly set `target_contribution_id: undefined`. This ensures that the downstream processor treats it as a new contribution, not a continuation.
+    *   `[✅]` 13.b. `[TEST-UNIT]` Run the test from step 12.
+        *   **Outcome:** The test from step 12 now passes, confirming the fix.
 
 ## Phase 3: Validation
 

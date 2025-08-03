@@ -529,3 +529,80 @@ Deno.test('processJob - verifies correct parameters passed to processComplexJob'
         mockSupabase.clearAllStubs?.();
     }
 });
+
+Deno.test('should clear target_contribution_id when transforming a simple plan job', async () => {
+    // 1. Setup
+    const { processors, spies } = createMockJobProcessors();
+
+    const mockJobId = 'job-id-simple-transform-clear';
+    const mockPayload: DialecticPlanJobPayload = {
+        job_type: 'plan',
+        step_info: { current_step: 1, total_steps: 1 },
+        sessionId: 'session-id-simple-transform',
+        projectId: 'project-id-simple-transform',
+        stageSlug: 'parenthesis', // A simple stage that follows a complex one
+        model_id: 'model-id-1',
+        iterationNumber: 1,
+        // THIS IS THE CRITICAL PART: the plan job has a target from the previous stage
+        target_contribution_id: 'synthesis-doc-uuid', 
+    };
+
+    if (!isJson(mockPayload)) {
+        throw new Error('Test setup failed: mockPayload is not a valid Json');
+    }
+
+    const mockJob: MockJob = {
+        id: mockJobId,
+        user_id: 'user-id-transform',
+        session_id: 'session-id-simple-transform',
+        stage_slug: 'parenthesis',
+        payload: mockPayload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: 'synthesis-doc-uuid', // Also on the job row
+        prerequisite_job_id: null,
+    };
+
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_stages': {
+                select: {
+                    data: [{
+                        id: 'stage-id-parenthesis',
+                        slug: 'parenthesis',
+                        display_name: 'Parenthesis',
+                        input_artifact_rules: null, // Simple stage
+                    }]
+                }
+            }
+        }
+    });
+
+    try {
+        // 2. Execute
+        await processJob(mockSupabase.client as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-id-transform', mockDeps, 'mock-token', processors);
+
+        // 3. Assert
+        assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called once');
+        
+        const call = spies.processSimpleJob.calls[0];
+        const transformedJobPayload = call.args[1].payload;
+
+        // The core assertion: the target_contribution_id should be cleared for the new 'execute' job.
+        assertEquals(transformedJobPayload.target_contribution_id, undefined, 'target_contribution_id should be cleared for the transformed execute job');
+
+    } finally {
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+

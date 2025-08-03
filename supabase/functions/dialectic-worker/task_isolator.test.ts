@@ -257,7 +257,8 @@ describe('planComplexStage', () => {
             canonicalPathParams: {
                 contributionType: 'pairwise_synthesis_chunk',
                 sourceModelSlugs: ['Test Model'],
-                sourceContributionIdShort: 'doc-1-th', // Based on ID 'doc-1-thesis'
+                sourceAnchorType: 'thesis',
+                sourceAnchorModelSlug: 'Test Model',
             },
         };
         const plannerFn: GranularityPlannerFn = () => [mockExecutePayload];
@@ -286,7 +287,8 @@ describe('planComplexStage', () => {
         const params = payload.canonicalPathParams;
         assertEquals(params.contributionType, 'pairwise_synthesis_chunk');
         assertEquals(params.sourceModelSlugs, ['Test Model']);
-        assertEquals(params.sourceContributionIdShort, 'doc-1-th');
+        assertEquals(params.sourceAnchorType, 'thesis');
+        assertEquals(params.sourceAnchorModelSlug, 'Test Model');
     });
 
     it('should throw an error if fetching source contributions fails', async () => {
@@ -540,6 +542,7 @@ describe('planComplexStage', () => {
         const params = childJob.payload.canonicalPathParams;
         assertEquals(params.contributionType, mockRecipeStep.output_type);
         assertEquals(params.sourceModelSlugs, undefined);
-        assertEquals(params.sourceContributionIdShort, undefined);
+        assertEquals(params.sourceAnchorType, undefined);
+        assertEquals(params.sourceAnchorModelSlug, undefined);
     });
 }); 

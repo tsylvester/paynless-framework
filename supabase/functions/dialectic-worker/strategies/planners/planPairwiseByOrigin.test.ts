@@ -1,8 +1,8 @@
 // supabase/functions/dialectic-worker/strategies/planners/planPairwiseByOrigin.test.ts
 import { assertEquals, assertExists, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts';
-import type { DialecticJobRow, SourceDocument, DialecticPlanJobPayload, DialecticRecipeStep } from '../../../dialectic-service/dialectic.interface.ts';
+import type { DialecticJobRow, SourceDocument, DialecticPlanJobPayload, DialecticRecipeStep, DialecticExecuteJobPayload } from '../../../dialectic-service/dialectic.interface.ts';
 import { planPairwiseByOrigin } from './planPairwiseByOrigin.ts';
-import { isDialecticExecuteJobPayload } from '../../../_shared/utils/type_guards.ts';
+import { createCanonicalPathParams } from '../canonical_context_builder.ts';
 
 // Mock Data
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
@@ -205,33 +205,51 @@ const MOCK_RECIPE_STEP: DialecticRecipeStep = {
 
 Deno.test('planPairwiseByOrigin should create one child job for each thesis-antithesis pair', () => {
     const childPayloads = planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
-
-    assertEquals(childPayloads.length, 3, "Should create 3 child jobs for the 3 pairs");
     
-    // Check Job 1 (thesis-1 vs antithesis-1a)
-    const job1Payload = childPayloads.find(p => isDialecticExecuteJobPayload(p) && p.inputs?.antithesis_id === 'antithesis-1a');
+    assertEquals(childPayloads.length, 3, "Should create 3 child jobs for the 3 pairs");
+
+    // Helper to find docs
+    const findDoc = (id: string) => MOCK_SOURCE_DOCS.find(d => d.id === id)!;
+
+    // --- Check Job 1 (thesis-1 vs antithesis-1a) ---
+    const job1Payload = childPayloads.find(p => p.inputs?.antithesis_id === 'antithesis-1a');
     assertExists(job1Payload, "Payload for antithesis-1a should exist");
-    assert(isDialecticExecuteJobPayload(job1Payload)); // Type guard assertion
     
     assertEquals(job1Payload.job_type, 'execute');
     assertEquals(job1Payload.prompt_template_name, 'synthesis_step1_pairwise');
-    assertEquals(job1Payload.inputs?.thesis_id, 'thesis-1');
     assertEquals(job1Payload.output_type, 'pairwise_synthesis_chunk');
-    assertEquals(job1Payload.isIntermediate, true, "Job 1 should be marked as intermediate");
+    assertEquals(job1Payload.isIntermediate, true);
     
-    // Check Job 2 (thesis-1 vs antithesis-1b)
-    const job2Payload = childPayloads.find(p => isDialecticExecuteJobPayload(p) && p.inputs?.antithesis_id === 'antithesis-1b');
+    // Check inputs and relationships
+    assertEquals(job1Payload.inputs, { thesis_id: 'thesis-1', antithesis_id: 'antithesis-1a' });
+    assertEquals(job1Payload.document_relationships, { thesis: 'thesis-1', antithesis: 'antithesis-1a', source_group: 'thesis-1' });
+
+    // Check canonical params
+    assertExists(job1Payload.canonicalPathParams);
+    assertEquals(job1Payload.canonicalPathParams.sourceAnchorType, 'thesis');
+    assertEquals(job1Payload.canonicalPathParams.sourceAnchorModelSlug, 'Model ABC');
+    assertEquals(job1Payload.canonicalPathParams.sourceModelSlugs?.sort(), ['Model ABC', 'Model GHI'].sort());
+    assert(!('originalFileName' in job1Payload));
+
+
+    // --- Check Job 2 (thesis-1 vs antithesis-1b) ---
+    const job2Payload = childPayloads.find(p => p.inputs?.antithesis_id === 'antithesis-1b');
     assertExists(job2Payload, "Payload for antithesis-1b should exist");
-    assert(isDialecticExecuteJobPayload(job2Payload));
-    assertEquals(job2Payload.inputs?.thesis_id, 'thesis-1');
-    assertEquals(job2Payload.isIntermediate, true, "Job 2 should be marked as intermediate");
-    
-    // Check Job 3 (thesis-2 vs antithesis-2a)
-    const job3Payload = childPayloads.find(p => isDialecticExecuteJobPayload(p) && p.inputs?.antithesis_id === 'antithesis-2a');
+    assertEquals(job2Payload.inputs, { thesis_id: 'thesis-1', antithesis_id: 'antithesis-1b' });
+    assertExists(job2Payload.canonicalPathParams);
+    assertEquals(job2Payload.canonicalPathParams.sourceAnchorType, 'thesis');
+    assertEquals(job2Payload.canonicalPathParams.sourceAnchorModelSlug, 'Model ABC');
+    assertEquals(job2Payload.canonicalPathParams.sourceModelSlugs?.sort(), ['Model ABC', 'Model JKL'].sort());
+
+
+    // --- Check Job 3 (thesis-2 vs antithesis-2a) ---
+    const job3Payload = childPayloads.find(p => p.inputs?.antithesis_id === 'antithesis-2a');
     assertExists(job3Payload, "Payload for antithesis-2a should exist");
-    assert(isDialecticExecuteJobPayload(job3Payload));
-    assertEquals(job3Payload.inputs?.thesis_id, 'thesis-2');
-    assertEquals(job3Payload.isIntermediate, true, "Job 3 should be marked as intermediate");
+    assertEquals(job3Payload.inputs, { thesis_id: 'thesis-2', antithesis_id: 'antithesis-2a' });
+    assertExists(job3Payload.canonicalPathParams);
+    assertEquals(job3Payload.canonicalPathParams.sourceAnchorType, 'thesis');
+    assertEquals(job3Payload.canonicalPathParams.sourceAnchorModelSlug, 'Model DEF');
+    assertEquals(job3Payload.canonicalPathParams.sourceModelSlugs?.sort(), ['Model DEF', 'Model MNO'].sort());
 });
 
 Deno.test('planPairwiseByOrigin should return an empty array if there are no theses', () => {
@@ -261,7 +279,7 @@ Deno.test('should return an empty array if theses exist but no antitheses are re
             source: 'some-other-thesis' 
             } 
         }
-    ] as SourceDocument[];
+    ];
     const thesesOnly = MOCK_SOURCE_DOCS.filter(d => d.contribution_type === 'thesis');
 
     const childPayloads = planPairwiseByOrigin([...thesesOnly, ...unrelatedAntitheses], MOCK_PARENT_JOB, MOCK_RECIPE_STEP);

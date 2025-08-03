@@ -13,7 +13,7 @@ import {
   type IMockStorageFileOptions,
 } from '../supabase.mock.ts'
 import { FileManagerService } from './file_manager.ts'
-import type { UploadContext, PathContext } from '../types/file_manager.types.ts'
+import { UploadContext, PathContext, FileType } from '../types/file_manager.types.ts'
 import { constructStoragePath } from '../utils/path_constructor.ts'
 import type { TablesInsert, Json } from '../../types_db.ts'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -53,7 +53,7 @@ Deno.test('FileManagerService', async (t) => {
 
   const baseUploadContext: UploadContext = {
     pathContext: {
-      fileType: 'initial_user_prompt',
+      fileType: FileType.InitialUserPrompt,
       projectId: 'project-uuid-123',
       sessionId: 'session-uuid-456',
       iteration: 1,
@@ -139,7 +139,7 @@ Deno.test('FileManagerService', async (t) => {
         const context: UploadContext = {
           ...baseUploadContext,
           pathContext: {
-            fileType: 'general_resource',
+            fileType: FileType.GeneralResource,
             projectId: 'project-uuid-123',
             originalFileName: resourceFileName,
             // sessionId and iteration are not strictly used by 'general_resource' path construction 
@@ -178,7 +178,7 @@ Deno.test('FileManagerService', async (t) => {
     async () => {
       try {
         const pathContextAttempt0: PathContext = {
-            fileType: 'model_contribution_main',
+            fileType: FileType.ModelContributionMain,
             projectId: 'project-uuid-123',
             sessionId: 'session-uuid-456',
             iteration: 2,
@@ -192,7 +192,7 @@ Deno.test('FileManagerService', async (t) => {
 
         const pathContextRawAttempt0: PathContext = {
             ...pathContextAttempt0,
-            fileType: 'model_contribution_raw_json',
+            fileType: FileType.ModelContributionRawJson,
             // originalFileName for raw is derived inside file_manager.ts from the main contribution's finalFileName
             // So, for constructStoragePath here, we might need to simulate that derivation if we want a precise match
             // or accept that this specific call to constructStoragePath is for testing its own logic primarily.
@@ -235,7 +235,7 @@ Deno.test('FileManagerService', async (t) => {
         const context: UploadContext = {
           ...baseUploadContext,
           pathContext: {
-            fileType: 'model_contribution_main',
+            fileType: FileType.ModelContributionMain,
             projectId: 'project-uuid-123',
             sessionId: 'session-uuid-456',
             iteration: 2,
@@ -283,19 +283,32 @@ Deno.test('FileManagerService', async (t) => {
     'uploadAndRegisterFile should place intermediate files in a _work directory',
     async () => {
       try {
-        beforeEach();
+        const pathContext: PathContext = {
+          fileType: FileType.PairwiseSynthesisChunk,
+          projectId: 'project-intermediate',
+          sessionId: 'session-intermediate',
+          iteration: 1,
+          stageSlug: 'synthesis',
+          modelSlug: 'test-model',
+          sourceModelSlugs: ['model-a', 'model-b'],
+          sourceAnchorType: 'thesis',
+          sourceAnchorModelSlug: 'model-a',
+          attemptCount: 0,
+        };
+        const expectedPathParts = constructStoragePath(pathContext);
+        const contributionDataMock = { id: 'contrib-intermediate-123', file_name: expectedPathParts.fileName };
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            dialectic_contributions: {
+              insert: { data: [contributionDataMock], error: null },
+            },
+          },
+        };
+        beforeEach(config);
 
         const context: UploadContext = {
           ...baseUploadContext,
-          pathContext: {
-            fileType: 'pairwise_synthesis_chunk',
-            projectId: 'project-intermediate',
-            sessionId: 'session-intermediate',
-            iteration: 1,
-            stageSlug: 'synthesis',
-            modelSlug: 'test-model',
-            originalFileName: 'intermediate.md',
-          },
+          pathContext,
           contributionMetadata: {
             iterationNumber: 1,
             modelIdUsed: 'model-id-123',
@@ -304,20 +317,19 @@ Deno.test('FileManagerService', async (t) => {
             stageSlug: 'synthesis',
             rawJsonResponseContent: '{}',
             seedPromptStoragePath: 'path/to/seed',
-            isIntermediate: true, // This is the key flag
+            document_relationships: { derived_from: ['id-a', 'id-b'] },
           },
         };
-
-        // We need to spy on the internal call to constructStoragePath
-        // This is a bit tricky, so we'll just check the final upload path
-        const expectedPathParts = constructStoragePath({ ...context.pathContext, isWorkInProgress: true });
-        const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
         
+        const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+
         await fileManager.uploadAndRegisterFile(context);
 
         const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
         assertExists(uploadSpy, "Upload spy should exist");
         assertEquals(uploadSpy.calls[0].args[0], expectedFullPath, "File was not uploaded to the expected _work directory path.");
+        assert(expectedFullPath.includes('/_work/'), "The final path should contain a '/_work/' directory.");
+
 
       } finally {
         afterEach();
@@ -330,7 +342,7 @@ Deno.test('FileManagerService', async (t) => {
     async () => {
       try {
         const baseRetryPathContext: PathContext = {
-          fileType: 'model_contribution_main',
+          fileType: FileType.ModelContributionMain,
           projectId: 'project-retry-proj',
           sessionId: 'session-retry-sess',
           iteration: 1,
@@ -359,7 +371,7 @@ Deno.test('FileManagerService', async (t) => {
         const successRawJsonPathContextAttempt1: PathContext = {
           ...baseRetryPathContext, // Use base, then override attemptCount and fileType
           attemptCount: 1, // Matches successful main file
-          fileType: 'model_contribution_raw_json',
+          fileType: FileType.ModelContributionRawJson,
           // originalFileName for raw is derived inside file_manager.ts from the main contribution's *final* (successful) fileName
           // So, for constructStoragePath here, we use the fileName from the successful main attempt (1)
           originalFileName: expectedSuccessfulMainFileName1.replace(/(\.\w+)$/, '_raw.json'),
@@ -455,7 +467,7 @@ Deno.test('FileManagerService', async (t) => {
         const context: UploadContext = {
           ...baseUploadContext,
           pathContext: {
-            fileType: 'user_feedback',
+            fileType: FileType.UserFeedback,
             projectId: 'project-feedback-proj',
             sessionId: 'session-feedback-sess',
             iteration: 3,
@@ -536,7 +548,7 @@ Deno.test('FileManagerService', async (t) => {
         const context: UploadContext = {
           ...baseUploadContext,
           pathContext: { // Using simpler initial_user_prompt for this DB error test
-            fileType: 'initial_user_prompt',
+            fileType: FileType.InitialUserPrompt,
             projectId: 'project-db-error',
             originalFileName: 'db_error_test.txt',
           },

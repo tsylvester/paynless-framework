@@ -12,7 +12,7 @@ const mockSourceDocument1: SourceDocument = {
     edit_version: 0,
     error: null,
     file_name: null,
-    id: '',
+    id: 'thesis-uuid-123456789',
     is_latest_edit: false,
     iteration_number: 0,
     mime_type: '',
@@ -144,7 +144,7 @@ Deno.test('createCanonicalPathParams correctly sorts model slugs', () => {
         mockSourceDocument3,
     ];
 
-    const params = createCanonicalPathParams(sourceDocs, 'test_type');
+    const params = createCanonicalPathParams(sourceDocs, 'test_type', mockSourceDocument1);
 
     assertEquals(params.sourceModelSlugs, ['a-model', 'b-model', 'c-model']);
 });
@@ -156,39 +156,33 @@ Deno.test('createCanonicalPathParams handles missing model names', () => {
         mockSourceDocument3,
     ];
 
-    const params = createCanonicalPathParams(sourceDocs, 'test_type');
+    const params = createCanonicalPathParams(sourceDocs, 'test_type', mockSourceDocument2);
 
     assertEquals(params.sourceModelSlugs, ['b-model', 'c-model']);
 });
 
-Deno.test('createCanonicalPathParams identifies primary source ID', () => {
+Deno.test('createCanonicalPathParams identifies anchor document properties', () => {
     const sourceDocs: SourceDocument[] = [
-        { ...mockSourceDocument1, id: 'thesis-uuid-123456789' },
+        mockSourceDocument1,
         mockAntithesisDocument,
     ];
+    const anchorDoc = mockSourceDocument1;
 
-    const params = createCanonicalPathParams(sourceDocs, 'test_type');
+    const params = createCanonicalPathParams(sourceDocs, 'pairwise_synthesis_chunk', anchorDoc);
 
-    assertExists(params.sourceContributionIdShort);
-    assertEquals(params.sourceContributionIdShort, 'thesisuu');
+    assertExists(params.sourceAnchorType);
+    assertEquals(params.sourceAnchorType, 'thesis');
+    assertExists(params.sourceAnchorModelSlug);
+    assertEquals(params.sourceAnchorModelSlug, 'a-model');
 });
 
-Deno.test('createCanonicalPathParams handles no primary source', () => {
-    const sourceDocs: SourceDocument[] = [
-        { ...mockSourceDocument2, contribution_type: 'antithesis' },
-        { ...mockSourceDocument3, contribution_type: 'synthesis' },
-    ];
-
-    const params = createCanonicalPathParams(sourceDocs, 'test_type');
-
-    assertEquals(params.sourceContributionIdShort, undefined);
-});
 
 Deno.test('createCanonicalPathParams handles empty source docs array', () => {
     const sourceDocs: SourceDocument[] = [];
-    const params = createCanonicalPathParams(sourceDocs, 'test_type');
+    const params = createCanonicalPathParams(sourceDocs, 'test_type', mockSourceDocument1);
 
     assertEquals(params.sourceModelSlugs, undefined);
-    assertEquals(params.sourceContributionIdShort, undefined);
+    assertEquals(params.sourceAnchorType, 'thesis');
+    assertEquals(params.sourceAnchorModelSlug, 'a-model');
     assertEquals(params.contributionType, 'test_type');
 });

@@ -5,6 +5,7 @@ import type {
   TablesInsert,
 } from '../../types_db.ts'
 import type { FileManagerResponse, UploadContext, PathContext } from '../types/file_manager.types.ts'
+import { FileType } from '../types/file_manager.types.ts'
 
 const MAX_UPLOAD_ATTEMPTS = 5; // Max attempts for filename collision resolution
 
@@ -161,7 +162,6 @@ export class FileManagerService {
         for (currentAttemptCount = 0; currentAttemptCount < MAX_UPLOAD_ATTEMPTS; currentAttemptCount++) {
           const attemptPathContext: PathContext = {
             ...context.pathContext,
-            isWorkInProgress: context.contributionMetadata?.isIntermediate,
             attemptCount: currentAttemptCount,
             modelSlug: context.pathContext.modelSlug!,
             stageSlug: context.pathContext.stageSlug!,
@@ -204,11 +204,7 @@ export class FileManagerService {
           }
         }
       } else {
-        const pathContextWithWorkFlag: PathContext = {
-          ...context.pathContext,
-          isWorkInProgress: context.contributionMetadata?.isIntermediate,
-        };
-        const pathParts = constructStoragePath(pathContextWithWorkFlag);
+        const pathParts = constructStoragePath(context.pathContext);
         const fullPathForUpload = `${pathParts.storagePath}/${pathParts.fileName}`;
         finalMainContentFilePath = pathParts.storagePath; // Directory path
         finalFileName = pathParts.fileName;          // Filename
@@ -234,10 +230,8 @@ export class FileManagerService {
         try {
           const rawJsonPathContext: PathContext = {
             ...context.pathContext, 
-            fileType: 'model_contribution_raw_json',
-            originalFileName: finalFileName.replace(/(\.\w+)$/, '_raw.json'), 
+            fileType: FileType.ModelContributionRawJson,
             attemptCount: currentAttemptCount, 
-            isWorkInProgress: context.contributionMetadata?.isIntermediate,
             modelSlug: context.pathContext.modelSlug!, 
             stageSlug: context.pathContext.stageSlug!,
           };

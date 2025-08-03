@@ -83,7 +83,6 @@ export async function processJob(
             continueUntilComplete, 
             maxRetries, 
             continuation_count, 
-            target_contribution_id, 
             step_info,
           } = job.payload;
 
@@ -102,7 +101,7 @@ export async function processJob(
               continueUntilComplete,
               maxRetries,
               continuation_count,
-              target_contribution_id,
+              target_contribution_id: undefined, // CRITICAL: Clear this for simple stages
               step_info, // Pass down from the plan job
               prompt_template_name: 'default_seed_prompt',
               output_type: stageSlug,

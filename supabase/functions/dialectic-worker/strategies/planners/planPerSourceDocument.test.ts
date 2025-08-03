@@ -1,8 +1,8 @@
 // supabase/functions/dialectic-worker/strategies/planners/planPerSourceDocument.test.ts
 import { assertEquals, assertExists, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts';
-import type { DialecticJobRow, DialecticPlanJobPayload, DialecticRecipeStep, SourceDocument } from '../../../dialectic-service/dialectic.interface.ts';
+import type { DialecticJobRow, DialecticPlanJobPayload, DialecticRecipeStep, SourceDocument, DialecticExecuteJobPayload } from '../../../dialectic-service/dialectic.interface.ts';
 import { planPerSourceDocument } from './planPerSourceDocument.ts';
-import { isDialecticExecuteJobPayload } from '../../../_shared/utils/type_guards.ts';
+import { createCanonicalPathParams } from '../canonical_context_builder.ts';
 
 // Mock Data
 const MOCK_SOURCE_DOCS: SourceDocument[] = [
@@ -114,15 +114,25 @@ Deno.test('planPerSourceDocument should create one child job for each source doc
 
     assertEquals(childPayloads.length, 2, "Should create 2 child jobs, one for each source doc");
 
-    const job1Payload = childPayloads.find(p => isDialecticExecuteJobPayload(p) && p.inputs?.source_id === 'doc-1');
+    const job1Payload = childPayloads.find(p => p.inputs?.thesis_id === 'doc-1');
     assertExists(job1Payload, "Payload for doc-1 should exist");
-    assert(isDialecticExecuteJobPayload(job1Payload));
     assertEquals(job1Payload.job_type, 'execute');
     assertEquals(job1Payload.prompt_template_name, 'antithesis_step1_critique');
     assertEquals(job1Payload.output_type, 'antithesis');
+    assertEquals(job1Payload.document_relationships, { source_group: 'doc-1' });
+
+    assertExists(job1Payload.canonicalPathParams);
+    assertEquals(job1Payload.canonicalPathParams.sourceAnchorType, 'thesis');
+    assertEquals(job1Payload.canonicalPathParams.sourceAnchorModelSlug, 'M1');
+    assertEquals(job1Payload.canonicalPathParams.sourceModelSlugs, ['M1']);
+    assert(!('originalFileName' in job1Payload));
     
-    const job2Payload = childPayloads.find(p => isDialecticExecuteJobPayload(p) && p.inputs?.source_id === 'doc-2');
+    const job2Payload = childPayloads.find(p => p.inputs?.thesis_id === 'doc-2');
     assertExists(job2Payload, "Payload for doc-2 should exist");
+    assertExists(job2Payload.canonicalPathParams);
+    assertEquals(job2Payload.canonicalPathParams.sourceAnchorType, 'thesis');
+    assertEquals(job2Payload.canonicalPathParams.sourceAnchorModelSlug, 'M1');
+    assertEquals(job2Payload.canonicalPathParams.sourceModelSlugs, ['M1']);
 });
 
 Deno.test('planPerSourceDocument should return an empty array for empty source documents', () => {
@@ -137,7 +147,7 @@ Deno.test('planPerSourceDocument should correctly handle a single source documen
     assertEquals(childPayloads.length, 1, "Should create exactly one child job");
     const payload = childPayloads[0];
     assertExists(payload, "The single payload should exist");
-    assert(isDialecticExecuteJobPayload(payload));
-    assertEquals(payload.inputs?.source_id, 'doc-1');
+
+    assertEquals(payload.inputs?.thesis_id, 'doc-1');
     assertEquals(payload.prompt_template_name, 'antithesis_step1_critique');
 }); 

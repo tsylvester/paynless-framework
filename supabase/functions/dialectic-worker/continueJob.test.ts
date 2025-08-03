@@ -645,7 +645,8 @@ Deno.test('continueJob', async (t) => {
             assertExists(newPayload.canonicalPathParams);
             assertEquals(newPayload.canonicalPathParams.contributionType, basePayload.output_type);
             assertEquals(newPayload.canonicalPathParams.sourceModelSlugs, undefined);
-            assertEquals(newPayload.canonicalPathParams.sourceContributionIdShort, undefined);
+            assertEquals(newPayload.canonicalPathParams.sourceAnchorType, undefined);
+            assertEquals(newPayload.canonicalPathParams.sourceAnchorModelSlug, undefined);
         } else {
             assert(false, 'Payload is not a valid DialecticJobPayload');
         }

@@ -1,4 +1,4 @@
-import type { PathContext } from '../types/file_manager.types.ts';
+import { FileType, type PathContext } from '../types/file_manager.types.ts';
 
 /**
  * Defines the structure for a constructed path, separating directory and filename.
@@ -59,7 +59,8 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     attemptCount,
     contributionType,
     sourceModelSlugs,
-    sourceContributionIdShort,
+    sourceAnchorType,
+    sourceAnchorModelSlug,
   } = context;
 
   const projectRoot = projectId;
@@ -77,44 +78,44 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
 
 
   switch (fileType) {
-    case 'project_readme':
+    case FileType.ProjectReadme:
       return { storagePath: projectRoot, fileName: 'project_readme.md' };
-    case 'master_plan':
+    case FileType.MasterPlan:
         return { storagePath: projectRoot, fileName: 'Master_Plan.md' };
-    case 'pending_file':
+    case FileType.PendingFile:
         if (!originalFileName) throw new Error('originalFileName is required for pending_file.');
         return { storagePath: `${projectRoot}/Pending`, fileName: sanitizeForPath(originalFileName) };
-    case 'current_file':
+    case FileType.CurrentFile:
         if (!originalFileName) throw new Error('originalFileName is required for current_file.');
         return { storagePath: `${projectRoot}/Current`, fileName: sanitizeForPath(originalFileName) };
-    case 'complete_file':
+    case FileType.CompleteFile:
         if (!originalFileName) throw new Error('originalFileName is required for complete_file.');
         return { storagePath: `${projectRoot}/Complete`, fileName: sanitizeForPath(originalFileName) };
-    case 'initial_user_prompt':
+    case FileType.InitialUserPrompt:
       if (!originalFileName) throw new Error('originalFileName is required for initial_user_prompt.');
       return { storagePath: projectRoot, fileName: sanitizeForPath(originalFileName) };
-    case 'project_settings_file':
+    case FileType.ProjectSettingsFile:
       return { storagePath: projectRoot, fileName: 'project_settings.json' };
-    case 'general_resource':
+    case FileType.GeneralResource:
       if (!originalFileName) throw new Error('originalFileName is required for general_resource.');
       return { storagePath: `${projectRoot}/general_resource`, fileName: sanitizeForPath(originalFileName) };
-    case 'seed_prompt':
+    case FileType.SeedPrompt:
       if (!stageRootPath) throw new Error('Base path context required for seed_prompt.');
       return { storagePath: stageRootPath, fileName: 'seed_prompt.md' };
-    case 'user_feedback':
+    case FileType.UserFeedback:
       if (!stageRootPath || !rawStageSlug) throw new Error('Base path context and stageSlug required for user_feedback.');
       return { storagePath: stageRootPath, fileName: `user_feedback_${sanitizeForPath(rawStageSlug)}.md` };
-    case 'contribution_document': {
+    case FileType.ContributionDocument: {
       if (!stageRootPath || !originalFileName) throw new Error('Base path and originalFileName required for contribution_document.');
       return { storagePath: `${stageRootPath}/documents`, fileName: sanitizeForPath(originalFileName) };
     }
 
     // --- All Model Contributions (Main, Raw, and Intermediate Types) ---
-    case 'model_contribution_main':
-    case 'model_contribution_raw_json':
-    case 'pairwise_synthesis_chunk':
-    case 'reduced_synthesis':
-    case 'final_synthesis': {
+    case FileType.ModelContributionMain:
+    case FileType.ModelContributionRawJson:
+    case FileType.PairwiseSynthesisChunk:
+    case FileType.ReducedSynthesis:
+    case FileType.FinalSynthesis: {
       // For fileType calls, infer contributionType.
       const effectiveContributionType = contributionType ?? fileType;
       const contributionTypeSanitized = sanitizeForPath(effectiveContributionType);
@@ -125,37 +126,42 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       }
 
       let fileName: string;
-      const suffix = fileType === 'model_contribution_raw_json' ? '_raw.json' : '.md';
+      const suffix = fileType === FileType.ModelContributionRawJson ? '_raw.json' : '.md';
 
       switch (effectiveContributionType) {
         case 'antithesis':
           if (!sourceModelSlugs || sourceModelSlugs.length !== 1) throw new Error('Antithesis requires exactly one sourceModelSlug.');
           fileName = `${modelSlugSanitized}_critiquing_${sanitizeForPath(sourceModelSlugs[0])}_${attemptCount}_${contributionTypeSanitized}${suffix}`;
           break;
-        case 'pairwise_synthesis_chunk':
-          if (!sourceModelSlugs || sourceModelSlugs.length === 0) throw new Error('Required sourceModelSlugs missing for pairwise_synthesis_chunk.');
+        case FileType.PairwiseSynthesisChunk:
+          if (!sourceModelSlugs || sourceModelSlugs.length === 0 || !sourceAnchorType || !sourceAnchorModelSlug) {
+            throw new Error('Required sourceModelSlugs, sourceAnchorType, and sourceAnchorModelSlug missing for pairwise_synthesis_chunk.');
+          }
           fileName = `${modelSlugSanitized}_from_${
             [...sourceModelSlugs].sort().map(sanitizeForPath).join('_and_')
-          }_${attemptCount}_${contributionTypeSanitized}${suffix}`;
+          }_on_${sanitizeForPath(sourceAnchorType)}_by_${sanitizeForPath(sourceAnchorModelSlug)}_${attemptCount}_${contributionTypeSanitized}${suffix}`;
           break;
-        case 'reduced_synthesis':
-          if (!sourceContributionIdShort) throw new Error('Required sourceContributionIdShort missing for reduced_synthesis.');
-          fileName = `${modelSlugSanitized}_reducing_${sourceContributionIdShort}_${attemptCount}_${contributionTypeSanitized}${suffix}`;
+        case FileType.ReducedSynthesis: {
+          if (!sourceAnchorType || !sourceAnchorModelSlug) {
+            throw new Error('Required sourceAnchorType and sourceAnchorModelSlug missing for reduced_synthesis.');
+          }
+          fileName = `${modelSlugSanitized}_reducing_${sanitizeForPath(sourceAnchorType)}_by_${sanitizeForPath(sourceAnchorModelSlug)}_${attemptCount}_${contributionTypeSanitized}${suffix}`;
           break;
+        }
         default: // Covers thesis, final_synthesis, parenthesis, paralysis
           fileName = `${modelSlugSanitized}_${attemptCount}_${contributionTypeSanitized}${suffix}`;
           break;
       }
       
       let storagePath: string;
-      const isIntermediate = effectiveContributionType === 'pairwise_synthesis_chunk' || effectiveContributionType === 'reduced_synthesis';
+      const isIntermediate = effectiveContributionType === FileType.PairwiseSynthesisChunk || effectiveContributionType === FileType.ReducedSynthesis;
 
       if (isIntermediate) {
-        storagePath = (fileType === 'model_contribution_raw_json')
+        storagePath = (fileType === FileType.ModelContributionRawJson)
           ? `${stageRootPath}/_work/raw_responses`
           : `${stageRootPath}/_work`;
       } else {
-        storagePath = (fileType === 'model_contribution_raw_json')
+        storagePath = (fileType === FileType.ModelContributionRawJson)
           ? `${stageRootPath}/raw_responses`
           : stageRootPath;
       }
@@ -163,7 +169,7 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       return { storagePath, fileName };
     }
 
-    case 'rag_context_summary': {
+    case FileType.RagContextSummary: {
       if (!stageRootPath || !modelSlugSanitized || !sourceModelSlugs || sourceModelSlugs.length === 0) {
         throw new Error('Required context missing for rag_context_summary.');
       }

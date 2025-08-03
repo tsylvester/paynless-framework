@@ -9,7 +9,8 @@
 *   `{stage_slug}`: The slug of the current stage (e.g., `thesis`, `antithesis`).
 *   `{contribution_type}`: The specific type of artifact being created (e.g., `thesis`, `antithesis`, `pairwise_synthesis_chunk`, `final_synthesis`).
 *   `{source_model_slugs}`: An alphabetically sorted, underscore-separated list of model slugs from the source contributions.
-*   `{source_contribution_id_short}`: A shortened (e.g., first 8 chars) UUID of the primary source contribution.
+*   `{source_anchor_type}`: The `contribution_type` of the anchor document for a derivative work (e.g., `thesis`).
+*   `{source_anchor_model_slug}`: The `model_slug` of the anchor document's author.
 
 ---
 
@@ -126,14 +127,14 @@ This stage generates one output for each input from the previous stage.
 This stage has intermediate artifacts that must be uniquely named.
 
 *   **Step 1: Pairwise Synthesis Chunk (`pairwise_synthesis_chunk`)**
-    *   **Primitive:** `{model_slug}_from_{source_model_slugs}_{n}_{contribution_type}.md`
-    *   **Example:** `gpt-4-turbo_from_claude-3-opus_and_gpt-4-turbo_0_pairwise_synthesis_chunk.md`
-    *   **Rationale:** The filename is fully descriptive of its contents: the model that generated it and the models that generated its sources. Sorting the source model slugs ensures canonical naming.
+    *   **Primitive:** `{model_slug}_from_{source_model_slugs}_on_{source_anchor_type}_by_{source_anchor_model_slug}_{n}_{contribution_type}.md`
+    *   **Example:** `gpt-4-turbo_from_claude-3-opus_and_gpt-4-turbo_on_thesis_by_claude-3-opus_0_pairwise_synthesis_chunk.md`
+    *   **Rationale:** The filename is fully descriptive and dynamic. It includes the generating model, the source models, and critically, the type and authoring model of the **Anchor Document** to ensure uniqueness when the same models operate on different source groups. Sorting the source model slugs ensures canonical naming.
 
 *   **Step 2: Reduced Synthesis (`reduced_synthesis`)**
-    *   **Primitive:** `{model_slug}_reducing_{source_contribution_id_short}_{n}_{contribution_type}.md`
-    *   **Example:** `gpt-4-turbo_reducing_a1b2c3d4_0_reduced_synthesis.md`
-    *   **Rationale:** This clearly identifies that the file is a reduction related to a specific original source contribution (the `thesis` that started the `source_group`).
+    *   **Primitive:** `{model_slug}_reducing_{source_anchor_type}_by_{source_anchor_model_slug}_{n}_{contribution_type}.md`
+    *   **Example:** `gpt-4-turbo_reducing_thesis_by_claude-3-opus_0_reduced_synthesis.md`
+    *   **Rationale:** This clearly identifies the file is a reduction based on a specific anchor document, ensuring uniqueness and clarity about its origin.
 
 *   **Step 3: Final Synthesis (`final_synthesis`)**
     *   **Primitive:** `{model_slug}_{n}_{contribution_type}.md`

@@ -37,7 +37,8 @@ export enum FileType {
 export interface CanonicalPathParams {
   contributionType: string;
   sourceModelSlugs?: string[]; // Guaranteed to be alphabetically sorted
-  sourceContributionIdShort?: string;
+  sourceAnchorType?: string; // e.g., 'thesis', 'outline'
+  sourceAnchorModelSlug?: string; // e.g., 'claude-3-opus'
 }
 
 /**
@@ -54,7 +55,8 @@ export interface PathContext {
   attemptCount?: number
   originalFileName?: string // Made optional, validation per fileType
   sourceModelSlugs?: string[];
-  sourceContributionIdShort?: string;
+  sourceAnchorType?: string;
+  sourceAnchorModelSlug?: string;
 }
 
 /**
