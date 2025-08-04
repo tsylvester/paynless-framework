@@ -148,7 +148,7 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
     // Assert that assembler.assemble was called correctly
     assertEquals(mockAssembler.assemble.calls.length, 1, "assembler.assemble should have been called once.");
     const assembleArgs = mockAssembler.assemble.calls[0].args;
-    assertEquals(assembleArgs.length, 7, "assembler.assemble should be called with 7 arguments.");
+    assertEquals(assembleArgs.length, 5, "assembler.assemble should be called with 5 arguments.");
     assertEquals(assembleArgs[3], "Let's be happy.", "The fourth argument to assemble should be the correct initial user prompt.");
     assertEquals(assembleArgs[4], 1, "Fifth argument (iterationNumber) should be 1 for startSession.");
 });
@@ -288,7 +288,7 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
     // Assert that assembler.assemble was called correctly for the default case
     assertEquals(mockAssembler.assemble.calls.length, 1, "assembler.assemble should have been called once for default case.");
     const assembleArgsDefault = mockAssembler.assemble.calls[0].args;
-    assertEquals(assembleArgsDefault.length, 7, "assembler.assemble should be called with 7 arguments for default case.");
+    assertEquals(assembleArgsDefault.length, 5, "assembler.assemble should be called with 5 arguments for default case.");
     assertEquals(assembleArgsDefault[3], "Default prompt", "The fourth argument should be the correct default prompt string.");
     assertEquals(assembleArgsDefault[4], 1, "Fifth argument (iterationNumber) should be 1 for startSession default case.");
 });
@@ -449,5 +449,5 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
     // Check that the prompt content from the file was passed to the assembler
     assertEquals(assembleArgs[3], mockFileContent, "The fourth argument to assemble should be the content of the initial prompt file.");
     assertEquals(assembleArgs[4], 1, "The fifth argument (iterationNumber) should be 1.");
-    assertEquals(assembleArgs.length, 7, "assembler.assemble should be called with 7 arguments for file case.");
+    assertEquals(assembleArgs.length, 5, "assembler.assemble should be called with 5 arguments for file case.");
 });

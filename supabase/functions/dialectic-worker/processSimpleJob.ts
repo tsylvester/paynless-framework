@@ -1,5 +1,5 @@
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { type Database } from '../types_db.ts';
+import type { Database, Json } from '../types_db.ts';
 import {
   type DialecticJobPayload,
   type SelectedAiProvider,
@@ -7,8 +7,10 @@ import {
   type IDialecticJobDeps,
   type ModelProcessingResult,
   type Job,
+  type SourceDocument,
 } from '../dialectic-service/dialectic.interface.ts';
-import { isSelectedAiProvider } from "../_shared/utils/type_guards.ts";
+import { type StageContext } from '../_shared/prompt-assembler.interface.ts';
+import { isSelectedAiProvider, isDocumentRelationships } from "../_shared/utils/type_guards.ts";
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 
 export async function processSimpleJob(
@@ -83,6 +85,72 @@ export async function processSimpleJob(
             previousContent = new TextDecoder().decode(downloadedData);
         }
         
+        const { data: project } = await dbClient.from('dialectic_projects').select('*, dialectic_domains(id, name, description)').eq('id', projectId).single();
+        if (!project) {
+            throw new Error(`Project ${projectId} not found.`);
+        }
+
+        const { data: stageResult, error: stageError } = await dbClient
+            .from('dialectic_stages')
+            .select('*, system_prompts(prompt_text)')
+            .eq('slug', stageSlug)
+            .single();
+
+        if (stageError || !stageResult) {
+            throw new Error(`Could not retrieve stage details for slug: ${stageSlug}`);
+        }
+
+        const { system_prompts, ...stageData } = stageResult;
+        
+        let overlays: { overlay_values: Json }[] = [];
+        if (stageData.default_system_prompt_id) {
+            const { data: overlayData, error: overlaysError } = await dbClient
+                .from('domain_specific_prompt_overlays')
+                .select('overlay_values')
+                .eq('system_prompt_id', stageData.default_system_prompt_id)
+                .eq('domain_id', project.selected_domain_id);
+
+            if (overlaysError) {
+                deps.logger.warn(`[processSimpleJob] Could not fetch overlays for prompt ${stageData.default_system_prompt_id} and domain ${project.selected_domain_id}.`, { error: overlaysError });
+            } else {
+                overlays = (overlayData || []).map(o => ({ overlay_values: o.overlay_values }));
+            }
+        }
+        
+        const stageContext: StageContext = {
+            ...stageData,
+            system_prompts: system_prompts,
+            domain_specific_prompt_overlays: overlays,
+        };
+
+        if (!deps.promptAssembler) {
+            throw new Error('PromptAssembler dependency is missing.');
+        }
+        
+        const assemblerDocuments = await deps.promptAssembler.gatherInputsForStage(stageContext, project, sessionData, iterationNumber);
+
+        const contributionIds = assemblerDocuments.filter(d => d.type === 'contribution').map(d => d.id);
+
+        const { data: contributions, error: contribError } = await dbClient
+            .from('dialectic_contributions')
+            .select('*')
+            .in('id', contributionIds);
+
+        if (contribError) {
+            throw new Error('Failed to fetch full source documents for contributions.');
+        }
+
+        const sourceContributions: SourceDocument[] = contributions.map(c => {
+            const assemblerDoc = assemblerDocuments.find(a => a.id === c.id);
+            return {
+                ...c,
+                content: assemblerDoc?.content || '',
+                document_relationships: isDocumentRelationships(c.document_relationships) ? c.document_relationships : null,
+            };
+        });
+
+        const sourceDocuments: SourceDocument[] = [...sourceContributions];
+        
         await deps.executeModelCallAndSave({
             dbClient,
             deps,
@@ -93,6 +161,7 @@ export async function processSimpleJob(
             renderedPrompt,
             previousContent,
             sessionData,
+            sourceDocuments,
         });
 
     } catch (e) {

@@ -40,7 +40,7 @@ describe('processComplexJob', () => {
             indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
             embeddingClient: { createEmbedding: () => Promise.resolve([]) },
         };
-        const promptAssembler = new PromptAssembler(mockSupabase.client as unknown as SupabaseClient<Database>, ragServiceDeps);
+        const promptAssembler = new PromptAssembler(mockSupabase.client as unknown as SupabaseClient<Database>);
 
         const mockPayload: DialecticPlanJobPayload = {
             job_type: 'plan',

@@ -11,6 +11,8 @@
 *   `{source_model_slugs}`: An alphabetically sorted, underscore-separated list of model slugs from the source contributions.
 *   `{source_anchor_type}`: The `contribution_type` of the anchor document for a derivative work (e.g., `thesis`).
 *   `{source_anchor_model_slug}`: The `model_slug` of the anchor document's author.
+*   `{paired_model_slug}`: The `model_slug` of the non-anchor document in a synthesis pair.
+*   `{source_attempt_count}`: The `attemptCount` (`{n}`) of the source document being operated on.
 
 ---
 
@@ -50,9 +52,9 @@
             │       └── (generated from .json object located at Database['dialectic_stages']['row']['expected_output_artifacts'])
             ├── 2_antithesis/
             │   ├── raw_responses
-            │   │   └── {model_slug}_critiquing_{source_model_slug}_{n}_antithesis_raw.json
+            │   │   └── {model_slug}_critiquing_({source_model_slug}'s_{source_contribution_type}_{source_attempt_count})_{n}_antithesis_raw.json
             │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
-            │   ├── {model_slug}_critiquing_{source_model_slug}_{n}_antithesis.md
+            │   ├── {model_slug}_critiquing_({source_model_slug}'s_{source_contribution_type}_{source_attempt_count})_{n}_antithesis.md
             │   ├── ...
             │   ├── user_feedback_antithesis.md
             │   └── documents/                    (Optional refined documents, e.g., PRDs from each model)
@@ -62,11 +64,11 @@
             │   │   └── {model_slug}_{n}_final_synthesis_raw.json
             │   ├── _work/   (Storage for intermediate, machine-generated artifacts that are not final outputs)
             |   │   └── raw_responses/
-            |   │   │   ├── {model_slug}_from_{source_model_slugs}_{n}_pairwise_synthesis_chunk_raw.json
-            |   │   │   ├── {model_slug}_reducing_{source_contribution_id_short}_{n}_reduced_synthesis_raw.json
+            |   │   │   ├── {model_slug}_synthesizing_{source_anchor_model_slug}_with_{paired_model_slug}_on_{source_anchor_type}_{n}_pairwise_synthesis_chunk_raw.json
+            |   │   │   ├── {model_slug}_reducing_{source_anchor_type}_by_{source_anchor_model_slug}_{n}_reduced_synthesis_raw.json
             |   │   │   └── {model_slug}_compressing_{source_model_slugs}_rag_summary_raw.json
-            │   │   ├── {model_slug}_from_{source_model_slugs}_{n}_pairwise_synthesis_chunk.md
-            │   │   ├── {model_slug}_reducing_{source_contribution_id_short}_{n}_reduced_synthesis.md
+            │   │   ├── {model_slug}_synthesizing_{source_anchor_model_slug}_with_{paired_model_slug}_on_{source_anchor_type}_{n}_pairwise_synthesis_chunk.md
+            │   │   ├── {model_slug}_reducing_{source_anchor_type}_by_{source_anchor_model_slug}_{n}_reduced_synthesis.md
             │   │   └── {model_slug}_compressing_{source_model_slugs}_rag_summary.txt
             │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
             │   ├── {model_slug}_{n}_final_synthesis.md
@@ -114,22 +116,22 @@ These stages take the entire prior context and produce a primary output.
 This stage generates one output for each input from the previous stage.
 
 *   **Main Contribution (`.md`)**
-    *   **Primitive:** `{model_slug}_critiquing_{source_model_slug}_{n}_{contribution_type}.md`
-    *   **Example:** `gpt-4-turbo_critiquing_claude-3-opus_0_antithesis.md`
-    *   **Rationale:** Explicitly states the generating model and the model of the source document being critiqued, guaranteeing uniqueness.
+    *   **Primitive:** `{model_slug}_critiquing_({source_model_slug}'s_{source_contribution_type}_{source_attempt_count})_{n}_{contribution_type}.md`
+    *   **Example:** `gpt-4-turbo_critiquing_(claude-3-opus's_thesis_0)_0_antithesis.md`
+    *   **Rationale:** Uniqueness is guaranteed by including the source document's model, type, and its original attempt count. This creates a human-readable genealogical link, ensuring that critiques of different source documents from the same author have distinct filenames.
 
 *   **Raw Response (`.json`)**
-    *   **Primitive:** `{model_slug}_critiquing_{source_model_slug}_{n}_{contribution_type}_raw.json`
-    *   **Example:** `gpt-4-turbo_critiquing_claude-3-opus_0_antithesis_raw.json`
+    *   **Primitive:** `{model_slug}_critiquing_({source_model_slug}'s_{source_contribution_type}_{source_attempt_count})_{n}_{contribution_type}_raw.json`
+    *   **Example:** `gpt-4-turbo_critiquing_(claude-3-opus's_thesis_0)_0_antithesis_raw.json`
 
 ### **Synthesis Stage (Multi-step Map/Reduce)**
 
 This stage has intermediate artifacts that must be uniquely named.
 
 *   **Step 1: Pairwise Synthesis Chunk (`pairwise_synthesis_chunk`)**
-    *   **Primitive:** `{model_slug}_from_{source_model_slugs}_on_{source_anchor_type}_by_{source_anchor_model_slug}_{n}_{contribution_type}.md`
-    *   **Example:** `gpt-4-turbo_from_claude-3-opus_and_gpt-4-turbo_on_thesis_by_claude-3-opus_0_pairwise_synthesis_chunk.md`
-    *   **Rationale:** The filename is fully descriptive and dynamic. It includes the generating model, the source models, and critically, the type and authoring model of the **Anchor Document** to ensure uniqueness when the same models operate on different source groups. Sorting the source model slugs ensures canonical naming.
+    *   **Primitive:** `{model_slug}_synthesizing_{source_anchor_model_slug}_with_{paired_model_slug}_on_{source_anchor_type}_{n}_{contribution_type}.md`
+    *   **Example:** `gpt-4-turbo_synthesizing_gpt-4-turbo_with_claude-3-opus_on_thesis_0_pairwise_synthesis_chunk.md`
+    *   **Rationale:** The filename is explicitly descriptive of the pairwise synthesis action. It includes the generating model, the anchor document's model (`source_anchor_model_slug`), the model of the document it's being paired with (`paired_model_slug`), and the type of the anchor document (`source_anchor_type`). This structure guarantees uniqueness for each distinct pair and makes the origin of the artifact unambiguous.
 
 *   **Step 2: Reduced Synthesis (`reduced_synthesis`)**
     *   **Primitive:** `{model_slug}_reducing_{source_anchor_type}_by_{source_anchor_model_slug}_{n}_{contribution_type}.md`

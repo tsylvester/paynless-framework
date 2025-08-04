@@ -1,5 +1,4 @@
 import { Json, Tables } from "../types_db.ts";
-import { AiModelExtendedConfig } from "./types.ts";
 
 export interface IPromptAssembler {
     assemble(
@@ -8,8 +7,6 @@ export interface IPromptAssembler {
         stage: StageContext,
         projectInitialUserPrompt: string,
         iterationNumber: number,
-        modelConfigForTokenization: AiModelExtendedConfig,
-        minTokenLimit: number
     ): Promise<string>;
 
     gatherContext(
@@ -19,8 +16,6 @@ export interface IPromptAssembler {
         projectInitialUserPrompt: string,
         iterationNumber: number,
         overrideContributions?: ContributionOverride[],
-        modelConfigForTokenization?: AiModelExtendedConfig,
-        minTokenLimit?: number
     ): Promise<DynamicContextVariables>;
 
     render(
@@ -34,7 +29,7 @@ export interface IPromptAssembler {
         project: ProjectContext, 
         session: SessionContext, 
         iterationNumber: number
-    ): Promise<SourceDocument[]>;
+    ): Promise<AssemblerSourceDocument[]>;
 }
 
 export type DynamicContextVariables = {
@@ -77,7 +72,7 @@ export type ContributionOverride = {
 
 };
 // Define a granular document type
-export interface SourceDocument {
+export interface AssemblerSourceDocument {
 	id: string;
 	type: 'contribution' | 'feedback';
 	content: string;

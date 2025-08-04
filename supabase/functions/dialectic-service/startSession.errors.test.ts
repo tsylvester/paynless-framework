@@ -258,7 +258,7 @@ Deno.test("startSession - Error: Fails to upload user prompt and cleans up sessi
     // Assert that assembler.assemble was called correctly even in this error path leading to cleanup
     assertEquals(mockAssembler.assemble.calls.length, 1, "assembler.assemble should have been called once in error case.");
     const assembleArgs = mockAssembler.assemble.calls[0].args;
-    assertEquals(assembleArgs.length, 7, "assembler.assemble should be called with 7 arguments in error case.");
+    assertEquals(assembleArgs.length, 5, "assembler.assemble should be called with 5 arguments in error case.");
     assert(typeof assembleArgs[3] === 'string', "Forth argument (projectInitialUserPrompt) should be a string in error case."); 
     assertEquals(assembleArgs[4], 1, "Fifth argument (iterationNumber) should be 1 for startSession in error case.");
 });

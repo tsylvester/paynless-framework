@@ -9,6 +9,7 @@ import { isDialecticContribution, isAiModelExtendedConfig, isDialecticExecuteJob
 import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
 import { type AiModelExtendedConfig, type MessageForTokenCounting } from '../_shared/types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
+import { IRagSourceDocument } from '../_shared/services/rag_service.interface.ts';
 
 export async function executeModelCallAndSave(
     params: ExecuteModelCallAndSaveParams,
@@ -24,6 +25,8 @@ export async function executeModelCallAndSave(
         previousContent, 
         sessionData 
     } = params;
+    
+    console.log('[executeModelCallAndSave] Received job payload:', JSON.stringify(job.payload, null, 2));
     
     if (!isDialecticExecuteJobPayload(job.payload)) {
         throw new Error(`Job ${job.id} does not have a valid 'execute' payload.`);
@@ -76,12 +79,36 @@ export async function executeModelCallAndSave(
         max_context_window_tokens: modelConfig.max_context_window_tokens,
     };
 
-    const messages: MessageForTokenCounting[] = [{ role: 'user', content: previousContent || renderedPrompt.content }];
-    const finalTokenCount = countTokensForMessages(messages, extendedModelConfig);
+    const messagesForTokenCounting: MessageForTokenCounting[] = [{ role: 'user', content: previousContent || renderedPrompt.content }];
+    const initialTokenCount = countTokensForMessages(messagesForTokenCounting, extendedModelConfig);
     const maxTokens = extendedModelConfig.max_context_window_tokens || extendedModelConfig.context_window_tokens;
+    
+    let finalPromptContent = previousContent || renderedPrompt.content;
 
-    if (maxTokens && finalTokenCount > maxTokens) {
-        throw new ContextWindowError(`Final prompt token count (${finalTokenCount}) exceeds model limit (${maxTokens}) for job ${jobId}.`);
+    if (maxTokens && initialTokenCount > maxTokens) {
+        deps.logger.warn(`[executeModelCallAndSave] Initial prompt token count (${initialTokenCount}) exceeds model limit (${maxTokens}) for job ${jobId}. Attempting compression.`);
+        
+        if (!deps.ragService) {
+            throw new ContextWindowError(`Token count (${initialTokenCount}) exceeds model limit (${maxTokens}) and RAG service is not available.`);
+        }
+        
+        // We need to gather the original source documents to pass to the RAG service.
+        const sourceDocumentsForRag: IRagSourceDocument[] = params.sourceDocuments.map(doc => ({ id: doc.id, content: doc.content }));
+
+
+        const ragResult = await deps.ragService.getContextForModel(sourceDocumentsForRag, extendedModelConfig, sessionId, stageSlug);
+
+        if (ragResult.error || !ragResult.context) {
+            throw new ContextWindowError(`Failed to compress prompt with RAG service: ${ragResult.error?.message || 'Unknown RAG error'}`);
+        }
+        
+        finalPromptContent = ragResult.context;
+        
+        const compressedTokenCount = countTokensForMessages([{ role: 'user', content: finalPromptContent }], extendedModelConfig);
+        if (maxTokens && compressedTokenCount > maxTokens) {
+            throw new ContextWindowError(`Compressed prompt token count (${compressedTokenCount}) still exceeds model limit (${maxTokens}).`);
+        }
+        deps.logger.info(`[executeModelCallAndSave] Prompt successfully compressed. New token count: ${compressedTokenCount}`);
     }
 
     const options = {
@@ -90,7 +117,7 @@ export async function executeModelCallAndSave(
 
     const aiResponse: UnifiedAIResponse = await deps.callUnifiedAIModel(
         providerDetails.id, 
-        previousContent || renderedPrompt.content, 
+        finalPromptContent, 
         sessionData.associated_chat_id, 
         authToken, 
         options
@@ -101,9 +128,6 @@ export async function executeModelCallAndSave(
     }
 
     const finalContent = previousContent + aiResponse.content;
-    const contributionType = isContributionType(job.payload.canonicalPathParams.contributionType)
-        ? job.payload.canonicalPathParams.contributionType
-        : undefined;
 
     const fileType: FileType = isFileType(output_type) 
         ? output_type
@@ -113,6 +137,15 @@ export async function executeModelCallAndSave(
         ? `Contribution for stage '${stageSlug}' by model ${providerDetails.name}`
         : `Intermediate artifact '${output_type}' for stage '${stageSlug}' by model ${providerDetails.name}`;
 
+    const {
+        contributionType: rawContributionType,
+        ...restOfCanonicalPathParams
+    } = job.payload.canonicalPathParams;
+
+    const contributionType = isContributionType(rawContributionType)
+        ? rawContributionType
+        : undefined;
+
     const uploadContext: UploadContext = {
         pathContext: {
             projectId,
@@ -121,7 +154,8 @@ export async function executeModelCallAndSave(
             iteration: iterationNumber,
             stageSlug,
             modelSlug: providerDetails.api_identifier,
-            ...job.payload.canonicalPathParams,
+            attemptCount: job.attempt_count,
+            ...restOfCanonicalPathParams,
             contributionType,
         },
         fileContent: finalContent, 

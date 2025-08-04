@@ -97,7 +97,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
         contribution_type: 'antithesis', 
         size_bytes: 2000, 
         mime_type: 'text/plain',
-        document_relationships: { source: 'thesis-1' },
+        document_relationships: { source_group: 'thesis-1' },
     },
     { 
         id: 'antithesis-1b', 
@@ -128,7 +128,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
         contribution_type: 'antithesis', 
         size_bytes: 2500, 
         mime_type: 'text/plain',
-        document_relationships: { source: 'thesis-1' },
+        document_relationships: { source_group: 'thesis-1' },
     },
     { 
         id: 'antithesis-2a', 
@@ -159,7 +159,7 @@ const MOCK_SOURCE_DOCS: SourceDocument[] = [
         contribution_type: 'antithesis', 
         size_bytes: 3000, 
         mime_type: 'text/plain',
-        document_relationships: { source: 'thesis-2' },
+        document_relationships: { source_group: 'thesis-2' },
     },
 ];
 
@@ -228,6 +228,7 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
     assertExists(job1Payload.canonicalPathParams);
     assertEquals(job1Payload.canonicalPathParams.sourceAnchorType, 'thesis');
     assertEquals(job1Payload.canonicalPathParams.sourceAnchorModelSlug, 'Model ABC');
+    assertEquals(job1Payload.canonicalPathParams.pairedModelSlug, 'Model GHI');
     assertEquals(job1Payload.canonicalPathParams.sourceModelSlugs?.sort(), ['Model ABC', 'Model GHI'].sort());
     assert(!('originalFileName' in job1Payload));
 
@@ -239,6 +240,7 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
     assertExists(job2Payload.canonicalPathParams);
     assertEquals(job2Payload.canonicalPathParams.sourceAnchorType, 'thesis');
     assertEquals(job2Payload.canonicalPathParams.sourceAnchorModelSlug, 'Model ABC');
+    assertEquals(job2Payload.canonicalPathParams.pairedModelSlug, 'Model JKL');
     assertEquals(job2Payload.canonicalPathParams.sourceModelSlugs?.sort(), ['Model ABC', 'Model JKL'].sort());
 
 
@@ -249,6 +251,7 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
     assertExists(job3Payload.canonicalPathParams);
     assertEquals(job3Payload.canonicalPathParams.sourceAnchorType, 'thesis');
     assertEquals(job3Payload.canonicalPathParams.sourceAnchorModelSlug, 'Model DEF');
+    assertEquals(job3Payload.canonicalPathParams.pairedModelSlug, 'Model MNO');
     assertEquals(job3Payload.canonicalPathParams.sourceModelSlugs?.sort(), ['Model DEF', 'Model MNO'].sort());
 });
 
@@ -276,7 +279,7 @@ Deno.test('should return an empty array if theses exist but no antitheses are re
         id: 'antithesis-unrelated', 
         target_contribution_id: 'some-other-thesis', 
         document_relationships: { 
-            source: 'some-other-thesis' 
+            source_group: 'some-other-thesis' 
             } 
         }
     ];

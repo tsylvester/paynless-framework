@@ -237,6 +237,7 @@ import { FileType } from '../_shared/types/file_manager.types.ts';
             renderedPrompt: { content: 'Seed prompt content', fullPath: 'prompts/seed.txt' },
             previousContent: '',
             sessionData: mockSessionData,
+            sourceDocuments: [],
         };
         await executeModelCallAndSave(params);
 
@@ -296,6 +297,7 @@ import { FileType } from '../_shared/types/file_manager.types.ts';
             renderedPrompt: { content: 'Seed prompt content', fullPath: 'prompts/seed.txt' },
             previousContent: '',
             sessionData: mockSessionData,
+            sourceDocuments: [],
         };
         await executeModelCallAndSave(params);
 
@@ -351,6 +353,7 @@ import { FileType } from '../_shared/types/file_manager.types.ts';
             renderedPrompt: { content: 'Seed prompt content', fullPath: 'prompts/seed.txt' },
             previousContent: '',
             sessionData: mockSessionData,
+            sourceDocuments: [],
         };
         await executeModelCallAndSave(params);
   
@@ -373,6 +376,7 @@ import { FileType } from '../_shared/types/file_manager.types.ts';
             renderedPrompt: { content: 'Seed prompt content', fullPath: 'prompts/seed.txt' },
             previousContent: '',
             sessionData: mockSessionData,
+            sourceDocuments: [],
         };
         await executeModelCallAndSave(params);
   
@@ -414,6 +418,7 @@ import { FileType } from '../_shared/types/file_manager.types.ts';
             renderedPrompt: { content: 'Seed prompt content', fullPath: 'prompts/seed.txt' },
             previousContent: '',
             sessionData: mockSessionData,
+            sourceDocuments: [],
         };
         await executeModelCallAndSave(params);
 
@@ -461,6 +466,7 @@ import { FileType } from '../_shared/types/file_manager.types.ts';
                 renderedPrompt: { content: 'Seed prompt content', fullPath: 'prompts/seed.txt' },
                 previousContent: '',
                 sessionData: mockSessionData,
+                sourceDocuments: [],
             };
             await executeModelCallAndSave(params);
         } catch (e) {
@@ -507,6 +513,7 @@ import { FileType } from '../_shared/types/file_manager.types.ts';
             renderedPrompt: { content: 'Seed prompt content', fullPath: 'prompts/seed.txt' },
             previousContent: '',
             sessionData: mockSessionData,
+            sourceDocuments: [],
         };
         await executeModelCallAndSave(params);
 
@@ -542,6 +549,7 @@ import { FileType } from '../_shared/types/file_manager.types.ts';
             renderedPrompt: { content: 'Seed prompt content', fullPath: 'prompts/seed.txt' },
             previousContent: '',
             sessionData: mockSessionData,
+            sourceDocuments: [],
         };
         await executeModelCallAndSave(params);
 
@@ -579,6 +587,7 @@ import { FileType } from '../_shared/types/file_manager.types.ts';
             renderedPrompt: { content: 'Seed prompt content', fullPath: 'prompts/seed.txt' },
             previousContent: '',
             sessionData: mockSessionData,
+            sourceDocuments: [],
         };
         await executeModelCallAndSave(params);
         
@@ -625,6 +634,7 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
                 renderedPrompt: { content: 'This is a prompt that is definitely going to be longer than ten tokens.', fullPath: 'prompts/seed.txt' },
                 previousContent: '',
                 sessionData: mockSessionData,
+                sourceDocuments: [],
             };
             await executeModelCallAndSave(params);
         } catch (e) {

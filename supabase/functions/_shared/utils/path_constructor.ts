@@ -61,6 +61,8 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     sourceModelSlugs,
     sourceAnchorType,
     sourceAnchorModelSlug,
+    sourceAttemptCount,
+    pairedModelSlug,
   } = context;
 
   const projectRoot = projectId;
@@ -130,16 +132,16 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
 
       switch (effectiveContributionType) {
         case 'antithesis':
-          if (!sourceModelSlugs || sourceModelSlugs.length !== 1) throw new Error('Antithesis requires exactly one sourceModelSlug.');
-          fileName = `${modelSlugSanitized}_critiquing_${sanitizeForPath(sourceModelSlugs[0])}_${attemptCount}_${contributionTypeSanitized}${suffix}`;
+          if (!sourceModelSlugs || sourceModelSlugs.length !== 1 || !sourceAnchorType || sourceAttemptCount === undefined) {
+            throw new Error('Antithesis requires one sourceModelSlug, a sourceAnchorType, and a sourceAttemptCount.');
+          }
+          fileName = `${modelSlugSanitized}_critiquing_(${sanitizeForPath(sourceModelSlugs[0])}'s_${sanitizeForPath(sourceAnchorType)}_${sourceAttemptCount})_${attemptCount}_${contributionTypeSanitized}${suffix}`;
           break;
         case FileType.PairwiseSynthesisChunk:
-          if (!sourceModelSlugs || sourceModelSlugs.length === 0 || !sourceAnchorType || !sourceAnchorModelSlug) {
-            throw new Error('Required sourceModelSlugs, sourceAnchorType, and sourceAnchorModelSlug missing for pairwise_synthesis_chunk.');
+          if (!sourceAnchorType || !sourceAnchorModelSlug || !pairedModelSlug) {
+            throw new Error('Required sourceAnchorType, sourceAnchorModelSlug, and pairedModelSlug missing for pairwise_synthesis_chunk.');
           }
-          fileName = `${modelSlugSanitized}_from_${
-            [...sourceModelSlugs].sort().map(sanitizeForPath).join('_and_')
-          }_on_${sanitizeForPath(sourceAnchorType)}_by_${sanitizeForPath(sourceAnchorModelSlug)}_${attemptCount}_${contributionTypeSanitized}${suffix}`;
+          fileName = `${modelSlugSanitized}_synthesizing_${sanitizeForPath(sourceAnchorModelSlug)}_with_${sanitizeForPath(pairedModelSlug)}_on_${sanitizeForPath(sourceAnchorType)}_${attemptCount}_${contributionTypeSanitized}${suffix}`;
           break;
         case FileType.ReducedSynthesis: {
           if (!sourceAnchorType || !sourceAnchorModelSlug) {

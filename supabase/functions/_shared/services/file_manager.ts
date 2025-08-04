@@ -229,11 +229,15 @@ export class FileManagerService {
       if (context.pathContext.fileType === 'model_contribution_main' && context.contributionMetadata?.rawJsonResponseContent) {
         try {
           const rawJsonPathContext: PathContext = {
-            ...context.pathContext, 
+            ...context.pathContext,
             fileType: FileType.ModelContributionRawJson,
-            attemptCount: currentAttemptCount, 
-            modelSlug: context.pathContext.modelSlug!, 
+            attemptCount: currentAttemptCount,
+            modelSlug: context.pathContext.modelSlug!,
             stageSlug: context.pathContext.stageSlug!,
+            // Explicitly copy over the dynamic properties
+            sourceModelSlugs: context.pathContext.sourceModelSlugs,
+            sourceAnchorType: context.pathContext.sourceAnchorType,
+            sourceAnchorModelSlug: context.pathContext.sourceAnchorModelSlug,
           };
           const rawJsonPathParts = constructStoragePath(rawJsonPathContext);
           const fullPathForRawJsonUpload = `${rawJsonPathParts.storagePath}/${rawJsonPathParts.fileName}`;

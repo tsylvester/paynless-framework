@@ -89,6 +89,9 @@ export async function generateContributions(
             return { success: false, error: { message: `Could not find recipe for stage ${stageSlug}.`, status: 500 } };
         }
         
+        console.log('[generateContributions] Fetched stageDef:', JSON.stringify(stageDef, null, 2));
+        console.log('[generateContributions] Result of hasStepsRecipe:', hasStepsRecipe(stageDef));
+
         // 2. Calculate total steps from the recipe
         const totalSteps = hasStepsRecipe(stageDef) ? stageDef.input_artifact_rules.steps.length : 1;
         
@@ -106,6 +109,9 @@ export async function generateContributions(
                     status: 'pending',
                 }
             };
+            
+            console.log(`[generateContributions] Final jobPayload for model ${modelId}:`, JSON.stringify(jobPayload, null, 2));
+
 
             const { data: job, error: insertError } = await dbClient
                 .from('dialectic_generation_jobs')

@@ -16,10 +16,9 @@ import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt
 import { downloadFromStorage } from '../_shared/supabase_storage_utils.ts';
 import { IRagServiceDependencies } from '../_shared/services/rag_service.interface.ts';
 import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
-import { getAiProviderConfig } from "../dialectic-worker/processComplexJob.ts";
-import { AiModelExtendedConfig } from "../_shared/types.ts";
 import { OpenAIEmbeddingClient, IndexingService, LangchainTextSplitter } from '../_shared/services/indexing_service.ts';
 import { IFileManager } from '../_shared/types/file_manager.types.ts';
+import { FileType } from "../_shared/types/file_manager.types.ts";
 
 export interface StartSessionDeps {
     logger: ILogger;
@@ -61,19 +60,6 @@ export async function startSession(
         return { error: { message: "Project is not configured with a process template.", status: 400 } };
     }
     
-    // Fetch Model Configuration for tokenization
-    let modelConfig: AiModelExtendedConfig;
-    try {
-        if (!selectedModelIds || selectedModelIds.length === 0) {
-            throw new Error("No model IDs provided in the payload.");
-        }
-        modelConfig = await getAiProviderConfig(dbClient, selectedModelIds[0]);
-    } catch (error: unknown) {
-        log.error("[startSession] Could not fetch model configuration for tokenization.", { selectedModelIds, error: error });
-        return { error: { message: `Failed to load configuration for selected AI models: ${error}`, status: 500 } };
-    }
-
-
     // 1. Find the initial stage for the session.
     // If a stageSlug is provided, use it. Otherwise, find the template's entry point.
     let initialStageId: string | undefined;
@@ -249,13 +235,7 @@ export async function startSession(
         const textSplitter = new LangchainTextSplitter();
         const indexingService = new IndexingService(dbClient, log, textSplitter, embeddingClient);
 
-        const ragServiceDeps: IRagServiceDependencies = {
-            dbClient: dbClient,
-            embeddingClient: embeddingClient,
-            logger: log,
-            indexingService: indexingService,
-        };
-        return new PromptAssembler(dbClient, ragServiceDeps, (bucket, path) => downloadFromStorage(dbClient, bucket, path));
+        return new PromptAssembler(dbClient, (bucket, path) => downloadFromStorage(dbClient, bucket, path));
     })();
 
 
@@ -289,16 +269,12 @@ export async function startSession(
         ...newSessionRecord, 
     };
 
-    const minTokenLimit = modelConfig.provider_max_input_tokens || 8000;
-
     const assembledSeedPrompt = await assembler.assemble(
         projectContext, 
         sessionContextForAssembler, 
         stageContext, 
         initialPrompt.content,
-        1, // Add iterationNumber for startSession
-        modelConfig,
-        minTokenLimit
+        1
     );
 
     if (!assembledSeedPrompt) {
@@ -315,7 +291,7 @@ export async function startSession(
     const seedPromptUploadResult = await fileManager.uploadAndRegisterFile({
         pathContext: {
             projectId: project.id,
-            fileType: 'seed_prompt', 
+            fileType: FileType.SeedPrompt, 
             sessionId: newSessionRecord.id,
             iteration: 1,
             stageSlug: stageContext.slug,

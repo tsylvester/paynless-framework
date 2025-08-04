@@ -293,6 +293,7 @@ Deno.test('FileManagerService', async (t) => {
           sourceModelSlugs: ['model-a', 'model-b'],
           sourceAnchorType: 'thesis',
           sourceAnchorModelSlug: 'model-a',
+          pairedModelSlug: 'model-b',
           attemptCount: 0,
         };
         const expectedPathParts = constructStoragePath(pathContext);

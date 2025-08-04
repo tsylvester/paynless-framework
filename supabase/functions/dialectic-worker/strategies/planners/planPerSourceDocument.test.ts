@@ -150,4 +150,97 @@ Deno.test('planPerSourceDocument should correctly handle a single source documen
 
     assertEquals(payload.inputs?.thesis_id, 'doc-1');
     assertEquals(payload.prompt_template_name, 'antithesis_step1_critique');
+});
+
+Deno.test('should correctly plan jobs for antithesis stage', () => {
+    // This test simulates the exact scenario from the integration test:
+    // planning the antithesis stage based on the outputs of the thesis stage.
+    const thesisContributions: SourceDocument[] = [
+        {
+            id: 'thesis-doc-1',
+            content: 'Content from gpt-4-turbo',
+            contribution_type: 'thesis',
+            model_name: 'GPT-4 Turbo',
+            document_relationships: { source_group: 'thesis-doc-1' },
+            citations: null,
+            created_at: new Date().toISOString(),
+            edit_version: 1,
+            error: null,
+            tokens_used_input: 1,
+            tokens_used_output: 1,
+            processing_time_ms: 1,
+            file_name: 'f1.txt',
+            storage_bucket: 'b1',
+            storage_path: 'p1',
+            model_id: 'm1',
+            mime_type: 'text/plain',
+            is_latest_edit: true,
+            iteration_number: 1,
+            original_model_contribution_id: null,
+            prompt_template_id_used: 'p1',
+            raw_response_storage_path: null,
+            size_bytes: 1,
+            target_contribution_id: null,
+            session_id: 'session-abc',
+            stage: 'thesis',
+            seed_prompt_url: null,
+            updated_at: new Date().toISOString(),
+            user_id: 'user-def',
+        },
+        {
+            id: 'thesis-doc-2',
+            content: 'Content from claude-3-opus',
+            contribution_type: 'thesis',
+            model_name: 'Claude 3 Opus',
+            document_relationships: { source_group: 'thesis-doc-2' },
+            citations: null,
+            created_at: new Date().toISOString(),
+            edit_version: 1,
+            error: null,
+            tokens_used_input: 1,
+            tokens_used_output: 1,
+            processing_time_ms: 1,
+            file_name: 'f2.txt',
+            storage_bucket: 'b1',
+            storage_path: 'p1',
+            model_id: 'm1',
+            mime_type: 'text/plain',
+            is_latest_edit: true,
+            iteration_number: 1,
+            original_model_contribution_id: null,
+            prompt_template_id_used: 'p1',
+            raw_response_storage_path: null,
+            size_bytes: 1,  
+            target_contribution_id: null,
+            session_id: 'session-abc',
+            stage: 'thesis',
+            seed_prompt_url: null,
+            updated_at: new Date().toISOString(),
+            user_id: 'user-def',
+        },
+    ];
+
+    const childPayloads = planPerSourceDocument(thesisContributions, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+
+    assertEquals(childPayloads.length, 2, "Should create a child job for each thesis contribution");
+
+    // Check payload for the first thesis doc
+    const job1Payload = childPayloads.find(p => p.inputs?.thesis_id === 'thesis-doc-1');
+    assertExists(job1Payload, "Payload for thesis-doc-1 should exist");
+    assertEquals(job1Payload.job_type, 'execute');
+    assertEquals(job1Payload.output_type, 'antithesis');
+    assertEquals(job1Payload.document_relationships, { source_group: 'thesis-doc-1' });
+    assertExists(job1Payload.canonicalPathParams);
+    assertEquals(job1Payload.canonicalPathParams.sourceAnchorType, 'thesis');
+    assertEquals(job1Payload.canonicalPathParams.sourceAnchorModelSlug, 'GPT-4 Turbo');
+
+    // Check payload for the second thesis doc
+    const job2Payload = childPayloads.find(p => p.inputs?.thesis_id === 'thesis-doc-2');
+    assertExists(job2Payload, "Payload for thesis-doc-2 should exist");
+    assertEquals(job2Payload.job_type, 'execute');
+    assertEquals(job2Payload.output_type, 'antithesis');
+    assertEquals(job2Payload.document_relationships, { source_group: 'thesis-doc-2' });
+    assertExists(job2Payload.canonicalPathParams);
+    assertEquals(job2Payload.canonicalPathParams.sourceAnchorType, 'thesis');
+    assertEquals(job2Payload.canonicalPathParams.sourceAnchorModelSlug, 'Claude 3 Opus');
 }); 

@@ -16,6 +16,7 @@ import { ProjectContext, SessionContext, StageContext } from "../_shared/prompt-
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
 import { formatResourceDescription } from '../_shared/utils/resourceDescriptionFormatter.ts';
 import { getAiProviderConfig } from '../dialectic-worker/processComplexJob.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
 
 // Get storage bucket from environment variables, with a fallback for safety.
 const STORAGE_BUCKET = Deno.env.get('SB_CONTENT_STORAGE_BUCKET');
@@ -212,7 +213,7 @@ export async function submitStageResponses(
       sessionId: payload.sessionId,
       iteration: iterationNumber,
       stageSlug: currentStage.slug,
-      fileType: 'user_feedback',
+      fileType: FileType.UserFeedback,
       originalFileName: feedbackFileName,
     };
 
@@ -370,8 +371,7 @@ export async function submitStageResponses(
     return { error: { message: "Project configuration error: Missing or invalid dialectic domain name.", status: 500 }, status: 500 };
   }
 
-  const ragServiceDeps = { dbClient, logger, indexingService, embeddingClient };
-  const assembler = new PromptAssembler(dbClient, ragServiceDeps, (bucket: string, path: string) => dependencies.downloadFromStorage(dbClient, bucket, path));
+  const assembler = new PromptAssembler(dbClient, (bucket: string, path: string) => dependencies.downloadFromStorage(dbClient, bucket, path));
 
   const projectContextForAssembler: ProjectContext = {
       id: project.id, 
@@ -432,26 +432,6 @@ export async function submitStageResponses(
   }
   const projectInitialUserPrompt = initialUserPromptData.content; 
 
-  const modelIds = sessionData.selected_model_ids;
-  if (!modelIds || modelIds.length === 0) {
-      return { error: { message: "No models selected for this session.", status: 400 }, status: 400 };
-  }
-
-  const modelConfigs: AiModelExtendedConfig[] = [];
-  for (const modelId of modelIds) {
-      const config = await getAiProviderConfig(dbClient, modelId);
-      if (config) {
-          modelConfigs.push(config);
-      }
-  }
-
-  if (modelConfigs.length === 0) {
-      return { error: { message: "Could not retrieve valid model configurations for this session.", status: 500 }, status: 500 };
-  }
-
-  const minTokenLimit = Math.min(...modelConfigs.map(m => m.provider_max_input_tokens || 0));
-  const modelConfigForTokenization = modelConfigs.find(m => (m.provider_max_input_tokens || 0) === minTokenLimit)!;
-
   let assembledSeedPromptText: string;
   try {
     assembledSeedPromptText = await assembler.assemble(
@@ -459,9 +439,7 @@ export async function submitStageResponses(
       sessionContextForAssembler,
       stageContextForAssembler,
       projectInitialUserPrompt,
-      iterationNumber,
-      modelConfigForTokenization,
-      minTokenLimit
+      iterationNumber
     );
     console.log(
       `[submitStageResponses DBG] Assembled seed prompt text:`,
@@ -505,7 +483,7 @@ export async function submitStageResponses(
     sessionId: payload.sessionId,
     iteration: iterationNumber, 
     stageSlug: nextStageFull.slug, // Use the slug of the NEXT stage
-    fileType: 'seed_prompt',
+    fileType: FileType.SeedPrompt,
     originalFileName: seedPromptFileName,
   };
 

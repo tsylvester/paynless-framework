@@ -4,13 +4,11 @@ import { renderPrompt } from "./prompt-renderer.ts";
 import { parseInputArtifactRules } from "./utils/input-artifact-parser.ts";
 import { downloadFromStorage } from "./supabase_storage_utils.ts";
 import { DialecticContributionRow, InputArtifactRules, ArtifactSourceRule } from '../dialectic-service/dialectic.interface.ts';
-import { DynamicContextVariables, ProjectContext, SessionContext, StageContext, RenderPromptFunctionType, ContributionOverride, SourceDocument } from "./prompt-assembler.interface.ts";
+import { DynamicContextVariables, ProjectContext, SessionContext, StageContext, RenderPromptFunctionType, ContributionOverride, AssemblerSourceDocument } from "./prompt-assembler.interface.ts";
 import type { DownloadStorageResult } from "./supabase_storage_utils.ts";
 import { hasProcessingStrategy } from "./utils/type_guards.ts";
 import { join } from "jsr:@std/path/join";
 import { AiModelExtendedConfig, MessageForTokenCounting } from "./types.ts";
-import { IRagServiceDependencies, IRagService } from "./services/rag_service.interface.ts";
-import { RagService } from "./services/rag_service.ts";
 import { countTokensForMessages } from "./utils/tokenizer_utils.ts";
 import type { IPromptAssembler } from "./prompt-assembler.interface.ts";
 
@@ -19,19 +17,16 @@ export class PromptAssembler implements IPromptAssembler {
     private storageBucket: string;
     private renderPromptFn: RenderPromptFunctionType;
     private downloadFromStorageFn: (bucket: string, path: string) => Promise<DownloadStorageResult>;
-    public ragService: IRagService;
 
     private countTokensFn: (messages: MessageForTokenCounting[], modelConfig: AiModelExtendedConfig) => number;
 
     constructor(
         dbClient: SupabaseClient<Database>,
-        ragServiceDeps: IRagServiceDependencies,
         downloadFn?: (bucket: string, path: string) => Promise<DownloadStorageResult>,
         renderPromptFn?: RenderPromptFunctionType,
         countTokensFn?: (messages: MessageForTokenCounting[], modelConfig: AiModelExtendedConfig) => number
     ) {
         this.dbClient = dbClient;
-        this.ragService = new RagService(ragServiceDeps);
         this.renderPromptFn = renderPromptFn || renderPrompt;
         this.downloadFromStorageFn = downloadFn || ((bucket, path) => downloadFromStorage(this.dbClient, bucket, path));
         this.countTokensFn = countTokensFn || countTokensForMessages;
@@ -48,9 +43,7 @@ export class PromptAssembler implements IPromptAssembler {
         session: SessionContext,
         stage: StageContext,
         projectInitialUserPrompt: string,
-        iterationNumber: number,
-        modelConfigForTokenization: AiModelExtendedConfig,
-        minTokenLimit: number
+        iterationNumber: number
     ): Promise<string> {
         const context = await this.gatherContext(
             project, 
@@ -58,9 +51,7 @@ export class PromptAssembler implements IPromptAssembler {
             stage, 
             projectInitialUserPrompt, 
             iterationNumber, 
-            undefined, 
-            modelConfigForTokenization, 
-            minTokenLimit
+            undefined
         );
         return this.render(stage, context, project.user_domain_overlay_values);
     }
@@ -71,9 +62,7 @@ export class PromptAssembler implements IPromptAssembler {
         stage: StageContext,
         projectInitialUserPrompt: string,
         iterationNumber: number,
-        overrideContributions?: ContributionOverride[],
-        modelConfigForTokenization?: AiModelExtendedConfig,
-        minTokenLimit?: number
+        overrideContributions?: ContributionOverride[]
     ): Promise<DynamicContextVariables> {
         let priorStageContributions = "";
         let priorStageFeedback = "";
@@ -86,64 +75,19 @@ export class PromptAssembler implements IPromptAssembler {
             try {
                 const sourceDocuments = await this.gatherInputsForStage(stage, project, session, iterationNumber);
 
-                if (modelConfigForTokenization && minTokenLimit && sourceDocuments.length > 0) {
-                    const combinedContent = sourceDocuments.map(d => d.content).join('\n\n');
-                    const estimatedTokens = this.countTokensFn(
-                        [{ role: 'user', content: combinedContent }],
-                        modelConfigForTokenization
-                    );
-
-                    if (estimatedTokens > minTokenLimit) {
-                        console.log(`[PromptAssembler.gatherContext] Context exceeds limit (${estimatedTokens} > ${minTokenLimit}). Invoking RAG service.`);
-                        
-                        const ragSourceDocs = sourceDocuments.map(doc => ({ id: doc.id, content: doc.content }));
-                        const ragResult = await this.ragService.getContextForModel(
-                            ragSourceDocs,
-                            modelConfigForTokenization,
-                            session.id,
-                            stage.slug
-                        );
-
-                        if (ragResult.error || !ragResult.context) {
-                            console.error(`[PromptAssembler.gatherContext] RAG service failed.`, { error: ragResult.error });
-                            throw new Error(`RAG service failed to compress context: ${ragResult.error?.message}`);
-                        }
-
-                        priorStageContributions = ragResult.context;
-                        priorStageFeedback = ""; // Clear feedback as it's now part of the RAG context
-
-                    } else {
-                        // If under limit, format the documents normally
-                        for (const doc of sourceDocuments) {
-                            if (doc.type === 'contribution') {
-                                const blockHeader = doc.metadata.header
-                                    ? `${doc.metadata.header}\n\n`
-                                    : `### Contributions from ${doc.metadata.displayName} Stage\n\n`;
-                                priorStageContributions += blockHeader;
-                                priorStageContributions += `#### Contribution from ${doc.metadata.modelName || 'AI Model'}\n${doc.content}\n\n`;
-                            } else if (doc.type === 'feedback') {
-                                const blockHeader = doc.metadata.header
-                                    ? `${doc.metadata.header}\n---\n\n`
-                                    : `### User Feedback on Previous Stage: ${doc.metadata.displayName}\n---\n\n`;
-                                priorStageFeedback += `${blockHeader}${doc.content}\n\n---\n`;
-                            }
-                        }
-                    }
-                } else {
-                     // Fallback for no token limit provided or no docs - format normally
-                     for (const doc of sourceDocuments) {
-                        if (doc.type === 'contribution') {
-                            const blockHeader = doc.metadata.header
-                                ? `${doc.metadata.header}\n\n`
-                                : `### Contributions from ${doc.metadata.displayName} Stage\n\n`;
-                            priorStageContributions += blockHeader;
-                            priorStageContributions += `#### Contribution from ${doc.metadata.modelName || 'AI Model'}\n${doc.content}\n\n`;
-                        } else if (doc.type === 'feedback') {
-                            const blockHeader = doc.metadata.header
-                                ? `${doc.metadata.header}\n---\n\n`
-                                : `### User Feedback on Previous Stage: ${doc.metadata.displayName}\n---\n\n`;
-                            priorStageFeedback += `${blockHeader}${doc.content}\n\n---\n`;
-                        }
+                // If under limit, format the documents normally
+                for (const doc of sourceDocuments) {
+                    if (doc.type === 'contribution') {
+                        const blockHeader = doc.metadata.header
+                            ? `${doc.metadata.header}\n\n`
+                            : `### Contributions from ${doc.metadata.displayName} Stage\n\n`;
+                        priorStageContributions += blockHeader;
+                        priorStageContributions += `#### Contribution from ${doc.metadata.modelName || 'AI Model'}\n${doc.content}\n\n`;
+                    } else if (doc.type === 'feedback') {
+                        const blockHeader = doc.metadata.header
+                            ? `${doc.metadata.header}\n---\n\n`
+                            : `### User Feedback on Previous Stage: ${doc.metadata.displayName}\n---\n\n`;
+                        priorStageFeedback += `${blockHeader}${doc.content}\n\n---\n`;
                     }
                 }
 
@@ -202,8 +146,8 @@ export class PromptAssembler implements IPromptAssembler {
         }
     }
 
-    public async gatherInputsForStage(stage: StageContext, project: ProjectContext, session: SessionContext, iterationNumber: number): Promise<SourceDocument[]> {
-        const sourceDocuments: SourceDocument[] = [];
+    public async gatherInputsForStage(stage: StageContext, project: ProjectContext, session: SessionContext, iterationNumber: number): Promise<AssemblerSourceDocument[]> {
+        const sourceDocuments: AssemblerSourceDocument[] = [];
         let criticalError: Error | null = null; 
 
         if (!stage.input_artifact_rules) {

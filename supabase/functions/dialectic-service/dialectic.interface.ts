@@ -345,6 +345,20 @@ export interface DialecticPlanJobPayload extends DialecticBaseJobPayload {
 }
 
 /**
+ * Defines the possible roles a related document can have in a relationship.
+ * This extends the ContributionType to also include abstract roles.
+ */
+export type RelationshipRole = ContributionType | 'source_group';
+
+/**
+ * Defines the structured relationships between documents as a flexible,
+ * type-safe dictionary where the key is the role the related document plays.
+ */
+export type DocumentRelationships = {
+  [key in RelationshipRole]?: string | null;
+};
+
+/**
  * The payload for a child job that executes a single model call.
  */
 export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
@@ -357,7 +371,7 @@ export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
         // Key-value store for resource_ids needed by the prompt
         [key: string]: string;
     };
-    document_relationships?: Json | null;
+    document_relationships?: DocumentRelationships | null;
     isIntermediate?: boolean;
 }
 
@@ -675,6 +689,19 @@ export interface IContinueJobResult {
 }
 
 export type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
+
+export type SourceDocument = Omit<DialecticContributionRow, 'document_relationships'> & { 
+  content: string;
+  document_relationships?: DocumentRelationships | null;
+  attempt_count?: number; // The attempt_count of the source document itself, derived from its filename
+};
+
+export type SourceFeedback = Omit<DialecticFeedback, 'resource_description'> & { 
+  content: string;
+  document_relationships?: DocumentRelationships | null;
+  attempt_count?: number; // The attempt_count of the source document itself, derived from its filename
+};
+
 export interface ExecuteModelCallAndSaveParams {
   dbClient: SupabaseClient<Database>;
   deps: IDialecticJobDeps;
@@ -685,6 +712,7 @@ export interface ExecuteModelCallAndSaveParams {
   renderedPrompt: { content: string; fullPath: string };
   previousContent: string;
   sessionData: { id: string, associated_chat_id: string | null };
+  sourceDocuments: SourceDocument[];
 }
 export interface IDialecticJobDeps extends GenerateContributionsDeps {
   getSeedPromptForStage: (
@@ -726,6 +754,7 @@ export interface IDialecticJobDeps extends GenerateContributionsDeps {
   getAiProviderConfig?: (dbClient: SupabaseClient<Database>, modelId: string) => Promise<AiModelExtendedConfig>;
   indexingService?: IIndexingService;
   embeddingClient?: IEmbeddingClient;
+  promptAssembler?: IPromptAssembler;
 }
 export type RecipeStep = {
     step_name: string;
@@ -736,8 +765,6 @@ export type RecipeStep = {
     job_type_to_create: 'plan' | 'execute';
     prompt_template_name: string;
 }
-
-export type SourceDocument = DialecticContributionRow & { content: string };
 
 export type GranularityPlannerFn = (
     sourceDocs: SourceDocument[],

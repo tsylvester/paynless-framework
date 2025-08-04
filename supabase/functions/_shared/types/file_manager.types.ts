@@ -35,10 +35,12 @@ export enum FileType {
  * The formal contract for path-related context, ensuring canonical parameter generation.
  */
 export interface CanonicalPathParams {
-  contributionType: string;
+  contributionType: ContributionType;
   sourceModelSlugs?: string[]; // Guaranteed to be alphabetically sorted
   sourceAnchorType?: string; // e.g., 'thesis', 'outline'
   sourceAnchorModelSlug?: string; // e.g., 'claude-3-opus'
+  sourceAttemptCount?: number; // The attempt_count of the source document
+  pairedModelSlug?: string; // e.g., 'gemini-1.5-pro'
 }
 
 /**
@@ -57,6 +59,8 @@ export interface PathContext {
   sourceModelSlugs?: string[];
   sourceAnchorType?: string;
   sourceAnchorModelSlug?: string;
+  sourceAttemptCount?: number;
+  pairedModelSlug?: string;
 }
 
 /**

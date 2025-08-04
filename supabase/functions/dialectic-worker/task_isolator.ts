@@ -5,14 +5,16 @@ import {
     DialecticPlanJobPayload,
     DialecticRecipeStep,
     SourceDocument,
-    IDialecticJobDeps
+    IDialecticJobDeps,
 } from '../dialectic-service/dialectic.interface.ts';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import { ILogger, MessageForTokenCounting } from '../_shared/types.ts';
-import { isDialecticExecuteJobPayload, isDialecticPlanJobPayload, isJson } from '../_shared/utils/type_guards.ts';
+import { isDialecticExecuteJobPayload, isDialecticPlanJobPayload, isJson, isDocumentRelationships, isCanonicalPathParams } from '../_shared/utils/type_guards.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
-import { Database, Tables } from '../types_db.ts';
+import { Database } from '../types_db.ts';
+import { createCanonicalPathParams } from './strategies/canonical_context_builder.ts';
+import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
 
 async function findSourceDocuments(
     dbClient: SupabaseClient<Database>,
@@ -53,7 +55,7 @@ async function findSourceDocuments(
         logger.info(`[task_isolator] [findSourceDocuments] Found ${sourceContributions.length} contributions for type '${rule.type}'.`);
 
         const documents = await Promise.all(
-            sourceContributions.map(async (contrib: Tables<'dialectic_contributions'>) => {
+            sourceContributions.map(async (contrib) => {
                 if (!contrib.file_name || !contrib.storage_bucket || !contrib.storage_path) {
                     logger.warn(`Contribution ${contrib.id} is missing required storage information (file_name, storage_bucket, or storage_path) and will be skipped.`);
                     return null;
@@ -63,14 +65,29 @@ async function findSourceDocuments(
                 if (error) {
                     throw new Error(`Failed to download content for contribution ${contrib.id} from ${fullPath}: ${error.message}`);
                 }
-                return {
-                    ...contrib,
+                
+                // Destructure to correctly omit the old `document_relationships` and create a valid SourceDocument
+                const { document_relationships, ...rest } = contrib;
+                const docRels = isDocumentRelationships(document_relationships)
+                    ? document_relationships
+                    : null;
+
+                const deconstructedPath = deconstructStoragePath({
+                    storageDir: contrib.storage_path,
+                    fileName: contrib.file_name,
+                });
+
+                const sourceDoc: SourceDocument = {
+                    ...rest,
                     content: new TextDecoder().decode(data!),
+                    document_relationships: docRels,
+                    attempt_count: deconstructedPath.attemptCount,
                 };
+                return sourceDoc;
             })
         );
         
-        const validDocuments = documents.filter((doc: SourceDocument | null): doc is SourceDocument => doc !== null);
+        const validDocuments = documents.filter((doc): doc is SourceDocument => doc !== null);
         allSourceDocuments.push(...validDocuments);
     }
     
@@ -127,18 +144,28 @@ export async function planComplexStage(
             throw new ContextWindowError(`RAG service failed to compress context for job ${parentJob.id}: ${ragResult.error?.message || 'No context returned'}`);
         }
 
-        // Persist the RAG context as a new temporary resource
-            const sourceModelSlugs = [...new Set(sourceDocuments.map(doc => doc.model_name).filter(Boolean))].sort();
+        const anchorDoc = sourceDocuments.find(doc => doc.contribution_type === 'thesis');
+        const antithesisDoc = sourceDocuments.find(doc => doc.contribution_type === 'antithesis');
+        if (!anchorDoc) {
+            throw new Error('RAG workflow requires an anchor document (thesis) to proceed.');
+        }
 
-            const { record: ragResource, error: fileError } = await deps.fileManager.uploadAndRegisterFile({
+        const canonicalPathParams = createCanonicalPathParams(
+            sourceDocuments,
+            FileType.RagContextSummary,
+            anchorDoc
+        );
+
+        // Persist the RAG context as a new temporary resource
+        const { record: ragResource, error: fileError } = await deps.fileManager.uploadAndRegisterFile({
             pathContext: {
                 projectId: parentJob.payload.projectId,
                 sessionId: parentJob.session_id,
+                iteration: parentJob.payload.iterationNumber,
+                stageSlug: parentJob.payload.stageSlug,
                 fileType: FileType.RagContextSummary,
                 modelSlug: modelConfig.api_identifier,
-                sourceModelSlugs: sourceModelSlugs.filter((slug): slug is string => slug !== null),
-                sourceAnchorType: 'thesis',
-                sourceAnchorModelSlug: parentJob.payload.model_id,
+                ...canonicalPathParams
             },
             fileContent: ragResult.context,
             mimeType: 'text/plain',
@@ -158,6 +185,21 @@ export async function planComplexStage(
         }
 
         // Create a single child job using the RAG-generated context.
+        const executeCanonicalPathParams = createCanonicalPathParams(
+            sourceDocuments,
+            recipeStep.output_type,
+            anchorDoc
+        );
+
+        // Remove undefined properties to make it JSON-safe for the payload
+        const cleanedParams = Object.fromEntries(
+            Object.entries(executeCanonicalPathParams).filter(([, v]) => v !== undefined)
+        );
+
+        if (!isCanonicalPathParams(cleanedParams)) {
+            throw new Error('Failed to construct valid CanonicalPathParams after cleaning.');
+        }
+        
         const newPayload: DialecticExecuteJobPayload = {
             job_type: 'execute',
             step_info: parentJob.payload.step_info,
@@ -175,9 +217,7 @@ export async function planComplexStage(
             inputs: {
                 rag_summary_id: ragResource.id,
             },
-            canonicalPathParams: {
-                contributionType: recipeStep.output_type,
-            },
+            canonicalPathParams: cleanedParams,
         };
         childJobPayloads = [newPayload];
 

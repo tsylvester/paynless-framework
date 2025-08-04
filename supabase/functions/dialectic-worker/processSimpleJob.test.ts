@@ -21,6 +21,7 @@ import { getGranularityPlanner } from './strategies/granularity.strategies.ts';
 import { planComplexStage } from './task_isolator.ts';
 import { IndexingService, LangchainTextSplitter, OpenAIEmbeddingClient } from '../_shared/services/indexing_service.ts';
 import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
+import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 
 const mockPayload: Json = {
   projectId: 'project-abc',
@@ -121,8 +122,46 @@ const mockNotificationService: NotificationServiceType = {
   };
 
 const setupMockClient = (configOverrides: Record<string, any> = {}) => {
+    const mockProject: Tables<'dialectic_projects'> & { dialectic_domains: Pick<Tables<'dialectic_domains'>, 'id' | 'name' | 'description'> } = {
+        id: 'project-abc',
+        user_id: 'user-789',
+        project_name: 'Test Project',
+        initial_user_prompt: 'Test prompt',
+        selected_domain_id: 'domain-123',
+        status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        initial_prompt_resource_id: null,
+        process_template_id: 'template-123',
+        repo_url: null,
+        selected_domain_overlay_id: null,
+        user_domain_overlay_values: null,
+        dialectic_domains: {
+            id: 'domain-123',
+            name: 'Test Domain',
+            description: 'A domain for testing',
+        }
+    };
+
+    const mockStage: Tables<'dialectic_stages'> = {
+        id: 'stage-1',
+        slug: 'test-stage',
+        display_name: 'Test Stage',
+        created_at: new Date().toISOString(),
+        default_system_prompt_id: 'prompt-123',
+        description: null,
+        expected_output_artifacts: null,
+        input_artifact_rules: null,
+    };
+    
     return createMockSupabaseClient('user-789', {
         genericMockResults: {
+            dialectic_projects: {
+                select: () => Promise.resolve({ data: [mockProject], error: null }),
+            },
+            dialectic_stages: {
+                select: () => Promise.resolve({ data: [mockStage], error: null }),
+            },
             dialectic_sessions: {
                 select: () => Promise.resolve({ data: [mockSessionData], error: null }),
             },
@@ -173,6 +212,7 @@ const getMockDeps = (): IDialecticJobDeps => {
       planComplexStage: planComplexStage,
       indexingService,
       embeddingClient,
+      promptAssembler: new PromptAssembler(mockSupabaseClient),
     }
 };
 

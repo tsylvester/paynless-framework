@@ -9,8 +9,10 @@ export interface DeconstructedPathInfo {
   stageSlug?: string;            // Stage slug derived from stageDirName (e.g., "hypothesis")
   contributionType?: string;   // Contribution type, if parsable from the filename
   modelSlug?: string;            // Model slug, if parsable from path or filename
+  sourceModelSlug?: string;      // Source model slug for derivative works (e.g., antithesis)
+  sourceContributionType?: string; // Source contribution type for derivative works
+  sourceAttemptCount?: number;   // Source attempt count for derivative works
   attemptCount?: number;         // Attempt count, if parsable from path or filename
-  isWorkInProgress?: boolean;    // True if the path contains a /_work/ segment
   parsedFileNameFromPath?: string; // The filename segment as extracted from the end of the path
   error?: string;                // Optional error message if deconstruction fails or is ambiguous
 } 

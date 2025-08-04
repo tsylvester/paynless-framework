@@ -24,6 +24,7 @@ import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { createSupabaseAdminClient, } from '../_shared/auth.ts';
 import { NotificationService } from '../_shared/utils/notification.service.ts';
+import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
 import { getGranularityPlanner } from './strategies/granularity.strategies.ts';
 import { RagService } from '../_shared/services/rag_service.ts';
@@ -70,6 +71,7 @@ serve(async (req: Request) => {
     const textSplitter = new LangchainTextSplitter();
     const indexingService = new IndexingService(adminClient, logger, textSplitter, embeddingClient);
     const ragService = new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient });
+    const promptAssembler = new PromptAssembler(adminClient);
 
     console.log('dialectic-worker serverless function called with adminClient', adminClient);
     console.log('dialectic-worker serverless function called with req', req);
@@ -93,7 +95,8 @@ serve(async (req: Request) => {
       getGranularityPlanner,
       planComplexStage,
       indexingService,
-      embeddingClient
+      embeddingClient,
+      promptAssembler,
     };
 
     // We must await the handler to ensure the serverless function

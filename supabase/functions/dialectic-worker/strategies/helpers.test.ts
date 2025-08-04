@@ -72,7 +72,7 @@ const MOCK_SOURCE_DOCUMENTS: SourceDocument[] = [
         contribution_type: 'antithesis',
         stage: 'antithesis',
         target_contribution_id: 'thesis-1',
-        document_relationships: { source: 'thesis-1' },
+        document_relationships: { source_group: 'thesis-1' },
         citations: [],
         created_at: '',
         edit_version: 0,
@@ -103,7 +103,7 @@ const MOCK_SOURCE_DOCUMENTS: SourceDocument[] = [
         contribution_type: 'antithesis', 
         stage: 'antithesis',
         target_contribution_id: 'thesis-1',
-        document_relationships: { source: 'thesis-1' },
+        document_relationships: { source_group: 'thesis-1' },
         citations: [],
         created_at: '',
         edit_version: 0,
@@ -134,7 +134,7 @@ const MOCK_SOURCE_DOCUMENTS: SourceDocument[] = [
         contribution_type: 'antithesis', 
         stage: 'antithesis',
         target_contribution_id: 'thesis-2',
-        document_relationships: { source: 'thesis-2' },
+        document_relationships: { source_group: 'thesis-2' },
         citations: [],
         created_at: '',
         edit_version: 0,
@@ -165,7 +165,7 @@ const MOCK_SOURCE_DOCUMENTS: SourceDocument[] = [
         contribution_type: 'synthesis', 
         stage: 'synthesis',
         target_contribution_id: 'some-other-id',
-        document_relationships: { source: 'some-other-id' },
+        document_relationships: { source_group: 'some-other-id' },
         citations: [],
         created_at: '',
         edit_version: 0,
@@ -261,9 +261,9 @@ Deno.test('findRelatedContributions should return documents with a matching sour
 
 Deno.test('findRelatedContributions should correctly find documents with a null source', () => {
     const docsWithNullSource = [
-        { ...MOCK_SOURCE_DOCUMENTS[0], id: 'rel-null-1', document_relationships: { source: null } },
-        { ...MOCK_SOURCE_DOCUMENTS[1], id: 'rel-null-2', document_relationships: { source: null } },
-        { ...MOCK_SOURCE_DOCUMENTS[2], id: 'rel-not-null', document_relationships: { source: 'thesis-1' } }
+        { ...MOCK_SOURCE_DOCUMENTS[0], id: 'rel-null-1', document_relationships: { source_group: null } },
+        { ...MOCK_SOURCE_DOCUMENTS[1], id: 'rel-null-2', document_relationships: { source_group: null } },
+        { ...MOCK_SOURCE_DOCUMENTS[2], id: 'rel-not-null', document_relationships: { source_group: 'thesis-1' } }
     ] as SourceDocument[];
     
     const related = findRelatedContributions(docsWithNullSource, null);
@@ -282,4 +282,31 @@ Deno.test('findRelatedContributions should return an empty array if no matches a
 Deno.test('findRelatedContributions should handle an empty input document array', () => {
     const related = findRelatedContributions([], 'thesis-1');
     assertEquals(related.length, 0, "Should return an empty array when given an empty document list");
+});
+
+Deno.test('findRelatedContributions handles complex real-world scenarios', () => {
+    // This test simulates a more realistic scenario where a planner is trying to find
+    // all antithesis documents related to a specific thesis document from a larger pool of documents.
+    const documents: SourceDocument[] = [
+        // Target-related documents
+        { id: 'antithesis-A-1', contribution_type: 'antithesis', document_relationships: { source_group: 'thesis-A' } },
+        { id: 'antithesis-A-2', contribution_type: 'antithesis', document_relationships: { source_group: 'thesis-A' } },
+        
+        // Documents related to a different thesis
+        { id: 'antithesis-B-1', contribution_type: 'antithesis', document_relationships: { source_group: 'thesis-B' } },
+        
+        // Unrelated documents of a different type
+        { id: 'synthesis-C-1', contribution_type: 'synthesis', document_relationships: { source_group: 'some-other-source' } },
+        
+        // Documents with null or missing relationships
+        { id: 'antithesis-null', contribution_type: 'antithesis', document_relationships: { source_group: null } },
+        { id: 'thesis-A', contribution_type: 'thesis', document_relationships: null },
+
+    ] as SourceDocument[];
+
+    const relatedDocs = findRelatedContributions(documents, 'thesis-A');
+
+    assertEquals(relatedDocs.length, 2, "Should only find the two documents directly related to 'thesis-A'");
+    assertExists(relatedDocs.find(d => d.id === 'antithesis-A-1'));
+    assertExists(relatedDocs.find(d => d.id === 'antithesis-A-2'));
 }); 

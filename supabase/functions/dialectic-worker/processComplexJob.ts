@@ -50,6 +50,10 @@ export async function processComplexJob(
     if (!isDialecticPlanJobPayload(job.payload)) {
         throw new Error(`[processComplexJob] Job ${parentJobId} has an invalid payload for complex processing.`);
     }
+
+    if (!job.payload.step_info) {
+        throw new Error(`[processComplexJob] Critical Error: Complex job ${parentJobId} is missing required step_info in its payload.`);
+    }
     
     deps.logger.info(`[processComplexJob] Processing step ${job.payload.step_info.current_step}/${job.payload.step_info.total_steps} for job ${parentJobId}`);
 
@@ -117,6 +121,7 @@ export async function processComplexJob(
         }
 
         deps.logger.info(`[processComplexJob] Planner created ${childJobs.length} child jobs for parent ${parentJobId}. Enqueuing now.`);
+        console.log('[processComplexJob] Child jobs to be inserted:', JSON.stringify(childJobs, null, 2));
 
         // 6. Enqueue the child jobs.
         const { error: insertError } = await dbClient.from('dialectic_generation_jobs').insert(childJobs);

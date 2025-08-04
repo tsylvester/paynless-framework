@@ -22,6 +22,7 @@ export const planPairwiseByOrigin: GranularityPlannerFn = (
             // Step 7.a.ii: Call the canonical context builder
             const pair: SourceDocument[] = [thesisDoc, antithesisDoc];
             const canonicalPathParams = createCanonicalPathParams(pair, recipeStep.output_type, thesisDoc);
+            console.log('[planPairwiseByOrigin] Created canonicalPathParams:', JSON.stringify(canonicalPathParams, null, 2));
 
             // Step 7.a.iii: Dynamically create inputs and relationships
             const inputs: Record<string, string> = {};

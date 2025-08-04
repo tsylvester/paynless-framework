@@ -146,10 +146,63 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅]` 13.b. `[TEST-UNIT]` Run the test from step 12.
         *   **Outcome:** The test from step 12 now passes, confirming the fix.
 
-## Phase 3: Validation
+---
 
-*   `[ ]` 11. **[TEST-INT] Re-run Integration Test**
-    *   `[ ]` 11.a. `[TEST-INT]` Execute the `dialectic_pipeline.integration.test.ts`.
-    *   `[ ]` 11.b. `[TEST-INT]` Analyze the new `test.log.md` and confirm that all `409 Conflict` errors are resolved.
-    *   `[ ]` 11.c. `[TEST-INT]` Manually inspect the database or storage (if possible via test outputs) to confirm that the filenames generated for Antithesis, Synthesis, and Parenthesis now follow the new, descriptive, and unique format specified in the readme.
-*   `[ ]` 12. **[COMMIT] `test(pipeline): confirm fix for filename collisions and parenthesis logic`**
+## Phase 4: Create a Flexible Contract for Document Relationships
+
+**Objective:** To prevent regressions and ensure future extensibility by replacing the generic `Json` type for `document_relationships` with a formal, type-safe contract. This change, discovered during TDD, makes the system more robust by ensuring that both the implementation and its tests are checked against the same explicit structure.
+
+*   `[✅]` 14. **[BE] [REFACTOR] Define the Relationship Contract in `dialectic.interface.ts`**
+    *   `[✅]` 14.a. `[BE]` Create a new `RelationshipRole` union type. This will extend the existing `ContributionType` to also include abstract roles like `'source_group'`.
+    *   `[✅]` 14.b. `[BE]` Define the `DocumentRelationships` type as a `Record<RelationshipRole, string | undefined>`. This creates a flexible but type-safe dictionary.
+    *   `[✅]` 14.c. `[BE]` Update the `DialecticExecuteJobPayload` and `SourceDocument` types to use the new `DocumentRelationships` contract instead of the generic `Json` type.
+
+*   `[✅]` 15. **[BE] [REFACTOR] Update Code to Use the New Contract**
+    *   `[✅]` 15.a. `[BE]` In `supabase/functions/dialectic-worker/strategies/helpers.ts`, refactor the `findRelatedContributions` function to use the strongly-typed `document_relationships` object. The TypeScript compiler will guide this change.
+    *   `[✅]` 15.b. `[TEST-UNIT]` In `supabase/functions/dialectic-worker/strategies/planners/planPairwiseByOrigin.test.ts`, ensure all mock `SourceDocument` objects adhere to the new `DocumentRelationships` contract. The mock data for `antithesis` documents must now correctly use `source_group`.
+    *   `[✅]` 15.c. `[TEST-UNIT]` Re-run the test for `planPairwiseByOrigin.ts` to confirm it now passes with the corrected mock data and the new, stricter types.
+
+*   `[✅]` 16. **[COMMIT] `refactor(worker): implement type-safe contract for document relationships`**
+
+## Phase 5: Correcting the Pairwise Synthesis Naming Collision
+
+**Objective:** The root cause of the `409 Conflict` errors is a flaw in how `pairwise_synthesis_chunk` artifacts are named, especially when the RAG (Retrieval-Augmented Generation) workflow is triggered in `task_isolator.ts`. The current implementation and specification do not create a sufficiently unique name when pairing documents, causing multiple jobs to attempt to write to the same file path. The fix involves making the naming convention more explicit and descriptive.
+
+*   `[✅]` 17. **[DOCS] Update Path Constructor Specification for Explicit Pairing**
+    *   `[✅]` 17.a. `[DOCS]` In `supabase/functions/_shared/utils/path_constructor.readme.md`, add the new `{paired_model_slug}` primitive to the variable list. This will represent the model slug of the non-anchor document in a synthesis pair.
+    *   `[✅]` 17.b. `[DOCS]` Update the `pairwise_synthesis_chunk` primitive to be more explicit and descriptive:
+        *   **New Primitive:** `{model_slug}_synthesizing_{source_anchor_model_slug}_with_{paired_model_slug}_on_{source_anchor_type}_{n}_{contribution_type}.md`
+    *   `[✅]` 17.c. `[DOCS]` Update the file structure diagram and the rationale in the readme to reflect this new, unambiguous naming convention.
+
+*   `[ ]` 18. **[BE] [REFACTOR] Evolve Interfaces and Implement New Naming Logic (TDD)**
+    *   `[✅]` 18.a. `[BE]` In `supabase/functions/_shared/types/file_manager.types.ts`, add `pairedModelSlug?: string;` to the `CanonicalPathParams` and `PathContext` interfaces to support the new primitive.
+    *   `[✅]` 18.b. `[TEST-UNIT]` Create a new **failing test** in `canonical_context_builder.test.ts` that asserts the builder correctly identifies the paired document and extracts its model slug into `pairedModelSlug`.
+    *   `[✅]` 18.c. `[TEST-UNIT]` Update the `pairwise_synthesis_chunk` test in `path_constructor.test.ts` to expect the new, more descriptive filename. This test must also **fail**.
+    *   `[✅]` 18.d. `[BE]` Modify `canonical_context_builder.ts`. The `createCanonicalPathParams` function must now identify the non-anchor document in the source pair and populate the `pairedModelSlug` field. This will make the test from 15.b pass.
+    *   `[✅]` 18.e. `[BE]` Modify `path_constructor.ts`. Update the logic for `pairwise_synthesis_chunk` to use the new `pairedModelSlug` primitive from the context to construct the filename. This will make the test from 15.c pass.
+
+*   `[✅]` 19. **[BE] [REFACTOR] Update Planners to Fulfill the Explicit Contract**
+    *   `[✅]` 19.a. `[BE]` In `planPairwiseByOrigin.ts`, update the planner to correctly identify both the anchor (`thesisDoc`) and the paired (`antithesisDoc`) documents and pass all necessary information to the `createCanonicalPathParams` function.
+    *   `[✅]` 19.b. `[BE]` In `task_isolator.ts`, update the RAG workflow. It must now gather the full context (including anchor and paired document details) *before* creating the RAG summary, so that the subsequent job's payload contains the correct, complete `CanonicalPathParams`. This prevents the fallback to a non-unique name.
+    *   `[✅]` 19.c. `[TEST-UNIT]` Update the unit tests for the planners and `task_isolator` to assert that the full, correct canonical context is being created in all code paths.
+
+*   `[✅]` 20. **[BE] [REFACTOR] Refactor Prompt-Assembler and Worker for Correctness**
+    *   `[✅]` 20.a. **Phase 1: Refactor `prompt-assembler.ts` to Simplify its Role**
+        *   `[✅]` 20.a.i. In `prompt-assembler.ts`, modify the signatures of `assemble` and `gatherContext` to remove the `modelConfigForTokenization` and `minTokenLimit` parameters, making them optional.
+        *   `[✅]` 20.a.ii. In `prompt-assembler.ts`, locate the `if (modelConfigForTokenization && minTokenLimit ...)` block within `gatherContext` and remove it. The method should be simplified to always format documents normally, without token checks or RAG invocations.
+    *   `[✅]` 20.b. **Phase 2: Update Call Sites to Match New Signatures**
+        *   `[✅]` 20.b.i. In `startSession.ts`, find the call to `assembler.assemble` and remove the `modelConfigForTokenization` and `minTokenLimit` arguments to resolve the linter error.
+    *   `[✅]` 20.c. **Phase 3: Implement Compression Logic in `executeModelCallAndSave.ts`**
+        *   `[✅]` 20.c.i. In `supabase/functions/dialectic-worker/index.ts`, ensure an instance of the `RagService` is created and passed into the `deps` object for the worker. This makes the service available to `executeModelCallAndSave.ts` via dependency injection.
+        *   `[✅]` 20.c.ii. In `executeModelCallAndSave.ts`, within the "Final Context Window Validation" block, invoke the `deps.ragService.getContextForModel(...)` to compress the prompt if it exceeds the token limit. This centralizes the token validation and compression logic in the execution step.
+        *   `[✅]` 20.c.iii. Ensure the subsequent call to `deps.callUnifiedAIModel(...)` uses the `finalPromptContent` variable, which will hold the potentially compressed prompt.
+
+*   `[✅]` 21. **[COMMIT] `feat(worker): implement explicit filenames for pairwise synthesis`**
+
+## Phase 6: Validation
+
+*   `[ ]` 21. **[TEST-INT] Re-run Integration Test**
+    *   `[ ]` 21.a. `[TEST-INT]` Execute the `dialectic_pipeline.integration.test.ts`.
+    *   `[ ]` 21.b. `[TEST-INT]` Analyze the new `test.log.md` and confirm that all `409 Conflict` errors are resolved.
+    *   `[ ]` 21.c. `[TEST-INT]` Manually inspect the database or storage (if possible via test outputs) to confirm that the filenames generated for `pairwise_synthesis_chunk` now follow the new, descriptive, and unique format.
+*   `[ ]` 22. **[COMMIT] `test(pipeline): confirm fix for filename collisions and parenthesis logic`**

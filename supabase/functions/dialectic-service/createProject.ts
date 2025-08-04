@@ -5,6 +5,7 @@ import {
     DialecticProject 
   } from "./dialectic.interface.ts";
 import { FileManagerService } from "../_shared/services/file_manager.ts";
+import { FileType } from "../_shared/types/file_manager.types.ts";
 
   console.log("createProject function started");
   
@@ -112,7 +113,7 @@ export async function createProject(
       const uploadResult = await fileManager.uploadAndRegisterFile({
         pathContext: {
           projectId: newProjectData.id,
-          fileType: 'initial_user_prompt',
+          fileType: FileType.InitialUserPrompt,
           originalFileName: file.name,
         },
         fileContent: Buffer.from(fileBuffer),
@@ -152,7 +153,7 @@ export async function createProject(
       const uploadResult = await fileManager.uploadAndRegisterFile({
         pathContext: {
           projectId: newProjectData.id,
-          fileType: 'initial_user_prompt',
+          fileType: FileType.InitialUserPrompt,
           originalFileName: fileName,
         },
         fileContent: fileContent,

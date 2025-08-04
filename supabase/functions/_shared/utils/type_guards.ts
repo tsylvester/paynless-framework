@@ -13,8 +13,9 @@ import type {
     DialecticRecipeStep,
     DialecticStepInfo,
     ContributionType,
+    DocumentRelationships,
 } from '../../dialectic-service/dialectic.interface.ts';
-import { FileType } from "../types/file_manager.types.ts";
+import { FileType, CanonicalPathParams } from "../types/file_manager.types.ts";
 import { ProjectContext, StageContext } from "../prompt-assembler.interface.ts";
 import { FailedAttemptError } from "../../dialectic-service/dialectic.interface.ts";
 import { AiModelExtendedConfig } from "../types.ts";
@@ -184,6 +185,31 @@ export function isCitationsArray(value: unknown): value is Citation[] {
   );
 }
 
+export function isDocumentRelationships(obj: unknown): obj is DocumentRelationships {
+    if (!isRecord(obj)) return false;
+
+    // Check if all values in the object are either strings or null
+    for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+            const value = obj[key];
+            if (typeof value !== 'string' && value !== null) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+export function isCanonicalPathParams(obj: unknown): obj is CanonicalPathParams {
+    if (!isRecord(obj)) return false;
+
+    if (!('contributionType' in obj) || typeof obj.contributionType !== 'string') {
+        return false;
+    }
+    // This guard can be expanded to check for other required properties if needed,
+    // but for now, ensuring the core required property is present is sufficient.
+    return true;
+}
 
 /**
  * A true type guard that safely checks if a record is a DialecticContribution

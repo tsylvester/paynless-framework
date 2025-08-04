@@ -3,7 +3,7 @@ import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
 import { 
     PromptAssembler, 
 } from "./prompt-assembler.ts";
-import { ProjectContext, SessionContext, StageContext, SourceDocument } from "./prompt-assembler.interface.ts";
+import { ProjectContext, SessionContext, StageContext, AssemblerSourceDocument } from "./prompt-assembler.interface.ts";
 import { FileManagerService } from "./services/file_manager.ts";
 import { type InputArtifactRules, type ArtifactSourceRule, type DialecticContribution } from '../dialectic-service/dialectic.interface.ts';
 import { createMockSupabaseClient, type MockSupabaseDataConfig, type IMockSupabaseClient, type IMockClientSpies, type MockSupabaseClientSetup, type MockQueryBuilderState } from "./supabase.mock.ts";
@@ -11,6 +11,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Json, Tables } from "../types_db.ts";
 import { Database } from "../types_db.ts";
 import { constructStoragePath } from './utils/path_constructor.ts';
+import { FileType } from "./types/file_manager.types.ts";
 import { join } from "jsr:@std/path/join";
 
 Deno.test("PromptAssembler", async (t) => {
@@ -44,12 +45,7 @@ Deno.test("PromptAssembler", async (t) => {
             if (currentConsoleWarnSpy) currentConsoleWarnSpy.restore();
             currentConsoleWarnSpy = spy(console, "warn");
 
-            const assembler = new PromptAssembler(mockSupabaseSetup.client as unknown as SupabaseClient<Database>, {
-                dbClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
-                logger: console,
-                indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
-                embeddingClient: { createEmbedding: () => Promise.resolve([]) },
-            });
+            const assembler = new PromptAssembler(mockSupabaseSetup.client as unknown as SupabaseClient<Database>);
             return { assembler, mockSupabaseClient: mockSupabaseSetup.client, spies: mockSupabaseSetup.spies };
         };
 
@@ -454,7 +450,7 @@ Deno.test("PromptAssembler", async (t) => {
                 sessionId,
                 iteration: iteration - 1, // Feedback is from previous iteration
                 stageSlug: feedbackStageSlug,
-                fileType: 'user_feedback',
+                fileType: FileType.UserFeedback,
             });
             const expectedFeedbackPath = join(feedbackPathParts.storagePath, feedbackPathParts.fileName);
 
@@ -589,7 +585,7 @@ Deno.test("PromptAssembler", async (t) => {
                 sessionId,
                 iteration: iteration - 1,
                 stageSlug: feedbackSlug,
-                fileType: 'user_feedback'
+                fileType: FileType.UserFeedback
             });
             const expectedFeedbackPath = join(feedbackPathParts.storagePath, feedbackPathParts.fileName);
 
@@ -764,7 +760,7 @@ Deno.test("PromptAssembler", async (t) => {
                 sessionId,
                 iteration: 1, // Feedback is from previous iteration, which is 1
                 stageSlug: feedbackSlug,
-                fileType: 'user_feedback'
+                fileType: FileType.UserFeedback
             });
             const expectedFeedbackPath = join(feedbackPathParts.storagePath, feedbackPathParts.fileName);
             const expectedContribPath = join(contribStoragePath, contribFileName);
@@ -1004,7 +1000,7 @@ Deno.test("PromptAssembler", async (t) => {
                 };
 
                 let errorThrown = false;
-                let result: SourceDocument[] | null = null;
+                let result: AssemblerSourceDocument[] | null = null;
                 try {
                      result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
                 } catch (e) {

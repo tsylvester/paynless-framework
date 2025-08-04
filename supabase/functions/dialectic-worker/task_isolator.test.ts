@@ -23,6 +23,7 @@ import {
     GranularityPlannerFn,
     IDialecticJobDeps,
     ContributionType,
+    SourceDocument, // Import the real SourceDocument
 } from '../dialectic-service/dialectic.interface.ts';
 import { ILogger } from '../_shared/types.ts';
 import { planComplexStage } from './task_isolator.ts';
@@ -37,8 +38,6 @@ import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 import { IRagContextResult, IRagServiceDependencies } from '../_shared/services/rag_service.interface.ts';
 import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
-
-type SourceDocument = DialecticContributionRow & { content: string };
 
 describe('planComplexStage', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
@@ -187,7 +186,7 @@ describe('planComplexStage', () => {
             indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
             embeddingClient: { createEmbedding: () => Promise.resolve([]) },
         };
-        const mockPromptAssembler = new PromptAssembler(mockSupabase.client as unknown as SupabaseClient<Database>, mockRagDeps, undefined);
+
 
         mockDeps = {
             logger: mockLogger,
@@ -541,8 +540,67 @@ describe('planComplexStage', () => {
         assertExists(childJob.payload.canonicalPathParams);
         const params = childJob.payload.canonicalPathParams;
         assertEquals(params.contributionType, mockRecipeStep.output_type);
-        assertEquals(params.sourceModelSlugs, undefined);
-        assertEquals(params.sourceAnchorType, undefined);
-        assertEquals(params.sourceAnchorModelSlug, undefined);
+        assertEquals(params.sourceModelSlugs, [ "Test Model" ]);
+        assertEquals(params.sourceAnchorType, 'thesis');
+        assertEquals(params.sourceAnchorModelSlug, 'Test Model');
+    });
+
+    it('should create correct canonicalPathParams in RAG workflow for complex types', async () => {
+        // This test proves the fix for the RAG workflow, ensuring it creates
+        // the full canonical path context required for complex output types.
+        mockRecipeStep.output_type = 'pairwise_synthesis_chunk';
+        mockDeps.countTokens = () => 9000; // Force RAG path
+
+        // Provide a custom mock for this specific test to ensure we have two documents
+        // with distinct model names.
+        if (mockSupabase.genericMockResults?.dialectic_contributions) {
+            mockSupabase.genericMockResults.dialectic_contributions.select = () => {
+                const data = [
+                    { ...mockContributions[0], id: 'rag-thesis', model_name: 'Test Model', contribution_type: 'thesis' },
+                    { ...mockContributions[1], id: 'rag-antithesis', model_name: 'paired-model', contribution_type: 'antithesis' }
+                ];
+                return Promise.resolve({ data, error: null, count: data.length, status: 200, statusText: 'OK' });
+            };
+        }
+
+        const mockFileRecord: Tables<'dialectic_project_resources'> = {
+            id: 'mock-file-record-id',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            project_id: 'proj-1',
+            file_name: 'rag_summary.txt',
+            mime_type: 'text/plain',
+            size_bytes: 123,
+            storage_bucket: 'test-bucket',
+            storage_path: '/path/to',
+            user_id: 'user-123',
+            resource_description: { description: 'RAG summary' }
+        };
+        mockDeps.fileManager.uploadAndRegisterFile = () => Promise.resolve({ record: mockFileRecord, error: null });
+
+        // Act
+        const childJobs = await planComplexStage(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockDeps,
+            mockRecipeStep
+        );
+
+        // Assert
+        assertEquals(childJobs.length, 1);
+        const childJob = childJobs[0];
+        assert(isDialecticExecuteJobPayload(childJob.payload));
+
+        const params = childJob.payload.canonicalPathParams;
+        assertExists(params);
+        assertEquals(params.contributionType, 'pairwise_synthesis_chunk');
+        assertExists(params.sourceAnchorType);
+        assertExists(params.sourceAnchorModelSlug);
+        assertExists(params.pairedModelSlug);
+        assertEquals(params.sourceModelSlugs, ['Test Model', 'paired-model']);
+        assertEquals(params.sourceAnchorModelSlug, 'Test Model');
+        // Because both mock docs have the same model name, the paired slug will also be 'Test Model'.
+        // The key is that the logic correctly found a non-anchor document.
+        assertEquals(params.pairedModelSlug, 'paired-model');
     });
 }); 

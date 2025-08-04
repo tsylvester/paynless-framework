@@ -6,7 +6,7 @@ import type {
 	SessionContext,
 	StageContext,
 	DynamicContextVariables,
-	SourceDocument,
+	AssemblerSourceDocument,
 	ContributionOverride,
 } from './prompt-assembler.interface.ts';
 import { PromptAssembler } from './prompt-assembler.ts';
@@ -22,14 +22,7 @@ export class MockPromptAssembler extends PromptAssembler {
 
 	constructor(supabaseClient?: SupabaseClient<Database>) {
         const clientToUse = supabaseClient || createMockSupabaseClient().client;
-		const mockRagDeps: IRagServiceDependencies = {
-            dbClient: clientToUse as unknown as SupabaseClient<Database>,
-            logger: console,
-            indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
-            embeddingClient: { createEmbedding: () => Promise.resolve([]) },
-        };
-
-		super(clientToUse as unknown as SupabaseClient<Database>, mockRagDeps, undefined);
+		super(clientToUse as unknown as SupabaseClient<Database>, undefined, undefined);
 
 		this.assemble = spy(async (
 			_project: ProjectContext,
