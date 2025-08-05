@@ -19,6 +19,9 @@ export const StreamingChatDemo = () => {
 		aiError,
 		setNewChatContext,
 		loadAiConfig,
+		setSelectedProvider,
+		setSelectedPrompt,
+		availableProviders,
 	} = useAiStore();
 
 	const { loadPersonalWallet } = useWalletStore((state) => ({
@@ -41,6 +44,27 @@ export const StreamingChatDemo = () => {
 		// Load personal wallet if needed
 		loadPersonalWallet();
 	}, [setNewChatContext, loadPersonalWallet, loadAiConfig]);
+
+	// Auto-select first available provider and prompt if none selected
+	useEffect(() => {
+		// Only auto-select if we have providers but no provider selected
+		if (availableProviders.length > 0 && !selectedProviderId) {
+			// Find first active provider
+			const firstActiveProvider = availableProviders.find((p) => p.is_active);
+			if (firstActiveProvider) {
+				console.log("Auto-selecting provider:", firstActiveProvider.name);
+				setSelectedProvider(firstActiveProvider.id);
+
+				// Auto-select a basic prompt (or leave null for default)
+				setSelectedPrompt(null);
+			}
+		}
+	}, [
+		availableProviders,
+		selectedProviderId,
+		setSelectedProvider,
+		setSelectedPrompt,
+	]);
 
 	const isWalletReady = activeWalletInfo.status === "ok";
 
@@ -162,7 +186,7 @@ export const StreamingChatDemo = () => {
 							!selectedProviderId ||
 							!isWalletReady
 						}
-						className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+						className="flex-1 bg-transparent px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
 					/>
 					<button
 						type="submit"
@@ -243,7 +267,7 @@ export const StreamingChatDemo = () => {
 					</li>
 					<li>
 						• <strong>Backend:</strong> The streaming endpoint is at{" "}
-						<code>/api/chat-stream</code>
+						<code>/functions/v1/chat-stream</code>
 					</li>
 					<li>
 						• <strong>Current Status:</strong> Streaming infrastructure is

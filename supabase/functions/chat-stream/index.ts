@@ -3,34 +3,18 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
 	handleCorsPreflightRequest,
 	createErrorResponse,
-	createSuccessResponse,
-	baseCorsHeaders,
-	isOriginAllowed,
 } from "../_shared/cors-headers.ts";
 import { getAiProviderAdapter } from "../_shared/ai_service/factory.ts";
 import { logger } from "../_shared/logger.ts";
-import type {
-	ChatApiRequest,
-	AdapterResponsePayload,
-} from "../_shared/types.ts";
-import type { Database } from "../types_db.ts";
+import type { ChatApiRequest } from "../_shared/types.ts";
 
 console.log("Loading chat-stream function...");
 
-const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+const supabaseUrl = Deno.env.get("SUPABASE_URL") || "http://localhost:54321";
+const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
-// Helper function to get proper CORS headers for the request
-const getCorsHeaders = (req: Request): Record<string, string> => {
-	const origin = req.headers.get("Origin");
-	const headers: Record<string, string> = { ...baseCorsHeaders };
-
-	if (isOriginAllowed(origin)) {
-		headers["Access-Control-Allow-Origin"] = origin as string;
-	}
-
-	return headers;
-};
+console.log("Supabase URL:", supabaseUrl);
+console.log("Service role key length:", supabaseServiceRoleKey.length);
 
 interface ChatStreamRequest {
 	message: string;
@@ -44,9 +28,17 @@ interface ChatStreamRequest {
 }
 
 serve(async (req: Request) => {
+	console.log("=== CHAT-STREAM DEBUG ===");
+	console.log("Method:", req.method);
+	console.log("Origin:", req.headers.get("Origin"));
+	console.log("Headers:", Object.fromEntries(req.headers.entries()));
+
 	// Handle CORS preflight requests
 	const corsResponse = handleCorsPreflightRequest(req);
-	if (corsResponse) return corsResponse;
+	if (corsResponse) {
+		console.log("Returning CORS preflight response");
+		return corsResponse;
+	}
 
 	try {
 		console.log("Chat stream request received");
@@ -72,7 +64,7 @@ serve(async (req: Request) => {
 		}
 
 		// Create supabase client for database operations
-		const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+		const supabaseClient = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 		// Get provider data from database
 		const { data: providerData, error: providerError } = await supabaseClient
@@ -175,6 +167,7 @@ serve(async (req: Request) => {
 							const adapterResponse = await aiProviderAdapter.sendMessage(
 								adapterChatRequest,
 								providerData.api_identifier,
+								"streaming-fallback",
 							);
 
 							// Send the complete response as chunks
@@ -236,7 +229,13 @@ serve(async (req: Request) => {
 
 		return new Response(stream, {
 			headers: {
-				...getCorsHeaders(req),
+				"Access-Control-Allow-Origin":
+					req.headers.get("Origin") || "http://localhost:5173",
+				"Access-Control-Allow-Headers":
+					"authorization, x-client-info, apikey, content-type, x-paynless-anon-secret",
+				"Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+				"Access-Control-Allow-Credentials": "true",
+				"Access-Control-Max-Age": "86400",
 				"Content-Type": "text/event-stream",
 				"Cache-Control": "no-cache",
 				Connection: "keep-alive",

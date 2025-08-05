@@ -1,5 +1,5 @@
-import React, { useState, useRef } from "react";
-import { useAiStore } from "../store/src/aiStore";
+import { useState, useRef, useEffect } from "react";
+import { useAiStore } from "../aiStore";
 
 export const StreamingChatDemo: React.FC = () => {
 	const [message, setMessage] = useState("");

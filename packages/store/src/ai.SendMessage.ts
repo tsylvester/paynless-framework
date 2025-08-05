@@ -69,7 +69,7 @@ async function handleStreamingRequest(params: {
 		const supabaseUrl = (
 			import.meta?.env?.VITE_SUPABASE_URL ||
 			process.env.VITE_SUPABASE_URL ||
-			"http://127.0.0.1:54321"
+			"http://localhost:54321"
 		).replace(/\/$/, "");
 
 		const supabaseAnonKey =
