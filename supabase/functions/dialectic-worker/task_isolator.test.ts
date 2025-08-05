@@ -114,15 +114,15 @@ describe('planComplexStage', () => {
             genericMockResults: {
                 dialectic_contributions: {
                     select: (state: MockQueryBuilderState) => {
-                        const stageSlugFilter = state.filters.find(f => f.column === 'stage_slug');
-                        if (stageSlugFilter) {
-                            const filteredData = mockContributions.filter(c => c.stage === stageSlugFilter.value);
+                        const stageFilter = state.filters.find(f => f.column === 'stage')?.value;
+                        if (stageFilter) {
+                            const filteredData = mockContributions.filter(c => c.stage === stageFilter);
                             return Promise.resolve({ data: filteredData, error: null, count: filteredData.length, status: 200, statusText: 'OK' });
                         }
 
-                        const typeFilter = state.filters.find(f => f.column === 'contribution_type');
+                        const typeFilter = state.filters.find(f => f.column === 'contribution_type')?.value;
                         if (typeFilter) {
-                            const filteredData = mockContributions.filter(c => c.contribution_type === typeFilter.value);
+                            const filteredData = mockContributions.filter(c => c.contribution_type === typeFilter);
                             return Promise.resolve({ data: filteredData, error: null, count: filteredData.length, status: 200, statusText: 'OK' });
                         }
                         
@@ -451,6 +451,18 @@ describe('planComplexStage', () => {
 
     it('should query by stage_slug when present in the rule', async () => {
         mockRecipeStep.inputs_required = [{ type: 'some_generic_type', stage_slug: 'thesis' }];
+        
+        // Custom mock for this test case
+        if (mockSupabase.genericMockResults?.dialectic_contributions) {
+            mockSupabase.genericMockResults.dialectic_contributions.select = (state: MockQueryBuilderState) => {
+                const stageFilter = state.filters.find(f => f.column === 'stage' && f.value === 'thesis');
+                if (stageFilter) {
+                    const data = mockContributions.filter(c => c.contribution_type === 'thesis'); // The mock data uses this as the distinguisher
+                    return Promise.resolve({ data, error: null, count: data.length, status: 200, statusText: 'OK' });
+                }
+                return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
+            };
+        }
         
         let receivedDocs: SourceDocument[] = [];
         const plannerFn: GranularityPlannerFn = (sourceDocs) => {

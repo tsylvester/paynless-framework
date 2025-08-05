@@ -37,7 +37,7 @@ import { startSession } from "../../functions/dialectic-service/startSession.ts"
 import { submitStageResponses } from "../../functions/dialectic-service/submitStageResponses.ts";
 import { downloadFromStorage } from "../../functions/_shared/supabase_storage_utils.ts";
 import { executeModelCallAndSave } from "../../functions/dialectic-worker/executeModelCallAndSave.ts";
-import { type UploadContext, IFileManager } from "../../functions/_shared/types/file_manager.types.ts";
+import { UploadContext, FileType, IFileManager } from "../../functions/_shared/types/file_manager.types.ts";
 import { RagService } from "../../functions/_shared/services/rag_service.ts";
 import { IndexingService, LangchainTextSplitter, OpenAIEmbeddingClient } from "../../functions/_shared/services/indexing_service.ts";
 import { IEmbeddingClient, IIndexingService } from "../../functions/_shared/services/indexing_service.interface.ts";
@@ -46,6 +46,7 @@ import { getGranularityPlanner } from '../../functions/dialectic-worker/strategi
 import { countTokensForMessages } from '../../functions/_shared/utils/tokenizer_utils.ts';
 import { getAiProviderConfig } from '../../functions/dialectic-worker/processComplexJob.ts';
 import { OpenAiAdapter } from "../../functions/_shared/ai_service/openai_adapter.ts";
+import { PromptAssembler } from "../../functions/_shared/prompt-assembler.ts";
 
 // --- Test Suite Setup ---
 let adminClient: SupabaseClient<Database>;
@@ -96,8 +97,7 @@ const pollForJobStatus = async (
 const executePendingDialecticJobs = async (
     sessionId: string,
     deps: IDialecticJobDeps,
-    authToken: string,
-    mockProcessors: IJobProcessors
+    authToken: string
 ) => {
     const { data: pendingJobs, error } = await adminClient
         .from('dialectic_generation_jobs')
@@ -115,7 +115,7 @@ const executePendingDialecticJobs = async (
             throw new Error(`Fetched job is not a valid DialecticJobRow: ${JSON.stringify(job)}`);
         }
         testLogger.info(`[Test Helper] >>>> Executing job ${job.id} | Status: ${job.status} | Parent: ${job.parent_job_id || 'None'}`);
-        await handleJob(adminClient, job, deps, authToken, mockProcessors);
+        await handleJob(adminClient, job, deps, authToken);
     }
 };
 
@@ -135,7 +135,7 @@ const submitMockFeedback = async (
             sessionId,
             iteration: iterationNumber,
             stageSlug,
-            fileType: 'user_feedback',
+            fileType: FileType.UserFeedback,
             originalFileName: `user_feedback_${stageSlug}.md`
         },
         fileContent: feedbackContent,
@@ -326,6 +326,7 @@ Deno.test(
             getGranularityPlanner,
             countTokens: countTokensForMessages,
             getAiProviderConfig,
+            promptAssembler: new PromptAssembler(adminClient),
         };
     };
 
@@ -429,7 +430,7 @@ Deno.test(
         assertExists(jobB_id, "Job B ID must exist.");
 
         testLogger.info(`[Test] >>> Executing first run for initial jobs...`);
-        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
 
         // --- Verify Retry and Continuation Creation ---
         // After the first run, Job A should be 'retrying' and Job B should be 'completed' (having enqueued a continuation).
@@ -459,7 +460,7 @@ Deno.test(
 
         // --- Execute Second Run to Process Retries and Continuations ---
         testLogger.info(`[Test] >>> Executing second run for retrying job and continuation job...`);
-        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
         
         // --- Verify Final States ---
         const completedJobA = await pollForJobStatus(jobA_id, 'completed', `Job A (${jobA_id}) should have status 'completed' after successful retry.`);
@@ -572,7 +573,7 @@ Deno.test(
         const [parentJobIdA, parentJobIdB] = jobData.job_ids;
         const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
 
-        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
 
         await pollForJobStatus(parentJobIdA, 'waiting_for_children', `Parent job A (${parentJobIdA}) should have status 'waiting_for_children'.`);
         await pollForJobStatus(parentJobIdB, 'waiting_for_children', `Parent job B (${parentJobIdB}) should have status 'waiting_for_children'.`);
@@ -584,7 +585,7 @@ Deno.test(
         
         assert(!childJobError, `Error fetching child jobs: ${childJobError?.message}`);
         assertExists(childJobs, "Child jobs were not created.");
-        assertEquals(childJobs.length, 4, "Expected 4 child jobs to be created for the antithesis stage (2 theses * 2 models).");
+        assertEquals(childJobs.length, 4, `Expected 4 child jobs to be created for the antithesis stage (2 theses * 2 models), but found ${childJobs.length}.`);
       } else {
         assert(false, "jobData or job_ids were not returned from generateContributions");
       }
@@ -598,7 +599,7 @@ Deno.test(
         const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
 
       // Act: Execute the pending child jobs
-      await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+      await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
       
       // Assert: Verify all jobs (parents and children) are completed
       await pollForCondition(async () => {
@@ -628,7 +629,7 @@ Deno.test(
 
       assert(!finalContribError, `Error fetching final antithesis contributions: ${finalContribError?.message}`);
       assertExists(finalContributions, "No final antithesis contributions were found.");
-      assertEquals(finalContributions.length, 4, "Expected exactly four final antithesis contributions.");
+      assertEquals(finalContributions.length, 4, `Expected exactly four final antithesis contributions, but found ${finalContributions.length}.`);
     });
 
     await t.step("7. should submit antithesis responses", async () => {
@@ -704,38 +705,38 @@ Deno.test(
         if (jobData) {
             assertEquals(jobData.job_ids.length, 2, "Expected 2 parent synthesis jobs (one per model).");
     
-            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
             
             const { data: step1ChildJobs, error: step1ChildError } = await adminClient.from('dialectic_generation_jobs').select('id, parent_job_id').in('parent_job_id', jobData.job_ids);
             assert(!step1ChildError, `Error fetching step 1 child jobs: ${step1ChildError?.message}`);
             assertEquals(step1ChildJobs?.length, 8, "Expected 8 child jobs for Synthesis Step 1 (2 theses * 2 antitheses per thesis * 2 models = 8 pairs).");
             
             // --- Simulate Step 1 Completion & Wake Parent ---
-            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
             for (const parentJobId of jobData.job_ids) {
                 await pollForJobStatus(parentJobId, 'pending_next_step', `Parent job ${parentJobId} should be pending_next_step after Step 1.`);
             }
     
             // --- Invoke Synthesis Planner (Step 2: per_source_group) ---
-            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
-            const { data: step2ChildJobs, error: step2ChildError } = await adminClient.from('dialectic_generation_jobs').select('id').in('parent_job_id', jobData.job_ids).eq('status', 'pending');
+            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
+            const { data: step2ChildJobs, error: step2ChildError } = await adminClient.from('dialectic_generation_jobs').select('id').in('parent_job_id', jobData.job_ids).eq('payload->>prompt_template_name', 'synthesis_step2_per_thesis');
             assert(!step2ChildError, `Error fetching step 2 child jobs: ${step2ChildError?.message}`);
             assertEquals(step2ChildJobs?.length, 4, "Expected 4 child jobs for Synthesis Step 2 (2 original thesis groups * 2 models).");
     
             // --- Simulate Step 2 Completion & Wake Parent ---
-            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
             for (const parentJobId of jobData.job_ids) {
                 await pollForJobStatus(parentJobId, 'pending_next_step', `Parent job ${parentJobId} should be pending_next_step after Step 2.`);
             }
     
             // --- Invoke Synthesis Planner (Step 3: all_to_one) ---
-            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
             const { data: step3ChildJobs, error: step3ChildError } = await adminClient.from('dialectic_generation_jobs').select('id').in('parent_job_id', jobData.job_ids).eq('status', 'pending');
             assert(!step3ChildError, `Error fetching step 3 child jobs: ${step3ChildError?.message}`);
             assertEquals(step3ChildJobs?.length, 2, "Expected 2 child jobs for Synthesis Step 3 (one per model, all_to_one).");
             
             // --- Simulate Final Step Completion ---
-            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+            await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
     
             // --- Final Assertions ---
             await pollForCondition(async () => {
@@ -819,8 +820,8 @@ Deno.test(
         assertExists(jobData?.job_ids, "Parent job creation for parenthesis did not return job IDs.");
 
         const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
-        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
-        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
+        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
 
         // --- Assert ---
         await pollForCondition(async () => {
@@ -907,8 +908,8 @@ Deno.test(
         assertExists(jobData?.job_ids, "Parent job creation for paralysis did not return job IDs.");
 
         const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
-        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
-        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt, mockProcessors);
+        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
+        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
 
         // --- Assert ---
         await pollForCondition(async () => {

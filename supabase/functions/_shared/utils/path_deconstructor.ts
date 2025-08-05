@@ -241,8 +241,8 @@ export function deconstructStoragePath(
         info.fileTypeGuess = FileType.PairwiseSynthesisChunk;
     } else if (fileName.includes('reduced_synthesis')) {
         info.fileTypeGuess = FileType.ReducedSynthesis;
-    } else if (fileName.includes('final_synthesis')) {
-        info.fileTypeGuess = FileType.FinalSynthesis;
+    } else if (fileName.includes('synthesis')) {
+        info.fileTypeGuess = FileType.Synthesis;
     }
     // No specific fileTypeGuess if it doesn't match common patterns.
     

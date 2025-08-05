@@ -117,7 +117,7 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     case FileType.ModelContributionRawJson:
     case FileType.PairwiseSynthesisChunk:
     case FileType.ReducedSynthesis:
-    case FileType.FinalSynthesis: {
+    case FileType.Synthesis: {
       // For fileType calls, infer contributionType.
       const effectiveContributionType = contributionType ?? fileType;
       const contributionTypeSanitized = sanitizeForPath(effectiveContributionType);
@@ -150,7 +150,7 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
           fileName = `${modelSlugSanitized}_reducing_${sanitizeForPath(sourceAnchorType)}_by_${sanitizeForPath(sourceAnchorModelSlug)}_${attemptCount}_${contributionTypeSanitized}${suffix}`;
           break;
         }
-        default: // Covers thesis, final_synthesis, parenthesis, paralysis
+        default: // Covers thesis, synthesis, parenthesis, paralysis
           fileName = `${modelSlugSanitized}_${attemptCount}_${contributionTypeSanitized}${suffix}`;
           break;
       }

@@ -121,7 +121,7 @@ export async function processComplexJob(
         }
 
         deps.logger.info(`[processComplexJob] Planner created ${childJobs.length} child jobs for parent ${parentJobId}. Enqueuing now.`);
-        console.log('[processComplexJob] Child jobs to be inserted:', JSON.stringify(childJobs, null, 2));
+        //console.log('[processComplexJob] Child jobs to be inserted:', JSON.stringify(childJobs, null, 2));
 
         // 6. Enqueue the child jobs.
         const { error: insertError } = await dbClient.from('dialectic_generation_jobs').insert(childJobs);

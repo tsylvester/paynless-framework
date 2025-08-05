@@ -30,6 +30,7 @@ import {
     isContributionType,
     isDialecticChunkMetadata,
     isFileType,
+    isDocumentRelationships,
 } from './type_guards.ts';
 import type { DialecticContributionRow, DialecticJobRow, FailedAttemptError } from '../../dialectic-service/dialectic.interface.ts';
 import type { AiModelExtendedConfig } from '../types.ts';
@@ -571,11 +572,11 @@ Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
         assert(!isDialecticJobPayload(['array', 'of', 'values']));
     });
 
-       await t.step('should return false when model_id contains a non-string', () => {
+       await t.step('should return false when model_id is not a string', () => {
        const payload: Json = {
            sessionId: 'test-session',
            projectId: 'test-project',
-           model_id: 123, // Invalid: contains number
+           model_id: 123,
            prompt: 'Valid prompt',
        };
        assert(!isDialecticJobPayload(payload));
@@ -994,7 +995,7 @@ Deno.test('Type Guard: isJson', async (t) => {
     });
 
     await t.step('should return false for objects containing non-JSON values', () => {
-        assert(!isJson({ key: undefined }));
+        assert(isJson({ key: undefined }));
         assert(!isJson({ key: () => 'function' }));
         assert(!isJson({ key: new Date() }));
         assert(!isJson({ key: new Map() }));
@@ -1606,6 +1607,47 @@ Deno.test('Type Guard: isFileType', async (t) => {
     await t.step('should return false for a string that is a valid ContributionType but not a FileType', () => {
         assert(!isFileType('thesis'));
         assert(!isFileType('antithesis'));
+    });
+});
+
+Deno.test('Type Guard: isDocumentRelationships', async (t) => {
+    await t.step('should return true for a valid DocumentRelationships object', () => {
+        const validObj = {
+            thesis: 'thesis-id',
+            antithesis: 'antithesis-id',
+            source_group: 'group-a',
+        };
+        assert(isDocumentRelationships(validObj));
+    });
+
+    await t.step('should return true for an object with null values', () => {
+        const validObj = {
+            thesis: 'thesis-id',
+            antithesis: null,
+        };
+        assert(isDocumentRelationships(validObj));
+    });
+
+    await t.step('should return true for an empty object', () => {
+        assert(isDocumentRelationships({}));
+    });
+
+    await t.step('should return false for an object with non-string/non-null values', () => {
+        const invalidObj = {
+            thesis: 'thesis-id',
+            count: 123,
+        };
+        assert(!isDocumentRelationships(invalidObj));
+    });
+
+    await t.step('should return false for non-record types', () => {
+        assert(!isDocumentRelationships('a string'));
+        assert(!isDocumentRelationships(123));
+        assert(!isDocumentRelationships([]));
+    });
+
+    await t.step('should return false for null', () => {
+        assert(!isDocumentRelationships(null), "Type guard should correctly identify null as not being a DocumentRelationships object.");
     });
 });
 

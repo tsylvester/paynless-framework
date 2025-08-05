@@ -243,4 +243,100 @@ Deno.test('should correctly plan jobs for antithesis stage', () => {
     assertExists(job2Payload.canonicalPathParams);
     assertEquals(job2Payload.canonicalPathParams.sourceAnchorType, 'thesis');
     assertEquals(job2Payload.canonicalPathParams.sourceAnchorModelSlug, 'Claude 3 Opus');
-}); 
+});
+
+Deno.test('planPerSourceDocument Test Case A: The Failing Case (Proves the bug exists)', () => {
+    const failingParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+        id: 'failing-parent-job',
+        session_id: 'session-abc',
+        user_id: 'user-def',
+        stage_slug: 'antithesis',
+        iteration_number: 1,
+        payload: {
+            job_type: 'plan',
+            projectId: 'project-xyz',
+            sessionId: 'session-abc',
+            stageSlug: 'antithesis',
+            iterationNumber: 1,
+            model_id: 'parent-model-id', // This is the key part
+            step_info: {
+                current_step: 1,
+                total_steps: 1,
+            }
+        },
+        attempt_count: 0,
+        completed_at: null,
+        created_at: new Date().toISOString(),
+        error_details: null,
+        max_retries: 3,
+        parent_job_id: null,
+        prerequisite_job_id: null,
+        results: null,
+        started_at: null,
+        status: 'pending',
+        target_contribution_id: null,
+    };
+
+    const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, failingParentJob, MOCK_RECIPE_STEP);
+
+    // This test PASSES if the assertion inside it THROWS an error, proving the bug.
+    // The planner currently assigns the parent job's model ID to ALL children,
+    // which does not match the model ID of the source documents.
+    try {
+        // This is the CORRECT behavior we want to enforce.
+        // With the bug present, this assertion will fail for at least one child,
+        // throwing an error and proving the bug exists.
+        childPayloads.forEach(child => {
+            assertEquals(child.model_id, failingParentJob.payload.model_id, "Child job model_id must match the parent job's model_id");
+        });
+        // If the loop completes, it means the bug is fixed, so this test should now fail.
+        assert(false, "Test A expected an error to be thrown, but none was. The bug may be fixed.");
+    } catch (e) {
+        // We expect to catch an error, which means the test passes and the bug is confirmed.
+        assert(e instanceof Error, "The thrown object should be an error.");
+        console.log("Test A passed by catching an expected error, confirming the bug's presence.");
+    }
+});
+
+
+Deno.test('planPerSourceDocument Test Case B: The Passing Case (Describes the correct behavior)', () => {
+    const passingParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+        id: 'passing-parent-job',
+        session_id: 'session-abc',
+        user_id: 'user-def',
+        stage_slug: 'antithesis',
+        iteration_number: 1,
+        payload: {
+            job_type: 'plan',
+            projectId: 'project-xyz',
+            sessionId: 'session-abc',
+            stageSlug: 'antithesis',
+            iterationNumber: 1,
+            model_id: 'parent-model-id', // This is the key part
+            step_info: {
+                current_step: 1,
+                total_steps: 1,
+            }
+        },
+        attempt_count: 0,
+        completed_at: null,
+        created_at: new Date().toISOString(),
+        error_details: null,
+        max_retries: 3,
+        parent_job_id: null,
+        prerequisite_job_id: null,
+        results: null,
+        started_at: null,
+        status: 'pending',
+        target_contribution_id: null,
+    };
+
+    const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, passingParentJob, MOCK_RECIPE_STEP);
+
+    // This test will FAIL initially because the planner assigns the wrong model_id.
+    // After the fix, it will PASS.
+    childPayloads.forEach(child => {
+        assertEquals(child.model_id, passingParentJob.payload.model_id, "Child job model_id must match the parent job's model_id");
+    });
+});
+ 

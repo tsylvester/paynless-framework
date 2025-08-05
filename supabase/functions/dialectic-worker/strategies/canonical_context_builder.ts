@@ -7,14 +7,14 @@ export function createCanonicalPathParams(
     outputType: ContributionType,
     anchorDoc: SourceDocument
 ): CanonicalPathParams {
-    const sourceModelSlugs = [...new Set(sourceDocs.map(d => d.model_name || ''))]
+    const sourceModelSlugs = Array.from(new Set(sourceDocs.map(d => d.model_name || '')))
         .filter(Boolean)
         .sort();
     
     // Find the non-anchor document to identify the paired model slug
     const pairedDoc = sourceDocs.find(doc => doc.id !== anchorDoc.id);
 
-    return {
+    const params: CanonicalPathParams = {
         contributionType: outputType,
         sourceModelSlugs: sourceModelSlugs.length > 0 ? sourceModelSlugs : undefined,
         sourceAnchorType: anchorDoc.contribution_type || undefined,
@@ -22,4 +22,10 @@ export function createCanonicalPathParams(
         sourceAttemptCount: anchorDoc.attempt_count ?? undefined, // Pass the anchor's attempt count
         pairedModelSlug: pairedDoc?.model_name || undefined,
     };
+
+    if (pairedDoc?.model_name) {
+        params.pairedModelSlug = pairedDoc.model_name;
+    }
+
+    return params;
 }

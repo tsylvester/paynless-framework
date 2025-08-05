@@ -7,7 +7,7 @@
 *   `{model_slug}`: The generating model's slug (e.g., `gpt-4-turbo`).
 *   `{n}`: The `attemptCount`, an integer (starting at 0) that increments only when the *same model* generates *multiple distinct contributions for the same input*.
 *   `{stage_slug}`: The slug of the current stage (e.g., `thesis`, `antithesis`).
-*   `{contribution_type}`: The specific type of artifact being created (e.g., `thesis`, `antithesis`, `pairwise_synthesis_chunk`, `final_synthesis`).
+*   `{contribution_type}`: The specific type of artifact being created (e.g., `thesis`, `antithesis`, `pairwise_synthesis_chunk`, `synthesis`).
 *   `{source_model_slugs}`: An alphabetically sorted, underscore-separated list of model slugs from the source contributions.
 *   `{source_anchor_type}`: The `contribution_type` of the anchor document for a derivative work (e.g., `thesis`).
 *   `{source_anchor_model_slug}`: The `model_slug` of the anchor document's author.
@@ -71,7 +71,7 @@
             │   │   ├── {model_slug}_reducing_{source_anchor_type}_by_{source_anchor_model_slug}_{n}_reduced_synthesis.md
             │   │   └── {model_slug}_compressing_{source_model_slugs}_rag_summary.txt
             │   ├── seed_prompt.md  (The complete prompt sent to the model for completion for this stage, including the stage prompt template, stage overlays, and user's input)
-            │   ├── {model_slug}_{n}_final_synthesis.md
+            │   ├── {model_slug}_{n}_synthesis.md
             │   ├── ...
             │   ├── user_feedback_synthesis.md
             │   └── documents/                      (Optional refined documents, e.g., PRDs from each model)
@@ -138,7 +138,7 @@ This stage has intermediate artifacts that must be uniquely named.
     *   **Example:** `gpt-4-turbo_reducing_thesis_by_claude-3-opus_0_reduced_synthesis.md`
     *   **Rationale:** This clearly identifies the file is a reduction based on a specific anchor document, ensuring uniqueness and clarity about its origin.
 
-*   **Step 3: Final Synthesis (`final_synthesis`)**
+*   **Step 3: Final Synthesis (`synthesis`)**
     *   **Primitive:** `{model_slug}_{n}_{contribution_type}.md`
     *   **Example:** `gpt-4-turbo_0_final_synthesis.md`
     *   **Rationale:** This is a final, primary contribution for the stage, so it can follow the simple stage pattern. The `contribution_type` distinguishes it from intermediate files.

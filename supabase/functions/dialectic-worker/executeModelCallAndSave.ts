@@ -26,7 +26,7 @@ export async function executeModelCallAndSave(
         sessionData 
     } = params;
     
-    console.log('[executeModelCallAndSave] Received job payload:', JSON.stringify(job.payload, null, 2));
+    //console.log('[executeModelCallAndSave] Received job payload:', JSON.stringify(job.payload, null, 2));
     
     if (!isDialecticExecuteJobPayload(job.payload)) {
         throw new Error(`Job ${job.id} does not have a valid 'execute' payload.`);
@@ -170,7 +170,7 @@ export async function executeModelCallAndSave(
             modelNameDisplay: providerDetails.name,
             stageSlug, 
             iterationNumber, 
-            contributionType: isContributionType(job.payload.output_type) ? job.payload.output_type : undefined,
+            contributionType: contributionType,
             rawJsonResponseContent: JSON.stringify(aiResponse.rawProviderResponse || {}),
             tokensUsedInput: aiResponse.inputTokens, 
             tokensUsedOutput: aiResponse.outputTokens,
@@ -182,15 +182,30 @@ export async function executeModelCallAndSave(
         },
     };
 
+    //console.log('[executeModelCallAndSave] Calling fileManager.uploadAndRegisterFile with context:', JSON.stringify(uploadContext, null, 2));
+
     const savedResult = await deps.fileManager.uploadAndRegisterFile(uploadContext);
 
-    deps.logger.info(`[dialectic-worker] [executeModelCallAndSave] Received record from fileManager: ${JSON.stringify(savedResult.record, null, 2)}`);
+    //deps.logger.info(`[dialectic-worker] [executeModelCallAndSave] Received record from fileManager: ${JSON.stringify(savedResult.record, null, 2)}`);
 
     if (savedResult.error || !isDialecticContribution(savedResult.record)) {
         throw new Error(`Failed to save contribution: ${savedResult.error?.message || 'Invalid record returned.'}`);
     }
 
     const contribution = savedResult.record;
+
+    if (contribution.contribution_type === 'thesis' && !contribution.document_relationships) {
+        const { error: updateError } = await dbClient
+            .from('dialectic_contributions')
+            .update({ document_relationships: { thesis: contribution.id } })
+            .eq('id', contribution.id);
+
+        if (updateError) {
+            deps.logger.error(`[executeModelCallAndSave] CRITICAL: Failed to update document_relationships for thesis contribution ${contribution.id}.`, { updateError });
+        } else {
+            contribution.document_relationships = { thesis: contribution.id };
+        }
+    }
     
     const needsContinuation = job.payload.continueUntilComplete && (aiResponse.finish_reason === 'length');
 

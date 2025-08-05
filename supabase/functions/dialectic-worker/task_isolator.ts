@@ -23,7 +23,7 @@ async function findSourceDocuments(
     downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>,
     logger: ILogger,
 ): Promise<SourceDocument[]> {
-    logger.info(`[task_isolator] [findSourceDocuments] Finding documents for job ${parentJob.id} based on recipe...`, { inputsRequired });
+    //logger.info(`[task_isolator] [findSourceDocuments] Finding documents for job ${parentJob.id} based on recipe...`, { inputsRequired });
 
     const allSourceDocuments: SourceDocument[] = [];
 
@@ -35,8 +35,8 @@ async function findSourceDocuments(
             .eq('iteration_number', parentJob.iteration_number)
             .eq('is_latest_edit', true);
 
-                if (rule.stage_slug) {
-          query = query.eq('contribution_type', rule.stage_slug);
+        if (rule.stage_slug) {
+          query = query.eq('stage', rule.stage_slug);
         } else {
           query = query.eq('contribution_type', rule.type);
         }
@@ -48,16 +48,16 @@ async function findSourceDocuments(
         }
 
         if (!sourceContributions || sourceContributions.length === 0) {
-            logger.warn(`[task_isolator] [findSourceDocuments] No contributions found for type '${rule.type}'.`);
+            //logger.warn(`[task_isolator] [findSourceDocuments] No contributions found for type '${rule.type}'.`);
             continue;
         }
 
-        logger.info(`[task_isolator] [findSourceDocuments] Found ${sourceContributions.length} contributions for type '${rule.type}'.`);
+        //logger.info(`[task_isolator] [findSourceDocuments] Found ${sourceContributions.length} contributions for type '${rule.type}'.`);
 
         const documents = await Promise.all(
             sourceContributions.map(async (contrib) => {
                 if (!contrib.file_name || !contrib.storage_bucket || !contrib.storage_path) {
-                    logger.warn(`Contribution ${contrib.id} is missing required storage information (file_name, storage_bucket, or storage_path) and will be skipped.`);
+                    //logger.warn(`Contribution ${contrib.id} is missing required storage information (file_name, storage_bucket, or storage_path) and will be skipped.`);
                     return null;
                 }
                 const fullPath = `${contrib.storage_path}/${contrib.file_name}`;
@@ -68,7 +68,7 @@ async function findSourceDocuments(
                 
                 // Destructure to correctly omit the old `document_relationships` and create a valid SourceDocument
                 const { document_relationships, ...rest } = contrib;
-                const docRels = isDocumentRelationships(document_relationships)
+                const docRels = document_relationships && isDocumentRelationships(document_relationships)
                     ? document_relationships
                     : null;
 
@@ -91,7 +91,7 @@ async function findSourceDocuments(
         allSourceDocuments.push(...validDocuments);
     }
     
-    logger.info(`[task_isolator] [findSourceDocuments] Total valid source documents found: ${allSourceDocuments.length}`);
+    //logger.info(`[task_isolator] [findSourceDocuments] Total valid source documents found: ${allSourceDocuments.length}`);
     return allSourceDocuments;
 }
 
@@ -101,7 +101,7 @@ export async function planComplexStage(
     deps: IDialecticJobDeps,
     recipeStep: DialecticRecipeStep,
 ): Promise<DialecticJobRow[]> {
-    deps.logger.info(`[task_isolator] [planComplexStage] Planning step "${recipeStep.name}" for parent job ID: ${parentJob.id}`);
+    //deps.logger.info(`[task_isolator] [planComplexStage] Planning step "${recipeStep.name}" for parent job ID: ${parentJob.id}`);
     
     // 1. Fetch source documents required for this specific step.
     const sourceDocuments = await findSourceDocuments(
@@ -113,7 +113,7 @@ export async function planComplexStage(
     );
     
     if (sourceDocuments.length === 0) {
-        deps.logger.info(`[task_isolator] [planComplexStage] No source documents found for step "${recipeStep.name}". Skipping planning.`);
+        //deps.logger.info(`[task_isolator] [planComplexStage] No source documents found for step "${recipeStep.name}". Skipping planning.`);
         return [];
     }
 
@@ -131,7 +131,7 @@ export async function planComplexStage(
     let childJobPayloads: DialecticExecuteJobPayload[];
 
     if (estimatedTokens > maxTokens) {
-        deps.logger.info(`[task_isolator] Context for job ${parentJob.id} exceeds token limit (${estimatedTokens} > ${maxTokens}). Invoking RAG service.`);
+        //deps.logger.info(`[task_isolator] Context for job ${parentJob.id} exceeds token limit (${estimatedTokens} > ${maxTokens}). Invoking RAG service.`);
         
         const ragResult = await deps.ragService!.getContextForModel(
             sourceDocuments.map(doc => ({ id: doc.id, content: doc.content })),
@@ -145,7 +145,6 @@ export async function planComplexStage(
         }
 
         const anchorDoc = sourceDocuments.find(doc => doc.contribution_type === 'thesis');
-        const antithesisDoc = sourceDocuments.find(doc => doc.contribution_type === 'antithesis');
         if (!anchorDoc) {
             throw new Error('RAG workflow requires an anchor document (thesis) to proceed.');
         }
@@ -227,7 +226,14 @@ export async function planComplexStage(
         if (!planner) {
             throw new Error(`No planner found for granularity strategy: ${recipeStep.granularity_strategy}`);
         }
-        childJobPayloads = planner(sourceDocuments, parentJob, recipeStep);
+        
+        const plannedPayloads = planner(sourceDocuments, parentJob, recipeStep);
+        if (!Array.isArray(plannedPayloads)) {
+            throw new Error(`Planner for strategy '${recipeStep.granularity_strategy}' returned a non-array value.`);
+        }
+        childJobPayloads = plannedPayloads;
+        
+        //deps.logger.info(`[task_isolator] [planComplexStage] Planner returned ${childJobPayloads.length} payloads. Content: ${JSON.stringify(childJobPayloads, null, 2)}`);
     }
 
     // 4. Map to full job rows for DB insertion.
@@ -256,7 +262,7 @@ export async function planComplexStage(
         }
     }
 
-    deps.logger.info(`[task_isolator] [planComplexStage] Planned ${childJobsToInsert.length} child jobs for step "${recipeStep.name}".`);
+    //deps.logger.info(`[task_isolator] [planComplexStage] Planned ${childJobsToInsert.length} child jobs for step "${recipeStep.name}".`);
     return childJobsToInsert;
 }
 

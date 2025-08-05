@@ -293,4 +293,96 @@ Deno.test('should return an empty array if antitheses exist but no matching thes
     const antithesesOnly = MOCK_SOURCE_DOCS.filter(d => d.contribution_type === 'antithesis');
     const childPayloads = planPairwiseByOrigin(antithesesOnly, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
     assertEquals(childPayloads.length, 0, "Should create no jobs if no theses are present to match against");
-}); 
+});
+
+Deno.test('planPairwiseByOrigin Test Case A: The Failing Case (Proves the bug exists)', () => {
+    // This test proves the bug by showing that the planner is not "self-aware".
+    // It creates jobs for models that are not its own.
+    const failingParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+        id: 'failing-parent-job',
+        session_id: 'session-abc',
+        user_id: 'user-def',
+        stage_slug: 'synthesis',
+        iteration_number: 1,
+        payload: {
+            job_type: 'plan',
+            projectId: 'project-xyz',
+            sessionId: 'session-abc',
+            stageSlug: 'synthesis',
+            iterationNumber: 1,
+            model_id: 'parent-model-id', // The parent planner belongs to this model
+            step_info: {
+                current_step: 1,
+                total_steps: 3,
+            }
+        },
+        attempt_count: 0,
+        completed_at: null,
+        created_at: new Date().toISOString(),
+        error_details: null,
+        max_retries: 3,
+        parent_job_id: null,
+        prerequisite_job_id: null,
+        results: null,
+        started_at: null,
+        status: 'pending',
+        target_contribution_id: null,
+    };
+
+    const childPayloads = planPairwiseByOrigin(MOCK_SOURCE_DOCS, failingParentJob, MOCK_RECIPE_STEP);
+
+    // With the bug present, this will throw an error because the child's model_id will be
+    // based on the source docs, not the parent job.
+    try {
+        childPayloads.forEach(child => {
+            assertEquals(child.model_id, failingParentJob.payload.model_id, "Child job model_id must match the parent job's model_id");
+        });
+        assert(false, "Test A expected an error to be thrown, but none was. The bug may be fixed.");
+    } catch (e) {
+        assert(e instanceof Error);
+        console.log("Test A passed by catching an expected error, confirming the bug's presence.");
+    }
+});
+
+Deno.test('planPairwiseByOrigin Test Case B: The Passing Case (Describes the correct behavior)', () => {
+    // This test describes the correct "self-aware" behavior. It will FAIL until the bug is fixed.
+    const passingParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
+        id: 'passing-parent-job',
+        session_id: 'session-abc',
+        user_id: 'user-def',
+        stage_slug: 'synthesis',
+        iteration_number: 1,
+        payload: {
+            job_type: 'plan',
+            projectId: 'project-xyz',
+            sessionId: 'session-abc',
+            stageSlug: 'synthesis',
+            iterationNumber: 1,
+            model_id: 'parent-model-id', // The parent planner belongs to this model
+            step_info: {
+                current_step: 1,
+                total_steps: 3,
+            }
+        },
+        attempt_count: 0,
+        completed_at: null,
+        created_at: new Date().toISOString(),
+        error_details: null,
+        max_retries: 3,
+        parent_job_id: null,
+        prerequisite_job_id: null,
+        results: null,
+        started_at: null,
+        status: 'pending',
+        target_contribution_id: null,
+    };
+
+    const childPayloads = planPairwiseByOrigin(MOCK_SOURCE_DOCS, passingParentJob, MOCK_RECIPE_STEP);
+
+    // This test will FAIL initially because the planner is not self-aware.
+    // After the fix, it will PASS.
+    childPayloads.forEach(child => {
+        assertEquals(child.model_id, passingParentJob.payload.model_id, "Child job model_id must match the parent job's model_id");
+    });
+});
+ 

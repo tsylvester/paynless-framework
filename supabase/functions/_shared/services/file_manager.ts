@@ -22,7 +22,7 @@ function getTableForFileType(
     case 'contribution_document':
     case 'pairwise_synthesis_chunk':
     case 'reduced_synthesis':
-    case 'final_synthesis':
+    case 'synthesis':
       return 'dialectic_contributions'
     case 'user_feedback':
       return 'dialectic_feedback'
@@ -58,7 +58,8 @@ export class FileManagerService {
   async uploadAndRegisterFile(
     context: UploadContext,
   ): Promise<FileManagerResponse> {
-    if (context.contributionMetadata?.target_contribution_id && context.pathContext.fileType === 'model_contribution_main') {
+    //console.log('[FileManagerService] Received uploadAndRegisterFile context:', JSON.stringify(context, null, 2));
+    if (context.contributionMetadata?.target_contribution_id) {
       // --- Continuation Logic ---
       if (!context.contributionMetadata) {
         return { record: null, error: { message: 'Contribution metadata is required for continuation uploads.' } };
@@ -120,6 +121,7 @@ export class FileManagerService {
           edit_version: (anchorRecord.edit_version ?? 1) + 1,
           is_latest_edit: true,
           original_model_contribution_id: anchorRecord.id,
+          document_relationships: anchorRecord.document_relationships,
       };
 
       const { data: newRecord, error: insertError } = await this.supabase
@@ -169,8 +171,8 @@ export class FileManagerService {
           const pathParts = constructStoragePath(attemptPathContext);
           const fullPathForUpload = `${pathParts.storagePath}/${pathParts.fileName}`;
 
-          console.log(`[FileManagerService] Attempting to upload to: ${fullPathForUpload}`);
-          console.log(`[FileManagerService] Content snippet: ${(typeof context.fileContent === 'string' ? context.fileContent : new TextDecoder().decode(context.fileContent)).substring(0, 100)}`);
+          //console.log(`[FileManagerService] Attempting to upload to: ${fullPathForUpload}`);
+          //console.log(`[FileManagerService] Content snippet: ${(typeof context.fileContent === 'string' ? context.fileContent : new TextDecoder().decode(context.fileContent)).substring(0, 100)}`);
 
           const uploadResult = await this.supabase.storage
             .from(this.storageBucket)
@@ -226,7 +228,9 @@ export class FileManagerService {
       }
       
       let rawJsonResponseFullStoragePath: string | null = null; // Stores full path for DB
-      if (context.pathContext.fileType === 'model_contribution_main' && context.contributionMetadata?.rawJsonResponseContent) {
+            const isModelContribution = getTableForFileType(context.pathContext.fileType) === 'dialectic_contributions' && context.pathContext.fileType !== 'contribution_document';
+
+      if (isModelContribution && context.contributionMetadata?.rawJsonResponseContent) {
         try {
           const rawJsonPathContext: PathContext = {
             ...context.pathContext,
@@ -337,6 +341,7 @@ export class FileManagerService {
             is_latest_edit: meta.isLatestEdit ?? true,
             original_model_contribution_id: meta.originalModelContributionId,
           };
+          //console.log('[FileManagerService] Inserting contribution recordData:', JSON.stringify(recordData, null, 2));
           const { data: newRecord, error: insertError } = await this.supabase
             .from(targetTable)
             .insert(recordData)

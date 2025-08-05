@@ -161,7 +161,7 @@ SET
                 "name": "Step 2: Consolidate Per-Thesis Syntheses (Reduce)",
                 "prompt_template_name": "synthesis_step2_per_thesis",
                 "description": "Combine all pairwise synthesis chunks for a given original thesis into a single synthesized document.",
-                "granularity_strategy": "per_source_group",
+                "granularity_strategy": "per_source_document_by_lineage",
                 "inputs_required": [
                     { "type": "pairwise_synthesis_chunk" }
                 ],

@@ -47,7 +47,7 @@ serve(async (req: Request) => {
       headers: { 'Content-Type': 'application/json' },
     });
   }
-  console.log('dialectic-worker serverless function called');
+  //console.log('dialectic-worker serverless function called');
   try {
     const { record: job } = await req.json();
 
@@ -60,7 +60,7 @@ serve(async (req: Request) => {
       console.log('dialectic-worker serverless function called without auth token');
       throw new Error('Missing authorization header.');
     }
-    console.log('dialectic-worker serverless function called with auth token', authToken);
+    //console.log('dialectic-worker serverless function called with auth token', authToken);
     const adminClient: SupabaseClient<Database> = createSupabaseAdminClient();
     const notificationService = new NotificationService(adminClient);
     
@@ -73,8 +73,8 @@ serve(async (req: Request) => {
     const ragService = new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient });
     const promptAssembler = new PromptAssembler(adminClient);
 
-    console.log('dialectic-worker serverless function called with adminClient', adminClient);
-    console.log('dialectic-worker serverless function called with req', req);
+    //console.log('dialectic-worker serverless function called with adminClient', adminClient);
+    //console.log('dialectic-worker serverless function called with req', req);
     const deps: IDialecticJobDeps = {
       logger,
       getSeedPromptForStage,
@@ -101,7 +101,7 @@ serve(async (req: Request) => {
 
     // We must await the handler to ensure the serverless function
     // stays alive to complete the job processing.
-    await handleJob(adminClient, job, deps, authToken, processors);
+    await handleJob(adminClient, job, deps, authToken);
 
     return new Response(JSON.stringify({ message: 'Job accepted and processing started' }), {
       status: 202,
@@ -122,13 +122,14 @@ export async function handleJob(
   job: Job,
   deps: IDialecticJobDeps,
   authToken: string,
-  processors: IJobProcessors,
+  testProcessors?: IJobProcessors
 ): Promise<void> {
-  console.log('[handleJob] Entered function for job:', job.id);
+  const effectiveProcessors = testProcessors || processors;
+  //console.log('[handleJob] Entered function for job:', job.id);
   const { id: jobId, user_id: projectOwnerUserId } = job;
 
   // --- Start of Validation Block ---
-  console.log('[handleJob] Starting validation for job:', jobId);
+  //console.log('[handleJob] Starting validation for job:', jobId);
   if (!projectOwnerUserId) {
       console.error(`[handleJob] Validation FAILED for job ${jobId}: Missing user_id.`);
       deps.logger.error(`[dialectic-worker] Job ${jobId} is missing a user_id and cannot be processed.`);
@@ -141,7 +142,7 @@ export async function handleJob(
       return;
   }
   
-  console.log(`[handleJob] user_id check PASSED for job: ${jobId}`);
+  //console.log(`[handleJob] user_id check PASSED for job: ${jobId}`);
 
   // Validate the payload using the type guard
   if (!job.payload || !isDialecticJobPayload(job.payload)) {
@@ -176,28 +177,28 @@ export async function handleJob(
     }
     return;
   }
-  console.log(`[handleJob] payload check PASSED for job: ${jobId}`);
+  //console.log(`[handleJob] payload check PASSED for job: ${jobId}`);
   // --- End of Validation Block ---
 
   try {
-    console.log(`[handleJob] Validation passed. Entering TRY block for job: ${jobId}`);
+    //console.log(`[handleJob] Validation passed. Entering TRY block for job: ${jobId}`);
     // Update job status to 'processing'
-    console.log(`[handleJob] Updating job ${jobId} status to 'processing'...`);
+    //console.log(`[handleJob] Updating job ${jobId} status to 'processing'...`);
     await adminClient.from('dialectic_generation_jobs').update({
         status: 'processing',
         started_at: new Date().toISOString(),
     }).eq('id', jobId);
-    console.log(`[handleJob] Job ${jobId} status successfully updated to 'processing'.`);
+    //console.log(`[handleJob] Job ${jobId} status successfully updated to 'processing'.`);
 
     // Notify user that the job has started
     if (projectOwnerUserId) {
-      console.log(`[handleJob] Sending 'started' notification for job ${jobId}...`);
+      //console.log(`[handleJob] Sending 'started' notification for job ${jobId}...`);
       await deps.notificationService.sendContributionStartedEvent({
         type: 'contribution_generation_started',
         sessionId: job.payload.sessionId,
         job_id: jobId,
       }, projectOwnerUserId);
-      console.log(`[handleJob] 'Started' notification sent for job ${jobId}.`);
+      //console.log(`[handleJob] 'Started' notification sent for job ${jobId}.`);
     }
 
     const validatedJob: Job & { payload: DialecticJobPayload } = {
@@ -206,9 +207,9 @@ export async function handleJob(
     };
 
     // Call the internal processing function with validated, typed payload
-    console.log(`[handleJob] Calling processJob for job ${jobId}...`);
-    await processJob(adminClient, validatedJob, projectOwnerUserId, deps, authToken, processors);
-    console.log(`[handleJob] processJob completed for job ${jobId}.`);
+    //console.log(`[handleJob] Calling processJob for job ${jobId}...`);
+    await processJob(adminClient, validatedJob, projectOwnerUserId, deps, authToken, effectiveProcessors);
+    //console.log(`[handleJob] processJob completed for job ${jobId}.`);
   } catch (e) {
       console.error(`[handleJob] CATCH block entered for job ${jobId}. Error:`, e);
       const error = e instanceof Error ? e : new Error(String(e));

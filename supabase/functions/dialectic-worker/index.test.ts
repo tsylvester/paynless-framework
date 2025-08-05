@@ -3,6 +3,7 @@ import { spy, stub } from 'jsr:@std/testing@0.225.1/mock';
 import type { Database, Json } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { handleJob } from './index.ts';
+import * as processJobModule from './processJob.ts';
 import { MockLogger } from '../_shared/logger.mock.ts';
 import type { IDialecticJobDeps, SeedPromptData, IContinueJobResult } from '../dialectic-service/dialectic.interface.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
@@ -58,7 +59,7 @@ const mockDeps: IDialecticJobDeps = {
 
 Deno.test('handleJob - fails when job is missing user_id', async () => {
     // 1. Setup
-    const { processors, spies } = createMockJobProcessors();
+    const { spies } = createMockJobProcessors();
 
     const mockJob: MockJob = {
         id: 'job-without-user-id',
@@ -97,7 +98,7 @@ Deno.test('handleJob - fails when job is missing user_id', async () => {
 
     try {
         // 2. Execute
-        await handleJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, mockDeps, 'mock-token', processors);
+        await handleJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, mockDeps, 'mock-token');
 
         // 3. Verify
         // Note: MockLogger methods are already spies, but we can't easily verify calls without extending the mock
@@ -120,7 +121,7 @@ Deno.test('handleJob - fails when job is missing user_id', async () => {
 Deno.test('handleJob - fails when payload is invalid', async () => {
     // 1. Setup
     const mockLogger = new MockLogger();
-    const { processors, spies } = createMockJobProcessors();
+    const { spies } = createMockJobProcessors();
 
     const mockJob: MockJob = {
         id: 'job-invalid-payload',
@@ -167,7 +168,7 @@ Deno.test('handleJob - fails when payload is invalid', async () => {
 
     try {
         // 2. Execute
-        await handleJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, testDeps, 'mock-token', processors);
+        await handleJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, testDeps, 'mock-token');
 
         // 3. Verify - MockLogger methods are already spies, so we can check them directly
         // Note: We can't easily verify specific error calls with MockLogger without extending it
@@ -207,7 +208,7 @@ Deno.test('handleJob - fails when payload is invalid', async () => {
 Deno.test('handleJob - successfully processes valid job', async () => {
     // 1. Setup
     const mockLogger = new MockLogger();
-    const { processors, spies } = createMockJobProcessors();
+    const { spies } = createMockJobProcessors();
 
     const validPayload: Json = {
         job_type: 'plan',
@@ -255,6 +256,14 @@ Deno.test('handleJob - successfully processes valid job', async () => {
                         name: 'Thesis',
                         display_name: 'Thesis',
                         input_artifact_rules: {
+                            steps: [{
+                                step: 1,
+                                prompt_template_name: 'test-prompt',
+                                granularity_strategy: 'full_text',
+                                output_type: 'test-output',
+                                inputs_required: [],
+                            }],
+                            sources: [],
                             processing_strategy: {
                                 type: 'task_isolation',
                             }
@@ -286,16 +295,25 @@ Deno.test('handleJob - successfully processes valid job', async () => {
 
     try {
         // 2. Execute
-        await handleJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, testDeps, 'mock-token', processors);
+        await handleJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, testDeps, 'mock-token');
 
         // 3. Verify
-        // Check job status was updated to processing
-        const updateSpies = mockSupabase.spies.getLatestQueryBuilderSpies('dialectic_generation_jobs');
-        assertExists(updateSpies?.update, 'Update spy should exist');
-        assertEquals(updateSpies!.update.calls.length, 1, 'Job should be updated once');
-        const updatePayload = updateSpies!.update.calls[0].args[0];
-        assertEquals(updatePayload.status, 'processing');
-        assertExists(updatePayload.started_at);
+        // Check job status was updated to processing, then to completed
+        const updateSpies = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
+        assertExists(updateSpies, 'Update spy should exist');
+        assertEquals(updateSpies.callCount, 2, 'Job should be updated twice (processing, then completed)');
+
+        // Check the first update was to 'processing'
+        const firstUpdatePayload = updateSpies.callsArgs[0][0];
+        assert(firstUpdatePayload && typeof firstUpdatePayload === 'object' && 'status' in firstUpdatePayload);
+        assertEquals(firstUpdatePayload.status, 'processing');
+        assert('started_at' in firstUpdatePayload);
+
+        // Check the second update was to 'completed'
+        const secondUpdatePayload = updateSpies.callsArgs[1][0];
+        assert(secondUpdatePayload && typeof secondUpdatePayload === 'object' && 'status' in secondUpdatePayload);
+        assertEquals(secondUpdatePayload.status, 'completed');
+        assert('completed_at' in secondUpdatePayload);
 
         // Check notification was sent for job start
         const rpcSpy = mockSupabase.spies.rpcSpy;
@@ -324,20 +342,11 @@ Deno.test('handleJob - successfully processes valid job', async () => {
     }
 });
 
-// Type guard to ensure the payload from the spy has the expected shape
-function isJobUpdatePayload(payload: unknown): payload is { status: string; completed_at: string; error_details: any } {
-    return (
-        payload !== null &&
-        typeof payload === 'object' &&
-        'status' in payload &&
-        'completed_at' in payload &&
-        'error_details' in payload
-    );
-}
-
 Deno.test('handleJob - handles exceptions during processJob execution', async () => {
     const testError = new Error('Simulated processJob error');
-    const { processors } = createMockJobProcessors();
+    const { processors, spies } = createMockJobProcessors();
+    
+    // Replace the real processor with one that throws an error
     processors.processComplexJob = () => Promise.reject(testError);
 
     const validPayload: Json = {
@@ -382,6 +391,14 @@ Deno.test('handleJob - handles exceptions during processJob execution', async ()
                         name: 'Thesis',
                         display_name: 'Thesis',
                         input_artifact_rules: {
+                            steps: [{
+                                step: 1,
+                                prompt_template_name: 'test-prompt',
+                                granularity_strategy: 'full_text',
+                                output_type: 'test-output',
+                                inputs_required: [],
+                            }],
+                            sources: [],
                             processing_strategy: {
                                 type: 'task_isolation',
                             }
@@ -412,10 +429,10 @@ Deno.test('handleJob - handles exceptions during processJob execution', async ()
         assertEquals(updateSpies.callCount, 2, 'Should update status to processing, then to failed');
         
         const finalUpdatePayload = updateSpies.callsArgs[1][0];
-        assert(isJobUpdatePayload(finalUpdatePayload), "Payload from spy should match the expected shape");
+        assert(finalUpdatePayload && typeof finalUpdatePayload === 'object' && 'status' in finalUpdatePayload && 'error_details' in finalUpdatePayload);
 
         assertEquals(finalUpdatePayload.status, 'failed', "Job status should be 'failed'");
-        assertExists(finalUpdatePayload.completed_at, "completed_at should be set");
+        assert('completed_at' in finalUpdatePayload, "completed_at should be set");
         const errorDetails = finalUpdatePayload.error_details;
         assert(errorDetails && typeof errorDetails === 'object' && 'final_error' in errorDetails && typeof errorDetails.final_error === 'string' && errorDetails.final_error.includes('Simulated processJob error'), "Error details should contain the simulated error message");
 
@@ -427,6 +444,9 @@ Deno.test('handleJob - handles exceptions during processJob execution', async ()
         assertEquals(failureNotification.args[1].p_notification_type, 'contribution_generation_failed');
 
     } finally {
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        spies.planComplexStage.restore();
         mockSupabase.clearAllStubs?.();
     }
 });
@@ -434,7 +454,7 @@ Deno.test('handleJob - handles exceptions during processJob execution', async ()
 Deno.test('handleJob - validates payload correctly and extracts user info', async () => {
     // 1. Setup - Test the validation and extraction logic specifically
     const mockLogger = new MockLogger();
-    const { processors, spies } = createMockJobProcessors();
+    const { spies } = createMockJobProcessors();
 
     const validPayload: Json = {
         job_type: 'plan',
@@ -485,6 +505,14 @@ Deno.test('handleJob - validates payload correctly and extracts user info', asyn
                         name: 'Synthesis',
                         display_name: 'Synthesis',
                         input_artifact_rules: {
+                            steps: [{
+                                step: 1,
+                                prompt_template_name: 'test-prompt',
+                                granularity_strategy: 'full_text',
+                                output_type: 'test-output',
+                                inputs_required: [],
+                            }],
+                            sources: [],
                             processing_strategy: {
                                 type: 'task_isolation',
                             }
@@ -516,17 +544,25 @@ Deno.test('handleJob - validates payload correctly and extracts user info', asyn
 
     try {
         // 2. Execute
-        await handleJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, testDeps, 'mock-token', processors);
+        await handleJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockJob, testDeps, 'mock-token');
 
         // 3. Verify
         // Verify the payload was validated successfully (no validation errors logged)
         // and the job proceeded to processing
 
-        const updateSpies = mockSupabase.spies.getLatestQueryBuilderSpies('dialectic_generation_jobs');
-        assertExists(updateSpies?.update, 'Update spy should exist');
-        assertEquals(updateSpies!.update.calls.length, 1, 'Job should be updated once');
-        const updatePayload = updateSpies!.update.calls[0].args[0];
-        assertEquals(updatePayload.status, 'processing');
+        const updateSpies = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
+        assertExists(updateSpies, 'Update spy should exist');
+        assertEquals(updateSpies.callCount, 2, 'Job should be updated twice (processing, then completed)');
+
+        // Check the first update was to 'processing'
+        const firstUpdatePayload = updateSpies.callsArgs[0][0];
+        assert(firstUpdatePayload && typeof firstUpdatePayload === 'object' && 'status' in firstUpdatePayload);
+        assertEquals(firstUpdatePayload.status, 'processing');
+
+        // Check the second update was to 'completed'
+        const secondUpdatePayload = updateSpies.callsArgs[1][0];
+        assert(secondUpdatePayload && typeof secondUpdatePayload === 'object' && 'status' in secondUpdatePayload);
+        assertEquals(secondUpdatePayload.status, 'completed');
 
         // Verify the start notification was sent with correct payload data
         const rpcSpy = mockSupabase.spies.rpcSpy;

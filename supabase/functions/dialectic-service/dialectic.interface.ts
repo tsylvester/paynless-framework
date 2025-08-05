@@ -369,7 +369,7 @@ export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
     canonicalPathParams: CanonicalPathParams; // The new formal contract for path context
     inputs: {
         // Key-value store for resource_ids needed by the prompt
-        [key: string]: string;
+        [key: string]: string | string[];
     };
     document_relationships?: DocumentRelationships | null;
     isIntermediate?: boolean;
@@ -785,7 +785,13 @@ export interface DialecticRecipeStep {
         type: string;
         stage_slug?: string; // e.g., 'thesis' for antithesis inputs
     }[];
-    granularity_strategy: 'per_source_document' | 'pairwise_by_origin' | 'per_source_group' | 'all_to_one';
+    granularity_strategy: 
+    'per_source_document' | 
+    'pairwise_by_origin' | 
+    'per_source_group' | 
+    'all_to_one' | 
+    'per_source_document_by_lineage' |
+    'per_model';
     output_type: ContributionType; // e.g., 'pairwise_synthesis_chunk'
 }
 

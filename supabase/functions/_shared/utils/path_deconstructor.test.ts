@@ -239,16 +239,16 @@ Deno.test('[path_deconstructor] direct - reduced_synthesis', () => {
   assertEquals(info.error, undefined);
 });
 
-Deno.test('[path_deconstructor] direct - final_synthesis', () => {
+Deno.test('[path_deconstructor] direct - synthesis', () => {
   const context: PathContext = {
     projectId: 'proj-fs',
     sessionId: 'sess-fs-uuid',
     iteration: 3,
     stageSlug: 'synthesis',
-    fileType: FileType.FinalSynthesis,
+    fileType: FileType.Synthesis,
     modelSlug: 'model-z',
     attemptCount: 2,
-    contributionType: 'final_synthesis',
+    contributionType: 'synthesis',
   };
   const { storagePath, fileName } = constructStoragePath(context);
   const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: storagePath, fileName: fileName });
@@ -257,7 +257,7 @@ Deno.test('[path_deconstructor] direct - final_synthesis', () => {
   assertEquals(info.shortSessionId, generateShortId(context.sessionId!));
   assertEquals(info.iteration, context.iteration);
   assertEquals(info.stageSlug, context.stageSlug);
-  assertEquals(info.fileTypeGuess, FileType.FinalSynthesis);
+  assertEquals(info.fileTypeGuess, FileType.Synthesis);
   assertEquals(info.error, undefined);
 });
 
@@ -376,13 +376,13 @@ const constructDeconstructTestCases: Array<{
     expectedFixedFileNameInPath: 'user_feedback_synthesis.md' // constructor sanitizes stageSlug for filename
   },
   {
-    name: 'model_contribution_main',
+    name: 'synthesis',
     context: {
       projectId: 'yy-mcm',
-      fileType: FileType.ModelContributionMain,
+      fileType: FileType.Synthesis,
       sessionId: 'session-yy-mcm',
       iteration: 2,
-      stageSlug: 'antithesis',
+      stageSlug: 'synthesis',
       modelSlug: 'Claude Model 2',
       attemptCount: 1,
       contributionType: 'synthesis',
@@ -454,19 +454,19 @@ const constructDeconstructTestCases: Array<{
     expectedFixedFileNameInPath: 'claude-3-opus_reducing_thesis_by_model-a_1_reduced_synthesis.md'
   },
   {
-    name: 'final_synthesis',
+    name: 'synthesis (from final)',
     context: {
       projectId: 'yy-fs',
-      fileType: FileType.FinalSynthesis,
+      fileType: FileType.Synthesis,
       sessionId: 'session-yy-fs',
       iteration: 2,
       stageSlug: 'synthesis',
       modelSlug: 'gemini-1.5-pro',
       attemptCount: 0,
-      contributionType: 'final_synthesis',
+      contributionType: 'synthesis',
     },
     checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug'],
-    expectedFixedFileNameInPath: 'gemini-1.5-pro_0_final_synthesis.md'
+    expectedFixedFileNameInPath: 'gemini-1.5-pro_0_synthesis.md'
   },
   {
     name: 'rag_context_summary',
@@ -586,9 +586,9 @@ const deconstructReconstructTestCases: DeconstructReconstructTestCase[] = [
     },
   },
   {
-    name: 'model_contribution_main',
+    name: 'synthesis',
     samplePath: 'proj_eta/session_sess003/iteration_2/3_synthesis/claude_v1_2_synthesis.md',
-    expectedFileType: FileType.ModelContributionMain,
+    expectedFileType: FileType.Synthesis,
     expectedContextParts: {
       originalProjectId: 'proj_eta',
       shortSessionId: 'sess003',

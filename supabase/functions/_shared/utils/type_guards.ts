@@ -77,33 +77,43 @@ export function validatePayload(payload: Json): DialecticJobPayload {
  * @returns boolean indicating if the payload is a valid DialecticJobPayload.
  */
 export function isDialecticJobPayload(payload: unknown): payload is DialecticJobPayload {
-    if (!isJson(payload)) {
+    if (!isPlainObject(payload)) {
         return false;
     }
 
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    const hasSessionId = 'sessionId' in payload && typeof payload.sessionId === 'string';
+    const hasProjectId = 'projectId' in payload && typeof payload.projectId === 'string';
+    
+    const hasModelId = 'model_id' in payload && typeof payload.model_id === 'string';
+    const hasSelectedModelIds = 'selectedModelIds' in payload && 
+                              Array.isArray(payload.selectedModelIds) && 
+                              payload.selectedModelIds.every(id => typeof id === 'string');
+
+    if (!hasSessionId || !hasProjectId || (!hasModelId && !hasSelectedModelIds)) {
         return false;
     }
 
-    try {
-        const hasSessionId = 'sessionId' in payload && typeof payload.sessionId === 'string';
-        const hasProjectId = 'projectId' in payload && typeof payload.projectId === 'string';
-        const hasSelectedModelIds = 'selectedModelIds' in payload && Array.isArray(payload.selectedModelIds) && payload.selectedModelIds.every((id: unknown) => typeof id === 'string');
-        const hasModelId = 'model_id' in payload && typeof payload.model_id === 'string';
+    // Optional fields
+    if ('prompt' in payload && typeof payload.prompt !== 'string') {
+        return false;
+    }
+    
+    // Ensure that if other properties exist, they are of the correct type.
+    // This part is crucial for robust validation beyond the required fields.
+    const allowedKeys: (keyof DialecticJobPayload)[] = [
+        'sessionId', 'projectId', 'model_id', 'stageSlug', 
+        'iterationNumber', 'walletId', 'continueUntilComplete', 'maxRetries', 
+        'continuation_count', 'target_contribution_id', 'job_type'
+    ];
 
-        if (!hasSessionId || !hasProjectId || (!hasSelectedModelIds && !hasModelId)) {
-            return false;
+    for (const key in payload) {
+        if (!allowedKeys.some(k => k === key)) {
+            // If you want to be strict and reject unknown properties, you can return false here.
+            // console.log(`Unknown key: ${key}`);
         }
-
-        if ('prompt' in payload && typeof payload.prompt !== 'string') {
-            return false;
-        }
-
-        return true;
-    } catch (error) {
-        // If validatePayload throws, it's not a valid payload.
-        return false;
     }
+    
+    return true;
 }
 
 /**
@@ -186,13 +196,19 @@ export function isCitationsArray(value: unknown): value is Citation[] {
 }
 
 export function isDocumentRelationships(obj: unknown): obj is DocumentRelationships {
-    if (!isRecord(obj)) return false;
+    if (!isRecord(obj)) {
+        // `null` is not a DocumentRelationships object. This guard correctly identifies it as such.
+        // The console.log was removed to prevent spam for valid null cases.
+        return false;
+    }
 
     // Check if all values in the object are either strings or null
     for (const key in obj) {
         if (Object.prototype.hasOwnProperty.call(obj, key)) {
             const value = obj[key];
             if (typeof value !== 'string' && value !== null) {
+                // This log is useful for debugging genuinely malformed objects.
+                console.log(`[isDocumentRelationships] FAILED: Key '${key}' has invalid value:`, value);
                 return false;
             }
         }
@@ -458,32 +474,36 @@ export function isDialecticJobRow(record: unknown): record is DialecticJobRow {
     return true;
 }
 
-export function isJson(value: unknown): value is Json {
-    if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    if (!isRecord(value)) {
+        return false;
+    }
+    const proto = Object.getPrototypeOf(value);
+    // It's a plain object if its prototype is Object.prototype or it has no prototype (e.g., Object.create(null)).
+    return proto === Object.prototype || proto === null;
+}
+
+export function isJson(value: unknown, isObjectProperty = false): value is Json {
+    const typeOfValue = typeof value;
+
+    if (typeOfValue === 'undefined') {
+        return isObjectProperty;
+    }
+
+    if (value === null || typeOfValue === 'boolean' || typeOfValue === 'number' || typeOfValue === 'string') {
         return true;
     }
 
-    if (typeof value === 'object') {
+    if (typeOfValue === 'object') {
         if (Array.isArray(value)) {
-            return value.every(isJson);
-        } else {
-            // Rule out class instances and other non-plain objects.
-            if (!isRecord(value) || value.constructor !== Object) return false;
-            
-            for (const key in value) {
-                if (Object.prototype.hasOwnProperty.call(value, key)) {
-                    // Explicitly check for undefined, which is not valid in JSON.
-                    if (value[key] === undefined) {
-                        return false;
-                    }
-                    if (!isJson(value[key])) {
-                        return false;
-                    }
-                }
-            }
-            return true;
+            return value.every((item) => isJson(item, false));
+        }
+        
+        if (isPlainObject(value)) {
+            return Object.values(value).every((v) => isJson(v, true));
         }
     }
+
     return false;
 }
 
@@ -621,12 +641,21 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
     // Check for the legacy property (which should NOT be present)
     const hasLegacyFileName = 'originalFileName' in payload;
 
+    // The property is optional. If it exists, it must be valid. If it doesn't, that's OK.
+    const hasValidRelationships = !('document_relationships' in payload) || 
+                                  payload.document_relationships === undefined || 
+                                  payload.document_relationships === null || 
+                                  isDocumentRelationships(payload.document_relationships);
+
     return (
         payload.job_type === 'execute' &&
         typeof payload.prompt_template_name === 'string' &&
+        typeof payload.output_type === 'string' &&
+        (!('step_info' in payload) || isDialecticStepInfo(payload.step_info)) &&
         isRecord(payload.inputs) &&
         hasCanonicalParams &&
-        !hasLegacyFileName
+        !hasLegacyFileName &&
+        hasValidRelationships
     );
 }
 

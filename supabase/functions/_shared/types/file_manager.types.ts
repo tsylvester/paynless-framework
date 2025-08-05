@@ -27,7 +27,7 @@ export enum FileType {
   // Intermediate artifacts for multi-step stages
   PairwiseSynthesisChunk = 'pairwise_synthesis_chunk',
   ReducedSynthesis = 'reduced_synthesis',
-  FinalSynthesis = 'final_synthesis',
+  Synthesis = 'synthesis',
   RagContextSummary = 'rag_context_summary',
 }
 

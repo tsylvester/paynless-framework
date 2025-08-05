@@ -646,4 +646,54 @@ Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
 
     clearAllStubs?.();
 });
+
+Deno.test('executeModelCallAndSave - Document Relationships', async (t) => {
+    const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        }
+    });
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+    const deps = getMockDeps();
+    deps.fileManager = fileManager;
+
+    await t.step('should pass document_relationships to the fileManager', async () => {
+        const relationshipsPayload: DialecticExecuteJobPayload = {
+            ...testPayload,
+            output_type: 'pairwise_synthesis_chunk',
+            document_relationships: {
+                source_group: 'thesis-1',
+                thesis: 'thesis-1',
+                antithesis: 'antithesis-A',
+            },
+        };
+
+        const params: ExecuteModelCallAndSaveParams = {
+            dbClient: dbClient as unknown as SupabaseClient<Database>,
+            deps,
+            authToken: 'auth-token',
+            job: createMockJob(relationshipsPayload),
+            projectOwnerUserId: 'user-789',
+            providerDetails: mockProviderData,
+            renderedPrompt: { content: 'Seed prompt content', fullPath: 'prompts/seed.txt' },
+            previousContent: '',
+            sessionData: mockSessionData,
+            sourceDocuments: [],
+        };
+
+        await executeModelCallAndSave(params);
+
+        assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
+        
+        const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+        assertExists(uploadContext.contributionMetadata, "Contribution metadata should exist");
+        
+        assertEquals(uploadContext.contributionMetadata.document_relationships, relationshipsPayload.document_relationships, "document_relationships object was not passed correctly to the file manager");
+    });
+
+    clearAllStubs?.();
+});
+
   
