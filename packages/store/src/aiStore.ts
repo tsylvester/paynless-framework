@@ -21,6 +21,8 @@ import {
 	IWalletService,
 	IAiStateService,
 	HandleSendMessageServiceParams,
+	StreamingCallbacks,
+	InternalProcessResult,
 } from "@paynless/types"; // IMPORT NECESSARY TYPES
 
 // Import api AFTER other local/utility imports but BEFORE code that might use types that cause issues with mocking
@@ -1456,6 +1458,137 @@ export const useAiStore = create<AiStore>()(
 					}
 				}
 				return assistantMessage; // Return the assistant message or null
+			},
+
+			// STREAMING sendMessage ACTION
+			sendMessageStreaming: async (
+				data: {
+					message: string;
+					providerId: string;
+					promptId: string | null;
+					chatId?: string | null;
+					contextMessages?: MessageForTokenCounting[];
+				} & StreamingCallbacks,
+			) => {
+				// --- Create Adapters for Service Dependencies ---
+				const authStoreState = useAuthStore.getState();
+				const authServiceAdapter: IAuthService = {
+					getCurrentUser: () => authStoreState.user,
+					getSession: () => authStoreState.session,
+					requestLoginNavigation: () => {
+						if (authStoreState.navigate) authStoreState.navigate("/login");
+					},
+				};
+
+				const walletServiceAdapter: IWalletService = {
+					getActiveWalletInfo: () =>
+						selectActiveChatWalletInfo(useWalletStore.getState()),
+				};
+
+				const aiStateServiceAdapter: IAiStateService = {
+					getAiState: get,
+					setAiState: set,
+					addOptimisticUserMessage: get()._addOptimisticUserMessage,
+				};
+
+				// Create streaming callbacks that update the UI
+				const streamingCallbacks = {
+					onChunk: (chunk: string) => {
+						data.onChunk?.(chunk);
+						// Update the optimistic message with the new chunk
+						set((state) => {
+							const currentChatId = state.currentChatId;
+							if (!currentChatId) return state;
+
+							const currentMessages =
+								state.messagesByChatId[currentChatId] || [];
+							const lastMessage = currentMessages[currentMessages.length - 1];
+
+							// If the last message is an assistant message, append to it
+							if (lastMessage && lastMessage.role === "assistant") {
+								const updatedMessages = [...currentMessages];
+								updatedMessages[updatedMessages.length - 1] = {
+									...lastMessage,
+									content: lastMessage.content + chunk,
+								};
+
+								return {
+									...state,
+									messagesByChatId: {
+										...state.messagesByChatId,
+										[currentChatId]: updatedMessages,
+									},
+								};
+							}
+
+							return state;
+						});
+					},
+					onComplete: (result: InternalProcessResult) => {
+						data.onComplete?.(result);
+						// Mark as complete and stop loading
+						set({ isLoadingAiResponse: false });
+					},
+					onError: (error: string) => {
+						data.onError?.(error);
+						set({
+							isLoadingAiResponse: false,
+							aiError: error,
+						});
+					},
+				};
+
+				// --- Prepare parameters for handleSendMessage with streaming ---
+				const serviceParams: HandleSendMessageServiceParams = {
+					data: {
+						message: data.message,
+						chatId: data.chatId,
+						contextMessages: data.contextMessages,
+					},
+					aiStateService: aiStateServiceAdapter,
+					authService: authServiceAdapter,
+					walletService: walletServiceAdapter,
+					callChatApi: async (
+						request: ChatApiRequest,
+						options: RequestInit,
+					): Promise<ApiResponse<ChatHandlerSuccessResponse>> => {
+						const response = await api.ai().sendChatMessage(request, options);
+						return response;
+					},
+					logger: logger as ILogger,
+				};
+
+				const assistantMessage = await handleSendMessage(serviceParams, {
+					enableStreaming: true,
+					streamingCallbacks,
+				});
+
+				// --- Post-processing: Wallet Refresh (if needed) ---
+				if (assistantMessage) {
+					// Only refresh if send was successful
+					try {
+						const activeWalletInfo = walletServiceAdapter.getActiveWalletInfo();
+						logger.info(
+							"[aiStore sendMessageStreaming] Triggering wallet refresh after successful message.",
+						);
+						if (
+							activeWalletInfo.type === "organization" &&
+							activeWalletInfo.orgId
+						) {
+							useWalletStore
+								.getState()
+								.loadOrganizationWallet(activeWalletInfo.orgId);
+						} else {
+							useWalletStore.getState().loadPersonalWallet();
+						}
+					} catch (walletError) {
+						logger.error(
+							"[aiStore sendMessageStreaming] Error triggering wallet refresh:",
+							{ error: String(walletError) },
+						);
+					}
+				}
+				// Don't return assistantMessage for streaming - it's handled via callbacks
 			},
 		};
 	},

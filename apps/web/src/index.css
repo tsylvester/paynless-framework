@@ -98,6 +98,8 @@
 		font-feature-settings:
 			"rlig" 1,
 			"calt" 1;
+		margin: 0;
+		padding: 0;
 	}
 
 	* {

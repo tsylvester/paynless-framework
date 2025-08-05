@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple WebSocket Test</title>
+</head>
+<body>
+    <h1>Simple WebSocket Connection Test</h1>
+    <div id="status">Disconnected</div>
+    <button onclick="connect()">Connect</button>
+    <button onclick="disconnect()">Disconnect</button>
+    <div id="messages" style="border: 1px solid #ccc; height: 300px; overflow-y: auto; padding: 10px; margin: 10px 0;"></div>
+
+    <script>
+        let ws = null;
+
+        function log(message) {
+            const messages = document.getElementById('messages');
+            const timestamp = new Date().toLocaleTimeString();
+            messages.innerHTML += `[${timestamp}] ${message}<br>`;
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function updateStatus(connected) {
+            document.getElementById('status').textContent = connected ? 'Connected' : 'Disconnected';
+        }
+
+        function connect() {
+            if (ws) {
+                log('Already connected');
+                return;
+            }
+
+            const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
+            const wsUrl = `ws://127.0.0.1:54321/functions/v1/socket-io?apikey=${encodeURIComponent(anonKey)}&userId=test-user-123`;
+            
+            log(`Connecting to ${wsUrl}...`);
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                log('✅ WebSocket connection opened successfully!');
+                updateStatus(true);
+            };
+            
+            ws.onmessage = (event) => {
+                log(`📨 Received: ${event.data}`);
+            };
+            
+            ws.onclose = (event) => {
+                log(`❌ WebSocket connection closed (code: ${event.code}, reason: ${event.reason})`);
+                updateStatus(false);
+                ws = null;
+            };
+            
+            ws.onerror = (error) => {
+                log(`💥 WebSocket error: ${error}`);
+                updateStatus(false);
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+            }
+        }
+
+        // Auto-connect for quick testing
+        setTimeout(connect, 1000);
+    </script>
+</body>
+</html>

@@ -345,6 +345,10 @@ verify_jwt = false
 [functions.chat]
 verify_jwt = false
 
+# AI Function "Chat Stream" must disable JWT to handle CORS properly
+[functions.chat-stream]
+verify_jwt = false
+
 # AI Functions requiring JWT (Default - no explicit setting needed)
 # [functions.chat-history]
 # [functions.chat-details]
