@@ -38,12 +38,12 @@ const MOCK_RECIPE_STEP: DialecticRecipeStep = {
 };
 
 Deno.test('planAllToOne should create exactly one child job', () => {
-    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
     assertEquals(childJobs.length, 1, "Should create exactly one child job");
 });
 
 Deno.test('planAllToOne should include all source document IDs in the single child job', () => {
-    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childJobs = planAllToOne(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
     const job1 = childJobs[0];
     assertExists(job1);
 
@@ -59,7 +59,7 @@ Deno.test('planAllToOne should include all source document IDs in the single chi
 
 Deno.test('should create one child job when given a single source document', () => {
     const singleDoc = [MOCK_SOURCE_DOCS[0]];
-    const childJobs = planAllToOne(singleDoc, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childJobs = planAllToOne(singleDoc, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
 
     assertEquals(childJobs.length, 1, "Should still create one child job");
     const docIds = childJobs[0].inputs?.document_ids as string[];
@@ -68,6 +68,6 @@ Deno.test('should create one child job when given a single source document', () 
 });
 
 Deno.test('planAllToOne should return an empty array if there are no source documents', () => {
-    const childJobs = planAllToOne([], MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childJobs = planAllToOne([], MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
     assertEquals(childJobs.length, 0, "Should create no jobs for empty input");
 });

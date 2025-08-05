@@ -230,7 +230,7 @@ describe('planComplexStage', () => {
     it('should throw an error if no planner is found for the strategy', async () => {
         // This test relies on the default mock for getGranularityPlanner returning undefined.
         await assertRejects(
-            () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep),
+            () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123'),
             Error,
             `No planner found for granularity strategy: ${mockRecipeStep.granularity_strategy}`,
         );
@@ -268,6 +268,7 @@ describe('planComplexStage', () => {
             mockParentJob,
             mockDeps,
             mockRecipeStep,
+            'user-jwt-123'
         );
 
         assertEquals(childJobs.length, 1);
@@ -300,7 +301,7 @@ describe('planComplexStage', () => {
         }
 
         await assertRejects(
-            () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep),
+            () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123'),
             Error,
             "Failed to fetch source contributions for type 'thesis': DB Read Error",
         );
@@ -316,7 +317,7 @@ describe('planComplexStage', () => {
         mockDeps.getGranularityPlanner = () => plannerFn;
 
         await assertRejects(
-            () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep),
+            () => planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123'),
             Error,
             'Failed to download content for contribution doc-1-thesis from projects/proj-1/sessions/sess-1/iteration_1/test-stage/doc1.txt: Storage Download Error',
         );
@@ -346,7 +347,7 @@ describe('planComplexStage', () => {
         };
         mockDeps.getGranularityPlanner = () => plannerFn;
         
-        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
+        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
     });
 
     it('should not call the planner if no source documents are found', async () => {
@@ -359,7 +360,7 @@ describe('planComplexStage', () => {
         };
         mockDeps.getGranularityPlanner = () => plannerFn;
 
-        const childJobs = await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
+        const childJobs = await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
 
         assertEquals(childJobs.length, 0);
         assertEquals(plannerCalled, false);
@@ -369,7 +370,7 @@ describe('planComplexStage', () => {
         const plannerFn: GranularityPlannerFn = () => [];
         mockDeps.getGranularityPlanner = () => plannerFn;
         
-        const childJobs = await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
+        const childJobs = await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
 
         assertEquals(childJobs.length, 0);
     });
@@ -399,7 +400,7 @@ describe('planComplexStage', () => {
         };
         mockDeps.getGranularityPlanner = () => plannerFn;
         
-        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
+        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
     });
 
     it('should handle downloaded files that are empty', async () => {
@@ -412,7 +413,7 @@ describe('planComplexStage', () => {
         };
         mockDeps.getGranularityPlanner = () => plannerFn;
 
-        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
+        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
 
         assertEquals(receivedDocs.length, 1);
         assertEquals(receivedDocs[0].content, '');
@@ -443,7 +444,7 @@ describe('planComplexStage', () => {
         const plannerFn: GranularityPlannerFn = () => [mockExecutePayload, malformedPayload as any];
         mockDeps.getGranularityPlanner = () => plannerFn;
 
-        const childJobs = await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
+        const childJobs = await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
 
         assertEquals(childJobs.length, 1);
         assert(isDialecticExecuteJobPayload(childJobs[0].payload));
@@ -471,7 +472,7 @@ describe('planComplexStage', () => {
         };
         mockDeps.getGranularityPlanner = () => plannerFn;
 
-        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
+        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
 
         assertEquals(receivedDocs.length, 1);
         assertEquals(receivedDocs[0].contribution_type, 'thesis');
@@ -488,7 +489,7 @@ describe('planComplexStage', () => {
         };
         mockDeps.getGranularityPlanner = () => plannerFn;
 
-        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep);
+        await planComplexStage(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, mockDeps, mockRecipeStep, 'user-jwt-123');
 
         assertEquals(receivedDocs.length, 1);
         assertEquals(receivedDocs[0].contribution_type, 'antithesis');
@@ -523,7 +524,8 @@ describe('planComplexStage', () => {
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
             mockDeps,
-            mockRecipeStep
+            mockRecipeStep,
+            'user-jwt-123'
         );
 
         // Assert
@@ -595,7 +597,8 @@ describe('planComplexStage', () => {
             mockSupabase.client as unknown as SupabaseClient<Database>,
             mockParentJob,
             mockDeps,
-            mockRecipeStep
+            mockRecipeStep,
+            'user-jwt-123'
         );
 
         // Assert

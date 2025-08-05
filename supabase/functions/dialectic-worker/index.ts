@@ -197,6 +197,8 @@ export async function handleJob(
         type: 'contribution_generation_started',
         sessionId: job.payload.sessionId,
         job_id: jobId,
+        modelId: job.payload.model_id,
+        iterationNumber: job.payload.iterationNumber ?? 0,
       }, projectOwnerUserId);
       //console.log(`[handleJob] 'Started' notification sent for job ${jobId}.`);
     }

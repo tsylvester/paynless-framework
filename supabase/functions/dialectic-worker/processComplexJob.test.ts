@@ -135,7 +135,7 @@ describe('processComplexJob', () => {
         
         mockDeps.planComplexStage = spy(async () => Promise.resolve([mockChildJob1, mockChildJob2]));
         
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', mockDeps);
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-complex', mockDeps, 'user-jwt-123');
 
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
         assertExists(insertSpy);
@@ -157,7 +157,7 @@ describe('processComplexJob', () => {
     it('handles planner failure gracefully', async () => {
         mockDeps.planComplexStage = spy(async () => Promise.reject(new Error('Planner failed!')));
 
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', mockDeps);
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', mockDeps, 'user-jwt-123');
 
         const updateSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
         assertExists(updateSpy);
@@ -174,7 +174,7 @@ describe('processComplexJob', () => {
 
     it('completes parent job if planner returns no children', async () => {
         // planComplexStage spy is already configured to return [] in beforeEach
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-no-children', mockDeps);
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-no-children', mockDeps, 'user-jwt-123');
 
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
         assert(!insertSpy || insertSpy.callCount === 0, 'Should not attempt to insert any child jobs');
@@ -210,7 +210,7 @@ describe('processComplexJob', () => {
             }
         });
 
-        await processComplexJob(failingSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-insert-fail', mockDeps);
+        await processComplexJob(failingSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-insert-fail', mockDeps, 'user-jwt-123');
         
         const updateSpy = failingSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
         assertExists(updateSpy);
@@ -245,7 +245,7 @@ describe('processComplexJob', () => {
             }
         });
 
-        await processComplexJob(failingSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-update-fail', mockDeps);
+        await processComplexJob(failingSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-update-fail', mockDeps, 'user-jwt-123');
 
         const updateSpy = failingSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
         assertExists(updateSpy);
@@ -270,7 +270,7 @@ describe('processComplexJob', () => {
     it('handles ContextWindowError gracefully', async () => {
         mockDeps.planComplexStage = spy(async () => Promise.reject(new ContextWindowError('Planning failed due to context window size.')));
 
-        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', mockDeps);
+        await processComplexJob(mockSupabase.client as unknown as SupabaseClient<Database>, mockParentJob, 'user-id-fail', mockDeps, 'user-jwt-123');
 
         const updateSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
         assertExists(updateSpy);

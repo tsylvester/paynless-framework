@@ -209,7 +209,7 @@ const getMockDeps = (): IDialecticJobDeps => {
       countTokens: () => 100,
       getAiProviderConfig: getAiProviderConfig,
       getGranularityPlanner: getGranularityPlanner,
-      planComplexStage: planComplexStage,
+      planComplexStage: async () => await Promise.resolve([]),
       indexingService,
       embeddingClient,
       promptAssembler: new PromptAssembler(mockSupabaseClient),

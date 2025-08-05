@@ -110,7 +110,7 @@ const MOCK_RECIPE_STEP: DialecticRecipeStep = {
 };
 
 Deno.test('planPerSourceDocument should create one child job for each source document', () => {
-    const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
 
     assertEquals(childPayloads.length, 2, "Should create 2 child jobs, one for each source doc");
 
@@ -136,13 +136,13 @@ Deno.test('planPerSourceDocument should create one child job for each source doc
 });
 
 Deno.test('planPerSourceDocument should return an empty array for empty source documents', () => {
-    const childPayloads = planPerSourceDocument([], MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childPayloads = planPerSourceDocument([], MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
     assertEquals(childPayloads.length, 0);
 });
 
 Deno.test('planPerSourceDocument should correctly handle a single source document', () => {
     const singleDoc = [MOCK_SOURCE_DOCS[0]];
-    const childPayloads = planPerSourceDocument(singleDoc, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childPayloads = planPerSourceDocument(singleDoc, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
 
     assertEquals(childPayloads.length, 1, "Should create exactly one child job");
     const payload = childPayloads[0];
@@ -220,7 +220,7 @@ Deno.test('should correctly plan jobs for antithesis stage', () => {
         },
     ];
 
-    const childPayloads = planPerSourceDocument(thesisContributions, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childPayloads = planPerSourceDocument(thesisContributions, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
 
     assertEquals(childPayloads.length, 2, "Should create a child job for each thesis contribution");
 
@@ -277,7 +277,7 @@ Deno.test('planPerSourceDocument Test Case A: The Failing Case (Proves the bug e
         target_contribution_id: null,
     };
 
-    const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, failingParentJob, MOCK_RECIPE_STEP);
+    const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, failingParentJob, MOCK_RECIPE_STEP, 'user-jwt-123');
 
     // This test PASSES if the assertion inside it THROWS an error, proving the bug.
     // The planner currently assigns the parent job's model ID to ALL children,
@@ -331,7 +331,7 @@ Deno.test('planPerSourceDocument Test Case B: The Passing Case (Describes the co
         target_contribution_id: null,
     };
 
-    const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, passingParentJob, MOCK_RECIPE_STEP);
+    const childPayloads = planPerSourceDocument(MOCK_SOURCE_DOCS, passingParentJob, MOCK_RECIPE_STEP, 'user-jwt-123');
 
     // This test will FAIL initially because the planner assigns the wrong model_id.
     // After the fix, it will PASS.

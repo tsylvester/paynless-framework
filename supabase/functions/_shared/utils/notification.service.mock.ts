@@ -98,6 +98,8 @@ export const mockContributionGenerationStartedPayload: ContributionGenerationSta
     type: 'contribution_generation_started',
     sessionId: 'session-uuid-456',
     job_id: 'job-uuid-123',
+    modelId: 'model-uuid-abc',
+    iterationNumber: 1,
   };
 
   export const mockContributionGenerationContinuedPayload: ContributionGenerationContinuedPayload = {

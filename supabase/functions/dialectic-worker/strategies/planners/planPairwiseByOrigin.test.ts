@@ -204,7 +204,7 @@ const MOCK_RECIPE_STEP: DialecticRecipeStep = {
 };
 
 Deno.test('planPairwiseByOrigin should create one child job for each thesis-antithesis pair', () => {
-    const childPayloads = planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childPayloads = planPairwiseByOrigin(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
     
     assertEquals(childPayloads.length, 3, "Should create 3 child jobs for the 3 pairs");
 
@@ -257,18 +257,18 @@ Deno.test('planPairwiseByOrigin should create one child job for each thesis-anti
 
 Deno.test('planPairwiseByOrigin should return an empty array if there are no theses', () => {
     const noTheses = MOCK_SOURCE_DOCS.filter(d => d.contribution_type !== 'thesis');
-    const childPayloads = planPairwiseByOrigin(noTheses, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childPayloads = planPairwiseByOrigin(noTheses, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
     assertEquals(childPayloads.length, 0);
 });
 
 Deno.test('planPairwiseByOrigin should return an empty array if there are no antitheses', () => {
     const noAntitheses = MOCK_SOURCE_DOCS.filter(d => d.contribution_type !== 'antithesis');
-    const childPayloads = planPairwiseByOrigin(noAntitheses, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childPayloads = planPairwiseByOrigin(noAntitheses, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
     assertEquals(childPayloads.length, 0);
 });
 
 Deno.test('planPairwiseByOrigin should return an empty array for empty source documents', () => {
-    const childPayloads = planPairwiseByOrigin([], MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childPayloads = planPairwiseByOrigin([], MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
     assertEquals(childPayloads.length, 0);
 });
 
@@ -285,13 +285,13 @@ Deno.test('should return an empty array if theses exist but no antitheses are re
     ];
     const thesesOnly = MOCK_SOURCE_DOCS.filter(d => d.contribution_type === 'thesis');
 
-    const childPayloads = planPairwiseByOrigin([...thesesOnly, ...unrelatedAntitheses], MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childPayloads = planPairwiseByOrigin([...thesesOnly, ...unrelatedAntitheses], MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
     assertEquals(childPayloads.length, 0, "Should create no jobs if no antitheses match the theses");
 });
 
 Deno.test('should return an empty array if antitheses exist but no matching theses are found', () => {
     const antithesesOnly = MOCK_SOURCE_DOCS.filter(d => d.contribution_type === 'antithesis');
-    const childPayloads = planPairwiseByOrigin(antithesesOnly, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childPayloads = planPairwiseByOrigin(antithesesOnly, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
     assertEquals(childPayloads.length, 0, "Should create no jobs if no theses are present to match against");
 });
 
@@ -329,7 +329,7 @@ Deno.test('planPairwiseByOrigin Test Case A: The Failing Case (Proves the bug ex
         target_contribution_id: null,
     };
 
-    const childPayloads = planPairwiseByOrigin(MOCK_SOURCE_DOCS, failingParentJob, MOCK_RECIPE_STEP);
+    const childPayloads = planPairwiseByOrigin(MOCK_SOURCE_DOCS, failingParentJob, MOCK_RECIPE_STEP, 'user-jwt-123');
 
     // With the bug present, this will throw an error because the child's model_id will be
     // based on the source docs, not the parent job.
@@ -377,7 +377,7 @@ Deno.test('planPairwiseByOrigin Test Case B: The Passing Case (Describes the cor
         target_contribution_id: null,
     };
 
-    const childPayloads = planPairwiseByOrigin(MOCK_SOURCE_DOCS, passingParentJob, MOCK_RECIPE_STEP);
+    const childPayloads = planPairwiseByOrigin(MOCK_SOURCE_DOCS, passingParentJob, MOCK_RECIPE_STEP, 'user-jwt-123');
 
     // This test will FAIL initially because the planner is not self-aware.
     // After the fix, it will PASS.

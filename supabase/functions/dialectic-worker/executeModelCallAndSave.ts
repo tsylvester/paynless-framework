@@ -115,11 +115,13 @@ export async function executeModelCallAndSave(
         walletId: walletId,
     };
 
+    const userAuthToken = 'user_jwt' in job.payload && job.payload.user_jwt ? job.payload.user_jwt : authToken;
+
     const aiResponse: UnifiedAIResponse = await deps.callUnifiedAIModel(
         providerDetails.id, 
         finalPromptContent, 
         sessionData.associated_chat_id, 
-        authToken, 
+        userAuthToken, 
         options
     );
 

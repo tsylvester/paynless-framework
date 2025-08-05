@@ -44,6 +44,7 @@ export async function processComplexJob(
     job: DialecticJobRow & { payload: DialecticPlanJobPayload },
     projectOwnerUserId: string,
     deps: IDialecticJobDeps,
+    authToken: string,
 ): Promise<void> {
     const { id: parentJobId } = job;
     
@@ -107,7 +108,8 @@ export async function processComplexJob(
             dbClient,
             job,
             deps,
-            currentRecipeStep
+            currentRecipeStep,
+            authToken,
         );
 
         if (!childJobs || childJobs.length === 0) {

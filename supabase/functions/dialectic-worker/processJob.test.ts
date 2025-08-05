@@ -509,7 +509,7 @@ Deno.test('processJob - verifies correct parameters passed to processComplexJob'
         assertEquals(spies.processComplexJob.calls.length, 1, 'processComplexJob should be called once');
         
         const call = spies.processComplexJob.calls[0];
-        assertEquals(call.args.length, 4, 'processComplexJob should be called with 4 arguments');
+        assertEquals(call.args.length, 5, 'processComplexJob should be called with 5 arguments');
         
         // Verify the parameters passed to processComplexJob
         assertEquals(call.args[1], { ...mockJob, payload: mockPayload }, 'Second argument should be the job object and its payload');

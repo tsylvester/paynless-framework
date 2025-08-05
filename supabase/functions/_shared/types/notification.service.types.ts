@@ -36,6 +36,8 @@ export interface ContributionGenerationStartedPayload {
     type: 'contribution_generation_started';
     sessionId: string;
     job_id: string;
+    modelId: string;
+    iterationNumber: number;
   }
   
   export interface DialecticContributionStartedPayload {

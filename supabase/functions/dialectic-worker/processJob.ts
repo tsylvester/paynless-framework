@@ -68,7 +68,7 @@ export async function processJob(
       if (processingStrategyType === 'task_isolation') {
           deps.logger.info(`[dialectic-worker] [processJob] Delegating 'plan' job ${jobId} to complex planner.`);
           // The main deps object now contains everything needed, so we can pass it directly.
-          await processors.processComplexJob(dbClient, { ...job, payload: job.payload }, projectOwnerUserId, deps);
+          await processors.processComplexJob(dbClient, { ...job, payload: job.payload }, projectOwnerUserId, deps, authToken);
       } else {
           deps.logger.info(`[dialectic-worker] [processJob] Job ${jobId} is a 'plan' job for a simple stage. Transforming to 'execute' job in-memory.`);
           

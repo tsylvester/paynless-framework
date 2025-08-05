@@ -100,6 +100,7 @@ export async function planComplexStage(
     parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
     deps: IDialecticJobDeps,
     recipeStep: DialecticRecipeStep,
+    authToken: string,
 ): Promise<DialecticJobRow[]> {
     //deps.logger.info(`[task_isolator] [planComplexStage] Planning step "${recipeStep.name}" for parent job ID: ${parentJob.id}`);
     
@@ -217,6 +218,7 @@ export async function planComplexStage(
                 rag_summary_id: ragResource.id,
             },
             canonicalPathParams: cleanedParams,
+            user_jwt: authToken,
         };
         childJobPayloads = [newPayload];
 
@@ -227,7 +229,7 @@ export async function planComplexStage(
             throw new Error(`No planner found for granularity strategy: ${recipeStep.granularity_strategy}`);
         }
         
-        const plannedPayloads = planner(sourceDocuments, parentJob, recipeStep);
+        const plannedPayloads = planner(sourceDocuments, parentJob, recipeStep, authToken);
         if (!Array.isArray(plannedPayloads)) {
             throw new Error(`Planner for strategy '${recipeStep.granularity_strategy}' returned a non-array value.`);
         }

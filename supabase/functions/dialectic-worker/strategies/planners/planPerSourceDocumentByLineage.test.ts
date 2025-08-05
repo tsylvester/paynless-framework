@@ -85,7 +85,7 @@ Deno.test('planPerSourceDocumentByLineage', async (t) => {
         const mockParentJob = getMockParentJob();
         const mockRecipeStep = getMockRecipeStep();
 
-        const childPayloads = planPerSourceDocumentByLineage(sourceDocs, mockParentJob, mockRecipeStep);
+        const childPayloads = planPerSourceDocumentByLineage(sourceDocs, mockParentJob, mockRecipeStep, 'user-jwt-123');
 
         assertEquals(childPayloads.length, 2, "Expected exactly one child job per source document group.");
         
@@ -105,7 +105,7 @@ Deno.test('planPerSourceDocumentByLineage', async (t) => {
         const mockParentJob = getMockParentJob();
         const mockRecipeStep = getMockRecipeStep();
 
-        const childPayloads = planPerSourceDocumentByLineage(sourceDocs, mockParentJob, mockRecipeStep);
+        const childPayloads = planPerSourceDocumentByLineage(sourceDocs, mockParentJob, mockRecipeStep, 'user-jwt-123');
 
         assertEquals(childPayloads.length, 0, "Expected no child jobs when there are no source documents.");
     });
@@ -118,7 +118,7 @@ Deno.test('planPerSourceDocumentByLineage', async (t) => {
         const mockParentJob = getMockParentJob();
         const mockRecipeStep = getMockRecipeStep();
 
-        const childPayloads = planPerSourceDocumentByLineage(sourceDocs, mockParentJob, mockRecipeStep);
+        const childPayloads = planPerSourceDocumentByLineage(sourceDocs, mockParentJob, mockRecipeStep, 'user-jwt-123');
 
         assertEquals(childPayloads.length, 2, "Expected two child jobs as there are two distinct source groups.");
         
@@ -142,7 +142,7 @@ Deno.test('planPerSourceDocumentByLineage', async (t) => {
         mockParentJob.payload.model_id = 'parent-model-id'; // Set a distinct model_id for the parent
         const mockRecipeStep = getMockRecipeStep();
 
-        const childPayloads = planPerSourceDocumentByLineage(sourceDocs, mockParentJob, mockRecipeStep);
+        const childPayloads = planPerSourceDocumentByLineage(sourceDocs, mockParentJob, mockRecipeStep, 'user-jwt-123');
 
         assertEquals(childPayloads.length, 2, "FAIL: Expected exactly one child job per source_group.");
         

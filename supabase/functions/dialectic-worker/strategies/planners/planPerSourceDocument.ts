@@ -6,7 +6,8 @@ import { createCanonicalPathParams } from "../canonical_context_builder.ts";
 export const planPerSourceDocument: GranularityPlannerFn = (
     sourceDocs,
     parentJob,
-    recipeStep
+    recipeStep,
+    authToken,
 ) => {
     const childPayloads: DialecticExecuteJobPayload[] = [];
 
@@ -38,6 +39,7 @@ export const planPerSourceDocument: GranularityPlannerFn = (
             canonicalPathParams, // Use the new contract
             document_relationships: { source_group: doc.id },
             inputs,
+            user_jwt: authToken,
         };
         console.log(`[planPerSourceDocument] Constructed newPayload for doc ${doc.id}:`, JSON.stringify(newPayload, null, 2));
 

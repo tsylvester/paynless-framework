@@ -78,7 +78,7 @@ const MOCK_RECIPE_STEP: DialecticRecipeStep = {
 };
 
 Deno.test('planPerSourceGroup should create one child job for each group of related documents', () => {
-    const childJobs = planPerSourceGroup(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childJobs = planPerSourceGroup(MOCK_SOURCE_DOCS, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
 
     assertEquals(childJobs.length, 2, "Should create 2 child jobs, one for each source group");
 
@@ -106,11 +106,11 @@ Deno.test('planPerSourceGroup should create one child job for each group of rela
 
 Deno.test('planPerSourceGroup should return an empty array if no documents have a source group', () => {
     const noSourceIds = MOCK_SOURCE_DOCS.map(d => ({ ...d, document_relationships: null as (DocumentRelationships | null) }));
-    const childJobs = planPerSourceGroup(noSourceIds, MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childJobs = planPerSourceGroup(noSourceIds, MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
     assertEquals(childJobs.length, 0);
 });
 
 Deno.test('planPerSourceGroup should return an empty array for empty source documents', () => {
-    const childJobs = planPerSourceGroup([], MOCK_PARENT_JOB, MOCK_RECIPE_STEP);
+    const childJobs = planPerSourceGroup([], MOCK_PARENT_JOB, MOCK_RECIPE_STEP, 'user-jwt-123');
     assertEquals(childJobs.length, 0);
 });

@@ -373,6 +373,7 @@ export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
     };
     document_relationships?: DocumentRelationships | null;
     isIntermediate?: boolean;
+    user_jwt?: string;
 }
 
 // Update the main union type
@@ -742,12 +743,13 @@ export interface IDialecticJobDeps extends GenerateContributionsDeps {
   notificationService: NotificationServiceType;
   executeModelCallAndSave: (params: ExecuteModelCallAndSaveParams) => Promise<void>;
   // Properties from the former IPlanComplexJobDeps
-  planComplexStage?: (
-      dbClient: SupabaseClient<Database>,
-      parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
-      deps: IDialecticJobDeps, // Self-reference
-      recipeStep: DialecticRecipeStep
-  ) => Promise<(DialecticJobRow)[]>;
+        planComplexStage?: (
+          dbClient: SupabaseClient<Database>,
+          parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
+          deps: IDialecticJobDeps, // Self-reference
+          recipeStep: DialecticRecipeStep,
+          authToken: string,
+      ) => Promise<(DialecticJobRow)[]>;
   getGranularityPlanner?: (strategyId: string) => GranularityPlannerFn | undefined;
   ragService?: IRagService;
   countTokens?: (messages: MessageForTokenCounting[], modelConfig: AiModelExtendedConfig) => number;
@@ -769,7 +771,8 @@ export type RecipeStep = {
 export type GranularityPlannerFn = (
     sourceDocs: SourceDocument[],
     parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
-    recipeStep: DialecticRecipeStep
+    recipeStep: DialecticRecipeStep,
+    authToken: string,
 ) => DialecticExecuteJobPayload[];
 
 export type GranularityStrategyMap = Map<string, GranularityPlannerFn>;
