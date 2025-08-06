@@ -13,8 +13,9 @@ import type {
     ChatHandlerDeps,
     GetUserFn,
     GetUserFnResult,
+    AiProviderAdapterInstance,
 } from '../_shared/types.ts';
-import type { Json } from "../types_db.ts";
+import type { AiModelExtendedConfig, ILogger } from "../_shared/types.ts";
 import { logger } from '../_shared/logger.ts';
 import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
 import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
@@ -151,13 +152,13 @@ export const defaultDeps: ChatHandlerDeps = {
     createErrorResponse,
     getAiProviderAdapter: (
         providerApiIdentifier: string,
-        providerDbConfig: Json | null,
+        providerDbConfig: AiModelExtendedConfig | null,
         apiKey: string,
-        loggerInstance?: import('../_shared/types.ts').ILogger
-    ) => {
-        const adapter = getAiProviderAdapter(providerApiIdentifier, providerDbConfig, apiKey, loggerInstance);
+        logger: ILogger
+    ): AiProviderAdapterInstance | null => {
+        const adapter = getAiProviderAdapter(providerApiIdentifier, providerDbConfig, apiKey, logger);
         if (!adapter) {
-            (loggerInstance || logger).error(`[defaultDeps] No adapter found by factory for provider API identifier: ${providerApiIdentifier}`);
+            logger.error(`[defaultDeps] No adapter found by factory for provider API identifier: ${providerApiIdentifier}`);
             throw new Error(`Adapter not found for provider API identifier: ${providerApiIdentifier}`);
         }
         return adapter;

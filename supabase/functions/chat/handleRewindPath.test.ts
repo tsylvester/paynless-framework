@@ -17,6 +17,7 @@ import {
   } from "../_shared/services/tokenWalletService.mock.ts";
   import { type TokenWallet } from "../_shared/types/tokenWallet.types.ts";
   import {
+    type AdapterResponsePayload,
     type AiModelExtendedConfig,
     type ChatApiRequest,
     type ChatHandlerDeps,
@@ -24,14 +25,26 @@ import {
     type ChatMessageRow,
   } from "../_shared/types.ts";
   import { handleRewindPath } from "./handleRewindPath.ts";
-  import { MockAiProviderAdapter } from "../_shared/ai_service/ai_provider.mock.ts";
+  import { getMockAiProviderAdapter } from "../_shared/ai_service/ai_provider.mock.ts";
   import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
   import { type Database } from "../types_db.ts";
   import { defaultDeps } from "./index.ts";
   import { type PathHandlerContext } from "./prepareChatContext.ts";
+
+  // Helper to create a fully-typed mock adapter with spies
+const createSpiedMockAdapter = (modelConfig: AiModelExtendedConfig) => {
+    const { instance, controls } = getMockAiProviderAdapter(logger, modelConfig);
+    const sendMessageSpy = spy(instance, 'sendMessage');
+    return {
+        instance,
+        controls,
+        sendMessageSpy,
+    };
+}
   
   Deno.test("handleRewindPath: failure in perform_chat_rewind RPC call triggers refund", async () => {
     // Arrange
+    const modelConfig: AiModelExtendedConfig = { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(
         "test-user-id",
         {
@@ -47,14 +60,16 @@ import {
     );
   
     const mockTokenWalletService = createMockTokenWalletService();
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    mockAiAdapter.controls.setMockResponse({ content: "This should not be used" });
     const context: PathHandlerContext = {
       supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-      deps: { ...defaultDeps, logger, tokenWalletService: mockTokenWalletService.instance, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy(() => new MockAiProviderAdapter()) },
+      deps: { ...defaultDeps, logger, tokenWalletService: mockTokenWalletService.instance, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy(() => mockAiAdapter.instance) },
       userId: "test-user-id",
       requestBody: { message: "test", providerId: "test", promptId: "test", rewindFromMessageId: "test", chatId: "test" },
       wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
-      aiProviderAdapter: new MockAiProviderAdapter(),
-      modelConfig: { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
       actualSystemPromptText: null,
       finalSystemPromptIdForDb: null,
       apiKey: "test-api-key",
@@ -75,6 +90,7 @@ import {
   
   Deno.test("handleRewindPath: AI adapter failure saves error messages", async () => {
     // Arrange
+    const modelConfig: AiModelExtendedConfig = { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(
         "test-user-id",
         {
@@ -87,17 +103,17 @@ import {
         }
     );
   
-    const mockAiAdapter = new MockAiProviderAdapter();
-    mockAiAdapter.setMockError("test-model-api-id", "AI provider exploded");
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    mockAiAdapter.controls.setMockError(new Error("AI provider exploded"));
   
     const context: PathHandlerContext = {
       supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-      deps: { ...defaultDeps, logger, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy(() => mockAiAdapter) },
+      deps: { ...defaultDeps, logger, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy(() => mockAiAdapter.instance) },
       userId: "test-user-id",
       requestBody: { message: "test", providerId: "test", promptId: "test", rewindFromMessageId: "test", chatId: "test" },
       wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
-      aiProviderAdapter: mockAiAdapter,
-      modelConfig: { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
       actualSystemPromptText: null,
       finalSystemPromptIdForDb: null,
       apiKey: "test-api-key",
@@ -117,6 +133,7 @@ import {
   
   Deno.test("handleRewindPath: history fetch failure returns error", async () => {
     // Arrange
+    const modelConfig: AiModelExtendedConfig = { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(
         "test-user-id",
         {
@@ -127,15 +144,16 @@ import {
             },
         }
     );
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
   
     const context: PathHandlerContext = {
       supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-      deps: { ...defaultDeps, logger, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy(() => new MockAiProviderAdapter()) },
+      deps: { ...defaultDeps, logger, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy(() => mockAiAdapter.instance) },
       userId: "test-user-id",
       requestBody: { message: "test", providerId: "test", promptId: "test", rewindFromMessageId: "test", chatId: "test" },
       wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
-      aiProviderAdapter: new MockAiProviderAdapter(),
-      modelConfig: { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
       actualSystemPromptText: null,
       finalSystemPromptIdForDb: null,
       apiKey: "test-api-key",
@@ -153,6 +171,7 @@ import {
 
 Deno.test("handleRewindPath: non-existent rewindFromMessageId returns 404", async () => {
     // Arrange
+    const modelConfig: AiModelExtendedConfig = { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } };
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(
         "test-user-id",
         {
@@ -163,15 +182,16 @@ Deno.test("handleRewindPath: non-existent rewindFromMessageId returns 404", asyn
             },
         }
     );
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
 
     const context: PathHandlerContext = {
       supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-      deps: { ...defaultDeps, logger, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy(() => new MockAiProviderAdapter()) },
+      deps: { ...defaultDeps, logger, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy(() => mockAiAdapter.instance) },
       userId: "test-user-id",
       requestBody: { message: "test", providerId: "test", promptId: "test", rewindFromMessageId: "non-existent", chatId: "test" },
       wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
-      aiProviderAdapter: new MockAiProviderAdapter(),
-      modelConfig: { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
       actualSystemPromptText: null,
       finalSystemPromptIdForDb: null,
       apiKey: "test-api-key",
@@ -188,6 +208,7 @@ Deno.test("handleRewindPath: non-existent rewindFromMessageId returns 404", asyn
 });
 
 Deno.test("handleRewindPath: POST request with rewindFromMessageId should call RPC and use its result", async () => {
+    const modelConfig: AiModelExtendedConfig = { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } };
     const rewindChatId = crypto.randomUUID();
     const userMsg1Content = "User Message 1 for RPC rewind";
     const aiMsg1Content = "AI Response 1 for RPC rewind";
@@ -207,10 +228,14 @@ Deno.test("handleRewindPath: POST request with rewindFromMessageId should call R
         { id: rewindFromMsgId, chat_id: rewindChatId, user_id: null, role: 'assistant', content: aiMsg1Content, created_at: msgTimestamp(1), is_active_in_thread: true, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: {prompt_tokens:1, completion_tokens:1}, updated_at: msgTimestamp(1), error_type: null, response_to_message_id: 'user-msg-1-rpc-id' },
     ];
     
-    const newAiResponseFromAdapterPayload = {
+    const newAiResponseFromAdapterPayload: Partial<AdapterResponsePayload> = {
         role: 'assistant', content: aiMsg3NewContentFromAdapter, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
     };
 
+    const tokenUsage = newAiResponseFromAdapterPayload.token_usage;
+    if (!tokenUsage) {
+        throw new Error("Token usage is required");
+    }
     const mockAssistantMessageFromRpc: ChatMessageRow = {
         id: mockNewAssistantMessageIdRpc,
         chat_id: rewindChatId, 
@@ -219,7 +244,7 @@ Deno.test("handleRewindPath: POST request with rewindFromMessageId should call R
         content: aiMsg3NewContentFromAdapter,
         created_at: msgTimestamp(5),
         is_active_in_thread: true,
-        token_usage: newAiResponseFromAdapterPayload.token_usage,
+        token_usage: tokenUsage,
         ai_provider_id: testProviderId,
         system_prompt_id: testPromptId,
         updated_at: msgTimestamp(5),
@@ -233,7 +258,7 @@ Deno.test("handleRewindPath: POST request with rewindFromMessageId should call R
         {
             genericMockResults: {
                 chat_messages: {
-                    select: (state) => {
+                    select: (_state) => {
                         selectCallCount++;
                         if (selectCallCount === 1) { // Fetch rewind point created_at
                             return Promise.resolve({ data: [{ created_at: historyForAIAdapter[1].created_at }], error: null });
@@ -255,8 +280,8 @@ Deno.test("handleRewindPath: POST request with rewindFromMessageId should call R
         }
     );
 
-    const mockAiAdapter = new MockAiProviderAdapter();
-    mockAiAdapter.setSimpleMockResponse("test-model-api-id", aiMsg3NewContentFromAdapter, testProviderId, testPromptId, newAiResponseFromAdapterPayload.token_usage);
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    mockAiAdapter.controls.setMockResponse(newAiResponseFromAdapterPayload);
 
     const mockTokenWalletService: MockTokenWalletService = createMockTokenWalletService();
     const deps: ChatHandlerDeps = {
@@ -264,7 +289,7 @@ Deno.test("handleRewindPath: POST request with rewindFromMessageId should call R
       logger,
       tokenWalletService: mockTokenWalletService.instance,
       countTokensForMessages: spy(() => 10),
-      getAiProviderAdapter: spy(() => mockAiAdapter),
+      getAiProviderAdapter: spy(() => mockAiAdapter.instance),
     };
 
     const requestBody: ChatApiRequest = {
@@ -280,9 +305,9 @@ Deno.test("handleRewindPath: POST request with rewindFromMessageId should call R
       deps,
       userId: "test-user-id",
       requestBody,
-      wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date(), userId: "test-user-id" },
-      aiProviderAdapter: mockAiAdapter,
-      modelConfig: { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } },
+      wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date()},
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
       actualSystemPromptText: systemPromptText,
       finalSystemPromptIdForDb: testPromptId,
       apiKey: "test-api-key",
@@ -312,9 +337,9 @@ Deno.test("handleRewindPath: POST request with rewindFromMessageId should call R
         p_new_assistant_message_content: aiMsg3NewContentFromAdapter,
     });
 
-    const sendMessageSpy = mockAiAdapter.getRecordedCalls();
-    assertEquals(sendMessageSpy.length, 1);
-    const adapterHistory = sendMessageSpy[0].messages;
+    assertEquals(mockAiAdapter.sendMessageSpy.calls.length, 1);
+    const adapterHistory = mockAiAdapter.sendMessageSpy.calls[0].args[0].messages;
+    assert(adapterHistory);
     assertEquals(adapterHistory[0].role, 'system');
     assertEquals(adapterHistory[1].role, 'user');
     assertEquals(adapterHistory[2].role, 'assistant');

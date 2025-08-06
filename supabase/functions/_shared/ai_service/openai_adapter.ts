@@ -1,15 +1,24 @@
 import OpenAI from 'npm:openai';
 import type { ChatCompletionMessageParam } from 'npm:openai/resources/chat/completions';
-import type { AiProviderAdapter, ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig } from '../types.ts';
+import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig } from '../types.ts';
 
 /**
  * Implements AiProviderAdapter for OpenAI models.
  */
-export class OpenAiAdapter implements AiProviderAdapter {
+export class OpenAiAdapter {
   private client: OpenAI;
+  private logger: ILogger;
+  private modelConfig: AiModelExtendedConfig;
 
-  constructor(apiKey: string, private logger: ILogger) {
+  constructor(
+    apiKey: string, 
+    logger: ILogger, 
+    modelConfig: AiModelExtendedConfig
+  ) {
     this.client = new OpenAI({ apiKey });
+    this.logger = logger;
+    this.modelConfig = modelConfig;
+    this.logger.info(`[OpenAiAdapter] Initialized with config: ${JSON.stringify(this.modelConfig)}`);
   }
 
   async sendMessage(
@@ -18,6 +27,16 @@ export class OpenAiAdapter implements AiProviderAdapter {
   ): Promise<AdapterResponsePayload> {
     this.logger.debug('[OpenAiAdapter] sendMessage called', { modelIdentifier });
     const modelApiName = modelIdentifier.replace(/^openai-/i, '');
+
+    // Placeholder for token validation logic, as per the plan
+    // This should use a token counting utility and check against this.modelConfig
+    const maxInputTokens = this.modelConfig.provider_max_input_tokens || this.modelConfig.context_window_tokens;
+    if (maxInputTokens) {
+        // const tokenCount = countTokens(request.messages, this.modelConfig); // PSEUDO-CODE
+        // if (tokenCount > maxInputTokens) {
+        //     throw new Error(`[OpenAiAdapter] Input token count (${tokenCount}) exceeds model limit of ${maxInputTokens}.`);
+        // }
+    }
 
     const openaiMessages: ChatCompletionMessageParam[] = (request.messages ?? []).map(msg => ({
       role: msg.role,
@@ -33,8 +52,9 @@ export class OpenAiAdapter implements AiProviderAdapter {
       messages: openaiMessages,
     };
 
-    if (request.max_tokens_to_generate && request.max_tokens_to_generate > 0) {
-      payload.max_tokens = request.max_tokens_to_generate;
+    const maxOutputTokens = request.max_tokens_to_generate || this.modelConfig.hard_cap_output_tokens;
+    if (maxOutputTokens && maxOutputTokens > 0) {
+      payload.max_tokens = maxOutputTokens;
     }
 
     this.logger.info(`Sending request to OpenAI model: ${modelApiName}`);
@@ -43,7 +63,7 @@ export class OpenAiAdapter implements AiProviderAdapter {
       const completion = await this.client.chat.completions.create(payload);
       
       const choice = completion.choices?.[0];
-      const aiContent = choice?.message?.content?.trim();
+      const aiContent = choice?.message?.content?.trim() || null;
       
       if (!aiContent) {
         this.logger.error("OpenAI response missing message content:", { response: completion, modelApiName });
@@ -117,16 +137,19 @@ export class OpenAiAdapter implements AiProviderAdapter {
 
       for (const model of modelsPage.data) {
         if (model.id && (model.id.includes('gpt') || model.id.includes('instruct'))) {
-          const config: Partial<AiModelExtendedConfig> = {};
-
-          // Note: The OpenAI SDK's model object does not expose context_window directly.
-          // This information might need to be hardcoded or managed elsewhere if needed.
-
+          // The config object from listModels is used by the sync-ai-models function.
+          // It's crucial that this is a *complete* AiModelExtendedConfig object.
+          // We use the base config from the constructor and override the API identifier.
+          const config: AiModelExtendedConfig = {
+            ...this.modelConfig, // Spread the base config
+            api_identifier: model.id, // Override with the specific model ID
+          };
+          
           models.push({
             api_identifier: `openai-${model.id}`,
             name: `OpenAI ${model.id}`,
             description: `Owned by: ${model.owned_by}`,
-            config: Object.keys(config).length > 0 ? config : undefined,
+            config: config,
           });
         }
       }
@@ -170,4 +193,4 @@ export class OpenAiAdapter implements AiProviderAdapter {
       throw error;
     }
   }
-} 
+}

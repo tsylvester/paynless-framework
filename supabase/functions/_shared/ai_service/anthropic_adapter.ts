@@ -1,7 +1,7 @@
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import type { MessageParam } from 'npm:@anthropic-ai/sdk/resources/messages';
 // Import types from the shared location
-import type { AdapterResponsePayload, AiProviderAdapter, ChatApiRequest, ILogger, ProviderModelInfo } from '../types.ts';
+import type { AdapterResponsePayload, ChatApiRequest, ILogger, ProviderModelInfo, AiModelExtendedConfig } from '../types.ts';
 import type { Database } from '../../types_db.ts';
 
 
@@ -22,13 +22,22 @@ interface AnthropicModelItem {
 /**
  * Implements AiProviderAdapter for Anthropic models (Claude).
  */
-export class AnthropicAdapter implements AiProviderAdapter {
+export class AnthropicAdapter {
   private client: Anthropic;
   private apiKey: string;
+  private logger: ILogger;
+  private modelConfig: AiModelExtendedConfig;
 
-  constructor(apiKey: string, private logger: ILogger) {
+  constructor(
+    apiKey: string, 
+    logger: ILogger,
+    modelConfig: AiModelExtendedConfig
+  ) {
     this.client = new Anthropic({ apiKey });
     this.apiKey = apiKey;
+    this.logger = logger;
+    this.modelConfig = modelConfig;
+    this.logger.info(`[AnthropicAdapter] Initialized with config: ${JSON.stringify(this.modelConfig)}`);
   }
 
   async sendMessage(
@@ -37,6 +46,16 @@ export class AnthropicAdapter implements AiProviderAdapter {
   ): Promise<AdapterResponsePayload> {
     this.logger.debug('[AnthropicAdapter] sendMessage called', { modelIdentifier });
     const modelApiName = modelIdentifier.replace(/^anthropic-/i, '');
+
+    // Placeholder for token validation logic
+    const maxInputTokens = this.modelConfig.provider_max_input_tokens || this.modelConfig.context_window_tokens;
+    if (maxInputTokens) {
+        // const tokenCount = countTokens(request.messages, this.modelConfig); // PSEUDO-CODE
+        // if (tokenCount > maxInputTokens) {
+        //     throw new Error(`[AnthropicAdapter] Input token count (${tokenCount}) exceeds model limit of ${maxInputTokens}.`);
+        // }
+    }
+
     let systemPrompt = '';
     const anthropicMessages: MessageParam[] = [];
     const combinedMessages = [...(request.messages ?? [])];
@@ -44,19 +63,30 @@ export class AnthropicAdapter implements AiProviderAdapter {
         combinedMessages.push({ role: 'user', content: request.message });
     }
     
+    // Preliminary processing to handle system prompts and merge consecutive messages of the same role.
     const preliminaryMessages: { role: 'user' | 'assistant'; content: string }[] = [];
     for (const message of combinedMessages) {
         if (message.role === 'system' && message.content) {
             systemPrompt = message.content;
         } else if ((message.role === 'user' || message.role === 'assistant') && message.content) {
-            preliminaryMessages.push({ role: message.role, content: message.content as string});
+            const lastMessage = preliminaryMessages[preliminaryMessages.length - 1];
+            if (lastMessage && lastMessage.role === message.role) {
+                // Merge consecutive messages of the same role
+                lastMessage.content += `\n\n${message.content}`;
+            } else {
+                preliminaryMessages.push({ role: message.role, content: message.content});
+            }
         }
     }
 
+    // Convert to Anthropic's format and enforce alternating roles.
     let expectedRole: 'user' | 'assistant' = 'user';
     for (const message of preliminaryMessages) {
         if (message.role === expectedRole) {
-            anthropicMessages.push(message);
+            anthropicMessages.push({
+                role: message.role,
+                content: [{ type: 'text', text: message.content }] // Correctly format the content
+            });
             expectedRole = (expectedRole === 'user') ? 'assistant' : 'user';
         } else {
              this.logger.warn(`Skipping message with role '${message.role}' because '${expectedRole}' was expected.`, { currentMessage: message, expectedRole });
@@ -73,10 +103,7 @@ export class AnthropicAdapter implements AiProviderAdapter {
         throw new Error('Cannot send request to Anthropic: message history format invalid.');
     }
 
-    const maxTokensForPayload = 
-        (request.max_tokens_to_generate && request.max_tokens_to_generate > 0) 
-        ? request.max_tokens_to_generate 
-        : 4096;
+    const maxTokensForPayload = request.max_tokens_to_generate || this.modelConfig.hard_cap_output_tokens || 4096;
 
     try {
       const response = await this.client.messages.create({
@@ -89,7 +116,7 @@ export class AnthropicAdapter implements AiProviderAdapter {
       const assistantMessageContent =
         response.content?.[0]?.type === 'text'
         ? response.content[0].text.trim()
-        : '';
+        : null;
 
       if (!assistantMessageContent) {
           this.logger.error("Anthropic response missing message content:", { response: response, modelApiName });
@@ -136,7 +163,11 @@ export class AnthropicAdapter implements AiProviderAdapter {
         this.logger.error(`Anthropic API error (${error.status}): ${error.message}`, { modelApiName, status: error.status });
         throw new Error(`Anthropic API request failed: ${error.status} ${error.name}`);
       }
-      this.logger.error(`Error sending message to Anthropic: ${(error as Error).message}`, { modelApiName, error });
+      if (error instanceof Error) {
+        this.logger.error(`Error sending message to Anthropic: ${error.message}`, { modelApiName, error });
+      } else {
+        this.logger.error(`Error sending message to Anthropic: ${error}`, { modelApiName, error });
+      }
       throw error;
     }
   }
@@ -168,11 +199,20 @@ export class AnthropicAdapter implements AiProviderAdapter {
         throw new Error("Invalid response format received from Anthropic models API.");
     }
 
-    const models: ProviderModelInfo[] = jsonResponse.data.map((item: AnthropicModelItem) => ({
-        api_identifier: `anthropic-${item.id}`,
+    const models: ProviderModelInfo[] = jsonResponse.data.map((item: AnthropicModelItem) => {
+      // Create a complete config for each model, using the base config as a default
+      const config: AiModelExtendedConfig = {
+        ...this.modelConfig,
+        api_identifier: item.id, // Override with the specific model ID from the API
+      };
+
+      return {
+        api_identifier: `anthropic-${item.id}`, // Our internal, prefixed identifier
         name: item.name || item.id,
-        description: undefined
-    }));
+        description: undefined,
+        config: config,
+      };
+    });
 
     this.logger.info(`[AnthropicAdapter] Found ${models.length} models from Anthropic dynamically.`);
     return models;

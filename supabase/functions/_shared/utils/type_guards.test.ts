@@ -31,10 +31,205 @@ import {
     isDialecticChunkMetadata,
     isFileType,
     isDocumentRelationships,
+    isTokenUsage,
+    isCanonicalPathParams,
+    isChatMessageRole,
+    isChatMessageRow,
+    isChatInsert,
 } from './type_guards.ts';
 import type { DialecticContributionRow, DialecticJobRow, FailedAttemptError } from '../../dialectic-service/dialectic.interface.ts';
-import type { AiModelExtendedConfig } from '../types.ts';
+import type { AiModelExtendedConfig, TokenUsage, ChatInsert } from '../types.ts';
 import { ProjectContext, StageContext } from '../prompt-assembler.interface.ts';
+import { CanonicalPathParams } from '../types/file_manager.types.ts';
+
+Deno.test('Type Guard: isChatInsert', async (t) => {
+    await t.step('should return true for a valid minimal ChatInsert object', () => {
+        const insert: ChatInsert = {
+            user_id: 'user1',
+            created_at: new Date().toISOString(),
+            id: 'chat1',
+            organization_id: 'org1',
+            system_prompt_id: 'prompt1',
+            title: 'Test Chat',
+            updated_at: new Date().toISOString(),
+        };
+        assert(isChatInsert(insert));
+    });
+
+    await t.step('should return true for a full ChatInsert object', () => {
+        const insert: ChatInsert = {
+            id: 'chat1',
+            user_id: 'user1',
+            organization_id: 'org1',
+            system_prompt_id: 'prompt1',
+            title: 'Test Chat',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        };
+        assert(isChatInsert(insert));
+    });
+
+    await t.step('should return false if user_id is missing', () => {
+        const insert = { title: 'Test Chat' };
+        assert(!isChatInsert(insert));
+    });
+
+    await t.step('should return false if an optional field has the wrong type', () => {
+        const insert = { user_id: 'user1', title: 123 };
+        assert(!isChatInsert(insert));
+    });
+
+    await t.step('should return false for non-object inputs', () => {
+        assert(!isChatInsert(null));
+        assert(!isChatInsert('a string'));
+    });
+});
+
+Deno.test('Type Guard: isChatMessageRow', async (t) => {
+    const baseMessage: Tables<'chat_messages'> = {
+        id: 'msg1',
+        chat_id: 'chat1',
+        user_id: 'user1',
+        role: 'user',
+        content: 'Hello, world!',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_active_in_thread: true,
+        token_usage: { prompt_tokens: 10, completion_tokens: 0, total_tokens: 10 },
+        ai_provider_id: null,
+        system_prompt_id: null,
+        error_type: null,
+        response_to_message_id: null,
+    };
+
+    await t.step('should return true for a valid chat message row', () => {
+        assert(isChatMessageRow(baseMessage));
+    });
+
+    await t.step('should return true for a message with all nullable fields as null', () => {
+        const message = { ...baseMessage };
+        assert(isChatMessageRow(message));
+    });
+
+    await t.step('should return false if a required field is missing (e.g., chat_id)', () => {
+        const { chat_id, ...invalidMessage } = baseMessage;
+        assert(!isChatMessageRow(invalidMessage));
+    });
+
+    await t.step('should return false if a field has the wrong type (e.g., is_active_in_thread)', () => {
+        const invalidMessage = { ...baseMessage, is_active_in_thread: 'yes' };
+        assert(!isChatMessageRow(invalidMessage));
+    });
+
+    await t.step('should return false if a nullable field has the wrong type (e.g., user_id)', () => {
+        const invalidMessage = { ...baseMessage, user_id: 123 };
+        assert(!isChatMessageRow(invalidMessage));
+    });
+
+    await t.step('should return false for a non-object', () => {
+        assert(!isChatMessageRow(null));
+        assert(!isChatMessageRow('a string'));
+    });
+});
+
+Deno.test('Type Guard: isChatMessageRole', async (t) => {
+    await t.step('should return true for valid roles', () => {
+        assert(isChatMessageRole('system'));
+        assert(isChatMessageRole('user'));
+        assert(isChatMessageRole('assistant'));
+    });
+
+    await t.step('should return false for invalid roles', () => {
+        assert(!isChatMessageRole('admin'));
+        assert(!isChatMessageRole(''));
+        assert(!isChatMessageRole(' user'));
+    });
+
+    await t.step('should return false for non-string values', () => {
+        assert(!isChatMessageRole(null as unknown as string));
+        assert(!isChatMessageRole(123 as unknown as string));
+        assert(!isChatMessageRole({} as unknown as string));
+    });
+});
+
+Deno.test('Type Guard: isCanonicalPathParams', async (t) => {
+    await t.step('should return true for a valid CanonicalPathParams object', () => {
+        const params: CanonicalPathParams = {
+            contributionType: 'thesis',
+            sourceModelSlugs: ['model-1', 'model-2'],
+        };
+        assert(isCanonicalPathParams(params));
+    });
+
+    await t.step('should return true for a minimal CanonicalPathParams object', () => {
+        const params: CanonicalPathParams = {
+            contributionType: 'synthesis',
+        };
+        assert(isCanonicalPathParams(params));
+    });
+
+    await t.step('should return false if contributionType is missing', () => {
+        const params = {
+            sourceModelSlugs: ['model-1'],
+        };
+        assert(!isCanonicalPathParams(params));
+    });
+
+    await t.step('should return false if contributionType is not a string', () => {
+        const params = {
+            contributionType: 123,
+        };
+        assert(!isCanonicalPathParams(params));
+    });
+
+    await t.step('should return false for non-object inputs', () => {
+        assert(!isCanonicalPathParams(null));
+        assert(!isCanonicalPathParams('a string'));
+        assert(!isCanonicalPathParams([]));
+    });
+});
+
+Deno.test('Type Guard: isTokenUsage', async (t) => {
+    await t.step('should return true for a valid TokenUsage object', () => {
+        const usage: TokenUsage = {
+            prompt_tokens: 100,
+            completion_tokens: 200,
+            total_tokens: 300,
+        };
+        assert(isTokenUsage(usage));
+    });
+
+    await t.step('should return false if prompt_tokens is missing', () => {
+        const usage = { completion_tokens: 200, total_tokens: 300 };
+        assert(!isTokenUsage(usage));
+    });
+
+    await t.step('should return false if completion_tokens is missing', () => {
+        const usage = { prompt_tokens: 100, total_tokens: 300 };
+        assert(!isTokenUsage(usage));
+    });
+
+    await t.step('should return false if total_tokens is missing', () => {
+        const usage = { prompt_tokens: 100, completion_tokens: 200 };
+        assert(!isTokenUsage(usage));
+    });
+
+    await t.step('should return false if a property has the wrong type', () => {
+        const usage = {
+            prompt_tokens: '100',
+            completion_tokens: 200,
+            total_tokens: 300,
+        };
+        assert(!isTokenUsage(usage));
+    });
+
+    await t.step('should return false for non-object inputs', () => {
+        assert(!isTokenUsage(null));
+        assert(!isTokenUsage('a string'));
+        assert(!isTokenUsage(123));
+        assert(!isTokenUsage([]));
+    });
+});
 
 Deno.test('Type Guard: hasProcessingStrategy', async (t) => {
     await t.step('should return true for a stage with a valid processing_strategy', () => {

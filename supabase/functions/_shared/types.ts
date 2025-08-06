@@ -174,23 +174,27 @@ export interface ProviderModelInfo {
   api_identifier: string; // The specific ID the provider uses for this model in API calls
   name: string;           // A user-friendly name for the model
   description?: string;    // Optional description
-  // Use `Database['public']['Tables']['ai_providers']['Row']['config']` for the actual JSON type
-  config?: Database['public']['Tables']['ai_providers']['Row']['config']; // Use specific DB Json type
+  config?: AiModelExtendedConfig;
 }
-
+  
 /**
- * Interface for AI provider adapters.
- * Defines the common methods required for interacting with different AI provider APIs.
+ * Interface for AI provider adapters. Defines the constructor and instance methods
+ * required for a class to be a valid, interchangeable AI provider.
  */
-export interface AiProviderAdapter {
+export type AiProviderAdapter = new (
+  apiKey: string,
+  logger: ILogger,
+  modelConfig: AiModelExtendedConfig
+) => {
   sendMessage(
     request: ChatApiRequest,
     modelIdentifier: string, // The specific API identifier for the model (e.g., 'gpt-4o')
-    apiKey: string
-  ): Promise<AdapterResponsePayload>; // Return type changed to AdapterResponsePayload
+  ): Promise<AdapterResponsePayload>;
 
-  listModels(apiKey: string): Promise<ProviderModelInfo[]>;
-}
+  listModels(): Promise<ProviderModelInfo[]>;
+};
+
+export type AiProviderAdapterInstance = InstanceType<AiProviderAdapter>;
 
 export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] & {
   // Keep application-level status enrichment if needed by UI directly
@@ -234,7 +238,7 @@ export interface FullChatMessageRecord {
  * Interface describing the signature of the getAiProviderAdapter function.
  */
 export interface GetAiProviderAdapter {
-  (provider: string): AiProviderAdapter | null;
+  (providerApiIdentifier: string, providerDbConfig: Json | null, apiKey: string, logger?: ILogger): AiProviderAdapter | null;
 }
 
 /**
@@ -370,16 +374,16 @@ export interface ChatHandlerDeps {
   createErrorResponse: typeof createErrorResponse;
   getAiProviderAdapter: (
     providerApiIdentifier: string,
-    providerDbConfig: Json | null, // Added
+    providerDbConfig: AiModelExtendedConfig | null,
     apiKey: string,
-    logger?: ILogger
-  ) => AiProviderAdapter | null; // Changed signature and return type
+    logger: ILogger
+  ) => AiProviderAdapterInstance | null;
   getAiProviderAdapterOverride?: ( // Also update this for consistency
     providerApiIdentifier: string,
-    providerDbConfig: Json | null, // Added
+    providerDbConfig: AiModelExtendedConfig | null,
     apiKey: string,
-    logger?: ILogger
-  ) => AiProviderAdapter | null; // Changed signature and return type
+    logger: ILogger
+  ) => AiProviderAdapterInstance | null;
   verifyApiKey: (apiKey: string, providerName: string) => Promise<boolean>;
   logger: ILogger;
   tokenWalletService?: ITokenWalletService; 
@@ -397,19 +401,6 @@ export interface TokenUsage {
   completion_tokens: number;
   total_tokens: number;
   finish_reason?: 'stop' | 'length';
-}
-
-export function isTokenUsage(obj: unknown): obj is TokenUsage {
-  return (
-    obj !== null &&
-    typeof obj === 'object' &&
-    'prompt_tokens' in obj &&
-    typeof obj.prompt_tokens === 'number' &&
-    'completion_tokens' in obj &&
-    typeof obj.completion_tokens === 'number' &&
-    'total_tokens' in obj &&
-    typeof obj.total_tokens === 'number'
-  );
 }
 
 // Define ChatMessageRole locally for clarity if not available from shared types

@@ -150,11 +150,11 @@ export async function handleNormalPath(
 
     let adapterResponsePayload: AdapterResponsePayload;
     try {
-        const adapterChatRequestNormal: ChatApiRequest = {
-            message: userMessageContent,
-            messages: messagesForProvider,
+            const adapterChatRequestNormal: ChatApiRequest = {
+            message: userMessageContent, 
+            messages: messagesForProvider, 
             providerId: requestProviderId,
-            promptId: requestPromptId,
+            promptId: requestPromptId, 
             chatId: currentChatId,
             organizationId: organizationId,
             max_tokens_to_generate: Math.min(max_tokens_to_generate || Infinity, maxAllowedOutputTokens)
@@ -171,8 +171,7 @@ export async function handleNormalPath(
         } else {
             adapterResponsePayload = await aiProviderAdapter.sendMessage(
                 adapterChatRequestNormal,
-                providerApiIdentifier,
-                apiKey
+                providerApiIdentifier
             );
         }
         logger.info('AI adapter returned successfully (normal path).');

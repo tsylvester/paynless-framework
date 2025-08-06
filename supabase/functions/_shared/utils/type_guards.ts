@@ -18,7 +18,7 @@ import type {
 import { FileType, CanonicalPathParams } from "../types/file_manager.types.ts";
 import { ProjectContext, StageContext } from "../prompt-assembler.interface.ts";
 import { FailedAttemptError } from "../../dialectic-service/dialectic.interface.ts";
-import { AiModelExtendedConfig } from "../types.ts";
+import { AiModelExtendedConfig, TokenUsage } from "../types.ts";
 import { ChatMessageRole, ChatInsert } from "../types.ts";
 
 // Helper type to represent the structure we're checking for.
@@ -815,3 +815,16 @@ export function isChatInsert(record: unknown): record is ChatInsert {
 
     return true;
 }
+
+export function isTokenUsage(obj: unknown): obj is TokenUsage {
+    return (
+      obj !== null &&
+      typeof obj === 'object' &&
+      'prompt_tokens' in obj &&
+      typeof obj.prompt_tokens === 'number' &&
+      'completion_tokens' in obj &&
+      typeof obj.completion_tokens === 'number' &&
+      'total_tokens' in obj &&
+      typeof obj.total_tokens === 'number'
+    );
+  }

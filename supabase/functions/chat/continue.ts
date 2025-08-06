@@ -4,9 +4,9 @@ import type {
     ILogger,
     TokenUsage,
   } from "../_shared/types.ts";
-  import type { AiProviderAdapter } from "../_shared/types.ts";
+  import type { AiProviderAdapterInstance } from "../_shared/types.ts";
   import { shouldContinue } from "../_shared/utils/continue_util.ts";
-  
+  import { isTokenUsage } from "../_shared/utils/type_guards.ts";
   const MAX_CONTINUATIONS = 4; // Max 4 additional calls, for a total of 5
   
   /**
@@ -22,7 +22,7 @@ import type {
    * @returns A promise that resolves to the combined and final assistant message payload.
    */
   export async function handleContinuationLoop(
-    adapter: AiProviderAdapter,
+    adapter: AiProviderAdapterInstance,
     initialApiRequest: ChatApiRequest,
     providerApiIdentifier: string,
     apiKey: string,
@@ -51,14 +51,13 @@ import type {
       const response = await adapter.sendMessage(
         currentRequest,
         providerApiIdentifier,
-        apiKey,
       );
 
       logger.debug(`[Continue] Loop #${continuationCount}. Received partial response.`, { content: response.content.substring(0, 100) + '...' });
   
       // Correctly accumulate token usage from each call.
       const token_usage = response.token_usage;
-      if (token_usage && typeof token_usage === 'object' && !Array.isArray(token_usage) && token_usage !== null) {
+      if (isTokenUsage(token_usage)) {
         if (typeof token_usage.prompt_tokens === 'number') {
             accumulatedTokenUsage.prompt_tokens += token_usage.prompt_tokens;
         }

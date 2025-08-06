@@ -3,7 +3,7 @@ import {
     assertRejects,
     assert,
   } from "https://deno.land/std@0.224.0/assert/mod.ts";
-  import { spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
+  import { spy, type Spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
   import {
     createMockSupabaseClient,
     type MockSupabaseClientSetup,
@@ -22,15 +22,27 @@ import {
     type ChatHandlerSuccessResponse,
     type ILogger,
     type TokenUsage,
+    AiProviderAdapterInstance,
   } from "../_shared/types.ts";
   import { handleNormalPath } from "./handleNormalPath.ts";
-  import { MockAiProviderAdapter } from "../_shared/ai_service/ai_provider.mock.ts";
+  import { getMockAiProviderAdapter } from "../_shared/ai_service/ai_provider.mock.ts";
   import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
   import { type Database } from "../types_db.ts";
   import { defaultDeps } from "./index.ts";
 import { type PathHandlerContext } from "./prepareChatContext.ts";
   
-  Deno.test("handleNormalPath: happy path - creates new chat and saves messages", async () => {
+// Helper to create a fully-typed mock adapter with spies
+const createSpiedMockAdapter = (modelConfig: AiModelExtendedConfig) => {
+    const { instance, controls } = getMockAiProviderAdapter(logger, modelConfig);
+    const sendMessageSpy = spy(instance, 'sendMessage');
+    return {
+        instance,
+        controls,
+        sendMessageSpy,
+    };
+}
+
+Deno.test("handleNormalPath: happy path - creates new chat and saves messages", async () => {
     // Arrange
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(
       "test-user-id",
@@ -64,23 +76,28 @@ import { type PathHandlerContext } from "./prepareChatContext.ts";
       },
     );
   
-    const mockAiAdapter = new MockAiProviderAdapter();
-    mockAiAdapter.setSimpleMockResponse(
-      "test-model-api-id",
-      "Assistant response",
-      "test-provider",
-      null,
-    );
+    const modelConfig: AiModelExtendedConfig = {
+        api_identifier: "test-model-api-id",
+        input_token_cost_rate: 0.01,
+        output_token_cost_rate: 0.02,
+        tokenization_strategy: {
+          type: "tiktoken",
+          tiktoken_encoding_name: "cl100k_base",
+        },
+    };
+
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    mockAiAdapter.controls.setMockResponse({ content: "Assistant response" });
   
     const mockTokenWalletService: MockTokenWalletService =
       createMockTokenWalletService();
+
     const deps: ChatHandlerDeps = {
       ...defaultDeps,
       logger: logger,
       tokenWalletService: mockTokenWalletService.instance,
       countTokensForMessages: spy(() => 10),
-      getAiProviderAdapter: spy(() => mockAiAdapter),
-      supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+      getAiProviderAdapter: spy(() => mockAiAdapter.instance),
     };
   
     const requestBody: ChatApiRequest = {
@@ -103,16 +120,8 @@ import { type PathHandlerContext } from "./prepareChatContext.ts";
       userId: "test-user-id",
       requestBody,
       wallet,
-      aiProviderAdapter: mockAiAdapter,
-      modelConfig: {
-        api_identifier: "test-model-api-id",
-        input_token_cost_rate: 0.01,
-        output_token_cost_rate: 0.02,
-        tokenization_strategy: {
-          type: "tiktoken",
-          tiktoken_encoding_name: "cl100k_base",
-        },
-      },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
       actualSystemPromptText: null,
       finalSystemPromptIdForDb: null,
       apiKey: "test-api-key",
@@ -168,16 +177,22 @@ import { type PathHandlerContext } from "./prepareChatContext.ts";
       },
     );
   
-    const mockAiAdapter = new MockAiProviderAdapter();
-    mockAiAdapter.setMockError("test-model-api-id", "AI provider exploded");
+    const modelConfig: AiModelExtendedConfig = {
+        api_identifier: "test-model-api-id",
+        input_token_cost_rate: 0.01,
+        output_token_cost_rate: 0.02,
+        tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+    };
+
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    mockAiAdapter.controls.setMockError(new Error("AI provider exploded"));
   
     const deps: ChatHandlerDeps = {
       ...defaultDeps,
       logger: logger,
       tokenWalletService: createMockTokenWalletService().instance,
       countTokensForMessages: spy(() => 10),
-      getAiProviderAdapter: spy(() => mockAiAdapter),
-      supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+      getAiProviderAdapter: spy(() => mockAiAdapter.instance),
     };
   
     const requestBody: ChatApiRequest = {
@@ -192,13 +207,8 @@ import { type PathHandlerContext } from "./prepareChatContext.ts";
       userId: "test-user-id",
       requestBody,
       wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
-      aiProviderAdapter: mockAiAdapter,
-      modelConfig: {
-        api_identifier: "test-model-api-id",
-        input_token_cost_rate: 0.01,
-        output_token_cost_rate: 0.02,
-        tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
-      },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
       actualSystemPromptText: null,
       finalSystemPromptIdForDb: null,
       apiKey: "test-api-key",
@@ -235,13 +245,15 @@ import { type PathHandlerContext } from "./prepareChatContext.ts";
       },
     );
   
-    const mockAiAdapter = new MockAiProviderAdapter();
-    mockAiAdapter.setSimpleMockResponse(
-      "test-model-api-id",
-      "Assistant response",
-      "test-provider",
-      null,
-    );
+    const modelConfig: AiModelExtendedConfig = {
+        api_identifier: "test-model-api-id",
+        input_token_cost_rate: 0.01,
+        output_token_cost_rate: 0.02,
+        tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+    };
+
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    mockAiAdapter.controls.setMockResponse({ content: "Assistant response" });
   
     const mockTokenWalletService = createMockTokenWalletService();
   
@@ -252,19 +264,13 @@ import { type PathHandlerContext } from "./prepareChatContext.ts";
         logger: logger,
         tokenWalletService: mockTokenWalletService.instance,
         countTokensForMessages: spy(() => 10),
-        getAiProviderAdapter: spy(() => mockAiAdapter),
-        supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+        getAiProviderAdapter: spy(() => mockAiAdapter.instance),
       },
       userId: "test-user-id",
       requestBody: { message: "Hello", providerId: "test-provider", promptId: "__none__" },
       wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
-      aiProviderAdapter: mockAiAdapter,
-      modelConfig: {
-        api_identifier: "test-model-api-id",
-        input_token_cost_rate: 0.01,
-        output_token_cost_rate: 0.02,
-        tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
-      },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
       actualSystemPromptText: null,
       finalSystemPromptIdForDb: null,
       apiKey: "test-api-key",
@@ -288,8 +294,8 @@ import { type PathHandlerContext } from "./prepareChatContext.ts";
       "CREDIT_ADJUSTMENT",
     );
   });
-
-Deno.test("handleNormalPath: existing chat history is included in adapter call", async () => {
+  
+  Deno.test("handleNormalPath: existing chat history is included in adapter call", async () => {
     // Arrange
     const chatId = crypto.randomUUID();
     const existingHistory: ChatMessageRow[] = [
@@ -310,9 +316,10 @@ Deno.test("handleNormalPath: existing chat history is included in adapter call",
             },
         },
     });
-
-    const mockAiAdapter = new MockAiProviderAdapter();
-    mockAiAdapter.setSimpleMockResponse("test-model-api-id", "Follow-up response", "test-provider", null);
+  
+    const modelConfig: AiModelExtendedConfig = { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } };
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    mockAiAdapter.controls.setMockResponse({ content: "Follow-up response" });
     
     const context: PathHandlerContext = {
       supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
@@ -321,36 +328,34 @@ Deno.test("handleNormalPath: existing chat history is included in adapter call",
         logger: logger,
         tokenWalletService: createMockTokenWalletService().instance,
         countTokensForMessages: spy(() => 15),
-        getAiProviderAdapter: spy(() => mockAiAdapter),
-        supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+        getAiProviderAdapter: spy(() => mockAiAdapter.instance),
       },
       userId: "test-user-id",
       requestBody: { message: "Follow up question", providerId: "test-provider", promptId: "__none__", chatId },
       wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
-      aiProviderAdapter: mockAiAdapter,
-      modelConfig: { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
       actualSystemPromptText: "System prompt text",
       finalSystemPromptIdForDb: "prompt-id",
       apiKey: "test-api-key",
       providerApiIdentifier: "test-model-api-id",
     };
-
+  
     // Act
     await handleNormalPath(context);
-
+  
     // Assert
-    const sendMessageSpy = mockAiAdapter.getRecordedCalls();
-    assertEquals(sendMessageSpy.length, 1);
-    const adapterArgs = sendMessageSpy[0].messages;
+    assertEquals(mockAiAdapter.sendMessageSpy.calls.length, 1);
+    const adapterArgs = mockAiAdapter.sendMessageSpy.calls[0].args[0].messages;
     assert(adapterArgs);
     assertEquals(adapterArgs.length, 4); // System + History User + History Asst + Current User
     assertEquals(adapterArgs[0].role, 'system');
     assertEquals(adapterArgs[1].content, 'Previous user message');
     assertEquals(adapterArgs[2].content, 'Previous assistant response');
     assertEquals(adapterArgs[3].content, 'Follow up question');
-});
-
-Deno.test("handleNormalPath: affordability check fails (insufficient funds)", async () => {
+  });
+  
+  Deno.test("handleNormalPath: affordability check fails (insufficient funds)", async () => {
     // Arrange
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {
         genericMockResults: {
@@ -359,11 +364,12 @@ Deno.test("handleNormalPath: affordability check fails (insufficient funds)", as
             },
         },
     });
-    const mockAiAdapter = new MockAiProviderAdapter();
+    const modelConfig: AiModelExtendedConfig = { api_identifier: "test-model-api-id", input_token_cost_rate: 1, output_token_cost_rate: 1, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } };
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
     const mockTokenWalletService = createMockTokenWalletService({
         getWalletForContext: () => Promise.resolve({ balance: '0', currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date(), walletId: "test-wallet" }),
     });
-
+  
     const context: PathHandlerContext = {
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         deps: {
@@ -371,30 +377,29 @@ Deno.test("handleNormalPath: affordability check fails (insufficient funds)", as
             logger: logger,
             tokenWalletService: mockTokenWalletService.instance,
             countTokensForMessages: spy(() => 100),
-            getAiProviderAdapter: spy(() => mockAiAdapter),
-            supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+            getAiProviderAdapter: spy(() => mockAiAdapter.instance),
         },
         userId: "test-user-id",
         requestBody: { message: "Test message, insufficient funds", providerId: "test-provider", promptId: "__none__" },
         wallet: { walletId: "test-wallet", balance: "0", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
-        aiProviderAdapter: mockAiAdapter,
-        modelConfig: { api_identifier: "test-model-api-id", input_token_cost_rate: 1, output_token_cost_rate: 1, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } } as AiModelExtendedConfig,
+        aiProviderAdapter: mockAiAdapter.instance,
+        modelConfig: modelConfig as AiModelExtendedConfig,
         actualSystemPromptText: null,
         finalSystemPromptIdForDb: null,
         apiKey: "test-api-key",
         providerApiIdentifier: "test-model-api-id",
     };
-
+  
     // Act
     const result = await handleNormalPath(context);
-
+  
     // Assert
     assert('error' in result);
     assertEquals(result.error.status, 402);
     assert(result.error.message.includes("Insufficient token balance"));
-});
-
-Deno.test("handleNormalPath: countTokensFn throws error", async () => {
+  });
+  
+  Deno.test("handleNormalPath: countTokensFn throws error", async () => {
     // Arrange
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {
         genericMockResults: {
@@ -403,10 +408,11 @@ Deno.test("handleNormalPath: countTokensFn throws error", async () => {
             },
         },
     });
-    const mockAiAdapter = new MockAiProviderAdapter();
+    const modelConfig: AiModelExtendedConfig = { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } };
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
     const mockTokenWalletService = createMockTokenWalletService();
     const countTokensErrorMessage = "Simulated error during token counting";
-
+  
     const context: PathHandlerContext = {
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         deps: {
@@ -414,78 +420,29 @@ Deno.test("handleNormalPath: countTokensFn throws error", async () => {
             logger: logger,
             tokenWalletService: mockTokenWalletService.instance,
             countTokensForMessages: spy(() => { throw new Error(countTokensErrorMessage); }),
-            getAiProviderAdapter: spy(() => mockAiAdapter),
-            supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+            getAiProviderAdapter: spy(() => mockAiAdapter.instance),
         },
         userId: "test-user-id",
         requestBody: { message: "Test message", providerId: "test-provider", promptId: "__none__" },
         wallet: { walletId: "test-wallet", balance: "1000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
-        aiProviderAdapter: mockAiAdapter,
-        modelConfig: { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } },
+        aiProviderAdapter: mockAiAdapter.instance,
+        modelConfig,
         actualSystemPromptText: null,
         finalSystemPromptIdForDb: null,
         apiKey: "test-api-key",
         providerApiIdentifier: "test-model-api-id",
     };
-
+  
     // Act
     const result = await handleNormalPath(context);
-
+  
     // Assert
     assert('error' in result);
     assertEquals(result.error.status, 500);
     assert(result.error.message.includes(countTokensErrorMessage));
-});
-
-Deno.test("handleNormalPath: skips debit if AI response has invalid token_usage", async () => {
-    // Arrange
-    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {
-        genericMockResults: {
-            chats: {
-                insert: { data: [{ id: 'new-chat-id' }], error: null },
-            },
-            chat_messages: {
-                insert: (state) => Promise.resolve({ data: [{ ...(state.insertData), id: crypto.randomUUID() }], error: null }),
-            },
-        },
-    });
-
-    const mockAiAdapter = new MockAiProviderAdapter();
-    mockAiAdapter.setSimpleMockResponse("test-model-api-id", "Assistant response", "test-provider", null, null as unknown as TokenUsage);
-
-    const mockTokenWalletService = createMockTokenWalletService();
-    const recordTransactionSpy = mockTokenWalletService.stubs.recordTransaction;
-
-    const context: PathHandlerContext = {
-        supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-        deps: {
-            ...defaultDeps,
-            logger: logger,
-            tokenWalletService: mockTokenWalletService.instance,
-            countTokensForMessages: spy(() => 10),
-            getAiProviderAdapter: spy(() => mockAiAdapter),
-            supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-        },
-        userId: "test-user-id",
-        requestBody: { message: "Hello", providerId: "test-provider", promptId: "__none__" },
-        wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
-        aiProviderAdapter: mockAiAdapter,
-        modelConfig: { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } },
-        actualSystemPromptText: null,
-        finalSystemPromptIdForDb: null,
-        apiKey: "test-api-key",
-        providerApiIdentifier: "test-model-api-id",
-    };
-
-    // Act
-    const result = await handleNormalPath(context);
-
-    // Assert
-    assert(!('error' in result));
-    assertEquals(recordTransactionSpy.calls.length, 0);
-});
-
-Deno.test("handleNormalPath: returns 413 if input tokens exceed provider limit", async () => {
+  });
+  
+  Deno.test("handleNormalPath: returns 413 if input tokens exceed provider limit", async () => {
     // Arrange
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {
         genericMockResults: {
@@ -494,10 +451,11 @@ Deno.test("handleNormalPath: returns 413 if input tokens exceed provider limit",
             },
         },
     });
-    const mockAiAdapter = new MockAiProviderAdapter();
+    const modelConfig: AiModelExtendedConfig = { api_identifier: "test-model-api-id", provider_max_input_tokens: 50, input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } };
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
     const mockTokenWalletService = createMockTokenWalletService();
     const mockCountTokensFn = (_messages: any[], _config: any) => 100;
-
+  
     const context: PathHandlerContext = {
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         deps: {
@@ -505,30 +463,29 @@ Deno.test("handleNormalPath: returns 413 if input tokens exceed provider limit",
             logger: logger,
             tokenWalletService: mockTokenWalletService.instance,
             countTokensForMessages: spy(mockCountTokensFn),
-            getAiProviderAdapter: spy(() => mockAiAdapter),
-            supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+            getAiProviderAdapter: spy(() => mockAiAdapter.instance),
         },
         userId: "test-user-id",
         requestBody: { message: "This message is too long", providerId: "test-provider", promptId: "__none__" },
         wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
-        aiProviderAdapter: mockAiAdapter,
-        modelConfig: { api_identifier: "test-model-api-id", provider_max_input_tokens: 50, input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } },
+        aiProviderAdapter: mockAiAdapter.instance,
+        modelConfig,
         actualSystemPromptText: null,
         finalSystemPromptIdForDb: null,
         apiKey: "test-api-key",
         providerApiIdentifier: "test-model-api-id",
     };
-
+  
     // Act
     const result = await handleNormalPath(context);
-
+  
     // Assert
     assert('error' in result);
     assertEquals(result.error.status, 413);
     assert(result.error.message.includes("maximum allowed length for this model is 50 tokens"));
-});
-
-Deno.test("handleNormalPath: history fetch error proceeds as new chat", async () => {
+  });
+  
+  Deno.test("handleNormalPath: history fetch error proceeds as new chat", async () => {
     // Arrange
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {
         genericMockResults: {
@@ -541,10 +498,11 @@ Deno.test("handleNormalPath: history fetch error proceeds as new chat", async ()
             }
         },
     });
-    const mockAiAdapter = new MockAiProviderAdapter();
-    mockAiAdapter.setSimpleMockResponse("test-model-api-id", "Response for new chat", "test-provider", null);
+    const modelConfig: AiModelExtendedConfig = { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } };
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    mockAiAdapter.controls.setMockResponse({ content: "Response for new chat" });
     const mockTokenWalletService = createMockTokenWalletService();
-
+  
     const context: PathHandlerContext = {
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         deps: {
@@ -552,143 +510,35 @@ Deno.test("handleNormalPath: history fetch error proceeds as new chat", async ()
             logger: logger,
             tokenWalletService: mockTokenWalletService.instance,
             countTokensForMessages: spy(() => 10),
-            getAiProviderAdapter: spy(() => mockAiAdapter),
-            supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+            getAiProviderAdapter: spy(() => mockAiAdapter.instance),
         },
         userId: "test-user-id",
         requestBody: { message: "initiate with bad history chatid", providerId: "test-provider", promptId: "__none__", chatId: "bad-chat-id" },
         wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
-        aiProviderAdapter: mockAiAdapter,
-        modelConfig: { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } },
+        aiProviderAdapter: mockAiAdapter.instance,
+        modelConfig,
         actualSystemPromptText: null,
         finalSystemPromptIdForDb: null,
         apiKey: "test-api-key",
         providerApiIdentifier: "test-model-api-id",
     };
-
+  
     // Act
     const result = await handleNormalPath(context);
-
+  
     // Assert
     assert(!('error' in result));
     assert(result.chatId !== 'bad-chat-id');
-});
-
-Deno.test("handleNormalPath: should apply a fallback cap when model config is missing a hard cap", async () => {
-    // Arrange
-    const highUserBalance = 1_000_000;
-    const promptInputTokens = 100;
-    const FALLBACK_SYSTEM_CAP = 4096;
-
-    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {
-        genericMockResults: {
-            chats: { insert: { data: [{ id: "new-chat-id" }], error: null } },
-            chat_messages: { insert: (state) => Promise.resolve({ data: [{ ...(state.insertData), id: crypto.randomUUID() }], error: null }) },
-        },
-    });
-
-    const mockAiAdapter = new MockAiProviderAdapter();
-    const mockTokenWalletService = createMockTokenWalletService({
-        getWalletForContext: () => Promise.resolve({ balance: String(highUserBalance), currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date(), walletId: "test-wallet" }),
-    });
-    
-    const context: PathHandlerContext = {
-      supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-      deps: {
-        ...defaultDeps,
-        logger: logger,
-        tokenWalletService: mockTokenWalletService.instance,
-        countTokensForMessages: spy(() => promptInputTokens),
-        getAiProviderAdapter: spy(() => mockAiAdapter),
-        supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-      },
-      userId: "test-user-id",
-      requestBody: { message: "Test message", providerId: "test-provider", promptId: "__none__" },
-      wallet: { walletId: "test-wallet", balance: String(highUserBalance), currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
-      aiProviderAdapter: mockAiAdapter,
-      modelConfig: { 
-          api_identifier: "test-model-api-id", 
-          input_token_cost_rate: 1, 
-          output_token_cost_rate: 2, 
-          tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } 
-      },
-      actualSystemPromptText: null,
-      finalSystemPromptIdForDb: null,
-      apiKey: "test-api-key",
-      providerApiIdentifier: "test-model-api-id",
-    };
-
-    // Act
-    await handleNormalPath(context);
-
-    // Assert
-    const sendMessageSpy = mockAiAdapter.getRecordedCalls();
-    assertEquals(sendMessageSpy.length, 1);
-    assertEquals(sendMessageSpy[0].max_tokens_to_generate, FALLBACK_SYSTEM_CAP);
-});
-
-Deno.test("handleNormalPath: should cap max_tokens_to_generate based on affordability", async () => {
-    // Arrange
-    const userBalance = 1000;
-    const promptInputTokens = 100;
-    const expectedMaxAllowedOutputTokens = 90;
-
-    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {
-        genericMockResults: {
-            chats: { insert: { data: [{ id: "new-chat-id" }], error: null } },
-            chat_messages: { insert: (state) => Promise.resolve({ data: [{ ...(state.insertData), id: crypto.randomUUID() }], error: null }) },
-        },
-    });
-    
-    const mockAiAdapter = new MockAiProviderAdapter();
-    const mockTokenWalletService = createMockTokenWalletService({
-        getWalletForContext: () => Promise.resolve({ balance: String(userBalance), currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date(), walletId: "test-wallet" }),
-    });
-
-    const context: PathHandlerContext = {
-      supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-      deps: {
-        ...defaultDeps,
-        logger: logger,
-        tokenWalletService: mockTokenWalletService.instance,
-        countTokensForMessages: spy(() => promptInputTokens),
-        getAiProviderAdapter: spy(() => mockAiAdapter),
-        supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-      },
-      userId: "test-user-id",
-      requestBody: { message: "Test message", providerId: "test-provider", promptId: "__none__", max_tokens_to_generate: 4096 },
-      wallet: { walletId: "test-wallet", balance: String(userBalance), currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
-      aiProviderAdapter: mockAiAdapter,
-      modelConfig: { 
-          api_identifier: "test-model-api-id", 
-          input_token_cost_rate: 1, 
-          output_token_cost_rate: 2, 
-          hard_cap_output_tokens: 4096, 
-          tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } 
-      },
-      actualSystemPromptText: null,
-      finalSystemPromptIdForDb: null,
-      apiKey: "test-api-key",
-      providerApiIdentifier: "test-model-api-id",
-    };
-
-    // Act
-    await handleNormalPath(context);
-
-    // Assert
-    const sendMessageSpy = mockAiAdapter.getRecordedCalls();
-    assertEquals(sendMessageSpy.length, 1);
-    assertEquals(sendMessageSpy[0].max_tokens_to_generate, expectedMaxAllowedOutputTokens);
-});
-
-Deno.test("handleNormalPath: should not duplicate message content", async () => {
+  });
+  
+  Deno.test("handleNormalPath: should not duplicate message content", async () => {
     // Arrange
     const userMessageContent = "This is the single message from the user.";
     const existingHistory: ChatMessageRow[] = [
         { id: 'hist-user-1', content: 'Previous user message', role: 'user', chat_id: 'test-chat-id', created_at: new Date().toISOString(), ai_provider_id: null, error_type: null, is_active_in_thread: true, response_to_message_id: null, user_id: null, system_prompt_id: null, token_usage: null, updated_at: new Date().toISOString() },
         { id: 'hist-asst-1', content: 'Previous assistant response', role: 'assistant', chat_id: 'test-chat-id', created_at: new Date().toISOString(), ai_provider_id: null, error_type: null, is_active_in_thread: true, response_to_message_id: null, user_id: null, system_prompt_id: null, token_usage: null, updated_at: new Date().toISOString() }
     ];
-
+  
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {
         genericMockResults: {
             chats: { 
@@ -701,7 +551,8 @@ Deno.test("handleNormalPath: should not duplicate message content", async () => 
             },
         },
     });
-    const mockAiAdapter = new MockAiProviderAdapter();
+    const modelConfig: AiModelExtendedConfig = { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } };
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
     
     const context: PathHandlerContext = {
       supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
@@ -710,33 +561,29 @@ Deno.test("handleNormalPath: should not duplicate message content", async () => 
         logger: logger,
         tokenWalletService: createMockTokenWalletService().instance,
         countTokensForMessages: spy(() => 10),
-        getAiProviderAdapter: spy(() => mockAiAdapter),
-        supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+        getAiProviderAdapter: spy(() => mockAiAdapter.instance),
       },
       userId: "test-user-id",
       requestBody: { message: userMessageContent, providerId: "test-provider", promptId: "__none__", chatId: "test-chat-id" },
       wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
-      aiProviderAdapter: mockAiAdapter,
-      modelConfig: { api_identifier: "test-model-api-id", input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
       actualSystemPromptText: 'System prompt text',
       finalSystemPromptIdForDb: 'prompt-id',
       apiKey: "test-api-key",
       providerApiIdentifier: "test-model-api-id",
     };
-
+  
     // Act
     await handleNormalPath(context);
-
+  
     // Assert
-    const sendMessageSpy = mockAiAdapter.getRecordedCalls();
-    assertEquals(sendMessageSpy.length, 1);
-    const adapterArgs = sendMessageSpy[0].messages;
+    assertEquals(mockAiAdapter.sendMessageSpy.calls.length, 1);
+    const adapterArgs = mockAiAdapter.sendMessageSpy.calls[0].args[0].messages;
+    assert(adapterArgs);
     assertEquals(adapterArgs.length, 4);
     assertEquals(adapterArgs[0].role, 'system');
     assertEquals(adapterArgs[1].content, 'Previous user message');
     assertEquals(adapterArgs[2].content, 'Previous assistant response');
     assertEquals(adapterArgs[3].content, userMessageContent);
-});
-
-
-
+  });

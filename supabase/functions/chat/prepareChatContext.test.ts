@@ -6,13 +6,14 @@ import { spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { createMockSupabaseClient, MockSupabaseClientSetup } from "../_shared/supabase.mock.ts";
 import { logger } from "../_shared/logger.ts";
 import { createMockTokenWalletService, MockTokenWalletService } from "../_shared/services/tokenWalletService.mock.ts";
-import { ChatApiRequest, ChatHandlerDeps } from "../_shared/types.ts";
+import { AiModelExtendedConfig, ChatApiRequest, ChatHandlerDeps } from "../_shared/types.ts";
 import { prepareChatContext, PrepareChatContextDeps, ChatContext } from "./prepareChatContext.ts";
-import { MockAiProviderAdapter } from "../_shared/ai_service/ai_provider.mock.ts";
+import { getMockAiProviderAdapter } from "../_shared/ai_service/ai_provider.mock.ts";
 import { Database } from "../types_db.ts";
 import { SupabaseClient } from "@supabase/supabase-js";
 
-const getValidProviderConfig = () => ({
+const getValidProviderConfig = (): AiModelExtendedConfig => ({
+    api_identifier: 'test-model',
     tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
     input_token_cost_rate: 0.0001,
     output_token_cost_rate: 0.0002,
@@ -48,10 +49,12 @@ Deno.test("prepareChatContext: successful context preparation", async () => {
     });
     Deno.env.set("TEST_PROVIDER_API_KEY", "test-key");
 
+    const mockAdapter = getMockAiProviderAdapter(logger, getValidProviderConfig()).instance;
+
     const deps: PrepareChatContextDeps = {
         logger,
         tokenWalletService: mockTokenWalletService.instance,
-        getAiProviderAdapter: spy(() => new MockAiProviderAdapter()),
+        getAiProviderAdapter: spy(() => mockAdapter),
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         countTokensForMessages: spy(() => 10),
         createSupabaseClient: spy(),
@@ -131,12 +134,13 @@ Deno.test("prepareChatContext: wallet not found", async () => {
         getWalletForContext: () => Promise.resolve(null),
     });
     Deno.env.set("TEST_PROVIDER_API_KEY", "test-key");
+    const mockAdapter = getMockAiProviderAdapter(logger, getValidProviderConfig()).instance;
 
     const deps: PrepareChatContextDeps = {
         logger,
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         tokenWalletService: mockTokenWalletService.instance,
-        getAiProviderAdapter: spy(() => new MockAiProviderAdapter()),
+        getAiProviderAdapter: spy(() => mockAdapter),
         countTokensForMessages: spy(),
         createSupabaseClient: spy(),
         fetch: spy(),
@@ -214,11 +218,12 @@ Deno.test("prepareChatContext: invalid promptId returns null prompt", async () =
         getWalletForContext: () => Promise.resolve({ walletId: 'wallet-1', balance: '1000', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date(), userId: 'test-user-id' }),
     });
     Deno.env.set("TEST_PROVIDER_API_KEY", "test-key");
+    const mockAdapter = getMockAiProviderAdapter(logger, getValidProviderConfig()).instance;
     const deps: PrepareChatContextDeps = {
         logger,
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         tokenWalletService: mockTokenWalletService.instance,
-        getAiProviderAdapter: spy(() => new MockAiProviderAdapter()),
+        getAiProviderAdapter: spy(() => mockAdapter),
         countTokensForMessages: spy(),
         createSupabaseClient: spy(),
         fetch: spy(),
@@ -259,11 +264,12 @@ Deno.test("prepareChatContext: inactive prompt returns null prompt", async () =>
         getWalletForContext: () => Promise.resolve({ walletId: 'wallet-1', balance: '1000', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date(), userId: 'test-user-id' }),
     });
     Deno.env.set("TEST_PROVIDER_API_KEY", "test-key");
+    const mockAdapter = getMockAiProviderAdapter(logger, getValidProviderConfig()).instance;
     const deps: PrepareChatContextDeps = {
         logger,
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         tokenWalletService: mockTokenWalletService.instance,
-        getAiProviderAdapter: spy(() => new MockAiProviderAdapter()),
+        getAiProviderAdapter: spy(() => mockAdapter),
         countTokensForMessages: spy(),
         createSupabaseClient: spy(),
         fetch: spy(),
@@ -300,11 +306,12 @@ Deno.test("prepareChatContext: promptId '__none__' returns null prompt", async (
         getWalletForContext: () => Promise.resolve({ walletId: 'wallet-1', balance: '1000', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date(), userId: 'test-user-id' }),
     });
     Deno.env.set("TEST_PROVIDER_API_KEY", "test-key");
+    const mockAdapter = getMockAiProviderAdapter(logger, getValidProviderConfig()).instance;
     const deps: PrepareChatContextDeps = {
         logger,
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         tokenWalletService: mockTokenWalletService.instance,
-        getAiProviderAdapter: spy(() => new MockAiProviderAdapter()),
+        getAiProviderAdapter: spy(() => mockAdapter),
         countTokensForMessages: spy(),
         createSupabaseClient: spy(),
         fetch: spy(),
@@ -421,12 +428,13 @@ Deno.test("prepareChatContext: returns 402 if getWalletForContext returns null",
         getWalletForContext: () => Promise.resolve(null),
     });
     Deno.env.set("TEST_PROVIDER_API_KEY", "test-key");
+    const mockAdapter = getMockAiProviderAdapter(logger, getValidProviderConfig()).instance;
 
     const deps: PrepareChatContextDeps = {
         logger,
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         tokenWalletService: mockTokenWalletService.instance,
-        getAiProviderAdapter: spy(() => new MockAiProviderAdapter()),
+        getAiProviderAdapter: spy(() => mockAdapter),
         countTokensForMessages: spy(),
         createSupabaseClient: spy(),
         fetch: spy(),
@@ -465,11 +473,12 @@ Deno.test("prepareChatContext: returns 500 if getWalletForContext throws an erro
     });
     Deno.env.set("TEST_PROVIDER_API_KEY", "test-key");
     const loggerErrorSpy = spy();
+    const mockAdapter = getMockAiProviderAdapter(logger, getValidProviderConfig()).instance;
     const deps: PrepareChatContextDeps = {
         logger: { ...logger, error: loggerErrorSpy, debug: spy(), info: spy(), warn: spy() },
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         tokenWalletService: mockTokenWalletService.instance,
-        getAiProviderAdapter: spy(() => new MockAiProviderAdapter()),
+        getAiProviderAdapter: spy(() => mockAdapter),
         countTokensForMessages: spy(),
         createSupabaseClient: spy(),
         fetch: spy(),

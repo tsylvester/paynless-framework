@@ -136,8 +136,7 @@ export async function handleRewindPath(
         };
         adapterResponsePayload = await aiProviderAdapter.sendMessage(
             adapterChatRequest,
-            modelConfig.api_identifier,
-            apiKey
+            modelConfig.api_identifier
         );
         logger.info('AI adapter returned successfully for rewind.');
     } catch (adapterError) {

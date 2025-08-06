@@ -1,6 +1,6 @@
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { Database } from "../types_db.ts";
-import { AiModelExtendedConfig, ChatApiRequest, ChatHandlerDeps, AiProviderAdapter } from "../_shared/types.ts";
+import { AiModelExtendedConfig, ChatApiRequest, ChatHandlerDeps, AiProviderAdapterInstance } from "../_shared/types.ts";
 import { TokenWallet } from "../_shared/types/tokenWallet.types.ts";
 import { AiModelExtendedConfigSchema } from "./zodSchema.ts";
 
@@ -10,7 +10,7 @@ export interface PrepareChatContextDeps extends ChatHandlerDeps {
 
 export interface SuccessfulChatContext {
     wallet: TokenWallet;
-    aiProviderAdapter: AiProviderAdapter;
+    aiProviderAdapter: AiProviderAdapterInstance;
     modelConfig: AiModelExtendedConfig;
     actualSystemPromptText: string | null;
     finalSystemPromptIdForDb: string | null;
@@ -94,15 +94,15 @@ export async function prepareChatContext(
         }
 
         const providerApiIdentifier = providerData.api_identifier;
-        const providerDatabaseConfig = providerData.config;
-        const combinedConfigForParsing = {
-            ...(typeof providerDatabaseConfig === 'object' && providerDatabaseConfig !== null ? providerDatabaseConfig : {}),
-            api_identifier: providerApiIdentifier
-        };
+        
+        // This is the correct place to parse the config from the DB
+        const parsedModelConfig = AiModelExtendedConfigSchema.safeParse(providerData.config);
 
-        const parsedModelConfig = AiModelExtendedConfigSchema.safeParse(combinedConfigForParsing);
         if (!parsedModelConfig.success) {
-            logger.error('Failed to parse provider config', { error: parsedModelConfig.error, config: combinedConfigForParsing });
+            logger.error('Failed to parse provider config from database', { 
+                error: parsedModelConfig.error, 
+                config: providerData.config 
+            });
             return { error: { message: `Invalid configuration for provider ID '${requestProviderId}'.`, status: 500 } };
         }
         const modelConfig = parsedModelConfig.data;
@@ -114,7 +114,13 @@ export async function prepareChatContext(
         }
 
         const adapterToUse = getAiProviderAdapterOverride || getAiProviderAdapterDep;
-        const aiProviderAdapter = adapterToUse(providerData.provider, providerApiIdentifier, apiKey, logger);
+        // Now we pass the *parsed and validated* modelConfig, satisfying the stricter contract
+        const aiProviderAdapter = adapterToUse(
+            providerApiIdentifier, 
+            modelConfig, 
+            apiKey, 
+            logger
+        );
 
         if (!aiProviderAdapter) {
             return { error: { message: `Unsupported or misconfigured AI provider: ${providerApiIdentifier}`, status: 400 } };

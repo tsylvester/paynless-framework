@@ -1,4 +1,4 @@
-# Model Call Refinement 2: Complex Job Processing
+# Modularize Chat - the chat/index.ts function is an unmaintainable monolith. The outcome of this work is a series of easy to maintain SRP DRY modules. 
 
 This document provides a complete, verified, and end-to-end refactoring to modularize the existing monolithic chat into multiple smaller, easier to test files.
 

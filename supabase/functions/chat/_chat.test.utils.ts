@@ -5,6 +5,7 @@ import type { ConnInfo } from "https://deno.land/std@0.177.0/http/server.ts";
 import type { Database, Json } from "../types_db.ts";
 import type {
     AiProviderAdapter,
+    AiProviderAdapterInstance,
     ChatApiRequest,
     AdapterResponsePayload,
     ChatHandlerDeps,
@@ -69,10 +70,10 @@ export const envGetStub = stub(Deno.env, "get", (key: string): string | undefine
 });
 
 // --- Exported Mock Creation Helpers ---
-export const createMockAiAdapter = (sendMessageResult: AdapterResponsePayload | Error) => {
+export const createMockAiAdapter = (sendMessageResult: AdapterResponsePayload | Error): AiProviderAdapterInstance => {
     const sendMessageSpyFn = sendMessageResult instanceof Error
-        ? (_request: ChatApiRequest, _modelIdentifier: string, _apiKey: string) => Promise.reject(sendMessageResult)
-        : (_request: ChatApiRequest, _modelIdentifier: string, _apiKey: string) => Promise.resolve(sendMessageResult);
+        ? (_request: ChatApiRequest, _modelIdentifier: string) => Promise.reject(sendMessageResult)
+        : (_request: ChatApiRequest, _modelIdentifier: string) => Promise.resolve(sendMessageResult);
     const actualSpy = spy(sendMessageSpyFn);
     return {
         sendMessage: actualSpy,
@@ -86,7 +87,7 @@ export interface CreateTestDepsResult {
     mockTokenWalletService: MockTokenWalletService;
     clearSupabaseClientStubs: MockSupabaseClientSetup['clearAllStubs'];
     clearTokenWalletStubs: () => void;
-    mockAdapterSpy?: Spy<any, [ChatApiRequest, string, string], Promise<AdapterResponsePayload>>;
+    mockAdapterSpy?: Spy<any, [ChatApiRequest, string], Promise<AdapterResponsePayload>>;
 }
 
 // Overrides for core dependencies, allowing for more granular control in specific tests
@@ -123,7 +124,7 @@ export const createTestDeps = (
   let mockAdapterSpy;
   if (adapterSendMessageResult) {
     const mockAdapter = createMockAiAdapter(adapterSendMessageResult);
-    mockAdapterSpy = mockAdapter.sendMessage;
+    mockAdapterSpy = spy(mockAdapter, 'sendMessage');
     // If a mock response is provided, make the factory always return this mock adapter
     deps.getAiProviderAdapter = spy((_providerApiIdentifier, _providerDbConfig, _apiKey, _logger) => mockAdapter);
   } else {
