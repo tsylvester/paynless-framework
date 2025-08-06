@@ -6,9 +6,12 @@ import type { handleCorsPreflightRequest, createSuccessResponse, createErrorResp
 import { createClient, SupabaseClient, User } from "npm:@supabase/supabase-js";
 import { Tables } from '../types_db.ts';
 import type { ITokenWalletService } from './types/tokenWallet.types.ts';
+import type { prepareChatContext } from '../chat/prepareChatContext.ts';
+import type { handleNormalPath } from '../chat/handleNormalPath.ts';
+import type { handleRewindPath } from '../chat/handleRewindPath.ts';
 // Import MessageForTokenCounting from the centralized location AT THE TOP
 
-
+export type ChatInsert = Tables<'chats'>;
 
 // Define PaymentTransaction using the Tables helper type from types_db.ts
 export type PaymentTransaction = Tables<'payment_transactions'>;
@@ -381,7 +384,10 @@ export interface ChatHandlerDeps {
   logger: ILogger;
   tokenWalletService?: ITokenWalletService; 
   countTokensForMessages: (messages: MessageForTokenCounting[], modelConfig: AiModelExtendedConfig) => number; // Updated signature
-  supabaseClient?: SupabaseClient; // Added for test overrides
+  prepareChatContext: typeof prepareChatContext;
+  handleNormalPath: typeof handleNormalPath;
+  handleRewindPath: typeof handleRewindPath;
+  handlePostRequest?: (requestBody: ChatApiRequest, supabaseClient: SupabaseClient<Database>, userId: string, deps: ChatHandlerDeps) => Promise<ChatHandlerSuccessResponse | { error: { message: string, status?: number } }>;
 }
 
 export type PerformChatRewindResult = Database['public']['Functions']['perform_chat_rewind']['Returns'];

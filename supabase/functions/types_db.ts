@@ -1746,19 +1746,34 @@ export type Database = {
         }[]
       }
       perform_chat_rewind: {
-        Args: {
-          p_chat_id: string
-          p_rewind_from_message_id: string
-          p_user_id: string
-          p_new_user_message_content: string
-          p_new_user_message_ai_provider_id: string
-          p_new_assistant_message_content: string
-          p_new_assistant_message_ai_provider_id: string
-          p_new_user_message_system_prompt_id?: string
-          p_new_assistant_message_token_usage?: Json
-          p_new_assistant_message_system_prompt_id?: string
-          p_new_assistant_message_error_type?: string
-        }
+        Args:
+          | {
+              p_chat_id: string
+              p_rewind_from_message_id: string
+              p_user_id: string
+              p_new_user_message_content: string
+              p_new_user_message_ai_provider_id: string
+              p_new_assistant_message_content: string
+              p_new_assistant_message_ai_provider_id: string
+              p_new_user_message_system_prompt_id?: string
+              p_new_assistant_message_token_usage?: Json
+              p_new_assistant_message_system_prompt_id?: string
+              p_new_assistant_message_error_type?: string
+            }
+          | {
+              p_chat_id: string
+              p_rewind_from_message_id: string
+              p_user_id: string
+              p_new_user_message_id: string
+              p_new_user_message_content: string
+              p_new_user_message_ai_provider_id: string
+              p_new_user_message_system_prompt_id: string
+              p_new_assistant_message_id: string
+              p_new_assistant_message_content: string
+              p_new_assistant_message_token_usage: Json
+              p_new_assistant_message_ai_provider_id: string
+              p_new_assistant_message_system_prompt_id: string
+            }
         Returns: {
           new_user_message_id: string
           new_assistant_message_id: string

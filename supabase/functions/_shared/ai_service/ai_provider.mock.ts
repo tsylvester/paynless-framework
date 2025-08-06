@@ -39,7 +39,7 @@ export class MockAiProviderAdapter implements AiProviderAdapter {
       content,
       ai_provider_id,
       system_prompt_id,
-      token_usage: (token_usage || { ...this.defaultTokenUsage }) as unknown as Json,
+      token_usage: (token_usage !== undefined ? token_usage : { ...this.defaultTokenUsage }) as unknown as Json,
     }));
   }
   

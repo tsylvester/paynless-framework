@@ -39,7 +39,12 @@ export class DummyAdapter implements AiProviderAdapter {
         request: ChatApiRequest,
         modelIdentifier: string, // e.g., "dummy-echo-v1"
     ): Promise<AdapterResponsePayload> {
-        this.logger.debug(`[DummyAdapter] sendMessage called for model: ${modelIdentifier}`, { request });
+        const payloadFingerprint = (request.messages ?? []).map(m => ({
+            role: m.role,
+            content_length: m.content?.length ?? 0,
+        }));
+        this.logger.debug(`[DummyAdapter] sendMessage received payload for model: ${modelIdentifier}. Fingerprint:`, { payloadFingerprint });
+
 
         const requestMessagesString = (request.messages ?? []).map(m => m.content).join('\n') + (request.message ? '\n' + request.message : '');
         let fullResponseContent = '';

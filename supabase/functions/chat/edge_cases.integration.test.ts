@@ -25,6 +25,7 @@ import type { MockQueryBuilderState, MockResolveQueryResult, MockPGRSTError } fr
 import { handler, defaultDeps } from "./index.ts"; // Static import
 import type { SupabaseClient } from "npm:@supabase/supabase-js";
 import type { Database, Json } from "../types_db.ts";
+import type { ChatMessageRow } from './_chat.test.utils.ts';
 
 // Helper function to create ChatHandlerDeps
 const createDepsForEdgeCaseTest = (): ChatHandlerDeps => {
@@ -42,6 +43,98 @@ const createDepsForEdgeCaseTest = (): ChatHandlerDeps => {
   };
   return deps;
 };
+
+// Helper to generate a unique suffix for chat names etc., to avoid collisions if tests are re-run without cleanup
+function generateTestRunSuffix(): string {
+    return Math.random().toString(36).substring(2, 8);
+}
+
+/**
+ * Sets up test data for a single real database test run.
+ * Assumes provider and prompt already exist.
+ * Creates a chat and a sequence of messages.
+ */
+async function setupRewindTestData(
+    supabaseClient: SupabaseClient<Database>, // Use admin client for setup
+    userId: string,
+    providerId: string,
+    promptId: string,
+    testRunId: string // Unique ID for this specific test execution
+): Promise<{
+    chatId: string,
+    userMsg1Id: string,
+    aiMsg1Id: string, // This will often be the rewind point
+    userMsg2Id: string,
+    aiMsg2Id: string,
+}> {
+    const chatId = crypto.randomUUID();
+    const userMsg1Id = crypto.randomUUID();
+    const aiMsg1Id = crypto.randomUUID(); // Rewind point
+    const userMsg2Id = crypto.randomUUID();
+    const aiMsg2Id = crypto.randomUUID();
+
+    console.log(`[Real DB Setup ${testRunId}] Creating chat: ${chatId}`);
+
+    // 1. Create Chat
+    const { error: chatError } = await supabaseClient
+        .from('chats')
+        .insert({
+            id: chatId,
+            user_id: userId,
+            system_prompt_id: promptId,
+            title: `Test Chat ${testRunId}`,
+        });
+    if (chatError) throw new Error(`Failed to create test chat: ${chatError.message}`);
+
+    // 2. Insert Messages
+    const messagesToInsert: Omit<ChatMessageRow, 'created_at' | 'updated_at' | 'metadata' | 'version'>[] = [
+        { id: userMsg1Id, chat_id: chatId, user_id: userId, role: 'user', content: 'User Message 1', is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null, error_type: null, response_to_message_id: null },
+        { id: aiMsg1Id, chat_id: chatId, user_id: null, role: 'assistant', content: 'AI Response 1 (Rewind Target)', is_active_in_thread: true, ai_provider_id: providerId, system_prompt_id: promptId, token_usage: { prompt_tokens: 10, completion_tokens: 10 } as Json, error_type: null, response_to_message_id: userMsg1Id },
+        { id: userMsg2Id, chat_id: chatId, user_id: userId, role: 'user', content: 'User Message 2', is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null, error_type: null, response_to_message_id: null },
+        { id: aiMsg2Id, chat_id: chatId, user_id: null, role: 'assistant', content: 'AI Response 2', is_active_in_thread: true, ai_provider_id: providerId, system_prompt_id: promptId, token_usage: { prompt_tokens: 10, completion_tokens: 10 } as Json, error_type: null, response_to_message_id: userMsg2Id },
+    ];
+    
+    const messagesWithTimestamps = messagesToInsert.map((msg, index) => ({
+        ...msg,
+        created_at: new Date(Date.now() - (messagesToInsert.length - index) * 2000).toISOString()
+    }));
+
+    const { data: insertedMessages, error: messageError } = await supabaseClient
+        .from('chat_messages')
+        .insert(messagesWithTimestamps)
+        .select(); 
+
+    if (messageError) {
+        await supabaseClient.from('chats').delete().eq('id', chatId);
+        throw new Error(`Failed to insert test messages: ${messageError.message}`);
+    }
+    if (!insertedMessages || insertedMessages.length !== messagesWithTimestamps.length) {
+        await supabaseClient.from('chats').delete().eq('id', chatId);
+        throw new Error(`Failed to insert all test messages. Expected ${messagesWithTimestamps.length}, got ${insertedMessages?.length}`);
+    }
+
+    console.log(`[Real DB Setup ${testRunId}] Successfully created chat and ${insertedMessages.length} messages.`);
+
+    return { chatId, userMsg1Id, aiMsg1Id, userMsg2Id, aiMsg2Id };
+}
+
+/**
+ * Cleans up data created by setupTestData for a specific test run.
+ */
+async function cleanupRewindTestData(supabaseClient: SupabaseClient<Database>, chatId: string, testRunId: string) {
+    console.log(`[Real DB Cleanup ${testRunId}] Deleting chat: ${chatId}`);
+    const { error: deleteChatError } = await supabaseClient
+        .from('chats')
+        .delete()
+        .eq('id', chatId);
+
+    if (deleteChatError) {
+        console.error(`[Real DB Cleanup ${testRunId}] WARN: Failed to delete test chat ${chatId}: ${deleteChatError.message}. Manual cleanup might be needed.`);
+    } else {
+        console.log(`[Real DB Cleanup ${testRunId}] Successfully deleted chat ${chatId}.`);
+    }
+}
+
 
 export async function runEdgeCaseTests(
   t: Deno.TestContext,
@@ -437,5 +530,51 @@ export async function runEdgeCaseTests(
       `Wallet balance should be restored to initial balance after DB error. Expected: ${initialBalance}, Got: ${walletAfter.balance}`);
 
     assertEquals(userMessageInsertCount, 2, "Expected two insert attempts to chat_messages (user, then assistant).");
+  });
+
+  await t.step("[Edge Case] Basic rewind functionality (real database)", async () => {
+    const { primaryUserId: testUserId, processedResources } = await initializeTestGroupEnvironment({
+      userProfile: { first_name: "Real DB Rewind User" },
+      initialWalletBalance: 10000,
+    });
+    const currentAuthToken = getTestUserAuthToken();
+    const providerInfo = processedResources.find(p => p.tableName === 'ai_providers' && (p.resource as any).api_identifier === 'gpt-3.5-turbo-test')!.resource as any;
+
+    const { data: chat, error: chatError } = await supabaseAdminClient!.from('chats').insert({ user_id: testUserId, title: "Rewind Test Chat" }).select().single();
+    if (chatError) throw chatError;
+
+    const { data: messages, error: msgError } = await supabaseAdminClient!.from('chat_messages').insert([
+        { chat_id: chat.id, user_id: testUserId, role: 'user', content: 'Message 1' },
+        { chat_id: chat.id, role: 'assistant', content: 'Response 1' },
+        { chat_id: chat.id, user_id: testUserId, role: 'user', content: 'Message 2' },
+        { chat_id: chat.id, role: 'assistant', content: 'Response 2' },
+    ]).select();
+    if (msgError) throw msgError;
+
+    const rewindFromMessageId = messages[1].id;
+
+    const requestBody: ChatApiRequest = {
+        message: "User message after rewind",
+        providerId: providerInfo.id,
+        chatId: chat.id,
+        rewindFromMessageId,
+        promptId: "__none__",
+    };
+
+    const request = new Request(CHAT_FUNCTION_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentAuthToken}` },
+        body: JSON.stringify(requestBody),
+    });
+
+    const response = await handler(request, createDepsForEdgeCaseTest());
+    assertEquals(response.status, 200);
+
+    const { data: finalMessages } = await supabaseAdminClient!.from('chat_messages').select('content, is_active_in_thread').eq('chat_id', chat.id).order('created_at');
+    assertEquals(finalMessages?.length, 6);
+    assertEquals(finalMessages![2].is_active_in_thread, false);
+    assertEquals(finalMessages![3].is_active_in_thread, false);
+    assertEquals(finalMessages![4].is_active_in_thread, true);
+    assertEquals(finalMessages![5].is_active_in_thread, true);
   });
 } 

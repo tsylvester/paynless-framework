@@ -16,6 +16,13 @@ export function countTokensForMessages(
   messages: MessageForTokenCounting[],
   modelConfig: AiModelExtendedConfig
 ): number {
+  const payloadFingerprint = messages.map(m => ({
+    role: m.role,
+    content_length: m.content?.length ?? 0,
+    name_length: m.name?.length ?? 0,
+  }));
+  console.log(`[countTokensForMessages] Estimating tokens for model "${modelConfig.api_identifier}". Payload fingerprint:`, JSON.stringify(payloadFingerprint, null, 2));
+  console.log(`[countTokensForMessages] Estimating tokens for model "${modelConfig.api_identifier}". Payload fingerprint:`, JSON.stringify(payloadFingerprint, null, 2));
   const { tokenization_strategy, api_identifier } = modelConfig;
 
   if (tokenization_strategy.type === "tiktoken") {

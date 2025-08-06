@@ -19,6 +19,7 @@ import { FileType, CanonicalPathParams } from "../types/file_manager.types.ts";
 import { ProjectContext, StageContext } from "../prompt-assembler.interface.ts";
 import { FailedAttemptError } from "../../dialectic-service/dialectic.interface.ts";
 import { AiModelExtendedConfig } from "../types.ts";
+import { ChatMessageRole, ChatInsert } from "../types.ts";
 
 // Helper type to represent the structure we're checking for.
 type StageWithProcessingStrategy = Tables<'dialectic_stages'> & {
@@ -732,4 +733,85 @@ export function isDialecticChunkMetadata(obj: unknown): obj is DialecticChunkMet
         'source_contribution_id' in obj &&
         typeof obj.source_contribution_id === 'string'
     );
+}
+
+export function isChatMessageRole(role: string): role is ChatMessageRole {
+    return ['system', 'user', 'assistant'].includes(role);
+}
+
+export function isChatMessageRow(record: unknown): record is Tables<'chat_messages'> {
+    if (!isRecord(record)) {
+        return false;
+    }
+
+    const checks: { key: keyof Tables<'chat_messages'>, type: string, nullable?: boolean }[] = [
+        { key: 'id', type: 'string' },
+        { key: 'chat_id', type: 'string' },
+        { key: 'user_id', type: 'string', nullable: true },
+        { key: 'role', type: 'string' },
+        { key: 'content', type: 'string', nullable: true },
+        { key: 'created_at', type: 'string' },
+        { key: 'updated_at', type: 'string' },
+        { key: 'is_active_in_thread', type: 'boolean' },
+        { key: 'token_usage', type: 'object', nullable: true },
+        { key: 'ai_provider_id', type: 'string', nullable: true },
+        { key: 'system_prompt_id', type: 'string', nullable: true },
+        { key: 'error_type', type: 'string', nullable: true },
+        { key: 'response_to_message_id', type: 'string', nullable: true },
+    ];
+
+    for (const check of checks) {
+        const descriptor = Object.getOwnPropertyDescriptor(record, check.key);
+        if (!descriptor && !check.nullable) {
+            return false;
+        }
+
+        if (descriptor) {
+            const value = descriptor.value;
+            const valueType = typeof value;
+            if (check.nullable && value === null) {
+                continue;
+            }
+            if (valueType !== check.type) {
+                return false;
+            }
+        } else if (!check.nullable) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+export function isChatInsert(record: unknown): record is ChatInsert {
+    if (!isRecord(record)) {
+        return false;
+    }
+
+    // Required field
+    if (typeof record.user_id !== 'string') {
+        return false;
+    }
+
+    // Optional fields
+    if ('created_at' in record && typeof record.created_at !== 'string') {
+        return false;
+    }
+    if ('id' in record && typeof record.id !== 'string') {
+        return false;
+    }
+    if ('organization__id' in record && typeof record.organization_id !== 'string' && record.organization_id !== null) {
+        return false;
+    }
+    if ('system_prompt_id' in record && typeof record.system_prompt_id !== 'string' && record.system_prompt_id !== null) {
+        return false;
+    }
+    if ('title' in record && typeof record.title !== 'string' && record.title !== null) {
+        return false;
+    }
+    if ('updated_at' in record && typeof record.updated_at !== 'string') {
+        return false;
+    }
+
+    return true;
 }

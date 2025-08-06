@@ -34,6 +34,10 @@ import { handler as chatHandler, defaultDeps as chatDefaultDeps } from "./index.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Database, Json } from "../types_db.ts"; // Added Json
 import { createMockSupabaseClient, type MockQueryBuilderState, type MockResolveQueryResult } from "../_shared/supabase.mock.ts";
+import { createTestDeps } from './_chat.test.utils.ts';
+import type { TokenWalletTransaction } from '../_shared/types/tokenWallet.types.ts';
+import type { TokenWalletServiceMethodImplementations } from '../_shared/services/tokenWalletService.mock.ts';
+import { ChatTestConstants } from './_chat.test.utils.ts';
 
 // Helper function to get provider data from processedResources
 async function getProviderForTest(
@@ -473,4 +477,98 @@ export async function runHappyPathTests(
       assertExists(lastCall, "No call recorded to the mock adapter for this test scenario.");
       assertEquals(lastCall?.max_tokens_to_generate, specificMaxTokens, "max_tokens_to_generate was not passed correctly to the AI adapter.");
     });
-} 
+}
+
+Deno.test("Happy Path Integration Tests", async (t) => {
+    await t.step("POST request with valid Auth (New Chat) should proceed past auth check", async () => {
+      const tokenWalletConfigForTest: TokenWalletServiceMethodImplementations = {
+        getWalletForContext: () => Promise.resolve({
+          walletId: 'test-wallet-id',
+          balance: '100000', // Sufficient balance
+          currency: 'AI_TOKEN',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          organization_id: null,
+          user_id: ChatTestConstants.testUserId
+        }),
+        recordTransaction: () => Promise.resolve({ 
+          transactionId: "txn_123",
+          walletId: "test-wallet-id",
+          type: "DEBIT_USAGE",
+          amount: "10",
+          balanceAfterTxn: "99990",
+          recordedByUserId: ChatTestConstants.testUserId, 
+          relatedEntityId: ChatTestConstants.testChatId, 
+          relatedEntityType: 'chat_flow',
+          timestamp: new Date(),
+        } as TokenWalletTransaction)
+      };
+
+      const { deps, mockSupabaseClient, mockTokenWalletService } = createTestDeps(
+        { 
+          genericMockResults: {
+            'ai_providers': {
+                select: { data: [{ id: ChatTestConstants.testProviderId, name: "Test Provider Active", api_identifier: ChatTestConstants.testApiIdentifier, provider: ChatTestConstants.testProviderString, is_active: true, default_model_id: "some-model", config: { api_identifier: ChatTestConstants.testApiIdentifier, input_token_cost_rate: 1, output_token_cost_rate: 2, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } } }], error: null, status: 200, count: 1 }
+            },
+            'system_prompts': {
+                select: { data: [{ id: ChatTestConstants.testPromptId, prompt_text: 'Test system prompt', is_active: true }], error: null, status: 200, count: 1 }
+            },
+            'chats': {
+                insert: { data: [{ id: ChatTestConstants.testChatId, user_id: ChatTestConstants.testUserId, system_prompt_id: ChatTestConstants.testPromptId, title:"test" }], error: null, status: 201, count: 1 },
+                select: { data: [{ id: ChatTestConstants.testChatId, user_id: ChatTestConstants.testUserId, system_prompt_id: ChatTestConstants.testPromptId, title:"test" }], error: null, status: 200, count: 1 } 
+            },
+            'chat_messages': {
+                insert: (state) => {
+                  const insertedData = Array.isArray(state.insertData) ? state.insertData[0] : state.insertData;
+                  let responseData = null;
+                  if (insertedData && (insertedData as any).role === 'user') {
+                    responseData = { ...ChatTestConstants.mockUserDbRow, id: crypto.randomUUID(), chat_id: ChatTestConstants.testChatId, ...insertedData };
+                  } else if (insertedData && (insertedData as any).role === 'assistant') {
+                    responseData = { ...ChatTestConstants.mockAssistantDbRow, id: crypto.randomUUID(), chat_id: ChatTestConstants.testChatId, ...insertedData };
+                  }
+                  if (!responseData) {
+                    console.warn('[Test Mock chat_messages insert] Unexpected insertData:', state.insertData);
+                    return Promise.resolve({ data: null, error: new Error('Mock insert for chat_messages received unexpected data'), status: 500, count: 0 });
+                  }
+                  return Promise.resolve({ data: [responseData], error: null, status: 201, count: 1 });
+                },
+            }
+          }
+        },
+        mockAdapterSuccessResponse,
+        tokenWalletConfigForTest,
+        () => 10 
+      );
+
+      const reqBodyMessages: { role: 'user' | 'system' | 'assistant'; content: string }[] = [{ role: "user", content: "Hello, this is a test for valid auth." }];
+      const reqBody: ChatApiRequest = {
+        message: reqBodyMessages[0].content,
+        providerId: ChatTestConstants.testProviderId,
+        messages: reqBodyMessages,
+        promptId: ChatTestConstants.testPromptId,
+      };
+
+      const req = new Request('http://localhost/chat', {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer mock-user-token`
+        },
+        body: JSON.stringify(reqBody),
+      });
+
+      const response = await chatHandler(req, deps);
+      
+      assertEquals(response.status, 200); 
+      const responseData = await response.json();
+      assertExists(responseData.chatId);
+      assertExists(responseData.assistantMessage);
+      assertEquals(responseData.assistantMessage.role, "assistant");
+
+      const getWalletSpy = deps.tokenWalletService!.getWalletForContext as Spy<any, any[], any>;
+      assertEquals(getWalletSpy.calls.length, 1);
+
+      const recordTransactionSpy = deps.tokenWalletService!.recordTransaction as Spy<any, any[], any>;
+      assertEquals(recordTransactionSpy.calls.length, 1);
+    });
+}); 
