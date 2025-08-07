@@ -1,4 +1,5 @@
 import type { FinishReason } from '../types.ts';
+import { isContinueReason } from './type_guards.ts';
 
 /**
  * Determines whether a continuation call to an AI provider should be made.
@@ -16,6 +17,5 @@ export function shouldContinue(
   if (continuationCount >= maxContinuations) {
     return false;
   }
-
-  return finishReason === 'length';
+  return isContinueReason(finishReason);
 } 

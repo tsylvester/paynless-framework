@@ -6,6 +6,16 @@ Deno.test('shouldContinue: returns true for "length" finish_reason', () => {
     assert(result, 'Should return true when finish_reason is "length" and within max continuations');
 });
 
+Deno.test('shouldContinue: returns true for "max_tokens" finish_reason', () => {
+    const result = shouldContinue('max_tokens', 0, 5);
+    assert(result, 'Should return true when finish_reason is "max_tokens" and within max continuations');
+});
+
+Deno.test('shouldContinue: returns true for "unknown" finish_reason', () => {
+    const result = shouldContinue('unknown', 0, 5);
+    assert(result, 'Should return true when finish_reason is "unknown" and within max continuations');
+});
+
 Deno.test('shouldContinue: returns false for "stop" finish_reason', () => {
     const result = shouldContinue('stop', 0, 5);
     assert(!result, 'Should return false when finish_reason is "stop"');

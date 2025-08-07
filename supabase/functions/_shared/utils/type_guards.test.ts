@@ -36,6 +36,7 @@ import {
     isChatMessageRole,
     isChatMessageRow,
     isChatInsert,
+    hasModelResultWithContributionId,
 } from './type_guards.ts';
 import type { DialecticContributionRow, DialecticJobRow, FailedAttemptError } from '../../dialectic-service/dialectic.interface.ts';
 import type { AiModelExtendedConfig, TokenUsage, ChatInsert } from '../types.ts';
@@ -1843,6 +1844,58 @@ Deno.test('Type Guard: isDocumentRelationships', async (t) => {
 
     await t.step('should return false for null', () => {
         assert(!isDocumentRelationships(null), "Type guard should correctly identify null as not being a DocumentRelationships object.");
+    });
+});
+
+Deno.test('Type Guard: hasModelResultWithContributionId', async (t) => {
+    await t.step('should return true for a valid object', () => {
+        const results = {
+            modelProcessingResult: {
+                contributionId: 'some-uuid-string'
+            }
+        };
+        assert(hasModelResultWithContributionId(results));
+    });
+
+    await t.step('should return false if modelProcessingResult is missing', () => {
+        const results = {
+            someOtherProperty: {
+                contributionId: 'some-uuid-string'
+            }
+        };
+        assert(!hasModelResultWithContributionId(results));
+    });
+
+    await t.step('should return false if modelProcessingResult is not an object', () => {
+        const results = {
+            modelProcessingResult: 'a-string'
+        };
+        assert(!hasModelResultWithContributionId(results));
+    });
+
+    await t.step('should return false if contributionId is missing', () => {
+        const results = {
+            modelProcessingResult: {
+                someOtherKey: 'some-value'
+            }
+        };
+        assert(!hasModelResultWithContributionId(results));
+    });
+
+    await t.step('should return false if contributionId is not a string', () => {
+        const results = {
+            modelProcessingResult: {
+                contributionId: 12345
+            }
+        };
+        assert(!hasModelResultWithContributionId(results));
+    });
+
+    await t.step('should return false for null or non-object input', () => {
+        assert(!hasModelResultWithContributionId(null));
+        assert(!hasModelResultWithContributionId('a string'));
+        assert(!hasModelResultWithContributionId(123));
+        assert(!hasModelResultWithContributionId([]));
     });
 });
 

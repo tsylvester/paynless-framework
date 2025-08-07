@@ -19,20 +19,20 @@
  *     user-specific clients to validate RLS.
  */
 
-import { createClient, SupabaseClient, SupabaseClientOptions, AuthError } from "npm:@supabase/supabase-js@2";
-import * as djwt from "https://deno.land/x/djwt@v3.0.2/mod.ts";
-// Import types for use within this file
-import type {
+import {
   ILogger,
   LogMetadata,
 } from "./types.ts";
-import { isTokenUsage } from "./types.ts";
+import { isTokenUsage } from "./utils/type_guards.ts";
 import type { Database } from "../types_db.ts";
-import { MockAiProviderAdapter } from "./ai_service/ai_provider.mock.ts";
+import { getMockAiProviderAdapter } from "./ai_service/ai_provider.mock.ts";
 import type { GenerateContributionsDeps } from "../../functions/dialectic-service/dialectic.interface.ts";
 import type { ChatApiRequest } from "./types.ts";
 import { MockFileManagerService } from './services/file_manager.mock.ts';
-import type { DialecticContributionRow } from '../dialectic-service/dialectic.interface.ts';
+import { createClient } from "npm:@supabase/supabase-js";
+import type { SupabaseClient } from "npm:@supabase/supabase-js";
+import * as djwt from "https://deno.land/x/djwt@v3.0.2/mod.ts";
+import { AiModelExtendedConfig } from "./types.ts";
 
 function isDbRow(obj: any): obj is { id: string; [key: string]: any } {
     return obj !== null && typeof obj === 'object' && !Array.isArray(obj) && 'id' in obj && typeof obj.id === 'string';
@@ -41,9 +41,16 @@ function isDbRow(obj: any): obj is { id: string; [key: string]: any } {
 // --- Exported Constants ---
 export const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 export const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
-export const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"); 
+export const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 export const SUPABASE_JWT_SECRET = Deno.env.get("SUPABASE_JWT_SECRET");
 export const CHAT_FUNCTION_URL = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/chat` : 'http://localhost:54321/functions/v1/chat';
+export const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
+    api_identifier: 'mock-model',
+    input_token_cost_rate: 0,
+    output_token_cost_rate: 0,
+    tokenization_strategy: { type: 'none' },
+};
+
 
 // Set a default for the content storage bucket if it's not already set
 if (!Deno.env.get('SB_CONTENT_STORAGE_BUCKET')) {
@@ -305,7 +312,6 @@ export async function coreCleanupTestResources(executionScope: 'all' | 'local' =
 // --- Exported Shared Instances and Mutable State ---
 export let supabaseAdminClient: SupabaseClient<Database>;
 // const testUserAuthToken: string | null = null; // Commented out as it's not set globally by the utility anymore.
-export const mockAiAdapter = new MockAiProviderAdapter();
 export let currentTestDeps: TestUtilityDeps;
 
 export const testLogger: ILogger = {
@@ -314,6 +320,8 @@ export const testLogger: ILogger = {
   warn: (message: string, metadata?: LogMetadata) => console.warn('[TestLogger WARN]', message, metadata || ""),
   error: (message: string | Error, metadata?: LogMetadata) => console.error('[TestLogger ERROR]', message, metadata || ""),
 };
+
+export const mockAiAdapter = getMockAiProviderAdapter(testLogger, MOCK_MODEL_CONFIG);
 
 // --- Core Logic for Test Setup and Helpers (to be called by router) ---
 

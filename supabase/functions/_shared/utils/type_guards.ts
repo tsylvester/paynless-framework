@@ -18,8 +18,7 @@ import type {
 import { FileType, CanonicalPathParams } from "../types/file_manager.types.ts";
 import { ProjectContext, StageContext } from "../prompt-assembler.interface.ts";
 import { FailedAttemptError } from "../../dialectic-service/dialectic.interface.ts";
-import { AiModelExtendedConfig, TokenUsage } from "../types.ts";
-import { ChatMessageRole, ChatInsert } from "../types.ts";
+import { AiModelExtendedConfig, TokenUsage, ChatMessageRole, ChatInsert, ContinueReason, FinishReason } from "../types.ts";
 
 // Helper type to represent the structure we're checking for.
 type StageWithProcessingStrategy = Tables<'dialectic_stages'> & {
@@ -828,3 +827,26 @@ export function isTokenUsage(obj: unknown): obj is TokenUsage {
       typeof obj.total_tokens === 'number'
     );
   }
+
+export function isContinueReason(reason: FinishReason): reason is ContinueReason {
+    if (typeof reason !== 'string') {
+        return false;
+    }
+    for (const value of Object.values(ContinueReason)) {
+        if (value === reason) {
+            return true;
+        }
+    }
+    return false;
+}
+
+export function hasModelResultWithContributionId(results: unknown): results is { modelProcessingResult: { contributionId: string } } {
+    if (!isRecord(results)) return false;
+    if (!('modelProcessingResult' in results)) return false;
+
+    const modelResult = results.modelProcessingResult;
+    if (!isRecord(modelResult)) return false;
+    if (!('contributionId' in modelResult)) return false;
+
+    return typeof modelResult.contributionId === 'string';
+}

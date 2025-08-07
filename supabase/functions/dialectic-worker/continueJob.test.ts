@@ -208,17 +208,23 @@ Deno.test('continueJob', async (t) => {
         assertEquals(insertSpy?.callCount ?? 0, 0);
     });
 
-    await t.step('FINISH_REASON: should not enqueue when finish_reason is "unknown"', async () => {
-        setup();
+    await t.step('FINISH_REASON: should enqueue when finish_reason is "unknown"', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
         const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
         const testJob = createMockJob(payload);
         const aiResponse: UnifiedAIResponse = { finish_reason: 'unknown', content: 'unknown response' };
         
         const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
 
-        assertEquals(result.enqueued, false);
+        assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0);
+        assertEquals(insertSpy?.callCount ?? 0, 1);
     });
 
     await t.step('FINISH_REASON: should not enqueue when finish_reason is null', async () => {

@@ -1,7 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
-import { 
-    StartSessionPayload, 
-    StartSessionSuccessResponse, 
+import {
+    StartSessionPayload,
+    StartSessionSuccessResponse,
 } from "./dialectic.interface.ts";
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import type { Database, Json } from "../types_db.ts";
@@ -19,6 +19,7 @@ import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
 import { OpenAIEmbeddingClient, IndexingService, LangchainTextSplitter } from '../_shared/services/indexing_service.ts';
 import { IFileManager } from '../_shared/types/file_manager.types.ts';
 import { FileType } from "../_shared/types/file_manager.types.ts";
+import { isAiModelExtendedConfig } from '../_shared/utils/type_guards.ts';
 
 export interface StartSessionDeps {
     logger: ILogger;
@@ -229,8 +230,25 @@ export async function startSession(
         return { error: { message: initialPrompt.error || "Failed to retrieve initial prompt content.", status: 500 } };
     }
     
+    const { data: modelConfigRecord, error: modelConfigError } = await dbClient
+        .from('ai_providers')
+        .select('config')
+        .eq('api_identifier', 'text-embedding-ada-002')
+        .single();
+
+    if (modelConfigError || !modelConfigRecord || !modelConfigRecord.config) {
+        log.error('[startSession] Failed to fetch model config for OpenAI embedding model.', { error: modelConfigError });
+        return { error: { message: "Configuration for embedding model not found.", status: 500 } };
+    }
+
+    const modelConfig = modelConfigRecord.config;
+    if (!isAiModelExtendedConfig(modelConfig)) {
+        log.error('[startSession] Fetched model config is not a valid AiModelExtendedConfig.', { config: modelConfig });
+        return { error: { message: "Invalid AI model configuration.", status: 500 } };
+    }
+   
     const assembler: IPromptAssembler = partialDeps?.promptAssembler || (() => {
-        const openAiAdapter = new OpenAiAdapter(Deno.env.get('OPENAI_API_KEY')!, log);
+        const openAiAdapter = new OpenAiAdapter(Deno.env.get('OPENAI_API_KEY')!, log, modelConfig);
         const embeddingClient = new OpenAIEmbeddingClient(openAiAdapter);
         const textSplitter = new LangchainTextSplitter();
         const indexingService = new IndexingService(dbClient, log, textSplitter, embeddingClient);

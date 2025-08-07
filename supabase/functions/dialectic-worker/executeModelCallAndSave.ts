@@ -1,4 +1,4 @@
-
+import { isContinueReason } from '../_shared/utils/type_guards.ts';
 import {
   type UnifiedAIResponse,
   type ModelProcessingResult,
@@ -209,7 +209,7 @@ export async function executeModelCallAndSave(
         }
     }
     
-    const needsContinuation = job.payload.continueUntilComplete && (aiResponse.finish_reason === 'length');
+    const needsContinuation = job.payload.continueUntilComplete && aiResponse.finish_reason && isContinueReason(aiResponse.finish_reason);
 
     const modelProcessingResult: ModelProcessingResult = { 
         modelId: model_id, 
@@ -217,6 +217,22 @@ export async function executeModelCallAndSave(
         attempts: currentAttempt + 1, 
         contributionId: contribution.id 
     };
+
+    
+    if (needsContinuation) {
+        await deps.continueJob({ logger: deps.logger }, dbClient, job, aiResponse, contribution, projectOwnerUserId);
+        if (projectOwnerUserId) {
+            await deps.notificationService.sendContributionGenerationContinuedEvent({
+                type: 'contribution_generation_continued',
+                sessionId: sessionId,
+                contribution: contribution,
+                projectId: projectId,
+                modelId: model_id,
+                continuationNumber: job.payload.continuation_count ?? 1,
+                job_id: jobId,
+            }, projectOwnerUserId);
+        }
+    }
 
     const { error: finalUpdateError } = await dbClient
         .from('dialectic_generation_jobs')
@@ -232,20 +248,7 @@ export async function executeModelCallAndSave(
         deps.logger.error(`[dialectic-worker] [executeModelCallAndSave] CRITICAL: Failed to mark job as 'completed'.`, { finalUpdateError });
     }
     
-    if (needsContinuation) {
-        await deps.continueJob({ logger: deps.logger }, dbClient, job, aiResponse, contribution, projectOwnerUserId);
-        if (projectOwnerUserId) {
-            await deps.notificationService.sendContributionGenerationContinuedEvent({
-                type: 'contribution_generation_continued',
-                sessionId: sessionId,
-                contribution: contribution,
-                projectId: projectId,
-                modelId: model_id,
-                continuationNumber: job.payload.continuation_count ?? 1,
-                job_id: jobId,
-            }, projectOwnerUserId);
-        }
-    } else {
+    if (!needsContinuation) {
         if (projectOwnerUserId) {
             await deps.notificationService.sendContributionReceivedEvent({ 
                 contribution,

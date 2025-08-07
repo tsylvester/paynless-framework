@@ -6,12 +6,13 @@ import {
   coreCreateAndSetupTestUser,
   initializeSupabaseAdminClient,
   initializeTestDeps,
+  MOCK_MODEL_CONFIG,
   setSharedAdminClient,
   testLogger,
 } from "../../functions/_shared/_integration.test.utils.ts";
 import { type Database } from "../../functions/types_db.ts";
 import { getAiProviderAdapter } from "../../functions/_shared/ai_service/factory.ts";
-import { MockAiProviderAdapter } from "../../functions/_shared/ai_service/ai_provider.mock.ts";
+import { getMockAiProviderAdapter } from "../../functions/_shared/ai_service/ai_provider.mock.ts";
 import {
   type GenerateContributionsPayload,
   type DialecticJobRow,
@@ -22,8 +23,8 @@ import {
   IDialecticJobDeps,
 } from "../../functions/dialectic-service/dialectic.interface.ts";
 import { generateContributions } from "../../functions/dialectic-service/generateContribution.ts";
-import { isDialecticJobPayload, isDialecticJobRow } from "../../functions/_shared/utils/type_guards.ts";
-import { isTokenUsage, type ChatApiRequest } from "../../functions/_shared/types.ts";
+import { isDialecticJobPayload, isDialecticJobRow, isTokenUsage, hasModelResultWithContributionId } from "../../functions/_shared/utils/type_guards.ts";
+import { type ChatApiRequest } from "../../functions/_shared/types.ts";
 import { type IJobProcessors } from "../../functions/dialectic-worker/processJob.ts";
 import { processSimpleJob } from "../../functions/dialectic-worker/processSimpleJob.ts";
 import { processComplexJob } from "../../functions/dialectic-worker/processComplexJob.ts";
@@ -50,7 +51,7 @@ import { PromptAssembler } from "../../functions/_shared/prompt-assembler.ts";
 
 // --- Test Suite Setup ---
 let adminClient: SupabaseClient<Database>;
-const mockAiAdapter = new MockAiProviderAdapter();
+const mockAiAdapter = getMockAiProviderAdapter(testLogger, MOCK_MODEL_CONFIG);
 let testDeps: IDialecticJobDeps;
 
 const pollForCondition = async (
@@ -220,6 +221,19 @@ Deno.test(
                 }
             },
           },
+          {
+            api_identifier: 'text-embedding-ada-002',
+            name: 'Ada v2 Embedding',
+            provider: 'openai',
+            config: {
+                provider_max_input_tokens: 8191,
+                provider_max_output_tokens: 0,
+                tokenization_strategy: {
+                    type: 'tiktoken',
+                    tiktoken_encoding_name: 'cl100k_base'
+                }
+            },
+          }
         ];
 
         const { data: upsertedProviders, error: upsertError } = await adminClient
@@ -229,7 +243,7 @@ Deno.test(
         
         assert(!upsertError, `Failed to upsert AI providers: ${upsertError?.message}`);
         assertExists(upsertedProviders, "Upserting providers did not return data.");
-        assertEquals(upsertedProviders.length, 2, "Expected to upsert exactly 2 providers.");
+        assertEquals(upsertedProviders.length, 3, "Expected to upsert exactly 3 providers.");
 
         const modelA = upsertedProviders.find(p => p.api_identifier === 'gpt-4-turbo');
         const modelB = upsertedProviders.find(p => p.api_identifier === 'claude-3-opus');
@@ -244,11 +258,11 @@ Deno.test(
         factoryStub = stub(
             { getAiProviderAdapter },
             "getAiProviderAdapter",
-            () => mockAiAdapter,
+            () => mockAiAdapter.instance,
         );
-        mockAiAdapter.reset();
+        mockAiAdapter.controls.reset();
 
-        const openAiAdapter = new OpenAiAdapter("sk-test-fake-key", testLogger);
+        const openAiAdapter = new OpenAiAdapter("sk-test-fake-key", testLogger, MOCK_MODEL_CONFIG);
         const embeddingClient = new OpenAIEmbeddingClient(openAiAdapter);
         const textSplitter = new LangchainTextSplitter();
         const indexingService = new IndexingService(adminClient, testLogger, textSplitter, embeddingClient);
@@ -280,7 +294,7 @@ Deno.test(
                 const model = upsertedProviders.find(p => p.id === modelId);
                 const modelIdentifier = model ? model.api_identifier : modelId; // Fallback to modelId if not found
                 
-                return mockAiAdapter.sendMessage(request, modelIdentifier, authToken)
+                return mockAiAdapter.instance.sendMessage(request, modelIdentifier)
                     .then(response => {
                         const tokenUsage = isTokenUsage(response.token_usage) ? response.token_usage : null;
                         return {
@@ -396,10 +410,6 @@ Deno.test(
       }
 
       // --- Arrange ---
-      // FIX: Configure the mock using the correct model UUIDs.
-      mockAiAdapter.setFailureForModel(modelAId, 1, new Error("Test-induced AI failure"));
-      mockAiAdapter.setContinuationForModel(modelBId, 1, "This is the final continued part.");
-
       const generatePayload: GenerateContributionsPayload = {
         sessionId: testSession.id,
         stageSlug: "thesis",
@@ -408,9 +418,7 @@ Deno.test(
         continueUntilComplete: true,
       };
       
-      const mockProcessors: IJobProcessors = { processSimpleJob, processComplexJob, planComplexStage };
-
-      // --- Act & Assert: Job Creation & Initial Processing ---
+      // --- Act & Assert: Job Creation ---
       const { data: jobData, error: creationError } = await generateContributions(
         adminClient,
         generatePayload,
@@ -423,47 +431,60 @@ Deno.test(
       if (jobData && jobData.job_ids) {
         assertEquals(jobData.job_ids.length, 2, "Expected exactly two jobs to be created.");
         
-        const jobA_id = jobData.job_ids[0];
-        const jobB_id = jobData.job_ids[1];
+        // Find the specific jobs to control their execution order
+        const { data: jobs, error: jobsError } = await adminClient.from('dialectic_generation_jobs').select('*').in('id', jobData.job_ids);
+        assert(!jobsError, `Failed to fetch created jobs: ${jobsError?.message}`);
+        assertExists(jobs, "Could not fetch the newly created jobs.");
 
-        assertExists(jobA_id, "Job A ID must exist.");
-        assertExists(jobB_id, "Job B ID must exist.");
+        const jobA = jobs.find(j => isDialecticJobPayload(j.payload) && j.payload.model_id === modelAId);
+        const jobB = jobs.find(j => isDialecticJobPayload(j.payload) && j.payload.model_id === modelBId);
+        assertExists(jobA, "Job for model A was not found.");
+        assertExists(jobB, "Job for model B was not found.");
 
-        testLogger.info(`[Test] >>> Executing first run for initial jobs...`);
-        await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
+        // --- Execute Jobs Sequentially to Control Mock Behavior ---
+        testLogger.info(`[Test] >>> Executing Job A (id: ${jobA.id}) - expecting failure...`);
+        mockAiAdapter.controls.setMockError(new Error("Test-induced AI failure"));
+        await handleJob(adminClient, jobA, testDeps, primaryUserJwt);
+        mockAiAdapter.controls.reset();
 
+        testLogger.info(`[Test] >>> Executing Job B (id: ${jobB.id}) - expecting partial success...`);
+        mockAiAdapter.controls.setMockResponse({ content: "This is a partial response for claude-3-opus.", finish_reason: 'max_tokens' });
+        await handleJob(adminClient, jobB, testDeps, primaryUserJwt);
+        mockAiAdapter.controls.reset();
+        
         // --- Verify Retry and Continuation Creation ---
-        // After the first run, Job A should be 'retrying' and Job B should be 'completed' (having enqueued a continuation).
-        const retryingJobA = await pollForJobStatus(jobA_id, 'retrying', `Job A (${jobA_id}) should have status 'retrying' after first failed attempt.`);
+        const retryingJobA = await pollForJobStatus(jobA.id, 'retrying', `Job A (${jobA.id}) should have status 'retrying' after first failed attempt.`);
         assertEquals(retryingJobA.attempt_count, 1, "Job A attempt count should be 1 after first failure.");
 
-        await pollForJobStatus(jobB_id, 'completed', `Original Job B (${jobB_id}) should be 'completed' after processing its first chunk.`);
+        const completedJobB = await pollForJobStatus(jobB.id, 'completed', `Original Job B (${jobB.id}) should be 'completed' after processing its first chunk.`);
         
-        // Now, verify that the continuation job was created BEFORE the next execution run.
+        const jobBResults = completedJobB.results && typeof completedJobB.results === 'string'
+            ? JSON.parse(completedJobB.results)
+            : completedJobB.results;
+
+        if (!hasModelResultWithContributionId(jobBResults)) {
+            assert(false, `Completed Job B results did not have the expected structure or was null. Got: ${JSON.stringify(jobBResults)}`);
+            return; // Exit the test step if the assertion fails.
+        }
+        
+        const targetContributionId = jobBResults.modelProcessingResult.contributionId;
+
         const { data: continuationJobData, error: continuationJobError } = await adminClient
           .from('dialectic_generation_jobs')
           .select('*')
-          .eq('session_id', testSession.id)
-          .eq('status', 'pending_continuation')
+          .eq('payload->>target_contribution_id', targetContributionId)
           .single();
         
         assert(!continuationJobError, `Error fetching continuation job: ${continuationJobError?.message}`);
-        assertExists(continuationJobData, "A new continuation job should have been created.");
-
-        // Correct the assertion to look inside the payload object using a type guard.
-        if (isDialecticJobPayload(continuationJobData.payload)) {
-            assertExists(continuationJobData.payload.target_contribution_id, "Continuation job must have a target_contribution_id in its payload.");
-            assertEquals(typeof continuationJobData.payload.target_contribution_id, 'string', "target_contribution_id should be a string.");
-        } else {
-            assert(false, "The continuation job's payload was not a valid DialecticJobPayload.");
-        }
+        assertExists(continuationJobData, "A new continuation job should have been created for job B.");
 
         // --- Execute Second Run to Process Retries and Continuations ---
         testLogger.info(`[Test] >>> Executing second run for retrying job and continuation job...`);
+        mockAiAdapter.controls.setMockResponse({ content: "This is the final continued part." });
         await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
         
         // --- Verify Final States ---
-        const completedJobA = await pollForJobStatus(jobA_id, 'completed', `Job A (${jobA_id}) should have status 'completed' after successful retry.`);
+        const completedJobA = await pollForJobStatus(jobA.id, 'completed', `Job A (${jobA.id}) should have status 'completed' after successful retry.`);
         assertEquals(completedJobA.attempt_count, 2, "Job A attempt count should be 2 after successful retry.");
 
         await pollForJobStatus(continuationJobData.id, 'completed', `Continuation job (${continuationJobData.id}) should have 'completed' status.`);

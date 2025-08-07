@@ -10,8 +10,7 @@ import {
 import { shouldContinue } from '../_shared/utils/continue_util.ts';
 import {
   isContinuablePayload,
-  isDialecticJobPayload,
-  isDialecticPlanJobPayload,
+  isDialecticExecuteJobPayload,
   isJson,
   isDialecticStepInfo,
   isStringRecord,
@@ -100,7 +99,7 @@ export async function continueJob(
     return { enqueued: false, error };
   }
 
-  if (!isDialecticJobPayload(newPayload) && !isDialecticPlanJobPayload(newPayload)) {
+  if (!isDialecticExecuteJobPayload(newPayload)) {
     deps.logger.error('[dialectic-worker] [continueJob] Failed to construct a valid continuation payload.', { payload: newPayload });
     return { enqueued: false, error: new Error('Failed to construct a valid continuation payload.') };
   }

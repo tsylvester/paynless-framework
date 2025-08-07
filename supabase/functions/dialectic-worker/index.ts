@@ -6,7 +6,7 @@ import {
   type DialecticJobPayload,
   type ExecuteModelCallAndSaveParams,
 } from '../dialectic-service/dialectic.interface.ts';
-import { isDialecticJobPayload } from '../_shared/utils/type_guards.ts';
+import { isDialecticJobPayload, isAiModelExtendedConfig } from '../_shared/utils/type_guards.ts';
 import { processJob, type IJobProcessors } from './processJob.ts';
 import { logger } from '../_shared/logger.ts';
 import { processSimpleJob } from './processSimpleJob.ts';
@@ -64,9 +64,25 @@ serve(async (req: Request) => {
     const adminClient: SupabaseClient<Database> = createSupabaseAdminClient();
     const notificationService = new NotificationService(adminClient);
     
+    // Fetch the model config for the embedding model
+    const { data: modelConfigRecord, error: modelConfigError } = await adminClient
+        .from('ai_providers')
+        .select('config')
+        .eq('api_identifier', 'text-embedding-ada-002')
+        .single();
+
+    if (modelConfigError || !modelConfigRecord || !modelConfigRecord.config) {
+        throw new Error('Failed to fetch model config for OpenAI embedding model.');
+    }
+    
+    const modelConfig = modelConfigRecord.config;
+    if (!isAiModelExtendedConfig(modelConfig)) {
+        throw new Error('Fetched model config is not a valid AiModelExtendedConfig.');
+    }
+
     // --- Instantiate all services for the unified dependency object ---
     const fileManager = new FileManagerService(adminClient);
-    const openAiAdapter = new OpenAiAdapter(Deno.env.get('OPENAI_API_KEY')!, logger);
+    const openAiAdapter = new OpenAiAdapter(Deno.env.get('OPENAI_API_KEY')!, logger, modelConfig);
     const embeddingClient = new OpenAIEmbeddingClient(openAiAdapter);
     const textSplitter = new LangchainTextSplitter();
     const indexingService = new IndexingService(adminClient, logger, textSplitter, embeddingClient);

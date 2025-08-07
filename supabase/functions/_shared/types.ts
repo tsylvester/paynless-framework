@@ -202,7 +202,14 @@ export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] &
   status?: 'pending' | 'sent' | 'error'; 
 };
 
-export type FinishReason = 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call' | 'error' | 'unknown' | null;
+export type FinishReason = 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call' | 'error' | 'unknown' | 'max_tokens' | 'content_truncated' | null;
+
+export enum ContinueReason {
+    MaxTokens = 'max_tokens',
+    Length = 'length',
+    ContentTruncated = 'content_truncated',
+    Unknown = 'unknown',
+}
 
 /**
  * Type representing the payload returned *by* an AI Provider Adapter's sendMessage method.
