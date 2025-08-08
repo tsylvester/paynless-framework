@@ -132,3 +132,111 @@ The implementation plan uses the following labels to categorize work steps:
 
 *   `[✅]` 7. **[COMMIT]** Final Commit.
     *   `[✅]` 7.a. Commit all changes with the message `feat: unify AI adapter factory and contracts`.
+
+---
+
+## Phase 5: Correct AI Model Discovery and Synchronization
+
+This phase focuses on fixing the root cause: the failure to sync embedding models from the provider into our database.
+
+*   `[✅]` 8. **[REFACTOR]** Update the OpenAI Adapter to Discover Embedding Models.
+    *   `[✅]` 8.a. **[BE]** In `supabase/functions/_shared/ai_service/openai_adapter.ts`, modify the `listModels` function to include `"embedding"` in its model ID filter. This will allow the sync script to see these models.
+        *   **Current:** `if (model.id && (model.id.includes('gpt') || model.id.includes('instruct')))`
+        *   **Proposed:** `if (model.id && (model.id.includes('gpt') || model.id.includes('instruct') || model.id.includes('embedding')))`
+
+*   `[ ]` 9. **[REFACTOR]** Implement a Modular, Self-Updating, Two-Pass Configuration System.
+    *   This step refactors the model synchronization process by abstracting the core logic into a shared, reusable utility. This makes the system more modular, testable, and resilient.
+    *   `[✅]` 9.a. **[BE]** **Create a Generic `ConfigAssembler` Utility.**
+        *   `[✅]` 9.a.i. **[BE]** Create a new file `supabase/functions/sync-ai-models/config_assembler.ts`.
+        *   `[✅]` 9.a.ii. **[BE]** This utility will encapsulate the entire two-pass configuration process, accepting provider-specific data and orchestrating the assembly. The following steps detail the internal logic of this assembler.
+    *   `[✅]` 9.b. **[BE]** **Initial Data Fetch & Preparation (within Assembler).**
+        *   `[✅]` 9.b.i. **[BE]** The assembler will be initiated with a complete list of all available models for a given provider.
+        *   `[✅]` 9.b.ii. **[BE]** It will create a temporary in-memory collection to hold the configuration-in-progress for each of these models.
+    *   `[✅]` 9.c. **[BE]** **Pass 1: Configuration Assembly from Authoritative Tiers (within Assembler).**
+        *   `[✅]` 9.c.i. **[BE]** The assembler will iterate through every model. For each model, it will attempt to build its configuration by filling in each required parameter (`input_token_cost_rate`, `context_window_tokens`, etc.) using an **element-wise cascade** through a hierarchy of data sources.
+        *   `[✅]` 9.c.ii. **[BE]** **Tier 1 (Live API):** First, attempt to get the value from the data returned by the adapter for the specific model.
+        *   `[✅]` 9.c.iii. **[BE]** **Tier 2 (External Source):** If unavailable, attempt to get the value from a trusted external database (e.g., a known npm package whose maintainers provide these details for consumers).
+        *   `[✅]` 9.c.iv. **[BE]** **Tier 3 (Internal Map):** If still unavailable, attempt to get the value from our own hardcoded `modelInfo` map, which serves as a failsafe. This map file will be updated with final values from each model configured at each run so that the map is always up to date.
+        *   `[✅]` 9.c.v. **[BE]** At the end of this pass, the assembler will categorize models into `fullyConfiguredModels` and `modelsNeedingDefaults`.
+    *   `[✅]` 9.d. **[BE]** **Dynamic Default Calculation (within Assembler).**
+        *   `[✅]` 9.d.i. **[BE]** The assembler will use the `fullyConfiguredModels` list as the dataset for calculating dynamic defaults.
+        *   `[✅]` 9.d.ii. **[BE]** **Cost Default (High-Water Mark):** Calculated as the absolute maximum known input/output costs from the `fullyConfiguredModels` set.
+        *   `[✅]` 9.d.iii. **[BE]** **Window Default (Dynamic Cohort Average):** Calculated by averaging window sizes from a dynamic sample of the most recent models. The sample size (`k`) will equal the number of new/unknown models (min 3).
+        *   `[✅]` 9.d.iv. **[BE]** An absolute, hardcoded "panic" value will be used as a failsafe if the `fullyConfiguredModels` list is empty.
+    *   `[✅]` 9.e. **[BE]** **Pass 2: Application of Defaults (within Assembler).**
+        *   `[✅]` 9.e.i. **[BE]** The assembler will iterate through `modelsNeedingDefaults` and fill in any missing parameters using the dynamic defaults.
+    *   `[✅]` 9.f. **[BE]** **Refactor Provider Sync Scripts to Use the Assembler.**
+        *   `[✅]` 9.f.i. **[BE]** Refactor `openai_sync.ts`, `google_sync.ts`, and `anthropic_sync.ts`.
+        *   `[✅]` 9.f.ii. **[BE]** Each script's responsibility will be simplified to: gathering its specific data, calling the `ConfigAssembler`, and then performing the final database diff and update operations with the result.
+    *   `[✅]` 9.g. **[TEST-UNIT]** **Standardize Sync Function Test Suites with a Shared Contract.**
+    *   This step establishes a unified testing framework for all AI model synchronization functions (`syncGoogleModels`, `syncOpenAIModels`, etc.) to ensure consistent behavior, eliminate test drift, and reduce code duplication. It follows the successful pattern established by `adapter_test_contract.ts`.
+    *   `[✅]` 9.g.i. **[TEST-UNIT]** **Create the Test Contract File and `MockProviderData` Interface.**
+        *   `[✅]` 9.g.i.1. **[TEST-UNIT]** Create a new file named `supabase/functions/sync-ai-models/sync_test_contract.ts`. This file will house the shared testing logic.
+        *   `[✅]` 9.g.i.2. **[TEST-UNIT]** Within the new file, define and export a `MockProviderData` interface. This interface serves as a contract for the data each provider-specific test must supply. It standardizes the inputs for the generic tests, abstracting away provider-specific details.
+            ```typescript
+            export interface MockProviderData {
+              // Provides a list of models as they would come from the provider's API.
+              apiModels: ProviderModelInfo[];
+            
+              // Provides a representative DB model that matches an API model,
+              // including a fully-formed config object. Crucial for the "no changes needed" test.
+              dbModel: DbAiProvider;
+            
+              // Provides a DB model that is stale (not in the API list) and should be deactivated.
+              staleDbModel: DbAiProvider;
+            
+              // Provides an inactive DB model that should be reactivated because it appears in the API list.
+              inactiveDbModel: DbAiProvider;
+              
+              // Provides an API model that corresponds to the inactiveDbModel to trigger reactivation.
+              reactivateApiModel: ProviderModelInfo;
+            
+              // Provides a new model found in the API list but not the DB, to test insertion.
+              newApiModel: ProviderModelInfo;
+            }
+            ```
+    *   `[✅]` 9.g.ii. **[TEST-UNIT]** **Implement the Generic `testSyncContract` Function.**
+        *   `[✅]` 9.g.ii.1. **[TEST-UNIT]** In `sync_test_contract.ts`, create and export an async function: `testSyncContract(t: Deno.TestContext, syncFunction: Function, mockProviderData: MockProviderData, providerName: string)`.
+        *   `[✅]` 9.g.ii.2. **[TEST-UNIT]** Port the core test cases from `openai_sync.test.ts` (as it is the most complete suite) into this function. Each test will be generic and use the `mockProviderData` object for its inputs. The standard suite must include:
+            *   `should insert new models when DB is empty`: Verifies that models from the API are correctly inserted when no corresponding models exist in the database.
+            *   `should do nothing if API and DB models match`: The critical test to ensure that when the assembled configuration and the database record are identical, no unnecessary write operations occur.
+            *   `should deactivate stale models`: Confirms that models existing in the database but not present in the latest API fetch are marked as inactive.
+            *   `should reactivate an inactive model if it reappears in API`: Checks that a model previously marked inactive is correctly updated to `is_active: true` if it's found in the API model list again.
+            *   `should update an existing model if its configuration changes`: Verifies that changes to properties like `name`, `description`, or any `config` field trigger an update operation.
+            *   `should handle errors from the listProviderModels function`: Ensures the sync process fails gracefully if the initial API call for models fails.
+            *   `should handle database errors`: Confirms that errors during `insert`, `update`, or `deactivate` operations are caught and reported correctly.
+    *   `[✅]` 9.g.iii. **[TEST-UNIT]** **Refactor Provider-Specific Test Suites to Use the Contract.**
+        *   `[✅]` 9.g.iii.1. **[TEST-UNIT]** **Refactor `openai_sync.test.ts`**:
+            *   Delete all generic test steps that are now covered by the `testSyncContract`.
+            *   Create a `mockOpenAIData: MockProviderData` object containing valid, OpenAI-specific mock data.
+            *   The main test body will now be a single call: `await testSyncContract(t, syncOpenAIModels, mockOpenAIData, 'openai');`.
+        *   `[✅]` 9.g.iii.2. **[TEST-UNIT]** **Refactor `google_sync.test.ts`**:
+            *   Delete all generic test steps.
+            *   Create a `mockGoogleData: MockProviderData` object with Google-specific mock models and configurations.
+            *   The main test body will be a call to `await testSyncContract(t, syncGoogleModels, mockGoogleData, 'google');`.
+        *   `[✅]` 9.g.iii.3. **[TEST-UNIT]** **Refactor `anthropic_sync.test.ts`**:
+            *   Delete all generic test steps, adding the missing "no-op" and other standard cases via the contract.
+            *   Create a `mockAnthropicData: MockProviderData` object.
+            *   The main test body will be a call to `await testSyncContract(t, syncAnthropicModels, mockAnthropicData, 'anthropic');`.
+
+*   `[✅]` 10. **[OPS]** Execute the Sync Process and Update Seed Data.
+    *   `[✅]` 10.a. **[OPS]** Run the `sync-ai-models` Edge Function to populate the local database using the new resilient sync logic.
+    *   `[✅]` 10.b. **[DB]** After the sync is successful, update the `supabase/seed.sql` file from the database to include the new and correctly configured model entries.
+
+## Phase 6: Refactor Application Code to Use Synced Configuration
+
+This phase focuses on fixing the application code that broke due to the missing model configurations.
+
+*   `[✅]` 11. **[REFACTOR]** Update `startSession` to Use a Valid Embedding Model.
+    *   `[✅]` 11.a. **[BE]** In `supabase/functions/dialectic-service/startSession.ts`, change the hardcoded database query for `text-embedding-ada-002` to query for a valid, synced embedding model, such as `'openai-text-embedding-3-small'`.
+    *   `[✅]` 11.b. **[TEST-INT]** Review `dialectic_pipeline.integration.test.ts` to ensure that if it mocks the `ai_providers` table, the mock data includes a valid embedding model to prevent the test from failing for the same reason as the e2e test.
+
+*   `[✅]` 12. **[REFACTOR]** Update `OpenAiAdapter` to Use Provided Configuration.
+    *   `[✅]` 12.a. **[BE]** In `supabase/functions/_shared/ai_service/openai_adapter.ts`, refactor the `getEmbedding` method. It must use the `api_identifier` from `this.modelConfig` instead of its own hardcoded default parameter.
+    *   `[✅]` 12.b. **[TEST-UNIT]** Update `openai_adapter.test.ts` to include a test case that verifies the `getEmbedding` method correctly uses the `modelConfig` passed during instantiation.
+
+## Phase 7: Finalization
+
+*   `[✅]` 13. **[COMMIT]** Commit all changes with the message `fix: Correctly sync and utilize AI embedding models`.
+
+    

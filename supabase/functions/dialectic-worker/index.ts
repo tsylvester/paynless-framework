@@ -64,15 +64,15 @@ serve(async (req: Request) => {
     const adminClient: SupabaseClient<Database> = createSupabaseAdminClient();
     const notificationService = new NotificationService(adminClient);
     
-    // Fetch the model config for the embedding model
+    // Fetch the model config for the default embedding model
     const { data: modelConfigRecord, error: modelConfigError } = await adminClient
         .from('ai_providers')
         .select('config')
-        .eq('api_identifier', 'text-embedding-ada-002')
+        .eq('is_default_embedding', true)
         .single();
 
     if (modelConfigError || !modelConfigRecord || !modelConfigRecord.config) {
-        throw new Error('Failed to fetch model config for OpenAI embedding model.');
+        throw new Error('Failed to fetch model config for the default OpenAI embedding model.');
     }
     
     const modelConfig = modelConfigRecord.config;

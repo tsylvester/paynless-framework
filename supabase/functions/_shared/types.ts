@@ -174,7 +174,7 @@ export interface ProviderModelInfo {
   api_identifier: string; // The specific ID the provider uses for this model in API calls
   name: string;           // A user-friendly name for the model
   description?: string;    // Optional description
-  config?: AiModelExtendedConfig;
+  config?: Partial<AiModelExtendedConfig>;
 }
   
 /**

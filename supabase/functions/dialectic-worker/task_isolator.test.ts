@@ -618,4 +618,45 @@ describe('planComplexStage', () => {
         // The key is that the logic correctly found a non-anchor document.
         assertEquals(params.pairedModelSlug, 'paired-model');
     });
+
+    it('should correctly pass the authToken to child job payloads', async () => {
+        // 1. Setup: Define a mock JWT
+        const MOCK_AUTH_TOKEN = 'mock-user-jwt-for-test';
+
+        // 2. Setup: Define a simple planner that returns a basic payload
+        const mockExecutePayload: DialecticExecuteJobPayload = {
+            job_type: 'execute',
+            step_info: { current_step: 1, total_steps: 1 },
+            prompt_template_name: 'test-prompt',
+            output_type: 'synthesis',
+            inputs: { documentId: 'doc-1-thesis' },
+            model_id: 'model-1',
+            projectId: 'proj-1',
+            sessionId: 'sess-1',
+            stageSlug: 'test-stage',
+            iterationNumber: 1,
+            walletId: 'wallet-1',
+            continueUntilComplete: false,
+            maxRetries: 3,
+            continuation_count: 0,
+            canonicalPathParams: { contributionType: 'synthesis' },
+        };
+        const plannerFn: GranularityPlannerFn = () => [mockExecutePayload];
+        mockDeps.getGranularityPlanner = () => plannerFn;
+
+        // 3. Act: Call the function under test
+        const childJobs = await planComplexStage(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            mockParentJob,
+            mockDeps,
+            mockRecipeStep,
+            MOCK_AUTH_TOKEN
+        );
+
+        // 4. Assert: Check that the payload of the created child job contains the JWT
+        assertEquals(childJobs.length, 1);
+        const childPayload = childJobs[0].payload;
+        assert(isDialecticExecuteJobPayload(childPayload), 'Payload should be a valid execute job payload');
+        assertEquals(childPayload.user_jwt, MOCK_AUTH_TOKEN, "The user_jwt was not correctly passed to the child job payload.");
+    });
 }); 

@@ -172,7 +172,12 @@ export class AnthropicAdapter {
     }
   }
 
-  async listModels(): Promise<ProviderModelInfo[]> {
+  // Overload for sync script to get raw data
+  async listModels(getRaw: true): Promise<{ models: ProviderModelInfo[], raw: unknown }>;
+  // Overload for standard adapter contract
+  async listModels(getRaw?: false): Promise<ProviderModelInfo[]>;
+  // Implementation
+  async listModels(getRaw?: boolean): Promise<ProviderModelInfo[] | { models: ProviderModelInfo[], raw: unknown }> {
     const modelsUrl = `${ANTHROPIC_API_BASE}/models`;
     this.logger.info("[AnthropicAdapter] Fetching models from Anthropic...", { url: modelsUrl });
 
@@ -200,10 +205,9 @@ export class AnthropicAdapter {
     }
 
     const models: ProviderModelInfo[] = jsonResponse.data.map((item: AnthropicModelItem) => {
-      // Create a complete config for each model, using the base config as a default
-      const config: AiModelExtendedConfig = {
-        ...this.modelConfig,
-        api_identifier: item.id, // Override with the specific model ID from the API
+      // The config provided here is minimal because the assembler will fill in the details.
+      const config: Partial<AiModelExtendedConfig> = {
+        api_identifier: item.id,
       };
 
       return {
@@ -215,6 +219,9 @@ export class AnthropicAdapter {
     });
 
     this.logger.info(`[AnthropicAdapter] Found ${models.length} models from Anthropic dynamically.`);
+    if (getRaw) {
+        return { models, raw: jsonResponse.data };
+    }
     return models;
   }
 }

@@ -222,15 +222,16 @@ Deno.test(
             },
           },
           {
-            api_identifier: 'text-embedding-ada-002',
+            api_identifier: 'openai-text-embedding-3-small',
             name: 'Ada v2 Embedding',
             provider: 'openai',
             config: {
                 provider_max_input_tokens: 8191,
-                provider_max_output_tokens: 0,
+                provider_max_output_tokens: 0, // Not applicable for embedding models
                 tokenization_strategy: {
                     type: 'tiktoken',
-                    tiktoken_encoding_name: 'cl100k_base'
+                    tiktoken_encoding_name: 'cl100k_base',
+                    is_chatml_model: false // Embedding models are not ChatML
                 }
             },
           }

@@ -1,8 +1,6 @@
 // supabase/functions/_shared/ai_service/google_adapter.ts
 import {
     GoogleGenerativeAI,
-    HarmCategory,
-    HarmBlockThreshold,
     type Content,
     type ModelParams,
     type GenerateContentResult,
@@ -23,6 +21,7 @@ export class GoogleAdapter {
     private client: GoogleGenerativeAI;
     private logger: ILogger;
     private modelConfig: AiModelExtendedConfig;
+    private apiKey: string;
 
     constructor(
         apiKey: string,
@@ -32,6 +31,7 @@ export class GoogleAdapter {
         this.client = new GoogleGenerativeAI(apiKey);
         this.logger = logger;
         this.modelConfig = modelConfig;
+        this.apiKey = apiKey;
         this.logger.info(`[GoogleAdapter] Initialized with config: ${JSON.stringify(this.modelConfig)}`);
     }
 
@@ -53,7 +53,6 @@ export class GoogleAdapter {
         const model = this.client.getGenerativeModel(modelParams);
 
         // --- Map messages to Google Gemini format ---
-        let systemPrompt = '';
         const history: Content[] = [];
 
         const combinedMessages = [...(request.messages ?? [])];
@@ -63,7 +62,8 @@ export class GoogleAdapter {
 
         for (const message of combinedMessages) {
             if (message.role === 'system' && message.content) {
-                systemPrompt = message.content;
+                // System prompt is handled by the model's `startChat` method if needed,
+                // but this implementation does not currently use it.
             } else if (message.role === 'user' && message.content) {
                 history.push({ role: 'user', parts: [{ text: message.content }] });
             } else if (message.role === 'assistant' && message.content) {
@@ -129,13 +129,68 @@ export class GoogleAdapter {
         return adapterResponse;
     }
 
-    async listModels(): Promise<ProviderModelInfo[]> {
-        // The Google AI SDK does not currently have a public method for listing models
-        // that is compatible with API key authentication in a server-side environment.
-        // The `listModels` function in the SDK is designed for client-side (e.g., Google AI Studio) use.
-        // Therefore, we will leave this method as a placeholder and note that model
-        // syncing for Google must be done manually or via a different mechanism.
-        this.logger.warn('[GoogleAdapter] listModels is not implemented due to SDK limitations for API key authentication.');
-        return Promise.resolve([]);
+    // Overload for sync script to get raw data
+    async listModels(getRaw: true): Promise<{ models: ProviderModelInfo[], raw: unknown }>;
+    // Overload for standard adapter contract
+    async listModels(getRaw?: false): Promise<ProviderModelInfo[]>;
+    // Implementation
+    async listModels(getRaw?: boolean): Promise<ProviderModelInfo[] | { models: ProviderModelInfo[], raw: unknown }> {
+        this.logger.info('[GoogleAdapter] Fetching models from Google AI...');
+        const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${this.apiKey}`;
+        
+        try {
+            const response = await fetch(url);
+            if (!response.ok) {
+                const errorBody = await response.text();
+                this.logger.error(`[GoogleAdapter] Error fetching models from Google AI: ${response.status} ${response.statusText}`, { errorBody });
+                throw new Error(`Failed to fetch models from Google AI: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            const models: ProviderModelInfo[] = [];
+
+            if (data && Array.isArray(data.models)) {
+                for (const model of data.models) {
+                    const modelId = `google-${model.name.replace('models/', '')}`;
+                    
+                    if (model.supportedGenerationMethods?.includes('generateContent')) {
+                        // The adapter should only pass on information it gets directly from the API.
+                        // The sync function's ConfigAssembler will handle merging this with other data sources.
+                        const config: Partial<AiModelExtendedConfig> = {
+                            provider_max_input_tokens: model.inputTokenLimit,
+                            provider_max_output_tokens: model.outputTokenLimit,
+                        };
+                        
+                        models.push({
+                            api_identifier: modelId,
+                            name: model.displayName,
+                            description: model.description,
+                            config: config,
+                        });
+                    }
+                }
+            }
+            
+            this.logger.info(`[GoogleAdapter] Found ${models.length} usable models from Google AI.`);
+            
+            if (getRaw) {
+                return { models, raw: data.models };
+            }
+            return models;
+
+        } catch (error) {
+            if (error instanceof Error) {
+                this.logger.error(`[GoogleAdapter] An unexpected error occurred while fetching Google models: ${error.message}`, { error });
+            } else {
+                this.logger.error('[GoogleAdapter] An unexpected and unknown error occurred while fetching Google models.', { error });
+            }
+            // Return empty array on failure to prevent sync from completely failing,
+            // though this will result in deactivation if there are existing models.
+            // A more robust implementation might throw to halt the sync process.
+            if (getRaw) {
+                return { models: [], raw: { error: 'Failed to fetch' } };
+            }
+            return [];
+        }
     }
 }

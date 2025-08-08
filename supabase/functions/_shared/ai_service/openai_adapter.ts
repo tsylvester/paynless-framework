@@ -128,7 +128,12 @@ export class OpenAiAdapter {
     }
   }
 
-  async listModels(): Promise<ProviderModelInfo[]> {
+  // Overload for sync script to get raw data
+  async listModels(getRaw: true): Promise<{ models: ProviderModelInfo[], raw: unknown }>;
+  // Overload for standard adapter contract
+  async listModels(getRaw?: false): Promise<ProviderModelInfo[]>;
+  // Implementation
+  async listModels(getRaw?: boolean): Promise<ProviderModelInfo[] | { models: ProviderModelInfo[], raw: unknown }> {
     this.logger.info("[OpenAiAdapter] Fetching models from OpenAI...");
 
     try {
@@ -136,13 +141,10 @@ export class OpenAiAdapter {
       const models: ProviderModelInfo[] = [];
 
       for (const model of modelsPage.data) {
-        if (model.id && (model.id.includes('gpt') || model.id.includes('instruct'))) {
-          // The config object from listModels is used by the sync-ai-models function.
-          // It's crucial that this is a *complete* AiModelExtendedConfig object.
-          // We use the base config from the constructor and override the API identifier.
+        if (model.id && (model.id.includes('gpt') || model.id.includes('instruct') || model.id.includes('text-embedding'))) {
           const config: AiModelExtendedConfig = {
-            ...this.modelConfig, // Spread the base config
-            api_identifier: model.id, // Override with the specific model ID
+            ...this.modelConfig,
+            api_identifier: model.id,
           };
           
           models.push({
@@ -155,7 +157,12 @@ export class OpenAiAdapter {
       }
       
       this.logger.info(`[OpenAiAdapter] Found ${models.length} potentially usable models from OpenAI.`);
+      
+      if (getRaw) {
+        return { models, raw: modelsPage.data };
+      }
       return models;
+
     } catch(error) {
       if (error instanceof OpenAI.APIError) {
         this.logger.error(`[OpenAiAdapter] OpenAI API error fetching models (${error.status}): ${error.message}`, { status: error.status });
@@ -169,12 +176,13 @@ export class OpenAiAdapter {
       throw new Error(`Failed to fetch models from OpenAI.`);
     }
   }
-
-  async getEmbedding(text: string, model = 'text-embedding-3-small') {
-    this.logger.info(`[OpenAiAdapter] Getting embedding for text with model ${model}`);
+  
+  async getEmbedding(text: string) {
+    const modelApiName = this.modelConfig.api_identifier.replace(/^openai-/i, '');
+    this.logger.info(`[OpenAiAdapter] Getting embedding for text with model ${modelApiName}`);
     try {
       const embedding = await this.client.embeddings.create({
-        model: model,
+        model: modelApiName,
         input: text,
         encoding_format: 'float',
       });

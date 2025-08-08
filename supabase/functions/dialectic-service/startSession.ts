@@ -230,12 +230,12 @@ export async function startSession(
         return { error: { message: initialPrompt.error || "Failed to retrieve initial prompt content.", status: 500 } };
     }
     
+    // Fetch the model config for the default embedding model
     const { data: modelConfigRecord, error: modelConfigError } = await dbClient
         .from('ai_providers')
         .select('config')
-        .eq('api_identifier', 'text-embedding-ada-002')
+        .eq('is_default_embedding', true)
         .single();
-
     if (modelConfigError || !modelConfigRecord || !modelConfigRecord.config) {
         log.error('[startSession] Failed to fetch model config for OpenAI embedding model.', { error: modelConfigError });
         return { error: { message: "Configuration for embedding model not found.", status: 500 } };

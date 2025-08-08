@@ -19,6 +19,7 @@ import { FileType, CanonicalPathParams } from "../types/file_manager.types.ts";
 import { ProjectContext, StageContext } from "../prompt-assembler.interface.ts";
 import { FailedAttemptError } from "../../dialectic-service/dialectic.interface.ts";
 import { AiModelExtendedConfig, TokenUsage, ChatMessageRole, ChatInsert, ContinueReason, FinishReason } from "../types.ts";
+import type { PostgrestError } from "npm:@supabase/supabase-js@2";
 
 // Helper type to represent the structure we're checking for.
 type StageWithProcessingStrategy = Tables<'dialectic_stages'> & {
@@ -411,6 +412,10 @@ export function isUserRole(role: unknown): role is Database['public']['Enums']['
 export function isRecord(item: unknown): item is Record<PropertyKey, unknown> {
     return (item !== null && typeof item === 'object' && !Array.isArray(item));
 } 
+
+export function isKeyOf<T extends object>(obj: T, key: PropertyKey): key is keyof T {
+    return Object.prototype.hasOwnProperty.call(obj, key);
+}
 
 export function isDialecticJobRowArray(arr: unknown): arr is DialecticJobRow[] {
     if (!Array.isArray(arr)) {
@@ -849,4 +854,17 @@ export function hasModelResultWithContributionId(results: unknown): results is {
     if (!('contributionId' in modelResult)) return false;
 
     return typeof modelResult.contributionId === 'string';
+}
+
+export function isPostgrestError(error: unknown): error is PostgrestError {
+    if (!isRecord(error)) {
+        return false;
+    }
+
+    return (
+        'message' in error && typeof error.message === 'string' &&
+        'code' in error && typeof error.code === 'string' &&
+        'details' in error && typeof error.details === 'string' &&
+        'hint' in error && typeof error.hint === 'string'
+    );
 }

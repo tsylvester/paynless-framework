@@ -93,6 +93,13 @@ Deno.test("OpenAI Adapter: Contract Compliance", async (t) => {
 // --- Provider-Specific Tests ---
 
 Deno.test("OpenAiAdapter - Specific Tests: getEmbedding", async () => {
+    const MOCK_EMBEDDING_MODEL_CONFIG: AiModelExtendedConfig = {
+        api_identifier: 'openai-text-embedding-3-small',
+        input_token_cost_rate: 0,
+        output_token_cost_rate: 0,
+        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base', is_chatml_model: false },
+    };
+
     const MOCK_EMBEDDING_SUCCESS_RESPONSE: CreateEmbeddingResponse = {
         object: 'list',
         data: [{ object: 'embedding', embedding: [0.01, 0.02, 0.03], index: 0 }],
@@ -107,10 +114,14 @@ Deno.test("OpenAiAdapter - Specific Tests: getEmbedding", async () => {
     const createStub = stub(OpenAI.Embeddings.prototype, "create", () => createMockEmbeddingPromise(MOCK_EMBEDDING_SUCCESS_RESPONSE));
 
     try {
-        const adapter = new OpenAiAdapter('sk-test-key', mockLogger, MOCK_MODEL_CONFIG);
+        const adapter = new OpenAiAdapter('sk-test-key', mockLogger, MOCK_EMBEDDING_MODEL_CONFIG);
         const result = await adapter.getEmbedding("Hello world");
 
         assertEquals(createStub.calls.length, 1);
+        // Verify the stub was called with the correct model from the config
+        const createCallArgs = createStub.calls[0].args[0];
+        assertEquals(createCallArgs.model, 'text-embedding-3-small');
+        
         assertExists(result);
         assertEquals(result, MOCK_EMBEDDING_SUCCESS_RESPONSE);
 

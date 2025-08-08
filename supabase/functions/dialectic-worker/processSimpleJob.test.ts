@@ -13,6 +13,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { isDialecticJobPayload, isRecord } from '../_shared/utils/type_guards.ts';
 import { processSimpleJob } from './processSimpleJob.ts';
 import type { DialecticJobRow, DialecticJobPayload, DialecticSession, DialecticContributionRow, IDialecticJobDeps, SelectedAiProvider } from '../dialectic-service/dialectic.interface.ts';
+import type { AiModelExtendedConfig } from '../_shared/types.ts';
 import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
@@ -178,7 +179,19 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
 
 const getMockDeps = (): IDialecticJobDeps => {
     const mockSupabaseClient = createMockSupabaseClient().client as unknown as SupabaseClient<Database>;
-    const openAiAdapter = new OpenAiAdapter(Deno.env.get('OPENAI_API_KEY')!, logger);
+    const mockModelConfig: AiModelExtendedConfig = {
+        api_identifier: 'mock-embedding-model',
+        input_token_cost_rate: 0,
+        output_token_cost_rate: 0,
+        provider_max_input_tokens: 8192,
+        tokenization_strategy: {
+            type: 'tiktoken',
+            tiktoken_encoding_name: 'cl100k_base',
+            is_chatml_model: false,
+            api_identifier_for_tokenization: 'mock-embedding-model',
+        },
+    };
+    const openAiAdapter = new OpenAiAdapter(Deno.env.get('OPENAI_API_KEY')!, logger, mockModelConfig);
     const embeddingClient = new OpenAIEmbeddingClient(openAiAdapter);
     const textSplitter = new LangchainTextSplitter();
     const indexingService = new IndexingService(mockSupabaseClient, logger, textSplitter, embeddingClient);

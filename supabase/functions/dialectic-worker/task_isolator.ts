@@ -8,7 +8,7 @@ import {
     IDialecticJobDeps,
 } from '../dialectic-service/dialectic.interface.ts';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
-import { ILogger, MessageForTokenCounting } from '../_shared/types.ts';
+import { MessageForTokenCounting } from '../_shared/types.ts';
 import { isDialecticExecuteJobPayload, isDialecticPlanJobPayload, isJson, isDocumentRelationships, isCanonicalPathParams } from '../_shared/utils/type_guards.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
@@ -21,7 +21,6 @@ async function findSourceDocuments(
     parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
     inputsRequired: DialecticRecipeStep['inputs_required'],
     downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>,
-    logger: ILogger,
 ): Promise<SourceDocument[]> {
     //logger.info(`[task_isolator] [findSourceDocuments] Finding documents for job ${parentJob.id} based on recipe...`, { inputsRequired });
 
@@ -110,7 +109,6 @@ export async function planComplexStage(
         parentJob, 
         recipeStep.inputs_required,
         deps.downloadFromStorage,
-        deps.logger
     );
     
     if (sourceDocuments.length === 0) {
@@ -242,6 +240,21 @@ export async function planComplexStage(
     const childJobsToInsert: DialecticJobRow[] = [];
     for (const payload of childJobPayloads) {
         if (isDialecticExecuteJobPayload(payload) && isJson(payload)) {
+            // Correct, type-safe approach: Assign the validated payload to a new
+            // strongly-typed variable. This allows the spread operator to work
+            // without unsafe casting, adhering to project standards.
+            const validatedPayload: DialecticExecuteJobPayload = payload;
+
+            const payloadWithAuth: DialecticExecuteJobPayload = {
+                ...validatedPayload,
+                user_jwt: authToken,
+            };
+
+            if (!isJson(payloadWithAuth)) {
+                // This should be an unreachable state if DialecticExecuteJobPayload is properly defined.
+                throw new Error('FATAL: Constructed child job payload is not a valid JSON object.');
+            }
+
             childJobsToInsert.push({
                 id: crypto.randomUUID(),
                 parent_job_id: parentJob.id,
@@ -259,7 +272,7 @@ export async function planComplexStage(
                 error_details: null,
                 target_contribution_id: null,
                 prerequisite_job_id: null,
-                payload: payload,
+                payload: payloadWithAuth,
             });
         }
     }
