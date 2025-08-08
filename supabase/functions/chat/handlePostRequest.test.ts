@@ -9,13 +9,13 @@ import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 import { logger } from "../_shared/logger.ts";
 import { SuccessfulChatContext } from "./prepareChatContext.ts";
-import { MockAiProviderAdapter } from '../_shared/ai_service/ai_provider.mock.ts';
+import { getMockAiProviderAdapter } from '../_shared/ai_service/ai_provider.mock.ts';
 
 // --- Reusable Mock Data ---
 
 const mockSuccessfulChatContext: SuccessfulChatContext = {
     wallet: { walletId: 'wallet-id', balance: '1000', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date(), userId: 'test-user' },
-    aiProviderAdapter: new MockAiProviderAdapter(),
+    aiProviderAdapter: getMockAiProviderAdapter(logger, { api_identifier: 'test-model', input_token_cost_rate: null, output_token_cost_rate: null, tokenization_strategy: { type: 'none' } }).instance,
     modelConfig: { api_identifier: 'test-model', input_token_cost_rate: null, output_token_cost_rate: null, tokenization_strategy: { type: 'none' } },
     actualSystemPromptText: 'system prompt',
     finalSystemPromptIdForDb: 'prompt-id',
@@ -64,6 +64,8 @@ Deno.test("handlePostRequest: should call handleNormalPath when rewindFromMessag
         getAiProviderAdapter: spy(),
         verifyApiKey: spy(() => Promise.resolve(true)),
         countTokensForMessages: spy(() => 10),
+        handleDialecticPath: spy(),
+        debitTokens: spy(),
     };
 
     const requestBody: ChatApiRequest = { message: "Hello", providerId: "provider-id", promptId: "prompt-id" };
@@ -98,6 +100,8 @@ Deno.test("handlePostRequest: should call handleRewindPath when rewindFromMessag
         getAiProviderAdapter: spy(),
         verifyApiKey: spy(() => Promise.resolve(true)),
         countTokensForMessages: spy(() => 10),
+        handleDialecticPath: spy(),
+        debitTokens: spy(),
     };
 
     const requestBody: ChatApiRequest = { message: "Hello", providerId: "provider-id", promptId: "prompt-id", rewindFromMessageId: "rewind-id" };
@@ -133,6 +137,8 @@ Deno.test("handlePostRequest: should return error and not call path handlers if 
         getAiProviderAdapter: spy(),
         verifyApiKey: spy(() => Promise.resolve(true)),
         countTokensForMessages: spy(() => 10),
+        handleDialecticPath: spy(),
+        debitTokens: spy(),
     };
     
     const requestBody: ChatApiRequest = { message: "Hello", providerId: "provider-id", promptId: "prompt-id" };

@@ -42,6 +42,7 @@ export type Database = {
           description: string | null
           id: string
           is_active: boolean
+          is_default_embedding: boolean
           is_enabled: boolean
           name: string
           provider: string | null
@@ -54,6 +55,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_active?: boolean
+          is_default_embedding?: boolean
           is_enabled?: boolean
           name: string
           provider?: string | null
@@ -66,6 +68,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_active?: boolean
+          is_default_embedding?: boolean
           is_enabled?: boolean
           name?: string
           provider?: string | null
@@ -76,7 +79,7 @@ export type Database = {
       chat_messages: {
         Row: {
           ai_provider_id: string | null
-          chat_id: string
+          chat_id: string | null
           content: string
           created_at: string
           error_type: string | null
@@ -91,7 +94,7 @@ export type Database = {
         }
         Insert: {
           ai_provider_id?: string | null
-          chat_id: string
+          chat_id?: string | null
           content: string
           created_at?: string
           error_type?: string | null
@@ -106,7 +109,7 @@ export type Database = {
         }
         Update: {
           ai_provider_id?: string | null
-          chat_id?: string
+          chat_id?: string | null
           content?: string
           created_at?: string
           error_type?: string | null
@@ -1775,8 +1778,17 @@ export type Database = {
               p_new_assistant_message_system_prompt_id: string
             }
         Returns: {
-          new_user_message_id: string
-          new_assistant_message_id: string
+          id: string
+          chat_id: string
+          user_id: string
+          role: string
+          content: string
+          created_at: string
+          updated_at: string
+          is_active_in_thread: boolean
+          token_usage: Json
+          ai_provider_id: string
+          system_prompt_id: string
         }[]
       }
       record_token_transaction: {

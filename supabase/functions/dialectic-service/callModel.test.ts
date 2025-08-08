@@ -40,7 +40,7 @@ Deno.test("callUnifiedAIModel - successful call to /chat", async () => {
   };
 
   const mockChatSuccessResponse: ChatHandlerSuccessResponse = {
-    assistantMessage: baseMockAssistantMessage as ChatMessage,
+    assistantMessage: baseMockAssistantMessage,
     chatId: mockAssociatedChatId,
   };
 
@@ -77,15 +77,16 @@ Deno.test("callUnifiedAIModel - successful call to /chat", async () => {
     assert(fetchStub.calls.length === 1, "Fetch should be called once");
     const firstCall = fetchStub.calls[0];
     assertEquals(firstCall.args[0], mockChatFunctionUrl);
-    const fetchOptions = firstCall.args[1] as RequestInit;
+    const fetchOptions = firstCall.args[1];
     assertEquals(fetchOptions.method, "POST");
-    assertEquals((fetchOptions.headers as Record<string, string>)["Authorization"], `Bearer ${mockAuthToken}`);
-    const actualBody = JSON.parse(fetchOptions.body as string);
+    assertEquals((fetchOptions.headers)["Authorization"], `Bearer ${mockAuthToken}`);
+    const actualBody = JSON.parse(fetchOptions.body);
     const expectedBodyToCompare = {
         message: mockRenderedPrompt,
         providerId: mockModelCatalogId,
         promptId: "__none__",
-        chatId: mockAssociatedChatId,
+        isDialectic: true,
+        // chatId is correctly NOT included
         messages: [],
     };
     assertEquals(actualBody, expectedBodyToCompare);
@@ -259,7 +260,21 @@ Deno.test("callUnifiedAIModel - with continueUntilComplete: true", async () => {
     const mockAssociatedChatId = "chat-uuid-continue-true";
   
     const mockChatSuccessResponse: ChatHandlerSuccessResponse = {
-      assistantMessage: { id: "msg-continue-true", content: "Continued response.", role: 'assistant' } as ChatMessage,
+      assistantMessage: { 
+        id: "msg-continue-true", 
+        content: "Continued response.", 
+        role: 'assistant',
+        chat_id: mockAssociatedChatId,
+        created_at: new Date().toISOString(),
+        error_type: null,
+        is_active_in_thread: true,
+        response_to_message_id: null,
+        user_id: null,
+        ai_provider_id: mockModelCatalogId,
+        system_prompt_id: null,
+        token_usage: null,
+        updated_at: new Date().toISOString(),
+      },
       chatId: mockAssociatedChatId,
     };
   
@@ -288,10 +303,13 @@ Deno.test("callUnifiedAIModel - with continueUntilComplete: true", async () => {
   
       assertEquals(fetchStub.calls.length, 1);
       const firstCall = fetchStub.calls[0];
-      const fetchOptions = firstCall.args[1] as RequestInit;
-      const actualBody = JSON.parse(fetchOptions.body as string);
-  
-      assertEquals(actualBody.continue_until_complete, true);
+      const fetchOptions = firstCall.args[1];
+      if (typeof fetchOptions?.body === "string") {
+        const actualBody = JSON.parse(fetchOptions.body);
+        assertEquals(actualBody.continue_until_complete, true);
+      } else {
+        assert(false, "Body is not a string.");
+      }
   
     } finally {
       fetchStub.restore();
@@ -306,7 +324,21 @@ Deno.test("callUnifiedAIModel - with continueUntilComplete: false", async () => 
     const mockAssociatedChatId = "chat-uuid-continue-false";
 
     const mockChatSuccessResponse: ChatHandlerSuccessResponse = {
-      assistantMessage: { id: "msg-continue-false", content: "Short response.", role: 'assistant' } as ChatMessage,
+      assistantMessage: { 
+        id: "msg-continue-false", 
+        content: "Short response.", 
+        role: 'assistant',
+        chat_id: mockAssociatedChatId,
+        created_at: new Date().toISOString(),
+        error_type: null,
+        is_active_in_thread: true,
+        response_to_message_id: null,
+        user_id: null,
+        ai_provider_id: mockModelCatalogId,
+        system_prompt_id: null,
+        token_usage: null,
+        updated_at: new Date().toISOString(),
+      },
       chatId: mockAssociatedChatId,
     };
 
@@ -335,10 +367,13 @@ Deno.test("callUnifiedAIModel - with continueUntilComplete: false", async () => 
 
       assertEquals(fetchStub.calls.length, 1);
       const firstCall = fetchStub.calls[0];
-      const fetchOptions = firstCall.args[1] as RequestInit;
-      const actualBody = JSON.parse(fetchOptions.body as string);
-
-      assertEquals(actualBody.continue_until_complete, false);
+      const fetchOptions = firstCall.args[1];
+      if (typeof fetchOptions?.body === "string") {
+        const actualBody = JSON.parse(fetchOptions.body);
+        assertEquals(actualBody.continue_until_complete, false);
+      } else {
+        assert(false, "Body is not a string.");
+      }
 
     } finally {
       fetchStub.restore();
@@ -370,7 +405,7 @@ Deno.test("callUnifiedAIModel - with options.historyMessages", async () => {
       error_type: null,
       is_active_in_thread: true,
       response_to_message_id: null,
-    } as ChatMessage, 
+    }, 
   ];
 
   const mockTokenUsage: TokenUsage = { prompt_tokens: 25, completion_tokens: 15, total_tokens: 40 };
@@ -394,7 +429,7 @@ Deno.test("callUnifiedAIModel - with options.historyMessages", async () => {
   };
 
   const mockChatSuccessResponse: ChatHandlerSuccessResponse = {
-    assistantMessage: baseMockAssistantMessage as ChatMessage,
+    assistantMessage: baseMockAssistantMessage,
     chatId: mockAssociatedChatId,
   };
 
@@ -433,13 +468,14 @@ Deno.test("callUnifiedAIModel - with options.historyMessages", async () => {
     assert(fetchStub.calls.length === 1, "Fetch should be called once");
     const firstCall = fetchStub.calls[0];
     assertEquals(firstCall.args[0], mockChatFunctionUrl);
-    const fetchOptions = firstCall.args[1] as RequestInit;
-    const actualBodyForHistory = JSON.parse(fetchOptions.body as string);
+    const fetchOptions = firstCall.args[1];
+    const actualBodyForHistory = JSON.parse(fetchOptions.body);
     const expectedBodyForHistory = {
         message: mockRenderedPrompt,
         providerId: mockModelCatalogId,
         promptId: "__none__", 
-        chatId: mockAssociatedChatId,
+        isDialectic: true,
+        // chatId is correctly NOT included
         messages: mockHistoryMessages.map(m => ({ 
             role: m.role,
             content: m.content,
@@ -485,7 +521,7 @@ Deno.test("callUnifiedAIModel - with options.currentStageSystemPromptId and opti
   };
 
   const mockChatSuccessResponse: ChatHandlerSuccessResponse = {
-    assistantMessage: baseMockAssistantMessage as ChatMessage,
+    assistantMessage: baseMockAssistantMessage,
     chatId: mockAssociatedChatId,
   };
 
@@ -526,17 +562,84 @@ Deno.test("callUnifiedAIModel - with options.currentStageSystemPromptId and opti
     assert(fetchStub.calls.length === 1, "Fetch should be called once");
     const firstCall = fetchStub.calls[0];
     assertEquals(firstCall.args[0], mockChatFunctionUrl);
-    const fetchOptions = firstCall.args[1] as RequestInit;
+    const fetchOptions = firstCall.args[1];
     const expectedBody = {
         message: mockRenderedPrompt,
         providerId: mockModelCatalogId,
         promptId: mockSystemPromptId, 
-        chatId: mockAssociatedChatId,
+        isDialectic: true,
+        // chatId is correctly NOT included
         messages: [], 
         max_tokens_to_generate: mockMaxTokens,
         walletId: mockWalletId
     };
-    assertEquals(JSON.parse(fetchOptions.body as string), expectedBody);
+    assertEquals(JSON.parse(fetchOptions.body), expectedBody);
+
+  } finally {
+    fetchStub.restore();
+    denoEnvStub.restore();
+  }
+});
+
+Deno.test("callUnifiedAIModel - should not pass chatId for dialectic jobs to prevent history masking", async () => {
+  const mockChatFunctionUrl = "http://localhost:12345/functions/v1/chat";
+  const mockAuthToken = "test-auth-token";
+  const mockModelCatalogId = "gpt-4-provider-id";
+  const mockRenderedPrompt = "Hello, world!";
+  const mockAssociatedChatId = "chat-uuid-123";
+
+  const mockChatSuccessResponse: ChatHandlerSuccessResponse = {
+    assistantMessage: { 
+      id: "msg-no-chat-id", 
+      content: "Response.", 
+      role: 'assistant', 
+      chat_id: null, 
+      created_at: new Date().toISOString(), 
+      error_type: null, 
+      is_active_in_thread: true, 
+      response_to_message_id: null, 
+      user_id: null, 
+      ai_provider_id: mockModelCatalogId,
+      system_prompt_id: null, 
+      updated_at: new Date().toISOString(), 
+      token_usage: null 
+    },
+    chatId: mockAssociatedChatId,
+  };
+
+    const fetchStub = stub(globalThis, "fetch", async (url: string | URL | Request, options?: RequestInit): Promise<Response> => {
+        return await Promise.resolve(new Response(JSON.stringify(mockChatSuccessResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+        }));
+    });
+
+  const denoEnvStub = stub(Deno.env, "get", (variable: string): string | undefined => {
+    if (variable === "SUPABASE_INTERNAL_FUNCTIONS_URL") return "http://localhost:12345";
+    if (variable === "SUPABASE_URL") return "http://localhost:12345";
+    return undefined;
+  });
+
+  try {
+    await callUnifiedAIModel(
+      mockModelCatalogId,
+      mockRenderedPrompt,
+      mockAssociatedChatId,
+      mockAuthToken
+    );
+
+    assertEquals(fetchStub.calls.length, 1, "Fetch should be called once");
+    const firstCall = fetchStub.calls[0];
+    const fetchOptions = firstCall.args[1];
+    
+    if(typeof fetchOptions?.body === 'string') {
+        const actualBody = JSON.parse(fetchOptions.body);
+        // This is the key assertion for the desired state. It will fail initially.
+        assertEquals(actualBody.chatId, undefined, "chatId should be undefined to prevent history masking");
+    } else {
+        assert(false, "Body is not string");
+    }
+
 
   } finally {
     fetchStub.restore();

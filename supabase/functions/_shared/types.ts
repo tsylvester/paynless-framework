@@ -9,6 +9,8 @@ import type { ITokenWalletService } from './types/tokenWallet.types.ts';
 import type { prepareChatContext } from '../chat/prepareChatContext.ts';
 import type { handleNormalPath } from '../chat/handleNormalPath.ts';
 import type { handleRewindPath } from '../chat/handleRewindPath.ts';
+import type { handleDialecticPath } from '../chat/handleDialecticPath.ts';
+import type { debitTokens } from '../chat/debitTokens.ts';
 // Import MessageForTokenCounting from the centralized location AT THE TOP
 
 export type ChatInsert = Tables<'chats'>;
@@ -165,6 +167,7 @@ export interface ChatApiRequest {
   rewindFromMessageId?: string; // uuid, optional for rewinding - ADDED
   max_tokens_to_generate?: number; // ADDED: Max tokens for the AI to generate in its response
   continue_until_complete?: boolean; // ADDED: Flag to enable response continuation
+  isDialectic?: boolean; // ADDED: Flag to indicate a 'headless' dialectic job that should not be saved to the DB
 }
 
 /**
@@ -196,10 +199,14 @@ export type AiProviderAdapter = new (
 
 export type AiProviderAdapterInstance = InstanceType<AiProviderAdapter>;
 
-export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] & {
-  // Keep application-level status enrichment if needed by UI directly
-  // Note: status was previously added to LocalChatMessage, consider if it belongs here
-  status?: 'pending' | 'sent' | 'error'; 
+// TODO: chat_id is optional to support "headless" dialectic messages that are not
+// associated with a chat history but are still processed by the /chat endpoint
+// for token accounting. Re-evaluate this after the chat service refactor.
+export type ChatMessage = Omit<Database['public']['Tables']['chat_messages']['Row'], 'chat_id'> & {
+    chat_id?: string;
+    // Keep application-level status enrichment if needed by UI directly
+    // Note: status was previously added to LocalChatMessage, consider if it belongs here
+    status?: 'pending' | 'sent' | 'error'; 
 };
 
 export type FinishReason = 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call' | 'error' | 'unknown' | 'max_tokens' | 'content_truncated' | null;
@@ -231,7 +238,9 @@ export interface AdapterResponsePayload {
  */
 export interface FullChatMessageRecord {
   id: string;
-  chat_id: string;
+      // TODO: chat_id is nullable to accommodate 'headless' dialectic messages that are not associated with a chat.
+    // This should be revisited when the chat and dialectic services are more formally separated.
+    chat_id?: string;
   user_id: string;
   created_at: string;
   role: 'user' | 'assistant' | 'system';
@@ -278,7 +287,7 @@ export interface ILogger {
   export interface ChatHandlerSuccessResponse {
     userMessage?: ChatMessageRow;       // Populated for normal new messages and new user message in rewind
     assistantMessage: ChatMessageRow;  // Always populated on success
-    chatId: string;                    // ID of the chat session (new or existing) - ADDED
+    chatId?: string;                   // ID of the chat session, optional for 'headless' dialectic jobs
     isRewind?: boolean;                 // True if this was a rewind operation
     isDummy?: boolean;                  // True if dummy provider was used
   }
@@ -398,6 +407,8 @@ export interface ChatHandlerDeps {
   prepareChatContext: typeof prepareChatContext;
   handleNormalPath: typeof handleNormalPath;
   handleRewindPath: typeof handleRewindPath;
+  handleDialecticPath: typeof handleDialecticPath;
+  debitTokens: typeof debitTokens;
   handlePostRequest?: (requestBody: ChatApiRequest, supabaseClient: SupabaseClient<Database>, userId: string, deps: ChatHandlerDeps) => Promise<ChatHandlerSuccessResponse | { error: { message: string, status?: number } }>;
 }
 

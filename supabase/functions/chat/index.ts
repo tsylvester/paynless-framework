@@ -24,6 +24,8 @@ import { handlePostRequest } from './handlePostRequest.ts';
 import { prepareChatContext } from './prepareChatContext.ts';
 import { handleNormalPath } from './handleNormalPath.ts';
 import { handleRewindPath } from './handleRewindPath.ts';
+import { handleDialecticPath } from "./handleDialecticPath.ts";
+import { debitTokens } from './debitTokens.ts';
 
 // --- Main Handler ---
 export async function handler(
@@ -173,6 +175,8 @@ export const defaultDeps: ChatHandlerDeps = {
     prepareChatContext: prepareChatContext,
     handleNormalPath: handleNormalPath,
     handleRewindPath: handleRewindPath,
+    handleDialecticPath: handleDialecticPath,
+    debitTokens: debitTokens,
     handlePostRequest: handlePostRequest,
 };
 

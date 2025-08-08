@@ -66,6 +66,8 @@ Deno.test("prepareChatContext: successful context preparation", async () => {
         prepareChatContext: spy(),
         handleNormalPath: spy(),
         handleRewindPath: spy(),
+        handleDialecticPath: spy(),
+        debitTokens: spy(),
     };
 
     const requestBody: ChatApiRequest = {
@@ -110,6 +112,8 @@ Deno.test("prepareChatContext: provider not found", async () => {
         prepareChatContext: spy(),
         handleNormalPath: spy(),
         handleRewindPath: spy(),
+        handleDialecticPath: spy(),
+        debitTokens: spy(),
     };
     const requestBody: ChatApiRequest = { message: "test", providerId: "non-existent", promptId: crypto.randomUUID() };
 
@@ -151,6 +155,8 @@ Deno.test("prepareChatContext: wallet not found", async () => {
         prepareChatContext: spy(),
         handleNormalPath: spy(),
         handleRewindPath: spy(),
+        handleDialecticPath: spy(),
+        debitTokens: spy(),
     };
     const requestBody: ChatApiRequest = { message: "test", providerId: "test", promptId: crypto.randomUUID() };
 
@@ -189,6 +195,8 @@ Deno.test("prepareChatContext: inactive provider", async () => {
         prepareChatContext: spy(),
         handleNormalPath: spy(),
         handleRewindPath: spy(),
+        handleDialecticPath: spy(),
+        debitTokens: spy(),
     };
     const requestBody: ChatApiRequest = { message: "test", providerId, promptId: crypto.randomUUID() };
 
@@ -234,6 +242,8 @@ Deno.test("prepareChatContext: invalid promptId returns null prompt", async () =
         prepareChatContext: spy(),
         handleNormalPath: spy(),
         handleRewindPath: spy(),
+        handleDialecticPath: spy(),
+        debitTokens: spy(),
     };
     const requestBody: ChatApiRequest = { message: "test", providerId, promptId: "non-existent" };
 
@@ -280,6 +290,8 @@ Deno.test("prepareChatContext: inactive prompt returns null prompt", async () =>
         prepareChatContext: spy(),
         handleNormalPath: spy(),
         handleRewindPath: spy(),
+        handleDialecticPath: spy(),
+        debitTokens: spy(),
     };
     const requestBody: ChatApiRequest = { message: "test", providerId, promptId };
 
@@ -322,6 +334,8 @@ Deno.test("prepareChatContext: promptId '__none__' returns null prompt", async (
         prepareChatContext: spy(),
         handleNormalPath: spy(),
         handleRewindPath: spy(),
+        handleDialecticPath: spy(),
+        debitTokens: spy(),
     };
     const requestBody: ChatApiRequest = { message: "test", providerId, promptId: "__none__" };
 
@@ -362,6 +376,8 @@ Deno.test("prepareChatContext: missing provider string in DB returns 500", async
         prepareChatContext: spy(),
         handleNormalPath: spy(),
         handleRewindPath: spy(),
+        handleDialecticPath: spy(),
+        debitTokens: spy(),
     };
     const requestBody: ChatApiRequest = { message: "test", providerId, promptId: crypto.randomUUID() };
 
@@ -403,6 +419,8 @@ Deno.test("prepareChatContext: unsupported provider returns 400", async () => {
         prepareChatContext: spy(),
         handleNormalPath: spy(),
         handleRewindPath: spy(),
+        handleDialecticPath: spy(),
+        debitTokens: spy(),
     };
     const requestBody: ChatApiRequest = { message: "test", providerId, promptId: crypto.randomUUID() };
 
@@ -445,6 +463,8 @@ Deno.test("prepareChatContext: returns 402 if getWalletForContext returns null",
         prepareChatContext: spy(),
         handleNormalPath: spy(),
         handleRewindPath: spy(),
+        handleDialecticPath: spy(),
+        debitTokens: spy(),
     };
     const requestBody: ChatApiRequest = { message: "test", providerId: "test", promptId: crypto.randomUUID() };
 
@@ -489,6 +509,8 @@ Deno.test("prepareChatContext: returns 500 if getWalletForContext throws an erro
         prepareChatContext: spy(),
         handleNormalPath: spy(),
         handleRewindPath: spy(),
+        handleDialecticPath: spy(),
+        debitTokens: spy(),
     };
     const requestBody: ChatApiRequest = { message: "test", providerId: "test", promptId: crypto.randomUUID() };
 

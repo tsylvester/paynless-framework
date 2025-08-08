@@ -6,6 +6,7 @@ import {
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { Database } from "../types_db.ts";
 import { PathHandlerContext } from "./prepareChatContext.ts";
+import { handleDialecticPath } from "./handleDialecticPath.ts";
 
 export async function handlePostRequest(
     requestBody: ChatApiRequest,
@@ -18,8 +19,9 @@ export async function handlePostRequest(
         prepareChatContext,
         handleNormalPath,
         handleRewindPath,
+        handleDialecticPath,
     } = deps;
-    const { rewindFromMessageId } = requestBody;
+    const { rewindFromMessageId, isDialectic } = requestBody;
 
     try {
         const chatContextResult = await prepareChatContext(requestBody, userId, { ...deps, supabaseClient });
@@ -37,7 +39,9 @@ export async function handlePostRequest(
             requestBody,
         };
 
-        if (rewindFromMessageId) {
+        if (isDialectic) {
+            return await handleDialecticPath(context);
+        } else if (rewindFromMessageId) {
             return await handleRewindPath(context);
         } else {
             return await handleNormalPath(context);

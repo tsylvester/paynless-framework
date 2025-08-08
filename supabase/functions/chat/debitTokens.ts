@@ -14,7 +14,7 @@ export interface DebitTokensParams<T> {
     tokenUsage: TokenUsage | null;
     modelConfig: AiModelExtendedConfig;
     userId: string;
-    chatId: string;
+    chatId?: string;
     relatedEntityId: string;
     databaseOperation: () => Promise<T>;
 }
@@ -53,6 +53,10 @@ export async function debitTokens<T>(
         });
         try {
             const debitType: TokenWalletTransactionType = 'DEBIT_USAGE';
+            const notes = chatId
+                ? `Token usage for chat message in chat ${chatId}. Model: ${modelConfig?.api_identifier || 'unknown'}. Input Tokens: ${tokenUsageFromAdapter?.prompt_tokens || 0}, Output Tokens: ${tokenUsageFromAdapter?.completion_tokens || 0}.`
+                : `Token usage for headless job (e.g., Dialectic). Model: ${modelConfig?.api_identifier || 'unknown'}. Input Tokens: ${tokenUsageFromAdapter?.prompt_tokens || 0}, Output Tokens: ${tokenUsageFromAdapter?.completion_tokens || 0}.`;
+
             const transactionData = {
                 walletId: wallet.walletId,
                 type: debitType,
@@ -61,7 +65,7 @@ export async function debitTokens<T>(
                 idempotencyKey: crypto.randomUUID(),
                 relatedEntityId: relatedEntityId,
                 relatedEntityType: 'chat_message',
-                notes: `Token usage for chat message in chat ${chatId}. Model: ${modelConfig?.api_identifier || 'unknown'}. Input Tokens: ${tokenUsageFromAdapter?.prompt_tokens || 0}, Output Tokens: ${tokenUsageFromAdapter?.completion_tokens || 0}.`,
+                notes: notes,
             };
             const transaction = await tokenWalletService.recordTransaction(transactionData);
             logger.info('Token transaction recorded (debit) successfully.', { transactionId: transaction.transactionId, walletId: wallet.walletId, amount: actualTokensToDebit });
@@ -104,6 +108,10 @@ export async function debitTokens<T>(
         if (transactionRecordedSuccessfully && actualTokensToDebit > 0) {
             try {
                 const creditType: TokenWalletTransactionType = 'CREDIT_ADJUSTMENT';
+                const refundNotes = chatId
+                    ? `Automatic refund for failed message persistence in chat ${chatId}. Original debit amount: ${actualTokensToDebit}.`
+                    : `Automatic refund for failed message persistence in headless job. Original debit amount: ${actualTokensToDebit}.`;
+
                 const refundTransactionData = {
                     walletId: wallet.walletId,
                     type: creditType,
@@ -112,7 +120,7 @@ export async function debitTokens<T>(
                     idempotencyKey: crypto.randomUUID(),
                     relatedEntityId: relatedEntityId,
                     relatedEntityType: 'chat_message',
-                    notes: `Automatic refund for failed message persistence in chat ${chatId}. Original debit amount: ${actualTokensToDebit}.`,
+                    notes: refundNotes,
                 };
                 await tokenWalletService.recordTransaction(refundTransactionData);
                 logger.info('Successfully issued refund credit transaction.', {
