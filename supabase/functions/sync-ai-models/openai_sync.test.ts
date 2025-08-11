@@ -2,8 +2,7 @@
 import { testSyncContract, type MockProviderData } from "./sync_test_contract.ts";
 import { syncOpenAIModels } from "./openai_sync.ts";
 import { type DbAiProvider, type SyncResult } from "./index.ts";
-import type { AiModelExtendedConfig } from "../_shared/types.ts";
-import { type AssembledModelConfig } from "./config_assembler.ts";
+import type { AiModelExtendedConfig, FinalAppModelConfig } from "../_shared/types.ts";
 import { isJson } from "../_shared/utils/type_guards.ts";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert@0.225.3";
 import { stub } from "jsr:@std/testing@0.225.1/mock";
@@ -12,6 +11,8 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../types_db.ts";
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 import { type SyncDeps } from "./sync_test_contract.ts";
+import { INTERNAL_MODEL_MAP } from "./openai_sync.ts";
+import { AiModelExtendedConfigSchema } from "../chat/zodSchema.ts";
 
 
 const PROVIDER_NAME = 'openai';
@@ -32,19 +33,19 @@ const createTestConfig = (apiIdentifier: string, overrides: Partial<AiModelExten
 
 const assembledGpt4Config = createTestConfig('gpt-4-turbo');
 assert(isJson(assembledGpt4Config), "assembledGpt4Config must be valid JSON");
-const assembledGpt4: AssembledModelConfig = { api_identifier: `gpt-4-turbo`, name: "GPT-4 Turbo", description: "A solid model.", config: assembledGpt4Config };
+const assembledGpt4: FinalAppModelConfig = { api_identifier: `gpt-4-turbo`, name: "GPT-4 Turbo", description: "A solid model.", config: assembledGpt4Config };
 
 const assembledGptNewConfig = createTestConfig('gpt-new-model');
 assert(isJson(assembledGptNewConfig), "assembledGptNewConfig must be valid JSON");
-const assembledGptNew: AssembledModelConfig = { api_identifier: `gpt-new-model`, name: "GPT New", description: "A new model.", config: assembledGptNewConfig };
+const assembledGptNew: FinalAppModelConfig = { api_identifier: `gpt-new-model`, name: "GPT New", description: "A new model.", config: assembledGptNewConfig };
 
 const assembledGptUpdatedConfig = createTestConfig('gpt-4-turbo', { output_token_cost_rate: 2.0 / 1_000_000 });
 assert(isJson(assembledGptUpdatedConfig), "assembledGptUpdatedConfig must be valid JSON");
-const assembledGptUpdated: AssembledModelConfig = { api_identifier: `gpt-4-turbo`, name: "GPT-4 Turbo v2", description: "An updated model.", config: assembledGptUpdatedConfig };
+const assembledGptUpdated: FinalAppModelConfig = { api_identifier: `gpt-4-turbo`, name: "GPT-4 Turbo v2", description: "An updated model.", config: assembledGptUpdatedConfig };
 
 const assembledGptReactivateConfig = createTestConfig('gpt-reactivate');
 assert(isJson(assembledGptReactivateConfig), "assembledGptReactivateConfig must be valid JSON");
-const assembledGptReactivate: AssembledModelConfig = { api_identifier: `gpt-reactivate`, name: "Reactivated", description: "It is back.", config: assembledGptReactivateConfig };
+const assembledGptReactivate: FinalAppModelConfig = { api_identifier: `gpt-reactivate`, name: "Reactivated", description: "It is back.", config: assembledGptReactivateConfig };
 
 const dbGpt4Config = createTestConfig('gpt-4-turbo');
 assert(isJson(dbGpt4Config), "dbGpt4Config must be valid JSON");
@@ -109,7 +110,7 @@ Deno.test("syncOpenAIModels", {
              embeddingConfig.tokenization_strategy.is_chatml_model = false;
         }
        
-        const mockAssembledConfigs: AssembledModelConfig[] = [
+        const mockAssembledConfigs: FinalAppModelConfig[] = [
             { api_identifier: "openai-text-embedding-3-small", name: "OpenAI text-embedding-3-small", description: "An embedding model", config: embeddingConfig }
         ];
 
@@ -146,4 +147,18 @@ Deno.test("syncOpenAIModels", {
             assembleStub.restore();
         }
     });
+});
+
+Deno.test("'INTERNAL_MODEL_MAP should contain valid partial configs'", () => {
+    // This test ensures that the hardcoded configurations in the provider's
+    // sync file adhere to the Zod schema for partial configurations. This prevents
+    // malformed data from being introduced at the source.
+    const results = [...INTERNAL_MODEL_MAP.entries()].map(([id, config]) => {
+        const result = AiModelExtendedConfigSchema.partial().safeParse(config);
+        return { id, success: result.success, error: result.success ? null : result.error.format() };
+    });
+
+    const failures = results.filter(r => !r.success);
+
+    assertEquals(failures.length, 0, `Found ${failures.length} invalid configs in INTERNAL_MODEL_MAP: ${JSON.stringify(failures, null, 2)}`);
 });

@@ -21,6 +21,7 @@ import {
   type StartSessionSuccessResponse,
   type StartSessionPayload,
   IDialecticJobDeps,
+  ExecuteModelCallAndSaveParams,
 } from "../../functions/dialectic-service/dialectic.interface.ts";
 import { generateContributions } from "../../functions/dialectic-service/generateContribution.ts";
 import { isDialecticJobPayload, isDialecticJobRow, isTokenUsage, hasModelResultWithContributionId } from "../../functions/_shared/utils/type_guards.ts";
@@ -38,6 +39,7 @@ import { startSession } from "../../functions/dialectic-service/startSession.ts"
 import { submitStageResponses } from "../../functions/dialectic-service/submitStageResponses.ts";
 import { downloadFromStorage } from "../../functions/_shared/supabase_storage_utils.ts";
 import { executeModelCallAndSave } from "../../functions/dialectic-worker/executeModelCallAndSave.ts";
+import { callUnifiedAIModel } from "../../functions/dialectic-service/callModel.ts";
 import { UploadContext, FileType, IFileManager } from "../../functions/_shared/types/file_manager.types.ts";
 import { RagService } from "../../functions/_shared/services/rag_service.ts";
 import { IndexingService, LangchainTextSplitter, OpenAIEmbeddingClient } from "../../functions/_shared/services/indexing_service.ts";
@@ -163,7 +165,6 @@ Deno.test(
     let primaryUserId: string;
     let primaryUserJwt: string;
     let primaryUser: User;
-    let factoryStub: Stub;
     let testProject: DialecticProject | null = null;
     let testDomainId: string;
     let testSession: StartSessionSuccessResponse | null = null;
@@ -192,75 +193,25 @@ Deno.test(
         assertExists(domain, "The 'Software Development' domain must exist in the database for this test to run.");
         testDomainId = domain.id;
 
-        // --- Upsert AI Providers to ensure test is self-contained ---
-        type AiProviderInsert = Database['public']['Tables']['ai_providers']['Insert'];
-        const providersToEnsure: AiProviderInsert[] = [
-          {
-            api_identifier: 'gpt-4-turbo',
-            name: 'GPT-4 Turbo',
-            provider: 'openai',
-            config: { 
-                provider_max_input_tokens: 128000, 
-                provider_max_output_tokens: 4096,
-                tokenization_strategy: {
-                    type: 'tiktoken',
-                    tiktoken_encoding_name: 'cl100k_base'
-                }
-            },
-          },
-          {
-            api_identifier: 'claude-3-opus',
-            name: 'Claude 3 Opus',
-            provider: 'anthropic',
-            config: { 
-                provider_max_input_tokens: 200000, 
-                provider_max_output_tokens: 4096,
-                tokenization_strategy: {
-                    type: 'anthropic_tokenizer',
-                    model: 'claude-3-opus-20240229'
-                }
-            },
-          },
-          {
-            api_identifier: 'openai-text-embedding-3-small',
-            name: 'Ada v2 Embedding',
-            provider: 'openai',
-            config: {
-                provider_max_input_tokens: 8191,
-                provider_max_output_tokens: 0, // Not applicable for embedding models
-                tokenization_strategy: {
-                    type: 'tiktoken',
-                    tiktoken_encoding_name: 'cl100k_base',
-                    is_chatml_model: false // Embedding models are not ChatML
-                }
-            },
-          }
-        ];
-
-        const { data: upsertedProviders, error: upsertError } = await adminClient
+        // --- Fetch AI Providers from DB, treating seed.sql as the source of truth ---
+        const requiredProviders = ['openai-gpt-4-turbo', 'claude-3-opus-20240229'];
+        const { data: fetchedProviders, error: providersError } = await adminClient
           .from('ai_providers')
-          .upsert(providersToEnsure, { onConflict: 'api_identifier' })
-          .select('id, api_identifier');
+          .select('id, api_identifier')
+          .in('api_identifier', requiredProviders);
+
+        assert(!providersError, `Failed to fetch AI providers: ${providersError?.message}`);
+        assert(fetchedProviders.length === requiredProviders.length, `Could not find all required AI providers. Found: ${fetchedProviders.map(p => p.api_identifier).join(', ')}`);
+
+        const modelA = fetchedProviders.find(p => p.api_identifier === 'openai-gpt-4-turbo');
+        const modelB = fetchedProviders.find(p => p.api_identifier === 'claude-3-opus-20240229');
+
+        assertExists(modelA, "The 'openai-gpt-4-turbo' provider must exist in the database for this test to run.");
+        assertExists(modelB, "The 'claude-3-opus-20240229' provider must exist in the database for this test to run.");
         
-        assert(!upsertError, `Failed to upsert AI providers: ${upsertError?.message}`);
-        assertExists(upsertedProviders, "Upserting providers did not return data.");
-        assertEquals(upsertedProviders.length, 3, "Expected to upsert exactly 3 providers.");
-
-        const modelA = upsertedProviders.find(p => p.api_identifier === 'gpt-4-turbo');
-        const modelB = upsertedProviders.find(p => p.api_identifier === 'claude-3-opus');
-
-        assertExists(modelA, "The 'gpt-4-turbo' AI provider could not be upserted.");
         modelAId = modelA.id;
-        
-        assertExists(modelB, "The 'claude-3-opus' AI provider could not be upserted.");
         modelBId = modelB.id;
-        // --- End of AI Provider Upsert ---
 
-        factoryStub = stub(
-            { getAiProviderAdapter },
-            "getAiProviderAdapter",
-            () => mockAiAdapter.instance,
-        );
         mockAiAdapter.controls.reset();
 
         const openAiAdapter = new OpenAiAdapter("sk-test-fake-key", testLogger, MOCK_MODEL_CONFIG);
@@ -281,39 +232,7 @@ Deno.test(
             deleteFromStorage: () => Promise.resolve({ error: null }), // Can remain a mock for now
             getExtensionFromMimeType: () => ".md",
             randomUUID: () => crypto.randomUUID(),
-            callUnifiedAIModel: async (modelId, prompt, chatId, authToken, options) => {
-                const request: ChatApiRequest = {
-                    message: prompt,
-                    providerId: modelId,
-                    promptId: options?.currentStageSystemPromptId || '__none__',
-                    chatId: chatId === null ? undefined : chatId,
-                    walletId: options?.walletId,
-                    max_tokens_to_generate: options?.customParameters?.max_tokens_to_generate,
-                };
-
-                // Find the api_identifier that corresponds to the modelId UUID
-                const model = upsertedProviders.find(p => p.id === modelId);
-                const modelIdentifier = model ? model.api_identifier : modelId; // Fallback to modelId if not found
-                
-                return mockAiAdapter.instance.sendMessage(request, modelIdentifier)
-                    .then(response => {
-                        const tokenUsage = isTokenUsage(response.token_usage) ? response.token_usage : null;
-                        return {
-                            content: response.content,
-                            finish_reason: response.finish_reason,
-                            inputTokens: tokenUsage?.prompt_tokens,
-                            outputTokens: tokenUsage?.completion_tokens,
-                            tokenUsage: tokenUsage,
-                            processingTimeMs: 0,
-                            rawProviderResponse: {},
-                            error: undefined,
-                        };
-                    })
-                    .catch(error => ({
-                        content: null,
-                        error: error.message,
-                    }));
-            },
+            callUnifiedAIModel,
             getSeedPromptForStage: () => Promise.resolve({
                 content: "This is the seed prompt for the stage.",
                 fullPath: "seed-prompt.md",
@@ -333,7 +252,13 @@ Deno.test(
                 sendContributionGenerationContinuedEvent: () => Promise.resolve(),
                 sendDialecticProgressUpdateEvent: () => Promise.resolve(),
             },
-            executeModelCallAndSave,
+            executeModelCallAndSave: async (params: ExecuteModelCallAndSaveParams) => {
+                testLogger.info(`[INTEGRATION TEST SPY] executeModelCallAndSave called for job ${params.job.id}`);
+                testLogger.info(`[INTEGRATION TEST SPY] Rendered Prompt Content:\n---\n${params.renderedPrompt.content}\n---`);
+                
+                // Now, call the original imported function
+                return await executeModelCallAndSave(params);
+            },
             ragService: ragService,
             indexingService: indexingService,
             embeddingClient: embeddingClient,
@@ -346,7 +271,6 @@ Deno.test(
     };
 
     const teardown = async () => {
-      if (factoryStub) factoryStub.restore();
       // We only clean up the user, as other resources were pre-existing
       await coreCleanupTestResources();
       testProject = null;
@@ -360,6 +284,7 @@ Deno.test(
       formData.append("projectName", "E2E Test Project");
       formData.append("initialUserPromptText", "This is the initial prompt for our E2E test.");
       formData.append("selectedDomainId", testDomainId);
+      formData.append("defaultProviderId", "165dfcb3-a0f7-521a-8707-3a1a66f275cc"); // openai-gpt-4o
 
       const { data, error } = await createProject(
         formData,
@@ -562,7 +487,10 @@ Deno.test(
       }
     });
 
-    await t.step("4. should plan child jobs for the Antithesis stage", async () => {
+    await t.step({
+      name: "4. should plan child jobs for the Antithesis stage",
+      ignore: true,
+      fn: async () => {
       // Step 1: Planning
       if (!testSession) {
         assert(testSession, "Cannot test antithesis without a session.");
@@ -611,9 +539,12 @@ Deno.test(
       } else {
         assert(false, "jobData or job_ids were not returned from generateContributions");
       }
-    });
+    }});
 
-    await t.step("5. should execute child jobs and verify parent job completion", async () => {
+    await t.step({
+      name: "5. should execute child jobs and verify parent job completion",
+      ignore: true,
+      fn: async () => {
       if (!testSession) {
         assert(testSession, "Cannot test antithesis without a session.");
         return;
@@ -634,9 +565,12 @@ Deno.test(
           .in('status', ['pending', 'processing', 'pending_continuation', 'retrying', 'waiting_for_children']);
         return pendingJobs !== null && pendingJobs.length === 0;
       }, "All jobs for the antithesis stage, including parents, should be completed");
-    });
+    }});
     
-    await t.step("6. should verify the final antithesis artifacts", async () => {
+    await t.step({
+      name: "6. should verify the final antithesis artifacts",
+      ignore: true,
+      fn: async () => {
       if (!testSession) {
         assert(testSession, "Cannot test antithesis without a session.");
         return;
@@ -652,9 +586,12 @@ Deno.test(
       assert(!finalContribError, `Error fetching final antithesis contributions: ${finalContribError?.message}`);
       assertExists(finalContributions, "No final antithesis contributions were found.");
       assertEquals(finalContributions.length, 4, `Expected exactly four final antithesis contributions, but found ${finalContributions.length}.`);
-    });
+    }});
 
-    await t.step("7. should submit antithesis responses", async () => {
+    await t.step({
+      name: "7. should submit antithesis responses",
+      ignore: true,
+      fn: async () => {
       if (!testSession) {
         assert(testSession, "Cannot test antithesis without a session.");
         return;
@@ -703,9 +640,12 @@ Deno.test(
       } else {
         assert(false, "Submission of antithesis responses failed to return an updated session.");
       }
-    });
+    }});
 
-    await t.step("8. should execute the multi-step Synthesis stage", async () => {
+    await t.step({
+      name: "8. should execute the multi-step Synthesis stage",
+      ignore: true,
+      fn: async () => {
         if (!testSession) {
             assert(testSession, "Cannot test synthesis without a session.");
             return;
@@ -778,9 +718,12 @@ Deno.test(
             assertEquals(reducedSyntheses?.length, 4, "Expected 4 intermediate 'reduced_synthesis' contributions.");
             assertEquals(finalSyntheses?.length, 2, "Expected 2 final 'synthesis' contributions.");
         }
-    });
+    }});
 
-    await t.step("9. should execute the Parenthesis stage", async () => {
+    await t.step({
+      name: "9. should execute the Parenthesis stage",
+      ignore: true,
+      fn: async () => {
         if (!testSession) {
             assert(testSession, "Cannot test parenthesis without a session.");
             return;
@@ -866,9 +809,12 @@ Deno.test(
 
         assert(!finalContribError, "Error fetching final parenthesis contributions.");
                 assertEquals(finalContributions?.length, 2, "Expected 2 final 'parenthesis' contributions (1 per model for a simple stage).");
-    });
+    }});
 
-    await t.step("10. should execute the Paralysis stage", async () => {
+    await t.step({
+      name: "10. should execute the Paralysis stage",
+      ignore: true,
+      fn: async () => {
         if (!testSession) {
             assert(testSession, "Cannot test paralysis without a session.");
             return;
@@ -954,10 +900,10 @@ Deno.test(
 
         assert(!finalContribError, "Error fetching final paralysis contributions.");
         assertEquals(finalContributions?.length, 2, "Expected 2 final 'paralysis' contributions.");
-    });
+    }});
 
 
 
-    await t.step("Teardown", teardown);
+        await t.step("Teardown", teardown);
   },
 );

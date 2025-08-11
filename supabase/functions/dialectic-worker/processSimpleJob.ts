@@ -150,6 +150,14 @@ export async function processSimpleJob(
         });
 
         const sourceDocuments: SourceDocument[] = [...sourceContributions];
+
+        const assembledPromptContent = await deps.promptAssembler.assemble(
+            project,
+            sessionData,
+            stageContext,
+            project.initial_user_prompt,
+            iterationNumber,
+        );
         
         await deps.executeModelCallAndSave({
             dbClient,
@@ -158,7 +166,10 @@ export async function processSimpleJob(
             job,
             projectOwnerUserId,
             providerDetails,
-            renderedPrompt,
+            renderedPrompt: {
+                ...renderedPrompt,
+                content: assembledPromptContent,
+            },
             previousContent,
             sessionData,
             sourceDocuments,

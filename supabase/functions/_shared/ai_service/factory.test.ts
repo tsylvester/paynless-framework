@@ -34,17 +34,17 @@ Deno.test("AI Adapter Factory - getAiProviderAdapter", () => {
     // The factory expects a config for all real providers.
     // It only creates a default for the dummy adapter.
     const config = provider.name.startsWith('dummy-') ? null : MOCK_MODEL_CONFIG;
-    const adapter = getAiProviderAdapter(provider.name, config, testApiKey, mockLogger);
+    const adapter = getAiProviderAdapter(provider.name, config, testApiKey, mockLogger, true); // Pass `true` to bypass the mock
     assertExists(adapter, `Adapter should be created for ${provider.name}`);
     assertInstanceOf(adapter, provider.adapterClass, `Adapter for ${provider.name} should be instance of ${provider.adapterClass.name}`);
   }
 
   // Test unknown provider
-  const adapterUnknown = getAiProviderAdapter('some-other-provider', null, testApiKey, mockLogger);
+  const adapterUnknown = getAiProviderAdapter('some-other-provider', null, testApiKey, mockLogger, true); // Pass `true` to bypass the mock
   assertEquals(adapterUnknown, null, "Adapter should be null for unknown provider");
 
   // Test empty string
-  const adapterEmpty = getAiProviderAdapter('', null, testApiKey, mockLogger);
+  const adapterEmpty = getAiProviderAdapter('', null, testApiKey, mockLogger, true); // Pass `true` to bypass the mock
   assertEquals(adapterEmpty, null, "Adapter should be null for empty provider string");
 });
 

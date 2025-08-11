@@ -9,9 +9,10 @@
  * deno run --allow-net --allow-read --allow-write ../scripts/update-seed.ts
  */
 
-import { Client } from "https://deno.land/x/postgres@v0.17.0/mod.ts";
+import { Client } from "https://deno.land/x/postgres@v0.19.2/mod.ts";
 import { resolve } from "https://deno.land/std@0.224.0/path/mod.ts";
-import { v5 } from "https://deno.land/std@0.224.0/uuid/mod.ts";
+import { v5 } from "npm:uuid@9.0.1";
+import { AiModelExtendedConfigSchema } from "../functions/chat/zodSchema.ts";
 
 // --- Configuration ---
 const DB_URL = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
@@ -32,7 +33,7 @@ function quoteLiteral(value: unknown): string {
   return `'${JSON.stringify(value).replace(/'/g, "''")}'`;
 }
 
-async function updateSeedFile() {
+export async function updateSeedFile() {
   console.log("🚀 Starting seed file update process...");
   const client = new Client(DB_URL);
   
@@ -47,10 +48,11 @@ async function updateSeedFile() {
 
     // Set the default embedding model
     rows.forEach(row => {
-      if (row.api_identifier === 'openai-text-embedding-3-large') {
-        row.is_default_embedding = true;
+      const typedRow = row as Record<string, unknown>;
+      if (typedRow.api_identifier === 'openai-text-embedding-3-large') {
+        typedRow.is_default_embedding = true;
       } else {
-        row.is_default_embedding = false;
+        typedRow.is_default_embedding = false;
       }
     });
     console.log("✅ Set 'openai-text-embedding-3-large' as the default embedding model.");
@@ -65,13 +67,27 @@ async function updateSeedFile() {
       const apiIdentifier = rawRow.api_identifier as string;
       if (!apiIdentifier) throw new Error("Fatal: Found a provider with no api_identifier.");
       
+      // Validate the config object from the database against the Zod schema.
+      // We use .parse() here because if validation fails, the entire script
+      // should halt to prevent writing a corrupted seed file.
+      if (rawRow.config && typeof rawRow.config === 'object') {
+        AiModelExtendedConfigSchema.parse(rawRow.config);
+      } else {
+        // Instead of throwing, log a clear warning and skip this record.
+        // This allows the seed script to complete even if some rows are corrupted,
+        // preventing a single bad row from halting the entire CI/CD pipeline.
+        // The sync process is responsible for fixing the data in the DB.
+        console.warn(`[WARN] Skipping provider ${apiIdentifier} because its config is missing, null, or not an object.`);
+        return null; // This will be filtered out later.
+      }
+
       // Generate a stable UUIDv5 based on the unique api_identifier
-      rawRow.id = await v5.generate(PROVIDER_NAMESPACE, textEncoder.encode(apiIdentifier));
+      rawRow.id = v5(apiIdentifier, PROVIDER_NAMESPACE);
 
       const values = columnNames.map(col => quoteLiteral(rawRow[col])).join(', ');
       return `INSERT INTO ${quoteIdent(SCHEMA_NAME)}.${quoteIdent(TABLE_NAME)} (${columnNames.map(quoteIdent).join(', ')}) VALUES (${values});`;
     }));
-    const finalInserts = insertStatements.join('\n');
+    const finalInserts = insertStatements.filter(s => s !== null).join('\n');
 
     // 3. Read the existing seed.sql file
     console.log(`📖 Reading seed file from: ${SEED_SQL_PATH}`);
@@ -104,13 +120,19 @@ async function updateSeedFile() {
 
   } catch (error) {
     console.error("\n❌ An error occurred during the seed file update process:");
-    console.error(error.message);
-    if (error.stack) console.error(error.stack);
-    Deno.exit(1);
+    const err = error as Error;
+    console.error(err.message);
+    if (err.stack) console.error(err.stack);
+    // Re-throw the error to allow test runners to catch it and to ensure
+    // the script exits with a non-zero status code in a CI/CD environment.
+    throw err;
   } finally {
     await client.end();
     console.log("🔌 Database connection closed.");
   }
 }
 
-await updateSeedFile();
+// Ensure the script can still be run directly from the command line
+if (import.meta.main) {
+  await updateSeedFile();
+}

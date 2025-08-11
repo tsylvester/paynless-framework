@@ -95,8 +95,23 @@ export async function prepareChatContext(
 
         const providerApiIdentifier = providerData.api_identifier;
         
-        // This is the correct place to parse the config from the DB
-        const parsedModelConfig = AiModelExtendedConfigSchema.safeParse(providerData.config);
+        // Detailed logging to debug Zod parsing issue
+        logger.info(`[prepareChatContext] Raw config from DB for provider ${requestProviderId}:`, { config: providerData.config });
+        logger.info(`[prepareChatContext] typeof provider.config: ${typeof providerData.config}`);
+        
+        let configToParse = providerData.config;
+        if (typeof configToParse === 'string') {
+            logger.info(`[prepareChatContext] Config is a string, attempting JSON.parse...`);
+            configToParse = JSON.parse(configToParse);
+            logger.info(`[prepareChatContext] Parsed config object:`, { parsedConfig: configToParse });
+        }
+        
+        if (configToParse && typeof configToParse === 'object' && 'tokenization_strategy' in configToParse) {
+            logger.info(`[prepareChatContext] typeof config.tokenization_strategy: ${typeof configToParse.tokenization_strategy}`);
+            logger.info(`[prepareChatContext] Stringified config for Zod: ${JSON.stringify(configToParse, null, 2)}`);
+        }
+
+        const parsedModelConfig = AiModelExtendedConfigSchema.safeParse(configToParse);
 
         if (!parsedModelConfig.success) {
             logger.error('Failed to parse provider config from database', { 

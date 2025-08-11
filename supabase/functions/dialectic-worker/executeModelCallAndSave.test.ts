@@ -115,6 +115,7 @@ import { FileType } from '../_shared/types/file_manager.types.ts';
     description: null,
     is_active: true,
     is_enabled: true,
+    is_default_embedding: false,
     updated_at: new Date().toISOString(),
   }
   
@@ -387,6 +388,86 @@ import { FileType } from '../_shared/types/file_manager.types.ts';
   
     clearAllStubs?.();
   });
+
+Deno.test('should use source documents for token estimation before prompt assembly', async () => {
+    const mockRagService = {
+        getContextForModel: spy(() => Promise.resolve({ context: 'Compressed content' })),
+    };
+
+    if (!isRecord(mockFullProviderData.config)) {
+        throw new Error('Test setup error: mockFullProviderData.config is not an object');
+    }
+
+    const limitedConfig = {
+        ...mockFullProviderData.config,
+        max_context_window_tokens: 100,
+        context_window_tokens: 100,
+    };
+
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [{ ...mockFullProviderData, config: limitedConfig }], error: null }
+        }
+    });
+
+    const deps = getMockDeps();
+    deps.ragService = mockRagService;
+
+    const largeSourceDoc = {
+        id: 'doc-1',
+        content: 'This is a very long source document that is clearly over one hundred tokens all by itself, which should force the RAG service to be called for compression to avoid a context window error downstream. To ensure this, I am adding a lot of extra text to this string. This additional text will push the character count well over the four hundred character threshold needed to exceed the one hundred token limit when using the rough character count estimation strategy, which divides the total number of characters by four. This is the only way to properly test the RAG service invocation logic.',
+        metadata: {},
+        created_at: new Date().toISOString(),
+        iteration_number: 1,
+        session_id: 'session-1',
+        target_contribution_id: 'contribution-1',
+        user_id: 'user-789',
+        document_relationships: null,
+        updated_at: new Date().toISOString(),
+        mime_type: 'text/plain',
+        citations: [],
+        contribution_type: 'source_document',
+        edit_version: 1,
+        error: null,
+        file_name: 'test.txt',
+        is_latest_edit: true,
+        model_id: 'model-1',
+        model_name: 'test-model',
+        original_model_contribution_id: 'contribution-1',
+        processing_time_ms: 100,
+        is_active: true,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 100,
+        status: 'completed',
+        is_default_embedding: false,
+        stage: 'test-stage',
+        storage_bucket: 'test-bucket',
+        storage_path: 'test/path',
+        tokens_used_input: 10,
+        tokens_used_output: 20,
+    };
+
+    const params: ExecuteModelCallAndSaveParams = {
+        dbClient: dbClient as unknown as SupabaseClient<Database>,
+        deps,
+        authToken: 'auth-token',
+        job: createMockJob(testPayload),
+        projectOwnerUserId: 'user-789',
+        providerDetails: mockProviderData,
+        renderedPrompt: { content: 'Short prompt.', fullPath: 'prompts/seed.txt' },
+        previousContent: '',
+        sessionData: mockSessionData,
+        sourceDocuments: [largeSourceDoc],
+    };
+
+    await executeModelCallAndSave(params);
+
+    assertEquals(mockRagService.getContextForModel.calls.length, 1, "Expected RAG service to be called for compression");
+
+    clearAllStubs?.();
+});
   
   Deno.test('executeModelCallAndSave - Continuation Enqueued', async (t) => {
     const { client: dbClient, spies, clearAllStubs } = setupMockClient({

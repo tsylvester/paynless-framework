@@ -6,7 +6,6 @@ import { ConfigAssembler } from './config_assembler.ts';
 import { diffAndPrepareDbOps, executeDbOps } from './diffAndPrepareDbOps.ts';
 
 const PROVIDER_NAME = 'openai';
-const MODEL_CAPABILITIES_URL = 'https://raw.githubusercontent.com/Intelligent-Intern/openai-model-capabilities/refs/heads/main/latest.json';
 
 // Tier 3 Data Source: Hardcoded internal map as a failsafe.
 // This map provides high-confidence, sparse overrides for models where the API's
@@ -40,7 +39,6 @@ const modelMapSource: { [key: string]: Partial<Pick<AiModelExtendedConfig, 'inpu
     // Application business logic requires a non-zero output cost.
     'openai-text-embedding-3-small': { context_window_tokens: 8191, input_token_cost_rate: 0.02, output_token_cost_rate: 1.0 },
     'openai-text-embedding-3-large': { context_window_tokens: 8191, input_token_cost_rate: 0.13, output_token_cost_rate: 1.0 },
-    'openai-text-embedding-ada-002': { context_window_tokens: 8191, input_token_cost_rate: 0.10, output_token_cost_rate: 1.0 },
 
     // --- Image & Audio Models (Context window data often unavailable) ---
     // Costs are per 1M units (images, characters, minutes)
@@ -51,7 +49,7 @@ const modelMapSource: { [key: string]: Partial<Pick<AiModelExtendedConfig, 'inpu
     'openai-whisper-1': { input_token_cost_rate: 6000, output_token_cost_rate: 6000 },
 };
 
-const INTERNAL_MODEL_MAP: Map<string, Partial<AiModelExtendedConfig>> = new Map(Object.entries(modelMapSource).map(([key, value]) => {
+export const INTERNAL_MODEL_MAP: Map<string, Partial<AiModelExtendedConfig>> = new Map(Object.entries(modelMapSource).map(([key, value]) => {
     const modelId = key.replace(/^openai-/i, '');
     const isEmbeddingModel = modelId.includes('embedding');
     
@@ -72,32 +70,6 @@ const INTERNAL_MODEL_MAP: Map<string, Partial<AiModelExtendedConfig>> = new Map(
     
     return [key, { ...value, ...providerMaxTokens, tokenization_strategy }];
 }));
-
-// Tier 2 Data Source: Fetches model capabilities from an external source.
-async function getExternalCapabilities(logger: ILogger): Promise<Map<string, Partial<AiModelExtendedConfig>>> {
-  try {
-    logger.info(`Fetching external capabilities from ${MODEL_CAPABILITIES_URL}`);
-    const response = await fetch(MODEL_CAPABILITIES_URL);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch model capabilities: ${response.statusText}`);
-    }
-    const data = await response.json();
-    const capabilities = new Map<string, Partial<AiModelExtendedConfig>>();
-    if (data && Array.isArray(data.data)) {
-      for (const model of data.data) {
-        if (model && typeof model.id === 'string' && typeof model.max_tokens === 'number') {
-          capabilities.set(`openai-${model.id}`, { context_window_tokens: model.max_tokens });
-        }
-      }
-    }
-    logger.info(`Successfully fetched and parsed ${capabilities.size} external model capabilities.`);
-    return capabilities;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-    logger.error('Error fetching external model capabilities.', { error: errorMessage });
-    return new Map();
-  }
-}
 
 // --- Dependency Injection Setup ---
 export interface SyncOpenAIDeps {

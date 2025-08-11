@@ -79,7 +79,9 @@ export async function executeModelCallAndSave(
         max_context_window_tokens: modelConfig.max_context_window_tokens,
     };
 
-    const messagesForTokenCounting: MessageForTokenCounting[] = [{ role: 'user', content: previousContent || renderedPrompt.content }];
+    const messagesForTokenCounting: MessageForTokenCounting[] = (params.sourceDocuments && params.sourceDocuments.length > 0)
+        ? params.sourceDocuments.map(doc => ({ role: 'user', content: doc.content || '' }))
+        : [{ role: 'user', content: previousContent || renderedPrompt.content }];
     const initialTokenCount = countTokensForMessages(messagesForTokenCounting, extendedModelConfig);
     const maxTokens = extendedModelConfig.max_context_window_tokens || extendedModelConfig.context_window_tokens;
     

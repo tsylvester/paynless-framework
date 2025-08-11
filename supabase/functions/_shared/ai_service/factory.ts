@@ -3,6 +3,7 @@ import { OpenAiAdapter } from './openai_adapter.ts';
 import { AnthropicAdapter } from './anthropic_adapter.ts';
 import { GoogleAdapter } from './google_adapter.ts';
 import { DummyAdapter } from './dummy_adapter.ts';
+import { getMockAiProviderAdapter } from './ai_provider.mock.ts';
 
 // Helper type for the adapter instance. An instance is the object returned by calling `new` on a constructable type.
 type AiProviderAdapterInstance = InstanceType<AiProviderAdapter>;
@@ -29,8 +30,27 @@ export function getAiProviderAdapter(
     providerApiIdentifier: string,
     providerDbConfig: AiModelExtendedConfig | null,
     apiKey: string,
-    logger: ILogger
+    logger: ILogger,
+    forceReal = false // Add a bypass flag for testing the factory's own logic.
 ): AiProviderAdapterInstance | null {
+
+    // Test-only override to inject the mock adapter.
+    // The `forceReal` flag allows the factory's own unit test to bypass this.
+    if (!forceReal && (Deno.env.get("SUPA_ENV") === "local" || Deno.env.get("NODE_ENV") === "development")) {
+        logger.warn(`[Factory] TEST ENVIRONMENT DETECTED. Returning Mock AI Provider Adapter for ${providerApiIdentifier}.`);
+        
+        // In a test environment, we don't have a real API key, so we pass a dummy one.
+        // The mock config needs to be created here to satisfy the contract.
+        const mockConfig: AiModelExtendedConfig = providerDbConfig || {
+            api_identifier: providerApiIdentifier,
+            input_token_cost_rate: 0,
+            output_token_cost_rate: 0,
+            tokenization_strategy: { type: 'none' },
+        };
+        
+        const { instance } = getMockAiProviderAdapter(logger, mockConfig);
+        return instance;
+    }
 
     const identifierLower = providerApiIdentifier.toLowerCase();
     

@@ -1,6 +1,14 @@
 // supabase/functions/sync-ai-models/config_assembler.ts
-import type { AiModelExtendedConfig, ProviderModelInfo } from '../_shared/types.ts';
+import type { 
+  AiModelExtendedConfig, 
+  ProviderModelInfo,
+  FinalAppModelConfig,
+} from '../_shared/types.ts';
 import { ILogger } from '../_shared/types.ts';
+import { z } from "https://deno.land/x/zod@v3.23.8/mod.ts";
+import { AiModelExtendedConfigSchema, TokenizationStrategySchema } from '../chat/zodSchema.ts';
+
+type TokenizationStrategy = z.infer<typeof TokenizationStrategySchema>;
 
 // --- Interfaces & Types for the Assembler ---
 
@@ -19,12 +27,6 @@ export interface ConfigDataSource {
   logger: ILogger;
 }
 
-/**
- * The final, successfully configured model information, ready for DB operations.
- */
-export type AssembledModelConfig = Required<ProviderModelInfo>;
-
-
 // --- Main Assembler Logic ---
 
 /**
@@ -41,107 +43,118 @@ export class ConfigAssembler {
   }
 
   /**
-   * Executes the full two-pass assembly process.
-   * @returns A promise that resolves to a list of fully configured models.
+   * Executes the full assembly process using a robust, single-pass, top-down strategy.
+   * @returns A promise that resolves to a list of fully and correctly configured models.
    */
-  public async assemble(): Promise<AssembledModelConfig[]> {
-    this.logger.info('[ConfigAssembler] Starting configuration assembly...');
+  public async assemble(): Promise<FinalAppModelConfig[]> {
+    this.logger.info('[ConfigAssembler] Starting top-down configuration assembly...');
+    const finalModels: FinalAppModelConfig[] = [];
+    const externalCaps = await this.sources.externalCapabilities?.() ?? new Map();
+    const failsafeStrategy: TokenizationStrategy = { type: 'rough_char_count', chars_per_token_ratio: 4 };
 
-    // Pass 1: Assemble from authoritative tiers
-    const { fullyConfiguredModels, modelsNeedingDefaults } = await this.performPassOne();
+    for (const apiModel of this.sources.apiModels) {
+      // 1. Establish a complete, valid baseline config using dynamic defaults.
+      // We pass a dummy array to get the absolute failsafe defaults initially.
+      const baseConfig = this.calculateDynamicDefaults([], 1);
+      
+      // 2. Define all partial config sources in DESCENDING order of priority.
+      const configSources: (Partial<AiModelExtendedConfig> | undefined)[] = [
+        apiModel.config,                                      // Tier 1: API Data (Highest Priority)
+        externalCaps.get(apiModel.api_identifier),            // Tier 2: External Capabilities
+        this.sources.internalModelMap?.get(apiModel.api_identifier), // Tier 3: Internal Static Map
+        baseConfig,                                           // Tier 4: Failsafe Defaults (Lowest Priority)
+      ];
+      
+      const definedSources = configSources.filter((s): s is Partial<AiModelExtendedConfig> => s !== undefined);
+      
+      // 3. Intelligently find the first valid tokenization strategy, atomistically.
+      let finalStrategy: TokenizationStrategy | undefined;
+      for (const source of definedSources) {
+          if (source.tokenization_strategy) {
+              const validation = TokenizationStrategySchema.safeParse(source.tokenization_strategy);
+              if (validation.success) {
+                  finalStrategy = validation.data;
+                  break; // Found the highest-priority valid strategy
+              }
+          }
+      }
+      if (!finalStrategy) {
+        this.logger.warn(`[ConfigAssembler] No valid tokenization strategy found for ${apiModel.api_identifier}. Falling back to failsafe.`);
+        finalStrategy = failsafeStrategy;
+      }
+      
+      // 4. Merge all sources, with higher priority sources overwriting lower ones.
+      const mergedConfig = definedSources.reverse().reduce(
+        (acc, source) => ({ ...acc, ...source }),
+        baseConfig
+      );
 
-    // Calculate dynamic defaults from the fully configured models
-    const dynamicDefaults = this.calculateDynamicDefaults(fullyConfiguredModels, modelsNeedingDefaults.length);
+      // 5. Overwrite with the atomistically-selected valid strategy.
+      mergedConfig.tokenization_strategy = finalStrategy;
+      
+      // 6. Perform one final, STRICT validation. This will throw on any invalid structure.
+      mergedConfig.api_identifier = apiModel.api_identifier;
+      const validatedConfig = AiModelExtendedConfigSchema.parse(mergedConfig);
 
-    // Pass 2: Apply defaults to the remaining models
-    const finalModels = this.performPassTwo(fullyConfiguredModels, modelsNeedingDefaults, dynamicDefaults);
+      // 7. If validation succeeds, construct and push the final application-ready object.
+      finalModels.push({
+        api_identifier: apiModel.api_identifier,
+        name: apiModel.name,
+        description: apiModel.description ?? '',
+        config: validatedConfig,
+      });
+    }
     
     this.logger.info(`[ConfigAssembler] Assembly complete. Total models configured: ${finalModels.length}`);
     return finalModels;
   }
 
   /**
-   * Performs the first pass, assembling configuration from tiered sources.
-   */
-  public async performPassOne(): Promise<{ 
-    fullyConfiguredModels: AssembledModelConfig[], 
-    modelsNeedingDefaults: ProviderModelInfo[] 
-  }> {
-    this.logger.info('[ConfigAssembler] Pass 1: Assembling from authoritative sources...');
-    const fullyConfiguredModels: AssembledModelConfig[] = [];
-    const modelsNeedingDefaults: ProviderModelInfo[] = [];
-
-    const externalCaps = await this.sources.externalCapabilities?.() ?? new Map();
-
-    for (const apiModel of this.sources.apiModels) {
-      // Define sources in ascending order of priority (Tier 3 -> Tier 1)
-      const configSources: Partial<AiModelExtendedConfig>[] = [
-        this.sources.internalModelMap?.get(apiModel.api_identifier) ?? {}, // Tier 3
-        externalCaps.get(apiModel.api_identifier) ?? {},                  // Tier 2
-        apiModel.config ?? {},                                           // Tier 1
-      ];
-      
-      // Reduce the sources into a single config, filtering out undefined values at each step.
-      const assembledConfig = configSources.reduce((acc, source) => {
-        const cleanedSource = Object.fromEntries(Object.entries(source).filter(([, v]) => v !== undefined));
-        return { ...acc, ...cleanedSource };
-      }, {} as Partial<AiModelExtendedConfig>);
-
-      // Always ensure the primary identifier is set correctly.
-      assembledConfig.api_identifier = apiModel.api_identifier;
-
-      // Final Check: Is the configuration complete?
-      if (this.isConfigComplete(assembledConfig)) {
-        fullyConfiguredModels.push({
-          ...apiModel,
-          description: apiModel.description ?? '', // Provide default for optional property
-          config: assembledConfig,
-        });
-      } else {
-        // If not complete, store the partially assembled config for Pass 2
-        modelsNeedingDefaults.push({
-          ...apiModel,
-          config: assembledConfig, 
-        });
-      }
-    }
-    
-    this.logger.info(`[ConfigAssembler] Pass 1 complete. Fully configured: ${fullyConfiguredModels.length}, Needing defaults: ${modelsNeedingDefaults.length}`);
-    return { fullyConfiguredModels, modelsNeedingDefaults };
-  }
-
-  /**
    * Calculates the dynamic default configuration based on the set of fully configured models.
    */
-  public calculateDynamicDefaults(
-    configuredModels: AssembledModelConfig[],
+  private calculateDynamicDefaults(
+    configuredModels: (ProviderModelInfo | FinalAppModelConfig)[],
     newModelCount: number
   ): Partial<AiModelExtendedConfig> {
     this.logger.info(`[ConfigAssembler] Calculating dynamic defaults based on ${configuredModels.length} configured models for ${newModelCount} new models...`);
     
     // Absolute failsafe values, used if no configured models are available.
-    const PANIC_DEFAULTS: AiModelExtendedConfig = {
-        api_identifier: 'panic-default',
+    const DEFAULTS: AiModelExtendedConfig = {
+        api_identifier: 'default',
         input_token_cost_rate: 0.000075, // Based on Claude 3 Opus (expensive)
         output_token_cost_rate: 0.000015, // Based on Claude 3 Opus
         context_window_tokens: 8192,     // A safe, low value
         hard_cap_output_tokens: 4096,
         provider_max_input_tokens: 8192,
         provider_max_output_tokens: 4096,
-        tokenization_strategy: { type: 'none' }
+        tokenization_strategy: { type: 'rough_char_count', chars_per_token_ratio: 4 }
     };
 
-    if (configuredModels.length === 0) {
-        this.logger.warn('[ConfigAssembler] No fully configured models found. Falling back to absolute panic defaults.');
-        return PANIC_DEFAULTS;
+    // --- Start of Fix ---
+    // 1. First, create a clean list of only models that have a full configuration object.
+    const modelsWithConfigs = configuredModels.filter(
+      (m): m is FinalAppModelConfig => m.config !== undefined
+    );
+
+    if (modelsWithConfigs.length === 0) {
+        this.logger.warn('[ConfigAssembler] No fully configured models found. Falling back to defaults.');
+        return DEFAULTS;
     }
 
-    // --- High-Water Mark for Costs ---
-    const highWaterMarkInput = Math.max(...configuredModels.map(m => m.config.input_token_cost_rate ?? 0));
-    const highWaterMarkOutput = Math.max(...configuredModels.map(m => m.config.output_token_cost_rate ?? 0));
+    // 2. Safely calculate high-water marks by filtering out nulls before calling Math.max.
+    const inputCosts = modelsWithConfigs
+      .map(m => m.config.input_token_cost_rate)
+      .filter((v): v is number => typeof v === 'number' && v > 0);
+    const outputCosts = modelsWithConfigs
+      .map(m => m.config.output_token_cost_rate)
+      .filter((v): v is number => typeof v === 'number' && v > 0);
+
+    const highWaterMarkInput = inputCosts.length > 0 ? Math.max(...inputCosts) : DEFAULTS.input_token_cost_rate;
+    const highWaterMarkOutput = outputCosts.length > 0 ? Math.max(...outputCosts) : DEFAULTS.output_token_cost_rate;
+    // --- End of Fix ---
 
     // --- Dynamic Cohort for Window Sizes ---
-    const sortedModels = [...configuredModels].sort((a, b) => {
+    const sortedModels = [...modelsWithConfigs].sort((a, b) => {
         const dateA = new Date(a.api_identifier.match(/(\d{4}-\d{2}-\d{2}|\d{8})/)?.[0] ?? 0);
         const dateB = new Date(b.api_identifier.match(/(\d{4}-\d{2}-\d{2}|\d{8})/)?.[0] ?? 0);
         return dateB.getTime() - dateA.getTime(); // Sort descending by date
@@ -159,75 +172,16 @@ export class ConfigAssembler {
     const avgOutputCap = Math.floor(average(recentCohort.map(m => m.config.hard_cap_output_tokens)));
 
     const defaults: Partial<AiModelExtendedConfig> = {
-        input_token_cost_rate: highWaterMarkInput > 0 ? highWaterMarkInput : PANIC_DEFAULTS.input_token_cost_rate,
-        output_token_cost_rate: highWaterMarkOutput > 0 ? highWaterMarkOutput : PANIC_DEFAULTS.output_token_cost_rate,
-        context_window_tokens: avgContextWindow > 0 ? avgContextWindow : PANIC_DEFAULTS.context_window_tokens,
-        hard_cap_output_tokens: avgOutputCap > 0 ? avgOutputCap : PANIC_DEFAULTS.hard_cap_output_tokens,
-        provider_max_input_tokens: avgContextWindow > 0 ? avgContextWindow : PANIC_DEFAULTS.provider_max_input_tokens,
-        provider_max_output_tokens: avgOutputCap > 0 ? avgOutputCap : PANIC_DEFAULTS.provider_max_output_tokens,
-        tokenization_strategy: { type: 'none' }
+        input_token_cost_rate: highWaterMarkInput ?? DEFAULTS.input_token_cost_rate,
+        output_token_cost_rate: highWaterMarkOutput ?? DEFAULTS.output_token_cost_rate,
+        context_window_tokens: avgContextWindow > 0 ? avgContextWindow : DEFAULTS.context_window_tokens,
+        hard_cap_output_tokens: avgOutputCap > 0 ? avgOutputCap : DEFAULTS.hard_cap_output_tokens,
+        provider_max_input_tokens: avgContextWindow > 0 ? avgContextWindow : DEFAULTS.provider_max_input_tokens,
+        provider_max_output_tokens: avgOutputCap > 0 ? avgOutputCap : DEFAULTS.provider_max_output_tokens,
+        tokenization_strategy: { type: 'rough_char_count', chars_per_token_ratio: 4 }
     };
 
     this.logger.info(`[ConfigAssembler] Dynamic defaults calculated: ${JSON.stringify(defaults)}`);
     return defaults;
   }
-
-  /**
-   * Performs the second pass, applying the dynamic defaults to incomplete models.
-   */
-  public performPassTwo(
-    fullyConfigured: AssembledModelConfig[],
-    needsDefaults: ProviderModelInfo[],
-    defaults: Partial<AiModelExtendedConfig>
-  ): AssembledModelConfig[] {
-    this.logger.info(`[ConfigAssembler] Pass 2: Applying defaults to ${needsDefaults.length} models...`);
-    const finalModelsFromDefaults: AssembledModelConfig[] = [];
-
-    for (const model of needsDefaults) {
-        // Use the same robust reduce logic as Pass 1 to merge defaults with the partial config.
-        const configSources: Partial<AiModelExtendedConfig>[] = [
-            defaults,
-            model.config ?? {}
-        ];
-
-        const finalConfigCandidate = configSources.reduce((acc, source) => {
-            const cleanedSource = Object.fromEntries(Object.entries(source).filter(([, v]) => v !== undefined));
-            return { ...acc, ...cleanedSource };
-        }, {} as Partial<AiModelExtendedConfig>);
-        
-        finalConfigCandidate.api_identifier = model.api_identifier;
-
-        // Ensure all required fields are present after merge
-        if (this.isConfigComplete(finalConfigCandidate)) {
-            finalModelsFromDefaults.push({
-                ...model,
-                description: model.description ?? '', // Provide default for optional property
-                config: finalConfigCandidate
-            });
-        } else {
-            this.logger.warn(`[ConfigAssembler] Model '${model.api_identifier}' could not be fully configured even after applying defaults. It will be skipped. Final config: ${JSON.stringify(finalConfigCandidate)}`);
-        }
-    }
-
-    return [...fullyConfigured, ...finalModelsFromDefaults];
-  }
-
-  /**
-   * A type guard to check if a configuration object has all required fields.
-   */
-  private isConfigComplete(config: Partial<AiModelExtendedConfig>): config is AiModelExtendedConfig {
-      // A configuration is considered "complete" if it has all the core, non-optional fields
-      // that we would otherwise attempt to fill with dynamic defaults.
-      return (
-          config.api_identifier !== undefined &&
-          config.input_token_cost_rate !== undefined &&
-          config.output_token_cost_rate !== undefined &&
-          config.tokenization_strategy !== undefined &&
-          config.context_window_tokens !== undefined &&
-          config.hard_cap_output_tokens !== undefined &&
-          config.provider_max_input_tokens !== undefined &&
-          config.provider_max_output_tokens !== undefined
-      );
-  }
 }
-

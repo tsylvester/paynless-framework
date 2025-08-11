@@ -144,7 +144,7 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
         }
     };
 
-    const mockStage: Tables<'dialectic_stages'> = {
+    const mockStage: Tables<'dialectic_stages'> & { system_prompts: { prompt_text: string } | null } = {
         id: 'stage-1',
         slug: 'test-stage',
         display_name: 'Test Stage',
@@ -153,6 +153,9 @@ const setupMockClient = (configOverrides: Record<string, any> = {}) => {
         description: null,
         expected_output_artifacts: null,
         input_artifact_rules: null,
+        system_prompts: {
+            prompt_text: 'This is the base system prompt for the test stage.',
+        },
     };
     
     return createMockSupabaseClient('user-789', {
@@ -243,7 +246,7 @@ Deno.test('processSimpleJob - Happy Path', async (t) => {
         
         assertEquals(executorParams.job.id, mockJob.id);
         assertEquals(executorParams.providerDetails.id, mockProviderData.id);
-        assertEquals(executorParams.renderedPrompt.content, 'Seed prompt content');
+        assertEquals(executorParams.renderedPrompt.content, 'This is the base system prompt for the test stage.');
         assertEquals(executorParams.previousContent, '');
     });
 
@@ -327,3 +330,33 @@ Deno.test('processSimpleJob - ContextWindowError Handling', async (t) => {
     clearAllStubs?.();
     executorStub.restore();
 });
+
+Deno.test('processSimpleJob - should call promptAssembler.assemble to construct the full prompt', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient();
+    const deps = getMockDeps();
+    const assemblerSpy = spy(deps.promptAssembler!, 'assemble');
+
+    await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', deps, 'auth-token');
+
+    assertEquals(assemblerSpy.calls.length, 1, 'Expected promptAssembler.assemble to be called once');
+
+    clearAllStubs?.();
+});
+
+Deno.test('processSimpleJob - should pass the fully assembled prompt to the executor', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient();
+    const deps = getMockDeps();
+    const uniqueAssembledContent = '---VALID_ASSEMBLED_PROMPT_EVIDENCE---';
+    
+    stub(deps.promptAssembler!, 'assemble', () => Promise.resolve(uniqueAssembledContent));
+    const executorSpy = spy(deps, 'executeModelCallAndSave');
+
+    await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', deps, 'auth-token');
+
+    assertEquals(executorSpy.calls.length, 1);
+    const [executorParams] = executorSpy.calls[0].args;
+    assertEquals(executorParams.renderedPrompt.content, uniqueAssembledContent, 'Expected the content from the assembler to be passed to the executor');
+
+    clearAllStubs?.();
+});
+

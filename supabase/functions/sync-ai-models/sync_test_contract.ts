@@ -15,9 +15,9 @@
 import { assertSpyCall, assertSpyCalls, spy, stub, type Spy, type SpyCall } from "jsr:@std/testing@0.225.1/mock";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert@0.225.3";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { ConfigAssembler, type AssembledModelConfig } from "./config_assembler.ts";
+import { ConfigAssembler } from "./config_assembler.ts";
 import { type DbAiProvider, type SyncResult } from "./index.ts";
-import type { ProviderModelInfo } from "../_shared/types.ts";
+import type { ProviderModelInfo, FinalAppModelConfig } from "../_shared/types.ts";
 import type { Database } from "../types_db.ts";
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 
@@ -27,13 +27,13 @@ import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
  * Defines the shape of the provider-specific data required by the test contract.
  */
 export interface MockProviderData {
-  apiModels: AssembledModelConfig[];
+  apiModels: FinalAppModelConfig[];
   dbModel: DbAiProvider;
   staleDbModel: DbAiProvider;
   inactiveDbModel: DbAiProvider;
-  reactivateApiModel: AssembledModelConfig;
-  newApiModel: AssembledModelConfig;
-  updatedApiModel: AssembledModelConfig;
+  reactivateApiModel: FinalAppModelConfig;
+  newApiModel: FinalAppModelConfig;
+  updatedApiModel: FinalAppModelConfig;
 }
 
 // Helper to create mock dependencies for any sync function.

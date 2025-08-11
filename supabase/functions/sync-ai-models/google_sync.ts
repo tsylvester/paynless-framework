@@ -13,27 +13,27 @@ const PROVIDER_NAME = 'google';
 // The keys are partial and will be matched against the full API identifier.
 // Cost rates are the application's normalized cost for 1 million units (tokens).
 // Source: https://ai.google.dev/gemini-api/docs/pricing
-const INTERNAL_MODEL_MAP: Map<string, Partial<AiModelExtendedConfig>> = new Map(Object.entries({
+export const INTERNAL_MODEL_MAP: Map<string, Partial<AiModelExtendedConfig>> = new Map(Object.entries({
     // --- Gemini 2.5 Series ---
-    'models/gemini-2.5-pro': { input_token_cost_rate: 2.50, output_token_cost_rate: 15.00 },
-    'models/gemini-2.5-flash': { input_token_cost_rate: 1.00, output_token_cost_rate: 2.50 },
-    'models/gemini-2.5-flash-lite': { input_token_cost_rate: 0.30, output_token_cost_rate: 0.40 },
+    'google-gemini-2.5-pro': { input_token_cost_rate: 2.50, output_token_cost_rate: 15.00 },
+    'google-gemini-2.5-flash': { input_token_cost_rate: 1.00, output_token_cost_rate: 2.50 },
+    'google-gemini-2.5-flash-lite': { input_token_cost_rate: 0.30, output_token_cost_rate: 0.40 },
 
     // --- Gemini 1.5 Series ---
-    'models/gemini-1.5-pro-latest': { input_token_cost_rate: 2.50, output_token_cost_rate: 10.00 },
-    'models/gemini-1.5-pro': { input_token_cost_rate: 2.50, output_token_cost_rate: 10.00 },
-    'models/gemini-1.5-flash-latest': { input_token_cost_rate: 0.60, output_token_cost_rate: 0.60 },
-    'models/gemini-1.5-flash': { input_token_cost_rate: 0.60, output_token_cost_rate: 0.60 },
-    'models/gemini-1.5-flash-8b': { input_token_cost_rate: 0.30, output_token_cost_rate: 0.30 },
+    'google-gemini-1.5-pro-latest': { input_token_cost_rate: 2.50, output_token_cost_rate: 10.00 },
+    'google-gemini-1.5-pro': { input_token_cost_rate: 2.50, output_token_cost_rate: 10.00 },
+    'google-gemini-1.5-flash-latest': { input_token_cost_rate: 0.60, output_token_cost_rate: 0.60 },
+    'google-gemini-1.5-flash': { input_token_cost_rate: 0.60, output_token_cost_rate: 0.60 },
+    'google-gemini-1.5-flash-8b': { input_token_cost_rate: 0.30, output_token_cost_rate: 0.30 },
     
     // --- Legacy Models ---
-    'models/gemini-pro': { input_token_cost_rate: 0.50, output_token_cost_rate: 1.50 },
+    'google-gemini-pro': { input_token_cost_rate: 0.50, output_token_cost_rate: 1.50 },
 
     // --- Embedding Models ---
-    'models/gemini-embedding': { input_token_cost_rate: 0.15, output_token_cost_rate: 0 },
-    'models/embedding-gecko-001': { input_token_cost_rate: 0.1, output_token_cost_rate: 0 },
-    'models/embedding-001': { input_token_cost_rate: 0.1, output_token_cost_rate: 0 },
-    'models/text-embedding-004': { input_token_cost_rate: 0.1, output_token_cost_rate: 0 },
+    'google-gemini-embedding': { input_token_cost_rate: 0.15, output_token_cost_rate: 1 },
+    'google-embedding-gecko-001': { input_token_cost_rate: 0.1, output_token_cost_rate: 1 },
+    'google-embedding-001': { input_token_cost_rate: 0.1, output_token_cost_rate: 1 },
+    'google-text-embedding-004': { input_token_cost_rate: 0.1, output_token_cost_rate: 1 },
 }).map(([key, value]) => {
     const config: Partial<AiModelExtendedConfig> = {
         ...value,

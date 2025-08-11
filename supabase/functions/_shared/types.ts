@@ -376,6 +376,20 @@ export interface AiModelExtendedConfig {
   // api_identifier_for_tokenization?: string; // Covered by main api_identifier generally
 }
 
+/**
+ * A strict, application-ready data contract for a fully configured AI model.
+ * This is the final, validated output of the ConfigAssembler, ensuring that
+ * the model has a complete and non-partial configuration before being used.
+ */
+export interface FinalAppModelConfig {
+  api_identifier: string;
+  name: string;
+  description: string;
+  // Note: The 'config' property is NOT optional and NOT partial.
+  // It must be a complete, valid object.
+  config: AiModelExtendedConfig; 
+}
+
 // Signature for countTokensForMessages function (this might be an old definition)
 // export type CountTokensForMessagesFn = (
 //   messages: MessageForTokenCounting[], 
