@@ -157,6 +157,7 @@ export async function processSimpleJob(
             stageContext,
             project.initial_user_prompt,
             iterationNumber,
+            previousContent,
         );
         
         await deps.executeModelCallAndSave({

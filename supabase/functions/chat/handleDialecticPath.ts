@@ -2,7 +2,6 @@ import {
     AdapterResponsePayload,
     ChatApiRequest,
     ChatHandlerSuccessResponse,
-    ChatMessageInsert,
     ChatMessageRow,
 } from "../_shared/types.ts";
 import { handleContinuationLoop } from "./continue.ts";
@@ -145,20 +144,6 @@ export async function handleDialecticPath(
         logger.error(`Normal path error: AI adapter (${providerApiIdentifier}) failed.`, { error: adapterError });
         const errorMessage = adapterError instanceof Error ? adapterError.message : 'AI service request failed.';
         
-        const assistantErrorContent = `AI service request failed: ${errorMessage}`;
-        const assistantErrorMessageData: ChatMessageInsert = {
-            id: crypto.randomUUID(),
-            chat_id: undefined,
-            user_id: userId,
-            role: 'assistant',
-            content: assistantErrorContent,
-            ai_provider_id: requestProviderId,
-            system_prompt_id: finalSystemPromptIdForDb,
-            token_usage: null,
-            error_type: 'ai_provider_error',
-            is_active_in_thread: true,
-        };
-
         // For dialectic jobs, we do not save the error to the database.
         // The error is returned to the caller (the worker) to be handled.
         logger.warn('Dialectic job failed, not saving error message to DB.', { userId });
@@ -227,7 +212,8 @@ export async function handleDialecticPath(
         return {
             userMessage,
             assistantMessage,
-            chatId: undefined
+            chatId: undefined,
+            finish_reason: adapterResponsePayload.finish_reason,
         };
 
     } catch (err) {

@@ -486,4 +486,28 @@ Deno.test("PromptAssembler", async (t) => {
             teardown();
         }
     });
+
+    await t.step("should correctly append continuation content to the prompt", async () => {
+        const expectedRenderedPrompt = "Base Prompt. Continuation Content.";
+        const renderPromptMockFn: RenderPromptMock = (_base, _vars, _sysOverlays, _userOverlays) => {
+            return "Base Prompt."; 
+        };
+        const { assembler } = setup({}, renderPromptMockFn);
+
+        try {
+            const result = await assembler.assemble(
+                defaultProject, 
+                defaultSession, 
+                defaultStage, 
+                defaultProject.initial_user_prompt, 
+                1,
+                "Continuation Content."
+            );
+            
+            assertEquals(result, expectedRenderedPrompt);
+
+        } finally {
+            teardown();
+        }
+    });
 });

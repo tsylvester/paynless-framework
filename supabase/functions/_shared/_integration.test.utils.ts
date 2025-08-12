@@ -578,6 +578,92 @@ export function getTestUserAuthToken(): string | null {
     return currentTestJwt;
 }
 
+/**
+ * Ensures that a standard set of AI providers required for integration tests
+ * exist in the database with valid, predictable configurations.
+ * This function is idempotent and uses the UndoAction system for cleanup.
+ * @param adminClient The Supabase admin client.
+ * @param scope The scope for the undo actions.
+ */
+export async function coreUpsertTestProviders(adminClient: SupabaseClient<Database>, scope: 'global' | 'local' = 'local') {
+    console.log(`[TestUtil] Upserting standard test AI providers with scope: '${scope}'`);
+
+    // Define the state of the providers required for the integration tests to run.
+    const requiredProviders = [
+        {
+            api_identifier: 'openai-gpt-4o',
+            name: 'GPT-4o (Integration Test)',
+            provider: 'openai',
+            config: {
+                api_identifier: 'openai-gpt-4o',
+                tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base', is_chatml_model: true, api_identifier_for_tokenization: 'gpt-4o' },
+                input_token_cost_rate: 5.0,
+                output_token_cost_rate: 15.0,
+                context_window_tokens: 128000,
+            },
+            is_active: true,
+        },
+        {
+            api_identifier: 'anthropic-claude-3-5-sonnet-20240620',
+            name: 'Claude 3.5 Sonnet (Integration Test)',
+            provider: 'anthropic',
+            config: {
+                api_identifier: 'anthropic-claude-3-5-sonnet-20240620',
+                tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3-5-sonnet-20240620' },
+                input_token_cost_rate: 3.00,
+                output_token_cost_rate: 15.00,
+                context_window_tokens: 200000,
+            },
+            is_active: true,
+        },
+    ];
+
+    for (const provider of requiredProviders) {
+        const identifier = { api_identifier: provider.api_identifier };
+        
+        const { data: existing, error: selectError } = await adminClient
+            .from('ai_providers')
+            .select('*')
+            .match(identifier)
+            .maybeSingle();
+
+        if (selectError && selectError.code !== 'PGRST116') {
+            console.error(`[TestUtil] Error checking for provider ${provider.api_identifier}:`, selectError);
+            continue; // Skip to the next provider on error
+        }
+
+        if (isDbRow(existing)) {
+            // Exists: register for restoration and update to ensure it's active and has the test config.
+            registerUndoAction({ type: 'RESTORE_UPDATED_ROW', tableName: 'ai_providers', identifier, originalRow: existing, scope });
+            
+            const { error: updateError } = await adminClient
+                .from('ai_providers')
+                .update({ is_active: true, name: provider.name, config: provider.config })
+                .match(identifier);
+
+            if (updateError) {
+                console.error(`[TestUtil] Error updating test provider ${provider.api_identifier}:`, updateError);
+            } else {
+                console.log(`[TestUtil] Successfully updated test provider: ${provider.api_identifier}`);
+            }
+        } else {
+            // Does not exist: create it.
+            const { data: newProvider, error: insertError } = await adminClient
+                .from('ai_providers')
+                .insert(provider)
+                .select('id')
+                .single();
+
+            if (insertError || !newProvider) {
+                console.error(`[TestUtil] Error creating test provider ${provider.api_identifier}:`, insertError);
+            } else {
+                console.log(`[TestUtil] Successfully created test provider: ${provider.api_identifier} with ID ${newProvider.id}`);
+                registerUndoAction({ type: 'DELETE_CREATED_ROW', tableName: 'ai_providers', criteria: { id: newProvider.id }, scope });
+            }
+        }
+    }
+}
+
 // --- Test Configuration Interfaces for Desired State Management ---
 
 /**

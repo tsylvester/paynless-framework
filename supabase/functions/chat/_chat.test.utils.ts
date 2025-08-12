@@ -9,6 +9,7 @@ import type {
     ChatApiRequest,
     AdapterResponsePayload,
     ChatHandlerDeps,
+    FactoryDependencies,
 } from '../_shared/types.ts';
 import {
   createMockSupabaseClient,
@@ -126,7 +127,7 @@ export const createTestDeps = (
     const mockAdapter = createMockAiAdapter(adapterSendMessageResult);
     mockAdapterSpy = spy(mockAdapter, 'sendMessage');
     // If a mock response is provided, make the factory always return this mock adapter
-    deps.getAiProviderAdapter = spy((_providerApiIdentifier, _providerDbConfig, _apiKey, _logger) => mockAdapter);
+    deps.getAiProviderAdapter = spy((_dependencies: FactoryDependencies) => mockAdapter);
   } else {
     // Otherwise, just spy on the real implementation for tracking calls
     deps.getAiProviderAdapter = spy(deps.getAiProviderAdapter);

@@ -3,6 +3,7 @@ import { stub, restore, type Stub } from "https://deno.land/std@0.170.0/testing/
 import { callUnifiedAIModel } from "./callModel.ts";
 import type { ChatHandlerSuccessResponse, ChatMessage, TokenUsage } from "../_shared/types.ts";
 import type { CallUnifiedAIModelOptions, UnifiedAIResponse } from "./dialectic.interface.ts";
+import { isJson } from "../_shared/utils/type_guards.ts";
 import type { Json } from "../types_db.ts";
 
 Deno.test("callUnifiedAIModel - successful call to /chat", async () => {
@@ -90,6 +91,76 @@ Deno.test("callUnifiedAIModel - successful call to /chat", async () => {
         messages: [],
     };
     assertEquals(actualBody, expectedBodyToCompare);
+
+  } finally {
+    fetchStub.restore();
+    denoEnvStub.restore();
+  }
+});
+
+Deno.test("callUnifiedAIModel - should correctly pass 'finish_reason' from /chat response", async () => {
+  const mockAuthToken = "test-auth-token";
+  const mockModelCatalogId = "gpt-4-provider-id";
+  const mockRenderedPrompt = "Hello, world!";
+  const mockAssociatedChatId = "chat-uuid-123";
+
+  const mockTokenUsage: TokenUsage = {
+    prompt_tokens: 10,
+    completion_tokens: 20,
+    total_tokens: 30,
+  };
+
+  if (!isJson(mockTokenUsage)) {
+    throw new Error("Test setup failed: mockTokenUsage is not valid JSON.");
+  }
+
+  // The key difference for this test is mocking a response that includes a finish_reason.
+  const mockChatSuccessResponse: ChatHandlerSuccessResponse = {
+    assistantMessage: {
+        id: "msg-2",
+        chat_id: mockAssociatedChatId,
+        user_id: "user-uuid-123",
+        role: "assistant",
+        content: "Partial response due to max tokens.",
+        token_usage: mockTokenUsage,
+        ai_provider_id: mockModelCatalogId,
+        system_prompt_id: "system-prompt-uuid-456",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        error_type: null,
+        is_active_in_thread: true,
+        response_to_message_id: null,
+    },
+    chatId: mockAssociatedChatId,
+    finish_reason: 'max_tokens', // This is what we expect to be passed through.
+  };
+
+  const fetchStub: Stub<typeof globalThis> = stub(globalThis, "fetch", async (): Promise<Response> => {
+    return await Promise.resolve(new Response(JSON.stringify(mockChatSuccessResponse), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+  });
+
+  const denoEnvStub: Stub<typeof Deno.env> = stub(Deno.env, "get", (variable: string): string | undefined => {
+    if (variable === "SUPABASE_INTERNAL_FUNCTIONS_URL") return "http://localhost:12345";
+    return undefined;
+  });
+
+  try {
+    const result: UnifiedAIResponse = await callUnifiedAIModel(
+      mockModelCatalogId,
+      mockRenderedPrompt,
+      mockAssociatedChatId,
+      mockAuthToken
+    );
+
+    // This is the critical assertion that will fail before the fix.
+    assertEquals(result.finish_reason, "max_tokens", "The finish_reason was not passed through from the /chat response.");
+    
+    // Also verify other fields are still correct.
+    assertEquals(result.error, null);
+    assertEquals(result.content, "Partial response due to max tokens.");
 
   } finally {
     fetchStub.restore();

@@ -12,6 +12,7 @@ import {
   type IContinueJobDeps,
 } from '../dialectic-service/dialectic.interface.ts';
 import { isDialecticJobPayload, isRecord, isJson, isDialecticExecuteJobPayload } from '../_shared/utils/type_guards.ts';
+import { type MessageForTokenCounting } from '../_shared/types.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 type JobInsert = Database['public']['Tables']['dialectic_generation_jobs']['Insert'];
@@ -562,6 +563,29 @@ Deno.test('continueJob', async (t) => {
         assert(isJobInsert(newJobData));
         
         assertEquals(newJobData.parent_job_id, null);
+    });
+
+    await t.step('PAYLOAD_CONSTRUCTION: should embed the provided message history into the new job payload', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
+        const payload: DialecticJobPayload = { ...basePayload, continuation_count: 0 };
+        const testJob = createMockJob(payload);
+        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        const mockMessages: MessageForTokenCounting[] = [
+            { role: 'user', content: 'Initial prompt' },
+            { role: 'assistant', content: 'part 1' }
+        ];
+
+        await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        
+        const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+        const newJobData = insertSpy!.callsArgs[0][0];
+        assert(isJobInsert(newJobData));
     });
 
     // =================================================================

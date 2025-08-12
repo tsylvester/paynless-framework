@@ -23,7 +23,8 @@ import {
     type ChatHandlerDeps,
     type ChatHandlerSuccessResponse,
     type ChatMessageRow,
-  } from "../_shared/types.ts";
+    FactoryDependencies,
+} from "../_shared/types.ts";
   import { handleRewindPath } from "./handleRewindPath.ts";
   import { getMockAiProviderAdapter } from "../_shared/ai_service/ai_provider.mock.ts";
   import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
@@ -64,7 +65,7 @@ const createSpiedMockAdapter = (modelConfig: AiModelExtendedConfig) => {
     mockAiAdapter.controls.setMockResponse({ content: "This should not be used" });
     const context: PathHandlerContext = {
       supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-      deps: { ...defaultDeps, logger, tokenWalletService: mockTokenWalletService.instance, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy(() => mockAiAdapter.instance) },
+      deps: { ...defaultDeps, logger, tokenWalletService: mockTokenWalletService.instance, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance) },
       userId: "test-user-id",
       requestBody: { message: "test", providerId: "test", promptId: "test", rewindFromMessageId: "test", chatId: "test" },
       wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
@@ -108,7 +109,7 @@ const createSpiedMockAdapter = (modelConfig: AiModelExtendedConfig) => {
   
     const context: PathHandlerContext = {
       supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-      deps: { ...defaultDeps, logger, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy(() => mockAiAdapter.instance) },
+      deps: { ...defaultDeps, logger, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance) },
       userId: "test-user-id",
       requestBody: { message: "test", providerId: "test", promptId: "test", rewindFromMessageId: "test", chatId: "test" },
       wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
@@ -148,7 +149,7 @@ const createSpiedMockAdapter = (modelConfig: AiModelExtendedConfig) => {
   
     const context: PathHandlerContext = {
       supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-      deps: { ...defaultDeps, logger, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy(() => mockAiAdapter.instance) },
+      deps: { ...defaultDeps, logger, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance) },
       userId: "test-user-id",
       requestBody: { message: "test", providerId: "test", promptId: "test", rewindFromMessageId: "test", chatId: "test" },
       wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
@@ -186,7 +187,7 @@ Deno.test("handleRewindPath: non-existent rewindFromMessageId returns 404", asyn
 
     const context: PathHandlerContext = {
       supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-      deps: { ...defaultDeps, logger, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy(() => mockAiAdapter.instance) },
+      deps: { ...defaultDeps, logger, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance) },
       userId: "test-user-id",
       requestBody: { message: "test", providerId: "test", promptId: "test", rewindFromMessageId: "non-existent", chatId: "test" },
       wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
@@ -289,7 +290,7 @@ Deno.test("handleRewindPath: POST request with rewindFromMessageId should call R
       logger,
       tokenWalletService: mockTokenWalletService.instance,
       countTokensForMessages: spy(() => 10),
-      getAiProviderAdapter: spy(() => mockAiAdapter.instance),
+      getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance),
     };
 
     const requestBody: ChatApiRequest = {

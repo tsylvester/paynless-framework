@@ -79,14 +79,17 @@ export async function executeModelCallAndSave(
         max_context_window_tokens: modelConfig.max_context_window_tokens,
     };
 
+    // First, do a token check. If this fails, we will attempt compression.
+    // We use previousContent here because it's the most accurate representation of the prompt before final assembly.
     const messagesForTokenCounting: MessageForTokenCounting[] = (params.sourceDocuments && params.sourceDocuments.length > 0)
         ? params.sourceDocuments.map(doc => ({ role: 'user', content: doc.content || '' }))
-        : [{ role: 'user', content: previousContent || renderedPrompt.content }];
+        : [{ role: 'user', content: params.renderedPrompt.content }];
+
+    let finalContent = params.renderedPrompt.content;
+
     const initialTokenCount = countTokensForMessages(messagesForTokenCounting, extendedModelConfig);
     const maxTokens = extendedModelConfig.max_context_window_tokens || extendedModelConfig.context_window_tokens;
     
-    let finalPromptContent = previousContent || renderedPrompt.content;
-
     if (maxTokens && initialTokenCount > maxTokens) {
         deps.logger.warn(`[executeModelCallAndSave] Initial prompt token count (${initialTokenCount}) exceeds model limit (${maxTokens}) for job ${jobId}. Attempting compression.`);
         
@@ -104,9 +107,9 @@ export async function executeModelCallAndSave(
             throw new ContextWindowError(`Failed to compress prompt with RAG service: ${ragResult.error?.message || 'Unknown RAG error'}`);
         }
         
-        finalPromptContent = ragResult.context;
+        finalContent = ragResult.context;
         
-        const compressedTokenCount = countTokensForMessages([{ role: 'user', content: finalPromptContent }], extendedModelConfig);
+        const compressedTokenCount = countTokensForMessages([{ role: 'user', content: finalContent }], extendedModelConfig);
         if (maxTokens && compressedTokenCount > maxTokens) {
             throw new ContextWindowError(`Compressed prompt token count (${compressedTokenCount}) still exceeds model limit (${maxTokens}).`);
         }
@@ -119,19 +122,38 @@ export async function executeModelCallAndSave(
 
     const userAuthToken = 'user_jwt' in job.payload && job.payload.user_jwt ? job.payload.user_jwt : authToken;
 
+    const startTime = Date.now();
     const aiResponse: UnifiedAIResponse = await deps.callUnifiedAIModel(
         providerDetails.id, 
-        finalPromptContent, 
+        finalContent, 
         sessionData.associated_chat_id, 
         userAuthToken, 
         options
     );
 
+    const endTime = Date.now();
+    const processingTimeMs = endTime - startTime;
+
+    deps.logger.info(`[dialectic-worker] [executeModelCallAndSave] AI call completed for job ${job.id} in ${processingTimeMs}ms.`);
+
+    // --- DIAGNOSTIC LOGGING START ---
+    deps.logger.info(`[executeModelCallAndSave] DIAGNOSTIC: Full AI Response for job ${job.id}:`, { aiResponse });
+    // --- DIAGNOSTIC LOGGING END ---
+
+    if (!aiResponse) {
+        throw new Error('No response from AI adapter');
+    }
+
     if (aiResponse.error || !aiResponse.content) {
         throw new Error(aiResponse.error || 'AI response was empty.');
     }
 
-    const finalContent = previousContent + aiResponse.content;
+    let contentForStorage: string;
+    if (previousContent !== undefined && previousContent !== null) {
+        contentForStorage = previousContent + aiResponse.content;
+    } else {
+        contentForStorage = aiResponse.content;
+    }
 
     const fileType: FileType = isFileType(output_type) 
         ? output_type
@@ -162,9 +184,9 @@ export async function executeModelCallAndSave(
             ...restOfCanonicalPathParams,
             contributionType,
         },
-        fileContent: finalContent, 
+        fileContent: contentForStorage, 
         mimeType: aiResponse.contentType || "text/markdown",
-        sizeBytes: finalContent.length, 
+        sizeBytes: contentForStorage.length, 
         userId: projectOwnerUserId,
         description,
         resourceTypeForDb: job.payload.output_type || stageSlug,
@@ -222,7 +244,24 @@ export async function executeModelCallAndSave(
 
     
     if (needsContinuation) {
-        await deps.continueJob({ logger: deps.logger }, dbClient, job, aiResponse, contribution, projectOwnerUserId);
+        // --- DIAGNOSTIC LOGGING START ---
+        deps.logger.info(`[executeModelCallAndSave] DIAGNOSTIC: Preparing to check for continuation for job ${job.id}.`, {
+          finish_reason: aiResponse.finish_reason,
+          payload_continuation_count: job.payload.continuation_count,
+          continueUntilComplete: job.payload.continueUntilComplete
+        });
+        // --- DIAGNOSTIC LOGGING END ---
+
+        const continueResult = await deps.continueJob({ logger: deps.logger }, dbClient, job, aiResponse, contribution, projectOwnerUserId);
+
+        // --- DIAGNOSTIC LOGGING START ---
+        deps.logger.info(`[executeModelCallAndSave] DIAGNOSTIC: Result from continueJob for job ${job.id}:`, { continueResult });
+        // --- DIAGNOSTIC LOGGING END ---
+
+        if (continueResult.error) {
+          // Even if continuation fails, the original job succeeded. Log the error and continue.
+          deps.logger.error(`[dialectic-worker] [executeModelCallAndSave] Failed to enqueue continuation for job ${job.id}.`, { error: continueResult.error.message });
+        }
         if (projectOwnerUserId) {
             await deps.notificationService.sendContributionGenerationContinuedEvent({
                 type: 'contribution_generation_continued',

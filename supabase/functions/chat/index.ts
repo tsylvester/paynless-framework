@@ -8,14 +8,14 @@ import {
     createErrorResponse,
     createSuccessResponse,
 } from '../_shared/cors-headers.ts';
-import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
+import { getAiProviderAdapter, defaultProviderMap } from '../_shared/ai_service/factory.ts';
 import type {
     ChatHandlerDeps,
     GetUserFn,
     GetUserFnResult,
     AiProviderAdapterInstance,
+    FactoryDependencies,
 } from '../_shared/types.ts';
-import type { AiModelExtendedConfig, ILogger } from "../_shared/types.ts";
 import { logger } from '../_shared/logger.ts';
 import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
 import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
@@ -152,14 +152,13 @@ export const defaultDeps: ChatHandlerDeps = {
     handleCorsPreflightRequest,
     createSuccessResponse,
     createErrorResponse,
-    getAiProviderAdapter: (
-        providerApiIdentifier: string,
-        providerDbConfig: AiModelExtendedConfig | null,
-        apiKey: string,
-        logger: ILogger
-    ): AiProviderAdapterInstance | null => {
-        const adapter = getAiProviderAdapter(providerApiIdentifier, providerDbConfig, apiKey, logger);
+    getAiProviderAdapter: (dependencies: FactoryDependencies): AiProviderAdapterInstance | null => {
+        const adapter = getAiProviderAdapter({
+            ...dependencies,
+            providerMap: defaultProviderMap,
+        });
         if (!adapter) {
+            const providerApiIdentifier = dependencies.provider.api_identifier;
             logger.error(`[defaultDeps] No adapter found by factory for provider API identifier: ${providerApiIdentifier}`);
             throw new Error(`Adapter not found for provider API identifier: ${providerApiIdentifier}`);
         }
@@ -258,3 +257,5 @@ serve(async (req: Request) => {
         );
     }
 });
+
+

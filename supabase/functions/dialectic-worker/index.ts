@@ -6,7 +6,7 @@ import {
   type DialecticJobPayload,
   type ExecuteModelCallAndSaveParams,
 } from '../dialectic-service/dialectic.interface.ts';
-import { isDialecticJobPayload, isAiModelExtendedConfig } from '../_shared/utils/type_guards.ts';
+import { isDialecticJobPayload } from '../_shared/utils/type_guards.ts';
 import { processJob, type IJobProcessors } from './processJob.ts';
 import { logger } from '../_shared/logger.ts';
 import { processSimpleJob } from './processSimpleJob.ts';
@@ -31,6 +31,8 @@ import { RagService } from '../_shared/services/rag_service.ts';
 import { IndexingService, LangchainTextSplitter, OpenAIEmbeddingClient } from '../_shared/services/indexing_service.ts';
 import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
 import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
+import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
+import { defaultProviderMap } from '../_shared/ai_service/factory.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -65,25 +67,36 @@ serve(async (req: Request) => {
     const notificationService = new NotificationService(adminClient);
     
     // Fetch the model config for the default embedding model
-    const { data: modelConfigRecord, error: modelConfigError } = await adminClient
+    const { data: modelProvider, error: modelConfigError } = await adminClient
         .from('ai_providers')
-        .select('config')
+        .select('*')
         .eq('is_default_embedding', true)
         .single();
 
-    if (modelConfigError || !modelConfigRecord || !modelConfigRecord.config) {
-        throw new Error('Failed to fetch model config for the default OpenAI embedding model.');
+    if (modelConfigError || !modelProvider) {
+        throw new Error('Failed to fetch model provider for the default OpenAI embedding model.');
     }
     
-    const modelConfig = modelConfigRecord.config;
-    if (!isAiModelExtendedConfig(modelConfig)) {
-        throw new Error('Fetched model config is not a valid AiModelExtendedConfig.');
+    const apiKey = Deno.env.get('OPENAI_API_KEY');
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY is not set');
     }
 
     // --- Instantiate all services for the unified dependency object ---
     const fileManager = new FileManagerService(adminClient);
-    const openAiAdapter = new OpenAiAdapter(Deno.env.get('OPENAI_API_KEY')!, logger, modelConfig);
-    const embeddingClient = new OpenAIEmbeddingClient(openAiAdapter);
+    
+    const embeddingAdapter = getAiProviderAdapter({
+      provider: modelProvider,
+      apiKey,
+      logger,
+      providerMap: defaultProviderMap,
+    });
+
+    if (!embeddingAdapter || !(embeddingAdapter instanceof OpenAiAdapter)) {
+      throw new Error('Failed to create a valid OpenAI adapter for the embedding client.');
+    }
+
+    const embeddingClient = new OpenAIEmbeddingClient(embeddingAdapter);
     const textSplitter = new LangchainTextSplitter();
     const indexingService = new IndexingService(adminClient, logger, textSplitter, embeddingClient);
     const ragService = new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient });
@@ -113,6 +126,7 @@ serve(async (req: Request) => {
       indexingService,
       embeddingClient,
       promptAssembler,
+      getAiProviderAdapter,
     };
 
     // We must await the handler to ensure the serverless function

@@ -319,3 +319,78 @@ Deno.test("handleDialecticPath: insufficient funds - should return 402", async (
     assertEquals(mockAiAdapter.sendMessageSpy.calls.length, 0, "AI adapter should not have been called.");
     assertEquals(mockTokenWalletService.stubs.recordTransaction.calls.length, 0, "No token transaction should have been recorded.");
   });
+
+Deno.test("handleDialecticPath: should pass 'finish_reason' from adapter to final response", async () => {
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {});
+  
+    const modelConfig: AiModelExtendedConfig = {
+        api_identifier: "test-model-api-id",
+        input_token_cost_rate: 0.01,
+        output_token_cost_rate: 0.02,
+        tokenization_strategy: {
+          type: "tiktoken",
+          tiktoken_encoding_name: "cl100k_base",
+        },
+    };
+
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    const mockAdapterResponse: AdapterResponsePayload = {
+      role: 'assistant',
+      content: "Dialectic assistant response",
+      finish_reason: "max_tokens", // The critical value to test for
+      ai_provider_id: "test-provider-id",
+      system_prompt_id: null,
+      token_usage: {
+        prompt_tokens: 10,
+        completion_tokens: 20,
+        total_tokens: 30,
+      },
+    };
+    mockAiAdapter.controls.setMockResponse(mockAdapterResponse);
+  
+    const mockTokenWalletService: MockTokenWalletService = createMockTokenWalletService();
+
+    const deps: ChatHandlerDeps = {
+      ...defaultDeps,
+      logger: logger,
+      tokenWalletService: mockTokenWalletService.instance,
+      countTokensForMessages: spy(() => 10),
+      getAiProviderAdapter: spy(() => mockAiAdapter.instance),
+    };
+  
+    const requestBody: ChatApiRequest = {
+      message: "Hello Dialectic",
+      providerId: "test-provider",
+      promptId: "__none__",
+      isDialectic: true,
+    };
+  
+    const wallet: TokenWallet = {
+      walletId: "test-wallet",
+      balance: "10000",
+      currency: "AI_TOKEN",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+  
+    const context: PathHandlerContext = {
+      supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+      deps,
+      userId: "test-user-id",
+      requestBody,
+      wallet,
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
+      actualSystemPromptText: null,
+      finalSystemPromptIdForDb: null,
+      apiKey: "test-api-key",
+      providerApiIdentifier: "test-model-api-id",
+    };
+  
+    const result = await handleDialecticPath(context);
+    
+    assert(!('error' in result), `Expected success, but got an error: ${('error' in result && result.error.message) || 'Unknown'}`);
+    const successResult: ChatHandlerSuccessResponse = result;
+    
+    assertEquals(successResult.finish_reason, "max_tokens", "The 'finish_reason' should be passed from the adapter to the final response.");
+  });

@@ -9,6 +9,135 @@ import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 import { createMockPromptAssembler } from "../_shared/prompt-assembler.mock.ts";
 import { MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
 import { MockLogger } from "../_shared/logger.mock.ts";
+import { AiProviderAdapterInstance, FactoryDependencies } from "../_shared/types.ts";
+
+Deno.test("startSession - TDD RED: Prove Flaw in startSession", async () => {
+    const mockUser: User = {
+        id: "user-happy-path-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+    };
+    const mockProjectId = "project-happy-path-id";
+    const mockProcessTemplateId = "proc-template-happy-path";
+    const mockInitialStageId = "stage-initial-happy-path";
+    const mockInitialStageName = "Hypothesis Stage";
+    const mockInitialStageSlug = "hypothesis-stage";
+    const mockSystemPromptId = "system-prompt-happy-path";
+    const mockSystemPromptText = "This is the initial system prompt for the happy path.";
+    const mockNewSessionId = "session-happy-path-id";
+    const mockNewChatId = "chat-happy-path-id";
+    const mockExplicitSessionDescription = "A happy little session description.";
+
+    const payload: StartSessionPayload = {
+        projectId: mockProjectId,
+        selectedModelIds: ["model-1"],
+        sessionDescription: mockExplicitSessionDescription
+    };
+
+    const mockAssembler = createMockPromptAssembler();
+    
+    const mockFileManager = new MockFileManagerService();
+    mockFileManager.setUploadAndRegisterFileResponse({
+        id: 'file-id',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        file_name: 'seed_prompt.md',
+        storage_bucket: 'dialectic-internal',
+        storage_path: 'projects/project-happy-path-id/sessions/session-happy-path-id/iterations/1/hypothesis-stage/seed_prompt.md',
+        mime_type: 'text/markdown',
+        size_bytes: 123,
+        user_id: mockUser.id,
+        project_id: mockProjectId,
+        session_id: mockNewSessionId,
+        resource_description: 'Seed prompt',
+    }, null);
+
+    const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
+        genericMockResults: {
+            dialectic_projects: {
+                select: async () => ({
+                    data: [{
+                        id: mockProjectId,
+                        user_id: mockUser.id,
+                        project_name: "Happy Project",
+                        initial_user_prompt: "Let's be happy.",
+                        process_template_id: mockProcessTemplateId,
+                        dialectic_domains: { name: 'General' },
+                        selected_domain_id: 'd-1'
+                    }], error: null, status: 200, statusText: 'ok'
+                })
+            },
+            dialectic_process_templates: {
+                select: async () => ({
+                    data: [{ id: mockProcessTemplateId, name: 'Happy Template', starting_stage_id: mockInitialStageId }],
+                    error: null, status: 200, statusText: 'ok'
+                })
+            },
+            dialectic_stages: {
+                select: async () => ({
+                    data: [{ id: mockInitialStageId, slug: mockInitialStageSlug, display_name: mockInitialStageName, default_system_prompt_id: mockSystemPromptId }],
+                    error: null, status: 200, statusText: 'ok'
+                })
+            },
+            system_prompts: {
+                select: async () => ({
+                    data: [{id: mockSystemPromptId, prompt_text: mockSystemPromptText}],
+                    error: null, status: 200, statusText: 'ok'
+                })
+            },
+            domain_specific_prompt_overlays: {
+                select: async () => ({ data: [], error: null, status: 200, statusText: 'ok' })
+            },
+            dialectic_sessions: {
+                insert: async () => ({
+                    data: [{
+                        id: mockNewSessionId, project_id: mockProjectId, session_description: mockExplicitSessionDescription,
+                        status: `pending_${mockInitialStageName}`, iteration_count: 1, associated_chat_id: mockNewChatId,
+                        current_stage_id: mockInitialStageId, selected_model_ids: payload.selectedModelIds,
+                    }], error: null, status: 201, statusText: 'ok'
+                })
+            },
+            ai_providers: {
+                select: async () => ({
+                    data: [{ 
+                        id: 'model-1', 
+                        provider_max_input_tokens: 8000, 
+                        is_default_embedding: true,
+                        config: {
+                            api_identifier: 'gpt-4o',
+                            tokenization_strategy: {
+                                type: 'tiktoken',
+                                tiktoken_encoding_name: 'cl100k_base'
+                            }
+                        } 
+                    }],
+                    error: null, status: 200, statusText: 'ok'
+                })
+            }
+        },
+        mockUser: mockUser,
+    });
+
+    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const mockLogger = new MockLogger();
+    const mockGetAiProviderAdapter = spy((_deps: FactoryDependencies): AiProviderAdapterInstance | null => {
+        return null;
+    });
+
+    const deps: Partial<StartSessionDeps> = {
+        logger: mockLogger,
+        fileManager: mockFileManager,
+        promptAssembler: mockAssembler,
+        randomUUID: () => mockNewChatId,
+        getAiProviderAdapter: mockGetAiProviderAdapter
+    };
+
+    await startSession(mockUser, adminDbClient, payload, deps); 
+    
+    assertEquals(mockGetAiProviderAdapter.calls.length, 0, "The getAiProviderAdapter factory should NOT have been called.");
+});
 
 Deno.test("startSession - Happy Path (with explicit sessionDescription)", async () => {
     const mockUser: User = {

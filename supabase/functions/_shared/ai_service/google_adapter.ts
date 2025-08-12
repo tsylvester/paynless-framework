@@ -12,7 +12,8 @@ import type {
     ILogger,
     AiModelExtendedConfig,
 } from '../types.ts';
-import type { Json } from '../../../functions/types_db.ts';
+import type { Json, Tables } from '../../../functions/types_db.ts';
+import { isJson, isAiModelExtendedConfig } from '../utils/type_guards.ts';
 
 /**
  * Implements AiProviderAdapter for Google Gemini models using the official SDK.
@@ -24,13 +25,19 @@ export class GoogleAdapter {
     private apiKey: string;
 
     constructor(
+        provider: Tables<'ai_providers'>,
         apiKey: string,
-        logger: ILogger,
-        modelConfig: AiModelExtendedConfig
+        logger: ILogger
     ) {
+        if(!isJson(provider.config)) {
+            throw new Error('provider.config is not a valid JSON object');
+        }
+        if(!isAiModelExtendedConfig(provider.config)) {
+            throw new Error('provider.config is not a valid AiModelExtendedConfig object');
+        }
         this.client = new GoogleGenerativeAI(apiKey);
         this.logger = logger;
-        this.modelConfig = modelConfig;
+        this.modelConfig = provider.config;
         this.apiKey = apiKey;
         this.logger.info(`[GoogleAdapter] Initialized with config: ${JSON.stringify(this.modelConfig)}`);
     }

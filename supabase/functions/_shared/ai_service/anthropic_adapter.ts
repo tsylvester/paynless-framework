@@ -2,7 +2,8 @@ import Anthropic from 'npm:@anthropic-ai/sdk';
 import type { MessageParam } from 'npm:@anthropic-ai/sdk/resources/messages';
 // Import types from the shared location
 import type { AdapterResponsePayload, ChatApiRequest, ILogger, ProviderModelInfo, AiModelExtendedConfig } from '../types.ts';
-import type { Database } from '../../types_db.ts';
+import type { Tables, Database } from '../../types_db.ts';
+import { isJson, isAiModelExtendedConfig } from '../utils/type_guards.ts';
 
 
 // Anthropic API constants
@@ -29,14 +30,20 @@ export class AnthropicAdapter {
   private modelConfig: AiModelExtendedConfig;
 
   constructor(
+    provider: Tables<'ai_providers'>,
     apiKey: string, 
     logger: ILogger,
-    modelConfig: AiModelExtendedConfig
   ) {
+    if(!isJson(provider.config)) {
+        throw new Error('provider.config is not a valid JSON object');
+    }
+    if(!isAiModelExtendedConfig(provider.config)) {
+        throw new Error('provider.config is not a valid AiModelExtendedConfig object');
+    }
     this.client = new Anthropic({ apiKey });
     this.apiKey = apiKey;
     this.logger = logger;
-    this.modelConfig = modelConfig;
+    this.modelConfig = provider.config;
     this.logger.info(`[AnthropicAdapter] Initialized with config: ${JSON.stringify(this.modelConfig)}`);
   }
 

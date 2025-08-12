@@ -328,7 +328,8 @@ export async function handleNormalPath(
         return {
             userMessage,
             assistantMessage,
-            chatId: currentChatId
+            chatId: currentChatId,
+            finish_reason: adapterResponsePayload.finish_reason,
         };
 
     } catch (err) {

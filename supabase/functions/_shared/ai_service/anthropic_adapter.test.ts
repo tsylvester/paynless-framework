@@ -9,6 +9,8 @@ import { AnthropicAdapter } from './anthropic_adapter.ts';
 import { testAdapterContract, type MockApi } from './adapter_test_contract.ts';
 import type { AdapterResponsePayload, ChatApiRequest, ProviderModelInfo, AiModelExtendedConfig } from "../types.ts";
 import { MockLogger } from "../logger.mock.ts";
+import { Tables } from "../../types_db.ts";
+import { isJson } from "../utils/type_guards.ts";
 
 // --- Mock Data & Helpers ---
 
@@ -19,6 +21,24 @@ const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
     tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3-opus-20240229' },
 };
 const mockLogger = new MockLogger();
+
+if(!isJson(MOCK_MODEL_CONFIG)) {
+    throw new Error('MOCK_MODEL_CONFIG is not a valid JSON object');
+}
+
+const MOCK_PROVIDER: Tables<'ai_providers'> = {
+    id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14", // Unique mock ID
+    provider: "anthropic",
+    api_identifier: "anthropic-claude-3-opus-20240229",
+    name: "Anthropic Claude 3 Opus",
+    description: "A mock Anthropic model for testing.",
+    is_active: true,
+    is_default_embedding: false,
+    is_enabled: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    config: MOCK_MODEL_CONFIG,
+};
 
 const MOCK_ANTHROPIC_SUCCESS_RESPONSE: Message = {
   id: "msg_01A1B2C3D4E5F6G7H8I9J0K1L2",
@@ -78,7 +98,7 @@ Deno.test("AnthropicAdapter: Contract Compliance", async (t) => {
         listModelsStub = stub(AnthropicAdapter.prototype, "listModels", () => mockAnthropicApi.listModels());
     });
 
-    await testAdapterContract(t, AnthropicAdapter, mockAnthropicApi, MOCK_MODEL_CONFIG);
+    await testAdapterContract(t, AnthropicAdapter, mockAnthropicApi, MOCK_PROVIDER);
 
     await t.step("Teardown: Restore stubs", () => {
         sendMessageStub.restore();
@@ -97,7 +117,7 @@ Deno.test("AnthropicAdapter - Specific Tests: Alternating Role Filtering", async
     const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
             
     try {
-        const adapter = new AnthropicAdapter('sk-ant-test-key', mockLogger, MOCK_MODEL_CONFIG);
+        const adapter = new AnthropicAdapter(MOCK_PROVIDER, 'sk-ant-test-key', mockLogger);
         const request: ChatApiRequest = {
             message: 'Third user message',
             providerId: 'test-provider',

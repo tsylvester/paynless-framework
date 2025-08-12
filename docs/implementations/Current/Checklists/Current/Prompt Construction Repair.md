@@ -282,25 +282,184 @@ This phase implements a defense-in-depth testing strategy to ensure that no malf
 This phase ensures the fixes are validated at a higher level and are protected against future regressions.
 
 *   `[ ]` 10. **Update Integration Test for Verbose Proof**
-    *   `[⏸️]` 10.a. `[TEST-INT]` **Address Integration Test Failures**
-        *   `[ ]` 10.a.i. **Invalid Provider Configuration:** The `generateContributions` function is failing with an `Invalid provider config` error because it cannot find the configuration for the AI models (`gpt-4-turbo`, `claude-3-opus`) that are upserted during the test setup. This suggests a dependency injection or Supabase client configuration issue within the test environment.
-        *   `[ ]` 10.a.ii. **Test Polling Timeout:** The test times out while polling for job statuses because the initial `generateContributions` call fails, meaning no jobs are ever created in the database.
-        *   `[ ]` 10.a.iii. **Divergence in Test Reporting:** The Deno test runner reports steps as passing (`ok`) even when the underlying Edge Functions are throwing critical, unhandled errors. The test's `assert(!error)` checks are not catching these asynchronous failures, leading to a dangerously misleading "green" test run.
-    *   `[ ]` 10.b. `[TEST-INT]` Modify `supabase/integration_tests/services/dialectic_pipeline.integration.test.ts`.
-    *   `[ ]` 10.c. `[TEST-INT]` In the test dependencies, intercept the call to `executeModelCallAndSave` and add verbose logging to print:
-        *   `[ ]` 10.c.i. The full content of the `renderedPrompt` to prove it was correctly assembled.
-        *   `[ ]` 10.c.ii. The content that the `countTokensForMessages` function is evaluating, to prove the token check is on the right data.
-    *   `[ ]` 10.d. `[TEST-INT]` Add a new integration test case that uses a large volume of source document content, specifically designed to exceed a model's token limit.
-    *   `[ ]` 10.e. `[TEST-INT]` Within this new test, spy on the `ragService` dependency.
-    *   `[ ]` 10.f. `[TEST-INT]` Assert that the `ragService` spy was called, proving the RAG logic was correctly triggered by the integration test.
-*   `[ ]` 11. **Add Regression Test for `chat_id`**
-    *   `[ ]` 11.a. `[TEST-UNIT]` Add a new test to `supabase/functions/dialectic-service/callModel.test.ts`.
-    *   `[ ]` 11.b. `[TEST-UNIT]` The test will call `callUnifiedAIModel` and spy on the underlying `fetch` call.
-    *   `[ ]` 11.c. `[TEST-UNIT]` It will assert that the `chatId` property in the request body sent to the `/chat` function is `undefined`. This ensures the history-masking workaround can never be accidentally reintroduced.
+    *   `[ ]` 10.a. `[TEST-INT]` **Address Integration Test Failures**
+        *   `[✅]` 10.a.i. **Root Cause Analysis:** The core failure originates in the `AIFactory`. Its logic detects the test environment (`SUPA_ENV=local`) and, to prevent real API calls, it was returning a generic, unconfigured `MockAdapter`. Downstream functions would then fail because this generic mock's config did not match the real model's config (e.g., for tokenization). The test also used outdated model identifiers that are no longer returned by provider APIs.
+        *   `[✅]` 10.a.ii. **Solution - Smart Mocking:** The fix is to modify the `AIFactory`'s test-environment logic. Instead of a generic mock, it will now instantiate the `DummyAdapter`. Crucially, it will pass the *real* database configuration for the requested model (e.g., `openai-gpt-4o`) into this `DummyAdapter`. This allows the `DummyAdapter` to accurately simulate the real model's token counting and behavior without making costly API calls.
+        *   `[✅]` 10.a.iii. **Solution - Test Data:** The integration test's setup helpers must be updated to upsert modern, valid AI provider configurations (`openai-gpt-4o`, `anthropic-claude-3-5-sonnet-20240620`) into the database, ensuring the Edge Functions have access to the necessary data.
+        *   `[✅]` 10.a.iv. **Revised Test Strategy - TDD for Dummy Adapter:** The current failure point is that the integration test relies on a mock (`MockAiProviderAdapter`) that is no longer used, preventing it from simulating errors and continuations. The solution is to enhance the `DummyAdapter` to be a more capable test double. We will follow a strict TDD process to implement this.
+        *   `[✅]` 10.a.v. **Create Failing Test for `DummyAdapter`:**
+            *   `[✅]` 10.a.v.1. Create a new test file: `supabase/functions/_shared/ai_service/dummy_adapter.test.ts`.
+            *   `[✅]` 10.a.v.2. Write test cases that prove the current `DummyAdapter` *cannot* simulate required behaviors: forced errors, partial `max_tokens` responses, and large generated outputs.
+            *   `[✅]` 10.a.v.3. Run this test and prove that it fails.
+        *   `[✅]` 10.a.vi. **Implement `DummyAdapter` Enhancements:**
+            *   `[✅]` 10.a.vi.1. Modify `supabase/functions/_shared/ai_service/dummy_adapter.ts`.
+            *   `[✅]` 10.a.vi.2. Implement keyword-driven simulation logic. The adapter will scan the prompt for keywords like `SIMULATE_ERROR`, `SIMULATE_MAX_TOKENS`, and `SIMULATE_LARGE_OUTPUT_KB=X` to alter its response dynamically.
+        *   `[✅]` 10.a.vii. **Prove `DummyAdapter` Fix:**
+            *   `[✅]` 10.a.vii.1. Run the `dummy_adapter.test.ts` again.
+            *   `[✅]` 10.a.vii.2. Assert that all tests now pass, proving the `DummyAdapter` is working as designed.
+        *   `[✅]` 10.a.viii. **Update Integration Test Logic:**
+            *   `[✅]` 10.a.viii.1. Modify `supabase/integration_tests/services/dialectic_pipeline.integration.test.ts`.
+            *   `[✅]` 10.a.viii.2. Remove all reliance on the old `mockAiAdapter.controls`.
+            *   `[✅]` 10.a.viii.3. Instead, modify the `getSeedPromptForStage` dependency mock to inject the appropriate `SIMULATE_*` keywords into the prompt content before it is passed to the `DummyAdapter`. This will allow precise control over job outcomes (failure vs. continuation).
+        *   `[✅]` 10.a.ix. **Validate Integration Test Progress:**
+            *   `[✅]` 10.a.ix.1. Run `dialectic_pipeline.integration.test.ts` again.
+            *   `[✅]` 10.a.ix.2. Expect that step 3 will now pass, as the retry and continuation logic can be correctly tested. Acknowledge that the test may fail on a subsequent, previously ignored step, which will become the new focus.
 
-## Phase 7: Documentation
+    *   `[✅]` 10.b. `[REFACTOR]` **Refactor Chat Handlers to Fix SRP Violation and Preserve `finish_reason`**
+        *   `[✅]` 10.b.i. **Root Cause Analysis:** The `finish_reason` from the AI adapter is lost because the `databaseOperation` callback passed to `debitTokens` is responsible for constructing the final message objects. The calling handlers (`handleDialecticPath`, etc.) lose access to the original `adapterResponsePayload` after the `debitTokens` call completes, preventing them from adding the `finish_reason` to the final `ChatHandlerSuccessResponse`. This represents a Single Responsibility Principle violation, as the transactional function is too tightly coupled with the specifics of the data it is transacting.
+        *   `[✅]` 10.b.ii. **Solution - Decouple Transaction from Response Construction:** The path handlers (`handleDialecticPath`, `handleNormalPath`, `handleRewindPath`) will be refactored to orchestrate the response construction. They will: 1. Call the AI adapter and store the complete `AdapterResponsePayload` locally. 2. Call `debitTokens`, passing a `databaseOperation` callback that only performs DB writes and returns the resulting message objects. 3. Receive the message objects back from `debitTokens`. 4. Construct the final `ChatHandlerSuccessResponse` by combining the message objects with the `finish_reason` from the stored `AdapterResponsePayload`. This preserves atomicity while fixing the SRP violation.
+        *   `[✅]` 10.b.iii. `[TEST-UNIT]` **Create Failing Unit Test:**
+            *   `[✅]` 10.b.iii.1. In `supabase/functions/chat/handleDialecticPath.test.ts`, create a new test that calls `handleDialecticPath`.
+            *   `[✅]` 10.b.iii.2. Mock the `aiProviderAdapter.sendMessage` to return a payload containing `finish_reason: 'max_tokens'`.
+            *   `[✅]` 10.b.iii.3. Assert that the final `ChatHandlerSuccessResponse` returned by the function includes the `finish_reason: 'max_tokens'` property.
+            *   `[✅]` 10.b.iii.4. **Execute the test and confirm it fails (RED), proving the bug.**
+        *   `[✅]` 10.b.iv. `[REFACTOR]` **Update `types.ts`:**
+            *   `[✅]` 10.b.iv.1. In `supabase/functions/_shared/types.ts`, add the optional field `finish_reason?: FinishReason;` to the `ChatHandlerSuccessResponse` interface.
+        *   `[✅]` 10.b.v. `[BE]` **Implement the Fix in `handleDialecticPath.ts`:**
+            *   `[✅]` 10.b.v.1. Apply the refactoring logic described in `10.b.ii`. The function will now store the adapter response, call `debitTokens`, and then assemble the final response object itself.
+        *   `[✅]` 10.b.vi. `[TEST-UNIT]` **Confirm Fix with Unit Test:**
+            *   `[✅]` 10.b.vi.1. Rerun the test from step `10.b.iii`. **Confirm it now passes (GREEN).**
+        *   `[✅]` 10.b.vii. `[TEST-INT]` **Confirm Fix with Integration Test:**
+            *   `[✅]` 10.b.vii.1. Run the full integration test: `deno test --allow-all --env=../.env ./supabase/integration_tests/services/dialectic_pipeline.integration.test.ts`.
+            *   `[✅]` 10.b.vii.2. **Confirm the test now proceeds past the continuation step.** Acknowledge that it may fail on a subsequent, disabled step.
+        *   `[✅]` 10.b.viii. `[REFACTOR]` **Apply Fix to Other Paths:**
+            *   `[✅]` 10.b.viii.1. Apply the same refactoring pattern to `handleNormalPath.ts` and `handleRewindPath.ts` to ensure architectural consistency.
+            *   `[✅]` 10.b.viii.2. Update their respective unit tests to assert that `finish_reason` is correctly passed through.
+    *   `[🚧]` 10.c. `[REFACTOR]` **Fix Final Data Propagation Bugs**
+        *   `[✅]` 10.c.i. **Root Cause Analysis:** A series of minor propagation errors were discovered.
+            *   The `callUnifiedAIModel` function in `dialectic-service/callModel.ts` was not passing the `finish_reason` from the `/chat` response to its own `UnifiedAIResponse` return object.
+            *   The integration test's `DummyAdapter` created an infinite loop. When simulating a `max_tokens` event, its response content included the simulation keyword, causing the continuation job to also simulate a `max_tokens` event.
+        *   `[✅]` 10.c.ii. `[TEST-UNIT]` **Create Failing Test for `callModel.ts`:**
+            *   `[✅]` 10.c.ii.1. In `supabase/functions/dialectic-service/callModel.test.ts`, add a test that provides a mock `/chat` response containing a `finish_reason`.
+            *   `[✅]` 10.c.ii.2. Assert that the `finish_reason` is present in the final `UnifiedAIResponse`.
+            *   `[✅]` 10.c.ii.3. **Run the test and confirm it fails (RED).**
+        *   `[✅]` 10.c.iii. `[BE]` **Fix `callModel.ts`:**
+            *   `[✅]` 10.c.iii.1. In `supabase/functions/dialectic-service/callModel.ts`, update the return object to include `finish_reason: chatResponse.finish_reason`.
+        *   `[✅]` 10.c.iv. `[TEST-UNIT]` **Confirm `callModel.ts` Fix:**
+            *   `[✅]` 10.c.iv.1. Rerun the test from step `10.c.ii`. **Confirm it now passes (GREEN).**
+        *   `[✅]` 10.c.v. `[BE]` **Fix `DummyAdapter` Infinite Loop:**
+            *   `[✅]` 10.c.v.1. In `supabase/functions/_shared/ai_service/dummy_adapter.ts`, modify the `SIMULATE_MAX_TOKENS` logic. The echoed content in the response must be cleaned of the simulation keyword to prevent the next job from re-triggering it.
+            *   `[✅]` 10.c.v.2. Harden the `DummyAdapter` tests to assert that all "magic string" keywords are stripped from the response content, ensuring they are single-use triggers.
+    *   `[✅]` 10.d. `[REFACTOR]` **Fix Continuation Prompt Logic**
+        *   `[✅]` 10.d.i. **Root Cause Analysis:** The "echo of an echo" bug is caused by a broken data flow across two functions. 
+            *   **`processSimpleJob.ts`:** When processing a continuation job, this function correctly downloads the partial AI response into a `previousContent` variable. However, it fails to pass this `previousContent` to the `promptAssembler`. The assembler, therefore, re-builds the *original* prompt, completely unaware that it should be building a prompt for a continuation.
+            *   **`executeModelCallAndSave.ts`:** This function then receives both the `previousContent` (the partial response) and the `renderedPrompt.content` (the incorrect, original prompt). It then makes a fatal logic error, incorrectly prioritizing `previousContent` as the prompt for the next AI call, which completely discards the work done by the `promptAssembler`. This sends the AI's own partial response back to it as a new prompt, causing the "echo" failure.
+        *   `[✅]` 10.d.ii. `[TEST-UNIT]` **Create Failing Tests for Flawed Data Flow:**
+            *   `[✅]` 10.d.ii.1. In `prompt_assembler.test.ts`, add a new test, `'should correctly append continuation content to the prompt'`. This test will pass a `continuationContent` string to the `assemble` method and assert that the final prompt includes it. This will initially fail due to the missing parameter on the method.
+            *   `[✅]` 10.d.ii.2. In `processSimpleJob.test.ts`, add a new test, `'should pass previousContent to the promptAssembler for continuation jobs'`. This test will spy on the `promptAssembler.assemble` method and assert that it is called with the `previousContent` when processing a job with a `target_contribution_id`.
+            *   `[✅]` 10.d.ii.3. In `executeModelCallAndSave.test.ts`, add a new test, `'should always use renderedPrompt.content for the AI call'`. This test will spy on the `callUnifiedAIModel` dependency and assert that the prompt it receives is always from `renderedPrompt.content`, even when `previousContent` is also present.
+        *   `[✅]` 10.d.iii. `[BE]` **Implement the Fix:**
+            *   `[✅]` 10.d.iii.1. **Update `prompt-assembler` Signature:** In `prompt-assembler.interface.ts` and `prompt-assembler.ts`, update the `assemble` method signature to accept an optional `continuationContent?: string` parameter.
+            *   `[✅]` 10.d.iii.2. **Update `prompt-assembler` Logic:** In `prompt-assembler.ts`, modify the implementation to correctly append the `continuationContent` to the assembled prompt if it's provided.
+            *   `[✅]` 10.d.iii.3. **Fix `processSimpleJob`:** In `processSimpleJob.ts`, locate the call to `deps.promptAssembler.assemble`. Pass the `previousContent` variable (which is already available in the function) as the new `continuationContent` argument.
+            *   `[✅]` 10.d.iii.4. **Fix `executeModelCallAndSave`:** In `executeModelCallAndSave.ts`, find the line `let finalPromptContent = previousContent || renderedPrompt.content;`. Change it to `const finalPromptContent = renderedPrompt.content;`. This ensures the output from the `promptAssembler` is always respected as the single source of truth for the AI call.
+        *   `[✅]` 10.d.iv. `[TEST-UNIT]` **Confirm Fixes with Unit Tests:**
+            *   `[✅]` 10.d.iv.1. Rerun all tests from step `10.d.ii` and confirm they now pass.
+    *   `[✅]` 10.e. `[REFACTOR]` **Harden Test Harness for Continuation**
+        *   `[✅]` 10.e.i. **Root Cause Analysis:** The `DummyAdapter` is not intelligent enough to simulate a real AI's continuation behavior. It echoes its entire input, which causes the application's correct continuation logic (`previousContent` + `newContent`) to fail the integration test by producing an "echo of an echo."
+        *   `[✅]` 10.e.ii. `[TEST-UNIT]` **Create Failing Test for Dummy Adapter:**
+            *   `[✅]` 10.e.ii.1. In `dummy_adapter.test.ts`, add a new test case. This test will call the adapter with a prompt that contains the "Partial echo due to max_tokens..." prefix, simulating a continuation call.
+            *   `[✅]` 10.e.ii.2. Assert that the adapter's response is *not* a simple completion string, proving that it currently re-echoes the entire prompt.
+        *   `[✅]` 10.e.iii. `[FIX]` **Implement "Smarter" Continuation in Dummy Adapter:**
+            *   `[✅]` 10.e.iii.1. In `dummy_adapter.ts`, modify the `sendMessage` method.
+            *   `[✅]` 10.e.iii.2. Add logic to check if the incoming `messageContent` includes the string `"Partial echo due to max_tokens"`.
+            *   `[✅]` 10.e.iii.3. If the prefix is found, return a fixed completion string (e.g., `"This is the continued content."`) and a `finish_reason: 'stop'`. Otherwise, maintain the existing behavior.
+        *   `[✅]` 10.e.iv. `[TEST-UNIT]` **Confirm Fix with Unit Test:**
+            *   `[✅]` 10.e.iv.1. Rerun the test from step `10.e.ii` and confirm it now passes.
 
-*   `[ ]` 12. **Update Architecture Document**
-    *   `[ ]` 12.a. `[DOCS]` Update `docs/implementations/Current/Documentation/Dialectic Architecture.md` to reflect the final, corrected architecture and data flow.
+*   `[✅]` 10.f. `[REFACTOR]` **Fix Dummy Adapter Token Calculation for Continuations**
+    *   `[✅]` 10.f.i. **Context:** The integration test revealed a critical flaw in the `DummyAdapter`'s continuation logic. While it correctly identifies a continuation prompt and returns new content, it fails to calculate the token count for the *incoming prompt text*. This results in a `token_usage` object with `prompt_tokens: 0` being sent to the database persistence layer. A database constraint, which correctly rejects this logically impossible state, causes a generic `500` error, which in turn causes the continuation job to fail and the integration test to time out.
+    *   `[✅]` 10.f.ii. `[TEST-UNIT]` **TDD RED: Prove the Token Calculation Flaw**
+        *   `[✅]` 10.f.ii.1. In `supabase/functions/_shared/ai_service/dummy_adapter.test.ts`, we will modify the existing test case, `"should handle continuation prompts"`.
+        *   `[✅]` 10.f.ii.2. We will add an assertion to this test that specifically checks the `token_usage` object in the returned `AdapterResponsePayload`.
+        *   `[✅]` 10.f.ii.3. The assertion will validate that `response.token_usage.prompt_tokens` is greater than 0.
+        *   `[✅]` 10.f.ii.4. We will run this test and confirm that it fails on this new assertion, proving the flaw.
+    *   `[✅]` 10.f.iii. `[FIX]` **GREEN: Implement the Fix**
+        *   `[✅]` 10.f.iii.1. In `supabase/functions/_shared/ai_service/dummy_adapter.ts`, we will locate the `if (messageContent.includes("Partial echo due to max_tokens"))` block.
+        *   `[✅]` 10.f.iii.2. Inside this block, we will add a call to the adapter's internal token counting method to calculate the number of tokens in the incoming `messageContent` (the prompt).
+        *   `[✅]` 10.f.iii.3. We will store this value as `prompt_tokens` and ensure it is correctly included in the `token_usage` object of the returned `AdapterResponsePayload`, alongside the existing `completion_tokens`.
+    *   `[✅]` 10.f.iv. `[PROVE]` **PROVE: Confirm Fix with Unit and Integration Tests**
+        *   `[✅]` 10.f.iv.1. `[TEST-UNIT]` We will run the `dummy_adapter.test.ts` again and confirm the previously failing test now passes.
+        *   `[✅]` 10.f.iv.2. `[TEST-INTEGRATION]` We will run the full `dialectic_pipeline.integration.test.ts` suite.
+        *   `[✅]` 10.f.iv.3. `[TEST-INTEGRATION]` We expect the test to proceed past the continuation step and either complete successfully or fail at a subsequent, new step.
 
-*   `[ ]` 13. `[COMMIT]` Commit all changes with a `fix:` prefix, referencing the resolved issue.
+*   `[✅]` 10.g. `[REFACTOR]` **Improve Error Logging to Unmask Root Cause**
+    *   `[✅]` 10.g.i. **Context:** Our previous fix to the `DummyAdapter`'s token calculation was successful, but the integration test still fails with a `500` error during the continuation job. The error message is a generic `"[object Object]"`, indicating that the true database error is being hidden by improper error logging within the `debitTokens.ts` function.
+    *   `[✅]` 10.g.ii. `[FIX]` **Enhance Error Logging in `debitTokens.ts`**
+        *   `[✅]` 10.g.ii.1. Read the file `supabase/functions/chat/debitTokens.ts`.
+        *   `[✅]` 10.g.ii.2. Locate the `try...catch` block responsible for inserting the `userMessageRow` and `assistantMessageRow` into the database.
+        *   `[✅]` 10.g.ii.3. Modify the `catch` block to log the error with more detail. Instead of logging the raw error object, we will use `JSON.stringify(error, null, 2)` or log specific properties like `error.message`, `error.details`, and `error.hint` to ensure the full, actionable error from the database is visible in the function logs.
+    *   `[✅]` 10.g.iii. `[PROVE]` **Rerun Integration Test to Capture Detailed Error**
+        *   `[✅]` 10.g.iii.1. `[TEST-INTEGRATION]` Rerun the full `dialectic_pipeline.integration.test.ts`.
+        *   `[✅]` 10.g.iii.2. `[TEST-INTEGRATION]` We expect the test to **fail in the exact same way**. However, we now expect the `supabase functions serve` log to contain a clear and specific database error message (e.g., "violates foreign key constraint," "null value in column... violates not-null constraint," etc.) instead of `"[object Object]"`. This detailed error will reveal the true root cause of the persistence failure.
+
+*   `[ ]` 10.h. `[REFACTOR]` **Refactor `AiServiceFactory` for True, Complete Dependency Injection**
+    *   `[ ]` 10.h.i. **Context:** The current `AiServiceFactory` is difficult to unit test because it manages its own default dependencies (e.g., the `defaultProviderMap`), violating the principles of Dependency Injection. This makes the factory complex and unpredictable. To fix this, we will refactor it into a "pure" factory that is completely configured by its caller. This is a breaking change that will centralize all dependency management into a single "composition root," making the system more modular, predictable, and testable.
+    *   `[✅]` 10.h.ii. `[REFACTOR]` **Simplify the Factory to Be "Dumb"**
+        *   `[✅]` 10.h.ii.1. `[REFACTOR]` In `supabase/functions/_shared/ai_service/factory.ts`, export the `defaultProviderMap`for callers.
+        *   `[✅]` 10.h.ii.2. `[REFACTOR]` Modify the `getAiProviderAdapter` function. Remove the logic that merges or provides default values for the `dependencies` object. The function must receive a complete, valid `FactoryDependencies` object and will fail if any dependency is missing.
+        *   `[✅]` 10.h.ii.3. `[REFACTOR]` The `Deno.env.get("SUPA_ENV") === "local"` override is a harmful pattern that makes testing difficult. Remove this entire `if` block from the factory. Test-specific behavior should be injected via dependencies, not determined by environment variables inside the factory.
+    *   `[✅]` 10.h.iii. `[REFACTOR]` **Update the `ChatHandlerDeps` Contract**
+        *   `[✅]` 10.h.iii.1. `[REFACTOR]` In `supabase/functions/_shared/types.ts`, find the `ChatHandlerDeps` interface.
+        *   `[✅]` 10.h.iii.2. `[REFACTOR]` The `getAiProviderAdapter` property in this interface currently has the wrong signature (`(providerApiIdentifier: string, ...)`). Update its signature to be `(dependencies: FactoryDependencies) => AiProviderAdapterInstance | null;`. This makes the DI contract explicit. Do the same for `getAiProviderAdapterOverride`.
+    *   `[✅]` 10.h.iv. `[REFACTOR]` **Establish a Single Composition Root**
+        *   `[✅]` 10.h.iv.1. `[REFACTOR]` In `supabase/functions/chat/index.ts`, locate the `defaultDeps` object. This will become our single source of truth for constructing production dependencies.
+        *   `[✅]` 10.h.iv.2. `[REFACTOR]` Move the `defaultProviderMap` from the factory into this file.
+        *   `[✅]` 10.h.iv.3. `[REFACTOR]` Update the `getAiProviderAdapter` method within `defaultDeps`. It will now be responsible for assembling the *complete* `FactoryDependencies` object (including the `providerMap`, `logger`, `forceReal: true`, etc.) before passing it to the now-dumb `getAiProviderAdapter` factory function.
+    *   `[✅]` 10.h.v. `[REFACTOR]` **Update the Final Call Site**
+        *   `[✅]` 10.h.v.1. `[REFACTOR]` In `supabase/functions/chat/prepareChatContext.ts`, the call to `adapterToUse` (around line 133) is currently incorrect.
+        *   `[✅]` 10.h.v.2. `[REFACTOR]` Update this call to pass a single `FactoryDependencies` object, assembling all the required pieces of data (`providerApiIdentifier`, `modelConfig`, `apiKey`, `logger`, etc.) that are already available within the `prepareChatContext` function.
+    *   `[✅]` 10.h.vi. `[TEST-UNIT]` **TDD RED: Prove Flawed ID Handoff**
+        *   `[✅]` 10.h.vi.1. `[TEST-UNIT]` In `supabase/functions/_shared/ai_service/factory.test.ts`, write a new, clean test case: `'should pass the full provider DB config to the adapter, including the provider ID'`.
+        *   `[✅]` 10.h.vi.2. `[TEST-UNIT]` Create a test-only `CapturingDummyAdapter` class whose constructor captures the `modelConfig` it receives.
+        *   `[✅]` 10.h.vi.3. `[TEST-UNIT]` Create a complete `testDependencies` object, injecting the `CapturingDummyAdapter` via the `providerMap`. Crucially, the `providerDbConfig` in this object must contain a mock UUID in its `id` property.
+        *   `[✅]` 10.h.vi.4. `[TEST-UNIT]` Call `getAiProviderAdapter`, passing the `testDependencies`.
+        *   `[✅]` 10.h.vi.5. `[TEST-UNIT]` Assert that the `id` property on the `modelConfig` captured by the adapter is `undefined`. **This test will pass, proving the factory incorrectly discards the ID (RED).**
+    *   `[ ]` 10.h.vii. `[REFACTOR]` **Fix the Core Dependency Contract to Pass the Entire Provider Object**
+        *   `[✅]` 10.h.vii.1. **Context:** The current `FactoryDependencies` interface is the root of the problem. We will redefine it to pass the necessary data cleanly. It will require the full `provider` object from the database, the `apiKey` from the request, the `logger`, and the `providerMap` for adapter selection.
+        *   `[✅]` 10.h.vii.2. `[BE]` In `supabase/functions/_shared/types.ts`, redefine the `FactoryDependencies` interface. Remove the old `providerApiIdentifier` and `providerDbConfig` properties.
+        *   `[✅]` 10.h.vii.3. `[BE]` The interface will now require **exactly four** properties: `provider: Tables<'ai_providers'>`, `apiKey: string`, `logger: ILogger`, and `providerMap: Record<string, AiProviderAdapter>`.
+        *   `[✅]` 10.h.vii.4. `[BE]` Update the `getAiProviderAdapter` signature in `ChatHandlerDeps` to accept this new, complete dependency object.
+    *   `[✅]` 10.h.viii. `[REFACTOR]` **Update the Factory, Adapters, and Unit Tests**
+        *   `[✅]` 10.h.viii.1. **Context:** With the new contract defined, we will update the factory and adapters to use it.
+        *   `[✅]` 10.h.viii.2. `[BE]` In `supabase/functions/_shared/ai_service/dummy_adapter.ts` and all other adapter files, change the constructor signature to `(provider: Tables<'ai_providers'>, apiKey: string, logger: ILogger)`.
+        *   `[✅]` 10.h.viii.3. `[BE]` In `supabase/functions/_shared/ai_service/factory.ts`, update the `getAiProviderAdapter` function to accept the new `FactoryDependencies` object. It will destructure all four dependencies, use the injected `providerMap` and `provider.api_identifier` to select the adapter class, and instantiate it with `new AdapterClass(provider, apiKey, logger)`.
+        *   `[✅]` 10.h.viii.4. `[TEST-UNIT]` In `supabase/functions/_shared/ai_service/factory.test.ts`, rewrite the tests to pass a complete mock `FactoryDependencies` object containing a mock `provider`, `apiKey`, `logger`, and `providerMap`.
+    *   `[ ]` 10.h.ix. `[REFACTOR]` **Systematically Repair All Dependent Files**
+        *   `[ ]` 10.h.ix.1. **Context:** This is a systematic, file-by-file repair of every location impacted by the breaking change.
+        *   `[✅]` 10.h.ix.2. `[BE]` Fix Composition Root (`chat/index.ts`): The `getAiProviderAdapter` function in `defaultDeps` acts as the composition root. It will now receive a partial dependency object from callers and be responsible for **adding the `providerMap`** before calling the real factory. The logic will be `getAiProviderAdapter({ ...dependencies, providerMap: defaultProviderMap })`.
+        *   `[✅]` 10.h.ix.3. `[BE]` Fix Primary Call Site (`chat/prepareChatContext.ts`): Update the call to `adapterToUse`. It will now pass an object with `{ provider: providerData, apiKey, logger }`. The composition root will handle adding the `providerMap`.
+        *   `[✅]` 10.h.ix.4. `[TEST-UNIT]` Fix Test Utilities (`chat/_chat.test.utils.ts`): Update the mock and spy setup for `getAiProviderAdapter` to conform to the new dependency object signature.
+        *   `[✅]` 10.h.ix.5. `[TEST-UNIT]` Fix All Remaining Test Files: Update the `getAiProviderAdapter` mocks in the following files to use the new `FactoryDependencies` contract.
+            *   `supabase/functions/chat/prepareChatContext.test.ts`
+            *   `supabase/functions/chat/index.test.ts`
+            *   `supabase/functions/chat/handleDialecticPath.test.ts`
+            *   `supabase/functions/chat/handlePostRequest.test.ts`
+            *   `supabase/functions/chat/handleNormalPath.test.ts`
+            *   `supabase/functions/chat/handleRewindPath.test.ts`
+            *   `supabase/functions/chat/edge_cases.integration.test.ts`
+            *   `supabase/functions/chat/happy_path.integration.test.ts`
+            *   `supabase/functions/chat/specific_configs.integration.test.ts`
+            *   `supabase/integration_tests/services/dialectic_pipeline.integration.test.ts`
+    *   `[✅]` 10.h.x. `[TEST-INTEGRATION]` **Final System-Wide Validation**
+        *   `[✅]` 10.h.x.1. **Context:** After all files have been repaired, run the highest-level tests.
+        *   `[ ]` 10.h.x.2. `[TEST-ALL]` Run the entire Deno test suite.
+        *   `[ ]` 10.h.x.3. `[TEST-INTEGRATION]` Run `dialectic_pipeline.integration.test.ts` and confirm it passes.
+
+*   `[ ]` 11. `[TEST-INTEGRATION]` **Final Validation**
+    *   `[ ]` 11.a. `[TEST-INTEGRATION]` Run the full `dialectic_pipeline.integration.test.ts`.
+    *   `[ ]` 11.b. `[TEST-INTEGRATION]` **Confirm all steps now pass.**
+    *   `[ ]` 12. **Add Regression Test for `chat_id`**
+        *   `[ ]` 12.a. `[TEST-UNIT]` Add a new test to `supabase/functions/dialectic-service/callModel.test.ts`.
+        *   `[ ]` 12.b. `[TEST-UNIT]` The test will call `callUnifiedAIModel` and spy on the underlying `fetch` call.
+        *   `[ ]` 12.c. `[TEST-UNIT]` It will assert that the `chatId` property in the request body sent to the `/chat` function is `undefined`. This ensures the history-masking workaround can never be accidentally reintroduced.
+        
+## Phase 10: Final System Validation & Cleanup
+
+*   `[ ]` 13. **Final System Validation:**
+    *   `[ ]` 13.a. `[BE]` Run the full test suite for the `dialectic-system` to ensure no regressions were introduced.
+*   `[ ]` 14. **Documentation and Cleanup:**
+    *   `[ ]` 14.a. `[DOC]` Review and update any relevant documentation in `docs/` that may have been impacted by these changes.
+    *   `[ ]` 14.b. `[BE]` Remove any unnecessary `console.log` or diagnostic statements added during the debugging process.
+    *   `[ ]` 14.c. `[BE]` Merge the `fix/prompt-construction-repair` branch into `main`.
+    *   `[ ]` 14.d. `[BE]` Delete the feature branch.

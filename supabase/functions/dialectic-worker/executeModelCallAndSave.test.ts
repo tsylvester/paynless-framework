@@ -468,6 +468,40 @@ Deno.test('should use source documents for token estimation before prompt assemb
 
     clearAllStubs?.();
 });
+
+Deno.test('should always use renderedPrompt.content for the AI call', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        }
+    });
+    const deps = getMockDeps();
+
+    const callUnifiedAISpy = spy(deps, 'callUnifiedAIModel');
+
+    const params: ExecuteModelCallAndSaveParams = {
+        dbClient: dbClient as unknown as SupabaseClient<Database>,
+        deps,
+        authToken: 'auth-token',
+        job: createMockJob(testPayload),
+        projectOwnerUserId: 'user-789',
+        providerDetails: mockProviderData,
+        renderedPrompt: { content: 'This is the CORRECT prompt content.', fullPath: 'prompts/seed.txt' },
+        previousContent: 'This is some previous content that should be IGNORED for the prompt.',
+        sessionData: mockSessionData,
+        sourceDocuments: [],
+    };
+
+    await executeModelCallAndSave(params);
+
+    assertEquals(callUnifiedAISpy.calls.length, 1);
+    const callArgs = callUnifiedAISpy.calls[0].args;
+    const promptContentPassed = callArgs[1]; // The second argument is the prompt content.
+
+    assertEquals(promptContentPassed, params.renderedPrompt.content, "The prompt passed to the AI model did not match renderedPrompt.content");
+
+    clearAllStubs?.();
+});
   
   Deno.test('executeModelCallAndSave - Continuation Enqueued', async (t) => {
     const { client: dbClient, spies, clearAllStubs } = setupMockClient({
@@ -777,4 +811,60 @@ Deno.test('executeModelCallAndSave - Document Relationships', async (t) => {
     clearAllStubs?.();
 });
 
+Deno.test('executeModelCallAndSave - Content Storage', async (t) => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        }
+    });
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(mockContribution, null);
+    const deps = getMockDeps();
+    deps.fileManager = fileManager;
+
+    await t.step('should save only AI response content when previousContent is undefined', async () => {
+        const params: ExecuteModelCallAndSaveParams = {
+            dbClient: dbClient as unknown as SupabaseClient<Database>,
+            deps,
+            authToken: 'auth-token',
+            job: createMockJob(testPayload),
+            projectOwnerUserId: 'user-789',
+            providerDetails: mockProviderData,
+            renderedPrompt: { content: 'Prompt', fullPath: 'prompts/seed.txt' },
+            previousContent: undefined, // Explicitly undefined
+            sessionData: mockSessionData,
+            sourceDocuments: [],
+        } as unknown as ExecuteModelCallAndSaveParams;
+
+        await executeModelCallAndSave(params);
+
+        assert(fileManager.uploadAndRegisterFile.calls.length > 0, 'Expected fileManager.uploadAndRegisterFile to be called');
+        const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+        assertEquals(uploadContext.fileContent, 'AI response content');
+    });
+
+    await t.step('should correctly concatenate previousContent and AI response', async () => {
+        const params: ExecuteModelCallAndSaveParams = {
+            dbClient: dbClient as unknown as SupabaseClient<Database>,
+            deps,
+            authToken: 'auth-token',
+            job: createMockJob(testPayload),
+            projectOwnerUserId: 'user-789',
+            providerDetails: mockProviderData,
+            renderedPrompt: { content: 'Prompt', fullPath: 'prompts/seed.txt' },
+            previousContent: 'Previous content.',
+            sessionData: mockSessionData,
+            sourceDocuments: [],
+        };
+
+        await executeModelCallAndSave(params);
+
+        assert(fileManager.uploadAndRegisterFile.calls.length > 1, 'Expected fileManager.uploadAndRegisterFile to be called again');
+        const uploadContext = fileManager.uploadAndRegisterFile.calls[1].args[0];
+        assertEquals(uploadContext.fileContent, 'Previous content.AI response content');
+    });
+
+    clearAllStubs?.();
+});
   

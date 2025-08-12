@@ -9,6 +9,9 @@ import { ITextSplitter } from './indexing_service.interface.ts';
 import { createMockSupabaseClient } from '../supabase.mock.ts';
 import { mockOpenAiAdapter, mockGetEmbeddingSpy } from '../ai_service/openai_adapter.mock.ts';
 import { type Database } from '../../../functions/types_db.ts';
+import { DummyAdapter } from "../ai_service/dummy_adapter.ts";
+import { MOCK_PROVIDER } from "../ai_service/dummy_adapter.test.ts";
+import { assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
 // Mocks
 class MockLogger implements ILogger {
@@ -63,4 +66,18 @@ test('IndexingService should process and index a document successfully', async (
   assertEquals(insertedData[0].source_contribution_id, contributionId);
   assertEquals(insertedData[0].content, 'This is a te');
   assertEquals(insertedData[0].embedding, `[${Array(1536).fill(0.1).join(',')}]`);
+});
+
+Deno.test("OpenAIEmbeddingClient should be instantiable with any valid AiProviderAdapter", () => {
+    // This test confirms that OpenAIEmbeddingClient is decoupled from a concrete
+    // adapter and can be instantiated with any class that conforms to the
+    // AiProviderAdapterInstance interface.
+    
+    const dummyAdapter = new DummyAdapter(MOCK_PROVIDER, "dummy-key", new MockLogger());
+
+    // This line should now compile without error.
+    const client = new OpenAIEmbeddingClient(dummyAdapter);
+
+    // Assert that the client was created successfully.
+    assertExists(client);
 });

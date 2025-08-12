@@ -155,6 +155,7 @@ export async function callUnifiedAIModel(
         processingTimeMs,
         contentType: "text/markdown", // Default content type
         rawProviderResponse: assistantMessage,
+        finish_reason: chatResponse.finish_reason,
       };
   
     } catch (e) {

@@ -13,6 +13,7 @@ import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { createMockJobProcessors } from '../_shared/dialectic.mock.ts';
 import { NotificationService } from '../_shared/utils/notification.service.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
+import { FactoryDependencies } from '../_shared/types.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 

@@ -2,9 +2,8 @@
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { RecursiveCharacterTextSplitter } from 'npm:langchain/text_splitter';
 import { type Database, type TablesInsert } from '../../../functions/types_db.ts';
-import { ILogger } from '../types.ts';
+import { ILogger, AiProviderAdapterInstance } from '../types.ts';
 import { IndexingError } from '../utils/errors.ts';
-import { OpenAiAdapter } from '../ai_service/openai_adapter.ts';
 import { ITextSplitter, IEmbeddingClient } from './indexing_service.interface.ts';
 
 export class LangchainTextSplitter implements ITextSplitter {
@@ -23,12 +22,15 @@ export class LangchainTextSplitter implements ITextSplitter {
 }
 
 export class OpenAIEmbeddingClient implements IEmbeddingClient {
-  constructor(private adapter: OpenAiAdapter) {}
+  constructor(private adapter: AiProviderAdapterInstance) {}
 
   async createEmbedding(text: string): Promise<number[]> {
+    if (!this.adapter.getEmbedding) {
+      throw new IndexingError("The provided AI adapter does not support embeddings.");
+    }
     const embeddingResponse = await this.adapter.getEmbedding(text);
     if (!embeddingResponse.data || embeddingResponse.data.length === 0) {
-        throw new IndexingError("Failed to generate embedding: No data returned from OpenAI.");
+        throw new IndexingError("Failed to generate embedding: No data returned from the AI provider.");
     }
     return embeddingResponse.data[0].embedding;
   }

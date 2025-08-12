@@ -10,7 +10,7 @@ import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import { logger } from '../_shared/logger.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { isDialecticJobPayload, isRecord } from '../_shared/utils/type_guards.ts';
+import { isDialecticJobPayload, isJson, isRecord } from '../_shared/utils/type_guards.ts';
 import { processSimpleJob } from './processSimpleJob.ts';
 import type { DialecticJobRow, DialecticJobPayload, DialecticSession, DialecticContributionRow, IDialecticJobDeps, SelectedAiProvider } from '../dialectic-service/dialectic.interface.ts';
 import type { AiModelExtendedConfig } from '../_shared/types.ts';
@@ -357,6 +357,50 @@ Deno.test('processSimpleJob - should pass the fully assembled prompt to the exec
     const [executorParams] = executorSpy.calls[0].args;
     assertEquals(executorParams.renderedPrompt.content, uniqueAssembledContent, 'Expected the content from the assembler to be passed to the executor');
 
+    clearAllStubs?.();
+});
+
+Deno.test('should pass previousContent to the promptAssembler for continuation jobs', async () => {
+    const { client: dbClient, spies, clearAllStubs } = setupMockClient();
+    const deps = getMockDeps();
+
+    // 1. Setup a job that looks like a continuation job
+    const continuationPayload = {
+        ...mockPayload,
+        target_contribution_id: 'prev-contrib-id',
+    };
+
+    if (!isDialecticJobPayload(continuationPayload)) {
+        throw new Error("Test setup failed: continuationPayload is not a valid DialecticJobPayload.");
+    }
+    
+    // 2. Mock the download to return specific content
+    const previousContent = "This is the content from the previous partial run.";
+    const downloadStub = stub(deps, 'downloadFromStorage', async () => {
+        const blob = new Blob([previousContent]);
+        return Promise.resolve({
+            data: await blob.arrayBuffer(),
+            error: null,
+        });
+    });
+
+    // 3. Spy on the assembler
+    const assemblerSpy = spy(deps.promptAssembler!, 'assemble');
+
+    // 4. Run the job
+    if (!isJson(continuationPayload)) {
+        throw new Error("Test setup failed: continuationPayload is not a valid DialecticJobPayload.");
+    }
+    await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: continuationPayload }, 'user-789', deps, 'auth-token');
+
+    // 5. Assert the assembler was called with the correct continuation content
+    assertEquals(assemblerSpy.calls.length, 1);
+    const assemblerArgs = assemblerSpy.calls[0].args;
+    const continuationArg = assemblerArgs[5]; // The 6th argument is continuationContent
+    
+    assertEquals(continuationArg, previousContent, "Expected previousContent to be passed as the continuationContent argument to the assembler.");
+
+    downloadStub.restore();
     clearAllStubs?.();
 });
 

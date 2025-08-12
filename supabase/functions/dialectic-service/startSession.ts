@@ -14,18 +14,20 @@ import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts';
 import { formatResourceDescription } from '../_shared/utils/resourceDescriptionFormatter.ts';
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
 import { downloadFromStorage } from '../_shared/supabase_storage_utils.ts';
-import { IRagServiceDependencies } from '../_shared/services/rag_service.interface.ts';
 import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
 import { OpenAIEmbeddingClient, IndexingService, LangchainTextSplitter } from '../_shared/services/indexing_service.ts';
 import { IFileManager } from '../_shared/types/file_manager.types.ts';
 import { FileType } from "../_shared/types/file_manager.types.ts";
-import { isAiModelExtendedConfig } from '../_shared/utils/type_guards.ts';
+import { FactoryDependencies, AiProviderAdapterInstance } from '../_shared/types.ts';
+import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
+import { defaultProviderMap } from '../_shared/ai_service/factory.ts';
 
 export interface StartSessionDeps {
     logger: ILogger;
     fileManager: IFileManager;
     promptAssembler: IPromptAssembler;
     randomUUID: () => string;
+    getAiProviderAdapter: (deps: FactoryDependencies) => AiProviderAdapterInstance | null;
 }
 
 
@@ -38,6 +40,7 @@ export async function startSession(
     const log: ILogger = partialDeps?.logger || logger;
     const fileManager: IFileManager = partialDeps?.fileManager || new FileManagerService(dbClient);
     const randomUUID = partialDeps?.randomUUID || (() => crypto.randomUUID());
+    const getAiProviderAdapterDep = partialDeps?.getAiProviderAdapter || getAiProviderAdapter;
 
     log.info(`[startSession] Function started for user ${user.id} with payload projectId: ${payload.projectId}`);
 
@@ -231,25 +234,41 @@ export async function startSession(
     }
     
     // Fetch the model config for the default embedding model
-    const { data: modelConfigRecord, error: modelConfigError } = await dbClient
+    const { data: embeddingProvider, error: providerError } = await dbClient
         .from('ai_providers')
-        .select('config')
+        .select('*')
         .eq('is_default_embedding', true)
         .single();
-    if (modelConfigError || !modelConfigRecord || !modelConfigRecord.config) {
-        log.error('[startSession] Failed to fetch model config for OpenAI embedding model.', { error: modelConfigError });
+    if (providerError || !embeddingProvider) {
+        log.error('[startSession] Failed to fetch provider for OpenAI embedding model.', { error: providerError });
         return { error: { message: "Configuration for embedding model not found.", status: 500 } };
-    }
-
-    const modelConfig = modelConfigRecord.config;
-    if (!isAiModelExtendedConfig(modelConfig)) {
-        log.error('[startSession] Fetched model config is not a valid AiModelExtendedConfig.', { config: modelConfig });
-        return { error: { message: "Invalid AI model configuration.", status: 500 } };
     }
    
     const assembler: IPromptAssembler = partialDeps?.promptAssembler || (() => {
-        const openAiAdapter = new OpenAiAdapter(Deno.env.get('OPENAI_API_KEY')!, log, modelConfig);
-        const embeddingClient = new OpenAIEmbeddingClient(openAiAdapter);
+        const apiKey = Deno.env.get('OPENAI_API_KEY');
+        if (!apiKey) {
+            log.error('[startSession] OPENAI_API_KEY environment variable not set.');
+            throw new Error('Server configuration error: OPENAI_API_KEY is missing.');
+        }
+
+        const adapter = getAiProviderAdapterDep({
+           provider: embeddingProvider,
+           apiKey: apiKey,
+           logger: log,
+           providerMap: defaultProviderMap,
+        });
+
+        if (!adapter) {
+            log.error('[startSession] Failed to create AI adapter for embedding.', { providerId: embeddingProvider.id });
+            throw new Error('Failed to create AI adapter for embedding.');
+        }
+
+        if (!(adapter instanceof OpenAiAdapter)) {
+             log.error('[startSession] The configured default embedding provider did not resolve to an OpenAiAdapter.', { providerId: embeddingProvider.id });
+             throw new Error('Default embedding provider must be an OpenAI model.');
+        }
+
+        const embeddingClient = new OpenAIEmbeddingClient(adapter);
         const textSplitter = new LangchainTextSplitter();
         const indexingService = new IndexingService(dbClient, log, textSplitter, embeddingClient);
 

@@ -1,6 +1,9 @@
 import OpenAI from 'npm:openai';
 import type { ChatCompletionMessageParam } from 'npm:openai/resources/chat/completions';
 import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig } from '../types.ts';
+import type { Tables } from '../../types_db.ts';
+import { isJson, isAiModelExtendedConfig } from '../utils/type_guards.ts';
+
 
 /**
  * Implements AiProviderAdapter for OpenAI models.
@@ -11,13 +14,19 @@ export class OpenAiAdapter {
   private modelConfig: AiModelExtendedConfig;
 
   constructor(
+    provider: Tables<'ai_providers'>,
     apiKey: string, 
     logger: ILogger, 
-    modelConfig: AiModelExtendedConfig
   ) {
+    if(!isJson(provider.config)) {
+        throw new Error('provider.config is not a valid JSON object');
+    }
+    if(!isAiModelExtendedConfig(provider.config)) {
+        throw new Error('provider.config is not a valid AiModelExtendedConfig object');
+    }
     this.client = new OpenAI({ apiKey });
     this.logger = logger;
-    this.modelConfig = modelConfig;
+    this.modelConfig = provider.config;
     this.logger.info(`[OpenAiAdapter] Initialized with config: ${JSON.stringify(this.modelConfig)}`);
   }
 

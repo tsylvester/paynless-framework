@@ -43,7 +43,8 @@ export class PromptAssembler implements IPromptAssembler {
         session: SessionContext,
         stage: StageContext,
         projectInitialUserPrompt: string,
-        iterationNumber: number
+        iterationNumber: number,
+        continuationContent?: string
     ): Promise<string> {
         const context = await this.gatherContext(
             project, 
@@ -53,7 +54,13 @@ export class PromptAssembler implements IPromptAssembler {
             iterationNumber, 
             undefined
         );
-        return this.render(stage, context, project.user_domain_overlay_values);
+        const renderedPrompt = this.render(stage, context, project.user_domain_overlay_values);
+
+        if (continuationContent) {
+            return `${renderedPrompt} ${continuationContent}`;
+        }
+
+        return renderedPrompt;
     }
 
     async gatherContext(

@@ -5,6 +5,7 @@ import { ILogger } from "../types.ts";
 import { CreateEmbeddingResponse } from "npm:openai/resources/embeddings";
 import { AdapterResponsePayload, ProviderModelInfo } from "../types.ts";
 import { ChatApiRequest } from "../types.ts";
+import { MOCK_PROVIDER } from "./dummy_adapter.test.ts";
 
 class MockLogger implements ILogger {
   info = () => {};
@@ -19,7 +20,7 @@ class MockLogger implements ILogger {
  */
 class MockOpenAiAdapter extends OpenAiAdapter {
     constructor() {
-        super("sk-mock-key", new MockLogger());
+        super(MOCK_PROVIDER, "sk-mock-key", new MockLogger());
     }
 
     // We override the original methods to provide predictable, mock implementations.
@@ -47,7 +48,15 @@ class MockOpenAiAdapter extends OpenAiAdapter {
         });
     }
 
-    override async listModels(): Promise<ProviderModelInfo[]> {
+    // Overload for sync script to get raw data
+    override async listModels(getRaw: true): Promise<{ models: ProviderModelInfo[], raw: unknown }>;
+    // Overload for standard adapter contract
+    override async listModels(getRaw?: false): Promise<ProviderModelInfo[]>;
+    // Implementation
+    override async listModels(getRaw?: boolean): Promise<ProviderModelInfo[] | { models: ProviderModelInfo[], raw: unknown }> {
+        if (getRaw) {
+            return Promise.resolve({ models: [], raw: {} });
+        }
         return Promise.resolve([]);
     }
 }

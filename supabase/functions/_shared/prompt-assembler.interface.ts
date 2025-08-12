@@ -7,6 +7,7 @@ export interface IPromptAssembler {
         stage: StageContext,
         projectInitialUserPrompt: string,
         iterationNumber: number,
+        continuationContent?: string,
     ): Promise<string>;
 
     gatherContext(

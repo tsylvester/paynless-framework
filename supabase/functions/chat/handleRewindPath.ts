@@ -294,7 +294,8 @@ export async function handleRewindPath(
             userMessage: newUserMessageData,
             assistantMessage: newAssistantMessageData,
             chatId: currentChatId,
-            isRewind: true
+            isRewind: true,
+            finish_reason: adapterResponsePayload.finish_reason,
         };
 
     } catch (err) {

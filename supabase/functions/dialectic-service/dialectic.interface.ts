@@ -9,7 +9,9 @@ import type { IFileManager, CanonicalPathParams } from '../_shared/types/file_ma
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
 import type { DeleteStorageResult, DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import type {
-  FinishReason
+  FinishReason,
+  FactoryDependencies,
+  AiProviderAdapterInstance
 } from '../_shared/types.ts';
 import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
 import type { IIndexingService, IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
@@ -730,7 +732,7 @@ export interface IDialecticJobDeps extends GenerateContributionsDeps {
     job: DialecticJobRow,
     aiResponse: UnifiedAIResponse,
     savedContribution: DialecticContributionRow,
-    projectOwnerUserId: string
+    projectOwnerUserId: string,
   ) => Promise<IContinueJobResult>;
   retryJob: (
     deps: { logger: ILogger, notificationService: NotificationServiceType },
@@ -757,6 +759,7 @@ export interface IDialecticJobDeps extends GenerateContributionsDeps {
   indexingService?: IIndexingService;
   embeddingClient?: IEmbeddingClient;
   promptAssembler?: IPromptAssembler;
+  getAiProviderAdapter?: (deps: FactoryDependencies) => AiProviderAdapterInstance | null;
 }
 export type RecipeStep = {
     step_name: string;
@@ -814,4 +817,5 @@ export interface StartSessionDeps {
   fileManager: IFileManager;
   promptAssembler: IPromptAssembler;
   randomUUID: () => string;
+  getAiProviderAdapter: (deps: FactoryDependencies) => AiProviderAdapterInstance | null;
 }
