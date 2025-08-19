@@ -31,6 +31,10 @@ export function deconstructStoragePath(
   // Regex patterns defined as strings
   const antithesisContribRawPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/raw_responses/([^_]+)_critiquing_\\(([^_]+)'s_([^_]+)_(\\d+)\\)_(\\d+)_antithesis_raw\\.json$";
   const antithesisContribPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/([^_]+)_critiquing_\\(([^_]+)'s_([^_]+)_(\\d+)\\)_(\\d+)_antithesis\\.md$";
+  
+  // New pattern for continuation chunks - must be checked before general model contributions
+  const modelContribContinuationPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(.+)_(\\d+)_(.+)_continuation_(\\d+)(\\.md|_raw\\.json)$";
+
   const modelContribRawPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/raw_responses/(.+)_(\\d+)_(.+)_raw\\.json$";
   const modelContribPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/(.+)_(\\d+)_(.+)\\.md$";
   const contributionDocumentPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/documents/([^/]+)$";
@@ -82,8 +86,28 @@ export function deconstructStoragePath(
     return info;
   }
 
+  // Path: .../{stageDir}/_work/{modelSlug}_{attemptCount}_{contribType}_continuation_{turnIndex}(.md/_raw.json)
+  matches = fullPath.match(new RegExp(modelContribContinuationPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    const modelSlugPart = matches[5];
+    info.modelSlug = modelSlugPart;
+    info.attemptCount = parseInt(matches[6], 10);
+    info.contributionType = matches[7];
+    info.isContinuation = true;
+    info.turnIndex = parseInt(matches[8], 10);
+    const extension = matches[9];
+    info.parsedFileNameFromPath = `${modelSlugPart}_${matches[6]}_${matches[7]}_continuation_${info.turnIndex}${extension}`;
+    info.fileTypeGuess = extension === '_raw.json' ? FileType.ModelContributionRawJson : FileType.ModelContributionMain;
+    return info;
+  }
+
   // --- Intermediate _work files ---
-  // Must be checked BEFORE general model contribution patterns
+  // Must be checked AFTER continuation and BEFORE general model contribution patterns
 
   // Path: .../_work/{modelSlug}_synthesizing_{sourceAnchorModelSlug}_with_{pairedModelSlug}_on_{sourceAnchorType}_{n}_pairwise_synthesis_chunk(.md/_raw.json)
   matches = fullPath.match(new RegExp(pairwiseSynthesisPatternString));

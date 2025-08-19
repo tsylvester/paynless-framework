@@ -394,3 +394,91 @@ Deno.test("handleDialecticPath: should pass 'finish_reason' from adapter to fina
     
     assertEquals(successResult.finish_reason, "max_tokens", "The 'finish_reason' should be passed from the adapter to the final response.");
   });
+
+Deno.test("handleDialecticPath: with continue_until_complete=true, it should call sendMessage once", async () => {
+    // Arrange
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {});
+  
+    const modelConfig: AiModelExtendedConfig = {
+        api_identifier: "test-model-api-id",
+        input_token_cost_rate: 0.01,
+        output_token_cost_rate: 0.02,
+        tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+    };
+
+    const { instance: mockAiAdapter } = getMockAiProviderAdapter(logger, modelConfig);
+    
+    const firstResponse: AdapterResponsePayload = {
+      role: 'assistant',
+      content: "This is a partial response... ",
+      finish_reason: "length",
+      ai_provider_id: "test-provider-id",
+      system_prompt_id: null,
+      token_usage: { prompt_tokens: 10, completion_tokens: 50, total_tokens: 60 },
+    };
+    const secondResponse: AdapterResponsePayload = {
+        role: 'assistant',
+        content: "and this is the final part.",
+        finish_reason: "stop",
+        ai_provider_id: "test-provider-id",
+        system_prompt_id: null,
+        token_usage: { prompt_tokens: 60, completion_tokens: 10, total_tokens: 70 },
+    };
+
+    let callCount = 0;
+    const sendMessageStub = stub(mockAiAdapter, "sendMessage", () => {
+        if (callCount === 0) {
+            callCount++;
+            return Promise.resolve(firstResponse);
+        }
+        return Promise.resolve(secondResponse);
+    });
+  
+    const mockTokenWalletService: MockTokenWalletService = createMockTokenWalletService();
+
+    const deps: ChatHandlerDeps = {
+      ...defaultDeps,
+      logger: logger,
+      tokenWalletService: mockTokenWalletService.instance,
+      countTokensForMessages: spy(() => 10),
+      getAiProviderAdapter: spy(() => mockAiAdapter),
+    };
+  
+    const requestBody: ChatApiRequest = {
+      message: "Give me a very long response that requires continuation.",
+      providerId: "test-provider",
+      promptId: "__none__",
+      isDialectic: true,
+      continue_until_complete: true,
+    };
+  
+    const wallet: TokenWallet = {
+      walletId: "test-wallet",
+      balance: "10000",
+      currency: "AI_TOKEN",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+  
+    const context: PathHandlerContext = {
+      supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+      deps,
+      userId: "test-user-id",
+      requestBody,
+      wallet,
+      aiProviderAdapter: mockAiAdapter,
+      modelConfig,
+      actualSystemPromptText: null,
+      finalSystemPromptIdForDb: null,
+      apiKey: "test-api-key",
+      providerApiIdentifier: "test-model-api-id",
+    };
+  
+    try {
+        await handleDialecticPath(context);
+        
+        assertEquals(sendMessageStub.calls.length, 1, "The AI adapter's sendMessage method was called more than once due to the continuation loop.");
+    } finally {
+        sendMessageStub.restore();
+    }
+  });

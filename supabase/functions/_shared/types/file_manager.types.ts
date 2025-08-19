@@ -61,6 +61,8 @@ export interface PathContext {
   sourceAnchorModelSlug?: string;
   sourceAttemptCount?: number;
   pairedModelSlug?: string;
+  isContinuation?: boolean;
+  turnIndex?: number;
 }
 
 /**
@@ -76,45 +78,74 @@ export interface UploadContext {
   resourceTypeForDb?: string; // To directly populate dialectic_project_resources.resource_type
 
   // Specific for 'model_contribution_main' fileType
-  contributionMetadata?: {
-    sessionId: string;
-    modelIdUsed: string; // FK to ai_providers.id
-    modelNameDisplay: string; // For dialectic_contributions.model_name
-    stageSlug: string;
-    iterationNumber: number;
-
-    // For FileManagerService to upload the raw JSON response.
-    // The path for this will be derived by FileManagerService using path_constructor
-    // with fileType 'model_contribution_raw_json' and an originalFileName derived
-    // from the main contribution's originalFileName (e.g., if main is foo.md, raw is foo_raw.json).
-    rawJsonResponseContent: string; // The actual JSON string content for the raw AI response.
-
-    // ADDED: For continuation jobs, this signals to update an existing record.
-    target_contribution_id?: string;
-    document_relationships?: Json | null; // ADDED: For derivative jobs, flexible JSONB for relationships.
-    isIntermediate?: boolean; // ADDED: Signals that this is a work-in-progress file.
-
-    // Tokenomics and other metadata for the primary dialectic_contributions record
-    tokensUsedInput?: number;
-    tokensUsedOutput?: number;
-    processingTimeMs?: number;
-    seedPromptStoragePath: string; // Path to the seed prompt that generated this contribution
-    citations?: Json | null;
-    contributionType?: ContributionType | null; // e.g., 'hypothesis', 'critique', 'synthesis' (align with stage or be more specific)
-    errorDetails?: string | null; // If AI model itself reported an error in its generation process
-    promptTemplateIdUsed?: string | null; // FK to system_prompts.id
-    
-    // Fields for edit tracking, typically set by the service managing edits, 
-    // but defaults can be provided for new contributions.
-    editVersion?: number; // Default to 1 for new contributions
-    isLatestEdit?: boolean; // Default to true for new contributions
-    originalModelContributionId?: string | null; // Null for new, non-edited contributions
-  };
+  contributionMetadata?: ContributionMetadata;
 
   // Specific for 'user_feedback' fileType
   feedbackTypeForDb?: string; // To directly populate dialectic_feedback.feedback_type
   resourceDescriptionForDb?: Json | null; // To directly populate dialectic_feedback.resource_description (jsonb)
+  
 }
+
+export interface ContributionMetadata {
+  sessionId: string;
+  modelIdUsed: string; // FK to ai_providers.id
+  modelNameDisplay: string; // For dialectic_contributions.model_name
+  stageSlug: string;
+  iterationNumber: number;
+
+  // For FileManagerService to upload the raw JSON response.
+  // The path for this will be derived by FileManagerService using path_constructor
+  // with fileType 'model_contribution_raw_json' and an originalFileName derived
+  // from the main contribution's originalFileName (e.g., if main is foo.md, raw is foo_raw.json).
+  rawJsonResponseContent: string; // The actual JSON string content for the raw AI response.
+
+  // ADDED: For continuation jobs, this signals to update an existing record.
+  target_contribution_id?: string;
+  document_relationships?: Json | null; // ADDED: For derivative jobs, flexible JSONB for relationships.
+  isIntermediate?: boolean; // ADDED: Signals that this is a work-in-progress file.
+
+  // Tokenomics and other metadata for the primary dialectic_contributions record
+  tokensUsedInput?: number;
+  tokensUsedOutput?: number;
+  processingTimeMs?: number;
+  seedPromptStoragePath: string; // Path to the seed prompt that generated this contribution
+  citations?: Json | null;
+  contributionType?: ContributionType | null; // e.g., 'hypothesis', 'critique', 'synthesis' (align with stage or be more specific)
+  errorDetails?: string | null; // If AI model itself reported an error in its generation process
+  promptTemplateIdUsed?: string | null; // FK to system_prompts.id
+  
+  // Fields for edit tracking, typically set by the service managing edits, 
+  // but defaults can be provided for new contributions.
+  editVersion?: number; // Default to 1 for new contributions
+  isLatestEdit?: boolean; // Default to true for new contributions
+  originalModelContributionId?: string | null; // Null for new, non-edited contributions
+
+  // For identifying the chunk ordering of a continuation job
+  isContinuation?: boolean;
+  turnIndex?: number;
+}
+
+export interface IDownloadContentResult {
+  fileName: string;
+  content: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+export enum DialecticStageSlug {
+  Thesis = 'thesis',
+  Antithesis = 'antithesis',
+  Synthesis = 'synthesis',
+  Parenthesis = 'parenthesis',
+  Paralysis = 'paralysis',
+}
+
+export type DocumentRelationships = {
+  [K in DialecticStageSlug]?: string;
+} & {
+  isContinuation?: boolean;
+  turnIndex?: number;
+};
 
 /**
  * Represents a record in one of the file metadata tables.
@@ -132,4 +163,5 @@ export type FileManagerResponse =
   
 export interface IFileManager {
   uploadAndRegisterFile(context: UploadContext): Promise<FileManagerResponse>;
+  assembleAndSaveFinalDocument(rootContributionId: string): Promise<{ finalPath: string | null; error: Error | null; }>;
 } 

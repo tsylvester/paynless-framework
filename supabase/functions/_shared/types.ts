@@ -12,6 +12,7 @@ import type { handleRewindPath } from '../chat/handleRewindPath.ts';
 import type { handleDialecticPath } from '../chat/handleDialecticPath.ts';
 import type { debitTokens } from '../chat/debitTokens.ts';
 import { CreateEmbeddingResponse } from 'npm:openai/resources/embeddings';
+import { SystemInstruction } from '../dialectic-service/dialectic.interface.ts';
 
 export type ChatInsert = Tables<'chats'>;
 
@@ -168,6 +169,7 @@ export interface ChatApiRequest {
   max_tokens_to_generate?: number; // ADDED: Max tokens for the AI to generate in its response
   continue_until_complete?: boolean; // ADDED: Flag to enable response continuation
   isDialectic?: boolean; // ADDED: Flag to indicate a 'headless' dialectic job that should not be saved to the DB
+  systemInstruction?: SystemInstruction;
 }
 
 /**
@@ -196,7 +198,7 @@ export type AiProviderAdapter = new (
 
   listModels(): Promise<ProviderModelInfo[]>;
 
-  getEmbedding?(text: string): Promise<CreateEmbeddingResponse>;
+  getEmbedding?(text: string): Promise<EmbeddingResponse>;
 };
 
 export type AiProviderAdapterInstance = InstanceType<AiProviderAdapter>;
@@ -258,7 +260,7 @@ export interface FactoryDependencies {
   provider: Tables<'ai_providers'>;
   apiKey: string;
   logger: ILogger;
-  providerMap: Record<string, AiProviderAdapter>;
+  providerMap?: Record<string, AiProviderAdapter>;
 }
 /**
  * Interface describing the signature of the getAiProviderAdapter function.
@@ -318,10 +320,19 @@ export interface ILogger {
 //   name?: string;
 // }
 
-export interface MessageForTokenCounting {
+export interface Messages {
+  id?: string; // Optional: The UUID of the source contribution for this message
   role: "system" | "user" | "assistant" | "function"; // Function role might be needed for some models
   content: string | null; // Content can be null for some function calls
   name?: string; // Optional, for function calls
+}
+
+export interface EmbeddingResponse {
+  embedding: number[];
+  usage: {
+      prompt_tokens: number;
+      total_tokens: number;
+  };
 }
 
 // Accepted Tiktoken encoding names - aligned with js-tiktoken
@@ -419,7 +430,7 @@ export interface ChatHandlerDeps {
   verifyApiKey: (apiKey: string, providerName: string) => Promise<boolean>;
   logger: ILogger;
   tokenWalletService?: ITokenWalletService; 
-  countTokensForMessages: (messages: MessageForTokenCounting[], modelConfig: AiModelExtendedConfig) => number; // Updated signature
+  countTokensForMessages: (messages: Messages[], modelConfig: AiModelExtendedConfig) => number; // Updated signature
   prepareChatContext: typeof prepareChatContext;
   handleNormalPath: typeof handleNormalPath;
   handleRewindPath: typeof handleRewindPath;

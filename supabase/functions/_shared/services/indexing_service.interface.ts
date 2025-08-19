@@ -1,5 +1,7 @@
 // supabase/functions/_shared/services/indexing_service.interface.ts
 
+import type { EmbeddingResponse } from '../types.ts';
+
 /**
  * @interface IIndexingService
  * @description Defines the contract for a service that can index documents.
@@ -19,7 +21,13 @@ export interface IIndexingService {
     sourceContributionId: string,
     documentContent: string,
     metadata: Record<string, unknown>
-  ): Promise<{ success: boolean; error?: Error }>;
+  ): Promise<IndexDocumentResult>;
+}
+
+export interface IndexDocumentResult {
+  success: boolean;
+  tokensUsed: number;
+  error?: Error;
 }
 
 export interface ITextSplitter {
@@ -27,5 +35,5 @@ export interface ITextSplitter {
   }
   
   export interface IEmbeddingClient {
-    createEmbedding(text: string): Promise<number[]>;
+    getEmbedding(text: string): Promise<EmbeddingResponse>;
   }

@@ -15,4 +15,6 @@ export interface DeconstructedPathInfo {
   attemptCount?: number;         // Attempt count, if parsable from path or filename
   parsedFileNameFromPath?: string; // The filename segment as extracted from the end of the path
   error?: string;                // Optional error message if deconstruction fails or is ambiguous
+  isContinuation?: boolean;      // Whether this is a continuation chunk
+  turnIndex?: number;            // The turn index of this chunk
 } 

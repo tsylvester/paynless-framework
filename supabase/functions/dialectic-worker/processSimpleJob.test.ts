@@ -12,7 +12,15 @@ import { logger } from '../_shared/logger.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { isDialecticJobPayload, isJson, isRecord } from '../_shared/utils/type_guards.ts';
 import { processSimpleJob } from './processSimpleJob.ts';
-import type { DialecticJobRow, DialecticJobPayload, DialecticSession, DialecticContributionRow, IDialecticJobDeps, SelectedAiProvider } from '../dialectic-service/dialectic.interface.ts';
+import type { 
+    DialecticJobRow, 
+    DialecticSession, 
+    DialecticContributionRow, 
+    IDialecticJobDeps, 
+    SelectedAiProvider, 
+    SourceDocument, 
+    DialecticJobPayload, 
+} from '../dialectic-service/dialectic.interface.ts';
 import type { AiModelExtendedConfig } from '../_shared/types.ts';
 import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
@@ -23,6 +31,7 @@ import { planComplexStage } from './task_isolator.ts';
 import { IndexingService, LangchainTextSplitter, OpenAIEmbeddingClient } from '../_shared/services/indexing_service.ts';
 import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
+import type { AssemblerSourceDocument } from '../_shared/prompt-assembler.interface.ts';
 
 const mockPayload: Json = {
   projectId: 'project-abc',
@@ -194,7 +203,23 @@ const getMockDeps = (): IDialecticJobDeps => {
             api_identifier_for_tokenization: 'mock-embedding-model',
         },
     };
-    const openAiAdapter = new OpenAiAdapter(Deno.env.get('OPENAI_API_KEY')!, logger, mockModelConfig);
+    if (!isJson(mockModelConfig)) {
+        throw new Error("Test setup failed: mockModelConfig is not a valid Json.");
+    }
+    const mockProvider: Tables<'ai_providers'> = {
+        id: 'provider-123',
+        api_identifier: 'openai-gpt-4',
+        config: mockModelConfig,
+        created_at: new Date().toISOString(),
+        description: 'Mock provider',
+        is_active: true,
+        is_default_embedding: false,
+        is_enabled: true,
+        name: 'Mock OpenAI',
+        provider: 'openai',
+        updated_at: new Date().toISOString()
+    };
+    const openAiAdapter = new OpenAiAdapter(mockProvider, Deno.env.get('OPENAI_API_KEY')!, logger);
     const embeddingClient = new OpenAIEmbeddingClient(openAiAdapter);
     const textSplitter = new LangchainTextSplitter();
     const indexingService = new IndexingService(mockSupabaseClient, logger, textSplitter, embeddingClient);
@@ -246,8 +271,8 @@ Deno.test('processSimpleJob - Happy Path', async (t) => {
         
         assertEquals(executorParams.job.id, mockJob.id);
         assertEquals(executorParams.providerDetails.id, mockProviderData.id);
-        assertEquals(executorParams.renderedPrompt.content, 'This is the base system prompt for the test stage.');
-        assertEquals(executorParams.previousContent, '');
+        assertEquals(executorParams.promptConstructionPayload.systemInstruction, 'This is the base system prompt for the test stage.');
+        assertEquals(executorParams.promptConstructionPayload.currentUserPrompt, 'Test prompt');
     });
 
     clearAllStubs?.();
@@ -331,76 +356,121 @@ Deno.test('processSimpleJob - ContextWindowError Handling', async (t) => {
     executorStub.restore();
 });
 
-Deno.test('processSimpleJob - should call promptAssembler.assemble to construct the full prompt', async () => {
-    const { client: dbClient, clearAllStubs } = setupMockClient();
-    const deps = getMockDeps();
-    const assemblerSpy = spy(deps.promptAssembler!, 'assemble');
-
-    await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', deps, 'auth-token');
-
-    assertEquals(assemblerSpy.calls.length, 1, 'Expected promptAssembler.assemble to be called once');
-
-    clearAllStubs?.();
-});
-
-Deno.test('processSimpleJob - should pass the fully assembled prompt to the executor', async () => {
-    const { client: dbClient, clearAllStubs } = setupMockClient();
-    const deps = getMockDeps();
-    const uniqueAssembledContent = '---VALID_ASSEMBLED_PROMPT_EVIDENCE---';
-    
-    stub(deps.promptAssembler!, 'assemble', () => Promise.resolve(uniqueAssembledContent));
-    const executorSpy = spy(deps, 'executeModelCallAndSave');
-
-    await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', deps, 'auth-token');
-
-    assertEquals(executorSpy.calls.length, 1);
-    const [executorParams] = executorSpy.calls[0].args;
-    assertEquals(executorParams.renderedPrompt.content, uniqueAssembledContent, 'Expected the content from the assembler to be passed to the executor');
-
-    clearAllStubs?.();
-});
-
-Deno.test('should pass previousContent to the promptAssembler for continuation jobs', async () => {
-    const { client: dbClient, spies, clearAllStubs } = setupMockClient();
+Deno.test('processSimpleJob - should call gatherContinuationInputs for a continuation job', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        dialectic_contributions: {
+            select: { data: [ { id: 'prev-contrib-id', content: 'previous content' } ], error: null }
+        }
+    });
     const deps = getMockDeps();
 
-    // 1. Setup a job that looks like a continuation job
-    const continuationPayload = {
+    const continuationPayload: DialecticJobPayload = {
         ...mockPayload,
         target_contribution_id: 'prev-contrib-id',
     };
 
-    if (!isDialecticJobPayload(continuationPayload)) {
-        throw new Error("Test setup failed: continuationPayload is not a valid DialecticJobPayload.");
-    }
-    
-    // 2. Mock the download to return specific content
-    const previousContent = "This is the content from the previous partial run.";
-    const downloadStub = stub(deps, 'downloadFromStorage', async () => {
-        const blob = new Blob([previousContent]);
-        return Promise.resolve({
-            data: await blob.arrayBuffer(),
-            error: null,
-        });
-    });
-
-    // 3. Spy on the assembler
-    const assemblerSpy = spy(deps.promptAssembler!, 'assemble');
-
-    // 4. Run the job
     if (!isJson(continuationPayload)) {
-        throw new Error("Test setup failed: continuationPayload is not a valid DialecticJobPayload.");
+        throw new Error("Test setup failed: continuationPayload is not a valid Json");
     }
-    await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: continuationPayload }, 'user-789', deps, 'auth-token');
 
-    // 5. Assert the assembler was called with the correct continuation content
-    assertEquals(assemblerSpy.calls.length, 1);
-    const assemblerArgs = assemblerSpy.calls[0].args;
-    const continuationArg = assemblerArgs[5]; // The 6th argument is continuationContent
+    const continuationJob: DialecticJobRow & { payload: DialecticJobPayload } = {
+        id: 'job-123',
+        user_id: 'user-789',
+        session_id: 'session-123',
+        stage_slug: 'synthesis',
+        payload: continuationPayload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: 'prev-contrib-id',
+        prerequisite_job_id: null,
+    };
+
+
+    // Spy on the method on the actual dependency object that will be used
+    const continuationSpy = spy(deps.promptAssembler!, 'gatherContinuationInputs');
+
+    await processSimpleJob(
+        dbClient as unknown as SupabaseClient<Database>,
+        continuationJob,
+        'user-789',
+        deps,
+        'auth-token'
+    );
+
+    assertEquals(continuationSpy.calls.length, 1, "Expected gatherContinuationInputs to be called once for a continuation job.");
+    assertEquals(continuationSpy.calls[0].args[0], 'prev-contrib-id');
+
+    clearAllStubs?.();
+});
+
+Deno.test('processSimpleJob - should dispatch a correctly formed PromptConstructionPayload', async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient();
+    const deps = getMockDeps();
     
-    assertEquals(continuationArg, previousContent, "Expected previousContent to be passed as the continuationContent argument to the assembler.");
+    // Arrange
+    const executeSpy = spy(deps, 'executeModelCallAndSave');
+    const expectedSystemInstruction = 'This is the base system prompt for the test stage.';
+    const expectedCurrentUserPrompt = 'Test prompt';
+    const expectedSourceDocuments: SourceDocument[] = [{
+        id: 'contrib-123',
+        content: 'Test document content.',
+        // Add other required properties to satisfy the type
+        session_id: 'session-456',
+        stage: 'test-stage',
+        iteration_number: 1,
+        model_id: 'model-def',
+        edit_version: 1,
+        is_latest_edit: true,
+        citations: null,
+        contribution_type: 'model_contribution_main',
+        created_at: new Date().toISOString(),
+        error: null,
+        file_name: 'test.txt',
+        mime_type: 'text/plain',
+        model_name: 'Mock AI',
+        original_model_contribution_id: null,
+        processing_time_ms: 100,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 100,
+        storage_bucket: 'test-bucket',
+        storage_path: 'test/path',
+        target_contribution_id: null,
+        tokens_used_input: 10,
+        tokens_used_output: 20,
+        updated_at: new Date().toISOString(),
+        user_id: 'user-789',
+        document_relationships: null,
+    }];
 
-    downloadStub.restore();
+    // Stub the assembler to return predictable values
+    const mockAssemblerResult: AssemblerSourceDocument[] = [{id: 'contrib-123', type: 'contribution', content: 'Test document content.', metadata: { displayName: 'Test Document' }}];
+    stub(deps.promptAssembler!, 'gatherInputsForStage', () => Promise.resolve(mockAssemblerResult));
+
+
+    // Act
+    await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', deps, 'auth-token');
+
+    // Assert
+    assertEquals(executeSpy.calls.length, 1);
+    const [executorParams] = executeSpy.calls[0].args;
+    
+    // This part of the test is expected to fail compilation (RED state)
+    const payload = executorParams.promptConstructionPayload;
+    assertEquals(payload.systemInstruction, expectedSystemInstruction);
+    assertEquals(payload.currentUserPrompt, expectedCurrentUserPrompt);
+    assertEquals(payload.resourceDocuments.length, 1);
+    assertEquals(payload.resourceDocuments[0].id, expectedSourceDocuments[0].id);
+
     clearAllStubs?.();
 });
 

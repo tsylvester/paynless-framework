@@ -3,7 +3,7 @@ import { assertEquals, assertExists, assert } from "https://deno.land/std@0.224.
 import { stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { DummyAdapter } from "./dummy_adapter.ts";
 import { testAdapterContract, type MockApi } from "./adapter_test_contract.ts";
-import type { AdapterResponsePayload, AiModelExtendedConfig, ChatApiRequest, ProviderModelInfo, MessageForTokenCounting } from "../types.ts";
+import type { AdapterResponsePayload, AiModelExtendedConfig, ChatApiRequest, ProviderModelInfo, Messages } from "../types.ts";
 import { MockLogger } from "../logger.mock.ts";
 import { countTokensForMessages } from "../utils/tokenizer_utils.ts";
 import { isTokenUsage } from "../utils/type_guards.ts";
@@ -49,8 +49,8 @@ export const MOCK_PROVIDER: Tables<'ai_providers'> = {
 const mockDummyApi: MockApi = {
     sendMessage: async (request: ChatApiRequest, modelIdentifier?: string): Promise<AdapterResponsePayload> => {
         const responseContent = `Echo from ${modelIdentifier || 'dummy'}: ${request.message || 'No message'}`;
-        const promptMessages: MessageForTokenCounting[] = request.messages || [{ role: 'user', content: request.message }];
-        const completionMessage: MessageForTokenCounting = { role: 'assistant', content: responseContent };
+        const promptMessages: Messages[] = request.messages || [{ role: 'user', content: request.message }];
+        const completionMessage: Messages = { role: 'assistant', content: responseContent };
         
         const promptTokens = countTokensForMessages(promptMessages, MOCK_MODEL_CONFIG);
         const completionTokens = countTokensForMessages([completionMessage], MOCK_MODEL_CONFIG);

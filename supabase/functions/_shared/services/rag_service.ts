@@ -62,14 +62,14 @@ export class RagService implements IRagService {
         if (!indexingResult.success) {
             const err = indexingResult.error || new Error("Unknown indexing failure.");
             this.deps.logger.error('[RagService] Halting context retrieval due to indexing failure.', { error: err.message });
-            return { context: null, error: new RagServiceError(`Failed to index one or more documents: ${err.message}`) };
+            return { context: null, error: new RagServiceError(`Failed to index one or more documents: ${err.message}`), tokensUsedForIndexing: 0 };
         }
         
         this.deps.logger.info('[RagService] Documents indexed. Proceeding with advanced retrieval.');
         
         const finalContext = await this.performAdvancedRetrieval(sessionId, stageSlug);
 
-        return { context: finalContext };
+        return { context: finalContext, tokensUsedForIndexing: indexingResult.tokensUsed };
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -81,10 +81,10 @@ export class RagService implements IRagService {
   private async ensureDocumentsAreIndexed(
     documents: IRagSourceDocument[],
     sessionId: string
-  ): Promise<{ success: boolean; error?: Error }> {
+  ): Promise<{ success: boolean; tokensUsed: number; error?: Error }> {
     if (documents.length === 0) {
         this.deps.logger.info('[RagService] No source documents provided; skipping indexing check.');
-        return { success: true };
+        return { success: true, tokensUsed: 0 };
     }
 
     const documentIds = documents.map(doc => doc.id);
@@ -108,7 +108,7 @@ export class RagService implements IRagService {
 
       if (docsToIndex.length === 0) {
         this.deps.logger.info('[RagService] All documents are already indexed.');
-        return { success: true };
+        return { success: true, tokensUsed: 0 };
       }
 
       this.deps.logger.info(`[RagService] Found ${docsToIndex.length} documents to index.`);
@@ -124,14 +124,16 @@ export class RagService implements IRagService {
           )
       );
 
-      await Promise.all(indexingPromises);
-      this.deps.logger.info(`[RagService] Successfully indexed ${docsToIndex.length} new documents.`);
-      return { success: true };
+      const indexingResults = await Promise.all(indexingPromises);
+      const totalTokensUsed = indexingResults.reduce((sum, result) => sum + (result.tokensUsed || 0), 0);
+
+      this.deps.logger.info(`[RagService] Successfully indexed ${docsToIndex.length} new documents. Tokens used: ${totalTokensUsed}`);
+      return { success: true, tokensUsed: totalTokensUsed };
 
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       this.deps.logger.error(`[RagService] Failed to ensure documents were indexed after all retries.`, { error: err.message });
-      return { success: false, error: err };
+      return { success: false, error: err, tokensUsed: 0 };
     }
   }
 
@@ -203,12 +205,12 @@ export class RagService implements IRagService {
         `Find conflicting or contradictory recommendations for the ${stageSlug} stage.`,
     ];
     
-    const primaryQueryEmbedding = await this.deps.embeddingClient.createEmbedding(queries[0]);
+    const { embedding: primaryQueryEmbedding } = await this.deps.embeddingClient.getEmbedding(queries[0]);
     const allChunks = new Map<string, { content: string; metadata: unknown; rank: number }>();
 
     // 2. Retrieve Superset
     for (const queryText of queries) {
-        const embedding = await this.deps.embeddingClient.createEmbedding(queryText);
+        const { embedding } = await this.deps.embeddingClient.getEmbedding(queryText);
 
         const { data: chunks, error } = await this.deps.dbClient.rpc('match_dialectic_chunks', {
             query_embedding: `[${embedding.join(',')}]`,

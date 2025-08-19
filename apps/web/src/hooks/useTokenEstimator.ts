@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAiStore } from '../../../../packages/store/src/aiStore';
 import { useAuthStore } from '../../../../packages/store/src/authStore';
-import type { ChatMessage, AiModelExtendedConfig, MessageForTokenCounting, SystemPrompt } from '@paynless/types'; // Assuming @paynless/types resolves to packages/types/src
+import { ChatMessage, AiModelExtendedConfig, Messages, SystemPrompt } from '@paynless/types'; // Assuming @paynless/types resolves to packages/types/src
 import { api } from '@paynless/api';
 
 export const useTokenEstimator = (textInput: string): { estimatedTokens: number; isLoading: boolean } => {
@@ -65,26 +65,26 @@ export const useTokenEstimator = (textInput: string): { estimatedTokens: number;
       }
 
       // Prepare input for API token estimation
-      let inputForEstimator: string | MessageForTokenCounting[];
+      let inputForEstimator: string | Messages[];
 
       if (
         modelConfig.tokenization_strategy?.type === 'tiktoken' &&
         modelConfig.tokenization_strategy?.is_chatml_model
       ) {
-        const messagesForTokenCounting: MessageForTokenCounting[] = [];
+        const messages: Messages[] = [];
         if (systemPromptContent) {
-          messagesForTokenCounting.push({ role: 'system', content: systemPromptContent });
+          messages.push({ role: 'system', content: systemPromptContent });
         }
         historyMessages.forEach(msg => {
-          messagesForTokenCounting.push({
+          messages.push({
             role: msg.role as 'user' | 'assistant' | 'system',
             content: msg.content,
           });
         });
         if (textInput.trim()) {
-          messagesForTokenCounting.push({ role: 'user', content: textInput });
+          messages.push({ role: 'user', content: textInput });
         }
-        inputForEstimator = messagesForTokenCounting;
+        inputForEstimator = messages;
         if (inputForEstimator.length === 0) {
           setEstimatedTokens(0);
           setIsLoading(false);
@@ -111,7 +111,7 @@ export const useTokenEstimator = (textInput: string): { estimatedTokens: number;
           console.warn('useTokenEstimator: No authentication token available, falling back to rough estimate');
           const fallbackText: string = typeof inputForEstimator === 'string' 
             ? inputForEstimator 
-            : (inputForEstimator as MessageForTokenCounting[]).map(m => m.content || '').join('\n');
+            : (inputForEstimator as Messages[]).map(m => m.content || '').join('\n');
           setEstimatedTokens(Math.ceil(fallbackText.length / 4));
           setIsLoading(false);
           return;
@@ -123,7 +123,7 @@ export const useTokenEstimator = (textInput: string): { estimatedTokens: number;
           // Fallback strategy: very rough estimate
           const fallbackText: string = typeof inputForEstimator === 'string' 
             ? inputForEstimator 
-            : (inputForEstimator as MessageForTokenCounting[]).map(m => m.content || '').join('\n');
+            : (inputForEstimator as Messages[]).map(m => m.content || '').join('\n');
           setEstimatedTokens(Math.ceil(fallbackText.length / 4));
         } else {
           setEstimatedTokens(response.data.estimatedTokens);
@@ -133,7 +133,7 @@ export const useTokenEstimator = (textInput: string): { estimatedTokens: number;
         // Fallback strategy: very rough estimate
         const fallbackText: string = typeof inputForEstimator === 'string' 
           ? inputForEstimator 
-          : (inputForEstimator as MessageForTokenCounting[]).map(m => m.content || '').join('\n');
+          : (inputForEstimator as Messages[]).map(m => m.content || '').join('\n');
         setEstimatedTokens(Math.ceil(fallbackText.length / 4));
       } finally {
         setIsLoading(false);

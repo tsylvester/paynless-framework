@@ -1,4 +1,5 @@
 import { Json, Tables } from "../types_db.ts";
+import { Messages } from "./types.ts";
 
 export interface IPromptAssembler {
     assemble(
@@ -31,6 +32,10 @@ export interface IPromptAssembler {
         session: SessionContext, 
         iterationNumber: number
     ): Promise<AssemblerSourceDocument[]>;
+
+    gatherContinuationInputs(
+        rootContributionId: string
+    ): Promise<Messages[]>;
 }
 
 export type DynamicContextVariables = {

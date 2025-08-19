@@ -4,7 +4,6 @@ import {
     ChatHandlerSuccessResponse,
     ChatMessageRow,
 } from "../_shared/types.ts";
-import { handleContinuationLoop } from "./continue.ts";
 import { getMaxOutputTokens } from "../_shared/utils/affordability_utils.ts";
 import { TokenUsageSchema } from "./zodSchema.ts";
 import { PathHandlerContext } from "./prepareChatContext.ts";
@@ -92,23 +91,14 @@ export async function handleDialecticPath(
             promptId: requestPromptId, 
             chatId: undefined,
             organizationId: organizationId,
-            max_tokens_to_generate: Math.min(max_tokens_to_generate || Infinity, maxAllowedOutputTokens)
+            max_tokens_to_generate: Math.min(max_tokens_to_generate || Infinity, maxAllowedOutputTokens),
+            continue_until_complete: continue_until_complete,
         };
 
-        if (continue_until_complete) {
-            adapterResponsePayload = await handleContinuationLoop(
-                aiProviderAdapter,
-                adapterChatRequestNormal,
-                providerApiIdentifier,
-                apiKey,
-                deps.logger
-            );
-        } else {
-            adapterResponsePayload = await aiProviderAdapter.sendMessage(
-                adapterChatRequestNormal,
-                providerApiIdentifier
-            );
-        }
+        adapterResponsePayload = await aiProviderAdapter.sendMessage(
+            adapterChatRequestNormal,
+            providerApiIdentifier
+        );
         logger.info('AI adapter returned successfully (dialectic path).');
 
         const parsedTokenUsage = TokenUsageSchema.safeParse(adapterResponsePayload.token_usage);

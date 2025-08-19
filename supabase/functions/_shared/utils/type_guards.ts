@@ -18,7 +18,7 @@ import type {
 import { FileType, CanonicalPathParams } from "../types/file_manager.types.ts";
 import { ProjectContext, StageContext } from "../prompt-assembler.interface.ts";
 import { FailedAttemptError } from "../../dialectic-service/dialectic.interface.ts";
-import { AiModelExtendedConfig, TokenUsage, ChatMessageRole, ChatInsert, ContinueReason, FinishReason } from "../types.ts";
+import { AiModelExtendedConfig, TokenUsage, ChatMessageRole, ChatInsert, ContinueReason, FinishReason, ChatApiRequest, Messages } from "../types.ts";
 import type { PostgrestError } from "npm:@supabase/supabase-js@2";
 
 // Helper type to represent the structure we're checking for.
@@ -867,4 +867,18 @@ export function isPostgrestError(error: unknown): error is PostgrestError {
         'details' in error && typeof error.details === 'string' &&
         'hint' in error && typeof error.hint === 'string'
     );
+}
+
+export function isChatApiRequest(obj: unknown): obj is ChatApiRequest {
+    if (typeof obj !== 'object' || obj === null) return false;
+    const req = obj as Record<string, unknown>;
+    return (
+        typeof req.message === 'string' &&
+        typeof req.providerId === 'string' &&
+        typeof req.promptId === 'string'
+    );
+}
+
+export function isApiChatMessage(message: Messages): message is { role: 'user' | 'assistant' | 'system', content: string | null } {
+    return message.role === 'user' || message.role === 'assistant' || message.role === 'system';
 }

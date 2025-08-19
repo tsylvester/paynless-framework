@@ -1,17 +1,15 @@
 // deno-lint-ignore-file no-explicit-any
 import { 
-    CallUnifiedAIModelOptions, 
     UnifiedAIResponse,
   } from "./dialectic.interface.ts";
   // Removed unused import: createSupabaseAdminClient
   import type {
     ChatApiRequest,
     ChatHandlerSuccessResponse,
-    ChatMessageRole,
-    ChatMessage,
 } from "../_shared/types.ts";
-import { isTokenUsage, isChatMessageRole } from "../_shared/utils/type_guards.ts";
-  
+import { isTokenUsage } from "../_shared/utils/type_guards.ts";
+import { CallModelDependencies } from "./dialectic.interface.ts";
+
   console.log("callModel function started");
   
   // Initialize Supabase admin client once
@@ -19,40 +17,18 @@ import { isTokenUsage, isChatMessageRole } from "../_shared/utils/type_guards.ts
   
 
 export async function callUnifiedAIModel(
-    modelCatalogId: string, // This is ai_providers.id, will be passed as providerId in ChatApiRequest
-    renderedPrompt: string,
-    associatedChatId: string | null | undefined, // MODIFIED: Allow null or undefined
+    chatApiRequest: ChatApiRequest,
     authToken: string,        // User's JWT for calling /chat
-    options?: CallUnifiedAIModelOptions,
-    continueUntilComplete?: boolean, // ADDED: New parameter for continuation
+    dependencies: CallModelDependencies = {},
   ): Promise<UnifiedAIResponse> {
-    console.log(`callUnifiedAIModel invoked for ai_providers.id (providerId): ${modelCatalogId}, chatId: ${associatedChatId}`);
+    const { fetch = globalThis.fetch, isTest = false } = dependencies;
+    console.log(`callUnifiedAIModel invoked for ai_providers.id (providerId): ${chatApiRequest.providerId}, chatId: ${chatApiRequest.chatId}`);
     const startTime = Date.now();
   
     // Note: callUnifiedAIModel is designed to handle interaction with a single AI model provider (via the /chat function)
     // for a single prompt. Functions that require generating responses from multiple AI models for a given stage
     // (e.g., generateContributions) are responsible for iterating through the selected models
     // (obtained from dialectic_session_models linked to the session) and calling callUnifiedAIModel individually for each one.
-  
-        const historyForChatApi = (options?.customParameters?.historyMessages || []).reduce((acc: { role: ChatMessageRole; content: string }[], hm: ChatMessage) => {
-        if (isChatMessageRole(hm.role)) {
-            acc.push({ content: hm.content, role: hm.role });
-        }
-        return acc;
-    }, []);
-  
-    const chatApiRequest: ChatApiRequest = {
-        message: renderedPrompt,
-        providerId: modelCatalogId,
-        promptId: options?.currentStageSystemPromptId || "__none__",
-        chatId: undefined, // Always undefined for Dialectic jobs to prevent history masking
-        walletId: options?.walletId,
-        messages: historyForChatApi,
-        max_tokens_to_generate: options?.customParameters?.max_tokens_to_generate,
-        continue_until_complete: continueUntilComplete, // ADDED: Pass the flag here
-        isDialectic: true, // Always true for this service
-        // organizationId might be relevant if dialectics are org-specific
-    };
   
     try {
       // TODO: Determine the correct URL for invoking the /chat function.
@@ -63,17 +39,18 @@ export async function callUnifiedAIModel(
       console.log("Attempting to call /chat function at URL:", chatFunctionUrl);
       console.log("Request payload to /chat:", JSON.stringify(chatApiRequest, null, 2));
   
+      const headers: HeadersInit = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${authToken}`,
+      };
+
+      if (isTest) {
+        headers['X-Test-Mode'] = 'true';
+      }
   
       const response = await fetch(chatFunctionUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${authToken}`,
-          // Supabase Edge Functions might require an API key for function-to-function calls
-          // if not using the client library's invoke method with service_role.
-          // For user-context calls, the user's Bearer token is primary.
-          // "apikey": Deno.env.get("SUPABASE_ANON_KEY") ?? "", // May or may not be needed depending on /chat setup
-        },
+        headers: headers,
         body: JSON.stringify(chatApiRequest),
       });
   

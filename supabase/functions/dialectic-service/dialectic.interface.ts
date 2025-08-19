@@ -16,14 +16,20 @@ import type {
 import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
 import type { IIndexingService, IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
 import type { IRagService } from '../_shared/services/rag_service.interface.ts';
-import type { MessageForTokenCounting, AiModelExtendedConfig } from '../_shared/types.ts';
+import type { Messages, AiModelExtendedConfig, ChatApiRequest } from '../_shared/types.ts';
 import type { IPromptAssembler } from '../_shared/prompt-assembler.interface.ts';
+import type { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
+import type { debitTokens } from '../chat/debitTokens.ts';
+import { ICompressionStrategy } from '../_shared/utils/vector_utils.ts';
 
 export type StorageError = {
   message: string;
   error?: string;
   statusCode?: string;
 };
+
+export type SystemInstruction = string;
+export type Prompt = string;
 
 export interface AIModelCatalogEntry {
     id: string;
@@ -273,6 +279,11 @@ export interface UnifiedAIResponse {
   finish_reason?: FinishReason;
 }
 
+export interface CallModelDependencies {
+  fetch?: typeof fetch;
+  isTest?: boolean;
+}
+
 export type DialecticStage = Database['public']['Tables']['dialectic_stages']['Row'];
 
 export interface ModelProcessingResult {
@@ -288,13 +299,10 @@ export interface JobResultsWithModelProcessing {
 }
 
 export interface GenerateContributionsDeps {
-  callUnifiedAIModel: (
-    modelId: string, 
-    prompt: string, 
-    chatId: string | null | undefined, 
-    authToken: string, 
-    options?: CallUnifiedAIModelOptions, 
-    continueUntilComplete?: boolean
+  callUnifiedAIModel?: (
+    chatApiRequest: ChatApiRequest,
+    userAuthToken: string, 
+    dependencies?: CallModelDependencies,
   ) => Promise<UnifiedAIResponse>;
   downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>;
   getExtensionFromMimeType: typeof getExtensionFromMimeType;
@@ -383,6 +391,13 @@ export type DialecticJobPayload =
     | DialecticSimpleJobPayload // Assuming this exists for non-complex jobs
     | DialecticPlanJobPayload
     | DialecticExecuteJobPayload
+
+export interface PromptConstructionPayload {
+  systemInstruction?: SystemInstruction;
+  conversationHistory: Messages[];
+  resourceDocuments: SourceDocument[];
+  currentUserPrompt: Prompt;
+}
 
 export interface GenerateContributionsSuccessResponse {
   sessionId: string;
@@ -712,10 +727,9 @@ export interface ExecuteModelCallAndSaveParams {
   job: DialecticJobRow;
   projectOwnerUserId: string;
   providerDetails: SelectedAiProvider;
-  renderedPrompt: { content: string; fullPath: string };
-  previousContent: string;
-  sessionData: { id: string, associated_chat_id: string | null };
-  sourceDocuments: SourceDocument[];
+  promptConstructionPayload: PromptConstructionPayload;
+  sessionData: DialecticSession;
+  compressionStrategy: ICompressionStrategy;
 }
 export interface IDialecticJobDeps extends GenerateContributionsDeps {
   getSeedPromptForStage: (
@@ -754,12 +768,14 @@ export interface IDialecticJobDeps extends GenerateContributionsDeps {
       ) => Promise<(DialecticJobRow)[]>;
   getGranularityPlanner?: (strategyId: string) => GranularityPlannerFn | undefined;
   ragService?: IRagService;
-  countTokens?: (messages: MessageForTokenCounting[], modelConfig: AiModelExtendedConfig) => number;
+  countTokens?: (messages: Messages[], modelConfig: AiModelExtendedConfig) => number;
   getAiProviderConfig?: (dbClient: SupabaseClient<Database>, modelId: string) => Promise<AiModelExtendedConfig>;
   indexingService?: IIndexingService;
   embeddingClient?: IEmbeddingClient;
   promptAssembler?: IPromptAssembler;
   getAiProviderAdapter?: (deps: FactoryDependencies) => AiProviderAdapterInstance | null;
+  tokenWalletService?: ITokenWalletService;
+  debitTokens?: typeof debitTokens;
 }
 export type RecipeStep = {
     step_name: string;

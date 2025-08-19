@@ -2,15 +2,16 @@ import {
     assertEquals,
     assert,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
+import { spy, assertSpyCall } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { createMockSupabaseClient, MockSupabaseClientSetup } from "../_shared/supabase.mock.ts";
 import { logger } from "../_shared/logger.ts";
 import { createMockTokenWalletService, MockTokenWalletService } from "../_shared/services/tokenWalletService.mock.ts";
-import { AiModelExtendedConfig, ChatApiRequest, ChatHandlerDeps } from "../_shared/types.ts";
+import { AiModelExtendedConfig, ChatApiRequest } from "../_shared/types.ts";
 import { prepareChatContext, PrepareChatContextDeps, ChatContext } from "./prepareChatContext.ts";
 import { getMockAiProviderAdapter } from "../_shared/ai_service/ai_provider.mock.ts";
 import { Database } from "../types_db.ts";
 import { SupabaseClient } from "@supabase/supabase-js";
+import { DummyAdapter } from "../_shared/ai_service/dummy_adapter.ts";
 
 const getValidProviderConfig = (): AiModelExtendedConfig => ({
     api_identifier: 'test-model',

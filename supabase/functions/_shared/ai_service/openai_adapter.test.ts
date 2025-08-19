@@ -10,7 +10,7 @@ import OpenAI from 'npm:openai';
 
 import { OpenAiAdapter } from './openai_adapter.ts';
 import { testAdapterContract, type MockApi } from './adapter_test_contract.ts';
-import type { AdapterResponsePayload, ChatApiRequest, ProviderModelInfo, AiModelExtendedConfig } from "../types.ts";
+import type { AdapterResponsePayload, ChatApiRequest, ProviderModelInfo, AiModelExtendedConfig, EmbeddingResponse } from "../types.ts";
 import { MockLogger } from "../logger.mock.ts";
 import { Tables } from "../../types_db.ts";
 import { isJson } from "../utils/type_guards.ts";
@@ -146,15 +146,17 @@ Deno.test("OpenAiAdapter - Specific Tests: getEmbedding", async () => {
 
     try {
         const adapter = new OpenAiAdapter(MOCK_EMBEDDING_PROVIDER, 'sk-test-key', mockLogger);
-        const result = await adapter.getEmbedding("Hello world");
+        const result: EmbeddingResponse = await adapter.getEmbedding("Hello world");
 
         assertEquals(createStub.calls.length, 1);
         // Verify the stub was called with the correct model from the config
         const createCallArgs = createStub.calls[0].args[0];
         assertEquals(createCallArgs.model, 'text-embedding-3-small');
         
-        assertExists(result);
-        assertEquals(result, MOCK_EMBEDDING_SUCCESS_RESPONSE);
+        assertExists(result.embedding);
+        assertEquals(Array.isArray(result.embedding), true);
+        assertExists(result.usage);
+        assertEquals(result.usage.total_tokens, MOCK_EMBEDDING_SUCCESS_RESPONSE.usage.total_tokens);
 
     } finally {
         createStub.restore();

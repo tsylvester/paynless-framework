@@ -63,6 +63,8 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     sourceAnchorModelSlug,
     sourceAttemptCount,
     pairedModelSlug,
+    isContinuation,
+    turnIndex,
   } = context;
 
   const projectRoot = projectId;
@@ -127,7 +129,7 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
         throw new Error('Required context missing for model contribution file.');
       }
 
-      let fileName: string;
+      let baseFileName: string;
       const suffix = fileType === FileType.ModelContributionRawJson ? '_raw.json' : '.md';
 
       switch (effectiveContributionType) {
@@ -135,30 +137,33 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
           if (!sourceModelSlugs || sourceModelSlugs.length !== 1 || !sourceAnchorType || sourceAttemptCount === undefined) {
             throw new Error('Antithesis requires one sourceModelSlug, a sourceAnchorType, and a sourceAttemptCount.');
           }
-          fileName = `${modelSlugSanitized}_critiquing_(${sanitizeForPath(sourceModelSlugs[0])}'s_${sanitizeForPath(sourceAnchorType)}_${sourceAttemptCount})_${attemptCount}_${contributionTypeSanitized}${suffix}`;
+          baseFileName = `${modelSlugSanitized}_critiquing_(${sanitizeForPath(sourceModelSlugs[0])}'s_${sanitizeForPath(sourceAnchorType)}_${sourceAttemptCount})_${attemptCount}_${contributionTypeSanitized}`;
           break;
         case FileType.PairwiseSynthesisChunk:
           if (!sourceAnchorType || !sourceAnchorModelSlug || !pairedModelSlug) {
             throw new Error('Required sourceAnchorType, sourceAnchorModelSlug, and pairedModelSlug missing for pairwise_synthesis_chunk.');
           }
-          fileName = `${modelSlugSanitized}_synthesizing_${sanitizeForPath(sourceAnchorModelSlug)}_with_${sanitizeForPath(pairedModelSlug)}_on_${sanitizeForPath(sourceAnchorType)}_${attemptCount}_${contributionTypeSanitized}${suffix}`;
+          baseFileName = `${modelSlugSanitized}_synthesizing_${sanitizeForPath(sourceAnchorModelSlug)}_with_${sanitizeForPath(pairedModelSlug)}_on_${sanitizeForPath(sourceAnchorType)}_${attemptCount}_${contributionTypeSanitized}`;
           break;
         case FileType.ReducedSynthesis: {
           if (!sourceAnchorType || !sourceAnchorModelSlug) {
             throw new Error('Required sourceAnchorType and sourceAnchorModelSlug missing for reduced_synthesis.');
           }
-          fileName = `${modelSlugSanitized}_reducing_${sanitizeForPath(sourceAnchorType)}_by_${sanitizeForPath(sourceAnchorModelSlug)}_${attemptCount}_${contributionTypeSanitized}${suffix}`;
+          baseFileName = `${modelSlugSanitized}_reducing_${sanitizeForPath(sourceAnchorType)}_by_${sanitizeForPath(sourceAnchorModelSlug)}_${attemptCount}_${contributionTypeSanitized}`;
           break;
         }
         default: // Covers thesis, synthesis, parenthesis, paralysis
-          fileName = `${modelSlugSanitized}_${attemptCount}_${contributionTypeSanitized}${suffix}`;
+          baseFileName = `${modelSlugSanitized}_${attemptCount}_${contributionTypeSanitized}`;
           break;
       }
       
+      const continuationSuffix = isContinuation ? `_continuation_${turnIndex}` : '';
+      const fileName = `${baseFileName}${continuationSuffix}${suffix}`;
+
       let storagePath: string;
       const isIntermediate = effectiveContributionType === FileType.PairwiseSynthesisChunk || effectiveContributionType === FileType.ReducedSynthesis;
 
-      if (isIntermediate) {
+      if (isIntermediate || isContinuation) {
         storagePath = (fileType === FileType.ModelContributionRawJson)
           ? `${stageRootPath}/_work/raw_responses`
           : `${stageRootPath}/_work`;

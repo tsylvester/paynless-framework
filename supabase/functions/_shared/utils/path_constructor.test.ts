@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from 'https://deno.land/std@0.177.0/testing/asserts.ts'
+import { assertEquals, assertThrows, assert } from 'https://deno.land/std@0.177.0/testing/asserts.ts'
 import {
   constructStoragePath,
   generateShortId,
@@ -358,4 +358,40 @@ Deno.test('constructStoragePath', async (t) => {
         assertEquals(generatedPaths.size, contexts.length, "All generated Reduced Synthesis paths should be unique.");
     });
   });
+
+  await t.step('should generate a path with _work directory and _continuation suffix for continuation chunks', () => {
+    const context: PathContext = {
+      fileType: FileType.ModelContributionMain,
+      projectId: 'project-continuation',
+      sessionId: 'session-continuation',
+      iteration: 1,
+      stageSlug: '1_thesis',
+      modelSlug: 'claude-opus',
+      contributionType: 'thesis',
+      attemptCount: 0,
+      isContinuation: true,
+      turnIndex: 1,
+    };
+
+    const result = constructStoragePath(context);
+
+    assert(
+      result.storagePath.includes('/_work'),
+      `Path should include '/_work'. Got: ${result.storagePath}`,
+    );
+    assert(
+      result.fileName.includes('_continuation_1'),
+      `Filename should include '_continuation_1'. Got: ${result.fileName}`,
+    );
+    assertEquals(
+      result.storagePath,
+      'project-continuation/session_sessionc/iteration_1/1_thesis/_work',
+    );
+    // Example expected filename: claude-opus_0_model_contribution_main_continuation_1.md
+    assertEquals(
+        result.fileName,
+        'claude-opus_0_thesis_continuation_1.md',
+    );
+  });
+
 });

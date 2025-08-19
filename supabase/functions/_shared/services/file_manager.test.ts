@@ -11,13 +11,14 @@ import {
   type MockSupabaseClientSetup,
   type MockSupabaseDataConfig,
   type IMockStorageFileOptions,
+  type MockQueryBuilderState,
 } from '../supabase.mock.ts'
 import { FileManagerService } from './file_manager.ts'
 import { UploadContext, PathContext, FileType } from '../types/file_manager.types.ts'
 import { constructStoragePath } from '../utils/path_constructor.ts'
-import type { TablesInsert, Json } from '../../types_db.ts'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '../../types_db.ts'
+import type { Database, Json } from '../../types_db.ts'
+import { DialecticContributionRow, DocumentRelationships } from '../../dialectic-service/dialectic.interface.ts'
 
 Deno.test('FileManagerService', async (t) => {
   let setup: MockSupabaseClientSetup
@@ -348,7 +349,7 @@ Deno.test('FileManagerService', async (t) => {
           sessionId: 'session-retry-sess',
           iteration: 1,
           // stageSlug will be mapped by mapStageSlugToDirName, ensure consistency
-          stageSlug: 'hypothesis', // Raw slug, path_constructor will map it to '1_hypothesis'
+          stageSlug: 'thesis', // Raw slug, path_constructor will map it to '1_thesis'
           modelSlug: 'claude-opus',
           originalFileName: 'opus_contribution.md', // Used by file_manager for raw JSON derivation
         };
@@ -422,9 +423,9 @@ Deno.test('FileManagerService', async (t) => {
             modelIdUsed: 'model-id-opus',
             modelNameDisplay: 'Claude Opus',
             sessionId: 'session-retry-sess',
-            stageSlug: 'hypothesis',
+            stageSlug: 'thesis',
             rawJsonResponseContent: '{"raw":"mock for retry"}',
-            seedPromptStoragePath: 'projects/project-retry-proj/sessions/session-retry-sess/iteration_1/hypothesis/seed_prompt.md',
+            seedPromptStoragePath: 'projects/project-retry-proj/sessions/session-retry-sess/iteration_1/thesis/seed_prompt.md',
           },
         };
 
@@ -724,4 +725,284 @@ Deno.test('FileManagerService', async (t) => {
     }
   })
 
+  await t.step('uploadAndRegisterFile for a continuation should save the file as an atomic chunk in a _work directory', async () => {
+    try {
+      // 1. Setup: Define the "original" file that is being continued.
+      const anchorRecord = {
+        id: 'anchor-contrib-id-123',
+        storage_bucket: 'test-bucket',
+        storage_path: 'projects/project-chunk-test/sessions/session-chunk-test/iteration_1/1_thesis',
+        file_name: 'claude-opus_1_thesis_20250101T000000Z.md',
+        mime_type: 'text/markdown',
+        edit_version: 1,
+        document_relationships: { "thesis": "self-id" },
+      };
+
+      // 2. Setup: Create the context for the fileManager call
+      const continuationContext: UploadContext = {
+        ...baseUploadContext,
+        fileContent: 'This is the new content.',
+        pathContext: { // This context is for metadata, the path logic is what we test
+          fileType: FileType.ModelContributionMain,
+          projectId: 'project-chunk-test',
+          sessionId: 'session-chunk-test',
+          stageSlug: '1_thesis',
+          iteration: 1, // This was the missing piece of context
+        },
+        contributionMetadata: {
+          target_contribution_id: 'anchor-contrib-id-123', // This triggers the continuation logic
+          iterationNumber: 1,
+          modelIdUsed: 'model-id-opus',
+          modelNameDisplay: 'Claude Opus',
+          sessionId: 'session-chunk-test',
+          stageSlug: '1_thesis',
+          contributionType: 'thesis',
+          rawJsonResponseContent: '{"content": "This is the new content."}',
+          seedPromptStoragePath: 'projects/project-chunk-test/sessions/session-chunk-test/iteration_1/1_thesis/claude-opus_1_thesis_20250101T000000Z.md',
+          // New metadata for chunking
+          isContinuation: true,
+          turnIndex: 1,
+        },
+        userId: 'user-chunk-test-id'
+      };
+
+      // 3. Setup: Define the expected path for the NEW chunk file.
+      // This is what we WANT, but the current code doesn't produce it.
+      const expectedChunkPathContext: PathContext = {
+        fileType: FileType.ModelContributionMain,
+        projectId: 'project-chunk-test',
+        sessionId: 'session-chunk-test',
+        iteration: 1,
+        stageSlug: '1_thesis',
+        modelSlug: continuationContext.contributionMetadata?.modelNameDisplay, // Align with implementation
+        attemptCount: 0,
+        isContinuation: continuationContext.contributionMetadata?.isContinuation,
+        turnIndex: continuationContext.contributionMetadata?.turnIndex,
+      };
+      // The path_constructor does not yet support these new flags, but we write the test
+      // as if it does, to prove that the overall system fails. The expected path
+      // should contain `_work` and the `_continuation_1` suffix.
+      const expectedPathParts = constructStoragePath({
+        ...expectedChunkPathContext,
+        contributionType: continuationContext.contributionMetadata?.contributionType,
+      });
+      const expectedChunkFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_contributions: {
+            // Mock the SELECT call that finds the anchor record
+            select: { data: [anchorRecord], error: null },
+            // Mock the INSERT call for the new contribution record
+            insert: { data: [{ id: 'new-contrib-456' }], error: null },
+          },
+        },
+        storageMock: {
+          // The upload should succeed, we are testing the PATH it uses.
+          uploadResult: { data: { path: 'any-path' }, error: null },
+        }
+      };
+      beforeEach(config);
+
+      // 4. Execute: Call the function
+      await fileManager.uploadAndRegisterFile(continuationContext);
+
+      // 5. Assert: Check the path used for the upload
+      const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
+      assertExists(uploadSpy, "Upload spy should exist");
+      
+      const actualUploadPath = uploadSpy.calls[0].args[0];
+
+      // This assertion is designed to FAIL.
+      // We expect a new path with `_work` and `_continuation_1`, but the current code
+      // will use the old path: `projects/.../claude-opus_....md`
+      assert(actualUploadPath.includes('/_work/'), "The upload path must be in a '_work' directory for chunks.");
+      assert(actualUploadPath.includes('_continuation_1'), "The upload path must include the continuation turn index.");
+      assertEquals(actualUploadPath, expectedChunkFullPath, "The upload path does not match the expected atomic chunk path.");
+
+    } finally {
+      afterEach();
+    }
+  });
+
+  await t.step('assembleAndSaveFinalDocument should query for chunks, concatenate them, and upload the final document', async () => {
+    try {
+      // 1. Arrange
+      const rootContributionId = 'root-contrib-id-123';
+      const documentRelationships: DocumentRelationships = { thesis: rootContributionId };
+      const rootChunk: DialecticContributionRow = {
+        id: rootContributionId,
+        storage_bucket: 'test-bucket',
+        storage_path: 'projects/p1/sessions/s1/iteration_1/3_synthesis',
+        file_name: 'claude-opus_synthesis_final.md',
+        document_relationships: documentRelationships,
+        created_at: '2025-01-01T12:00:00Z',
+        citations: [],
+        contribution_type: 'synthesis',
+        edit_version: 1,
+        error: null,
+        user_id: 'user-id-123',
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'text/markdown',
+        model_id: 'model-id-opus',
+        model_name: 'Claude Opus',
+        session_id: 'session-id-123',
+        tokens_used_input: 100,
+        tokens_used_output: 100,
+        processing_time_ms: 100,
+        original_model_contribution_id: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 100,
+        stage: 'synthesis',
+        target_contribution_id: null,
+        updated_at: '2025-01-01T12:00:00Z',
+      };
+      const continuationChunk1: DialecticContributionRow = {
+        id: 'continuation-chunk-1',
+        storage_bucket: 'test-bucket',
+        storage_path: 'projects/p1/sessions/s1/iteration_1/3_synthesis/_work',
+        file_name: 'claude-opus_synthesis_continuation_1.md',
+        document_relationships: documentRelationships,
+        created_at: '2025-01-01T12:01:00Z',
+        citations: [],
+        contribution_type: 'synthesis',
+        edit_version: 1,
+        error: null,
+        user_id: 'user-id-123',
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'text/markdown',
+        model_id: 'model-id-opus',
+        model_name: 'Claude Opus',
+        session_id: 'session-id-123',
+        tokens_used_input: 100,
+        tokens_used_output: 100,
+        processing_time_ms: 100,
+        original_model_contribution_id: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 100,
+        stage: 'synthesis',
+        target_contribution_id: null,
+        updated_at: '2025-01-01T12:01:00Z',
+      };
+      const continuationChunk2: DialecticContributionRow = {
+        id: 'continuation-chunk-2',
+        storage_bucket: 'test-bucket',
+        storage_path: 'projects/p1/sessions/s1/iteration_1/3_synthesis/_work',
+        file_name: 'claude-opus_synthesis_continuation_2.md',
+        document_relationships: documentRelationships,
+        created_at: '2025-01-01T12:02:00Z',
+        citations: [],
+        contribution_type: 'synthesis',
+        edit_version: 1,
+        error: null,
+        user_id: 'user-id-123',
+        is_latest_edit: true,
+        iteration_number: 1,
+        mime_type: 'text/markdown',
+        model_id: 'model-id-opus',
+        model_name: 'Claude Opus',
+        session_id: 'session-id-123',
+        tokens_used_input: 100,
+        tokens_used_output: 100,
+        processing_time_ms: 100,
+        original_model_contribution_id: null,
+        prompt_template_id_used: null,
+        raw_response_storage_path: null,
+        seed_prompt_url: null,
+        size_bytes: 100,
+        stage: 'synthesis',
+        target_contribution_id: null,
+        updated_at: '2025-01-01T12:02:00Z',
+      };
+
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_contributions: {
+            // This mock is now more specific to handle the two calls.
+            select: (state: MockQueryBuilderState) => {
+              // First call: get the root contribution by ID.
+              if (state.filters.some((f) => f.column === 'id' && f.value === rootContributionId)) {
+                return Promise.resolve({ data: [rootChunk], error: null });
+              }
+              // Second call: get all contributions for the session.
+              if (state.filters.some((f) => f.column === 'session_id' && f.value === 'session-id-123')) {
+                return Promise.resolve({ data: [rootChunk, continuationChunk1, continuationChunk2], error: null });
+              }
+              // Default fallback.
+              return Promise.resolve({ data: [], error: new Error('Unexpected select query in test') });
+            },
+          },
+        },
+      };
+      beforeEach(config);
+
+      // Mock the download for each chunk
+      const originalStorageFrom = setup.client.storage.from;
+      setup.client.storage.from = (bucketName: string) => {
+        const bucket = originalStorageFrom(bucketName);
+        const originalDownload = bucket.download;
+        bucket.download = async (path: string) => {
+          const fullRootPath = `${rootChunk.storage_path}/${rootChunk.file_name}`;
+          const fullChunk1Path = `${continuationChunk1.storage_path}/${continuationChunk1.file_name}`;
+          const fullChunk2Path = `${continuationChunk2.storage_path}/${continuationChunk2.file_name}`;
+          
+          if (path === fullRootPath) {
+            return { data: new Blob(['Root content. ']), error: null };
+          }
+          if (path === fullChunk1Path) {
+            return { data: new Blob(['Chunk 1 content. ']), error: null };
+          }
+          if (path === fullChunk2Path) {
+            return { data: new Blob(['Chunk 2 content.']), error: null };
+          }
+          return originalDownload.call(bucket, path);
+        };
+        return bucket;
+      };
+
+      // Spy on the final upload
+      const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
+
+      // 2. Act
+      // This will fail because the method doesn't exist. We cast to any to bypass TS compilation errors.
+      await fileManager.assembleAndSaveFinalDocument(rootContributionId);
+
+      // 3. Assert
+      assertExists(uploadSpy, "Upload spy should exist");
+      assertEquals(uploadSpy.calls.length, 1, 'A single final document should be uploaded');
+
+      const finalContentResult = uploadSpy.calls[0].args[1];
+      
+      // CORRECTED: The upload body might be a Blob, not a string or ArrayBuffer. 
+      // We need to handle it correctly to prevent the TextDecoder error.
+      let finalContent = '';
+      if (typeof finalContentResult === 'string') {
+        finalContent = finalContentResult;
+      } else if (finalContentResult instanceof Blob) {
+        finalContent = await finalContentResult.text(); // .text() is the correct way to read a Blob's content.
+      } else {
+        // Failsafe for ArrayBuffer just in case, which was the original logic.
+        finalContent = new TextDecoder().decode(finalContentResult);
+      }
+
+      assertEquals(
+        finalContent,
+        'Root content. Chunk 1 content. Chunk 2 content.',
+      );
+
+      // The final path should be the same path as the root contribution.
+      const expectedFinalPath = `${rootChunk.storage_path}/${rootChunk.file_name}`;
+      assertEquals(uploadSpy.calls[0].args[0], expectedFinalPath);
+      assert(!expectedFinalPath.includes('/_work/'), "Final path must not be in a _work directory");
+
+    } finally {
+      afterEach();
+    }
+  });
 });

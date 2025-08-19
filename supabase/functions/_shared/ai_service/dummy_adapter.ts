@@ -1,4 +1,4 @@
-import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig, MessageForTokenCounting } from '../types.ts';
+import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig, Messages } from '../types.ts';
 import { countTokensForMessages } from '../utils/tokenizer_utils.ts';
 import { ContextWindowError } from '../utils/errors.ts';
 import type { Tables } from '../../types_db.ts';
@@ -45,8 +45,8 @@ export class DummyAdapter {
             const completionContent = "This is the continued content.";
             
             // Calculate tokens for both prompt and completion
-            const promptMessage: MessageForTokenCounting = { role: 'user', content: messageContent };
-            const completionMessage: MessageForTokenCounting = { role: 'assistant', content: completionContent };
+            const promptMessage: Messages = { role: 'user', content: messageContent };
+            const completionMessage: Messages = { role: 'assistant', content: completionContent };
             
             const promptTokens = countTokensForMessages([promptMessage], this.modelConfig);
             const completionTokens = countTokensForMessages([completionMessage], this.modelConfig);
@@ -116,8 +116,8 @@ export class DummyAdapter {
         content: string,
         finish_reason: 'stop' | 'max_tokens'
     ): AdapterResponsePayload {
-        const promptMessages: MessageForTokenCounting[] = request.messages || [{ role: 'user', content: request.message }];
-        const completionMessage: MessageForTokenCounting = { role: 'assistant', content };
+        const promptMessages: Messages[] = request.messages || [{ role: 'user', content: request.message }];
+        const completionMessage: Messages = { role: 'assistant', content };
 
         const promptTokens = countTokensForMessages(promptMessages, this.modelConfig);
         const completionTokens = countTokensForMessages([completionMessage], this.modelConfig);

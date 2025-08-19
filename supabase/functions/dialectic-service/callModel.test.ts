@@ -1,10 +1,9 @@
 import { assert, assertEquals, assertExists } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { stub, restore, type Stub } from "https://deno.land/std@0.170.0/testing/mock.ts";
 import { callUnifiedAIModel } from "./callModel.ts";
-import type { ChatHandlerSuccessResponse, ChatMessage, TokenUsage } from "../_shared/types.ts";
-import type { CallUnifiedAIModelOptions, UnifiedAIResponse } from "./dialectic.interface.ts";
-import { isJson } from "../_shared/utils/type_guards.ts";
-import type { Json } from "../types_db.ts";
+import type { ChatHandlerSuccessResponse, ChatMessage, TokenUsage, ChatApiRequest, ChatMessageRole } from "../_shared/types.ts";
+import type { UnifiedAIResponse } from "./dialectic.interface.ts";
+import { isJson, isChatMessageRole } from "../_shared/utils/type_guards.ts";
 
 Deno.test("callUnifiedAIModel - successful call to /chat", async () => {
   const mockChatFunctionUrl = "http://localhost:12345/functions/v1/chat";
@@ -59,10 +58,16 @@ Deno.test("callUnifiedAIModel - successful call to /chat", async () => {
   });
 
   try {
+    const chatApiRequest: ChatApiRequest = {
+        message: mockRenderedPrompt,
+        providerId: mockModelCatalogId,
+        promptId: "__none__",
+        isDialectic: true,
+        messages: [],
+    };
+
     const result: UnifiedAIResponse = await callUnifiedAIModel(
-      mockModelCatalogId,
-      mockRenderedPrompt,
-      mockAssociatedChatId,
+      chatApiRequest,
       mockAuthToken
     );
 
@@ -82,15 +87,7 @@ Deno.test("callUnifiedAIModel - successful call to /chat", async () => {
     assertEquals(fetchOptions.method, "POST");
     assertEquals((fetchOptions.headers)["Authorization"], `Bearer ${mockAuthToken}`);
     const actualBody = JSON.parse(fetchOptions.body);
-    const expectedBodyToCompare = {
-        message: mockRenderedPrompt,
-        providerId: mockModelCatalogId,
-        promptId: "__none__",
-        isDialectic: true,
-        // chatId is correctly NOT included
-        messages: [],
-    };
-    assertEquals(actualBody, expectedBodyToCompare);
+    assertEquals(actualBody, chatApiRequest);
 
   } finally {
     fetchStub.restore();
@@ -148,11 +145,17 @@ Deno.test("callUnifiedAIModel - should correctly pass 'finish_reason' from /chat
   });
 
   try {
+    const chatApiRequest: ChatApiRequest = {
+        message: mockRenderedPrompt,
+        providerId: mockModelCatalogId,
+        promptId: "__none__",
+        isDialectic: true,
+        messages: [],
+    };
+
     const result: UnifiedAIResponse = await callUnifiedAIModel(
-      mockModelCatalogId,
-      mockRenderedPrompt,
-      mockAssociatedChatId,
-      mockAuthToken
+        chatApiRequest,
+        mockAuthToken
     );
 
     // This is the critical assertion that will fail before the fix.
@@ -172,7 +175,6 @@ Deno.test("callUnifiedAIModel - network error during fetch", async () => {
   const mockAuthToken = "test-auth-token";
   const mockModelCatalogId = "gpt-4-provider-id";
   const mockRenderedPrompt = "Hello, world!";
-  const mockAssociatedChatId = "chat-uuid-network-error";
 
   const fetchStub: Stub<typeof globalThis> = stub(globalThis, "fetch", async (_url: string | URL | Request, _options?: RequestInit): Promise<Response> => {
     return await Promise.reject(new Error("Simulated network error"));
@@ -185,10 +187,16 @@ Deno.test("callUnifiedAIModel - network error during fetch", async () => {
   });
 
   try {
+    const chatApiRequest: ChatApiRequest = {
+        message: mockRenderedPrompt,
+        providerId: mockModelCatalogId,
+        promptId: "__none__",
+        isDialectic: true,
+        messages: [],
+    };
+
     const result: UnifiedAIResponse = await callUnifiedAIModel(
-      mockModelCatalogId,
-      mockRenderedPrompt,
-      mockAssociatedChatId,
+      chatApiRequest,
       mockAuthToken
     );
 
@@ -204,11 +212,9 @@ Deno.test("callUnifiedAIModel - network error during fetch", async () => {
 });
 
 Deno.test("callUnifiedAIModel - non-OK HTTP response from /chat", async () => {
-  const mockChatFunctionUrl = "http://localhost:12345/functions/v1/chat";
   const mockAuthToken = "test-auth-token";
   const mockModelCatalogId = "gpt-4-provider-id";
   const mockRenderedPrompt = "Hello, world!";
-  const mockAssociatedChatId = "chat-uuid-http-error";
   const errorPayload = { error: { message: "Internal Server Error", code: "CHAT_SERVER_ERROR" } };
 
   const fetchStub: Stub<typeof globalThis> = stub(globalThis, "fetch", async (url: string | URL | Request, options?: RequestInit): Promise<Response> => {
@@ -226,10 +232,15 @@ Deno.test("callUnifiedAIModel - non-OK HTTP response from /chat", async () => {
   });
 
   try {
+    const chatApiRequest: ChatApiRequest = {
+        message: mockRenderedPrompt,
+        providerId: mockModelCatalogId,
+        promptId: "__none__",
+        isDialectic: true,
+        messages: [],
+    };
     const result: UnifiedAIResponse = await callUnifiedAIModel(
-      mockModelCatalogId,
-      mockRenderedPrompt,
-      mockAssociatedChatId,
+      chatApiRequest,
       mockAuthToken
     );
 
@@ -249,7 +260,6 @@ Deno.test("callUnifiedAIModel - non-JSON response from /chat", async () => {
   const mockAuthToken = "test-auth-token";
   const mockModelCatalogId = "gpt-4-provider-id";
   const mockRenderedPrompt = "Hello, world!";
-  const mockAssociatedChatId = "chat-uuid-non-json";
 
   const fetchStub: Stub<typeof globalThis> = stub(globalThis, "fetch", async (url: string | URL | Request, options?: RequestInit): Promise<Response> => {
     return await Promise.resolve(new Response("This is not JSON", {
@@ -265,10 +275,15 @@ Deno.test("callUnifiedAIModel - non-JSON response from /chat", async () => {
   });
 
   try {
+    const chatApiRequest: ChatApiRequest = {
+        message: mockRenderedPrompt,
+        providerId: mockModelCatalogId,
+        promptId: "__none__",
+        isDialectic: true,
+        messages: [],
+    };
     const result: UnifiedAIResponse = await callUnifiedAIModel(
-      mockModelCatalogId,
-      mockRenderedPrompt,
-      mockAssociatedChatId,
+      chatApiRequest,
       mockAuthToken
     );
 
@@ -306,10 +321,15 @@ Deno.test("callUnifiedAIModel - /chat response missing assistantMessage", async 
   });
 
   try {
+    const chatApiRequest: ChatApiRequest = {
+        message: mockRenderedPrompt,
+        providerId: mockModelCatalogId,
+        promptId: "__none__",
+        isDialectic: true,
+        messages: [],
+    };
     const result: UnifiedAIResponse = await callUnifiedAIModel(
-      mockModelCatalogId,
-      mockRenderedPrompt,
-      mockAssociatedChatId,
+      chatApiRequest,
       mockAuthToken
     );
 
@@ -363,13 +383,18 @@ Deno.test("callUnifiedAIModel - with continueUntilComplete: true", async () => {
     });
   
     try {
+      const chatApiRequest: ChatApiRequest = {
+        message: mockRenderedPrompt,
+        providerId: mockModelCatalogId,
+        promptId: "__none__",
+        continue_until_complete: true,
+        isDialectic: true,
+        messages: [],
+      };
+
       await callUnifiedAIModel(
-        mockModelCatalogId,
-        mockRenderedPrompt,
-        mockAssociatedChatId,
+        chatApiRequest,
         mockAuthToken,
-        undefined, // options
-        true // continueUntilComplete
       );
   
       assertEquals(fetchStub.calls.length, 1);
@@ -427,13 +452,17 @@ Deno.test("callUnifiedAIModel - with continueUntilComplete: false", async () => 
     });
 
     try {
+      const chatApiRequest: ChatApiRequest = {
+        message: mockRenderedPrompt,
+        providerId: mockModelCatalogId,
+        promptId: "__none__",
+        continue_until_complete: false,
+        isDialectic: true,
+        messages: [],
+      };
       await callUnifiedAIModel(
-        mockModelCatalogId,
-        mockRenderedPrompt,
-        mockAssociatedChatId,
+        chatApiRequest,
         mockAuthToken,
-        undefined, // options
-        false // continueUntilComplete
       );
 
       assertEquals(fetchStub.calls.length, 1);
@@ -517,19 +546,22 @@ Deno.test("callUnifiedAIModel - with options.historyMessages", async () => {
     return undefined;
   });
 
-  const options: CallUnifiedAIModelOptions = {
-    customParameters: {
-      historyMessages: mockHistoryMessages,
-    }
-  };
-
   try {
+    const chatApiRequest: ChatApiRequest = {
+        message: mockRenderedPrompt,
+        providerId: mockModelCatalogId,
+        promptId: "__none__",
+        isDialectic: true,
+        messages: mockHistoryMessages
+            .filter((m): m is ChatMessage & { role: ChatMessageRole } => isChatMessageRole(m.role))
+            .map(m => ({
+                role: m.role,
+                content: m.content,
+        })),
+    };
     const result: UnifiedAIResponse = await callUnifiedAIModel(
-      mockModelCatalogId,
-      mockRenderedPrompt,
-      mockAssociatedChatId,
-      mockAuthToken,
-      options
+      chatApiRequest,
+      mockAuthToken
     );
 
     assertExists(result);
@@ -540,19 +572,10 @@ Deno.test("callUnifiedAIModel - with options.historyMessages", async () => {
     const firstCall = fetchStub.calls[0];
     assertEquals(firstCall.args[0], mockChatFunctionUrl);
     const fetchOptions = firstCall.args[1];
+    assertEquals(fetchOptions.method, "POST");
+    assertEquals((fetchOptions.headers)["Authorization"], `Bearer ${mockAuthToken}`);
     const actualBodyForHistory = JSON.parse(fetchOptions.body);
-    const expectedBodyForHistory = {
-        message: mockRenderedPrompt,
-        providerId: mockModelCatalogId,
-        promptId: "__none__", 
-        isDialectic: true,
-        // chatId is correctly NOT included
-        messages: mockHistoryMessages.map(m => ({ 
-            role: m.role,
-            content: m.content,
-        })),
-    };
-    assertEquals(actualBodyForHistory, expectedBodyForHistory);
+    assertEquals(actualBodyForHistory, chatApiRequest);
 
   } finally {
     fetchStub.restore();
@@ -609,21 +632,19 @@ Deno.test("callUnifiedAIModel - with options.currentStageSystemPromptId and opti
     return undefined;
   });
 
-  const options: CallUnifiedAIModelOptions = {
-    customParameters: {
-      max_tokens_to_generate: mockMaxTokens,
-    },
-    currentStageSystemPromptId: mockSystemPromptId,
-    walletId: mockWalletId,
-  };
-
   try {
+    const chatApiRequest: ChatApiRequest = {
+        message: mockRenderedPrompt,
+        providerId: mockModelCatalogId,
+        promptId: mockSystemPromptId,
+        walletId: mockWalletId,
+        max_tokens_to_generate: mockMaxTokens,
+        isDialectic: true,
+        messages: [],
+    };
     const result: UnifiedAIResponse = await callUnifiedAIModel(
-      mockModelCatalogId,
-      mockRenderedPrompt,
-      mockAssociatedChatId,
-      mockAuthToken,
-      options
+      chatApiRequest,
+      mockAuthToken
     );
 
     assertExists(result);
@@ -634,6 +655,8 @@ Deno.test("callUnifiedAIModel - with options.currentStageSystemPromptId and opti
     const firstCall = fetchStub.calls[0];
     assertEquals(firstCall.args[0], mockChatFunctionUrl);
     const fetchOptions = firstCall.args[1];
+    assertEquals(fetchOptions.method, "POST");
+    assertEquals((fetchOptions.headers)["Authorization"], `Bearer ${mockAuthToken}`);
     const expectedBody = {
         message: mockRenderedPrompt,
         providerId: mockModelCatalogId,
@@ -652,8 +675,74 @@ Deno.test("callUnifiedAIModel - with options.currentStageSystemPromptId and opti
   }
 });
 
+Deno.test("callUnifiedAIModel - should include X-Test-Mode header when isTest is true", async () => {
+  const mockAuthToken = "test-auth-token";
+  const mockModelCatalogId = "gpt-4-provider-id";
+  const mockRenderedPrompt = "Test prompt";
+  const mockAssociatedChatId = "chat-uuid-test-header";
+
+  const mockChatSuccessResponse: ChatHandlerSuccessResponse = {
+    assistantMessage: { 
+      id: "msg-test-header", 
+      content: "Test response.", 
+      role: 'assistant', 
+      chat_id: mockAssociatedChatId, 
+      created_at: new Date().toISOString(), 
+      error_type: null, 
+      is_active_in_thread: true, 
+      response_to_message_id: null, 
+      user_id: null, 
+      ai_provider_id: mockModelCatalogId,
+      system_prompt_id: null, 
+      updated_at: new Date().toISOString(), 
+      token_usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 }
+    },
+    chatId: mockAssociatedChatId,
+  };
+
+  const fetchStub = stub(globalThis, "fetch", async () => {
+    return await Promise.resolve(new Response(JSON.stringify(mockChatSuccessResponse), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+  });
+
+  const denoEnvStub = stub(Deno.env, "get", (variable: string): string | undefined => {
+    if (variable === "SUPABASE_INTERNAL_FUNCTIONS_URL") return "http://localhost:12345";
+    return undefined;
+  });
+
+  try {
+    const chatApiRequest: ChatApiRequest = {
+        message: mockRenderedPrompt,
+        providerId: mockModelCatalogId,
+        promptId: "__none__",
+        isDialectic: true,
+        messages: [],
+    };
+    await callUnifiedAIModel(
+      chatApiRequest,
+      mockAuthToken,
+      { isTest: true } // dependencies
+    );
+
+    assertEquals(fetchStub.calls.length, 1);
+    const firstCall = fetchStub.calls[0];
+    const fetchOptions = firstCall.args[1];
+    assertExists(fetchOptions, "Fetch options should exist");
+    assertExists(fetchOptions.headers, "Headers object should exist on fetch options");
+    
+    // Create a Headers object to safely access the header
+    const headers = new Headers(fetchOptions.headers);
+    assertEquals(headers.get("X-Test-Mode"), "true", "X-Test-Mode header was not set correctly");
+
+  } finally {
+    fetchStub.restore();
+    denoEnvStub.restore();
+  }
+});
+
 Deno.test("callUnifiedAIModel - should not pass chatId for dialectic jobs to prevent history masking", async () => {
-  const mockChatFunctionUrl = "http://localhost:12345/functions/v1/chat";
   const mockAuthToken = "test-auth-token";
   const mockModelCatalogId = "gpt-4-provider-id";
   const mockRenderedPrompt = "Hello, world!";
@@ -692,10 +781,16 @@ Deno.test("callUnifiedAIModel - should not pass chatId for dialectic jobs to pre
   });
 
   try {
+    const chatApiRequest: ChatApiRequest = {
+        message: mockRenderedPrompt,
+        providerId: mockModelCatalogId,
+        promptId: "__none__",
+        chatId: undefined, // Explicitly set to undefined
+        isDialectic: true,
+        messages: [],
+    };
     await callUnifiedAIModel(
-      mockModelCatalogId,
-      mockRenderedPrompt,
-      mockAssociatedChatId,
+      chatApiRequest,
       mockAuthToken
     );
 

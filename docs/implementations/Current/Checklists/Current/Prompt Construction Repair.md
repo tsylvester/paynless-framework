@@ -445,6 +445,157 @@ This phase ensures the fixes are validated at a higher level and are protected a
         *   `[✅]` 10.h.x.1. **Context:** After all files have been repaired, run the highest-level tests.
         *   `[ ]` 10.h.x.2. `[TEST-ALL]` Run the entire Deno test suite.
         *   `[ ]` 10.h.x.3. `[TEST-INTEGRATION]` Run `dialectic_pipeline.integration.test.ts` and confirm it passes.
+    *   `[✅]` 10.k. `[REFACTOR]` **TDD Refactor of Dialectic Services to Use AiServiceFactory**
+        *   `[✅]` 10.k.i. **Context:** The integration test failure is caused by a critical architectural flaw where Dialectic services directly instantiate AI adapters instead of using the central factory. We will fix this by following a strict TDD process, creating failing unit tests for each component to prove the flaw before implementing the fix.
+        *   `[✅]` 10.k.ii. `[REFACTOR]` **Component 1: `dialectic-service/startSession.ts`**
+            *   `[✅]` 10.k.ii.1. `[TEST-UNIT]` **RED: Prove Flaw in `startSession`:** Update the existing unit test file, `supabase/functions/dialectic-service/startSession.test.ts`. Write a test that mocks the `getAiProviderAdapter` factory dependency. Spy on this mock. Call `startSession`. Assert that the factory spy was **NOT** called, proving the service bypasses the factory. **Run the test and confirm it fails (RED).**
+            *   `[✅]` 10.k.ii.2. `[BE]` **GREEN: Implement Fix in `startSession.ts`:** Refactor the service to remove the direct `new OpenAiAdapter()` call. Instead, query the database for the default embedding provider and pass the resulting provider record to the `getAiProviderAdapter` factory function to correctly create the adapter dependency.
+            *   `[✅]` 10.k.ii.3. `[TEST-UNIT]` **PROVE: Confirm Fix:** Modify the unit test from the RED step. Assert that the `getAiProviderAdapter` factory spy **IS** now called exactly once. **Run the test and confirm it passes (GREEN).**
+        *   `[✅]` 10.k.iii. `[REFACTOR]` **Component 2: `dialectic-worker/index.ts`**
+            *   `[✅]` 10.k.iii.1. `[TEST-UNIT]` **RED: Prove Flaw in `dialectic-worker`:** Update the existing unit test file, `supabase/functions/dialectic-worker/index.test.ts`. Write a test that proves the `handleJob` function instantiates its own adapter instead of using a dependency. Spy on the factory and assert it is not called. **Run the test and confirm it fails (RED).**
+            *   `[✅]` 10.k.iii.2. `[BE]` **GREEN: Implement Fix in `index.ts`:** Refactor the worker's dependency setup (`serve` block) to use the same factory pattern as `startSession.ts`, creating the adapter via the factory and injecting it into the `deps` object.
+            *   `[✅]` 10.k.iii.3. `[TEST-UNIT]` **PROVE: Confirm Fix:** Modify the unit test to assert that the factory dependency **IS** now used. **Run the test and confirm it passes (GREEN).**
+        *   `[✅]` 10.k.iv. `[REFACTOR]` **Component 3: `dialectic_pipeline.integration.test.ts`**
+            *   `[✅]` 10.k.iv.1. `[TEST-INT]` **RED: Confirm Initial State:** The integration test is already failing type-checking. This is our initial RED state for this component.
+            *   `[✅]` 10.k.iv.2. `[TEST-INT]` **GREEN: Implement Fix in Integration Test:** With the underlying production code now fixed and unit-tested, refactor the test's `setup` function. Remove the direct instantiation of `OpenAiAdapter` and instead replicate the production logic: fetch the default embedding provider from the mock database and use the `getAiProviderAdapter` factory to create the adapter needed for the test dependencies.
+    *   `[ ]` 10.l. `[REFACTOR]` **Refactor Embedding Service and Test Harness for True Dependency Injection**
+        *   `[ ]` 10.l.i. **Context:** The integration test is failing because it is architecturally flawed. It is forced to instantiate a real `OpenAiAdapter` because the `OpenAIEmbeddingClient` has a hard-coded dependency on it. Furthermore, the test calls the real `callUnifiedAIModel` function, which makes a network request to a live service instead of using a local test double. This section details the TDD-based refactoring required to break these hard dependencies and properly isolate the integration test.
+        *   `[ ]` 10.l.ii. `[REFACTOR]` **Update the Core Adapter Contract to Support Embeddings**
+            *   `[✅]` 10.l.ii.1. `[BE]` In `supabase/functions/_shared/types.ts`, modify the `AiProviderAdapter` type definition. Add a new optional method: `getEmbedding(text: string): Promise<CreateEmbeddingResponse>;`. This makes embedding a standard feature of all AI adapters.
+        *   `[✅]` 10.l.iii. `[REFACTOR]` **Make `DummyAdapter` Conform to the New Contract**
+            *   `[✅]` 10.l.iii.1. `[TEST-UNIT]` **RED: Prove Flaw:** In `supabase/functions/_shared/ai_service/dummy_adapter.test.ts`, add a new test case that asserts an instance of `DummyAdapter` is assignable to the `AiProviderAdapterInstance` type. This will fail the type-check because the `getEmbedding` method is missing.
+            *   `[✅]` 10.l.iii.2. `[BE]` **GREEN: Implement Fix:** In `supabase/functions/_shared/ai_service/dummy_adapter.ts`, add a `getEmbedding` method. This method will return a promise that resolves to a mock embedding response (e.g., `{ data: [{ embedding: [0.1, 0.2, 0.3] }] }`), matching the structure the `OpenAIEmbeddingClient` expects.
+            *   `[✅]` 10.l.iii.3. `[TEST-UNIT]` **PROVE: Confirm Fix:** Rerun the test from the RED step and confirm it now passes.
+        *   `[✅]` 10.l.iv. `[REFACTOR]` **Decouple `OpenAIEmbeddingClient` from the Concrete Adapter**
+            *   `[✅]` 10.l.iv.1. `[TEST-UNIT]` **RED: Prove Flaw:** In a test file for `indexing_service.ts`, write a test that attempts to instantiate `OpenAIEmbeddingClient` with a `DummyAdapter` instance. This will fail the type-check because the constructor requires a specific `OpenAiAdapter`.
+            *   `[✅]` 10.l.iv.2. `[BE]` **GREEN: Implement Fix:** In `supabase/functions/_shared/services/indexing_service.ts`, change the constructor of `OpenAIEmbeddingClient` to accept a generic `AiProviderAdapterInstance` instead of a concrete `OpenAiAdapter`.
+            *   `[✅]` 10.l.iv.3. `[TEST-UNIT]` **PROVE: Confirm Fix:** Rerun the test from the RED step and confirm it now passes.
+        *   `[✅]` 10.l.v. `[REFACTOR]` **Fix Embedding Client Instantiation in Test Harness**
+            *   `[✅]` 10.l.v.1. `[TEST-INT]` In `supabase/integration_tests/services/dialectic_pipeline.integration.test.ts`, locate the `setup` function.
+            *   `[✅]` 10.l.v.2. `[TEST-INT]` The `setup` will be refactored to remove the direct instantiation of `new OpenAiAdapter`.
+            *   `[✅]` 10.l.v.3. `[TEST-INT]` Instead, it will first fetch the default embedding provider from the test database.
+            *   `[✅]` 10.l.v.4. `[TEST-INT]` It will then call the `getAiProviderAdapter` factory to create a generic adapter instance for embeddings.
+            *   `[✅]` 10.l.v.5. `[TEST-INT]` This generic adapter instance will then be passed to the `OpenAIEmbeddingClient` constructor, satisfying its dependency without using a real adapter.
+        *   `[ ]` 10.l.vi. `[REFACTOR]` **Refactor `callUnifiedAIModel` for True Dependency Injection**
+            *   `[✅]` 10.l.vi.1. `[TEST-INT]` **Context:** The integration test is failing because `callUnifiedAIModel` has a hardcoded, implicit dependency on the global `fetch` function, which makes true test isolation impossible without manipulating the global environment. This violates the core principle of Dependency Injection. The following steps will refactor the function to make its dependencies explicit and injectable.
+            *   `[✅]` 10.l.vi.2. `[TEST-UNIT]` **RED: Prove Flaw in `callModel.ts`**
+                *   `[✅]` 10.l.vi.2.a. In `supabase/functions/dialectic-service/callModel.test.ts`, write a new test, `'should make a network request using the global fetch'`.
+                *   `[✅]` 10.l.vi.2.b. Spy on `globalThis.fetch`.
+                *   `[✅]` 10.l.vi.2.c. Call the real `callUnifiedAIModel` function.
+                *   `[✅]` 10.l.vi.2.d. Assert that the `fetch` spy was called. This test will pass, but it proves the undesirable behavior (RED state).
+            *   `[✅]` 10.l.vi.3. `[REFACTOR]` **GREEN: Implement Dependency Injection**
+                *   `[✅]` 10.l.vi.3.a. `[BE]` In `supabase/functions/dialectic-service/dialectic.interface.ts`, create a new exported interface: `export interface CallModelDependencies { fetch: typeof fetch; }`.
+                *   `[✅]` 10.l.vi.3.b. `[BE]` In `supabase/functions/dialectic-service/callModel.ts`, modify the `callUnifiedAIModel` signature. It will now accept `deps: CallModelDependencies` as its first parameter.
+                *   `[✅]` 10.l.vi.3.c. `[BE]` Inside the function, change the line `const response = await fetch(...)` to `const response = await deps.fetch(...)`.
+            *   `[✅]` 10.l.vi.4. `[REFACTOR]` **Update Production Call Site**
+                *   `[✅]` 10.l.vi.4.a. `[BE]` In `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`, locate the call to `callUnifiedAIModel`.
+                *   `[✅]` 10.l.vi.4.b. `[BE]` Update the call to pass the dependency object: `deps.callUnifiedAIModel({ fetch: globalThis.fetch }, ...)`. Note that we are adding `callUnifiedAIModel` to the `IDialecticJobDeps` interface.
+            *   `[✅]` 10.l.vi.5. `[TEST-UNIT]` **PROVE: Confirm Fix with Unit Test**
+                *   `[✅]` 10.l.vi.5.a. In `supabase/functions/dialectic-service/callModel.test.ts`, modify the test from the RED step.
+                *   `[✅]` 10.l.vi.5.b. Create a mock fetch function: `const mockFetch = spy(() => Promise.resolve(new Response('{}')));`.
+                *   `[✅]` 10.l.vi.5.c. Call `callUnifiedAIModel`, passing `{ fetch: mockFetch }` as the dependency.
+                *   `[✅]` 10.l.vi.5.d. Assert that the `mockFetch` spy was called, not the global one. This test now passes for the correct reason (GREEN state).
+            *   `[ ]` 10.l.vi.6. `[REFACTOR]` **Update Integration Test Harness**
+                *   `[ ]` 10.l.vi.6.a. `[TEST-INT]` In `supabase/integration_tests/services/dialectic_pipeline.integration.test.ts`, locate the `testDeps` object.
+                *   `[ ]` 10.l.vi.6.b. `[TEST-INT]` The `callUnifiedAIModel` property will be a function that calls the real `callUnifiedAIModel`.
+                *   `[ ]` 10.l.vi.6.c. `[TEST-INT]` Crucially, for the `deps` argument, it will pass a mock fetch function: `{ fetch: mockFetch }`. This mock fetch will return a `Response` object containing a JSON payload that simulates a valid response from the `DummyAdapter`, including a `finish_reason`. This ensures all calls are intercepted locally.
+    *   `[ ]` 10.k `[TEST-INTEGRATION]` **Fix Integration Test** The integration test now stalls on the forced-failure "retrying" stage. 
+        *   `[ ]`   10.k.i. `[TEST-INTEGRATION]` Investigate the cause of the retry failure. 
+            *   `[ ]` 10.k.i.1  The retry may fail because the the integration test has lost the ability to force the use of the dummy-adapter in the test environment. 
+                *   The test is now calling /chat directly instead of a mocked version of chat that uses the dummy-adapter.
+                *   The /chat function is not being passed a test flag to tell it to use an adapterMap that forces the dummy-adapter regardless of the adapter invoked.
+            *   `[ ]` 10.k.i.2 `[PLAN]` **Implementation Plan:** Implement a mechanism to signal the test environment to the `/chat` function via a custom HTTP header.**
+                *   `[✅]` 10.k.i.2.a **Part 1: Drive Client-Side Change with a Unit Test**
+                    *   `[✅]` `[TEST-RED]` In `supabase/functions/dialectic-service/callModel.test.ts`, add a new, failing unit test. This test will call `callUnifiedAIModel` with `isTest: true` and assert that the `X-Test-Mode: 'true'` header is present in the `fetch` call. This test must fail initially.
+                    *   `[✅]` `[IMPLEMENT]` In `supabase/functions/dialectic-service/callModel.ts`, add the `isTest?: boolean` parameter and the logic to include the header.
+                    *   `[✅]` `[TEST-GREEN]` Run the `callModel.test.ts` suite. The new unit test must now pass, proving the client-side feature is correctly implemented.
+                *   `[ ]` 10.k.i.2.b **Part 2: Correct DI Chain and Implement Server-Side Test Mode (TDD)**
+                    *   `[ ]` **Sub-Part 2.1: Fix `prepareChatContext` Dependency Injection**
+                        *   `[✅]` `[TEST-RED]` In `supabase/functions/chat/prepareChatContext.test.ts`, write a new unit test. It will call `prepareChatContext` directly and provide a `deps` object containing a `spy` for the real `getAiProviderAdapter` factory and a custom `providerMap`. The test will assert that the spy is called with arguments that include the custom `providerMap`. This test must fail because `prepareChatContext` currently ignores the injected map and hardcodes `defaultProviderMap`.
+                        *   `[✅]` `[IMPLEMENT]` In `supabase/functions/chat/prepareChatContext.ts`, modify the call to the AI adapter factory. The `providerMap` argument must be changed from the hardcoded `defaultProviderMap` to `deps.providerMap`, thereby respecting the injected dependency.
+                        *   `[✅]` `[TEST-GREEN]` Run the `prepareChatContext.test.ts` suite. The new unit test must now pass.
+                        
+                    *   `[✅]` **Sub-Part 2.1a: Refactor `handlePostRequest` for Dependency Injection**
+                        *   `[✅]` `[REFACTOR]` In `supabase/functions/chat/handlePostRequest.ts`, create a `createHandlePostRequest` factory that accepts all external dependencies (`prepareChatContext`, etc.) as an argument and returns a `handlePostRequest` function.
+                        *   `[✅]` `[REFACTOR]` Export a `handlePostRequest` instance created by calling the new factory with the real dependencies.
+                    *   `[✅]` **Sub-Part 2.1b: Update `chat/index.ts` to Use Injected `handlePostRequest`**
+                        *   `[✅]` `[REFACTOR]` In the main `handler` function, change the call from the direct import `handlePostRequest(...)` to the injected dependency `deps.handlePostRequest(...)`.
+                    *   `[✅]` **Sub-Part 2.1c: Fix Unit Test**
+                        *   `[✅]` `[TEST-UNIT]` In `supabase/functions/chat/index.test.ts`, for the `'POST: should successfully process a valid request'` test, create a simple stub for `handlePostRequest`.
+                        *   `[✅]` `[TEST-UNIT]` Pass this stub as a dependency override: `{ handlePostRequest: myStub }`. This isolates the handler and fixes the unit test.
+                        
+                    *   `[✅]` **Sub-Part 2.2: Fix `defaultDeps` Dependency Injection**
+                        *   `[✅]` `[TEST-RED]` In `supabase/functions/chat/index.test.ts`, write a new unit test that directly tests the `getAiProviderAdapter` function within the `defaultDeps` object. This test will call `defaultDeps.getAiProviderAdapter` with a `FactoryDependencies` object containing a custom `providerMap`. It will assert that the underlying factory is called with this custom map. This test must fail because `defaultDeps` currently discards the injected map.
+                        *   `[✅]` `[IMPLEMENT]` In `supabase/functions/chat/index.ts`, modify the `getAiProviderAdapter` function inside the `defaultDeps` object. The `providerMap` argument in its call to the factory must be changed from the hardcoded `defaultProviderMap` to `dependencies.providerMap`.
+                        *   `[✅]` `[TEST-GREEN]` Run the `chat/index.test.ts` suite. The new unit test for `defaultDeps` must now pass.
+                    *   `[✅]` **Sub-Part 2.3: Implement `X-Test-Mode` Header Logic in `handler`**
+                        *   `[✅]` `[TEST-RED]` In `supabase/functions/chat/index.test.ts`, write a new unit test for the `handler` function. The test will send a request with the `X-Test-Mode: 'true'` header. It will inject a spy for `handlePostRequest` and assert that the `deps` object passed to this spy contains a `providerMap` that forces all providers to map to the `dummy` adapter. This test must fail.
+                        *   `[✅]` `[IMPLEMENT]` In `supabase/functions/chat/index.ts`, add logic to the `handler`. It must check for the `X-Test-Mode` header. If present, it must clone the incoming `deps` object, overwrite the `providerMap` with one that forces the dummy adapter, and pass these modified dependencies to `handlePostRequest`.
+                        *   `[✅]` `[TEST-GREEN]` Run the `chat/index.test.ts` suite. The new handler test must now pass.
+                    *   `[✅]` **Sub-Part 2.4: Final Verification**
+                        *   `[✅]` `[TEST-GREEN]` Run all test suites (`chat/index.test.ts` and `prepareChatContext.test.ts`) to ensure no regressions were introduced.
+                        *   `[✅]` `[REFACTOR]` In `supabase/functions/chat/index.ts`, perform the final cleanup of the unnecessary temporary `deps` variable.
+                        *   `[✅]` `[TEST-GREEN]` Run `chat/index.test.ts` one last time.
+
+    *   `[ ]` 10.l. **Fix Dependency Injection Chain with TDD**
+        *   `[✅]` 10.l.i. **Part 1: Correct Unit Tests (`[TEST-RED]`)**
+            *   `[✅]` 10.l.i.1. **Goal:** Prove that `handlePostRequest` does not correctly pass through all properties of its `deps` object to `prepareChatContext`.
+            *   `[✅]` 10.l.i.2. **Action:** Modify a test in `supabase/functions/chat/handlePostRequest.test.ts`. Add a unique test-only property to the `deps` object and then assert that this property is present when the `prepareChatContext` spy is called.
+            *   `[✅]` 10.l.i.3. **Expected Outcome:** This test will fail, demonstrating the flaw in the hand-off between `handlePostRequest` and `prepareChatContext`.
+        *   `[✅]` 10.l.ii. **Part 2: Implement and Verify Unit-Level Fixes (`[IMPLEMENT]` & `[TEST-GREEN]`)**
+            *   `[✅]` 10.l.ii.1. **Goal:** Fix the dependency hand-off and the root cause of the error.
+            *   `[✅]` 10.l.ii.2. **Action (A): `handlePostRequest.ts`**: Based on the failure in Part 1, correct the code so that it correctly passes the *entire* `deps` object it receives to `prepareChatContext`.
+            *   `[✅]` 10.l.ii.3. **Action (B): `index.ts` & `prepareChatContext.ts`**: Apply the originally planned fixes: add `providerMap` to `effectiveDeps` in `index.ts` and clean up the redundant logic in `prepareChatContext.ts`.
+            *   `[✅]` 10.l.ii.4. **Verification:** Run the unit test suites for all three modified files (`handlePostRequest.test.ts`, `index.test.ts`, `prepareChatContext.test.ts`) to confirm the fixes work and have not introduced regressions.
+        *   `[ ]` 10.l.iii. **Part 3: Update Chat Integration Test (`[INTEGRATE]` & `[TEST-GREEN]`)**
+            *   `[ ]` 10.l.iii.1. **Goal:** Create a true integration test that validates the `X-Test-Mode` header triggers the use of the `DummyAdapter` through the entire `/chat` function call stack.
+            *   `[ ]` 10.l.iii.2. **Action:** Add a new test case to `supabase/functions/chat/index.integration.test.ts`. This test will make a live `POST` request to the locally served `/chat` function with the `X-Test-Mode: 'true'` header.
+            *   `[ ]` 10.l.iii.3. **Assertion:** The `DummyAdapter` is configured in "echo" mode. Assert that the response content from the function exactly matches the prompt sent in the request, proving the `DummyAdapter` was used.
+            *   `[ ]` 10.l.iii.4. **Expected Outcome:** The integration test will pass, verifying the entire feature works end-to-end as intended.
+
+    *   `[ ]` 10.m. `[REFACTOR]` **Repair `continue.ts` for Transactional, Scalable, Context-Aware Generation**
+        *   `[ ]` 10.m.i. **Context:** The current `handleContinuationLoop` is critically flawed. It is non-transactional, risking data and financial loss if it fails mid-process. It creates an invalid conversational history, causing AI failures. It also lacks a mechanism to manage the context window, preventing long generations. This refactoring will rebuild the function to be a robust, transactional loop that follows a "Charge -> Save -> Check Balance -> Continue" model, uses a correct alternating turn structure (`[user, assistant, user, assistant]`), and integrates RAG-based context trimming to enable near-infinite continuation while preserving critical context and ensuring financial safety.
+        *   `[ ]` 10.m.ii. `[REFACTOR]` **Update Function Signature to Use `PathHandlerContext`**
+            *   `[ ]` 10.m.ii.1. `[TEST-UNIT]` **RED: Prove Flawed Signature:** In `continue.test.ts`, write a new test that attempts to call `handleContinuationLoop` by passing it a mock `PathHandlerContext` object. This will immediately fail the type-check, proving the current function signature is incorrect for our needs.
+            *   `[ ]` 10.m.ii.2. `[BE]` **GREEN: Update Signatures:**
+                *   Refactor the `handleContinuationLoop` signature in `continue.ts` to accept two arguments: `context: PathHandlerContext` and the `initialApiRequest: ChatApiRequest`.
+                *   Inside the function, destructure all necessary dependencies (e.g., `aiProviderAdapter`, `logger`, `modelConfig`, `ragService`, `countTokensForMessages`) directly from the `context` object.
+                *   Update the call sites in `handleNormalPath.ts` and `handleDialecticPath.ts` to pass their `context` object and the `adapterChatRequestNormal` to `handleContinuationLoop`.
+            *   `[ ]` 10.m.ii.3. `[TEST-UNIT]` **PROVE: Confirm Fix:** Rerun the test from the RED step, updating it as needed. It should now pass the type-check, confirming the signature has been successfully updated.
+        *   `[ ]` 10.m.iii. `[REFACTOR]` **Implement Transactional, Alternating-Turn Loop**
+            *   `[ ]` 10.m.iii.1. `[TEST-UNIT]` **RED: Prove Non-Transactional, Flawed History:** In `continue.test.ts`, write a new, comprehensive test for a 3-part continuation.
+                *   Provide mock dependencies, including spies for `debitTokens` and the database `update` method.
+                *   Assert three failures: 1. `debitTokens` is only called once at the very end, not within the loop. 2. The database `update` method is never called to save intermediate progress. 3. The message history for the third call has the invalid `[user, assistant, assistant]` structure.
+            *   `[ ]` 10.m.iii.2. `[BE]` **GREEN: Implement Transactional Loop in `continue.ts`:**
+                *   Restructure the function entirely. First, make the initial AI call *before* the loop starts.
+                *   Immediately call `debitTokens`, passing a `databaseOperation` callback that `INSERT`s the initial `user` and `assistant` messages. Store the returned `assistantMessage.id` and the full `assistantMessage` object in local variables.
+                *   Begin the `while` loop for subsequent continuations. Inside the loop, in order:
+                    1.  **Check Balance:** Fetch the user's latest wallet balance via the `tokenWalletService` and use `getMaxOutputTokens` to verify they can afford another step. If not, `break` the loop.
+                    2.  **Prepare History:** Push a `{ role: 'user', content: 'Please continue.' }` message to the history.
+                    3.  **Make AI Call:** Call `adapter.sendMessage` with the updated history.
+                    4.  **Charge & Save:** Call `debitTokens` with the token usage from this *specific step*. The `databaseOperation` for this call will `UPDATE` the existing assistant message (using its stored ID) by appending the new content, and `INSERT` the new `user: 'continue'` message. The updated `assistantMessage` object must be retrieved and stored.
+            *   `[ ]` 10.m.iii.3. `[TEST-UNIT]` **PROVE: Confirm Fix:** Rerun the test from the RED step. Assert that `debitTokens` and the database `update` spy are now called multiple times (inside the loop) and that the history for the third call has the correct `[user, assistant, user, assistant, user]` structure.
+        *   `[ ]` 10.m.iv. `[REFACTOR]` **Implement RAG-Based Context Trimming**
+            *   `[ ]` 10.m.iv.1. `[TEST-UNIT]` **RED: Prove Context Overflow and Lack of RAG:** Write a new test in `continue.test.ts`.
+                *   Provide mock dependencies within a `PathHandlerContext`: a `countTokensForMessages` function that returns high token counts, a `modelConfig` with a low `provider_max_input_tokens` limit, and a spy on the `ragService.addDocument` method from the `deps` object.
+                *   Simulate a continuation long enough to exceed the token limit.
+                *   Assert two things: the `messages` array passed to the final `adapter.sendMessage` call is shorter than the full history, and the `ragService.addDocument` spy was called with the content of the trimmed-out assistant message. This test will fail because no trimming or RAG integration exists.
+            *   `[ ]` 10.m.iv.2. `[BE]` **GREEN: Implement Trimming and RAG Logic:**
+                *   In `continue.ts`, at the beginning of the `while` loop, add a call to a new local helper function, `manageContextWindow`.
+                *   This function will:
+                    1.  Use the `deps.countTokensForMessages` function and `modelConfig` (both destructured from the `context` argument) to calculate the token count of the current `messages` array.
+                    2.  If the count exceeds `modelConfig.provider_max_input_tokens`, enter a `while` loop.
+                    3.  Inside the loop, identify the oldest turn-pair (the first `assistant` message and the subsequent `user` message at indices 1 and 2).
+                    4.  Call `await deps.ragService.addDocument()` with the content from the assistant message at index 1.
+                    5.  Remove the two messages at indices 1 and 2 from the `messages` array using `splice(1, 2)`.
+                    6.  Recalculate the token count and repeat the loop until the history fits within the context window.
+            *   `[ ]` 10.m.iv.3. `[TEST-UNIT]` **PROVE: Confirm Fix:** Rerun the test from the RED step and confirm all assertions now pass.
+
+*   `[ ]` 10.n. `[REFACTOR]` **Charge RAG Expense to User**
+    *   `[ ]`   10.n.i. **RAG Embedding Costs Tokens** The RAG service relies on OpenAI text embedding models. These models charge input tokens. The application has operating expenses, and charges output tokens for RAG. Currently the RAG service does not call the tokenWalletService to charge users for the token expense of the embedding service. 
+
+*   `[ ]` 10.o. `[REFACTOR]` **Refactor ContinueJob for Transactional, Scalable, Context Aware Generation**
+    *   `[ ]` 10.o.i. **Context:** The current `handleContinuationJob` is critically flawed. It is non-transactional, risking data and financial loss if it fails mid-process. It creates an invalid conversational history, causing AI failures. It also lacks a mechanism to manage the context window, preventing long generations. This refactoring will rebuild the function to be a robust, transactional loop that follows a "Charge -> Save -> Check Balance -> Continue" model, uses a correct alternating turn structure (`[user, assistant, user, assistant]`), and integrates RAG-based context trimming to enable near-infinite continuation while preserving critical context and ensuring financial safety.
 
 *   `[ ]` 11. `[TEST-INTEGRATION]` **Final Validation**
     *   `[ ]` 11.a. `[TEST-INTEGRATION]` Run the full `dialectic_pipeline.integration.test.ts`.

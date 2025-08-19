@@ -8,12 +8,11 @@ import {
     createErrorResponse,
     createSuccessResponse,
 } from '../_shared/cors-headers.ts';
-import { getAiProviderAdapter, defaultProviderMap } from '../_shared/ai_service/factory.ts';
+import { getAiProviderAdapter, testProviderMap } from '../_shared/ai_service/factory.ts';
 import type {
     ChatHandlerDeps,
     GetUserFn,
     GetUserFnResult,
-    AiProviderAdapterInstance,
     FactoryDependencies,
 } from '../_shared/types.ts';
 import { logger } from '../_shared/logger.ts';
@@ -68,6 +67,23 @@ export async function handler(
     const userId = user.id;
     logger.info('Authenticated user:', { userId });
 
+    const isTestMode = req.headers.get('X-Test-Mode') === 'true';
+    let effectiveDeps = deps;
+
+    if (isTestMode) {
+        logger.info('[handler] Test mode detected. Overriding getAiProviderAdapter.');
+        effectiveDeps = {
+            ...deps,
+            getAiProviderAdapter: (dependencies: FactoryDependencies) => {
+                // In test mode, we ALWAYS use the testProviderMap.
+                return getAiProviderAdapter({
+                    ...dependencies,
+                    providerMap: testProviderMap,
+                });
+            },
+        };
+    }
+
     let tokenWalletService = deps.tokenWalletService;
     if (!tokenWalletService) {
         tokenWalletService = new TokenWalletService(userClient, adminClient);
@@ -95,7 +111,10 @@ export async function handler(
             logger.info('Received chat POST request (validated):', { body: requestBody });
 
             // Pass the adminClient to handlePostRequest if it needs it
-            const result = await handlePostRequest(requestBody, userClient, userId, { ...deps, tokenWalletService });
+            if (!effectiveDeps.handlePostRequest) {
+                throw new Error('handlePostRequest is not defined in the dependencies.');
+            }
+            const result = await effectiveDeps.handlePostRequest(requestBody, userClient, userId, { ...effectiveDeps, tokenWalletService });
 
             if (result && 'error' in result && result.error) {
                 const { message, status } = result.error;
@@ -152,18 +171,7 @@ export const defaultDeps: ChatHandlerDeps = {
     handleCorsPreflightRequest,
     createSuccessResponse,
     createErrorResponse,
-    getAiProviderAdapter: (dependencies: FactoryDependencies): AiProviderAdapterInstance | null => {
-        const adapter = getAiProviderAdapter({
-            ...dependencies,
-            providerMap: defaultProviderMap,
-        });
-        if (!adapter) {
-            const providerApiIdentifier = dependencies.provider.api_identifier;
-            logger.error(`[defaultDeps] No adapter found by factory for provider API identifier: ${providerApiIdentifier}`);
-            throw new Error(`Adapter not found for provider API identifier: ${providerApiIdentifier}`);
-        }
-        return adapter;
-    },
+    getAiProviderAdapter: getAiProviderAdapter,
     verifyApiKey: async (apiKey: string, providerName: string): Promise<boolean> => {
         logger.warn("[defaultDeps] Using STUB for verifyApiKey.", { apiKeyLen: apiKey.length, providerName });
         return apiKey.startsWith('sk-test-');

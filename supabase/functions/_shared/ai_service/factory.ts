@@ -11,6 +11,13 @@ export const defaultProviderMap: Record<string, AiProviderAdapter> = {
     'dummy-': DummyAdapter,
 };
 
+export const testProviderMap: Record<string, AiProviderAdapter> = {
+    'dummy': DummyAdapter,
+    'openai-': DummyAdapter,
+    'anthropic-': DummyAdapter,
+    'google-': DummyAdapter,
+};
+
 // Helper type for the adapter instance. An instance is the object returned by calling `new` on a constructable type.
 type AiProviderAdapterInstance = InstanceType<AiProviderAdapter>;
 /**
@@ -36,6 +43,10 @@ export function getAiProviderAdapter(
 
     const identifierLower = provider.api_identifier.toLowerCase();
     
+    if (!providerMap) {
+        logger.error(`[Factory] providerMap is not configured. This should not happen.`);
+        return null;
+    }
     const providerPrefix = Object.keys(providerMap).find(prefix => identifierLower.startsWith(prefix));
 
     if (!providerPrefix) {

@@ -1,7 +1,7 @@
 import { describe, it } from "https://deno.land/std@0.224.0/testing/bdd.ts";
 import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { countTokensForMessages } from "./tokenizer_utils.ts";
-import type { MessageForTokenCounting, AiModelExtendedConfig } from "../types.ts";
+import type { Messages, AiModelExtendedConfig } from "../types.ts";
 
 // Helper to create mock configs
 const createMockConfig = (modelId: string): AiModelExtendedConfig => {
@@ -35,7 +35,7 @@ const createMockConfig = (modelId: string): AiModelExtendedConfig => {
 
 describe("countTokensForMessages", () => {
   it("should throw an error for gpt-4o if o200k_base is not available (simulating tiktoken lib issue)", () => {
-    const messages: MessageForTokenCounting[] = [
+    const messages: Messages[] = [
       { role: "system", content: "You are a helpful assistant." },
       { role: "user", content: "Hello!" },
     ];
@@ -51,7 +51,7 @@ describe("countTokensForMessages", () => {
   });
 
   it("should correctly count tokens for gpt-3.5-turbo-0301 with name property", () => {
-    const messages: MessageForTokenCounting[] = [
+    const messages: Messages[] = [
       { role: "user", content: "Hello from user", name: "testuser" },
       { role: "assistant", content: "Hi there" },
     ];
@@ -59,7 +59,7 @@ describe("countTokensForMessages", () => {
   });
 
   it("should correctly count tokens for gpt-4 with name property", () => {
-    const messages: MessageForTokenCounting[] = [
+    const messages: Messages[] = [
         { role: "user", content: "What is my name?", name: "ExampleUser" },
         { role: "assistant", content: "Your name is ExampleUser." },
     ];
@@ -67,7 +67,7 @@ describe("countTokensForMessages", () => {
   });
 
   it("should throw an error for null content with gpt-4o (if encoding is invalid for test)", () => {
-    const messages: MessageForTokenCounting[] = [
+    const messages: Messages[] = [
       { role: "user", content: null },
       { role: "system", content: "System prompt" },
     ];
@@ -83,7 +83,7 @@ describe("countTokensForMessages", () => {
   });
 
   it("should throw an error for an unsupported encoding name (custom model name)", () => {
-    const messages: MessageForTokenCounting[] = [
+    const messages: Messages[] = [
       { role: "user", content: "Hello" },
     ];
     assertThrows(
@@ -94,7 +94,7 @@ describe("countTokensForMessages", () => {
   });
   
   it("should count tokens using fallback ChatML rules for a model like text-davinci-003 (p50k_base)", () => {
-    const messages: MessageForTokenCounting[] = [
+    const messages: Messages[] = [
       { role: "user", content: "Hello" }, // p50k_base: Hello -> 1 token
     ];
     assertEquals(countTokensForMessages(messages, createMockConfig("text-davinci-003")), 8);

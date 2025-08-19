@@ -28,6 +28,7 @@ import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 import { executeModelCallAndSave } from './executeModelCallAndSave.ts';
 import { getGranularityPlanner } from './strategies/granularity.strategies.ts';
 import { RagService } from '../_shared/services/rag_service.ts';
+import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { IndexingService, LangchainTextSplitter, OpenAIEmbeddingClient } from '../_shared/services/indexing_service.ts';
 import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
 import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
@@ -116,7 +117,12 @@ serve(async (req: Request) => {
       fileManager: fileManager,
       deleteFromStorage: (bucket: string, paths: string[]) => deleteFromStorage(adminClient, bucket, paths),
       notificationService,
-      executeModelCallAndSave: (params: ExecuteModelCallAndSaveParams) => executeModelCallAndSave(params),
+      executeModelCallAndSave: (params: ExecuteModelCallAndSaveParams) => 
+        executeModelCallAndSave({
+            ...params,
+            // NEW: Inject the real compression strategy implementation
+            compressionStrategy: getSortedCompressionCandidates,
+        }),
       // Add the new dependencies for complex jobs
       ragService,
       countTokens: countTokensForMessages,

@@ -8,9 +8,11 @@ import { DynamicContextVariables, ProjectContext, SessionContext, StageContext, 
 import type { DownloadStorageResult } from "./supabase_storage_utils.ts";
 import { hasProcessingStrategy } from "./utils/type_guards.ts";
 import { join } from "jsr:@std/path/join";
-import { AiModelExtendedConfig, MessageForTokenCounting } from "./types.ts";
+import { AiModelExtendedConfig, Messages } from "./types.ts";
 import { countTokensForMessages } from "./utils/tokenizer_utils.ts";
 import type { IPromptAssembler } from "./prompt-assembler.interface.ts";
+import { DocumentRelationships } from "./types/file_manager.types.ts";
+import { isKeyOf } from "./utils/type_guards.ts";
 
 export class PromptAssembler implements IPromptAssembler {
     private dbClient: SupabaseClient<Database>;
@@ -18,13 +20,13 @@ export class PromptAssembler implements IPromptAssembler {
     private renderPromptFn: RenderPromptFunctionType;
     private downloadFromStorageFn: (bucket: string, path: string) => Promise<DownloadStorageResult>;
 
-    private countTokensFn: (messages: MessageForTokenCounting[], modelConfig: AiModelExtendedConfig) => number;
+    private countTokensFn: (messages: Messages[], modelConfig: AiModelExtendedConfig) => number;
 
     constructor(
         dbClient: SupabaseClient<Database>,
         downloadFn?: (bucket: string, path: string) => Promise<DownloadStorageResult>,
         renderPromptFn?: RenderPromptFunctionType,
-        countTokensFn?: (messages: MessageForTokenCounting[], modelConfig: AiModelExtendedConfig) => number
+        countTokensFn?: (messages: Messages[], modelConfig: AiModelExtendedConfig) => number
     ) {
         this.dbClient = dbClient;
         this.renderPromptFn = renderPromptFn || renderPrompt;
@@ -319,4 +321,94 @@ export class PromptAssembler implements IPromptAssembler {
         return sourceDocuments;
     }
 
+    public async gatherContinuationInputs(rootContributionId: string): Promise<Messages[]> {
+        // 1. Fetch the root chunk to get the stage slug and other base info.
+        const { data: rootChunk, error: rootChunkError } = await this.dbClient
+            .from('dialectic_contributions')
+            .select('*')
+            .eq('id', rootContributionId)
+            .single();
+
+        if (rootChunkError || !rootChunk) {
+            console.error(`[PromptAssembler.gatherContinuationInputs] Failed to retrieve root contribution.`, { error: rootChunkError, rootContributionId });
+            throw new Error(`Failed to retrieve root contribution for id ${rootContributionId}.`);
+        }
+
+        // 2. Dynamically determine the stage slug from the document_relationships.
+        if (!rootChunk.document_relationships || typeof rootChunk.document_relationships !== 'object' || Array.isArray(rootChunk.document_relationships)) {
+            throw new Error(`Root contribution ${rootContributionId} has invalid document_relationships.`);
+        }
+        const relationships: DocumentRelationships = rootChunk.document_relationships;
+        const stageSlugKey = Object.keys(relationships).find(key => key !== 'isContinuation' && key !== 'turnIndex');
+
+        if (!stageSlugKey || !isKeyOf(relationships, stageSlugKey)) {
+            throw new Error(`Could not determine stage slug from root contribution ${rootContributionId}.`);
+        }
+        
+        // The type guard has confirmed stageSlugKey is a keyof DocumentRelationships
+        const stageSlug = stageSlugKey;
+
+        if (relationships[stageSlug] !== rootContributionId) {
+            throw new Error(`Could not determine stage slug from root contribution ${rootContributionId}.`);
+        }
+
+        // 3. Use a .contains query to find all related chunks.
+        const queryMatcher = { [stageSlug]: rootContributionId };
+        const { data: allChunks, error: chunksError } = await this.dbClient
+            .from('dialectic_contributions')
+            .select('*')
+            .contains('document_relationships', queryMatcher)
+            .order('continuation_number', { ascending: true, nullsFirst: true });
+
+        if (chunksError) {
+            console.error(`[PromptAssembler.gatherContinuationInputs] Failed to retrieve contribution chunks.`, { error: chunksError, rootContributionId });
+            throw new Error(`Failed to retrieve contribution chunks for root ${rootContributionId}.`);
+        }
+        
+        if (!allChunks || allChunks.length === 0) {
+            // This should be impossible since we already found the root chunk.
+            throw new Error(`No contribution chunks found for root ${rootContributionId}.`);
+        }
+
+        if (!rootChunk.storage_path) {
+            throw new Error(`Root contribution ${rootChunk.id} is missing a storage_path.`);
+        }
+        
+        // 4. Download seed prompt.
+        const seedPromptPath = join(rootChunk.storage_path, 'seed_prompt.md');
+        const { data: seedPromptContentData, error: seedDownloadError } = await this.downloadFromStorageFn(this.storageBucket, seedPromptPath);
+
+        if (seedDownloadError || !seedPromptContentData) {
+            console.error(`[PromptAssembler.gatherContinuationInputs] Failed to download seed prompt.`, { path: seedPromptPath, error: seedDownloadError });
+            throw new Error(`Failed to download seed prompt for root ${rootContributionId}.`);
+        }
+        const seedPromptContent = new TextDecoder().decode(seedPromptContentData);
+
+        // 5. Download and create atomic messages for all chunks.
+        const assistantMessages: Messages[] = [];
+        for (const chunk of allChunks) {
+            if (chunk.storage_path && chunk.file_name && chunk.storage_bucket) {
+                const chunkPath = join(chunk.storage_path, chunk.file_name);
+                const { data: chunkContentData, error: chunkDownloadError } = await this.downloadFromStorageFn(chunk.storage_bucket, chunkPath);
+
+                if (chunkDownloadError || !chunkContentData) {
+                    console.error(`[PromptAssembler.gatherContinuationInputs] Failed to download chunk content.`, { path: chunkPath, error: chunkDownloadError });
+                    throw new Error(`Failed to download content for chunk ${chunk.id}.`);
+                }
+                const chunkContent = new TextDecoder().decode(chunkContentData);
+                assistantMessages.push({
+                    role: 'assistant',
+                    content: chunkContent,
+                    id: chunk.id,
+                });
+            }
+        }
+        
+        // 6. Return formatted messages.
+        return [
+            { role: 'user', content: seedPromptContent },
+            ...assistantMessages,
+            { role: 'user', content: 'Please continue.' }
+        ];
+    }
 }

@@ -5,7 +5,7 @@ import { assertSpyCall, spy } from "https://deno.land/std@0.224.0/testing/mock.t
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { ILogger } from '../types.ts';
 import { IndexingService, OpenAIEmbeddingClient } from './indexing_service.ts';
-import { ITextSplitter } from './indexing_service.interface.ts';
+import { ITextSplitter, IndexDocumentResult } from './indexing_service.interface.ts';
 import { createMockSupabaseClient } from '../supabase.mock.ts';
 import { mockOpenAiAdapter, mockGetEmbeddingSpy } from '../ai_service/openai_adapter.mock.ts';
 import { type Database } from '../../../functions/types_db.ts';
@@ -44,10 +44,11 @@ test('IndexingService should process and index a document successfully', async (
   const metadata = { source: 'test' };
 
   // Act
-  const result = await service.indexDocument(sessionId, contributionId, documentContent, metadata);
+  const result: IndexDocumentResult = await service.indexDocument(sessionId, contributionId, documentContent, metadata);
 
   // Assert
   assertEquals(result.success, true);
+  assertEquals(result.tokensUsed, 10);
   assertSpyCall(textSplitterSpy, 0, { args: [documentContent] });
   
   // Use the type-safe spy from the mock

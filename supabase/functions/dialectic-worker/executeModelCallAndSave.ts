@@ -1,15 +1,12 @@
-import { isContinueReason } from '../_shared/utils/type_guards.ts';
 import {
   type UnifiedAIResponse,
   type ModelProcessingResult,
   type ExecuteModelCallAndSaveParams,
 } from '../dialectic-service/dialectic.interface.ts';
 import { type UploadContext, FileType } from '../_shared/types/file_manager.types.ts';
-import { isDialecticContribution, isAiModelExtendedConfig, isDialecticExecuteJobPayload, isContributionType, isFileType } from "../_shared/utils/type_guards.ts";
-import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
-import { type AiModelExtendedConfig, type MessageForTokenCounting } from '../_shared/types.ts';
+import { isDialecticContribution, isAiModelExtendedConfig, isDialecticExecuteJobPayload, isContributionType, isFileType, isApiChatMessage, isContinueReason } from "../_shared/utils/type_guards.ts";
+import { type AiModelExtendedConfig, type ChatApiRequest, type Messages } from '../_shared/types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
-import { IRagSourceDocument } from '../_shared/services/rag_service.interface.ts';
 
 export async function executeModelCallAndSave(
     params: ExecuteModelCallAndSaveParams,
@@ -21,9 +18,8 @@ export async function executeModelCallAndSave(
         job, 
         projectOwnerUserId, 
         providerDetails, 
-        renderedPrompt, 
-        previousContent, 
-        sessionData 
+        promptConstructionPayload,
+        compressionStrategy,
     } = params;
     
     //console.log('[executeModelCallAndSave] Received job payload:', JSON.stringify(job.payload, null, 2));
@@ -63,7 +59,6 @@ export async function executeModelCallAndSave(
 
     deps.logger.info(`[dialectic-worker] [executeModelCallAndSave] Executing model call for job ID: ${jobId}`);
 
-    // Final Context Window Validation
     const modelConfig = fullProviderData.config;
     if (!isAiModelExtendedConfig(modelConfig)) {
         throw new Error(`Model ${fullProviderData.id} has invalid or missing configuration.`);
@@ -79,56 +74,180 @@ export async function executeModelCallAndSave(
         max_context_window_tokens: modelConfig.max_context_window_tokens,
     };
 
-    // First, do a token check. If this fails, we will attempt compression.
-    // We use previousContent here because it's the most accurate representation of the prompt before final assembly.
-    const messagesForTokenCounting: MessageForTokenCounting[] = (params.sourceDocuments && params.sourceDocuments.length > 0)
-        ? params.sourceDocuments.map(doc => ({ role: 'user', content: doc.content || '' }))
-        : [{ role: 'user', content: params.renderedPrompt.content }];
+    const {
+        systemInstruction,
+        conversationHistory,
+        resourceDocuments,
+        currentUserPrompt,
+    } = promptConstructionPayload;
 
-    let finalContent = params.renderedPrompt.content;
+    const {
+        countTokens,
+        embeddingClient,
+        ragService,
+        tokenWalletService,
+    } = deps;
 
-    const initialTokenCount = countTokensForMessages(messagesForTokenCounting, extendedModelConfig);
-    const maxTokens = extendedModelConfig.max_context_window_tokens || extendedModelConfig.context_window_tokens;
-    
-    if (maxTokens && initialTokenCount > maxTokens) {
-        deps.logger.warn(`[executeModelCallAndSave] Initial prompt token count (${initialTokenCount}) exceeds model limit (${maxTokens}) for job ${jobId}. Attempting compression.`);
-        
-        if (!deps.ragService) {
-            throw new ContextWindowError(`Token count (${initialTokenCount}) exceeds model limit (${maxTokens}) and RAG service is not available.`);
-        }
-        
-        // We need to gather the original source documents to pass to the RAG service.
-        const sourceDocumentsForRag: IRagSourceDocument[] = params.sourceDocuments.map(doc => ({ id: doc.id, content: doc.content }));
-
-
-        const ragResult = await deps.ragService.getContextForModel(sourceDocumentsForRag, extendedModelConfig, sessionId, stageSlug);
-
-        if (ragResult.error || !ragResult.context) {
-            throw new ContextWindowError(`Failed to compress prompt with RAG service: ${ragResult.error?.message || 'Unknown RAG error'}`);
-        }
-        
-        finalContent = ragResult.context;
-        
-        const compressedTokenCount = countTokensForMessages([{ role: 'user', content: finalContent }], extendedModelConfig);
-        if (maxTokens && compressedTokenCount > maxTokens) {
-            throw new ContextWindowError(`Compressed prompt token count (${compressedTokenCount}) still exceeds model limit (${maxTokens}).`);
-        }
-        deps.logger.info(`[executeModelCallAndSave] Prompt successfully compressed. New token count: ${compressedTokenCount}`);
+    if (!deps.countTokens) {
+        throw new Error("Dependency 'countTokens' is not provided.");
     }
 
-    const options = {
+    const tempMessagesForTokenCounting: Messages[] = [
+        ...conversationHistory,
+        ...resourceDocuments.map((d): Messages => ({ role: 'user', content: d.content })),
+    ];
+
+    const initialTokenCount = deps.countTokens(tempMessagesForTokenCounting, extendedModelConfig);
+    const maxTokens = extendedModelConfig.max_context_window_tokens || extendedModelConfig.context_window_tokens;
+    
+    console.log(`[DEBUG] Initial Token Count: ${initialTokenCount}`);
+    console.log(`[DEBUG] Max Tokens: ${maxTokens}`);
+    console.log(`[DEBUG] Condition will be: ${!!maxTokens && initialTokenCount > maxTokens}`);
+
+    let finalResourceDocuments = resourceDocuments;
+    let finalConversationHistory = conversationHistory;
+
+    if (maxTokens && initialTokenCount > maxTokens) {
+        if (!ragService || !embeddingClient || !tokenWalletService || !countTokens) {
+            throw new Error('Required services for prompt compression (RAG, Embedding, Wallet, Token Counter) are not available.');
+        }
+
+        // --- 3. Implement Holistic Pre-Flight Sanity Check ---
+        const tokensToBeRemoved = initialTokenCount - maxTokens;
+        
+        if (typeof modelConfig.input_token_cost_rate !== 'number') {
+            throw new Error(`Model ${fullProviderData.id} is missing a valid 'input_token_cost_rate' in its configuration and cannot be used for operations that require cost estimation.`);
+        }
+        const inputCostRate = modelConfig.input_token_cost_rate;
+        
+        // Cost is per token
+        const estimatedTotalRagCost = tokensToBeRemoved * inputCostRate;
+        const estimatedFinalPromptCost = maxTokens * inputCostRate;
+        const totalEstimatedInputCost = estimatedTotalRagCost + estimatedFinalPromptCost;
+        
+        let currentUserBalance: number;
+        try {
+            const balanceStr = await tokenWalletService.getBalance(walletId!);
+            currentUserBalance = parseFloat(balanceStr);
+        } catch (e) {
+            throw new Error(`Could not fetch or parse wallet balance for walletId: ${walletId}`, { cause: e });
+        }
+        
+        // Stage 1: Absolute Affordability Check
+        if (currentUserBalance < totalEstimatedInputCost) {
+            throw new Error(`Insufficient funds for the entire operation. Estimated cost: ${totalEstimatedInputCost}, Balance: ${currentUserBalance}`);
+        }
+
+        // Stage 2: Rationality Check
+        const rationalityThreshold = 0.20; // 20%
+        if (totalEstimatedInputCost > currentUserBalance * rationalityThreshold) {
+            throw new Error(`Estimated cost (${totalEstimatedInputCost}) exceeds 20% of the user's balance (${currentUserBalance}).`);
+        }
+
+        deps.logger.info(
+            `Initial prompt token count (${initialTokenCount}) exceeds model limit (${maxTokens}) for job ${jobId}. Attempting compression.`,
+        );
+
+        const workingHistory = [...conversationHistory];
+        const workingResourceDocs = [...resourceDocuments];
+        let currentTokenCount = initialTokenCount;
+        
+        const candidates = await compressionStrategy(dbClient, deps, workingResourceDocs, workingHistory, currentUserPrompt);
+        console.log(`[DEBUG] Number of compression candidates found: ${candidates.length}`);
+        
+        while (currentTokenCount > maxTokens && candidates.length > 0) {
+            const victim = candidates.shift(); // Takes the lowest-value item and removes it from the array
+            if (!victim) break; // Should not happen with the loop condition, but good for safety
+
+            const ragResult = await ragService.getContextForModel(
+                [{ id: victim.id, content: victim.content || '' }], 
+                extendedModelConfig, 
+                sessionId, 
+                stageSlug
+            );
+            
+            if (ragResult.error) throw ragResult.error;
+
+            const tokensUsed = ragResult.tokensUsedForIndexing || 0;
+            if (tokensUsed > 0 && walletId) {
+                try {
+                    await tokenWalletService.recordTransaction({
+                        walletId: walletId,
+                        type: 'DEBIT_USAGE',
+                        amount: tokensUsed.toString(),
+                        recordedByUserId: projectOwnerUserId,
+                        idempotencyKey: crypto.randomUUID(),
+                        relatedEntityId: victim.id,
+                        relatedEntityType: 'rag_compression',
+                        notes: `RAG compression for job ${jobId}`,
+                    });
+                } catch (error) {
+                    throw new Error(`Insufficient funds for RAG operation. Cost: ${tokensUsed} tokens.`, { cause: error });
+                }
+            }
+            
+            const newContent = ragResult.context || '';
+            if (victim.sourceType === 'history') {
+                const historyIndex = workingHistory.findIndex(h => h.id === victim.id);
+                if (historyIndex > -1) workingHistory[historyIndex].content = newContent;
+            } else {
+                const docIndex = workingResourceDocs.findIndex(d => d.id === victim.id);
+                if (docIndex > -1) workingResourceDocs[docIndex].content = newContent;
+            }
+            
+            const tempPromptForTokenCheck: Messages[] = [
+                ...workingHistory,
+                ...workingResourceDocs.map((d): Messages => ({ role: 'user', content: d.content })),
+            ];
+            currentTokenCount = deps.countTokens(tempPromptForTokenCheck, extendedModelConfig);
+        }
+
+        if (currentTokenCount > maxTokens) {
+            throw new ContextWindowError(
+                `Compressed prompt token count (${currentTokenCount}) still exceeds model limit (${maxTokens}).`,
+            );
+        }
+        
+        deps.logger.info(
+            `[executeModelCallAndSave] Prompt successfully compressed. New token count: ${currentTokenCount}`,
+        );
+
+        finalConversationHistory = workingHistory;
+        finalResourceDocuments = workingResourceDocs;
+    }
+
+    const assembledMessages: Messages[] = [];
+    finalConversationHistory.forEach(msg => {
+        if (msg.role !== 'function') {
+            assembledMessages.push({ role: msg.role, content: msg.content });
+        }
+    });
+    finalResourceDocuments.forEach(doc => {
+        assembledMessages.push({ role: 'user', content: doc.content });
+    });
+
+    const chatApiRequest: ChatApiRequest = {
+        message: currentUserPrompt,
+        messages: assembledMessages.filter(isApiChatMessage).filter((m): m is { role: 'user' | 'assistant' | 'system', content: string } => m.content !== null),
+        providerId: providerDetails.id,
+        promptId: job.payload.prompt_template_name || '__none__',
+        systemInstruction: systemInstruction,
         walletId: walletId,
+        continue_until_complete: job.payload.continueUntilComplete,
+        isDialectic: true,
     };
 
     const userAuthToken = 'user_jwt' in job.payload && job.payload.user_jwt ? job.payload.user_jwt : authToken;
 
+    if (!deps.callUnifiedAIModel) {
+        throw new Error("Dependency 'callUnifiedAIModel' is not provided.");
+    }
+
     const startTime = Date.now();
     const aiResponse: UnifiedAIResponse = await deps.callUnifiedAIModel(
-        providerDetails.id, 
-        finalContent, 
-        sessionData.associated_chat_id, 
+        chatApiRequest,
         userAuthToken, 
-        options
+        { fetch: globalThis.fetch }
     );
 
     const endTime = Date.now();
@@ -136,9 +255,7 @@ export async function executeModelCallAndSave(
 
     deps.logger.info(`[dialectic-worker] [executeModelCallAndSave] AI call completed for job ${job.id} in ${processingTimeMs}ms.`);
 
-    // --- DIAGNOSTIC LOGGING START ---
     deps.logger.info(`[executeModelCallAndSave] DIAGNOSTIC: Full AI Response for job ${job.id}:`, { aiResponse });
-    // --- DIAGNOSTIC LOGGING END ---
 
     if (!aiResponse) {
         throw new Error('No response from AI adapter');
@@ -148,12 +265,15 @@ export async function executeModelCallAndSave(
         throw new Error(aiResponse.error || 'AI response was empty.');
     }
 
-    let contentForStorage: string;
-    if (previousContent !== undefined && previousContent !== null) {
-        contentForStorage = previousContent + aiResponse.content;
-    } else {
-        contentForStorage = aiResponse.content;
-    }
+    const isContinuation = !!aiResponse.finish_reason && isContinueReason(aiResponse.finish_reason);
+
+    const contentForStorage: string = aiResponse.content;
+    
+    // This is the correct implementation. The semantic relationships are inherited
+    // directly from the job payload. The structural link for continuations is
+    // handled by the `target_contribution_id` field on the contribution record,
+    // not by adding a non-standard property to this JSON blob.
+    const document_relationships = job.payload.document_relationships;
 
     const fileType: FileType = isFileType(output_type) 
         ? output_type
@@ -174,8 +294,8 @@ export async function executeModelCallAndSave(
 
     const uploadContext: UploadContext = {
         pathContext: {
-            projectId,
-            fileType,
+            projectId: job.payload.projectId,
+            fileType: fileType,
             sessionId,
             iteration: iterationNumber,
             stageSlug,
@@ -201,18 +321,16 @@ export async function executeModelCallAndSave(
             tokensUsedInput: aiResponse.inputTokens, 
             tokensUsedOutput: aiResponse.outputTokens,
             processingTimeMs: aiResponse.processingTimeMs, 
-            seedPromptStoragePath: renderedPrompt.fullPath,
+            seedPromptStoragePath: 'file/location',
             target_contribution_id: job.payload.target_contribution_id,
-            document_relationships: job.payload.document_relationships,
+            document_relationships: document_relationships,
             isIntermediate: 'isIntermediate' in job.payload && job.payload.isIntermediate,
+            isContinuation: isContinuation,
+            turnIndex: isContinuation ? job.payload.continuation_count ?? 0 : undefined,
         },
     };
 
-    //console.log('[executeModelCallAndSave] Calling fileManager.uploadAndRegisterFile with context:', JSON.stringify(uploadContext, null, 2));
-
     const savedResult = await deps.fileManager.uploadAndRegisterFile(uploadContext);
-
-    //deps.logger.info(`[dialectic-worker] [executeModelCallAndSave] Received record from fileManager: ${JSON.stringify(savedResult.record, null, 2)}`);
 
     if (savedResult.error || !isDialecticContribution(savedResult.record)) {
         throw new Error(`Failed to save contribution: ${savedResult.error?.message || 'Invalid record returned.'}`);
@@ -244,22 +362,17 @@ export async function executeModelCallAndSave(
 
     
     if (needsContinuation) {
-        // --- DIAGNOSTIC LOGGING START ---
         deps.logger.info(`[executeModelCallAndSave] DIAGNOSTIC: Preparing to check for continuation for job ${job.id}.`, {
           finish_reason: aiResponse.finish_reason,
           payload_continuation_count: job.payload.continuation_count,
           continueUntilComplete: job.payload.continueUntilComplete
         });
-        // --- DIAGNOSTIC LOGGING END ---
 
         const continueResult = await deps.continueJob({ logger: deps.logger }, dbClient, job, aiResponse, contribution, projectOwnerUserId);
 
-        // --- DIAGNOSTIC LOGGING START ---
         deps.logger.info(`[executeModelCallAndSave] DIAGNOSTIC: Result from continueJob for job ${job.id}:`, { continueResult });
-        // --- DIAGNOSTIC LOGGING END ---
 
         if (continueResult.error) {
-          // Even if continuation fails, the original job succeeded. Log the error and continue.
           deps.logger.error(`[dialectic-worker] [executeModelCallAndSave] Failed to enqueue continuation for job ${job.id}.`, { error: continueResult.error.message });
         }
         if (projectOwnerUserId) {
@@ -273,6 +386,12 @@ export async function executeModelCallAndSave(
                 job_id: jobId,
             }, projectOwnerUserId);
         }
+    }
+
+    const isFinalChunk = aiResponse.finish_reason === 'stop';
+
+    if (isFinalChunk && job.payload.document_relationships) {
+        await deps.fileManager.assembleAndSaveFinalDocument(job.payload.document_relationships.thesis!);
     }
 
     const { error: finalUpdateError } = await dbClient

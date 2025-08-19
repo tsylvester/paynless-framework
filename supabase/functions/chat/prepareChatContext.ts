@@ -3,8 +3,6 @@ import { Database } from "../types_db.ts";
 import { AiModelExtendedConfig, ChatApiRequest, ChatHandlerDeps, AiProviderAdapterInstance } from "../_shared/types.ts";
 import { TokenWallet } from "../_shared/types/tokenWallet.types.ts";
 import { AiModelExtendedConfigSchema } from "./zodSchema.ts";
-import { defaultProviderMap } from "../_shared/ai_service/factory.ts";
-
 export interface PrepareChatContextDeps extends ChatHandlerDeps {
     supabaseClient: SupabaseClient<Database>;
 }
@@ -43,7 +41,6 @@ export async function prepareChatContext(
     const {
         logger,
         tokenWalletService,
-        getAiProviderAdapterOverride,
         getAiProviderAdapter: getAiProviderAdapterDep,
         supabaseClient,
     } = deps;
@@ -130,12 +127,11 @@ export async function prepareChatContext(
         }
 
         const aiProviderAdapter = (() => {
-            const adapterToUse = getAiProviderAdapterOverride || getAiProviderAdapterDep;
+            const adapterToUse = getAiProviderAdapterDep;
             return adapterToUse({
                 provider: providerData,
                 apiKey,
                 logger,
-                providerMap: defaultProviderMap,
             });
         })();
 

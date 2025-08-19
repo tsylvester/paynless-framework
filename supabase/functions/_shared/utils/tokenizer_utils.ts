@@ -1,5 +1,5 @@
 import { getEncoding } from "https://esm.sh/js-tiktoken@1.0.10";
-import type { MessageForTokenCounting, AiModelExtendedConfig, TiktokenModelForRules } from "../types.ts";
+import type { Messages, AiModelExtendedConfig, TiktokenModelForRules } from "../types.ts";
 import { countTokens } from "npm:@anthropic-ai/tokenizer@0.0.4";
 
 /**
@@ -13,7 +13,7 @@ import { countTokens } from "npm:@anthropic-ai/tokenizer@0.0.4";
  * @throws Error if token counting cannot be performed for the given strategy or configuration.
  */
 export function countTokensForMessages(
-  messages: MessageForTokenCounting[],
+  messages: Messages[],
   modelConfig: AiModelExtendedConfig
 ): number {
   const payloadFingerprint = messages.map(m => ({
@@ -21,8 +21,7 @@ export function countTokensForMessages(
     content_length: m.content?.length ?? 0,
     name_length: m.name?.length ?? 0,
   }));
-  console.log(`[countTokensForMessages] Estimating tokens for model "${modelConfig.api_identifier}". Payload fingerprint:`, JSON.stringify(payloadFingerprint, null, 2));
-  console.log(`[countTokensForMessages] Estimating tokens for model "${modelConfig.api_identifier}". Payload fingerprint:`, JSON.stringify(payloadFingerprint, null, 2));
+  //console.log(`[countTokensForMessages] Estimating tokens for model "${modelConfig.api_identifier}". Payload fingerprint:`, JSON.stringify(payloadFingerprint, null, 2));
   const { tokenization_strategy, api_identifier } = modelConfig;
 
   if (tokenization_strategy.type === "tiktoken") {

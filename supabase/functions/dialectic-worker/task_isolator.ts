@@ -8,7 +8,7 @@ import {
     IDialecticJobDeps,
 } from '../dialectic-service/dialectic.interface.ts';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
-import { MessageForTokenCounting } from '../_shared/types.ts';
+import { Messages } from '../_shared/types.ts';
 import { isDialecticExecuteJobPayload, isDialecticPlanJobPayload, isJson, isDocumentRelationships, isCanonicalPathParams } from '../_shared/utils/type_guards.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
@@ -124,8 +124,8 @@ export async function planComplexStage(
         throw new Error(`Model ${parentJob.payload.model_id} does not have provider_max_input_tokens configured.`);
     }
 
-    const messagesForTokenCounting: MessageForTokenCounting[] = sourceDocuments.map(doc => ({ role: 'user', content: doc.content }));
-    const estimatedTokens = deps.countTokens!(messagesForTokenCounting, modelConfig);
+    const messages: Messages[] = sourceDocuments.map(doc => ({ role: 'user', content: doc.content }));
+    const estimatedTokens = deps.countTokens!(messages, modelConfig);
 
     let childJobPayloads: DialecticExecuteJobPayload[];
 
