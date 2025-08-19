@@ -22,7 +22,7 @@ import { useChatWalletDecision } from "@/hooks/useChatWalletDecision";
 
 type WalkthroughStep = "domain" | "model" | "message";
 
-export default function Chat() {
+export default function StreamingChat() {
 	const { fetchDomains } = useDialecticStore((state) => ({
 		fetchDomains: state.fetchDomains,
 	}));
@@ -38,7 +38,6 @@ export default function Chat() {
 		setSelectedProvider,
 		setSelectedPrompt,
 		availableProviders,
-		startNewChat,
 	} = useAiStore();
 
 	const { loadPersonalWallet } = useWalletStore((state) => ({
@@ -103,12 +102,6 @@ export default function Chat() {
 		setIsTransitioning(true);
 		setTimeout(() => {
 			setCurrentStep(nextStep);
-
-			// Start a new chat when transitioning to message step
-			if (nextStep === "message") {
-				startNewChat(null); // null for personal chat
-			}
-
 			setTimeout(() => {
 				setIsTransitioning(false);
 			}, 50); // Small delay to ensure DOM update
@@ -133,19 +126,9 @@ export default function Chat() {
 		const userMessage = { role: "user" as const, content: message.trim() };
 		setChatHistory((prev) => [...prev, userMessage]);
 
-		// Clear streaming content from previous response when starting new message
+		setIsStreaming(true);
 		setStreamingContent("");
 		streamingContentRef.current = "";
-		setIsStreaming(true);
-
-		console.log(
-			"Starting streaming with provider:",
-			selectedProviderId,
-			"prompt:",
-			selectedPromptId,
-			"wallet ready:",
-			isWalletReady,
-		);
 
 		try {
 			await sendMessageStreaming({
@@ -153,16 +136,10 @@ export default function Chat() {
 				providerId: selectedProviderId,
 				promptId: selectedPromptId,
 				onChunk: (chunk: string) => {
-					console.log("Received chunk:", chunk);
 					streamingContentRef.current += chunk;
 					setStreamingContent(streamingContentRef.current);
-					console.log(
-						"Updated streaming content:",
-						streamingContentRef.current,
-					);
 				},
-				onComplete: (result) => {
-					console.log("Streaming complete with result:", result);
+				onComplete: () => {
 					setIsStreaming(false);
 					// Add assistant message to chat history
 					const assistantMessage = {
@@ -170,12 +147,13 @@ export default function Chat() {
 						content: streamingContentRef.current,
 					};
 					setChatHistory((prev) => [...prev, assistantMessage]);
-					// Keep streaming content visible - don't clear it here
+					setStreamingContent("");
+					streamingContentRef.current = "";
 					console.log("Streaming complete!");
 				},
 				onError: (error: string) => {
-					console.error("Streaming error:", error);
 					setIsStreaming(false);
+					console.error("Streaming error:", error);
 				},
 			});
 		} catch (error) {
