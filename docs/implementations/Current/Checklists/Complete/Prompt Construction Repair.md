@@ -591,11 +591,11 @@ This phase ensures the fixes are validated at a higher level and are protected a
                     6.  Recalculate the token count and repeat the loop until the history fits within the context window.
             *   `[ ]` 10.m.iv.3. `[TEST-UNIT]` **PROVE: Confirm Fix:** Rerun the test from the RED step and confirm all assertions now pass.
 
-*   `[ ]` 10.n. `[REFACTOR]` **Charge RAG Expense to User**
-    *   `[ ]`   10.n.i. **RAG Embedding Costs Tokens** The RAG service relies on OpenAI text embedding models. These models charge input tokens. The application has operating expenses, and charges output tokens for RAG. Currently the RAG service does not call the tokenWalletService to charge users for the token expense of the embedding service. 
+*   `[✅]` 10.n. `[REFACTOR]` **Charge RAG Expense to User**
+    *   `[✅]`   10.n.i. **RAG Embedding Costs Tokens** The RAG service relies on OpenAI text embedding models. These models charge input tokens. The application has operating expenses, and charges output tokens for RAG. Currently the RAG service does not call the tokenWalletService to charge users for the token expense of the embedding service. 
 
-*   `[ ]` 10.o. `[REFACTOR]` **Refactor ContinueJob for Transactional, Scalable, Context Aware Generation**
-    *   `[ ]` 10.o.i. **Context:** The current `handleContinuationJob` is critically flawed. It is non-transactional, risking data and financial loss if it fails mid-process. It creates an invalid conversational history, causing AI failures. It also lacks a mechanism to manage the context window, preventing long generations. This refactoring will rebuild the function to be a robust, transactional loop that follows a "Charge -> Save -> Check Balance -> Continue" model, uses a correct alternating turn structure (`[user, assistant, user, assistant]`), and integrates RAG-based context trimming to enable near-infinite continuation while preserving critical context and ensuring financial safety.
+*   `[✅]` 10.o. `[REFACTOR]` **Refactor ContinueJob for Transactional, Scalable, Context Aware Generation**
+    *   `[✅]` 10.o.i. **Context:** The current `handleContinuationJob` is critically flawed. It is non-transactional, risking data and financial loss if it fails mid-process. It creates an invalid conversational history, causing AI failures. It also lacks a mechanism to manage the context window, preventing long generations. This refactoring will rebuild the function to be a robust, transactional loop that follows a "Charge -> Save -> Check Balance -> Continue" model, uses a correct alternating turn structure (`[user, assistant, user, assistant]`), and integrates RAG-based context trimming to enable near-infinite continuation while preserving critical context and ensuring financial safety.
 
 *   `[ ]` 11. `[TEST-INTEGRATION]` **Final Validation**
     *   `[ ]` 11.a. `[TEST-INTEGRATION]` Run the full `dialectic_pipeline.integration.test.ts`.
