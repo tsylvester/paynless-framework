@@ -14,7 +14,7 @@ import {
     UserProfileUpdate, // Added for typing the updateProfile payload
     ChatContextPreferences,
     UserProfile, // Import UserProfile from @paynless/types
-    MessageForTokenCounting,
+    Messages,
     ChatHandlerSuccessResponse, // For casting the api call result type
     IAuthService,
     IWalletService,
@@ -740,11 +740,13 @@ export const useAiStore = create<AiStore>()(
                                         // Add assistant message
                                         updatedMessagesForChat.push(assistantMessage);
 
-                                        if (chatIdForOptimistic !== actualNewChatId && newMessagesByChatId[chatIdForOptimistic]) {
+                                        if (chatIdForOptimistic !== actualNewChatId && actualNewChatId && newMessagesByChatId[chatIdForOptimistic]) {
                                             newMessagesByChatId[actualNewChatId] = updatedMessagesForChat;
                                             delete newMessagesByChatId[chatIdForOptimistic];
                                         } else {
-                                            newMessagesByChatId[actualNewChatId] = updatedMessagesForChat;
+                                            if (actualNewChatId) {
+                                                newMessagesByChatId[actualNewChatId] = updatedMessagesForChat;
+                                            }
                                         }
 
                                         return {
@@ -1022,7 +1024,7 @@ export const useAiStore = create<AiStore>()(
                     },
 
                     // SIMPLIFIED sendMessage ACTION
-                    sendMessage: async (data: { message: string; providerId: string; promptId: string | null; chatId?: string | null; contextMessages?: MessageForTokenCounting[] }) => {
+                    sendMessage: async (data: { message: string; providerId: string; promptId: string | null; chatId?: string | null; contextMessages?: Messages[] }) => {
                         // --- Create Adapters for Service Dependencies ---
                         const authStoreState = useAuthStore.getState();
                         const authServiceAdapter: IAuthService = {

@@ -36,6 +36,30 @@ import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
 import type { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 
+// Local helpers for arranging tests
+const buildPromptPayload = (overrides: Partial<PromptConstructionPayload> = {}): PromptConstructionPayload => ({
+  systemInstruction: undefined,
+  conversationHistory: [],
+  resourceDocuments: [],
+  currentUserPrompt: 'RENDERED: Hello',
+  ...overrides,
+});
+
+const buildExecuteParams = (dbClient: SupabaseClient<Database>, deps: IDialecticJobDeps, overrides: Partial<ExecuteModelCallAndSaveParams> = {}): ExecuteModelCallAndSaveParams => ({
+  dbClient,
+  deps,
+  authToken: 'auth-token',
+  job: createMockJob(testPayload),
+  projectOwnerUserId: 'user-789',
+  providerDetails: mockProviderData,
+  sessionData: mockSessionData,
+  promptConstructionPayload: buildPromptPayload(),
+  compressionStrategy: getSortedCompressionCandidates,
+  ...overrides,
+});
+
+const spyCallModel = (deps: IDialecticJobDeps) => spy(deps, 'callUnifiedAIModel');
+
 // Helper function to create a valid DialecticJobRow for testing
 export function createMockJob(payload: DialecticJobPayload, overrides: Partial<DialecticJobRow> = {}): DialecticJobRow {
     if (!isJson(payload)) {
@@ -270,6 +294,43 @@ Deno.test('executeModelCallAndSave - Happy Path', async (t) => {
         const [updatePayload] = historicSpies.callsArgs[0];
         assert(isRecord(updatePayload) && 'status' in updatePayload, "Update payload should have a status property");
     });
+
+    clearAllStubs?.();
+});
+
+Deno.test("executeModelCallAndSave - should send '__none__' as promptId in ChatApiRequest", async () => {
+    const { client: dbClient, clearAllStubs } = setupMockClient({
+        'ai_providers': {
+            select: { data: [mockFullProviderData], error: null }
+        }
+    });
+
+    const deps = getMockDeps();
+    const callUnifiedAISpy = spyCallModel(deps);
+
+    const params: ExecuteModelCallAndSaveParams = {
+        dbClient: dbClient as unknown as SupabaseClient<Database>,
+        deps,
+        authToken: 'auth-token',
+        job: createMockJob({ ...testPayload, prompt_template_name: 'some-template-name' }),
+        projectOwnerUserId: 'user-789',
+        providerDetails: mockProviderData,
+        sessionData: mockSessionData,
+        promptConstructionPayload: {
+            systemInstruction: 'System instruction',
+            conversationHistory: [],
+            resourceDocuments: [],
+            currentUserPrompt: 'User prompt',
+        },
+        compressionStrategy: getSortedCompressionCandidates,
+    };
+
+    await executeModelCallAndSave(params);
+
+    assertEquals(callUnifiedAISpy.calls.length, 1, 'callUnifiedAIModel should be called once');
+    const firstArg = callUnifiedAISpy.calls[0].args[0];
+    assert(isChatApiRequest(firstArg), 'First argument to callUnifiedAIModel should be a ChatApiRequest');
+    assertEquals(firstArg.promptId, '__none__');
 
     clearAllStubs?.();
 });
@@ -715,24 +776,14 @@ Deno.test('executeModelCallAndSave - should accept PromptConstructionPayload and
         stage: 'test-stage',
     };
 
-    const promptConstructionPayload: PromptConstructionPayload = {
+    const promptConstructionPayload: PromptConstructionPayload = buildPromptPayload({
         systemInstruction: "You are a helpful assistant.",
         conversationHistory: [{ role: 'user', content: 'Previous message' }],
         resourceDocuments: [mockResourceDocument],
         currentUserPrompt: "This is the current user prompt.",
-    };
+    });
 
-    const params: ExecuteModelCallAndSaveParams = {
-        dbClient: dbClient as unknown as SupabaseClient<Database>,
-        deps,
-        authToken: 'auth-token',
-        job: createMockJob(testPayload),
-        projectOwnerUserId: 'user-789',
-        providerDetails: mockProviderData,
-        sessionData: mockSessionData,
-        promptConstructionPayload,
-        compressionStrategy: getSortedCompressionCandidates,
-    };
+    const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, { promptConstructionPayload });
 
     // Act
     await executeModelCallAndSave(params);
@@ -746,8 +797,80 @@ Deno.test('executeModelCallAndSave - should accept PromptConstructionPayload and
     assertEquals(firstArg.message, "This is the current user prompt.");
     assertEquals(firstArg.systemInstruction, "You are a helpful assistant.");
     assertExists(firstArg.messages);
-    assertEquals(firstArg.messages.length, 2, "Should include history and resource documents");
+    assertEquals(firstArg.messages.length, 2, "Should include rendered prompt and one history message; resourceDocuments are not appended");
+    assertEquals(firstArg.messages[0], { role: 'user', content: 'This is the current user prompt.' });
+    assertEquals(firstArg.messages[1], { role: 'user', content: 'Previous message' });
     assertEquals(firstArg.providerId, mockProviderData.id);
 
     clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - includes rendered template as first user message (non-continuation)', async () => {
+  const { client: dbClient, clearAllStubs } = setupMockClient({
+    'ai_providers': {
+      select: { data: [mockFullProviderData], error: null }
+    }
+  });
+
+  const deps = getMockDeps();
+  const callUnifiedAISpy = spyCallModel(deps);
+  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+    promptConstructionPayload: buildPromptPayload({ currentUserPrompt: 'RENDERED: Hello' }),
+  });
+
+  await executeModelCallAndSave(params);
+
+  assertEquals(callUnifiedAISpy.calls.length, 1, 'callUnifiedAIModel should be called once');
+  const firstArg = callUnifiedAISpy.calls[0].args[0];
+  assert(isChatApiRequest(firstArg), 'First argument to callUnifiedAIModel should be a ChatApiRequest');
+
+  assertExists(firstArg.messages, 'messages should exist on ChatApiRequest');
+  assertEquals(firstArg.message, 'RENDERED: Hello');
+  assertEquals(firstArg.systemInstruction, undefined);
+  assertEquals(firstArg.messages.length, 1, 'messages should contain only the rendered user prompt when no history/resources');
+  assertEquals(firstArg.messages[0], { role: 'user', content: 'RENDERED: Hello' });
+
+  clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - continuation uses gathered history and does not duplicate "Please continue."', async () => {
+  const { client: dbClient, clearAllStubs } = setupMockClient({
+    'ai_providers': {
+      select: { data: [mockFullProviderData], error: null }
+    }
+  });
+
+  const deps = getMockDeps();
+  const callUnifiedAISpy = spyCallModel(deps);
+
+  const gatheredHistory = [
+    { role: 'user', content: 'SEED: Original user prompt' },
+    { role: 'assistant', content: 'First assistant reply' },
+    { role: 'assistant', content: 'Intermediate assistant chunk' },
+    { role: 'user', content: 'Please continue.' },
+  ];
+
+  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
+    job: createMockJob(testPayload, { target_contribution_id: 'root-123' }),
+    promptConstructionPayload: buildPromptPayload({
+      currentUserPrompt: 'Please continue.',
+      conversationHistory: gatheredHistory as any,
+    }),
+  });
+
+  await executeModelCallAndSave(params);
+
+  const firstArg = callUnifiedAISpy.calls[0].args[0];
+  assert(isChatApiRequest(firstArg), 'First argument to callUnifiedAIModel should be a ChatApiRequest');
+
+  // message should be the continuation prompt
+  assertEquals(firstArg.message, 'Please continue.');
+  // messages should match gathered history exactly (no extra prepend)
+  assertExists(firstArg.messages, 'messages should exist on ChatApiRequest');
+  assertEquals(firstArg.messages, gatheredHistory);
+  // ensure exactly one trailing "Please continue." message
+  const continueCount = firstArg.messages.filter((m: any) => m.role === 'user' && m.content === 'Please continue.').length;
+  assertEquals(continueCount, 1);
+
+  clearAllStubs?.();
 });

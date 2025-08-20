@@ -9,13 +9,13 @@ import {
   type Job,
   type PromptConstructionPayload,
   type SourceDocument,
-  type DialecticContributionRow,
 } from '../dialectic-service/dialectic.interface.ts';
-import { isSelectedAiProvider, isDocumentRelationships } from "../_shared/utils/type_guards.ts";
+import { isSelectedAiProvider } from "../_shared/utils/type_guards.ts";
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { type Messages } from '../_shared/types.ts';
 import { type AssemblerSourceDocument, type StageContext } from '../_shared/prompt-assembler.interface.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
+import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
 
 export async function processSimpleJob(
     dbClient: SupabaseClient<Database>,
@@ -88,7 +88,7 @@ export async function processSimpleJob(
         let conversationHistory: Messages[] = [];
         let gatheredInputs: AssemblerSourceDocument[] = [];
         let currentUserPrompt: string;
-        let resourceDocuments: SourceDocument[] = [];
+        const resourceDocuments: SourceDocument[] = [];
 
         if (job.payload.target_contribution_id) {
             conversationHistory = await deps.promptAssembler.gatherContinuationInputs(
@@ -110,32 +110,51 @@ export async function processSimpleJob(
                     return { role: 'user', content: input.content };
                 }
             });
-            currentUserPrompt = project.initial_user_prompt;
 
-        const contributionIds = gatheredInputs.filter(d => d.type === 'contribution').map(d => d.id);
-        const { data: contributions, error: contribError } = await dbClient
-            .from('dialectic_contributions')
-            .select('*')
-            .in('id', contributionIds);
+            const initialPromptResult = await getInitialPromptContent(
+                dbClient,
+                project,
+                deps.logger,
+                (_client, bucket, path) => deps.downloadFromStorage(bucket, path)
+            );
 
-        if (contribError) {
-            throw new Error('Failed to fetch full source documents for contributions.');
-        }
+            const directPrompt = typeof project.initial_user_prompt === 'string' ? project.initial_user_prompt.trim() : '';
+            const loaderContent = (initialPromptResult && typeof initialPromptResult.content === 'string') ? initialPromptResult.content.trim() : '';
+            const hasLoaderSource = !!(initialPromptResult && initialPromptResult.storagePath);
 
-            resourceDocuments = (contributions || []).map((c: DialecticContributionRow) => {
-                const assemblerDoc = gatheredInputs.find(a => a.id === c.id);
-                return {
-                    ...c,
-                    content: assemblerDoc?.content || '',
-                    document_relationships: isDocumentRelationships(c.document_relationships) ? c.document_relationships : null,
-                };
-            });
+            if (directPrompt) {
+                currentUserPrompt = directPrompt;
+            } else if (hasLoaderSource && loaderContent) {
+                currentUserPrompt = loaderContent;
+            } else {
+                throw new Error('Initial prompt is required to start this stage, but none was provided.');
+            }
+            // Render the prompt template using the resolved initial prompt and gathered context
+            const dynamicContext = await deps.promptAssembler.gatherContext(
+                project,
+                sessionData,
+                stageContext,
+                currentUserPrompt,
+                sessionData.iteration_count,
+            );
+            const renderedPrompt = deps.promptAssembler.render(
+                stageContext,
+                dynamicContext,
+                project.user_domain_overlay_values ?? null,
+            );
+            const renderedTrimmed = (renderedPrompt || '').trim();
+            if (!renderedTrimmed) {
+                throw new Error('Rendered initial prompt is empty.');
+            }
+            currentUserPrompt = renderedTrimmed;
+            console.log('currentUserPrompt', currentUserPrompt);
         }
         
-        const systemInstruction = system_prompts.prompt_text;
-        
+        // Pass-through-only: include systemInstruction if an upstream value is provided in the future.
+        const maybeSystemInstruction: string | undefined = undefined;
+
         const promptConstructionPayload: PromptConstructionPayload = {
-            systemInstruction,
+            ...(maybeSystemInstruction !== undefined ? { systemInstruction: maybeSystemInstruction } : {}),
             conversationHistory,
             resourceDocuments,
             currentUserPrompt,

@@ -86,5 +86,13 @@ export function renderPrompt(
   // 6. Final cleanup of any leftover empty lines to avoid large gaps
   renderedText = renderedText.replace(/\n{3,}/g, '\n\n');
 
+  // 7. GREEN cleanup: remove any remaining lines that still contain single-brace placeholders like {key}
+  //    This ensures unknown variables that were not supplied by overlays or dynamic context
+  //    do not leak into the final prompt text sent to the model.
+  renderedText = renderedText.replace(/^.*\{[A-Za-z0-9_]+\}.*$\n?/gm, '');
+
+  // Normalize trailing whitespace
+  renderedText = renderedText.replace(/\n{3,}/g, '\n\n').trimEnd();
+
   return renderedText;
 } 

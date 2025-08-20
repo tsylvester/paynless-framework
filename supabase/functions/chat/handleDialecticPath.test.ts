@@ -21,6 +21,7 @@ import {
     type ChatHandlerSuccessResponse,
     AdapterResponsePayload,
     ChatMessageRow,
+    Messages,
   } from "../_shared/types.ts";
   import { handleDialecticPath } from "./handleDialecticPath.ts";
   import { getMockAiProviderAdapter } from "../_shared/ai_service/ai_provider.mock.ts";
@@ -126,6 +127,88 @@ Deno.test("handleDialecticPath: happy path - should NOT create chat or message r
       "Dialectic assistant response",
     );
   });
+
+Deno.test("handleDialecticPath: forwards message, messages, and systemInstruction unchanged; uses requestBody.messages for token counting (RED)", async () => {
+  const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {});
+
+  const modelConfig: AiModelExtendedConfig = {
+      api_identifier: "test-model-api-id",
+      input_token_cost_rate: 0.01,
+      output_token_cost_rate: 0.02,
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+  };
+
+  const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+  mockAiAdapter.controls.setMockResponse({
+    role: 'assistant',
+    content: 'ok',
+    ai_provider_id: 'test-provider-id',
+    system_prompt_id: null,
+    token_usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+  });
+
+  const mockTokenWalletService: MockTokenWalletService = createMockTokenWalletService();
+
+  const countTokensSpy = spy((messages: { role: 'user'|'assistant'|'system', content: string }[], _cfg: AiModelExtendedConfig) => 5);
+
+  const deps: ChatHandlerDeps = {
+    ...defaultDeps,
+    logger: logger,
+    tokenWalletService: mockTokenWalletService.instance,
+    countTokensForMessages: countTokensSpy as unknown as ChatHandlerDeps['countTokensForMessages'],
+    getAiProviderAdapter: spy(() => mockAiAdapter.instance),
+  };
+
+  const requestMessages: NonNullable<ChatApiRequest['messages']> = [
+    { role: 'user', content: 'seed user' },
+    { role: 'assistant', content: 'first reply' },
+    { role: 'user', content: 'Please continue.' },
+  ];
+
+  const requestBody: ChatApiRequest = {
+    message: 'Please continue.',
+    providerId: 'test-provider',
+    promptId: '__none__',
+    isDialectic: true,
+    messages: requestMessages,
+    systemInstruction: 'SYSTEM: pass-through',
+  };
+
+  const wallet: TokenWallet = {
+    walletId: 'test-wallet',
+    balance: '10000',
+    currency: 'AI_TOKEN',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  const context: PathHandlerContext = {
+    supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+    deps,
+    userId: 'test-user-id',
+    requestBody,
+    wallet,
+    aiProviderAdapter: mockAiAdapter.instance,
+    modelConfig,
+    actualSystemPromptText: null,
+    finalSystemPromptIdForDb: null,
+    apiKey: 'test-api-key',
+    providerApiIdentifier: 'test-model-api-id',
+  };
+
+  const result = await handleDialecticPath(context);
+  assert(!('error' in result), 'Expected success');
+
+  // Assert token counting used requestBody.messages
+  const firstCountArgs = countTokensSpy.calls[0]?.args?.[0];
+  assertEquals(firstCountArgs, requestMessages, 'Token counting should use requestBody.messages');
+
+  // Assert adapter received pass-through request
+  const firstSendArg = mockAiAdapter.sendMessageSpy.calls[0].args[0];
+  assertEquals(firstSendArg.message, requestBody.message, 'message must be forwarded unchanged');
+  assertEquals(firstSendArg.messages, requestBody.messages, 'messages must be forwarded unchanged');
+  assertEquals(firstSendArg.systemInstruction, requestBody.systemInstruction, 'systemInstruction must be forwarded unchanged');
+});
 
 Deno.test("handleDialecticPath: AI adapter fails - should not debit tokens and return error", async () => {
     // Arrange

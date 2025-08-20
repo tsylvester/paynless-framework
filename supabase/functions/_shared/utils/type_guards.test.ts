@@ -1547,6 +1547,18 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
         assert(isDialecticExecuteJobPayload(payload));
     });
 
+    await t.step('should return true for an execute job payload without prompt_template_name (simple flow)', () => {
+        const payload = {
+            job_type: 'execute',
+            inputs: {},
+            output_type: 'thesis',
+            canonicalPathParams: {
+                contributionType: 'thesis',
+            },
+        };
+        assert(isDialecticExecuteJobPayload(payload));
+    });
+
     await t.step('should return true for a valid execute job payload with full canonical params', () => {
         const payload = {
             ...basePayload,

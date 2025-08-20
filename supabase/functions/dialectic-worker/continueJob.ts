@@ -68,9 +68,9 @@ export async function continueJob(
     step_info: 'step_info' in job.payload && isDialecticStepInfo(job.payload.step_info)
         ? job.payload.step_info 
         : { current_step: newContinuationCount, total_steps: -1 }, // Fallback, -1 indicates unknown total
-    prompt_template_name: 'prompt_template_name' in job.payload && typeof job.payload.prompt_template_name === 'string' 
-        ? job.payload.prompt_template_name 
-        : 'default_continuation_prompt',
+    prompt_template_name: ('prompt_template_name' in job.payload && typeof job.payload.prompt_template_name === 'string')
+        ? job.payload.prompt_template_name
+        : undefined,
     output_type: job.payload.output_type, // We have already validated this is a valid ContributionType.
     inputs: 'inputs' in job.payload && isStringRecord(job.payload.inputs)
         ? job.payload.inputs

@@ -6,10 +6,15 @@ import {
     DialecticLifecycleEvent,
     DialecticContribution,
     ApiError,
+    ChatRole,
 } from '@paynless/types';
 
 export function isUserRole(role: unknown): role is UserRole {
   return typeof role === 'string' && ['user', 'admin'].includes(role);
+}
+
+export function isChatRole(role: unknown): role is ChatRole {
+  return typeof role === 'string' && ['system', 'user', 'assistant', 'function'].includes(role);
 }
 
 export function isChatContextPreferences(obj: unknown): obj is ChatContextPreferences {

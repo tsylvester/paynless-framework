@@ -654,7 +654,7 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
 
     return (
         payload.job_type === 'execute' &&
-        typeof payload.prompt_template_name === 'string' &&
+        (!('prompt_template_name' in payload) || payload.prompt_template_name === undefined || typeof payload.prompt_template_name === 'string') &&
         typeof payload.output_type === 'string' &&
         (!('step_info' in payload) || isDialecticStepInfo(payload.step_info)) &&
         isRecord(payload.inputs) &&

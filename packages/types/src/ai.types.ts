@@ -64,11 +64,20 @@ export type TiktokenEncoding = 'cl100k_base' | 'p50k_base' | 'r50k_base' | 'gpt2
 /**
  * Interface for messages used in token counting functions.
  */
+export enum ChatRole {
+  SYSTEM = 'system',
+  USER = 'user',
+  ASSISTANT = 'assistant',
+  FUNCTION = 'function',
+}
+
 export interface Messages {
-  role: "system" | "user" | "assistant" | "function"; // Function role might be needed for some models
+  role: ChatRole; // Function role might be needed for some models
   content: string | null; // Content can be null for some function calls
   name?: string; // Optional, for function calls
 }
+
+
 
 /**
  * Extended configuration for an AI model, stored in the `ai_providers.config` JSON column.

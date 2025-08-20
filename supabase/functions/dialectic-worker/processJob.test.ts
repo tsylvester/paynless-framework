@@ -424,7 +424,6 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
             continuation_count: undefined,
             target_contribution_id: undefined,
             step_info: mockPayload.step_info,
-            prompt_template_name: 'default_seed_prompt',
             output_type: 'thesis',
             inputs: {},
             canonicalPathParams: {
@@ -522,6 +521,91 @@ Deno.test('processJob - verifies correct parameters passed to processComplexJob'
         assertExists(passedDeps.planComplexStage, 'deps should have planComplexStage');
         assertExists(passedDeps.ragService, 'deps should have ragService');
         assertExists(passedDeps.fileManager, 'deps should have fileManager');
+
+    } finally {
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+Deno.test('processJob - simple plan→execute should NOT set prompt_template_name', async () => {
+    // 1. Setup
+    const { processors, spies } = createMockJobProcessors();
+
+    const mockJobId = 'job-id-no-prompt-template-name';
+    const simplePlanPayload: DialecticPlanJobPayload = {
+        job_type: 'plan',
+        step_info: { current_step: 1, total_steps: 1 },
+        sessionId: 'session-id-simple',
+        projectId: 'project-id-simple',
+        stageSlug: 'thesis',
+        model_id: 'model-id-simple',
+        iterationNumber: 1,
+        continueUntilComplete: false,
+    };
+
+    if (!isJson(simplePlanPayload)) {
+        throw new Error('Test setup failed: simplePlanPayload is not a valid Json');
+    }
+
+    const mockJob: MockJob = {
+        id: mockJobId,
+        user_id: 'user-id-simple',
+        session_id: 'session-id-simple',
+        stage_slug: 'thesis',
+        payload: simplePlanPayload,
+        iteration_number: 1,
+        status: 'pending',
+        attempt_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        results: null,
+        error_details: null,
+        parent_job_id: null,
+        target_contribution_id: null,
+        prerequisite_job_id: null,
+    };
+
+    const mockSupabase = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_stages': {
+                select: {
+                    data: [{
+                        id: 'stage-id-thesis',
+                        slug: 'thesis',
+                        display_name: 'Thesis',
+                        input_artifact_rules: null, // Simple stage
+                    }]
+                }
+            }
+        }
+    });
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...mockJob, payload: simplePlanPayload },
+            'user-id-simple',
+            mockDeps,
+            'mock-token-simple',
+            processors,
+        );
+
+        // Ensure simple processor was called
+        assertEquals(spies.processSimpleJob.calls.length, 1, 'processSimpleJob should be called once for simple stage');
+
+        // Inspect transformed execute payload
+        const transformedPayload = spies.processSimpleJob.calls[0].args[1].payload as Record<string, unknown>;
+
+        // RED assertions: field should be absent/undefined and must not be 'default_seed_prompt'
+        assertEquals('prompt_template_name' in transformedPayload, false, "prompt_template_name should not be present for simple plan→execute");
+        // If present due to bug, ensure it's not 'default_seed_prompt'
+        if ('prompt_template_name' in transformedPayload) {
+            assertEquals(transformedPayload.prompt_template_name, undefined, "prompt_template_name should be undefined for simple plan→execute");
+        }
 
     } finally {
         spies.processSimpleJob.restore();

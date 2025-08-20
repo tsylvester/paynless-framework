@@ -130,34 +130,91 @@ export async function scoreResourceDocuments(
 }
 
 /**
- * Scores the "middle" of a conversation history. A lower score is worse (older).
- * The first 3 messages (system, user, assistant) are considered immutable.
- * The last 2 messages (user, assistant) are considered immutable.
+ * Scores compressible portions of the conversation history.
+ *
+ * Immutable by position (compatibility with existing tests):
+ *  - First 3 messages (typically system, seed user, first assistant)
+ *  - Last 3 messages by index
+ *
+ * Immutable by role (role-aware anchors):
+ *  - First user message (seed prompt)
+ *  - First assistant reply that follows the seed
+ *  - Last two assistant replies
+ *  - Final user message if exactly 'Please continue.'
  */
 export function scoreHistory(
     history: Messages[],
     immutableTailCount = 3,
 ): CompressionCandidate[] {
     const immutableHeadCount = 3;
-    // The first 3 and last 3 messages are immutable.
-    if (history.length <= immutableHeadCount + immutableTailCount) {
+    const totalLength = history.length;
+
+    // Positional immutables guard
+    if (totalLength <= immutableHeadCount + immutableTailCount) {
         return [];
     }
 
-    const mutablePart = history.slice(immutableHeadCount, -immutableTailCount);
+    // Candidate window by position (exclude head/tail blocks)
+    const candidateStart = immutableHeadCount;
+    const candidateEndExclusive = totalLength - immutableTailCount;
 
-    return mutablePart.map((message, index) => {
-        // Normalize the score: oldest (index 0) is 0, newest is 1.
-        const valueScore = mutablePart.length > 1 
-            ? index / (mutablePart.length - 1) 
-            : 0; 
-            
+    // Compute role-aware anchors to exclude from candidates
+    const excludedIndices = new Set<number>();
+
+    // Anchor: first user (seed)
+    const firstUserIdx = history.findIndex(m => m.role === 'user');
+    if (firstUserIdx >= 0) excludedIndices.add(firstUserIdx);
+
+    // Anchor: first assistant after seed
+    if (firstUserIdx >= 0) {
+        const afterSeedAssistantRel = history.slice(firstUserIdx + 1).findIndex(m => m.role === 'assistant');
+        if (afterSeedAssistantRel >= 0) {
+            const idx = firstUserIdx + 1 + afterSeedAssistantRel;
+            excludedIndices.add(idx);
+        }
+    }
+
+    // Anchor: last two assistant replies
+    const assistantIndices: number[] = [];
+    for (let i = 0; i < totalLength; i++) {
+        if (history[i].role === 'assistant') assistantIndices.push(i);
+    }
+    if (assistantIndices.length >= 1) excludedIndices.add(assistantIndices[assistantIndices.length - 1]);
+    if (assistantIndices.length >= 2) excludedIndices.add(assistantIndices[assistantIndices.length - 2]);
+
+    // Anchor: final user 'Please continue.'
+    for (let i = totalLength - 1; i >= 0; i--) {
+        const msg = history[i];
+        if (msg.role === 'user') {
+            const content = (msg.content || '').trim();
+            if (content === 'Please continue.') {
+                excludedIndices.add(i);
+            }
+            break; // only inspect the final user message
+        }
+    }
+
+    // Build candidate list excluding role-aware anchors
+    const candidateIndices: number[] = [];
+    for (let i = candidateStart; i < candidateEndExclusive; i++) {
+        if (!excludedIndices.has(i)) candidateIndices.push(i);
+    }
+
+    if (candidateIndices.length === 0) return [];
+
+    return candidateIndices.map((originalIndex, relativeIndex) => {
+        // Normalize value score across candidates: oldest (first in window) -> 0, newest -> 1
+        const valueScore = candidateIndices.length > 1
+            ? relativeIndex / (candidateIndices.length - 1)
+            : 0;
+
+        const message = history[originalIndex];
         return {
             id: message.id!,
             content: message.content || '',
             sourceType: 'history',
-            originalIndex: index + immutableHeadCount, // Adjust for the initial slice
-            valueScore: valueScore,
+            originalIndex,
+            valueScore,
         };
     });
 }

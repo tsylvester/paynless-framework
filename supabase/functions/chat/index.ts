@@ -8,7 +8,7 @@ import {
     createErrorResponse,
     createSuccessResponse,
 } from '../_shared/cors-headers.ts';
-import { getAiProviderAdapter, testProviderMap } from '../_shared/ai_service/factory.ts';
+import { getAiProviderAdapter, testProviderMap, defaultProviderMap } from '../_shared/ai_service/factory.ts';
 import type {
     ChatHandlerDeps,
     GetUserFn,
@@ -171,7 +171,12 @@ export const defaultDeps: ChatHandlerDeps = {
     handleCorsPreflightRequest,
     createSuccessResponse,
     createErrorResponse,
-    getAiProviderAdapter: getAiProviderAdapter,
+    getAiProviderAdapter: (dependencies: FactoryDependencies) => {
+        return getAiProviderAdapter({
+            ...dependencies,
+            providerMap: defaultProviderMap,
+        });
+    },
     verifyApiKey: async (apiKey: string, providerName: string): Promise<boolean> => {
         logger.warn("[defaultDeps] Using STUB for verifyApiKey.", { apiKeyLen: apiKey.length, providerName });
         return apiKey.startsWith('sk-test-');

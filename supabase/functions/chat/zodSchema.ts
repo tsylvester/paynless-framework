@@ -60,4 +60,5 @@ export const ChatApiRequestSchema = z.object({
   rewindFromMessageId: z.string().uuid({ message: "If provided, rewindFromMessageId must be a valid UUID." }).optional(),
   max_tokens_to_generate: z.number().int({ message: "max_tokens_to_generate must be an integer." }).positive({ message: "max_tokens_to_generate must be positive." }).optional(),
   continue_until_complete: z.boolean().optional(),
+  systemInstruction: z.string().optional(),
 });

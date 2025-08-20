@@ -34,7 +34,10 @@ export async function handleDialecticPath(
     
     logger.info('Dialectic request processing (no rewind).');
 
-    const messagesForProvider: {role: 'user' | 'assistant' | 'system', content: string}[] = [{ role: 'user', content: userMessageContent }];
+    // Use requestBody.messages for both token counting and forwarding when provided; otherwise synthesize from message
+    const messagesForProvider: {role: 'user' | 'assistant' | 'system', content: string}[] = Array.isArray(requestBody.messages) && requestBody.messages.length > 0
+        ? requestBody.messages
+        : [{ role: 'user', content: userMessageContent }];
 
     let maxAllowedOutputTokens: number;
     try {
@@ -85,15 +88,16 @@ export async function handleDialecticPath(
     let adapterResponsePayload: AdapterResponsePayload;
     try {
             const adapterChatRequestNormal: ChatApiRequest = {
-            message: userMessageContent, 
-            messages: messagesForProvider, 
-            providerId: requestProviderId,
-            promptId: requestPromptId, 
-            chatId: undefined,
-            organizationId: organizationId,
-            max_tokens_to_generate: Math.min(max_tokens_to_generate || Infinity, maxAllowedOutputTokens),
-            continue_until_complete: continue_until_complete,
-        };
+                message: userMessageContent,
+                messages: messagesForProvider,
+                providerId: requestProviderId,
+                promptId: requestPromptId,
+                chatId: undefined,
+                organizationId: organizationId,
+                max_tokens_to_generate: Math.min(max_tokens_to_generate || Infinity, maxAllowedOutputTokens),
+                continue_until_complete: continue_until_complete,
+                systemInstruction: requestBody.systemInstruction,
+            };
 
         adapterResponsePayload = await aiProviderAdapter.sendMessage(
             adapterChatRequestNormal,

@@ -374,7 +374,7 @@ export type DocumentRelationships = {
 export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
     job_type: 'execute';
     step_info: DialecticStepInfo; // Pass down for context
-    prompt_template_name: string;
+    prompt_template_name?: string;
     output_type: ContributionType; // The type of artifact this job will produce
     canonicalPathParams: CanonicalPathParams; // The new formal contract for path context
     inputs: {

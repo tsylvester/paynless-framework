@@ -72,12 +72,12 @@ Deno.test("Prompt Rendering Utility", async (t) => {
       expectedOutput: "Priority: DynamicValue.",
     },
     {
-      name: "Missing variable remains as placeholder",
+      name: "removes unknown placeholders in mixed lines",
       basePromptText: "Data: {present_var}, {missing_var}.",
       dynamicContextVariables: { present_var: "Exists" },
       systemDefaultOverlayValues: null,
       userProjectOverlayValues: null,
-      expectedOutput: "Data: Exists, {missing_var}.",
+      expectedOutput: "",
     },
     {
       name: "Whitespace in placeholders is handled",
@@ -111,12 +111,12 @@ Deno.test("Prompt Rendering Utility", async (t) => {
       expectedOutput: "Just a static string.",
     },
     {
-      name: "All sources are null or empty",
+      name: "removes lines containing only unknown placeholders",
       basePromptText: "Static with {placeholder}.",
       dynamicContextVariables: {},
       systemDefaultOverlayValues: null,
       userProjectOverlayValues: {},
-      expectedOutput: "Static with {placeholder}.",
+      expectedOutput: "",
     }
     // Future tests:
     // - Nested variables in overlays (e.g. system_overlay: { details: { title: "SysTitle" } }, prompt: {{details.title}} - current simple replace won't handle this)
@@ -134,4 +134,26 @@ Deno.test("Prompt Rendering Utility", async (t) => {
       assertEquals(result, tc.expectedOutput);
     });
   }
+  
+  // RED: Unknown single-brace placeholders should not remain after render
+  await t.step("removes unknown single-brace placeholders from final output (RED)", () => {
+    const base = [
+      "Intro:",
+      "Known: {user_objective}",
+      "Unknown A: {domain_standards}",
+      "Unknown B: {success_criteria}",
+      "Unknown C: {compliance_requirements}",
+    ].join("\n");
+
+    const result = renderPrompt(
+      base,
+      { user_objective: "Project X" },
+      null,
+      null,
+    );
+
+    // Assert there are no remaining single-brace placeholders like {key}
+    const hasPlaceholder = /\{[A-Za-z0-9_]+\}/.test(result);
+    assertEquals(hasPlaceholder, false);
+  });
 }); 

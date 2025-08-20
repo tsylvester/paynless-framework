@@ -104,7 +104,6 @@ export async function executeModelCallAndSave(
     console.log(`[DEBUG] Max Tokens: ${maxTokens}`);
     console.log(`[DEBUG] Condition will be: ${!!maxTokens && initialTokenCount > maxTokens}`);
 
-    let finalResourceDocuments = resourceDocuments;
     let finalConversationHistory = conversationHistory;
 
     if (maxTokens && initialTokenCount > maxTokens) {
@@ -213,24 +212,27 @@ export async function executeModelCallAndSave(
         );
 
         finalConversationHistory = workingHistory;
-        finalResourceDocuments = workingResourceDocs;
     }
 
+    const isContinuationFlow = Boolean(job.target_contribution_id || job.payload.target_contribution_id);
     const assembledMessages: Messages[] = [];
+    // For non-continuation flows, the rendered user prompt is the first message
+    if (!isContinuationFlow) {
+        assembledMessages.push({ role: 'user', content: currentUserPrompt });
+    }
+    // Append conversation history (excluding function role)
     finalConversationHistory.forEach(msg => {
         if (msg.role !== 'function') {
             assembledMessages.push({ role: msg.role, content: msg.content });
         }
     });
-    finalResourceDocuments.forEach(doc => {
-        assembledMessages.push({ role: 'user', content: doc.content });
-    });
+    // Do not append resourceDocuments into messages; they are not implemented as chat messages
 
     const chatApiRequest: ChatApiRequest = {
         message: currentUserPrompt,
         messages: assembledMessages.filter(isApiChatMessage).filter((m): m is { role: 'user' | 'assistant' | 'system', content: string } => m.content !== null),
         providerId: providerDetails.id,
-        promptId: job.payload.prompt_template_name || '__none__',
+        promptId: '__none__',
         systemInstruction: systemInstruction,
         walletId: walletId,
         continue_until_complete: job.payload.continueUntilComplete,

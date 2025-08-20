@@ -1,7 +1,19 @@
-// supabase/functions/chat/zodSchema.test.ts
-
-import { AiModelExtendedConfigSchema } from "./zodSchema.ts";
 import { assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { ChatApiRequestSchema, AiModelExtendedConfigSchema } from "./zodSchema.ts";
+
+Deno.test("ChatApiRequestSchema - accepts optional systemInstruction pass-through", () => {
+  const valid = ChatApiRequestSchema.safeParse({
+    message: "Hello",
+    providerId: crypto.randomUUID(),
+    promptId: "__none__",
+    messages: [{ role: 'user', content: 'Hello' }],
+    systemInstruction: "Do not alter; pass-through",
+  });
+
+  assert(valid.success, "Schema should accept optional systemInstruction");
+});
+
+// Additional schema tests below
 
 Deno.test("zodSchema.ts: AiModelExtendedConfigSchema Validation", async (t) => {
 

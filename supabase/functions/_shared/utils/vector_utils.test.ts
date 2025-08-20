@@ -186,6 +186,27 @@ fileManager: {
       },
       error: null,
   }),
+  assembleAndSaveFinalDocument: () => Promise.resolve({
+    record: {
+      id: '',
+      name: '',
+      size: 0,
+      type: '',
+      url: '',
+      created_at: '',
+      file_name: '',
+      mime_type: '',
+      project_id: '',
+      resource_description: {},
+      size_bytes: 0,
+      storage_bucket: '',
+      storage_path: '',
+      updated_at: '',
+      user_id: '',
+    },
+    error: null,
+    finalPath: null,
+  }),
 },
 deleteFromStorage: () => Promise.resolve({
   success: true,
@@ -335,5 +356,56 @@ Deno.test("getSortedCompressionCandidates", async (t) => {
         // The new lowest-value candidate should be the next one in line ('msg-3').
         assertEquals(result[0].id, 'msg-3', "The lowest value, un-indexed candidate should be first.");
     });
+});
+
+// 25.a RED: Role-aware preservation anchors for compression
+Deno.test("getSortedCompressionCandidates - role-aware anchors preserved; non-anchored early messages are candidates (RED)", async () => {
+  const { client: dbClient } = createMockSupabaseClient('user-123', {
+    genericMockResults: {
+      'dialectic_memory': {
+        select: { data: [], error: null }
+      }
+    }
+  });
+
+  // Build a history where the second-to-last assistant is NOT within the last 3 by index
+  // Indices: 0..11
+  const history: Messages[] = [
+    { id: 'msg-0', role: 'system', content: 'system prompt' },
+    { id: 'msg-1', role: 'user', content: 'SEED: Original user prompt' },
+    { id: 'msg-2', role: 'assistant', content: 'First assistant reply' },
+    { id: 'msg-3', role: 'user', content: 'early user' },
+    { id: 'msg-4', role: 'assistant', content: 'assistant mid 1' },
+    { id: 'msg-5', role: 'user', content: 'mid user' },
+    { id: 'msg-6', role: 'assistant', content: 'assistant mid 2' },
+    { id: 'msg-7', role: 'user', content: 'mid user 2' },
+    { id: 'msg-8', role: 'assistant', content: 'assistant mid 3 (second-to-last assistant)' },
+    { id: 'msg-9', role: 'user', content: 'another user' },
+    { id: 'msg-10', role: 'assistant', content: 'LAST assistant reply' },
+    { id: 'msg-11', role: 'user', content: 'Please continue.' },
+  ];
+
+  const result = await getSortedCompressionCandidates(
+    dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    [],
+    history,
+    'prompt'
+  );
+
+  const candidateIds = result.filter(c => c.sourceType === 'history').map(c => c.id);
+
+  // Role-aware preserved anchors that must NOT be candidates
+  // - First user (seed) and first assistant
+  // - Last two assistant replies (msg-10 and msg-8 here, even though msg-8 is not in the last 3 by index)
+  // - Final user "Please continue."
+  assert(!candidateIds.includes('msg-1'), 'First user (seed) should be preserved');
+  assert(!candidateIds.includes('msg-2'), 'First assistant should be preserved');
+  assert(!candidateIds.includes('msg-10'), 'Last assistant should be preserved');
+  assert(!candidateIds.includes('msg-11'), 'Final user "Please continue." should be preserved');
+
+  // This is the critical RED assertion: the second-to-last assistant (msg-8) must also be preserved
+  // Current index-based logic will incorrectly include it as a candidate, causing this test to fail.
+  assert(!candidateIds.includes('msg-8'), 'Second-to-last assistant should be preserved (role-aware)');
 });
 
