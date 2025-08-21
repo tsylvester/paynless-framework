@@ -50,6 +50,7 @@ export interface SyncResult {
   updated: number;
   deactivated: number;
   error?: string;
+  debug_data?: unknown;
 }
 
 type ProviderSyncFunction = (client: SupabaseClient, key: string) => Promise<SyncResult>;

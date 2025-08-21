@@ -5,6 +5,7 @@ import {
     DialecticProject 
   } from "./dialectic.interface.ts";
 import { FileManagerService } from "../_shared/services/file_manager.ts";
+import { FileType } from "../_shared/types/file_manager.types.ts";
 
   console.log("createProject function started");
   
@@ -22,27 +23,29 @@ export async function createProject(
   payload: FormData,
   dbAdminClient: SupabaseClient,
   user: User,
-  options?: CreateProjectOptions
+  _options?: CreateProjectOptions
 ) {
   console.log("createProject function invoked");
 
   try {
-    const projectName = payload.get('projectName') as string | null;
-    const initialUserPromptText = payload.get('initialUserPromptText') as string | null;
-    const selectedDomainId = payload.get('selectedDomainId') as string | null;
-    const selected_domain_overlay_id = payload.get('selectedDomainOverlayId') as string | null;
-    const promptFile = payload.get('promptFile') as File | null;
+    const projectName = payload.get('projectName');
+    const initialUserPromptText = payload.get('initialUserPromptText');
+    const selectedDomainId = payload.get('selectedDomainId');
+    const selected_domain_overlay_id = payload.get('selectedDomainOverlayId');
+    const promptFile = payload.get('promptFile');
 
-    console.log({ projectName, initialUserPromptText, selectedDomainId, selected_domain_overlay_id, promptFileExists: !!promptFile });
+    const isFile = promptFile instanceof File;
 
-    if (!projectName) {
-      return { error: { message: "projectName is required", status: 400 } };
+    console.log({ projectName, initialUserPromptText, selectedDomainId, selected_domain_overlay_id, promptFileExists: isFile });
+
+    if (!projectName || typeof projectName !== 'string') {
+      return { error: { message: "projectName is required and must be a string", status: 400 } };
     }
-    if (!initialUserPromptText && !promptFile) {
+    if (typeof initialUserPromptText !== 'string' && !isFile) {
       return { error: { message: "Either initialUserPromptText or a promptFile must be provided.", status: 400 } };
     }
-    if (!selectedDomainId) {
-      return { error: { message: "selectedDomainId is required", status: 400 } };
+    if (!selectedDomainId || typeof selectedDomainId !== 'string') {
+      return { error: { message: "selectedDomainId is required and must be a string", status: 400 } };
     }
 
     // Step 1: Find the default process template for the selected domain
@@ -101,20 +104,21 @@ export async function createProject(
     const fileManager = new FileManagerService(dbAdminClient);
     let promptResourceId: string;
 
-    if (promptFile) {
-      console.log(`Processing promptFile: ${promptFile.name}, size: ${promptFile.size}, type: ${promptFile.type}`);
+    if (isFile) {
+      const file = promptFile;
+      console.log(`Processing promptFile: ${file.name}, size: ${file.size}, type: ${file.type}`);
       
-      const fileBuffer = await promptFile.arrayBuffer();
+      const fileBuffer = await file.arrayBuffer();
 
       const uploadResult = await fileManager.uploadAndRegisterFile({
         pathContext: {
           projectId: newProjectData.id,
-          fileType: 'initial_user_prompt',
-          originalFileName: promptFile.name,
+          fileType: FileType.InitialUserPrompt,
+          originalFileName: file.name,
         },
         fileContent: Buffer.from(fileBuffer),
-        mimeType: promptFile.type,
-        sizeBytes: promptFile.size,
+        mimeType: file.type,
+        sizeBytes: file.size,
         userId: user.id,
         description: 'Initial project prompt file',
       });
@@ -138,23 +142,23 @@ export async function createProject(
       
       promptResourceId = uploadResult.record.id;
       console.log(`File uploaded and registered successfully via FileManagerService. Resource ID: ${promptResourceId}`);
-    } else if (initialUserPromptText) {
+    } else if (typeof initialUserPromptText === 'string') {
       // Convert string input to markdown file
       console.log(`Converting string input to markdown file for project ${newProjectData.id}`);
       
       const stringUint8Array = new TextEncoder().encode(initialUserPromptText);
-      const stringBuffer = stringUint8Array.buffer.slice(stringUint8Array.byteOffset, stringUint8Array.byteOffset + stringUint8Array.byteLength) as ArrayBuffer;
+      const fileContent = Buffer.from(stringUint8Array);
       const fileName = `initial_prompt_${Date.now()}.md`;
 
       const uploadResult = await fileManager.uploadAndRegisterFile({
         pathContext: {
           projectId: newProjectData.id,
-          fileType: 'initial_user_prompt',
+          fileType: FileType.InitialUserPrompt,
           originalFileName: fileName,
         },
-        fileContent: stringBuffer,
+        fileContent: fileContent,
         mimeType: 'text/markdown',
-        sizeBytes: stringBuffer.byteLength,
+        sizeBytes: fileContent.byteLength,
         userId: user.id,
         description: 'Initial project prompt (converted from text input)',
       });

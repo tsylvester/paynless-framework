@@ -2,7 +2,7 @@ import { assertEquals, assertExists, assert, assertStringIncludes } from "https:
 import { spy } from "https://deno.land/std@0.218.2/testing/mock.ts";
 import { User, type SupabaseClient } from 'npm:@supabase/supabase-js@^2';
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts';
-import { posix as pathPosix, join } from "https://deno.land/std@0.218.2/path/mod.ts";
+import { posix, join } from "https://deno.land/std@0.218.2/path/mod.ts";
 
 // Import shared mock utilities
 import {
@@ -46,6 +46,7 @@ Deno.test('submitStageResponses', async (t) => {
   const testAntithesisStageId = crypto.randomUUID();
   const testParalysisStageId = crypto.randomUUID();
   const mockUser: User = { id: testUserId, app_metadata: {}, user_metadata: {}, aud: 'test-aud', created_at: new Date().toISOString() };
+  const MOCK_MODEL_ID = crypto.randomUUID();
 
   const mockProcessTemplate = {
     id: testProcessTemplateId,
@@ -71,7 +72,7 @@ Deno.test('submitStageResponses', async (t) => {
       slug: 'antithesis',
       display_name: 'Antithesis',
       default_system_prompt_id: testSystemPromptId, // This is the one we'll fetch
-      input_artifact_rules: { sources: [{ type: 'contribution', stage_slug: 'thesis' }, { type: 'feedback', stage_slug: 'thesis'}] },
+      input_artifact_rules: { sources: [{ type: 'contribution', stage_slug: 'thesis' }, { type: 'feedback', stage_slug: 'thesis', required: false }] },
       created_at: new Date().toISOString(),
       description: null,
       expected_output_artifacts: {},
@@ -114,6 +115,7 @@ Deno.test('submitStageResponses', async (t) => {
         dialectic_sessions: { select: { data: [{ 
             id: testSessionId,
             iteration_count: 1,
+            selected_model_ids: [MOCK_MODEL_ID],
             project: { 
               id: testProjectId, 
               user_id: testUserId,
@@ -149,24 +151,26 @@ Deno.test('submitStageResponses', async (t) => {
     const mockDependencies = {
         logger,
         downloadFromStorage: spy((): Promise<{ data: ArrayBuffer | null; error: Error | null; }> => Promise.resolve({data: null, error: null})),
-        fileManager: mockFileManager
+        fileManager: mockFileManager,
+        indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+        embeddingClient: { createEmbedding: () => Promise.resolve([]) }
     };
 
     // Act
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, mockDependencies);
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient<Database>, mockUser, mockDependencies);
     
     // Assert
     assertEquals(status, 500);
     assertExists(error);
     assertEquals(data, undefined);
     assertStringIncludes(error.message, "Failed to store user feedback.");
-    assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "FileManager should have been called once and failed");
+    assertEquals(mockFileManager.uploadAndRegisterFileSpy.calls.length, 1, "FileManager should have been called once and failed");
   });
 
   await t.step('5.2 Handles failure when uploading the rendered seed prompt for the next stage', async () => {
     // 5.2.1 Arrange
     const mockFileManager = createMockFileManagerService();
-    mockFileManager.uploadAndRegisterFile = spy(async (context: UploadContext) => {
+    mockFileManager.uploadAndRegisterFileSpy = spy(async (context: UploadContext) => {
       if (context.pathContext.fileType === 'seed_prompt') {
         return await Promise.resolve({
           record: null,
@@ -208,6 +212,7 @@ Deno.test('submitStageResponses', async (t) => {
                     data: [{
                         id: testSessionId,
                         iteration_count: 1,
+                        selected_model_ids: [MOCK_MODEL_ID],
                         project: {
                             id: testProjectId,
                             user_id: testUserId,
@@ -233,6 +238,9 @@ Deno.test('submitStageResponses', async (t) => {
                     }],
                 },
             },
+            ai_providers: {
+              select: { data: [{ config: { provider_max_input_tokens: 8000, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } }, api_identifier: 'mock-api-id' }], error: null }
+            },
             dialectic_feedback: { insert: { data: [{id: 'fb-id'}] } },
             dialectic_contributions: { select: { data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId, storage_bucket: 'test-bucket', storage_path: 'ai_contributions', file_name: 'contribution.md' }] } },
             dialectic_stage_transitions: { 
@@ -245,8 +253,14 @@ Deno.test('submitStageResponses', async (t) => {
                     }] 
                 } 
             },
+            system_prompts: {
+                select: { data: [{ prompt_text: 'Next prompt' }], error: null }
+            },
             dialectic_process_templates: {
               select: { data: [mockProcessTemplate] }
+            },
+            dialectic_stages: {
+                select: { data: [{ slug: 'thesis', display_name: 'Thesis' }], error: null }
             },
             dialectic_project_resources: {
                 select: { data: [{ storage_bucket: "mock-bucket", storage_path: "mock/path", file_name: "initial.md" }], error: null }
@@ -257,10 +271,12 @@ Deno.test('submitStageResponses', async (t) => {
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient(testUserId, mockDbConfig);
 
     // 5.2.2 Act
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, {
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient<Database>, mockUser, {
       logger,
       downloadFromStorage: mockDownloadFromStorage,
       fileManager: mockFileManager,
+      indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+      embeddingClient: { createEmbedding: () => Promise.resolve([]) }
     });
     
     // 5.2.3 Assert
@@ -282,7 +298,7 @@ Deno.test('submitStageResponses', async (t) => {
     const initialPromptStoragePath5_3 = 'project_setups/initial_prompt_content_5_3.md';
     const contributionFileDirectory5_3 = 'ai_contributions/iteration_1_thesis_dir'; 
     const contributionFileName5_3 = 'ai_contribution_thesis_5_3.md';
-    const expectedFailedContributionDownloadPath = pathPosix.join(contributionFileDirectory5_3, contributionFileName5_3);
+    const expectedFailedContributionDownloadPath = posix.join(contributionFileDirectory5_3, contributionFileName5_3);
 
     const userFeedbackStoragePath5_3 = `projects/${testProjectId5_3}/sessions/${testSessionId5_3}/iteration_1/${mockThesisStage.slug}/user_feedback_${mockThesisStage.slug}.md`;
 
@@ -311,6 +327,7 @@ Deno.test('submitStageResponses', async (t) => {
                 data: [{
                   id: testSessionId5_3,
                   iteration_count: 1,
+                  selected_model_ids: [MOCK_MODEL_ID],
                   project: {
                     id: testProjectId5_3,
                     user_id: testUserId5_3,
@@ -330,6 +347,9 @@ Deno.test('submitStageResponses', async (t) => {
             return Promise.resolve({ data: null, error: new Error("Session not found in 5.3 mock"), status: 404, count: 0 });
           },
           update: () => Promise.resolve({ data: [{ id: testSessionId5_3 }], error: null, status: 200, count: 1 }) // Should not be reached if download fails
+        },
+        ai_providers: {
+          select: { data: [{ config: { provider_max_input_tokens: 8000, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } }, api_identifier: 'mock-api-id' }], error: null }
         },
         dialectic_stage_transitions: {
           select: () => Promise.resolve({ // Transition from thesis to antithesis
@@ -401,32 +421,33 @@ Deno.test('submitStageResponses', async (t) => {
       },
       storageMock: {
         downloadResult: (bucketId: string, path: string): Promise<IMockStorageDownloadResponse> => {
+          const normalizedPath = path.replace(/\\/g, '/');
           // Define expected path for AI contribution download failure INSIDE the mock using pathPosix.join
-          const currentExpectedFailedPathUsingPosix = pathPosix.join(contributionFileDirectory5_3, contributionFileName5_3);
+          const currentExpectedFailedPathUsingPosix = posix.join(contributionFileDirectory5_3, contributionFileName5_3);
 
           // --- BEGIN DEBUG LOGS (can be removed after test passes) ---
           console.log(`[Test 5.3 Mock Storage Debug] Comparing paths for bucket: ${bucketId}`);
-          console.log(`[Test 5.3 Mock Storage Debug]   Received Path: "${path}" (Length: ${path.length})`);
-          console.log(`[Test 5.3 Mock Storage Debug]   Expected Fail Path (posix): "${currentExpectedFailedPathUsingPosix}" (Length: ${currentExpectedFailedPathUsingPosix.length})`);
-          console.log(`[Test 5.3 Mock Storage Debug]   Is Match? ${path === currentExpectedFailedPathUsingPosix}`);
+          console.log(`[Test 5.3 Mock Storage Debug]   Received Path: "${path}" (Normalized: "${normalizedPath}")`);
+          console.log(`[Test 5.3 Mock Storage Debug]   Expected Fail Path (posix): "${currentExpectedFailedPathUsingPosix}"`);
+          console.log(`[Test 5.3 Mock Storage Debug]   Is Match? ${normalizedPath === currentExpectedFailedPathUsingPosix}`);
           // --- END DEBUG LOGS ---
 
-          if (bucketId === 'test-bucket' && path === currentExpectedFailedPathUsingPosix) { 
-            console.log(`[Test 5.3 Mock Storage] Intentionally failing download for AI contribution: ${bucketId}/${path}`);
+          if (bucketId === 'test-bucket' && normalizedPath === currentExpectedFailedPathUsingPosix) { 
+            console.log(`[Test 5.3 Mock Storage] Intentionally failing download for AI contribution: ${bucketId}/${normalizedPath}`);
             return Promise.resolve({ data: null, error: new Error('Simulated download failure for AI contribution in test 5.3') });
           }
-          if (bucketId === 'test-bucket' && path === initialPromptStoragePath5_3) {
-            console.log(`[Test 5.3 Mock Storage] Successfully downloading initial prompt: ${bucketId}/${path}`);
+          if (bucketId === 'test-bucket' && normalizedPath === initialPromptStoragePath5_3) {
+            console.log(`[Test 5.3 Mock Storage] Successfully downloading initial prompt: ${bucketId}/${normalizedPath}`);
             const contentBuffer = new TextEncoder().encode("Mock initial project prompt for 5.3").buffer;
             return Promise.resolve({ data: new Blob([new Uint8Array(contentBuffer)]), error: null });
           }
-          if (bucketId === 'dialectic-contributions' && path === userFeedbackStoragePath5_3) {
-             console.log(`[Test 5.3 Mock Storage] Successfully downloading user feedback: ${bucketId}/${path}`);
+          if (bucketId === 'dialectic-contributions' && normalizedPath === userFeedbackStoragePath5_3) {
+             console.log(`[Test 5.3 Mock Storage] Successfully downloading user feedback: ${bucketId}/${normalizedPath}`);
              const feedbackBuffer = new TextEncoder().encode("Mock user feedback content for 5.3").buffer;
             return Promise.resolve({ data: new Blob([new Uint8Array(feedbackBuffer)]), error: null });
           }
-          console.warn(`[Test 5.3 Mock Storage] Unexpected download attempt in test 5.3: ${bucketId}/${path}`);
-          return Promise.resolve({ data: null, error: new Error(`Unexpected download path in test 5.3: ${path}`) });
+          console.warn(`[Test 5.3 Mock Storage] Unexpected download attempt in test 5.3: ${bucketId}/${normalizedPath}`);
+          return Promise.resolve({ data: null, error: new Error(`Unexpected download path in test 5.3: ${normalizedPath}`) });
         }
       }
     };
@@ -438,9 +459,9 @@ Deno.test('submitStageResponses', async (t) => {
     // 5.3.2 Act
     const { data, error, status } = await submitStageResponses(
       mockPayload5_3,
-      mockSupabaseClient5_3 as any,
+      mockSupabaseClient5_3 as unknown as SupabaseClient<Database>,
       mockUserInstance5_3,
-      { logger, fileManager: mockFileManager5_3, downloadFromStorage }
+      { logger, fileManager: mockFileManager5_3, downloadFromStorage, indexingService: { indexDocument: () => Promise.resolve({ success: true }) }, embeddingClient: { createEmbedding: () => Promise.resolve([]) } }
     );
 
     // 5.3.3 Assert
@@ -449,7 +470,7 @@ Deno.test('submitStageResponses', async (t) => {
     assertStringIncludes(error.message, "Failed to assemble seed prompt for next stage: Failed to gather inputs for prompt assembly:", "Error message preamble for seed prompt prep did not match");
     assertStringIncludes(error.message, "Simulated download failure for AI contribution in test 5.3", "Specific download error from storageMock not found in error message");
     assertEquals(data, undefined, "Data should be undefined on failure.");
-    assertEquals(mockFileManager5_3.uploadAndRegisterFile.calls.length, 0, "FileManager.uploadAndRegisterFile for next stage's seed prompt should not have been called.");
+    assertEquals(mockFileManager5_3.uploadAndRegisterFileSpy.calls.length, 0, "FileManager.uploadAndRegisterFile for next stage's seed prompt should not have been called.");
   });
 
   await t.step('5.4 Handles failure during fileManager.uploadAndRegisterFile for user feedback, database insertion is rolled back or not committed', async () => {
@@ -473,6 +494,7 @@ Deno.test('submitStageResponses', async (t) => {
             select: { data: [{ 
                 id: testSessionId,
                 iteration_count: 1,
+                selected_model_ids: [MOCK_MODEL_ID],
                 project: { 
                   id: testProjectId, 
                   user_id: testUserId,
@@ -492,6 +514,9 @@ Deno.test('submitStageResponses', async (t) => {
             }] },
             update: { data: [{ id: testSessionId, status: `pending_${mockAntithesisStage.slug}` }] } // Mock for session update to next stage
         },
+        ai_providers: {
+          select: { data: [{ config: { provider_max_input_tokens: 8000, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } }, api_identifier: 'mock-api-id' }], error: null }
+        },
         // If feedback file upload fails, the dialectic_feedback insert via fileManager might not occur or might be part of a rolled-back transaction.
         // For this test, we assume the function continues and attempts other operations.
         dialectic_contributions: { select: { data: [{ id: testContributionId1, model_name: 'ModelA', session_id: testSessionId }] } },
@@ -509,20 +534,15 @@ Deno.test('submitStageResponses', async (t) => {
     const mockFileManager = createMockFileManagerService();
     
     // Simulate fileManager.uploadAndRegisterFile failing for user_feedback
-    const originalUploadAndRegisterFile = mockFileManager.uploadAndRegisterFile.bind(mockFileManager);
-    mockFileManager.uploadAndRegisterFile = spy(async (context: UploadContext): Promise<FileManagerResponse> => {
-      if (context.pathContext.fileType === 'user_feedback') {
-        return { record: null, error: { message: "Simulated feedback upload failure" } };
-      }
-      // Allow other types (like seed_prompt) to succeed if the function continues that far
-      return originalUploadAndRegisterFile(context);
-    });
+    mockFileManager.setUploadAndRegisterFileResponse(null, { message: "Simulated feedback upload failure" });
 
     // Act
-    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as any, mockUser, {
+    const { data, error, status } = await submitStageResponses(mockPayload, mockSupabase.client as unknown as SupabaseClient<Database>, mockUser, {
       logger,
       downloadFromStorage: spy((): Promise<{ data: ArrayBuffer | null; error: Error | null; }> => Promise.resolve({data: new ArrayBuffer(0), error: null})),
       fileManager: mockFileManager,
+      indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
+      embeddingClient: { createEmbedding: () => Promise.resolve([]) }
     });
     
     // Assert based on current function behavior (returns 500 on feedback save failure)
@@ -530,7 +550,7 @@ Deno.test('submitStageResponses', async (t) => {
     assertExists(error, "Expected a top-level error when user feedback saving fails.");
     assertStringIncludes(error.message, "Failed to store user feedback", "Error message for user feedback save failure did not match");
     assertEquals(data, undefined, "Expected data to be undefined as the function should have exited early.");
-    assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "Expected fileManager to be called only for feedback (which failed)");
+    assertEquals(mockFileManager.uploadAndRegisterFileSpy.calls.length, 1, "Expected fileManager to be called only for feedback (which failed)");
   });
 
 });

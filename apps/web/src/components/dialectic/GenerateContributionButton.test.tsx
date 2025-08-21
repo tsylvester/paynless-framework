@@ -1,4 +1,5 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom'; // Still useful for DOM assertions
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { toast } from 'sonner'; // Import the mocked toast
@@ -21,7 +22,7 @@ import {
   getDialecticStoreState
 } from '@/mocks/dialecticStore.mock';
 
-import { useDialecticStore, initialDialecticStateValues } from '@paynless/store';
+import { useDialecticStore, initialDialecticStateValues, selectIsStageReadyForSessionIteration } from '@paynless/store';
 
 // Mock the actual store path to use exports from our mock file
 vi.mock('@paynless/store', async () => {
@@ -54,6 +55,8 @@ vi.mock('@paynless/store', async () => {
     selectSessionById: actualPaynlessStore.selectSessionById, // This selector is simple enough to work with our mock state
     selectSelectedModelIds, // Use our test-specific implementation
     selectActiveStage, // Use our test-specific implementation
+    // Add the new selector to our mocks
+    selectIsStageReadyForSessionIteration: vi.fn(),
   };
 });
 
@@ -176,11 +179,9 @@ const setDialecticStateValues = (state: Partial<DialecticStateValues>) => {
 };
 
 describe('GenerateContributionButton', () => {
-  // This is no longer needed as props are removed.
-  // const defaultProps = { ... };
-
+  // Let TypeScript infer the type of storeActions from the mock store
   let storeActions: {
-     generateContributions: ReturnType<typeof vi.fn<[GenerateContributionsPayload], Promise<ApiResponse<GenerateContributionsResponse>>>>;
+    generateContributions: (payload: GenerateContributionsPayload) => Promise<ApiResponse<GenerateContributionsResponse>>;
   };
 
   beforeEach(() => {
@@ -197,11 +198,11 @@ describe('GenerateContributionButton', () => {
     });
     // Retrieve the mock function instance from the initialized store
     storeActions = {
-        generateContributions: getDialecticStoreState().generateContributions as ReturnType<typeof vi.fn<[GenerateContributionsPayload], Promise<ApiResponse<GenerateContributionsResponse>>>>,
+        generateContributions: getDialecticStoreState().generateContributions,
     };
     // Clear mocks for props and toast for each test
-    (toast.success as ReturnType<typeof vi.fn>).mockClear();
-    (toast.error as ReturnType<typeof vi.fn>).mockClear();
+    vi.mocked(toast.success).mockClear();
+    vi.mocked(toast.error).mockClear();
   });
 
   afterEach(() => {
@@ -209,6 +210,9 @@ describe('GenerateContributionButton', () => {
   });
 
   it('renders "Generate [StageName]" when models are selected and no other conditions met', () => {
+    // We now need to explicitly mock the stage readiness check to return true
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+
     // beforeEach already sets up models selected and a basic project/session in the store
     render(<GenerateContributionButton />);
     expect(screen.getByRole('button', { name: /Generate Thesis/i })).toBeInTheDocument();
@@ -230,6 +234,8 @@ describe('GenerateContributionButton', () => {
   });
 
   it('is disabled and shows "Stage Not Ready" when no active stage is selected', () => {
+    // We now need to explicitly mock the stage readiness check to return true to isolate the test
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     setDialecticStateValues({
       selectedModelIds: ['model-1'],
       activeStageSlug: null, // No active stage
@@ -240,7 +246,18 @@ describe('GenerateContributionButton', () => {
     expect(screen.getByRole('button')).toBeDisabled();
   });
 
+  it('is disabled and shows "Previous Stage Incomplete" when the stage is not ready', () => {
+    // This is the new test case for our added logic
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(false);
+
+    render(<GenerateContributionButton />);
+    expect(screen.getByRole('button', { name: /Previous Stage Incomplete/i })).toBeInTheDocument();
+    expect(screen.getByRole('button')).toBeDisabled();
+  });
+
   it('renders "Regenerate [StageName]" when contributions for current stage and iteration exist', () => {
+    // We now need to explicitly mock the stage readiness check to return true
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     const currentIter = 1;
     const existingContribution = { ...mockGenericContribution, stage: mockThesisStage.slug, iteration_number: currentIter, session_id: 'test-session-id' };
     const sessionWithContribution = createMockSession('test-session-id', 'test-project-id', currentIter, [existingContribution]);
@@ -259,30 +276,32 @@ describe('GenerateContributionButton', () => {
   });
 
   it('renders "Generating..." and is disabled when that specific session is generating', () => {
-    // Setup the mock store to return a generating state for this session
+    // We now need to explicitly mock the stage readiness check to return true
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const defaultSession = createMockSession('test-session-id', 'test-project-id', 1);
+    const defaultProject = createMockProject('test-project-id', [defaultSession]);
     setDialecticStateValues({
-      selectedModelIds: ['model-1'], // Ensure models are selected
-      generatingSessions: { 'test-session-id': true },
+      selectedModelIds: ['model-1'],
+      currentProjectDetail: defaultProject,
       activeContextSessionId: 'test-session-id',
       activeStageSlug: 'thesis',
-      currentProjectDetail: createMockProject('test-project-id', [createMockSession('test-session-id', 'test-project-id', 1)]),
+      generatingSessions: { 'test-session-id': ['job-1'] }, // This session is generating
     });
-    
+
     render(<GenerateContributionButton />);
-    
-    expect(screen.getByText(/Generating.../i)).toBeInTheDocument();
+
+    // The text is inside a more complex structure now with an SVG
+    expect(screen.getByRole('button')).toHaveTextContent(/Generating.../i);
     expect(screen.getByRole('button')).toBeDisabled();
   });
 
   it('renders "Regenerate" when contributions for the current stage/iteration already exist', () => {
-    // This test is somewhat redundant with the one above, but we keep it for coverage.
-    const sessionWithContributions = createMockSession(
-      'test-session-id',
-      'test-project-id',
-      1,
-      [mockGenericContribution]
-    );
-    const projectWithContributions = createMockProject('test-project-id', [sessionWithContributions]);
+    // We now need to explicitly mock the stage readiness check to return true
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const currentIter = 1;
+    const existingContribution = { ...mockGenericContribution, stage: mockThesisStage.slug, iteration_number: currentIter, session_id: 'test-session-id' };
+    const sessionWithContribution = createMockSession('test-session-id', 'test-project-id', currentIter, [existingContribution]);
+    const projectWithContributions = createMockProject('test-project-id', [sessionWithContribution]);
 
     setDialecticStateValues({
       selectedModelIds: ['model1'],
@@ -297,23 +316,28 @@ describe('GenerateContributionButton', () => {
   });
 
   it('calls generateContributions and shows a toast on click', async () => {
+    // We now need to explicitly mock the stage readiness check to return true
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const user = userEvent.setup();
     // Mock the successful API call
-    storeActions.generateContributions.mockResolvedValue({ 
-      status: 202, 
+    vi.mocked(storeActions.generateContributions).mockResolvedValue({
       data: {
+        job_ids: ['job-123'],
         sessionId: 'test-session-id',
         projectId: 'test-project-id',
         stage: 'thesis',
         iteration: 1,
-        status: 'complete',
+        status: 'generating',
         successfulContributions: [],
         failedAttempts: [],
-      } 
+      },
+      status: 202,
     });
     
     render(<GenerateContributionButton />);
     
-    fireEvent.click(screen.getByRole('button'));
+    const button = screen.getByRole('button', { name: /Generate Thesis/i });
+    await user.click(button);
     
     await waitFor(() => {
       expect(storeActions.generateContributions).toHaveBeenCalledWith({
@@ -331,46 +355,58 @@ describe('GenerateContributionButton', () => {
   });
 
   it('shows an error toast if generateContributions fails unexpectedly at dispatch', async () => {
-    const dispatchError = new Error('Thunk dispatch failed');
+    // We now need to explicitly mock the stage readiness check to return true
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const user = userEvent.setup();
+    const errorMessage = 'Thunk dispatch failed';
+    const dispatchError = new Error(errorMessage);
     // Ensure the mock is for the instance used in the component
     const { generateContributions } = getDialecticStoreState();
-    (generateContributions as ReturnType<typeof vi.fn>).mockRejectedValue(dispatchError);
+    vi.mocked(generateContributions).mockRejectedValue(dispatchError);
 
     render(<GenerateContributionButton />);
     
-    fireEvent.click(screen.getByRole('button'));
+    const button = screen.getByRole('button', { name: /Generate Thesis/i });
+    await user.click(button);
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Thunk dispatch failed');
+      expect(toast.error).toHaveBeenCalledWith(errorMessage);
     });
   });
 
   it('shows an error toast if the session data is missing', async () => {
+    // We now need to explicitly mock the stage readiness check to return true
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     // Set a project detail with a session that has a null iteration_count
-    const sessionWithNullIteration = createMockSession('test-session-id', 'test-project-id', undefined as unknown as number);
-    const projectWithBadSession = createMockProject('test-project-id', [sessionWithNullIteration]);
+    const sessionWithNullIteration = createMockSession('test-session-id', 'test-project-id', 1);
+    const projectWithNullIterationSession = createMockProject('test-project-id', [sessionWithNullIteration]);
     setDialecticStateValues({ 
       selectedModelIds: ['model1'],
-      currentProjectDetail: projectWithBadSession,
-      activeContextSessionId: 'test-session-id',
+      // Set active session to null to test the guard clause
+      activeContextSessionId: null,
+      currentProjectDetail: projectWithNullIterationSession,
       activeStageSlug: 'thesis',
     });
     
     render(<GenerateContributionButton />);
-    fireEvent.click(screen.getByRole('button'));
-    
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Could not determine the required context. Please ensure a project, session, and stage are active.');
-    });
+    const button = screen.getByRole('button');
+    // The button should be disabled because the active session is missing.
+    expect(button).toBeDisabled();
+    expect(button).toHaveTextContent(/Stage Not Ready/i);
 
+    // Ensure toast.error was not called because the button is disabled
+    expect(toast.error).not.toHaveBeenCalled();
     expect(storeActions.generateContributions).not.toHaveBeenCalled();
   });
 
   it('is disabled when the active stage cannot be found from the store', () => {
+    // This test implicitly checks for the 'Stage Not Ready' state, so no readiness mock needed
+    const defaultSession = createMockSession('test-session-id', 'test-project-id', 1);
+    const projectWithoutStages = createMockProject('test-project-id', [defaultSession], []); // No stages in template
     setDialecticStateValues({
       selectedModelIds: ['model-1'],
       activeStageSlug: 'non-existent-stage', // This stage doesn't exist in the mock project
-      currentProjectDetail: createMockProject('p-id', [createMockSession('s-id', 'p-id', 1)], [mockThesisStage]),
+      currentProjectDetail: projectWithoutStages,
       activeContextSessionId: 's-id'
     });
     render(<GenerateContributionButton />);
@@ -378,18 +414,24 @@ describe('GenerateContributionButton', () => {
   });
 
   it('handles unexpected exception during thunk execution (mockRejectedValue)', async () => {
-    const exceptionError = new Error('Unexpected Thunk Error');
-    storeActions.generateContributions.mockRejectedValueOnce(exceptionError);
+    // We now need to explicitly mock the stage readiness check to return true
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const user = userEvent.setup();
+    const errorMessage = 'Unexpected Thunk Error';
+    vi.mocked(storeActions.generateContributions).mockRejectedValue(new Error(errorMessage));
     render(<GenerateContributionButton />);
 
-    fireEvent.click(screen.getByRole('button'));
+    const button = screen.getByRole('button', { name: /Generate Thesis/i });
+    await user.click(button);
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Unexpected Thunk Error');
+      expect(toast.error).toHaveBeenCalledWith(errorMessage);
     });
   });
 
   it('is disabled and shows "Choose AI Models" when no models selected, overriding "Regenerate" label', () => {
+    // We now need to explicitly mock the stage readiness check to return true
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     const currentIter = 1;
     const existingContribution = { ...mockGenericContribution, stage: mockThesisStage.slug, iteration_number: currentIter, session_id: 'test-session-id' };
     const sessionWithContribution = createMockSession('test-session-id', 'test-project-id', currentIter, [existingContribution]);
@@ -409,18 +451,45 @@ describe('GenerateContributionButton', () => {
   });
   
   it('handles missing activeSession or iteration_count gracefully', async () => {
-    setDialecticStateValues({
+    // We now need to explicitly mock the stage readiness check to return true
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const user = userEvent.setup();
+    
+    // Test Case 1: Active session is missing
+    setDialecticStateValues({ 
       selectedModelIds: ['model1'],
-      currentProjectDetail: createMockProject('test-project-id', [
-        // Session with missing iteration_count
-        { ...createMockSession('test-session-id', 'test-project-id', 1), iteration_count: undefined as unknown as number } 
-      ]),
-      activeContextSessionId: 'test-session-id',
+      activeContextSessionId: null, // No active session
+      currentProjectDetail: createMockProject('test-project-id', [createMockSession('test-session-id', 'test-project-id', 1)]),
       activeStageSlug: 'thesis',
     });
 
-    render(<GenerateContributionButton />);
-    fireEvent.click(screen.getByRole('button'));
+    const { rerender } = render(<GenerateContributionButton />);
+    const button = screen.getByRole('button');
+    expect(button).toBeDisabled();
+    expect(button).toHaveTextContent(/Stage Not Ready/i);
+
+    // Test Case 2: Iteration count is missing
+    // @ts-expect-error - Intentionally creating an invalid state for testing the guard clause.
+    const sessionWithoutIteration: DialecticSession = { ...createMockSession('test-session-id', 'test-project-id', 1), iteration_count: null };
+    const projectWithBadSession = createMockProject('test-project-id', [sessionWithoutIteration]);
+    
+    act(() => {
+      setDialecticStateValues({
+        selectedModelIds: ['model-1'],
+        currentProjectDetail: projectWithBadSession,
+        activeContextSessionId: 'test-session-id',
+        activeStageSlug: 'thesis',
+      });
+    });
+
+    // Use rerender to update the component with the new state
+    rerender(<GenerateContributionButton />);
+    const button2 = screen.getByRole('button', { name: /Generate Thesis/i });
+    
+    // The button is enabled, but the click handler should catch the missing iteration
+    await act(async () => {
+      await user.click(button2);
+    });
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith('Could not determine the required context. Please ensure a project, session, and stage are active.');
@@ -429,9 +498,10 @@ describe('GenerateContributionButton', () => {
   });
 
    it('handles currentProjectDetail being null gracefully by being disabled', () => {
+    // No readiness mock needed as this checks a more fundamental missing piece of state
     setDialecticStateValues({
-      selectedModelIds: ['model1'],
-      currentProjectDetail: null, // Project details not loaded
+      selectedModelIds: ['model-1'],
+      currentProjectDetail: null, // Project is null
       activeContextSessionId: 'test-session-id',
       activeStageSlug: 'thesis',
     });

@@ -5,9 +5,23 @@ import {
 } from '../_shared/supabase_storage_utils.ts';
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
 import type { Logger } from '../_shared/logger.ts';
-import type { IFileManager } from '../_shared/types/file_manager.types.ts';
+import type { IFileManager, CanonicalPathParams } from '../_shared/types/file_manager.types.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
-import type { DeleteStorageResult } from '../_shared/supabase_storage_utils.ts';
+import type { DeleteStorageResult, DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
+import type {
+  FinishReason
+} from '../_shared/types.ts';
+import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
+import type { IIndexingService, IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
+import type { IRagService } from '../_shared/services/rag_service.interface.ts';
+import type { MessageForTokenCounting, AiModelExtendedConfig } from '../_shared/types.ts';
+import type { IPromptAssembler } from '../_shared/prompt-assembler.interface.ts';
+
+export type StorageError = {
+  message: string;
+  error?: string;
+  statusCode?: string;
+};
 
 export interface AIModelCatalogEntry {
     id: string;
@@ -30,10 +44,13 @@ export interface AIModelCatalogEntry {
 }
 
 // Defines the raw structure from the database
-export type DialecticContributionSql = Database['public']['Tables']['dialectic_contributions']['Row'];
+export type DialecticContributionRow = Database['public']['Tables']['dialectic_contributions']['Row'];
+export type DialecticJobRow = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
 // Defines the structured contribution object used within the service and for API responses,
 // aligning with packages/types/src/dialectic.types.ts
+
+//This type needs to be reset to be a row from the database
 export interface DialecticContribution {
   id: string;
   session_id: string;
@@ -56,13 +73,24 @@ export interface DialecticContribution {
   citations: { text: string; url?: string }[] | null;
   created_at: string;
   updated_at: string;
-  contribution_type: string | null;
+  contribution_type: ContributionType | null;
   file_name: string | null;
   storage_bucket: string | null;
   storage_path: string | null;
   size_bytes: number | null;
   mime_type: string | null;
 }
+
+export type ContributionType =
+  | 'thesis'
+  | 'antithesis'
+  | 'synthesis'
+  | 'parenthesis'
+  | 'paralysis'
+  | 'pairwise_synthesis_chunk'
+  | 'reduced_synthesis'
+  | 'final_synthesis'
+  | 'rag_context_summary';
 
 
 export interface DialecticSessionModel {
@@ -74,6 +102,7 @@ export interface DialecticSessionModel {
     ai_provider?: AIModelCatalogEntry;
 }
 
+//This type needs to be reset to be a row from the database
 export interface DialecticSession {
   id: string;
   project_id: string;
@@ -90,6 +119,7 @@ export interface DialecticSession {
 
 export type DialecticProcessTemplate = Database['public']['Tables']['dialectic_process_templates']['Row'];
 
+//This type needs to be reset to be a row from the database
 export interface DialecticProject {
     id: string;
     user_id: string;
@@ -105,7 +135,7 @@ export interface DialecticProject {
     status: string;
     created_at: string;
     updated_at: string;
-    sessions?: DialecticSession[];
+    dialectic_sessions?: DialecticSession[];
 }
 
 // --- END: Redefined types ---
@@ -124,7 +154,7 @@ type UpdateProjectDomainAction = { action: 'updateProjectDomain', payload: Updat
 type GetProjectDetailsAction = { action: 'getProjectDetails', payload: GetProjectDetailsPayload };
 type StartSessionAction = { action: 'startSession', payload: StartSessionPayload };
 type GenerateContributionsAction = { action: 'generateContributions', payload: GenerateContributionsPayload };
-type GetContributionContentDataAction = { action: 'getContributionContentData', payload: GetContributionContentSignedUrlPayload };
+type GetContributionContentDataAction = { action: 'getContributionContentData', payload: GetContributionContentDataPayload };
 type DeleteProjectAction = { action: 'deleteProject', payload: DeleteProjectPayload };
 type CloneProjectAction = { action: 'cloneProject', payload: CloneProjectPayload };
 type ExportProjectAction = { action: 'exportProject', payload: ExportProjectPayload };
@@ -187,6 +217,23 @@ export interface GetProjectDetailsPayload {
   projectId: string;
 }
 
+export interface GetContributionContentDataPayload {
+  contributionId: string;
+}
+
+export interface DeleteProjectPayload {
+  projectId: string;
+}
+
+export interface CloneProjectPayload {
+  projectId: string;
+  newProjectName?: string;
+}
+
+export interface ExportProjectPayload {
+  projectId: string;
+}
+
 export interface StartSessionPayload {
   projectId: string;
   sessionDescription?: string | null;
@@ -221,10 +268,22 @@ export interface UnifiedAIResponse {
   processingTimeMs?: number;
   contentType?: string; // Added to specify the MIME type of the content
   rawProviderResponse?: Record<string, unknown>; 
+  finish_reason?: FinishReason;
 }
 
 export type DialecticStage = Database['public']['Tables']['dialectic_stages']['Row'];
 
+export interface ModelProcessingResult {
+  modelId: string;
+  status: 'completed' | 'failed' | 'needs_continuation';
+  attempts: number;
+  contributionId?: string;
+  error?: string;
+}
+
+export interface JobResultsWithModelProcessing {
+    modelProcessingResults: ModelProcessingResult[];
+}
 
 export interface GenerateContributionsDeps {
   callUnifiedAIModel: (
@@ -235,12 +294,12 @@ export interface GenerateContributionsDeps {
     options?: CallUnifiedAIModelOptions, 
     continueUntilComplete?: boolean
   ) => Promise<UnifiedAIResponse>;
-  downloadFromStorage: typeof downloadFromStorage;
+  downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>;
   getExtensionFromMimeType: typeof getExtensionFromMimeType;
   logger: ILogger;
   randomUUID: () => string;
   fileManager: IFileManager;
-  deleteFromStorage: (path: string) => Promise<DeleteStorageResult>;
+  deleteFromStorage: (bucket: string, paths: string[]) => Promise<DeleteStorageResult>;
 }
 export interface GenerateContributionsPayload {
   sessionId: string;
@@ -248,10 +307,80 @@ export interface GenerateContributionsPayload {
   stageSlug?: DialecticStage['slug'];
   iterationNumber?: number;
   chatId?: string | null;
-  selectedModelIds: string[];
   walletId?: string;
   continueUntilComplete?: boolean;
+  maxRetries?: number;
+  continuation_count?: number;
+  target_contribution_id?: string;
 }
+
+/**
+ * Tracks the progress of a multi-step job.
+ */
+export interface DialecticStepInfo {
+    current_step: number;
+    total_steps: number;
+}
+
+/**
+ * The base payload containing information common to all job types.
+ */
+export interface DialecticBaseJobPayload extends Omit<GenerateContributionsPayload, 'selectedModelIds' | 'chatId'> {
+    model_id: string; // Individual model ID for this specific job
+}
+
+/**
+ * The payload for a simple, single-call job.
+ */
+export interface DialecticSimpleJobPayload extends DialecticBaseJobPayload {
+    job_type?: 'simple';
+}
+
+/**
+ * The payload for a parent job that plans steps based on a recipe.
+ */
+export interface DialecticPlanJobPayload extends DialecticBaseJobPayload {
+    job_type: 'plan';
+    step_info: DialecticStepInfo;
+}
+
+/**
+ * Defines the possible roles a related document can have in a relationship.
+ * This extends the ContributionType to also include abstract roles.
+ */
+export type RelationshipRole = ContributionType | 'source_group';
+
+/**
+ * Defines the structured relationships between documents as a flexible,
+ * type-safe dictionary where the key is the role the related document plays.
+ */
+export type DocumentRelationships = {
+  [key in RelationshipRole]?: string | null;
+};
+
+/**
+ * The payload for a child job that executes a single model call.
+ */
+export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
+    job_type: 'execute';
+    step_info: DialecticStepInfo; // Pass down for context
+    prompt_template_name: string;
+    output_type: ContributionType; // The type of artifact this job will produce
+    canonicalPathParams: CanonicalPathParams; // The new formal contract for path context
+    inputs: {
+        // Key-value store for resource_ids needed by the prompt
+        [key: string]: string | string[];
+    };
+    document_relationships?: DocumentRelationships | null;
+    isIntermediate?: boolean;
+    user_jwt?: string;
+}
+
+// Update the main union type
+export type DialecticJobPayload =
+    | DialecticSimpleJobPayload // Assuming this exists for non-complex jobs
+    | DialecticPlanJobPayload
+    | DialecticExecuteJobPayload
 
 export interface GenerateContributionsSuccessResponse {
   sessionId: string;
@@ -352,27 +481,14 @@ export interface ListAvailableDomainOverlaysPayload {
 }
 
 
-export interface DeleteProjectPayload {
-  projectId: string;
-}
-
 export interface GetContributionContentSignedUrlPayload {
   contributionId: string;
-}
-
-export interface CloneProjectPayload {
-  projectId: string;
-  newProjectName?: string;
 }
 
 export interface CloneProjectSuccessResponse {
   id: string;
   project_name: string;
   created_at: string;
-}
-
-export interface ExportProjectPayload {
-  projectId: string;
 }
 
 export interface ExportProjectSuccessResponse {
@@ -411,7 +527,7 @@ export interface DialecticFeedback {
   mime_type: string; // Added
   size_bytes: number; // Added
   feedback_type: string; // Kept, ensure it's used for the file's purpose type
-  resource_description?: Record<string, unknown> | null; // Added, replaces feedback_value_structured
+  resource_description?: Json | null; // Added, replaces feedback_value_structured
   created_at: string;
   updated_at: string;
   // contribution_id: string | null; // Removed
@@ -434,7 +550,7 @@ export interface SubmitStageResponsesPayload {
   userStageFeedback?: { 
     content: string; 
     feedbackType: string; 
-    resourceDescription?: Record<string, unknown>; 
+    resourceDescription?: Json | null; 
   };
 }
 
@@ -474,6 +590,8 @@ export interface SubmitStageResponsesDependencies {
     downloadFromStorage: typeof downloadFromStorage;
     logger: ILogger;
     fileManager: IFileManager;
+    indexingService: IIndexingService;
+    embeddingClient: IEmbeddingClient;
 }
 
 export type DialecticStageTransition = Database['public']['Tables']['dialectic_stage_transitions']['Row'];
@@ -518,4 +636,182 @@ export interface GetContributionContentDataResponse {
 export interface GetSessionDetailsResponse {
   session: DialecticSession;
   currentStageDetails: DialecticStage | null;
+}
+
+export interface ProgressReporting {
+  message_template: string;
+}
+
+export type ProcessingStrategyType = 'task_isolation';
+export type ProcessingGranularity =
+  | 'per_thesis_contribution'
+  | 'per_pairwise_synthesis';
+
+export interface ProcessingStrategy {
+  type: ProcessingStrategyType;
+  granularity: ProcessingGranularity;
+  description: string;
+  progress_reporting: ProgressReporting;
+}
+
+export interface DialecticServiceError {
+  message: string;
+  details?: string;
+  status?: number;
+}
+
+export interface DialecticServiceResponse<T> {
+  data?: T;
+  error?: DialecticServiceError;
+}
+
+export type SeedPromptData = {
+  content: string;
+  fullPath: string;
+  bucket: string;
+  path: string;
+  fileName: string;
+};
+export interface ModelProcessingResult {
+  modelId: string;
+  status: 'completed' | 'failed' | 'needs_continuation';
+  attempts: number;
+  contributionId?: string;
+  error?: string;
+}
+
+export interface IContinueJobDeps {
+  logger: ILogger;
+}
+
+export interface IContinueJobResult {
+    enqueued: boolean;
+    error?: Error;
+}
+
+export type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
+
+export type SourceDocument = Omit<DialecticContributionRow, 'document_relationships'> & { 
+  content: string;
+  document_relationships?: DocumentRelationships | null;
+  attempt_count?: number; // The attempt_count of the source document itself, derived from its filename
+};
+
+export type SourceFeedback = Omit<DialecticFeedback, 'resource_description'> & { 
+  content: string;
+  document_relationships?: DocumentRelationships | null;
+  attempt_count?: number; // The attempt_count of the source document itself, derived from its filename
+};
+
+export interface ExecuteModelCallAndSaveParams {
+  dbClient: SupabaseClient<Database>;
+  deps: IDialecticJobDeps;
+  authToken: string;
+  job: DialecticJobRow;
+  projectOwnerUserId: string;
+  providerDetails: SelectedAiProvider;
+  renderedPrompt: { content: string; fullPath: string };
+  previousContent: string;
+  sessionData: { id: string, associated_chat_id: string | null };
+  sourceDocuments: SourceDocument[];
+}
+export interface IDialecticJobDeps extends GenerateContributionsDeps {
+  getSeedPromptForStage: (
+    dbClient: SupabaseClient<Database>,
+    projectId: string,
+    sessionId: string,
+    stageSlug: string,
+    iterationNumber: number,
+    downloadFromStorage: GenerateContributionsDeps['downloadFromStorage']
+  ) => Promise<SeedPromptData>;
+  continueJob: (
+    deps: { logger: ILogger },
+    dbClient: SupabaseClient<Database>,
+    job: DialecticJobRow,
+    aiResponse: UnifiedAIResponse,
+    savedContribution: DialecticContributionRow,
+    projectOwnerUserId: string
+  ) => Promise<IContinueJobResult>;
+  retryJob: (
+    deps: { logger: ILogger, notificationService: NotificationServiceType },
+    dbClient: SupabaseClient<Database>,
+    job: DialecticJobRow,
+    currentAttempt: number,
+    failedContributionAttempts: FailedAttemptError[],
+    projectOwnerUserId: string
+  ) => Promise<{ error?: Error }>;
+  notificationService: NotificationServiceType;
+  executeModelCallAndSave: (params: ExecuteModelCallAndSaveParams) => Promise<void>;
+  // Properties from the former IPlanComplexJobDeps
+        planComplexStage?: (
+          dbClient: SupabaseClient<Database>,
+          parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
+          deps: IDialecticJobDeps, // Self-reference
+          recipeStep: DialecticRecipeStep,
+          authToken: string,
+      ) => Promise<(DialecticJobRow)[]>;
+  getGranularityPlanner?: (strategyId: string) => GranularityPlannerFn | undefined;
+  ragService?: IRagService;
+  countTokens?: (messages: MessageForTokenCounting[], modelConfig: AiModelExtendedConfig) => number;
+  getAiProviderConfig?: (dbClient: SupabaseClient<Database>, modelId: string) => Promise<AiModelExtendedConfig>;
+  indexingService?: IIndexingService;
+  embeddingClient?: IEmbeddingClient;
+  promptAssembler?: IPromptAssembler;
+}
+export type RecipeStep = {
+    step_name: string;
+    description: string;
+    granularity_strategy: string;
+    inputs_required: { type: string; stage_slug?: string }[];
+    output_type: string;
+    job_type_to_create: 'plan' | 'execute';
+    prompt_template_name: string;
+}
+
+export type GranularityPlannerFn = (
+    sourceDocs: SourceDocument[],
+    parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload },
+    recipeStep: DialecticRecipeStep,
+    authToken: string,
+) => DialecticExecuteJobPayload[];
+
+export type GranularityStrategyMap = Map<string, GranularityPlannerFn>;
+
+/**
+ * Describes a single step within a multi-step job recipe.
+ */
+export interface DialecticRecipeStep {
+    step: number;
+    name: string;
+    prompt_template_name: string;
+    inputs_required: {
+        type: string;
+        stage_slug?: string; // e.g., 'thesis' for antithesis inputs
+    }[];
+    granularity_strategy: 
+    'per_source_document' | 
+    'pairwise_by_origin' | 
+    'per_source_group' | 
+    'all_to_one' | 
+    'per_source_document_by_lineage' |
+    'per_model';
+    output_type: ContributionType; // e.g., 'pairwise_synthesis_chunk'
+}
+
+/**
+ * Describes the complete recipe for a complex, multi-step stage.
+ */
+export interface DialecticStageRecipe {
+    processing_strategy: {
+        type: 'task_isolation';
+    };
+    steps: DialecticRecipeStep[];
+}
+
+
+export interface StartSessionDeps {
+  logger: ILogger;
+  fileManager: IFileManager;
+  promptAssembler: IPromptAssembler;
+  randomUUID: () => string;
 }

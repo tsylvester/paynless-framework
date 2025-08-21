@@ -19,23 +19,131 @@
  *     user-specific clients to validate RLS.
  */
 
-import { createClient, SupabaseClient, SupabaseClientOptions, AuthError } from "npm:@supabase/supabase-js@2";
-import * as djwt from "https://deno.land/x/djwt@v3.0.2/mod.ts";
-// Import types for use within this file
-import type {
+import {
   ILogger,
   LogMetadata,
 } from "./types.ts";
-import type { Json, Database } from "../types_db.ts";
-import { MockAiProviderAdapter } from "./ai_service/ai_provider.mock.ts";
-import { TokenWalletService } from "./services/tokenWalletService.ts";
+import { isTokenUsage } from "./utils/type_guards.ts";
+import type { Database } from "../types_db.ts";
+import { getMockAiProviderAdapter } from "./ai_service/ai_provider.mock.ts";
+import type { GenerateContributionsDeps } from "../../functions/dialectic-service/dialectic.interface.ts";
+import type { ChatApiRequest } from "./types.ts";
+import { MockFileManagerService } from './services/file_manager.mock.ts';
+import { createClient } from "npm:@supabase/supabase-js";
+import type { SupabaseClient } from "npm:@supabase/supabase-js";
+import * as djwt from "https://deno.land/x/djwt@v3.0.2/mod.ts";
+import { AiModelExtendedConfig } from "./types.ts";
+
+function isDbRow(obj: any): obj is { id: string; [key: string]: any } {
+    return obj !== null && typeof obj === 'object' && !Array.isArray(obj) && 'id' in obj && typeof obj.id === 'string';
+}
 
 // --- Exported Constants ---
 export const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 export const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
-export const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"); 
+export const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 export const SUPABASE_JWT_SECRET = Deno.env.get("SUPABASE_JWT_SECRET");
 export const CHAT_FUNCTION_URL = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/chat` : 'http://localhost:54321/functions/v1/chat';
+export const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
+    api_identifier: 'mock-model',
+    input_token_cost_rate: 0,
+    output_token_cost_rate: 0,
+    tokenization_strategy: { type: 'none' },
+};
+
+
+// Set a default for the content storage bucket if it's not already set
+if (!Deno.env.get('SB_CONTENT_STORAGE_BUCKET')) {
+  console.log(`[TestUtil] SB_CONTENT_STORAGE_BUCKET value is ${Deno.env.get('SB_CONTENT_STORAGE_BUCKET')}.`);
+}
+
+
+// --- New Type Guards for RPC Calls ---
+
+function isChatMessageRole(role: any): role is 'user' | 'system' | 'assistant' {
+    return typeof role === 'string' && ['user', 'system', 'assistant'].includes(role);
+}
+
+function isTableColumnInfo(obj: any): obj is TableColumnInfo {
+  return (
+    obj !== null &&
+    typeof obj === 'object' &&
+    'column_name' in obj && typeof obj.column_name === 'string' &&
+    'data_type' in obj && typeof obj.data_type === 'string' &&
+    'is_nullable' in obj && (obj.is_nullable === 'YES' || obj.is_nullable === 'NO') &&
+    'column_default' in obj && (typeof obj.column_default === 'string' || obj.column_default === null) &&
+    'udt_name' in obj && typeof obj.udt_name === 'string'
+  );
+}
+
+function isTableColumnInfoArray(data: any): data is TableColumnInfo[] {
+  return Array.isArray(data) && data.every(isTableColumnInfo);
+}
+
+interface RawConstraintInfo {
+  constraint_name: string;
+  constraint_type: "PRIMARY KEY" | "FOREIGN KEY" | "UNIQUE" | "CHECK";
+  constrained_column: string | null;
+  foreign_table_schema?: string | null;
+  foreign_table_name?: string | null;
+  foreign_column?: string | null;
+  check_clause?: string | null;
+  delete_rule?: string | null;
+  update_rule?: string | null;
+}
+
+function isRawConstraintInfo(obj: any): obj is RawConstraintInfo {
+  return (
+    obj !== null &&
+    typeof obj === 'object' &&
+    'constraint_name' in obj && typeof obj.constraint_name === 'string' &&
+    'constraint_type' in obj && typeof obj.constraint_type === 'string'
+  );
+}
+
+function isRawConstraintInfoArray(data: any): data is RawConstraintInfo[] {
+    return Array.isArray(data) && data.every(isRawConstraintInfo);
+}
+
+interface RawIndexInfo {
+    indexname: string;
+    indexdef: string;
+}
+
+function isRawIndexInfo(obj: any): obj is RawIndexInfo {
+    return obj !== null && typeof obj === 'object' && 'indexname' in obj && typeof obj.indexname === 'string' && 'indexdef' in obj && typeof obj.indexdef === 'string';
+}
+
+function isRawIndexInfoArray(data: any): data is RawIndexInfo[] {
+    return Array.isArray(data) && data.every(isRawIndexInfo);
+}
+
+interface RawTriggerInfo {
+    trigger_name: string;
+    event_manipulation: string;
+    action_timing: string;
+    action_statement: string;
+}
+
+function isRawTriggerInfo(obj: any): obj is RawTriggerInfo {
+    return obj !== null && typeof obj === 'object' &&
+        'trigger_name' in obj && typeof obj.trigger_name === 'string' &&
+        'event_manipulation' in obj && typeof obj.event_manipulation === 'string' &&
+        'action_timing' in obj && typeof obj.action_timing === 'string' &&
+        'action_statement' in obj && typeof obj.action_statement === 'string';
+}
+
+function isRawTriggerInfoArray(data: any): data is RawTriggerInfo[] {
+    return Array.isArray(data) && data.every(isRawTriggerInfo);
+}
+
+interface RLSInfo {
+    relrowsecurity: boolean;
+}
+
+function isRLSInfo(obj: any): obj is RLSInfo {
+    return obj !== null && typeof obj === 'object' && 'relrowsecurity' in obj && typeof obj.relrowsecurity === 'boolean';
+}
 
 
 // --- Test Resource Management --- 
@@ -63,7 +171,7 @@ export type UndoAction =
       type: 'RESTORE_UPDATED_ROW'; 
       tableName: keyof Database['public']['Tables']; 
       identifier: Record<string, any>; // To uniquely identify the row for restoration
-      originalRow: Database['public']['Tables'][keyof Database['public']['Tables']]['Row']; // The complete original row data
+      originalRow: Record<string, any>; // The complete original row data
       scope: 'global' | 'local';
     }
   | { type: 'DELETE_STORAGE_OBJECT'; bucketName: string; path: string; scope: 'global' | 'local'; };
@@ -204,7 +312,6 @@ export async function coreCleanupTestResources(executionScope: 'all' | 'local' =
 // --- Exported Shared Instances and Mutable State ---
 export let supabaseAdminClient: SupabaseClient<Database>;
 // const testUserAuthToken: string | null = null; // Commented out as it's not set globally by the utility anymore.
-export const mockAiAdapter = new MockAiProviderAdapter();
 export let currentTestDeps: TestUtilityDeps;
 
 export const testLogger: ILogger = {
@@ -213,6 +320,8 @@ export const testLogger: ILogger = {
   warn: (message: string, metadata?: LogMetadata) => console.warn('[TestLogger WARN]', message, metadata || ""),
   error: (message: string | Error, metadata?: LogMetadata) => console.error('[TestLogger ERROR]', message, metadata || ""),
 };
+
+export const mockAiAdapter = getMockAiProviderAdapter(testLogger, MOCK_MODEL_CONFIG);
 
 // --- Core Logic for Test Setup and Helpers (to be called by router) ---
 
@@ -561,14 +670,17 @@ export interface ProcessedResourceInfo<T extends keyof Database['public']['Table
  * @param exportId The exportId you are looking for.
  * @returns The resource object from the database, or undefined if not found.
  */
-export function findProcessedResource(
+export function findProcessedResource<T extends keyof Database['public']['Tables']>(
   processedResources: ProcessedResourceInfo[],
+  tableName: T,
   exportId: string
-): (Database['public']['Tables'][keyof Database['public']['Tables']]['Row'] & { id: string }) | undefined {
-    const found = processedResources.find(p => p.exportId === exportId);
+): (Database['public']['Tables'][T]['Row'] & { id: string }) | undefined {
+    const found = processedResources.find(p => p.exportId === exportId && p.tableName === tableName);
     if (found && found.resource) {
-        // We cast to add the 'id' property confidently, as it's expected for exported resources.
-        return found.resource as Database['public']['Tables'][keyof Database['public']['Tables']]['Row'] & { id: string };
+        // A type assertion is acceptable here because we are inside a specific utility
+        // and have manually verified the type logic by checking tableName. 
+        // This provides a strictly-typed interface to all calling functions.
+        return found.resource as (Database['public']['Tables'][T]['Row'] & { id: string });
     }
     return undefined;
 }
@@ -597,12 +709,16 @@ export async function getTableColumns(
     WHERE table_schema = '${schemaName}' AND table_name = '${tableName}'
     ORDER BY ordinal_position
   `;
-  const { data, error } = await client.rpc('execute_sql' as any, { query: query });
+  const { data, error } = await client.rpc('execute_sql', { query: query });
   if (error) {
     console.error("Error fetching table columns:", error);
     throw error;
   }
-  return data as TableColumnInfo[];
+  if (isTableColumnInfoArray(data)) {
+    return data;
+  }
+  console.error("Data from execute_sql for getTableColumns does not match expected type", data);
+  return [];
 }
 
 export interface TableConstraintInfo {
@@ -663,35 +779,42 @@ export async function getTableConstraints(
     ORDER BY
         tc.constraint_name, kcu.ordinal_position, kcu_ref.ordinal_position
   `;
-  const { data: rawConstraints, error } = await client.rpc('execute_sql' as any, { query: query });
+  const { data: rawConstraints, error } = await client.rpc('execute_sql', { query: query });
 
   if (error) {
     console.error("Error fetching table constraints:", error);
     throw error;
   }
 
+  if (!isRawConstraintInfoArray(rawConstraints)) {
+    console.error('getTableConstraints received invalid data:', rawConstraints);
+    return [];
+  }
+
   const processedConstraints: { [key: string]: TableConstraintInfo } = {};
-  (rawConstraints as any[]).forEach(rc_row => { // Renamed loop variable to avoid conflict with outer 'rc' alias
-    if (!processedConstraints[rc_row.constraint_name]) {
-      processedConstraints[rc_row.constraint_name] = {
-        constraint_name: rc_row.constraint_name,
-        constraint_type: rc_row.constraint_type,
-        constrained_columns: [],
-        foreign_table_schema: rc_row.foreign_table_schema,
-        foreign_table_name: rc_row.foreign_table_name,
-        foreign_columns: rc_row.constraint_type === 'FOREIGN KEY' ? [] : undefined,
-        check_clause: rc_row.check_clause,
-        delete_rule: rc_row.delete_rule,
-        update_rule: rc_row.update_rule,
-      };
-    }
-    // Add constrained column if it's not already there
-    if (rc_row.constrained_column && !processedConstraints[rc_row.constraint_name].constrained_columns.includes(rc_row.constrained_column)) {
-      processedConstraints[rc_row.constraint_name].constrained_columns.push(rc_row.constrained_column);
-    }
-    // Add foreign column if it's a FOREIGN KEY constraint and the column is not already there
-    if (rc_row.constraint_type === 'FOREIGN KEY' && rc_row.foreign_column && processedConstraints[rc_row.constraint_name].foreign_columns && !processedConstraints[rc_row.constraint_name].foreign_columns!.includes(rc_row.foreign_column) ) {
-        processedConstraints[rc_row.constraint_name].foreign_columns!.push(rc_row.foreign_column);
+  rawConstraints.forEach(rc_row => { // Renamed loop variable to avoid conflict with outer 'rc' alias
+    if (isRawConstraintInfo(rc_row)) {
+      if (!processedConstraints[rc_row.constraint_name]) {
+        processedConstraints[rc_row.constraint_name] = {
+          constraint_name: rc_row.constraint_name,
+          constraint_type: rc_row.constraint_type,
+          constrained_columns: [],
+          foreign_table_schema: rc_row.foreign_table_schema ?? undefined,
+          foreign_table_name: rc_row.foreign_table_name ?? undefined,
+          foreign_columns: rc_row.constraint_type === 'FOREIGN KEY' ? [] : undefined,
+          check_clause: rc_row.check_clause ?? undefined,
+          delete_rule: rc_row.delete_rule ?? undefined,
+          update_rule: rc_row.update_rule ?? undefined,
+        };
+      }
+      // Add constrained column if it's not already there
+      if (rc_row.constrained_column && !processedConstraints[rc_row.constraint_name].constrained_columns.includes(rc_row.constrained_column)) {
+        processedConstraints[rc_row.constraint_name].constrained_columns.push(rc_row.constrained_column);
+      }
+      // Add foreign column if it's a FOREIGN KEY constraint and the column is not already there
+      if (rc_row.constraint_type === 'FOREIGN KEY' && rc_row.foreign_column && processedConstraints[rc_row.constraint_name].foreign_columns && !processedConstraints[rc_row.constraint_name].foreign_columns!.includes(rc_row.foreign_column) ) {
+          processedConstraints[rc_row.constraint_name].foreign_columns!.push(rc_row.foreign_column);
+      }
     }
   });
 
@@ -721,22 +844,30 @@ export async function getTableIndexes(
     WHERE
         schemaname = '${schemaName}' AND tablename = '${tableName}'
   `;
-  const { data, error } = await client.rpc('execute_sql' as any, { query: query });
+  const { data, error } = await client.rpc('execute_sql', { query: query });
   if (error) {
     console.error("Error fetching table indexes:", error);
     throw error;
   }
 
+  if (!isRawIndexInfoArray(data)) {
+    console.error("Invalid data for getTableIndexes", data);
+    return [];
+  }
+
   // Basic parsing of column names from indexdef (can be improved)
-  return (data as any[]).map(idx => {
-    const colMatch = idx.indexdef.match(/\(([^)]+)\)/);
-    const column_names = colMatch ? colMatch[1].split(',').map((s: string) => s.trim().replace(/"/g, '')) : [];
-    return {
-      indexname: idx.indexname,
-      indexdef: idx.indexdef,
-      column_names: column_names
-    };
-  });
+  return data.reduce<IndexInfo[]>((acc, idx) => {
+    if (isRawIndexInfo(idx)) {
+      const colMatch = idx.indexdef.match(/\(([^)]+)\)/);
+      const column_names = colMatch ? colMatch[1].split(',').map((s: string) => s.trim().replace(/"/g, '')) : [];
+      acc.push({
+        indexname: idx.indexname,
+        indexdef: idx.indexdef,
+        column_names: column_names
+      });
+    }
+    return acc;
+  }, []);
 }
 
 // Keep one instance of setSharedAdminClient, remove any duplicates.
@@ -853,17 +984,28 @@ export async function getTriggersForTable(
     ORDER BY trigger_name
   `;
 
-  const { data, error } = await client.rpc('execute_sql' as any, { query: final_query });
+  const { data, error } = await client.rpc('execute_sql', { query: final_query });
   if (error) {
     console.error(`Error fetching triggers for ${schemaName}.${tableName}:`, error);
     throw error;
   }
-  return (data as any[]).map(trg => ({
-      trigger_name: trg.trigger_name,
-      event_manipulation: trg.event_manipulation,
-      action_timing: trg.action_timing,
-      action_statement: trg.action_statement,
-  }));
+  
+  if (!isRawTriggerInfoArray(data)) {
+    console.error("Invalid data for getTriggersForTable", data);
+    return [];
+  }
+
+  return data.reduce<TriggerInfo[]>((acc, trg) => {
+    if (isRawTriggerInfo(trg)) {
+      acc.push({
+        trigger_name: trg.trigger_name,
+        event_manipulation: trg.event_manipulation,
+        action_timing: trg.action_timing,
+        action_statement: trg.action_statement,
+      });
+    }
+    return acc;
+  }, []);
 }
 
 export interface ForeignKeyInfo {
@@ -916,14 +1058,14 @@ export async function getForeignKeyInfo(
         tc.constraint_name, kcu.ordinal_position
   `;
 
-   const { data: rawFks, error } = await client.rpc('execute_sql' as any, { query: fkQuery });
+   const { data: rawFks, error } = await client.rpc('execute_sql', { query: fkQuery });
 
    if (error) {
      console.error(`Error fetching detailed foreign key info for ${schemaName}.${tableName}:`, error);
      throw error;
    }
 
-  return (rawFks as any[]).map((fk: any) => ({
+  return rawFks.map((fk: any) => ({
     constraint_name: fk.constraint_name,
     foreign_key_column: fk.foreign_key_column,
     referenced_table_name: fk.referenced_table_name,
@@ -988,19 +1130,33 @@ export async function isRLSEnabled(
     JOIN pg_namespace nsp ON nsp.oid = cl.relnamespace
     WHERE cl.relname = '${tableName}' AND nsp.nspname = '${schemaName}'
   `;
-  const { data, error } = await client.rpc('execute_sql' as any, { query: query });
+  const { data, error } = await client.rpc('execute_sql', { query: query });
   if (error) {
     console.error(`Error checking RLS status for ${schemaName}.${tableName}:`, error);
     throw error;
   }
-  if (data && data.length > 0) {
-    return (data[0] as any).relrowsecurity === true;
+  if (data && Array.isArray(data) && data.length > 0 && isRLSInfo(data[0])) {
+    return data[0].relrowsecurity;
   }
   return false; // Or throw error if table not found
 }
 
 // Helper function to resolve {$ref: ...} placeholders
 function resolveReferences(obj: any, exportedIds: Map<string, string>): any {
+  if (typeof obj === 'string') {
+    // This regex finds all occurrences of "{$ref: '...'}""
+    return obj.replace(/"\{\$ref: '([^']+)'\}"/g, (match, refKey) => {
+      const resolved = exportedIds.get(refKey);
+      if (resolved) {
+        // Replace the entire placeholder with just the resolved ID, unquoted.
+        return `"${resolved}"`;
+      }
+      // If a reference can't be resolved, leave it as is for debugging.
+      console.warn(`[resolveReferences] Failed to resolve ref in string: "${refKey}"`);
+      return match;
+    });
+  }
+  
   if (typeof obj !== 'object' || obj === null) {
     return obj;
   }
@@ -1009,38 +1165,36 @@ function resolveReferences(obj: any, exportedIds: Map<string, string>): any {
     return obj.map(item => resolveReferences(item, exportedIds));
   }
 
-  // Check for {$ref: '...'} structure
-  // It must be an object with a single key '$ref' whose value is a string.
   if (Object.prototype.hasOwnProperty.call(obj, '$ref') && typeof obj.$ref === 'string' && Object.keys(obj).length === 1) {
-    const refKey = obj.$ref; // e.g., "thesisPrompt_id" or "processTemplate"
-    let actualId: string | undefined = exportedIds.get(refKey);
-
-    // If direct lookup fails and key ends with _id, try trimming _id and looking up again
-    if (actualId === undefined && refKey.endsWith('_id')) {
-      const trimmedKey = refKey.substring(0, refKey.length - 3); // e.g., "thesisPrompt"
-      actualId = exportedIds.get(trimmedKey);
-    }
+    const refKey = obj.$ref; 
+    const actualId: string | undefined = exportedIds.get(refKey);
 
     if (actualId !== undefined) {
-      return actualId; // Return the resolved UUID
+      return actualId;
     } else {
-      // Enhanced logging for unresolved reference
       console.warn(`[resolveReferences] Failed to resolve ref: "${refKey}".`);
-      console.warn(`[resolveReferences] Attempted direct key: "${refKey}", was present: ${exportedIds.has(refKey)}`);
-      if (refKey.endsWith('_id')) {
-        const trimmedKey = refKey.substring(0, refKey.length - 3);
-        console.warn(`[resolveReferences] Attempted trimmed key: "${trimmedKey}", was present: ${exportedIds.has(trimmedKey)}`);
-      }
       console.warn(`[resolveReferences] Full exportedIds map at this failure point: ${JSON.stringify(Array.from(exportedIds.entries()))}`);
-      return obj; // Return original {$ref: ...} object if ref not found
+      return obj;
     }
   }
 
-  // Recursively process other objects
   const newObj: { [key: string]: any } = {};
   for (const key in obj) {
     if (Object.prototype.hasOwnProperty.call(obj, key)) {
-      newObj[key] = resolveReferences(obj[key], exportedIds);
+      const value = obj[key];
+      if (typeof value === 'string') {
+        // Also process standalone strings that might contain the placeholder pattern.
+        newObj[key] = value.replace(/\{\$ref: '([^']+)'\}/g, (match, refKey) => {
+          const resolved = exportedIds.get(refKey);
+          if (resolved) {
+            return resolved;
+          }
+          console.warn(`[resolveReferences] Failed to resolve ref in string property: "${refKey}"`);
+          return match;
+        });
+      } else {
+        newObj[key] = resolveReferences(value, exportedIds);
+      }
     }
   }
   return newObj;
@@ -1164,25 +1318,28 @@ export async function coreInitializeTestStep(
         continue;
       }
 
-      if (existingResource) {
+      if (isDbRow(existingResource)) {
         // Exists: register for restoration and update
-        registerUndoAction({ type: 'RESTORE_UPDATED_ROW', tableName: req.tableName, identifier: resolvedIdentifier, originalRow: existingResource as any, scope: executionScope });
+        const originalRowForUndo = Object.assign({}, existingResource);
+        registerUndoAction({ type: 'RESTORE_UPDATED_ROW', tableName: req.tableName, identifier: resolvedIdentifier, originalRow: originalRowForUndo, scope: executionScope });
         
         const { data: updatedRecord, error: updateError } = await supabaseAdminClient
           .from(req.tableName)
-          .update(resolvedDesiredState as any)
+          .update(resolvedDesiredState)
           .match(resolvedIdentifier)
           .select()
           .single();
         
         if (updateError) {
           console.error(`[coreInitializeTestStep] Error updating resource in ${req.tableName}:`, updateError);
-          processedResources.push({ tableName: req.tableName, identifier: resolvedIdentifier, resource: existingResource as any, status: 'failed', error: updateError.message, exportId: req.exportId });
+          processedResources.push({ tableName: req.tableName, identifier: resolvedIdentifier, resource: existingResource, status: 'failed', error: updateError.message, exportId: req.exportId });
         } else {
-          console.log(`[TestUtil] Updated existing resource in ${req.tableName} (ID: ${(updatedRecord as any).id}, Resolved Identifier: ${JSON.stringify(resolvedIdentifier)}) with data: ${JSON.stringify(resolvedDesiredState)}`);
-          processedResources.push({ tableName: req.tableName, identifier: resolvedIdentifier, resource: updatedRecord as any, status: 'updated', exportId: req.exportId });
-          if (req.exportId) {
-            exportedIds.set(req.exportId, (updatedRecord as any).id);
+          if (isDbRow(updatedRecord)) {
+            console.log(`[TestUtil] Updated existing resource in ${req.tableName} (ID: ${updatedRecord.id}, Resolved Identifier: ${JSON.stringify(resolvedIdentifier)}) with data: ${JSON.stringify(resolvedDesiredState)}`);
+            processedResources.push({ tableName: req.tableName, identifier: resolvedIdentifier, resource: updatedRecord, status: 'updated', exportId: req.exportId });
+            if (req.exportId) {
+              exportedIds.set(req.exportId, updatedRecord.id);
+            }
           }
         }
       } else {
@@ -1193,7 +1350,7 @@ export async function coreInitializeTestStep(
 
         const { data: newResource, error: createError } = await supabaseAdminClient
           .from(req.tableName)
-          .insert(createPayload as any)
+          .insert(createPayload)
           .select()
           .single();
 
@@ -1201,19 +1358,21 @@ export async function coreInitializeTestStep(
           console.error(`[coreInitializeTestStep] Error creating resource in ${req.tableName}:`, createError);
           processedResources.push({ tableName: req.tableName, identifier: resolvedIdentifier, status: 'failed', error: createError.message, exportId: req.exportId });
         } else {
-          console.log(`[TestUtil] Created new resource in ${req.tableName} with ID: ${(newResource as any).id}`);
-          const deleteCriteria = { id: (newResource as any).id };
-          registerUndoAction({ type: 'DELETE_CREATED_ROW', tableName: req.tableName, criteria: deleteCriteria, scope: executionScope });
-          processedResources.push({ tableName: req.tableName, identifier: resolvedIdentifier, resource: newResource as any, status: 'created', exportId: req.exportId });
-          if (req.exportId) {
-            exportedIds.set(req.exportId, (newResource as any).id);
+          if (isDbRow(newResource)) {
+            console.log(`[TestUtil] Created new resource in ${req.tableName} with ID: ${newResource.id}`);
+            const deleteCriteria = { id: newResource.id };
+            registerUndoAction({ type: 'DELETE_CREATED_ROW', tableName: req.tableName, criteria: deleteCriteria, scope: executionScope });
+            processedResources.push({ tableName: req.tableName, identifier: resolvedIdentifier, resource: newResource, status: 'created', exportId: req.exportId });
+            if (req.exportId) {
+              exportedIds.set(req.exportId, newResource.id);
+            }
           }
         }
       }
     }
   }
   
-  console.log(`[coreInitializeTestStep] Finished processing resources. Final processedResources array (before return): ${JSON.stringify(processedResources.map(p => ({ tableName: p.tableName, exportId: p.exportId, status: p.status, id: (p.resource as any)?.id, error: p.error  })), null, 2)}`);
+  console.log(`[coreInitializeTestStep] Finished processing resources. Final processedResources array (before return): ${JSON.stringify(processedResources.map(p => ({ tableName: p.tableName, exportId: p.exportId, status: p.status, id: isDbRow(p.resource) ? p.resource.id : null, error: p.error  })), null, 2)}`);
 
   return {
     primaryUserId,
@@ -1233,14 +1392,12 @@ export async function coreInitializeTestStep(
 /**
  * DEPRECATED for direct test use. Clients are now returned by coreInitializeTestStep and coreCreateAndSetupTestUser.
  * Creates and returns a Supabase client authenticated as the specified user.
-// ... existing code ...
  */
 // export async function getAuthedSupabaseClient(userId: string): Promise<SupabaseClient<Database>> { ... }
 
 /**
  * DEPRECATED for direct test use. Clients are now returned by coreInitializeTestStep.
  * Creates and returns an anonymous Supabase client.
-// ... existing code ...
  */
 // export function getAnonSupabaseClient(): SupabaseClient<Database> { ... }
 

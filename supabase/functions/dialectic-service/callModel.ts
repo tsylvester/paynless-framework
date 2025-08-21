@@ -5,11 +5,12 @@ import {
   } from "./dialectic.interface.ts";
   // Removed unused import: createSupabaseAdminClient
   import type {
-      ChatApiRequest,
-      TokenUsage,
-      ChatHandlerSuccessResponse,
-      ChatMessageRole
-  } from "../_shared/types.ts";
+    ChatApiRequest,
+    ChatHandlerSuccessResponse,
+    ChatMessageRole,
+    ChatMessage,
+} from "../_shared/types.ts";
+import { isTokenUsage, isChatMessageRole } from "../_shared/utils/type_guards.ts";
   
   console.log("callModel function started");
   
@@ -33,21 +34,23 @@ export async function callUnifiedAIModel(
     // (e.g., generateContributions) are responsible for iterating through the selected models
     // (obtained from dialectic_session_models linked to the session) and calling callUnifiedAIModel individually for each one.
   
-    const historyForChatApi: { role: ChatMessageRole; content: string }[] = 
-      options?.customParameters?.historyMessages?.map(hm => ({
-          content: hm.content,
-          role: hm.role as ChatMessageRole // Asserting role is of stricter type
-      })).filter(hm => ['system', 'user', 'assistant'].includes(hm.role as string)) || [];
+        const historyForChatApi = (options?.customParameters?.historyMessages || []).reduce((acc: { role: ChatMessageRole; content: string }[], hm: ChatMessage) => {
+        if (isChatMessageRole(hm.role)) {
+            acc.push({ content: hm.content, role: hm.role });
+        }
+        return acc;
+    }, []);
   
     const chatApiRequest: ChatApiRequest = {
         message: renderedPrompt,
         providerId: modelCatalogId,
         promptId: options?.currentStageSystemPromptId || "__none__",
-        chatId: associatedChatId === null ? undefined : associatedChatId, // MODIFIED: Convert null to undefined
+        chatId: undefined, // Always undefined for Dialectic jobs to prevent history masking
         walletId: options?.walletId,
         messages: historyForChatApi,
         max_tokens_to_generate: options?.customParameters?.max_tokens_to_generate,
         continue_until_complete: continueUntilComplete, // ADDED: Pass the flag here
+        isDialectic: true, // Always true for this service
         // organizationId might be relevant if dialectics are org-specific
     };
   
@@ -92,7 +95,7 @@ export async function callUnifiedAIModel(
       }
   
       // Try to parse as JSON. If /chat returns non-JSON for success (e.g. empty string), handle it.
-      let chatResponseData: unknown;
+      let chatResponseData: ChatHandlerSuccessResponse;
       const responseText = await response.text(); // Read text first
       try {
           chatResponseData = JSON.parse(responseText); // Try to parse the text
@@ -106,7 +109,7 @@ export async function callUnifiedAIModel(
           };
       }
       
-      const chatResponse = chatResponseData as ChatHandlerSuccessResponse; // Cast after parsing
+      const chatResponse: ChatHandlerSuccessResponse = chatResponseData ; // Cast after parsing
       
       console.log("/chat function response:", JSON.stringify(chatResponse, null, 2));
       
@@ -123,24 +126,35 @@ export async function callUnifiedAIModel(
               error: "/chat function response did not include an assistantMessage.",
               errorCode: 'CHAT_API_INVALID_RESPONSE',
               processingTimeMs,
-              rawProviderResponse: chatResponse as unknown as Record<string, unknown>,
+              rawProviderResponse: chatResponse.assistantMessage,
           };
       }
       
       const assistantMessage = chatResponse.assistantMessage;
-      const tokenUsage = assistantMessage.token_usage as TokenUsage | null;
+      const tokenUsage = assistantMessage.token_usage;
 
-      const contentType = (assistantMessage as unknown as { contentType?: string }).contentType || "text/markdown";
+      if (!isTokenUsage(tokenUsage)) {
+        // If tokenUsage is not valid, we can't proceed with token-related data.
+        // Return a successful response but with null token info and a warning in the error field.
+        return {
+            content: assistantMessage.content,
+            error: "Successfully received content, but token usage data was invalid or missing.",
+            errorCode: 'INVALID_TOKEN_USAGE_DATA',
+            processingTimeMs,
+            contentType: "text/markdown", // Default content type
+            rawProviderResponse: assistantMessage,
+        };
+      }
 
       return {
         content: assistantMessage.content,
         error: null,
-        inputTokens: tokenUsage?.prompt_tokens,
-        outputTokens: tokenUsage?.completion_tokens,
+        inputTokens: tokenUsage.prompt_tokens,
+        outputTokens: tokenUsage.completion_tokens,
         tokenUsage: tokenUsage,
         processingTimeMs,
-        contentType: contentType,
-        rawProviderResponse: assistantMessage as unknown as Record<string, unknown>,
+        contentType: "text/markdown", // Default content type
+        rawProviderResponse: assistantMessage,
       };
   
     } catch (e) {

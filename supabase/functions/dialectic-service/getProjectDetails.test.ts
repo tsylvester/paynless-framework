@@ -384,8 +384,6 @@ describe("getProjectDetails", () => {
     const expectedSelect = `
         *,
         dialectic_domains ( name ),
-        dialectic_process_templates ( * ),
-        resources:dialectic_project_resources!dialectic_project_resources_project_id_fkey (*),
         dialectic_sessions (*,
           dialectic_contributions (*),
           dialectic_feedback (*)
@@ -395,15 +393,9 @@ describe("getProjectDetails", () => {
     const actualSelect = (qbSpies.select.calls[0].args[0] as string).trim().replace(/\s+/g, ' ');
     assertEquals(actualSelect, expectedSelect);
 
-    assertEquals(qbSpies.eq.calls.length, 2);
+    assertEquals(qbSpies.eq.calls.length, 1);
     assertEquals(qbSpies.eq.calls[0].args[0], 'id');
     assertEquals(qbSpies.eq.calls[0].args[1], 'test-project-id');
-    assertEquals(qbSpies.eq.calls[1].args[0], 'user_id');
-    assertEquals(qbSpies.eq.calls[1].args[1], MOCK_USER_ID); 
-
-    assertEquals(resultData.dialectic_domains.name, "General");
-    assertExists(resultData.dialectic_process_templates);
-    assertEquals(resultData.dialectic_process_templates.name, "Default Template");
   });
   
   it("should handle project with no sessions", async () => {

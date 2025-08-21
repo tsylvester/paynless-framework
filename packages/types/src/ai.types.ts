@@ -356,15 +356,12 @@ export interface AiActions {
 		msgContent: string,
 		explicitChatId?: string | null,
 	) => { tempId: string; chatIdUsed: string; createdTimestamp: string };
-	addOptimisticMessageForReplay: (
-		messageContent: string,
-		existingChatId?: string | null,
-	) => { tempId: string; chatIdForOptimistic: string };
 	_updateChatContextInProfile: (
 		contextUpdate: Partial<ChatContextPreferences>,
 	) => Promise<void>;
 	_fetchAndStoreUserProfiles: (userIds: string[]) => Promise<void>;
 	_dangerouslySetStateForTesting: (newState: Partial<AiState>) => void;
+	checkAndReplayPendingChatAction: () => Promise<void>;
 }
 
 /**

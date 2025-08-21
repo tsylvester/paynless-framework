@@ -15,13 +15,14 @@ import { NotificationApiClient } from '@paynless/api';
 import { createMockNotificationApiClient, resetMockNotificationApiClient } from '@paynless/api/mocks/notifications.api.mock';
 import { useDialecticStore } from './dialecticStore';
 import { useWalletStore } from './walletStore';
+import type { DialecticLifecycleEvent, NotificationData } from '@paynless/types';
 
-// Mock the dialecticStore to spy on its internal methods
-const mockHandleGenerationComplete = vi.fn();
+// --- Mock the dialecticStore to spy on its internal methods ---
+const mockHandleDialecticLifecycleEvent = vi.fn();
 vi.mock('./dialecticStore', () => ({
   useDialecticStore: {
     getState: () => ({
-      _handleGenerationCompleteEvent: mockHandleGenerationComplete,
+      _handleDialecticLifecycleEvent: mockHandleDialecticLifecycleEvent,
     }),
   },
 }));
@@ -94,6 +95,10 @@ const mockNotification1: Notification = {
     data: { message: 'Test 1' },
     read: false,
     created_at: new Date(Date.now() - 10000).toISOString(),
+    is_internal_event: false, // For standard notifications
+    title: 'Test Title 1',
+    message: 'Test Message 1',
+    link_path: null,
 };
 const mockNotification2: Notification = {
     id: 'uuid-2',
@@ -102,6 +107,10 @@ const mockNotification2: Notification = {
     data: { message: 'Test 2', target_path: 'some/path' },
     read: false,
     created_at: new Date(Date.now() - 5000).toISOString(),
+    is_internal_event: false, // For standard notifications
+    title: 'Test Title 2',
+    message: 'Test Message 2',
+    link_path: 'some/path',
 };
 const mockNotification3: Notification = {
     id: 'uuid-3',
@@ -110,7 +119,24 @@ const mockNotification3: Notification = {
     data: null,
     read: true, // Already read
     created_at: new Date(Date.now() - 20000).toISOString(),
+    is_internal_event: false, // For standard notifications
+    title: 'Test Title 3',
+    message: 'Test Message 3',
+    link_path: null,
 };
+const mockInternalEventNotification: Notification = {
+    id: 'uuid-internal-1',
+    user_id: 'user-abc',
+    type: 'dialectic_contribution_started',
+    data: { sessionId: 'sid-123', modelId: 'm-1', iterationNumber: 1, job_id: 'job-internal-1' },
+    read: true, // Internal events are often implicitly 'read'
+    created_at: new Date().toISOString(),
+    is_internal_event: true, // This is an internal lifecycle event
+    title: null,
+    message: null,
+    link_path: null,
+};
+
 
 // --- Test Suite ---
 describe('notificationStore', () => {
@@ -159,7 +185,7 @@ describe('notificationStore', () => {
 
     afterEach(() => {
         // Clear mocks after each test to ensure isolation
-        mockHandleGenerationComplete.mockClear();
+        mockHandleDialecticLifecycleEvent.mockClear();
     });
 
     it('should have correct initial state', () => {
@@ -252,70 +278,66 @@ describe('notificationStore', () => {
                  act(() => { useNotificationStore.setState({ notifications: [mockNotification1], unreadCount: 1 }); });
                  act(() => { useNotificationStore.getState().addNotification(mockNotification1); });
                  const state = useNotificationStore.getState();
-                 expect(state.notifications).toEqual([mockNotification1]);
+                 expect(state.notifications.length).toBe(1);
                  expect(state.unreadCount).toBe(1);
                  expect(logger.warn).toHaveBeenCalledWith('[notificationStore] Attempted to add duplicate notification', { id: mockNotification1.id });
-             });
+            });
         });
 
         describe('handleIncomingNotification (Internal - called by Realtime subscription callback)', () => {
-            it('should call addNotification for standard notifications', () => {
+            it('should call addNotification for standard, user-facing notifications', () => {
                 const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
                 act(() => {
                     useNotificationStore.getState().handleIncomingNotification(mockNotification1);
                 });
                 expect(addNotificationSpy).toHaveBeenCalledWith(mockNotification1);
-                expect(mockHandleGenerationComplete).not.toHaveBeenCalled();
-                addNotificationSpy.mockRestore();
-            });
-    
-            it('should call dialecticStore._handleGenerationCompleteEvent for completion notifications', () => {
-                const completionNotification: Notification = {
-                    id: 'uuid-complete',
-                    user_id: 'user-abc',
-                    type: 'contribution_generation_complete',
-                    data: { sessionId: 'session-xyz', projectId: 'project-123' },
-                    read: false,
-                    created_at: new Date().toISOString(),
-                };
-    
-                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
-    
-                act(() => {
-                    useNotificationStore.getState().handleIncomingNotification(completionNotification);
-                });
-    
-                // It should call the special handler
-                expect(mockHandleGenerationComplete).toHaveBeenCalledWith(completionNotification.data);
-    
-                // It should ALSO still add it to the general notification list
-                expect(addNotificationSpy).toHaveBeenCalledWith(completionNotification);
-    
+                expect(mockHandleDialecticLifecycleEvent).not.toHaveBeenCalled();
                 addNotificationSpy.mockRestore();
             });
 
-            it('should call walletStore._handleWalletUpdateNotification for wallet transaction notifications', () => {
+            it('should route internal events to the dialecticStore without creating a visible notification', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(mockInternalEventNotification);
+                });
+
+                // Should be routed to the specific store handler
+                expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith({
+                    type: 'dialectic_contribution_started',
+                    sessionId: 'sid-123',
+                    modelId: 'm-1',
+                    iterationNumber: 1,
+                    job_id: 'job-internal-1',
+                });
+
+                // Should NOT create a visible notification for the user
+                expect(addNotificationSpy).not.toHaveBeenCalled();
+                
+                addNotificationSpy.mockRestore();
+            });
+            
+            it('should not process wallet notifications as internal events', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
                 const walletNotification: Notification = {
-                    id: 'uuid-wallet',
-                    user_id: 'user-abc',
+                    ...mockNotification1,
+                    id: 'wallet-noti-1',
                     type: 'WALLET_TRANSACTION',
                     data: { walletId: 'wallet-xyz', newBalance: '1000' },
-                    read: false,
-                    created_at: new Date().toISOString(),
+                    is_internal_event: false, // Wallet notifications are user-facing
                 };
-    
-                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
-    
+
                 act(() => {
                     useNotificationStore.getState().handleIncomingNotification(walletNotification);
                 });
-    
-                // It should call the special handler
+
+                // Should call the special wallet handler
                 expect(mockHandleWalletUpdate).toHaveBeenCalledWith(walletNotification.data);
-    
-                // It should ALSO still add it to the general notification list
+                // Should ALSO still add it to the general notification list
                 expect(addNotificationSpy).toHaveBeenCalledWith(walletNotification);
-    
+                // Should NOT be routed to the dialectic handler
+                expect(mockHandleDialecticLifecycleEvent).not.toHaveBeenCalled();
+                
                 addNotificationSpy.mockRestore();
             });
         });

@@ -1,11 +1,43 @@
-import { SupabaseClient } from "npm:@supabase/supabase-js";
-import { Database, Tables } from "../types_db.ts";
+import { Json, Tables } from "../types_db.ts";
+
+export interface IPromptAssembler {
+    assemble(
+        project: ProjectContext, 
+        session: SessionContext,
+        stage: StageContext,
+        projectInitialUserPrompt: string,
+        iterationNumber: number,
+    ): Promise<string>;
+
+    gatherContext(
+        project: ProjectContext,
+        session: SessionContext,
+        stage: StageContext,
+        projectInitialUserPrompt: string,
+        iterationNumber: number,
+        overrideContributions?: ContributionOverride[],
+    ): Promise<DynamicContextVariables>;
+
+    render(
+        stage: StageContext,
+        context: DynamicContextVariables,
+        userProjectOverlayValues?: Json | null
+    ): string;
+
+    gatherInputsForStage(
+        stage: StageContext, 
+        project: ProjectContext, 
+        session: SessionContext, 
+        iterationNumber: number
+    ): Promise<AssemblerSourceDocument[]>;
+}
 
 export type DynamicContextVariables = {
     user_objective: string,
     domain: string,
     agent_count: number,
     context_description: string,
+    original_user_request: string | null;
     prior_stage_ai_outputs: string,
     prior_stage_user_feedback: string,
     deployment_context: string | null,
@@ -35,8 +67,18 @@ export type RenderPromptFunctionType = (
     userProjectOverlayValues?: Tables<'domain_specific_prompt_overlays'>['overlay_values'] | null
 ) => string;
 
-export type DownloadStorageFunctionType = (
-    client: SupabaseClient<Database>,
-    bucket: string,
-    path: string,
-) => Promise<{ data: ArrayBuffer | null; error: Error | null }>;
+export type ContributionOverride = {
+    content: string;
+
+};
+// Define a granular document type
+export interface AssemblerSourceDocument {
+	id: string;
+	type: 'contribution' | 'feedback';
+	content: string;
+	metadata: {
+		displayName: string;
+		header?: string;
+		modelName?: string;
+	}
+}

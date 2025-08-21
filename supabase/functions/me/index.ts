@@ -1,6 +1,7 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { 
   handleCorsPreflightRequest, 
   createErrorResponse, 
@@ -10,6 +11,8 @@ import {
   createSupabaseClient,
   createUnauthorizedResponse
 } from '../_shared/auth.ts';
+import { getEmailMarketingService } from '../_shared/email_service/factory.ts';
+import type { UserData } from '../_shared/types.ts';
 
 // Define dependencies interface (Restoring)
 export interface MeHandlerDeps {
@@ -18,6 +21,7 @@ export interface MeHandlerDeps {
     createErrorResponse: typeof createErrorResponse;
     createSuccessResponse: typeof createSuccessResponse;
     createSupabaseClient: typeof createSupabaseClient;
+    getEmailMarketingService: typeof getEmailMarketingService;
 }
 
 // Default dependencies (Restoring)
@@ -27,6 +31,7 @@ const defaultDeps: MeHandlerDeps = {
     createErrorResponse: createErrorResponse,
     createSuccessResponse: createSuccessResponse,
     createSupabaseClient: createSupabaseClient,
+    getEmailMarketingService,
 };
 
 // Export the handler with deps parameter (Restoring)
@@ -110,16 +115,80 @@ export async function handleMeRequest(
         return deps.createSuccessResponse(responseData, 200, req);
       }
 
-      case 'PUT': {
-        console.log(`[me/index.ts] Handling PUT for user ${user.id}`);
+      case 'POST': { // Changed from PUT to POST
+        console.log(`[me/index.ts] Handling POST for user ${user.id}`);
         let updates: Record<string, unknown>;
         try {
             updates = await req.json();
         } catch (jsonError) {
-            console.error("Failed to parse PUT body:", jsonError);
-            // Revert: Remove jsonError argument
+            console.error("Failed to parse POST body:", jsonError);
             return deps.createErrorResponse("Invalid JSON body for update", 400, req); 
         }
+
+        // Handle empty update payload gracefully
+        if (Object.keys(updates).length === 0) {
+          console.log(`[me/index.ts] Empty update payload for user ${user.id}. Returning current profile.`);
+          const { data: currentProfile, error: fetchError } = await supabase
+              .from('user_profiles')
+              .select('*')
+              .eq('id', user.id)
+              .single();
+          
+          if (fetchError) {
+              console.error('[me/index.ts] Error fetching current profile for empty update:', fetchError);
+              return deps.createErrorResponse("Failed to fetch profile", 500, req);
+          }
+          
+          return deps.createSuccessResponse(currentProfile, 200, req);
+        }
+
+        // --- Newsletter Subscription Logic ---
+        if ('is_subscribed_to_newsletter' in updates && user.email) {
+          const email = user.email; // Guaranteed to be a string here
+          const emailService = deps.getEmailMarketingService({
+            provider: Deno.env.get('EMAIL_MARKETING_PROVIDER') ?? '',
+            kitApiKey: Deno.env.get('EMAIL_MARKETING_API_KEY') ?? '',
+            kitBaseUrl: Deno.env.get('EMAIL_MARKETING_API_URL') ?? '',
+            kitTagId: Deno.env.get('EMAIL_MARKETING_NEWSLETTER_TAG_ID') ?? '',
+            kitCustomUserIdField: Deno.env.get('EMAIL_MARKETING_USER_ID_FIELD') ?? '',
+            kitCustomCreatedAtField: Deno.env.get('EMAIL_MARKETING_CREATED_AT_FIELD') ?? '',
+          });
+
+          const { data: currentProfile, error: fetchError } = await supabase
+            .from('user_profiles')
+            .select('is_subscribed_to_newsletter, first_name, last_name')
+            .eq('id', user.id)
+            .single();
+          
+          if (fetchError) {
+            console.error('[me] Error fetching current profile for update:', fetchError);
+            // Don't block the main update, just log the error
+          } else if (currentProfile && updates.is_subscribed_to_newsletter !== currentProfile.is_subscribed_to_newsletter) {
+            const userData: UserData = {
+              id: user.id,
+              email: email,
+              firstName: currentProfile.first_name,
+              lastName: currentProfile.last_name,
+              createdAt: user.created_at,
+            };
+            try {
+              if (updates.is_subscribed_to_newsletter) {
+                console.log(`[me] Subscribing user ${email} to newsletter.`);
+                if (emailService?.addUserToList) {
+                  await emailService.addUserToList(userData);
+                }
+              } else {
+                console.log(`[me] Unsubscribing user ${email} from newsletter.`);
+                if (emailService?.removeUser) {
+                  await emailService.removeUser(email);
+                }
+              }
+            } catch (emailError) {
+               console.error(`[me] Error handling newsletter subscription:`, emailError);
+            }
+          }
+        }
+        // --- End Newsletter Logic ---
         
         let updatedProfile = null;
         let updateError = null;

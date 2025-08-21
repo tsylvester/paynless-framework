@@ -1,16 +1,23 @@
 {
   "imports": {
     "@shared/": "./functions/_shared/",
-    "@supabase/supabase-js": "npm:@supabase/supabase-js@^2.43.4",
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2",
     "stripe": "npm:stripe@^14.11.0",
     "@paynless/utils": "../packages/utils/src/index.ts",
     "@paynless/utils/": "../packages/utils/src/",
     "@supabase/types": "./functions/types_db.ts",
     "@paynless/types": "../packages/types/src/index.ts",
     "@paynless/db-types": "./functions/types_db.ts",
+    "@google/genai": "npm:@google/genai@^0.13.0",
+    "@anthropic-ai/sdk": "npm:@anthropic-ai/sdk@^0.22.0",
+    "openai": "npm:openai@^4.52.0",
     "jsr:@std/assert": "jsr:@std/assert@^0.225.3",
     "jsr:@std/testing/bdd": "jsr:@std/testing@0.225.1/bdd",
     "jsr:@std/testing/mock": "jsr:@std/testing@0.225.1/mock",
-    "deno.land/x/expect/": "https://deno.land/x/expect@v0.3.0/"
+    "deno.land/x/expect/": "https://deno.land/x/expect@v0.3.0/",
+    "@anthropic-ai/tokenizer": "npm:@anthropic-ai/tokenizer@0.0.4",
+    "https_deno.land/": "https://deno.land/",
+    "npm:": "https://esm.sh/",
+    "deno:": "https://deno.land/"
   }
 }

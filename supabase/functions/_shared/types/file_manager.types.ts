@@ -4,21 +4,44 @@ import type {
   Json
 } from '../../types_db.ts'
 import type { ServiceError } from '../types.ts';
+import type { ContributionType } from '../../dialectic-service/dialectic.interface.ts';
 
 /**
  * A union of all possible file types the system can manage.
  * This is the primary driver for path construction and database registration logic.
  */
-export type FileType =
-  | 'project_readme' // The main README for a dialectic project.
-  | 'initial_user_prompt' // The initial user-provided prompt file for a project.
-  | 'user_feedback' // User's consolidated feedback on a stage.
-  | 'model_contribution_main' // For the primary content (e.g., Markdown) of an AI model's output for a stage.
-  | 'model_contribution_raw_json' // For the raw JSON response from the AI provider for a stage.
-  | 'contribution_document' // A refined/derived document (e.g., PRD, checklist) within a stage's 'documents' folder.
-  | 'project_settings_file'
-  | 'general_resource' // A general file resource uploaded by a user for an iteration (in 0_seed_inputs/general_resource).
-  | 'seed_prompt' // The fully constructed prompt sent to a model for a specific stage.
+export enum FileType {
+  ProjectReadme = 'project_readme', // The main README for a dialectic project.
+  MasterPlan = 'master_plan',
+  PendingFile = 'pending_file',
+  CurrentFile = 'current_file',
+  CompleteFile = 'complete_file',
+  InitialUserPrompt = 'initial_user_prompt', // The initial user-provided prompt file for a project.
+  UserFeedback = 'user_feedback', // User's consolidated feedback on a stage.
+  ModelContributionMain = 'model_contribution_main', // For the primary content (e.g., Markdown) of an AI model's output for a stage.
+  ModelContributionRawJson = 'model_contribution_raw_json', // For the raw JSON response from the AI provider for a stage.
+  ContributionDocument = 'contribution_document', // A refined/derived document (e.g., PRD, checklist) within a stage's 'documents' folder.
+  ProjectSettingsFile = 'project_settings_file',
+  GeneralResource = 'general_resource', // A general file resource uploaded by a user for an iteration (in 0_seed_inputs/general_resource).
+  SeedPrompt = 'seed_prompt', // The fully constructed prompt sent to a model for a specific stage.
+  // Intermediate artifacts for multi-step stages
+  PairwiseSynthesisChunk = 'pairwise_synthesis_chunk',
+  ReducedSynthesis = 'reduced_synthesis',
+  Synthesis = 'synthesis',
+  RagContextSummary = 'rag_context_summary',
+}
+
+/**
+ * The formal contract for path-related context, ensuring canonical parameter generation.
+ */
+export interface CanonicalPathParams {
+  contributionType: ContributionType;
+  sourceModelSlugs?: string[]; // Guaranteed to be alphabetically sorted
+  sourceAnchorType?: string; // e.g., 'thesis', 'outline'
+  sourceAnchorModelSlug?: string; // e.g., 'claude-3-opus'
+  sourceAttemptCount?: number; // The attempt_count of the source document
+  pairedModelSlug?: string; // e.g., 'gemini-1.5-pro'
+}
 
 /**
  * The context required to construct a unique, deterministic storage path for a file.
@@ -28,10 +51,16 @@ export interface PathContext {
   fileType: FileType
   sessionId?: string
   iteration?: number
-  stageSlug?: string
+    stageSlug?: string
+  contributionType?: ContributionType | null; // e.g., 'hypothesis', 'critique', 'synthesis' (align with stage or be more specific)
   modelSlug?: string
   attemptCount?: number
   originalFileName?: string // Made optional, validation per fileType
+  sourceModelSlugs?: string[];
+  sourceAnchorType?: string;
+  sourceAnchorModelSlug?: string;
+  sourceAttemptCount?: number;
+  pairedModelSlug?: string;
 }
 
 /**
@@ -43,7 +72,8 @@ export interface UploadContext {
   mimeType: string
   sizeBytes: number
   userId: string | null; // Allow null for system-generated contributions
-  description?: string
+  description: string
+  resourceTypeForDb?: string; // To directly populate dialectic_project_resources.resource_type
 
   // Specific for 'model_contribution_main' fileType
   contributionMetadata?: {
@@ -59,16 +89,20 @@ export interface UploadContext {
     // from the main contribution's originalFileName (e.g., if main is foo.md, raw is foo_raw.json).
     rawJsonResponseContent: string; // The actual JSON string content for the raw AI response.
 
+    // ADDED: For continuation jobs, this signals to update an existing record.
+    target_contribution_id?: string;
+    document_relationships?: Json | null; // ADDED: For derivative jobs, flexible JSONB for relationships.
+    isIntermediate?: boolean; // ADDED: Signals that this is a work-in-progress file.
+
     // Tokenomics and other metadata for the primary dialectic_contributions record
     tokensUsedInput?: number;
     tokensUsedOutput?: number;
     processingTimeMs?: number;
-    seedPromptStoragePath?: string; // Path to the seed prompt that generated this contribution
+    seedPromptStoragePath: string; // Path to the seed prompt that generated this contribution
     citations?: Json | null;
-    contributionType?: string | null; // e.g., 'hypothesis', 'critique', 'synthesis' (align with stage or be more specific)
+    contributionType?: ContributionType | null; // e.g., 'hypothesis', 'critique', 'synthesis' (align with stage or be more specific)
     errorDetails?: string | null; // If AI model itself reported an error in its generation process
     promptTemplateIdUsed?: string | null; // FK to system_prompts.id
-    targetContributionId?: string | null; // For linking critiques or threaded responses
     
     // Fields for edit tracking, typically set by the service managing edits, 
     // but defaults can be provided for new contributions.
@@ -79,7 +113,7 @@ export interface UploadContext {
 
   // Specific for 'user_feedback' fileType
   feedbackTypeForDb?: string; // To directly populate dialectic_feedback.feedback_type
-  resourceDescriptionForDb?: Record<string, unknown> | null; // To directly populate dialectic_feedback.resource_description (jsonb)
+  resourceDescriptionForDb?: Json | null; // To directly populate dialectic_feedback.resource_description (jsonb)
 }
 
 /**

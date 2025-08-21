@@ -16,13 +16,10 @@ import {
 	UserProfile, // Import UserProfile from @paynless/types
 	MessageForTokenCounting,
 	ChatHandlerSuccessResponse, // For casting the api call result type
-	ILogger, // For casting the logger type
 	IAuthService,
 	IWalletService,
 	IAiStateService,
 	HandleSendMessageServiceParams,
-	StreamingCallbacks,
-	InternalProcessResult,
 } from "@paynless/types"; // IMPORT NECESSARY TYPES
 
 // Import api AFTER other local/utility imports but BEFORE code that might use types that cause issues with mocking
@@ -32,9 +29,20 @@ import { logger } from "@paynless/utils";
 import { useAuthStore } from "./authStore";
 import { useWalletStore } from "./walletStore"; // Keep this for getState()
 import { selectActiveChatWalletInfo } from "./walletStore.selectors"; // Corrected import path
+import {
+	isChatContextPreferences,
+	isAiProvidersApiResponse,
+	isSystemPromptsApiResponse,
+} from "@paynless/utils";
 
 // Import the new handler function and its required interfaces from ai.SendMessage.ts
 import { handleSendMessage } from "./ai.SendMessage";
+
+type ProfileFetchSuccess = {
+	userId: string;
+	response: ApiResponse<UserProfile>;
+};
+type ProfileFetchError = { userId: string; error: Error };
 
 // Use the imported AiStore type
 export const useAiStore = create<AiStore>()(
@@ -69,14 +77,18 @@ export const useAiStore = create<AiStore>()(
 					return;
 				}
 
-				// Ensure chat_context is treated as an object, even if initially null from DB
-				const currentChatContext = (profile.chat_context ||
-					{}) as ChatContextPreferences;
-
-				const newChatContextState = {
-					...currentChatContext,
-					...contextUpdate,
-				};
+				let newChatContextState: ChatContextPreferences = { ...contextUpdate };
+				// Use a more direct type check that TypeScript can reliably analyze
+				if (
+					typeof profile.chat_context === "object" &&
+					profile.chat_context !== null &&
+					!Array.isArray(profile.chat_context)
+				) {
+					newChatContextState = {
+						...profile.chat_context,
+						...contextUpdate,
+					};
+				}
 
 				// Type the payload for updateProfile
 				const profileUpdatePayload: UserProfileUpdate = {
@@ -132,16 +144,17 @@ export const useAiStore = create<AiStore>()(
 				{ userIds: idsToFetch },
 			);
 
-			const profilePromises = idsToFetch.map(
-				(userId) =>
-					api
-						.users()
-						.getProfile(userId) // Use the new UserApiClient method
-						.then((response: ApiResponse<UserProfile>) => ({
+			const profilePromises = idsToFetch.map((userId) =>
+				api
+					.users()
+					.getProfile(userId)
+					.then(
+						(response: ApiResponse<UserProfile>): ProfileFetchSuccess => ({
 							userId,
 							response,
-						})) // Explicitly type response
-						.catch((error: Error) => ({ userId, error })), // Explicitly type error as Error
+						}),
+					)
+					.catch((error: Error): ProfileFetchError => ({ userId, error })),
 			);
 
 			const results = await Promise.allSettled(profilePromises);
@@ -150,53 +163,47 @@ export const useAiStore = create<AiStore>()(
 
 			results.forEach((result) => {
 				if (result.status === "fulfilled") {
-					const { userId, response, error } = result.value as {
-						userId: string;
-						response?: ApiResponse<UserProfile>;
-						error?: Error;
-					}; // error is now Error
-
-					if (error) {
-						// Handle errors caught by the .catch in profilePromises
+					const value = result.value;
+					// This is a type guard to differentiate between success and error shapes
+					if ("error" in value) {
 						logger.warn(
-							`[aiStore._fetchAndStoreUserProfiles] Error fetching profile for user ${userId} (caught by promise.catch):`,
-							{ error },
+							`[aiStore._fetchAndStoreUserProfiles] Error fetching profile for user ${value.userId} (caught by promise.catch):`,
+							{ error: value.error },
 						);
-					} else if (response && response.data && !response.error) {
-						newProfilesMap[userId] = response.data;
-						successfullyFetchedCount++;
-					} else if (response && response.error) {
-						logger.warn(
-							`[aiStore._fetchAndStoreUserProfiles] API error fetching profile for user ${userId} (RLS denial or other server error):`,
-							{
-								status: response.status,
-								errorCode: response.error.code,
-								errorMessage: response.error.message,
-							},
-						);
-						// Do not add to newProfilesMap, RLS likely denied access or another server-side issue occurred
 					} else {
-						logger.warn(
-							`[aiStore._fetchAndStoreUserProfiles] Unexpected empty response or structure for user ${userId}.`,
-							{ response },
-						);
+						const { userId, response } = value;
+						if (response.data && !response.error) {
+							newProfilesMap[userId] = response.data;
+							successfullyFetchedCount++;
+						} else if (response.error) {
+							logger.warn(
+								`[aiStore._fetchAndStoreUserProfiles] API error fetching profile for user ${userId} (RLS denial or other server error):`,
+								{
+									status: response.status,
+									errorCode: response.error.code,
+									errorMessage: response.error.message,
+								},
+							);
+						} else {
+							logger.warn(
+								`[aiStore._fetchAndStoreUserProfiles] Unexpected empty response or structure for user ${userId}.`,
+								{ response },
+							);
+						}
 					}
 				} else {
-					// result.status === 'rejected' - error from api.users().getProfile() itself before .then/.catch
-					// This case should ideally be less common if getProfile itself catches and returns ApiResponse
-					const failedPromise = result.reason as
-						| { userId?: string; error?: Error }
-						| Error; // Refined type for failedPromise
+					// result.status === 'rejected'
+					const reason = result.reason;
 					const userId =
-						typeof failedPromise === "object" &&
-						failedPromise !== null &&
-						"userId" in failedPromise &&
-						typeof failedPromise.userId === "string"
-							? failedPromise.userId
-							: "unknown_user_id_in_rejected_promise";
+						reason &&
+						typeof reason === "object" &&
+						"userId" in reason &&
+						typeof reason.userId === "string"
+							? reason.userId
+							: "unknown";
 					logger.error(
 						`[aiStore._fetchAndStoreUserProfiles] Promise rejected while fetching profile for user ${userId}:`,
-						{ reason: result.reason },
+						{ reason },
 					);
 				}
 			});
@@ -329,82 +336,6 @@ export const useAiStore = create<AiStore>()(
 				return { tempId, chatIdUsed, createdTimestamp };
 			},
 
-			addOptimisticMessageForReplay: (
-				messageContent: string,
-				existingChatId?: string | null,
-			): { tempId: string; chatIdForOptimistic: string } => {
-				const { messagesByChatId, selectedMessagesMap } = get();
-				const { user: currentUser } = useAuthStore.getState(); // Ensure currentUser is available
-				const createdTimestamp = new Date().toISOString();
-
-				// Determine the chat ID to use for this replayed message
-				let chatIdForOptimistic = existingChatId;
-				if (!chatIdForOptimistic) {
-					// If no existingChatId is provided (e.g., truly new chat for replay or error state),
-					// generate a UUID.
-					chatIdForOptimistic = crypto.randomUUID();
-					logger.warn(
-						"[aiStore.addOptimisticMessageForReplay] No existingChatId provided for replay, generated UUID:",
-						{ chatIdForOptimistic },
-					);
-				} else {
-					logger.info(
-						"[aiStore.addOptimisticMessageForReplay] Using provided existingChatId for replay:",
-						{ chatIdForOptimistic },
-					);
-				}
-
-				const tempId = `optimistic-replay-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-				const optimisticMessage: ChatMessage = {
-					id: tempId,
-					chat_id: chatIdForOptimistic, // Use the determined chat ID
-					role: "user",
-					content: messageContent,
-					created_at: createdTimestamp,
-					updated_at: createdTimestamp,
-					user_id: currentUser?.id || null,
-					ai_provider_id: null,
-					system_prompt_id: null,
-					token_usage: null,
-					is_active_in_thread: true,
-					error_type: null,
-					response_to_message_id: null,
-				};
-
-				const currentMessagesForChat =
-					messagesByChatId[chatIdForOptimistic] || [];
-				const updatedMessagesForChat = [
-					...currentMessagesForChat,
-					optimisticMessage,
-				];
-
-				const updatedMessagesByChatId = {
-					...messagesByChatId,
-					[chatIdForOptimistic]: updatedMessagesForChat,
-				};
-
-				// Automatically select the new replayed optimistic message
-				const updatedSelectedMessagesMap = {
-					...selectedMessagesMap,
-					[chatIdForOptimistic]: {
-						...(selectedMessagesMap[chatIdForOptimistic] || {}),
-						[tempId]: true,
-					},
-				};
-
-				set((_state) => ({
-					messagesByChatId: updatedMessagesByChatId,
-					selectedMessagesMap: updatedSelectedMessagesMap,
-					// currentChatId might not change here unless explicitly intended for replay to set context
-					// currentChatMessages: updatedMessagesForChat, // Consider if this direct update is needed
-					// isSending might not be appropriate for replay, depends on UX for replay
-				}));
-				logger.info(
-					"[aiStore.addOptimisticMessageForReplay] Added optimistic message for replay:",
-					{ tempId, chatIdUsed: chatIdForOptimistic },
-				);
-				return { tempId, chatIdForOptimistic };
-			},
 			setContinueUntilComplete: (shouldContinue: boolean) => {
 				set({ continueUntilComplete: shouldContinue });
 				logger.info(
@@ -426,23 +357,59 @@ export const useAiStore = create<AiStore>()(
 						api.ai().getAiProviders(),
 						api.ai().getSystemPrompts(),
 					]);
-					const errorMessages: string[] = [];
+
+					if (providersResponse.error || promptsResponse.error) {
+						const errorMessages: string[] = [];
+						if (providersResponse.error) {
+							errorMessages.push(
+								providersResponse.error?.message ||
+									"Failed to load AI providers.",
+							);
+						}
+						if (promptsResponse.error) {
+							errorMessages.push(
+								promptsResponse.error?.message ||
+									"Failed to load system prompts.",
+							);
+						}
+						const errorMessage = errorMessages.join(" ");
+						logger.error("[aiStore] Error loading AI config:", {
+							message: errorMessage,
+						});
+						set({
+							isConfigLoading: false,
+							aiError: errorMessage,
+							availableProviders: [],
+							availablePrompts: [],
+						});
+						return;
+					}
+
 					let loadedProviders: AiProvider[] = [];
 					let loadedPrompts: SystemPrompt[] = [];
 
-					type ProvidersPayload = { providers: AiProvider[] };
-					if (
-						!providersResponse.error &&
-						providersResponse.data &&
-						typeof providersResponse.data === "object" &&
-						providersResponse.data !== null &&
-						"providers" in providersResponse.data &&
-						Array.isArray(
-							(providersResponse.data as ProvidersPayload).providers,
-						)
-					) {
-						loadedProviders = (providersResponse.data as ProvidersPayload)
-							.providers;
+					try {
+						if (isAiProvidersApiResponse(providersResponse.data)) {
+							loadedProviders = providersResponse.data.providers;
+						} else if (Array.isArray(providersResponse.data)) {
+							loadedProviders = providersResponse.data;
+						} else {
+							logger.warn(
+								"[aiStore] Providers response data is not in the expected array format.",
+								{ data: providersResponse.data },
+							);
+						}
+
+						if (isSystemPromptsApiResponse(promptsResponse.data)) {
+							loadedPrompts = promptsResponse.data.prompts;
+						} else if (Array.isArray(promptsResponse.data)) {
+							loadedPrompts = promptsResponse.data;
+						} else {
+							logger.warn(
+								"[aiStore] Prompts response data is not in the expected array format.",
+								{ data: promptsResponse.data },
+							);
+						}
 
 						logger.info("[aiStore] Initial loadedProviders from API:", {
 							count: loadedProviders.length,
@@ -482,32 +449,18 @@ export const useAiStore = create<AiStore>()(
 								`[aiStore] MODE is "${import.meta.env.MODE}", skipping dummy provider filter.`,
 							);
 						}
-					} else if (providersResponse.error) {
-						errorMessages.push(
-							providersResponse.error?.message ||
-								"Failed to load AI providers.",
-						);
-					}
-
-					type PromptsPayload = { prompts: SystemPrompt[] };
-					if (
-						!promptsResponse.error &&
-						promptsResponse.data &&
-						typeof promptsResponse.data === "object" &&
-						promptsResponse.data !== null &&
-						"prompts" in promptsResponse.data &&
-						Array.isArray((promptsResponse.data as PromptsPayload).prompts)
-					) {
-						loadedPrompts = (promptsResponse.data as PromptsPayload).prompts;
-					} else if (promptsResponse.error) {
-						errorMessages.push(
-							promptsResponse.error?.message ||
-								"Failed to load system prompts.",
-						);
-					}
-
-					if (errorMessages.length > 0) {
-						throw new Error(errorMessages.join(" \n"));
+					} catch (error: unknown) {
+						const errorMessage =
+							error instanceof Error
+								? error.message
+								: "An unknown error occurred while loading AI configuration.";
+						logger.error("Error loading AI config:", { error: errorMessage });
+						set({
+							availableProviders: [],
+							availablePrompts: [],
+							aiError: errorMessage,
+							isConfigLoading: false,
+						});
 					}
 
 					set({
@@ -938,7 +891,8 @@ export const useAiStore = create<AiStore>()(
 				if (
 					pendingAction.endpoint === "chat" &&
 					pendingAction.method === "POST" &&
-					pendingAction.body
+					typeof pendingAction.body === "object" &&
+					pendingAction.body !== null
 				) {
 					const token = useAuthStore.getState().session?.access_token;
 					if (!token) {
@@ -959,9 +913,7 @@ export const useAiStore = create<AiStore>()(
 
 					const messageContent = String(pendingAction.body["message"] || "");
 					// Pass the original chatId from the pending action body if it exists
-					const originalChatIdFromPendingAction = pendingAction.body[
-						"chatId"
-					] as string | null | undefined;
+					const originalChatIdFromPendingAction = pendingAction.body["chatId"];
 
 					const { tempId, chatIdForOptimistic } = addOptimisticMessageForReplay(
 						messageContent,
@@ -972,13 +924,10 @@ export const useAiStore = create<AiStore>()(
 						// Ensure the body sent to API matches ChatApiRequest, especially chatId
 						const apiRequestBody: ChatApiRequest = {
 							message: messageContent,
-							providerId: pendingAction.body["providerId"] as string,
-							promptId: pendingAction.body["promptId"] as string,
+							providerId: pendingAction.body["providerId"],
+							promptId: pendingAction.body["promptId"],
 							chatId: originalChatIdFromPendingAction, // Now correctly typed
-							organizationId: pendingAction.body["organizationId"] as
-								| string
-								| undefined
-								| null,
+							organizationId: pendingAction.body["organizationId"],
 							// rewindFromMessageId is not typically part of a generic pending action replay for send.
 						};
 
@@ -1008,11 +957,7 @@ export const useAiStore = create<AiStore>()(
 								// Update the optimistic user message to 'sent'
 								updatedMessagesForChat = updatedMessagesForChat.map((msg) =>
 									msg.id === tempId
-										? {
-												...msg,
-												status: "sent" as const,
-												chat_id: actualNewChatId,
-											} // Ensure chat_id is updated
+										? { ...msg, status: "sent", chat_id: actualNewChatId } // Ensure chat_id is updated
 										: msg,
 								);
 
@@ -1053,7 +998,7 @@ export const useAiStore = create<AiStore>()(
 							(typeof error === "object" &&
 								error !== null &&
 								"name" in error &&
-								(error as { name: string }).name === "AuthRequiredError");
+								error.name === "AuthRequiredError");
 						const errorMessage = isAuthError
 							? "Session expired during replay. Please log in again."
 							: error instanceof Error
@@ -1072,18 +1017,13 @@ export const useAiStore = create<AiStore>()(
 
 							if (!isAuthError) {
 								// Only set to 'error' if it's NOT an AuthRequiredError
-								updatedMessages = messagesForThisChat
-									? messagesForThisChat.map((msg) =>
-											msg.id === tempId
-												? { ...msg, status: "error" as const }
-												: msg,
-										)
-									: [];
+								updatedMessages = updatedMessages.map((msg) =>
+									msg.id === tempId
+										? { ...msg, status: "error", error_type: "replay_failed" } // Add error status
+										: msg,
+								);
 							}
-							// If it is an AuthError, updatedMessages remains as it was (i.e. with 'pending' status)
-							// if (isAuthError) {
-							//     logger.info('[Replay AuthError Debug] Messages before return in set', { messages: JSON.stringify(updatedMessages) });
-							// } // Removed log
+							// If it is an AuthError, the message status remains pending, which is the desired behavior.
 
 							return {
 								isLoadingAiResponse: false,
@@ -1224,61 +1164,54 @@ export const useAiStore = create<AiStore>()(
 			// --- Hydration Actions ---
 			setChatContextHydrated: (hydrated: boolean) => {
 				set({ isChatContextHydrated: hydrated });
-				logger.info(`[aiStore] isChatContextHydrated set to: ${hydrated}`);
 			},
 
-			hydrateChatContext: (chatContext: ChatContextPreferences | null) => {
-				if (chatContext) {
+			hydrateChatContext: (chatContext: unknown) => {
+				if (isChatContextPreferences(chatContext)) {
 					logger.info(
-						"[aiStore] Attempting to hydrate chat context from profile:",
-						{ data: chatContext },
+						"[aiStore.hydrateChatContext] Hydrating AI context from user profile:",
+						{ context: chatContext },
 					);
-					const updates: Partial<
-						Pick<
-							AiState,
-							"newChatContext" | "selectedProviderId" | "selectedPromptId"
-						>
-					> = {};
-					if (typeof chatContext.newChatContext !== "undefined") {
-						updates.newChatContext = chatContext.newChatContext;
-					}
-					if (typeof chatContext.selectedProviderId !== "undefined") {
-						updates.selectedProviderId = chatContext.selectedProviderId;
-					}
-					if (typeof chatContext.selectedPromptId !== "undefined") {
-						updates.selectedPromptId = chatContext.selectedPromptId;
-					}
+					const { newChatContext, selectedProviderId, selectedPromptId } =
+						chatContext;
 
-					if (Object.keys(updates).length > 0) {
-						set(updates);
-						logger.info(
-							"[aiStore] Chat context hydrated with values:",
-							updates,
-						);
-					} else {
-						logger.info(
-							"[aiStore] chat_context from profile was empty or contained no relevant keys. No hydration applied.",
-						);
-					}
+					set((state) => ({
+						...state,
+						newChatContext:
+							newChatContext !== undefined
+								? newChatContext
+								: state.newChatContext,
+						selectedProviderId:
+							selectedProviderId !== undefined
+								? selectedProviderId
+								: state.selectedProviderId,
+						selectedPromptId:
+							selectedPromptId !== undefined
+								? selectedPromptId
+								: state.selectedPromptId,
+						isChatContextHydrated: true,
+					}));
 				} else {
-					logger.info(
-						"[aiStore] No chat_context found in profile to hydrate from.",
+					logger.warn(
+						"[aiStore.hydrateChatContext] Received chat context from profile is not valid. Using store defaults.",
+						{ receivedContext: chatContext },
 					);
+					// Still mark as hydrated to prevent re-attempts on every render
+					set({ isChatContextHydrated: true });
 				}
-				// Always mark as hydrated after attempt, even if no data, to prevent re-attempts in same session part
-				set({ isChatContextHydrated: true });
 			},
 
 			resetChatContextToDefaults: () => {
 				logger.info(
-					"[aiStore] Resetting chat context to defaults and clearing hydration flag.",
+					"[aiStore.resetChatContextToDefaults] Resetting AI context to initial default values.",
 				);
-				set({
+				set((state) => ({
+					...state,
 					newChatContext: initialAiStateValues.newChatContext,
 					selectedProviderId: initialAiStateValues.selectedProviderId,
 					selectedPromptId: initialAiStateValues.selectedPromptId,
-					isChatContextHydrated: false,
-				});
+					isChatContextHydrated: false, // Reset hydration status
+				}));
 			},
 
 			// --- Message Selection Actions ---
@@ -1427,7 +1360,7 @@ export const useAiStore = create<AiStore>()(
 						const response = await api.ai().sendChatMessage(request, options);
 						return response; // No transformation needed - API client now returns the correct type
 					},
-					logger: logger as ILogger,
+					logger: logger,
 				};
 
 				const assistantMessage = await handleSendMessage(serviceParams);
@@ -1459,147 +1392,8 @@ export const useAiStore = create<AiStore>()(
 				}
 				return assistantMessage; // Return the assistant message or null
 			},
-
-			// STREAMING sendMessage ACTION
-			sendMessageStreaming: async (
-				data: {
-					message: string;
-					providerId: string;
-					promptId: string | null;
-					chatId?: string | null;
-					contextMessages?: MessageForTokenCounting[];
-				} & StreamingCallbacks,
-			) => {
-				// --- Create Adapters for Service Dependencies ---
-				const authStoreState = useAuthStore.getState();
-				const authServiceAdapter: IAuthService = {
-					getCurrentUser: () => authStoreState.user,
-					getSession: () => authStoreState.session,
-					requestLoginNavigation: () => {
-						if (authStoreState.navigate) authStoreState.navigate("/login");
-					},
-				};
-
-				const walletServiceAdapter: IWalletService = {
-					getActiveWalletInfo: () =>
-						selectActiveChatWalletInfo(useWalletStore.getState()),
-				};
-
-				const aiStateServiceAdapter: IAiStateService = {
-					getAiState: get,
-					setAiState: set,
-					addOptimisticUserMessage: get()._addOptimisticUserMessage,
-				};
-
-				// Create streaming callbacks that update the UI
-				const streamingCallbacks = {
-					onChunk: (chunk: string) => {
-						data.onChunk?.(chunk);
-						// Update the optimistic message with the new chunk
-						set((state) => {
-							const currentChatId = state.currentChatId;
-							if (!currentChatId) return state;
-
-							const currentMessages =
-								state.messagesByChatId[currentChatId] || [];
-							const lastMessage = currentMessages[currentMessages.length - 1];
-
-							// If the last message is an assistant message, append to it
-							if (lastMessage && lastMessage.role === "assistant") {
-								const updatedMessages = [...currentMessages];
-								updatedMessages[updatedMessages.length - 1] = {
-									...lastMessage,
-									content: lastMessage.content + chunk,
-								};
-
-								return {
-									...state,
-									messagesByChatId: {
-										...state.messagesByChatId,
-										[currentChatId]: updatedMessages,
-									},
-								};
-							}
-
-							return state;
-						});
-					},
-					onComplete: (result: InternalProcessResult) => {
-						data.onComplete?.(result);
-						// Mark as complete and stop loading
-						set({ isLoadingAiResponse: false });
-					},
-					onError: (error: string) => {
-						data.onError?.(error);
-						set({
-							isLoadingAiResponse: false,
-							aiError: error,
-						});
-					},
-				};
-
-				// --- Prepare parameters for handleSendMessage with streaming ---
-				const serviceParams: HandleSendMessageServiceParams = {
-					data: {
-						message: data.message,
-						chatId: data.chatId,
-						contextMessages: data.contextMessages,
-					},
-					aiStateService: aiStateServiceAdapter,
-					authService: authServiceAdapter,
-					walletService: walletServiceAdapter,
-					callChatApi: async (
-						request: ChatApiRequest,
-						options: RequestInit,
-					): Promise<ApiResponse<ChatHandlerSuccessResponse>> => {
-						const response = await api.ai().sendChatMessage(request, options);
-						return response;
-					},
-					logger: logger as ILogger,
-				};
-
-				const assistantMessage = await handleSendMessage(serviceParams, {
-					enableStreaming: true,
-					streamingCallbacks,
-				});
-
-				// --- Post-processing: Wallet Refresh (if needed) ---
-				if (assistantMessage) {
-					// Only refresh if send was successful
-					try {
-						const activeWalletInfo = walletServiceAdapter.getActiveWalletInfo();
-						logger.info(
-							"[aiStore sendMessageStreaming] Triggering wallet refresh after successful message.",
-						);
-						if (
-							activeWalletInfo.type === "organization" &&
-							activeWalletInfo.orgId
-						) {
-							useWalletStore
-								.getState()
-								.loadOrganizationWallet(activeWalletInfo.orgId);
-						} else {
-							useWalletStore.getState().loadPersonalWallet();
-						}
-					} catch (walletError) {
-						logger.error(
-							"[aiStore sendMessageStreaming] Error triggering wallet refresh:",
-							{ error: String(walletError) },
-						);
-					}
-				}
-				// Don't return assistantMessage for streaming - it's handled via callbacks
-			},
 		};
 	},
 	// )
 	// )
 );
-
-export const useAiStoreTyped = useAiStore as unknown as AiStore;
-
-// Export initialAiStateValues for testing purposes
-export { initialAiStateValues };
-
-// Selector to get the current user's profile from useAuthStore
-export const selectCurrentUserProfile = () => useAuthStore.getState().profile;

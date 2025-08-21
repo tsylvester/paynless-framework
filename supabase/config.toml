@@ -336,7 +336,7 @@ verify_jwt = false
 
 # Add section for the new generic webhooks router
 [functions.webhooks] # For the function in supabase/functions/webhooks/
-  verify_jwt = false
+verify_jwt = false
 
 # Keep function sections below if they exist for other specific settings,
 # otherwise they can be removed if verify_jwt=false is set globally above.

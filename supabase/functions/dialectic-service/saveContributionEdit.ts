@@ -1,5 +1,6 @@
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js';
 import type { ILogger, ServiceError } from '../_shared/types.ts';
+import { isCitationsArray } from '../_shared/utils/type_guards.ts';
 import type { SaveContributionEditPayload, DialecticContribution } from './dialectic.interface.ts';
 import type { Database } from '../types_db.ts';
 
@@ -20,6 +21,7 @@ type OriginalContributionQueryResult = {
     dialectic_projects: {
       user_id: string;
     } | null;
+    current_stage_id: string | null;
   } | null;
 };
 
@@ -76,7 +78,11 @@ export async function saveContributionEdit(
             logger.warn('[saveContributionEdit] DEBUG: Contribution NOT found in quick check or quickCheckError occurred.');
         }
     } catch (debugErr) {
-        logger.error('[saveContributionEdit] DEBUG: Exception during debug pre-flight checks:', { errorMessage: (debugErr as Error).message, stack: (debugErr as Error).stack });
+        if (debugErr instanceof Error) {
+            logger.error('[saveContributionEdit] DEBUG: Exception during debug pre-flight checks:', { errorMessage: debugErr.message, stack: debugErr.stack });
+        } else {
+            logger.error('[saveContributionEdit] DEBUG: Exception during debug pre-flight checks:', { error: String(debugErr) });
+        }
     }
     // END TEMPORARY DEBUG LOGGING
 
@@ -94,7 +100,8 @@ export async function saveContributionEdit(
         user_id,
         dialectic_sessions (
           project_id,
-          dialectic_projects ( user_id )
+          dialectic_projects ( user_id ),
+          current_stage_id
         )
       `)
       .eq('id', originalContributionIdToEdit)
@@ -111,11 +118,11 @@ export async function saveContributionEdit(
       return { error: { message: 'Original contribution not found.', status: 404, code: 'NOT_FOUND' }, status: 404 };
     }
     
-    const typedOriginalContribution = originalContribution as OriginalContributionQueryResult;
+    const typedOriginalContribution: OriginalContributionQueryResult = originalContribution;
 
     logger.info('[saveContributionEdit] Original contribution fetched successfully', { id: typedOriginalContribution.id, projectOwnerUserId: typedOriginalContribution.dialectic_sessions?.dialectic_projects?.user_id, currentUser: user.id });
 
-    if (!typedOriginalContribution.dialectic_sessions?.dialectic_projects?.user_id || typedOriginalContribution.dialectic_sessions.dialectic_projects.user_id !== user.id) {
+    if (!typedOriginalContribution.dialectic_sessions?.dialectic_projects?.user_id || typedOriginalContribution.dialectic_sessions?.dialectic_projects?.user_id !== user.id) {
         logger.warn('[saveContributionEdit] User attempted to edit contribution in a project they do not own', {
             userId: user.id,
             projectOwner: typedOriginalContribution.dialectic_sessions?.dialectic_projects?.user_id,
@@ -123,6 +130,15 @@ export async function saveContributionEdit(
             contributionId: originalContributionIdToEdit
         });
         return { error: { message: 'Not authorized to edit this contribution.', status: 403, code: 'FORBIDDEN' }, status: 403 };
+    }
+
+    // Add a null check for the current_stage_id
+    if (!typedOriginalContribution.dialectic_sessions.current_stage_id) {
+        logger.error('[saveContributionEdit] Session is missing current_stage_id', {
+            sessionId: typedOriginalContribution.session_id,
+            contributionId: originalContributionIdToEdit
+        });
+        return { error: { message: 'Data integrity error: Session is missing a current stage.', status: 500, code: 'INTERNAL_SERVER_ERROR' }, status: 500 };
     }
 
     const newOriginalModelContributionId = typedOriginalContribution.original_model_contribution_id || typedOriginalContribution.id;
@@ -138,7 +154,7 @@ export async function saveContributionEdit(
         p_original_contribution_id: originalContributionIdToEdit,
         p_session_id: typedOriginalContribution.session_id,
         p_user_id: user.id,
-        p_stage: typedOriginalContribution.stage,
+        p_stage: typedOriginalContribution.dialectic_sessions.current_stage_id,        
         p_iteration_number: typedOriginalContribution.iteration_number,
         p_storage_bucket: 'dialectic_contributions_content',
         p_storage_path: placeholderContentStoragePath, 
@@ -154,7 +170,6 @@ export async function saveContributionEdit(
         p_is_latest_edit: true,
         p_original_model_contribution_id: newOriginalModelContributionId,
         p_error_details: '',
-        p_model_id: null as unknown as string,
         p_contribution_type: 'user_edit'
     };
 
@@ -209,13 +224,15 @@ export async function saveContributionEdit(
     if (dbContributionRow.citations) {
         if (typeof dbContributionRow.citations === 'string') {
             try {
-                parsedCitations = JSON.parse(dbContributionRow.citations);
+                const parsed = JSON.parse(dbContributionRow.citations);
+                if (isCitationsArray(parsed)) {
+                    parsedCitations = parsed;
+                }
             } catch (jsonError) {
                 logger.error('[saveContributionEdit] Failed to parse citations JSON string for contribution.', { contributionId: dbContributionRow.id, citationsString: dbContributionRow.citations, error: jsonError });
-                // parsedCitations remains null
             }
-        } else {
-            parsedCitations = dbContributionRow.citations as { text: string; url?: string }[] | null;
+        } else if (isCitationsArray(dbContributionRow.citations)) {
+            parsedCitations = dbContributionRow.citations;
         }
     }
 
@@ -256,8 +273,11 @@ export async function saveContributionEdit(
     return { data: resultContribution, status: 201 };
 
   } catch (e) {
-    const error = e as Error;
-    logger.error('[saveContributionEdit] Unexpected error', { errorMessage: error.message, stack: error.stack });
+    if (e instanceof Error) {
+        logger.error('[saveContributionEdit] Unexpected error', { errorMessage: e.message, stack: e.stack });
+    } else {
+        logger.error('[saveContributionEdit] Unexpected error', { error: String(e) });
+    }
     return { error: { message: 'An unexpected error occurred.', status: 500, code: 'INTERNAL_SERVER_ERROR' }, status: 500 };
   }
 } 

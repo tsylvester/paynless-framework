@@ -39,20 +39,17 @@ export const isOriginAllowed = (requestOrigin: string | null): boolean => {
  */
 // Keep this internal, used by the response creators below
 const getCorsHeadersForRequest = (request: Request): Record<string, string> => {
-	const origin = request.headers.get("Origin");
-	console.log(
-		`[cors-headers] getCorsHeadersForRequest called for Origin: ${origin}`,
-	); // Log origin
-	const headers: Record<string, string> = { ...baseCorsHeaders };
-	if (isOriginAllowed(origin)) {
-		headers["Access-Control-Allow-Origin"] = origin as string; // Dynamic origin
-		console.log(`[cors-headers] Added Access-Control-Allow-Origin: ${origin}`);
-	} else {
-		console.log(
-			`[cors-headers] Origin not in allowed list. Not adding Access-Control-Allow-Origin.`,
-		);
-	}
-	return headers;
+  const origin = request.headers.get("Origin");
+  console.log(`[cors-headers] getCorsHeadersForRequest called for Origin: ${origin}`); // Log origin
+  const headers: Record<string, string> = { ...baseCorsHeaders };
+  if (isOriginAllowed(origin)) {
+    headers["Access-Control-Allow-Origin"] = origin!; // Dynamic origin
+    console.log(`[cors-headers] Added Access-Control-Allow-Origin: ${origin}`);
+    //console.log('[cors-headers] Processing request object:', request);
+  } else {
+    console.log(`[cors-headers] Origin not in allowed list. Not adding Access-Control-Allow-Origin.`);
+  }
+  return headers;
 };
 
 /**

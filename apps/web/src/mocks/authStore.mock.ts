@@ -1,5 +1,14 @@
 import { vi } from 'vitest';
+import { act } from '@testing-library/react';
 import type { AuthStore, User, Session, UserProfile, NavigateFunction } from '@paynless/types';
+
+export type MockedUseAuthStoreHook = (<TResult>(
+    selector?: (state: AuthStore) => TResult
+) => TResult | AuthStore) & {
+    getState: () => AuthStore;
+    setState: (newState: Partial<AuthStore>) => void;
+};
+
 
 // Use the full AuthStore type for the internal state
 let internalMockAuthStoreState: AuthStore;
@@ -13,26 +22,37 @@ const initializeMockAuthState = (): AuthStore => ({
   isLoading: false,
   error: null,
   navigate: null,
+  showWelcomeModal: false,
 
   // Setters
-  setUser: vi.fn((user: User | null) => { internalMockAuthStoreState.user = user; }),
-  setSession: vi.fn((session: Session | null) => { internalMockAuthStoreState.session = session; }),
-  setProfile: vi.fn((profile: UserProfile | null) => { internalMockAuthStoreState.profile = profile; }),
-  setIsLoading: vi.fn((isLoading: boolean) => { internalMockAuthStoreState.isLoading = isLoading; }),
-  setError: vi.fn((error: Error | null) => { internalMockAuthStoreState.error = error; }),
-  setNavigate: vi.fn((navigateFn: NavigateFunction) => { internalMockAuthStoreState.navigate = navigateFn; }),
+  setUser: vi.fn(),
+  setSession: vi.fn(),
+  setProfile: vi.fn(),
+  setIsLoading: vi.fn(),
+  setError: vi.fn(),
+  setNavigate: vi.fn(),
+  clearError: vi.fn(),
+  setShowWelcomeModal: vi.fn((show: boolean) => {
+    internalMockAuthStoreState.showWelcomeModal = show;
+  }),
 
   // Core Auth Actions
   login: vi.fn().mockResolvedValue(undefined),
+  loginWithGoogle: vi.fn().mockResolvedValue(undefined),
   register: vi.fn().mockResolvedValue(undefined),
+  subscribeToNewsletter: vi.fn().mockResolvedValue(undefined),
   logout: vi.fn().mockResolvedValue(undefined),
-  updateProfile: vi.fn().mockResolvedValue(null as UserProfile | null),
+  updateProfile: vi.fn().mockResolvedValue(null),
   updateEmail: vi.fn().mockResolvedValue(true),
-  uploadAvatar: vi.fn().mockResolvedValue(null as string | null),
-  fetchProfile: vi.fn().mockResolvedValue(null as UserProfile | null),
+  uploadAvatar: vi.fn().mockResolvedValue(null),
+  fetchProfile: vi.fn().mockResolvedValue(null),
   checkEmailExists: vi.fn().mockResolvedValue(false),
   requestPasswordReset: vi.fn().mockResolvedValue(true),
   handleOAuthLogin: vi.fn().mockResolvedValue(undefined),
+  updateProfileWithAvatar: vi.fn().mockResolvedValue(undefined),
+  updateSubscriptionAndDismissWelcome: vi.fn(),
+  toggleNewsletterSubscription: vi.fn().mockResolvedValue(undefined),
+  
 });
 
 // Initialize the state
@@ -42,40 +62,70 @@ internalMockAuthStoreState = initializeMockAuthState();
 export const internalMockAuthStoreGetState = (): AuthStore => internalMockAuthStoreState;
 
 // The main hook logic, now using AuthStore
-export const mockedUseAuthStoreHookLogic = <TResult>(
-  selector?: (state: AuthStore) => TResult,
-  _equalityFn?: (a: TResult, b: TResult) => boolean // Added for zustand spyOn compatibility
+export const mockedUseAuthStoreHookLogic: MockedUseAuthStoreHook = <TResult>(
+  selector?: (state: AuthStore) => TResult
 ): TResult | AuthStore => {
   const state = internalMockAuthStoreGetState();
+  console.log('[AuthStore Mock] Hook called. Returning profile:', JSON.stringify(state.profile, null, 2));
   return selector ? selector(state) : state;
 };
 
 // Attach .getState() to the logic function itself
-(mockedUseAuthStoreHookLogic as any).getState = internalMockAuthStoreGetState;
+mockedUseAuthStoreHookLogic.getState = internalMockAuthStoreGetState;
+mockedUseAuthStoreHookLogic.setState = (newState: Partial<AuthStore>) => {
+    internalMockAuthStoreState = {
+        ...internalMockAuthStoreState,
+        ...newState,
+    };
+};
 
 // --- Helper Functions for Test Setup (Update to modify the new internal state structure) ---
 export const mockSetAuthUser = (user: User | null) => {
-  internalMockAuthStoreState.user = user;
+  act(() => {
+    mockedUseAuthStoreHookLogic.setState({ user });
+  });
 };
 
 export const mockSetAuthSession = (session: Session | null) => {
-  internalMockAuthStoreState.session = session;
+  act(() => {
+    mockedUseAuthStoreHookLogic.setState({ session });
+  });
 };
 
 export const mockSetAuthProfile = (profile: UserProfile | null) => {
-  internalMockAuthStoreState.profile = profile;
+  act(() => {
+    mockedUseAuthStoreHookLogic.setState({ profile });
+  });
 };
 
 export const mockSetAuthIsLoading = (isLoading: boolean) => {
-  internalMockAuthStoreState.isLoading = isLoading;
+  act(() => {
+    mockedUseAuthStoreHookLogic.setState({ isLoading });
+  });
 };
 
 export const mockSetAuthError = (error: Error | null) => {
-  internalMockAuthStoreState.error = error;
+  act(() => {
+    mockedUseAuthStoreHookLogic.setState({ error });
+  });
 };
 
 export const mockSetAuthNavigate = (navigate: NavigateFunction | null) => {
-  internalMockAuthStoreState.navigate = navigate;
+  act(() => {
+    mockedUseAuthStoreHookLogic.setState({ navigate });
+  });
+};
+
+export const mockSetShowWelcomeModal = (show: boolean) => {
+    act(() => {
+        mockedUseAuthStoreHookLogic.setState({ showWelcomeModal: show });
+    });
+};
+
+export const mockUpdateProfile = (profile: UserProfile) => {
+  act(() => {
+    mockedUseAuthStoreHookLogic.setState({ profile });
+  });
 };
 
 // --- Reset Function ---
@@ -97,4 +147,4 @@ export const resetAuthStoreMock = () => {
 // Note: The previous MockAuthStoreState type is no longer needed.
 // The previous mockAuthStoreActions object is also simplified/removed. 
 
-export const useAuthStore = mockedUseAuthStoreHookLogic;
+export const useAuthStore: MockedUseAuthStoreHook = mockedUseAuthStoreHookLogic;

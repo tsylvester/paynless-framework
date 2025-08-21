@@ -1,59 +1,34 @@
+// supabase/functions/sync-ai-models/anthropic_sync.ts
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { AnthropicAdapter } from '../_shared/ai_service/anthropic_adapter.ts'; // Import AnthropicAdapter class
-import type { ProviderModelInfo, ILogger } from '../_shared/types.ts'; // Added ILogger
-import type { AiModelExtendedConfig } from '../_shared/types.ts';
-import { getCurrentDbModels, type SyncResult, type DbAiProvider } from './index.ts'; // Import shared helper and types from main index
-import type { Json } from '../types_db.ts'; // Added import
+import { AnthropicAdapter } from '../_shared/ai_service/anthropic_adapter.ts';
+import type { ProviderModelInfo, ILogger, AiModelExtendedConfig } from '../_shared/types.ts';
+import { getCurrentDbModels, type SyncResult, type DbAiProvider } from './index.ts';
+import { ConfigAssembler } from './config_assembler.ts';
+import { diffAndPrepareDbOps, executeDbOps } from './diffAndPrepareDbOps.ts';
 
 const PROVIDER_NAME = 'anthropic';
 
-// Centralized map for model properties
-const modelInfo = {
-  'claude-4-sonnet': { inputCost: 3.0, outputCost: 15.0, context: 200000, hardCap: 8192 },
-  'claude-3.7-sonnet': { inputCost: 3.0, outputCost: 15.0, context: 200000, hardCap: 8192 },
-  'claude-3.5-sonnet': { inputCost: 3.0, outputCost: 15.0, context: 200000, hardCap: 8192 },
-  'claude-3-opus': { inputCost: 15.0, outputCost: 75.0, context: 200000, hardCap: 4096 },
-  'claude-3-sonnet': { inputCost: 3.0, outputCost: 15.0, context: 200000, hardCap: 4096 },
-  'claude-3-haiku': { inputCost: 0.25, outputCost: 1.25, context: 200000, hardCap: 4096 },
-  // Fallback for any other model
-  'default': { inputCost: 1.0, outputCost: 1.0, context: 200000, hardCap: 4096 }
-};
-
-// Helper function to create a default AiModelExtendedConfig for Anthropic models
-export function createDefaultAnthropicConfig(modelApiIdentifier: string): AiModelExtendedConfig {
-  const modelId = modelApiIdentifier.toLowerCase();
-  
-  // Find the most specific match, then fallback to broader matches, then to default
-  const bestMatchKey = Object.keys(modelInfo).find(key => modelId.includes(key) && key !== 'default') || 'default';
-  const info = modelInfo[bestMatchKey as keyof typeof modelInfo];
-
-  const tokenizationStrategy: AiModelExtendedConfig['tokenization_strategy'] = {
-    type: 'claude_tokenizer',
-  };
-
-  return {
-    api_identifier: modelApiIdentifier,
-    input_token_cost_rate: info.inputCost / 1000000,
-    output_token_cost_rate: info.outputCost / 1000000,
-    context_window_tokens: info.context,
-    hard_cap_output_tokens: info.hardCap,
-    tokenization_strategy: tokenizationStrategy,
-    provider_max_input_tokens: info.context,
-    provider_max_output_tokens: info.hardCap,
-  };
-}
-
-// Type guard to check if an object is a partial AiModelExtendedConfig
-function isPartialAiModelExtendedConfig(obj: unknown): obj is Partial<AiModelExtendedConfig> {
-  if (typeof obj !== 'object' || obj === null) return false;
-  // Basic check, can be made more robust if needed
-  return true;
-}
+// Tier 3 Data Source: Hardcoded internal map as a failsafe.
+// This provides detailed configuration for known Anthropic models, as their API
+// does not return this data.
+// Source: https://docs.anthropic.com/en/docs/about-claude/models
+export const INTERNAL_MODEL_MAP: Map<string, Partial<AiModelExtendedConfig>> = new Map(Object.entries({
+    'anthropic-claude-opus-4-1-20250805':     { input_token_cost_rate: 20.00, output_token_cost_rate: 100.00, context_window_tokens: 200000, hard_cap_output_tokens: 8192, provider_max_input_tokens: 200000, provider_max_output_tokens: 8192, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-opus-4-1-20250805' } },
+    'anthropic-claude-opus-4-20250514':      { input_token_cost_rate: 18.00, output_token_cost_rate: 90.00,  context_window_tokens: 200000, hard_cap_output_tokens: 8192, provider_max_input_tokens: 200000, provider_max_output_tokens: 8192, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-opus-4-20250514' } },
+    'anthropic-claude-sonnet-4-20250514':     { input_token_cost_rate: 4.00,  output_token_cost_rate: 20.00,  context_window_tokens: 200000, hard_cap_output_tokens: 8192, provider_max_input_tokens: 200000, provider_max_output_tokens: 8192, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-sonnet-4-20250514' } },
+    'anthropic-claude-3-7-sonnet-20250219':   { input_token_cost_rate: 3.00,  output_token_cost_rate: 15.00,  context_window_tokens: 200000, hard_cap_output_tokens: 8192, provider_max_input_tokens: 200000, provider_max_output_tokens: 8192, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3-7-sonnet-20250219' } },
+    'anthropic-claude-3-5-sonnet-20241022':  { input_token_cost_rate: 3.00,  output_token_cost_rate: 15.00,  context_window_tokens: 200000, hard_cap_output_tokens: 8192, provider_max_input_tokens: 200000, provider_max_output_tokens: 8192, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3.5-sonnet-20241022' } },
+    'anthropic-claude-3-5-haiku-20241022':   { input_token_cost_rate: 0.80,  output_token_cost_rate: 4.00,   context_window_tokens: 200000, hard_cap_output_tokens: 8192, provider_max_input_tokens: 200000, provider_max_output_tokens: 8192, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3.5-haiku-20241022' } },
+    'anthropic-claude-3-5-sonnet-20240620':  { input_token_cost_rate: 3.00,  output_token_cost_rate: 15.00,  context_window_tokens: 200000, hard_cap_output_tokens: 8192, provider_max_input_tokens: 200000, provider_max_output_tokens: 8192, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3.5-sonnet-20240620' } },
+    'anthropic-claude-3-sonnet-20240229':    { input_token_cost_rate: 3.00,  output_token_cost_rate: 15.00,  context_window_tokens: 200000, hard_cap_output_tokens: 4096, provider_max_input_tokens: 200000, provider_max_output_tokens: 4096, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3-sonnet-20240229' } },
+    'anthropic-claude-3-haiku-20240307':     { input_token_cost_rate: 0.25,  output_token_cost_rate: 1.25,   context_window_tokens: 200000, hard_cap_output_tokens: 4096, provider_max_input_tokens: 200000, provider_max_output_tokens: 4096, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3-haiku-20240307' } },
+    'anthropic-claude-3-opus-20240229':      { input_token_cost_rate: 15.00, output_token_cost_rate: 75.00,  context_window_tokens: 200000, hard_cap_output_tokens: 4096, provider_max_input_tokens: 200000, provider_max_output_tokens: 4096, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3-opus-20240229' } },
+}));
 
 // --- Dependency Injection Setup ---
 // Interface for dependencies required by the sync function
 export interface SyncAnthropicDeps {
-  listProviderModels: (apiKey: string) => Promise<ProviderModelInfo[]>;
+  listProviderModels: (apiKey: string) => Promise<{ models: ProviderModelInfo[], raw: unknown }>;
   getCurrentDbModels: (supabaseClient: SupabaseClient, providerName: string) => Promise<DbAiProvider[]>;
   log: (...args: unknown[]) => void;
   error: (...args: unknown[]) => void;
@@ -61,15 +36,18 @@ export interface SyncAnthropicDeps {
 
 // Default dependencies using actual implementations
 export const defaultSyncAnthropicDeps: SyncAnthropicDeps = {
-  listProviderModels: async (apiKey: string): Promise<ProviderModelInfo[]> => {
+  listProviderModels: async (apiKey: string) => {
     const logger: ILogger = {
       debug: (...args: unknown[]) => console.debug('[SyncAnthropic:AnthropicAdapter]', ...args),
       info: (...args: unknown[]) => console.info('[SyncAnthropic:AnthropicAdapter]', ...args),
       warn: (...args: unknown[]) => console.warn('[SyncAnthropic:AnthropicAdapter]', ...args),
       error: (...args: unknown[]) => console.error('[SyncAnthropic:AnthropicAdapter]', ...args),
     };
-    const adapter = new AnthropicAdapter(apiKey, logger);
-    return adapter.listModels();
+    // The adapter needs a minimal config just to be instantiated.
+    const adapter = new AnthropicAdapter(apiKey, logger, {} as AiModelExtendedConfig);
+    // We call with `getRaw: true` to get the detailed data for our logs.
+    const { models, raw } = await adapter.listModels(true);
+    return { models, raw };
   },
   getCurrentDbModels: getCurrentDbModels,
   log: console.log,
@@ -77,152 +55,66 @@ export const defaultSyncAnthropicDeps: SyncAnthropicDeps = {
 };
 
 /**
- * Syncs Anthropic models with the database.
- * Accepts dependencies for testability.
+ * Syncs Anthropic models with the database using shared assembly and DB operation utilities.
+ * @param supabaseClient - The Supabase client instance.
+ * @param apiKey - The Anthropic API key.
+ * @param deps - Dependencies for testability.
+ * @returns A promise that resolves to a SyncResult object.
  */
 export async function syncAnthropicModels(
   supabaseClient: SupabaseClient,
   apiKey: string,
-  deps: SyncAnthropicDeps = defaultSyncAnthropicDeps // Inject dependencies
+  deps: SyncAnthropicDeps = defaultSyncAnthropicDeps
 ): Promise<SyncResult> {
-  let insertedCount = 0;
-  let updatedCount = 0;
-  let deactivatedCount = 0;
   const { listProviderModels, getCurrentDbModels, log, error } = deps;
+  const logger: ILogger = { info: log, warn: log, error: error, debug: log };
 
   try {
-    // 1. Fetch models from Anthropic API
-    log(`Fetching models from ${PROVIDER_NAME} API...`);
-    const apiModels = await listProviderModels(apiKey);
-    log(`Fetched ${apiModels.length} models from ${PROVIDER_NAME} API.`);
-    const apiModelMap = new Map(apiModels.map(m => [m.api_identifier, m]));
-
-    // 2. Fetch current Anthropic models from DB
+    // 1. Fetch data
+    logger.info(`Fetching models from ${PROVIDER_NAME} API...`);
+    const { models: apiModels, raw: rawApiData } = await listProviderModels(apiKey);
+    logger.info(`Fetched ${apiModels.length} models from ${PROVIDER_NAME} API.`);
+    logger.info('Anthropic models found:', { models: apiModels.map((m) => m.api_identifier) });
     const dbModels = await getCurrentDbModels(supabaseClient, PROVIDER_NAME);
-    const dbModelMap = new Map<string, DbAiProvider>(
-        dbModels.map((m: DbAiProvider) => [m.api_identifier, m])
+    logger.info(`Found ${dbModels.length} existing DB models for ${PROVIDER_NAME}.`);
+
+    // 2. Assemble Configurations
+    const assembler = new ConfigAssembler({
+        apiModels,
+        // Anthropic has no external capabilities source, so we provide an empty one.
+        externalCapabilities: () => Promise.resolve(new Map()),
+        internalModelMap: INTERNAL_MODEL_MAP,
+        logger,
+    });
+    const assembledConfigs = await assembler.assemble();
+
+    // 3. Diff and Prepare DB Operations
+    const ops = diffAndPrepareDbOps(
+        assembledConfigs,
+        dbModels,
+        PROVIDER_NAME,
+        logger
     );
-    log(`Found ${dbModels.length} existing DB models for ${PROVIDER_NAME}.`);
 
-    // 3. Determine operations
-    const modelsToInsert: Omit<DbAiProvider, 'id' | 'is_active'>[] = [];
-    const modelsToUpdate: { id: string; changes: Partial<DbAiProvider> }[] = [];
-    const modelsToDeactivate: string[] = [];
-    
-    log("--- Starting API model diff ---");
-    for (const [apiIdentifier, apiModel] of apiModelMap.entries()) {
-      log(`[Diff] Processing API model: ${apiIdentifier}`);
-      const dbModel = dbModelMap.get(apiIdentifier);
-      
-      // apiModel.config from Anthropic adapter's listModels will be undefined
-      // as the API doesn't provide structured config data.
+    // 4. Execute DB operations
+    const { inserted, updated, deactivated } = await executeDbOps(
+        supabaseClient,
+        PROVIDER_NAME,
+        ops,
+        logger,
+    );
 
-      if (dbModel) {
-        log(`[Diff]   Found matching DB model (ID: ${dbModel.id}, Active: ${dbModel.is_active}, Config: ${JSON.stringify(dbModel.config)})`);
-        const changes: Partial<DbAiProvider> = {};
-        if (apiModel.name !== dbModel.name) changes.name = apiModel.name;
-        if ((apiModel.description ?? null) !== dbModel.description) changes.description = apiModel.description ?? null;
-        if (!dbModel.is_active) changes.is_active = true;
+    return { 
+      provider: PROVIDER_NAME, 
+      inserted, 
+      updated, 
+      deactivated,
+      debug_data: rawApiData 
+    };
 
-        let baseConfig = createDefaultAnthropicConfig(apiIdentifier);
-        if (dbModel.config && isPartialAiModelExtendedConfig(dbModel.config)) {
-            const parsedDbConfig = dbModel.config;
-            baseConfig = {
-                ...baseConfig, // Start with defaults derived from model ID
-                ...parsedDbConfig, // Override with any stored values (manual edits)
-                tokenization_strategy: { // Ensure strategy is well-formed
-                    ...baseConfig.tokenization_strategy, 
-                    ...(parsedDbConfig.tokenization_strategy || {}),
-                },
-            };
-        }
-        
-        // Compare current dbModel.config with the potentially updated baseConfig
-        // (which includes current defaults + existing overrides)
-        // This ensures that if our default generation logic changes, it gets applied,
-        // unless specific fields were manually changed.
-        if (JSON.stringify(dbModel.config) !== JSON.stringify(baseConfig)) {
-            changes.config = baseConfig as unknown as Json;
-            log(`[Diff]     Config changes detected for ${apiIdentifier}:`, baseConfig);
-        }
-
-        if (Object.keys(changes).length > 0) {
-          log(`[Diff]     Overall changes for ${apiIdentifier}:`, changes);
-          modelsToUpdate.push({ id: dbModel.id, changes });
-        } else {
-          log(`[Diff]     No changes detected for ${apiIdentifier}.`);
-        }
-        dbModelMap.delete(apiIdentifier);
-        log(`[Diff]   Removed ${apiIdentifier} from dbModelMap (Remaining size: ${dbModelMap.size})`);
-      } else {
-        log(`[Diff]   No matching DB model found. Queuing for insert.`);
-        const newModelConfig = createDefaultAnthropicConfig(apiIdentifier);
-        modelsToInsert.push({
-          api_identifier: apiIdentifier,
-          name: apiModel.name,
-          description: apiModel.description ?? null,
-          provider: PROVIDER_NAME,
-          config: newModelConfig as unknown as Json, // Add the default config
-        });
-        log(`[Diff]   Queued for insert with config:`, newModelConfig);
-      }
-    }
-    log("--- Finished API model diff ---");
-
-    log(`--- Starting DB model cleanup (Models remaining in dbModelMap: ${dbModelMap.size}) ---`);
-    log("[Cleanup] Remaining DB models IDs:", Array.from(dbModelMap.keys()));
-    for (const dbModel of dbModelMap.values()) {
-      log(`[Cleanup] Processing remaining DB model: ${dbModel.api_identifier} (ID: ${dbModel.id}, Active: ${dbModel.is_active})`);
-      if (dbModel.is_active) {
-        log(`[Cleanup]   Model is active. Queuing for deactivation.`);
-        modelsToDeactivate.push(dbModel.id);
-      } else {
-        log(`[Cleanup]   Model is already inactive. Skipping.`);
-      }
-    }
-    log("--- Finished DB model cleanup ---");
-
-    // 4. Execute DB Operations
-    if (modelsToInsert.length > 0) {
-      log(`Inserting ${modelsToInsert.length} new ${PROVIDER_NAME} models...`);
-      const { error: insertError } = await supabaseClient.from('ai_providers').insert(modelsToInsert);
-      if (insertError) {
-        error(`Insert resolved with error object for ${PROVIDER_NAME}:`, insertError);
-        throw new Error(`Insert failed for ${PROVIDER_NAME}: ${insertError.message}`);
-      }
-      insertedCount = modelsToInsert.length;
-    }
-
-    if (modelsToUpdate.length > 0) {
-      log(`Updating ${modelsToUpdate.length} ${PROVIDER_NAME} models...`);
-      for (const update of modelsToUpdate) {
-        const { error: updateError } = await supabaseClient.from('ai_providers').update(update.changes).eq('id', update.id);
-        if (updateError) {
-          error(`Update resolved with error object for model ID ${update.id} (${PROVIDER_NAME}):`, updateError);
-          throw new Error(`Update failed for model ID ${update.id} (${PROVIDER_NAME}): ${updateError.message}`);
-        }
-      }
-      updatedCount = modelsToUpdate.length;
-    }
-
-    if (modelsToDeactivate.length > 0) {
-      log(`Deactivating ${modelsToDeactivate.length} ${PROVIDER_NAME} models...`);
-      const { error: deactivateError } = await supabaseClient
-        .from('ai_providers')
-        .update({ is_active: false })
-        .in('id', modelsToDeactivate);
-      if (deactivateError) {
-        error(`Deactivation resolved with error object for ${PROVIDER_NAME}:`, deactivateError);
-        throw new Error(`Deactivation failed for ${PROVIDER_NAME}: ${deactivateError.message}`);
-      }
-      deactivatedCount = modelsToDeactivate.length;
-    }
-
-    return { provider: PROVIDER_NAME, inserted: insertedCount, updated: updatedCount, deactivated: deactivatedCount };
-
-  } catch (outerError) {
-    error(`!!! Sync failed for provider ${PROVIDER_NAME}:`, outerError);
-    const errorMessage = outerError instanceof Error ? outerError.message : String(outerError ?? 'Unknown error');
-    return { provider: PROVIDER_NAME, inserted: 0, updated: 0, deactivated: 0, error: errorMessage };
+  } catch (e) { 
+    const err = e instanceof Error ? e : new Error(String(e));
+    logger.error(`!!! Sync failed for provider ${PROVIDER_NAME}:`, { error: err.message }); 
+    return { provider: PROVIDER_NAME, inserted: 0, updated: 0, deactivated: 0, error: err.message };
   }
-} 
+}

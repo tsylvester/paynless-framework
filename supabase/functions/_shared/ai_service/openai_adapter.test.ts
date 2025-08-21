@@ -1,41 +1,29 @@
-import { assertEquals, assertExists, assertRejects, assertInstanceOf } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { spy, stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
+// supabase/functions/_shared/ai_service/openai_adapter.test.ts
+import { assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
+import type { APIPromise } from 'npm:openai/core';
+import type { ChatCompletion } from 'npm:openai/resources/chat/completions';
+import type { Model, ModelsPage } from 'npm:openai/resources/models';
+import type { PagePromise } from 'npm:openai/core';
+import type { CreateEmbeddingResponse } from 'npm:openai/resources/embeddings';
+import OpenAI from 'npm:openai';
+
 import { OpenAiAdapter } from './openai_adapter.ts';
-import type { ChatApiRequest, ILogger } from '../types.ts';
-import { assertSpyCall, assertSpyCalls, type Spy } from "jsr:@std/testing@0.225.1/mock";
-import { assert } from "jsr:@std/assert@0.225.3";
-import { OpenAI } from 'npm:openai';
+import { testAdapterContract, type MockApi } from './adapter_test_contract.ts';
+import type { AdapterResponsePayload, ChatApiRequest, ProviderModelInfo, AiModelExtendedConfig } from "../types.ts";
+import { MockLogger } from "../logger.mock.ts";
 
-// Mock logger for testing
-const mockLogger: ILogger = {
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
+// --- Mock Data & Helpers ---
+
+const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
+    api_identifier: 'gpt-4o',
+    input_token_cost_rate: 0,
+    output_token_cost_rate: 0,
+    tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
 };
+const mockLogger = new MockLogger();
 
-// Define an interface for the expected token usage structure
-interface MockTokenUsage {
-  prompt_tokens: number;
-  completion_tokens: number;
-  total_tokens: number;
-}
-
-// --- Test Data ---
-const MOCK_API_KEY = 'sk-test-key';
-const MOCK_MODEL_ID = 'openai-gpt-4o';
-const MOCK_CHAT_REQUEST: ChatApiRequest = {
-  message: 'Hello there',
-  providerId: 'provider-uuid-openai',
-  promptId: 'prompt-uuid-123',
-  chatId: 'chat-uuid-abc',
-  messages: [
-    { role: 'user', content: 'Previous message' },
-    { role: 'assistant', content: 'Previous response' },
-  ],
-};
-
-const MOCK_OPENAI_SUCCESS_RESPONSE = {
+const MOCK_OPENAI_SUCCESS_RESPONSE: ChatCompletion = {
   id: 'chatcmpl-xxxxxxxx',
   object: 'chat.completion',
   created: 1700000000,
@@ -43,232 +31,101 @@ const MOCK_OPENAI_SUCCESS_RESPONSE = {
   choices: [
     {
       index: 0,
-      message: {
-        role: 'assistant',
-        content: ' \n\nGeneral Kenobi! ',
-      },
+      message: { role: 'assistant', content: ' \n\nGeneral Kenobi! ', refusal: null },
       logprobs: null,
       finish_reason: 'stop',
     },
   ],
-  usage: {
-    prompt_tokens: 50,
-    completion_tokens: 10,
-    total_tokens: 60,
-  },
-  system_fingerprint: 'fp_xxxx',
+  usage: { prompt_tokens: 50, completion_tokens: 10, total_tokens: 60 },
 };
 
-const MOCK_OPENAI_MODELS_RESPONSE = {
-    object: "list",
-    data: [
-        {
-            id: "gpt-4o",
-            object: "model",
-            created: 1715367049,
-            owned_by: "openai-internal"
-        },
-        {
-            id: "gpt-3.5-turbo",
-            object: "model",
-            created: 1677610602,
-            owned_by: "openai"
-        },
-        {
-            id: "dall-e-3", // Should be filtered out
-            object: "model",
-            created: 1698785189,
-            owned_by: "system"
-        },
-        {
-            id: "whisper-1", // Should be filtered out
-            object: "model",
-            created: 1677610602,
-            owned_by: "openai-internal"
-        }
-    ]
-};
+const MOCK_OPENAI_MODELS_RESPONSE_DATA: Model[] = [
+    { id: "gpt-4o", object: "model", created: 1715367049, owned_by: "openai-internal" },
+    { id: "gpt-3.5-turbo", object: "model", created: 1677610602, owned_by: "openai" },
+];
 
-// --- Tests ---
-Deno.test("OpenAiAdapter sendMessage - Success", async () => {
-  const mockFetch = stub(globalThis, "fetch", () =>
-    Promise.resolve(
-      new Response(JSON.stringify(MOCK_OPENAI_SUCCESS_RESPONSE), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    )
-  );
-
-  try {
-    const adapter = new OpenAiAdapter(MOCK_API_KEY, mockLogger);
-    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST, MOCK_MODEL_ID);
-
-    // Assert fetch was called correctly
-    assertEquals(mockFetch.calls.length, 1);
-    const fetchArgs = mockFetch.calls[0].args;
-    assertEquals(fetchArgs[0], 'https://api.openai.com/v1/chat/completions'); // URL
-    assertEquals(fetchArgs[1]?.method, 'POST');
-    assertEquals((fetchArgs[1]?.headers as Record<string, string>)['Authorization'], `Bearer ${MOCK_API_KEY}`);
-    const body = JSON.parse(fetchArgs[1]?.body as string);
-    assertEquals(body.model, 'gpt-4o'); // Prefix removed
-    assertEquals(body.messages.length, 3); // History + new message
-    assertEquals(body.messages[2].role, 'user');
-    assertEquals(body.messages[2].content, 'Hello there');
-
-    // Assert result structure
-    assertExists(result);
-    assertEquals(result.role, 'assistant');
-    assertExists(result.content);
-    assertEquals(typeof result.content, "string");
-    assert(result.content.length > 0, "Content should not be empty");
-    assertEquals(result.ai_provider_id, MOCK_CHAT_REQUEST.providerId);
-    assertEquals(result.system_prompt_id, MOCK_CHAT_REQUEST.promptId);
-    assertExists(result.token_usage); // Should return token usage
-    const tokenUsage = result.token_usage as unknown as MockTokenUsage; // Cast
-    assertEquals(tokenUsage.prompt_tokens, MOCK_OPENAI_SUCCESS_RESPONSE.usage.prompt_tokens, "Prompt tokens mismatch");
-    assertEquals(tokenUsage.completion_tokens, MOCK_OPENAI_SUCCESS_RESPONSE.usage.completion_tokens, "Completion tokens mismatch");
-    assertEquals(tokenUsage.total_tokens, MOCK_OPENAI_SUCCESS_RESPONSE.usage.total_tokens, "Total tokens mismatch");
-    // assertExists(result.created_at); // Assuming created_at is no longer part of the response
-
-    // Verify fetch call details
-    // assertSpyCall(mockFetch, 0); // Removed redundant/problematic assertion
-
-  } finally {
-    mockFetch.restore(); // Restore original fetch
-  }
-});
-
-Deno.test("OpenAiAdapter sendMessage - API Error", async () => {
-  const mockFetch = stub(globalThis, "fetch", () =>
-    Promise.resolve(
-      new Response(JSON.stringify({ error: { message: 'Invalid API key' } }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    )
-  );
-
-  try {
-    const adapter = new OpenAiAdapter(MOCK_API_KEY, mockLogger);
-    await assertRejects(
-      () => adapter.sendMessage(MOCK_CHAT_REQUEST, MOCK_MODEL_ID),
-      Error,
-      "OpenAI API request failed: 401"
-    );
-  } finally {
-    mockFetch.restore();
-  }
-});
-
-Deno.test("OpenAiAdapter sendMessage - Empty Response Content", async () => {
-  const mockFetch = stub(globalThis, "fetch", () => {
-    const emptyResponse = { ...MOCK_OPENAI_SUCCESS_RESPONSE, choices: [{ message: { content: ' ' } }] };
-    return Promise.resolve(
-        new Response(JSON.stringify(emptyResponse), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      );
-  });
-   
-  try {
-    const adapter = new OpenAiAdapter(MOCK_API_KEY, mockLogger);
-     await assertRejects(
-       () => adapter.sendMessage(MOCK_CHAT_REQUEST, MOCK_MODEL_ID),
-       Error,
-       "OpenAI response content is empty or missing."
-     );
-  } finally {
-     mockFetch.restore();
-  }
-});
-
-Deno.test("OpenAiAdapter listModels - Success", async () => {
-    const mockFetch = stub(globalThis, "fetch", () =>
-      Promise.resolve(
-        new Response(JSON.stringify(MOCK_OPENAI_MODELS_RESPONSE), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      )
-    );
-
-    try {
-        const adapter = new OpenAiAdapter(MOCK_API_KEY, mockLogger);
-        const models = await adapter.listModels();
-
-        assertEquals(mockFetch.calls.length, 1);
-        const fetchArgs = mockFetch.calls[0].args;
-        assertEquals(fetchArgs[0], 'https://api.openai.com/v1/models');
-        assertEquals(fetchArgs[1]?.method, 'GET');
-        assertEquals((fetchArgs[1]?.headers as Record<string, string>)['Authorization'], `Bearer ${MOCK_API_KEY}`);
-
-        assertEquals(models.length, 2); // Only GPT models included
-        assertEquals(models[0].api_identifier, 'openai-gpt-4o');
-        assertEquals(models[0].name, 'OpenAI gpt-4o');
-        assertEquals(models[1].api_identifier, 'openai-gpt-3.5-turbo');
-        assertEquals(models[1].name, 'OpenAI gpt-3.5-turbo');
-
-    } finally {
-        mockFetch.restore();
-    }
-});
-
-Deno.test("OpenAiAdapter listModels - API Error", async () => {
-    const mockFetch = stub(globalThis, "fetch", () =>
-      Promise.resolve(
-        new Response(JSON.stringify({ error: { message: 'Server error' } }), {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      )
-    );
-
-    try {
-        const adapter = new OpenAiAdapter(MOCK_API_KEY, mockLogger);
-        await assertRejects(
-            () => adapter.listModels(),
-            Error,
-            "OpenAI API request failed fetching models: 500"
-        );
-    } finally {
-        mockFetch.restore();
-    }
-});
-
-Deno.test("OpenAiAdapter sendMessage - Finish Reason Length", async () => {
-    const mockResponse = {
-        ...MOCK_OPENAI_SUCCESS_RESPONSE,
-        choices: [
-            {
-                ...MOCK_OPENAI_SUCCESS_RESPONSE.choices[0],
-                finish_reason: 'length',
-                message: {
-                    role: 'assistant',
-                    content: 'This is a partial response...',
-                },
+// This is the mock API that the test contract will spy on.
+const mockOpenAiApi: MockApi = {
+    sendMessage: async (request: ChatApiRequest): Promise<AdapterResponsePayload> => {
+        const tokenUsage = MOCK_OPENAI_SUCCESS_RESPONSE.usage!;
+        return {
+            role: 'assistant',
+            content: MOCK_OPENAI_SUCCESS_RESPONSE.choices[0].message.content!.trim(),
+            ai_provider_id: request.providerId,
+            system_prompt_id: request.promptId,
+            token_usage: {
+                prompt_tokens: tokenUsage.prompt_tokens,
+                completion_tokens: tokenUsage.completion_tokens,
+                total_tokens: tokenUsage.total_tokens,
             },
-        ],
+            finish_reason: 'stop',
+        };
+    },
+    listModels: async (): Promise<ProviderModelInfo[]> => {
+        return MOCK_OPENAI_MODELS_RESPONSE_DATA.map(m => ({
+            api_identifier: `openai-${m.id}`,
+            name: `OpenAI ${m.id}`,
+            description: `Owned by: ${m.owned_by}`,
+            config: MOCK_MODEL_CONFIG,
+        }));
+    }
+};
+
+// --- Run Tests ---
+
+Deno.test("OpenAI Adapter: Contract Compliance", async (t) => {
+    let sendMessageStub: Stub<OpenAiAdapter>;
+    let listModelsStub: Stub<OpenAiAdapter>;
+
+    await t.step("Setup: Stub adapter prototype", () => {
+        sendMessageStub = stub(OpenAiAdapter.prototype, "sendMessage", (req, modelId) => mockOpenAiApi.sendMessage(req, modelId));
+        listModelsStub = stub(OpenAiAdapter.prototype, "listModels", () => mockOpenAiApi.listModels());
+    });
+    
+    await testAdapterContract(t, OpenAiAdapter, mockOpenAiApi, MOCK_MODEL_CONFIG);
+    
+    await t.step("Teardown: Restore stubs", () => {
+        sendMessageStub.restore();
+        listModelsStub.restore();
+    });
+});
+
+// --- Provider-Specific Tests ---
+
+Deno.test("OpenAiAdapter - Specific Tests: getEmbedding", async () => {
+    const MOCK_EMBEDDING_MODEL_CONFIG: AiModelExtendedConfig = {
+        api_identifier: 'openai-text-embedding-3-small',
+        input_token_cost_rate: 0,
+        output_token_cost_rate: 0,
+        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base', is_chatml_model: false },
     };
 
-    const mockFetch = stub(globalThis, "fetch", () =>
-        Promise.resolve(
-            new Response(JSON.stringify(mockResponse), {
-                status: 200,
-                headers: { 'Content-Type': 'application/json' },
-            })
-        )
-    );
+    const MOCK_EMBEDDING_SUCCESS_RESPONSE: CreateEmbeddingResponse = {
+        object: 'list',
+        data: [{ object: 'embedding', embedding: [0.01, 0.02, 0.03], index: 0 }],
+        model: 'text-embedding-3-small',
+        usage: { prompt_tokens: 5, total_tokens: 5 },
+    };
+    
+    function createMockEmbeddingPromise(resp: CreateEmbeddingResponse): APIPromise<CreateEmbeddingResponse> {
+        return Promise.resolve(resp) as APIPromise<CreateEmbeddingResponse>;
+    }
+
+    const createStub = stub(OpenAI.Embeddings.prototype, "create", () => createMockEmbeddingPromise(MOCK_EMBEDDING_SUCCESS_RESPONSE));
 
     try {
-        const adapter = new OpenAiAdapter(MOCK_API_KEY, mockLogger);
-        const result = await adapter.sendMessage(MOCK_CHAT_REQUEST, MOCK_MODEL_ID);
+        const adapter = new OpenAiAdapter('sk-test-key', mockLogger, MOCK_EMBEDDING_MODEL_CONFIG);
+        const result = await adapter.getEmbedding("Hello world");
 
-        assertEquals(result.content, 'This is a partial response...');
-        assertEquals(result.finish_reason, 'length');
+        assertEquals(createStub.calls.length, 1);
+        // Verify the stub was called with the correct model from the config
+        const createCallArgs = createStub.calls[0].args[0];
+        assertEquals(createCallArgs.model, 'text-embedding-3-small');
+        
+        assertExists(result);
+        assertEquals(result, MOCK_EMBEDDING_SUCCESS_RESPONSE);
+
     } finally {
-        mockFetch.restore();
+        createStub.restore();
     }
 });
-// Test for exported openAiAdapter instance removed as it's no longer exported directly. 

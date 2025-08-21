@@ -5,6 +5,7 @@ import {
   selectSelectedModelIds,
   selectSessionById,
   selectActiveStage,
+  selectIsStageReadyForSessionIteration,
 } from '@paynless/store';
 import { GenerateContributionsPayload } from '@paynless/types';
 import { useAiStore } from '@paynless/store';
@@ -40,7 +41,18 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
     [store, activeContextSessionId]
   );
 
-  const isSessionGenerating = activeContextSessionId ? generatingSessions[activeContextSessionId] || false : false;
+  const isStageReady = useDialecticStore(state =>
+    currentProjectDetail && activeSession && activeStage ?
+    selectIsStageReadyForSessionIteration(
+        state,
+        currentProjectDetail.id,
+        activeSession.id,
+        activeStage.slug,
+        activeSession.iteration_count
+    ) : false
+  );
+
+  const isSessionGenerating = activeContextSessionId ? (generatingSessions[activeContextSessionId]?.length > 0) : false;
   const areAnyModelsSelected = selectedModelIds && selectedModelIds.length > 0;
 
   // Final, correct logic based on user feedback
@@ -92,13 +104,14 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
   };
 
   // The button is only disabled if essential data is missing or a generation is in progress.
-  const isDisabled = isSessionGenerating || !areAnyModelsSelected || !activeStage || !activeSession;
+  const isDisabled = isSessionGenerating || !areAnyModelsSelected || !activeStage || !activeSession || !isStageReady;
   const friendlyName = activeStage?.display_name || '...';
 
   const getButtonText = () => {
     if (isSessionGenerating) return <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>;
     if (!areAnyModelsSelected) return 'Choose AI Models';
     if (!activeStage || !activeSession) return 'Stage Not Ready';
+    if (!isStageReady) return 'Previous Stage Incomplete';
     if (didGenerationFail) return `Retry ${friendlyName}`;
     if (contributionsForStageAndIterationExist) return `Regenerate ${friendlyName}`;
     return `Generate ${friendlyName}`;

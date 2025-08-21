@@ -6,9 +6,14 @@ import type { handleCorsPreflightRequest, createSuccessResponse, createErrorResp
 import { createClient, SupabaseClient, User } from "npm:@supabase/supabase-js";
 import { Tables } from '../types_db.ts';
 import type { ITokenWalletService } from './types/tokenWallet.types.ts';
+import type { prepareChatContext } from '../chat/prepareChatContext.ts';
+import type { handleNormalPath } from '../chat/handleNormalPath.ts';
+import type { handleRewindPath } from '../chat/handleRewindPath.ts';
+import type { handleDialecticPath } from '../chat/handleDialecticPath.ts';
+import type { debitTokens } from '../chat/debitTokens.ts';
 // Import MessageForTokenCounting from the centralized location AT THE TOP
 
-
+export type ChatInsert = Tables<'chats'>;
 
 // Define PaymentTransaction using the Tables helper type from types_db.ts
 export type PaymentTransaction = Tables<'payment_transactions'>;
@@ -162,6 +167,7 @@ export interface ChatApiRequest {
   rewindFromMessageId?: string; // uuid, optional for rewinding - ADDED
   max_tokens_to_generate?: number; // ADDED: Max tokens for the AI to generate in its response
   continue_until_complete?: boolean; // ADDED: Flag to enable response continuation
+  isDialectic?: boolean; // ADDED: Flag to indicate a 'headless' dialectic job that should not be saved to the DB
 }
 
 /**
@@ -171,29 +177,46 @@ export interface ProviderModelInfo {
   api_identifier: string; // The specific ID the provider uses for this model in API calls
   name: string;           // A user-friendly name for the model
   description?: string;    // Optional description
-  // Use `Database['public']['Tables']['ai_providers']['Row']['config']` for the actual JSON type
-  config?: Database['public']['Tables']['ai_providers']['Row']['config']; // Use specific DB Json type
+  config?: Partial<AiModelExtendedConfig>;
 }
-
+  
 /**
- * Interface for AI provider adapters.
- * Defines the common methods required for interacting with different AI provider APIs.
+ * Interface for AI provider adapters. Defines the constructor and instance methods
+ * required for a class to be a valid, interchangeable AI provider.
  */
-export interface AiProviderAdapter {
+export type AiProviderAdapter = new (
+  apiKey: string,
+  logger: ILogger,
+  modelConfig: AiModelExtendedConfig
+) => {
   sendMessage(
     request: ChatApiRequest,
     modelIdentifier: string, // The specific API identifier for the model (e.g., 'gpt-4o')
-    apiKey: string
-  ): Promise<AdapterResponsePayload>; // Return type changed to AdapterResponsePayload
+  ): Promise<AdapterResponsePayload>;
 
-  listModels(apiKey: string): Promise<ProviderModelInfo[]>;
-}
-
-export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] & {
-  // Keep application-level status enrichment if needed by UI directly
-  // Note: status was previously added to LocalChatMessage, consider if it belongs here
-  status?: 'pending' | 'sent' | 'error'; 
+  listModels(): Promise<ProviderModelInfo[]>;
 };
+
+export type AiProviderAdapterInstance = InstanceType<AiProviderAdapter>;
+
+// TODO: chat_id is optional to support "headless" dialectic messages that are not
+// associated with a chat history but are still processed by the /chat endpoint
+// for token accounting. Re-evaluate this after the chat service refactor.
+export type ChatMessage = Omit<Database['public']['Tables']['chat_messages']['Row'], 'chat_id'> & {
+    chat_id?: string;
+    // Keep application-level status enrichment if needed by UI directly
+    // Note: status was previously added to LocalChatMessage, consider if it belongs here
+    status?: 'pending' | 'sent' | 'error'; 
+};
+
+export type FinishReason = 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call' | 'error' | 'unknown' | 'max_tokens' | 'content_truncated' | null;
+
+export enum ContinueReason {
+    MaxTokens = 'max_tokens',
+    Length = 'length',
+    ContentTruncated = 'content_truncated',
+    Unknown = 'unknown',
+}
 
 /**
  * Type representing the payload returned *by* an AI Provider Adapter's sendMessage method.
@@ -207,7 +230,7 @@ export interface AdapterResponsePayload {
   system_prompt_id: string | null; // The DB ID of the prompt used (or null)
   token_usage: Database['public']['Tables']['chat_messages']['Row']['token_usage']; // Use specific DB Json type
   created_at?: string;
-  finish_reason?: 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call' | 'error' | 'unknown' | null; // ADDED: Standardized finish reason
+  finish_reason?: FinishReason; // ADDED: Standardized finish reason
 }
 
 /**
@@ -215,7 +238,9 @@ export interface AdapterResponsePayload {
  */
 export interface FullChatMessageRecord {
   id: string;
-  chat_id: string;
+      // TODO: chat_id is nullable to accommodate 'headless' dialectic messages that are not associated with a chat.
+    // This should be revisited when the chat and dialectic services are more formally separated.
+    chat_id?: string;
   user_id: string;
   created_at: string;
   role: 'user' | 'assistant' | 'system';
@@ -229,7 +254,7 @@ export interface FullChatMessageRecord {
  * Interface describing the signature of the getAiProviderAdapter function.
  */
 export interface GetAiProviderAdapter {
-  (provider: string): AiProviderAdapter | null;
+  (providerApiIdentifier: string, providerDbConfig: Json | null, apiKey: string, logger?: ILogger): AiProviderAdapter | null;
 }
 
 /**
@@ -262,7 +287,7 @@ export interface ILogger {
   export interface ChatHandlerSuccessResponse {
     userMessage?: ChatMessageRow;       // Populated for normal new messages and new user message in rewind
     assistantMessage: ChatMessageRow;  // Always populated on success
-    chatId: string;                    // ID of the chat session (new or existing) - ADDED
+    chatId?: string;                   // ID of the chat session, optional for 'headless' dialectic jobs
     isRewind?: boolean;                 // True if this was a rewind operation
     isDummy?: boolean;                  // True if dummy provider was used
   }
@@ -325,7 +350,7 @@ export interface AiModelExtendedConfig {
   tokenization_strategy: 
     | { type: 'tiktoken'; tiktoken_encoding_name: TiktokenEncoding; tiktoken_model_name_for_rules_fallback?: TiktokenModelForRules; is_chatml_model?: boolean; api_identifier_for_tokenization?: string; } 
     | { type: 'rough_char_count'; chars_per_token_ratio?: number; }
-    | { type: 'claude_tokenizer'; } // Placeholder for Anthropic's official tokenizer
+    | { type: 'anthropic_tokenizer'; model: string }
     | { type: 'google_gemini_tokenizer'; } // Placeholder for Google's official tokenizer
     | { type: 'none'; }; // If token counting is not applicable or handled externally
 
@@ -351,6 +376,20 @@ export interface AiModelExtendedConfig {
   // api_identifier_for_tokenization?: string; // Covered by main api_identifier generally
 }
 
+/**
+ * A strict, application-ready data contract for a fully configured AI model.
+ * This is the final, validated output of the ConfigAssembler, ensuring that
+ * the model has a complete and non-partial configuration before being used.
+ */
+export interface FinalAppModelConfig {
+  api_identifier: string;
+  name: string;
+  description: string;
+  // Note: The 'config' property is NOT optional and NOT partial.
+  // It must be a complete, valid object.
+  config: AiModelExtendedConfig; 
+}
+
 // Signature for countTokensForMessages function (this might be an old definition)
 // export type CountTokensForMessagesFn = (
 //   messages: MessageForTokenCounting[], 
@@ -365,21 +404,26 @@ export interface ChatHandlerDeps {
   createErrorResponse: typeof createErrorResponse;
   getAiProviderAdapter: (
     providerApiIdentifier: string,
-    providerDbConfig: Json | null, // Added
+    providerDbConfig: AiModelExtendedConfig | null,
     apiKey: string,
-    logger?: ILogger
-  ) => AiProviderAdapter | null; // Changed signature and return type
+    logger: ILogger
+  ) => AiProviderAdapterInstance | null;
   getAiProviderAdapterOverride?: ( // Also update this for consistency
     providerApiIdentifier: string,
-    providerDbConfig: Json | null, // Added
+    providerDbConfig: AiModelExtendedConfig | null,
     apiKey: string,
-    logger?: ILogger
-  ) => AiProviderAdapter | null; // Changed signature and return type
+    logger: ILogger
+  ) => AiProviderAdapterInstance | null;
   verifyApiKey: (apiKey: string, providerName: string) => Promise<boolean>;
   logger: ILogger;
   tokenWalletService?: ITokenWalletService; 
   countTokensForMessages: (messages: MessageForTokenCounting[], modelConfig: AiModelExtendedConfig) => number; // Updated signature
-  supabaseClient?: SupabaseClient; // Added for test overrides
+  prepareChatContext: typeof prepareChatContext;
+  handleNormalPath: typeof handleNormalPath;
+  handleRewindPath: typeof handleRewindPath;
+  handleDialecticPath: typeof handleDialecticPath;
+  debitTokens: typeof debitTokens;
+  handlePostRequest?: (requestBody: ChatApiRequest, supabaseClient: SupabaseClient<Database>, userId: string, deps: ChatHandlerDeps) => Promise<ChatHandlerSuccessResponse | { error: { message: string, status?: number } }>;
 }
 
 export type PerformChatRewindResult = Database['public']['Functions']['perform_chat_rewind']['Returns'];
@@ -413,3 +457,29 @@ export interface GetUserFn {
 }
 
 // --- END: New/Standardized Interfaces ---
+
+// +++ ADDED Chat Context Preferences Type +++
+/**
+ * Defines the structure for user-specific chat UI preferences,
+ * intended to be stored as JSON in user_profiles.chat_context.
+ */
+export interface ChatContextPreferences {
+  newChatContext?: string | null;      // Corresponds to ChatContextSelector
+  selectedProviderId?: string | null;  // Corresponds to ModelSelector (provider ID)
+  selectedPromptId?: string | null;    // Corresponds to PromptSelector
+}
+// +++ END Chat Context Preferences Type +++
+
+// Define the allowed values for profile privacy settings
+export type ProfilePrivacySetting = 'private' | 'public' | 'members_only';
+
+// Define the type for profile updates - ONLY first/last name
+export type UserProfileUpdate = {
+  first_name?: string | null; // Match DB nullability
+  last_name?: string | null; // Match DB nullability
+  last_selected_org_id?: string | null; // <<< ADD THIS LINE BACK
+  chat_context?: ChatContextPreferences | null; // Added to store user's chat selector preferences
+  profile_privacy_setting?: ProfilePrivacySetting; // Added for user profile privacy
+  is_subscribed_to_newsletter?: boolean; // Added for user newsletter subscription
+  has_seen_welcome_modal?: boolean; // Added for user welcome modal seen
+}

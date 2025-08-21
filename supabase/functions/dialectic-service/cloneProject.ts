@@ -259,7 +259,7 @@ export async function cloneProject(
                     mimeType: res.mime_type || 'application/octet-stream',
                     sizeBytes: fileContentBuffer.length, // Use actual downloaded buffer length
                     userId: cloningUserId,
-                    description: stringifiedDescription,
+                    description: stringifiedDescription || '',
                 };
                 
                 console.log(`[cloneProject] Uploading resource ${res.file_name} via FileManager for new project ${actualClonedProjectId}`);
@@ -507,6 +507,7 @@ export async function cloneProject(
                             mimeType: effectiveMimeType,
                             sizeBytes: effectiveFileContent.length,
                             userId: originalContrib.user_id || cloningUserId, // Prefer original user_id if available, else cloning user
+                            description: `Cloned contribution for stage ${stageSlugForPathContext || originalContrib.stage}`,
                             contributionMetadata: {
                                 sessionId: actualNewSessionId,
                                 modelIdUsed: originalContrib.model_id, // This is ai_models.id
@@ -525,6 +526,7 @@ export async function cloneProject(
                                 editVersion: 1, 
                                 isLatestEdit: true,
                                 originalModelContributionId: null, 
+                                seedPromptStoragePath: originalContrib.seed_prompt_url || '',
                                 // seedPromptStoragePath: originalContrib.seed_prompt_url - this needs careful handling
                             }
                         };
@@ -595,7 +597,7 @@ export async function cloneProject(
                         }
                         // Assign the newly constructed path (or undefined if it failed) to the metadata
                         if (contribUploadContext.contributionMetadata) { // Type guard
-                           contribUploadContext.contributionMetadata.seedPromptStoragePath = newSeedPromptStoragePath;
+                           contribUploadContext.contributionMetadata.seedPromptStoragePath = newSeedPromptStoragePath || '';
                         }
 
                         // If the main file IS the raw_json, then metadata.rawJsonResponseContent should be an empty string

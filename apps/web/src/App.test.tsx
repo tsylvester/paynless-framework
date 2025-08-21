@@ -1,13 +1,24 @@
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-// Remove MemoryRouter import, App provides its own RouterProvider
-// import { MemoryRouter } from 'react-router-dom'; 
 import App from './App';
-import * as PaynlessStore from '@paynless/store';
-import type { SubscriptionStore, WalletStore } from '@paynless/store'; // Import SubscriptionStore and WalletStore
+import { useAuthStore, useSubscriptionStore, useWalletStore, initialWalletStateValues } from '@paynless/store';
+import type { SubscriptionStore, WalletStore } from '@paynless/store';
+import type { UserProfile } from '@paynless/types';
 // Import initialWalletStateValues and necessary selectors
-import { initialWalletStateValues } from '@paynless/store';
-import { mockSetAuthIsLoading, mockSetAuthUser, mockSetAuthSession, mockedUseAuthStoreHookLogic, resetAuthStoreMock } from './mocks/authStore.mock';
+import { 
+    mockSetAuthIsLoading, 
+    mockSetAuthUser, 
+    mockSetAuthSession, 
+    mockedUseAuthStoreHookLogic, 
+    resetAuthStoreMock, 
+    mockSetAuthProfile, 
+} from './mocks/authStore.mock';
+import { 
+    mockedUseAiStoreHookLogic, 
+    resetAiStoreMock,
+    mockSetIsChatContextHydrated,
+} from './mocks/aiStore.mock';
+import { useAiStore } from '@paynless/store';
 
 // --- Mocks ---
 
@@ -23,6 +34,7 @@ describe('App Component', () => {
     beforeEach(() => {
         vi.resetAllMocks();
         resetAuthStoreMock();
+        resetAiStoreMock();
 
         // Reset global mocks
         vi.stubGlobal('matchMedia', vi.fn().mockImplementation(query => ({ 
@@ -50,9 +62,9 @@ describe('App Component', () => {
             getUsageMetrics: vi.fn().mockResolvedValue(null),
         };
 
-        vi.spyOn(PaynlessStore, 'useSubscriptionStore').mockImplementation(<S,>(
+        vi.spyOn({ useSubscriptionStore }, 'useSubscriptionStore').mockImplementation(<S,>(
             selector?: (state: SubscriptionStore) => S,
-            _equalityFn?: (a: S, b: S) => boolean
+            // _equalityFn?: (a: S, b: S) => boolean
         ): S | SubscriptionStore => {
             if (typeof selector === 'function') {
                 return selector(mockSubscriptionState);
@@ -71,13 +83,18 @@ describe('App Component', () => {
             initiatePurchase: vi.fn().mockResolvedValue(null),
             _resetForTesting: vi.fn(),
             determineChatWallet: vi.fn().mockReturnValue({ walletType: 'personal', walletId: 'test-personal-wallet' }),
+            setUserOrgTokenConsent: vi.fn(),
+            clearUserOrgTokenConsent: vi.fn(),
+            openConsentModal: vi.fn(),
+            closeConsentModal: vi.fn(),
+            _handleWalletUpdateNotification: vi.fn(),
             // Ensure selectCurrentWalletBalance is available if it were a direct method (it's not, but good to be aware)
             // For selector-based access, the selector itself is applied to this state.
         };
 
-        vi.spyOn(PaynlessStore, 'useWalletStore').mockImplementation(<S,>(
+        vi.spyOn({ useWalletStore }, 'useWalletStore').mockImplementation(<S,>(
             selector?: (state: WalletStore) => S,
-            _equalityFn?: (a: S, b: S) => boolean
+            // _equalityFn?: (a: S, b: S) => boolean
         ): S | WalletStore => {
             // If a selector is provided (like selectPersonalWalletBalance), apply it to the mock state
             // Otherwise, return the whole mock state (standard Zustand behavior)
@@ -89,7 +106,8 @@ describe('App Component', () => {
 
         // Spy on useAuthStore to use the updated mockedUseAuthStoreHookLogic
         // The mockedUseAuthStoreHookLogic itself now handles the full AuthStore type and the equalityFn
-        vi.spyOn(PaynlessStore, 'useAuthStore').mockImplementation(mockedUseAuthStoreHookLogic);
+        vi.spyOn({ useAuthStore }, 'useAuthStore').mockImplementation(mockedUseAuthStoreHookLogic);
+        vi.spyOn({ useAiStore }, 'useAiStore').mockImplementation(mockedUseAiStoreHookLogic);
     });
 
     afterEach(() => {
@@ -109,6 +127,10 @@ describe('App Component', () => {
             render(<App />);
         });
 
+        // Assertions
+        expect(await screen.findByRole('status')).toBeInTheDocument(); 
+        expect(screen.queryByRole('banner')).not.toBeInTheDocument(); 
+        expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
     });
 
     it('should render loading spinner when auth is loading', async () => {
@@ -130,4 +152,35 @@ describe('App Component', () => {
         expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
     });
 
+    it('should set showWelcomeModal to true when profile is loaded and has_seen_welcome_modal is false', async () => {
+        const mockProfile: UserProfile = {
+            id: 'user-123',
+            has_seen_welcome_modal: false,
+            is_subscribed_to_newsletter: false,
+            first_name: null,
+            last_name: null,
+            last_selected_org_id: null,
+            profile_privacy_setting: 'private',
+            chat_context: null,
+            created_at: new Date().toISOString(),
+            role: 'user',
+            updated_at: new Date().toISOString(),
+        };
+
+        // Arrange
+        mockSetAuthIsLoading(false);
+        mockSetIsChatContextHydrated(false);
+        const { rerender } = render(<App />);
+
+        // Act
+        act(() => {
+            mockSetAuthProfile(mockProfile);
+        });
+        rerender(<App />); // Force re-render to pick up the new state from the mock
+
+        // Assert
+        await waitFor(() => {
+            expect(mockedUseAuthStoreHookLogic.getState().showWelcomeModal).toBe(true);
+        });
+    });
 });

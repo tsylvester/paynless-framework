@@ -6,14 +6,17 @@ import { useAuthStore } from '@paynless/store'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 
 export function RegisterForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [subscribe, setSubscribe] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const navigate = useNavigate()
 
   const register = useAuthStore((state) => state.register)
+  const subscribeToNewsletter = useAuthStore((state) => state.subscribeToNewsletter)
   const authError = useAuthStore((state) => state.error)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -29,6 +32,11 @@ export function RegisterForm() {
     try {
       logger.info('Attempting to register user via form', { email })
       await register(email, password)
+
+      if (subscribe) {
+        // This is a non-blocking call
+        subscribeToNewsletter(email);
+      }
 
       logger.info('[RegisterForm] Register action succeeded, navigating to dashboard.')
       navigate('/dashboard', { replace: true })
@@ -90,6 +98,13 @@ export function RegisterForm() {
               required
             />
           </div>
+        </div>
+
+        <div className="mb-6 flex items-center space-x-2">
+            <Checkbox id="subscribe" checked={subscribe} onCheckedChange={(checked) => setSubscribe(Boolean(checked))} />
+            <Label htmlFor="subscribe" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                Receive system notices and updates by email.
+            </Label>
         </div>
 
         <Button

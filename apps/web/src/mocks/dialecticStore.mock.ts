@@ -147,6 +147,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
   fetchFeedbackFileContentError: null,
   activeDialecticWalletId: null,
   activeStageSlug: 'thesis',
+  sessionProgress: {},
 };
 
 // 2. Helper function to create a new mock store instance
@@ -242,6 +243,14 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
         activeStageSlug: slug
       });
     }),
+    _handleContributionGenerationStarted: vi.fn(),
+    _handleDialecticContributionStarted: vi.fn(),
+    _handleContributionGenerationRetrying: vi.fn(),
+    _handleDialecticContributionReceived: vi.fn(),
+    _handleContributionGenerationFailed: vi.fn(),
+    _handleContributionGenerationContinued: vi.fn(),
+    _handleProgressUpdate: vi.fn(),
+    _handleContributionGenerationComplete: vi.fn(),
   }));
 };
 
