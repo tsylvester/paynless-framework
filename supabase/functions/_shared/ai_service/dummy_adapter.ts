@@ -1,5 +1,6 @@
 import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig, Messages } from '../types.ts';
-import { countTokensForMessages } from '../utils/tokenizer_utils.ts';
+import { countTokens } from '../utils/tokenizer_utils.ts';
+import type { CountTokensDeps, CountableChatPayload } from '../types/tokenizer.types.ts';
 import { ContextWindowError } from '../utils/errors.ts';
 import type { Tables } from '../../types_db.ts';
 import { isJson, isAiModelExtendedConfig } from '../utils/type_guards.ts';
@@ -44,12 +45,18 @@ export class DummyAdapter {
         if (messageContent.includes("Partial echo due to max_tokens")) {
             const completionContent = "This is the continued content.";
             
-            // Calculate tokens for both prompt and completion
-            const promptMessage: Messages = { role: 'user', content: messageContent };
-            const completionMessage: Messages = { role: 'assistant', content: completionContent };
-            
-            const promptTokens = countTokensForMessages([promptMessage], this.modelConfig);
-            const completionTokens = countTokensForMessages([completionMessage], this.modelConfig);
+            // Calculate tokens for both prompt and completion using full-payload triple-arg API
+            const tokenizerDeps: CountTokensDeps = {
+                getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
+                countTokensAnthropic: (text: string) => (text ?? '').length,
+                logger: this.logger,
+            };
+
+            const promptPayload: CountableChatPayload = { message: messageContent, messages: [] };
+            const completionPayload: CountableChatPayload = { messages: [{ role: 'assistant', content: completionContent }] };
+
+            const promptTokens = countTokens(tokenizerDeps, promptPayload, this.modelConfig);
+            const completionTokens = countTokens(tokenizerDeps, completionPayload, this.modelConfig);
 
             return {
                 role: 'assistant',
@@ -100,7 +107,17 @@ export class DummyAdapter {
 
         // 4. Simulate a context window error for oversized input
         const maxTokens = this.modelConfig.max_context_window_tokens || this.modelConfig.context_window_tokens;
-        const initialTokenCount = countTokensForMessages(request.messages || [{ role: 'user', content: request.message }], this.modelConfig);
+        const tokenizerDeps: CountTokensDeps = {
+            getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
+            countTokensAnthropic: (text: string) => (text ?? '').length,
+            logger: this.logger,
+        };
+        const narrowedMessages: Messages[] = (request.messages || [])
+            .filter((m) => (m.role === 'system' || m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string');
+        const initialPayload: CountableChatPayload = narrowedMessages.length > 0
+            ? { messages: narrowedMessages }
+            : { message: request.message, messages: [] };
+        const initialTokenCount = countTokens(tokenizerDeps, initialPayload, this.modelConfig);
 
         if (maxTokens && initialTokenCount > maxTokens) {
              this.logger.warn(`[DummyAdapter] Input tokens (${initialTokenCount}) exceed model limit (${maxTokens}). Simulating a context window error.`);
@@ -116,11 +133,16 @@ export class DummyAdapter {
         content: string,
         finish_reason: 'stop' | 'max_tokens'
     ): AdapterResponsePayload {
-        const promptMessages: Messages[] = request.messages || [{ role: 'user', content: request.message }];
-        const completionMessage: Messages = { role: 'assistant', content };
+        const tokenizerDeps: CountTokensDeps = {
+            getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
+            countTokensAnthropic: (text: string) => (text ?? '').length,
+            logger: this.logger,
+        };
+        const promptPayload: CountableChatPayload = { message: request.message, messages: [] };
+        const completionPayload: CountableChatPayload = { messages: [{ role: 'assistant', content }] };
 
-        const promptTokens = countTokensForMessages(promptMessages, this.modelConfig);
-        const completionTokens = countTokensForMessages([completionMessage], this.modelConfig);
+        const promptTokens = countTokens(tokenizerDeps, promptPayload, this.modelConfig);
+        const completionTokens = countTokens(tokenizerDeps, completionPayload, this.modelConfig);
 
         const tokenUsage = {
             prompt_tokens: promptTokens,

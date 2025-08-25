@@ -1,10 +1,9 @@
 import { stub, type Spy } from "jsr:@std/testing@0.225.1/mock";
 import { spy } from "jsr:@std/testing@0.225.1/mock";
-import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2";
 import type { ConnInfo } from "https://deno.land/std@0.177.0/http/server.ts";
-import type { Database, Json } from "../types_db.ts";
+import type { Database } from "../types_db.ts";
 import type {
-    AiProviderAdapter,
     AiProviderAdapterInstance,
     ChatApiRequest,
     AdapterResponsePayload,
@@ -24,12 +23,6 @@ import {
     type TokenWalletServiceMethodImplementations
 } from "../_shared/services/tokenWalletService.mock.ts";
 import { Logger } from "../_shared/logger.ts";
-import {
-  assertEquals,
-} from "jsr:@std/assert@0.225.3";
-import {
-  assertSpyCalls,
-} from "jsr:@std/testing@0.225.1/mock";
 
 // Re-exporting common testing utilities if needed by other test files
 export { assert, assertEquals, assertExists, assertObjectMatch } from "jsr:@std/assert@0.225.3";
@@ -92,9 +85,9 @@ export interface CreateTestDepsResult {
 }
 
 // Overrides for core dependencies, allowing for more granular control in specific tests
-export interface CoreDepsOverride extends Partial<Omit<ChatHandlerDeps, 'createSupabaseClient' | 'tokenWalletService' | 'getAiProviderAdapter' | 'countTokensForMessages' | 'logger' >> {
+export interface CoreDepsOverride extends Partial<Omit<ChatHandlerDeps, 'createSupabaseClient' | 'tokenWalletService' | 'getAiProviderAdapter' | 'countTokens' | 'logger' >> {
   getAiProviderAdapter?: ChatHandlerDeps['getAiProviderAdapter'];
-  countTokensForMessages?: ChatHandlerDeps['countTokensForMessages'];
+  countTokens?: ChatHandlerDeps['countTokens'];
   logger?: Partial<Logger>;
 }
 
@@ -103,7 +96,7 @@ export const createTestDeps = (
   supaConfig: MockSupabaseDataConfig = {},
   adapterSendMessageResult?: AdapterResponsePayload | Error,
   tokenWalletConfig?: TokenWalletServiceMethodImplementations,
-  countTokensFnOverride?: ChatHandlerDeps['countTokensForMessages'],
+  countTokensFnOverride?: ChatHandlerDeps['countTokens'],
   pDepOverrides?: CoreDepsOverride,
 ): CreateTestDepsResult => {
   const mockSupabaseClientSetup = createMockSupabaseClient(testUserId, supaConfig);
@@ -135,7 +128,7 @@ export const createTestDeps = (
 
   // Override token counting function if provided
   if (countTokensFnOverride) {
-    deps.countTokensForMessages = countTokensFnOverride;
+    deps.countTokens = countTokensFnOverride;
   }
 
   // Override logger if provided
@@ -145,7 +138,7 @@ export const createTestDeps = (
 
   // Override any other dependencies
   if (pDepOverrides) {
-    const { getAiProviderAdapter, countTokensForMessages, logger, ...rest } = pDepOverrides;
+    const { getAiProviderAdapter, countTokens, logger, ...rest } = pDepOverrides;
     Object.assign(deps, rest);
   }
 

@@ -105,7 +105,7 @@ This phase will prove that the token check logic is flawed and then repair it.
     *   `[✅]` 3.a. `[TEST-UNIT]` **Write Failing Test for Token Calculation:**
         *   `[✅]` 3.a.i. Add a new, independent test case to `supabase/functions/dialectic-worker/executeModelCallAndSave.test.ts` named `'should use source documents for token estimation before prompt assembly'`.
         *   `[✅]` 3.a.ii. Pass a short `renderedPrompt` but a `sourceDocuments` array with content large enough to exceed a mock token limit.
-        *   `[✅]` 3.a.iii. Spy on `deps.ragService` and `deps.countTokensForMessages`. Log the content and token count calculated by the spy.
+        *   `[✅]` 3.a.iii. Spy on `deps.ragService` and `deps.countTokens`. Log the content and token count calculated by the spy.
         *   `[✅]` 3.a.iv. Assert that `deps.ragService` **is called**.
         *   `[✅]` 3.a.v. **Execute the test and confirm it fails (RED).** The log output will visually confirm the check was performed on the wrong content.
     *   `[✅]` 3.b. `[REFACTOR]` **Implement the Fix:**
@@ -559,7 +559,7 @@ This phase ensures the fixes are validated at a higher level and are protected a
             *   `[ ]` 10.m.ii.1. `[TEST-UNIT]` **RED: Prove Flawed Signature:** In `continue.test.ts`, write a new test that attempts to call `handleContinuationLoop` by passing it a mock `PathHandlerContext` object. This will immediately fail the type-check, proving the current function signature is incorrect for our needs.
             *   `[ ]` 10.m.ii.2. `[BE]` **GREEN: Update Signatures:**
                 *   Refactor the `handleContinuationLoop` signature in `continue.ts` to accept two arguments: `context: PathHandlerContext` and the `initialApiRequest: ChatApiRequest`.
-                *   Inside the function, destructure all necessary dependencies (e.g., `aiProviderAdapter`, `logger`, `modelConfig`, `ragService`, `countTokensForMessages`) directly from the `context` object.
+                *   Inside the function, destructure all necessary dependencies (e.g., `aiProviderAdapter`, `logger`, `modelConfig`, `ragService`, `countTokens`) directly from the `context` object.
                 *   Update the call sites in `handleNormalPath.ts` and `handleDialecticPath.ts` to pass their `context` object and the `adapterChatRequestNormal` to `handleContinuationLoop`.
             *   `[ ]` 10.m.ii.3. `[TEST-UNIT]` **PROVE: Confirm Fix:** Rerun the test from the RED step, updating it as needed. It should now pass the type-check, confirming the signature has been successfully updated.
         *   `[ ]` 10.m.iii. `[REFACTOR]` **Implement Transactional, Alternating-Turn Loop**
@@ -577,13 +577,13 @@ This phase ensures the fixes are validated at a higher level and are protected a
             *   `[ ]` 10.m.iii.3. `[TEST-UNIT]` **PROVE: Confirm Fix:** Rerun the test from the RED step. Assert that `debitTokens` and the database `update` spy are now called multiple times (inside the loop) and that the history for the third call has the correct `[user, assistant, user, assistant, user]` structure.
         *   `[ ]` 10.m.iv. `[REFACTOR]` **Implement RAG-Based Context Trimming**
             *   `[ ]` 10.m.iv.1. `[TEST-UNIT]` **RED: Prove Context Overflow and Lack of RAG:** Write a new test in `continue.test.ts`.
-                *   Provide mock dependencies within a `PathHandlerContext`: a `countTokensForMessages` function that returns high token counts, a `modelConfig` with a low `provider_max_input_tokens` limit, and a spy on the `ragService.addDocument` method from the `deps` object.
+                *   Provide mock dependencies within a `PathHandlerContext`: a `countTokens` function that returns high token counts, a `modelConfig` with a low `provider_max_input_tokens` limit, and a spy on the `ragService.addDocument` method from the `deps` object.
                 *   Simulate a continuation long enough to exceed the token limit.
                 *   Assert two things: the `messages` array passed to the final `adapter.sendMessage` call is shorter than the full history, and the `ragService.addDocument` spy was called with the content of the trimmed-out assistant message. This test will fail because no trimming or RAG integration exists.
             *   `[ ]` 10.m.iv.2. `[BE]` **GREEN: Implement Trimming and RAG Logic:**
                 *   In `continue.ts`, at the beginning of the `while` loop, add a call to a new local helper function, `manageContextWindow`.
                 *   This function will:
-                    1.  Use the `deps.countTokensForMessages` function and `modelConfig` (both destructured from the `context` argument) to calculate the token count of the current `messages` array.
+                    1.  Use the `deps.countTokens` function and `modelConfig` (both destructured from the `context` argument) to calculate the token count of the current `messages` array.
                     2.  If the count exceeds `modelConfig.provider_max_input_tokens`, enter a `while` loop.
                     3.  Inside the loop, identify the oldest turn-pair (the first `assistant` message and the subsequent `user` message at indices 1 and 2).
                     4.  Call `await deps.ragService.addDocument()` with the content from the assistant message at index 1.

@@ -197,7 +197,7 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
       dbClient: dbClient as unknown as SupabaseClient<Database>,
       deps,
       authToken: 'auth-token',
-      job: createMockJob(testPayload), // A standard, non-continuation job
+      job: createMockJob({ ...testPayload, walletId: 'wallet-ghi' }), // Explicit wallet to satisfy fail-fast
       projectOwnerUserId: 'user-789',
       providerDetails: mockProviderData,
       promptConstructionPayload: {
@@ -253,6 +253,7 @@ Deno.test('executeModelCallAndSave - Continuation Handling', async (t) => {
         iteration: 1,
         stageSlug: 'test-stage',
         modelId: 'model-def',
+        walletId: 'wallet-ghi',
         // --- Properties to satisfy the type guard ---
         job_type: 'execute',
         prompt_template_name: 'test-prompt',

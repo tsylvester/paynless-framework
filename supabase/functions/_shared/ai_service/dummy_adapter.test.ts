@@ -5,7 +5,8 @@ import { DummyAdapter } from "./dummy_adapter.ts";
 import { testAdapterContract, type MockApi } from "./adapter_test_contract.ts";
 import type { AdapterResponsePayload, AiModelExtendedConfig, ChatApiRequest, ProviderModelInfo, Messages } from "../types.ts";
 import { MockLogger } from "../logger.mock.ts";
-import { countTokensForMessages } from "../utils/tokenizer_utils.ts";
+import { countTokens } from "../utils/tokenizer_utils.ts";
+import type { CountTokensDeps, CountableChatPayload } from "../types/tokenizer.types.ts";
 import { isTokenUsage } from "../utils/type_guards.ts";
 import { Tables } from "../../types_db.ts";
 import { isJson } from "../utils/type_guards.ts";
@@ -49,11 +50,29 @@ export const MOCK_PROVIDER: Tables<'ai_providers'> = {
 const mockDummyApi: MockApi = {
     sendMessage: async (request: ChatApiRequest, modelIdentifier?: string): Promise<AdapterResponsePayload> => {
         const responseContent = `Echo from ${modelIdentifier || 'dummy'}: ${request.message || 'No message'}`;
-        const promptMessages: Messages[] = request.messages || [{ role: 'user', content: request.message }];
-        const completionMessage: Messages = { role: 'assistant', content: responseContent };
-        
-        const promptTokens = countTokensForMessages(promptMessages, MOCK_MODEL_CONFIG);
-        const completionTokens = countTokensForMessages([completionMessage], MOCK_MODEL_CONFIG);
+
+        const buildTokenizerDeps = (): CountTokensDeps => ({
+            getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? "").map((_, i) => i) }),
+            countTokensAnthropic: (text: string) => (text ?? "").length,
+            logger: { warn: () => {}, error: () => {} },
+        });
+        const deps = buildTokenizerDeps();
+
+        const narrowedMessages: Messages[] = (request.messages || [])
+            .filter((m) => (m.role === 'system' || m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string');
+
+        const promptPayload: CountableChatPayload = {
+            systemInstruction: request.systemInstruction,
+            message: request.message,
+            messages: narrowedMessages,
+        };
+
+        const completionPayload: CountableChatPayload = {
+            messages: [{ role: 'assistant', content: responseContent }],
+        };
+
+        const promptTokens = countTokens(deps, promptPayload, MOCK_MODEL_CONFIG);
+        const completionTokens = countTokens(deps, completionPayload, MOCK_MODEL_CONFIG);
 
         return {
             role: 'assistant',
@@ -117,12 +136,20 @@ Deno.test("[DummyAdapter] Specific Behavior - Correctly calculates token usage",
     assertExists(result.token_usage);
     assert(isTokenUsage(result.token_usage), "Token usage should conform to the TokenUsage interface.");
 
-    const expectedPromptTokens = countTokensForMessages(
-        [{ role: 'user', content: request.message }],
+    const buildTokenizerDeps = (): CountTokensDeps => ({
+        getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? "").map((_, i) => i) }),
+        countTokensAnthropic: (text: string) => (text ?? "").length,
+        logger: { warn: () => {}, error: () => {} },
+    });
+    const deps = buildTokenizerDeps();
+    const expectedPromptTokens = countTokens(
+        deps,
+        { message: request.message, messages: [] },
         MOCK_MODEL_CONFIG
     );
-    const expectedCompletionTokens = countTokensForMessages(
-        [{ role: 'assistant', content: result.content }],
+    const expectedCompletionTokens = countTokens(
+        deps,
+        { messages: [{ role: 'assistant', content: result.content }] },
         MOCK_MODEL_CONFIG
     );
     const expectedTotalTokens = expectedPromptTokens + expectedCompletionTokens;

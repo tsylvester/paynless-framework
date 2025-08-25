@@ -99,7 +99,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[BE]` `[REFACTOR]` **Action:** In `supabase/functions/chat/index.ts`, locate the part of `handlePostRequest` where the final `adapterChatRequestNormal` object has been constructed, but *before* the `if (continue_until_complete)` block.
     *   **Action:**
         1.  Retrieve the `provider_max_input_tokens` value from the `config` object of the fetched provider details.
-        2.  Use the existing tokenizer utility (e.g., `countTokensForMessages`) to calculate the total token count of the `adapterChatRequestNormal.messages` array.
+        2.  Use the existing tokenizer utility (e.g., `countTokens`) to calculate the total token count of the `adapterChatRequestNormal.messages` array.
         3.  If the calculated token count exceeds `provider_max_input_tokens`, immediately return a specific error (e.g., `{ error: { message: "Input prompt exceeds the model's maximum context size.", status: 413 } }`) without proceeding to call the AI adapter.
 *   `[✅]` 4.B.b. **Add New Test Case for Proactive Validation:**
     *   `[TEST-UNIT]` **Action:** In the `chat/index.sendMessage.test.ts` suite (or other relevant test file), create a new test case where the input message history is intentionally larger than the `provider_max_input_tokens` set in the mock provider data.

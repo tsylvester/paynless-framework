@@ -2,9 +2,11 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { GoogleAdapter } from '../_shared/ai_service/google_adapter.ts';
 import type { ProviderModelInfo, ILogger, AiModelExtendedConfig } from '../_shared/types.ts';
+import type { Tables } from '../types_db.ts';
 import { getCurrentDbModels, type SyncResult, type DbAiProvider } from './index.ts';
 import { ConfigAssembler } from './config_assembler.ts';
 import { diffAndPrepareDbOps, executeDbOps } from './diffAndPrepareDbOps.ts';
+import { isJson } from "../_shared/utils/type_guards.ts";
 
 const PROVIDER_NAME = 'google';
 
@@ -39,6 +41,8 @@ export const INTERNAL_MODEL_MAP: Map<string, Partial<AiModelExtendedConfig>> = n
         ...value,
         tokenization_strategy: {
             type: 'google_gemini_tokenizer',
+            // Apply default chars_per_token_ratio for chat models; will be ignored by embeddings
+            chars_per_token_ratio: 4.0,
         }
     };
     return [key, config];
@@ -62,7 +66,31 @@ export const defaultSyncGoogleDeps: SyncGoogleDeps = {
       warn: (...args: unknown[]) => console.warn('[SyncGoogle:GoogleAdapter]', ...args),
       error: (...args: unknown[]) => console.error('[SyncGoogle:GoogleAdapter]', ...args),
     };
-    const adapter = new GoogleAdapter(apiKey, logger, {} as AiModelExtendedConfig);
+    // Construct a minimal provider shape required by the adapter constructor.
+    // The adapter validates provider.config via isAiModelExtendedConfig, so provide a minimal valid config.
+    const minimalConfig: AiModelExtendedConfig = {
+      api_identifier: 'google-gemini-2.5-pro',
+      input_token_cost_rate: 0,
+      output_token_cost_rate: 0,
+      tokenization_strategy: { type: 'google_gemini_tokenizer' },
+    };
+    if(!isJson(minimalConfig)) {
+      throw new Error('minimalConfig is not a valid JSON object');
+    }
+    const dummyProvider: Tables<'ai_providers'> = {
+      id: 'sync-google-dummy',
+      api_identifier: 'google-gemini-2.5-pro',
+      name: 'Google Sync Dummy',
+      description: null,
+      is_active: true,
+      provider: 'google',
+      config: minimalConfig,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_default_embedding: false,
+      is_enabled: true,
+    };
+    const adapter = new GoogleAdapter(dummyProvider, apiKey, logger);
     const { models, raw } = await adapter.listModels(true);
     return { models, raw };
   },

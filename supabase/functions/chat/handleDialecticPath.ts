@@ -3,10 +3,13 @@ import {
     ChatApiRequest,
     ChatHandlerSuccessResponse,
     ChatMessageRow,
+    Messages,
 } from "../_shared/types.ts";
 import { getMaxOutputTokens } from "../_shared/utils/affordability_utils.ts";
 import { TokenUsageSchema } from "./zodSchema.ts";
 import { PathHandlerContext } from "./prepareChatContext.ts";
+import type { CountTokensDeps } from "../_shared/types/tokenizer.types.ts";
+import { isApiChatMessage } from "../_shared/utils/type_guards.ts";
 
 export async function handleDialecticPath(
     context: PathHandlerContext
@@ -22,7 +25,7 @@ export async function handleDialecticPath(
         apiKey,
         providerApiIdentifier,
     } = context;
-    const { logger, tokenWalletService, countTokensForMessages: countTokensFn, debitTokens } = deps;
+    const { logger, tokenWalletService, countTokens: countTokensFn, debitTokens } = deps;
     const {
         message: userMessageContent,
         providerId: requestProviderId,
@@ -34,10 +37,35 @@ export async function handleDialecticPath(
     
     logger.info('Dialectic request processing (no rewind).');
 
-    // Use requestBody.messages for both token counting and forwarding when provided; otherwise synthesize from message
-    const messagesForProvider: {role: 'user' | 'assistant' | 'system', content: string}[] = Array.isArray(requestBody.messages) && requestBody.messages.length > 0
-        ? requestBody.messages
+    const tokenizerDeps: CountTokensDeps = {
+        getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
+        countTokensAnthropic: (text: string) => (text ?? '').length,
+        logger: logger,
+    };
+
+    // Build candidate messages, then narrow to allowed roles/content using type guards (no casting)
+    const candidateMessages: Messages[] = Array.isArray(requestBody.messages) && requestBody.messages.length > 0
+        ? requestBody.messages.map((m) => ({ role: m.role, content: m.content }))
         : [{ role: 'user', content: userMessageContent }];
+    const effectiveMessages: { role: 'system' | 'user' | 'assistant'; content: string }[] = candidateMessages
+        .filter((m): m is { role: 'system' | 'user' | 'assistant'; content: string } => isApiChatMessage(m) && typeof m.content === 'string');
+    if (effectiveMessages.length === 0) {
+        effectiveMessages.push({ role: 'user', content: userMessageContent });
+    }
+
+    // Construct a single ChatApiRequest instance up-front and use it to drive both sizing and send
+    let adapterChatRequestNormal: ChatApiRequest = {
+        message: userMessageContent,
+        messages: effectiveMessages,
+        providerId: requestProviderId,
+        promptId: requestPromptId,
+        chatId: undefined,
+        organizationId: organizationId,
+        continue_until_complete: continue_until_complete,
+        systemInstruction: requestBody.systemInstruction,
+        resourceDocuments: requestBody.resourceDocuments,
+        isDialectic: true,
+    };
 
     let maxAllowedOutputTokens: number;
     try {
@@ -45,7 +73,16 @@ export async function handleDialecticPath(
             logger.error('Critical: modelConfig is null before token counting (normal path).', { providerId: requestProviderId, apiIdentifier: providerApiIdentifier });
             return { error: { message: 'Internal server error: Provider configuration missing for token calculation.', status: 500 } };
         }
-        const tokensRequiredForNormal = await countTokensFn(messagesForProvider, modelConfig);
+        const tokensRequiredForNormal = await countTokensFn(
+            tokenizerDeps,
+            {
+                systemInstruction: adapterChatRequestNormal.systemInstruction,
+                message: adapterChatRequestNormal.message,
+                messages: adapterChatRequestNormal.messages,
+                resourceDocuments: adapterChatRequestNormal.resourceDocuments,
+            },
+            modelConfig,
+        );
         logger.info('Estimated tokens for normal prompt.', { tokensRequiredForNormal, model: providerApiIdentifier });
 
         if (modelConfig.provider_max_input_tokens && tokensRequiredForNormal > modelConfig.provider_max_input_tokens) {
@@ -79,6 +116,20 @@ export async function handleDialecticPath(
         return { error: { message: `Internal server error during token calculation: ${errorMessage}`, status: 500 } };
     }
 
+    // Wallet preflight: require wallet on request and ensure it matches context
+    if (!requestBody.walletId || typeof requestBody.walletId !== 'string') {
+        logger.warn('Dialectic path preflight failed: missing walletId on request body.');
+        return { error: { message: 'Wallet required for chat operation.', status: 400 } };
+    }
+    if (!wallet || !wallet.walletId) {
+        logger.error('Dialectic path preflight failed: wallet context missing.');
+        return { error: { message: 'Internal server error: Wallet context missing.', status: 500 } };
+    }
+    if (requestBody.walletId !== wallet.walletId) {
+        logger.warn('Dialectic path preflight failed: mismatched walletId between request and context.', { requestWalletId: requestBody.walletId, contextWalletId: wallet.walletId });
+        return { error: { message: 'Requested wallet does not match active wallet.', status: 403 } };
+    }
+
     logger.info(`Processing with real provider: ${providerApiIdentifier}`);
     if (!apiKey) {
         logger.error(`Critical: API key for ${providerApiIdentifier} was not resolved before normal path adapter call.`);
@@ -87,17 +138,10 @@ export async function handleDialecticPath(
 
     let adapterResponsePayload: AdapterResponsePayload;
     try {
-            const adapterChatRequestNormal: ChatApiRequest = {
-                message: userMessageContent,
-                messages: messagesForProvider,
-                providerId: requestProviderId,
-                promptId: requestPromptId,
-                chatId: undefined,
-                organizationId: organizationId,
-                max_tokens_to_generate: Math.min(max_tokens_to_generate || Infinity, maxAllowedOutputTokens),
-                continue_until_complete: continue_until_complete,
-                systemInstruction: requestBody.systemInstruction,
-            };
+        adapterChatRequestNormal = {
+            ...adapterChatRequestNormal,
+            max_tokens_to_generate: Math.min(max_tokens_to_generate || Infinity, maxAllowedOutputTokens),
+        };
 
         adapterResponsePayload = await aiProviderAdapter.sendMessage(
             adapterChatRequestNormal,

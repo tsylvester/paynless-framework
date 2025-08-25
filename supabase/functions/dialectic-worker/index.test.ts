@@ -2,7 +2,7 @@ import { assertEquals, assertExists, assert } from 'https://deno.land/std@0.170.
 import { spy, stub } from 'jsr:@std/testing@0.225.1/mock';
 import type { Database, Json } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
-import { handleJob } from './index.ts';
+import { handleJob, createDialecticWorkerDeps } from './index.ts';
 import * as processJobModule from './processJob.ts';
 import { MockLogger } from '../_shared/logger.mock.ts';
 import type { IDialecticJobDeps, SeedPromptData, IContinueJobResult } from '../dialectic-service/dialectic.interface.ts';
@@ -13,7 +13,7 @@ import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { createMockJobProcessors } from '../_shared/dialectic.mock.ts';
 import { NotificationService } from '../_shared/utils/notification.service.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
-import { FactoryDependencies } from '../_shared/types.ts';
+import { FactoryDependencies, type AiModelExtendedConfig } from '../_shared/types.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -582,4 +582,54 @@ Deno.test('handleJob - validates payload correctly and extracts user info', asyn
         spies.planComplexStage.restore();
         mockSupabase.clearAllStubs?.();
     }
+});
+
+// --- Step 36 RED: worker deps factory exists and injects wallet service for compression path ---
+Deno.test('createDialecticWorkerDeps: provides wallet and compression deps', async () => {
+    // Provide a mock default embedding provider row for the factory's DB fetch
+    const embeddingConfig: AiModelExtendedConfig = {
+        api_identifier: 'openai-text-embedding-3-small',
+        input_token_cost_rate: 1,
+        output_token_cost_rate: 1,
+        tokenization_strategy: {
+            type: 'tiktoken',
+            tiktoken_encoding_name: 'cl100k_base',
+            is_chatml_model: false,
+            api_identifier_for_tokenization: 'text-embedding-3-small',
+        },
+    };
+    const mockProviderRow = {
+        id: 'prov-openai-embed-1',
+        api_identifier: 'openai-text-embedding-3-small',
+        name: 'OpenAI Embedding',
+        description: 'Mock embedding model',
+        is_active: true,
+        provider: 'openai',
+        config: embeddingConfig,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_default_embedding: true,
+        is_enabled: true,
+    };
+
+    const { client } = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'ai_providers': {
+                select: { data: [mockProviderRow], error: null },
+            },
+        },
+    });
+
+    const deps = await createDialecticWorkerDeps(client as unknown as SupabaseClient<Database>);
+
+    // Core deps wiring
+    assertExists(deps.ragService, 'ragService should be present');
+    assertExists(deps.indexingService, 'indexingService should be present');
+    assertExists(deps.embeddingClient, 'embeddingClient should be present');
+    assertExists(deps.promptAssembler, 'promptAssembler should be present');
+    assertEquals(typeof deps.countTokens, 'function');
+    assertEquals(typeof deps.executeModelCallAndSave, 'function');
+
+    // Wallet service must be injected
+    assertExists(deps.tokenWalletService, 'tokenWalletService should be present');
 });

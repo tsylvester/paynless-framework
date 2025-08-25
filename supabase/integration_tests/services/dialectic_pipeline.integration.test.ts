@@ -42,7 +42,7 @@ import { UploadContext, FileType, IFileManager } from "../../functions/_shared/t
 import { RagService } from "../../functions/_shared/services/rag_service.ts";
 import { IndexingService, LangchainTextSplitter, OpenAIEmbeddingClient } from "../../functions/_shared/services/indexing_service.ts";
 import { getGranularityPlanner } from '../../functions/dialectic-worker/strategies/granularity.strategies.ts';
-import { countTokensForMessages } from '../../functions/_shared/utils/tokenizer_utils.ts';
+import { countTokens } from '../../functions/_shared/utils/tokenizer_utils.ts';
 import { getAiProviderConfig } from '../../functions/dialectic-worker/processComplexJob.ts';
 import { PromptAssembler } from "../../functions/_shared/prompt-assembler.ts";
 import { DummyAdapter } from "../../functions/_shared/ai_service/dummy_adapter.ts";
@@ -286,7 +286,7 @@ Deno.test(
             embeddingClient: embeddingClient,
             planComplexStage,
             getGranularityPlanner,
-            countTokens: countTokensForMessages,
+            countTokens: countTokens,
             getAiProviderConfig,
             promptAssembler: new PromptAssembler(adminClient),
         };

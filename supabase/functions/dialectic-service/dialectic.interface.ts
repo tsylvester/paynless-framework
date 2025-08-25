@@ -17,6 +17,7 @@ import type { NotificationServiceType } from '../_shared/types/notification.serv
 import type { IIndexingService, IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
 import type { IRagService } from '../_shared/services/rag_service.interface.ts';
 import type { Messages, AiModelExtendedConfig, ChatApiRequest } from '../_shared/types.ts';
+import type { CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
 import type { IPromptAssembler } from '../_shared/prompt-assembler.interface.ts';
 import type { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
 import type { debitTokens } from '../chat/debitTokens.ts';
@@ -768,7 +769,7 @@ export interface IDialecticJobDeps extends GenerateContributionsDeps {
       ) => Promise<(DialecticJobRow)[]>;
   getGranularityPlanner?: (strategyId: string) => GranularityPlannerFn | undefined;
   ragService?: IRagService;
-  countTokens?: (messages: Messages[], modelConfig: AiModelExtendedConfig) => number;
+  countTokens?: (deps: CountTokensDeps, payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number;
   getAiProviderConfig?: (dbClient: SupabaseClient<Database>, modelId: string) => Promise<AiModelExtendedConfig>;
   indexingService?: IIndexingService;
   embeddingClient?: IEmbeddingClient;

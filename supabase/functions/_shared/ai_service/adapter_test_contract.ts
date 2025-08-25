@@ -11,7 +11,7 @@
  * 3. Within that block, create mock data, stubs, and a mock API handler.
  * 4. `await` this function, passing the test context `t`, the Adapter class, the mock API, and a valid config.
  */
-import { assert, assertEquals, assertExists, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { spy, stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import type { AiProviderAdapter, ChatApiRequest, AdapterResponsePayload, ProviderModelInfo } from '../types.ts';
 import { MockLogger } from '../logger.mock.ts';
@@ -67,6 +67,7 @@ export async function testAdapterContract(
         const sendMessageSpy = spy(mockApi, 'sendMessage');
         try {
             const adapter = new AdapterClass(provider, MOCK_API_KEY, MOCK_LOGGER);
+            const snapshot = structuredClone(MOCK_CHAT_REQUEST);
             const result = await adapter.sendMessage(MOCK_CHAT_REQUEST, modelId);
             
             assertEquals(sendMessageSpy.calls.length, 1, "sendMessage should be called once on the mock API.");
@@ -74,6 +75,37 @@ export async function testAdapterContract(
             assertEquals(result.role, 'assistant');
             assertExists(result.content);
             assertEquals(result.ai_provider_id, MOCK_CHAT_REQUEST.providerId);
+
+            // Pass-through by reference: adapter must forward the exact same object instance
+            const forwarded = sendMessageSpy.calls[0].args[0];
+            assertStrictEquals(forwarded, MOCK_CHAT_REQUEST);
+
+            // Non-mutation: adapter must not mutate the request object
+            assertEquals(MOCK_CHAT_REQUEST, snapshot, 'Adapter must not modify the original ChatApiRequest object');
+        } finally {
+            sendMessageSpy.restore();
+        }
+    });
+
+    await t.step(`[Contract] ${AdapterClass.name} - sendMessage: request is not mutated and no defaults injected`, async () => {
+        const sendMessageSpy = spy(mockApi, 'sendMessage');
+        try {
+            const adapter = new AdapterClass(provider, MOCK_API_KEY, MOCK_LOGGER);
+            const original: ChatApiRequest = {
+                message: 'Hello, world! (immutability check)',
+                providerId: 'provider-uuid-test',
+                promptId: 'prompt-uuid-test',
+                messages: [ { role: 'user', content: 'u1' }, { role: 'assistant', content: 'a1' } ],
+                resourceDocuments: [ { id: 'doc-1', content: 'D1' } ],
+            };
+            const snapshot = structuredClone(original);
+
+            await adapter.sendMessage(original, modelId);
+
+            assertEquals(sendMessageSpy.calls.length, 1);
+            // Confirm adapter forwarded the same object and left it unchanged
+            assertStrictEquals(sendMessageSpy.calls[0].args[0], original);
+            assertEquals(original, snapshot, 'Adapter must not inject defaults or alter fields on ChatApiRequest');
         } finally {
             sendMessageSpy.restore();
         }

@@ -11,6 +11,8 @@ import { handleContinuationLoop } from "./continue.ts";
 import { getMaxOutputTokens } from "../_shared/utils/affordability_utils.ts";
 import { TokenUsageSchema } from "./zodSchema.ts";
 import { PathHandlerContext } from "./prepareChatContext.ts";
+import type { CountTokensDeps } from "../_shared/types/tokenizer.types.ts";
+import { isApiChatMessage } from "../_shared/utils/type_guards.ts";
 
 export async function handleNormalPath(
     context: PathHandlerContext
@@ -28,7 +30,7 @@ export async function handleNormalPath(
         apiKey,
         providerApiIdentifier,
     } = context;
-    const { logger, tokenWalletService, countTokensForMessages: countTokensFn } = deps;
+    const { logger, tokenWalletService, countTokens: countTokensFn } = deps;
     const {
         message: userMessageContent,
         providerId: requestProviderId,
@@ -102,13 +104,31 @@ export async function handleNormalPath(
         return { error: { message: `Failed to fetch message history: ${historyFetchError.message}`, status: 500 } };
     }
 
+    const tokenizerDeps: CountTokensDeps = {
+        getEncoding: (name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
+        countTokensAnthropic: (text: string) => (text ?? '').length,
+        logger: logger,
+    };
+
+    // Narrow messages to allowed roles/content (exclude 'function' and non-string content)
+    const effectiveMessages: { role: 'system' | 'user' | 'assistant'; content: string }[] = (messagesForProvider || [])
+        .filter((m): m is { role: 'system' | 'user' | 'assistant'; content: string } => isApiChatMessage(m) && typeof m.content === 'string');
+    if (effectiveMessages.length === 0) {
+        effectiveMessages.push({ role: 'user', content: userMessageContent });
+    }
+
     let maxAllowedOutputTokens: number;
     try {
         if (!modelConfig) {
             logger.error('Critical: modelConfig is null before token counting (normal path).', { providerId: requestProviderId, apiIdentifier: providerApiIdentifier });
             return { error: { message: 'Internal server error: Provider configuration missing for token calculation.', status: 500 } };
         }
-        const tokensRequiredForNormal = await countTokensFn(messagesForProvider, modelConfig);
+        const tokensRequiredForNormal = await countTokensFn(tokenizerDeps, {
+            systemInstruction: actualSystemPromptText || undefined,
+            message: userMessageContent,
+            messages: effectiveMessages,
+            resourceDocuments: requestBody.resourceDocuments,
+        }, modelConfig);
         logger.info('Estimated tokens for normal prompt.', { tokensRequiredForNormal, model: providerApiIdentifier });
 
         if (modelConfig.provider_max_input_tokens && tokensRequiredForNormal > modelConfig.provider_max_input_tokens) {
@@ -152,7 +172,7 @@ export async function handleNormalPath(
     try {
             const adapterChatRequestNormal: ChatApiRequest = {
             message: userMessageContent, 
-            messages: messagesForProvider, 
+            messages: effectiveMessages, 
             providerId: requestProviderId,
             promptId: requestPromptId, 
             chatId: currentChatId,

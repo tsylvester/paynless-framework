@@ -172,7 +172,7 @@ This step implements a hybrid, two-layer defense mechanism to manage model conte
     *   **Logic:**
         1.  **Location:** The new logic will be placed after the `validSourceDocuments` array is populated.
         2.  **Token Estimation:**
-            *   Import `countTokensForMessages` from `supabase/functions/_shared/utils/tokenizer_utils.ts`.
+            *   Import `countTokens` from `supabase/functions/_shared/utils/tokenizer_utils.ts`.
             *   Fetch the `ai_providers` record for the `parentJob.payload.model_id` to get its `max_input_tokens` and `tokenization_strategy`.
             *   Map the `validSourceDocuments` to the `MessageForTokenCounting` format (`[{ role: 'user', content: doc.content }]`).
             *   Calculate the `estimatedTokens` for the entire collection of documents.
@@ -194,7 +194,7 @@ This step implements a hybrid, two-layer defense mechanism to manage model conte
     *   **Logic:**
         1.  **Location:** The new logic will be placed immediately before the call to `deps.callUnifiedAIModel`.
         2.  **Token Calculation:**
-            *   Import `countTokensForMessages` from `supabase/functions/_shared/utils/tokenizer_utils.ts`.
+            *   Import `countTokens` from `supabase/functions/_shared/utils/tokenizer_utils.ts`.
             *   Construct the `MessageForTokenCounting` array from the `renderedPrompt.content` and `previousContent`.
             *   Calculate the `finalTokenCount` using the `providerDetails` (which is an `AiModelExtendedConfig`).
         3.  **Validation:**
@@ -742,11 +742,11 @@ This section refactors the RAG pipeline to be a dynamic, on-demand "context comp
         *   **Action:** Create a mock for the `RagService` that can be spied on.
         *   **Action:** Modify mocks for `gatherInputsForStage` to return an array of `SourceDocument` objects (a new internal type defined below), not a single string.
         *   **Test Case 1 (Context Under Limit):**
-            *   **Setup:** Mock `gatherInputsForStage` to return a small array of `SourceDocument`s. Mock `countTokensForMessages` to return a value below the token limit.
+            *   **Setup:** Mock `gatherInputsForStage` to return a small array of `SourceDocument`s. Mock `countTokens` to return a value below the token limit.
             *   **Execution:** Call `gatherContext`.
             *   **Assertion:** Assert that `ragService.getContextForModel` was **NOT** called. Assert that the `dynamicContextVariables` are correctly formatted by combining the individual `SourceDocument` objects.
         *   **Test Case 2 (Context Over Limit):**
-            *   **Setup:** Mock `gatherInputsForStage` to return a large array of `SourceDocument`s. Mock `countTokensForMessages` to return a value exceeding the `minTokenLimit`. Provide the mock `RagService`.
+            *   **Setup:** Mock `gatherInputsForStage` to return a large array of `SourceDocument`s. Mock `countTokens` to return a value exceeding the `minTokenLimit`. Provide the mock `RagService`.
             *   **Execution:** Call `gatherContext`.
             *   **Assertion:** Assert that `ragService.getContextForModel` **WAS** called exactly once with an array of `IRagSourceDocument` objects, preserving the individuality of each source. Assert that the returned `dynamicContextVariables.prior_stage_ai_outputs` contains the compressed string from the mock RAG service.
     *   `[BE]` `[REFACTOR]` **(GREEN)** **Step 1: Refactor `gatherInputsForStage` to Return Individual Documents:**

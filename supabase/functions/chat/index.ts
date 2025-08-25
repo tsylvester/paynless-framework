@@ -17,7 +17,7 @@ import type {
 } from '../_shared/types.ts';
 import { logger } from '../_shared/logger.ts';
 import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
-import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
+import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
 import { ChatApiRequestSchema } from './zodSchema.ts';
 import { handlePostRequest } from './handlePostRequest.ts';
 import { prepareChatContext } from './prepareChatContext.ts';
@@ -183,7 +183,7 @@ export const defaultDeps: ChatHandlerDeps = {
     },
     logger: logger,
     tokenWalletService: undefined,
-    countTokensForMessages: countTokensForMessages,
+    countTokens: countTokens,
     prepareChatContext: prepareChatContext,
     handleNormalPath: handleNormalPath,
     handleRewindPath: handleRewindPath,

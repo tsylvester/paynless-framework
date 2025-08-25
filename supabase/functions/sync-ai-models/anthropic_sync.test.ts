@@ -1,11 +1,14 @@
 // supabase/functions/sync-ai-models/anthropic_sync.test.ts
 import { testSyncContract, type MockProviderData } from "./sync_test_contract.ts";
-import { syncAnthropicModels, INTERNAL_MODEL_MAP } from "./anthropic_sync.ts";
+import { syncAnthropicModels, INTERNAL_MODEL_MAP, type SyncAnthropicDeps } from "./anthropic_sync.ts";
 import { type DbAiProvider } from "./index.ts";
 import type { AiModelExtendedConfig, FinalAppModelConfig } from "../_shared/types.ts";
 import { isJson } from "../_shared/utils/type_guards.ts";
-import { assert, assertEquals } from "jsr:@std/assert@0.225.3";
+import { assert, assertEquals, assertExists } from "jsr:@std/assert@0.225.3";
 import { AiModelExtendedConfigSchema } from "../chat/zodSchema.ts";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { Database } from "../types_db.ts";
+import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 
 const PROVIDER_NAME = 'anthropic';
 
@@ -94,7 +97,70 @@ Deno.test("syncAnthropicModels", {
     // Run the standardized test contract
     await testSyncContract(t, syncAnthropicModels, mockAnthropicData, PROVIDER_NAME);
 
-    // No provider-specific tests are needed for Anthropic at this time.
+    await t.step(`[Provider-Specific] ${PROVIDER_NAME}: assembled configs use official tokenizer with correct model`, async () => {
+        const mockApiKey = "test-api-key";
+        const mockDeps: SyncAnthropicDeps = {
+            listProviderModels: async (_apiKey: string) => ({
+                models: [
+                    { api_identifier: "anthropic-claude-3.5-sonnet-20240620", name: "Claude 3.5 Sonnet" },
+                ],
+                raw: {},
+            }),
+            getCurrentDbModels: async (_client: SupabaseClient<Database>, _provider: string) => [],
+            log: () => {},
+            error: () => {},
+        };
+
+        const { client: mockClient, spies } = createMockSupabaseClient();
+
+        await syncAnthropicModels(mockClient as unknown as SupabaseClient<Database>, mockApiKey, mockDeps);
+
+        const insertSpy = spies.fromSpy.calls[0]?.returned.insert;
+        assertExists(insertSpy);
+        const insertArgs = insertSpy.calls[0].args[0];
+        assertEquals(insertArgs.length, 1);
+
+        const modelConfig: AiModelExtendedConfig = insertArgs[0].config;
+        assert(isJson(modelConfig));
+        assertExists(modelConfig.tokenization_strategy);
+        assertEquals(modelConfig.tokenization_strategy.type, 'anthropic_tokenizer');
+        if (modelConfig.tokenization_strategy.type === 'anthropic_tokenizer') {
+            assertEquals(modelConfig.tokenization_strategy.model, 'claude-3.5-sonnet-20240620');
+        }
+    });
+
+    await t.step(`[Provider-Specific] ${PROVIDER_NAME}: no rough_char_count for active chat models`, async () => {
+        const mockApiKey = "test-api-key";
+        const mockDeps: SyncAnthropicDeps = {
+            listProviderModels: async (_apiKey: string) => ({
+                models: [
+                    { api_identifier: "anthropic-claude-3.5-sonnet-20240620", name: "Claude 3.5 Sonnet" },
+                    { api_identifier: "anthropic-claude-3-haiku-20240307", name: "Claude 3 Haiku" },
+                ],
+                raw: {},
+            }),
+            getCurrentDbModels: async (_client: SupabaseClient<Database>, _provider: string) => [],
+            log: () => {},
+            error: () => {},
+        };
+
+        const { client: mockClient, spies } = createMockSupabaseClient(undefined, {
+            genericMockResults: { ai_providers: { insert: { data: [], error: null, count: 2 } } }
+        });
+
+        await syncAnthropicModels(mockClient as unknown as SupabaseClient<Database>, mockApiKey, mockDeps);
+
+        const insertSpy = spies.fromSpy.calls[0]?.returned.insert;
+        assertExists(insertSpy);
+        const insertArgs = insertSpy.calls[0].args[0];
+        assertEquals(insertArgs.length, 2);
+        for (const row of insertArgs) {
+            const cfg: AiModelExtendedConfig = row.config;
+            assert(isJson(cfg));
+            assertExists(cfg.tokenization_strategy);
+            assertEquals(cfg.tokenization_strategy.type !== 'rough_char_count', true);
+        }
+    });
 });
 
 Deno.test("'INTERNAL_MODEL_MAP should contain valid partial configs'", () => {

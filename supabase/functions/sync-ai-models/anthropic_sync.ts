@@ -2,9 +2,11 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { AnthropicAdapter } from '../_shared/ai_service/anthropic_adapter.ts';
 import type { ProviderModelInfo, ILogger, AiModelExtendedConfig } from '../_shared/types.ts';
+import type { Tables } from '../types_db.ts';
 import { getCurrentDbModels, type SyncResult, type DbAiProvider } from './index.ts';
 import { ConfigAssembler } from './config_assembler.ts';
 import { diffAndPrepareDbOps, executeDbOps } from './diffAndPrepareDbOps.ts';
+import { isJson } from "../_shared/utils/type_guards.ts";
 
 const PROVIDER_NAME = 'anthropic';
 
@@ -43,8 +45,30 @@ export const defaultSyncAnthropicDeps: SyncAnthropicDeps = {
       warn: (...args: unknown[]) => console.warn('[SyncAnthropic:AnthropicAdapter]', ...args),
       error: (...args: unknown[]) => console.error('[SyncAnthropic:AnthropicAdapter]', ...args),
     };
-    // The adapter needs a minimal config just to be instantiated.
-    const adapter = new AnthropicAdapter(apiKey, logger, {} as AiModelExtendedConfig);
+    // The adapter expects a provider row with a valid AiModelExtendedConfig.
+    const minimalConfig: AiModelExtendedConfig = {
+      api_identifier: 'anthropic-claude-3.5-sonnet-20240620',
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 1,
+      tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3.5-sonnet-20240620' },
+    };
+    if(!isJson(minimalConfig)) {
+      throw new Error('minimalConfig is not a valid JSON object');
+    }
+    const dummyProvider: Tables<'ai_providers'> = {
+      id: 'sync-anthropic-dummy',
+      api_identifier: 'anthropic-claude-3.5-sonnet-20240620',
+      name: 'Anthropic Sync Dummy',
+      description: null,
+      is_active: true,
+      provider: 'anthropic',
+      config: minimalConfig,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_default_embedding: false,
+      is_enabled: true,
+    };
+    const adapter = new AnthropicAdapter(dummyProvider, apiKey, logger);
     // We call with `getRaw: true` to get the detailed data for our logs.
     const { models, raw } = await adapter.listModels(true);
     return { models, raw };
@@ -86,7 +110,19 @@ export async function syncAnthropicModels(
         internalModelMap: INTERNAL_MODEL_MAP,
         logger,
     });
-    const assembledConfigs = await assembler.assemble();
+    let assembledConfigs = await assembler.assemble();
+
+    // Provider-specific hardening: ensure Anthropic chat models use official tokenizer strategy
+    assembledConfigs = assembledConfigs.map((cfg) => {
+      const modelId = cfg.api_identifier.replace(/^anthropic-/i, '');
+      const strat = cfg.config.tokenization_strategy;
+      if (strat.type !== 'anthropic_tokenizer') {
+        cfg.config.tokenization_strategy = { type: 'anthropic_tokenizer', model: modelId };
+      } else if (!strat.model || strat.model.trim().length === 0) {
+        cfg.config.tokenization_strategy = { type: 'anthropic_tokenizer', model: modelId };
+      }
+      return cfg;
+    });
 
     // 3. Diff and Prepare DB Operations
     const ops = diffAndPrepareDbOps(

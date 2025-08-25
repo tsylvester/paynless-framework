@@ -12,6 +12,7 @@ import { getMaxOutputTokens } from "../_shared/utils/affordability_utils.ts";
 import { TokenUsageSchema } from "./zodSchema.ts";
 import { isChatMessageRow, isChatMessageRole } from "../_shared/utils/type_guards.ts";
 import { PathHandlerContext } from "./prepareChatContext.ts";
+import type { CountTokensDeps } from "../_shared/types/tokenizer.types.ts";
 
 export async function handleRewindPath(
     context: PathHandlerContext
@@ -28,7 +29,7 @@ export async function handleRewindPath(
         finalSystemPromptIdForDb,
         apiKey,
     } = context;
-    const { logger, tokenWalletService, countTokensForMessages: countTokensFn } = deps;
+    const { logger, tokenWalletService, countTokens: countTokensFn } = deps;
     const {
         message: userMessageContent,
         providerId: requestProviderId,
@@ -92,9 +93,20 @@ export async function handleRewindPath(
             }))
     );
 
+    const tokenizerDeps: CountTokensDeps = {
+        getEncoding: (name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
+        countTokensAnthropic: (text: string) => (text ?? '').length,
+        logger: logger,
+    };
+
     let maxAllowedOutputTokens: number;
     try {
-        const tokensRequiredForRewind = await countTokensFn(messagesForAdapter, modelConfig);
+        const tokensRequiredForRewind = await countTokensFn(tokenizerDeps, {
+            systemInstruction: actualSystemPromptText || undefined,
+            message: userMessageContent,
+            messages: messagesForAdapter,
+            resourceDocuments: requestBody.resourceDocuments,
+        }, modelConfig);
         logger.info('Estimated tokens for rewind prompt.', { tokensRequiredForRewind, model: modelConfig.api_identifier });
 
         maxAllowedOutputTokens = getMaxOutputTokens(

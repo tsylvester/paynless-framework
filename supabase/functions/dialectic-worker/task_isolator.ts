@@ -15,6 +15,7 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { Database } from '../types_db.ts';
 import { createCanonicalPathParams } from './strategies/canonical_context_builder.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
+import type { CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
 
 async function findSourceDocuments(
     dbClient: SupabaseClient<Database>,
@@ -125,7 +126,13 @@ export async function planComplexStage(
     }
 
     const messages: Messages[] = sourceDocuments.map(doc => ({ role: 'user', content: doc.content }));
-    const estimatedTokens = deps.countTokens!(messages, modelConfig);
+    const tokenizerDeps: CountTokensDeps = {
+        getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
+        countTokensAnthropic: (text: string) => (text ?? '').length,
+        logger: deps.logger,
+    };
+    const countablePayload: CountableChatPayload = { messages };
+    const estimatedTokens = deps.countTokens!(tokenizerDeps, countablePayload, modelConfig);
 
     let childJobPayloads: DialecticExecuteJobPayload[];
 

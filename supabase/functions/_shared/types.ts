@@ -3,6 +3,7 @@
 // Types directly related to DB tables should be imported from ../types_db.ts
 import type { Database, Json } from '../types_db.ts';
 import type { handleCorsPreflightRequest, createSuccessResponse, createErrorResponse } from './cors-headers.ts';
+import type { CountTokensDeps, CountableChatPayload } from './types/tokenizer.types.ts';
 import { createClient, SupabaseClient, User } from "npm:@supabase/supabase-js";
 import { Tables } from '../types_db.ts';
 import type { ITokenWalletService } from './types/tokenWallet.types.ts';
@@ -11,7 +12,6 @@ import type { handleNormalPath } from '../chat/handleNormalPath.ts';
 import type { handleRewindPath } from '../chat/handleRewindPath.ts';
 import type { handleDialecticPath } from '../chat/handleDialecticPath.ts';
 import type { debitTokens } from '../chat/debitTokens.ts';
-import { CreateEmbeddingResponse } from 'npm:openai/resources/embeddings';
 import { SystemInstruction } from '../dialectic-service/dialectic.interface.ts';
 
 export type ChatInsert = Tables<'chats'>;
@@ -143,6 +143,11 @@ export interface EmailMarketingService {
 
 // --- AI Adapter/API Types (Not DB Tables) ---
 
+export type ResourceDocuments = {
+  id?: string;
+  content: string;
+}[];
+
 /**
  * Structure for sending a message via the 'chat' Edge Function.
  * Includes message history needed by adapters.
@@ -164,6 +169,7 @@ export interface ChatApiRequest {
     role: 'system' | 'user' | 'assistant';
     content: string;
   }[];
+  resourceDocuments?: ResourceDocuments;
   organizationId?: string; // uuid, optional for org chats - ADDED
   rewindFromMessageId?: string; // uuid, optional for rewinding - ADDED
   max_tokens_to_generate?: number; // ADDED: Max tokens for the AI to generate in its response
@@ -312,7 +318,7 @@ export interface ILogger {
   }
   
 
-// Interface for messages argument in CountTokensForMessagesFn
+// Interface for messages argument in countTokensFn
 // REMOVED Local Definition:
 // export interface MessageForTokenCounting {
 //   role: "system" | "user" | "assistant" | "function";
@@ -374,7 +380,7 @@ export interface AiModelExtendedConfig {
     | { type: 'tiktoken'; tiktoken_encoding_name: TiktokenEncoding; tiktoken_model_name_for_rules_fallback?: TiktokenModelForRules; is_chatml_model?: boolean; api_identifier_for_tokenization?: string; } 
     | { type: 'rough_char_count'; chars_per_token_ratio?: number; }
     | { type: 'anthropic_tokenizer'; model: string }
-    | { type: 'google_gemini_tokenizer'; } // Placeholder for Google's official tokenizer
+    | { type: 'google_gemini_tokenizer'; chars_per_token_ratio?: number } // Allow explicit ratio control for Gemini
     | { type: 'none'; }; // If token counting is not applicable or handled externally
 
   hard_cap_output_tokens?: number; // An absolute maximum for output tokens
@@ -413,8 +419,8 @@ export interface FinalAppModelConfig {
   config: AiModelExtendedConfig; 
 }
 
-// Signature for countTokensForMessages function (this might be an old definition)
-// export type CountTokensForMessagesFn = (
+// Signature for countTokens function (this might be an old definition)
+// export type countTokensFn = (
 //   messages: MessageForTokenCounting[], 
 //   modelName: string
 // ) => number;
@@ -430,7 +436,7 @@ export interface ChatHandlerDeps {
   verifyApiKey: (apiKey: string, providerName: string) => Promise<boolean>;
   logger: ILogger;
   tokenWalletService?: ITokenWalletService; 
-  countTokensForMessages: (messages: Messages[], modelConfig: AiModelExtendedConfig) => number; // Updated signature
+  countTokens: (deps: CountTokensDeps, payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number;
   prepareChatContext: typeof prepareChatContext;
   handleNormalPath: typeof handleNormalPath;
   handleRewindPath: typeof handleRewindPath;

@@ -31,9 +31,10 @@ import { RagService } from '../_shared/services/rag_service.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { IndexingService, LangchainTextSplitter, OpenAIEmbeddingClient } from '../_shared/services/indexing_service.ts';
 import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
-import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
+import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
 import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
 import { defaultProviderMap } from '../_shared/ai_service/factory.ts';
+import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -42,6 +43,80 @@ const processors: IJobProcessors = {
   processComplexJob,
   planComplexStage,
 };
+
+// Factory to create fully-wired worker dependencies
+export async function createDialecticWorkerDeps(
+  adminClient: SupabaseClient<Database>,
+): Promise<IDialecticJobDeps> {
+  const notificationService = new NotificationService(adminClient);
+
+  // Fetch the model provider for default embedding
+  const { data: modelProvider, error: modelConfigError } = await adminClient
+    .from('ai_providers')
+    .select('*')
+    .eq('is_default_embedding', true)
+    .single();
+
+  if (modelConfigError || !modelProvider) {
+    throw new Error('Failed to fetch model provider for the default OpenAI embedding model.');
+  }
+
+  const apiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is not set');
+  }
+
+  const fileManager = new FileManagerService(adminClient);
+
+  const embeddingAdapter = getAiProviderAdapter({
+    provider: modelProvider,
+    apiKey,
+    logger,
+    providerMap: defaultProviderMap,
+  });
+
+  if (!embeddingAdapter || !(embeddingAdapter instanceof OpenAiAdapter)) {
+    throw new Error('Failed to create a valid OpenAI adapter for the embedding client.');
+  }
+
+  const embeddingClient = new OpenAIEmbeddingClient(embeddingAdapter);
+  const textSplitter = new LangchainTextSplitter();
+  const indexingService = new IndexingService(adminClient, logger, textSplitter, embeddingClient);
+  const ragService = new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient });
+  const promptAssembler = new PromptAssembler(adminClient);
+
+  const deps: IDialecticJobDeps = {
+    logger,
+    getSeedPromptForStage,
+    continueJob,
+    retryJob,
+    callUnifiedAIModel,
+    downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
+    getExtensionFromMimeType,
+    randomUUID: crypto.randomUUID.bind(crypto),
+    fileManager: fileManager,
+    deleteFromStorage: (bucket: string, paths: string[]) => deleteFromStorage(adminClient, bucket, paths),
+    notificationService,
+    executeModelCallAndSave: (params: ExecuteModelCallAndSaveParams) =>
+      executeModelCallAndSave({
+        ...params,
+        compressionStrategy: getSortedCompressionCandidates,
+      }),
+    ragService,
+    countTokens: countTokens,
+    getAiProviderConfig: (dbClient: SupabaseClient<Database>, modelId: string) => getAiProviderConfig(dbClient, modelId),
+    getGranularityPlanner,
+    planComplexStage,
+    indexingService,
+    embeddingClient,
+    promptAssembler,
+    getAiProviderAdapter,
+    // Use admin client for both contexts in worker environment
+    tokenWalletService: new TokenWalletService(adminClient, adminClient),
+  };
+
+  return deps;
+}
 
 serve(async (req: Request) => {
   if (req.method !== 'POST') {
@@ -65,75 +140,7 @@ serve(async (req: Request) => {
     }
     //console.log('dialectic-worker serverless function called with auth token', authToken);
     const adminClient: SupabaseClient<Database> = createSupabaseAdminClient();
-    const notificationService = new NotificationService(adminClient);
-    
-    // Fetch the model config for the default embedding model
-    const { data: modelProvider, error: modelConfigError } = await adminClient
-        .from('ai_providers')
-        .select('*')
-        .eq('is_default_embedding', true)
-        .single();
-
-    if (modelConfigError || !modelProvider) {
-        throw new Error('Failed to fetch model provider for the default OpenAI embedding model.');
-    }
-    
-    const apiKey = Deno.env.get('OPENAI_API_KEY');
-    if (!apiKey) {
-      throw new Error('OPENAI_API_KEY is not set');
-    }
-
-    // --- Instantiate all services for the unified dependency object ---
-    const fileManager = new FileManagerService(adminClient);
-    
-    const embeddingAdapter = getAiProviderAdapter({
-      provider: modelProvider,
-      apiKey,
-      logger,
-      providerMap: defaultProviderMap,
-    });
-
-    if (!embeddingAdapter || !(embeddingAdapter instanceof OpenAiAdapter)) {
-      throw new Error('Failed to create a valid OpenAI adapter for the embedding client.');
-    }
-
-    const embeddingClient = new OpenAIEmbeddingClient(embeddingAdapter);
-    const textSplitter = new LangchainTextSplitter();
-    const indexingService = new IndexingService(adminClient, logger, textSplitter, embeddingClient);
-    const ragService = new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient });
-    const promptAssembler = new PromptAssembler(adminClient);
-
-    //console.log('dialectic-worker serverless function called with adminClient', adminClient);
-    //console.log('dialectic-worker serverless function called with req', req);
-    const deps: IDialecticJobDeps = {
-      logger,
-      getSeedPromptForStage,
-      continueJob,
-      retryJob,
-      callUnifiedAIModel,
-      downloadFromStorage: (bucket: string, path: string) => downloadFromStorage(adminClient, bucket, path),
-      getExtensionFromMimeType,
-      randomUUID: crypto.randomUUID.bind(crypto),
-      fileManager: fileManager,
-      deleteFromStorage: (bucket: string, paths: string[]) => deleteFromStorage(adminClient, bucket, paths),
-      notificationService,
-      executeModelCallAndSave: (params: ExecuteModelCallAndSaveParams) => 
-        executeModelCallAndSave({
-            ...params,
-            // NEW: Inject the real compression strategy implementation
-            compressionStrategy: getSortedCompressionCandidates,
-        }),
-      // Add the new dependencies for complex jobs
-      ragService,
-      countTokens: countTokensForMessages,
-      getAiProviderConfig: (dbClient: SupabaseClient<Database>, modelId: string) => getAiProviderConfig(dbClient, modelId),
-      getGranularityPlanner,
-      planComplexStage,
-      indexingService,
-      embeddingClient,
-      promptAssembler,
-      getAiProviderAdapter,
-    };
+    const deps = await createDialecticWorkerDeps(adminClient);
 
     // We must await the handler to ensure the serverless function
     // stays alive to complete the job processing.

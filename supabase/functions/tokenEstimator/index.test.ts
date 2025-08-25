@@ -1,8 +1,14 @@
 import { assertEquals, assertExists } from "https://deno.land/std@0.192.0/testing/asserts.ts";
 import { spy } from "https://deno.land/std@0.192.0/testing/mock.ts";
 import { handleTokenEstimatorRequest, type TokenEstimatorHandlerDeps } from "./index.ts";
-import type { AiModelExtendedConfig, MessageForTokenCounting } from '../_shared/types.ts';
+import type { AiModelExtendedConfig, Messages } from '../_shared/types.ts';
 import type { User } from "npm:@supabase/supabase-js@^2.43.4";
+import { countTokens } from "../_shared/utils/tokenizer_utils.ts";
+import type { CountTokensDeps, CountableChatPayload } from "../_shared/types/tokenizer.types.ts";
+import { countTokens as countTokensAnthropicLib } from "npm:@anthropic-ai/tokenizer@0.0.4";
+import { getEncoding } from "npm:js-tiktoken@1.0.7";
+import { isKnownTiktokenEncoding } from "../_shared/utils/type_guards.ts";
+import { MockLogger } from "../_shared/logger.mock.ts";
 
 // Mock user
 const MOCK_USER: User = {
@@ -103,11 +109,7 @@ const createMockDeps = (options: {
         }
         throw new Error(`Invalid encoding: ${encodingName}`);
       }),
-      logger: {
-        info: spy(),
-        warn: spy(),
-        error: spy()
-      } as any
+      logger: new MockLogger()
     }
   };
 };
@@ -155,7 +157,7 @@ Deno.test("tokenEstimator Handler Unit Tests", async (t) => {
 
   await t.step("should estimate tokens for ChatML messages", async () => {
     const deps = createMockDeps();
-    const messages: MessageForTokenCounting[] = [
+    const messages: Messages[] = [
       { role: 'system', content: 'You are a helpful assistant.' },
       { role: 'user', content: 'What is the capital of France?' },
       { role: 'assistant', content: 'The capital of France is Paris.' }
@@ -261,5 +263,91 @@ Deno.test("tokenEstimator Handler Unit Tests", async (t) => {
     assertEquals(response.status, 500);
     const data = await response.json();
     assertExists(data.error);
+  });
+
+  await t.step("alignment: OpenAI ChatML estimator matches tokenizer_utils", async () => {
+    const deps = createMockDeps();
+    // Use real tiktoken encoding in estimator to align with tokenizer_utils
+    deps.tokenEstimationDeps.createEncoding = (encodingName: string) => {
+      if (!isKnownTiktokenEncoding(encodingName)) {
+        throw new Error(`Invalid encoding for tiktoken: ${encodingName}`);
+      }
+      const enc = getEncoding(encodingName);
+      return { encode: (text: string) => ({ length: enc.encode(text).length }) };
+    };
+
+    const messages: Messages[] = [
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'user', content: 'Say hello to the world.' },
+      { role: 'assistant', content: 'Hello, world!' },
+    ];
+    const modelConfig: AiModelExtendedConfig = {
+      api_identifier: 'gpt-4',
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 1,
+      hard_cap_output_tokens: 4096,
+      tokenization_strategy: {
+        type: 'tiktoken',
+        tiktoken_encoding_name: 'cl100k_base',
+        is_chatml_model: true,
+        api_identifier_for_tokenization: 'gpt-4',
+      },
+    };
+
+    const req = createMockRequest("POST", { textOrMessages: messages, modelConfig }, true);
+    const res = await handleTokenEstimatorRequest(req, deps);
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    const estimated = body.estimatedTokens;
+    const tokenizerDeps: CountTokensDeps = {
+      getEncoding: (encodingName: string) => {
+        if (!isKnownTiktokenEncoding(encodingName)) {
+          throw new Error(`Invalid encoding for tiktoken: ${encodingName}`);
+        }
+        const enc = getEncoding(encodingName);
+        return { encode: (text: string) => Array.from(enc.encode(text)) };
+      },
+      countTokensAnthropic: (text: string) => (text ?? "").length,
+      logger: new MockLogger(),
+    };
+    const payload: CountableChatPayload = { messages };
+    const tokenizerCount = countTokens(tokenizerDeps, payload, modelConfig);
+    assertEquals(estimated, tokenizerCount);
+  });
+
+  await t.step("alignment: Anthropic estimator matches tokenizer_utils", async () => {
+    const deps = createMockDeps();
+    const messages: Messages[] = [
+      { role: 'user', content: 'Please summarize: The quick brown fox jumps over the lazy dog.' },
+      { role: 'assistant', content: 'A fox jumps over a dog.' },
+    ];
+    const modelConfig: AiModelExtendedConfig = {
+      api_identifier: 'claude-3.5-sonnet-20240620',
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 1,
+      hard_cap_output_tokens: 4096,
+      tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3.5-sonnet-20240620' },
+    };
+
+    const req = createMockRequest("POST", { textOrMessages: messages, modelConfig }, true);
+    const res = await handleTokenEstimatorRequest(req, deps);
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    const estimated = body.estimatedTokens;
+    const tokenizerDeps: CountTokensDeps = {
+      getEncoding: (encodingName: string) => {
+        if (!isKnownTiktokenEncoding(encodingName)) {
+          throw new Error(`Invalid encoding for tiktoken: ${encodingName}`);
+        }
+        const enc = getEncoding(encodingName);
+        return { encode: (text: string) => Array.from(enc.encode(text)) };
+      },
+      countTokensAnthropic: (text: string) => countTokensAnthropicLib(text),
+      logger: new MockLogger(),
+    };
+    const payload: CountableChatPayload = { messages };
+    const tokenizerCount = countTokens(tokenizerDeps, payload, modelConfig);
+    // Expect exact equality
+    assertEquals(estimated, tokenizerCount);
   });
 });

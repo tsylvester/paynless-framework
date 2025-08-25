@@ -9,6 +9,48 @@ The objective is to validate and prove that the entire dialectic work flow works
 ##Expected Outcome
 A complete, error free user experience. 
 
+## Instructions for Agent
+*   You MUST read the file every time you need to touch it. YOU CAN NOT RELY ON YOUR "MEMORY" of having read a file at some point previously. YOU MUST READ THE FILE FROM DISK EVERY TIME! 
+*   You MUST read the file BEFORE YOU TRY TO EDIT IT. Your edit WILL NOT APPLY if you do not read the file. 
+*   To edit a file, READ the file so you have its state. EDIT the file precisely, ONLY changing EXACTLY what needs modified and nothing else. Then READ the file to ensure the change applied. 
+*   DO NOT rewrite files or refactor functions unless explicitly instructed to. 
+*   DO NOT write to a file you aren't explicitly instructed to edit. 
+*   We use strict explicit typing everywhere, always. 
+    * There are only two exceptions: 
+        * We cannot strictly type Supabase clients
+        * When we test graceful error handling, we often need to pass in malformed objects that must be typecast to pass linting to permit testing of improperly shaped objects. 
+*   We only edit a SINGLE FILE at a time. We NEVER edit multiple files in one turn.
+*   We do EXACTLY what the instruction in the checklist step says without exception.
+*   If we cannot perform the step as described or make a discovery, we explain the problem or discovery and HALT! We DO NOT CONTINUE after we encounter a problem or a discovery.
+*   We DO NOT CONTINUE if we encounter a problem or make a discovery. We explain the problem or discovery then halt for user input. 
+*   If our discovery is that more files need to be edited, instead of editing a file, we generate a proposal for a checklist of instructions to insert into the work plan that explains everything required to update the codebase so that the invalid step can be resolved. 
+*   DO NOT RUMINATE ON HOW TO SOLVE A PROBLEM OR DISCOVERY WHILE ONLY EDITING ONE FILE! That is a DISCOVERY that requires that you EXPLAIN your discovery, PROPOSE a solution, and HALT! 
+*   We always use test-driven-development. 
+    *   We write a RED test that we expect to fail to prove the flaw or incomplete code. 
+        *   A RED test is written to the INTENDED SUCCESS STATE so that it is NOT edited again. Do NOT refer to "RED: x condition now, y condition later", which forces the test to be edited after the GREEN step. Do NOT title the test to include any reference to RED/GREEN. Tests are stateless. 
+        *   We implement the edit to a SINGLE FILE to enable the GREEN state.
+        *   We run the test again and prove it passes. We DO NOT edit the test unless we discover the test is itself flawed. 
+*   EVERY EDIT is performed using TDD. We DO NOT EDIT ANY FILE WITHOUT A TEST. 
+    *   Documents, types, and interfaces cannot be tested, so are exempt. 
+*   Every edit is documented in the checklist of instructions that describe the required edits. 
+*   Whenever we discover an edit must be made that is not documented in the checklist of instructions, we EXPLAIN the discovery, PROPOSE an insertion into the instruction set that describes the required work, and HALT. 
+    *   We build dependency ordered instructions so that the dependencies are built, tested, and working before the consumers of the dependency. 
+*   We use dependency injection for EVERY FILE. 
+*   We build adapters and interfaces for EVERY FUNCTION.  
+*   We edit files from the lowest dependency on the tree up to the top so that our tests can be run at every step.
+*   We PROVE tests pass before we move to the next file. We NEVER proceed without explicit demonstration that the tests pass. 
+*   The tests PROVE the functional gap, PROVE the flaw in the function, and prevent regression by ensuring that any changes MUST comply with the proof. 
+*   Our process to edit a file is: 
+    *   READ the instruction for the step, and read every file referenced by the instruction or step, or implicit by the instruction or step (like types and interfaces).
+    *   ANALYZE the difference between the state of the file and the state described by the instructions in the step.
+    *   EXPLAIN how the file must be edited to transform it from its current state into the state described by the instructions in the step. 
+    *   PROPOSE an edit to the file that will accomplish the transformation while preserving strict explicit typing. 
+    *   LINT! After editing the file, run your linter and fix all linter errors that are fixable within that single file. 
+    *   HALT! After editing ONE file and ensuring it passes linting, HALT! DO NOT CONTINUE! 
+*   The agent NEVER runs tests. 
+*   The agent uses ITS OWN TOOLS. 
+*   The agent DOES NOT USE THE USER'S TERMINAL. 
+
 ## Legend
 
 *   `[ ]` 1. Unstarted work step. Each work step will be uniquely named for easy reference. We begin with 1.
@@ -532,3 +574,569 @@ graph TD
     - Avoids synthesizing `resourceDocuments` from contributions
     - Non-continuation prepends rendered user message; continuation avoids duplication
     - Dialectic path forwards `message`, `messages`, and `systemInstruction` unchanged and schema allows it
+
+- [✅] 32. RED: tokenizer_utils supports official strategies; Google has explicit ratio control
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/_shared/utils/tokenizer_utils.test.ts`
+  - Add tests that describe the final working behavior (these tests will not be edited later):
+    - OpenAI (TikToken with ChatML rules):
+      - Build a small `messages` array and a config with `tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base', api_identifier_for_tokenization: 'gpt-4' }`.
+      - Assert the count is a positive integer and increases when adding another user message (proves real counting).
+    - Anthropic (official tokenizer):
+      - Build a `messages` array and a config with `tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3.5-sonnet-20240620' }`.
+      - Assert the count is positive and increases with longer content.
+    - Google (synchronous worker estimator honoring ratio):
+      - Build `messages` where `totalChars` can be computed.
+      - With `tokenization_strategy: { type: 'google_gemini_tokenizer', chars_per_token_ratio: 5 }`, assert `countTokens(...) === Math.ceil(totalChars / 5)`.
+      - With `tokenization_strategy: { type: 'google_gemini_tokenizer' }` (no ratio), assert `Math.ceil(totalChars / 4)`.
+  - Expected: Fails for the Google ratio assertions until GREEN.
+
+- [✅] 33. GREEN: implement explicit ratio handling for Google in tokenizer_utils
+  - [BE]
+  - **File**: `supabase/functions/_shared/utils/tokenizer_utils.ts`
+  - In the `google_gemini_tokenizer` branch:
+    - If `chars_per_token_ratio` is present and numeric, use it; otherwise default to `4.0`.
+    - Honor `chars_per_token_ratio` provided via runtime model config (e.g., from Google sync map) without falling back when it is present.
+    - Keep this implementation synchronous (worker path cannot await SDKs).
+  - Re-run step 32 tests (unaltered): they pass.
+
+- [✅] 34. RED: internal Google sync map defines a default ratio (worker-only hardening)
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/sync-ai-models/google_sync.test.ts`
+  - Add tests for representative Gemini models (e.g., `google-gemini-2.5-pro`, `google-gemini-2.5-flash`):
+    - Assert `tokenization_strategy.type === 'google_gemini_tokenizer'`.
+    - Assert `tokenization_strategy.chars_per_token_ratio === 4.0` (or the chosen standard).
+  - Expected: Fails until we set the map explicitly.
+
+- [✅] 35. GREEN: set default ratio in Google INTERNAL_MODEL_MAP
+  - [BE]
+  - **File**: `supabase/functions/sync-ai-models/google_sync.ts`
+  - For Gemini entries in `INTERNAL_MODEL_MAP`, set:
+    - `tokenization_strategy: { type: 'google_gemini_tokenizer', chars_per_token_ratio: 4.0 }`.
+    - Apply this to all Gemini chat models enumerated in the map (2.5 series and 1.5 series), keeping embeddings unchanged.
+  - Re-run step 34 tests (unaltered): they pass.
+
+- [✅] 36. RED: worker deps factory exists and injects wallet service for compression path
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/dialectic-worker/index.test.ts`
+  - Add tests describing the desired state:
+    - Expect a new named export `createDialecticWorkerDeps(adminClient)` that returns an `IDialecticJobDeps` with:
+      - `ragService`, `indexingService`, `embeddingClient`, `promptAssembler`, `countTokens`, and `executeModelCallAndSave` wiring intact.
+      - `tokenWalletService` present and usable.
+    - Do not start the server; only import and assert the factory’s object shape.
+  - Expected: Fails now (factory not present, wallet not injected).
+
+- [✅] 37. GREEN: implement deps factory and wallet service injection
+  - [BE]
+  - **File**: `supabase/functions/dialectic-worker/index.ts`
+  - Implement `export function createDialecticWorkerDeps(adminClient: SupabaseClient<Database>): IDialecticJobDeps`:
+    - Preserve existing service creations (`indexingService`, `embeddingClient`, `ragService`, `promptAssembler`, etc.).
+    - Set `countTokensForMessages` to `countTokens` and `executeModelCallAndSave` wrapper with `compressionStrategy: getSortedCompressionCandidates`.
+    - Instantiate and include `tokenWalletService` using the same client pattern used elsewhere in the worker (if no user-context is available here, document and use `adminClient` consistently as needed).
+  - Update the handler to use `createDialecticWorkerDeps(adminClient)` in place of the inline literal deps.
+  - Add early validation: when `initialTokenCount > maxTokens` and compression would run, assert `walletId` is present in the job payload; if missing, fail fast with a clear error instructing to supply a wallet.
+  - Re-run step 36 tests (unaltered): they pass.
+
+- [✅] 38. RED: compression path uses wallet, counts resource docs for sizing, and respects limits
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.rag.test.ts`
+  - Add tests describing the working behavior (single RED for this file):
+    - A. Missing dependency handling:
+      - Arrange `initialTokenCount > maxTokens` (e.g., tiny `max_context_window_tokens`, large `conversationHistory`).
+      - Provide deps without `tokenWalletService`; assert it throws:
+        - "Required services for prompt compression (RAG, Embedding, Wallet, Token Counter) are not available."
+    - B. Debit occurs during RAG:
+      - Provide mocks:
+        - `ragService.getContextForModel` → `{ context: '...', tokensUsedForIndexing: 123 }` at least once.
+        - `tokenWalletService.getBalance` returns enough to pass checks; `recordTransaction` is a spy.
+      - Include `walletId` in the job payload and valid `input_token_cost_rate` in model config.
+      - Assert `recordTransaction` is called with amount `'123'` and appropriate metadata.
+    - C. Resource documents only influence sizing:
+      - Provide `resourceDocuments` with content.
+      - Spy the `deps.countTokens` input and assert mapped documents are included as `{ role: 'user', content: d.content }`.
+      - Assert final `ChatApiRequest.messages` does NOT include those documents (we don’t send them as chat messages).
+  - Expected: A likely passes already; B/C fail until GREEN ensures wallet usage and sizing behavior are correct and explicit.
+
+- [✅] 39. GREEN: ensure compression uses wallet service and resource docs only affect sizing
+  - [BE]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`
+  - Confirm or update:
+    - The initial token estimation includes mapped `resourceDocuments` into a temporary array used solely for counting.
+    - The compression loop calls `ragService.getContextForModel(...)` and, when `tokensUsedForIndexing > 0`, calls `tokenWalletService.recordTransaction(...)` with correct fields (idempotency key, related entity id).
+    - Final `assembledMessages` does NOT append resource documents.
+  - Re-run step 38 tests (unaltered): they pass.
+
+- [✅] 40. RED: tokenizer/estimator alignment for OpenAI and Anthropic (worker-only)
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/tokenEstimator/index.test.ts`
+  - Add tests that assert consistent counts between:
+    - `estimateInputTokens` (from tokenEstimator/index.ts) and `countTokens` (tokenizer_utils) for:
+      - OpenAI ChatML models (e.g., `gpt-4` with `cl100k_base`)
+      - Anthropic models (`anthropic_tokenizer`)
+    - For each case, assert exact equality, or specify a bounded, documented delta if absolutely necessary due to priming constants. These tests will not be edited later.
+  - Expected: May fail if constants differ.
+
+- [✅] 41. GREEN: align estimator constants or document bounded differences
+  - [BE]
+  - **File**: `supabase/functions/tokenEstimator/index.ts`
+  - Make minimal adjustments so its counting (per-message overhead, name penalties, trailing priming) matches `tokenizer_utils` for the above cases.
+  - If any small difference must remain, add comments explaining the delta and update the test to assert the bounded delta with rationale.
+  - Re-run step 40 tests (unaltered): they pass.
+
+- [✅] 42. RED: OpenAI per-model encoding is selected correctly during sync
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/sync-ai-models/openai_sync.test.ts`
+  - Add tests asserting assembled configs use the correct tiktoken encoding:
+    - `gpt-4o`, `gpt-4o-mini`, `gpt-4.1`, `gpt-4.1-mini` → `tiktoken_encoding_name: "o200k_base"`, `is_chatml_model: true`.
+    - `gpt-4`, `gpt-4-turbo`, `gpt-3.5-turbo` → `"cl100k_base"`, `is_chatml_model: true`.
+    - `text-davinci-003` (if included) → `"p50k_base"`, `is_chatml_model: false`.
+    - Embeddings → `"cl100k_base"`, `is_chatml_model: false`.
+  - Expected: Fails because the current map forces `"cl100k_base"` broadly.
+
+- [✅] 43. GREEN: implement OpenAI model-family → encoding mapping
+  - [BE]
+  - **File**: `supabase/functions/sync-ai-models/openai_sync.ts`
+  - Replace the single `"cl100k_base"` default with a small selector:
+    - Starts-with `"gpt-4o"`, `"gpt-4.1"` → `"o200k_base"`.
+    - Starts-with `"gpt-4"`, `"gpt-4-turbo"`, `"gpt-3.5-turbo"` → `"cl100k_base"`.
+    - Equals `"text-davinci-003"` → `"p50k_base"`.
+    - Embeddings keep existing handling (`is_chatml_model: false`).
+  - Keep `is_chatml_model: true` for chat models, `false` for embeddings.
+  - Re-run step 42 (unaltered): passes.
+
+- [✅] 44. RED: tokenizer_utils positively counts 4o/4.1 with o200k_base
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/_shared/utils/tokenizer_utils.test.ts`
+  - Add positive tests (not throw-tests) for:
+    - `gpt-4o`: with `tiktoken_encoding_name = "o200k_base"` → count > 0 and increases with content length.
+    - `gpt-4.1`: same assertions.
+  - Expected: Should pass if `o200k_base` is available; otherwise reveals gaps to address.
+
+- [✅] 45. GREEN: scrub OpenAI rough_char_count via sync for chat models
+  - [BE]
+  - **File**: `supabase/functions/sync-ai-models/openai_sync.ts`
+  - Ensure the sync sets `tiktoken` strategies for all OpenAI chat models so seeds/configs do not fall back to `rough_char_count` for OpenAI chat families.
+  - Re-run step 44 to confirm counting still passes.
+
+- [✅] 46. RED: Anthropic models use official tokenizer strategy in sync (no rough-char)
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/sync-ai-models/anthropic_sync.test.ts`
+  - Add tests asserting assembled configs for active Anthropic chat models include:
+    - `tokenization_strategy.type === 'anthropic_tokenizer'`
+    - `tokenization_strategy.model` equals the model’s API identifier suffix (e.g., `claude-3.5-sonnet-20240620`).
+    - No `rough_char_count` remains for active Anthropic chat models.
+  - Expected: Fails where the sync leaves rough-char strategies or omits the model field.
+
+- [✅] 47. GREEN: enforce anthropic_tokenizer mapping in Anthropic sync
+  - [BE]
+  - **File**: `supabase/functions/sync-ai-models/anthropic_sync.ts`
+  - Ensure the internal map and assembly always set:
+    - `tokenization_strategy: { type: 'anthropic_tokenizer', model: '<exact-model-name>' }` for active Anthropic chat models.
+  - Do not set `rough_char_count` for active Anthropics. Leave obsolete/deactivated rows alone if present.
+  - Re-run step 46 (unaltered): passes.
+
+- [✅] 48. RED: tokenizer_utils counts Anthropics via official tokenizer on message arrays
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/_shared/utils/tokenizer_utils.test.ts`
+  - Add a test with `tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3.5-sonnet-20240620' }` and a messages array:
+    - Assert the count is > 0 and increases with content length.
+    - Assert no error is thrown and no fallback rough-char path is needed.
+  - Expected: Should already pass; locks in behavior against regressions.
+
+- [✅] 49. GREEN: scrub Anthropic rough_char_count via sync for active models
+  - [BE]
+  - **File**: `supabase/functions/sync-ai-models/anthropic_sync.ts`
+  - Ensure the sync emits `anthropic_tokenizer` for all active Anthropic chat models so seeds/configs don’t regress to `rough_char_count`.
+  - Re-run step 48 to confirm counting still passes.
+
+  ---
+
+## Continuation: Payload Consistency & Wallet Enforcement (TDD)
+
+The following steps lock down end-to-end consistency so the ENTIRE `PromptConstructionPayload` is transformed into the ENTIRE `ChatApiRequest`, sized EXACTLY as sent, and charged against a required wallet. Each step follows strict RED/GREEN/REFACTOR with one file edited per step.
+
+- [✅] 50. RED: `ChatApiRequest` accepts `resourceDocuments`
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/chat/zodSchema.test.ts`
+  - Add tests validating that the schema accepts an optional `resourceDocuments` array with the expected shape (e.g., `{ id?: string; content: string }`).
+
+- [✅] 51. GREEN: extend schema and types to include `resourceDocuments`
+  - [BE]
+  - **Files**:
+    - `supabase/functions/chat/zodSchema.ts`: extend `ChatApiRequestSchema` with `resourceDocuments` (optional, typed), preserving pass-through.
+    - `supabase/functions/_shared/types.ts`: extend `ChatApiRequest` interface with `resourceDocuments` (distinct from `messages`).
+
+- [✅] 52. RED: Worker builds full `ChatApiRequest` from entire `PromptConstructionPayload`
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.test.ts`
+  - Assert the built `ChatApiRequest` includes ALL FOUR elements plus `walletId`:
+    - `systemInstruction`, `message` (currentUserPrompt), `messages` (conversationHistory), `resourceDocuments`, and `walletId`.
+  - Assert the adapter receives exactly the same object (deep-equal to the one constructed).
+
+- [✅] 53. GREEN: implement single-source `ChatApiRequest` builder (worker)
+  - [BE]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`
+  - Build `ChatApiRequest` directly from `PromptConstructionPayload` and `job.payload.walletId`.
+  - Include `resourceDocuments` distinctly (do NOT merge them into `messages`).
+  - Use this exact `ChatApiRequest` for both sizing and sending (no alternate arrays).
+
+- [✅] 54. RED: Size exactly what we send (no payload projection)
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/_shared/utils/tokenizer_utils.test.ts`
+  - Define and use a standardized payload type for counting: `CountableChatPayload`:
+    - Shape: `{ systemInstruction?: string; message?: string; messages?: Messages[]; resourceDocuments?: { id?: string; content: string }[] }`
+      - Synthetic system message for `systemInstruction`
+      - `message` as a user message
+      - Append `messages` in order
+      - Append `resourceDocuments` as distinct user items (kept distinct from chat history semantics)
+  - EVERY test counts the ENTIRE PAYLOAD! NO EXCEPTIONS! THE ENTIRE PAYLOAD IS MEASURED IN EVERY SINGLE TEST! 
+  - Verify counts are positive and increase when any component grows.
+
+- [✅] 55. GREEN: implement `countTokens` (payload-based, DI)
+  - [BE]
+  - **File**: `supabase/functions/_shared/utils/tokenizer_utils.ts`
+  - Update `countTokens` signature to: `(deps, payload, modelConfig)` using DI (`getEncoding`, `countTokensAnthropic`, `logger`).
+  - Measure EVERY element of the ENTIRE PAYLOAD, then perform model-specific counting.
+  - Note (breaking): all call sites must now supply payload elements instead of raw `Messages[]`. We will fix callers TDD-style in subsequent steps to ensure no part of the model payload is ever dropped from sizing.
+
+- [✅] 55.d GREEN: Update DI types to new countTokens signature
+  - [BE]
+  - **File**: `supabase/functions/_shared/types.ts`
+  - Change `ChatHandlerDeps.countTokens` to `(deps: CountTokensDeps, payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number`.
+  - Import `CountTokensDeps` and `CountableChatPayload` from `../types/tokenizer.types.ts`.
+
+- [✅] 55.d.1 GREEN: Update worker DI to new countTokens signature
+  - [BE]
+  - **File**: `supabase/functions/dialectic-service/dialectic.interface.ts`
+  - Change `IDialecticJobDeps.countTokens` to `(deps: CountTokensDeps, payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number`.
+  - Import `CountTokensDeps` and `CountableChatPayload` from `../_shared/types/tokenizer.types.ts`.
+
+- [✅] 55.d.2 REVIEW: Audit all deps factories for countTokens shape
+  - [REVIEW]
+  - **Files**:
+    - `supabase/functions/dialectic-worker/index.ts`
+    - Any other place constructing `IDialecticJobDeps`
+  - Ensure factories implement the new triple-arg signature and wire real tokenizer deps where available (or existing test stubs).
+
+- [✅] 55.e GREEN: Worker initial sizing uses full-object counting and pass-through
+  - [BE]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`
+  - Replace legacy calls with `countTokens(tokenizerDeps, fullPayload, extendedModelConfig)`.
+  - Build `fullPayload` from the exact fields that will be sent: `{ systemInstruction, message: currentUserPrompt, messages: conversationHistory, resourceDocuments }`.
+  - Use a single ChatApiRequest builder; size using the same payload fields to ensure sizing equals sending (identity).
+
+- [✅] 55.e.1 GREEN: Chat dialectic path uses full-object counting and strict messages
+  - [BE]
+  - **File**: `supabase/functions/chat/handleDialecticPath.ts`
+  - Build `tokenizerDeps` and a `fullPayload` from requestBody: `{ systemInstruction, message, messages, resourceDocuments }`.
+  - Derive `messages` by filtering out any entries with role `'function'` and any non-string content; if none are provided, synthesize `[ { role: 'user', content: message } ]`.
+  - Call `countTokens(deps, fullPayload, modelConfig)` and forward the adapter `ChatApiRequest` with the same narrowed `messages`, passing `systemInstruction` as provided. Do not merge `resourceDocuments` into messages.
+  - Remove any legacy 2-arg `countTokens` calls.
+
+- [✅] 55.e.2 GREEN: Align Chat deps countTokens return type to sync number
+  - [BE]
+  - **File**: `supabase/functions/_shared/types.ts`
+  - Change `ChatHandlerDeps.countTokens` to return `number` (not Promise), keeping `(deps: CountTokensDeps, payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number`.
+  - Ensure `defaultDeps.countTokens = countTokens` remains valid under the new type.
+
+- [✅] 55.e.3 RED: Refactor dummy adapter tests to new triple-arg counting
+  - [BE]
+  - **File**: `supabase/functions/_shared/ai_service/dummy_adapter.test.ts`
+  - Replace all 2-arg `countTokens(messages, modelConfig)` calls with `countTokens(tokenizerDeps, fullPayload, modelConfig)`.
+  - Build `tokenizerDeps` locally with `getEncoding`, `countTokensAnthropic`, `logger`.
+  - Build `fullPayload` with `{ systemInstruction?: string; message: string; messages: { role: 'system'|'user'|'assistant'; content: string }[]; }` and do not merge resource documents into messages.
+  - Narrow messages by excluding `'function'` and any non-string content using guards.
+
+- [✅] 55.e.4 GREEN: Refactor dummy adapter to new triple-arg counting
+  - [BE]
+  - **File**: `supabase/functions/_shared/ai_service/dummy_adapter.ts`
+  - Replace all 2-arg `countTokens(messages, modelConfig)` calls with `countTokens(tokenizerDeps, fullPayload, modelConfig)`.
+  - Build `tokenizerDeps` locally with `getEncoding`, `countTokensAnthropic`, `logger`.
+  - Build `fullPayload` with `{ systemInstruction?: string; message: string; messages: { role: 'system'|'user'|'assistant'; content: string }[]; }` and do not merge resource documents into messages.
+  - Narrow messages by excluding `'function'` and any non-string content using guards.
+
+- [✅] 55.e.5 RED: Update chat tests to new triple-arg signature
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/chat/handleDialecticPath.test.ts` (and any other chat tests stubbing deps)
+  - Update `countTokens` spies to accept `(deps, payload, modelConfig)` and return a number.
+  - Remove legacy 2-arg `countTokens` usage in tests.
+
+- [✅] 55.e.6 GREEN: Update chat to new triple-arg signature
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/chat/handleDialecticPath.ts` (and any other chat tests stubbing deps)
+  - Update `countTokens` spies to accept `(deps, payload, modelConfig)` and return a number.
+  - Remove legacy 2-arg `countTokens` usage in tests.
+
+- [✅] 55.e.7 REVIEW: Repo-wide audit for new countTokens signature
+  - [REVIEW]
+  - Grep all call sites in `supabase/functions/**` and ensure each uses `(deps, fullPayload, modelConfig)`.
+  - Confirm adapter/handler paths construct narrowed messages for both sizing and sending and do not append resource documents to chat messages.
+
+- [✅] 55.e.7.a RED: Update tokenEstimator tests to triple-arg counting
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/tokenEstimator/index.test.ts`
+  - Build `tokenizerDeps` locally with `getEncoding`, `countTokensAnthropic`, and a `logger`.
+  - Build `CountableChatPayload` from the test messages: `{ messages }`.
+  - Replace `countTokens(messages, modelConfig)` with `countTokens(tokenizerDeps, payload, modelConfig)` in alignment tests.
+
+- [✅] 55.e.7.b GREEN: Ensure estimator alignment tests use new signature and pass
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/tokenEstimator/index.test.ts`
+  - Keep assertions unchanged; only update counting calls to the new triple-arg signature so tests pass unchanged semantically.
+
+- [✅] 55.e.8 RED: Chat normal path uses full-object counting and strict messages
+  - [BE]
+  - **File**: `supabase/functions/chat/handleNormalPath.test.ts`
+  - After `constructMessageHistory`, derive a narrowed `messages` array by excluding `'function'` role and any non-string content.
+  - Count with `countTokens(deps, { systemInstruction, message, messages, resourceDocuments }, modelConfig)`.
+  - Forward the adapter request with the same narrowed `messages`; do not include `resourceDocuments` in messages.
+  - Remove any legacy 2-arg `countTokens` calls.
+
+- [✅] 55.e.9 GREEN: Chat normal path uses full-object counting and strict messages
+  - [BE]
+  - **File**: `supabase/functions/chat/handleNormalPath.ts`
+  - After `constructMessageHistory`, derive a narrowed `messages` array by excluding `'function'` role and any non-string content.
+  - Count with `countTokens(deps, { systemInstruction, message, messages, resourceDocuments }, modelConfig)`.
+  - Forward the adapter request with the same narrowed `messages`; do not include `resourceDocuments` in messages.
+  - Remove any legacy 2-arg `countTokens` calls.
+
+- [✅] 55.e.10 REVIEW: Chat rewind path verification
+  - [REVIEW]
+  - **File**: `supabase/functions/chat/handleRewindPath.ts`
+  - Confirm it uses the new triple-arg `countTokens` and constructs `messages` as `{ role: 'system'|'user'|'assistant', content: string }[]` with no `'function'` entries.
+  - If any gaps are found, apply the same narrowing/counting pattern as 55.e.1/55.e.2.
+
+- [✅] 55.e.10.a RED: Update rewind tests to triple-arg counting
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/chat/handleRewindPath.test.ts`
+  - Replace `countTokens: spy(() => 10)` with `countTokens: spy((_deps, _payload, _cfg) => 10)` in all test contexts.
+  - In at least one test, assert the spy received a payload whose `messages` deep-equals the adapter request messages (sized equals sent).
+
+- [✅] 55.e.10.b GREEN: Ensure tests pass with triple-arg spies
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/chat/handleRewindPath.test.ts`
+  - Keep existing behavior assertions; only update stubs and add the payload identity assertion so tests pass unchanged semantically.
+
+- [✅] 55.f GREEN: Compression loop always measures and passes the entire object
+  - [BE]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`
+  - After each compression step:
+    - Rebuild the entire `CountableChatPayload` (all four fields).
+    - Rebuild the single `ChatApiRequest` from that payload.
+    - Recount with `countTokens(tokenizerDeps, fullPayload, extendedModelConfig)`.
+    - When it fits, pass the exact `ChatApiRequest` you sized (no alternate arrays, no projections, no mutation).
+  - NEVER measure a subset; NEVER pass a subset. Sizing equals sending, object-for-object.
+
+- [✅] 55.g.1 RED: /chat uses new signature with full-object pass-through
+  - [BE]
+  - **File**: `supabase/functions/chat/handleDialecticPath.test.ts`
+  - Count with `countTokens(tokenizerDeps, { systemInstruction: body.systemInstruction, message: body.message, messages: body.messages, resourceDocuments: body.resourceDocuments }, modelConfig)`.
+  - Forward the same `ChatApiRequest` unchanged to the adapter.
+
+- [✅] 55.g.2 GREEN: /chat uses new signature with full-object pass-through
+  - [BE]
+  - **File**: `supabase/functions/chat/handleDialecticPath.ts`
+  - Count with `countTokens(tokenizerDeps, { systemInstruction: body.systemInstruction, message: body.message, messages: body.messages, resourceDocuments: body.resourceDocuments }, modelConfig)`.
+  - Forward the same `ChatApiRequest` unchanged to the adapter.
+
+- [✅] 55.h GREEN: Check that tests use the new signature everywhere
+  - [TEST-UNIT]
+  - **Files**:
+    - `supabase/functions/dialectic-worker/executeModelCallAndSave.test.ts`
+    - `supabase/functions/dialectic-worker/executeModelCallAndSave.rag.test.ts`
+    - `supabase/functions/chat/handleDialecticPath.test.ts`
+  - Replace legacy `(messages, modelConfig)` stubs with `(tokenizerDeps, fullPayload, modelConfig)`.
+  - Remove any wrappers/shims; tests must construct the same full payload the code sends.
+
+- [✅] 55.i REVIEW: Audit and remove legacy signature usage
+  - [REVIEW]
+  - Grep all `countTokens(` call sites; ensure they pass `(deps, fullPayload, modelConfig)`.
+  - Confirm code/tests size exactly what is sent and pass the exact same object onward (no mutation between sizing and sending).
+
+- [✅] 56. RED: Wallet required and preflight on every AI operation (comprehensive)
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.rag.test.ts`
+  - Add tests that assert a universal preflight occurs BEFORE any provider call for both non-oversized and oversized inputs:
+    - Non-oversized: missing `walletId` → hard local failure before any provider call.
+    - Non-oversized: missing `tokenWalletService` in deps → hard local failure before any provider call.
+    - Non-oversized: invalid model cost rates (missing/NaN `input_token_cost_rate` or non-positive `output_token_cost_rate`) → hard failure.
+    - Non-oversized: NSF preflight — estimate total cost as (input tokens × input rate) + (plannedMaxOutputTokens × output rate) and fail when it exceeds wallet balance.
+    - Non-oversized: safety-margin/headroom — reserve output headroom using `getMaxOutputTokens(balance, inputTokens, modelConfig, logger)` plus a small safety buffer; compute `allowedInput = (provider_max_input_tokens || context_window_tokens) − (plannedMaxOutputTokens + safetyBuffer)`; fail if `inputTokens > allowedInput` and pass when `inputTokens === allowedInput`.
+    - Oversized: retain existing tests for rationality threshold (20% of balance) and absolute affordability (existing cases), proving early-fail occurs before provider call.
+    - Ensure no wallet debit occurs during preflight; RAG debit happens only when `tokensUsedForIndexing > 0` during compression.
+  - Expected now: FAILS until GREEN implements universal preflight in the worker for both non-oversized and oversized paths using exact payload token counts.
+
+- [✅] 57. GREEN: implement wallet preflight (worker)
+  - [BE]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`
+  - Always: estimate input tokens with `countTokens(deps, { systemInstruction, message, messages, resourceDocuments }, modelConfig)` using the exact fields that will be sent.
+  - Compute `allowedInput = (provider_max_input_tokens || context_window_tokens) − (planned_max_output + safetyBuffer)`.
+  - Fetch wallet balance; compute estimated total cost for this call; if `walletId` missing, NSF, or safety-margin violation → throw before provider call.
+
+- [✅] 58. RED: Oversize with wallet triggers RAG; rebuild+recount exact `ChatApiRequest`
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.rag.test.ts`
+  - With wallet + oversized: RAG runs; `tokenWalletService.recordTransaction` is called; compressed content replaces originals; we rebuild the same `ChatApiRequest` post-compression; re-count drops ≤ `allowedInput`; provider call proceeds.
+  - If RAG exhausts strategies or request is still oversized → hard failure with explicit error.
+
+- [✅] 59. GREEN: implement RAG loop over the same unified request
+  - [BE]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`
+  - Use the same projection logic each loop; rebuild the exact `ChatApiRequest` after each compression; re-count with `countTokens(deps, { systemInstruction, message, messages, resourceDocuments }, modelConfig)`; re-check cost and wallet; debit per RAG usage.
+
+- [✅] 60. RED: /chat pass-through uses exact request for sizing and wallet enforcement
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/chat/handleDialecticPath.test.ts`
+  - Token counting uses `countTokens(deps, { systemInstruction, message, messages, resourceDocuments }, modelConfig)` derived directly from the incoming `ChatApiRequest`.
+  - Missing walletId or NSF → hard local failure (no adapter call).
+  - Adapter receives the `ChatApiRequest` unchanged (strict pass-through).
+
+- [✅] 61. GREEN: apply pass-through counting + wallet rule in /chat
+  - [BE]
+  - **File**: `supabase/functions/chat/handleDialecticPath.ts`
+  - No mutation; call `countTokens(deps, { systemInstruction: body.systemInstruction, message: body.message, messages: body.messages, resourceDocuments: body.resourceDocuments }, modelConfig)`.
+  - Enforce the same wallet preflight and early-fail rules before calling the adapter.
+
+- [✅] 62.a. RED: Invariants — sizing equals sending (identity)
+  - [TEST-UNIT]
+  - **Files**:
+    - `supabase/functions/dialectic-worker/executeModelCallAndSave.test.ts`
+  - Add deep-equality assertions that the four payload fields used for counting are exactly those sent to the adapter (pre- and post-compression for the worker path).
+
+- [✅] 62.b. GREEN: enforce identity of sized vs sent payloads
+  - [BE]
+  - **Files**:
+    - `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`
+  - Refactor minor code paths to ensure a single `ChatApiRequest` instance drives both sizing and send.
+
+- [✅] 63.a. RED: Invariants — sizing equals sending (identity)
+  - [TEST-UNIT]
+  - **Files**:
+    - `supabase/functions/chat/handleDialecticPath.test.ts`
+  - Add deep-equality assertions that the four payload fields used for counting are exactly those sent to the adapter (pre- and post-compression for the worker path).
+
+- [✅] 63.b. GREEN: enforce identity of sized vs sent payloads
+  - [BE]
+  - **Files**:
+    - `supabase/functions/chat/handleDialecticPath.ts`
+  - Refactor minor code paths to ensure a single `ChatApiRequest` instance drives both sizing and send.
+
+- [✅] 64. REVIEW: Wallet and payload threading audit
+  - [REVIEW]
+  - Grep and verify threading:
+    - `walletId`: `processSimpleJob` → `executeModelCallAndSave` → `/chat` (and RAG) → debit
+    - Full payload fields (`systemInstruction`, `message`, `messages`, `resourceDocuments`) are never dropped or mutated between sizing and sending.
+  - Add any missing tests if a gap is found.
+
+- [✅] 65. REVIEW: `countTokens` implementation to include all `promptConstructionPayload` elements
+  - [REVIEW]
+  - Review every file in Git "Changes" list:
+    - All `promptConstructionPayload` elements are added to the `countTokens` call.
+    - File passes all elements it receives into the `countTokens` call.  
+    - File does not overwrite or drop any elements unless the function has a specific justified purpose for mutating the object.
+  - Ensure every test is updated for the new shape of `countTokens` input.
+  - Ensure every file is updated for the new shape of `countTokens` input.
+  - Ensure all tests pass with the new shape. 
+  
+- [✅] 66. REVIEW: Enforce DI for tokenizer usage across call sites
+  - [REVIEW]
+  - Grep audit: no direct imports of `js-tiktoken` or `@anthropic-ai/tokenizer` in call sites; all callers pass `deps` into `countTokens`.
+  - Verify tests stub `deps.logger` and assert warnings/errors are emitted where expected.
+
+- [✅] 67. RED: Boundary math correctness for allowed input window
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.rag.test.ts`
+  - Add cases that set limits so that sizing:
+    - fits by exactly 1 token (should proceed), and
+    - exceeds by exactly 1 token (should enter compression or fail per wallet rules).
+
+- [✅] 68.a. RED: ResourceDocuments pass-through and sizing behavior
+  - [TEST-UNIT]
+  - **Files**:
+    - `supabase/functions/dialectic-worker/executeModelCallAndSave.test.ts`
+  - Assert `resourceDocuments` increase counts and are forwarded to adapter unchanged (distinct from `messages`).
+
+- [✅] 68.b. RED: ResourceDocuments pass-through and sizing behavior
+  - [TEST-UNIT]
+  - **Files**:
+    - `supabase/functions/chat/handleDialecticPath.test.ts`
+  - Assert `resourceDocuments` increase counts and are forwarded to adapter unchanged (distinct from `messages`).
+
+- [✅] 69.a. RED: Continuation invariants survive compression
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.rag.test.ts`
+  - With oversized continuation flow, after RAG ensure preserved anchors (original user, first assistant, last two assistants, single trailing "Please continue.") remain intact and unmodified.
+
+- [✅] 69.b. GREEN: Continuation invariants survive compression
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.rag.test.ts`
+  - With oversized continuation flow, after RAG ensure preserved anchors (original user, first assistant, last two assistants, single trailing "Please continue.") remain intact and unmodified.
+
+- [✅] 69.c. RED: Strict user-assistant-user turn order is enforced after compression
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.rag.test.ts`
+  - With oversized continuation flow, after RAG ensure message array maintains strict user-assistant-user ordering.
+
+- [✅] 69.d. GREEN: Strict user-assistant-user turn order is enforced after compression
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`
+  - With oversized continuation flow, after RAG ensure message array maintains strict user-assistant-user ordering.
+
+- [✅] 70. RED: Rendering hygiene proven end-to-end
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.test.ts`
+  - Assert final `message` sent has no `{...}` placeholders; `systemInstruction` is passed-through only if provided (never synthesized).
+
+- [✅] 71.a. RED: Error specificity in worker 
+  - [TEST-UNIT]
+  - **Files**:
+    - `supabase/functions/dialectic-worker/executeModelCallAndSave.rag.test.ts`
+  - Assert missing wallet and missing critical deps throw clear, unique error messages; no silent fallbacks.
+
+  - [✅] 71.b. GREEN: Error specificity in worker 
+  - [TEST-UNIT]
+  - **Files**:
+    - `supabase/functions/dialectic-worker/executeModelCallAndSave.rag.test.ts`
+  - Assert missing wallet and missing critical deps throw clear, unique error messages; no silent fallbacks.
+
+- [✅] 71.c. RED: Error specificity in /chat
+  - [TEST-UNIT]
+  - **Files**:
+    - `supabase/functions/chat/handleDialecticPath.test.ts`
+  - Assert missing wallet and missing critical deps throw clear, unique error messages; no silent fallbacks.
+
+- [✅] 71.d. GREEN: Error specificity in /chat
+  - [TEST-UNIT]
+  - **Files**:
+    - `supabase/functions/chat/handleDialecticPath.test.ts`
+  - Assert missing wallet and missing critical deps throw clear, unique error messages; no silent fallbacks.
+
+- [✅] 72.a. RED: Idempotent RAG debits
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.rag.test.ts`
+  - Assert each RAG operation records a wallet transaction with a stable idempotency key tied to job + candidate; verify count and metadata.
+
+- [✅] 72.b. GREEN: Idempotent RAG debits
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`
+  - Assert each RAG operation records a wallet transaction with a stable idempotency key tied to job + candidate; verify count and metadata.
+
+- [✅] 73. RED: Empty/minimal payload edge cases
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/_shared/utils/tokenizer_utils.test.ts`
+  - Add cases for payloads containing only one component (only `message`, only `messages`, only `systemInstruction`, only `resourceDocuments`) and combinations; counts remain coherent and positive where appropriate.
+
+- [✅] 74. RED: Type guards recognize extended ChatApiRequest
+  - [TEST-UNIT]
+  - **File**: `supabase/functions/_shared/utils/type_guards.test.ts`
+  - Add tests for guards (e.g., `isChatApiRequest`) accepting `resourceDocuments` and `systemInstruction` without casting.
+
+- [✅] 75. REVIEW: Adapter pass-through invariants
+  - [REVIEW]
+  - Verify tests cover strict pass-through for all four payload fields in both worker and /chat paths; no mutation or defaulting occurs.
+
+- [✅] 76. REVIEW: Audit guardrail for legacy signatures
+  - [REVIEW]
+  - Grep and remove any lingering references to the old tokenizer signature or alternative counting helpers; ensure CI/script checks catch regressions.
+
+

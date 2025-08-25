@@ -82,7 +82,7 @@ Deno.test("handlePostRequest: should call handleNormalPath and pass runtime deps
         createErrorResponse: spy(),
         getAiProviderAdapter: getAiProviderAdapterSpy,
         verifyApiKey: spy(() => Promise.resolve(true)),
-        countTokensForMessages: spy(() => 10),
+        countTokens: spy(() => 10),
         debitTokens: spy(),
     };
     const requestBody: ChatApiRequest = { message: "Hello", providerId: "provider-id", promptId: "prompt-id" };
@@ -143,7 +143,7 @@ Deno.test("handlePostRequest: should call handleRewindPath when rewindFromMessag
         createErrorResponse: spy(),
         getAiProviderAdapter: spy(),
         verifyApiKey: spy(() => Promise.resolve(true)),
-        countTokensForMessages: spy(() => 10),
+        countTokens: spy(() => 10),
         debitTokens: spy(),
     };
     const requestBody: ChatApiRequest = { message: "Hello", providerId: "provider-id", promptId: "prompt-id", rewindFromMessageId: "rewind-id" };
@@ -182,7 +182,7 @@ Deno.test("handlePostRequest: should return error and not call path handlers if 
         createErrorResponse: spy(),
         getAiProviderAdapter: spy(),
         verifyApiKey: spy(() => Promise.resolve(true)),
-        countTokensForMessages: spy(() => 10),
+        countTokens: spy(() => 10),
         debitTokens: spy(),
     };
     const requestBody: ChatApiRequest = { message: "Hello", providerId: "provider-id", promptId: "prompt-id" };

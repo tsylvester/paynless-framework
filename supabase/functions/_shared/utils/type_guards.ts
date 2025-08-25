@@ -787,6 +787,23 @@ export function isChatMessageRow(record: unknown): record is Tables<'chat_messag
     return true;
 }
 
+/**
+ * Type guard for allowed js-tiktoken encoding names used by our token counters.
+ * Keeps tests and estimators aligned without any casting.
+ */
+export function isKnownTiktokenEncoding(
+  name: unknown
+): name is 'cl100k_base' | 'p50k_base' | 'r50k_base' | 'gpt2' {
+  return (
+    typeof name === 'string' && (
+      name === 'cl100k_base' ||
+      name === 'p50k_base' ||
+      name === 'r50k_base' ||
+      name === 'gpt2'
+    )
+  );
+}
+
 export function isChatInsert(record: unknown): record is ChatInsert {
     if (!isRecord(record)) {
         return false;

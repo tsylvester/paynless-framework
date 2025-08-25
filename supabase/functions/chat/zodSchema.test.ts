@@ -15,6 +15,24 @@ Deno.test("ChatApiRequestSchema - accepts optional systemInstruction pass-throug
 
 // Additional schema tests below
 
+Deno.test("ChatApiRequestSchema - accepts optional resourceDocuments array", () => {
+  const req = {
+    message: "Hello",
+    providerId: crypto.randomUUID(),
+    promptId: "__none__",
+    messages: [
+      { role: 'user', content: 'Hello' },
+      { role: 'assistant', content: 'Hi there' },
+    ],
+    resourceDocuments: [
+      { id: "doc-1", content: "Reference A" },
+      { content: "Reference B" },
+    ],
+  };
+  const result = ChatApiRequestSchema.safeParse(req);
+  assert(result.success, "Schema should accept optional resourceDocuments array");
+});
+
 Deno.test("zodSchema.ts: AiModelExtendedConfigSchema Validation", async (t) => {
 
   await t.step("should successfully validate a CORRECT Anthropic config object", () => {

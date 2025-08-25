@@ -3,10 +3,13 @@ import {
   type ModelProcessingResult,
   type ExecuteModelCallAndSaveParams,
 } from '../dialectic-service/dialectic.interface.ts';
-import { type UploadContext, FileType } from '../_shared/types/file_manager.types.ts';
+import { UploadContext, FileType } from '../_shared/types/file_manager.types.ts';
 import { isDialecticContribution, isAiModelExtendedConfig, isDialecticExecuteJobPayload, isContributionType, isFileType, isApiChatMessage, isContinueReason } from "../_shared/utils/type_guards.ts";
-import { type AiModelExtendedConfig, type ChatApiRequest, type Messages } from '../_shared/types.ts';
+import { AiModelExtendedConfig, ChatApiRequest, Messages } from '../_shared/types.ts';
+import { CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
+import { ResourceDocuments } from "../_shared/types.ts";
+import { getMaxOutputTokens } from '../_shared/utils/affordability_utils.ts';
 
 export async function executeModelCallAndSave(
     params: ExecuteModelCallAndSaveParams,
@@ -47,6 +50,11 @@ export async function executeModelCallAndSave(
         throw new Error(`Job ${jobId} is missing required stageSlug in its payload.`);
     }
 
+    // Enforce wallet presence for ALL requests before any provider calls or sizing
+    if (typeof walletId !== 'string' || walletId.trim() === '') {
+        throw new Error('Wallet is required to process model calls.');
+    }
+
     const { data: fullProviderData, error: providerError } = await dbClient
         .from('ai_providers')
         .select('*')
@@ -72,6 +80,8 @@ export async function executeModelCallAndSave(
         tokenization_strategy: modelConfig.tokenization_strategy,
         context_window_tokens: modelConfig.context_window_tokens,
         max_context_window_tokens: modelConfig.max_context_window_tokens,
+        provider_max_output_tokens: modelConfig.provider_max_output_tokens,
+        provider_max_input_tokens: modelConfig.provider_max_input_tokens,
     };
 
     const {
@@ -92,19 +102,160 @@ export async function executeModelCallAndSave(
         throw new Error("Dependency 'countTokens' is not provided.");
     }
 
-    const tempMessagesForTokenCounting: Messages[] = [
-        ...conversationHistory,
-        ...resourceDocuments.map((d): Messages => ({ role: 'user', content: d.content })),
-    ];
+    const tokenizerDeps: CountTokensDeps = {
+        getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
+        countTokensAnthropic: (text: string) => (text ?? '').length,
+        logger: deps.logger,
+    };
+    const isContinuationFlowInitial = Boolean(job.target_contribution_id || job.payload.target_contribution_id);
+    // Rendering hygiene: sanitize placeholder braces in the primary user message we send to the model
+    const sanitizeMessage = (text: string | undefined): string | undefined => {
+        if (typeof text !== 'string') return text;
+        return text.replace(/[{}]/g, '');
+    };
+    const sanitizedCurrentUserPrompt = sanitizeMessage(currentUserPrompt) ?? '';
+    const initialAssembledMessages: Messages[] = [];
+    if (!isContinuationFlowInitial) {
+        initialAssembledMessages.push({ role: 'user', content: sanitizedCurrentUserPrompt });
+    }
+    conversationHistory.forEach(msg => {
+        if (msg.role !== 'function') {
+            initialAssembledMessages.push({ role: msg.role, content: msg.content });
+        }
+    });
+    // Enforce strict alternation (user/assistant) ignoring 'system' by inserting empty user spacers only when necessary
+    const enforceStrictTurnOrder = (
+        input: { role: 'system'|'user'|'assistant'; content: string }[],
+    ): { role: 'system'|'user'|'assistant'; content: string }[] => {
+        const output: { role: 'system'|'user'|'assistant'; content: string }[] = [];
+        let lastNonSystemRole: 'user' | 'assistant' | null = null;
+        for (const m of input) {
+            if (m.role === 'system') {
+                output.push(m);
+                continue;
+            }
+            if (lastNonSystemRole !== null && lastNonSystemRole === m.role) {
+                // Insert an empty user spacer to maintain alternation without affecting token counts
+                const spacer: { role: 'user'|'assistant'; content: string } = {
+                    role: lastNonSystemRole === 'assistant' ? 'user' : 'assistant',
+                    content: '',
+                };
+                // Only insert if it actually flips the role to alternate
+                output.push(spacer);
+                lastNonSystemRole = spacer.role;
+            }
+            output.push(m);
+            lastNonSystemRole = m.role;
+        }
+        return output;
+    };
+    // Track the single source of truth for what we size and what we send
+    let currentAssembledMessages: Messages[] = initialAssembledMessages;
+    let currentResourceDocuments: ResourceDocuments = [...resourceDocuments];
 
-    const initialTokenCount = deps.countTokens(tempMessagesForTokenCounting, extendedModelConfig);
+    // Build normalized messages for initial sizing
+    const initialEffectiveMessages: { role: 'system'|'user'|'assistant'; content: string }[] = initialAssembledMessages
+        .filter(isApiChatMessage)
+        .filter((m): m is { role: 'system'|'user'|'assistant'; content: string } => m.content !== null);
+    const normalizedInitialMessages = enforceStrictTurnOrder(initialEffectiveMessages);
+
+    const fullPayload: CountableChatPayload = {
+        systemInstruction,
+        message: sanitizedCurrentUserPrompt,
+        messages: normalizedInitialMessages,
+        resourceDocuments: currentResourceDocuments.map(d => ({ id: d.id, content: d.content })),
+    };
+    const initialTokenCount = deps.countTokens(tokenizerDeps, fullPayload, extendedModelConfig);
     const maxTokens = extendedModelConfig.max_context_window_tokens || extendedModelConfig.context_window_tokens;
     
     console.log(`[DEBUG] Initial Token Count: ${initialTokenCount}`);
     console.log(`[DEBUG] Max Tokens: ${maxTokens}`);
     console.log(`[DEBUG] Condition will be: ${!!maxTokens && initialTokenCount > maxTokens}`);
 
-    let finalConversationHistory = conversationHistory;
+    // Wallet presence is already enforced above; implement universal preflight (non-oversized included)
+    if (!tokenWalletService) {
+        throw new Error('Token wallet service is required for affordability preflight');
+    }
+
+    // Fetch and parse wallet balance
+    const walletBalanceStr = await tokenWalletService.getBalance(walletId);
+    const walletBalance = parseFloat(walletBalanceStr);
+    if (!Number.isFinite(walletBalance) || walletBalance < 0) {
+        throw new Error(`Could not parse wallet balance for walletId: ${walletId}`);
+    }
+
+    // Validate model cost rates
+    const inputRate = extendedModelConfig.input_token_cost_rate;
+    const outputRate = extendedModelConfig.output_token_cost_rate;
+    if (typeof inputRate !== 'number' || inputRate < 0 || typeof outputRate !== 'number' || outputRate <= 0) {
+        throw new Error('Model configuration is missing valid token cost rates.');
+    }
+
+    const isOversized = Boolean(maxTokens && initialTokenCount > maxTokens);
+    if (!isOversized) {
+        // Compute planned output budget using balance and model configuration
+        const plannedMaxOutputTokens = getMaxOutputTokens(
+            walletBalance,
+            initialTokenCount,
+            extendedModelConfig,
+            deps.logger,
+        );
+        if (plannedMaxOutputTokens < 0) {
+            throw new Error('Insufficient funds to cover the input prompt cost.');
+        }
+
+        // Reserve headroom for output + safety buffer from the input window
+        const providerMaxInputTokens = (typeof (extendedModelConfig).provider_max_input_tokens === 'number'
+            && (extendedModelConfig).provider_max_input_tokens! > 0)
+            ? (extendedModelConfig).provider_max_input_tokens!
+            : (typeof extendedModelConfig.context_window_tokens === 'number' ? extendedModelConfig.context_window_tokens : 0);
+
+        const safetyBufferTokens = 32;
+        const allowedInput = providerMaxInputTokens > 0
+            ? providerMaxInputTokens - (plannedMaxOutputTokens + safetyBufferTokens)
+            : Infinity;
+
+        if (allowedInput !== Infinity && allowedInput <= 0) {
+            throw new ContextWindowError(
+                `No input window remains after reserving output budget (${plannedMaxOutputTokens}) and safety buffer (${safetyBufferTokens}).`
+            );
+        }
+
+        if (allowedInput !== Infinity && initialTokenCount > allowedInput) {
+            // Safety-margin violation: input too large once output budget is reserved
+            throw new ContextWindowError(
+                `Initial input tokens (${initialTokenCount}) exceed allowed input (${allowedInput}) after reserving output budget.`
+            );
+        }
+
+        // NSF guard: input + output estimated cost must not exceed balance
+        const estimatedInputCost = initialTokenCount * inputRate;
+        const estimatedOutputCost = plannedMaxOutputTokens * outputRate;
+        const estimatedTotalCost = estimatedInputCost + estimatedOutputCost;
+
+        if (estimatedTotalCost > walletBalance) {
+            throw new Error(
+                `Insufficient funds: estimated total cost (${estimatedTotalCost}) exceeds wallet balance (${walletBalance}).`
+            );
+        }
+    }
+
+    // Build a single ChatApiRequest instance early and keep it in sync; use it to drive both sizing and send
+    let chatApiRequest: ChatApiRequest = {
+        message: sanitizedCurrentUserPrompt,
+        messages: enforceStrictTurnOrder(
+            currentAssembledMessages
+                .filter(isApiChatMessage)
+                .filter((m): m is { role: 'user' | 'assistant' | 'system', content: string } => m.content !== null),
+        ),
+        providerId: providerDetails.id,
+        promptId: '__none__',
+        systemInstruction: systemInstruction,
+        walletId: walletId,
+        resourceDocuments: currentResourceDocuments.map((d) => ({ id: d.id, content: d.content })),
+        continue_until_complete: job.payload.continueUntilComplete,
+        isDialectic: true,
+    };
 
     if (maxTokens && initialTokenCount > maxTokens) {
         if (!ragService || !embeddingClient || !tokenWalletService || !countTokens) {
@@ -124,13 +275,7 @@ export async function executeModelCallAndSave(
         const estimatedFinalPromptCost = maxTokens * inputCostRate;
         const totalEstimatedInputCost = estimatedTotalRagCost + estimatedFinalPromptCost;
         
-        let currentUserBalance: number;
-        try {
-            const balanceStr = await tokenWalletService.getBalance(walletId!);
-            currentUserBalance = parseFloat(balanceStr);
-        } catch (e) {
-            throw new Error(`Could not fetch or parse wallet balance for walletId: ${walletId}`, { cause: e });
-        }
+        const currentUserBalance: number = walletBalance;
         
         // Stage 1: Absolute Affordability Check
         if (currentUserBalance < totalEstimatedInputCost) {
@@ -168,14 +313,26 @@ export async function executeModelCallAndSave(
             if (ragResult.error) throw ragResult.error;
 
             const tokensUsed = ragResult.tokensUsedForIndexing || 0;
+            // Persistent diagnostics for per-turn debit visibility
+            deps.logger.info('[executeModelCallAndSave] RAG tokensUsedForIndexing observed in-loop', {
+                jobId,
+                candidateId: victim.id,
+                tokensUsed,
+                hasWallet: Boolean(walletId),
+            });
             if (tokensUsed > 0 && walletId) {
+                deps.logger.info('[executeModelCallAndSave] Debiting wallet for RAG compression', {
+                    jobId,
+                    candidateId: victim.id,
+                    amount: tokensUsed,
+                });
                 try {
                     await tokenWalletService.recordTransaction({
                         walletId: walletId,
                         type: 'DEBIT_USAGE',
                         amount: tokensUsed.toString(),
                         recordedByUserId: projectOwnerUserId,
-                        idempotencyKey: crypto.randomUUID(),
+                        idempotencyKey: `rag:${jobId}:${victim.id}`,
                         relatedEntityId: victim.id,
                         relatedEntityType: 'rag_compression',
                         notes: `RAG compression for job ${jobId}`,
@@ -194,11 +351,38 @@ export async function executeModelCallAndSave(
                 if (docIndex > -1) workingResourceDocs[docIndex].content = newContent;
             }
             
-            const tempPromptForTokenCheck: Messages[] = [
-                ...workingHistory,
-                ...workingResourceDocs.map((d): Messages => ({ role: 'user', content: d.content })),
-            ];
-            currentTokenCount = deps.countTokens(tempPromptForTokenCheck, extendedModelConfig);
+            const loopAssembledMessages: Messages[] = [];
+            if (!isContinuationFlowInitial) {
+                loopAssembledMessages.push({ role: 'user', content: currentUserPrompt });
+            }
+            workingHistory.forEach(msg => {
+                if (msg.role !== 'function') {
+                    loopAssembledMessages.push({ role: msg.role, content: msg.content });
+                }
+            });
+            // Rebuild the entire payload after each compression step
+            // Keep the sized payload components as the ones we will send when it fits
+            currentAssembledMessages = loopAssembledMessages;
+            currentResourceDocuments = [...workingResourceDocs];
+
+            // Keep ChatApiRequest in sync and size based on the same object
+            chatApiRequest = {
+                ...chatApiRequest,
+                message: sanitizedCurrentUserPrompt,
+                messages: enforceStrictTurnOrder(
+                    currentAssembledMessages
+                        .filter(isApiChatMessage)
+                        .filter((m): m is { role: 'user' | 'assistant' | 'system', content: string } => m.content !== null),
+                ),
+                resourceDocuments: currentResourceDocuments.map((d) => ({ id: d.id, content: d.content })),
+            };
+            const loopPayload: CountableChatPayload = {
+                systemInstruction: chatApiRequest.systemInstruction,
+                message: chatApiRequest.message,
+                messages: chatApiRequest.messages,
+                resourceDocuments: chatApiRequest.resourceDocuments,
+            };
+            currentTokenCount = deps.countTokens(tokenizerDeps, loopPayload, extendedModelConfig);
         }
 
         if (currentTokenCount > maxTokens) {
@@ -211,33 +395,71 @@ export async function executeModelCallAndSave(
             `[executeModelCallAndSave] Prompt successfully compressed. New token count: ${currentTokenCount}`,
         );
 
-        finalConversationHistory = workingHistory;
+        // When compression succeeds, currentAssembledMessages/currentResourceDocuments already
+        // reflect the last sized state and will be used to build the final ChatApiRequest below.
+
+        //Final headroom and affordability checks on the exact payload we will send
+        // Ensure chatApiRequest reflects final compressed state and size using the same object
+        chatApiRequest = {
+            ...chatApiRequest,
+            message: sanitizedCurrentUserPrompt,
+            messages: enforceStrictTurnOrder(
+                currentAssembledMessages
+                    .filter(isApiChatMessage)
+                    .filter((m): m is { role: 'user' | 'assistant' | 'system', content: string } => m.content !== null),
+            ),
+            resourceDocuments: currentResourceDocuments.map((d) => ({ id: d.id, content: d.content })),
+        };
+        const finalPayloadAfterCompression: CountableChatPayload = {
+            systemInstruction: chatApiRequest.systemInstruction,
+            message: chatApiRequest.message,
+            messages: chatApiRequest.messages,
+            resourceDocuments: chatApiRequest.resourceDocuments,
+        };
+        const finalTokenCountAfterCompression = deps.countTokens(tokenizerDeps, finalPayloadAfterCompression, extendedModelConfig);
+
+        const plannedMaxOutputTokensPost = getMaxOutputTokens(
+            walletBalance,
+            finalTokenCountAfterCompression,
+            extendedModelConfig,
+            deps.logger,
+        );
+
+        const providerMaxInputTokensPost =
+            (typeof extendedModelConfig.provider_max_input_tokens === 'number' && extendedModelConfig.provider_max_input_tokens > 0)
+                ? extendedModelConfig.provider_max_input_tokens
+                : (typeof extendedModelConfig.context_window_tokens === 'number' ? extendedModelConfig.context_window_tokens : 0);
+
+        const safetyBufferTokensPost = 32;
+        const allowedInputPost = providerMaxInputTokensPost > 0
+            ? providerMaxInputTokensPost - (plannedMaxOutputTokensPost + safetyBufferTokensPost)
+            : Infinity;
+
+        if (allowedInputPost !== Infinity && allowedInputPost <= 0) {
+            throw new ContextWindowError(
+                `No input window remains after reserving output budget (${plannedMaxOutputTokensPost}) and safety buffer (${safetyBufferTokensPost}).`
+            );
+        }
+
+        if (allowedInputPost !== Infinity && finalTokenCountAfterCompression > allowedInputPost) {
+            throw new ContextWindowError(
+                `Final input tokens (${finalTokenCountAfterCompression}) exceed allowed input (${allowedInputPost}) after reserving output budget.`
+            );
+        }
+
+        const estimatedInputCostPost = finalTokenCountAfterCompression * inputRate;
+        const estimatedOutputCostPost = plannedMaxOutputTokensPost * outputRate;
+        const estimatedTotalCostPost = estimatedInputCostPost + estimatedOutputCostPost;
+        if (estimatedTotalCostPost > walletBalance) {
+            throw new Error(
+                `Insufficient funds: estimated total cost (${estimatedTotalCostPost}) exceeds wallet balance (${walletBalance}) after compression.`
+            );
+        }
     }
 
-    const isContinuationFlow = Boolean(job.target_contribution_id || job.payload.target_contribution_id);
-    const assembledMessages: Messages[] = [];
-    // For non-continuation flows, the rendered user prompt is the first message
-    if (!isContinuationFlow) {
-        assembledMessages.push({ role: 'user', content: currentUserPrompt });
-    }
-    // Append conversation history (excluding function role)
-    finalConversationHistory.forEach(msg => {
-        if (msg.role !== 'function') {
-            assembledMessages.push({ role: msg.role, content: msg.content });
-        }
-    });
     // Do not append resourceDocuments into messages; they are not implemented as chat messages
 
-    const chatApiRequest: ChatApiRequest = {
-        message: currentUserPrompt,
-        messages: assembledMessages.filter(isApiChatMessage).filter((m): m is { role: 'user' | 'assistant' | 'system', content: string } => m.content !== null),
-        providerId: providerDetails.id,
-        promptId: '__none__',
-        systemInstruction: systemInstruction,
-        walletId: walletId,
-        continue_until_complete: job.payload.continueUntilComplete,
-        isDialectic: true,
-    };
+    // chatApiRequest already constructed and kept in sync above; use it directly for the adapter call
 
     const userAuthToken = 'user_jwt' in job.payload && job.payload.user_jwt ? job.payload.user_jwt : authToken;
 
@@ -430,4 +652,8 @@ export async function executeModelCallAndSave(
 
     deps.logger.info(`[dialectic-worker] [executeModelCallAndSave] Job ${jobId} finished successfully. Results: ${JSON.stringify(modelProcessingResult)}. Final Status: completed`);
 }
+
+
+
+
 

@@ -37,9 +37,13 @@ import {
     isChatMessageRow,
     isChatInsert,
     hasModelResultWithContributionId,
+    isKnownTiktokenEncoding,
+    isChatApiRequest,
+    isApiChatMessage,
 } from './type_guards.ts';
 import type { DialecticContributionRow, DialecticJobRow, FailedAttemptError } from '../../dialectic-service/dialectic.interface.ts';
 import type { AiModelExtendedConfig, TokenUsage, ChatInsert } from '../types.ts';
+import type { ChatApiRequest } from '../types.ts';
 import { ProjectContext, StageContext } from '../prompt-assembler.interface.ts';
 import { CanonicalPathParams } from '../types/file_manager.types.ts';
 
@@ -83,6 +87,58 @@ Deno.test('Type Guard: isChatInsert', async (t) => {
     await t.step('should return false for non-object inputs', () => {
         assert(!isChatInsert(null));
         assert(!isChatInsert('a string'));
+    });
+});
+
+Deno.test('Type Guard: isChatApiRequest (RED for step 74)', async (t) => {
+    await t.step('accepts minimal valid request', () => {
+        const req: ChatApiRequest = {
+            message: 'Hello',
+            providerId: 'provider-1',
+            promptId: '__none__',
+        };
+        assert(isChatApiRequest(req));
+    });
+
+    await t.step('accepts extended fields: systemInstruction, messages, resourceDocuments, walletId', () => {
+        const req: ChatApiRequest = {
+            message: 'Hi there',
+            providerId: 'prov-123',
+            promptId: '__none__',
+            walletId: 'wallet-1',
+            systemInstruction: 'Be concise',
+            messages: [
+                { role: 'user', content: 'Earlier' },
+                { role: 'assistant', content: 'Reply' },
+            ],
+            resourceDocuments: [
+                { id: 'doc-1', content: 'Context A' },
+            ],
+        };
+        assert(isChatApiRequest(req));
+        // Ensure messages elements pass the narrower guard as well
+        assert(req.messages?.every(m => isApiChatMessage({ role: m.role, content: m.content })) === true);
+    });
+
+    await t.step('rejects missing required fields', () => {
+        const bad1 = { providerId: 'p', promptId: '__none__' };
+        const bad2 = { message: 'x', promptId: '__none__' };
+        const bad3 = { message: 'x', providerId: 'p' };
+        assert(!isChatApiRequest(bad1));
+        assert(!isChatApiRequest(bad2));
+        assert(!isChatApiRequest(bad3));
+    });
+
+    await t.step('rejects wrong-typed required fields', () => {
+        const bad = { message: 123, providerId: 'p', promptId: '__none__' };
+        assert(!isChatApiRequest(bad));
+    });
+
+    await t.step('rejects non-object', () => {
+        assert(!isChatApiRequest(null));
+        assert(!isChatApiRequest('string'));
+        assert(!isChatApiRequest(123));
+        assert(!isChatApiRequest([]));
     });
 });
 
@@ -1912,3 +1968,26 @@ Deno.test('Type Guard: hasModelResultWithContributionId', async (t) => {
     });
 });
 
+
+Deno.test('Type Guard: isKnownTiktokenEncoding', async (t) => {
+    await t.step('should return true for supported encoding names', () => {
+        assert(isKnownTiktokenEncoding('cl100k_base'));
+        assert(isKnownTiktokenEncoding('p50k_base'));
+        assert(isKnownTiktokenEncoding('r50k_base'));
+        assert(isKnownTiktokenEncoding('gpt2'));
+    });
+
+    await t.step('should return false for unsupported encoding names', () => {
+        assert(!isKnownTiktokenEncoding('o200k_base'));
+        assert(!isKnownTiktokenEncoding('unknown_encoding'));
+        assert(!isKnownTiktokenEncoding(''));
+    });
+
+    await t.step('should return false for non-string values', () => {
+        assert(!isKnownTiktokenEncoding(null));
+        assert(!isKnownTiktokenEncoding(undefined));
+        assert(!isKnownTiktokenEncoding(123));
+        assert(!isKnownTiktokenEncoding({}));
+        assert(!isKnownTiktokenEncoding([]));
+    });
+});

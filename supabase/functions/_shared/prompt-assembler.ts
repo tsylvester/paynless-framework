@@ -9,7 +9,8 @@ import type { DownloadStorageResult } from "./supabase_storage_utils.ts";
 import { hasProcessingStrategy } from "./utils/type_guards.ts";
 import { join } from "jsr:@std/path/join";
 import { AiModelExtendedConfig, Messages } from "./types.ts";
-import { countTokensForMessages } from "./utils/tokenizer_utils.ts";
+import { countTokens } from "./utils/tokenizer_utils.ts";
+import type { CountTokensDeps, CountableChatPayload } from "./types/tokenizer.types.ts";
 import type { IPromptAssembler } from "./prompt-assembler.interface.ts";
 import { DocumentRelationships } from "./types/file_manager.types.ts";
 import { isKeyOf } from "./utils/type_guards.ts";
@@ -20,18 +21,18 @@ export class PromptAssembler implements IPromptAssembler {
     private renderPromptFn: RenderPromptFunctionType;
     private downloadFromStorageFn: (bucket: string, path: string) => Promise<DownloadStorageResult>;
 
-    private countTokensFn: (messages: Messages[], modelConfig: AiModelExtendedConfig) => number;
+    private countTokensFn: (deps: CountTokensDeps, payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number;
 
     constructor(
         dbClient: SupabaseClient<Database>,
         downloadFn?: (bucket: string, path: string) => Promise<DownloadStorageResult>,
         renderPromptFn?: RenderPromptFunctionType,
-        countTokensFn?: (messages: Messages[], modelConfig: AiModelExtendedConfig) => number
+        countTokensFn?: (deps: CountTokensDeps, payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number
     ) {
         this.dbClient = dbClient;
         this.renderPromptFn = renderPromptFn || renderPrompt;
         this.downloadFromStorageFn = downloadFn || ((bucket, path) => downloadFromStorage(this.dbClient, bucket, path));
-        this.countTokensFn = countTokensFn || countTokensForMessages;
+        this.countTokensFn = countTokensFn || countTokens;
 
         const bucketFromEnv = Deno.env.get("SB_CONTENT_STORAGE_BUCKET");
         if (!bucketFromEnv) {
