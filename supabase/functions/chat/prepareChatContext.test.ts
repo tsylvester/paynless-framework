@@ -2,15 +2,16 @@ import {
     assertEquals,
     assert,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
+import { spy, assertSpyCall } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { createMockSupabaseClient, MockSupabaseClientSetup } from "../_shared/supabase.mock.ts";
 import { logger } from "../_shared/logger.ts";
 import { createMockTokenWalletService, MockTokenWalletService } from "../_shared/services/tokenWalletService.mock.ts";
-import { AiModelExtendedConfig, ChatApiRequest, ChatHandlerDeps } from "../_shared/types.ts";
+import { AiModelExtendedConfig, ChatApiRequest } from "../_shared/types.ts";
 import { prepareChatContext, PrepareChatContextDeps, ChatContext } from "./prepareChatContext.ts";
 import { getMockAiProviderAdapter } from "../_shared/ai_service/ai_provider.mock.ts";
 import { Database } from "../types_db.ts";
 import { SupabaseClient } from "@supabase/supabase-js";
+import { DummyAdapter } from "../_shared/ai_service/dummy_adapter.ts";
 
 const getValidProviderConfig = (): AiModelExtendedConfig => ({
     api_identifier: 'test-model',
@@ -56,7 +57,7 @@ Deno.test("prepareChatContext: successful context preparation", async () => {
         tokenWalletService: mockTokenWalletService.instance,
         getAiProviderAdapter: spy(() => mockAdapter),
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-        countTokensForMessages: spy(() => 10),
+        countTokens: spy(() => 10),
         createSupabaseClient: spy(),
         fetch: spy(),
         handleCorsPreflightRequest: spy(),
@@ -102,7 +103,7 @@ Deno.test("prepareChatContext: provider not found", async () => {
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         tokenWalletService: createMockTokenWalletService().instance,
         getAiProviderAdapter: spy(),
-        countTokensForMessages: spy(),
+        countTokens: spy(),
         createSupabaseClient: spy(),
         fetch: spy(),
         handleCorsPreflightRequest: spy(),
@@ -145,7 +146,7 @@ Deno.test("prepareChatContext: wallet not found", async () => {
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         tokenWalletService: mockTokenWalletService.instance,
         getAiProviderAdapter: spy(() => mockAdapter),
-        countTokensForMessages: spy(),
+        countTokens: spy(),
         createSupabaseClient: spy(),
         fetch: spy(),
         handleCorsPreflightRequest: spy(),
@@ -185,7 +186,7 @@ Deno.test("prepareChatContext: inactive provider", async () => {
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         tokenWalletService: createMockTokenWalletService().instance,
         getAiProviderAdapter: spy(),
-        countTokensForMessages: spy(),
+        countTokens: spy(),
         createSupabaseClient: spy(),
         fetch: spy(),
         handleCorsPreflightRequest: spy(),
@@ -232,7 +233,7 @@ Deno.test("prepareChatContext: invalid promptId returns null prompt", async () =
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         tokenWalletService: mockTokenWalletService.instance,
         getAiProviderAdapter: spy(() => mockAdapter),
-        countTokensForMessages: spy(),
+        countTokens: spy(),
         createSupabaseClient: spy(),
         fetch: spy(),
         handleCorsPreflightRequest: spy(),
@@ -280,7 +281,7 @@ Deno.test("prepareChatContext: inactive prompt returns null prompt", async () =>
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         tokenWalletService: mockTokenWalletService.instance,
         getAiProviderAdapter: spy(() => mockAdapter),
-        countTokensForMessages: spy(),
+        countTokens: spy(),
         createSupabaseClient: spy(),
         fetch: spy(),
         handleCorsPreflightRequest: spy(),
@@ -324,7 +325,7 @@ Deno.test("prepareChatContext: promptId '__none__' returns null prompt", async (
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         tokenWalletService: mockTokenWalletService.instance,
         getAiProviderAdapter: spy(() => mockAdapter),
-        countTokensForMessages: spy(),
+        countTokens: spy(),
         createSupabaseClient: spy(),
         fetch: spy(),
         handleCorsPreflightRequest: spy(),
@@ -366,7 +367,7 @@ Deno.test("prepareChatContext: missing provider string in DB returns 500", async
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         tokenWalletService: createMockTokenWalletService().instance,
         getAiProviderAdapter: spy(),
-        countTokensForMessages: spy(),
+        countTokens: spy(),
         createSupabaseClient: spy(),
         fetch: spy(),
         handleCorsPreflightRequest: spy(),
@@ -409,7 +410,7 @@ Deno.test("prepareChatContext: unsupported provider returns 400", async () => {
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         tokenWalletService: mockTokenWalletService.instance,
         getAiProviderAdapter: spy(() => null), // Factory returns null for unsupported provider
-        countTokensForMessages: spy(),
+        countTokens: spy(),
         createSupabaseClient: spy(),
         fetch: spy(),
         handleCorsPreflightRequest: spy(),
@@ -453,7 +454,7 @@ Deno.test("prepareChatContext: returns 402 if getWalletForContext returns null",
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         tokenWalletService: mockTokenWalletService.instance,
         getAiProviderAdapter: spy(() => mockAdapter),
-        countTokensForMessages: spy(),
+        countTokens: spy(),
         createSupabaseClient: spy(),
         fetch: spy(),
         handleCorsPreflightRequest: spy(),
@@ -499,7 +500,7 @@ Deno.test("prepareChatContext: returns 500 if getWalletForContext throws an erro
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
         tokenWalletService: mockTokenWalletService.instance,
         getAiProviderAdapter: spy(() => mockAdapter),
-        countTokensForMessages: spy(),
+        countTokens: spy(),
         createSupabaseClient: spy(),
         fetch: spy(),
         handleCorsPreflightRequest: spy(),

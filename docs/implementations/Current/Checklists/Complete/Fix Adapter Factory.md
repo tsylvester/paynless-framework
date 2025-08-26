@@ -119,11 +119,11 @@ The implementation plan uses the following labels to categorize work steps:
         *   `[✅]` 5.c.ii. **[TEST-UNIT]** Use `testAdapterContract` with a mocked Google API (`fetch`).
         *   `[✅]` 5.c.iii. **[TEST-UNIT]** Retain tests for Google-specific logic (e.g., system prompt prepending, `getModelDetails`).
     *   `[✅]` 5.d. **Dummy Adapter Tests**
-        *   `[✅]` 5.d.i. **[BE]** First, refactor the `DummyAdapter` itself. It must import and use the application's shared `countTokensForMessages` utility to calculate its `token_usage` based on the echoed message content. It must not hardcode token values or use a bespoke counting method.
+        *   `[✅]` 5.d.i. **[BE]** First, refactor the `DummyAdapter` itself. It must import and use the application's shared `countTokens` utility to calculate its `token_usage` based on the echoed message content. It must not hardcode token values or use a bespoke counting method.
         *   `[✅]` 5.d.ii. **[TEST-UNIT]** In `dummy_adapter.test.ts`, refactor the test to use the `testAdapterContract`.
         *   `[✅]` 5.d.iii. **[TEST-UNIT]** The test **must not** mock the global `fetch` function, as the `DummyAdapter` does not perform external communication.
         *   `[✅]` 5.d.iv. **[TEST-UNIT]** The `MockApi` implementation for the dummy test will be a simple pass-through that instantiates the real `DummyAdapter` and calls its methods directly.
-        *   `[✅]` 5.d.v. **[TEST-UNIT]** Add a separate, specific test case within `dummy_adapter.test.ts` to verify its unique tokenization behavior. This test will call `sendMessage` and then independently use `countTokensForMessages` to assert that the token counts returned by the adapter are correct.
+        *   `[✅]` 5.d.v. **[TEST-UNIT]** Add a separate, specific test case within `dummy_adapter.test.ts` to verify its unique tokenization behavior. This test will call `sendMessage` and then independently use `countTokens` to assert that the token counts returned by the adapter are correct.
 
 ## Phase 4: Documentation and Finalization
 

@@ -113,7 +113,7 @@ Deno.test('debitTokens: rollback - debit succeeds, db operation fails', async ()
     };
 
     // Act & Assert
-    await assertRejects(() => debitTokens(deps, params), Error, "DB insert failed");
+    await assertRejects(() => debitTokens(deps, params), Error, "Database operation failed after debit:");
     
     assertEquals(dbOperation.calls.length, 1);
     assertEquals(mockTokenWalletService.stubs.recordTransaction.calls.length, 2);
@@ -200,7 +200,7 @@ Deno.test('debitTokens: handles message insert error from handleNormalPath', asy
     await assertRejects(
         () => debitTokens(deps, params),
         Error,
-        "Test: Message insert failed"
+        "Database operation failed after debit:"
     );
 
     // Verify that a refund was issued
@@ -284,7 +284,7 @@ Deno.test('debitTokens: handles message insert error from handleNormalPath', asy
     await assertRejects(
         () => debitTokens(deps, params),
         Error,
-        "Test: Message insert failed"
+        "Database operation failed after debit:"
     );
 
     // Verify that a refund was issued

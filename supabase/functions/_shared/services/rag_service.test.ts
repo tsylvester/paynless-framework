@@ -55,10 +55,10 @@ describe('RagService', () => {
   function initializeService(config: MockSupabaseDataConfig = {}) {
     setup = createMockSupabaseClient('test-user-id', config);
     mockIndexingService = {
-        indexDocument: () => Promise.resolve({ success: true }),
+        indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }),
     };
     mockEmbeddingClient = {
-        createEmbedding: () => Promise.resolve(Array(1536).fill(0.1)),
+        getEmbedding: () => Promise.resolve({ embedding: Array(1536).fill(0.1), usage: { prompt_tokens: 0, total_tokens: 0 } }),
     };
 
     deps = {
@@ -141,7 +141,7 @@ describe('RagService', () => {
             }
         });
 
-        const embeddingSpy = spy(deps.embeddingClient, 'createEmbedding');
+        const embeddingSpy = spy(deps.embeddingClient, 'getEmbedding');
         const rpcSpy = setup.spies.rpcSpy;
 
         const result = await service.getContextForModel([], mockModelConfig, 'session-123', 'synthesis');
@@ -272,14 +272,14 @@ describe('RagService', () => {
         });
 
         let doc2Attempt = 0;
-        indexDocumentStub = stub(deps.indexingService, 'indexDocument', (sessionId, docId) => {
-            if (docId === 'doc2') {
+        indexDocumentStub = stub(deps.indexingService, 'indexDocument', (sessionId, sourceContributionId, documentContent, metadata) => {
+            if (sourceContributionId === 'doc2') {
                 doc2Attempt++;
                 if (doc2Attempt === 1) {
-                    return Promise.resolve({ success: false, error: new Error("Transient Indexing Error") });
+                    return Promise.resolve({ success: false, error: new Error("Transient Indexing Error"), tokensUsed: 0 });
                 }
             }
-            return Promise.resolve({ success: true });
+            return Promise.resolve({ success: true, tokensUsed: 0 });
         });
 
         const result = await service.getContextForModel(mockSourceDocuments, mockModelConfig, 'session-123', 'synthesis');
@@ -295,11 +295,11 @@ describe('RagService', () => {
             genericMockResults: { dialectic_memory: { select: { data: [], error: null } } },
         });
     
-        indexDocumentStub = stub(deps.indexingService, 'indexDocument', (sessionId, docId) => {
-            if (docId === 'doc2') {
-                return Promise.resolve({ success: false, error: new Error("Permanent Indexing Error") });
+        indexDocumentStub = stub(deps.indexingService, 'indexDocument', (sessionId, sourceContributionId, documentContent, metadata) => {
+            if (sourceContributionId === 'doc2') {
+                return Promise.resolve({ success: false, error: new Error("Permanent Indexing Error"), tokensUsed: 0 });
             }
-            return Promise.resolve({ success: true });
+            return Promise.resolve({ success: true, tokensUsed: 0 });
         });
     
         const result = await service.getContextForModel(mockSourceDocuments, mockModelConfig, 'session-123', 'synthesis');
@@ -308,6 +308,37 @@ describe('RagService', () => {
         assertEquals(result.context, null);
         assert(result.error instanceof RagServiceError, "Error should be a RagServiceError");
         assert(result.error.message.includes("Failed to index one or more documents: Permanent Indexing Error"), `Unexpected error message: ${result.error.message}`);
+    });
+  });
+
+  describe('Financial Tracking', () => {
+    it('should return the total tokens used for indexing new documents', async () => {
+        const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+                dialectic_memory: {
+                    select: { data: [{ source_contribution_id: 'doc1' }], error: null },
+                },
+            },
+            rpcResults: {
+                match_dialectic_chunks: { data: [], error: null },
+            }
+        };
+        initializeService(config);
+        
+        // Stub the indexing service to return a specific token count
+        indexDocumentStub = stub(deps.indexingService, 'indexDocument', () => {
+            return Promise.resolve({ success: true, tokensUsed: 123 });
+        });
+
+        const documentsToIndex = [
+            { id: 'doc1', content: 'Already indexed.' },
+            { id: 'doc2', content: 'Needs indexing.' },
+        ];
+
+        const result = await service.getContextForModel(documentsToIndex, mockModelConfig, 'session-123', 'synthesis');
+
+        // This test will fail because the property doesn't exist on the interface yet.
+        assertEquals(result.tokensUsedForIndexing, 123);
     });
   });
 });

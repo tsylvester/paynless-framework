@@ -3,7 +3,6 @@ import { Database } from "../types_db.ts";
 import { AiModelExtendedConfig, ChatApiRequest, ChatHandlerDeps, AiProviderAdapterInstance } from "../_shared/types.ts";
 import { TokenWallet } from "../_shared/types/tokenWallet.types.ts";
 import { AiModelExtendedConfigSchema } from "./zodSchema.ts";
-
 export interface PrepareChatContextDeps extends ChatHandlerDeps {
     supabaseClient: SupabaseClient<Database>;
 }
@@ -42,7 +41,6 @@ export async function prepareChatContext(
     const {
         logger,
         tokenWalletService,
-        getAiProviderAdapterOverride,
         getAiProviderAdapter: getAiProviderAdapterDep,
         supabaseClient,
     } = deps;
@@ -77,7 +75,7 @@ export async function prepareChatContext(
 
         const { data: providerData, error: providerError } = await supabaseClient
             .from('ai_providers')
-            .select('id, provider, api_identifier, config, is_active, name')
+            .select('*')
             .eq('id', requestProviderId)
             .single();
 
@@ -128,14 +126,14 @@ export async function prepareChatContext(
             return { error: { message: `API key for ${providerData.provider} is not configured.`, status: 500 } };
         }
 
-        const adapterToUse = getAiProviderAdapterOverride || getAiProviderAdapterDep;
-        // Now we pass the *parsed and validated* modelConfig, satisfying the stricter contract
-        const aiProviderAdapter = adapterToUse(
-            providerApiIdentifier, 
-            modelConfig, 
-            apiKey, 
-            logger
-        );
+        const aiProviderAdapter = (() => {
+            const adapterToUse = getAiProviderAdapterDep;
+            return adapterToUse({
+                provider: providerData,
+                apiKey,
+                logger,
+            });
+        })();
 
         if (!aiProviderAdapter) {
             return { error: { message: `Unsupported or misconfigured AI provider: ${providerApiIdentifier}`, status: 400 } };

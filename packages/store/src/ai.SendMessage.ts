@@ -1,6 +1,6 @@
 import type {
 	ChatMessage,
-	MessageForTokenCounting,
+	Messages,
 	ChatApiRequest,
 	ILogger,
 	AiState,
@@ -9,6 +9,7 @@ import type {
 	HandleSendMessageServiceParams,
 	InternalProcessResult,
 } from "@paynless/types";
+import { isChatRole } from "@paynless/utils";
 
 // --- Streaming Support ---
 interface StreamingCallbacks {
@@ -208,13 +209,11 @@ async function coreMessageProcessing(params: {
 	targetProviderId: string;
 	targetPromptId: string | null;
 	targetChatId?: string | null;
-	selectedContextMessages?: MessageForTokenCounting[];
+	selectedContextMessages?: Messages[];
 	effectiveOrganizationId?: string | null;
 	token: string; // Auth token is now passed directly
 	rewindTargetMessageId?: string | null;
-	continueUntilComplete?: boolean;
-	enableStreaming?: boolean; // Add streaming flag
-	streamingCallbacks?: StreamingCallbacks; // Add streaming callbacks
+	continueUntilComplete?: boolean; // Add this line
 	callChatApi: HandleSendMessageServiceParams["callChatApi"];
 	logger: ILogger;
 }): Promise<InternalProcessResult> {
@@ -228,8 +227,6 @@ async function coreMessageProcessing(params: {
 		token,
 		rewindTargetMessageId,
 		continueUntilComplete,
-		enableStreaming,
-		streamingCallbacks,
 		callChatApi,
 		logger,
 	} = params;
@@ -259,44 +256,6 @@ async function coreMessageProcessing(params: {
 			});
 		}
 
-		// Otherwise, use the regular chat API
-		const apiRequest: ChatApiRequest = {
-			message: messageContent,
-			providerId: targetProviderId,
-			promptId: targetPromptId || "__none__",
-			...(targetChatId && { chatId: targetChatId }),
-			...(effectiveOrganizationId && {
-				organizationId: effectiveOrganizationId,
-			}),
-			...(rewindTargetMessageId && {
-				rewindFromMessageId: rewindTargetMessageId,
-			}),
-			contextMessages: selectedContextMessages,
-			...(continueUntilComplete && {
-				continue_until_complete: continueUntilComplete,
-			}),
-		};
-		// Use RequestInit for fetch options, token is passed in headers
-		const response = await callChatApi(apiRequest, {
-			headers: { Authorization: `Bearer ${token}` },
-		});
-
-		logger.info("[coreMessageProcessing] API response:", {
-			hasError: !!response.error,
-			hasData: !!response.data,
-			errorMessage: response.error?.message,
-			responseData: response.data
-				? {
-						hasUserMessage: !!response.data.userMessage,
-						hasAssistantMessage: !!response.data.assistantMessage,
-						chatId: response.data.chatId,
-						isRewind: response.data.isRewind,
-						userMessageId: response.data.userMessage?.id,
-						assistantMessageId: response.data.assistantMessage?.id,
-					}
-				: null,
-		});
-
 		if (response.error || !response.data) {
 			return {
 				success: false,
@@ -318,21 +277,16 @@ async function coreMessageProcessing(params: {
 			typeof assistantMessage.token_usage === "object"
 		) {
 			// The type of assistantMessage.token_usage should be inferred from ChatMessageRow (DB schema)
-			const usage = assistantMessage.token_usage as {
-				prompt_tokens?: number;
-				completion_tokens?: number;
-				total_tokens?: number;
-				cost?: number;
-			}; // Keep cast for specific shape if DB type is JsonValue
-			if (usage.cost) {
-				actualCostWalletTokens = usage.cost;
+			const usage = assistantMessage.token_usage;
+			if (usage && typeof usage === "number") {
+				actualCostWalletTokens = usage;
 			}
 		}
 
 		return {
 			success: true,
-			finalUserMessage: finalUserMessage as ChatMessage | undefined,
-			assistantMessage: assistantMessage as ChatMessage,
+			finalUserMessage: finalUserMessage,
+			assistantMessage: assistantMessage,
 			newlyCreatedChatId,
 			actualCostWalletTokens,
 			wasRewind: isRewind,
@@ -461,24 +415,37 @@ export async function handleSendMessage(
 	const { tempId: tempUserMessageId, chatIdUsed: optimisticMessageChatId } =
 		aiStateService.addOptimisticUserMessage(message, inputChatId);
 
-	const effectiveChatIdForApi = inputChatId ?? existingChatIdFromState ?? null;
-	let organizationIdForApi: string | undefined | null = undefined;
-	if (!effectiveChatIdForApi) {
-		// Only set organizationId if newChatContext is not 'personal' (which is not a valid UUID)
-		organizationIdForApi =
-			newChatContext && newChatContext !== "personal"
-				? newChatContext
-				: undefined;
+	let finalContextMessages: Messages[] = [];
+	if (providedContextMessages && providedContextMessages.length > 0) {
+		finalContextMessages = providedContextMessages;
 	} else if (
-		activeWalletInfo.type === "organization" &&
-		activeWalletInfo.orgId
+		optimisticMessageChatId &&
+		messagesByChatId[optimisticMessageChatId] &&
+		messagesByChatId[optimisticMessageChatId].length > 0
 	) {
-		organizationIdForApi = activeWalletInfo.orgId;
+		// This is for an existing chat or a chat that was just created optimistically
+		// (e.g. after addOptimisticUserMessage or from a rewind that maintains the same chatId)
+		const currentMessages = messagesByChatId[optimisticMessageChatId] || [];
+		const currentSelections =
+			selectedMessagesMap[optimisticMessageChatId] || {};
+
+		finalContextMessages = currentMessages
+			.filter((m) => m.id !== tempUserMessageId && currentSelections[m.id]) // Exclude the current user message being sent, include selected history
+			.reduce<Messages[]>((acc, m) => {
+				if (isChatRole(m.role)) {
+					// The type guard has confirmed m.role is a valid ChatRole.
+					// We can now safely construct the object.
+					acc.push({
+						role: m.role,
+						content: m.content,
+					});
+				}
+				return acc;
+			}, []);
 	}
-	const apiPromptId =
-		selectedPromptId === null || selectedPromptId === "__none__"
-			? "__none__"
-			: selectedPromptId;
+	// If none of the above, finalContextMessages remains an empty array.
+	// This covers new chats where no contextMessages are explicitly provided,
+	// and the types do not currently support deriving context from newChatContext object properties or modelConfig.systemPrompt.
 
 	let finalContextMessages: MessageForTokenCounting[] = [];
 	if (providedContextMessages && providedContextMessages.length > 0) {
@@ -597,9 +564,74 @@ export async function handleSendMessage(
 		return null;
 	}
 
-	const { finalUserMessage, assistantMessage, newlyCreatedChatId, wasRewind } =
-		processingResult;
-	let finalChatIdForLog: string | null | undefined = null;
+	if (!actualNewChatId) {
+		return {
+			...state,
+			isLoadingAiResponse: false,
+			aiError: "Internal error: Chat ID missing.",
+		};
+	}
+	let messagesForChatProcessing = [
+		...(state.messagesByChatId[optimisticMessageChatId] || []),
+	];
+	if (finalUserMessage) {
+		messagesForChatProcessing = messagesForChatProcessing.map((msg) =>
+			msg.id === tempUserMessageId
+				? { ...finalUserMessage, status: "sent" }
+				: msg,
+		);
+	} else {
+		messagesForChatProcessing = messagesForChatProcessing.map((msg) =>
+			msg.id === tempUserMessageId
+				? { ...msg, chat_id: actualNewChatId, status: "sent" }
+				: msg,
+		);
+	}
+	if (isActualRewind) {
+		const processedUserMsgForRewind = messagesForChatProcessing.find(
+			(m) =>
+				m.role === "user" &&
+				(m.id === finalUserMessage?.id || m.id === tempUserMessageId),
+		);
+		const newBranchMessages: ChatMessage[] = [];
+		if (processedUserMsgForRewind)
+			newBranchMessages.push(processedUserMsgForRewind);
+		newBranchMessages.push(assistantMessage);
+		let baseHistory: ChatMessage[] = [];
+		const rewindPointIdx = (
+			state.messagesByChatId[actualNewChatId] || []
+		).findIndex((m) => m.id === currentRewindTargetId);
+		if (rewindPointIdx !== -1) {
+			baseHistory = (state.messagesByChatId[actualNewChatId] || []).slice(
+				0,
+				rewindPointIdx,
+			);
+		} else {
+			baseHistory = (
+				state.messagesByChatId[optimisticMessageChatId] || []
+			).filter((m) => m.id !== tempUserMessageId);
+		}
+		baseHistory = baseHistory.filter(
+			(m) => m.id !== tempUserMessageId && m.id !== finalUserMessage?.id,
+		);
+		messagesForChatProcessing = [...baseHistory, ...newBranchMessages];
+	} else {
+		if (
+			!messagesForChatProcessing.some((msg) => msg.id === assistantMessage.id)
+		) {
+			messagesForChatProcessing.push(assistantMessage);
+		}
+	}
+	const newMessagesByChatId = { ...state.messagesByChatId };
+	if (
+		optimisticMessageChatId !== actualNewChatId &&
+		newMessagesByChatId[optimisticMessageChatId]
+	) {
+		newMessagesByChatId[actualNewChatId] = messagesForChatProcessing;
+		delete newMessagesByChatId[optimisticMessageChatId];
+	} else {
+		newMessagesByChatId[actualNewChatId] = messagesForChatProcessing;
+	}
 
 	// The complex state update logic using aiStateService.setAiState
 	aiStateService.setAiState((state: AiState) => {

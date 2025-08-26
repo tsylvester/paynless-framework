@@ -1,5 +1,5 @@
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import type { Database, Json } from '../types_db.ts';
+import type { Database } from '../types_db.ts';
 import {
   type DialecticJobPayload,
   type SelectedAiProvider,
@@ -7,11 +7,15 @@ import {
   type IDialecticJobDeps,
   type ModelProcessingResult,
   type Job,
+  type PromptConstructionPayload,
   type SourceDocument,
 } from '../dialectic-service/dialectic.interface.ts';
-import { type StageContext } from '../_shared/prompt-assembler.interface.ts';
-import { isSelectedAiProvider, isDocumentRelationships } from "../_shared/utils/type_guards.ts";
+import { isSelectedAiProvider } from "../_shared/utils/type_guards.ts";
 import { ContextWindowError } from '../_shared/utils/errors.ts';
+import { type Messages } from '../_shared/types.ts';
+import { type AssemblerSourceDocument, type StageContext } from '../_shared/prompt-assembler.interface.ts';
+import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
+import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
 
 export async function processSimpleJob(
     dbClient: SupabaseClient<Database>,
@@ -21,10 +25,9 @@ export async function processSimpleJob(
     authToken: string,
 ) {
     const { id: jobId, attempt_count: currentAttempt, max_retries } = job;
-    const { 
-        iterationNumber = 1, 
-        stageSlug, 
-        projectId, 
+    const {
+        stageSlug,
+        projectId,
         model_id,
         sessionId,
     } = job.payload;
@@ -40,10 +43,6 @@ export async function processSimpleJob(
         const { data: sessionData, error: sessionError } = await dbClient.from('dialectic_sessions').select('*').eq('id', sessionId).single();
         if (sessionError || !sessionData) throw new Error(`Session ${sessionId} not found.`);
 
-        const renderedPrompt = await deps.getSeedPromptForStage(
-          dbClient, projectId, sessionId, stageSlug, iterationNumber, deps.downloadFromStorage
-        );
-        
         const { data: providerData, error: providerError } = await dbClient.from('ai_providers').select('*').eq('id', model_id).single();
         if (providerError || !providerData || !isSelectedAiProvider(providerData)) {
             throw new Error(`Failed to fetch valid provider details for model ID ${model_id}.`);
@@ -52,42 +51,20 @@ export async function processSimpleJob(
 
         if (currentAttempt === 0 && projectOwnerUserId) {
             await deps.notificationService.sendDialecticContributionStartedEvent({
-                sessionId, 
+                sessionId,
                 modelId: providerDetails.id,
-                iterationNumber: iterationNumber,
+                iterationNumber: sessionData.iteration_count,
                 type: 'dialectic_contribution_started',
                 job_id: jobId,
             }, projectOwnerUserId);
         }
         
-        let previousContent = '';
-        if (job.payload.target_contribution_id) {
-             const { data: prevContribution, error: prevContribError } = await dbClient
-              .from('dialectic_contributions').select('storage_path, storage_bucket, file_name').eq('id', job.payload.target_contribution_id).single();
-            if (prevContribError || !prevContribution) throw new Error(`Failed to find previous contribution record ${job.payload.target_contribution_id}.`);
-            
-            if (!prevContribution || !prevContribution.storage_path) {
-                throw new Error(`Previous contribution ${job.payload.target_contribution_id} not found or has no storage path.`);
-            }
-
-            const downloadPath = `${prevContribution.storage_path}/${prevContribution.file_name}`;
-            
-            const { data: downloadedData, error: downloadError } = await deps.downloadFromStorage(prevContribution.storage_bucket, downloadPath);
-            
-            if (downloadError) {
-                throw new Error('Failed to download previous content.', { cause: downloadError });
-            }
-
-            if (!downloadedData) {
-                throw new Error('Downloaded previous content is empty.');
-            }
-
-            previousContent = new TextDecoder().decode(downloadedData);
-        }
-        
         const { data: project } = await dbClient.from('dialectic_projects').select('*, dialectic_domains(id, name, description)').eq('id', projectId).single();
         if (!project) {
             throw new Error(`Project ${projectId} not found.`);
+        }
+        if (!project.dialectic_domains) {
+            throw new Error(`Project domain not found for project ${projectId}.`);
         }
 
         const { data: stageResult, error: stageError } = await dbClient
@@ -99,66 +76,90 @@ export async function processSimpleJob(
         if (stageError || !stageResult) {
             throw new Error(`Could not retrieve stage details for slug: ${stageSlug}`);
         }
-
         const { system_prompts, ...stageData } = stageResult;
-        
-        let overlays: { overlay_values: Json }[] = [];
-        if (stageData.default_system_prompt_id) {
-            const { data: overlayData, error: overlaysError } = await dbClient
-                .from('domain_specific_prompt_overlays')
-                .select('overlay_values')
-                .eq('system_prompt_id', stageData.default_system_prompt_id)
-                .eq('domain_id', project.selected_domain_id);
-
-            if (overlaysError) {
-                deps.logger.warn(`[processSimpleJob] Could not fetch overlays for prompt ${stageData.default_system_prompt_id} and domain ${project.selected_domain_id}.`, { error: overlaysError });
-            } else {
-                overlays = (overlayData || []).map(o => ({ overlay_values: o.overlay_values }));
-            }
+        if (!system_prompts) {
+            throw new Error(`System prompt not found for stage: ${stageData.id}`);
         }
-        
-        const stageContext: StageContext = {
-            ...stageData,
-            system_prompts: system_prompts,
-            domain_specific_prompt_overlays: overlays,
-        };
 
         if (!deps.promptAssembler) {
             throw new Error('PromptAssembler dependency is missing.');
         }
-        
-        const assemblerDocuments = await deps.promptAssembler.gatherInputsForStage(stageContext, project, sessionData, iterationNumber);
 
-        const contributionIds = assemblerDocuments.filter(d => d.type === 'contribution').map(d => d.id);
+        let conversationHistory: Messages[] = [];
+        let gatheredInputs: AssemblerSourceDocument[] = [];
+        let currentUserPrompt: string;
+        const resourceDocuments: SourceDocument[] = [];
 
-        const { data: contributions, error: contribError } = await dbClient
-            .from('dialectic_contributions')
-            .select('*')
-            .in('id', contributionIds);
+        if (job.payload.target_contribution_id) {
+            conversationHistory = await deps.promptAssembler.gatherContinuationInputs(
+                job.payload.target_contribution_id
+            );
+            currentUserPrompt = "Please continue.";
+        } else {
+            const stageContext: StageContext = { ...stageData, system_prompts, domain_specific_prompt_overlays: [] };
+            gatheredInputs = await deps.promptAssembler.gatherInputsForStage(
+                stageContext,
+                project,
+                sessionData,
+                sessionData.iteration_count,
+            );
+            conversationHistory = gatheredInputs.map((input) => {
+                if (input.type === 'contribution') {
+                    return { role: 'assistant', content: input.content };
+                } else {
+                    return { role: 'user', content: input.content };
+                }
+            });
 
-        if (contribError) {
-            throw new Error('Failed to fetch full source documents for contributions.');
+            const initialPromptResult = await getInitialPromptContent(
+                dbClient,
+                project,
+                deps.logger,
+                (_client, bucket, path) => deps.downloadFromStorage(bucket, path)
+            );
+
+            const directPrompt = typeof project.initial_user_prompt === 'string' ? project.initial_user_prompt.trim() : '';
+            const loaderContent = (initialPromptResult && typeof initialPromptResult.content === 'string') ? initialPromptResult.content.trim() : '';
+            const hasLoaderSource = !!(initialPromptResult && initialPromptResult.storagePath);
+
+            if (directPrompt) {
+                currentUserPrompt = directPrompt;
+            } else if (hasLoaderSource && loaderContent) {
+                currentUserPrompt = loaderContent;
+            } else {
+                throw new Error('Initial prompt is required to start this stage, but none was provided.');
+            }
+            // Render the prompt template using the resolved initial prompt and gathered context
+            const dynamicContext = await deps.promptAssembler.gatherContext(
+                project,
+                sessionData,
+                stageContext,
+                currentUserPrompt,
+                sessionData.iteration_count,
+            );
+            const renderedPrompt = deps.promptAssembler.render(
+                stageContext,
+                dynamicContext,
+                project.user_domain_overlay_values ?? null,
+            );
+            const renderedTrimmed = (renderedPrompt || '').trim();
+            if (!renderedTrimmed) {
+                throw new Error('Rendered initial prompt is empty.');
+            }
+            currentUserPrompt = renderedTrimmed;
+            console.log('currentUserPrompt', currentUserPrompt);
         }
-
-        const sourceContributions: SourceDocument[] = contributions.map(c => {
-            const assemblerDoc = assemblerDocuments.find(a => a.id === c.id);
-            return {
-                ...c,
-                content: assemblerDoc?.content || '',
-                document_relationships: isDocumentRelationships(c.document_relationships) ? c.document_relationships : null,
-            };
-        });
-
-        const sourceDocuments: SourceDocument[] = [...sourceContributions];
-
-        const assembledPromptContent = await deps.promptAssembler.assemble(
-            project,
-            sessionData,
-            stageContext,
-            project.initial_user_prompt,
-            iterationNumber,
-        );
         
+        // Pass-through-only: include systemInstruction if an upstream value is provided in the future.
+        const maybeSystemInstruction: string | undefined = undefined;
+
+        const promptConstructionPayload: PromptConstructionPayload = {
+            ...(maybeSystemInstruction !== undefined ? { systemInstruction: maybeSystemInstruction } : {}),
+            conversationHistory,
+            resourceDocuments,
+            currentUserPrompt,
+        };
+
         await deps.executeModelCallAndSave({
             dbClient,
             deps,
@@ -166,13 +167,9 @@ export async function processSimpleJob(
             job,
             projectOwnerUserId,
             providerDetails,
-            renderedPrompt: {
-                ...renderedPrompt,
-                content: assembledPromptContent,
-            },
-            previousContent,
             sessionData,
-            sourceDocuments,
+            promptConstructionPayload,
+            compressionStrategy: getSortedCompressionCandidates,
         });
 
     } catch (e) {
@@ -185,7 +182,6 @@ export async function processSimpleJob(
                 completed_at: new Date().toISOString(),
                 error_details: { message: `Context window limit exceeded: ${error.message}` },
             }).eq('id', jobId);
-            // Optionally, send a specific notification for this failure type.
             return;
         }
 

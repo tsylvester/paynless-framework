@@ -1,6 +1,9 @@
 import OpenAI from 'npm:openai';
 import type { ChatCompletionMessageParam } from 'npm:openai/resources/chat/completions';
-import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig } from '../types.ts';
+import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig, EmbeddingResponse } from '../types.ts';
+import type { Tables } from '../../types_db.ts';
+import { isJson, isAiModelExtendedConfig } from '../utils/type_guards.ts';
+
 
 /**
  * Implements AiProviderAdapter for OpenAI models.
@@ -11,13 +14,19 @@ export class OpenAiAdapter {
   private modelConfig: AiModelExtendedConfig;
 
   constructor(
+    provider: Tables<'ai_providers'>,
     apiKey: string, 
     logger: ILogger, 
-    modelConfig: AiModelExtendedConfig
   ) {
+    if(!isJson(provider.config)) {
+        throw new Error('provider.config is not a valid JSON object');
+    }
+    if(!isAiModelExtendedConfig(provider.config)) {
+        throw new Error('provider.config is not a valid AiModelExtendedConfig object');
+    }
     this.client = new OpenAI({ apiKey });
     this.logger = logger;
-    this.modelConfig = modelConfig;
+    this.modelConfig = provider.config;
     this.logger.info(`[OpenAiAdapter] Initialized with config: ${JSON.stringify(this.modelConfig)}`);
   }
 
@@ -177,17 +186,34 @@ export class OpenAiAdapter {
     }
   }
   
-  async getEmbedding(text: string) {
+  async getEmbedding(text: string): Promise<EmbeddingResponse> {
     const modelApiName = this.modelConfig.api_identifier.replace(/^openai-/i, '');
     this.logger.info(`[OpenAiAdapter] Getting embedding for text with model ${modelApiName}`);
     try {
-      const embedding = await this.client.embeddings.create({
+      const embeddingResponse = await this.client.embeddings.create({
         model: modelApiName,
         input: text,
         encoding_format: 'float',
       });
+      
+      if (!embeddingResponse.usage) {
+        this.logger.warn('[OpenAiAdapter] OpenAI embedding response did not include usage data.');
+        // Handle cases where usage is unexpectedly missing, perhaps return a default or throw
+        // For now, we'll construct the response with zeroed usage to prevent crashes downstream.
+        return {
+            embedding: embeddingResponse.data[0].embedding,
+            usage: { prompt_tokens: 0, total_tokens: 0 },
+        };
+      }
+
       this.logger.debug('[OpenAiAdapter] getEmbedding successful');
-      return embedding;
+      return {
+        embedding: embeddingResponse.data[0].embedding,
+        usage: {
+            prompt_tokens: embeddingResponse.usage.prompt_tokens,
+            total_tokens: embeddingResponse.usage.total_tokens,
+        },
+      };
     } catch (error) {
       if (error instanceof OpenAI.APIError) {
         this.logger.error(`[OpenAiAdapter] OpenAI API error getting embedding (${error.status}): ${error.message}`, { status: error.status });

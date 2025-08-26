@@ -83,6 +83,7 @@ Deno.test("startSession - Error: Process template is missing a starting_stage_id
                 select: async () => ({
                     data: [{ 
                         id: 'model-abc', 
+                        api_identifier: 'openai-gpt-4o', 
                         provider_max_input_tokens: 8000, 
                         config: {
                             tokenization_strategy: {
@@ -125,6 +126,7 @@ Deno.test("startSession - Error: Initial stage has no associated system prompt",
                 select: async () => ({
                     data: [{ 
                         id: 'model-abc', 
+                        api_identifier: 'openai-gpt-4o', 
                         provider_max_input_tokens: 8000, 
                         config: {
                             tokenization_strategy: {
@@ -169,6 +171,7 @@ Deno.test("startSession - Error: Database error on session insertion", async () 
                 select: async () => ({
                     data: [{ 
                         id: 'model-abc', 
+                        api_identifier: 'openai-gpt-4o', 
                         provider_max_input_tokens: 8000, 
                         config: {
                             tokenization_strategy: {
@@ -214,6 +217,7 @@ Deno.test("startSession - Error: Fails to upload user prompt and cleans up sessi
                 select: async () => ({
                     data: [{ 
                         id: 'model-abc', 
+                        api_identifier: 'openai-gpt-4o', 
                         provider_max_input_tokens: 8000, 
                         config: {
                             tokenization_strategy: {

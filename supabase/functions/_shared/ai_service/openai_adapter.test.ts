@@ -10,8 +10,10 @@ import OpenAI from 'npm:openai';
 
 import { OpenAiAdapter } from './openai_adapter.ts';
 import { testAdapterContract, type MockApi } from './adapter_test_contract.ts';
-import type { AdapterResponsePayload, ChatApiRequest, ProviderModelInfo, AiModelExtendedConfig } from "../types.ts";
+import type { AdapterResponsePayload, ChatApiRequest, ProviderModelInfo, AiModelExtendedConfig, EmbeddingResponse } from "../types.ts";
 import { MockLogger } from "../logger.mock.ts";
+import { Tables } from "../../types_db.ts";
+import { isJson } from "../utils/type_guards.ts";
 
 // --- Mock Data & Helpers ---
 
@@ -22,6 +24,24 @@ const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
     tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
 };
 const mockLogger = new MockLogger();
+
+if(!isJson(MOCK_MODEL_CONFIG)) {
+    throw new Error('MOCK_MODEL_CONFIG is not a valid JSON object');
+}
+
+const MOCK_PROVIDER: Tables<'ai_providers'> = {
+    id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12", // Unique mock ID
+    provider: "openai",
+    api_identifier: "openai-gpt-4o",
+    name: "OpenAI GPT-4o",
+    description: "A mock OpenAI model for testing.",
+    is_active: true,
+    is_default_embedding: false,
+    is_enabled: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    config: MOCK_MODEL_CONFIG,
+};
 
 const MOCK_OPENAI_SUCCESS_RESPONSE: ChatCompletion = {
   id: 'chatcmpl-xxxxxxxx',
@@ -82,7 +102,7 @@ Deno.test("OpenAI Adapter: Contract Compliance", async (t) => {
         listModelsStub = stub(OpenAiAdapter.prototype, "listModels", () => mockOpenAiApi.listModels());
     });
     
-    await testAdapterContract(t, OpenAiAdapter, mockOpenAiApi, MOCK_MODEL_CONFIG);
+    await testAdapterContract(t, OpenAiAdapter, mockOpenAiApi, MOCK_PROVIDER);
     
     await t.step("Teardown: Restore stubs", () => {
         sendMessageStub.restore();
@@ -100,6 +120,17 @@ Deno.test("OpenAiAdapter - Specific Tests: getEmbedding", async () => {
         tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base', is_chatml_model: false },
     };
 
+    if(!isJson(MOCK_EMBEDDING_MODEL_CONFIG)) {
+        throw new Error('MOCK_EMBEDDING_MODEL_CONFIG is not a valid JSON object');
+    }
+
+    const MOCK_EMBEDDING_PROVIDER: Tables<'ai_providers'> = {
+        ...MOCK_PROVIDER,
+        id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13', // Unique mock ID
+        api_identifier: 'openai-text-embedding-3-small',
+        config: MOCK_EMBEDDING_MODEL_CONFIG,
+    };
+
     const MOCK_EMBEDDING_SUCCESS_RESPONSE: CreateEmbeddingResponse = {
         object: 'list',
         data: [{ object: 'embedding', embedding: [0.01, 0.02, 0.03], index: 0 }],
@@ -114,16 +145,18 @@ Deno.test("OpenAiAdapter - Specific Tests: getEmbedding", async () => {
     const createStub = stub(OpenAI.Embeddings.prototype, "create", () => createMockEmbeddingPromise(MOCK_EMBEDDING_SUCCESS_RESPONSE));
 
     try {
-        const adapter = new OpenAiAdapter('sk-test-key', mockLogger, MOCK_EMBEDDING_MODEL_CONFIG);
-        const result = await adapter.getEmbedding("Hello world");
+        const adapter = new OpenAiAdapter(MOCK_EMBEDDING_PROVIDER, 'sk-test-key', mockLogger);
+        const result: EmbeddingResponse = await adapter.getEmbedding("Hello world");
 
         assertEquals(createStub.calls.length, 1);
         // Verify the stub was called with the correct model from the config
         const createCallArgs = createStub.calls[0].args[0];
         assertEquals(createCallArgs.model, 'text-embedding-3-small');
         
-        assertExists(result);
-        assertEquals(result, MOCK_EMBEDDING_SUCCESS_RESPONSE);
+        assertExists(result.embedding);
+        assertEquals(Array.isArray(result.embedding), true);
+        assertExists(result.usage);
+        assertEquals(result.usage.total_tokens, MOCK_EMBEDDING_SUCCESS_RESPONSE.usage.total_tokens);
 
     } finally {
         createStub.restore();

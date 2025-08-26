@@ -18,7 +18,7 @@ import type {
 import { FileType, CanonicalPathParams } from "../types/file_manager.types.ts";
 import { ProjectContext, StageContext } from "../prompt-assembler.interface.ts";
 import { FailedAttemptError } from "../../dialectic-service/dialectic.interface.ts";
-import { AiModelExtendedConfig, TokenUsage, ChatMessageRole, ChatInsert, ContinueReason, FinishReason } from "../types.ts";
+import { AiModelExtendedConfig, TokenUsage, ChatMessageRole, ChatInsert, ContinueReason, FinishReason, ChatApiRequest, Messages } from "../types.ts";
 import type { PostgrestError } from "npm:@supabase/supabase-js@2";
 
 // Helper type to represent the structure we're checking for.
@@ -654,7 +654,7 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
 
     return (
         payload.job_type === 'execute' &&
-        typeof payload.prompt_template_name === 'string' &&
+        (!('prompt_template_name' in payload) || payload.prompt_template_name === undefined || typeof payload.prompt_template_name === 'string') &&
         typeof payload.output_type === 'string' &&
         (!('step_info' in payload) || isDialecticStepInfo(payload.step_info)) &&
         isRecord(payload.inputs) &&
@@ -787,6 +787,23 @@ export function isChatMessageRow(record: unknown): record is Tables<'chat_messag
     return true;
 }
 
+/**
+ * Type guard for allowed js-tiktoken encoding names used by our token counters.
+ * Keeps tests and estimators aligned without any casting.
+ */
+export function isKnownTiktokenEncoding(
+  name: unknown
+): name is 'cl100k_base' | 'p50k_base' | 'r50k_base' | 'gpt2' {
+  return (
+    typeof name === 'string' && (
+      name === 'cl100k_base' ||
+      name === 'p50k_base' ||
+      name === 'r50k_base' ||
+      name === 'gpt2'
+    )
+  );
+}
+
 export function isChatInsert(record: unknown): record is ChatInsert {
     if (!isRecord(record)) {
         return false;
@@ -867,4 +884,18 @@ export function isPostgrestError(error: unknown): error is PostgrestError {
         'details' in error && typeof error.details === 'string' &&
         'hint' in error && typeof error.hint === 'string'
     );
+}
+
+export function isChatApiRequest(obj: unknown): obj is ChatApiRequest {
+    if (typeof obj !== 'object' || obj === null) return false;
+    const req = obj as Record<string, unknown>;
+    return (
+        typeof req.message === 'string' &&
+        typeof req.providerId === 'string' &&
+        typeof req.promptId === 'string'
+    );
+}
+
+export function isApiChatMessage(message: Messages): message is { role: 'user' | 'assistant' | 'system', content: string | null } {
+    return message.role === 'user' || message.role === 'assistant' || message.role === 'system';
 }

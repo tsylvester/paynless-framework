@@ -7,6 +7,8 @@ export interface MockRagServiceConfig {
     mockContextResult?: string;
     shouldThrowError?: boolean;
     errorMessage?: string;
+    mockTokensUsed?: number;
+    mockCompressedDocuments?: IRagSourceDocument[];
 }
 
 export class MockRagService implements IRagService {
@@ -17,6 +19,8 @@ export class MockRagService implements IRagService {
             mockContextResult: 'Mocked RAG context',
             shouldThrowError: false,
             errorMessage: 'Mock RAG service error',
+            mockTokensUsed: 0,
+            mockCompressedDocuments: [],
             ...config,
         };
     }
@@ -35,6 +39,7 @@ export class MockRagService implements IRagService {
 
         return Promise.resolve({
             context: this.config.mockContextResult!,
+            tokensUsedForIndexing: this.config.mockTokensUsed,
         });
     }
 

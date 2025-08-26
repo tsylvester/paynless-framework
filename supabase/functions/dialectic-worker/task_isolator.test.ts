@@ -183,8 +183,8 @@ describe('planComplexStage', () => {
         const mockRagDeps: IRagServiceDependencies = {
             dbClient: mockSupabase.client as unknown as SupabaseClient<Database>,
             logger: mockLogger,
-            indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
-            embeddingClient: { createEmbedding: () => Promise.resolve([]) },
+            indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) },
+            embeddingClient: { getEmbedding: () => Promise.resolve({ embedding: [], usage: { input_tokens: 0, output_tokens: 0, prompt_tokens: 0, total_tokens: 0 } }) },
         };
 
 

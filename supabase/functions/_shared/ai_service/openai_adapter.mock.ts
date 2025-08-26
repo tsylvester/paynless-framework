@@ -3,8 +3,9 @@ import { spy, Spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { OpenAiAdapter } from "./openai_adapter.ts";
 import { ILogger } from "../types.ts";
 import { CreateEmbeddingResponse } from "npm:openai/resources/embeddings";
-import { AdapterResponsePayload, ProviderModelInfo } from "../types.ts";
+import { AdapterResponsePayload, EmbeddingResponse, ProviderModelInfo } from "../types.ts";
 import { ChatApiRequest } from "../types.ts";
+import { MOCK_PROVIDER } from "./dummy_adapter.test.ts";
 
 class MockLogger implements ILogger {
   info = () => {};
@@ -19,20 +20,14 @@ class MockLogger implements ILogger {
  */
 class MockOpenAiAdapter extends OpenAiAdapter {
     constructor() {
-        super("sk-mock-key", new MockLogger());
+        super(MOCK_PROVIDER, "sk-mock-key", new MockLogger());
     }
 
     // We override the original methods to provide predictable, mock implementations.
-    override async getEmbedding(_text: string, _model?: string): Promise<CreateEmbeddingResponse> {
+    override async getEmbedding(_text: string, _model?: string): Promise<EmbeddingResponse> {
         return Promise.resolve({
-            data: [{
-                embedding: Array(1536).fill(0.1),
-                index: 0,
-                object: 'embedding'
-            }],
-            model: 'text-embedding-3-small',
-            object: 'list',
-            usage: { prompt_tokens: 1, total_tokens: 1 }
+            embedding: Array(1536).fill(0.1),
+            usage: { prompt_tokens: 5, total_tokens: 5 }
         });
     }
 
@@ -47,7 +42,15 @@ class MockOpenAiAdapter extends OpenAiAdapter {
         });
     }
 
-    override async listModels(): Promise<ProviderModelInfo[]> {
+    // Overload for sync script to get raw data
+    override async listModels(getRaw: true): Promise<{ models: ProviderModelInfo[], raw: unknown }>;
+    // Overload for standard adapter contract
+    override async listModels(getRaw?: false): Promise<ProviderModelInfo[]>;
+    // Implementation
+    override async listModels(getRaw?: boolean): Promise<ProviderModelInfo[] | { models: ProviderModelInfo[], raw: unknown }> {
+        if (getRaw) {
+            return Promise.resolve({ models: [], raw: {} });
+        }
         return Promise.resolve([]);
     }
 }

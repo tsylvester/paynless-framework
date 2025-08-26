@@ -56,8 +56,13 @@ export const ChatApiRequestSchema = z.object({
     role: z.enum(["system", "user", "assistant"]),
     content: z.string()
   })).optional(),
+  resourceDocuments: z.array(z.object({
+    id: z.string().optional(),
+    content: z.string(),
+  })).optional(),
   organizationId: z.string().uuid({ message: "If provided, organizationId must be a valid UUID." }).optional(),
   rewindFromMessageId: z.string().uuid({ message: "If provided, rewindFromMessageId must be a valid UUID." }).optional(),
   max_tokens_to_generate: z.number().int({ message: "max_tokens_to_generate must be an integer." }).positive({ message: "max_tokens_to_generate must be positive." }).optional(),
   continue_until_complete: z.boolean().optional(),
+  systemInstruction: z.string().optional(),
 });

@@ -97,9 +97,10 @@ export async function debitTokens<T>(
         const result = await databaseOperation();
         return result;
     } catch (dbError) {
-        const typedDbError = dbError instanceof Error ? dbError : new Error(String(dbError));
+        const errorDetails = dbError instanceof Error ? dbError.message : String(dbError);
+
         logger.error('DATABASE ERROR during operation. This occurred after a successful debit.', {
-            error: typedDbError.message,
+            error: errorDetails,
             chatId: chatId,
             userId,
             tokensDebited: actualTokensToDebit
@@ -137,7 +138,7 @@ export async function debitTokens<T>(
         }
         
         // Re-throw the original database error to the caller
-        throw typedDbError;
+        throw new Error(`Database operation failed after debit: ${errorDetails}`);
     }
 }
 

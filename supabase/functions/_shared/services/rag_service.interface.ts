@@ -36,6 +36,7 @@ export interface IRagSourceDocument {
  */
 export interface IRagContextResult {
     context: string | null;
+    tokensUsedForIndexing?: number;
     error?: Error;
 }
 

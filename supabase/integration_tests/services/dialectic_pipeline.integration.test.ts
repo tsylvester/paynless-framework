@@ -1,5 +1,4 @@
 import { assert, assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { type Stub, stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import {
   coreCleanupTestResources,
@@ -24,8 +23,7 @@ import {
   ExecuteModelCallAndSaveParams,
 } from "../../functions/dialectic-service/dialectic.interface.ts";
 import { generateContributions } from "../../functions/dialectic-service/generateContribution.ts";
-import { isDialecticJobPayload, isDialecticJobRow, isTokenUsage, hasModelResultWithContributionId } from "../../functions/_shared/utils/type_guards.ts";
-import { type ChatApiRequest } from "../../functions/_shared/types.ts";
+import { isDialecticJobPayload, isDialecticJobRow, hasModelResultWithContributionId } from "../../functions/_shared/utils/type_guards.ts";
 import { type IJobProcessors } from "../../functions/dialectic-worker/processJob.ts";
 import { processSimpleJob } from "../../functions/dialectic-worker/processSimpleJob.ts";
 import { processComplexJob } from "../../functions/dialectic-worker/processComplexJob.ts";
@@ -43,13 +41,11 @@ import { callUnifiedAIModel } from "../../functions/dialectic-service/callModel.
 import { UploadContext, FileType, IFileManager } from "../../functions/_shared/types/file_manager.types.ts";
 import { RagService } from "../../functions/_shared/services/rag_service.ts";
 import { IndexingService, LangchainTextSplitter, OpenAIEmbeddingClient } from "../../functions/_shared/services/indexing_service.ts";
-import { IEmbeddingClient, IIndexingService } from "../../functions/_shared/services/indexing_service.interface.ts";
-import { IRagService } from "../../functions/_shared/services/rag_service.interface.ts";
 import { getGranularityPlanner } from '../../functions/dialectic-worker/strategies/granularity.strategies.ts';
-import { countTokensForMessages } from '../../functions/_shared/utils/tokenizer_utils.ts';
+import { countTokens } from '../../functions/_shared/utils/tokenizer_utils.ts';
 import { getAiProviderConfig } from '../../functions/dialectic-worker/processComplexJob.ts';
-import { OpenAiAdapter } from "../../functions/_shared/ai_service/openai_adapter.ts";
 import { PromptAssembler } from "../../functions/_shared/prompt-assembler.ts";
+import { DummyAdapter } from "../../functions/_shared/ai_service/dummy_adapter.ts";
 
 // --- Test Suite Setup ---
 let adminClient: SupabaseClient<Database>;
@@ -214,8 +210,34 @@ Deno.test(
 
         mockAiAdapter.controls.reset();
 
-        const openAiAdapter = new OpenAiAdapter("sk-test-fake-key", testLogger, MOCK_MODEL_CONFIG);
-        const embeddingClient = new OpenAIEmbeddingClient(openAiAdapter);
+        // Fetch the default embedding provider
+        const { data: embeddingProvider, error: embeddingProviderError } = await adminClient
+            .from('ai_providers')
+            .select('*')
+            .eq('is_default_embedding', true)
+            .single();
+
+        assert(!embeddingProviderError, `Failed to fetch default embedding provider: ${embeddingProviderError?.message}`);
+        assertExists(embeddingProvider, "No default embedding provider found in the database.");
+        
+        // Use the factory to get a generic adapter for embeddings
+        const embeddingAdapter = getAiProviderAdapter({
+            provider: embeddingProvider,
+            apiKey: "sk-dummy-key-for-embedding", // A dummy key is fine if the default is a dummy provider
+            logger: testLogger,
+            providerMap: { 
+                'openai-': DummyAdapter,
+                'anthropic-': DummyAdapter,
+                'google-': DummyAdapter,
+                'dummy-': DummyAdapter 
+            }
+        });
+
+        if (!embeddingAdapter) {
+            throw new Error("Failed to create an adapter for the default embedding provider.");
+        }
+
+        const embeddingClient = new OpenAIEmbeddingClient(embeddingAdapter);
         const textSplitter = new LangchainTextSplitter();
         const indexingService = new IndexingService(adminClient, testLogger, textSplitter, embeddingClient);
         const ragService = new RagService({
@@ -264,7 +286,7 @@ Deno.test(
             embeddingClient: embeddingClient,
             planComplexStage,
             getGranularityPlanner,
-            countTokens: countTokensForMessages,
+            countTokens: countTokens,
             getAiProviderConfig,
             promptAssembler: new PromptAssembler(adminClient),
         };

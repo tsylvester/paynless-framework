@@ -52,5 +52,5 @@ export async function getInitialPromptContent(
     }
 
     logger.warn(`[getInitialPromptContent] Project ${project.id} has neither a direct prompt nor a resource file.`);
-    return { content: 'No prompt provided.' }; // Fallback content
+    return { error: 'No prompt provided.' };
 } 

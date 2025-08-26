@@ -103,7 +103,6 @@ export async function processJob(
               continuation_count,
               target_contribution_id: undefined, // CRITICAL: Clear this for simple stages
               step_info, // Pass down from the plan job
-              prompt_template_name: 'default_seed_prompt',
               output_type: stageSlug,
               inputs: {},
               canonicalPathParams: {

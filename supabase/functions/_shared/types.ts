@@ -3,6 +3,7 @@
 // Types directly related to DB tables should be imported from ../types_db.ts
 import type { Database, Json } from '../types_db.ts';
 import type { handleCorsPreflightRequest, createSuccessResponse, createErrorResponse } from './cors-headers.ts';
+import type { CountTokensDeps, CountableChatPayload } from './types/tokenizer.types.ts';
 import { createClient, SupabaseClient, User } from "npm:@supabase/supabase-js";
 import { Tables } from '../types_db.ts';
 import type { ITokenWalletService } from './types/tokenWallet.types.ts';
@@ -11,7 +12,7 @@ import type { handleNormalPath } from '../chat/handleNormalPath.ts';
 import type { handleRewindPath } from '../chat/handleRewindPath.ts';
 import type { handleDialecticPath } from '../chat/handleDialecticPath.ts';
 import type { debitTokens } from '../chat/debitTokens.ts';
-// Import MessageForTokenCounting from the centralized location AT THE TOP
+import { SystemInstruction } from '../dialectic-service/dialectic.interface.ts';
 
 export type ChatInsert = Tables<'chats'>;
 
@@ -142,6 +143,11 @@ export interface EmailMarketingService {
 
 // --- AI Adapter/API Types (Not DB Tables) ---
 
+export type ResourceDocuments = {
+  id?: string;
+  content: string;
+}[];
+
 /**
  * Structure for sending a message via the 'chat' Edge Function.
  * Includes message history needed by adapters.
@@ -163,11 +169,13 @@ export interface ChatApiRequest {
     role: 'system' | 'user' | 'assistant';
     content: string;
   }[];
+  resourceDocuments?: ResourceDocuments;
   organizationId?: string; // uuid, optional for org chats - ADDED
   rewindFromMessageId?: string; // uuid, optional for rewinding - ADDED
   max_tokens_to_generate?: number; // ADDED: Max tokens for the AI to generate in its response
   continue_until_complete?: boolean; // ADDED: Flag to enable response continuation
   isDialectic?: boolean; // ADDED: Flag to indicate a 'headless' dialectic job that should not be saved to the DB
+  systemInstruction?: SystemInstruction;
 }
 
 /**
@@ -185,9 +193,9 @@ export interface ProviderModelInfo {
  * required for a class to be a valid, interchangeable AI provider.
  */
 export type AiProviderAdapter = new (
+  provider: Tables<'ai_providers'>,
   apiKey: string,
-  logger: ILogger,
-  modelConfig: AiModelExtendedConfig
+  logger: ILogger
 ) => {
   sendMessage(
     request: ChatApiRequest,
@@ -195,6 +203,8 @@ export type AiProviderAdapter = new (
   ): Promise<AdapterResponsePayload>;
 
   listModels(): Promise<ProviderModelInfo[]>;
+
+  getEmbedding?(text: string): Promise<EmbeddingResponse>;
 };
 
 export type AiProviderAdapterInstance = InstanceType<AiProviderAdapter>;
@@ -250,11 +260,19 @@ export interface FullChatMessageRecord {
   token_usage?: Database['public']['Tables']['chat_messages']['Row']['token_usage']; // Use specific DB Json type
 }
 
+
+// Define the dependencies for the factory to allow for injection.
+export interface FactoryDependencies {
+  provider: Tables<'ai_providers'>;
+  apiKey: string;
+  logger: ILogger;
+  providerMap?: Record<string, AiProviderAdapter>;
+}
 /**
  * Interface describing the signature of the getAiProviderAdapter function.
  */
 export interface GetAiProviderAdapter {
-  (providerApiIdentifier: string, providerDbConfig: Json | null, apiKey: string, logger?: ILogger): AiProviderAdapter | null;
+  (dependencies: FactoryDependencies): AiProviderAdapterInstance | null;
 }
 
 /**
@@ -288,6 +306,7 @@ export interface ILogger {
     userMessage?: ChatMessageRow;       // Populated for normal new messages and new user message in rewind
     assistantMessage: ChatMessageRow;  // Always populated on success
     chatId?: string;                   // ID of the chat session, optional for 'headless' dialectic jobs
+    finish_reason?: FinishReason;      // ADDED: The reason the AI provider finished generating tokens
     isRewind?: boolean;                 // True if this was a rewind operation
     isDummy?: boolean;                  // True if dummy provider was used
   }
@@ -299,7 +318,7 @@ export interface ILogger {
   }
   
 
-// Interface for messages argument in CountTokensForMessagesFn
+// Interface for messages argument in countTokensFn
 // REMOVED Local Definition:
 // export interface MessageForTokenCounting {
 //   role: "system" | "user" | "assistant" | "function";
@@ -307,10 +326,19 @@ export interface ILogger {
 //   name?: string;
 // }
 
-export interface MessageForTokenCounting {
+export interface Messages {
+  id?: string; // Optional: The UUID of the source contribution for this message
   role: "system" | "user" | "assistant" | "function"; // Function role might be needed for some models
   content: string | null; // Content can be null for some function calls
   name?: string; // Optional, for function calls
+}
+
+export interface EmbeddingResponse {
+  embedding: number[];
+  usage: {
+      prompt_tokens: number;
+      total_tokens: number;
+  };
 }
 
 // Accepted Tiktoken encoding names - aligned with js-tiktoken
@@ -341,6 +369,7 @@ export interface AiModelConfig {
 
 // Comprehensive configuration for an AI model, reflecting ai_providers.config structure
 export interface AiModelExtendedConfig {
+  id?: string; // Optional: The UUID of the provider from the ai_providers table.
   model_id?: string; // Optional: Internal model ID or name, for display or logging
   api_identifier: string; // Crucial: The string used to call the AI provider's API (e.g., "gpt-4-turbo")
   
@@ -351,7 +380,7 @@ export interface AiModelExtendedConfig {
     | { type: 'tiktoken'; tiktoken_encoding_name: TiktokenEncoding; tiktoken_model_name_for_rules_fallback?: TiktokenModelForRules; is_chatml_model?: boolean; api_identifier_for_tokenization?: string; } 
     | { type: 'rough_char_count'; chars_per_token_ratio?: number; }
     | { type: 'anthropic_tokenizer'; model: string }
-    | { type: 'google_gemini_tokenizer'; } // Placeholder for Google's official tokenizer
+    | { type: 'google_gemini_tokenizer'; chars_per_token_ratio?: number } // Allow explicit ratio control for Gemini
     | { type: 'none'; }; // If token counting is not applicable or handled externally
 
   hard_cap_output_tokens?: number; // An absolute maximum for output tokens
@@ -390,8 +419,8 @@ export interface FinalAppModelConfig {
   config: AiModelExtendedConfig; 
 }
 
-// Signature for countTokensForMessages function (this might be an old definition)
-// export type CountTokensForMessagesFn = (
+// Signature for countTokens function (this might be an old definition)
+// export type countTokensFn = (
 //   messages: MessageForTokenCounting[], 
 //   modelName: string
 // ) => number;
@@ -402,22 +431,12 @@ export interface ChatHandlerDeps {
   handleCorsPreflightRequest: typeof handleCorsPreflightRequest;
   createSuccessResponse: typeof createSuccessResponse; // Use the corrected type name
   createErrorResponse: typeof createErrorResponse;
-  getAiProviderAdapter: (
-    providerApiIdentifier: string,
-    providerDbConfig: AiModelExtendedConfig | null,
-    apiKey: string,
-    logger: ILogger
-  ) => AiProviderAdapterInstance | null;
-  getAiProviderAdapterOverride?: ( // Also update this for consistency
-    providerApiIdentifier: string,
-    providerDbConfig: AiModelExtendedConfig | null,
-    apiKey: string,
-    logger: ILogger
-  ) => AiProviderAdapterInstance | null;
+  getAiProviderAdapter: (dependencies: FactoryDependencies) => AiProviderAdapterInstance | null;
+  getAiProviderAdapterOverride?: (dependencies: FactoryDependencies) => AiProviderAdapterInstance | null;
   verifyApiKey: (apiKey: string, providerName: string) => Promise<boolean>;
   logger: ILogger;
   tokenWalletService?: ITokenWalletService; 
-  countTokensForMessages: (messages: MessageForTokenCounting[], modelConfig: AiModelExtendedConfig) => number; // Updated signature
+  countTokens: (deps: CountTokensDeps, payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number;
   prepareChatContext: typeof prepareChatContext;
   handleNormalPath: typeof handleNormalPath;
   handleRewindPath: typeof handleRewindPath;

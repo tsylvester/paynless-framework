@@ -23,12 +23,13 @@ import {
     type ILogger,
     type TokenUsage,
     AiProviderAdapterInstance,
-  } from "../_shared/types.ts";
-  import { handleNormalPath } from "./handleNormalPath.ts";
-  import { getMockAiProviderAdapter } from "../_shared/ai_service/ai_provider.mock.ts";
-  import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
-  import { type Database } from "../types_db.ts";
-  import { defaultDeps } from "./index.ts";
+    FactoryDependencies,
+} from "../_shared/types.ts";
+import { handleNormalPath } from "./handleNormalPath.ts";
+import { getMockAiProviderAdapter } from "../_shared/ai_service/ai_provider.mock.ts";
+import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { type Database } from "../types_db.ts";
+import { defaultDeps } from "./index.ts";
 import { type PathHandlerContext } from "./prepareChatContext.ts";
   
 // Helper to create a fully-typed mock adapter with spies
@@ -96,8 +97,8 @@ Deno.test("handleNormalPath: happy path - creates new chat and saves messages", 
       ...defaultDeps,
       logger: logger,
       tokenWalletService: mockTokenWalletService.instance,
-      countTokensForMessages: spy(() => 10),
-      getAiProviderAdapter: spy(() => mockAiAdapter.instance),
+      countTokens: spy((_deps, _payload, _cfg) => 10),
+      getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance),
     };
   
     const requestBody: ChatApiRequest = {
@@ -191,8 +192,8 @@ Deno.test("handleNormalPath: happy path - creates new chat and saves messages", 
       ...defaultDeps,
       logger: logger,
       tokenWalletService: createMockTokenWalletService().instance,
-      countTokensForMessages: spy(() => 10),
-      getAiProviderAdapter: spy(() => mockAiAdapter.instance),
+      countTokens: spy((_deps, _payload, _cfg) => 10),
+      getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance),
     };
   
     const requestBody: ChatApiRequest = {
@@ -263,8 +264,8 @@ Deno.test("handleNormalPath: happy path - creates new chat and saves messages", 
         ...defaultDeps,
         logger: logger,
         tokenWalletService: mockTokenWalletService.instance,
-        countTokensForMessages: spy(() => 10),
-        getAiProviderAdapter: spy(() => mockAiAdapter.instance),
+        countTokens: spy((_deps, _payload, _cfg) => 10),
+        getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance),
       },
       userId: "test-user-id",
       requestBody: { message: "Hello", providerId: "test-provider", promptId: "__none__" },
@@ -327,8 +328,8 @@ Deno.test("handleNormalPath: happy path - creates new chat and saves messages", 
         ...defaultDeps,
         logger: logger,
         tokenWalletService: createMockTokenWalletService().instance,
-        countTokensForMessages: spy(() => 15),
-        getAiProviderAdapter: spy(() => mockAiAdapter.instance),
+        countTokens: spy((_deps, _payload, _cfg) => 15),
+        getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance),
       },
       userId: "test-user-id",
       requestBody: { message: "Follow up question", providerId: "test-provider", promptId: "__none__", chatId },
@@ -376,14 +377,14 @@ Deno.test("handleNormalPath: happy path - creates new chat and saves messages", 
             ...defaultDeps,
             logger: logger,
             tokenWalletService: mockTokenWalletService.instance,
-            countTokensForMessages: spy(() => 100),
-            getAiProviderAdapter: spy(() => mockAiAdapter.instance),
+            countTokens: spy((_deps, _payload, _cfg) => 100),
+            getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance),
         },
         userId: "test-user-id",
         requestBody: { message: "Test message, insufficient funds", providerId: "test-provider", promptId: "__none__" },
         wallet: { walletId: "test-wallet", balance: "0", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
         aiProviderAdapter: mockAiAdapter.instance,
-        modelConfig: modelConfig as AiModelExtendedConfig,
+        modelConfig: modelConfig,
         actualSystemPromptText: null,
         finalSystemPromptIdForDb: null,
         apiKey: "test-api-key",
@@ -419,8 +420,8 @@ Deno.test("handleNormalPath: happy path - creates new chat and saves messages", 
             ...defaultDeps,
             logger: logger,
             tokenWalletService: mockTokenWalletService.instance,
-            countTokensForMessages: spy(() => { throw new Error(countTokensErrorMessage); }),
-            getAiProviderAdapter: spy(() => mockAiAdapter.instance),
+            countTokens: spy((_deps, _payload, _cfg) => { throw new Error(countTokensErrorMessage); }),
+            getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance),
         },
         userId: "test-user-id",
         requestBody: { message: "Test message", providerId: "test-provider", promptId: "__none__" },
@@ -454,7 +455,7 @@ Deno.test("handleNormalPath: happy path - creates new chat and saves messages", 
     const modelConfig: AiModelExtendedConfig = { api_identifier: "test-model-api-id", provider_max_input_tokens: 50, input_token_cost_rate: 0.01, output_token_cost_rate: 0.02, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } };
     const mockAiAdapter = createSpiedMockAdapter(modelConfig);
     const mockTokenWalletService = createMockTokenWalletService();
-    const mockCountTokensFn = (_messages: any[], _config: any) => 100;
+    const mockCountTokensFn = (_deps: unknown, _payload: unknown, _config: unknown) => 100;
   
     const context: PathHandlerContext = {
         supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
@@ -462,8 +463,8 @@ Deno.test("handleNormalPath: happy path - creates new chat and saves messages", 
             ...defaultDeps,
             logger: logger,
             tokenWalletService: mockTokenWalletService.instance,
-            countTokensForMessages: spy(mockCountTokensFn),
-            getAiProviderAdapter: spy(() => mockAiAdapter.instance),
+            countTokens: spy(mockCountTokensFn),
+            getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance),
         },
         userId: "test-user-id",
         requestBody: { message: "This message is too long", providerId: "test-provider", promptId: "__none__" },
@@ -509,8 +510,8 @@ Deno.test("handleNormalPath: happy path - creates new chat and saves messages", 
             ...defaultDeps,
             logger: logger,
             tokenWalletService: mockTokenWalletService.instance,
-            countTokensForMessages: spy(() => 10),
-            getAiProviderAdapter: spy(() => mockAiAdapter.instance),
+            countTokens: spy(() => 10),
+            getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance),
         },
         userId: "test-user-id",
         requestBody: { message: "initiate with bad history chatid", providerId: "test-provider", promptId: "__none__", chatId: "bad-chat-id" },
@@ -560,8 +561,8 @@ Deno.test("handleNormalPath: happy path - creates new chat and saves messages", 
         ...defaultDeps,
         logger: logger,
         tokenWalletService: createMockTokenWalletService().instance,
-        countTokensForMessages: spy(() => 10),
-        getAiProviderAdapter: spy(() => mockAiAdapter.instance),
+        countTokens: spy(() => 10),
+        getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance),
       },
       userId: "test-user-id",
       requestBody: { message: userMessageContent, providerId: "test-provider", promptId: "__none__", chatId: "test-chat-id" },

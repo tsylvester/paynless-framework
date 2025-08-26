@@ -7,6 +7,8 @@ import { GoogleAdapter } from './google_adapter.ts';
 import { testAdapterContract, type MockApi } from './adapter_test_contract.ts';
 import type { AdapterResponsePayload, ChatApiRequest, ProviderModelInfo, AiModelExtendedConfig } from "../types.ts";
 import { MockLogger } from "../logger.mock.ts";
+import { Tables } from "../../types_db.ts";
+import { isJson } from "../utils/type_guards.ts";
 
 // --- Mock Data & Helpers ---
 
@@ -17,6 +19,24 @@ const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
     tokenization_strategy: { type: 'google_gemini_tokenizer' },
 };
 const mockLogger = new MockLogger();
+
+if(!isJson(MOCK_MODEL_CONFIG)) {
+    throw new Error('MOCK_MODEL_CONFIG is not a valid JSON object');
+}
+
+const MOCK_PROVIDER: Tables<'ai_providers'> = {
+    id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a15", // Unique mock ID
+    provider: "google",
+    api_identifier: "google-gemini-1.5-pro-latest",
+    name: "Google Gemini 1.5 Pro",
+    description: "A mock Google model for testing.",
+    is_active: true,
+    is_default_embedding: false,
+    is_enabled: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    config: MOCK_MODEL_CONFIG,
+};
 
 // This is the mock API that the test contract will spy on.
 const mockGoogleApi: MockApi = {
@@ -47,7 +67,7 @@ Deno.test("GoogleAdapter: Contract Compliance", async (t) => {
         listModelsStub = stub(GoogleAdapter.prototype, "listModels", () => mockGoogleApi.listModels());
     });
 
-    await testAdapterContract(t, GoogleAdapter, mockGoogleApi, MOCK_MODEL_CONFIG);
+    await testAdapterContract(t, GoogleAdapter, mockGoogleApi, MOCK_PROVIDER);
 
     await t.step("Teardown: Restore stubs", () => {
         sendMessageStub.restore();

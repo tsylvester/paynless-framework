@@ -282,6 +282,35 @@ Deno.test('[path_deconstructor] direct - rag_context_summary', () => {
   assertEquals(info.error, undefined);
 });
 
+Deno.test('[path_deconstructor] direct - model_contribution_main with continuation', () => {
+  const context: PathContext = {
+    projectId: 'proj-cont',
+    sessionId: 'sess-cont-uuid',
+    iteration: 2,
+    stageSlug: 'synthesis',
+    fileType: FileType.ModelContributionMain,
+    modelSlug: 'claude-3-sonnet',
+    attemptCount: 0,
+    contributionType: 'synthesis',
+    isContinuation: true,
+    turnIndex: 2,
+  };
+  const { storagePath, fileName } = constructStoragePath(context);
+  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: storagePath, fileName: fileName });
+
+  assertEquals(info.error, undefined, `Deconstruction failed with error: ${info.error}`);
+  assertEquals(info.originalProjectId, context.projectId);
+  assertEquals(info.shortSessionId, generateShortId(context.sessionId!));
+  assertEquals(info.iteration, context.iteration);
+  assertEquals(info.stageSlug, context.stageSlug);
+  assertEquals(info.modelSlug, sanitizeForPath(context.modelSlug!));
+  assertEquals(info.attemptCount, context.attemptCount);
+  assertEquals(info.contributionType, context.contributionType);
+  assertEquals(info.isContinuation, context.isContinuation);
+  assertEquals(info.turnIndex, context.turnIndex);
+  assertEquals(info.fileTypeGuess, FileType.ModelContributionMain);
+});
+
 
 Deno.test('[path_deconstructor] handles unknown path structure gracefully', () => {
   const dirPart = 'some/completely/unknown/path/structure';

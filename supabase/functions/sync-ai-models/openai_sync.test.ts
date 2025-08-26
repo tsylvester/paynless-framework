@@ -162,3 +162,40 @@ Deno.test("'INTERNAL_MODEL_MAP should contain valid partial configs'", () => {
 
     assertEquals(failures.length, 0, `Found ${failures.length} invalid configs in INTERNAL_MODEL_MAP: ${JSON.stringify(failures, null, 2)}`);
 });
+
+// Step 42: Verify per-model tiktoken encoding and ChatML flags for OpenAI models
+Deno.test("OpenAI per-model encoding and ChatML flags are mapped correctly", () => {
+    // Expected mapping: [modelIdInMap, expectedEncoding, expectedIsChatML]
+    const expectations: Array<[string, string, boolean]> = [
+        // 4o family
+        ['openai-gpt-4o', 'o200k_base', true],
+        ['openai-gpt-4o-mini', 'o200k_base', true],
+        ['openai-gpt-4.1', 'o200k_base', true],
+        ['openai-gpt-4.1-mini', 'o200k_base', true],
+        // 4/3.5 classic
+        ['openai-gpt-4', 'cl100k_base', true],
+        ['openai-gpt-4-turbo', 'cl100k_base', true],
+        ['openai-gpt-3.5-turbo', 'cl100k_base', true],
+        // Legacy non-ChatML
+        ['openai-text-davinci-003', 'p50k_base', false],
+        // Embeddings
+        ['openai-text-embedding-3-small', 'cl100k_base', false],
+        ['openai-text-embedding-3-large', 'cl100k_base', false],
+    ];
+
+    for (const [key, expectedEncoding, expectedIsChatML] of expectations) {
+        const cfg = INTERNAL_MODEL_MAP.get(key);
+        assertExists(cfg, `Missing INTERNAL_MODEL_MAP entry for ${key}`);
+        const strat = (cfg as Partial<AiModelExtendedConfig>).tokenization_strategy;
+        assertExists(strat, `tokenization_strategy missing for ${key}`);
+        // Ensure type is tiktoken and encoding/is_chatml match expectations
+        if ((strat as any).type === 'tiktoken') {
+            const t = strat as { type: 'tiktoken'; tiktoken_encoding_name?: string; is_chatml_model?: boolean };
+            assertEquals(t.tiktoken_encoding_name, expectedEncoding, `${key} should use ${expectedEncoding}`);
+            assertEquals(t.is_chatml_model, expectedIsChatML, `${key} is_chatml_model mismatch`);
+        } else {
+            // For any non-tiktoken entries, this is a failure for these models
+            assert(false, `${key} should use tiktoken strategy`);
+        }
+    }
+});

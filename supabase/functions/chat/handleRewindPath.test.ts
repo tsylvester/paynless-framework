@@ -23,13 +23,15 @@ import {
     type ChatHandlerDeps,
     type ChatHandlerSuccessResponse,
     type ChatMessageRow,
-  } from "../_shared/types.ts";
+    FactoryDependencies,
+} from "../_shared/types.ts";
   import { handleRewindPath } from "./handleRewindPath.ts";
   import { getMockAiProviderAdapter } from "../_shared/ai_service/ai_provider.mock.ts";
   import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
   import { type Database } from "../types_db.ts";
   import { defaultDeps } from "./index.ts";
   import { type PathHandlerContext } from "./prepareChatContext.ts";
+  import type { CountableChatPayload } from "../_shared/types/tokenizer.types.ts";
 
   // Helper to create a fully-typed mock adapter with spies
 const createSpiedMockAdapter = (modelConfig: AiModelExtendedConfig) => {
@@ -64,7 +66,7 @@ const createSpiedMockAdapter = (modelConfig: AiModelExtendedConfig) => {
     mockAiAdapter.controls.setMockResponse({ content: "This should not be used" });
     const context: PathHandlerContext = {
       supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-      deps: { ...defaultDeps, logger, tokenWalletService: mockTokenWalletService.instance, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy(() => mockAiAdapter.instance) },
+      deps: { ...defaultDeps, logger, tokenWalletService: mockTokenWalletService.instance, countTokens: spy((_deps, _payload, _cfg) => 10), getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance) },
       userId: "test-user-id",
       requestBody: { message: "test", providerId: "test", promptId: "test", rewindFromMessageId: "test", chatId: "test" },
       wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
@@ -108,7 +110,7 @@ const createSpiedMockAdapter = (modelConfig: AiModelExtendedConfig) => {
   
     const context: PathHandlerContext = {
       supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-      deps: { ...defaultDeps, logger, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy(() => mockAiAdapter.instance) },
+      deps: { ...defaultDeps, logger, countTokens: spy((_deps, _payload, _cfg) => 10), getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance) },
       userId: "test-user-id",
       requestBody: { message: "test", providerId: "test", promptId: "test", rewindFromMessageId: "test", chatId: "test" },
       wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
@@ -148,7 +150,7 @@ const createSpiedMockAdapter = (modelConfig: AiModelExtendedConfig) => {
   
     const context: PathHandlerContext = {
       supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-      deps: { ...defaultDeps, logger, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy(() => mockAiAdapter.instance) },
+      deps: { ...defaultDeps, logger, countTokens: spy((_deps, _payload, _cfg) => 10), getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance) },
       userId: "test-user-id",
       requestBody: { message: "test", providerId: "test", promptId: "test", rewindFromMessageId: "test", chatId: "test" },
       wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
@@ -186,7 +188,7 @@ Deno.test("handleRewindPath: non-existent rewindFromMessageId returns 404", asyn
 
     const context: PathHandlerContext = {
       supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
-      deps: { ...defaultDeps, logger, countTokensForMessages: spy(() => 10), getAiProviderAdapter: spy(() => mockAiAdapter.instance) },
+      deps: { ...defaultDeps, logger, countTokens: spy((_deps, _payload, _cfg) => 10), getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance) },
       userId: "test-user-id",
       requestBody: { message: "test", providerId: "test", promptId: "test", rewindFromMessageId: "non-existent", chatId: "test" },
       wallet: { walletId: "test-wallet", balance: "10000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
@@ -284,12 +286,13 @@ Deno.test("handleRewindPath: POST request with rewindFromMessageId should call R
     mockAiAdapter.controls.setMockResponse(newAiResponseFromAdapterPayload);
 
     const mockTokenWalletService: MockTokenWalletService = createMockTokenWalletService();
+    const countTokensSpy = spy((_deps, payload: CountableChatPayload, _cfg) => 10);
     const deps: ChatHandlerDeps = {
       ...defaultDeps,
       logger,
       tokenWalletService: mockTokenWalletService.instance,
-      countTokensForMessages: spy(() => 10),
-      getAiProviderAdapter: spy(() => mockAiAdapter.instance),
+      countTokens: countTokensSpy,
+      getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance),
     };
 
     const requestBody: ChatApiRequest = {
@@ -343,4 +346,9 @@ Deno.test("handleRewindPath: POST request with rewindFromMessageId should call R
     assertEquals(adapterHistory[0].role, 'system');
     assertEquals(adapterHistory[1].role, 'user');
     assertEquals(adapterHistory[2].role, 'assistant');
+
+    // Ensure sized equals sent: payload used for counting matches adapter request messages
+    const countSpyCalls = countTokensSpy.calls;
+    const payloadUsed = countSpyCalls && countSpyCalls[0] ? countSpyCalls[0].args[1] : undefined;
+    assertEquals(payloadUsed?.messages, adapterHistory);
 });

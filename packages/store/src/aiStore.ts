@@ -14,7 +14,7 @@ import {
 	UserProfileUpdate, // Added for typing the updateProfile payload
 	ChatContextPreferences,
 	UserProfile, // Import UserProfile from @paynless/types
-	MessageForTokenCounting,
+	Messages,
 	ChatHandlerSuccessResponse, // For casting the api call result type
 	IAuthService,
 	IWalletService,
@@ -966,12 +966,16 @@ export const useAiStore = create<AiStore>()(
 
 								if (
 									chatIdForOptimistic !== actualNewChatId &&
+									actualNewChatId &&
 									newMessagesByChatId[chatIdForOptimistic]
 								) {
 									newMessagesByChatId[actualNewChatId] = updatedMessagesForChat;
 									delete newMessagesByChatId[chatIdForOptimistic];
 								} else {
-									newMessagesByChatId[actualNewChatId] = updatedMessagesForChat;
+									if (actualNewChatId) {
+										newMessagesByChatId[actualNewChatId] =
+											updatedMessagesForChat;
+									}
 								}
 
 								return {
@@ -1320,7 +1324,7 @@ export const useAiStore = create<AiStore>()(
 				providerId: string;
 				promptId: string | null;
 				chatId?: string | null;
-				contextMessages?: MessageForTokenCounting[];
+				contextMessages?: Messages[];
 			}) => {
 				// --- Create Adapters for Service Dependencies ---
 				const authStoreState = useAuthStore.getState();

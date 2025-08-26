@@ -12,6 +12,7 @@ import {
   type IContinueJobDeps,
 } from '../dialectic-service/dialectic.interface.ts';
 import { isDialecticJobPayload, isRecord, isJson, isDialecticExecuteJobPayload } from '../_shared/utils/type_guards.ts';
+import { type Messages } from '../_shared/types.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 type JobInsert = Database['public']['Tables']['dialectic_generation_jobs']['Insert'];
@@ -514,6 +515,105 @@ Deno.test('continueJob', async (t) => {
         }
     });
 
+    await t.step('should not set prompt_template_name when absent on source execute payload', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': {
+                    insert: { data: [{ id: 'new-job-id' }] }
+                },
+            },
+        });
+
+        const testPayload: DialecticJobPayload = {
+            job_type: 'execute',
+            sessionId: 'session-1',
+            projectId: 'project-1',
+            model_id: 'model-1',
+            stageSlug: 'test-stage',
+            iterationNumber: 1,
+            step_info: { current_step: 0, total_steps: 1 },
+            // NOTE: prompt_template_name intentionally omitted
+            inputs: { source: 'some_input' },
+            output_type: 'thesis',
+            continueUntilComplete: true,
+            continuation_count: 0,
+            canonicalPathParams: {
+                contributionType: 'thesis'
+            },
+        };
+
+        const testJob = createMockJob(testPayload);
+        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        assertEquals(result.enqueued, true);
+
+        const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+        const newJobData = insertSpy!.callsArgs[0][0];
+        assert(isJobInsert(newJobData));
+
+        // The continuation payload should not invent a prompt_template_name
+        if (isRecord(newJobData.payload)) {
+            assertEquals(
+                Object.prototype.hasOwnProperty.call(newJobData.payload, 'prompt_template_name'),
+                false,
+                'prompt_template_name should be omitted on continuation when absent on source',
+            );
+        } else {
+            assert(false, 'Payload is not a record');
+        }
+
+        if (isDialecticExecuteJobPayload(newJobData.payload)) {
+            assertEquals(newJobData.payload.prompt_template_name, undefined, 'prompt_template_name should be undefined');
+        } else {
+            assert(false, 'Payload is not a valid DialecticExecuteJobPayload');
+        }
+    });
+
+    await t.step('should preserve prompt_template_name when present on source execute payload (recipe continuation)', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': {
+                    insert: { data: [{ id: 'new-job-id' }] }
+                },
+            },
+        });
+
+        const testPayload: DialecticJobPayload = {
+            job_type: 'execute',
+            sessionId: 'session-1',
+            projectId: 'project-1',
+            model_id: 'model-1',
+            stageSlug: 'test-stage',
+            iterationNumber: 1,
+            step_info: { current_step: 0, total_steps: 1 },
+            prompt_template_name: 'recipe_template_step1',
+            inputs: { source: 'some_input' },
+            output_type: 'thesis',
+            continueUntilComplete: true,
+            continuation_count: 0,
+            canonicalPathParams: {
+                contributionType: 'thesis'
+            },
+        };
+
+        const testJob = createMockJob(testPayload);
+        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        assertEquals(result.enqueued, true);
+
+        const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+        const newJobData = insertSpy!.callsArgs[0][0];
+        assert(isJobInsert(newJobData));
+
+        if (isDialecticExecuteJobPayload(newJobData.payload)) {
+            assertEquals(newJobData.payload.prompt_template_name, 'recipe_template_step1', 'prompt_template_name should be preserved on continuation for recipe flows');
+        } else {
+            assert(false, 'Payload is not a valid DialecticExecuteJobPayload');
+        }
+    });
+
     // =================================================================
     // GROUP 5: Parent Job ID Preservation
     // =================================================================
@@ -562,6 +662,29 @@ Deno.test('continueJob', async (t) => {
         assert(isJobInsert(newJobData));
         
         assertEquals(newJobData.parent_job_id, null);
+    });
+
+    await t.step('PAYLOAD_CONSTRUCTION: should embed the provided message history into the new job payload', async () => {
+        setup({
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
+        const payload: DialecticJobPayload = { ...basePayload, continuation_count: 0 };
+        const testJob = createMockJob(payload);
+        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        const mockMessages: Messages[] = [
+            { role: 'user', content: 'Initial prompt', id: 'message-1' },
+            { role: 'assistant', content: 'part 1', id: 'message-2' }
+        ];
+
+        await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        
+        const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+        const newJobData = insertSpy!.callsArgs[0][0];
+        assert(isJobInsert(newJobData));
     });
 
     // =================================================================

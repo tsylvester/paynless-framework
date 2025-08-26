@@ -45,53 +45,97 @@ const mockSuccessResponse: ChatHandlerSuccessResponse = {
 };
 
 
-Deno.test("handlePostRequest: should call handleNormalPath when rewindFromMessageId is not provided", async () => {
+Deno.test("handlePostRequest: should call handleNormalPath and pass runtime deps", async () => {
     // Arrange
-    const prepareChatContextSpy = spy(() => Promise.resolve(mockSuccessfulChatContext));
+    const prepareChatContextFactorySpy = spy(
+        (
+            _requestBody: ChatApiRequest,
+            _userId: string,
+            _deps: ChatHandlerDeps,
+        ) => Promise.resolve(mockSuccessfulChatContext)
+    );
+    const prepareChatContextRuntimeSpy = spy(
+        (
+            _requestBody: ChatApiRequest,
+            _userId: string,
+            _deps: ChatHandlerDeps,
+        ) => Promise.resolve(mockSuccessfulChatContext)
+    );
+
     const handleNormalPathSpy = spy(() => Promise.resolve(mockSuccessResponse));
     const handleRewindPathSpy = spy(() => Promise.resolve(mockSuccessResponse));
+    const handleDialecticPathSpy = spy(() => Promise.resolve(mockSuccessResponse));
 
+    const handlePostRequestForTest = handlePostRequest;
+
+    const getAiProviderAdapterSpy = spy(() => null);
     const deps: ChatHandlerDeps = {
         logger,
-        prepareChatContext: prepareChatContextSpy,
+        prepareChatContext: prepareChatContextRuntimeSpy,
         handleNormalPath: handleNormalPathSpy,
         handleRewindPath: handleRewindPathSpy,
+        handleDialecticPath: handleDialecticPathSpy,
         createSupabaseClient: spy(),
         fetch: spy(),
         handleCorsPreflightRequest: spy(),
         createSuccessResponse: spy(),
         createErrorResponse: spy(),
-        getAiProviderAdapter: spy(),
+        getAiProviderAdapter: getAiProviderAdapterSpy,
         verifyApiKey: spy(() => Promise.resolve(true)),
-        countTokensForMessages: spy(() => 10),
-        handleDialecticPath: spy(),
+        countTokens: spy(() => 10),
         debitTokens: spy(),
     };
-
     const requestBody: ChatApiRequest = { message: "Hello", providerId: "provider-id", promptId: "prompt-id" };
     const mockSupabase = createMockSupabaseClient("test-user-id");
     const supabaseClient = mockSupabase.client as unknown as SupabaseClient;
 
     // Act
-    await handlePostRequest(requestBody, supabaseClient, "test-user-id", deps);
+    await handlePostRequestForTest(requestBody, supabaseClient, "test-user-id", deps);
 
     // Assert
-    assertEquals(prepareChatContextSpy.calls.length, 1);
+    assertEquals(prepareChatContextFactorySpy.calls.length, 0, "Factory spy should NOT have been called");
+    assertEquals(prepareChatContextRuntimeSpy.calls.length, 1, "Runtime spy should have been called");
+
+    const passedDeps = prepareChatContextRuntimeSpy.calls[0].args[2];
+    assert(passedDeps, "Deps object should have been passed to prepareChatContext");
+
+    // Verify that all original dependencies are present in the passed dependencies
+    for (const key in deps) {
+        const typedKey = key as keyof ChatHandlerDeps;
+        if (Object.prototype.hasOwnProperty.call(deps, typedKey)) {
+            assertEquals(
+                passedDeps[typedKey],
+                deps[typedKey],
+                `Dependency "${typedKey}" was not passed down correctly.`,
+            );
+        }
+    }
+
     assertEquals(handleNormalPathSpy.calls.length, 1, "handleNormalPath should have been called once");
     assertEquals(handleRewindPathSpy.calls.length, 0, "handleRewindPath should not have been called");
 });
 
 Deno.test("handlePostRequest: should call handleRewindPath when rewindFromMessageId is provided", async () => {
     // Arrange
-    const prepareChatContextSpy = spy(() => Promise.resolve(mockSuccessfulChatContext));
+    const prepareChatContextSpy = spy(
+        (
+            _requestBody: ChatApiRequest,
+            _userId: string,
+            _deps: ChatHandlerDeps,
+        ) => Promise.resolve(mockSuccessfulChatContext)
+    );
     const handleNormalPathSpy = spy(() => Promise.resolve(mockSuccessResponse));
     const handleRewindPathSpy = spy(() => Promise.resolve(mockSuccessResponse));
+    const handleDialecticPathSpy = spy(() => Promise.resolve(mockSuccessResponse));
+
+    const handlePostRequestForTest = handlePostRequest;
 
     const deps: ChatHandlerDeps = {
         logger,
         prepareChatContext: prepareChatContextSpy,
         handleNormalPath: handleNormalPathSpy,
         handleRewindPath: handleRewindPathSpy,
+        handleDialecticPath: handleDialecticPathSpy,
         createSupabaseClient: spy(),
         fetch: spy(),
         handleCorsPreflightRequest: spy(),
@@ -99,17 +143,15 @@ Deno.test("handlePostRequest: should call handleRewindPath when rewindFromMessag
         createErrorResponse: spy(),
         getAiProviderAdapter: spy(),
         verifyApiKey: spy(() => Promise.resolve(true)),
-        countTokensForMessages: spy(() => 10),
-        handleDialecticPath: spy(),
+        countTokens: spy(() => 10),
         debitTokens: spy(),
     };
-
     const requestBody: ChatApiRequest = { message: "Hello", providerId: "provider-id", promptId: "prompt-id", rewindFromMessageId: "rewind-id" };
     const mockSupabase = createMockSupabaseClient("test-user-id");
     const supabaseClient = mockSupabase.client as unknown as SupabaseClient;
 
     // Act
-    await handlePostRequest(requestBody, supabaseClient, "test-user-id", deps);
+    await handlePostRequestForTest(requestBody, supabaseClient, "test-user-id", deps);
 
     // Assert
     assertEquals(prepareChatContextSpy.calls.length, 1);
@@ -123,12 +165,16 @@ Deno.test("handlePostRequest: should return error and not call path handlers if 
     const prepareChatContextSpy = spy(() => Promise.resolve({ error }));
     const handleNormalPathSpy = spy(() => Promise.resolve(mockSuccessResponse));
     const handleRewindPathSpy = spy(() => Promise.resolve(mockSuccessResponse));
+    const handleDialecticPathSpy = spy(() => Promise.resolve(mockSuccessResponse));
+
+    const handlePostRequestForTest = handlePostRequest;
     
     const deps: ChatHandlerDeps = {
         logger,
         prepareChatContext: prepareChatContextSpy,
         handleNormalPath: handleNormalPathSpy,
         handleRewindPath: handleRewindPathSpy,
+        handleDialecticPath: handleDialecticPathSpy,
         createSupabaseClient: spy(),
         fetch: spy(),
         handleCorsPreflightRequest: spy(),
@@ -136,17 +182,15 @@ Deno.test("handlePostRequest: should return error and not call path handlers if 
         createErrorResponse: spy(),
         getAiProviderAdapter: spy(),
         verifyApiKey: spy(() => Promise.resolve(true)),
-        countTokensForMessages: spy(() => 10),
-        handleDialecticPath: spy(),
+        countTokens: spy(() => 10),
         debitTokens: spy(),
     };
-    
     const requestBody: ChatApiRequest = { message: "Hello", providerId: "provider-id", promptId: "prompt-id" };
     const mockSupabase = createMockSupabaseClient("test-user-id");
     const supabaseClient = mockSupabase.client as unknown as SupabaseClient;
 
     // Act
-    const result = await handlePostRequest(requestBody, supabaseClient, "test-user-id", deps);
+    const result = await handlePostRequestForTest(requestBody, supabaseClient, "test-user-id", deps);
 
     // Assert
     assert('error' in result);

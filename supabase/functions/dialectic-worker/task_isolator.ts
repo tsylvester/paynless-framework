@@ -8,13 +8,14 @@ import {
     IDialecticJobDeps,
 } from '../dialectic-service/dialectic.interface.ts';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
-import { MessageForTokenCounting } from '../_shared/types.ts';
+import { Messages } from '../_shared/types.ts';
 import { isDialecticExecuteJobPayload, isDialecticPlanJobPayload, isJson, isDocumentRelationships, isCanonicalPathParams } from '../_shared/utils/type_guards.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { Database } from '../types_db.ts';
 import { createCanonicalPathParams } from './strategies/canonical_context_builder.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
+import type { CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
 
 async function findSourceDocuments(
     dbClient: SupabaseClient<Database>,
@@ -124,8 +125,14 @@ export async function planComplexStage(
         throw new Error(`Model ${parentJob.payload.model_id} does not have provider_max_input_tokens configured.`);
     }
 
-    const messagesForTokenCounting: MessageForTokenCounting[] = sourceDocuments.map(doc => ({ role: 'user', content: doc.content }));
-    const estimatedTokens = deps.countTokens!(messagesForTokenCounting, modelConfig);
+    const messages: Messages[] = sourceDocuments.map(doc => ({ role: 'user', content: doc.content }));
+    const tokenizerDeps: CountTokensDeps = {
+        getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
+        countTokensAnthropic: (text: string) => (text ?? '').length,
+        logger: deps.logger,
+    };
+    const countablePayload: CountableChatPayload = { messages };
+    const estimatedTokens = deps.countTokens!(tokenizerDeps, countablePayload, modelConfig);
 
     let childJobPayloads: DialecticExecuteJobPayload[];
 

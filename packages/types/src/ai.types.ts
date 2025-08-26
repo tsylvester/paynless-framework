@@ -74,8 +74,15 @@ export type TiktokenEncoding =
 /**
  * Interface for messages used in token counting functions.
  */
-export interface MessageForTokenCounting {
-	role: "system" | "user" | "assistant" | "function"; // Function role might be needed for some models
+export enum ChatRole {
+	SYSTEM = "system",
+	USER = "user",
+	ASSISTANT = "assistant",
+	FUNCTION = "function",
+}
+
+export interface Messages {
+	role: ChatRole; // Function role might be needed for some models
 	content: string | null; // Content can be null for some function calls
 	name?: string; // Optional, for function calls
 }
@@ -126,7 +133,7 @@ export interface ChatApiRequest {
 	promptId: SystemPrompt["id"]; // Reference aliased type
 	chatId?: Chat["id"] | null; // Reference aliased type (optional for new chats)
 	organizationId?: string | null; // Add optional organizationId
-	contextMessages?: MessageForTokenCounting[]; // Added for selected context
+	contextMessages?: Messages[]; // Added for selected context
 	rewindFromMessageId?: string | null; // Added for rewind
 	max_tokens_to_generate?: number; // Added for output capping
 	temperature?: number; // Added for temperature control
@@ -314,17 +321,8 @@ export interface AiActions {
 		providerId: AiProvider["id"]; // Use aliased type
 		promptId: SystemPrompt["id"] | null; // MODIFIED HERE
 		chatId?: Chat["id"] | null; // Use aliased type
-		contextMessages?: MessageForTokenCounting[]; // Use the more permissive type here
+		contextMessages?: Messages[]; // Use the more permissive type here
 	}) => Promise<ChatMessage | null>; // Use aliased type
-	sendMessageStreaming: (
-		data: {
-			message: string;
-			providerId: AiProvider["id"];
-			promptId: SystemPrompt["id"] | null;
-			chatId?: Chat["id"] | null;
-			contextMessages?: MessageForTokenCounting[];
-		} & StreamingCallbacks,
-	) => Promise<void>;
 	loadChatHistory: (organizationId?: string | null) => Promise<void>;
 	loadChatDetails: (chatId: Chat["id"]) => Promise<void>; // Use aliased type
 	startNewChat: (organizationId?: string | null) => void;
@@ -422,7 +420,7 @@ export interface ChatContextPreferences {
  * Request structure for token estimation.
  */
 export interface TokenEstimationRequest {
-	textOrMessages: string | MessageForTokenCounting[];
+	textOrMessages: string | Messages[];
 	modelConfig: AiModelExtendedConfig;
 }
 

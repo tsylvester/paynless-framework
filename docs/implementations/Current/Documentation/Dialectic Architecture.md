@@ -79,8 +79,8 @@ executeModelCallAndSave (dialectic-worker)-(dialectic-service)
 TEST POINT(s): 
 1.  **Unit Test: Prove Flawed Token Calculation**
     -   **Location:** Add a new test to `supabase/functions/dialectic-worker/executeModelCallAndSave.test.ts`.
-    -   **Description:** This test will prove that the token check ignores the `sourceDocuments` and only evaluates the `renderedPrompt`. We will pass a short `renderedPrompt` but a `sourceDocuments` array containing a single, massive document that would exceed any token limit. We will spy on the internal `countTokensForMessages` function and have the test log the content it was called with and the resulting token count.
-    -   **Expected Red Result:** The test will fail. The RAG service will not be called. The assertion `assert(ragSpy.calls.length > 0)` will fail. The log output will visually confirm that `countTokensForMessages` was only called with the short prompt content.
+    -   **Description:** This test will prove that the token check ignores the `sourceDocuments` and only evaluates the `renderedPrompt`. We will pass a short `renderedPrompt` but a `sourceDocuments` array containing a single, massive document that would exceed any token limit. We will spy on the internal `countTokens` function and have the test log the content it was called with and the resulting token count.
+    -   **Expected Red Result:** The test will fail. The RAG service will not be called. The assertion `assert(ragSpy.calls.length > 0)` will fail. The log output will visually confirm that `countTokens` was only called with the short prompt content.
 
 # This section is probably innocent, there's no reason to believe callModel is misbehaving. 
 

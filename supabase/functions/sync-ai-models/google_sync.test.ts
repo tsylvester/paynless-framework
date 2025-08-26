@@ -111,3 +111,23 @@ Deno.test("'INTERNAL_MODEL_MAP should contain valid partial configs'", () => {
 
     assertEquals(failures.length, 0, `Found ${failures.length} invalid configs in INTERNAL_MODEL_MAP: ${JSON.stringify(failures, null, 2)}`);
 });
+
+// --- NEW: Step 34 RED ---
+Deno.test("INTERNAL_MODEL_MAP sets google_gemini_tokenizer with default ratio 4.0", () => {
+    const ids = [
+        'google-gemini-2.5-pro',
+        'google-gemini-2.5-flash',
+        'google-gemini-1.5-pro-latest',
+    ];
+
+    for (const id of ids) {
+        const cfg = INTERNAL_MODEL_MAP.get(id);
+        assert(cfg, `Config missing for ${id}`);
+        const strat = cfg!.tokenization_strategy as AiModelExtendedConfig['tokenization_strategy'] | undefined;
+        assert(strat && 'type' in strat && strat.type === 'google_gemini_tokenizer', `tokenization_strategy.type should be 'google_gemini_tokenizer' for ${id}`);
+        // RED: expect default ratio present and equal to 4.0
+        // deno-lint-ignore no-explicit-any
+        const ratio = (strat as any).chars_per_token_ratio;
+        assertEquals(ratio, 4.0, `chars_per_token_ratio should be 4.0 for ${id}`);
+    }
+});

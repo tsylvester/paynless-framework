@@ -7,9 +7,10 @@ import { ProjectContext, SessionContext, StageContext, DynamicContextVariables }
 import { createMockSupabaseClient, type MockSupabaseDataConfig, type MockSupabaseClientSetup } from "./supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Json, Database } from "../types_db.ts";
-import type { AiModelExtendedConfig } from "./types.ts";
-import { MockRagService } from './services/rag_service.mock.ts';
-import { IRagServiceDependencies } from "./services/rag_service.interface.ts";
+import type { AiModelExtendedConfig, Messages } from "./types.ts";
+import { ContributionMetadata, DocumentRelationships } from "./types/file_manager.types.ts";
+import { MockQueryBuilderState } from "./supabase.mock.ts";
+
 
 // Define a type for the mock implementation of renderPrompt
 type RenderPromptMock = (
@@ -481,6 +482,153 @@ Deno.test("PromptAssembler", async (t) => {
             assertEquals(renderArgs?.[1], context);
             assertEquals(renderArgs?.[2], stageOverlayValues); 
             assertEquals(renderArgs?.[3], null);
+
+        } finally {
+            teardown();
+        }
+    });
+
+    await t.step("should correctly append continuation content to the prompt", async () => {
+        const expectedRenderedPrompt = "Base Prompt. Continuation Content.";
+        const renderPromptMockFn: RenderPromptMock = (_base, _vars, _sysOverlays, _userOverlays) => {
+            return "Base Prompt."; 
+        };
+        const { assembler } = setup({}, renderPromptMockFn);
+
+        try {
+            const result = await assembler.assemble(
+                defaultProject, 
+                defaultSession, 
+                defaultStage, 
+                defaultProject.initial_user_prompt, 
+                1,
+                "Continuation Content."
+            );
+            
+            assertEquals(result, expectedRenderedPrompt);
+
+        } finally {
+            teardown();
+        }
+    });
+
+    await t.step("gatherContinuationInputs returns an atomic message for each chunk", async () => {
+        const rootContributionId = 'contrib-root-123';
+        const continuationId = 'contrib-cont-456';
+        const seedPromptContent = "This is the original seed prompt.";
+        const rootAiChunkContent = "This is the root AI part.";
+        const continuationAiChunkContent = "This is the continuation AI part.";
+
+        const mockContributions: Database['public']['Tables']['dialectic_contributions']['Row'][] = [
+            {
+                id: rootContributionId,
+                session_id: 'sess-123',
+                iteration_number: 1,
+                storage_path: 'path/to/root',
+                file_name: 'root_chunk.md',
+                storage_bucket: 'test-bucket',
+                document_relationships: { "thesis": rootContributionId },
+                created_at: new Date().toISOString(),
+                is_latest_edit: true,
+                model_name: 'test-model',
+                user_id: 'user-123',
+                citations: null,
+                contribution_type: null,
+                edit_version: 1,
+                error: null,
+                mime_type: 'text/markdown',
+                model_id: 'model-123',
+                original_model_contribution_id: null,
+                processing_time_ms: 100,
+                target_contribution_id: null,
+                prompt_template_id_used: null,
+                raw_response_storage_path: null,
+                seed_prompt_url: null,
+                size_bytes: 100,
+                tokens_used_input: 100,
+                tokens_used_output: 100,
+                stage: 'thesis',
+                updated_at: new Date().toISOString(),
+            },
+            {
+                id: 'contrib-cont-456',
+                session_id: 'sess-123',
+                iteration_number: 1,
+                storage_path: 'path/to/cont1',
+                file_name: 'cont1_chunk.md',
+                storage_bucket: 'test-bucket',
+                document_relationships: { 
+                    "thesis": rootContributionId,
+                    "isContinuation": true,
+                    "turnIndex": 0
+                },
+                created_at: new Date().toISOString(),
+                is_latest_edit: true,
+                model_name: 'test-model',
+                user_id: 'user-123',
+                citations: null,
+                contribution_type: null,
+                edit_version: 1,
+                error: null,
+                mime_type: 'text/markdown',
+                model_id: 'model-123',
+                original_model_contribution_id: null,
+                processing_time_ms: 100,
+                target_contribution_id: null,
+                prompt_template_id_used: null,
+                raw_response_storage_path: null,
+                seed_prompt_url: null,
+                size_bytes: 100,
+                tokens_used_input: 100,
+                tokens_used_output: 100,
+                stage: 'thesis',
+                updated_at: new Date().toISOString(),
+            }
+        ];
+
+        const config: MockSupabaseDataConfig = {
+            genericMockResults: {
+                dialectic_contributions: {
+                    select: (modifier: MockQueryBuilderState) => {
+                        const isQueryingForRootById = modifier.filters.some(f => f.column === 'id' && f.value === rootContributionId);
+                        if (isQueryingForRootById) {
+                            const rootChunk = mockContributions.find(c => c.id === rootContributionId);
+                            // The .single() is called on the builder, so .select() should return an array.
+                            return Promise.resolve({ data: rootChunk ? [rootChunk] : [], error: null });
+                        }
+                        return Promise.resolve({ data: mockContributions, error: null });
+                    }
+                },
+            },
+            storageMock: {
+                downloadResult: (_bucket, path) => {
+                    if (path.includes('seed_prompt.md')) {
+                        return Promise.resolve({ data: new Blob([seedPromptContent]), error: null });
+                    }
+                    if (path.includes('root_chunk.md')) {
+                        return Promise.resolve({ data: new Blob([rootAiChunkContent]), error: null });
+                    }
+                    if (path.includes('cont1_chunk.md')) {
+                        return Promise.resolve({ data: new Blob([continuationAiChunkContent]), error: null });
+                    }
+                    return Promise.resolve({ data: null, error: new Error('File not found in mock') });
+                }
+            }
+        };
+
+        const { assembler } = setup(config);
+
+        try {
+            const expectedMessages: Messages[] = [
+                { role: 'user', content: seedPromptContent },
+                { role: 'assistant', content: rootAiChunkContent, id: rootContributionId },
+                { role: 'assistant', content: continuationAiChunkContent, id: continuationId },
+                { role: 'user', content: 'Please continue.' }
+            ];
+
+            const result = await (assembler).gatherContinuationInputs(rootContributionId);
+
+            assertEquals(result, expectedMessages);
 
         } finally {
             teardown();
