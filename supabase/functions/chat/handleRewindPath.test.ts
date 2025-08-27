@@ -505,3 +505,58 @@ Deno.test("handleRewindPath: caps larger client max_tokens_to_generate to SSOT",
   const sent: ChatApiRequest = mockAiAdapter.sendMessageSpy.calls[0].args[0];
   assertEquals(sent.max_tokens_to_generate, 400);
 });
+
+// 123.i: Ensure rewind path records a non-zero debit amount for usage
+Deno.test("handleRewindPath: records a non-zero debit amount for usage", async () => {
+  const modelConfig: AiModelExtendedConfig = {
+    api_identifier: "test-model",
+    input_token_cost_rate: 1,
+    output_token_cost_rate: 1,
+    tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+  };
+
+  // Select 1: rewind point timestamp; Select 2: history for AI
+  let selectCall = 0;
+  const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {
+    genericMockResults: {
+      chat_messages: {
+        select: () => {
+          selectCall++;
+          if (selectCall === 1) {
+            return Promise.resolve({ data: [{ created_at: new Date().toISOString() }], error: null });
+          }
+          return Promise.resolve({ data: [{ id: crypto.randomUUID(), role: 'user', content: 'hi', created_at: new Date().toISOString(), is_active_in_thread: true }], error: null });
+        },
+      },
+    },
+    rpcResults: {
+      perform_chat_rewind: { data: { id: crypto.randomUUID(), chat_id: 'c', user_id: null, role: 'assistant', content: 'rewound assistant', created_at: new Date().toISOString(), is_active_in_thread: true, token_usage: { prompt_tokens: 5, completion_tokens: 7, total_tokens: 12 }, ai_provider_id: 'p', system_prompt_id: 'pr', updated_at: new Date().toISOString(), error_type: null, response_to_message_id: crypto.randomUUID() }, error: null },
+    },
+  });
+
+  const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+  mockAiAdapter.controls.setMockResponse({ content: 'ok', token_usage: { prompt_tokens: 5, completion_tokens: 7, total_tokens: 12 } });
+
+  const mockWallet = createMockTokenWalletService();
+  const deps: ChatHandlerDeps = { ...defaultDeps, logger, tokenWalletService: mockWallet.instance, countTokens: spy(() => 10), getAiProviderAdapter: spy(() => mockAiAdapter.instance) };
+
+  const context: PathHandlerContext = {
+    supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+    deps,
+    userId: 'test-user-id',
+    requestBody: { message: 'rewind', providerId: 'p', promptId: 'pr', chatId: 'c', rewindFromMessageId: crypto.randomUUID() },
+    wallet: { walletId: 'w', balance: '1000', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() },
+    aiProviderAdapter: mockAiAdapter.instance,
+    modelConfig,
+    actualSystemPromptText: null,
+    finalSystemPromptIdForDb: null,
+    apiKey: 'k',
+    providerApiIdentifier: 'test-model',
+  };
+
+  const result = await handleRewindPath(context);
+  assert(!('error' in result), 'Expected success');
+  assertEquals(mockWallet.stubs.recordTransaction.calls.length, 1);
+  const amount = mockWallet.stubs.recordTransaction.calls[0].args[0].amount;
+  assert(Number.parseInt(amount, 10) > 0, 'Debit amount should be > 0');
+});

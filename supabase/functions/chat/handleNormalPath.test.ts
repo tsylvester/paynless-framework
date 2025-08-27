@@ -151,6 +151,41 @@ Deno.test("handleNormalPath: happy path - creates new chat and saves messages", 
     );
     assertEquals(insertCalls?.callCount, 2);
   });
+
+  Deno.test("handleNormalPath: records a non-zero debit amount for usage", async () => {
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {
+      genericMockResults: {
+        chats: { insert: { data: [{ id: 'new-chat-id' }], error: null } },
+        chat_messages: { insert: (state) => Promise.resolve({ data: [{ ...(state.insertData), id: crypto.randomUUID() }], error: null }) },
+      },
+    });
+
+    const modelConfig: AiModelExtendedConfig = { api_identifier: 'test-model', input_token_cost_rate: 1, output_token_cost_rate: 1, tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' } };
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    mockAiAdapter.controls.setMockResponse({ content: 'ok', token_usage: { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 } });
+
+    const mockWallet = createMockTokenWalletService();
+    const deps: ChatHandlerDeps = { ...defaultDeps, logger, tokenWalletService: mockWallet.instance, countTokens: spy(()=>5), getAiProviderAdapter: spy(()=>mockAiAdapter.instance) };
+
+    const context: PathHandlerContext = {
+      supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+      deps,
+      userId: 'test-user',
+      requestBody: { message: 'Hi', providerId: 'prov', promptId: '__none__' },
+      wallet: { walletId: 'w', balance: '1000', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
+      actualSystemPromptText: null,
+      finalSystemPromptIdForDb: null,
+      apiKey: 'k',
+      providerApiIdentifier: 'test-model',
+    };
+
+    await handleNormalPath(context);
+    assertEquals(mockWallet.stubs.recordTransaction.calls.length, 1);
+    const amountStr = mockWallet.stubs.recordTransaction.calls[0].args[0].amount;
+    assert(Number.parseInt(amountStr, 10) > 0, 'Debit amount should be > 0');
+  });
   
   Deno.test("handleNormalPath: AI adapter fails, saves error message", async () => {
     // Arrange

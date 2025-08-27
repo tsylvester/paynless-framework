@@ -147,6 +147,33 @@ Deno.test('getMaxOutputTokens', async (t) => {
     assertEquals(mockLoggerErrorCalls.length, 1);
   });
 
+  await t.step('should throw error when output_token_cost_rate is negative', () => {
+    beforeEachStep();
+    const invalidModelConfig = { ...modelConfig, output_token_cost_rate: -0.1 };
+    assertThrows(() => {
+        getMaxOutputTokens(1000, 100, invalidModelConfig, mockLogger);
+    }, Error, 'Cannot calculate max output tokens: Invalid output token cost rate.');
+    assertEquals(mockLoggerErrorCalls.length, 1);
+  });
+
+  await t.step('should throw error when output_token_cost_rate is missing', () => {
+    beforeEachStep();
+    const invalidModelConfig = { ...modelConfig, output_token_cost_rate: undefined } as unknown as AiModelExtendedConfig;
+    assertThrows(() => {
+        getMaxOutputTokens(1000, 100, invalidModelConfig, mockLogger);
+    }, Error, 'Cannot calculate max output tokens: Invalid output token cost rate.');
+    assertEquals(mockLoggerErrorCalls.length, 1);
+  });
+
+  await t.step('should throw error when input_token_cost_rate is missing', () => {
+    beforeEachStep();
+    const invalidModelConfig = { ...modelConfig, input_token_cost_rate: undefined } as unknown as AiModelExtendedConfig;
+    assertThrows(() => {
+        getMaxOutputTokens(1000, 100, invalidModelConfig, mockLogger);
+    }, Error, 'Cannot calculate max output tokens: Invalid input token cost rate.');
+    assertEquals(mockLoggerErrorCalls.length, 1);
+  });
+
   await t.step('should work with floating point rates', () => {
     beforeEachStep();
     const user_balance_tokens = 1000;

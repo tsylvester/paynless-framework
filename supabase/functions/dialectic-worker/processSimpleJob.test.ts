@@ -32,6 +32,7 @@ import { IndexingService, LangchainTextSplitter, EmbeddingClient } from '../_sha
 import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler.ts';
 import type { AssemblerSourceDocument } from '../_shared/prompt-assembler.interface.ts';
+import { createMockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
 
 const mockPayload: Json = {
   projectId: 'project-abc',
@@ -223,7 +224,8 @@ const getMockDeps = (): IDialecticJobDeps => {
     const openAiAdapter = new OpenAiAdapter(mockProvider, Deno.env.get('OPENAI_API_KEY')!, logger);
     const embeddingClient = new EmbeddingClient(openAiAdapter);
     const textSplitter = new LangchainTextSplitter();
-    const indexingService = new IndexingService(mockSupabaseClient, logger, textSplitter, embeddingClient);
+    const mockWallet = createMockTokenWalletService();
+    const indexingService = new IndexingService(mockSupabaseClient, logger, textSplitter, embeddingClient, mockWallet.instance);
     
     return {
       logger: logger,

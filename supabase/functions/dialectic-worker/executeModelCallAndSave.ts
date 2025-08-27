@@ -283,18 +283,25 @@ export async function executeModelCallAndSave(
         const estimatedTotalRagCost = tokensToBeRemoved * inputCostRate;
         const estimatedFinalPromptCost = maxTokens * inputCostRate;
         const totalEstimatedInputCost = estimatedTotalRagCost + estimatedFinalPromptCost;
+
+        // Include a deterministic estimate for embedding costs in preflight.
+        // To trim tokensToBeRemoved from the prompt, we must process at least that
+        // many tokens through RAG/indexing. Bill embeddings 1:1 at input rate.
+        const estimatedEmbeddingTokens = Math.max(0, tokensToBeRemoved);
+        const estimatedEmbeddingCost = estimatedEmbeddingTokens * inputCostRate;
+        const totalEstimatedInputCostWithEmbeddings = totalEstimatedInputCost + estimatedEmbeddingCost;
         
         const currentUserBalance: number = walletBalance;
         
         // Stage 1: Absolute Affordability Check
-        if (currentUserBalance < totalEstimatedInputCost) {
-            throw new Error(`Insufficient funds for the entire operation. Estimated cost: ${totalEstimatedInputCost}, Balance: ${currentUserBalance}`);
+        if (currentUserBalance < totalEstimatedInputCostWithEmbeddings) {
+            throw new Error(`Insufficient funds for the entire operation (including embeddings). Estimated cost: ${totalEstimatedInputCostWithEmbeddings}, Balance: ${currentUserBalance}`);
         }
 
         // Stage 2: Rationality Check (80%)
         const rationalityThreshold = 0.80;
-        if (totalEstimatedInputCost > currentUserBalance * rationalityThreshold) {
-            throw new Error(`Estimated cost (${totalEstimatedInputCost}) exceeds ${rationalityThreshold * 100}% of the user's balance (${currentUserBalance}).`);
+        if (totalEstimatedInputCostWithEmbeddings > currentUserBalance * rationalityThreshold) {
+            throw new Error(`Estimated cost (${totalEstimatedInputCostWithEmbeddings}) exceeds ${rationalityThreshold * 100}% of the user's balance (${currentUserBalance}).`);
         }
 
         deps.logger.info(

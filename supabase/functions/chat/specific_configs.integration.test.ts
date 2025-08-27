@@ -928,7 +928,7 @@ export async function runSpecificConfigsTests(
       // For the dummy provider, it just echoes, so the absence of specific system prompt text is the check.
       assertNotEquals(responseJson.assistantMessage.content.toLowerCase().includes("system prompt:"), true, "Response should not contain system prompt content for non-existent ID.");
 
-      // Check wallet balance - should be unchanged if dummy provider (or charged normally if a real provider was used and succeeded)
+      // Check wallet balance - should decrease by debited amount even for dummy provider (non-zero rates)
       const { data: wallet, error: walletErr } = await supabaseAdminClient
           .from('token_wallets')
           .select('balance')
@@ -937,8 +937,38 @@ export async function runSpecificConfigsTests(
           .single();
       if (walletErr) throw walletErr;
       assertExists(wallet, "Wallet data was null for test user.");
-      // For dummy-echo-test, balance should be unchanged. If we used a real provider, it would be charged.
-      assertEquals(wallet.balance, initialBalance, "Wallet balance should remain unchanged for dummy provider with non-existent prompt ID.");
+      // Compute expected debit from token usage and provider config rates
+      const usageUnknown = (responseJson.assistantMessage && responseJson.assistantMessage.token_usage) || null;
+      assertExists(usageUnknown, "assistantMessage.token_usage should exist");
+      const { data: provRow, error: provErr } = await supabaseAdminClient
+        .from('ai_providers')
+        .select('config')
+        .eq('api_identifier', 'dummy-echo-test')
+        .single();
+      if (provErr) throw provErr;
+      assertExists(provRow, 'Provider row for dummy-echo-test not found');
+      // Narrow provider config JSON
+      let inRate = 1;
+      let outRate = 1;
+      const cfgUnknown = provRow.config;
+      // Import placed at file top: isRecord from ../_shared/utils/type_guards.ts
+      if (isRecord(cfgUnknown)) {
+        const inRaw = cfgUnknown['input_token_cost_rate'];
+        const outRaw = cfgUnknown['output_token_cost_rate'];
+        if (typeof inRaw === 'number') inRate = inRaw;
+        if (typeof outRaw === 'number') outRate = outRaw;
+      }
+      // Narrow usage JSON
+      let promptTokens = 0;
+      let completionTokens = 0;
+      if (isRecord(usageUnknown)) {
+        const p = usageUnknown['prompt_tokens'];
+        const c = usageUnknown['completion_tokens'];
+        if (typeof p === 'number') promptTokens = p;
+        if (typeof c === 'number') completionTokens = c;
+      }
+      const expectedDebit = Math.round(promptTokens * inRate + completionTokens * outRate);
+      assertEquals(Number(wallet.balance), initialBalance - expectedDebit, "Wallet balance should reflect debit for dummy provider");
       // No adapter reset needed
     });
 

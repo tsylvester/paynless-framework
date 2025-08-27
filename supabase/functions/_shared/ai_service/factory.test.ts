@@ -28,8 +28,8 @@ Deno.test("AI Adapter Factory - getAiProviderAdapter", () => {
 
   const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
     api_identifier: 'test-model',
-    input_token_cost_rate: 0,
-    output_token_cost_rate: 0,
+    input_token_cost_rate: 1,
+    output_token_cost_rate: 1,
     tokenization_strategy: { type: 'none' },
   };
 
@@ -127,8 +127,8 @@ Deno.test("should pass the full provider DB config to the adapter, including the
     const MOCK_PROVIDER_ID = crypto.randomUUID();
     const mockProviderConfig: AiModelExtendedConfig = {
         api_identifier: 'dummy-test-model',
-        input_token_cost_rate: 0,
-        output_token_cost_rate: 0,
+        input_token_cost_rate: 1,
+        output_token_cost_rate: 1,
         tokenization_strategy: { type: 'none' },
     };
     if(!isJson(mockProviderConfig)) {
@@ -175,8 +175,8 @@ Deno.test("DI Proof: should return DummyAdapter for a real provider when injecte
     const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
         id: crypto.randomUUID(),
         api_identifier: 'openai-gpt-4o',
-        input_token_cost_rate: 0,
-        output_token_cost_rate: 0,
+        input_token_cost_rate: 1,
+        output_token_cost_rate: 1,
         tokenization_strategy: { type: 'none' },
     };
     if(!isJson(MOCK_MODEL_CONFIG)) {
@@ -214,8 +214,8 @@ Deno.test("DI Proof: should return real adapter when using the default map", () 
     const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
         id: crypto.randomUUID(),
         api_identifier: 'openai-gpt-4o',
-        input_token_cost_rate: 0,
-        output_token_cost_rate: 0,
+        input_token_cost_rate: 1,
+        output_token_cost_rate: 1,
         tokenization_strategy: { type: 'none' },
     };
     if(!isJson(MOCK_MODEL_CONFIG)) {

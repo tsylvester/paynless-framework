@@ -475,23 +475,23 @@ Objective: Emit an internal `contribution_generation_failed` event from all fail
   - Send an internal notification `{ type: 'other_generation_failed', data: { sessionId, job_id, error } }`.
   - Assert: it routes to `useDialecticStore()._handleDialecticLifecycleEvent` with a payload equivalent to failure handling (same path as `contribution_generation_failed`), and no user-facing notification is added.
 
-- [ ] 85.d. GREEN: Implement router mapping for `other_generation_failed`
+- [✅] 85.d. GREEN: Implement router mapping for `other_generation_failed`
   - [FE-STORE]
   - **File**: `packages/store/src/notificationStore.ts`
   - In the internal event switch, handle `other_generation_failed` by constructing the same failure payload shape used for `contribution_generation_failed` and forward to `_handleDialecticLifecycleEvent`.
 
-- [ ] 86. RED: End-to-end integration shows UI placeholder transitions to failed with specific message
+- [✅] 86. RED: End-to-end integration shows UI placeholder transitions to failed with specific message
   - [TEST-INT]
   - **File**: `supabase/integration_tests/services/dialectic_pipeline.integration.test.ts`
   - Simulate a job that triggers NSF (e.g., tiny balance vs. large prompt). Assert that a Realtime internal notification (type `other_generation_failed`) is emitted and that the UI-facing store (via test harness) sets the placeholder status to `failed` with the NSF message, not a generic retry message.
 
-- [ ] 87. REVIEW: Ensure user-facing notifications still created
+- [✅] 87. REVIEW: Ensure user-facing notifications still created
   - [REVIEW]
   - Verify `sendContributionFailedNotification` (user-facing, `is_internal_event: false`) is still sent so the Notifications UI preserves a historical record; internal events should handle state changes, not toasts.
 
 ---
 
-## Linter Error Remediation (Queued)
+## Ensure dialectic-service passes all tests  
 
 - [ ] 88. REFACTOR: Align `FileType` usage in `cloneProject.ts`
   - **File**: `supabase/functions/dialectic-service/cloneProject.ts`
@@ -751,79 +751,159 @@ Objective: Emit an internal `contribution_generation_failed` event from all fail
     - Ensure `token_usage` is populated with non-zero prompt/completion/total tokens, computed from content length and config tokenization strategy.
     - Update `listModels()` to return `hard_cap_output_tokens` and `context_window_tokens` defaults for the dummy model.
 
-- [ ] 119.a RED: Dummy embedding client used by RAG with non-zero cost
+- [✅] 119.a RED: Dummy embedding client used by Indexing (non-zero cost)
   - [TEST-UNIT]
   - Files:
     - `supabase/functions/_shared/services/indexing_service.test.ts`
   - Add tests:
-    - Inject a `DummyEmbeddingClient` via DI; `getEmbedding(text)` returns a deterministic vector and a non-zero usage object.
-    - RAG pipeline calls `embeddingClient.getEmbedding` for queries and documents; debit logic (where applicable in higher-level tests) observes non-zero token usage.
+    - Inject an `EmbeddingClient` using `DummyAdapter` via DI; `getEmbedding(text)` returns a deterministic vector and a non-zero usage object.
+    - Assert `embeddingClient.getEmbedding` is called once per chunk.
+    - Assert persisted `dialectic_memory.embedding` is a JSON array string of length 32.
+    - Assert aggregated `tokensUsed > 0`.
 
-- [ ] 119.b GREEN: Implement DummyEmbeddingClient (non-zero usage) and wire into services for tests
+- [✅] 119.b GREEN: Wire EmbeddingClient (DummyAdapter) for indexing tests via DI
   - [BE]
   - Files:
     - `supabase/functions/_shared/services/indexing_service.ts` (DI only; do not hardcode)
-  - Implement `DummyEmbeddingClient` in tests or a local test helper with:
-    - Deterministic numeric vector (e.g., hash-based), and usage `{ prompt_tokens: >0, total_tokens: >0 }`.
+  - Use the generic `EmbeddingClient` with a `DummyAdapter` instance in tests; no code changes required in `indexing_service.ts`.
+  - Deterministic numeric vector (e.g., hash-based) and usage `{ prompt_tokens: >0, total_tokens: >0 }` are produced by the adapter.
 
-- [ ] 120.a RED: Dummy embedding client used by RAG with non-zero cost
+- [✅] 120.a RED: Dummy embedding client used by RAG with non-zero cost
   - [TEST-UNIT]
   - Files:
     - `supabase/functions/_shared/services/rag_service.test.ts`
   - Add tests:
-    - Inject a `DummyEmbeddingClient` via DI; `getEmbedding(text)` returns a deterministic vector and a non-zero usage object.
+    - Inject an `EmbeddingClient` using `DummyAdapter` via DI; `getEmbedding(text)` returns a deterministic vector and a non-zero usage object.
     - RAG pipeline calls `embeddingClient.getEmbedding` for queries and documents; debit logic (where applicable in higher-level tests) observes non-zero token usage.
 
-- [ ] 120.b GREEN: Implement DummyEmbeddingClient (non-zero usage) and wire into services for tests
+- [✅] 120.b GREEN: Wire EmbeddingClient (DummyAdapter) for RAG tests via DI
   - [BE]
   - Files:
     - `supabase/functions/_shared/services/rag_service.ts` (no changes expected; relies on DI)
-  - Implement `DummyEmbeddingClient` in tests or a local test helper with:
-    - Deterministic numeric vector (e.g., hash-based), and usage `{ prompt_tokens: >0, total_tokens: >0 }`.
+  - Use the generic `EmbeddingClient` with a `DummyAdapter` instance in tests; no code changes required in `rag_service.ts`.
+  - Deterministic numeric vector and non-zero usage are produced by the adapter.
 
-- [ ] 120.c GREEN: Implement DummyEmbeddingClient (non-zero usage) and wire into services for tests
+- [✅] 120.c GREEN: Verify `dummy_adapter.ts` exposes getEmbedding (no-op if present)
   - [BE]
   - Files:
-    - `supabase/functions/_shared/ai_service/dummy_adapter.ts` (expose `getEmbedding` to mirror other adapters)
-  - Implement `DummyEmbeddingClient` in tests or a local test helper with:
-    - Deterministic numeric vector (e.g., hash-based), and usage `{ prompt_tokens: >0, total_tokens: >0 }`.
+    - `supabase/functions/_shared/ai_service/dummy_adapter.ts`
+  - Confirm `getEmbedding(text)` returns a deterministic numeric vector and usage `{ prompt_tokens: >0, total_tokens: >0 }`. No code changes if already implemented.
 
-- [ ] 121.a RED: Switch embedding provider by selected model (dummy → dummy embeddings; else → OpenAI)
+- [✅] 121.a RED: Switch embedding provider by selected model (dummy → DummyAdapter; else → provider adapter)
   - [TEST-UNIT/INT]
   - Files:
     - `supabase/functions/dialectic-worker/index.test.ts`
   - Add tests asserting:
-    - When selected chat provider is dummy, the embedding client constructed is the dummy embedding client.
-    - When selected provider is non-dummy, the embedding client is the OpenAI embedding client (current default).
+    - When selected chat provider is dummy, the constructed embedding client wraps `DummyAdapter`.
+    - When selected provider is non-dummy, the constructed embedding client wraps the corresponding provider adapter (OpenAI by default).
 
-- [ ] 121.b GREEN: Implement embedding provider selection (DI) based on chosen model
+- [✅] 121.b GREEN: Implement embedding provider selection (DI) based on chosen model
   - [BE]
   - Files:
     - `supabase/functions/dialectic-worker/index.ts`
   - Refactor to select embedding adapter via the same factory used for chat providers:
-    - If provider name/id indicates dummy, instantiate dummy embedding client; else use OpenAI embedding client.
-    - Preserve existing signatures; avoid hardcoding OpenAI.
+    - If provider name/id indicates dummy, instantiate `EmbeddingClient` with `DummyAdapter`; else instantiate `EmbeddingClient` with the selected provider adapter.
+    - Preserve existing signatures; avoid hardcoding a specific provider.
 
-- [ ] 122.a RED: Switch embedding provider by selected model (dummy → dummy embeddings; else → OpenAI)
+- [✅] 122.a RED: Switch embedding provider by selected model (dummy → DummyAdapter; else → provider adapter)
   - [TEST-UNIT/INT]
   - Files:
     - `supabase/functions/dialectic-service/startSession.ts` (test hooks)
   - Add tests asserting:
-    - When selected chat provider is dummy, the embedding client constructed is the dummy embedding client.
-    - When selected provider is non-dummy, the embedding client is the OpenAI embedding client (current default).
+    - When selected chat provider is dummy, the constructed embedding client wraps `DummyAdapter`.
+    - When selected provider is non-dummy, the constructed embedding client wraps the corresponding provider adapter (OpenAI by default).
 
-- [ ] 122.b GREEN: Implement embedding provider selection (DI) based on chosen model
+- [✅] 122.b GREEN: Implement embedding provider selection (DI) based on chosen model
   - [BE]
   - Files:
     - `supabase/functions/dialectic-service/startSession.ts`
   - Refactor to select embedding adapter via the same factory used for chat providers:
-    - If provider name/id indicates dummy, instantiate dummy embedding client; else use OpenAI embedding client.
-    - Preserve existing signatures; avoid hardcoding OpenAI.
+    - If provider name/id indicates dummy, instantiate `EmbeddingClient` with `DummyAdapter`; else instantiate `EmbeddingClient` with the selected provider adapter.
+    - Preserve existing signatures; avoid hardcoding a specific provider.
 
-- [ ] 123. REVIEW: Ensure all dummy paths incur non-zero costs
-  - [REVIEW]
-  - Verify across tests that:
-    - Dummy adapter chat usage reflects non-zero token counts and costs.
-    - Dummy embedding usage is non-zero in RAG flows.
-    - Wallet debit logic (where present) observes non-zero amounts for dummy paths.
+- [ ] 123. ENFORCE NON-ZERO COSTS AND BILLING (Embedding + Chat)
+  - [OVERVIEW]
+  - Objective: remove zero-cost defaults and ensure all embedding and chat paths assess non-zero charges, with explicit debits and tests.
 
+  - [✅] 123.a RED: Provider configs must never have zero cost rates
+    - [TEST-CONFIG]
+    - Add tests to fail when `input_token_cost_rate` or `output_token_cost_rate` are 0 or missing for any active provider (dummy included).
+
+  - [✅] 123.b GREEN: Update seeds to non-zero defaults for all providers (dummy included)
+    - [DATA]
+    - Files: `supabase/seed.sql` (and migrations if needed)
+    - Ensure dummy/openai/etc. have strictly positive `input_token_cost_rate` and `output_token_cost_rate`.
+
+  - [✅] 123.c RED: IndexingService bills embeddings (1:1) via wallet debit
+    - [TEST-UNIT]
+    - Files: `supabase/functions/_shared/services/indexing_service.test.ts`
+    - Assert: after indexing, `tokenWalletService.debit` is called with `amount = usage.total_tokens` and idempotency key `embed:{sessionId}:{contributionId}:{chunkIdx}`.
+    - [Order]
+      - 123.c.1 RED: Add assertions only in `indexing_service.test.ts` (no prod edits yet).
+
+  - [ ] 123.d GREEN: Implement debit in IndexingService with DI
+    - [BE]
+    - Files: `supabase/functions/_shared/services/indexing_service.ts`
+    - Inject `tokenWalletService`; after each `getEmbedding` call, sum `usage.total_tokens` and call `debit(...)` with idempotency.
+    - [Order]
+      - [✅] 123.d.1 GREEN: Update `indexing_service.ts` constructor to accept `tokenWalletService`; implement per-chunk debit with keys `embed:{sessionId}:{sourceContributionId}:{chunkIdx}`.
+      - [✅] 123.d.2 GREEN: Update only local unit test constructors in `indexing_service.test.ts` to pass a minimal mock `tokenWalletService`.
+      - [✅] 123.d.3 GREEN: Update `supabase/functions/dialectic-worker/index.ts` to pass the existing `tokenWalletService` into `IndexingService`.
+      - [✅] 123.d.4 GREEN: Update `supabase/functions/dialectic-worker/processSimpleJob.test.ts` to pass a mock `tokenWalletService` when constructing `IndexingService`.
+      - [✅] 123.d.5 GREEN: Update `supabase/integration_tests/services/dialectic_pipeline.integration.test.ts` to construct `IndexingService` with a mock/real wallet service.
+      - [✅] 123.d.6 GREEN: In `supabase/functions/dialectic-service/startSession.ts`, remove the unused `IndexingService` construction to avoid DI ripple (or, if we keep it, inject `tokenWalletService` via deps and pass through).
+
+  - [✅] 123.e RED: RagService also bills embeddings used during retrieval
+    - [TEST-UNIT]
+    - Files: `supabase/functions/_shared/services/rag_service.test.ts`
+    - Assert: `tokenWalletService.debit` is invoked for query/document embeddings; `tokensUsedForIndexing > 0` and billed 1:1.
+    - [Order]
+      - 123.e.1 RED: Add assertions only in `rag_service.test.ts` (no prod edits yet).
+
+  - [✅] 123.f GREEN: Implement debit in RagService with DI
+    - [BE]
+    - Files: `supabase/functions/_shared/services/rag_service.ts`
+    - Inject `tokenWalletService`; for any embedding generation, call `debit(...)` using stable idempotency keys per session/stage/query.
+    - [Order]
+      - 123.f.1 GREEN: Extend `IRagServiceDependencies` to include `tokenWalletService`.
+      - 123.f.2 GREEN: In `rag_service.ts`, on each embedding generation (query and document), call `debit(...)` with keys `rag:query:{sessionId}:{stageSlug}:{n}` and `rag:doc:{sessionId}:{docId}:{chunkIdx}`; amount = `usage.total_tokens`.
+      - 123.f.3 GREEN: Update `supabase/functions/dialectic-worker/executeModelCallAndSave.ts` where `RagService` is constructed to pass `tokenWalletService` (already present in deps).
+      - 123.f.4 GREEN: Update any unit/integration tests that construct `RagService` to provide a mock `tokenWalletService`.
+
+  - [✅] 123.g RED: SSOT budget includes planned embedding costs in preflight
+    - [TEST-UNIT]
+    - Files: `supabase/functions/dialectic-worker/executeModelCallAndSave.rag.test.ts`
+    - Assert: preflight rejects when balance cannot cover compression + embeddings + final send (use 80% safety factor).
+
+  - [✅] 123.h GREEN: Preflight and compression account for embedding debits
+    - [BE]
+    - Files: `supabase/functions/dialectic-worker/executeModelCallAndSave.ts`
+    - Ensure running balance used by SSOT is reduced by embedding debits before computing final `max_tokens_to_generate`.
+
+  - [✅] 123.i RED: Chat paths charge non-zero for dummy and real providers
+    - [TEST-UNIT/INT]
+    - Files: chat handler tests and worker integration tests
+    - Assert: sending a message results in non-zero debit amounts for dummy and non-dummy providers.
+
+  - [✅] 123.j GREEN: Adapter factory removes zero fallbacks; enforce > 0 via validation
+    - [BE]
+    - Files: `supabase/functions/_shared/ai_service/factory.ts` (and related guards)
+    - Do not default to 0; validate provider config and reject/throw if rates ≤ 0.
+
+  - [✅] 123.k RED: SSOT `getMaxOutputTokens` fails fast on invalid rates
+    - [TEST-UNIT]
+    - Files: tests around `getMaxOutputTokens(...)`
+    - Assert: zero/negative rates cause validation failure; positive rates compute caps as expected.
+
+  - [✅] 123.l GREEN: Logging/telemetry for charge events (chat + embeddings)
+    - [BE]
+    - At each debit site, log tokens, amount, session/job identifiers, and idempotency key.
+
+  - [✅] 123.m REVIEW: Remove any bypasses that treat dummy as free
+    - [REVIEW]
+    - Grep for provider-specific zeroing or special cases; delete/replace with validated non-zero rates.
+
+  - [ ] 123.n INT: End-to-end balance delta proof
+    - [TEST-INT]
+    - Files: worker/service integration tests
+    - Given starting balance B, after one RAG+chat iteration with dummy provider, assert final balance B' < B by expected non-zero sum (embeddings + chat).

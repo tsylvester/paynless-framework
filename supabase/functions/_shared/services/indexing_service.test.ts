@@ -12,6 +12,7 @@ import { type Database } from '../../../functions/types_db.ts';
 import { DummyAdapter } from "../ai_service/dummy_adapter.ts";
 import { MOCK_PROVIDER } from "../ai_service/dummy_adapter.test.ts";
 import { assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { createMockTokenWalletService } from "../services/tokenWalletService.mock.ts";
 
 // Mocks
 class MockLogger implements ILogger {
@@ -32,9 +33,9 @@ test('IndexingService should process and index a document successfully', async (
   const { client: mockSupabaseClient, spies } = createMockSupabaseClient();
   const logger = new MockLogger();
   const textSplitter = new MockTextSplitter();
-  
+  const mockWallet = createMockTokenWalletService();
   const embeddingClient = new EmbeddingClient(mockOpenAiAdapter);
-  const service = new IndexingService(mockSupabaseClient as unknown as SupabaseClient<Database>, logger, textSplitter, embeddingClient);
+  const service = new IndexingService(mockSupabaseClient as unknown as SupabaseClient<Database>, logger, textSplitter, embeddingClient, mockWallet.instance);
 
   const textSplitterSpy = spy(textSplitter, 'splitText');
   
@@ -88,7 +89,7 @@ Deno.test('IndexingService uses DummyAdapter embeddings (deterministic vector, n
   const { client: mockSupabaseClient, spies } = createMockSupabaseClient();
   const logger = new MockLogger();
   const textSplitter = new MockTextSplitter(); // yields 2 chunks
-
+  const mockWallet = createMockTokenWalletService();
   const dummyAdapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', logger);
   const getEmbeddingSpy = spy(dummyAdapter, 'getEmbedding');
   const embeddingClient = new EmbeddingClient(dummyAdapter);
@@ -96,7 +97,8 @@ Deno.test('IndexingService uses DummyAdapter embeddings (deterministic vector, n
     mockSupabaseClient as unknown as SupabaseClient<Database>,
     logger,
     textSplitter,
-    embeddingClient
+    embeddingClient,
+    mockWallet.instance
   );
 
   const sessionId = 'session-abc';
@@ -136,4 +138,50 @@ Deno.test('IndexingService uses DummyAdapter embeddings (deterministic vector, n
   assertEquals(Array.isArray(emb1), true);
   assertEquals(emb0.length, 32);
   assertEquals(emb1.length, 32);
+});
+
+// Billing RED test (ignored until DI is wired): asserts 1:1 debits per chunk with idempotent keys
+Deno.test('IndexingService bills embeddings 1:1 per chunk with idempotent keys', async () => {
+  const { client: mockSupabaseClient } = createMockSupabaseClient();
+  const logger = new MockLogger();
+  const textSplitter = new MockTextSplitter(); // splits into 2 chunks
+
+  const dummyAdapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', logger);
+  const embeddingClient = new EmbeddingClient(dummyAdapter);
+
+  // Prepare mock wallet service and capture debits
+  const mockWallet = createMockTokenWalletService();
+
+  // Construct service (DI for wallet to be added in GREEN step)
+  const service = new IndexingService(
+    mockSupabaseClient as unknown as SupabaseClient<Database>,
+    logger,
+    textSplitter,   
+    embeddingClient,
+    mockWallet.instance
+  );
+
+  const sessionId = 'sess-bill-1';
+  const contributionId = 'contrib-bill-1';
+  const documentContent = 'Billing over two chunks to ensure two debit calls.';
+  const metadata = { source: 'unit-test' };
+
+  const result: IndexDocumentResult = await service.indexDocument(sessionId, contributionId, documentContent, metadata);
+
+  // Desired final state assertions (will fail until DI is implemented)
+  const expectedKeys = new Set([
+    `embed:${sessionId}:${contributionId}:1`,
+    `embed:${sessionId}:${contributionId}:2`,
+  ]);
+
+  const recordTxnCalls = mockWallet.stubs.recordTransaction.calls;
+  const seenKeys = new Set(recordTxnCalls.map((call: typeof recordTxnCalls[number]) => call.args[0]?.idempotencyKey as string));
+  let totalDebited = 0;
+  for (const call of recordTxnCalls as typeof recordTxnCalls) {
+    const amt = call.args[0]?.amount ?? '0';
+    totalDebited += parseFloat(amt);
+  }
+
+  assertEquals(seenKeys, expectedKeys);
+  assertEquals(totalDebited, result.tokensUsed);
 });

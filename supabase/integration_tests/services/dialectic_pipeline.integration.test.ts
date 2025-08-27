@@ -46,6 +46,8 @@ import { countTokens } from '../../functions/_shared/utils/tokenizer_utils.ts';
 import { getAiProviderConfig } from '../../functions/dialectic-worker/processComplexJob.ts';
 import { PromptAssembler } from "../../functions/_shared/prompt-assembler.ts";
 import { DummyAdapter } from "../../functions/_shared/ai_service/dummy_adapter.ts";
+import { createMockTokenWalletService } from "../../functions/_shared/services/tokenWalletService.mock.ts";
+import { NotificationService } from "../../functions/_shared/utils/notification.service.ts";
 
 // --- Test Suite Setup ---
 let adminClient: SupabaseClient<Database>;
@@ -239,7 +241,8 @@ Deno.test(
 
         const embeddingClient = new EmbeddingClient(embeddingAdapter);
         const textSplitter = new LangchainTextSplitter();
-        const indexingService = new IndexingService(adminClient, testLogger, textSplitter, embeddingClient);
+        const mockWallet = createMockTokenWalletService();
+        const indexingService = new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, mockWallet.instance);
         const ragService = new RagService({
             dbClient: adminClient,
             logger: testLogger,
@@ -264,23 +267,8 @@ Deno.test(
             }),
             continueJob,
             retryJob,
-            notificationService: {
-                sendContributionStartedEvent: () => Promise.resolve(),
-                sendDialecticContributionStartedEvent: () => Promise.resolve(),
-                sendContributionReceivedEvent: () => Promise.resolve(),
-                sendContributionRetryingEvent: () => Promise.resolve(),
-                sendContributionFailedNotification: () => Promise.resolve(),
-                sendContributionGenerationCompleteEvent: () => Promise.resolve(),
-                sendContributionGenerationContinuedEvent: () => Promise.resolve(),
-                sendDialecticProgressUpdateEvent: () => Promise.resolve(),
-            },
-            executeModelCallAndSave: async (params: ExecuteModelCallAndSaveParams) => {
-                testLogger.info(`[INTEGRATION TEST SPY] executeModelCallAndSave called for job ${params.job.id}`);
-                testLogger.info(`[INTEGRATION TEST SPY] Rendered Prompt Content:\n---\n${params.renderedPrompt.content}\n---`);
-                
-                // Now, call the original imported function
-                return await executeModelCallAndSave(params);
-            },
+            notificationService: new NotificationService(adminClient),
+            executeModelCallAndSave,
             ragService: ragService,
             indexingService: indexingService,
             embeddingClient: embeddingClient,
@@ -364,6 +352,7 @@ Deno.test(
         iterationNumber: 1,
         projectId: testSession.project_id,
         continueUntilComplete: true,
+        walletId: 'test-wallet',
       };
       
       // --- Act & Assert: Job Creation ---
@@ -525,6 +514,7 @@ Deno.test(
         stageSlug: "antithesis",
         iterationNumber: 1,
         projectId: testSession.project_id,
+        walletId: 'test-wallet',
       };
       
       // --- Act ---
@@ -681,6 +671,7 @@ Deno.test(
             stageSlug: "synthesis",
             iterationNumber: 1,
             projectId: testSession.project_id,
+            walletId: 'test-wallet',
         };
         const { data: jobData, error: creationError } = await generateContributions(adminClient, generatePayload, primaryUser, testDeps);
         assert(!creationError, `Error creating parent job for synthesis: ${creationError?.message}`);
@@ -801,6 +792,7 @@ Deno.test(
             stageSlug: "parenthesis",
             iterationNumber: 1,
             projectId: testSession.project_id,
+            walletId: 'test-wallet',
         };
         const { data: jobData, error: creationError } = await generateContributions(adminClient, generatePayload, primaryUser, testDeps);
         assert(!creationError, `Error creating parent job for parenthesis: ${creationError?.message}`);
@@ -892,6 +884,7 @@ Deno.test(
             stageSlug: "paralysis",
             iterationNumber: 1,
             projectId: testSession.project_id,
+            walletId: 'test-wallet',
         };
         const { data: jobData, error: creationError } = await generateContributions(adminClient, generatePayload, primaryUser, testDeps);
         assert(!creationError, `Error creating parent job for paralysis: ${creationError?.message}`);

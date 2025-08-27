@@ -23,6 +23,7 @@ import { PostgrestError } from 'npm:@supabase/postgrest-js@1.15.5';
 import { EmbeddingClient } from './indexing_service.ts';
 import { DummyAdapter } from '../ai_service/dummy_adapter.ts';
 import { MOCK_PROVIDER } from '../ai_service/dummy_adapter.test.ts';
+import { createMockTokenWalletService } from '../services/tokenWalletService.mock.ts';
 
 // Helper to create a compliant PostgrestError mock
 const createMockPostgrestError = (message: string): PostgrestError & { name: string } => ({
@@ -60,7 +61,7 @@ describe('RagService', () => {
     mockIndexingService = {
         indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }),
     };
-    // Use real EmbeddingClient with DummyAdapter to satisfy 120.a RED expectations
+    // Use real EmbeddingClient with DummyAdapter
     const dummyAdapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', new MockLogger());
     mockEmbeddingClient = new EmbeddingClient(dummyAdapter);
 
@@ -158,6 +159,27 @@ describe('RagService', () => {
         assert(result.context!.includes("Common chunk"));
         assert(result.context!.includes("Unique chunk from query 2"));
         assert(result.context!.includes("--- End of Retrieved Context ---"), "Context should have a footer");
+    });
+
+    // Expect billing for query embeddings (wallet debits per query)
+    it('bills 1:1 for query embeddings via token wallet', async () => {
+      initializeService({
+        genericMockResults: { dialectic_memory: { select: { data: [], error: null } } },
+        rpcResults: { match_dialectic_chunks: { data: [], error: null } },
+      });
+
+      const mockWallet = createMockTokenWalletService();
+      deps.tokenWalletService = mockWallet.instance;
+      service = new RagService(deps);
+      const embeddingSpy = spy(deps.embeddingClient, 'getEmbedding');
+
+      await service.getContextForModel([], mockModelConfig, 'session-wallet', 'synthesis');
+
+      // Desired behavior: a wallet debit per query embedding generated
+      const expectedDebits = embeddingSpy.calls.length;
+      const actualDebits = mockWallet.stubs.recordTransaction.calls.length;
+      assert(expectedDebits >= 2, 'Should generate multiple query embeddings');
+      assertEquals(actualDebits, expectedDebits);
     });
 
     it('should correctly select diverse documents using MMR', async () => {

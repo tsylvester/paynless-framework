@@ -193,6 +193,19 @@ export async function processSimpleJob(
                         message: `Context window limit exceeded, message too large to send to the model and it cannot be compressed further: ${error.message}`,
                     },
                 }, projectOwnerUserId);
+
+                // User-facing historical notification
+                await deps.notificationService.sendContributionFailedNotification({
+                    type: 'contribution_generation_failed',
+                    sessionId: job.payload.sessionId ?? sessionId,
+                    stageSlug: job.payload.stageSlug ?? 'unknown',
+                    projectId: job.payload.projectId ?? '',
+                    error: {
+                        code: 'CONTEXT_WINDOW_ERROR',
+                        message: `Context window limit exceeded, message too large to send to the model and it cannot be compressed further: ${error.message}`,
+                    },
+                    job_id: jobId,
+                }, projectOwnerUserId);
             }
             return;
         }

@@ -1066,7 +1066,7 @@ Deno.test('recomputes SSOT output after RAG debit reduces balance', async () => 
 
   // Balance high enough for first SSOT; then reduced via RAG debit to shrink SSOT
   // Start balance 200; initial SSOT_output ~ floor(0.8*200 / 1) = 160
-  const { instance: mockTokenWalletService, stubs } = createMockTokenWalletService({ getBalance: () => Promise.resolve('500') });
+  const { instance: mockTokenWalletService, stubs } = createMockTokenWalletService({ getBalance: () => Promise.resolve('700') });
 
   const deps = getMockDeps(mockTokenWalletService);
   const modelSpy = spy(deps, 'callUnifiedAIModel');
@@ -1373,5 +1373,93 @@ Deno.test("error specificity: missing 'countTokens' dependency throws and does n
   }
   assert(threw, "Expected an error to be thrown when 'countTokens' is missing");
   assertEquals(modelSpy.calls.length, 0, 'Provider should not be called when a critical dependency is missing');
+});
+
+
+// 123.g: Preflight should reject when compression + planned embeddings + final send would exceed 80% of balance
+Deno.test('preflight rejects when total planned spend (compression + embeddings + final) exceeds 80% budget', async () => {
+  if (!isRecord(mockFullProviderData.config)) {
+    throw new Error('Test setup error: mockFullProviderData.config is not an object');
+  }
+
+  // Math setup (do the math first):
+  // - Balance B = 375 -> 80% of B = 300
+  // - initialTokenCount = 300, context_window_tokens (cw) = 200 (oversized)
+  //   tokensToBeRemoved = 300 - 200 = 100
+  // - input_token_cost_rate = 1, output_token_cost_rate = 1
+  //   estimatedCompressionCost = 100, estimatedFinalPromptCost = 200 => input-only total = 300 (== 80% of B) → passes
+  // - planned embedding queries add any positive cost E > 0 → total > 300 → should be rejected by preflight
+
+  const cfg: AiModelExtendedConfig = {
+    ...mockFullProviderData.config,
+    context_window_tokens: 200,
+    provider_max_input_tokens: 0,     // treat as Infinity in headroom logic
+    provider_max_output_tokens: 1000, // not limiting
+    input_token_cost_rate: 1,
+    output_token_cost_rate: 1,
+    api_identifier: 'test-api',
+    tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+  };
+
+  const { client: dbClient } = setupMockClient({
+    'ai_providers': { select: { data: [{ ...mockFullProviderData, config: cfg }], error: null } },
+  });
+
+  // Wallet balance B = 375
+  const { instance: mockTokenWalletService } = createMockTokenWalletService({
+    getBalance: () => Promise.resolve('450'),
+  });
+
+  const deps = getMockDeps(mockTokenWalletService);
+
+  // Use a RAG mock that would incur non-zero embedding cost if we accounted for it
+  const mockRag = new MockRagService();
+  mockRag.setConfig({ mockContextResult: 'short summary', mockTokensUsed: 10 });
+  deps.ragService = mockRag;
+
+  // Token counter: first call oversized (300), after one compression fits exactly cw (200)
+  let idx = 0;
+  const countStub = stub(deps, 'countTokens', () => (++idx === 1 ? 300 : 200));
+
+  // Provide one compression candidate so the function would proceed if preflight does not reject
+  const oneCandidateStrategy: ICompressionStrategy = async () => ([
+    { id: 'cand-embed', content: 'long content to summarize', sourceType: 'history', originalIndex: 1, valueScore: 0.5 },
+  ]);
+
+  const payload: PromptConstructionPayload = {
+    systemInstruction: 'SYS',
+    conversationHistory: [ { role: 'user', content: 'hello' } ],
+    resourceDocuments: [],
+    currentUserPrompt: 'current',
+  };
+
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job: createMockJob({ ...testPayload, walletId: 'wallet-embeds-preflight' }),
+    projectOwnerUserId: 'user-emb',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: payload,
+    sessionData: mockSessionData,
+    compressionStrategy: oneCandidateStrategy,
+  };
+
+  let threw = false;
+  try {
+    await executeModelCallAndSave(params);
+  } catch (e: unknown) {
+    threw = true;
+    // Expect the specific rationality (80%) error to be thrown once embedding costs are included in preflight
+    if (e instanceof Error) {
+      assert(e.message.includes('80%') || e.message.includes('exceeds 80%'), `Expected preflight 80% rejection message, got: ${e.message}`);
+    }
+  }
+
+  // End-state expectation: with embedding costs included, preflight should reject
+  // Current implementation excludes embeddings in preflight, so this test should fail (RED) until fixed.
+  assert(threw, 'Preflight should reject when planned total (including embeddings) exceeds 80% of balance.');
+
+  countStub.restore();
 });
 

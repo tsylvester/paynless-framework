@@ -138,6 +138,41 @@ Deno.test("handleDialecticPath: happy path - should NOT create chat or message r
     );
   });
 
+  Deno.test("handleDialecticPath: records a non-zero debit amount for usage", async () => {
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {});
+
+    const modelConfig: AiModelExtendedConfig = {
+      api_identifier: "test-model-api-id",
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 1,
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+    };
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    mockAiAdapter.controls.setMockResponse({ content: "ok", token_usage: { prompt_tokens: 5, completion_tokens: 7, total_tokens: 12 } });
+
+    const mockWallet = createMockTokenWalletService();
+    const deps: ChatHandlerDeps = { ...defaultDeps, logger, tokenWalletService: mockWallet.instance, countTokens: spy((_d,_p,_c)=>5), getAiProviderAdapter: spy(()=>mockAiAdapter.instance) };
+
+    const context: PathHandlerContext = {
+      supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+      deps,
+      userId: "test-user-id",
+      requestBody: { message: "Hello", providerId: "prov", promptId: "__none__", walletId: "w", isDialectic: true },
+      wallet: { walletId: "w", balance: "1000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
+      actualSystemPromptText: null,
+      finalSystemPromptIdForDb: null,
+      apiKey: "k",
+      providerApiIdentifier: "test-model-api-id",
+    };
+
+    await handleDialecticPath(context);
+    assertEquals(mockWallet.stubs.recordTransaction.calls.length, 1);
+    const amountStr = mockWallet.stubs.recordTransaction.calls[0].args[0].amount;
+    assert(Number.parseInt(amountStr, 10) > 0, "Debit amount should be > 0");
+  });
+
   Deno.test("handleDialecticPath: caps max_tokens_to_generate via SSOT when client omits", async () => {
     const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {});
 

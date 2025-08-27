@@ -79,8 +79,9 @@ export async function createDialecticWorkerDeps(
 
   const embeddingClient = new EmbeddingClient(embeddingAdapter);
   const textSplitter = new LangchainTextSplitter();
-  const indexingService = new IndexingService(adminClient, logger, textSplitter, embeddingClient);
-  const ragService = new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient });
+  const tokenWalletService = new TokenWalletService(adminClient, adminClient);
+  const indexingService = new IndexingService(adminClient, logger, textSplitter, embeddingClient, tokenWalletService);
+  const ragService = new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient, tokenWalletService });
   const promptAssembler = new PromptAssembler(adminClient);
 
   const deps: IDialecticJobDeps = {
@@ -110,7 +111,7 @@ export async function createDialecticWorkerDeps(
     promptAssembler,
     getAiProviderAdapter,
     // Use admin client for both contexts in worker environment
-    tokenWalletService: new TokenWalletService(adminClient, adminClient),
+    tokenWalletService,
   };
 
   return deps;

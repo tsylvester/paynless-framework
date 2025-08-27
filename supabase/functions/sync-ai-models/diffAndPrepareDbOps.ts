@@ -47,7 +47,7 @@ export function diffAndPrepareDbOps(
     for (const [apiIdentifier, assembledModel] of assembledConfigMap.entries()) {
         const dbModel = dbModelMap.get(apiIdentifier);
 
-        // --- ENFORCE NON-ZERO COST RATES (123.a RED) ---
+        // --- ENFORCE NON-ZERO COST RATES ---
         const inputRate = assembledModel.config?.input_token_cost_rate;
         const outputRate = assembledModel.config?.output_token_cost_rate;
         if (typeof inputRate !== 'number' || inputRate <= 0 || typeof outputRate !== 'number' || outputRate <= 0) {
