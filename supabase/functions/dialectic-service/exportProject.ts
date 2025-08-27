@@ -10,15 +10,15 @@ import { logger } from "../_shared/logger.ts";
 import {
     ZipWriter,
     TextReader,
-    BlobReader, // Used if downloadFromStorage returns Blob, but it returns ArrayBuffer
     Uint8ArrayReader, // Use this if we have ArrayBuffer
     BlobWriter,
 } from "jsr:@zip-js/zip-js";
 // Removed direct import of storage functions
 import type { ServiceError } from "../_shared/types.ts";
-import type { IFileManager, UploadContext } from "../_shared/types/file_manager.types.ts";
+import { FileType, type IFileManager, type UploadContext } from "../_shared/types/file_manager.types.ts";
 import type { IStorageUtils } from "../_shared/types/storage_utils.types.ts"; // Added import for the interface
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts'; // For converting ArrayBuffer to Buffer for FileManager
+import { isContributionType } from "../_shared/utils/type_guards.ts";
 
 // --- START: Constants ---
 const SIGNED_URL_EXPIRES_IN = 3600; // 1 hour
@@ -191,7 +191,9 @@ export async function exportProject(
                             citations: c.citations as { text: string; url?: string }[] | null,
                             created_at: c.created_at,
                             updated_at: c.updated_at,
-                            contribution_type: c.contribution_type,
+                            contribution_type: (c.contribution_type && isContributionType(c.contribution_type))
+                                ? c.contribution_type
+                                : (isContributionType(stageObject.slug) ? stageObject.slug : null),
                             file_name: c.file_name,
                             storage_bucket: c.storage_bucket,
                             storage_path: c.storage_path,
@@ -229,7 +231,7 @@ export async function exportProject(
                         const { data: fileArrayBuffer, error: downloadError } = await storageUtils.downloadFromStorage(
                             supabaseClient,
                             currentResourceBucket,
-                            resource.storage_path
+                            `${resource.storage_path}/${resource.file_name}`
                         );
 
                         if (downloadError) {
@@ -259,7 +261,7 @@ export async function exportProject(
                                 const { data: contentArrayBuffer, error: downloadError } = await storageUtils.downloadFromStorage(
                                     supabaseClient,
                                     currentContribBucket,
-                                    contribution.storage_path
+                                    `${contribution.storage_path}/${contribution.file_name}`
                                 );
                                 if (downloadError) {
                                     logger.warn('Failed to download contribution content for export. Skipping file.', { details: downloadError, contributionId: contribution.id, path: contribution.storage_path });
@@ -326,19 +328,14 @@ export async function exportProject(
 
         const uploadContext: UploadContext = {
             pathContext: {
-                projectId: projectId, // The project this export belongs to
-                fileType: 'general_resource', // Or define a specific 'project_export_zip' FileType
+                projectId: projectId,
+                fileType: FileType.ProjectExportZip,
                 originalFileName: exportFileName,
-                // Optional context fields if your PathConstructor uses them for this FileType:
-                // sessionId: undefined, 
-                // iteration: undefined,
-                // stageSlug: undefined,
-                // modelSlug: undefined, 
             },
             fileContent: zipBuffer,
             mimeType: "application/zip",
             sizeBytes: zipBuffer.length,
-            userId: userId, // User performing the export
+            userId: userId,
             description: JSON.stringify({ type: "project_export_zip", original_project_name: project.project_name })
         };
 
@@ -362,7 +359,7 @@ export async function exportProject(
         const { signedUrl, error: signedUrlError } = await storageUtils.createSignedUrlForPath(
             supabaseClient,
             fileRecord.storage_bucket, // Use bucket from the file record
-            fileRecord.storage_path,   // Use path from the file record
+            `${fileRecord.storage_path}/${fileRecord.file_name}`,
             SIGNED_URL_EXPIRES_IN
         );
 

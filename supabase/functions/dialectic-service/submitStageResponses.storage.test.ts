@@ -152,8 +152,8 @@ Deno.test('submitStageResponses', async (t) => {
         logger,
         downloadFromStorage: spy((): Promise<{ data: ArrayBuffer | null; error: Error | null; }> => Promise.resolve({data: null, error: null})),
         fileManager: mockFileManager,
-        indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
-        embeddingClient: { createEmbedding: () => Promise.resolve([]) }
+        indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) },
+        embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) }
     };
 
     // Act
@@ -164,13 +164,13 @@ Deno.test('submitStageResponses', async (t) => {
     assertExists(error);
     assertEquals(data, undefined);
     assertStringIncludes(error.message, "Failed to store user feedback.");
-    assertEquals(mockFileManager.uploadAndRegisterFileSpy.calls.length, 1, "FileManager should have been called once and failed");
+    assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "FileManager should have been called once and failed");
   });
 
   await t.step('5.2 Handles failure when uploading the rendered seed prompt for the next stage', async () => {
     // 5.2.1 Arrange
     const mockFileManager = createMockFileManagerService();
-    mockFileManager.uploadAndRegisterFileSpy = spy(async (context: UploadContext) => {
+    mockFileManager.uploadAndRegisterFile = spy(async (context: UploadContext) => {
       if (context.pathContext.fileType === 'seed_prompt') {
         return await Promise.resolve({
           record: null,
@@ -275,8 +275,8 @@ Deno.test('submitStageResponses', async (t) => {
       logger,
       downloadFromStorage: mockDownloadFromStorage,
       fileManager: mockFileManager,
-      indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
-      embeddingClient: { createEmbedding: () => Promise.resolve([]) }
+      indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) },
+      embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) }
     });
     
     // 5.2.3 Assert
@@ -461,16 +461,16 @@ Deno.test('submitStageResponses', async (t) => {
       mockPayload5_3,
       mockSupabaseClient5_3 as unknown as SupabaseClient<Database>,
       mockUserInstance5_3,
-      { logger, fileManager: mockFileManager5_3, downloadFromStorage, indexingService: { indexDocument: () => Promise.resolve({ success: true }) }, embeddingClient: { createEmbedding: () => Promise.resolve([]) } }
+      { logger, fileManager: mockFileManager5_3, downloadFromStorage, indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) }, embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) } }
     );
 
     // 5.3.3 Assert
     assertEquals(status, 500, `Expected 500 but got ${status}. Error: ${error?.message}`);
     assertExists(error, "Expected an error object when AI contribution download fails.");
     assertStringIncludes(error.message, "Failed to assemble seed prompt for next stage: Failed to gather inputs for prompt assembly:", "Error message preamble for seed prompt prep did not match");
-    assertStringIncludes(error.message, "Simulated download failure for AI contribution in test 5.3", "Specific download error from storageMock not found in error message");
+    assertStringIncludes(error.message, "Failed to download REQUIRED content for contribution", "Expected download failure details to be included in the error message");
     assertEquals(data, undefined, "Data should be undefined on failure.");
-    assertEquals(mockFileManager5_3.uploadAndRegisterFileSpy.calls.length, 0, "FileManager.uploadAndRegisterFile for next stage's seed prompt should not have been called.");
+    assertEquals(mockFileManager5_3.uploadAndRegisterFile.calls.length, 0, "FileManager.uploadAndRegisterFile for next stage's seed prompt should not have been called.");
   });
 
   await t.step('5.4 Handles failure during fileManager.uploadAndRegisterFile for user feedback, database insertion is rolled back or not committed', async () => {
@@ -541,8 +541,8 @@ Deno.test('submitStageResponses', async (t) => {
       logger,
       downloadFromStorage: spy((): Promise<{ data: ArrayBuffer | null; error: Error | null; }> => Promise.resolve({data: new ArrayBuffer(0), error: null})),
       fileManager: mockFileManager,
-      indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
-      embeddingClient: { createEmbedding: () => Promise.resolve([]) }
+      indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) },
+      embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) }
     });
     
     // Assert based on current function behavior (returns 500 on feedback save failure)
@@ -550,7 +550,7 @@ Deno.test('submitStageResponses', async (t) => {
     assertExists(error, "Expected a top-level error when user feedback saving fails.");
     assertStringIncludes(error.message, "Failed to store user feedback", "Error message for user feedback save failure did not match");
     assertEquals(data, undefined, "Expected data to be undefined as the function should have exited early.");
-    assertEquals(mockFileManager.uploadAndRegisterFileSpy.calls.length, 1, "Expected fileManager to be called only for feedback (which failed)");
+    assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "Expected fileManager to be called only for feedback (which failed)");
   });
 
 });

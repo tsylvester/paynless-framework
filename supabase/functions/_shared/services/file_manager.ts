@@ -26,6 +26,8 @@ function getTableForFileType(
       return 'dialectic_contributions'
     case 'user_feedback':
       return 'dialectic_feedback'
+    case 'project_export_zip':
+      return 'dialectic_project_resources'
     default:
       return 'dialectic_project_resources'
   }

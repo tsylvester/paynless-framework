@@ -73,6 +73,12 @@ Deno.test('constructStoragePath', async (t) => {
         assertEquals(storagePath, `${projectId}/general_resource`);
         assertEquals(fileName, 'api_docs.pdf');
     });
+
+    await t.step('constructs path for project_export_zip', () => {
+      const { storagePath, fileName } = constructStoragePath({ projectId, fileType: FileType.ProjectExportZip, originalFileName: 'My Export.zip' });
+      assertEquals(storagePath, projectId);
+      assertEquals(fileName, 'my_export.zip');
+    });
   });
 
   await t.step('should handle model contributions with correct naming conventions', async (t) => {

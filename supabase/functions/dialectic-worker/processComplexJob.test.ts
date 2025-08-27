@@ -49,6 +49,7 @@ describe('processComplexJob', () => {
             projectId: 'project-id-complex',
             stageSlug: 'antithesis',
             model_id: 'model-id-complex',
+            walletId: 'wallet-id-complex',
         };
 
         if (!isJson(mockPayload)) {

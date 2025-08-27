@@ -1,8 +1,14 @@
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js';
 import type { ILogger, ServiceError } from '../_shared/types.ts';
-import { isCitationsArray } from '../_shared/utils/type_guards.ts';
+import { isCitationsArray, isContributionType, isDialecticContribution } from '../_shared/utils/type_guards.ts';
 import type { SaveContributionEditPayload, DialecticContribution } from './dialectic.interface.ts';
 import type { Database } from '../types_db.ts';
+import { FileType, type IFileManager } from '../_shared/types/file_manager.types.ts';
+import type { DeconstructedPathInfo } from '../_shared/utils/path_deconstructor.types.ts';
+import type { ConstructedPath } from '../_shared/utils/path_constructor.ts';
+
+type PathDeconstructor = (params: { storageDir: string; fileName: string; dbOriginalFileName?: string }) => DeconstructedPathInfo;
+type PathConstructor = (context: import('../_shared/types/file_manager.types.ts').PathContext) => ConstructedPath;
 
 // Placeholder for actual file upload logic if content is stored as files
 // For now, assuming content is text and stored directly or path is managed abstractly
@@ -25,11 +31,20 @@ type OriginalContributionQueryResult = {
   } | null;
 };
 
+export type SaveContributionEditDeps = {
+  fileManager: IFileManager;
+  logger: ILogger;
+  dbClient: SupabaseClient<Database>;
+  pathDeconstructor: PathDeconstructor;
+  pathConstructor: PathConstructor;
+};
+
 export async function saveContributionEdit(
   payload: SaveContributionEditPayload,
   dbClient: SupabaseClient<Database>,
   user: User,
-  logger: ILogger
+  logger: ILogger,
+  deps: SaveContributionEditDeps
 ): Promise<{ data?: DialecticContribution; error?: ServiceError; status?: number }> {
   logger.info('saveContributionEdit action started', { userId: user.id, payload_originalContributionIdToEdit: payload.originalContributionIdToEdit });
 
@@ -98,6 +113,10 @@ export async function saveContributionEdit(
         original_model_contribution_id,
         target_contribution_id,
         user_id,
+        model_id,
+        model_name,
+        storage_path,
+        file_name,
         dialectic_sessions (
           project_id,
           dialectic_projects ( user_id ),
@@ -140,68 +159,119 @@ export async function saveContributionEdit(
         });
         return { error: { message: 'Data integrity error: Session is missing a current stage.', status: 500, code: 'INTERNAL_SERVER_ERROR' }, status: 500 };
     }
+    // Fail-fast on missing DI
+    if (!deps || !deps.fileManager) {
+        logger.error('[saveContributionEdit] fileManager dependency not provided');
+        return { error: { message: 'Internal configuration error.', status: 500, code: 'INTERNAL_SERVER_ERROR' }, status: 500 };
+    }
 
-    const newOriginalModelContributionId = typedOriginalContribution.original_model_contribution_id || typedOriginalContribution.id;
+    // Deconstruct original path to derive canonical parameters
+    if (!originalContribution.storage_path || !originalContribution.file_name) {
+        logger.error('[saveContributionEdit] Original contribution missing storage_path or file_name');
+        return { error: { message: 'Data integrity error: original contribution lacks storage fields.', status: 500, code: 'INTERNAL_SERVER_ERROR' }, status: 500 };
+    }
+    const deconstructed = deps.pathDeconstructor({ storageDir: originalContribution.storage_path, fileName: originalContribution.file_name, dbOriginalFileName: originalContribution.file_name });
+    if (deconstructed.error || !deconstructed.originalProjectId || !deconstructed.stageSlug || deconstructed.attemptCount === undefined || !deconstructed.modelSlug || deconstructed.iteration === undefined) {
+        logger.error('[saveContributionEdit] Failed to deconstruct original path; aborting to prevent partial/incorrect clone', { deconstructed });
+        return { error: { message: 'Failed to parse original file path for canonical context.', status: 500, code: 'INTERNAL_SERVER_ERROR' }, status: 500 };
+    }
+
     const newEditVersion = typedOriginalContribution.edit_version + 1;
+    const originalModelContributionId = typedOriginalContribution.original_model_contribution_id || typedOriginalContribution.id;
 
-    const placeholderContentStoragePath = `edits/${user.id}/${Date.now()}_edit.md`;
-    const placeholderContentMimeType = 'text/markdown';
-    const placeholderContentSizeBytes = new TextEncoder().encode(editedContentText).length;
-
-    logger.info('[saveContributionEdit] Calling save_contribution_edit_atomic RPC', { originalContributionIdToEdit, newEditVersion });
-
-    const rpcParams = {
-        p_original_contribution_id: originalContributionIdToEdit,
-        p_session_id: typedOriginalContribution.session_id,
-        p_user_id: user.id,
-        p_stage: typedOriginalContribution.dialectic_sessions.current_stage_id,        
-        p_iteration_number: typedOriginalContribution.iteration_number,
-        p_storage_bucket: 'dialectic_contributions_content',
-        p_storage_path: placeholderContentStoragePath, 
-        p_mime_type: placeholderContentMimeType,
-        p_size_bytes: placeholderContentSizeBytes,
-        p_raw_response_storage_path: '',
-        p_tokens_used_input: 0,
-        p_tokens_used_output: 0,
-        p_processing_time_ms: 0,
-        p_citations: null,
-        p_target_contribution_id: originalContributionIdToEdit, 
-        p_edit_version: newEditVersion,
-        p_is_latest_edit: true,
-        p_original_model_contribution_id: newOriginalModelContributionId,
-        p_error_details: '',
-        p_contribution_type: 'user_edit'
-    };
-
-    logger.info('[saveContributionEdit] Parameters for save_contribution_edit_atomic RPC:', { rpcParams });
-
-    const { data: rpcData, error: transactionError } = await dbClient.rpc('save_contribution_edit_atomic', rpcParams);
-
-    if (transactionError) {
-      logger.error('[saveContributionEdit] Error in save_contribution_edit_atomic transaction', { transactionError, rpcParamsSent: rpcParams });
-      return { error: { message: 'Failed to save contribution edit.', status: 500, code: 'DB_TRANSACTION_ERROR', details: transactionError.message }, status: 500 };
-    }
-    
-    const newContributionId = rpcData; 
-    logger.info('[saveContributionEdit] RPC call successful, new contribution ID:', { newContributionId });
-
-    if (!newContributionId) {
-        logger.error('[saveContributionEdit] RPC save_contribution_edit_atomic did not return a new contribution ID', { dataFromRPC: rpcData });
-        return { error: { message: 'Failed to create new contribution record (no ID returned).', status: 500, code: 'DB_ERROR' }, status: 500 };
+    // Ensure required model metadata is present
+    if (!originalContribution.model_id || !originalContribution.model_name) {
+        logger.error('[saveContributionEdit] Original contribution missing model metadata (model_id/model_name)');
+        return { error: { message: 'Data integrity error: original contribution missing model metadata.', status: 500, code: 'INTERNAL_SERVER_ERROR' }, status: 500 };
     }
 
-    const { data: newContributionDbRow, error: fetchNewError } = await dbClient
+    // Construct seed prompt path
+    const seedPrompt = deps.pathConstructor({
+        projectId: deconstructed.originalProjectId,
+        fileType: FileType.SeedPrompt,
+        sessionId: typedOriginalContribution.session_id,
+        iteration: deconstructed.iteration,
+        stageSlug: deconstructed.stageSlug,
+    });
+
+    // Determine contribution type for path/metadata
+    const pathContributionType: ReturnType<typeof isContributionType> extends true ? never : import('./dialectic.interface.ts').ContributionType | null =
+        (deconstructed.contributionType && isContributionType(deconstructed.contributionType))
+        ? deconstructed.contributionType
+        : (isContributionType(deconstructed.stageSlug) ? deconstructed.stageSlug : null);
+    if (!pathContributionType) {
+        logger.error('[saveContributionEdit] Unable to determine contribution type from deconstructed path/stage.');
+        return { error: { message: 'Failed to determine contribution type for edited file.', status: 500, code: 'INTERNAL_SERVER_ERROR' }, status: 500 };
+    }
+
+    // Upload new edited content via FileManager
+    const uploadResult = await deps.fileManager.uploadAndRegisterFile({
+        pathContext: {
+            projectId: deconstructed.originalProjectId,
+            sessionId: typedOriginalContribution.session_id,
+            iteration: deconstructed.iteration,
+            stageSlug: deconstructed.stageSlug,
+            fileType: FileType.ModelContributionMain,
+            modelSlug: deconstructed.modelSlug,
+            attemptCount: deconstructed.attemptCount,
+            contributionType: pathContributionType,
+            originalFileName: `${deconstructed.modelSlug}_${deconstructed.attemptCount}_${deconstructed.contributionType}.md`,
+        },
+        fileContent: editedContentText,
+        mimeType: 'text/markdown',
+        sizeBytes: new TextEncoder().encode(editedContentText).length,
+        userId: user.id,
+        description: 'user_edit_of_model_contribution',
+        contributionMetadata: {
+            sessionId: typedOriginalContribution.session_id,
+            modelIdUsed: originalContribution.model_id,
+            modelNameDisplay: originalContribution.model_name,
+            stageSlug: deconstructed.stageSlug,
+            iterationNumber: deconstructed.iteration,
+            rawJsonResponseContent: '',
+            seedPromptStoragePath: `${seedPrompt.storagePath}/${seedPrompt.fileName}`,
+            editVersion: newEditVersion,
+            isLatestEdit: true,
+            originalModelContributionId,
+            target_contribution_id: typedOriginalContribution.id,
+            contributionType: pathContributionType,
+            document_relationships: null,
+        },
+    });
+
+    if (uploadResult.error || !uploadResult.record) {
+        logger.error('[saveContributionEdit] FileManager uploadAndRegisterFile failed', { error: uploadResult.error });
+        return { error: { message: 'Failed to save contribution edit.', status: 500, code: 'DB_TRANSACTION_ERROR', details: uploadResult.error?.details }, status: 500 };
+    }
+
+    const newContributionDbRow = uploadResult.record;
+
+    if (!isDialecticContribution(newContributionDbRow)) {
+        logger.error('[saveContributionEdit] FileManager returned non-contribution record for model_contribution_main');
+        return { error: { message: 'Failed to create contribution record.', status: 500, code: 'INTERNAL_SERVER_ERROR' }, status: 500 };
+    }
+
+    // Mark original as not latest
+    const { error: updateOriginalError } = await dbClient
         .from('dialectic_contributions')
-        .select('*')
-        .eq('id', newContributionId)
-        .single();
+        .update({ is_latest_edit: false })
+        .eq('id', originalContributionIdToEdit);
 
-    if (fetchNewError || !newContributionDbRow) {
-        logger.error('[saveContributionEdit] Failed to fetch newly created contribution record', { newContributionId, fetchNewError });
-        return { error: { message: 'Failed to retrieve new contribution record after creation.', status: 500, code: 'DB_FETCH_ERROR' }, status: 500 };
+    if (updateOriginalError) {
+        logger.error('[saveContributionEdit] Failed to update original is_latest_edit=false; attempting cleanup', { updateOriginalError });
+        // Best-effort cleanup: remove the uploaded file path
+        try {
+            const fullNewPath = `${newContributionDbRow.storage_path}/${newContributionDbRow.file_name}`;
+            const bucketEnv = Deno.env.get('SB_CONTENT_STORAGE_BUCKET');
+            if (bucketEnv) {
+                await dbClient.storage.from(bucketEnv).remove([fullNewPath]);
+            }
+            await dbClient.from('dialectic_contributions').delete().eq('id', newContributionDbRow.id);
+        } catch (_) { /* swallow cleanup errors; we already log the primary failure */ }
+        return { error: { message: 'Failed to finalize edit; original update failed.', status: 500, code: 'DB_TRANSACTION_ERROR' }, status: 500 };
     }
-    
-    const dbContributionRow = newContributionDbRow; // Alias for clarity
+
+    const dbContributionRow = newContributionDbRow; // Alias for mapping
 
     // Fetch the full stage object based on stage (which is stage_id) from the new contribution
     if (!dbContributionRow.stage) {
@@ -265,7 +335,9 @@ export async function saveContributionEdit(
         citations: parsedCitations, // Use parsed citations
         created_at: dbContributionRow.created_at,
         updated_at: dbContributionRow.updated_at,
-        contribution_type: dbContributionRow.contribution_type,
+        contribution_type: (dbContributionRow.contribution_type && isContributionType(dbContributionRow.contribution_type))
+          ? dbContributionRow.contribution_type
+          : (stageObject.slug && isContributionType(stageObject.slug) ? stageObject.slug : null),
         file_name: dbContributionRow.file_name,
     };
 

@@ -493,53 +493,156 @@ Objective: Emit an internal `contribution_generation_failed` event from all fail
 
 ## Ensure dialectic-service passes all tests  
 
-- [ ] 88. REFACTOR: Align `FileType` usage in `cloneProject.ts`
+- [✅] 88. REFACTOR: Align `FileType` usage in `cloneProject.ts`
   - **File**: `supabase/functions/dialectic-service/cloneProject.ts`
   - Replace string literals (e.g., `"project_readme"`, `"initial_user_prompt"`, `"seed_prompt"`, `"general_resource"`, `"contribution_document"`) with the correct `FileType` enum members. Fix swapped hints for `model_contribution_main` vs `model_contribution_raw_json`. Remove unused `getFileTypeFromResourceDescription`.
 
-- [ ] 89. REFACTOR: Correct `ContributionType` assignments
+- [✅] 89. REFACTOR: Correct `ContributionType` assignments
   - **Files**:
     - `supabase/functions/dialectic-service/exportProject.ts`
     - `supabase/functions/dialectic-service/saveContributionEdit.ts`
     - `supabase/functions/dialectic-service/cloneProject.ts`
   - Ensure fields typed as `ContributionType | null` are assigned only valid enum values (no raw strings). Map source strings to enum safely without casting.
 
-- [ ] 90. REFACTOR: Fix `FileType.GeneralResource` and related
+  - [✅] 89.a. RED: Add canonical export-zip path contract to constructor tests
+    - [TEST-UNIT]
+    - Files:
+      - supabase/functions/_shared/utils/path_constructor.test.ts
+    - Add tests asserting:
+      - constructStoragePath({ projectId, fileType: ProjectExportZip, originalFileName }) returns:
+        - storagePath === projectId
+        - fileName === sanitizeForPath(originalFileName)
+      - GeneralResource remains directory-based: constructStoragePath({ projectId, fileType: GeneralResource, originalFileName }) → storagePath === `${projectId}/general_resource`, fileName === sanitized file.
+    - Expected: Fails to compile (ProjectExportZip missing) and/or test fails.
+
+  - [✅] 89.b. GREEN: Introduce FileType.ProjectExportZip and route in FileManager
+    - [REFACTOR]
+    - Files:
+      - supabase/functions/_shared/types/file_manager.types.ts
+      - supabase/functions/_shared/services/file_manager.ts
+    - Changes:
+      - Add enum member ProjectExportZip = 'project_export_zip'.
+      - getTableForFileType: return 'dialectic_project_resources' for 'project_export_zip'.
+    - Lint; compile should pass for enum and routing.
+
+  - [✅] 89.c. GREEN: Implement ProjectExportZip in path_constructor
+    - [BE]
+    - Files:
+      - supabase/functions/_shared/utils/path_constructor.ts
+    - Add case:
+      - FileType.ProjectExportZip → { storagePath: projectId, fileName: sanitizeForPath(originalFileName) }
+    - Lint and run constructor tests (previous RED now GREEN).
+
+  - [✅] 89.d. RED: Deconstructor guarantees for directory/file separation
+    - [TEST-UNIT]
+    - Files:
+      - supabase/functions/_shared/utils/path_deconstructor.test.ts
+    - Add tests asserting deconstructStoragePath can correctly parse when storage path and file name are provided separately for:
+      - ModelContributionMain paths: `${projectId}/session_${shortId}/iteration_1/1_thesis` + fileName: `{model_slug}_0_thesis.md`.
+      - GeneralResource: `${projectId}/general_resource` + fileName: `resource1.txt`.
+      - InitialUserPrompt: `${projectId}` + fileName: `initial_prompt.md`.
+    - Note: The deconstructor is not required to parse ProjectExportZip (zip path is a single file at project root), so do not add a pattern for it.
+    - Expected: If patterns are missing or fileTypeGuess is incorrect for any of the above, tests fail.
+
+  - [✅] 89.e. GREEN: Align path_deconstructor to canonical directory-only storage_path
+    - [BE]
+    - Files:
+      - supabase/functions/_shared/utils/path_deconstructor.ts
+    - Verify existing patterns:
+      - Model contribution (main/raw) already expects separate storageDir and fileName: no change if tests pass.
+      - GeneralResource pattern: `^([^/]+)/general_resource/([^/]+)$` → fileName is matched; adjust to accept directory-only storageDir with separate fileName argument. (If already supported via params.storageDir/fileName, ensure tests pass without changing regex; else, minimally adjust.)
+      - InitialUserPrompt: keep root-level file handling (pattern present).
+    - Lint; deconstructor tests now GREEN.
+
+  - [✅] 89.f. RED: Export tests assert directory+filename joins and zip at project root
+    - [TEST-UNIT]
+    - Files:
+      - supabase/functions/dialectic-service/exportProject.test.ts
+    - Assert:
+      - Resource download: bucket, `${resource.storage_path}/${resource.file_name}`.
+      - Contribution content download: bucket, `${contribution.storage_path}/${contribution.file_name}`.
+      - Raw download: bucket, `contribution.raw_response_storage_path` as-is.
+      - FileManager upload: pathContext.fileType === 'project_export_zip' (ProjectExportZip), projectId set, originalFileName set.
+      - Signed URL creation: uses joined `${storage_path}/${file_name}` from FileManager record.
+      - Zip entries include canonical full paths for all downloaded files; include project_manifest.json at root.
+    - Expected: Fails on current exportProject.ts typing/paths and missing FileType.ProjectExportZip usage.
+
+  - [✅] 89.g. GREEN: Implement canonical export in exportProject.ts
+    - [BE]
+    - Files:
+      - supabase/functions/dialectic-service/exportProject.ts
+    - Changes:
+      - ContributionType mapping (fix TS2322):
+        - contribution_type: isContributionType(c.contribution_type ?? '') ? c.contribution_type : (isContributionType(stageObject.slug) ? stageObject.slug : null)
+      - Download paths:
+        - Resources: `${resource.storage_path}/${resource.file_name}`
+        - Contribution content: `${contribution.storage_path}/${contribution.file_name}`
+        - Raw response: `contribution.raw_response_storage_path`
+      - Zip layout: add files using those canonical full paths; keep project_manifest.json at root only.
+      - Upload export zip via FileManager:
+        - pathContext.fileType = ProjectExportZip
+        - pathContext.projectId = projectId
+        - pathContext.originalFileName = computed export filename
+      - Signed URL: createSignedUrlForPath(bucket, `${fileRecord.storage_path}/${fileRecord.file_name}`, expiresIn)
+    - Lint; export tests’ RED should be GREEN.
+
+  - [✅] 89.h. RED: FileManager routing test for ProjectExportZip
+    - [TEST-UNIT]
+    - Files:
+      - supabase/functions/_shared/services/file_manager.test.ts (or a new minimal test colocated)
+    - Add a case asserting getTableForFileType('project_export_zip') routes to 'dialectic_project_resources'.
+    - Expected: Fails if not routed correctly.
+
+  - [✅] 89.i. GREEN: Confirm FileManager routing and registration for zip uploads
+    - [BE]
+    - Files:
+      - supabase/functions/_shared/services/file_manager.ts
+    - Ensure new case already implemented in 89.b; if not, add routing and minimal registration logic validation.
+    - Lint; routing test now GREEN.
+
+  - [✅] 89.j. REVIEW: Canonical root preservation and UI handoff
+    - [REVIEW]
+    - Confirm that:
+      - The resulting export zip record resolves to path `${projectId}/${exportFileName}.zip` (storage_path is projectId, file_name sanitized).
+      - The export function returns a signed URL to that exact path for DialecticProjectCard.handleExport to trigger browser download.
+      - No zip file is added inside the zip; only stored at project root as a separate file (per canonical tree).
+
+- [✅] 90. REFACTOR: Fix `FileType.GeneralResource` and related
   - **Files**:
     - `supabase/functions/dialectic-service/exportProject.ts`
     - `supabase/functions/dialectic-service/cloneProject.ts`
   - Replace any `"general_resource"` string with the correct `FileType` enum. Verify all `PathContext.fileType` assignments compile.
 
-- [ ] 91. REFACTOR: Clean up unused vars
+- [✅] 91. REFACTOR: Clean up unused vars
   - **Files**:
     - `supabase/functions/dialectic-service/index.ts` (remove unused `EdgeRuntime` identifier if present)
     - `supabase/functions/dialectic-service/updateSessionModels.ts` (remove/underscore `projectData`)
   - Ensure ESLint `@typescript-eslint/no-unused-vars` passes.
 
-- [ ] 92. REFACTOR: Fix action names and payloads in integration tests
+- [✅] 92. REFACTOR: Fix action names and payloads in integration tests
   - **File**: `supabase/functions/dialectic-service/dialectic-service.integration.test.ts`
   - Replace invalid actions (e.g., `listAvailableDomainTags` → `listAvailableDomains`, `updateProjectDomainTag` → `updateProjectDomain`, `getContributionContentSignedUrl` → `getContributionContentData`).
   - Correct payload shapes (e.g., use `GetContributionContentDataPayload`, `GetSessionDetailsPayload` without extra fields). Provide required fields for `GenerateContributionsPayload` (`projectId`, `walletId`).
   - Remove/replace queries against missing tables or wrong types.
 
-- [ ] 93. REFACTOR: Fix table/query type usages in integration tests
+- [✅] 93. REFACTOR: Fix table/query type usages in integration tests
   - **File**: `supabase/functions/dialectic-service/dialectic-service.integration.test.ts`
   - Replace `.from('dialectic_session_models')` with the correct relation per `types_db.ts` (use supported tables). Ensure test inserts/selects target valid tables/columns.
 
-- [ ] 94. REFACTOR: Update session/contribution property access in integration tests
+- [✅] 94. REFACTOR: Update session/contribution property access in integration tests
   - **Files**:
     - `supabase/functions/dialectic-service/getProjectDetails.integration.test.ts`
   - Use the correct response type (e.g., `GetSessionDetailsResponse`) or navigate via fetched payloads that include `dialectic_session_models` / `dialectic_contributions`. Avoid assuming these arrays on `DialecticSession` if not present in the type context used by the test.
 
-- [ ] 95. REFACTOR: Provide required fields in `exportProject.test.ts`
+- [✅] 95. REFACTOR: Provide required fields in `exportProject.test.ts`
   - **File**: `supabase/functions/dialectic-service/exportProject.test.ts`
   - Add missing `document_relationships` field on mocked `dialectic_contributions` rows to satisfy `types_db.ts` requirements.
 
-- [ ] 96. REFACTOR: Repair missing local module imports
+- [✅] 96. REFACTOR: Repair missing local module imports
   - **File**: `supabase/functions/dialectic-service/index.ts`
   - Remove or correct invalid imports referencing `_shared/services/indexing.ts` and `_shared/services/embedding.ts` (align with current service paths or remove if unused).
 
-- [ ] 97. REFACTOR: Replace missing test helpers
+- [✅] 97. REFACTOR: Replace missing test helpers
   - **File**: `supabase/functions/dialectic-service/dialectic-stages.integration.test.ts`
   - Remove `setupSuite/beforeEachTest/afterEachTest/teardownSuite` references or replace with standard `Deno.test` structure/shared helpers that exist in-repo.
 

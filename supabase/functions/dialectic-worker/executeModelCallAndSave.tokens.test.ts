@@ -468,15 +468,15 @@ Deno.test('should throw an error if the estimated cost exceeds the 80% rationali
     };
     if (!isRecord(costConfig)) throw new Error("Test config error");
     
-    const initialTokenCount = 900; // With input_rate=1 and target window=100, total_estimated_input_cost = 900 (> 80% of 1000)
+    const initialTokenCount = 500; // With input_rate=1 and target window=100, total_estimated_full_op ≈ 900 (> 80% of 1000, < 1000)
     const countTokensStub = stub(deps, 'countTokens', () => initialTokenCount);
     
-    // Total cost calculation under current logic:
-    // tokens_to_be_removed = 900 - 100 = 800
-    // estimated_rag_cost = 800 * 1 = 800
+    // Total cost calculation under current logic (including embeddings):
+    // tokens_to_be_removed = 500 - 100 = 400
+    // estimated_rag_cost = 400 * 1 = 400
     // estimated_final_prompt_cost = 100 * 1 = 100
-    // total_estimated_input_cost = 800 + 100 = 900
-    // 80% of balance (1000) is 800. Since 900 > 800, this should fail the rationality check.
+    // plus remaining input tokens cost (window) + reduction mechanics yield a total around 900
+    // 80% of balance (1000) is 800. Since ~900 > 800 and < 1000, this should fail the rationality check (not absolute NSF).
     const { client: dbClient } = setupMockClient({
         'ai_providers': { select: { data: [{ ...mockFullProviderData, config: costConfig }], error: null } },
     });

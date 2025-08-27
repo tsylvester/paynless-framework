@@ -149,8 +149,8 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         logger: mockLogger,
         fileManager: createMockFileManagerService(),
         downloadFromStorage: downloadFromStorageSpy,
-        indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
-        embeddingClient: { createEmbedding: () => Promise.resolve([]) }
+        indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) },
+        embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) }
       };
 
     const { error, status } = await submitStageResponses(mockPayload, mockSupabaseClient as unknown as SupabaseClient<Database>, MOCK_USER, mockDependencies);
@@ -196,8 +196,8 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         logger: mockLogger,
         fileManager: createMockFileManagerService(),
         downloadFromStorage: spy(async () => ({ data: new ArrayBuffer(0), error: null })),
-        indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
-        embeddingClient: { createEmbedding: () => Promise.resolve([]) }
+        indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) },
+        embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) }
       };
 
     const { error, status } = await submitStageResponses(mockPayload, mockSupabaseClient as unknown as SupabaseClient<Database>, MOCK_USER, mockDependencies);
@@ -285,8 +285,8 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
       logger: mockLogger,
       fileManager: mockFileManager,
       downloadFromStorage: downloadFromStorageSpy,
-      indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
-      embeddingClient: { createEmbedding: () => Promise.resolve([]) }
+      indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) },
+      embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) }
     };
 
     const { data, error, status } = await submitStageResponses(mockPayload, mockSupabaseClient as unknown as SupabaseClient<Database>, MOCK_USER, mockDependencies);
@@ -296,7 +296,7 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
     assertEquals(data!.updatedSession.status, 'pending_antithesis');
     assertExists(data!.nextStageSeedPromptPath);
 
-    const uploadCalls = mockFileManager.uploadAndRegisterFileSpy.calls;
+    const uploadCalls = mockFileManager.uploadAndRegisterFile.calls;
     assert(uploadCalls.some((call: any) => {
       const context: UploadContext = call.args[0];
       return context.pathContext.originalFileName && context.pathContext.originalFileName.includes('user_feedback_thesis.md');
@@ -397,8 +397,8 @@ Deno.test('submitStageResponses - All Scenarios', async (t) => {
         logger: mockLogger,
         fileManager: mockFileManager,
         downloadFromStorage: downloadSpy,
-        indexingService: { indexDocument: () => Promise.resolve({ success: true }) },
-        embeddingClient: { createEmbedding: () => Promise.resolve([]) }
+        indexingService: { indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }) },
+        embeddingClient: { getEmbedding: async () => ({ embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } }) }
     };
 
     const { data, status, error } = await submitStageResponses(mockPayload, mockSupabaseClient as unknown as SupabaseClient<Database>, MOCK_USER, mockDependencies);

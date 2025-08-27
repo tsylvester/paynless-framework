@@ -1,5 +1,4 @@
-// @deno-types="npm:@types/chai@4.3.1"
-import { assertEquals } from "https://deno.land/std@0.208.0/testing/asserts.ts";
+import { assertEquals } from "https://deno.land/std@0.208.0/assert/assert_equals.ts";
 import { Json } from "../types_db.ts"; // Assuming Json type is useful here
 import { renderPrompt } from "./prompt-renderer.ts"; // Function to be created
 

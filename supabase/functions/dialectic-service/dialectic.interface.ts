@@ -23,6 +23,15 @@ import type { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts'
 import type { debitTokens } from '../chat/debitTokens.ts';
 import { ICompressionStrategy } from '../_shared/utils/vector_utils.ts';
 
+export type DialecticProjectRow = Database['public']['Tables']['dialectic_projects']['Row'];
+export type DialecticProjectInsert = Database['public']['Tables']['dialectic_projects']['Insert'];
+export type DialecticProjectResourceRow = Database['public']['Tables']['dialectic_project_resources']['Row']; // For typing original resources
+export type DialecticSessionInsert = Database['public']['Tables']['dialectic_sessions']['Insert'];
+export type DialecticContributionRow = Database['public']['Tables']['dialectic_contributions']['Row'];
+export type DialecticJobRow = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
+export type DialecticMemoryRow = Database['public']['Tables']['dialectic_memory']['Row'];
+export type DialecticFeedbackRow = Database['public']['Tables']['dialectic_feedback']['Row'];
+
 export type StorageError = {
   message: string;
   error?: string;
@@ -51,10 +60,6 @@ export interface AIModelCatalogEntry {
     created_at: string;
     updated_at: string;
 }
-
-// Defines the raw structure from the database
-export type DialecticContributionRow = Database['public']['Tables']['dialectic_contributions']['Row'];
-export type DialecticJobRow = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
 // Defines the structured contribution object used within the service and for API responses,
 // aligning with packages/types/src/dialectic.types.ts

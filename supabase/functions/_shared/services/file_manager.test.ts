@@ -175,6 +175,63 @@ Deno.test('FileManagerService', async (t) => {
   )
 
   await t.step(
+    'uploadAndRegisterFile should register a project export zip at project root',
+    async () => {
+      try {
+        const projectId = 'project-uuid-zip';
+        const originalZipName = 'My Export.zip';
+        const context: UploadContext = {
+          ...baseUploadContext,
+          pathContext: {
+            fileType: FileType.ProjectExportZip,
+            projectId,
+            originalFileName: originalZipName,
+          },
+          fileContent: 'zip-bytes',
+          mimeType: 'application/zip',
+          sizeBytes: 45678,
+          description: 'Project export archive',
+        };
+
+        const expectedPathParts = constructStoragePath(context.pathContext);
+        const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
+
+        const config: MockSupabaseDataConfig = {
+          genericMockResults: {
+            dialectic_project_resources: {
+              insert: { data: [{ id: 'zip-res-123' }], error: null },
+            },
+          },
+          storageMock: {
+            uploadResult: { data: { path: expectedFullPath }, error: null },
+          },
+        };
+        beforeEach(config);
+
+        const { record, error } = await fileManager.uploadAndRegisterFile(context);
+
+        assertEquals(error, null);
+        assertExists(record);
+        assertEquals(setup.spies.fromSpy.calls[0].args[0], 'dialectic_project_resources');
+
+        const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.insert;
+        assertExists(insertSpy);
+        const insertData = insertSpy.calls[0].args[0];
+        assertEquals(insertData.project_id, projectId);
+        assertEquals(insertData.storage_path, expectedPathParts.storagePath);
+        assertEquals(insertData.file_name, expectedPathParts.fileName);
+        assertEquals(insertData.mime_type, 'application/zip');
+
+        const uploadSpy = setup.spies.storage.from('test-bucket').uploadSpy;
+        assertExists(uploadSpy);
+        assertEquals(uploadSpy.calls[0].args[0], expectedFullPath);
+      } finally {
+        afterEach();
+      }
+    },
+  );
+
+  await t.step(
     'uploadAndRegisterFile should register a contribution correctly (no collision)',
     async () => {
       try {

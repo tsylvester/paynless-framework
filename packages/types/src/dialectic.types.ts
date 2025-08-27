@@ -429,6 +429,27 @@ export interface DialecticContribution {
   job_id?: string | null; // ID of the generation job that created this contribution
 }
 
+// Contribution types used across Dialectic features (copied from Edge/Deno definitions)
+export type ContributionType =
+  | 'thesis'
+  | 'antithesis'
+  | 'synthesis'
+  | 'parenthesis'
+  | 'paralysis'
+  | 'pairwise_synthesis_chunk'
+  | 'reduced_synthesis'
+  | 'final_synthesis'
+  | 'rag_context_summary';
+  
+export type DialecticNotificationTypes = 
+  | 'contribution_generation_started'
+  | 'dialectic_contribution_started'
+  | 'contribution_generation_retrying'
+  | 'dialectic_contribution_received'
+  | 'contribution_generation_failed'
+  | 'contribution_generation_complete'
+  | 'dialectic_progress_update'
+  | 'contribution_generation_continued';
 export interface ContributionGenerationStartedPayload {
   // This is the overall contribution generation for the entire session stage. 
   type: 'contribution_generation_started';

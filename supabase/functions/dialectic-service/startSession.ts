@@ -16,7 +16,7 @@ import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt
 import { downloadFromStorage } from '../_shared/supabase_storage_utils.ts';
 import { IFileManager } from '../_shared/types/file_manager.types.ts';
 import { FileType } from "../_shared/types/file_manager.types.ts";
-import { FactoryDependencies, AiProviderAdapterInstance } from '../_shared/types.ts';
+import { FactoryDependencies, AiProviderAdapterInstance, AiProviderAdapter } from '../_shared/types.ts';
 import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
 import { defaultProviderMap } from '../_shared/ai_service/factory.ts';
 
@@ -26,6 +26,8 @@ export interface StartSessionDeps {
     promptAssembler: IPromptAssembler;
     randomUUID: () => string;
     getAiProviderAdapter: (deps: FactoryDependencies) => AiProviderAdapterInstance | null;
+    providerMap?: Record<string, AiProviderAdapter>;
+    embeddingApiKey?: string;
 }
 
 
@@ -243,7 +245,7 @@ export async function startSession(
     }
    
     const assembler: IPromptAssembler = partialDeps?.promptAssembler || (() => {
-        const apiKey = Deno.env.get('OPENAI_API_KEY');
+        const apiKey = partialDeps?.embeddingApiKey || Deno.env.get('OPENAI_API_KEY');
         if (!apiKey) {
             log.error('[startSession] OPENAI_API_KEY environment variable not set.');
             throw new Error('Server configuration error: OPENAI_API_KEY is missing.');
@@ -253,7 +255,7 @@ export async function startSession(
            provider: embeddingProvider,
            apiKey: apiKey,
            logger: log,
-           providerMap: defaultProviderMap,
+           providerMap: partialDeps?.providerMap || defaultProviderMap,
         });
 
         if (!adapter) {

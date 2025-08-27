@@ -70,14 +70,26 @@ import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { handleUpdateSessionModels } from './updateSessionModels.ts';
 import { callUnifiedAIModel } from './callModel.ts';
 import { getExtensionFromMimeType } from '../_shared/path_utils.ts';
+import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
+import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
+import type { IIndexingService, IEmbeddingClient } from '../_shared/services/indexing_service.interface.ts';
+import type { SaveContributionEditDeps } from './saveContributionEdit.ts';
 
-// Declare EdgeRuntime as a global to satisfy the linter.
-// It is provided by the Supabase Edge Function environment.
-declare const EdgeRuntime: {
-  waitUntil: (promise: Promise<unknown>) => void;
-};
 
 console.log("dialectic-service function started");
+
+// Minimal DI defaults for dependencies required by submitStageResponses
+const indexingService: IIndexingService = {
+  async indexDocument(_sessionId: string, _sourceContributionId: string, _documentContent: string, _metadata: Record<string, unknown>) {
+    return { success: true, tokensUsed: 0 };
+  }
+};
+
+const embeddingClient: IEmbeddingClient = {
+  async getEmbedding(_text: string) {
+    return { embedding: [], usage: { prompt_tokens: 0, total_tokens: 0 } };
+  }
+};
 
 export interface RequestEvent {
   waitUntil: (promise: Promise<unknown>) => void;
@@ -157,7 +169,7 @@ export interface ActionHandlers {
   cloneProject: (dbClient: SupabaseClient, fileManager: IFileManager, originalProjectId: string, newProjectName: string | undefined, cloningUserId: string) => Promise<CloneProjectResult>;
   exportProject: (dbClient: SupabaseClient, fileManager: IFileManager, storageUtils: IStorageUtils, projectId: string, userId: string) => Promise<{ data?: { export_url: string }; error?: ServiceError; status?: number }>;
   getProjectResourceContent: (payload: GetProjectResourceContentPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetProjectResourceContentResponse; error?: ServiceError; status?: number }>;
-  saveContributionEdit: (payload: SaveContributionEditPayload, dbClient: SupabaseClient, user: User, logger: ILogger) => Promise<{ data?: DialecticContribution; error?: ServiceError; status?: number }>;
+  saveContributionEdit: (payload: SaveContributionEditPayload, dbClient: SupabaseClient, user: User, logger: ILogger, deps: SaveContributionEditDeps) => Promise<{ data?: DialecticContribution; error?: ServiceError; status?: number }>;
   submitStageResponses: (payload: SubmitStageResponsesPayload, dbClient: SupabaseClient, user: User, dependencies: SubmitStageResponsesDependencies) => Promise<{ data?: SubmitStageResponsesResponse; error?: ServiceError; status?: number }>;
   listDomains: (dbClient: SupabaseClient) => Promise<{ data?: DialecticDomain[]; error?: ServiceError }>;
   fetchProcessTemplate: (dbClient: SupabaseClient, payload: FetchProcessTemplatePayload) => Promise<{ data?: DialecticProcessTemplate; error?: ServiceError; status?: number }>;
@@ -324,7 +336,12 @@ export async function handleRequest(
           if (!payload || !payload.projectId) {
             return createErrorResponse("projectId is required.", 400, req, { message: "projectId is required.", status: 400 });
           }
-          const { data, error } = await handlers.startSession(userForJson!, adminClient, payload, { logger });
+          const { data, error } = await handlers.startSession(
+            userForJson!,
+            adminClient,
+            payload,
+            { logger }
+          );
           if (error) {
             return createErrorResponse(error.message, error.status, req, error);
           }
@@ -432,7 +449,14 @@ export async function handleRequest(
         }
         case "saveContributionEdit": {
           const payload: SaveContributionEditPayload = requestBody.payload;
-          const { data, error, status } = await handlers.saveContributionEdit(payload, userClient, userForJson!, logger);
+          const deps: SaveContributionEditDeps = {
+            fileManager: new FileManagerService(userClient),
+            logger,
+            dbClient: userClient,
+            pathDeconstructor: deconstructStoragePath,
+            pathConstructor: constructStoragePath,
+          };
+          const { data, error, status } = await handlers.saveContributionEdit(payload, userClient, userForJson!, logger, deps);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }
@@ -443,6 +467,8 @@ export async function handleRequest(
             logger,
             fileManager,
             downloadFromStorage,
+            indexingService: indexingService,
+            embeddingClient: embeddingClient,
           };
           const payload: SubmitStageResponsesPayload = requestBody.payload;
           const { data, error, status } = await handlers.submitStageResponses(payload, adminClient, userForJson!, dependencies);

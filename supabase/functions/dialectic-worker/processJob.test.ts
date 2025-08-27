@@ -66,6 +66,7 @@ Deno.test('processJob - routes to processSimpleJob for simple stages', async () 
         stageSlug: 'thesis', // A simple stage
         model_id: 'model-id',
         continueUntilComplete: false,
+        walletId: 'wallet-id-simple',
     };
     
     if (!isJson(mockPayload)) {
@@ -137,6 +138,7 @@ Deno.test('processJob - routes to processComplexJob for complex stages', async (
         projectId: 'project-id-complex',
         stageSlug: 'antithesis', // A complex stage
         model_id: 'model-id-complex',
+        walletId: 'wallet-id-complex',
     };
 
     if (!isJson(mockPayload)) {
@@ -213,6 +215,7 @@ Deno.test('processJob - throws error when stage not found', async () => {
         projectId: 'project-id',
         stageSlug: 'nonexistent-stage',
         model_id: 'model-id',
+        walletId: 'wallet-id',
     };
     
     if (!isJson(mockPayload)) {
@@ -285,6 +288,7 @@ Deno.test('processJob - routes to simple processor for unsupported processing st
         projectId: 'project-id',
         stageSlug: 'thesis', // Use a valid slug
         model_id: 'model-id',
+        walletId: 'wallet-id',
     };
     
     if (!isJson(mockPayload)) {
@@ -359,6 +363,7 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
         model_id: 'model-id-1',
         iterationNumber: 1,
         continueUntilComplete: true,
+        walletId: 'wallet-id',
     };
     
     if (!isJson(mockPayload)) {
@@ -418,7 +423,7 @@ Deno.test('processJob - verifies correct parameters passed to processSimpleJob',
             projectId: mockPayload.projectId,
             stageSlug: mockPayload.stageSlug,
             iterationNumber: mockPayload.iterationNumber,
-            walletId: undefined,
+            walletId: mockPayload.walletId,
             continueUntilComplete: mockPayload.continueUntilComplete,
             maxRetries: undefined,
             continuation_count: undefined,
@@ -456,6 +461,7 @@ Deno.test('processJob - verifies correct parameters passed to processComplexJob'
         projectId: 'project-id-complex-params',
         stageSlug: 'antithesis',
         model_id: 'model-id-complex',
+        walletId: 'wallet-id-complex',
     };
     
     if (!isJson(mockPayload)) {
@@ -543,6 +549,7 @@ Deno.test('processJob - simple plan→execute should NOT set prompt_template_nam
         model_id: 'model-id-simple',
         iterationNumber: 1,
         continueUntilComplete: false,
+        walletId: 'wallet-id-simple',
     };
 
     if (!isJson(simplePlanPayload)) {
@@ -629,7 +636,8 @@ Deno.test('should clear target_contribution_id when transforming a simple plan j
         iterationNumber: 1,
         // THIS IS THE CRITICAL PART: the plan job has a target from the previous stage
         target_contribution_id: 'synthesis-doc-uuid', 
-    };
+        walletId: 'wallet-id-simple-transform',
+        };
 
     if (!isJson(mockPayload)) {
         throw new Error('Test setup failed: mockPayload is not a valid Json');
