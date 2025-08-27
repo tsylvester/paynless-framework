@@ -180,6 +180,7 @@ const MOCK_PARENT_JOB: DialecticJobRow & { payload: DialecticPlanJobPayload } = 
             current_step: 1,
             total_steps: 1,
         },
+        walletId: 'wallet-default',
     },
     attempt_count: 0,
     completed_at: null,
@@ -314,7 +315,8 @@ Deno.test('planPairwiseByOrigin Test Case A: The Failing Case (Proves the bug ex
             step_info: {
                 current_step: 1,
                 total_steps: 3,
-            }
+            },
+            walletId: 'wallet-default',
         },
         attempt_count: 0,
         completed_at: null,
@@ -362,7 +364,8 @@ Deno.test('planPairwiseByOrigin Test Case B: The Passing Case (Describes the cor
             step_info: {
                 current_step: 1,
                 total_steps: 3,
-            }
+            },
+            walletId: 'wallet-default',
         },
         attempt_count: 0,
         completed_at: null,

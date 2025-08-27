@@ -21,7 +21,7 @@ export class LangchainTextSplitter implements ITextSplitter {
   }
 }
 
-export class OpenAIEmbeddingClient implements IEmbeddingClient {
+export class EmbeddingClient implements IEmbeddingClient {
   constructor(private adapter: AiProviderAdapterInstance) {}
 
   async getEmbedding(text: string): Promise<EmbeddingResponse> {

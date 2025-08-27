@@ -671,6 +671,7 @@ Deno.test('Type Guard: validatePayload', async (t) => {
             sessionId: 'test-session',
             projectId: 'test-project',
             model_id: 'model-1',
+            walletId: 'test-wallet',
         };
         const validated = validatePayload(payload);
         assert(validated.sessionId === 'test-session');
@@ -730,6 +731,7 @@ Deno.test('Type Guard: validatePayload', async (t) => {
             sessionId: 'test-session',
             projectId: 'test-project',
             model_id: 123, // not a string
+            walletId: 'test-wallet',
         };
         assertThrows(() => validatePayload(payload), Error, 'Payload must have model_id (string)');
     });
@@ -738,6 +740,7 @@ Deno.test('Type Guard: validatePayload', async (t) => {
         const payload: Json = {
             sessionId: 'test-session',
             projectId: 'test-project',
+            walletId: 'test-wallet',
         };
         assertThrows(() => validatePayload(payload), Error, 'Payload must have model_id (string)');
     });

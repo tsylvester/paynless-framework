@@ -311,4 +311,35 @@ export async function testSyncContract(
             assembleStub.restore();
         }
     });
+
+    // Provider configs must never have zero cost rates
+    await t.step(`[Contract] ${providerName}: rejects models with zero or missing cost rates (RED)`, async () => {
+        const zeroCostModel = {
+            ...mockProviderData.newApiModel,
+            config: {
+                ...mockProviderData.newApiModel.config,
+                input_token_cost_rate: 0,
+                output_token_cost_rate: 0,
+            },
+        };
+        const mockDeps = createMockSyncDeps({
+            getCurrentDbModels: spy(async (_client: SupabaseClient<Database>, _provider: string) => []),
+        });
+        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve([zeroCostModel]));
+
+        try {
+            const { client: mockClient, spies } = createMockSupabaseClient(undefined, {
+                genericMockResults: { ai_providers: { insert: { data: [], error: null } } }
+            });
+
+            const result = await syncFunction(mockClient as unknown as SupabaseClient<Database>, MOCK_API_KEY, mockDeps);
+
+            // Expect an error to be reported by the sync when encountering zero-cost rates
+            assertExists(result.error, 'Sync should report an error for zero-cost provider rates');
+            // Ensure no DB writes occurred
+            assertEquals(spies.fromSpy.calls.length, 0, 'No DB operations should occur for zero-cost models');
+        } finally {
+            assembleStub.restore();
+        }
+    });
 }

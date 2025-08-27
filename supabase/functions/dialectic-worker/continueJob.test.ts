@@ -449,6 +449,7 @@ Deno.test('continueJob', async (t) => {
             canonicalPathParams: {
                 contributionType: 'thesis'
             },
+            walletId: 'wallet-default',
         };
         
         const testJob = createMockJob(testPayload);
@@ -463,7 +464,9 @@ Deno.test('continueJob', async (t) => {
         assert(isJobInsert(newJobData));
 
         if (isDialecticExecuteJobPayload(newJobData.payload)) {
-            assertEquals('walletId' in newJobData.payload, false);
+            // walletId is required for continuations and must be preserved
+            assertEquals(newJobData.payload.walletId, 'wallet-default');
+            // maxRetries remains optional and should be omitted if not provided on source payload
             assertEquals('maxRetries' in newJobData.payload, false);
         } else {
             assert(false, 'Payload is not a valid DialecticJobPayload');
@@ -540,6 +543,7 @@ Deno.test('continueJob', async (t) => {
             canonicalPathParams: {
                 contributionType: 'thesis'
             },
+            walletId: 'wallet-default',
         };
 
         const testJob = createMockJob(testPayload);
@@ -595,6 +599,7 @@ Deno.test('continueJob', async (t) => {
             canonicalPathParams: {
                 contributionType: 'thesis'
             },
+            walletId: 'wallet-default',
         };
 
         const testJob = createMockJob(testPayload);

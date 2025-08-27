@@ -4,7 +4,7 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { assertSpyCall, spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { ILogger } from '../types.ts';
-import { IndexingService, OpenAIEmbeddingClient } from './indexing_service.ts';
+import { IndexingService, EmbeddingClient } from './indexing_service.ts';
 import { ITextSplitter, IndexDocumentResult } from './indexing_service.interface.ts';
 import { createMockSupabaseClient } from '../supabase.mock.ts';
 import { mockOpenAiAdapter, mockGetEmbeddingSpy } from '../ai_service/openai_adapter.mock.ts';
@@ -33,7 +33,7 @@ test('IndexingService should process and index a document successfully', async (
   const logger = new MockLogger();
   const textSplitter = new MockTextSplitter();
   
-  const embeddingClient = new OpenAIEmbeddingClient(mockOpenAiAdapter);
+  const embeddingClient = new EmbeddingClient(mockOpenAiAdapter);
   const service = new IndexingService(mockSupabaseClient as unknown as SupabaseClient<Database>, logger, textSplitter, embeddingClient);
 
   const textSplitterSpy = spy(textSplitter, 'splitText');
@@ -69,16 +69,71 @@ test('IndexingService should process and index a document successfully', async (
   assertEquals(insertedData[0].embedding, `[${Array(1536).fill(0.1).join(',')}]`);
 });
 
-Deno.test("OpenAIEmbeddingClient should be instantiable with any valid AiProviderAdapter", () => {
-    // This test confirms that OpenAIEmbeddingClient is decoupled from a concrete
+Deno.test("EmbeddingClient should be instantiable with any valid AiProviderAdapter", () => {
+    // This test confirms that EmbeddingClient is decoupled from a concrete
     // adapter and can be instantiated with any class that conforms to the
     // AiProviderAdapterInstance interface.
     
     const dummyAdapter = new DummyAdapter(MOCK_PROVIDER, "dummy-key", new MockLogger());
 
     // This line should now compile without error.
-    const client = new OpenAIEmbeddingClient(dummyAdapter);
+    const client = new EmbeddingClient(dummyAdapter);
 
     // Assert that the client was created successfully.
     assertExists(client);
+});
+
+Deno.test('IndexingService uses DummyAdapter embeddings (deterministic vector, non-zero usage, persisted length 32)', async () => {
+  // Arrange
+  const { client: mockSupabaseClient, spies } = createMockSupabaseClient();
+  const logger = new MockLogger();
+  const textSplitter = new MockTextSplitter(); // yields 2 chunks
+
+  const dummyAdapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', logger);
+  const getEmbeddingSpy = spy(dummyAdapter, 'getEmbedding');
+  const embeddingClient = new EmbeddingClient(dummyAdapter);
+  const service = new IndexingService(
+    mockSupabaseClient as unknown as SupabaseClient<Database>,
+    logger,
+    textSplitter,
+    embeddingClient
+  );
+
+  const sessionId = 'session-abc';
+  const contributionId = 'contrib-def';
+  const documentContent = 'Deterministic embeddings make RAG testing safe.';
+  const metadata = { source: 'unit-test' };
+
+  // Act
+  const result: IndexDocumentResult = await service.indexDocument(
+    sessionId,
+    contributionId,
+    documentContent,
+    metadata,
+  );
+
+  // Assert: tokensUsed aggregated from adapter usage should be > 0
+  assertEquals(result.success, true);
+  assertEquals(result.tokensUsed > 0, true);
+
+  // Assert: adapter embedding called once per chunk (2 chunks)
+  assertSpyCall(getEmbeddingSpy, 0);
+  assertSpyCall(getEmbeddingSpy, 1);
+
+  // Assert: insert occurred into dialectic_memory with 32-dim embedding arrays as JSON strings
+  assertSpyCall(spies.fromSpy, 0, { args: ['dialectic_memory'] });
+  const insertSpy = spies.getLatestQueryBuilderSpies('dialectic_memory')?.insert;
+  if (!insertSpy) throw new Error('Insert spy not found');
+  assertSpyCall(insertSpy, 0);
+  const inserted = insertSpy.calls[0].args[0];
+  // Should insert 2 rows (2 chunks)
+  assertEquals(Array.isArray(inserted), true);
+  assertEquals(inserted.length, 2);
+  // Embedding field is a JSON array string; parse and check length
+  const emb0 = JSON.parse(inserted[0].embedding);
+  const emb1 = JSON.parse(inserted[1].embedding);
+  assertEquals(Array.isArray(emb0), true);
+  assertEquals(Array.isArray(emb1), true);
+  assertEquals(emb0.length, 32);
+  assertEquals(emb1.length, 32);
 });

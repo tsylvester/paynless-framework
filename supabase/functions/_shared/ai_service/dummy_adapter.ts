@@ -1,4 +1,4 @@
-import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig, Messages } from '../types.ts';
+import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig, Messages, EmbeddingResponse } from '../types.ts';
 import { countTokens } from '../utils/tokenizer_utils.ts';
 import type { CountTokensDeps, CountableChatPayload } from '../types/tokenizer.types.ts';
 import { ContextWindowError } from '../utils/errors.ts';
@@ -106,7 +106,7 @@ export class DummyAdapter {
         }
 
         // 4. Simulate a context window error for oversized input
-        const maxTokens = this.modelConfig.max_context_window_tokens || this.modelConfig.context_window_tokens;
+        const maxTokens = this.modelConfig.context_window_tokens || this.modelConfig.context_window_tokens;
         const tokenizerDeps: CountTokensDeps = {
             getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
             countTokensAnthropic: (text: string) => (text ?? '').length,
@@ -124,6 +124,45 @@ export class DummyAdapter {
              throw new ContextWindowError(`The model's context window is ${maxTokens} tokens. Your request has ${initialTokenCount} tokens.`);
         }
         
+        // Apply output caps from request or model config
+        const completionTokenizerDeps: CountTokensDeps = {
+            getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
+            countTokensAnthropic: (text: string) => (text ?? '').length,
+            logger: this.logger,
+        };
+
+        const clientCap = (typeof request.max_tokens_to_generate === 'number' && request.max_tokens_to_generate > 0)
+            ? request.max_tokens_to_generate
+            : undefined;
+        const modelHardCap = (typeof this.modelConfig.hard_cap_output_tokens === 'number' && this.modelConfig.hard_cap_output_tokens > 0)
+            ? this.modelConfig.hard_cap_output_tokens
+            : undefined;
+        const capTokens = clientCap ?? modelHardCap;
+
+        if (typeof capTokens === 'number' && capTokens >= 0) {
+            // Truncate completion content by measured token count using binary search
+            const completionPayloadFor = (text: string): CountableChatPayload => ({ messages: [{ role: 'assistant', content: text }] });
+            const initialTokens = countTokens(completionTokenizerDeps, completionPayloadFor(content), this.modelConfig);
+            if (initialTokens > capTokens) {
+                let left = 0;
+                let right = content.length;
+                let best = 0;
+                while (left <= right) {
+                    const mid = Math.floor((left + right) / 2);
+                    const candidate = content.slice(0, mid);
+                    const t = countTokens(completionTokenizerDeps, completionPayloadFor(candidate), this.modelConfig);
+                    if (t <= capTokens) {
+                        best = mid;
+                        left = mid + 1;
+                    } else {
+                        right = mid - 1;
+                    }
+                }
+                content = content.slice(0, best);
+                finishReason = 'max_tokens';
+            }
+        }
+
         // --- Default Behavior ---
         return this.createResponse(request, content, finishReason);
     }
@@ -172,5 +211,48 @@ export class DummyAdapter {
         };
         this.logger.info('[DummyAdapter] listModels called', { modelInfo });
         return [modelInfo];
+    }
+
+    async getEmbedding(text: string): Promise<EmbeddingResponse> {
+        this.logger.info('[DummyAdapter] getEmbedding called');
+
+        // Compute usage via tokenizer to remain consistent with the rest of the stack
+        const tokenizerDeps: CountTokensDeps = {
+            getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
+            countTokensAnthropic: (t: string) => (t ?? '').length,
+            logger: this.logger,
+        };
+        const payload = { message: text, messages: [] } satisfies CountableChatPayload;
+        const promptTokens = countTokens(tokenizerDeps, payload, this.modelConfig);
+
+        // Deterministic, offline embedding (no network). Small, fixed dimension.
+        const DIMENSION = 32;
+        const vector: number[] = Array.from({ length: DIMENSION }, () => 0);
+
+        // Simple character-accumulation hash for determinism
+        for (let i = 0; i < text.length; i++) {
+            const codePoint = text.codePointAt(i);
+            if (codePoint === undefined) continue;
+            const idx = codePoint % DIMENSION;
+            // Mix in a few bits to avoid trivial collisions for repeated chars
+            const mixed = ((codePoint << 5) - codePoint) ^ (i * 1315423911);
+            vector[idx] += (mixed % 1000) / 1000; // keep values small and stable
+            // If surrogate pair, skip the next unit to avoid double-counting
+            if (codePoint > 0xffff) i++;
+        }
+
+        // Optional L2 normalization for bounded magnitude
+        let norm = 0;
+        for (let i = 0; i < DIMENSION; i++) norm += vector[i] * vector[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < DIMENSION; i++) vector[i] = vector[i] / norm;
+
+        return {
+            embedding: vector,
+            usage: {
+                prompt_tokens: promptTokens,
+                total_tokens: promptTokens,
+            },
+        };
     }
 }

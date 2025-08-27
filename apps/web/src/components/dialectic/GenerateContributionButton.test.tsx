@@ -21,6 +21,7 @@ import {
   initializeMockDialecticState, 
   getDialecticStoreState
 } from '@/mocks/dialecticStore.mock';
+import { selectActiveChatWalletInfo } from '@/mocks/walletStore.mock';
 
 import { useDialecticStore, initialDialecticStateValues, selectIsStageReadyForSessionIteration } from '@paynless/store';
 
@@ -28,6 +29,7 @@ import { useDialecticStore, initialDialecticStateValues, selectIsStageReadyForSe
 vi.mock('@paynless/store', async () => {
   const mockStoreExports = await vi.importActual<typeof import('@/mocks/dialecticStore.mock')>('@/mocks/dialecticStore.mock');
   const actualPaynlessStore = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
+  const walletStoreMock = await vi.importActual<typeof import('@/mocks/walletStore.mock')>('@/mocks/walletStore.mock');
 
   // These are simple, test-specific selectors that work with our flat mock state.
   // This isolates the component test from the real store's implementation details.
@@ -40,9 +42,10 @@ vi.mock('@paynless/store', async () => {
     return processTemplate.stages?.find((s: DialecticStage) => s.slug === activeStageSlug) || null;
   };
 
-  const useAiStore = (selector: (state: { continueUntilComplete: boolean }) => void) => {
+  const useAiStore = (selector: (state: { continueUntilComplete: boolean; newChatContext: string | null }) => unknown) => {
     const state = {
       continueUntilComplete: false,
+      newChatContext: 'personal',
       // Add other properties from useAiStore that are needed for tests
     };
     return selector(state);
@@ -50,8 +53,13 @@ vi.mock('@paynless/store', async () => {
   
   return {
     ...mockStoreExports,
+    // Expose wallet store hook and selector for component under test
+    useWalletStore: walletStoreMock.useWalletStore,
+    selectActiveChatWalletInfo: walletStoreMock.selectActiveChatWalletInfo,
     useAiStore,
     initialDialecticStateValues: actualPaynlessStore.initialDialecticStateValues,
+    // Pass through wallet state defaults required by the wallet mock itself
+    initialWalletStateValues: actualPaynlessStore.initialWalletStateValues,
     selectSessionById: actualPaynlessStore.selectSessionById, // This selector is simple enough to work with our mock state
     selectSelectedModelIds, // Use our test-specific implementation
     selectActiveStage, // Use our test-specific implementation
@@ -203,6 +211,16 @@ describe('GenerateContributionButton', () => {
     // Clear mocks for props and toast for each test
     vi.mocked(toast.success).mockClear();
     vi.mocked(toast.error).mockClear();
+
+    // Set a default "wallet ready" state for all tests; individual tests can override
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
+      status: 'ok',
+      type: 'personal',
+      walletId: 'default-wallet-id',
+      orgId: null,
+      balance: '1000',
+      isLoadingPrimaryWallet: false,
+    });
   });
 
   afterEach(() => {
@@ -346,6 +364,7 @@ describe('GenerateContributionButton', () => {
         stageSlug: 'thesis', // from store state
         iterationNumber: 1, // from mock session in store
         continueUntilComplete: false,
+        walletId: 'default-wallet-id', // WalletId is now expected
       });
     });
 
@@ -492,7 +511,7 @@ describe('GenerateContributionButton', () => {
     });
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Could not determine the required context. Please ensure a project, session, and stage are active.');
+      expect(toast.error).toHaveBeenCalledWith('Could not determine the required context. Please ensure a project, session, stage, and wallet are active.');
     });
     expect(storeActions.generateContributions).not.toHaveBeenCalled();
   });
@@ -512,5 +531,79 @@ describe('GenerateContributionButton', () => {
     expect(screen.getByRole('button')).toBeDisabled();
     // And it should indicate why
     expect(screen.getByText(/Stage Not Ready/i)).toBeInTheDocument();
+  });
+
+  it('is disabled when no active wallet is available', () => {
+    // Ensure stage is otherwise ready so wallet gating is the deciding factor
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    // Simulate wallet selector returning a loading/no-wallet state
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
+      status: 'loading',
+      type: null,
+      walletId: null,
+      orgId: null,
+      balance: null,
+      message: 'Determining wallet policy and consent...',
+      isLoadingPrimaryWallet: true,
+    });
+
+    render(<GenerateContributionButton />);
+    expect(screen.getByRole('button')).toBeDisabled();
+  });
+
+  it('passes walletId in payload to generateContributions when wallet is ready', async () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
+      status: 'ok',
+      type: 'personal',
+      walletId: 'wallet-123',
+      orgId: null,
+      balance: '100',
+      isLoadingPrimaryWallet: false,
+    });
+
+    const user = userEvent.setup();
+    render(<GenerateContributionButton />);
+
+    const button = screen.getByRole('button');
+    await user.click(button);
+
+    await waitFor(() => {
+      expect(getDialecticStoreState().generateContributions).toHaveBeenCalledWith(
+        expect.objectContaining({ walletId: 'wallet-123' })
+      );
+    });
+  });
+
+  it('reacts to chat context: personal wallet makes button enabled', () => {
+    // Stage is ready
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+
+    // Selector returns ok only when ctx === 'personal'; otherwise loading
+    vi.mocked(selectActiveChatWalletInfo).mockImplementation((state, ctx) => {
+      if (ctx === 'personal') {
+        return {
+          status: 'ok',
+          type: 'personal',
+          walletId: 'personal-wallet',
+          orgId: null,
+          balance: '100',
+          isLoadingPrimaryWallet: false,
+        };
+      }
+      return {
+        status: 'loading',
+        type: null,
+        walletId: null,
+        orgId: null,
+        balance: null,
+        isLoadingPrimaryWallet: true,
+        message: 'Determining wallet policy and consent...',
+      };
+    });
+
+    render(<GenerateContributionButton />);
+    // Desired behavior: with personal context, button should be enabled and say Generate
+    expect(screen.getByRole('button', { name: /Generate Thesis/i })).not.toBeDisabled();
   });
 }); 

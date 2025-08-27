@@ -208,8 +208,7 @@ Deno.test('should only pass un-indexed documents to the RAG service', async () =
 
     const limitedConfig = {
         ...mockFullProviderData.config,
-        max_context_window_tokens: 100,
-        context_window_tokens: 1000,
+        context_window_tokens: 100,
         provider_max_output_tokens: 50,
     };
 
@@ -428,8 +427,7 @@ Deno.test('should iteratively compress the lowest-value candidate until the prom
     // Configure token limits
     const limitedConfig = {
         ...mockFullProviderData.config,
-        max_context_window_tokens: 100, // Force compression with real tokenizer
-        context_window_tokens: 1000,    // Preflight headroom
+        context_window_tokens: 100, // Force compression with real tokenizer
         provider_max_output_tokens: 50,
     };
     if (!isRecord(limitedConfig)) throw new Error("Test config error");
@@ -495,8 +493,7 @@ Deno.test('should throw ContextWindowError if compression fails to reduce size s
     // Set a very tight token limit
     const limitedConfig = {
         ...mockFullProviderData.config,
-        max_context_window_tokens: 20,
-        context_window_tokens: 1000, // ensure preflight headroom
+        context_window_tokens: 20,
         provider_max_output_tokens: 50,
     };
 
@@ -570,8 +567,7 @@ Deno.test('does not call provider if final input exceeds allowed headroom after 
   }
   const cfg = {
     ...mockFullProviderData.config,
-    max_context_window_tokens: 100,      // loop fits when <= 100
-    context_window_tokens: 100,
+    context_window_tokens: 100,      // loop fits when <= 100
     provider_max_input_tokens: 100,      // basis for allowed input
     provider_max_output_tokens: 50,      // planned output budget
     input_token_cost_rate: 1,
@@ -656,8 +652,7 @@ Deno.test('proceeds when final input equals allowed headroom (boundary success)'
   }
   const cfg = {
     ...mockFullProviderData.config,
-    max_context_window_tokens: 1000,     // ensure non-oversized path
-    context_window_tokens: 1000,
+    context_window_tokens: 1000,     // ensure non-oversized path
     provider_max_input_tokens: 100,      // basis for allowed input
     provider_max_output_tokens: 50,      // planned output budget
     input_token_cost_rate: 1,
@@ -716,8 +711,7 @@ Deno.test('fails when final input exceeds allowed headroom by 1 token (boundary 
   }
   const cfg = {
     ...mockFullProviderData.config,
-    max_context_window_tokens: 1000,     // ensure non-oversized path
-    context_window_tokens: 1000,
+    context_window_tokens: 1000,     // ensure non-oversized path
     provider_max_input_tokens: 100,
     provider_max_output_tokens: 50,
     input_token_cost_rate: 1,
@@ -778,7 +772,6 @@ Deno.test('enforces strict user-assistant alternation in ChatApiRequest after co
   }
   const cfg = {
     ...mockFullProviderData.config,
-    max_context_window_tokens: 50,
     context_window_tokens: 50,
     provider_max_input_tokens: 10000,
     provider_max_output_tokens: 50,
@@ -871,7 +864,6 @@ Deno.test('preserves continuation anchors after compression', async () => {
   }
   const cfg = {
     ...mockFullProviderData.config,
-    max_context_window_tokens: 50,
     context_window_tokens: 50,
     provider_max_input_tokens: 10000,
     provider_max_output_tokens: 50,
@@ -979,7 +971,6 @@ Deno.test('RAG debits use stable idempotency keys tied to job and candidate', as
   }
   const cfg = {
     ...mockFullProviderData.config,
-    max_context_window_tokens: 100,
     context_window_tokens: 100,
     provider_max_input_tokens: 10000,
     provider_max_output_tokens: 50,
@@ -1059,8 +1050,246 @@ Deno.test('RAG debits use stable idempotency keys tied to job and candidate', as
 
   assertEquals(seenKeys.size, 2, 'Idempotency keys should be unique per candidate and stable across retries');
 });
-// 71.a RED: Error specificity in worker - missing wallet should throw a clear, unique message and never call provider
-Deno.test('error specificity: missing wallet throws "Wallet is required to process model calls." and does not call provider (RED)', async () => {
+
+// Recompute SSOT after RAG debit reduces balance
+Deno.test('recomputes SSOT output after RAG debit reduces balance', async () => {
+  if (!isRecord(mockFullProviderData.config)) throw new Error('Test setup error: config not object');
+  const cfg = {
+    ...mockFullProviderData.config,
+    context_window_tokens: 100,       // force compression
+    provider_max_input_tokens: 200,
+    provider_max_output_tokens: 1000,
+    input_token_cost_rate: 1,         // costful RAG to reduce balance
+    output_token_cost_rate: 1,
+  };
+  const { client: dbClient } = setupMockClient({ 'ai_providers': { select: { data: [{ ...mockFullProviderData, config: cfg }], error: null } } });
+
+  // Balance high enough for first SSOT; then reduced via RAG debit to shrink SSOT
+  // Start balance 200; initial SSOT_output ~ floor(0.8*200 / 1) = 160
+  const { instance: mockTokenWalletService, stubs } = createMockTokenWalletService({ getBalance: () => Promise.resolve('500') });
+
+  const deps = getMockDeps(mockTokenWalletService);
+  const modelSpy = spy(deps, 'callUnifiedAIModel');
+
+  // Count tokens path: initial tokenCount oversized (300), after first compression (150), after second (80) fits
+  let idx = 0;
+  const countStub = stub(deps, 'countTokens', () => (++idx === 1 ? 300 : (idx === 2 ? 150 : 80)));
+
+  // RAG mock returns tokensUsed=50 each iteration, debit reduces balance -> new SSOT smaller
+  const mockRag = new MockRagService();
+  mockRag.setConfig({ mockContextResult: 'short', mockTokensUsed: 50 });
+  deps.ragService = mockRag;
+
+  const mockCompressionStrategy: ICompressionStrategy = async () => ([
+    { id: 'cand-1', content: 'long-1', sourceType: 'document', originalIndex: 1, valueScore: 0.1 },
+    { id: 'cand-2', content: 'long-2', sourceType: 'history', originalIndex: 2, valueScore: 0.2 },
+  ]);
+
+  const payload: PromptConstructionPayload = {
+    systemInstruction: '',
+    conversationHistory: [ { role: 'user', content: 'seed' }, { role: 'assistant', content: 'reply' } ],
+    resourceDocuments: [],
+    currentUserPrompt: 'CURR',
+  };
+
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job: createMockJob({ ...testPayload, walletId: 'wallet-ssot-recompute' }),
+    projectOwnerUserId: 'user-xyz',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: payload,
+    sessionData: mockSessionData,
+    compressionStrategy: mockCompressionStrategy,
+  };
+
+  await executeModelCallAndSave(params);
+
+  // Assert: wallet debits occurred for RAG
+  assert(stubs.recordTransaction.calls.length >= 1, 'Expected at least one RAG debit to reduce balance');
+  // Provider called once at the end
+  assertEquals(modelSpy.calls.length, 1, 'Model should be called once after recomputation enforces new headroom');
+
+  countStub.restore();
+});
+
+// Final ChatApiRequest.cap equals SSOT(final input)
+Deno.test('final ChatApiRequest.max_tokens_to_generate equals SSOT(final input)', async () => {
+  if (!isRecord(mockFullProviderData.config)) throw new Error('Test setup error: config not object');
+  const cfg = {
+    ...mockFullProviderData.config,
+    context_window_tokens: 1000,      // ensure non-oversized final after one compression cycle
+    provider_max_input_tokens: 10000,
+    provider_max_output_tokens: 500,
+    input_token_cost_rate: 1,
+    output_token_cost_rate: 2,
+  };
+  const { client: dbClient } = setupMockClient({ 'ai_providers': { select: { data: [{ ...mockFullProviderData, config: cfg }], error: null } } });
+
+  // Balance chosen so SSOT_output = floor(0.8*balance / output_rate)
+  // balance=1000 => floor(800/2)=400
+  const { instance: mockTokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('1000') });
+  const deps = getMockDeps(mockTokenWalletService);
+  const modelSpy = spy(deps, 'callUnifiedAIModel');
+
+  // Token counter: initial count fits window (50) so we use non-oversized path, but we still want to validate cap equals SSOT
+  const countStub = stub(deps, 'countTokens', () => 50);
+
+  const payload: PromptConstructionPayload = {
+    systemInstruction: 'SYS',
+    conversationHistory: [ { role: 'user', content: 'hello' } ],
+    resourceDocuments: [],
+    currentUserPrompt: 'CURR',
+  };
+
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job: createMockJob({ ...testPayload, walletId: 'wallet-final-ssot' }),
+    projectOwnerUserId: 'user-xyz',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: payload,
+    sessionData: mockSessionData,
+    compressionStrategy: getSortedCompressionCandidates,
+  };
+
+  await executeModelCallAndSave(params);
+  assertEquals(modelSpy.calls.length, 1, 'Model should be called once');
+  const sent = modelSpy.calls[0].args[0] as { max_tokens_to_generate?: number };
+  assertEquals(sent.max_tokens_to_generate, 400, 'Final cap must equal SSOT output for final-sized payload');
+
+  countStub.restore();
+});
+
+// SSOT cap is threaded unchanged to /chat in compression path
+Deno.test('threads SSOT cap unchanged to callUnifiedAIModel in compression path', async () => {
+  if (!isRecord(mockFullProviderData.config)) throw new Error('Test setup error: config not object');
+  const cfg = {
+    ...mockFullProviderData.config,
+    context_window_tokens: 600,       // force compression path with ample headroom for SSOT output
+    provider_max_input_tokens: 10000, // avoid input headroom conflicts in this identity test
+    provider_max_output_tokens: 1000, // not limiting
+    input_token_cost_rate: 0,         // simplify SSOT to budget/output only
+    output_token_cost_rate: 2,
+  };
+  const { client: dbClient } = setupMockClient({ 'ai_providers': { select: { data: [{ ...mockFullProviderData, config: cfg }], error: null } } });
+
+  // Wallet balance => SSOT_output = floor(0.8 * balance / output_rate) = floor(800 / 2) = 400
+  const { instance: mockTokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('1000') });
+  const deps = getMockDeps(mockTokenWalletService);
+  const modelSpy = spy(deps, 'callUnifiedAIModel');
+
+  // Token counter: start oversized, compress to fit
+  let idx = 0;
+  const countStub = stub(deps, 'countTokens', () => (++idx === 1 ? 700 : 90));
+
+  // One or more candidates to trigger RAG/compression loop
+  const mockCompressionStrategy: ICompressionStrategy = async () => ([
+    { id: 'cand-1', content: 'long-1', sourceType: 'document', originalIndex: 1, valueScore: 0.1 },
+  ]);
+
+  const payload: PromptConstructionPayload = {
+    systemInstruction: '',
+    conversationHistory: [ { role: 'user', content: 'seed' }, { role: 'assistant', content: 'reply' } ],
+    resourceDocuments: [],
+    currentUserPrompt: 'CURR',
+  };
+
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job: createMockJob({ ...testPayload, walletId: 'wallet-rag-identity' }),
+    projectOwnerUserId: 'user-xyz',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: payload,
+    sessionData: mockSessionData,
+    compressionStrategy: mockCompressionStrategy,
+  };
+
+  await executeModelCallAndSave(params);
+  assertEquals(modelSpy.calls.length, 1, 'Model should be called once after compression fits');
+  const sent = modelSpy.calls[0].args[0] as { max_tokens_to_generate?: number };
+  assertEquals(sent.max_tokens_to_generate, 400, 'SSOT cap must be forwarded unchanged to callUnifiedAIModel');
+
+  countStub.restore();
+});
+
+// 113.A RED: Allowed input headroom uses SSOT (budget-based) not provider cap
+Deno.test('uses SSOT-based output headroom (budget) to compute allowed input during compression', async () => {
+  if (!isRecord(mockFullProviderData.config)) {
+    throw new Error('Test setup error: mockFullProviderData.config is not an object');
+  }
+  // Model config: provider output cap large; input rate = 0 so SSOT output depends only on balance (0.8 * balance / output_rate)
+  const cfg = {
+    ...mockFullProviderData.config,
+    context_window_tokens: 100,        // force compression
+    provider_max_input_tokens: 200,    // headroom basis
+    provider_max_output_tokens: 1000,  // not limiting; SSOT (budget) should dominate
+    input_token_cost_rate: 0,          // make SSOT output independent of tokenCount
+    output_token_cost_rate: 1,
+  };
+
+  const { client: dbClient } = setupMockClient({
+    'ai_providers': { select: { data: [{ ...mockFullProviderData, config: cfg }], error: null } },
+    'dialectic_memory': { select: { data: [], error: null } },
+  });
+
+  // Wallet balance => SSOT_output = floor(0.8 * balance / output_rate) = 80
+  const { instance: mockTokenWalletService } = createMockTokenWalletService({ getBalance: () => Promise.resolve('100') });
+
+  const deps = getMockDeps(mockTokenWalletService);
+  const modelSpy = spy(deps, 'callUnifiedAIModel');
+
+  // Token counter sequence: initial oversized (120), first compression (89) still violates headroom, second (88) fits
+  // Allowed input based on SSOT:  allowedInput = provider_max_input_tokens - (SSOT_output + 32) = 200 - (80 + 32) = 88
+  let idx = 0;
+  const countStub = stub(deps, 'countTokens', () => {
+    idx++;
+    return idx === 1 ? 120 : (idx === 2 ? 89 : 88);
+  });
+
+  // Compression strategy to ensure at least two iterations
+  const mockCompressionStrategy: ICompressionStrategy = async () => ([
+    { id: 'cand-1', content: 'middle-1', sourceType: 'history', originalIndex: 3, valueScore: 0.2 },
+    { id: 'cand-2', content: 'middle-2', sourceType: 'document', originalIndex: 1, valueScore: 0.3 },
+  ]);
+
+  const payload: PromptConstructionPayload = {
+    systemInstruction: '',
+    conversationHistory: [
+      { role: 'system', content: 'SYS' },
+      { role: 'user', content: 'A'.repeat(400) },
+      { role: 'assistant', content: 'B' },
+    ],
+    resourceDocuments: [],
+    currentUserPrompt: 'CURR',
+  };
+
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job: createMockJob({ ...testPayload, walletId: 'wallet-ssot' }),
+    projectOwnerUserId: 'user-abc',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: payload,
+    sessionData: mockSessionData,
+    compressionStrategy: mockCompressionStrategy,
+  };
+
+  await executeModelCallAndSave(params);
+
+  // Assert: provider called exactly once when final input equals SSOT-based allowed input (88)
+  assertEquals(modelSpy.calls.length, 1, 'Model should be called once, only when SSOT headroom condition is met.');
+
+  countStub.restore();
+});
+
+// Error specificity in worker - missing wallet should throw a clear, unique message and never call provider
+Deno.test('error specificity: missing wallet throws "Wallet is required to process model calls." and does not call provider', async () => {
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [mockFullProviderData], error: null } },
   });
@@ -1102,7 +1331,7 @@ Deno.test('error specificity: missing wallet throws "Wallet is required to proce
 });
 
 // Error specificity in worker - missing critical dependency throws a clear, unique message and never calls provider
-Deno.test("error specificity: missing 'countTokens' dependency throws and does not call provider (RED)", async () => {
+Deno.test("error specificity: missing 'countTokens' dependency throws and does not call provider", async () => {
   const { client: dbClient } = setupMockClient({
     'ai_providers': { select: { data: [mockFullProviderData], error: null } },
   });

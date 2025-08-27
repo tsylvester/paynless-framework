@@ -20,6 +20,9 @@ import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockSupaba
 import { IEmbeddingClient, IIndexingService } from './indexing_service.interface.ts';
 import { RagServiceError } from '../utils/errors.ts';
 import { PostgrestError } from 'npm:@supabase/postgrest-js@1.15.5';
+import { EmbeddingClient } from './indexing_service.ts';
+import { DummyAdapter } from '../ai_service/dummy_adapter.ts';
+import { MOCK_PROVIDER } from '../ai_service/dummy_adapter.test.ts';
 
 // Helper to create a compliant PostgrestError mock
 const createMockPostgrestError = (message: string): PostgrestError & { name: string } => ({
@@ -57,9 +60,9 @@ describe('RagService', () => {
     mockIndexingService = {
         indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }),
     };
-    mockEmbeddingClient = {
-        getEmbedding: () => Promise.resolve({ embedding: Array(1536).fill(0.1), usage: { prompt_tokens: 0, total_tokens: 0 } }),
-    };
+    // Use real EmbeddingClient with DummyAdapter to satisfy 120.a RED expectations
+    const dummyAdapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', new MockLogger());
+    mockEmbeddingClient = new EmbeddingClient(dummyAdapter);
 
     deps = {
       dbClient: setup.client as unknown as SupabaseClient<Database>,
@@ -118,7 +121,7 @@ describe('RagService', () => {
   });
 
   describe('Advanced Retrieval', () => {
-    it('should generate multiple queries, call RPC, and assemble a final context', async () => {
+    it('should generate multiple queries, call embedding client for each, call RPC, and assemble a final context', async () => {
         const mockRpcResponse = [
             { id: 'chunk1', content: 'Unique chunk from query 1', metadata: { source_contribution_id: 'doc1' }, similarity: 0.9, rank: 10 },
             { id: 'chunk2', content: 'Common chunk', metadata: { source_contribution_id: 'doc2' }, similarity: 0.8, rank: 2 },

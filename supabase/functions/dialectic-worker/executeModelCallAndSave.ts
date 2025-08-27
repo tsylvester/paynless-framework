@@ -79,7 +79,6 @@ export async function executeModelCallAndSave(
         output_token_cost_rate: modelConfig.output_token_cost_rate,
         tokenization_strategy: modelConfig.tokenization_strategy,
         context_window_tokens: modelConfig.context_window_tokens,
-        max_context_window_tokens: modelConfig.max_context_window_tokens,
         provider_max_output_tokens: modelConfig.provider_max_output_tokens,
         provider_max_input_tokens: modelConfig.provider_max_input_tokens,
     };
@@ -166,7 +165,7 @@ export async function executeModelCallAndSave(
         resourceDocuments: currentResourceDocuments.map(d => ({ id: d.id, content: d.content })),
     };
     const initialTokenCount = deps.countTokens(tokenizerDeps, fullPayload, extendedModelConfig);
-    const maxTokens = extendedModelConfig.max_context_window_tokens || extendedModelConfig.context_window_tokens;
+    const maxTokens = extendedModelConfig.context_window_tokens || extendedModelConfig.context_window_tokens;
     
     console.log(`[DEBUG] Initial Token Count: ${initialTokenCount}`);
     console.log(`[DEBUG] Max Tokens: ${maxTokens}`);
@@ -192,6 +191,7 @@ export async function executeModelCallAndSave(
     }
 
     const isOversized = Boolean(maxTokens && initialTokenCount > maxTokens);
+    let ssotMaxOutputNonOversized: number | undefined = undefined;
     if (!isOversized) {
         // Compute planned output budget using balance and model configuration
         const plannedMaxOutputTokens = getMaxOutputTokens(
@@ -203,15 +203,16 @@ export async function executeModelCallAndSave(
         if (plannedMaxOutputTokens < 0) {
             throw new Error('Insufficient funds to cover the input prompt cost.');
         }
+        ssotMaxOutputNonOversized = plannedMaxOutputTokens;
 
-        // Reserve headroom for output + safety buffer from the input window
-        const providerMaxInputTokens = (typeof (extendedModelConfig).provider_max_input_tokens === 'number'
-            && (extendedModelConfig).provider_max_input_tokens! > 0)
-            ? (extendedModelConfig).provider_max_input_tokens!
-            : (typeof extendedModelConfig.context_window_tokens === 'number' ? extendedModelConfig.context_window_tokens : 0);
+        // Reserve headroom only if provider_max_input_tokens is defined
+        const providerMaxInputTokens = (typeof extendedModelConfig.provider_max_input_tokens === 'number'
+            && extendedModelConfig.provider_max_input_tokens > 0)
+            ? extendedModelConfig.provider_max_input_tokens
+            : undefined;
 
         const safetyBufferTokens = 32;
-        const allowedInput = providerMaxInputTokens > 0
+        const allowedInput = typeof providerMaxInputTokens === 'number'
             ? providerMaxInputTokens - (plannedMaxOutputTokens + safetyBufferTokens)
             : Infinity;
 
@@ -257,6 +258,14 @@ export async function executeModelCallAndSave(
         isDialectic: true,
     };
 
+    // Apply SSOT cap for non-oversized path
+    if (!isOversized && typeof ssotMaxOutputNonOversized === 'number' && ssotMaxOutputNonOversized >= 0) {
+        chatApiRequest = {
+            ...chatApiRequest,
+            max_tokens_to_generate: ssotMaxOutputNonOversized,
+        };
+    }
+
     if (maxTokens && initialTokenCount > maxTokens) {
         if (!ragService || !embeddingClient || !tokenWalletService || !countTokens) {
             throw new Error('Required services for prompt compression (RAG, Embedding, Wallet, Token Counter) are not available.');
@@ -282,10 +291,10 @@ export async function executeModelCallAndSave(
             throw new Error(`Insufficient funds for the entire operation. Estimated cost: ${totalEstimatedInputCost}, Balance: ${currentUserBalance}`);
         }
 
-        // Stage 2: Rationality Check
-        const rationalityThreshold = 0.20; // 20%
+        // Stage 2: Rationality Check (80%)
+        const rationalityThreshold = 0.80;
         if (totalEstimatedInputCost > currentUserBalance * rationalityThreshold) {
-            throw new Error(`Estimated cost (${totalEstimatedInputCost}) exceeds 20% of the user's balance (${currentUserBalance}).`);
+            throw new Error(`Estimated cost (${totalEstimatedInputCost}) exceeds ${rationalityThreshold * 100}% of the user's balance (${currentUserBalance}).`);
         }
 
         deps.logger.info(
@@ -295,11 +304,107 @@ export async function executeModelCallAndSave(
         const workingHistory = [...conversationHistory];
         const workingResourceDocs = [...resourceDocuments];
         let currentTokenCount = initialTokenCount;
+
+        // --- Preflight: estimate if we can compress to a feasible target and still afford final call ---
+        const safetyBufferTokensPre = 32;
+
+        const providerMaxInputForPre = (typeof extendedModelConfig.provider_max_input_tokens === 'number' && extendedModelConfig.provider_max_input_tokens > 0)
+            ? extendedModelConfig.provider_max_input_tokens
+            : 0;
+
+        const getAllowedInputFor = (balanceTokens: number, tokenCount: number): number => {
+            const plannedOut = getMaxOutputTokens(
+                balanceTokens,
+                tokenCount,
+                extendedModelConfig,
+                deps.logger,
+            );
+            return providerMaxInputForPre > 0
+                ? providerMaxInputForPre - (plannedOut + safetyBufferTokensPre)
+                : Infinity;
+        };
+
+        const solveTargetForBalance = (balanceTokens: number): number => {
+            let t = Math.min(
+                typeof maxTokens === 'number' && maxTokens > 0 ? maxTokens : Infinity,
+                initialTokenCount,
+            );
+            // Small fixed-point iteration to converge t <= allowedInputFor(t)
+            for (let i = 0; i < 5; i++) {
+                const allowed = getAllowedInputFor(balanceTokens, t);
+                const next = Math.min(
+                    typeof maxTokens === 'number' && maxTokens > 0 ? maxTokens : Infinity,
+                    allowed,
+                );
+                if (!(next < t - 1)) break; // Stop when close enough or expanding
+                t = Math.max(0, Math.floor(next));
+            }
+            return Math.max(0, Math.floor(t));
+        };
+
+        // First, solve ignoring compression spend to get a preliminary target
+        const prelimTarget = solveTargetForBalance(walletBalance);
+        const prelimTokensToRemove = Math.max(0, initialTokenCount - prelimTarget);
+        const estimatedCompressionCost = prelimTokensToRemove * inputRate;
+        const balanceAfterCompression = walletBalance - estimatedCompressionCost;
+        if (!Number.isFinite(balanceAfterCompression) || balanceAfterCompression <= 0) {
+            throw new Error(`Insufficient funds: compression requires ${estimatedCompressionCost} tokens, balance is ${walletBalance}.`);
+        }
+
+        // Re-solve with post-compression balance
+        const finalTargetThreshold = solveTargetForBalance(balanceAfterCompression);
+        if (!(finalTargetThreshold >= 0)) {
+            throw new ContextWindowError(`Unable to determine a feasible input size target given current balance.`);
+        }
+
+        // Ensure the total plan (compression + final input + output) is affordable
+        const plannedMaxOutPostPrecheck = getMaxOutputTokens(
+            balanceAfterCompression,
+            finalTargetThreshold,
+            extendedModelConfig,
+            deps.logger,
+        );
+        const estimatedFinalInputCost = finalTargetThreshold * inputRate;
+        const estimatedFinalOutputCost = plannedMaxOutPostPrecheck * outputRate;
+        const totalEstimatedCost = estimatedCompressionCost + estimatedFinalInputCost + estimatedFinalOutputCost;
+        if (totalEstimatedCost > walletBalance) {
+            throw new Error(
+                `Insufficient funds: total estimated cost (compression + final I/O) ${totalEstimatedCost} exceeds balance ${walletBalance}.`
+            );
+        }
+        const rationalityThresholdTotal = 0.80; // 80%
+        if (totalEstimatedCost > walletBalance * rationalityThresholdTotal) {
+            throw new Error(`Estimated cost (${totalEstimatedCost}) exceeds ${rationalityThresholdTotal*100}% of the user's balance (${walletBalance}).`);
+        }
+        
+        // Track live balance during compression so SSOT reflects actual debits
+        let currentBalanceTokens = walletBalance;
+
+        // Compute dynamic allowed input headroom given a candidate input size
+        const computeAllowedInput = (tokenCount: number): number => {
+            const plannedMaxOutput = getMaxOutputTokens(
+                currentBalanceTokens,
+                tokenCount,
+                extendedModelConfig,
+                deps.logger,
+            );
+            const providerMaxInput = (typeof extendedModelConfig.provider_max_input_tokens === 'number' && extendedModelConfig.provider_max_input_tokens > 0)
+                ? extendedModelConfig.provider_max_input_tokens
+                : 0;
+            const safetyBuffer = 32;
+            return providerMaxInput > 0
+                ? providerMaxInput - (plannedMaxOutput + safetyBuffer)
+                : Infinity;
+        };
         
         const candidates = await compressionStrategy(dbClient, deps, workingResourceDocs, workingHistory, currentUserPrompt);
         console.log(`[DEBUG] Number of compression candidates found: ${candidates.length}`);
         
-        while (currentTokenCount > maxTokens && candidates.length > 0) {
+        while (candidates.length > 0) {
+            // Compress until we reach the preflight-computed final target threshold
+            if (!(currentTokenCount > finalTargetThreshold)) {
+                break;
+            }
             const victim = candidates.shift(); // Takes the lowest-value item and removes it from the array
             if (!victim) break; // Should not happen with the loop condition, but good for safety
 
@@ -320,6 +425,11 @@ export async function executeModelCallAndSave(
                 tokensUsed,
                 hasWallet: Boolean(walletId),
             });
+            // Adjust live balance so SSOT uses the actual remaining budget
+            if (tokensUsed > 0) {
+                const observedCompressionCost = tokensUsed * inputRate;
+                currentBalanceTokens = Math.max(0, currentBalanceTokens - observedCompressionCost);
+            }
             if (tokensUsed > 0 && walletId) {
                 deps.logger.info('[executeModelCallAndSave] Debiting wallet for RAG compression', {
                     jobId,
@@ -385,9 +495,14 @@ export async function executeModelCallAndSave(
             currentTokenCount = deps.countTokens(tokenizerDeps, loopPayload, extendedModelConfig);
         }
 
-        if (currentTokenCount > maxTokens) {
+        // If still above either constraint, fail clearly
+        const allowedInputCheck = computeAllowedInput(currentTokenCount);
+        if (currentTokenCount > Math.min(
+            typeof maxTokens === 'number' && maxTokens > 0 ? maxTokens : Infinity,
+            allowedInputCheck,
+        )) {
             throw new ContextWindowError(
-                `Compressed prompt token count (${currentTokenCount}) still exceeds model limit (${maxTokens}).`,
+                `Compressed prompt token count (${currentTokenCount}) still exceeds model limit (${maxTokens}) and allowed input (${allowedInputCheck}).`,
             );
         }
         
@@ -419,7 +534,7 @@ export async function executeModelCallAndSave(
         const finalTokenCountAfterCompression = deps.countTokens(tokenizerDeps, finalPayloadAfterCompression, extendedModelConfig);
 
         const plannedMaxOutputTokensPost = getMaxOutputTokens(
-            walletBalance,
+            currentBalanceTokens,
             finalTokenCountAfterCompression,
             extendedModelConfig,
             deps.logger,
@@ -428,7 +543,7 @@ export async function executeModelCallAndSave(
         const providerMaxInputTokensPost =
             (typeof extendedModelConfig.provider_max_input_tokens === 'number' && extendedModelConfig.provider_max_input_tokens > 0)
                 ? extendedModelConfig.provider_max_input_tokens
-                : (typeof extendedModelConfig.context_window_tokens === 'number' ? extendedModelConfig.context_window_tokens : 0);
+                : 0;
 
         const safetyBufferTokensPost = 32;
         const allowedInputPost = providerMaxInputTokensPost > 0
@@ -455,6 +570,12 @@ export async function executeModelCallAndSave(
                 `Insufficient funds: estimated total cost (${estimatedTotalCostPost}) exceeds wallet balance (${walletBalance}) after compression.`
             );
         }
+
+        // Apply SSOT cap for post-compression send
+        chatApiRequest = {
+            ...chatApiRequest,
+            max_tokens_to_generate: plannedMaxOutputTokensPost,
+        };
     }
 
     // Do not append resourceDocuments into messages; they are not implemented as chat messages

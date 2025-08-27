@@ -122,6 +122,7 @@ Deno.test("AnthropicAdapter - Specific Tests: Alternating Role Filtering", async
             message: 'Third user message',
             providerId: 'test-provider',
             promptId: '__none__',
+            max_tokens_to_generate: 200,
             messages: [
               { role: 'user', content: 'First user turn' },
               { role: 'assistant', content: 'First assistant turn' },
@@ -147,6 +148,79 @@ Deno.test("AnthropicAdapter - Specific Tests: Alternating Role Filtering", async
         assertTextBlockContent(callArgs.messages[2], 'Second user turn, which is consecutive');
         assertTextBlockContent(callArgs.messages[2], 'Third user message');
         
+    } finally {
+        messagesCreateStub.restore();
+    }
+});
+
+Deno.test("AnthropicAdapter - Specific Tests: forwards client max_tokens_to_generate to Anthropic", async () => {
+    function createMockMessagePromise(msg: Message): APIPromise<Message> {
+        return Promise.resolve(msg) as APIPromise<Message>;
+    }
+    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+
+    try {
+        const adapter = new AnthropicAdapter(MOCK_PROVIDER, 'sk-ant-test-key', mockLogger);
+        const K = 123;
+        const request: ChatApiRequest = {
+            message: 'Hello max tokens',
+            providerId: 'test-provider',
+            promptId: '__none__',
+            max_tokens_to_generate: K,
+            messages: [ { role: 'user', content: 'u1' } ],
+        };
+
+        await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+
+        assertEquals(messagesCreateStub.calls.length, 1);
+        const callArgs = messagesCreateStub.calls[0].args[0];
+        assertEquals(callArgs.max_tokens, K, 'Anthropic payload must use client-provided max_tokens_to_generate');
+    } finally {
+        messagesCreateStub.restore();
+    }
+});
+
+Deno.test("AnthropicAdapter - Specific Tests: does NOT inject 4096 default when client cap is absent", async () => {
+    function createMockMessagePromise(msg: Message): APIPromise<Message> {
+        return Promise.resolve(msg) as APIPromise<Message>;
+    }
+    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+
+    try {
+        // Provide a provider config with a model hard cap so the adapter need not inject 4096
+        const PROVIDER_WITH_HARD_CAP: Tables<'ai_providers'> = {
+            id: MOCK_PROVIDER.id,
+            provider: MOCK_PROVIDER.provider,
+            api_identifier: MOCK_PROVIDER.api_identifier,
+            name: MOCK_PROVIDER.name,
+            description: MOCK_PROVIDER.description,
+            is_active: MOCK_PROVIDER.is_active,
+            is_default_embedding: MOCK_PROVIDER.is_default_embedding,
+            is_enabled: MOCK_PROVIDER.is_enabled,
+            created_at: MOCK_PROVIDER.created_at,
+            updated_at: MOCK_PROVIDER.updated_at,
+            config: {
+                api_identifier: MOCK_MODEL_CONFIG.api_identifier,
+                input_token_cost_rate: MOCK_MODEL_CONFIG.input_token_cost_rate,
+                output_token_cost_rate: MOCK_MODEL_CONFIG.output_token_cost_rate,
+                tokenization_strategy: MOCK_MODEL_CONFIG.tokenization_strategy,
+                hard_cap_output_tokens: 250,
+            },
+        };
+        const adapter = new AnthropicAdapter(PROVIDER_WITH_HARD_CAP, 'sk-ant-test-key', mockLogger);
+        const request: ChatApiRequest = {
+            message: 'No cap provided',
+            providerId: 'test-provider',
+            promptId: '__none__',
+            messages: [ { role: 'user', content: 'u1' } ],
+        };
+
+        await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+
+        assertEquals(messagesCreateStub.calls.length, 1);
+        const callArgs = messagesCreateStub.calls[0].args[0];
+        // With no client cap, adapter should use model hard cap (not 4096 fallback)
+        assertEquals(callArgs.max_tokens, 250, 'Adapter must use model hard cap when client cap is absent');
     } finally {
         messagesCreateStub.restore();
     }

@@ -14,8 +14,7 @@ import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts';
 import { formatResourceDescription } from '../_shared/utils/resourceDescriptionFormatter.ts';
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
 import { downloadFromStorage } from '../_shared/supabase_storage_utils.ts';
-import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
-import { OpenAIEmbeddingClient, IndexingService, LangchainTextSplitter } from '../_shared/services/indexing_service.ts';
+import { EmbeddingClient, IndexingService, LangchainTextSplitter } from '../_shared/services/indexing_service.ts';
 import { IFileManager } from '../_shared/types/file_manager.types.ts';
 import { FileType } from "../_shared/types/file_manager.types.ts";
 import { FactoryDependencies, AiProviderAdapterInstance } from '../_shared/types.ts';
@@ -263,12 +262,7 @@ export async function startSession(
             throw new Error('Failed to create AI adapter for embedding.');
         }
 
-        if (!(adapter instanceof OpenAiAdapter)) {
-             log.error('[startSession] The configured default embedding provider did not resolve to an OpenAiAdapter.', { providerId: embeddingProvider.id });
-             throw new Error('Default embedding provider must be an OpenAI model.');
-        }
-
-        const embeddingClient = new OpenAIEmbeddingClient(adapter);
+        const embeddingClient = new EmbeddingClient(adapter);
         const textSplitter = new LangchainTextSplitter();
         const indexingService = new IndexingService(dbClient, log, textSplitter, embeddingClient);
 

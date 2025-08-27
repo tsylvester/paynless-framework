@@ -86,8 +86,14 @@ export class GoogleAdapter {
 
         const chat = model.startChat({
             history: history,
-            // generationConfig can be set here if needed
-            // generationConfig: { maxOutputTokens: request.max_tokens_to_generate },
+            generationConfig: (() => {
+                const clientCap = typeof request.max_tokens_to_generate === 'number' ? request.max_tokens_to_generate : undefined;
+                const modelHardCap = typeof this.modelConfig.hard_cap_output_tokens === 'number'
+                    ? (this.modelConfig).hard_cap_output_tokens
+                    : undefined;
+                const cap = typeof clientCap === 'number' ? clientCap : modelHardCap;
+                return typeof cap === 'number' ? { maxOutputTokens: cap } : undefined;
+            })(),
         });
 
         const result: GenerateContentResult = await chat.sendMessage(lastMessage.parts);

@@ -31,6 +31,7 @@ import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { type Database } from "../types_db.ts";
 import { defaultDeps } from "./index.ts";
 import { type PathHandlerContext } from "./prepareChatContext.ts";
+import { isTokenUsage } from "../_shared/utils/type_guards.ts";
   
 // Helper to create a fully-typed mock adapter with spies
 const createSpiedMockAdapter = (modelConfig: AiModelExtendedConfig) => {
@@ -587,4 +588,197 @@ Deno.test("handleNormalPath: happy path - creates new chat and saves messages", 
     assertEquals(adapterArgs[1].content, 'Previous user message');
     assertEquals(adapterArgs[2].content, 'Previous assistant response');
     assertEquals(adapterArgs[3].content, userMessageContent);
+  });
+
+  Deno.test("handleNormalPath: caps max_tokens_to_generate to SSOT when client omits", async () => {
+    // Arrange: small, deterministic numbers for SSOT math
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {
+      genericMockResults: {
+        chats: { insert: { data: [{ id: 'new-chat-id' }], error: null } },
+        chat_messages: { insert: (state) => Promise.resolve({ data: [{ ...(state.insertData), id: crypto.randomUUID() }], error: null }) },
+      },
+    });
+
+    const modelConfig: AiModelExtendedConfig = {
+      api_identifier: "test-model-api-id",
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 2,
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+    };
+
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    mockAiAdapter.controls.setMockResponse({ content: "ok" });
+
+    // countTokens = 100 → prompt_cost=100, remaining=900, spendable=min(1000*0.8=800, 900)=800 → SSOT cap=floor(800/2)=400
+    const deps: ChatHandlerDeps = {
+      ...defaultDeps,
+      logger,
+      tokenWalletService: createMockTokenWalletService().instance,
+      countTokens: spy((_d, _p, _c) => 100),
+      getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance),
+    };
+
+    const context: PathHandlerContext = {
+      supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+      deps,
+      userId: "test-user-id",
+      requestBody: { message: "Hi", providerId: "prov", promptId: "__none__" },
+      wallet: { walletId: "w", balance: "1000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
+      actualSystemPromptText: null,
+      finalSystemPromptIdForDb: null,
+      apiKey: "k",
+      providerApiIdentifier: "test-model-api-id",
+    };
+
+    // Act
+    await handleNormalPath(context);
+
+    // Assert: adapter received SSOT cap
+    const sent = mockAiAdapter.sendMessageSpy.calls[0].args[0];
+    assertEquals(sent.max_tokens_to_generate, 400);
+  });
+
+  Deno.test("handleNormalPath: preserves client smaller max_tokens_to_generate", async () => {
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {
+      genericMockResults: {
+        chats: { insert: { data: [{ id: 'new-chat-id' }], error: null } },
+        chat_messages: { insert: (state) => Promise.resolve({ data: [{ ...(state.insertData), id: crypto.randomUUID() }], error: null }) },
+      },
+    });
+
+    const modelConfig: AiModelExtendedConfig = {
+      api_identifier: "test-model-api-id",
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 2,
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+    };
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    mockAiAdapter.controls.setMockResponse({ content: "ok" });
+
+    const deps: ChatHandlerDeps = {
+      ...defaultDeps,
+      logger,
+      tokenWalletService: createMockTokenWalletService().instance,
+      countTokens: spy((_d, _p, _c) => 100), // SSOT cap would be 400 as above
+      getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance),
+    };
+
+    const context: PathHandlerContext = {
+      supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+      deps,
+      userId: "test-user-id",
+      requestBody: { message: "Hi", providerId: "prov", promptId: "__none__", max_tokens_to_generate: 50 },
+      wallet: { walletId: "w", balance: "1000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
+      actualSystemPromptText: null,
+      finalSystemPromptIdForDb: null,
+      apiKey: "k",
+      providerApiIdentifier: "test-model-api-id",
+    };
+
+    await handleNormalPath(context);
+    const sent = mockAiAdapter.sendMessageSpy.calls[0].args[0];
+    assertEquals(sent.max_tokens_to_generate, 50);
+  });
+
+  Deno.test("handleNormalPath: caps client larger max_tokens_to_generate to SSOT", async () => {
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {
+      genericMockResults: {
+        chats: { insert: { data: [{ id: 'new-chat-id' }], error: null } },
+        chat_messages: { insert: (state) => Promise.resolve({ data: [{ ...(state.insertData), id: crypto.randomUUID() }], error: null }) },
+      },
+    });
+
+    const modelConfig: AiModelExtendedConfig = {
+      api_identifier: "test-model-api-id",
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 2,
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+    };
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    mockAiAdapter.controls.setMockResponse({ content: "ok" });
+
+    const deps: ChatHandlerDeps = {
+      ...defaultDeps,
+      logger,
+      tokenWalletService: createMockTokenWalletService().instance,
+      countTokens: spy((_d, _p, _c) => 100), // SSOT cap would be 400 as above
+      getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance),
+    };
+
+    const context: PathHandlerContext = {
+      supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+      deps,
+      userId: "test-user-id",
+      requestBody: { message: "Hi", providerId: "prov", promptId: "__none__", max_tokens_to_generate: 9999 },
+      wallet: { walletId: "w", balance: "1000", currency: "AI_TOKEN", createdAt: new Date(), updatedAt: new Date() },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
+      actualSystemPromptText: null,
+      finalSystemPromptIdForDb: null,
+      apiKey: "k",
+      providerApiIdentifier: "test-model-api-id",
+    };
+
+    await handleNormalPath(context);
+    const sent = mockAiAdapter.sendMessageSpy.calls[0].args[0];
+    assertEquals(sent.max_tokens_to_generate, 400);
+  });
+  
+  Deno.test("handleNormalPath: does NOT post-hoc cap completion_tokens; cap must be pre-send via SSOT (RED)", async () => {
+    const mockSupabase: MockSupabaseClientSetup = createMockSupabaseClient("test-user-id", {
+      genericMockResults: {
+        chats: { insert: { data: [{ id: 'new-chat-id' }], error: null } },
+        chat_messages: { insert: (state) => Promise.resolve({ data: [{ ...(state.insertData), id: crypto.randomUUID() }], error: null }) },
+      },
+    });
+
+    const modelConfig: AiModelExtendedConfig = {
+      api_identifier: "test-model-api-id",
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 2,
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+      hard_cap_output_tokens: 5,
+    };
+
+    const mockAiAdapter = createSpiedMockAdapter(modelConfig);
+    const tokenUsageObj = { prompt_tokens: 10, completion_tokens: 50, total_tokens: 60 };
+    mockAiAdapter.controls.setMockResponse({ role: 'assistant', content: 'ok', token_usage: tokenUsageObj });
+
+    const deps: ChatHandlerDeps = {
+      ...defaultDeps,
+      logger,
+      tokenWalletService: createMockTokenWalletService().instance,
+      countTokens: spy((_d, _p, _c) => 100),
+      getAiProviderAdapter: spy((_deps: FactoryDependencies) => mockAiAdapter.instance),
+    };
+
+    const context: PathHandlerContext = {
+      supabaseClient: mockSupabase.client as unknown as SupabaseClient<Database>,
+      deps,
+      userId: 'test-user-id',
+      requestBody: { message: 'Hi', providerId: 'prov', promptId: '__none__' },
+      wallet: { walletId: 'w', balance: '1000', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() },
+      aiProviderAdapter: mockAiAdapter.instance,
+      modelConfig,
+      actualSystemPromptText: null,
+      finalSystemPromptIdForDb: null,
+      apiKey: 'k',
+      providerApiIdentifier: 'test-model-api-id',
+    };
+
+    const result = await handleNormalPath(context);
+    assert(!('error' in result), 'Expected success');
+
+    const sent: ChatApiRequest = mockAiAdapter.sendMessageSpy.calls[0].args[0];
+    assertEquals(sent.max_tokens_to_generate, 5, 'Pre-send cap should equal SSOT result min() with provider hard cap');
+
+    const success: ChatHandlerSuccessResponse = result;
+    const usageRaw = success.assistantMessage.token_usage;
+    assert(isTokenUsage(usageRaw), 'assistantMessage.token_usage must conform to TokenUsage');
+    assertEquals(usageRaw.completion_tokens, 50, 'completion_tokens must remain as returned by adapter (no post-hoc capping)');
+    assertEquals(usageRaw.total_tokens, 60, 'total_tokens must remain consistent with adapter return (no post-hoc recompute)');
   });

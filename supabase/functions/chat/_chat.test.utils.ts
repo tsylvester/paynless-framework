@@ -60,6 +60,7 @@ export const envGetStub = stub(Deno.env, "get", (key: string): string | undefine
     if (key === 'OPENAI_API_KEY') return mockOpenAiKey;
     if (key === 'ANTHROPIC_API_KEY') return mockAnthropicKey;
     if (key === 'GOOGLE_API_KEY') return mockGoogleKey;
+    if (key === 'DUMMY_API_KEY') return 'sk-test-dummy-key';
     return undefined;
 });
 

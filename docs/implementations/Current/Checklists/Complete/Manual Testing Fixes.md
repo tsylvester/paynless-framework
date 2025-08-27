@@ -642,7 +642,7 @@ graph TD
   - **File**: `supabase/functions/dialectic-worker/executeModelCallAndSave.rag.test.ts`
   - Add tests describing the working behavior (single RED for this file):
     - A. Missing dependency handling:
-      - Arrange `initialTokenCount > maxTokens` (e.g., tiny `max_context_window_tokens`, large `conversationHistory`).
+      - Arrange `initialTokenCount > maxTokens` (e.g., tiny `context_window_tokens`, large `conversationHistory`).
       - Provide deps without `tokenWalletService`; assert it throws:
         - "Required services for prompt compression (RAG, Embedding, Wallet, Token Counter) are not available."
     - B. Debit occurs during RAG:
@@ -1138,5 +1138,3 @@ The following steps lock down end-to-end consistency so the ENTIRE `PromptConstr
 - [✅] 76. REVIEW: Audit guardrail for legacy signatures
   - [REVIEW]
   - Grep and remove any lingering references to the old tokenizer signature or alternative counting helpers; ensure CI/script checks catch regressions.
-
-

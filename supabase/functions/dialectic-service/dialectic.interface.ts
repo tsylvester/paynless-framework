@@ -318,7 +318,7 @@ export interface GenerateContributionsPayload {
   stageSlug?: DialecticStage['slug'];
   iterationNumber?: number;
   chatId?: string | null;
-  walletId?: string;
+  walletId: string;
   continueUntilComplete?: boolean;
   maxRetries?: number;
   continuation_count?: number;

@@ -1,5 +1,12 @@
 import { WalletStateValues } from './walletStore'; // Adjust path as needed
 import { TokenWalletTransaction, ApiError, TokenWallet, WalletDecisionOutcome, ActiveChatWalletInfo } from '@paynless/types';
+import { 
+  isWalletDecisionLoading,
+  isWalletDecisionError,
+  isUserConsentRequired,
+  isUserConsentRefused,
+  isOrgWalletUnavailableByPolicy,
+} from '@paynless/utils';
 
 // Re-export or define types if they are used by selectors and not part of WalletStateValues directly
 // For example, if selectors return complex objects not directly from state.
@@ -44,11 +51,14 @@ export const selectCurrentChatWalletDecision = (state: WalletStateValues): Walle
   return state.currentChatWalletDecision;
 };
 
-export const selectActiveChatWalletInfo = (state: WalletStateValues): ActiveChatWalletInfo => {
+export const selectActiveChatWalletInfo = (
+  state: WalletStateValues,
+  newChatContext: string | null | undefined,
+): ActiveChatWalletInfo => {
   const decision = state.currentChatWalletDecision;
 
-  // Default loading state if decision itself is loading or null
-  if (!decision || decision.outcome === 'loading') {
+  // Only explicit loading decisions are treated as loading; null will use context-based logic below
+  if (isWalletDecisionLoading(decision)) {
     return {
       status: 'loading',
       type: null,
@@ -61,22 +71,20 @@ export const selectActiveChatWalletInfo = (state: WalletStateValues): ActiveChat
   }
 
   // Handle error outcomes from the decision logic itself
-  if (decision.outcome === 'error') {
-    // TODO: Ensure WalletDecisionOutcome type for 'error' in @paynless/types includes optional orgId: string | null
-    const errorDecision = decision as { outcome: 'error'; message: string; orgId?: string | null };
+  if (isWalletDecisionError(decision)) {
     return {
       status: 'error',
       type: null,
       walletId: null,
-      orgId: errorDecision.orgId ?? null, // Use nullish coalescing
+      orgId: null,
       balance: null,
-      message: errorDecision.message || 'An error occurred in wallet determination.',
+      message: decision.message || 'An error occurred in wallet determination.',
       isLoadingPrimaryWallet: false,
     };
   }
   
   // Handle consent-related blocking outcomes
-  if (decision.outcome === 'user_consent_required') {
+  if (isUserConsentRequired(decision)) {
     return {
       status: 'consent_required',
       type: 'personal', // Implies personal would be used if consent given
@@ -88,7 +96,7 @@ export const selectActiveChatWalletInfo = (state: WalletStateValues): ActiveChat
     };
   }
 
-  if (decision.outcome === 'user_consent_refused') {
+  if (isUserConsentRefused(decision)) {
     return {
       status: 'consent_refused',
       type: 'personal', // Context is personal wallet usage was refused
@@ -101,7 +109,7 @@ export const selectActiveChatWalletInfo = (state: WalletStateValues): ActiveChat
   }
   
   // Handle policy-based unavailability where organization tokens are specified but org wallet itself is not yet implemented/funded
-  if (decision.outcome === 'org_wallet_not_available_policy_org') {
+  if (isOrgWalletUnavailableByPolicy(decision)) {
     return {
       status: 'policy_org_wallet_unavailable',
       type: 'organization',
@@ -113,8 +121,11 @@ export const selectActiveChatWalletInfo = (state: WalletStateValues): ActiveChat
     };
   }
 
-  // Handle cases where the wallet is determined and should be usable
-  if (decision.outcome === 'use_personal_wallet') {
+  // Determine active info based on provided chat context to ensure reactivity.
+  // If context is personal or not specified, prefer personal wallet info; otherwise prefer organization wallet info.
+  const isPersonalContext = !newChatContext || newChatContext === 'personal';
+
+  if (isPersonalContext) {
     const personalWallet = state.personalWallet;
     const isLoading = state.isLoadingPersonalWallet;
     const error = state.personalWalletError;
@@ -129,44 +140,21 @@ export const selectActiveChatWalletInfo = (state: WalletStateValues): ActiveChat
     };
   }
 
-  if (decision.outcome === 'use_personal_wallet_for_org' && decision.orgId) {
-    const personalWallet = state.personalWallet;
-    const isLoading = state.isLoadingPersonalWallet;
-    const error = state.personalWalletError;
-    return {
-      status: isLoading ? 'loading' : error ? 'error' : 'ok',
-      type: 'personal',
-      walletId: personalWallet?.walletId || null,
-      orgId: decision.orgId,
-      balance: personalWallet?.balance || null,
-      message: error ? error.message : isLoading ? `Loading personal wallet for ${decision.orgId}...` : undefined,
-      isLoadingPrimaryWallet: isLoading,
-    };
-  }
-
-  if (decision.outcome === 'use_organization_wallet' && decision.orgId) {
-    const orgWallet = state.organizationWallets[decision.orgId];
-    const isLoading = state.isLoadingOrgWallet[decision.orgId] || false;
-    const error = state.orgWalletErrors[decision.orgId] || null;
+  // Organization context
+  {
+    const orgId = newChatContext;
+    const orgWallet = orgId ? state.organizationWallets[orgId] : null;
+    const isLoading = orgId ? (state.isLoadingOrgWallet[orgId] || false) : false;
+    const error = orgId ? (state.orgWalletErrors[orgId] || null) : null;
     return {
       status: isLoading ? 'loading' : error ? 'error' : 'ok',
       type: 'organization',
       walletId: orgWallet?.walletId || null,
-      orgId: decision.orgId,
+      orgId: orgId || null,
       balance: orgWallet?.balance || null,
-      message: error ? error.message : isLoading ? `Loading wallet for ${decision.orgId}...` : undefined,
+      message: error ? error.message : isLoading && orgId ? `Loading wallet for ${orgId}...` : undefined,
       isLoadingPrimaryWallet: isLoading,
     };
   }
-  
-  // Fallback for any unhandled decision outcome - should ideally not be reached
-  return {
-    status: 'error',
-    type: null,
-    walletId: null,
-    orgId: decision.orgId ?? null, // Attempt to get orgId if it exists on unknown type
-    balance: null,
-    message: `Unhandled wallet decision outcome: ${decision.outcome}. Please check application logic.`,
-    isLoadingPrimaryWallet: false,
-  };
+
 }; 

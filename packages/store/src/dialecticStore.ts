@@ -33,6 +33,9 @@ import {
   isContributionStatus,
 } from '@paynless/types';
 import { api } from '@paynless/api';
+import { useWalletStore } from './walletStore';
+import { useAiStore } from './aiStore';
+import { selectActiveChatWalletInfo } from './walletStore.selectors';
 import { logger } from '@paynless/utils';
 
 
@@ -1236,6 +1239,15 @@ export const useDialecticStore = create<DialecticStore>()(
     });
   
     try {
+      // Enrich payload with active walletId from wallet store
+      const activeWalletInfo = selectActiveChatWalletInfo(
+        useWalletStore.getState(),
+        useAiStore.getState().newChatContext
+      );
+      if (activeWalletInfo && activeWalletInfo.walletId) {
+        payload = { ...payload, walletId: activeWalletInfo.walletId };
+      }
+
       const response = await api.dialectic().generateContributions(payload);
   
       if (response.error || !response.data?.job_ids) {

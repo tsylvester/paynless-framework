@@ -47,6 +47,14 @@ export function diffAndPrepareDbOps(
     for (const [apiIdentifier, assembledModel] of assembledConfigMap.entries()) {
         const dbModel = dbModelMap.get(apiIdentifier);
 
+        // --- ENFORCE NON-ZERO COST RATES (123.a RED) ---
+        const inputRate = assembledModel.config?.input_token_cost_rate;
+        const outputRate = assembledModel.config?.output_token_cost_rate;
+        if (typeof inputRate !== 'number' || inputRate <= 0 || typeof outputRate !== 'number' || outputRate <= 0) {
+            logger.error(`[Diff] Assembled config for ${apiIdentifier} has zero or missing cost rates.`, { inputRate, outputRate });
+            throw new Error(`Invalid cost rates for ${providerName} model ${apiIdentifier}: input=${String(inputRate)}, output=${String(outputRate)}`);
+        }
+
         // --- VALIDATE ASSEMBLED CONFIG ---
         const assembledValidation = AiModelExtendedConfigSchema.safeParse(assembledModel.config);
 
@@ -112,7 +120,6 @@ export function diffAndPrepareDbOps(
                         api_identifier: dbModel.api_identifier,
                         input_token_cost_rate: null,
                         output_token_cost_rate: null,
-                        context_window_tokens: null,
                         hard_cap_output_tokens: 1, // Must be a positive number
                         tokenization_strategy: { type: 'rough_char_count', chars_per_token_ratio: 4 },
                     };
@@ -197,7 +204,6 @@ export function diffAndPrepareDbOps(
                 api_identifier: dbModel.api_identifier,
                 input_token_cost_rate: null,
                 output_token_cost_rate: null,
-                context_window_tokens: null,
                 hard_cap_output_tokens: 1, // Must be a positive number
                 tokenization_strategy: { type: 'rough_char_count', chars_per_token_ratio: 4 },
             };

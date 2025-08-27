@@ -7,6 +7,7 @@ import {
     DialecticContribution,
     ApiError,
     ChatRole,
+    WalletDecisionOutcome,
 } from '@paynless/types';
 
 export function isUserRole(role: unknown): role is UserRole {
@@ -39,6 +40,7 @@ const dialecticNotificationTypes: ReadonlyArray<string> = [
     'contribution_generation_retrying',
     'dialectic_contribution_received',
     'contribution_generation_failed',
+    'other_generation_failed',
     'contribution_generation_complete',
     'dialectic_progress_update',
     'contribution_generation_continued',
@@ -89,4 +91,33 @@ export function isSystemPromptsApiResponse(obj: unknown): obj is SystemPromptsAp
         'prompts' in obj &&
         Array.isArray(obj.prompts)
     );
+}
+
+export function isWalletDecisionLoading(x: unknown): x is Extract<WalletDecisionOutcome, { outcome: 'loading' }> {
+  return typeof x === 'object' && x !== null && 'outcome' in x && x.outcome === 'loading';
+}
+
+export function isWalletDecisionError(x: unknown): x is Extract<WalletDecisionOutcome, { outcome: 'error'; message: string }> {
+  return (
+    typeof x === 'object' &&
+    x !== null &&
+    'outcome' in x && x.outcome === 'error' &&
+    'message' in x && typeof x.message === 'string'
+  );
+}
+
+function hasOrgId(x: unknown): x is { orgId: string } {
+  return typeof x === 'object' && x !== null && 'orgId' in x && typeof x.orgId === 'string';
+}
+
+export function isUserConsentRequired(x: unknown): x is Extract<WalletDecisionOutcome, { outcome: 'user_consent_required'; orgId: string }> {
+  return typeof x === 'object' && x !== null && 'outcome' in x && x.outcome === 'user_consent_required' && hasOrgId(x);
+}
+
+export function isUserConsentRefused(x: unknown): x is Extract<WalletDecisionOutcome, { outcome: 'user_consent_refused'; orgId: string }> {
+  return typeof x === 'object' && x !== null && 'outcome' in x && x.outcome === 'user_consent_refused' && hasOrgId(x);
+}
+
+export function isOrgWalletUnavailableByPolicy(x: unknown): x is Extract<WalletDecisionOutcome, { outcome: 'org_wallet_not_available_policy_org'; orgId: string }> {
+  return typeof x === 'object' && x !== null && 'outcome' in x && x.outcome === 'org_wallet_not_available_policy_org' && hasOrgId(x);
 }

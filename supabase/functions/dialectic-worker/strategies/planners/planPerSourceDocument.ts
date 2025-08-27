@@ -40,6 +40,7 @@ export const planPerSourceDocument: GranularityPlannerFn = (
             document_relationships: { source_group: doc.id },
             inputs,
             user_jwt: authToken,
+            walletId: parentJob.payload.walletId,
         };
         console.log(`[planPerSourceDocument] Constructed newPayload for doc ${doc.id}:`, JSON.stringify(newPayload, null, 2));
 

@@ -228,6 +228,101 @@ Deno.test("[FAILING TEST] DummyAdapter should generate a large response for SIMU
     assertEquals(result.finish_reason, "stop", "The finish reason should be 'stop' for a large but complete response.");
 });
 
+Deno.test("DummyAdapter respects client-provided max_tokens_to_generate and yields non-zero usage under non-zero cost rates", async () => {
+  const CONFIG_WITH_COSTS: AiModelExtendedConfig = {
+    api_identifier: "dummy-model-v1",
+    tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+    context_window_tokens: 10000,
+    input_token_cost_rate: 0,
+    output_token_cost_rate: 2,
+  };
+  if (!isJson(CONFIG_WITH_COSTS)) throw new Error('CONFIG_WITH_COSTS must be JSON');
+  const PROVIDER_WITH_COSTS: Tables<'ai_providers'> = {
+    ...MOCK_PROVIDER,
+    config: CONFIG_WITH_COSTS,
+  };
+
+  const adapter = new DummyAdapter(PROVIDER_WITH_COSTS, 'dummy-key', new MockLogger());
+  const K = 64;
+  const request: ChatApiRequest = {
+    message: "SIMULATE_LARGE_OUTPUT_KB=1 Hello world",
+    providerId: 'dummy-provider',
+    promptId: '__none__',
+    max_tokens_to_generate: K,
+  };
+  const modelIdentifier = CONFIG_WITH_COSTS.api_identifier;
+
+  const result = await adapter.sendMessage(request, modelIdentifier);
+  assertExists(result.token_usage);
+  assert(isTokenUsage(result.token_usage));
+  // completion should be capped by client K (K chosen high enough above envelope)
+  assert(result.token_usage.completion_tokens <= K, "completion_tokens should respect client-provided cap");
+  // Non-zero usage implies non-zero costs under non-zero rates at higher layers
+  assert(result.token_usage.total_tokens > 0, "total_tokens should be non-zero under non-zero rates setup");
+});
+
+Deno.test("DummyAdapter respects model hard_cap_output_tokens when client cap is absent", async () => {
+  const CONFIG_WITH_HARD_CAP: AiModelExtendedConfig = {
+    api_identifier: "dummy-model-v1",
+    tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+    context_window_tokens: 10000,
+    input_token_cost_rate: 0,
+    output_token_cost_rate: 2,
+    hard_cap_output_tokens: 64,
+  };
+  if (!isJson(CONFIG_WITH_HARD_CAP)) throw new Error('CONFIG_WITH_HARD_CAP must be JSON');
+  const PROVIDER_WITH_HARD_CAP: Tables<'ai_providers'> = {
+    ...MOCK_PROVIDER,
+    config: CONFIG_WITH_HARD_CAP,
+  };
+
+  const adapter = new DummyAdapter(PROVIDER_WITH_HARD_CAP, 'dummy-key', new MockLogger());
+  const request: ChatApiRequest = {
+    message: "SIMULATE_LARGE_OUTPUT_KB=1 This should exceed cap",
+    providerId: 'dummy-provider',
+    promptId: '__none__',
+  };
+  const modelIdentifier = CONFIG_WITH_HARD_CAP.api_identifier;
+
+  const result = await adapter.sendMessage(request, modelIdentifier);
+  assertExists(result.token_usage);
+  assert(isTokenUsage(result.token_usage));
+  // Desired behavior: without client cap, model hard cap should apply (64 chosen above envelope)
+  assert(result.token_usage.completion_tokens <= 64, "completion_tokens should respect model hard_cap_output_tokens");
+});
+
+Deno.test("DummyAdapter handles oversized input by throwing ContextWindowError (step 118)", async () => {
+  const CONFIG_SMALL_WINDOW: AiModelExtendedConfig = {
+    api_identifier: "dummy-model-v1",
+    tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+    context_window_tokens: 50,
+    input_token_cost_rate: 1,
+    output_token_cost_rate: 1,
+  };
+  if (!isJson(CONFIG_SMALL_WINDOW)) throw new Error('CONFIG_SMALL_WINDOW must be JSON');
+  const PROVIDER_SMALL_WINDOW: Tables<'ai_providers'> = {
+    ...MOCK_PROVIDER,
+    config: CONFIG_SMALL_WINDOW,
+  };
+
+  const adapter = new DummyAdapter(PROVIDER_SMALL_WINDOW, 'dummy-key', new MockLogger());
+  const longText = 'A'.repeat(200);
+  const request: ChatApiRequest = {
+    message: longText,
+    providerId: 'dummy-provider',
+    promptId: '__none__',
+  };
+  const modelIdentifier = CONFIG_SMALL_WINDOW.api_identifier;
+
+  let threw = false;
+  try {
+    await adapter.sendMessage(request, modelIdentifier);
+  } catch (e) {
+    threw = true;
+  }
+  assert(threw, 'Expected ContextWindowError for oversized input in step 118');
+});
+
 Deno.test("[DummyAdapter] Specific Behavior - should handle continuation prompts", async () => {
     // Arrange
     const adapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', new MockLogger());

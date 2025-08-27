@@ -110,9 +110,18 @@ export class AnthropicAdapter {
         throw new Error('Cannot send request to Anthropic: message history format invalid.');
     }
 
-    const maxTokensForPayload = request.max_tokens_to_generate || this.modelConfig.hard_cap_output_tokens || 4096;
+    const maxTokensForPayload =
+      (typeof request.max_tokens_to_generate === 'number')
+        ? request.max_tokens_to_generate
+        : (typeof this.modelConfig.hard_cap_output_tokens === 'number'
+            ? this.modelConfig.hard_cap_output_tokens
+            : undefined);
 
     try {
+      if (!maxTokensForPayload) {
+        this.logger.error('AnthropicAdapter: No max tokens for payload', { modelApiName });
+        throw new Error('AnthropicAdapter: No max tokens for payload');
+      }
       const response = await this.client.messages.create({
         model: modelApiName,
         system: systemPrompt || undefined,

@@ -1036,7 +1036,7 @@ export const useAiStore = create<AiStore>()(
                         };
 
                         const walletServiceAdapter: IWalletService = {
-                            getActiveWalletInfo: () => selectActiveChatWalletInfo(useWalletStore.getState())
+                            getActiveWalletInfo: () => selectActiveChatWalletInfo(useWalletStore.getState(), get().newChatContext)
                         };
 
                         const aiStateServiceAdapter: IAiStateService = {

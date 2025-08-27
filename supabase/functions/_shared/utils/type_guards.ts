@@ -47,6 +47,9 @@ export function validatePayload(payload: Json): DialecticJobPayload {
   if (!('projectId' in payload) || typeof payload.projectId !== 'string') {
     throw new Error('projectId must be a string');
   }
+  if (!('walletId' in payload) || typeof payload.walletId !== 'string' || payload.walletId.trim() === '') {
+    throw new Error('walletId must be a string');
+  }
   
   const hasModelId = 'model_id' in payload && typeof payload.model_id === 'string';
 
@@ -61,7 +64,7 @@ export function validatePayload(payload: Json): DialecticJobPayload {
     model_id: ('model_id' in payload && typeof payload.model_id === 'string') ? payload.model_id : '',
     stageSlug: ('stageSlug' in payload && typeof payload.stageSlug === 'string') ? payload.stageSlug : undefined,
     iterationNumber: ('iterationNumber' in payload && typeof payload.iterationNumber === 'number') ? payload.iterationNumber : undefined,
-    walletId: ('walletId' in payload && typeof payload.walletId === 'string') ? payload.walletId : undefined,
+    walletId: payload.walletId,
     continueUntilComplete: ('continueUntilComplete' in payload && typeof payload.continueUntilComplete === 'boolean') ? payload.continueUntilComplete : undefined,
     maxRetries: ('maxRetries' in payload && typeof payload.maxRetries === 'number') ? payload.maxRetries : undefined,
     continuation_count: ('continuation_count' in payload && typeof payload.continuation_count === 'number') ? payload.continuation_count : undefined,

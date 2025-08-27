@@ -89,6 +89,12 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                                 eventPayload = { type, sessionId: data['sessionId'], error: data['error'], job_id: typeof data['job_id'] === 'string' ? data['job_id'] : undefined, modelId: typeof data['modelId'] === 'string' ? data['modelId'] : undefined };
                             }
                             break;
+                        case 'other_generation_failed':
+                            // Map to the same pathway as contribution_generation_failed
+                            if (typeof data['sessionId'] === 'string' && isApiError(data['error'])) {
+                                eventPayload = { type: 'contribution_generation_failed', sessionId: data['sessionId'], error: data['error'], job_id: typeof data['job_id'] === 'string' ? data['job_id'] : undefined, modelId: typeof data['modelId'] === 'string' ? data['modelId'] : undefined } as DialecticLifecycleEvent;
+                            }
+                            break;
                         case 'contribution_generation_complete':
                             if (typeof data['sessionId'] === 'string' && typeof data['projectId'] === 'string') {
                                 eventPayload = { type, sessionId: data['sessionId'], projectId: data['projectId'] };

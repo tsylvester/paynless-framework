@@ -10,6 +10,7 @@ import type {
     ContributionGenerationCompletePayload,
     DialecticProgressUpdatePayload,
     ContributionGenerationFailedPayload,
+    ContributionGenerationFailedInternalPayload,
     ApiError
 } from '../types/notification.service.types.ts';
 
@@ -26,6 +27,7 @@ function createMockService(): MockNotificationService {
         sendContributionGenerationContinuedEvent: spy(() => Promise.resolve()),
         sendContributionGenerationCompleteEvent: spy(() => Promise.resolve()),
         sendDialecticProgressUpdateEvent: spy(() => Promise.resolve()),
+        sendContributionGenerationFailedEvent: spy(() => Promise.resolve()),
         sendContributionFailedNotification: spy(() => Promise.resolve()),
     };
 }
@@ -141,4 +143,11 @@ export const mockContributionGenerationFailedPayload: ContributionGenerationFail
     stageSlug: 'antithesis',
     error: mockContributionGenerationFailedApiError,
     job_id: 'job-uuid-123',
+  };
+
+export const mockContributionGenerationFailedInternalPayload: ContributionGenerationFailedInternalPayload = {
+    type: 'other_generation_failed',
+    sessionId: 'session-uuid-456',
+    job_id: 'job-uuid-123',
+    error: mockContributionGenerationFailedApiError,
   };

@@ -3,7 +3,6 @@ import { spy, stub } from 'jsr:@std/testing@0.225.1/mock';
 import type { Database, Json } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { handleJob, createDialecticWorkerDeps } from './index.ts';
-import * as processJobModule from './processJob.ts';
 import { MockLogger } from '../_shared/logger.mock.ts';
 import type { IDialecticJobDeps, SeedPromptData, IContinueJobResult } from '../dialectic-service/dialectic.interface.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
@@ -13,7 +12,8 @@ import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { createMockJobProcessors } from '../_shared/dialectic.mock.ts';
 import { NotificationService } from '../_shared/utils/notification.service.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
-import { FactoryDependencies, type AiModelExtendedConfig } from '../_shared/types.ts';
+import { type AiModelExtendedConfig } from '../_shared/types.ts';
+import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -166,6 +166,7 @@ Deno.test('handleJob - fails when payload is invalid', async () => {
         ...mockDeps,
         notificationService: new NotificationService(mockSupabase.client as unknown as SupabaseClient<Database>),
     };
+    const internalFailSpy = spy(testDeps.notificationService, 'sendContributionGenerationFailedEvent');
 
     try {
         // 2. Execute
@@ -186,22 +187,41 @@ Deno.test('handleJob - fails when payload is invalid', async () => {
         assertEquals(errorDetailsMessage, 'Invalid payload: Job payload is invalid or missing required fields.');
         assertExists(updatePayload.completed_at);
 
-        // Verify notification was sent - use existing rpcSpy from mock
+        // Verify both internal and user-facing notifications were sent
         const rpcSpy = mockSupabase.spies.rpcSpy;
-        assertEquals(rpcSpy.calls.length, 1, 'RPC should be called once for notification');
-        const rpcCall = rpcSpy.calls[0];
-        assertEquals(rpcCall.args[0], 'create_notification_for_user');
-        const rpcArgs = rpcCall.args[1];
-        assertEquals(rpcArgs.p_target_user_id, mockJob.user_id);
-        assertEquals(rpcArgs.p_notification_type, 'contribution_generation_failed');
-        
-        // Ensure notification_data is a valid JSON object
-        assert(typeof rpcArgs.p_notification_data === 'object' && rpcArgs.p_notification_data !== null, "notification_data should be a valid object");
-        
-        const notificationData = rpcArgs.p_notification_data;
-        assertEquals(notificationData.job_id, 'job-invalid-payload');
+        assertEquals(rpcSpy.calls.length, 2, 'RPC should be called twice (internal + user-facing)');
+
+        const internalCall = rpcSpy.calls.find((c: any) => c.args[1]?.p_notification_type === 'other_generation_failed');
+        assertExists(internalCall, 'Internal failure event should be sent');
+        const internalArgs = internalCall!.args[1];
+        assertEquals(internalArgs.p_target_user_id, mockJob.user_id);
+        assertEquals(internalArgs.p_is_internal_event, true);
+        const internalData = internalArgs.p_notification_data;
+        assert(typeof internalData === 'object' && internalData !== null, 'internal notification_data should be object');
+        assertEquals(internalData.job_id, 'job-invalid-payload');
+        assertEquals(internalData.sessionId, mockJob.session_id);
+        assertEquals(internalData.error.code, 'VALIDATION_ERROR');
+
+        const userFailCall = rpcSpy.calls.find((c: any) => c.args[1]?.p_notification_type === 'contribution_generation_failed');
+        assertExists(userFailCall, 'User-facing failure notification should be sent');
+        const userArgs = userFailCall!.args[1];
+        assertEquals(userArgs.p_target_user_id, mockJob.user_id);
+        assertEquals(userArgs.p_is_internal_event, false);
+        const userData = userArgs.p_notification_data;
+        assert(typeof userData === 'object' && userData !== null, 'user notification_data should be object');
+        assertEquals(userData.job_id, 'job-invalid-payload');
+
+        // Verify internal failure event emitted (RED - should fail until implemented)
+        assertEquals(internalFailSpy.calls.length, 1, 'Internal failure event should be emitted once');
+        const internalPayload = internalFailSpy.calls[0].args[0];
+        assertEquals(internalPayload.type, 'other_generation_failed');
+        assertEquals(internalPayload.sessionId, mockJob.session_id);
+        assertEquals(internalPayload.job_id, mockJob.id);
+        assert(typeof internalPayload.error === 'object' && internalPayload.error !== null);
+        assertEquals(internalPayload.error.code, 'VALIDATION_ERROR');
 
     } finally {
+        internalFailSpy.restore();
         mockSupabase.clearAllStubs?.();
     }
 });
@@ -418,6 +438,7 @@ Deno.test('handleJob - handles exceptions during processJob execution', async ()
         ...mockDeps,
         notificationService: new NotificationService(mockSupabase.client as unknown as SupabaseClient<Database>),
     };
+    const internalFailSpy = spy(testDeps.notificationService, 'sendContributionGenerationFailedEvent');
 
     try {
         // 2. Execute
@@ -437,17 +458,41 @@ Deno.test('handleJob - handles exceptions during processJob execution', async ()
         const errorDetails = finalUpdatePayload.error_details;
         assert(errorDetails && typeof errorDetails === 'object' && 'final_error' in errorDetails && typeof errorDetails.final_error === 'string' && errorDetails.final_error.includes('Simulated processJob error'), "Error details should contain the simulated error message");
 
-        // Verify failure notification was sent
+        // Verify start, internal failure, and user-facing failure notifications
         const rpcSpy = mockSupabase.spies.rpcSpy;
-        assertEquals(rpcSpy.calls.length, 2, 'RPC should be called twice (start and fail)');
-        const failureNotification = rpcSpy.calls[1];
-        assertEquals(failureNotification.args[0], 'create_notification_for_user');
-        assertEquals(failureNotification.args[1].p_notification_type, 'contribution_generation_failed');
+        assertEquals(rpcSpy.calls.length, 3, 'RPC should be called thrice (start, internal fail, user fail)');
+
+        const startCall = rpcSpy.calls.find((c: any) => c.args[1]?.p_notification_type === 'contribution_generation_started');
+        assertExists(startCall, 'Start notification should be sent');
+
+        const internalFailCall = rpcSpy.calls.find((c: any) => c.args[1]?.p_notification_type === 'other_generation_failed');
+        assertExists(internalFailCall, 'Internal failure event should be sent');
+        const internalArgs = internalFailCall!.args[1];
+        assertEquals(internalArgs.p_is_internal_event, true);
+        const internalData = internalArgs.p_notification_data;
+        assertEquals(internalData.job_id, mockJob.id);
+        assertEquals(internalData.sessionId, mockJob.session_id);
+        assertEquals(internalData.error.code, 'UNHANDLED_EXCEPTION');
+
+        const userFailCall = rpcSpy.calls.find((c: any) => c.args[1]?.p_notification_type === 'contribution_generation_failed');
+        assertExists(userFailCall, 'User-facing failure notification should be sent');
+        const userArgs = userFailCall!.args[1];
+        assertEquals(userArgs.p_is_internal_event, false);
+
+        // Verify internal failure event emitted (RED - should fail until implemented)
+        assertEquals(internalFailSpy.calls.length, 1, 'Internal failure event should be emitted once');
+        const internalPayload = internalFailSpy.calls[0].args[0];
+        assertEquals(internalPayload.type, 'other_generation_failed');
+        assertEquals(internalPayload.sessionId, mockJob.session_id);
+        assertEquals(internalPayload.job_id, mockJob.id);
+        assert(typeof internalPayload.error === 'object' && internalPayload.error !== null);
+        assertEquals(internalPayload.error.code, 'UNHANDLED_EXCEPTION');
 
     } finally {
         spies.processSimpleJob.restore();
         spies.processComplexJob.restore();
         spies.planComplexStage.restore();
+        internalFailSpy.restore();
         mockSupabase.clearAllStubs?.();
     }
 });
@@ -632,4 +677,96 @@ Deno.test('createDialecticWorkerDeps: provides wallet and compression deps', asy
 
     // Wallet service must be injected
     assertExists(deps.tokenWalletService, 'tokenWalletService should be present');
+});
+
+Deno.test('createDialecticWorkerDeps: constructs DummyAdapter embedding client when default embedding provider is dummy', async () => {
+    const dummyConfig: AiModelExtendedConfig = {
+        api_identifier: 'dummy-model-v1',
+        input_token_cost_rate: 1,
+        output_token_cost_rate: 1,
+        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+        context_window_tokens: 4096,
+        hard_cap_output_tokens: 4096,
+    };
+    const dummyProviderRow = {
+        id: 'prov-dummy-embed-1',
+        api_identifier: 'dummy-model-v1',
+        name: 'Dummy Embedding',
+        description: 'Dummy embedding model',
+        is_active: true,
+        provider: 'dummy',
+        config: dummyConfig,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_default_embedding: true,
+        is_enabled: true,
+    };
+
+    const { client } = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'ai_providers': {
+                select: { data: [dummyProviderRow], error: null },
+            },
+        },
+    });
+
+    const deps = await createDialecticWorkerDeps(client as unknown as SupabaseClient<Database>);
+    if (!deps.embeddingClient) throw new Error('embeddingClient was not constructed');
+
+    // Call through to ensure the embedding client is functional and offline (DummyAdapter)
+    const result = await deps.embeddingClient.getEmbedding('hello world');
+    assertExists(result.embedding);
+    assert(Array.isArray(result.embedding) && result.embedding.length === 32);
+    assert(typeof result.usage.total_tokens === 'number' && result.usage.total_tokens > 0);
+});
+
+Deno.test('createDialecticWorkerDeps: constructs OpenAI embedding client when default provider is openai', async () => {
+    const embeddingConfig: AiModelExtendedConfig = {
+        api_identifier: 'openai-text-embedding-3-small',
+        input_token_cost_rate: 1,
+        output_token_cost_rate: 1,
+        tokenization_strategy: {
+            type: 'tiktoken',
+            tiktoken_encoding_name: 'cl100k_base',
+            is_chatml_model: false,
+            api_identifier_for_tokenization: 'text-embedding-3-small',
+        },
+    };
+    const providerRow = {
+        id: 'prov-openai-embed-2',
+        api_identifier: 'openai-text-embedding-3-small',
+        name: 'OpenAI Embedding',
+        description: 'Mock embedding model',
+        is_active: true,
+        provider: 'openai',
+        config: embeddingConfig,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_default_embedding: true,
+        is_enabled: true,
+    };
+
+    const { client } = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'ai_providers': {
+                select: { data: [providerRow], error: null },
+            },
+        },
+    });
+
+    // Stub OpenAI adapter network call
+    const getEmbeddingStub = stub(OpenAiAdapter.prototype, 'getEmbedding', async () => ({
+        embedding: [0.1, 0.2, 0.3],
+        usage: { prompt_tokens: 3, total_tokens: 3 },
+    }));
+    try {
+        const deps = await createDialecticWorkerDeps(client as unknown as SupabaseClient<Database>);
+        if (!deps.embeddingClient) throw new Error('embeddingClient was not constructed');
+        const res = await deps.embeddingClient.getEmbedding('x');
+        assertExists(res);
+        assert(Array.isArray(res.embedding));
+        assertEquals(getEmbeddingStub.calls.length, 1);
+    } finally {
+        getEmbeddingStub.restore();
+    }
 });

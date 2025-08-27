@@ -340,6 +340,75 @@ describe('notificationStore', () => {
                 
                 addNotificationSpy.mockRestore();
             });
+            
+            it('should route internal failed events with job_id and error preserved (NSF) to the dialecticStore', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                const failedInternalNotification: Notification = {
+                    id: 'uuid-internal-fail-1',
+                    user_id: 'user-abc',
+                    type: 'contribution_generation_failed',
+                    data: {
+                        sessionId: 'sid-123',
+                        job_id: 'job-1',
+                        error: { code: 'INSUFFICIENT_FUNDS', message: 'Insufficient funds to cover the input prompt cost.' },
+                    },
+                    read: true,
+                    created_at: new Date().toISOString(),
+                    is_internal_event: true,
+                    title: null,
+                    message: null,
+                    link_path: null,
+                };
+
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(failedInternalNotification);
+                });
+
+                expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith({
+                    type: 'contribution_generation_failed',
+                    sessionId: 'sid-123',
+                    job_id: 'job-1',
+                    error: { code: 'INSUFFICIENT_FUNDS', message: 'Insufficient funds to cover the input prompt cost.' },
+                });
+                expect(addNotificationSpy).not.toHaveBeenCalled();
+                addNotificationSpy.mockRestore();
+            });
+
+            it('should route other_generation_failed as a failure event to the dialecticStore and not create a visible notification', () => {
+                const addNotificationSpy = vi.spyOn(useNotificationStore.getState(), 'addNotification');
+                const otherFailedInternal: Notification = {
+                    id: 'uuid-internal-fail-2',
+                    user_id: 'user-abc',
+                    type: 'other_generation_failed',
+                    data: {
+                        sessionId: 'sid-xyz',
+                        job_id: 'job-xyz',
+                        error: { code: 'INTERNAL_DEPENDENCY_MISSING', message: 'Token wallet service is required for affordability preflight' },
+                    },
+                    read: true,
+                    created_at: new Date().toISOString(),
+                    is_internal_event: true,
+                    title: null,
+                    message: null,
+                    link_path: null,
+                };
+
+                act(() => {
+                    useNotificationStore.getState().handleIncomingNotification(otherFailedInternal);
+                });
+
+                // Should be translated to the same failure path as contribution_generation_failed
+                expect(mockHandleDialecticLifecycleEvent).toHaveBeenCalledWith({
+                    type: 'contribution_generation_failed',
+                    sessionId: 'sid-xyz',
+                    job_id: 'job-xyz',
+                    error: { code: 'INTERNAL_DEPENDENCY_MISSING', message: 'Token wallet service is required for affordability preflight' },
+                });
+
+                // No user-facing notification should be added
+                expect(addNotificationSpy).not.toHaveBeenCalled();
+                addNotificationSpy.mockRestore();
+            });
         });
 
         describe('markNotificationRead', () => {

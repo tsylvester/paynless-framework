@@ -575,6 +575,7 @@ export interface GenerateContributionsPayload {
   stageSlug: DialecticStage['slug'];
   iterationNumber: number;
   continueUntilComplete: boolean;
+  walletId: string;
 }
 
 export interface FailedAttemptError {

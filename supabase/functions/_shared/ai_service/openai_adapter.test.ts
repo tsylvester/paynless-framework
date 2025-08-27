@@ -162,3 +162,83 @@ Deno.test("OpenAiAdapter - Specific Tests: getEmbedding", async () => {
         createStub.restore();
     }
 });
+
+Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for o-series", async () => {
+    // Arrange
+    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    function createMockChatPromise(resp: ChatCompletion): APIPromise<ChatCompletion> {
+        return Promise.resolve(resp) as APIPromise<ChatCompletion>;
+    }
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", (params) => createMockChatPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+
+    try {
+        const request: ChatApiRequest = {
+            message: 'Hello',
+            providerId: 'provider-uuid-test',
+            promptId: 'prompt-uuid-test',
+            messages: [ { role: 'user', content: 'Hi' } ],
+            max_tokens_to_generate: 123,
+        };
+
+        await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+
+        assertEquals(chatCreateStub.calls.length, 1);
+        const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
+        let mct: unknown = undefined;
+        let mt: unknown = undefined;
+        if (isJson(payloadUnknown) && typeof payloadUnknown === 'object' && payloadUnknown !== null) {
+            // Narrow using runtime guards and index access
+            // deno-lint-ignore no-explicit-any
+            const rec = payloadUnknown as any;
+            mct = rec['max_completion_tokens'];
+            mt = rec['max_tokens'];
+        }
+        assertExists(mct);
+        assertEquals(mct, 123);
+        assertEquals(mt === undefined || mt === null, true);
+    } finally {
+        chatCreateStub.restore();
+    }
+});
+
+Deno.test("OpenAiAdapter - Specific Tests: uses max_tokens for legacy chat models", async () => {
+    // Arrange a legacy model provider
+    const LEGACY_PROVIDER: Tables<'ai_providers'> = {
+        ...MOCK_PROVIDER,
+        api_identifier: 'openai-gpt-3.5-turbo',
+    };
+
+    const adapter = new OpenAiAdapter(LEGACY_PROVIDER, 'sk-test-key', mockLogger);
+    function createMockChatPromise(resp: ChatCompletion): APIPromise<ChatCompletion> {
+        return Promise.resolve(resp) as APIPromise<ChatCompletion>;
+    }
+    const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", (params) => createMockChatPromise(MOCK_OPENAI_SUCCESS_RESPONSE));
+
+    try {
+        const request: ChatApiRequest = {
+            message: 'Hello',
+            providerId: 'provider-uuid-test',
+            promptId: 'prompt-uuid-test',
+            messages: [ { role: 'user', content: 'Hi' } ],
+            max_tokens_to_generate: 123,
+        };
+
+        await adapter.sendMessage(request, LEGACY_PROVIDER.api_identifier);
+
+        assertEquals(chatCreateStub.calls.length, 1);
+        const payloadUnknown: unknown = chatCreateStub.calls[0].args[0];
+        let mt: unknown = undefined;
+        let mct: unknown = undefined;
+        if (isJson(payloadUnknown) && typeof payloadUnknown === 'object' && payloadUnknown !== null) {
+            // deno-lint-ignore no-explicit-any
+            const rec = payloadUnknown as any;
+            mt = rec['max_tokens'];
+            mct = rec['max_completion_tokens'];
+        }
+        assertExists(mt);
+        assertEquals(mt, 123);
+        assertEquals(mct === undefined || mct === null, true);
+    } finally {
+        chatCreateStub.restore();
+    }
+});

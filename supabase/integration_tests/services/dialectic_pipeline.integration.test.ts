@@ -40,7 +40,7 @@ import { executeModelCallAndSave } from "../../functions/dialectic-worker/execut
 import { callUnifiedAIModel } from "../../functions/dialectic-service/callModel.ts";
 import { UploadContext, FileType, IFileManager } from "../../functions/_shared/types/file_manager.types.ts";
 import { RagService } from "../../functions/_shared/services/rag_service.ts";
-import { IndexingService, LangchainTextSplitter, OpenAIEmbeddingClient } from "../../functions/_shared/services/indexing_service.ts";
+import { IndexingService, LangchainTextSplitter, EmbeddingClient } from "../../functions/_shared/services/indexing_service.ts";
 import { getGranularityPlanner } from '../../functions/dialectic-worker/strategies/granularity.strategies.ts';
 import { countTokens } from '../../functions/_shared/utils/tokenizer_utils.ts';
 import { getAiProviderConfig } from '../../functions/dialectic-worker/processComplexJob.ts';
@@ -237,7 +237,7 @@ Deno.test(
             throw new Error("Failed to create an adapter for the default embedding provider.");
         }
 
-        const embeddingClient = new OpenAIEmbeddingClient(embeddingAdapter);
+        const embeddingClient = new EmbeddingClient(embeddingAdapter);
         const textSplitter = new LangchainTextSplitter();
         const indexingService = new IndexingService(adminClient, testLogger, textSplitter, embeddingClient);
         const ragService = new RagService({

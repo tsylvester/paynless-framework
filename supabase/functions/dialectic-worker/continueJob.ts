@@ -52,6 +52,12 @@ export async function continueJob(
 
   const newContinuationCount = (job.payload.continuation_count ?? 0) + 1;
 
+  if (!job.payload.walletId) {
+    const error = new Error('Job payload is missing a valid walletId');
+    deps.logger.error('Cannot continue job due to invalid walletId.', { jobId: job.id, payload: job.payload, error: error.message });
+    return { enqueued: false, error };
+  }
+
   const payloadObject: DialecticExecuteJobPayload = {
     job_type: 'execute',
     sessionId: job.payload.sessionId,

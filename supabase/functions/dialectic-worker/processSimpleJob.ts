@@ -182,6 +182,126 @@ export async function processSimpleJob(
                 completed_at: new Date().toISOString(),
                 error_details: { message: `Context window limit exceeded: ${error.message}` },
             }).eq('id', jobId);
+            // Emit internal failure event for UI state routing
+            if (projectOwnerUserId) {
+                await deps.notificationService.sendContributionGenerationFailedEvent({
+                    type: 'other_generation_failed',
+                    sessionId: sessionId,
+                    job_id: jobId,
+                    error: {
+                        code: 'CONTEXT_WINDOW_ERROR',
+                        message: `Context window limit exceeded, message too large to send to the model and it cannot be compressed further: ${error.message}`,
+                    },
+                }, projectOwnerUserId);
+            }
+            return;
+        }
+
+        // Classify non-retryable failures (fail immediately, emit internal + user-facing notifications)
+        const message = error.message || '';
+        const lower = message.toLowerCase();
+
+        const emitImmediateFailure = async (code: string, userMessage: string) => {
+            await dbClient.from('dialectic_generation_jobs').update({
+                status: 'failed',
+                completed_at: new Date().toISOString(),
+                error_details: { code, message: userMessage },
+            }).eq('id', jobId);
+
+            if (projectOwnerUserId) {
+                // Internal event (UI state routing)
+                await deps.notificationService.sendContributionGenerationFailedEvent({
+                    type: 'other_generation_failed',
+                    sessionId: sessionId,
+                    job_id: jobId,
+                    error: { code, message: userMessage },
+                }, projectOwnerUserId);
+
+                // User-facing historical notification
+                await deps.notificationService.sendContributionFailedNotification({
+                    type: 'contribution_generation_failed',
+                    sessionId: job.payload.sessionId ?? 'unknown',
+                    stageSlug: job.payload.stageSlug ?? 'unknown',
+                    projectId: job.payload.projectId ?? '',
+                    error: { code, message: userMessage },
+                    job_id: jobId,
+                }, projectOwnerUserId);
+            }
+        };
+
+        // Affordability / NSF signals
+        if (lower.includes('insufficient funds')) {
+            await emitImmediateFailure('INSUFFICIENT_FUNDS', message);
+            return;
+        }
+
+        // Wallet missing
+        if (lower.includes('wallet is required')) {
+            await emitImmediateFailure('WALLET_MISSING', message);
+            return;
+        }
+
+        // Missing or invalid initial prompt signals
+        if (lower.includes('initial prompt is required') || lower.includes('rendered initial prompt is empty')) {
+            await emitImmediateFailure('INVALID_INITIAL_PROMPT', message);
+            return;
+        }
+
+        // Continuation dependency missing
+        if (lower.includes('failed to retrieve root contribution')) {
+            await emitImmediateFailure('CONTINUATION_ROOT_MISSING', message);
+            return;
+        }
+
+        // Missing core entities / config
+        if (lower.includes('session ') && lower.includes(' not found')) {
+            await emitImmediateFailure('SESSION_NOT_FOUND', message);
+            return;
+        }
+        if (lower.startsWith('project ') && lower.includes(' not found')) {
+            await emitImmediateFailure('PROJECT_NOT_FOUND', message);
+            return;
+        }
+        if (lower.includes('project domain not found')) {
+            await emitImmediateFailure('DOMAIN_NOT_FOUND', message);
+            return;
+        }
+        if (lower.includes('could not retrieve stage details') || lower.includes('system prompt not found')) {
+            await emitImmediateFailure('STAGE_CONFIG_MISSING', message);
+            return;
+        }
+
+        // Dependency/configuration problems
+        if (lower.includes('affordability preflight') || lower.includes('token wallet service is required')) {
+            await emitImmediateFailure('INTERNAL_DEPENDENCY_MISSING', message);
+            return;
+        }
+        if (lower.includes('promptassembler dependency is missing')) {
+            await emitImmediateFailure('INTERNAL_DEPENDENCY_MISSING', message);
+            return;
+        }
+        if (lower.includes("dependency 'counttokens' is not provided") ||
+            lower.includes("dependency 'callunifiedaimodel' is not provided") ||
+            lower.includes('required services for prompt compression')) {
+            await emitImmediateFailure('INTERNAL_DEPENDENCY_MISSING', message);
+            return;
+        }
+        if (lower.includes('could not fetch full provider details') ||
+            lower.includes('failed to fetch valid provider details') ||
+            lower.includes('has invalid or missing configuration')) {
+            await emitImmediateFailure('PROVIDER_CONFIG_INVALID', message);
+            return;
+        }
+
+        // Wallet/balance parsing issues
+        if (lower.includes('could not parse wallet balance')) {
+            await emitImmediateFailure('WALLET_BALANCE_INVALID', message);
+            return;
+        }
+
+        // File save failures
+        if (lower.includes('failed to save contribution')) {
+            await emitImmediateFailure('SAVE_FAILED', message);
             return;
         }
 
@@ -215,6 +335,7 @@ export async function processSimpleJob(
         }
         
         if (projectOwnerUserId) {
+            // User-facing notification (preserve existing behavior)
             await deps.notificationService.sendContributionFailedNotification({
                 type: 'contribution_generation_failed',
                 sessionId: job.payload.sessionId ?? 'unknown',
@@ -225,6 +346,17 @@ export async function processSimpleJob(
                     message: `Generation for stage '${job.payload.stageSlug}' has failed after all retry attempts.`,
                 },
                 job_id: jobId,
+            }, projectOwnerUserId);
+
+            // Internal event for UI placeholder transition to failed
+            await deps.notificationService.sendContributionGenerationFailedEvent({
+                type: 'other_generation_failed',
+                sessionId: sessionId,
+                job_id: jobId,
+                error: {
+                    code: 'RETRY_LOOP_FAILED',
+                    message: failedAttempt.error,
+                },
             }, projectOwnerUserId);
         }
         return;

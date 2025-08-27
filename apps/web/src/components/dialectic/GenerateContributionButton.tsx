@@ -6,6 +6,8 @@ import {
   selectSessionById,
   selectActiveStage,
   selectIsStageReadyForSessionIteration,
+  useWalletStore,
+  selectActiveChatWalletInfo,
 } from '@paynless/store';
 import { GenerateContributionsPayload } from '@paynless/types';
 import { useAiStore } from '@paynless/store';
@@ -33,6 +35,11 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
     activeContextSessionId: state.activeContextSessionId,
   }));
   const continueUntilComplete = useAiStore((state) => state.continueUntilComplete);
+
+  // Get active wallet info (reactive to chat context)
+  const newChatContext = useAiStore(state => state.newChatContext);
+  const activeWalletInfo = useWalletStore(state => selectActiveChatWalletInfo(state, newChatContext));
+  const isWalletReady = activeWalletInfo.status === 'ok' && activeWalletInfo.walletId;
 
   const selectedModelIds = useDialecticStore(selectSelectedModelIds);
   const activeStage = useMemo(() => selectActiveStage(store), [store]);
@@ -77,9 +84,10 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
       typeof activeSession.iteration_count !== 'number' ||
       !currentProjectDetail ||
       !activeStage ||
-      !activeContextSessionId
+      !activeContextSessionId ||
+      !isWalletReady
     ) {
-      toast.error('Could not determine the required context. Please ensure a project, session, and stage are active.');
+      toast.error('Could not determine the required context. Please ensure a project, session, stage, and wallet are active.');
       return;
     }
     const currentIterationNumber = activeSession.iteration_count;
@@ -95,6 +103,7 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
         stageSlug: activeStage.slug,
         iterationNumber: currentIterationNumber,
         continueUntilComplete,
+        walletId: activeWalletInfo.walletId as string,
       };
       await generateContributions(payload);
     } catch (e: unknown) {
@@ -104,12 +113,13 @@ export const GenerateContributionButton: React.FC<GenerateContributionButtonProp
   };
 
   // The button is only disabled if essential data is missing or a generation is in progress.
-  const isDisabled = isSessionGenerating || !areAnyModelsSelected || !activeStage || !activeSession || !isStageReady;
+  const isDisabled = isSessionGenerating || !areAnyModelsSelected || !activeStage || !activeSession || !isStageReady || !isWalletReady;
   const friendlyName = activeStage?.display_name || '...';
 
   const getButtonText = () => {
     if (isSessionGenerating) return <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>;
     if (!areAnyModelsSelected) return 'Choose AI Models';
+    if (!isWalletReady) return 'Wallet Not Ready';
     if (!activeStage || !activeSession) return 'Stage Not Ready';
     if (!isStageReady) return 'Previous Stage Incomplete';
     if (didGenerationFail) return `Retry ${friendlyName}`;

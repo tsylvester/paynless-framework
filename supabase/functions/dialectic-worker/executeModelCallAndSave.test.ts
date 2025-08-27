@@ -137,8 +137,7 @@ export const mockFullProviderData: Tables<'ai_providers'> = {
     created_at: new Date().toISOString(),
     config: {
         tokenization_strategy: { type: 'rough_char_count' },
-        max_context_window_tokens: 10000,
-        context_window_tokens: 8000,
+        context_window_tokens: 10000,
         input_token_cost_rate: 0.001,
         output_token_cost_rate: 0.002,
     },
@@ -189,6 +188,7 @@ export  const mockNotificationService: NotificationServiceType = {
       sendContributionGenerationCompleteEvent: async () => {},
       sendDialecticProgressUpdateEvent: async () => {},
       sendContributionFailedNotification: async () => {},
+      sendContributionGenerationFailedEvent: async () => {},
     };
   
 export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
@@ -584,8 +584,7 @@ Deno.test('executeModelCallAndSave - Database Error on Update', async (t) => {
 Deno.test('executeModelCallAndSave - Throws ContextWindowError', async (t) => {
     const limitedConfigObject = {
         tokenization_strategy: { type: 'rough_char_count' },
-        max_context_window_tokens: 10, // very small limit
-        context_window_tokens: 10,
+        context_window_tokens: 10, // very small limit
         input_token_cost_rate: 0.001,
         output_token_cost_rate: 0.002,
     };
@@ -831,6 +830,61 @@ Deno.test('executeModelCallAndSave - includes rendered template as first user me
   assertEquals(firstArg.messages[0], { role: 'user', content: 'RENDERED: Hello' });
 
   clearAllStubs?.();
+});
+
+Deno.test('executeModelCallAndSave - sets and forwards max_tokens_to_generate using SSOT (RED)', async () => {
+  // Arrange: provider config with simple rates and no restrictive provider caps
+  if (!isRecord(mockFullProviderData.config)) {
+    throw new Error('Test setup error: mockFullProviderData.config is not an object');
+  }
+  const cfg = {
+    ...mockFullProviderData.config,
+    input_token_cost_rate: 1,
+    output_token_cost_rate: 2,
+    context_window_tokens: 10000,
+    provider_max_input_tokens: undefined,
+    provider_max_output_tokens: undefined,
+  };
+  const { client: dbClient } = setupMockClient({
+    'ai_providers': { select: { data: [{ ...mockFullProviderData, config: cfg }], error: null } },
+  });
+
+  // Wallet balance 1000; prompt tokens 100 → SSOT cap = 400 (min(balance*0.8=800, remaining=900)/2)
+  const { instance: mockTokenWalletService } = createMockTokenWalletService({
+    getBalance: () => Promise.resolve('1000'),
+  });
+
+  const deps = getMockDeps(mockTokenWalletService);
+  const callUnifiedAISpy = spy(deps, 'callUnifiedAIModel');
+  // Non-oversized path: fixed token count
+  deps.countTokens = () => 100;
+
+  const params: ExecuteModelCallAndSaveParams = {
+    dbClient: dbClient as unknown as SupabaseClient<Database>,
+    deps,
+    authToken: 'auth-token',
+    job: createMockJob({ ...testPayload, walletId: 'wallet-ssot' }),
+    projectOwnerUserId: 'user-789',
+    providerDetails: mockProviderData,
+    promptConstructionPayload: {
+      systemInstruction: 'SYS',
+      conversationHistory: [ { role: 'user', content: 'hello' } ],
+      resourceDocuments: [],
+      currentUserPrompt: 'current',
+    },
+    sessionData: mockSessionData,
+    compressionStrategy: getSortedCompressionCandidates,
+  };
+
+  // Act
+  await executeModelCallAndSave(params);
+
+  // Assert
+  assertEquals(callUnifiedAISpy.calls.length, 1, 'callUnifiedAIModel should be called once');
+  const sent = callUnifiedAISpy.calls[0].args[0];
+  assert(isChatApiRequest(sent), 'Adapter should receive a ChatApiRequest');
+  // RED: SSOT cap must be set and forwarded
+  assertEquals(sent.max_tokens_to_generate, 400);
 });
 
 Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are forwarded unchanged (distinct from messages)', async () => {
@@ -1142,7 +1196,6 @@ Deno.test('executeModelCallAndSave - identity after compression: final sized pay
     ...mockFullProviderData,
     config: {
       tokenization_strategy: { type: 'rough_char_count' },
-      max_context_window_tokens: 50,
       context_window_tokens: 50,
       provider_max_input_tokens: 10000,
       input_token_cost_rate: 0.001,
