@@ -192,7 +192,7 @@ Deno.test(
         testDomainId = domain.id;
 
         // --- Fetch AI Providers from DB, treating seed.sql as the source of truth ---
-        const requiredProviders = ['openai-gpt-4-turbo', 'claude-3-opus-20240229'];
+        const requiredProviders = ['openai-gpt-4-turbo', 'anthropic-claude-3-opus-20240229'];
         const { data: fetchedProviders, error: providersError } = await adminClient
           .from('ai_providers')
           .select('id, api_identifier')
