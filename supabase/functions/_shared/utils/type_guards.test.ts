@@ -40,10 +40,11 @@ import {
     isKnownTiktokenEncoding,
     isChatApiRequest,
     isApiChatMessage,
+    isFinishReason,
+    isContinueReason,
 } from './type_guards.ts';
 import type { DialecticContributionRow, DialecticJobRow, FailedAttemptError } from '../../dialectic-service/dialectic.interface.ts';
-import type { AiModelExtendedConfig, TokenUsage, ChatInsert } from '../types.ts';
-import type { ChatApiRequest } from '../types.ts';
+import type { AiModelExtendedConfig, TokenUsage, ChatInsert, ChatApiRequest, FinishReason } from '../types.ts';
 import { ProjectContext, StageContext } from '../prompt-assembler.interface.ts';
 import { CanonicalPathParams } from '../types/file_manager.types.ts';
 
@@ -1992,5 +1993,30 @@ Deno.test('Type Guard: isKnownTiktokenEncoding', async (t) => {
         assert(!isKnownTiktokenEncoding(123));
         assert(!isKnownTiktokenEncoding({}));
         assert(!isKnownTiktokenEncoding([]));
+    });
+});
+
+// New tests for FinishReason guards
+Deno.test('Type Guard: isFinishReason and isContinueReason', async (t) => {
+    await t.step('isFinishReason accepts full set and null; isContinueReason only accepts continuation subset', () => {
+        const all: (FinishReason)[] = [
+            'stop','length','tool_calls','content_filter','function_call','error','unknown','max_tokens','content_truncated',null
+        ];
+        for (const r of all) {
+            // unknown → FinishReason
+            const val = r;
+            assert(isFinishReason(val));
+        }
+
+        // Continuation subset
+        const contTrue: FinishReason[] = ['max_tokens','length','content_truncated','unknown'];
+        const contFalse: FinishReason[] = ['stop','tool_calls','content_filter','function_call','error', null];
+
+        for (const r of contTrue) {
+            assert(isContinueReason(r));
+        }
+        for (const r of contFalse) {
+            assert(!isContinueReason(r));
+        }
     });
 });

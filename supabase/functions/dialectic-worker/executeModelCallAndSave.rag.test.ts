@@ -31,6 +31,8 @@ import {
     setupMockClient, 
     getMockDeps 
 } from './executeModelCallAndSave.test.ts';
+import { DocumentRelationships } from '../_shared/types/file_manager.types.ts';
+
 
 Deno.test('resource documents are used for sizing but not included in ChatApiRequest.messages', async () => {
     const { client: dbClient } = setupMockClient({
@@ -558,7 +560,7 @@ Deno.test('should throw ContextWindowError if compression fails to reduce size s
     assertEquals(ragSpy.calls.length, 1, "RAG service should have been called for the one available candidate.");
 });
 
-// Step 58 (RED): After compression, enforce allowed input headroom before provider call
+// After compression, enforce allowed input headroom before provider call
 // End-state assertion: if final token count exceeds allowed input (provider_max_input_tokens - (plannedMaxOutputTokens + safetyBuffer)),
 // the provider must NOT be called.
 Deno.test('does not call provider if final input exceeds allowed headroom after compression', async () => {
@@ -686,11 +688,14 @@ Deno.test('proceeds when final input equals allowed headroom (boundary success)'
     currentUserPrompt: 'current',
   };
 
+  const stageSlug = 'thesis';
+  const rootId = 'root-prev';
+  const rel: DocumentRelationships = { [stageSlug]: rootId };
   const params: ExecuteModelCallAndSaveParams = {
     dbClient: dbClient as unknown as SupabaseClient<Database>,
     deps,
     authToken: 'auth-token',
-    job: createMockJob({ ...testPayload, walletId: 'wallet-xyz' }),
+    job: createMockJob({ ...testPayload, walletId: 'wallet-xyz', stageSlug, document_relationships: rel }),
     projectOwnerUserId: 'user-789',
     providerDetails: mockProviderData,
     promptConstructionPayload: payload,
@@ -765,7 +770,7 @@ Deno.test('fails when final input exceeds allowed headroom by 1 token (boundary 
   countStub.restore();
 });
 
-Deno.test('enforces strict user-assistant alternation in ChatApiRequest after compression (RED)', async () => {
+Deno.test('enforces strict user-assistant alternation in ChatApiRequest after compression', async () => {
   // Arrange: configure compression and create a history that violates alternation (two assistants in a row)
   if (!isRecord(mockFullProviderData.config)) {
     throw new Error('Test setup error: mockFullProviderData.config is not an object');
@@ -804,6 +809,9 @@ Deno.test('enforces strict user-assistant alternation in ChatApiRequest after co
     { id: 'u-last', role: 'user', content: 'Please continue.' },
   ];
 
+  const stageSlug2 = 'thesis';
+  const rootId2 = 'prev';
+  const rel2: DocumentRelationships = { [stageSlug2]: rootId2 };
   const params: ExecuteModelCallAndSaveParams = {
     dbClient: dbClient as unknown as SupabaseClient<Database>,
     deps,
@@ -811,9 +819,11 @@ Deno.test('enforces strict user-assistant alternation in ChatApiRequest after co
     job: createMockJob({
       ...testPayload,
       walletId: 'wallet-turn',
-      target_contribution_id: 'prev',
+      target_contribution_id: rootId2,
       continueUntilComplete: true,
       continuation_count: 1,
+      stageSlug: stageSlug2,
+      document_relationships: rel2,
     }),
     projectOwnerUserId: 'user-789',
     providerDetails: mockProviderData,
@@ -855,7 +865,6 @@ Deno.test('enforces strict user-assistant alternation in ChatApiRequest after co
 
   countStub.restore();
 });
-
 
 Deno.test('preserves continuation anchors after compression', async () => {
   // Arrange: force compression with controlled token counts
@@ -900,6 +909,9 @@ Deno.test('preserves continuation anchors after compression', async () => {
     { id: 'please-continue', role: 'user', content: 'Please continue.' },   // single trailing continuation
   ];
 
+  const stageSlug3 = 'thesis';
+  const rootId3 = 'prev-contrib-id';
+  const rel3: DocumentRelationships = { [stageSlug3]: rootId3 };
   const params: ExecuteModelCallAndSaveParams = {
     dbClient: dbClient as unknown as SupabaseClient<Database>,
     deps,
@@ -907,9 +919,11 @@ Deno.test('preserves continuation anchors after compression', async () => {
     job: createMockJob({
       ...testPayload,
       walletId: 'wallet-ctn',
-      target_contribution_id: 'prev-contrib-id',
+      target_contribution_id: rootId3,
       continueUntilComplete: true,
       continuation_count: 1,
+      stageSlug: stageSlug3,
+      document_relationships: rel3,
     }),
     projectOwnerUserId: 'user-789',
     providerDetails: mockProviderData,

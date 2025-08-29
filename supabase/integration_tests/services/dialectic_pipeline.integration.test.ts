@@ -3,6 +3,7 @@ import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import {
   coreCleanupTestResources,
   coreCreateAndSetupTestUser,
+  coreEnsureTestUserAndWallet,
   initializeSupabaseAdminClient,
   initializeTestDeps,
   MOCK_MODEL_CONFIG,
@@ -11,7 +12,6 @@ import {
 } from "../../functions/_shared/_integration.test.utils.ts";
 import { type Database } from "../../functions/types_db.ts";
 import { getAiProviderAdapter } from "../../functions/_shared/ai_service/factory.ts";
-import { getMockAiProviderAdapter } from "../../functions/_shared/ai_service/ai_provider.mock.ts";
 import {
   type GenerateContributionsPayload,
   type DialecticJobRow,
@@ -46,19 +46,19 @@ import { countTokens } from '../../functions/_shared/utils/tokenizer_utils.ts';
 import { getAiProviderConfig } from '../../functions/dialectic-worker/processComplexJob.ts';
 import { PromptAssembler } from "../../functions/_shared/prompt-assembler.ts";
 import { DummyAdapter } from "../../functions/_shared/ai_service/dummy_adapter.ts";
-import { createMockTokenWalletService } from "../../functions/_shared/services/tokenWalletService.mock.ts";
 import { NotificationService } from "../../functions/_shared/utils/notification.service.ts";
+import { TokenWalletService } from "../../functions/_shared/services/tokenWalletService.ts";
 
 // --- Test Suite Setup ---
 let adminClient: SupabaseClient<Database>;
-const mockAiAdapter = getMockAiProviderAdapter(testLogger, MOCK_MODEL_CONFIG);
+let primaryUserClient: SupabaseClient<Database>;
 let testDeps: IDialecticJobDeps;
 
 const pollForCondition = async (
   condition: () => Promise<boolean>,
   timeoutMessage: string,
-  interval = 1000,
-  timeout = 30000,
+  interval = 500,
+  timeout = 2000,
 ) => {
   const startTime = Date.now();
   while (Date.now() - startTime < timeout) {
@@ -75,7 +75,7 @@ const pollForJobStatus = async (
     expectedStatus: string,
     timeoutMessage: string,
     interval = 500,
-    timeout = 10000,
+    timeout = 2000,
 ): Promise<DialecticJobRow> => {
     let job: DialecticJobRow | null = null;
     await pollForCondition(async () => {
@@ -168,6 +168,7 @@ Deno.test(
     let testSession: StartSessionSuccessResponse | null = null;
     let modelAId: string;
     let modelBId: string;
+    let testWalletId: string;
 
     const setup = async () => {
         adminClient = initializeSupabaseAdminClient();
@@ -177,6 +178,7 @@ Deno.test(
         const { userId, userClient, jwt } = await coreCreateAndSetupTestUser();
         primaryUserId = userId;
         primaryUserJwt = jwt;
+        primaryUserClient = userClient;
         const { data: { user } } = await userClient.auth.getUser();
         assertExists(user, "Test user could not be created or fetched.");
         primaryUser = user;
@@ -192,7 +194,8 @@ Deno.test(
         testDomainId = domain.id;
 
         // --- Fetch AI Providers from DB, treating seed.sql as the source of truth ---
-        const requiredProviders = ['openai-gpt-4-turbo', 'anthropic-claude-3-opus-20240229'];
+        // Use providers that are seeded as enabled and active
+        const requiredProviders = ['openai-gpt-4', 'anthropic-claude-3-7-sonnet-20250219'];
         const { data: fetchedProviders, error: providersError } = await adminClient
           .from('ai_providers')
           .select('id, api_identifier')
@@ -201,16 +204,14 @@ Deno.test(
         assert(!providersError, `Failed to fetch AI providers: ${providersError?.message}`);
         assert(fetchedProviders.length === requiredProviders.length, `Could not find all required AI providers. Found: ${fetchedProviders.map(p => p.api_identifier).join(', ')}`);
 
-        const modelA = fetchedProviders.find(p => p.api_identifier === 'openai-gpt-4-turbo');
-        const modelB = fetchedProviders.find(p => p.api_identifier === 'claude-3-opus-20240229');
+        const modelA = fetchedProviders.find(p => p.api_identifier === 'openai-gpt-4');
+        const modelB = fetchedProviders.find(p => p.api_identifier === 'anthropic-claude-3-7-sonnet-20250219');
 
-        assertExists(modelA, "The 'openai-gpt-4-turbo' provider must exist in the database for this test to run.");
-        assertExists(modelB, "The 'claude-3-opus-20240229' provider must exist in the database for this test to run.");
+        assertExists(modelA, "The 'openai-gpt-4' provider must exist in the database for this test to run.");
+        assertExists(modelB, "The 'anthropic-claude-3-7-sonnet-20250219' provider must exist in the database for this test to run.");
         
         modelAId = modelA.id;
         modelBId = modelB.id;
-
-        mockAiAdapter.controls.reset();
 
         // Fetch the default embedding provider
         const { data: embeddingProvider, error: embeddingProviderError } = await adminClient
@@ -241,8 +242,8 @@ Deno.test(
 
         const embeddingClient = new EmbeddingClient(embeddingAdapter);
         const textSplitter = new LangchainTextSplitter();
-        const mockWallet = createMockTokenWalletService();
-        const indexingService = new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, mockWallet.instance);
+        const realWallet = new TokenWalletService(primaryUserClient, adminClient);
+        const indexingService = new IndexingService(adminClient, testLogger, textSplitter, embeddingClient, realWallet);
         const ragService = new RagService({
             dbClient: adminClient,
             logger: testLogger,
@@ -277,6 +278,49 @@ Deno.test(
             countTokens: countTokens,
             getAiProviderConfig,
             promptAssembler: new PromptAssembler(adminClient),
+            tokenWalletService: realWallet,
+        };
+
+        // Ensure a REAL wallet exists with a large balance and capture its UUID for the test
+        await coreEnsureTestUserAndWallet(primaryUserId, 1000000000, 'local');
+        const contextWallet = await realWallet.getWalletForContext(primaryUserId, undefined);
+        if (!contextWallet) {
+            throw new Error("A token wallet must exist for the test user.");
+        }
+        testWalletId = contextWallet.walletId;
+
+        // Configure deps to call real /chat in TEST MODE and inject per-model behavior into prompts
+        const realCallUnified = callUnifiedAIModel;
+        const realExecute = executeModelCallAndSave;
+        testDeps.callUnifiedAIModel = (chatApiRequest, userAuthToken, deps) => {
+            return realCallUnified(chatApiRequest, userAuthToken, { ...(deps || {}), isTest: true });
+        };
+        testDeps.executeModelCallAndSave = async (params) => {
+            const { job } = params;
+            const modified = { ...params, promptConstructionPayload: { ...params.promptConstructionPayload } };
+            const current = modified.promptConstructionPayload;
+            const base = typeof current.currentUserPrompt === 'string' ? current.currentUserPrompt : '';
+            if (job && isDialecticJobPayload(job.payload)) {
+                const attempt = typeof job.attempt_count === 'number' ? job.attempt_count : 0;
+                if (job.payload.model_id === modelAId) {
+                    if (attempt === 0) {
+                        current.currentUserPrompt = `${base}\nSIMULATE_ERROR`;
+                        testLogger.info(`[Test] Injecting SIMULATE_ERROR for Job ${job.id} on attempt ${attempt}`);
+                    } else {
+                        testLogger.info(`[Test] Not injecting error for Job ${job.id} on attempt ${attempt} to allow retry success`);
+                    }
+                } else if (job.payload.model_id === modelBId) {
+                    const payload = job.payload;
+                    const isInitialModelBJob = (payload.target_contribution_id === undefined) && (payload.continuation_count === undefined || payload.continuation_count === 0);
+                    if (isInitialModelBJob) {
+                        current.currentUserPrompt = `${base}\nSIMULATE_MAX_TOKENS`;
+                        testLogger.info(`[Test] Injecting SIMULATE_MAX_TOKENS for initial Model B Job ${job.id}`);
+                    } else {
+                        testLogger.info(`[Test] Skipping SIMULATE_MAX_TOKENS for continuation Model B Job ${job.id}`);
+                    }
+                }
+            }
+            return realExecute(modified);
         };
     };
 
@@ -345,6 +389,10 @@ Deno.test(
         return;
       }
 
+      // Capture contents to assert final root equals concatenation of chain
+      let initialChunkContent = '';
+      let continuationChunkContent = '';
+
       // --- Arrange ---
       const generatePayload: GenerateContributionsPayload = {
         sessionId: testSession.id,
@@ -352,7 +400,7 @@ Deno.test(
         iterationNumber: 1,
         projectId: testSession.project_id,
         continueUntilComplete: true,
-        walletId: 'test-wallet',
+        walletId: testWalletId,
       };
       
       // --- Act & Assert: Job Creation ---
@@ -378,16 +426,12 @@ Deno.test(
         assertExists(jobA, "Job for model A was not found.");
         assertExists(jobB, "Job for model B was not found.");
 
-        // --- Execute Jobs Sequentially to Control Mock Behavior ---
+        // --- Execute Jobs Sequentially. Use real adapters with test mode header via callUnifiedAIModel ---
         testLogger.info(`[Test] >>> Executing Job A (id: ${jobA.id}) - expecting failure...`);
-        mockAiAdapter.controls.setMockError(new Error("Test-induced AI failure"));
         await handleJob(adminClient, jobA, testDeps, primaryUserJwt);
-        mockAiAdapter.controls.reset();
 
         testLogger.info(`[Test] >>> Executing Job B (id: ${jobB.id}) - expecting partial success...`);
-        mockAiAdapter.controls.setMockResponse({ content: "This is a partial response for claude-3-opus.", finish_reason: 'max_tokens' });
         await handleJob(adminClient, jobB, testDeps, primaryUserJwt);
-        mockAiAdapter.controls.reset();
         
         // --- Verify Retry and Continuation Creation ---
         const retryingJobA = await pollForJobStatus(jobA.id, 'retrying', `Job A (${jobA.id}) should have status 'retrying' after first failed attempt.`);
@@ -406,6 +450,19 @@ Deno.test(
         
         const targetContributionId = jobBResults.modelProcessingResult.contributionId;
 
+        // Diagnostics: enumerate jobs tied to this contribution to understand .single() failure causes
+        testLogger.info(`[Diagnostics] Looking for continuation job. sessionId=${testSession.id}, targetContributionId=${targetContributionId}`);
+        const { data: allWithTarget, error: allWithTargetErr } = await adminClient
+          .from('dialectic_generation_jobs')
+          .select('id,status,session_id,parent_job_id,payload')
+          .eq('payload->>target_contribution_id', targetContributionId);
+        testLogger.info(`[Diagnostics] Jobs with target_contribution_id=${targetContributionId}: count=${allWithTarget?.length ?? 0}, error=${allWithTargetErr?.message ?? 'none'}`);
+        if (allWithTarget && allWithTarget.length > 0) {
+          testLogger.info(`[Diagnostics] Job IDs: ${allWithTarget.map(j => j.id).join(', ')}`);
+          const pending = allWithTarget.filter(j => j.status === 'pending_continuation');
+          testLogger.info(`[Diagnostics] pending_continuation subset count=${pending.length}`);
+        }
+
         const { data: continuationJobData, error: continuationJobError } = await adminClient
           .from('dialectic_generation_jobs')
           .select('*')
@@ -415,16 +472,115 @@ Deno.test(
         assert(!continuationJobError, `Error fetching continuation job: ${continuationJobError?.message}`);
         assertExists(continuationJobData, "A new continuation job should have been created for job B.");
 
+        // Capture initial chunk content from immutable raw JSON (not the main file which will be overwritten by assembly)
+        {
+          const { data: rootContribRows, error: rootContribErr } = await adminClient
+            .from('dialectic_contributions')
+            .select('id, storage_bucket, storage_path, file_name, raw_response_storage_path')
+            .eq('id', targetContributionId);
+          assert(!rootContribErr, `Error fetching root contribution for initial content: ${rootContribErr?.message}`);
+          assertExists(rootContribRows, 'Root contribution not found for initial content capture');
+          if (rootContribRows && rootContribRows.length === 1) {
+            const rootContrib = rootContribRows[0];
+            const rawPath = rootContrib.raw_response_storage_path;
+            for (let attempt = 0; attempt < 3 && initialChunkContent.trim().length === 0; attempt++) {
+              if (typeof rawPath === 'string' && rawPath.length > 0) {
+                const { data: initJsonBytes, error: initJsonErr } = await downloadFromStorage(
+                  adminClient,
+                  rootContrib.storage_bucket,
+                  rawPath,
+                );
+                assert(!initJsonErr, `Failed to download initial chunk raw JSON: ${initJsonErr?.message}`);
+                if (initJsonBytes) {
+                  const jsonText = new TextDecoder().decode(initJsonBytes);
+                  try {
+                    const parsed = JSON.parse(jsonText);
+                    if (parsed && typeof parsed === 'object' && typeof parsed.content === 'string') {
+                      initialChunkContent = parsed.content;
+                    }
+                  } catch (_) {
+                    // fall back to main file only if JSON parse fails
+                  }
+                }
+              }
+              if (initialChunkContent.trim().length === 0) {
+                const { data: initBytes, error: initDlErr } = await downloadFromStorage(
+                  adminClient,
+                  rootContrib.storage_bucket,
+                  `${rootContrib.storage_path}/${rootContrib.file_name}`,
+                );
+                assert(!initDlErr, `Failed to download initial chunk content: ${initDlErr?.message}`);
+                if (initBytes) initialChunkContent = new TextDecoder().decode(initBytes);
+              }
+              if (initialChunkContent.trim().length === 0) await new Promise((r) => setTimeout(r, 50));
+            }
+            assert(initialChunkContent.trim().length > 0, 'Initial chunk content should have been captured before assembly');
+          }
+        }
+
         // --- Execute Second Run to Process Retries and Continuations ---
         testLogger.info(`[Test] >>> Executing second run for retrying job and continuation job...`);
-        mockAiAdapter.controls.setMockResponse({ content: "This is the final continued part." });
         await executePendingDialecticJobs(testSession.id, testDeps, primaryUserJwt);
         
         // --- Verify Final States ---
         const completedJobA = await pollForJobStatus(jobA.id, 'completed', `Job A (${jobA.id}) should have status 'completed' after successful retry.`);
         assertEquals(completedJobA.attempt_count, 2, "Job A attempt count should be 2 after successful retry.");
 
-        await pollForJobStatus(continuationJobData.id, 'completed', `Continuation job (${continuationJobData.id}) should have 'completed' status.`);
+        const completedContinuationJob = await pollForJobStatus(continuationJobData.id, 'completed', `Continuation job (${continuationJobData.id}) should have 'completed' status.`);
+
+        // Download continuation chunk content from immutable raw JSON
+        {
+          const contResults = completedContinuationJob.results && typeof completedContinuationJob.results === 'string'
+            ? JSON.parse(completedContinuationJob.results)
+            : completedContinuationJob.results;
+          if (!hasModelResultWithContributionId(contResults)) {
+            assert(false, `Continuation job results missing contributionId. Got: ${JSON.stringify(contResults)}`);
+          } else {
+            const contContributionId = contResults.modelProcessingResult.contributionId;
+            const { data: contContribRows, error: contContribErr } = await adminClient
+              .from('dialectic_contributions')
+              .select('id, storage_bucket, storage_path, file_name, raw_response_storage_path')
+              .eq('id', contContributionId);
+            assert(!contContribErr, `Error fetching continuation contribution: ${contContribErr?.message}`);
+            assertExists(contContribRows, 'Continuation contribution row was not found');
+            if (contContribRows && contContribRows.length === 1) {
+              const contContrib = contContribRows[0];
+              const contRawPath = contContrib.raw_response_storage_path;
+              for (let attempt = 0; attempt < 3 && continuationChunkContent.trim().length === 0; attempt++) {
+                if (typeof contRawPath === 'string' && contRawPath.length > 0) {
+                  const { data: contJsonBytes, error: contJsonErr } = await downloadFromStorage(
+                    adminClient,
+                    contContrib.storage_bucket,
+                    contRawPath,
+                  );
+                  assert(!contJsonErr, `Failed to download continuation chunk raw JSON: ${contJsonErr?.message}`);
+                  if (contJsonBytes) {
+                    const jsonText = new TextDecoder().decode(contJsonBytes);
+                    try {
+                      const parsed = JSON.parse(jsonText);
+                      if (parsed && typeof parsed === 'object' && typeof parsed.content === 'string') {
+                        continuationChunkContent = parsed.content;
+                      }
+                    } catch (_) {
+                      // fall back to main file only if JSON parse fails
+                    }
+                  }
+                }
+                if (continuationChunkContent.trim().length === 0) {
+                  const { data: contBytes, error: contDlErr } = await downloadFromStorage(
+                    adminClient,
+                    contContrib.storage_bucket,
+                    `${contContrib.storage_path}/${contContrib.file_name}`,
+                  );
+                  assert(!contDlErr, `Failed to download continuation chunk content: ${contDlErr?.message}`);
+                  if (contBytes) continuationChunkContent = new TextDecoder().decode(contBytes);
+                }
+                if (continuationChunkContent.trim().length === 0) await new Promise((r) => setTimeout(r, 50));
+              }
+              assert(continuationChunkContent.trim().length > 0, 'Continuation chunk content should have been captured');
+            }
+          }
+        }
 
       } else {
         assert(false, "jobData or job_ids were not created correctly.");
@@ -460,8 +616,10 @@ Deno.test(
       
       if (downloadedData) {
         const finalContent = new TextDecoder().decode(downloadedData);
-        const expectedContent = "This is a partial response for claude-3-opus.This is the final continued part.";
-        assertEquals(finalContent, expectedContent, "The final content of the continued contribution is incorrect.");
+        const normalize = (s: string) => s.replace(/\r\n/g, '\n').replace(/\n{2,}/g, '\n\n').trim();
+        const expectedContent = normalize(`${initialChunkContent}${continuationChunkContent}`);
+        const actualContent = normalize(finalContent);
+        assertEquals(actualContent, expectedContent, "The final content of the continued contribution is incorrect.");
       } else {
         assert(false, "Downloaded content for contribution B was null.");
       }
@@ -514,7 +672,7 @@ Deno.test(
         stageSlug: "antithesis",
         iterationNumber: 1,
         projectId: testSession.project_id,
-        walletId: 'test-wallet',
+        walletId: testWalletId,
       };
       
       // --- Act ---
@@ -671,7 +829,7 @@ Deno.test(
             stageSlug: "synthesis",
             iterationNumber: 1,
             projectId: testSession.project_id,
-            walletId: 'test-wallet',
+            walletId: testWalletId,
         };
         const { data: jobData, error: creationError } = await generateContributions(adminClient, generatePayload, primaryUser, testDeps);
         assert(!creationError, `Error creating parent job for synthesis: ${creationError?.message}`);
@@ -792,7 +950,7 @@ Deno.test(
             stageSlug: "parenthesis",
             iterationNumber: 1,
             projectId: testSession.project_id,
-            walletId: 'test-wallet',
+            walletId: testWalletId,
         };
         const { data: jobData, error: creationError } = await generateContributions(adminClient, generatePayload, primaryUser, testDeps);
         assert(!creationError, `Error creating parent job for parenthesis: ${creationError?.message}`);
@@ -884,7 +1042,7 @@ Deno.test(
             stageSlug: "paralysis",
             iterationNumber: 1,
             projectId: testSession.project_id,
-            walletId: 'test-wallet',
+            walletId: testWalletId,
         };
         const { data: jobData, error: creationError } = await generateContributions(adminClient, generatePayload, primaryUser, testDeps);
         assert(!creationError, `Error creating parent job for paralysis: ${creationError?.message}`);

@@ -16,6 +16,7 @@ import {
   isStringRecord,
   isContributionType,
   isRecord,
+  isDocumentRelationships,
 } from '../_shared/utils/type_guards.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
@@ -86,7 +87,25 @@ export async function continueJob(
       ...('canonicalPathParams' in job.payload && isRecord(job.payload.canonicalPathParams) ? job.payload.canonicalPathParams : {}),
       contributionType: job.payload.output_type,
     },
+    document_relationships:
+      ('document_relationships' in job.payload && isDocumentRelationships(job.payload.document_relationships))
+        ? job.payload.document_relationships
+        : (isDocumentRelationships(savedContribution.document_relationships)
+            ? savedContribution.document_relationships
+            : undefined),
   };
+
+  // Invariant: Continuation enqueue requires valid document_relationships from either the triggering payload
+  // or the saved contribution. Do not enqueue if missing.
+  if (!isDocumentRelationships(payloadObject.document_relationships)) {
+    const error = new Error('Continuation enqueue requires valid document_relationships');
+    deps.logger.error('[dialectic-worker] [continueJob] Missing document_relationships for continuation.', {
+      jobId: job.id,
+      payloadHasRelationships: 'document_relationships' in job.payload && isDocumentRelationships(job.payload.document_relationships),
+      savedHasRelationships: isDocumentRelationships(savedContribution.document_relationships),
+    });
+    return { enqueued: false, error };
+  }
   
   // Remove undefined keys to keep the payload clean. JSON.stringify would do this anyway,
   // but this makes the new payload object explicit and easier to debug.

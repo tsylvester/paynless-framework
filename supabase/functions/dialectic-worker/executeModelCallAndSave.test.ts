@@ -27,6 +27,7 @@ import {
     PromptConstructionPayload,
     SourceDocument
 } from '../dialectic-service/dialectic.interface.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
 import type { NotificationServiceType } from '../_shared/types/notification.service.types.ts';
 import type { LogMetadata, Messages } from '../_shared/types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
@@ -37,7 +38,7 @@ import type { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts'
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 
 // Local helpers for arranging tests
-const buildPromptPayload = (overrides: Partial<PromptConstructionPayload> = {}): PromptConstructionPayload => ({
+export const buildPromptPayload = (overrides: Partial<PromptConstructionPayload> = {}): PromptConstructionPayload => ({
   systemInstruction: undefined,
   conversationHistory: [],
   resourceDocuments: [],
@@ -45,7 +46,7 @@ const buildPromptPayload = (overrides: Partial<PromptConstructionPayload> = {}):
   ...overrides,
 });
 
-const buildExecuteParams = (dbClient: SupabaseClient<Database>, deps: IDialecticJobDeps, overrides: Partial<ExecuteModelCallAndSaveParams> = {}): ExecuteModelCallAndSaveParams => ({
+export const buildExecuteParams = (dbClient: SupabaseClient<Database>, deps: IDialecticJobDeps, overrides: Partial<ExecuteModelCallAndSaveParams> = {}): ExecuteModelCallAndSaveParams => ({
   dbClient,
   deps,
   authToken: 'auth-token',
@@ -58,7 +59,7 @@ const buildExecuteParams = (dbClient: SupabaseClient<Database>, deps: IDialectic
   ...overrides,
 });
 
-const spyCallModel = (deps: IDialecticJobDeps) => spy(deps, 'callUnifiedAIModel');
+export const spyCallModel = (deps: IDialecticJobDeps) => spy(deps, 'callUnifiedAIModel');
 
 // Helper function to create a valid DialecticJobRow for testing
 export function createMockJob(payload: DialecticJobPayload, overrides: Partial<DialecticJobRow> = {}): DialecticJobRow {
@@ -832,7 +833,7 @@ Deno.test('executeModelCallAndSave - includes rendered template as first user me
   clearAllStubs?.();
 });
 
-Deno.test('executeModelCallAndSave - sets and forwards max_tokens_to_generate using SSOT (RED)', async () => {
+Deno.test('executeModelCallAndSave - sets and forwards max_tokens_to_generate using SSOT', async () => {
   // Arrange: provider config with simple rates and no restrictive provider caps
   if (!isRecord(mockFullProviderData.config)) {
     throw new Error('Test setup error: mockFullProviderData.config is not an object');
@@ -1000,50 +1001,7 @@ Deno.test('executeModelCallAndSave - resourceDocuments increase counts and are f
   countTokensStub.restore();
 });
 
-Deno.test('executeModelCallAndSave - continuation uses gathered history and does not duplicate "Please continue."', async () => {
-  const { client: dbClient, clearAllStubs } = setupMockClient({
-    'ai_providers': {
-      select: { data: [mockFullProviderData], error: null }
-    }
-  });
-
-  const deps = getMockDeps();
-  const callUnifiedAISpy = spyCallModel(deps);
-
-  const gatheredHistory: Messages[] = [
-    { role: 'user', content: 'SEED: Original user prompt' },
-    { role: 'assistant', content: 'First assistant reply' },
-    { role: 'user', content: '' }, // spacer to maintain alternation in strict mode
-    { role: 'assistant', content: 'Intermediate assistant chunk' },
-    { role: 'user', content: 'Please continue.' },
-  ];
-
-  const params = buildExecuteParams(dbClient as unknown as SupabaseClient<Database>, deps, {
-    job: createMockJob(testPayload, { target_contribution_id: 'root-123' }),
-    promptConstructionPayload: buildPromptPayload({
-      currentUserPrompt: 'Please continue.',
-      conversationHistory: gatheredHistory,
-    }),
-  });
-
-  await executeModelCallAndSave(params);
-
-  const firstArg = callUnifiedAISpy.calls[0].args[0];
-  assert(isChatApiRequest(firstArg), 'First argument to callUnifiedAIModel should be a ChatApiRequest');
-
-  // message should be the continuation prompt
-  assertEquals(firstArg.message, 'Please continue.');
-  // messages should match gathered history exactly (no extra prepend)
-  assertExists(firstArg.messages, 'messages should exist on ChatApiRequest');
-  assertEquals(firstArg.messages, gatheredHistory.map((m) => ({ role: m.role, content: m.content })));
-  // ensure exactly one trailing "Please continue." message
-  const continueCount = firstArg.messages.filter((m: { role: string; content: string }) => m.role === 'user' && m.content === 'Please continue.').length;
-  assertEquals(continueCount, 1);
-
-  clearAllStubs?.();
-});
-
-Deno.test('executeModelCallAndSave - builds full ChatApiRequest including resourceDocuments and walletId (RED)', async () => {
+Deno.test('executeModelCallAndSave - builds full ChatApiRequest including resourceDocuments and walletId', async () => {
   const { client: dbClient } = setupMockClient({
     'ai_providers': {
       select: { data: [mockFullProviderData], error: null }
@@ -1325,3 +1283,4 @@ Deno.test('executeModelCallAndSave - rendering hygiene: final message has no pla
   // Assert systemInstruction is passthrough-only (undefined when not provided)
   assertEquals(firstArg.systemInstruction, undefined, 'systemInstruction should be undefined when not provided (no synthesis)');
 });
+

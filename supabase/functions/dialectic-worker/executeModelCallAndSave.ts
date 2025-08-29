@@ -4,8 +4,19 @@ import {
   type ExecuteModelCallAndSaveParams,
 } from '../dialectic-service/dialectic.interface.ts';
 import { UploadContext, FileType } from '../_shared/types/file_manager.types.ts';
-import { isDialecticContribution, isAiModelExtendedConfig, isDialecticExecuteJobPayload, isContributionType, isFileType, isApiChatMessage, isContinueReason } from "../_shared/utils/type_guards.ts";
-import { AiModelExtendedConfig, ChatApiRequest, Messages } from '../_shared/types.ts';
+import { 
+    isDialecticContribution, 
+    isAiModelExtendedConfig, 
+    isDialecticExecuteJobPayload, 
+    isContributionType, 
+    isFileType, 
+    isApiChatMessage, 
+    isContinueReason, 
+    isRecord, 
+    isFinishReason, 
+    isDocumentRelationships 
+} from "../_shared/utils/type_guards.ts";
+import { AiModelExtendedConfig, ChatApiRequest, Messages, FinishReason } from '../_shared/types.ts';
 import { CountTokensDeps, CountableChatPayload } from '../_shared/types/tokenizer.types.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { ResourceDocuments } from "../_shared/types.ts";
@@ -617,7 +628,14 @@ export async function executeModelCallAndSave(
         throw new Error(aiResponse.error || 'AI response was empty.');
     }
 
-    const isContinuation = !!aiResponse.finish_reason && isContinueReason(aiResponse.finish_reason);
+    // Determine finish reason from either top-level or raw provider response
+    let resolvedFinish: FinishReason = null;
+    if (isFinishReason(aiResponse.finish_reason)) {
+        resolvedFinish = aiResponse.finish_reason;
+    } else if (isRecord(aiResponse.rawProviderResponse) && isFinishReason(aiResponse.rawProviderResponse['finish_reason'])) {
+        resolvedFinish = aiResponse.rawProviderResponse['finish_reason'];
+    }
+    const shouldContinue = isContinueReason(resolvedFinish);
 
     const contentForStorage: string = aiResponse.content;
     
@@ -643,6 +661,23 @@ export async function executeModelCallAndSave(
     const contributionType = isContributionType(rawContributionType)
         ? rawContributionType
         : undefined;
+
+    const targetContributionId =
+        (typeof job.payload.target_contribution_id === 'string' && job.payload.target_contribution_id.length > 0)
+            ? job.payload.target_contribution_id
+            : (typeof job.target_contribution_id === 'string' && job.target_contribution_id.length > 0)
+                ? job.target_contribution_id
+                : undefined;
+
+    const isContinuationForStorage = typeof targetContributionId === 'string' && targetContributionId.trim() !== '';
+
+    // Validate continuation relationships before persisting (hard-fail if invalid/missing)
+    if (isContinuationForStorage) {
+        const relsUnknown = job.payload.document_relationships;
+        if (!isDocumentRelationships(relsUnknown)) {
+            throw new Error('Continuation save requires valid document_relationships');
+        }
+    }
 
     const uploadContext: UploadContext = {
         pathContext: {
@@ -674,11 +709,11 @@ export async function executeModelCallAndSave(
             tokensUsedOutput: aiResponse.outputTokens,
             processingTimeMs: aiResponse.processingTimeMs, 
             seedPromptStoragePath: 'file/location',
-            target_contribution_id: job.payload.target_contribution_id,
+            target_contribution_id: targetContributionId,
             document_relationships: document_relationships,
             isIntermediate: 'isIntermediate' in job.payload && job.payload.isIntermediate,
-            isContinuation: isContinuation,
-            turnIndex: isContinuation ? job.payload.continuation_count ?? 0 : undefined,
+            isContinuation: isContinuationForStorage,
+            turnIndex: isContinuationForStorage ? job.payload.continuation_count ?? 0 : undefined,
         },
     };
 
@@ -690,20 +725,39 @@ export async function executeModelCallAndSave(
 
     const contribution = savedResult.record;
 
-    if (contribution.contribution_type === 'thesis' && !contribution.document_relationships) {
+    // Persist full document_relationships for continuation saves to avoid initializer self-map
+    const payloadRelationships = job.payload.document_relationships;
+    if (isContinuationForStorage && isDocumentRelationships(payloadRelationships)) {
+        const { error: relUpdateError } = await dbClient
+            .from('dialectic_contributions')
+            .update({ document_relationships: payloadRelationships })
+            .eq('id', contribution.id);
+
+        if (relUpdateError) {
+            deps.logger.error(`[executeModelCallAndSave] CRITICAL: Failed to persist continuation document_relationships for contribution ${contribution.id}.`, { relUpdateError });
+        } else {
+            contribution.document_relationships = payloadRelationships;
+        }
+    }
+
+    // Initialize root-only relationships when absent (first chunk only)
+    if (!contribution.document_relationships && !isContinuationForStorage) {
+        const dynamicRelationships: Record<string, string> = {};
+        dynamicRelationships[stageSlug] = contribution.id;
+
         const { error: updateError } = await dbClient
             .from('dialectic_contributions')
-            .update({ document_relationships: { thesis: contribution.id } })
+            .update({ document_relationships: dynamicRelationships })
             .eq('id', contribution.id);
 
         if (updateError) {
-            deps.logger.error(`[executeModelCallAndSave] CRITICAL: Failed to update document_relationships for thesis contribution ${contribution.id}.`, { updateError });
+            deps.logger.error(`[executeModelCallAndSave] CRITICAL: Failed to update document_relationships for contribution ${contribution.id}.`, { updateError });
         } else {
-            contribution.document_relationships = { thesis: contribution.id };
+            contribution.document_relationships = dynamicRelationships;
         }
     }
     
-    const needsContinuation = job.payload.continueUntilComplete && aiResponse.finish_reason && isContinueReason(aiResponse.finish_reason);
+    const needsContinuation = job.payload.continueUntilComplete && shouldContinue;
 
     const modelProcessingResult: ModelProcessingResult = { 
         modelId: model_id, 
@@ -740,10 +794,20 @@ export async function executeModelCallAndSave(
         }
     }
 
-    const isFinalChunk = aiResponse.finish_reason === 'stop';
+    const isFinalChunk = resolvedFinish === 'stop';
 
-    if (isFinalChunk && job.payload.document_relationships) {
-        await deps.fileManager.assembleAndSaveFinalDocument(job.payload.document_relationships.thesis!);
+    if (isFinalChunk) {
+        let rootIdFromSaved: string | undefined = undefined;
+        const savedRelationships = contribution.document_relationships;
+        if (isRecord(savedRelationships)) {
+            const candidateUnknown = savedRelationships[stageSlug];
+            if (typeof candidateUnknown === 'string' && candidateUnknown.trim() !== '') {
+                rootIdFromSaved = candidateUnknown;
+            }
+        }
+        if (rootIdFromSaved) {
+            await deps.fileManager.assembleAndSaveFinalDocument(rootIdFromSaved);
+        }
     }
 
     const { error: finalUpdateError } = await dbClient
