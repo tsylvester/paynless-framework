@@ -1,4 +1,4 @@
-import { assertEquals, assertExists, assert } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
+import { assertEquals, assertExists, assert, assertStrictEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import { spy, stub } from 'jsr:@std/testing@0.225.1/mock';
 import type { Database, Json } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
@@ -14,6 +14,8 @@ import { NotificationService } from '../_shared/utils/notification.service.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { type AiModelExtendedConfig } from '../_shared/types.ts';
 import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
+import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
+import type { AiProviderAdapterInstance, ILogger } from '../_shared/types.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -716,8 +718,63 @@ Deno.test('createDialecticWorkerDeps: constructs DummyAdapter embedding client w
     // Call through to ensure the embedding client is functional and offline (DummyAdapter)
     const result = await deps.embeddingClient.getEmbedding('hello world');
     assertExists(result.embedding);
-    assert(Array.isArray(result.embedding) && result.embedding.length === 32);
+    assert(Array.isArray(result.embedding) && result.embedding.length === 3072);
     assert(typeof result.usage.total_tokens === 'number' && result.usage.total_tokens > 0);
+});
+
+// 52.b.i: When test mode routes factory to dummy, assert factory passes selected model config verbatim
+Deno.test('getAiProviderAdapter (test routing): passes provider.config verbatim into DummyAdapter', async () => {
+  const now = new Date().toISOString();
+  const providerRow = {
+    id: 'prov-openai-4o-1',
+    api_identifier: 'openai-gpt-4o',
+    name: 'OpenAI gpt-4o',
+    description: 'Owned by: system',
+    is_active: true,
+    provider: 'openai',
+    is_default_embedding: false,
+    is_enabled: true,
+    created_at: now,
+    updated_at: now,
+    config: {
+      api_identifier: 'openai-gpt-4o',
+      context_window_tokens: 128000,
+      provider_max_input_tokens: 128000,
+      provider_max_output_tokens: 4096,
+      input_token_cost_rate: 5,
+      output_token_cost_rate: 15,
+      tokenization_strategy: {
+        type: 'tiktoken',
+        is_chatml_model: true,
+        tiktoken_encoding_name: 'cl100k_base',
+        api_identifier_for_tokenization: 'gpt-4o',
+      },
+      hard_cap_output_tokens: 4096,
+    },
+  };
+
+  // Use the factory in test routing by providing the test provider map
+  const logger: ILogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
+  const adapter = getAiProviderAdapter({
+    provider: providerRow as any,
+    apiKey: 'sk-test',
+    logger,
+    providerMap: { 'dummy': (await import('../_shared/ai_service/dummy_adapter.ts')).DummyAdapter, 'openai-': (await import('../_shared/ai_service/dummy_adapter.ts')).DummyAdapter, 'anthropic-': (await import('../_shared/ai_service/dummy_adapter.ts')).DummyAdapter, 'google-': (await import('../_shared/ai_service/dummy_adapter.ts')).DummyAdapter },
+  }) as AiProviderAdapterInstance | null;
+
+  assertExists(adapter, 'Factory should return an adapter instance');
+
+  // Probe the adapter by listing models to retrieve its internal config
+  const models = await adapter!.listModels();
+  assert(Array.isArray(models) && models.length === 1);
+  const cfgCandidate = models[0] && typeof models[0] === 'object' ? (models[0] as { config?: unknown }).config : undefined;
+  assert(!!cfgCandidate && typeof cfgCandidate === 'object', 'adapter.listModels should expose a config');
+  const cfg = cfgCandidate as { [k: string]: unknown };
+  assertEquals(cfg.api_identifier, providerRow.config.api_identifier);
+  assertEquals(cfg.context_window_tokens, providerRow.config.context_window_tokens);
+  assertEquals(cfg.provider_max_input_tokens, providerRow.config.provider_max_input_tokens);
+  assertEquals(cfg.provider_max_output_tokens, providerRow.config.provider_max_output_tokens);
+  assertEquals(cfg.hard_cap_output_tokens, providerRow.config.hard_cap_output_tokens);
 });
 
 Deno.test('createDialecticWorkerDeps: constructs OpenAI embedding client when default provider is openai', async () => {

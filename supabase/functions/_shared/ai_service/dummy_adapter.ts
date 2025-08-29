@@ -30,7 +30,27 @@ export class DummyAdapter {
         }
         this.apiKey = apiKey; // Stored for interface consistency, but not used.
         this.logger = logger;
-        this.modelConfig = provider.config; // Stored for interface consistency.
+        if (provider.provider === 'dummy') {
+            this.modelConfig = provider.config;
+            const resolvedWindow = (typeof this.modelConfig.context_window_tokens === 'number' && this.modelConfig.context_window_tokens > 0)
+                ? this.modelConfig.context_window_tokens
+                : 200_000;
+            const resolvedProvMaxIn = (typeof this.modelConfig.provider_max_input_tokens === 'number' && this.modelConfig.provider_max_input_tokens > 0)
+                ? this.modelConfig.provider_max_input_tokens
+                : resolvedWindow;
+            const resolvedHardCapOut = (typeof this.modelConfig.hard_cap_output_tokens === 'number' && this.modelConfig.hard_cap_output_tokens > 0)
+                ? this.modelConfig.hard_cap_output_tokens
+                : 4_096;
+            const resolvedProvMaxOut = (typeof this.modelConfig.provider_max_output_tokens === 'number' && this.modelConfig.provider_max_output_tokens > 0)
+                ? this.modelConfig.provider_max_output_tokens
+                : resolvedHardCapOut;
+            this.modelConfig.context_window_tokens = resolvedWindow;
+            this.modelConfig.provider_max_input_tokens = resolvedProvMaxIn;
+            this.modelConfig.hard_cap_output_tokens = resolvedHardCapOut;
+            this.modelConfig.provider_max_output_tokens = resolvedProvMaxOut;
+        } else {
+            this.modelConfig = provider.config; // Stored for interface consistency.
+        }
         this.providerId = provider.id;
         this.logger.info(`[DummyAdapter] Initialized with config: ${JSON.stringify(this.modelConfig)}`);
     }
@@ -225,8 +245,8 @@ export class DummyAdapter {
         const payload = { message: text, messages: [] } satisfies CountableChatPayload;
         const promptTokens = countTokens(tokenizerDeps, payload, this.modelConfig);
 
-        // Deterministic, offline embedding (no network). Small, fixed dimension.
-        const DIMENSION = 32;
+        // Deterministic, offline embedding (no network). Fixed dimension aligned with DB/RPC (3072).
+        const DIMENSION = 3072;
         const vector: number[] = Array.from({ length: DIMENSION }, () => 0);
 
         // Simple character-accumulation hash for determinism

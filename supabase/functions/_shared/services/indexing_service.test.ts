@@ -3,7 +3,8 @@ import { test } from 'https://deno.land/std@0.224.0/testing/bdd.ts';
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { assertSpyCall, spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { ILogger } from '../types.ts';
+import { ILogger, type EmbeddingResponse } from '../types.ts';
+import type { IEmbeddingClient } from './indexing_service.interface.ts';
 import { IndexingService, EmbeddingClient } from './indexing_service.ts';
 import { ITextSplitter, IndexDocumentResult } from './indexing_service.interface.ts';
 import { createMockSupabaseClient } from '../supabase.mock.ts';
@@ -11,7 +12,7 @@ import { mockOpenAiAdapter, mockGetEmbeddingSpy } from '../ai_service/openai_ada
 import { type Database } from '../../../functions/types_db.ts';
 import { DummyAdapter } from "../ai_service/dummy_adapter.ts";
 import { MOCK_PROVIDER } from "../ai_service/dummy_adapter.test.ts";
-import { assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertExists, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { createMockTokenWalletService } from "../services/tokenWalletService.mock.ts";
 
 // Mocks
@@ -67,7 +68,9 @@ test('IndexingService should process and index a document successfully', async (
   assertEquals(insertedData[0].session_id, sessionId);
   assertEquals(insertedData[0].source_contribution_id, contributionId);
   assertEquals(insertedData[0].content, 'This is a te');
-  assertEquals(insertedData[0].embedding, `[${Array(1536).fill(0.1).join(',')}]`);
+  const parsed = JSON.parse(insertedData[0].embedding);
+  assert(Array.isArray(parsed));
+  assertEquals(parsed.length, 3072);
 });
 
 Deno.test("EmbeddingClient should be instantiable with any valid AiProviderAdapter", () => {
@@ -84,7 +87,7 @@ Deno.test("EmbeddingClient should be instantiable with any valid AiProviderAdapt
     assertExists(client);
 });
 
-Deno.test('IndexingService uses DummyAdapter embeddings (deterministic vector, non-zero usage, persisted length 32)', async () => {
+Deno.test('IndexingService uses DummyAdapter embeddings (deterministic vector, non-zero usage, persisted length 3072)', async () => {
   // Arrange
   const { client: mockSupabaseClient, spies } = createMockSupabaseClient();
   const logger = new MockLogger();
@@ -122,7 +125,7 @@ Deno.test('IndexingService uses DummyAdapter embeddings (deterministic vector, n
   assertSpyCall(getEmbeddingSpy, 0);
   assertSpyCall(getEmbeddingSpy, 1);
 
-  // Assert: insert occurred into dialectic_memory with 32-dim embedding arrays as JSON strings
+  // Assert: insert occurred into dialectic_memory with 3072-dim embedding arrays as JSON strings
   assertSpyCall(spies.fromSpy, 0, { args: ['dialectic_memory'] });
   const insertSpy = spies.getLatestQueryBuilderSpies('dialectic_memory')?.insert;
   if (!insertSpy) throw new Error('Insert spy not found');
@@ -136,8 +139,57 @@ Deno.test('IndexingService uses DummyAdapter embeddings (deterministic vector, n
   const emb1 = JSON.parse(inserted[1].embedding);
   assertEquals(Array.isArray(emb0), true);
   assertEquals(Array.isArray(emb1), true);
-  assertEquals(emb0.length, 32);
-  assertEquals(emb1.length, 32);
+  assertEquals(emb0.length, 3072);
+  assertEquals(emb1.length, 3072);
+});
+
+Deno.test('IndexingService guard: returns error when embedding dimension != 3072 (no insert)', async () => {
+  // Arrange
+  const { client: mockSupabaseClient, spies } = createMockSupabaseClient();
+  const logger = new MockLogger();
+  const textSplitter = new MockTextSplitter(); // yields 2 chunks
+  const mockWallet = createMockTokenWalletService();
+
+  class WrongDimEmbeddingClient implements IEmbeddingClient {
+    async getEmbedding(text: string): Promise<EmbeddingResponse> {
+      const embedding = Array.from({ length: 32 }, () => 0);
+      const tokens = text.length;
+      return { embedding, usage: { prompt_tokens: tokens, total_tokens: tokens } };
+    }
+  }
+
+  const embeddingClient = new WrongDimEmbeddingClient();
+  const service = new IndexingService(
+    mockSupabaseClient as unknown as SupabaseClient<Database>,
+    logger,
+    textSplitter,
+    embeddingClient,
+    mockWallet.instance
+  );
+
+  const sessionId = 'sess-guard-1';
+  const contributionId = 'contrib-guard-1';
+  const documentContent = 'Guard should catch wrong dimension.';
+  const metadata = { source: 'unit-test' };
+
+  // Act
+  const result: IndexDocumentResult = await service.indexDocument(
+    sessionId,
+    contributionId,
+    documentContent,
+    metadata,
+  );
+
+  // Assert: service reports failure with expected error
+  assertEquals(result.success, false);
+  const errMsg = result.error ? result.error.message : '';
+  assertEquals(errMsg, 'Embedding dimension mismatch; expected 3072.');
+
+  // Assert: no insert attempted
+  const qb = spies.getLatestQueryBuilderSpies('dialectic_memory');
+  if (qb && qb.insert) {
+    assertEquals(qb.insert.calls.length, 0);
+  }
 });
 
 // Billing RED test (ignored until DI is wired): asserts 1:1 debits per chunk with idempotent keys

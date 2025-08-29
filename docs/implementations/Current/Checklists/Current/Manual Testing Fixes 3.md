@@ -466,3 +466,134 @@ graph TD
 [✅] 34. [INT-TEST] Validate end-to-end user flow manually
     [✅] a. Create a project, trigger a continuation on a non-"thesis" stage (e.g., `parenthesis`), and verify the final artifact equals `Chunk1 + Chunk2`.
     [✅] b. Re-run the full `dialectic_pipeline.integration.test.ts` and the test passes step 3. 
+
+[✅] 35. [DB] Switch embeddings to 3072-d across DB and RPC
+    [✅] a. File: `supabase/migrations/<new_timestamp>_alter_dialectic_memory_embedding_3072.sql`
+        [✅] i. `alter table public.dialectic_memory alter column embedding type extensions.vector(3072);`
+        [✅] ii. `create or replace function public.match_dialectic_chunks(query_embedding extensions.vector(3072), ...) returns table (...) language plpgsql as $$ ... $$;`
+        [✅] iii. Preserve RLS and indexes; only change vector dimension and function signature/body where `<=> query_embedding` is used.
+
+[✅] 36. [TEST-UNIT] RED: embedding client returns 3072-d vectors
+    [✅] a. File: `supabase/functions/_shared/ai_service/dummy_adapter.test.ts`
+        [✅] i. Arrange a dummy provider row and create the `DummyAdapter`, wrap with `EmbeddingClient`.
+        [✅] ii. Act: call `embeddingClient.getEmbedding('test text')`.
+        [✅] iii. Assert: `embedding.length === 3072` and `usage.total_tokens` is present. Use runtime guards only.
+
+[✅] 37. [BE] GREEN: update dummy adapter to emit 3072-d vectors
+    [✅] a. File: `supabase/functions/_shared/ai_service/dummy_adapter.ts`
+        [✅] i. Change `DIMENSION` to 3072 for the embedding implementation; keep deterministic hashing; no other behavior changes.
+
+[✅] 38. [TEST-UNIT] RED: indexing writes pgvector(3072) strings to dialectic_memory
+    [✅] a. File: `supabase/functions/_shared/services/indexing_service.test.ts`
+        [✅] i. Stub text splitter to return one chunk; use real `EmbeddingClient` (dummy) so vectors are length 3072.
+        [✅] ii. Spy on `supabaseClient.from('dialectic_memory').insert` args; assert inserted `embedding` string contains exactly 3072 numeric entries.
+        [✅] iii. Assert `tokensUsed > 0` in the result.
+
+[✅] 39. [BE] GREEN: guard indexing against wrong-dimension embeddings
+    [✅] a. File: `supabase/functions/_shared/services/indexing_service.ts`
+        [✅] i. Before `recordsToInsert`, validate each `embeddingResponses[i].embedding.length === 3072`; if not, throw `IndexingError('Embedding dimension mismatch; expected 3072.')`.
+        [✅] ii. Keep strict typing and existing debit behavior unchanged.
+
+[✅] 40. [TEST-UNIT] RED: rag_service issues RPC with 3072-d query embedding and returns non-empty context
+    [✅] a. File: `supabase/functions/_shared/services/rag_service.test.ts`
+        [✅] i. Arrange: one `IRagSourceDocument`, real `EmbeddingClient` (dummy), and stub `dbClient.rpc('match_dialectic_chunks', ...)` to assert the received `query_embedding` contains 3072 values; return a mock row.
+        [✅] ii. Act: `getContextForModel([doc], modelConfig, sessionId, stageSlug)`.
+        [✅] iii. Assert: result has non-empty `context` and `tokensUsedForIndexing > 0`.
+
+[✅] 41. [BE] GREEN: add defensive guard in rag_service
+    [✅] a. File: `supabase/functions/_shared/services/rag_service.ts`
+        [✅] i. After `embeddingClient.getEmbedding(queries[0])`, validate `embedding.length === 3072`; if not, return `{ context: null, error: new RagServiceError('Query embedding dimension mismatch; expected 3072.'), tokensUsedForIndexing: 0 }`.
+        [✅] ii. Keep existing RPC call and MMR logic unchanged.
+
+[✅] 42. [TEST-INT] RED: antithesis child jobs must all complete (no terminal-error pass)
+    [✅] a. File: `supabase/integration_tests/services/dialectic_pipeline.integration.test.ts`
+        [✅] i. In step 5, after executing pending child jobs, fetch antithesis child rows and assert each child `status === 'completed'`.
+        [✅] ii. Remove acceptance of error terminal states for parent completion in this test.
+
+[✅] 43. [TEST-UNIT] RED: compression candidates must include already-indexed documents
+    [✅] a. File: `supabase/functions/_shared/utils/vector_utils.test.ts`
+        [✅] i. Arrange: one resource document in `documents` and minimal `history` so history yields no candidates.
+        [✅] ii. Stub DB call: `from('dialectic_memory').select('source_contribution_id').in('source_contribution_id', ...)` returns the document id (i.e., it is already indexed).
+        [✅] iii. Act: call `getSortedCompressionCandidates(db, depsWithEmbeddingClient, documents, history, currentUserPrompt)`.
+        [✅] iv. Assert: result length > 0 and contains the document candidate (by id). Do not use type casts; use runtime guards.
+
+[✅] 44. [BE] GREEN: keep already-indexed documents in candidate list
+    [✅] a. File: `supabase/functions/_shared/utils/vector_utils.ts`
+        [✅] i. In `getSortedCompressionCandidates`, remove the filter that excludes candidates whose ids are present in `dialectic_memory.source_contribution_id`.
+        [✅] ii. Return all candidates sorted by `valueScore` regardless of prior indexing. Preserve the DB query only for diagnostics/future use; do not log errors as hard failures.
+        [✅] iii. Keep strict typing; do not introduce defaults or change the function signature.
+
+[✅] 45. [TEST-INT] RED: re-run pipeline with corrected embeddings and show antithesis child jobs complete after compression (step 5)
+    [✅] a. File: `supabase/integration_tests/services/dialectic_pipeline.integration.test.ts`
+        [✅] i. Re-run step 5 with existing stricter assertion (all antithesis children `status === 'completed'`).
+        [✅] ii. Expect green now that candidates include already-indexed thesis documents, enabling RAG replacement and token reduction.
+
+[ ] 46. [TEST-UNIT] RED: assembler applies adaptive provider floors for unknown/newer models
+    [ ] a. File: `supabase/functions/sync-ai-models/config_assembler.test.ts`
+        [ ] i. Arrange unknown Anthropic id (e.g., `anthropic-claude-4-foo-20260101`) with no internal/external caps and a cohort including known Anthropic 200k models.
+        [ ] ii. Act: assemble; assert floors are monotonic: `provider_max_input_tokens` and `context_window_tokens` are >= provider recent high-water mark (computed from the cohort), never lower than known 3.x models.
+        [ ] iii. Repeat for Google with an unknown `google-gemini-3-foo` id and for OpenAI with `openai-gpt-4.1-foo` and `openai-gpt-4o-foo`; assert result >= provider recent high-water mark, with a minimal per-provider safety floor (Anthropic ≥ 200k, Gemini ≥ 1,048,576, OpenAI 4.1 ≥ 1,047,576, 4o ≥ 128,000) when cohort is empty.
+
+[ ] 47. [BE] GREEN: implement adaptive provider floors in assembler
+    [ ] a. File: `supabase/functions/sync-ai-models/config_assembler.ts`
+        [ ] i. Add `getAdaptiveProviderFloor(api_identifier, configuredModels)` that:
+            - Filters `configuredModels` by provider, sorts by recency, and computes high-water marks (max and P90) for `context_window_tokens`/`provider_max_input_tokens`.
+            - Returns floors as the max of: recent high-water mark, recent P90, and a minimal safety floor per provider (Anthropic 200k; Google Gemini 1,048,576; OpenAI 4.1 1,047,576; OpenAI 4o 128,000) used only if cohort empty.
+            - Ensures monotonicity by not downgrading newer-looking ids (by date/version) below nearest known cohort values.
+        [ ] ii. In `calculateDynamicDefaults`, after averaging, raise `context_window_tokens` and `provider_max_input_tokens` to at least the adaptive floors.
+        [ ] iii. Keep strict typing; no signature changes; no speculative per-model invention.
+
+[ ] 48. [TEST-UNIT] RED: internal maps expose correct known windows per provider
+    [ ] a. File: `supabase/functions/sync-ai-models/anthropic_sync.test.ts`
+        [ ] i. Assert 3.x Sonnet/Haiku/Opus entries set `provider_max_input_tokens = 200_000` and `hard_cap_output_tokens = 8_192` where applicable.
+    [ ] b. File: `supabase/functions/sync-ai-models/openai_sync.test.ts`
+        [ ] i. Assert `openai-gpt-4.1*` => `provider_max_input_tokens = 1_047_576`; `openai-gpt-4o*` => `128_000`.
+    [ ] c. File: `supabase/functions/sync-ai-models/google_sync.test.ts`
+        [ ] i. Assert Gemini 2.5 families => `provider_max_input_tokens = 1_048_576`.
+
+[ ] 49. [BE] GREEN: extend internal maps where sparse
+    [ ] a. File: `supabase/functions/sync-ai-models/anthropic_sync.ts`
+        [ ] i. Add missing model ids used in tests; ensure 200k/8k and tokenizer set.
+    [ ] b. File: `supabase/functions/sync-ai-models/openai_sync.ts`
+        [ ] i. Ensure 4.1/4o families propagate `context_window_tokens` to `provider_max_input_tokens`.
+    [ ] c. File: `supabase/functions/sync-ai-models/google_sync.ts`
+        [ ] i. Ensure 2.5 families present; costs via map, token limits via adapter, tokenizer strategy present.
+
+[ ] 50. [TEST-FUNC] RED: sync writes adaptive provider floors to DB
+    [ ] a. File: `supabase/functions/sync-ai-models/index.test.ts`
+        [ ] i. Mock provider APIs to return one unknown-per-provider id; run sync; fetch `ai_providers`.
+        [ ] ii. Assert DB rows meet or exceed the adaptive floor (>= provider recent high-water mark, or the minimal safety floor when cohort empty) for `provider_max_input_tokens` and `context_window_tokens`.
+
+[ ] 51. [BE] GREEN: rerun sync and regenerate seed
+    [ ] a. File: `supabase/functions/sync-ai-models/index.ts`
+        [ ] i. No code change; execute sync in tests; update assertions accordingly.
+    [ ] b. File: `supabase/seed.sql`
+        [ ] i. Regenerate from DB so seeded `ai_providers.config` reflects realistic windows.
+
+[ ] 52. [TEST-UNIT] RED: dummy honors injected provider config; has rational self-default
+    [ ] a. File: `supabase/functions/_shared/ai_service/dummy_adapter.test.ts`
+        [ ] i. Arrange a provider row for `openai-gpt-4o` with `provider_max_input_tokens = 128_000` and a tiktoken strategy; construct DummyAdapter with this row; assert its effective limits/tokenization match the injected config (no internal override).
+        [ ] ii. Arrange a provider row for the dummy itself (`dummy-echo-v1`); construct DummyAdapter without overrides; assert `provider_max_input_tokens = 200_000` (rational default) and embedding dim remains 3072.
+    [ ] b. File: `supabase/functions/dialectic-worker/index.test.ts`
+        [ ] i. When test mode routes factory to dummy, assert the factory passes the selected model’s provider row/config into DummyAdapter; verify via spy that the exact config object is used.
+
+[ ] 53. [BE] GREEN: dummy consumes injected config; factory passes through config
+    [ ] a. File: `supabase/functions/_shared/ai_service/dummy_adapter.ts`
+        [ ] i. Accept and use the injected provider row’s config verbatim for context window, provider_max_input_tokens, tokenization strategy, and costs; no overrides when present.
+        [ ] ii. When constructed with the dummy’s own id/config, set a rational default `provider_max_input_tokens = 200_000`; keep embedding dim 3072.
+    [ ] b. File: <factory file that substitutes dummy in test mode>
+        [ ] i. When test flag is active and dummy is substituted, pass the selected model’s provider row/config into DummyAdapter unchanged.
+        [ ] ii. Keep strict typing; no global defaults introduced.
+
+[ ] xx. [COMMIT] fix(db,be,test): switch embeddings to 3072 and enforce guards
+    - alter pgvector and RPC to 3072
+    - dummy adapter emits 3072-d vectors
+    - indexing validates and writes pgvector(3072)
+    - rag_service validates query embedding dimension and keeps RPC path
+    - integration requires all antithesis children to complete
+    - vector_utils: do not filter out indexed candidates
+    - unit test: candidates include already-indexed docs
+    - integration: step 5 completes without ContextWindowError
+    - fix input sizes for model configs, 
+    - implement rational input size monotonicity for new models 
+    - dummy adapter takes whatever config the model it's emulating uses 

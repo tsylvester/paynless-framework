@@ -206,6 +206,13 @@ export class RagService implements IRagService {
     ];
     
     const { embedding: primaryQueryEmbedding, usage: primaryUsage } = await this.deps.embeddingClient.getEmbedding(queries[0]);
+    // Guard: ensure query embedding dimension matches system expectation
+    if (!Array.isArray(primaryQueryEmbedding) || primaryQueryEmbedding.length !== 3072) {
+      this.deps.logger.error('[RagService] Query embedding dimension mismatch', {
+        length: Array.isArray(primaryQueryEmbedding) ? primaryQueryEmbedding.length : null,
+      });
+      throw new RagServiceError('Query embedding dimension mismatch; expected 3072.');
+    }
     if (this.deps.tokenWalletService) {
       await this.deps.tokenWalletService.recordTransaction({
         walletId: `rag-${sessionId}`,

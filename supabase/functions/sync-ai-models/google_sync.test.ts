@@ -131,3 +131,20 @@ Deno.test("INTERNAL_MODEL_MAP sets google_gemini_tokenizer with default ratio 4.
         assertEquals(ratio, 4.0, `chars_per_token_ratio should be 4.0 for ${id}`);
     }
 });
+
+// RED: INTERNAL_MODEL_MAP exposes correct windows for Gemini 2.5 families
+Deno.test("[Provider-Specific] google: INTERNAL_MODEL_MAP sets provider_max_input_tokens = 1,048,576 for Gemini 2.5", () => {
+    const ids = [
+        'google-gemini-2.5-pro',
+        'google-gemini-2.5-flash',
+        'google-gemini-2.5-flash-lite',
+    ];
+
+    for (const id of ids) {
+        const cfg = INTERNAL_MODEL_MAP.get(id);
+        assert(cfg, `Config missing for ${id}`);
+        const pmi = (cfg as Partial<AiModelExtendedConfig>).provider_max_input_tokens;
+        assert(typeof pmi === 'number', `provider_max_input_tokens missing for ${id}`);
+        assertEquals(pmi, 1_048_576, `${id} should have provider_max_input_tokens = 1,048,576`);
+    }
+});

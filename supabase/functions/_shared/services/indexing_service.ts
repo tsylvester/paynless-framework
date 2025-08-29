@@ -92,6 +92,19 @@ export class IndexingService {
         }
       }
 
+      // Guard: ensure embeddings are 3072-dim before inserting
+      const expectedEmbeddingDim = 3072;
+      for (let i = 0; i < embeddingResponses.length; i++) {
+        const embeddingVector = embeddingResponses[i].embedding;
+        if (!Array.isArray(embeddingVector) || embeddingVector.length !== expectedEmbeddingDim) {
+          this.logger.error('[IndexingService] Embedding dimension mismatch', {
+            index: i,
+            length: Array.isArray(embeddingVector) ? embeddingVector.length : null,
+          });
+          throw new IndexingError('Embedding dimension mismatch; expected 3072.');
+        }
+      }
+
       const recordsToInsert: TablesInsert<'dialectic_memory'>[] = chunks.map((chunk, index) => ({
         session_id: sessionId,
         source_contribution_id: sourceContributionId,

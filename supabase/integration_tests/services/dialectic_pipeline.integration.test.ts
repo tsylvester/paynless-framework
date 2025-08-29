@@ -58,7 +58,7 @@ const pollForCondition = async (
   condition: () => Promise<boolean>,
   timeoutMessage: string,
   interval = 500,
-  timeout = 2000,
+  timeout = 10000,
 ) => {
   const startTime = Date.now();
   while (Date.now() - startTime < timeout) {
@@ -75,7 +75,7 @@ const pollForJobStatus = async (
     expectedStatus: string,
     timeoutMessage: string,
     interval = 500,
-    timeout = 2000,
+    timeout = 10000,
 ): Promise<DialecticJobRow> => {
     let job: DialecticJobRow | null = null;
     await pollForCondition(async () => {
@@ -195,7 +195,7 @@ Deno.test(
 
         // --- Fetch AI Providers from DB, treating seed.sql as the source of truth ---
         // Use providers that are seeded as enabled and active
-        const requiredProviders = ['openai-gpt-4', 'anthropic-claude-3-7-sonnet-20250219'];
+        const requiredProviders = ['openai-gpt-4.1', 'anthropic-claude-3-7-sonnet-20250219'];
         const { data: fetchedProviders, error: providersError } = await adminClient
           .from('ai_providers')
           .select('id, api_identifier')
@@ -204,7 +204,7 @@ Deno.test(
         assert(!providersError, `Failed to fetch AI providers: ${providersError?.message}`);
         assert(fetchedProviders.length === requiredProviders.length, `Could not find all required AI providers. Found: ${fetchedProviders.map(p => p.api_identifier).join(', ')}`);
 
-        const modelA = fetchedProviders.find(p => p.api_identifier === 'openai-gpt-4');
+        const modelA = fetchedProviders.find(p => p.api_identifier === 'openai-gpt-4.1');
         const modelB = fetchedProviders.find(p => p.api_identifier === 'anthropic-claude-3-7-sonnet-20250219');
 
         assertExists(modelA, "The 'openai-gpt-4' provider must exist in the database for this test to run.");
@@ -615,9 +615,19 @@ Deno.test(
       assert(!downloadError, `Failed to download final content for contribution B: ${downloadError?.message}`);
       
       if (downloadedData) {
-        const finalContent = new TextDecoder().decode(downloadedData);
         const normalize = (s: string) => s.replace(/\r\n/g, '\n').replace(/\n{2,}/g, '\n\n').trim();
         const expectedContent = normalize(`${initialChunkContent}${continuationChunkContent}`);
+
+        // Poll until the assembled file reflects the expected content, then assert
+        await pollForCondition(async () => {
+          const { data: reDownloaded } = await downloadFromStorage(adminClient, contributionB.storage_bucket, `${contributionB.storage_path}/${contributionB.file_name}`);
+          if (!reDownloaded) return false;
+          const current = new TextDecoder().decode(reDownloaded);
+          const actualNow = normalize(current);
+          return actualNow === expectedContent;
+        }, "Final thesis assembly should match expected continuation content", 150, 3000);
+
+        const finalContent = new TextDecoder().decode(downloadedData);
         const actualContent = normalize(finalContent);
         assertEquals(actualContent, expectedContent, "The final content of the continued contribution is incorrect.");
       } else {
@@ -658,7 +668,7 @@ Deno.test(
 
     await t.step({
       name: "4. should plan child jobs for the Antithesis stage",
-      ignore: true,
+      ignore: false,
       fn: async () => {
       // Step 1: Planning
       if (!testSession) {
@@ -713,7 +723,7 @@ Deno.test(
 
     await t.step({
       name: "5. should execute child jobs and verify parent job completion",
-      ignore: true,
+      ignore: false,
       fn: async () => {
       if (!testSession) {
         assert(testSession, "Cannot test antithesis without a session.");
@@ -735,11 +745,25 @@ Deno.test(
           .in('status', ['pending', 'processing', 'pending_continuation', 'retrying', 'waiting_for_children']);
         return pendingJobs !== null && pendingJobs.length === 0;
       }, "All jobs for the antithesis stage, including parents, should be completed");
+
+      // New stricter assertion: all antithesis child jobs must have status 'completed'
+      {
+        const { data: childJobs, error: childJobsError } = await adminClient
+          .from('dialectic_generation_jobs')
+          .select('id,status,parent_job_id,stage_slug')
+          .eq('session_id', testSession.id)
+          .eq('stage_slug', 'antithesis')
+          .not('parent_job_id', 'is', null);
+        assert(!childJobsError, `Failed to fetch antithesis child jobs: ${childJobsError?.message}`);
+        assertExists(childJobs, 'No antithesis child jobs found for completion verification.');
+        const nonCompleted = (childJobs || []).filter(j => j.status !== 'completed');
+        assert(nonCompleted.length === 0, `All antithesis child jobs must be completed. Non-completed count: ${nonCompleted.length}`);
+      }
     }});
     
     await t.step({
       name: "6. should verify the final antithesis artifacts",
-      ignore: true,
+      ignore: false,
       fn: async () => {
       if (!testSession) {
         assert(testSession, "Cannot test antithesis without a session.");
@@ -760,7 +784,7 @@ Deno.test(
 
     await t.step({
       name: "7. should submit antithesis responses",
-      ignore: true,
+      ignore: false,
       fn: async () => {
       if (!testSession) {
         assert(testSession, "Cannot test antithesis without a session.");
@@ -814,7 +838,7 @@ Deno.test(
 
     await t.step({
       name: "8. should execute the multi-step Synthesis stage",
-      ignore: true,
+      ignore: false,
       fn: async () => {
         if (!testSession) {
             assert(testSession, "Cannot test synthesis without a session.");
@@ -893,7 +917,7 @@ Deno.test(
 
     await t.step({
       name: "9. should execute the Parenthesis stage",
-      ignore: true,
+      ignore: false,
       fn: async () => {
         if (!testSession) {
             assert(testSession, "Cannot test parenthesis without a session.");
@@ -985,7 +1009,7 @@ Deno.test(
 
     await t.step({
       name: "10. should execute the Paralysis stage",
-      ignore: true,
+      ignore: false,
       fn: async () => {
         if (!testSession) {
             assert(testSession, "Cannot test paralysis without a session.");

@@ -43,18 +43,17 @@ export function getAiProviderAdapter(
 
     const identifierLower = provider.api_identifier.toLowerCase();
     
-    if (!providerMap) {
-        logger.error(`[Factory] providerMap is not configured. This should not happen.`);
-        return null;
-    }
-    const providerPrefix = Object.keys(providerMap).find(prefix => identifierLower.startsWith(prefix));
+    const isTestMode = (Deno.env.get('TEST_MODE') === 'true') || (Deno.env.get('VITE_TEST_MODE') === 'true');
+    const effectiveProviderMap: Record<string, AiProviderAdapter> = providerMap ?? (isTestMode ? testProviderMap : defaultProviderMap);
+
+    const providerPrefix = Object.keys(effectiveProviderMap).find(prefix => identifierLower.startsWith(prefix));
 
     if (!providerPrefix) {
         logger.warn(`[Factory] Unknown or unsupported AI provider api_identifier: ${provider.api_identifier}.`);
         return null;
     }
 
-    const AdapterClass = providerMap[providerPrefix];
+    const AdapterClass = effectiveProviderMap[providerPrefix];
     let providerToUse = provider;
 
     // A real provider MUST have its configuration from the database.
