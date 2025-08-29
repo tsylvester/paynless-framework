@@ -528,64 +528,64 @@ graph TD
         [✅] i. Re-run step 5 with existing stricter assertion (all antithesis children `status === 'completed'`).
         [✅] ii. Expect green now that candidates include already-indexed thesis documents, enabling RAG replacement and token reduction.
 
-[ ] 46. [TEST-UNIT] RED: assembler applies adaptive provider floors for unknown/newer models
-    [ ] a. File: `supabase/functions/sync-ai-models/config_assembler.test.ts`
-        [ ] i. Arrange unknown Anthropic id (e.g., `anthropic-claude-4-foo-20260101`) with no internal/external caps and a cohort including known Anthropic 200k models.
-        [ ] ii. Act: assemble; assert floors are monotonic: `provider_max_input_tokens` and `context_window_tokens` are >= provider recent high-water mark (computed from the cohort), never lower than known 3.x models.
-        [ ] iii. Repeat for Google with an unknown `google-gemini-3-foo` id and for OpenAI with `openai-gpt-4.1-foo` and `openai-gpt-4o-foo`; assert result >= provider recent high-water mark, with a minimal per-provider safety floor (Anthropic ≥ 200k, Gemini ≥ 1,048,576, OpenAI 4.1 ≥ 1,047,576, 4o ≥ 128,000) when cohort is empty.
+[✅] 46. [TEST-UNIT] RED: assembler applies adaptive provider floors for unknown/newer models
+    [✅] a. File: `supabase/functions/sync-ai-models/config_assembler.test.ts`
+        [✅] i. Arrange unknown Anthropic id (e.g., `anthropic-claude-4-foo-20260101`) with no internal/external caps and a cohort including known Anthropic 200k models.
+        [✅] ii. Act: assemble; assert floors are monotonic: `provider_max_input_tokens` and `context_window_tokens` are >= provider recent high-water mark (computed from the cohort), never lower than known 3.x models.
+        [✅] iii. Repeat for Google with an unknown `google-gemini-3-foo` id and for OpenAI with `openai-gpt-4.1-foo` and `openai-gpt-4o-foo`; assert result >= provider recent high-water mark, with a minimal per-provider safety floor (Anthropic ≥ 200k, Gemini ≥ 1,048,576, OpenAI 4.1 ≥ 1,047,576, 4o ≥ 128,000) when cohort is empty.
 
-[ ] 47. [BE] GREEN: implement adaptive provider floors in assembler
-    [ ] a. File: `supabase/functions/sync-ai-models/config_assembler.ts`
-        [ ] i. Add `getAdaptiveProviderFloor(api_identifier, configuredModels)` that:
+[✅] 47. [BE] GREEN: implement adaptive provider floors in assembler
+    [✅] a. File: `supabase/functions/sync-ai-models/config_assembler.ts`
+        [✅] i. Add `getAdaptiveProviderFloor(api_identifier, configuredModels)` that:
             - Filters `configuredModels` by provider, sorts by recency, and computes high-water marks (max and P90) for `context_window_tokens`/`provider_max_input_tokens`.
             - Returns floors as the max of: recent high-water mark, recent P90, and a minimal safety floor per provider (Anthropic 200k; Google Gemini 1,048,576; OpenAI 4.1 1,047,576; OpenAI 4o 128,000) used only if cohort empty.
             - Ensures monotonicity by not downgrading newer-looking ids (by date/version) below nearest known cohort values.
-        [ ] ii. In `calculateDynamicDefaults`, after averaging, raise `context_window_tokens` and `provider_max_input_tokens` to at least the adaptive floors.
-        [ ] iii. Keep strict typing; no signature changes; no speculative per-model invention.
+        [✅] ii. In `calculateDynamicDefaults`, after averaging, raise `context_window_tokens` and `provider_max_input_tokens` to at least the adaptive floors.
+        [✅] iii. Keep strict typing; no signature changes; no speculative per-model invention.
 
 [ ] 48. [TEST-UNIT] RED: internal maps expose correct known windows per provider
-    [ ] a. File: `supabase/functions/sync-ai-models/anthropic_sync.test.ts`
-        [ ] i. Assert 3.x Sonnet/Haiku/Opus entries set `provider_max_input_tokens = 200_000` and `hard_cap_output_tokens = 8_192` where applicable.
-    [ ] b. File: `supabase/functions/sync-ai-models/openai_sync.test.ts`
-        [ ] i. Assert `openai-gpt-4.1*` => `provider_max_input_tokens = 1_047_576`; `openai-gpt-4o*` => `128_000`.
-    [ ] c. File: `supabase/functions/sync-ai-models/google_sync.test.ts`
-        [ ] i. Assert Gemini 2.5 families => `provider_max_input_tokens = 1_048_576`.
+    [✅] a. File: `supabase/functions/sync-ai-models/anthropic_sync.test.ts`
+        [✅] i. Assert 3.x Sonnet/Haiku/Opus entries set `provider_max_input_tokens = 200_000` and `hard_cap_output_tokens = 8_192` where applicable.
+    [✅] b. File: `supabase/functions/sync-ai-models/openai_sync.test.ts`
+        [✅] i. Assert `openai-gpt-4.1*` => `provider_max_input_tokens = 1_047_576`; `openai-gpt-4o*` => `128_000`.
+    [✅] c. File: `supabase/functions/sync-ai-models/google_sync.test.ts`
+        [✅] i. Assert Gemini 2.5 families => `provider_max_input_tokens = 1_048_576`.
 
-[ ] 49. [BE] GREEN: extend internal maps where sparse
-    [ ] a. File: `supabase/functions/sync-ai-models/anthropic_sync.ts`
-        [ ] i. Add missing model ids used in tests; ensure 200k/8k and tokenizer set.
-    [ ] b. File: `supabase/functions/sync-ai-models/openai_sync.ts`
-        [ ] i. Ensure 4.1/4o families propagate `context_window_tokens` to `provider_max_input_tokens`.
-    [ ] c. File: `supabase/functions/sync-ai-models/google_sync.ts`
-        [ ] i. Ensure 2.5 families present; costs via map, token limits via adapter, tokenizer strategy present.
+[✅] 49. [BE] GREEN: extend internal maps where sparse
+    [✅] a. File: `supabase/functions/sync-ai-models/anthropic_sync.ts`
+        [✅] i. Add missing model ids used in tests; ensure 200k/8k and tokenizer set.
+    [✅] b. File: `supabase/functions/sync-ai-models/openai_sync.ts`
+        [✅] i. Ensure 4.1/4o families propagate `context_window_tokens` to `provider_max_input_tokens`.
+    [✅] c. File: `supabase/functions/sync-ai-models/google_sync.ts`
+        [✅] i. Ensure 2.5 families present; costs via map, token limits via adapter, tokenizer strategy present.
 
-[ ] 50. [TEST-FUNC] RED: sync writes adaptive provider floors to DB
-    [ ] a. File: `supabase/functions/sync-ai-models/index.test.ts`
-        [ ] i. Mock provider APIs to return one unknown-per-provider id; run sync; fetch `ai_providers`.
-        [ ] ii. Assert DB rows meet or exceed the adaptive floor (>= provider recent high-water mark, or the minimal safety floor when cohort empty) for `provider_max_input_tokens` and `context_window_tokens`.
+[✅] 50. [TEST-FUNC] RED: sync writes adaptive provider floors to DB
+    [✅] a. File: `supabase/functions/sync-ai-models/index.test.ts`
+        [✅] i. Mock provider APIs to return one unknown-per-provider id; run sync; fetch `ai_providers`.
+        [✅] ii. Assert DB rows meet or exceed the adaptive floor (>= provider recent high-water mark, or the minimal safety floor when cohort empty) for `provider_max_input_tokens` and `context_window_tokens`.
 
-[ ] 51. [BE] GREEN: rerun sync and regenerate seed
-    [ ] a. File: `supabase/functions/sync-ai-models/index.ts`
-        [ ] i. No code change; execute sync in tests; update assertions accordingly.
-    [ ] b. File: `supabase/seed.sql`
-        [ ] i. Regenerate from DB so seeded `ai_providers.config` reflects realistic windows.
+[✅] 51. [BE] GREEN: rerun sync and regenerate seed
+    [✅] a. File: `supabase/functions/sync-ai-models/index.ts`
+        [✅] i. No code change; execute sync in tests; update assertions accordingly.
+    [✅] b. File: `supabase/seed.sql`
+        [✅] i. Regenerate from DB so seeded `ai_providers.config` reflects realistic windows.
 
 [ ] 52. [TEST-UNIT] RED: dummy honors injected provider config; has rational self-default
-    [ ] a. File: `supabase/functions/_shared/ai_service/dummy_adapter.test.ts`
-        [ ] i. Arrange a provider row for `openai-gpt-4o` with `provider_max_input_tokens = 128_000` and a tiktoken strategy; construct DummyAdapter with this row; assert its effective limits/tokenization match the injected config (no internal override).
-        [ ] ii. Arrange a provider row for the dummy itself (`dummy-echo-v1`); construct DummyAdapter without overrides; assert `provider_max_input_tokens = 200_000` (rational default) and embedding dim remains 3072.
-    [ ] b. File: `supabase/functions/dialectic-worker/index.test.ts`
-        [ ] i. When test mode routes factory to dummy, assert the factory passes the selected model’s provider row/config into DummyAdapter; verify via spy that the exact config object is used.
+    [✅] a. File: `supabase/functions/_shared/ai_service/dummy_adapter.test.ts`
+        [✅] i. Arrange a provider row for `openai-gpt-4o` with `provider_max_input_tokens = 128_000` and a tiktoken strategy; construct DummyAdapter with this row; assert its effective limits/tokenization match the injected config (no internal override).
+        [✅] ii. Arrange a provider row for the dummy itself (`dummy-echo-v1`); construct DummyAdapter without overrides; assert `provider_max_input_tokens = 200_000` (rational default) and embedding dim remains 3072.
+    [✅] b. File: `supabase/functions/dialectic-worker/index.test.ts`
+        [✅] i. When test mode routes factory to dummy, assert the factory passes the selected model’s provider row/config into DummyAdapter; verify via spy that the exact config object is used.
 
 [ ] 53. [BE] GREEN: dummy consumes injected config; factory passes through config
-    [ ] a. File: `supabase/functions/_shared/ai_service/dummy_adapter.ts`
-        [ ] i. Accept and use the injected provider row’s config verbatim for context window, provider_max_input_tokens, tokenization strategy, and costs; no overrides when present.
-        [ ] ii. When constructed with the dummy’s own id/config, set a rational default `provider_max_input_tokens = 200_000`; keep embedding dim 3072.
-    [ ] b. File: <factory file that substitutes dummy in test mode>
-        [ ] i. When test flag is active and dummy is substituted, pass the selected model’s provider row/config into DummyAdapter unchanged.
-        [ ] ii. Keep strict typing; no global defaults introduced.
+    [✅] a. File: `supabase/functions/_shared/ai_service/dummy_adapter.ts`
+        [✅] i. Accept and use the injected provider row’s config verbatim for context window, provider_max_input_tokens, tokenization strategy, and costs; no overrides when present.
+        [✅] ii. When constructed with the dummy’s own id/config, set a rational default `provider_max_input_tokens = 200_000`; keep embedding dim 3072.
+    [✅] b. File: `supabase/functions/_shared/ai_service/factory.ts`
+        [✅] i. When test flag is active and dummy is substituted, pass the selected model’s provider row/config into DummyAdapter unchanged.
+        [✅] ii. Keep strict typing; no global defaults introduced.
 
-[ ] xx. [COMMIT] fix(db,be,test): switch embeddings to 3072 and enforce guards
+[✅] 54. [COMMIT] fix(db,be,test): switch embeddings to 3072 and enforce guards
     - alter pgvector and RPC to 3072
     - dummy adapter emits 3072-d vectors
     - indexing validates and writes pgvector(3072)
