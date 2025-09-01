@@ -2,7 +2,9 @@ import { assertEquals, assertExists } from 'https://deno.land/std@0.192.0/testin
 import { deconstructStoragePath, mapDirNameToStageSlug } from './path_deconstructor.ts';
 import type { DeconstructedPathInfo } from './path_deconstructor.types.ts';
 import { constructStoragePath, generateShortId, mapStageSlugToDirName, sanitizeForPath } from './path_constructor.ts';
-import type { FileType, PathContext } from '../types/file_manager.types.ts';
+import { FileType, PathContext } from '../types/file_manager.types.ts';
+import type { ContributionType } from '../../dialectic-service/dialectic.interface.ts';
+import { isContributionType } from './type_guards.ts';
 
 // --- Direct Deconstruction Tests ---
 Deno.test('[path_deconstructor] direct - model_contribution_main', () => {
@@ -17,7 +19,7 @@ Deno.test('[path_deconstructor] direct - model_contribution_main', () => {
   const modelSlugSanitized = sanitizeForPath(modelSlug);
   const stageSlugSanitized = sanitizeForPath(stageSlug);
 
-  const dirPart = `${projectId}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}`;
+  const dirPart = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}`;
   const filePart = `${modelSlugSanitized}_${attemptCount}_${stageSlugSanitized}.md`;
   const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
 
@@ -45,7 +47,7 @@ Deno.test('[path_deconstructor] direct - model_contribution_raw_json', () => {
   const modelSlugSanitized = sanitizeForPath(modelSlug);
   const stageSlugSanitized = sanitizeForPath(stageSlug);
 
-  const dirPart = `${projectId}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}/raw_responses`;
+  const dirPart = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/raw_responses`;
   const filePart = `${modelSlugSanitized}_${attemptCount}_${stageSlugSanitized}_raw.json`;
   const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
 
@@ -69,7 +71,7 @@ Deno.test('[path_deconstructor] direct - seed_prompt', () => {
   const stageSlug = 'antithesis';
   const mappedStageDir = mapStageSlugToDirName(stageSlug);
 
-  const dirPart = `${projectId}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}`;
+  const dirPart = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}`;
   const filePart = 'seed_prompt.md';
   const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
 
@@ -92,7 +94,7 @@ Deno.test('[path_deconstructor] direct - user_feedback', () => {
   const mappedStageDir = mapStageSlugToDirName(stageSlug);
   const stageSlugSanitized = sanitizeForPath(stageSlug);
 
-  const dirPart = `${projectId}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}`;
+  const dirPart = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}`;
   const filePart = `user_feedback_${stageSlugSanitized}.md`;
   const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
 
@@ -116,7 +118,7 @@ Deno.test('[path_deconstructor] direct - contribution_document', () => {
   const originalFileName = 'Detailed Analysis Report.xlsx';
   const sanitizedFileName = sanitizeForPath(originalFileName);
 
-  const dirPart = `${projectId}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}/documents`;
+  const dirPart = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/documents`;
   const filePart = sanitizedFileName;
   const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: dirPart, fileName: filePart, dbOriginalFileName: originalFileName });
 
@@ -188,6 +190,128 @@ Deno.test('[path_deconstructor] direct - initial_user_prompt', () => {
   assertEquals(info.error, undefined);
 });
 
+Deno.test('[path_deconstructor] direct - pairwise_synthesis_chunk', () => {
+  const context: PathContext = {
+    projectId: 'proj-psc',
+    sessionId: 'sess-psc-uuid',
+    iteration: 1,
+    stageSlug: 'synthesis',
+    fileType: FileType.PairwiseSynthesisChunk,
+    modelSlug: 'model-x',
+    attemptCount: 0,
+    contributionType: 'pairwise_synthesis_chunk',
+    sourceAnchorType: 'thesis',
+    sourceAnchorModelSlug: 'model-a',
+    pairedModelSlug: 'model-b',
+  };
+  const { storagePath, fileName } = constructStoragePath(context);
+  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: storagePath, fileName: fileName });
+
+  assertEquals(info.originalProjectId, context.projectId);
+  assertEquals(info.shortSessionId, generateShortId(context.sessionId!));
+  assertEquals(info.iteration, context.iteration);
+  assertEquals(info.stageSlug, context.stageSlug);
+  assertEquals(info.fileTypeGuess, FileType.PairwiseSynthesisChunk);
+  assertEquals(info.error, undefined);
+});
+
+Deno.test('[path_deconstructor] direct - reduced_synthesis', () => {
+  const context: PathContext = {
+    projectId: 'proj-rs',
+    sessionId: 'sess-rs-uuid',
+    iteration: 2,
+    stageSlug: 'synthesis',
+    fileType: FileType.ReducedSynthesis,
+    modelSlug: 'model-y',
+    attemptCount: 1,
+    contributionType: 'reduced_synthesis',
+    sourceAnchorType: 'thesis',
+    sourceAnchorModelSlug: 'model-c',
+  };
+  const { storagePath, fileName } = constructStoragePath(context);
+  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: storagePath, fileName: fileName });
+
+  assertEquals(info.originalProjectId, context.projectId);
+  assertEquals(info.shortSessionId, generateShortId(context.sessionId!));
+  assertEquals(info.iteration, context.iteration);
+  assertEquals(info.stageSlug, context.stageSlug);
+  assertEquals(info.fileTypeGuess, FileType.ReducedSynthesis);
+  assertEquals(info.error, undefined);
+});
+
+Deno.test('[path_deconstructor] direct - synthesis', () => {
+  const context: PathContext = {
+    projectId: 'proj-fs',
+    sessionId: 'sess-fs-uuid',
+    iteration: 3,
+    stageSlug: 'synthesis',
+    fileType: FileType.Synthesis,
+    modelSlug: 'model-z',
+    attemptCount: 2,
+    contributionType: 'synthesis',
+  };
+  const { storagePath, fileName } = constructStoragePath(context);
+  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: storagePath, fileName: fileName });
+
+  assertEquals(info.originalProjectId, context.projectId);
+  assertEquals(info.shortSessionId, generateShortId(context.sessionId!));
+  assertEquals(info.iteration, context.iteration);
+  assertEquals(info.stageSlug, context.stageSlug);
+  assertEquals(info.fileTypeGuess, FileType.Synthesis);
+  assertEquals(info.error, undefined);
+});
+
+Deno.test('[path_deconstructor] direct - rag_context_summary', () => {
+  const context: PathContext = {
+    projectId: 'proj-rcs',
+    sessionId: 'sess-rcs-uuid',
+    iteration: 1,
+    stageSlug: 'synthesis',
+    fileType: FileType.RagContextSummary,
+    modelSlug: 'model-embed',
+    sourceModelSlugs: ['model-a', 'model-b'],
+  };
+  const { storagePath, fileName } = constructStoragePath(context);
+  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: storagePath, fileName: fileName });
+
+  assertEquals(info.originalProjectId, context.projectId);
+  assertEquals(info.shortSessionId, generateShortId(context.sessionId!));
+  assertEquals(info.iteration, context.iteration);
+  assertEquals(info.stageSlug, context.stageSlug);
+  assertEquals(info.fileTypeGuess, FileType.RagContextSummary);
+  assertEquals(info.error, undefined);
+});
+
+Deno.test('[path_deconstructor] direct - model_contribution_main with continuation', () => {
+  const context: PathContext = {
+    projectId: 'proj-cont',
+    sessionId: 'sess-cont-uuid',
+    iteration: 2,
+    stageSlug: 'synthesis',
+    fileType: FileType.ModelContributionMain,
+    modelSlug: 'claude-3-sonnet',
+    attemptCount: 0,
+    contributionType: 'synthesis',
+    isContinuation: true,
+    turnIndex: 2,
+  };
+  const { storagePath, fileName } = constructStoragePath(context);
+  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: storagePath, fileName: fileName });
+
+  assertEquals(info.error, undefined, `Deconstruction failed with error: ${info.error}`);
+  assertEquals(info.originalProjectId, context.projectId);
+  assertEquals(info.shortSessionId, generateShortId(context.sessionId!));
+  assertEquals(info.iteration, context.iteration);
+  assertEquals(info.stageSlug, context.stageSlug);
+  assertEquals(info.modelSlug, sanitizeForPath(context.modelSlug!));
+  assertEquals(info.attemptCount, context.attemptCount);
+  assertEquals(info.contributionType, context.contributionType);
+  assertEquals(info.isContinuation, context.isContinuation);
+  assertEquals(info.turnIndex, context.turnIndex);
+  assertEquals(info.fileTypeGuess, FileType.ModelContributionMain);
+});
+
+
 Deno.test('[path_deconstructor] handles unknown path structure gracefully', () => {
   const dirPart = 'some/completely/unknown/path/structure';
   const filePart = 'file.txt';
@@ -208,13 +332,39 @@ Deno.test('[path_deconstructor] mapDirNameToStageSlug works as expected', () => 
 });
 
 
+// --- Defensive: ensure project root .zip is not misclassified ---
+Deno.test('[path_deconstructor] defensive - project root zip is classified as project_export_zip (not initial_user_prompt)', () => {
+  const projectId = 'proj-zip';
+  const dirPart = projectId;
+  const filePart = 'my_export.zip';
+  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
+
+  assertEquals(info.originalProjectId, projectId);
+  assertEquals(info.parsedFileNameFromPath, filePart);
+  assertEquals(info.fileTypeGuess, FileType.ProjectExportZip);
+  assertEquals(info.error, undefined);
+});
+
+Deno.test('[path_deconstructor] identifies project root archive as project_export_zip', () => {
+  const projectId = 'proj-zip-2';
+  const dirPart = projectId;
+  const filePart = 'my_export.zip';
+  const info: DeconstructedPathInfo = deconstructStoragePath({ storageDir: dirPart, fileName: filePart });
+
+  assertEquals(info.originalProjectId, projectId);
+  assertEquals(info.parsedFileNameFromPath, 'my_export.zip');
+  assertEquals(info.fileTypeGuess, FileType.ProjectExportZip);
+  assertEquals(info.error, undefined);
+});
+
+
 // --- Yin/Yang (Inverse Function) Tests: Construct then Deconstruct ---
 
 const constructDeconstructTestCases: Array<{ 
   name: string; 
   context: PathContext; 
   // Fields to check in deconstructedInfo against original context
-  checkFields: Array<keyof Pick<PathContext, 'sessionId' | 'iteration' | 'stageSlug' | 'modelSlug' | 'attemptCount'> | 'shortSessionId' | 'stageDirName'>;
+  checkFields: Array<keyof Pick<PathContext, 'sessionId' | 'iteration' | 'stageSlug' | 'modelSlug' | 'attemptCount' | 'contributionType'> | 'shortSessionId' | 'stageDirName'>;
   expectedSanitizedFileName?: string; // If originalFileName in context leads to a specific sanitized name in path
   expectedFixedFileNameInPath?: string; // If fileType leads to a fixed name in path (e.g. seed_prompt.md)
 }> = [
@@ -222,7 +372,7 @@ const constructDeconstructTestCases: Array<{
     name: 'project_readme',
     context: {
       projectId: 'yy-pr',
-      fileType: 'project_readme',
+      fileType: FileType.ProjectReadme,
     },
     checkFields: [],
     expectedFixedFileNameInPath: 'project_readme.md'
@@ -231,7 +381,7 @@ const constructDeconstructTestCases: Array<{
     name: 'initial_user_prompt',
     context: {
       projectId: 'yy-iup',
-      fileType: 'initial_user_prompt',
+      fileType: FileType.InitialUserPrompt,
       originalFileName: 'My Ideas V1.txt',
     },
     checkFields: [],
@@ -241,7 +391,7 @@ const constructDeconstructTestCases: Array<{
     name: 'project_settings_file',
     context: {
       projectId: 'yy-psf',
-      fileType: 'project_settings_file',
+      fileType: FileType.ProjectSettingsFile,
     },
     checkFields: [],
     expectedFixedFileNameInPath: 'project_settings.json'
@@ -250,7 +400,7 @@ const constructDeconstructTestCases: Array<{
     name: 'general_resource (project root)',
     context: {
       projectId: 'yy-gr',
-      fileType: 'general_resource',
+      fileType: FileType.GeneralResource,
       originalFileName: 'Shared Asset.png',
     },
     checkFields: [],
@@ -260,7 +410,7 @@ const constructDeconstructTestCases: Array<{
     name: 'seed_prompt',
     context: {
       projectId: 'yy-sp',
-      fileType: 'seed_prompt',
+      fileType: FileType.SeedPrompt,
       sessionId: 'session-yy-sp',
       iteration: 1,
       stageSlug: 'thesis',
@@ -272,7 +422,7 @@ const constructDeconstructTestCases: Array<{
     name: 'user_feedback',
     context: {
       projectId: 'yy-ufb',
-      fileType: 'user_feedback',
+      fileType: FileType.UserFeedback,
       sessionId: 'session-yy-ufb',
       iteration: 0,
       stageSlug: 'synthesis',
@@ -281,38 +431,40 @@ const constructDeconstructTestCases: Array<{
     expectedFixedFileNameInPath: 'user_feedback_synthesis.md' // constructor sanitizes stageSlug for filename
   },
   {
-    name: 'model_contribution_main',
+    name: 'synthesis',
     context: {
       projectId: 'yy-mcm',
-      fileType: 'model_contribution_main',
+      fileType: FileType.Synthesis,
       sessionId: 'session-yy-mcm',
       iteration: 2,
-      stageSlug: 'antithesis',
+      stageSlug: 'synthesis',
       modelSlug: 'Claude Model 2',
       attemptCount: 1,
+      contributionType: 'synthesis',
     },
-    checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug', 'modelSlug', 'attemptCount'],
-    expectedFixedFileNameInPath: 'claude_model_2_1_antithesis.md'
+    checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug', 'modelSlug', 'attemptCount', 'contributionType'],
+    expectedFixedFileNameInPath: 'claude_model_2_1_synthesis.md'
   },
   {
     name: 'model_contribution_raw_json',
     context: {
       projectId: 'yy-mcrj',
-      fileType: 'model_contribution_raw_json',
+      fileType: FileType.ModelContributionRawJson,
       sessionId: 'session-yy-mcrj',
       iteration: 3,
       stageSlug: 'parenthesis',
       modelSlug: 'GPT-X Alpha',
       attemptCount: 0,
+      contributionType: 'parenthesis', // Corrected: Match the stage slug
     },
-    checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug', 'modelSlug', 'attemptCount'],
+    checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug', 'modelSlug', 'attemptCount', 'contributionType'],
     expectedFixedFileNameInPath: 'gpt-x_alpha_0_parenthesis_raw.json'
   },
   {
     name: 'contribution_document',
     context: {
       projectId: 'yy-cdoc',
-      fileType: 'contribution_document',
+      fileType: FileType.ContributionDocument,
       sessionId: 'session-yy-cdoc',
       iteration: 1,
       stageSlug: 'paralysis',
@@ -320,6 +472,70 @@ const constructDeconstructTestCases: Array<{
     },
     checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug'],
     expectedSanitizedFileName: 'final_output_plan.docx'
+  },
+  {
+    name: 'pairwise_synthesis_chunk',
+    context: {
+      projectId: 'yy-psc',
+      fileType: FileType.PairwiseSynthesisChunk,
+      sessionId: 'session-yy-psc',
+      iteration: 0,
+      stageSlug: 'synthesis',
+      modelSlug: 'gpt-4-turbo',
+      attemptCount: 0,
+      contributionType: 'pairwise_synthesis_chunk',
+      sourceAnchorType: 'thesis',
+      sourceAnchorModelSlug: 'model-a',
+      pairedModelSlug: 'model-b',
+    },
+    checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug'],
+    expectedFixedFileNameInPath: 'gpt-4-turbo_synthesizing_model-a_with_model-b_on_thesis_0_pairwise_synthesis_chunk.md'
+  },
+    {
+    name: 'reduced_synthesis',
+    context: {
+      projectId: 'yy-rs',
+      fileType: FileType.ReducedSynthesis,
+      sessionId: 'session-yy-rs',
+      iteration: 1,
+      stageSlug: 'synthesis',
+      modelSlug: 'claude-3-opus',
+      attemptCount: 1,
+      contributionType: 'reduced_synthesis',
+      sourceAnchorType: 'thesis',
+      sourceAnchorModelSlug: 'model-a',
+    },
+    checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug'],
+    expectedFixedFileNameInPath: 'claude-3-opus_reducing_thesis_by_model-a_1_reduced_synthesis.md'
+  },
+  {
+    name: 'synthesis (from final)',
+    context: {
+      projectId: 'yy-fs',
+      fileType: FileType.Synthesis,
+      sessionId: 'session-yy-fs',
+      iteration: 2,
+      stageSlug: 'synthesis',
+      modelSlug: 'gemini-1.5-pro',
+      attemptCount: 0,
+      contributionType: 'synthesis',
+    },
+    checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug'],
+    expectedFixedFileNameInPath: 'gemini-1.5-pro_0_synthesis.md'
+  },
+  {
+    name: 'rag_context_summary',
+    context: {
+      projectId: 'yy-rcs',
+      fileType: FileType.RagContextSummary,
+      sessionId: 'session-yy-rcs',
+      iteration: 0,
+      stageSlug: 'synthesis',
+      modelSlug: 'text-embedder',
+      sourceModelSlugs: ['model-a', 'model-b'],
+    },
+    checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug'],
+    expectedFixedFileNameInPath: 'text-embedder_compressing_model-a_and_model-b_rag_summary.txt'
   },
 ];
 
@@ -349,7 +565,7 @@ constructDeconstructTestCases.forEach((tc) => {
         assertEquals(deconstructedInfo.stageDirName, mapStageSlugToDirName(tc.context.stageSlug!), `stageDirName mismatch for ${tc.name}`);
       } else if (field === 'modelSlug' && tc.context.modelSlug) { // modelSlug in context is unsanitized
         assertEquals(deconstructedInfo.modelSlug, sanitizeForPath(tc.context.modelSlug), `modelSlug mismatch for ${tc.name}`);
-      } else if (field === 'stageSlug' || field === 'iteration' || field === 'attemptCount') {
+             } else if (field === 'stageSlug' || field === 'iteration' || field === 'attemptCount' || field === 'contributionType') {
          assertEquals(deconstructedInfo[field], tc.context[field], `${field} mismatch for ${tc.name}`);
       } else {
         // This case should not be reached if checkFields are typed correctly
@@ -379,33 +595,33 @@ const deconstructReconstructTestCases: DeconstructReconstructTestCase[] = [
   {
     name: 'project_readme',
     samplePath: 'old_proj_alpha/project_readme.md',
-    expectedFileType: 'project_readme',
+    expectedFileType: FileType.ProjectReadme,
     expectedContextParts: { originalProjectId: 'old_proj_alpha' },
   },
   {
     name: 'initial_user_prompt',
     samplePath: 'old_proj_beta/my_user_prompt_file.md',
     dbOriginalFileName: 'My User Prompt File.md',
-    expectedFileType: 'initial_user_prompt',
+    expectedFileType: FileType.InitialUserPrompt,
     expectedContextParts: { originalProjectId: 'old_proj_beta' },
   },
   {
     name: 'project_settings_file',
     samplePath: 'old_proj_gamma/project_settings.json',
-    expectedFileType: 'project_settings_file',
+    expectedFileType: FileType.ProjectSettingsFile,
     expectedContextParts: { originalProjectId: 'old_proj_gamma' },
   },
   {
     name: 'general_resource (project root)',
     samplePath: 'old_proj_delta/general_resource/asset_library.zip',
     dbOriginalFileName: 'Asset Library.zip',
-    expectedFileType: 'general_resource',
+    expectedFileType: FileType.GeneralResource,
     expectedContextParts: { originalProjectId: 'old_proj_delta' },
   },
   {
     name: 'seed_prompt',
-    samplePath: 'proj_epsilon/sessions/sess001/iteration_1/1_thesis/seed_prompt.md',
-    expectedFileType: 'seed_prompt',
+    samplePath: 'proj_epsilon/session_sess001/iteration_1/1_thesis/seed_prompt.md',
+    expectedFileType: FileType.SeedPrompt,
     expectedContextParts: {
       originalProjectId: 'proj_epsilon',
       shortSessionId: 'sess001',
@@ -415,8 +631,8 @@ const deconstructReconstructTestCases: DeconstructReconstructTestCase[] = [
   },
   {
     name: 'user_feedback',
-    samplePath: 'proj_zeta/sessions/sess002/iteration_0/2_antithesis/user_feedback_antithesis.md',
-    expectedFileType: 'user_feedback',
+    samplePath: 'proj_zeta/session_sess002/iteration_0/2_antithesis/user_feedback_antithesis.md',
+    expectedFileType: FileType.UserFeedback,
     expectedContextParts: {
       originalProjectId: 'proj_zeta',
       shortSessionId: 'sess002',
@@ -425,9 +641,9 @@ const deconstructReconstructTestCases: DeconstructReconstructTestCase[] = [
     },
   },
   {
-    name: 'model_contribution_main',
-    samplePath: 'proj_eta/sessions/sess003/iteration_2/3_synthesis/claude_v1_2_synthesis.md',
-    expectedFileType: 'model_contribution_main',
+    name: 'synthesis',
+    samplePath: 'proj_eta/session_sess003/iteration_2/3_synthesis/claude_v1_2_synthesis.md',
+    expectedFileType: FileType.Synthesis,
     expectedContextParts: {
       originalProjectId: 'proj_eta',
       shortSessionId: 'sess003',
@@ -439,8 +655,8 @@ const deconstructReconstructTestCases: DeconstructReconstructTestCase[] = [
   },
   {
     name: 'model_contribution_raw_json',
-    samplePath: 'proj_theta/sessions/sess004/iteration_1/4_parenthesis/raw_responses/gpt_4_turbo_1_parenthesis_raw.json',
-    expectedFileType: 'model_contribution_raw_json',
+    samplePath: 'proj_theta/session_sess004/iteration_1/4_parenthesis/raw_responses/gpt_4_turbo_1_parenthesis_raw.json',
+    expectedFileType: FileType.ModelContributionRawJson,
     expectedContextParts: {
       originalProjectId: 'proj_theta',
       shortSessionId: 'sess004',
@@ -452,9 +668,9 @@ const deconstructReconstructTestCases: DeconstructReconstructTestCase[] = [
   },
   {
     name: 'contribution_document',
-    samplePath: 'proj_iota/sessions/sess005/iteration_0/5_paralysis/documents/final_output.pdf',
+    samplePath: 'proj_iota/session_sess005/iteration_0/5_paralysis/documents/final_output.pdf',
     dbOriginalFileName: 'Final Output.pdf',
-    expectedFileType: 'contribution_document',
+    expectedFileType: FileType.ContributionDocument,
     expectedContextParts: {
       originalProjectId: 'proj_iota',
       shortSessionId: 'sess005',
@@ -485,13 +701,20 @@ deconstructReconstructTestCases.forEach((tc) => {
     assertEquals(deconstructedInfo.fileTypeGuess, tc.expectedFileType, "Initial FileType guess mismatch");
 
     // Verify all expected parts were deconstructed
-    for (const key in tc.expectedContextParts) {
-      assertEquals((deconstructedInfo as any)[key], (tc.expectedContextParts as any)[key], `Deconstructed part ${key} mismatch`);
-    }
+    assertEquals(deconstructedInfo.originalProjectId, tc.expectedContextParts.originalProjectId, `Deconstructed part originalProjectId mismatch`);
+    assertEquals(deconstructedInfo.shortSessionId, tc.expectedContextParts.shortSessionId, `Deconstructed part shortSessionId mismatch`);
+    assertEquals(deconstructedInfo.iteration, tc.expectedContextParts.iteration, `Deconstructed part iteration mismatch`);
+    assertEquals(deconstructedInfo.stageSlug, tc.expectedContextParts.stageSlug, `Deconstructed part stageSlug mismatch`);
+    assertEquals(deconstructedInfo.modelSlug, tc.expectedContextParts.modelSlug, `Deconstructed part modelSlug mismatch`);
+    assertEquals(deconstructedInfo.attemptCount, tc.expectedContextParts.attemptCount, `Deconstructed part attemptCount mismatch`);
 
     const newProjectId = 'new_project_zyxw';
     const newFullSessionId = 'new-full-session-id-12345';
     const newModelSlugForReconstruction = 'reconstructed_model'; // For types that need it
+
+    if (deconstructedInfo.contributionType && !isContributionType(deconstructedInfo.contributionType)) {
+        throw new Error(`Invalid contribution type: ${deconstructedInfo.contributionType}`);
+    }
 
     const reconstructionContext: PathContext = {
       projectId: newProjectId, // Use a new project ID for reconstruction
@@ -503,53 +726,38 @@ deconstructReconstructTestCases.forEach((tc) => {
       // modelSlug and attemptCount are tricky, as they are part of the deconstructed filename for contributions
       // For reconstruction, path_constructor derives them if fileType is model_contribution_*
       // For other types, originalFileName is primary.
-      modelSlug: deconstructedInfo.fileTypeGuess?.startsWith('model_contribution') 
-                 ? deconstructedInfo.modelSlug // Use deconstructed modelSlug if available
-                 : (tc.expectedFileType === 'model_contribution_main' || tc.expectedFileType === 'model_contribution_raw_json' ? newModelSlugForReconstruction : undefined),
-      attemptCount: deconstructedInfo.fileTypeGuess?.startsWith('model_contribution') 
-                    ? deconstructedInfo.attemptCount 
-                    : (tc.expectedFileType === 'model_contribution_main' || tc.expectedFileType === 'model_contribution_raw_json' ? 0 : undefined),
+      modelSlug: deconstructedInfo.modelSlug,
+      attemptCount: deconstructedInfo.attemptCount,
+      contributionType: deconstructedInfo.contributionType && isContributionType(deconstructedInfo.contributionType) ? deconstructedInfo.contributionType : null,
     };
     
     // If the original test case had a dbOriginalFileName (which implies it might be different from parsedFileNameFromPath due to sanitization),
     // prefer that for reconstruction IF the fileType is one that uses originalFileName directly for naming (not fixed names or complex model names)
     if (tc.dbOriginalFileName && (
-        reconstructionContext.fileType === 'initial_user_prompt' || 
-        reconstructionContext.fileType === 'general_resource' || 
-        reconstructionContext.fileType === 'contribution_document')) {
+        reconstructionContext.fileType === FileType.InitialUserPrompt || 
+        reconstructionContext.fileType === FileType.GeneralResource || 
+        reconstructionContext.fileType === FileType.ContributionDocument)) {
       reconstructionContext.originalFileName = tc.dbOriginalFileName;
     }
 
     const reconstructedPath = constructStoragePath(reconstructionContext);
 
-    // Assertions focus on fileName and structural integrity of storagePath
-    assertEquals(reconstructedPath.fileName, filePart, `Reconstructed fileName does not match original filePart for ${tc.name}`);
+    const originalFullPath = `${dirPart}/${filePart}`;
+    const reconstructedFullPath = `${reconstructedPath.storagePath}/${reconstructedPath.fileName}`;
+    
+    // Replace variable parts for a structural comparison
+    const originalComparable = originalFullPath
+        .replace(tc.expectedContextParts.originalProjectId!, 'PROJECT_ID')
+        
+    const reconstructedComparable = reconstructedFullPath
+        .replace(reconstructionContext.projectId, 'PROJECT_ID')
 
-    // For storagePath, check consistent parts, allowing for new IDs
-    let expectedStoragePathPattern = dirPart;
-    if (deconstructedInfo.originalProjectId) {
-      expectedStoragePathPattern = expectedStoragePathPattern.replace(deconstructedInfo.originalProjectId, newProjectId);
-    }
-    if (deconstructedInfo.shortSessionId && reconstructionContext.sessionId) {
-      expectedStoragePathPattern = expectedStoragePathPattern.replace(deconstructedInfo.shortSessionId, generateShortId(newFullSessionId));
-    }
-    // For model contributions, the modelSlug and attemptCount in the path come from reconstructionContext
-    if (reconstructionContext.fileType?.startsWith('model_contribution')) {
-        if (deconstructedInfo.modelSlug && reconstructionContext.modelSlug && dirPart.includes(deconstructedInfo.modelSlug)) {
-            // This case is tricky because the model slug in dirPart might not directly map if reconstruction uses a new one.
-            // Instead, verify the structure based on reconstructionContext more directly.
-            const sessionPathPart = reconstructionContext.sessionId ? `sessions/${generateShortId(reconstructionContext.sessionId)}/iteration_${reconstructionContext.iteration}/${mapStageSlugToDirName(reconstructionContext.stageSlug!)}` : '';
-            if (reconstructionContext.fileType === 'model_contribution_raw_json') {
-                 assertEquals(reconstructedPath.storagePath, `${newProjectId}/${sessionPathPart}/raw_responses`);
-            } else {
-                 assertEquals(reconstructedPath.storagePath, `${newProjectId}/${sessionPathPart}`);
-            }
-        } else {
-             // Fallback or simpler check if modelSlug replacement is too complex or not applicable
-             // This branch might need refinement based on exact path_constructor logic for model contributions
-        }
+    if (tc.expectedContextParts.shortSessionId && reconstructionContext.sessionId) {
+        const originalWithSession = originalComparable.replace(tc.expectedContextParts.shortSessionId!, 'SESSION_ID');
+        const reconstructedWithSession = reconstructedComparable.replace(generateShortId(reconstructionContext.sessionId!), 'SESSION_ID');
+        assertEquals(reconstructedWithSession, originalWithSession, `Reconstructed path structure mismatch for ${tc.name}`);
     } else {
-        assertEquals(reconstructedPath.storagePath, expectedStoragePathPattern, `Reconstructed storagePath structure mismatch for ${tc.name}`);
+        assertEquals(reconstructedComparable, originalComparable, `Reconstructed path structure mismatch for ${tc.name}`);
     }
   });
 });

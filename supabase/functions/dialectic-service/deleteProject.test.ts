@@ -2,7 +2,7 @@ import { assertEquals, assertExists, assertObjectMatch } from "https://deno.land
 import { spy } from "jsr:@std/testing@0.225.1/mock";
 import { deleteProject } from "./deleteProject.ts";
 import type { DeleteProjectPayload } from "./dialectic.interface.ts";
-import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockSupabaseDataConfig } from "../_shared/supabase.mock.ts";
+import { createMockSupabaseClient, type MockQueryBuilderState, type MockSupabaseDataConfig } from "../_shared/supabase.mock.ts";
 import type { Database } from "../types_db.ts"; // Assuming this is the correct path for db types
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getStorageSpies } from "../_shared/supabase.mock.ts";
@@ -35,45 +35,56 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
         },
     ];
 
-    const filesToRemove = [
-        ...mockProjectResources.map(r => r.storage_path),
-        ...mockContributions.flatMap(c => [
-            c.storage_path,
-            c.raw_response_storage_path,
-        ].filter(Boolean) as string[]),
+    const projectRootPath = `projects/${mockProjectId}`;
+    const filesInStorageList = [
+        { id: '1', name: 'project_file1.md', created_at: '', updated_at: '', last_accessed_at: '', metadata: {} },
+        { id: undefined, name: 'sessions', created_at: '', updated_at: '', last_accessed_at: '', metadata: {} }
     ];
+    const sessionFolderPath = `${projectRootPath}/sessions`;
+    const filesInSessionFolderList = [
+        { id: '2', name: 'contrib1.md', created_at: '', updated_at: '', last_accessed_at: '', metadata: {} },
+        { id: '3', name: 'contrib1_raw.json', created_at: '', updated_at: '', last_accessed_at: '', metadata: {} },
+        { id: '4', name: 'contrib2.md', created_at: '', updated_at: '', last_accessed_at: '', metadata: {} }
+    ];
+    const filesToRemove = [
+        `${projectRootPath}/project_file1.md`,
+        `${sessionFolderPath}/contrib1.md`,
+        `${sessionFolderPath}/contrib1_raw.json`,
+        `${sessionFolderPath}/contrib2.md`
+    ].sort();
+
 
     // 1. Mock the DB calls
-    const mockProjectsSelect = spy(async (state: any) => {
-        if (state.filters.some((f: any) => f.column === 'id' && f.value === mockProjectId)) {
+    const mockProjectsSelect = spy(async (state: MockQueryBuilderState) => {
+        if (state.filters.some((f) => f.column === 'id' && f.value === mockProjectId)) {
             return { data: [{ id: mockProjectId, user_id: mockUserId }], error: null, count: 1, status: 200, statusText: "OK" };
         }
         return { data: null, error: { name: "PGRST116", message: "Not found" }, count: 0, status: 404, statusText: "Not Found" };
     });
     
-    const mockResourcesSelect = spy(async (state: any) => {
-        if (state.filters.some((f: any) => f.column === 'project_id' && f.value === mockProjectId)) {
+    const mockResourcesSelect = spy(async (state: MockQueryBuilderState) => {
+        if (state.filters.some((f) => f.column === 'project_id' && f.value === mockProjectId)) {
             return { data: mockProjectResources, error: null, count: mockProjectResources.length, status: 200, statusText: "OK" };
         }
         return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
     });
 
-    const mockSessionsSelect = spy(async (state: any) => {
-        if (state.filters.some((f: any) => f.column === 'project_id' && f.value === mockProjectId)) {
+    const mockSessionsSelect = spy(async (state: MockQueryBuilderState) => {
+        if (state.filters.some((f) => f.column === 'project_id' && f.value === mockProjectId)) {
             return { data: [{ id: mockSessionId }], error: null, count: 1, status: 200, statusText: "OK" };
         }
         return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
     });
 
-    const mockContributionsSelect = spy(async (state: any) => {
-        if (state.filters.some((f: any) => f.column === 'session_id' && f.value.includes(mockSessionId))) {
+    const mockContributionsSelect = spy(async (state: MockQueryBuilderState) => {
+        if (state.filters.some((f) => f.column === 'session_id' && Array.isArray(f.value) && f.value.includes(mockSessionId))) {
             return { data: mockContributions, error: null, count: mockContributions.length, status: 200, statusText: "OK" };
         }
         return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
     });
 
-    const mockProjectsDelete = spy(async (state: any) => {
-        if (state.filters.some((f: any) => f.column === 'id' && f.value === mockProjectId)) {
+    const mockProjectsDelete = spy(async (state: MockQueryBuilderState) => {
+        if (state.filters.some((f) => f.column === 'id' && f.value === mockProjectId)) {
             return { data: [{ id: mockProjectId }], error: null, count: 1, status: 200, statusText: "OK" };
         }
         return { data: null, error: new Error("Failed to delete project in mock"), count: 0, status: 500, statusText: "Error" };
@@ -88,15 +99,19 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
             dialectic_contributions: { select: mockContributionsSelect },
         },
         storageMock: {
+            listResult: async (bucketId, path, options) => {
+                if (path === projectRootPath) return { data: filesInStorageList, error: null };
+                if (path === sessionFolderPath) return { data: filesInSessionFolderList, error: null };
+                if (path === `${projectRootPath}/sessions/sessions`) return { data: [], error: null };
+                return { data: [], error: new Error(`Mock list not configured for path: ${path}`) };
+            },
             removeResult: async (bucketId, paths) => {
-                // Basic check to see if the paths to remove match what's expected
-                // Sort both arrays for consistent comparison
                 const sortedPaths = [...paths].sort();
-                const sortedFilesToRemove = [...filesToRemove].sort();
-                if (bucketId === 'dialectic-contributions' && JSON.stringify(sortedPaths) === JSON.stringify(sortedFilesToRemove)) {
+                if (bucketId === 'dialectic-contributions' && sortedPaths.length > 0) {
+                     // The recursive delete may call remove multiple times. This mock should just succeed.
                     return { data: [{ bucket: bucketId, name: 'mocked-removal' }], error: null };
                 }
-                return { data: null, error: new Error(`Mocked removal failed: paths did not match. Expected ${JSON.stringify(sortedFilesToRemove)}, got ${JSON.stringify(sortedPaths)}`) };
+                return { data: null, error: new Error(`Mocked removal failed for bucket ${bucketId} with paths: ${JSON.stringify(paths)}`) };
             },
         }
     };
@@ -105,10 +120,10 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
     
     // Ensure the storage spies are created by calling from()
     adminDbClient.storage.from('dialectic-contributions'); 
-    const { removeSpy } = getStorageSpies(adminDbClient, 'dialectic-contributions');
+    const { removeSpy, listSpy } = getStorageSpies(adminDbClient, 'dialectic-contributions');
 
     // 3. Run the function
-    const response = await deleteProject(adminDbClient as any, mockPayload, mockUserId);
+    const response = await deleteProject(adminDbClient as unknown as SupabaseClient<Database>, mockPayload, mockUserId);
 
     // 4. Assertions
     assertEquals(response.error, undefined, "Response error should be undefined on happy path");
@@ -116,22 +131,24 @@ Deno.test("deleteProject - Happy Path: successfully deletes a project and its re
 
     // Assert DB calls
     assertEquals(mockProjectsSelect.calls.length, 1, "Project select should be called once for ownership check");
-    assertEquals(mockResourcesSelect.calls.length, 1, "Resources select should be called once");
-    assertEquals(mockSessionsSelect.calls.length, 1, "Sessions select should be called once");
-    assertEquals(mockContributionsSelect.calls.length, 1, "Contributions select should be called once");
+    assertEquals(mockResourcesSelect.calls.length, 1, "Resources select should be called once to get buckets");
+    assertEquals(mockSessionsSelect.calls.length, 1, "Sessions select should be called once to get buckets");
+    assertEquals(mockContributionsSelect.calls.length, 1, "Contributions select should be called once to get buckets");
     assertEquals(mockProjectsDelete.calls.length, 1, "Project delete should be called once");
 
     // Assert Storage calls
-    assertExists(removeSpy, "The remove spy for the storage bucket should exist.");
-    // It will be called once per bucket
-    assertEquals(removeSpy.calls.length, 1, "Storage remove should be called once per bucket");
+    assertExists(listSpy, "The list spy for the storage bucket should exist.");
+    assertEquals(listSpy.calls.length, 2, "Storage list should be called for the root project folder and the sessions sub-folder.");
     
-    // Check that the call to remove was for all the expected files
-    const removedPathsInCall = removeSpy.calls[0].args[0].sort(); // Get the paths from the call and sort
+    assertExists(removeSpy, "The remove spy for the storage bucket should exist.");
+    assertEquals(removeSpy.calls.length, 2, "Storage remove should be called once for files in root, and once for files in session folder.");
+    
+    // Check that the combination of all calls to remove() contains all the expected files.
+    const allRemovedPaths = removeSpy.calls.flatMap(call => call.args[0]).sort();
     assertEquals(
-        JSON.stringify(removedPathsInCall),
-        JSON.stringify(filesToRemove.sort()), // Sort expected paths for comparison
-        "Storage remove was not called with the correct file paths"
+        JSON.stringify(allRemovedPaths),
+        JSON.stringify(filesToRemove), // Use the pre-sorted list of expected files
+        "Storage remove was not called with the correct file paths across all calls"
     );
 
     clearAllStubs?.();
@@ -142,7 +159,7 @@ Deno.test("deleteProject - Project Not Found (404)", async () => {
     const mockProjectId = "project-not-found-id";
     const mockPayload: DeleteProjectPayload = { projectId: mockProjectId };
 
-    const mockProjectsSelect = spy(async (_state: any) => {
+    const mockProjectsSelect = spy(async (_state: MockQueryBuilderState) => {
         return { data: null, error: { name: "PGRST116", message: "Not found", code: "PGRST116" }, count: 0, status: 404, statusText: "Not Found" };
     });
 
@@ -150,12 +167,11 @@ Deno.test("deleteProject - Project Not Found (404)", async () => {
         genericMockResults: { dialectic_projects: { select: mockProjectsSelect } }
     };
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUserId, mockAdminDbConfig);
-    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
-    const functionsInvokeSpy = spy(async (_fn: string, _opts: any) => ({ data: null, error: null }));
-    if (!(adminDbClient as any).functions) { (adminDbClient as any).functions = {}; }
-    (adminDbClient.functions as any).invoke = functionsInvokeSpy;
+    const adminDbClient = mockAdminDbClientSetup.client;
+    const functionsInvokeSpy = spy(async (_fn: string, _opts: unknown) => ({ data: null, error: null }));
+    adminDbClient.functions = { invoke: functionsInvokeSpy };
 
-    const response = await deleteProject(adminDbClient, mockPayload, mockUserId);
+    const response = await deleteProject(adminDbClient as unknown as SupabaseClient<Database>, mockPayload, mockUserId);
 
     assertExists(response.error, "Error should exist for not found project");
     assertEquals(response.status, 404);
@@ -172,7 +188,7 @@ Deno.test("deleteProject - User Not Authorized (403)", async () => {
     const mockProjectId = "project-auth-fail-id";
     const mockPayload: DeleteProjectPayload = { projectId: mockProjectId };
 
-    const mockProjectsSelect = spy(async (_state: any) => {
+    const mockProjectsSelect = spy(async (_state: MockQueryBuilderState) => {
         return { data: [{ id: mockProjectId, user_id: ownerUserId }], error: null, count: 1, status: 200, statusText: "OK" };
     });
 
@@ -180,12 +196,11 @@ Deno.test("deleteProject - User Not Authorized (403)", async () => {
         genericMockResults: { dialectic_projects: { select: mockProjectsSelect } }
     };
     const mockAdminDbClientSetup = createMockSupabaseClient(requesterUserId, mockAdminDbConfig);
-    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
-    const functionsInvokeSpy = spy(async (_fn: string, _opts: any) => ({ data: null, error: null }));
-    if (!(adminDbClient as any).functions) { (adminDbClient as any).functions = {}; }
-    (adminDbClient.functions as any).invoke = functionsInvokeSpy;
+    const adminDbClient = mockAdminDbClientSetup.client;
+    const functionsInvokeSpy = spy(async (_fn: string, _opts: unknown) => ({ data: null, error: null }));
+    adminDbClient.functions = { invoke: functionsInvokeSpy };
 
-    const response = await deleteProject(adminDbClient, mockPayload, requesterUserId);
+    const response = await deleteProject(adminDbClient as unknown as SupabaseClient<Database>, mockPayload, requesterUserId);
 
     assertExists(response.error, "Error should exist for unauthorized access");
     assertEquals(response.status, 403);

@@ -2,7 +2,7 @@ import type {
     AiModelExtendedConfig,
     ChatMessage,
     ApiResponse,
-    MessageForTokenCounting,
+    Messages,
     ILogger, // Assuming ILogger is in @paynless/types
     ChatHandlerSuccessResponse,
     FetchOptions,
@@ -33,7 +33,7 @@ export interface IAiStateService {
 
 // --- Main Service Parameter Interface ---
 export interface HandleSendMessageServiceParams {
-  data: { message: string; chatId?: string | null; contextMessages?: MessageForTokenCounting[] };
+  data: { message: string; chatId?: string | null; contextMessages?: Messages[] };
   aiStateService: IAiStateService;
   authService: IAuthService;
   walletService: IWalletService;
@@ -64,7 +64,7 @@ export interface SendMessageParams {
   targetProviderId: string; // DB ID of the AiProvider
   targetPromptId: string | null;
   targetChatId?: string | null; // Can be null for a new chat
-  selectedContextMessages?: MessageForTokenCounting[]; // This is the source for apiRequest.contextMessages
+  selectedContextMessages?: Messages[]; // This is the source for apiRequest.contextMessages
   effectiveOrganizationId?: string | null; // Determined by wallet logic
 
   // Current state values / resolved data

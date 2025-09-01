@@ -1,5 +1,5 @@
 import type { ApiClient } from './apiClient';
-import type { ApiResponse, UserProfile } from '@paynless/types';
+import type { ApiResponse, UserProfile, UserProfileUpdate } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
 export class UserApiClient {
@@ -41,8 +41,18 @@ export class UserApiClient {
     }
 
     // Future user-specific methods can be added here, for example:
-    // public async updateOwnProfile(profileData: UserProfileUpdate): Promise<ApiResponse<UserProfile>> {
-    //     logger.info('[UserApiClient] Updating own user profile');
-    //     return this.apiClient.put<UserProfile, UserProfileUpdate>('profile', profileData); // Assuming a PUT /profile endpoint for current user
-    // }
+    public async updateOwnProfile(profileData: UserProfileUpdate): Promise<ApiResponse<UserProfile>> {
+        logger.info('[UserApiClient] Updating own user profile');
+        try {
+            // Use POST to /me for updating the current user's profile.
+            return await this.apiClient.post<UserProfile, UserProfileUpdate>('me', profileData);
+        } catch (error) {
+            logger.error(`[UserApiClient] Unexpected error in updateOwnProfile:`, { error });
+            const message = error instanceof Error ? error.message : 'An unexpected error occurred';
+            return {
+                status: 500,
+                error: { code: 'UNEXPECTED_ERROR', message },
+            };
+        }
+    }
 } 

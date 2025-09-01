@@ -32,6 +32,14 @@ async function setupTestSuiteRouter() {
   const adminClient = initializeSupabaseAdminClient();
   setSharedAdminClient(adminClient); 
 
+  // Ensure API keys exist for provider adapters during tests
+  const ensureEnv = (k: string, v: string) => { if (!Deno.env.get(k)) Deno.env.set(k, v) };
+  ensureEnv('OPENAI_API_KEY', 'sk-test-openai');
+  ensureEnv('ANTHROPIC_API_KEY', 'sk-test-anthropic');
+  ensureEnv('GOOGLE_API_KEY', 'sk-test-google');
+  ensureEnv('CUSTOM_API_KEY', 'sk-test-custom');
+  ensureEnv('DUMMY_API_KEY', 'sk-test-dummy');
+
   initializeTestDeps();
   
   console.log("Test suite setup complete (router).");
@@ -47,14 +55,15 @@ async function teardownTestSuiteRouter() {
 const defaultTestAiProviders: TestResourceRequirement<any>[] = [
   {
     tableName: "ai_providers",
-    identifier: { api_identifier: "gpt-3.5-turbo-test" },
+    identifier: { api_identifier: "openai-gpt-3.5-turbo-test" },
     desiredState: {
       name: "GPT-3.5 Turbo (Test)",
-      api_identifier: "gpt-3.5-turbo-test",
+      api_identifier: "openai-gpt-3.5-turbo-test",
       provider: "openai",
       is_active: true,
       config: {
-        tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } as AiModelExtendedConfig['tokenization_strategy'],
+        api_identifier: "openai-gpt-3.5-turbo-test",
+        tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
         input_token_cost_rate: 0.001,
         output_token_cost_rate: 0.002,
         requires_api_key: false,
@@ -63,14 +72,15 @@ const defaultTestAiProviders: TestResourceRequirement<any>[] = [
   },
   {
     tableName: "ai_providers",
-    identifier: { api_identifier: "gpt-4-costly-test" },
+    identifier: { api_identifier: "openai-gpt-4-costly-test" },
     desiredState: {
       name: "GPT-4 Costly (Test)",
-      api_identifier: "gpt-4-costly-test",
+      api_identifier: "openai-gpt-4-costly-test",
       provider: "openai",
       is_active: true,
       config: {
-        tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } as AiModelExtendedConfig['tokenization_strategy'],
+        api_identifier: "openai-gpt-4-costly-test",
+        tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
         input_token_cost_rate: 0.03,
         output_token_cost_rate: 0.06,
         requires_api_key: false,
@@ -86,7 +96,8 @@ const defaultTestAiProviders: TestResourceRequirement<any>[] = [
       provider: "anthropic",
       is_active: true,
       config: {
-        tokenization_strategy: { type: "claude_tokenizer" } as AiModelExtendedConfig['tokenization_strategy'],
+        api_identifier: "anthropic-claude-test",
+        tokenization_strategy: { type: "anthropic_tokenizer", model: "claude-3-opus-20240229" },
         input_token_cost_rate: 0.008,
         output_token_cost_rate: 0.024,
         requires_api_key: false,
@@ -102,7 +113,8 @@ const defaultTestAiProviders: TestResourceRequirement<any>[] = [
       provider: "google",
       is_active: true,
       config: {
-        tokenization_strategy: { type: "google_gemini_tokenizer" } as AiModelExtendedConfig['tokenization_strategy'],
+        api_identifier: "google-gemini-pro-test",
+        tokenization_strategy: { type: "google_gemini_tokenizer" },
         input_token_cost_rate: 0.000125,
         output_token_cost_rate: 0.000375,
         requires_api_key: false,
@@ -118,7 +130,8 @@ const defaultTestAiProviders: TestResourceRequirement<any>[] = [
       provider: "custom",
       is_active: true,
       config: {
-        tokenization_strategy: { type: "rough_char_count", chars_per_token_ratio: 4 } as AiModelExtendedConfig['tokenization_strategy'],
+        api_identifier: "rough-char-count-test",
+        tokenization_strategy: { type: "rough_char_count", chars_per_token_ratio: 4 },
         input_token_cost_rate: 0.0001,
         output_token_cost_rate: 0.0001,
         requires_api_key: false,
@@ -134,7 +147,8 @@ const defaultTestAiProviders: TestResourceRequirement<any>[] = [
       provider: "custom",
       is_active: false,
       config: {
-        tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } as AiModelExtendedConfig['tokenization_strategy'],
+        api_identifier: "inactive-provider-test",
+        tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
         requires_api_key: false,
       }
     }
@@ -176,7 +190,7 @@ async function initializeTestGroupEnvironmentRouter(
     resources: [...allDefaultTestResources, ...(options.additionalResources || [])]
   };
   if ('additionalResources' in finalConfig) {
-    delete (finalConfig as any).additionalResources;
+    delete finalConfig.additionalResources;
   }
 
   const result = await coreInitializeTestStep(finalConfig);

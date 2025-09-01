@@ -3,8 +3,7 @@ import { router } from './routes/routes'
 import { RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect /*useRef */ } from 'react'
-import { useAuthStore, useAiStore, useWalletStore, useOrganizationStore } from '@paynless/store'
-import type { ChatContextPreferences } from '@paynless/types'
+import { useAuthStore, useAiStore, useWalletStore } from '@paynless/store'
 import { ThemeProvider } from './context/theme.context'
 import { logger } from '@paynless/utils'
 import { useSubscriptionStore } from '@paynless/store'
@@ -14,6 +13,7 @@ import { PlatformProvider, usePlatform } from '@paynless/platform'
 import { PlatformFeatureTester } from './components/debug/PlatformFeatureTester'
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle } from 'lucide-react';
+import { isChatContextPreferences } from '@paynless/utils';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -42,7 +42,7 @@ export function NavigateInjector() {
 function AppContent() {
   const profile = useAuthStore((state) => state.profile);
   const isAuthLoading = useAuthStore((state) => state.isLoading);
-  const { currentOrganizationId } = useOrganizationStore(state => ({ currentOrganizationId: state.currentOrganizationId })); // Get current org ID
+  const setShowWelcomeModal = useAuthStore((state) => state.setShowWelcomeModal);
 
   const {
     loadPersonalWallet,
@@ -67,17 +67,26 @@ function AppContent() {
   const { isLoadingCapabilities, capabilityError } = usePlatform();
 
   useEffect(() => {
-    if (profile && !isChatContextHydrated) {
-      logger.info('[AppContent] Profile available and AI chat context not hydrated. Hydrating...');
-      // Type assertion as UserProfile from authStore has chat_context as Json | null
-      // and hydrateChatContext expects ChatContextPreferences | null.
-      // This assumes the structure within profile.chat_context matches ChatContextPreferences.
-      hydrateChatContext(profile.chat_context as ChatContextPreferences | null);
-    } else if (!profile && isChatContextHydrated) {
+    console.log('[AppContent useEffect] Triggered. Profile:', JSON.stringify(profile, null, 2));
+    console.log('[AppContent useEffect] Triggered. isChatContextHydrated:', isChatContextHydrated);
+    if (profile) {
+      // Hydrate chat context if needed
+      if (!isChatContextHydrated) {
+        logger.info('[AppContent] Profile available and AI chat context not hydrated. Hydrating...');
+        hydrateChatContext(isChatContextPreferences(profile.chat_context) ? profile.chat_context : null);
+      }
+      // Show welcome modal if needed
+      if (profile.has_seen_welcome_modal === false) {
+        console.log('[AppContent useEffect] Condition met: profile.has_seen_welcome_modal is false. Calling setShowWelcomeModal.');
+        logger.info('[AppContent] New user profile detected, showing welcome modal.');
+        setShowWelcomeModal(true);
+      }
+    } else if (isChatContextHydrated) {
+      // This part handles logout
       logger.info('[AppContent] Profile removed (logout) and AI chat context was hydrated. Resetting AI context...');
       resetChatContextToDefaults();
     }
-  }, [profile, isChatContextHydrated, hydrateChatContext, resetChatContextToDefaults]);
+  }, [profile, isChatContextHydrated, hydrateChatContext, resetChatContextToDefaults, setShowWelcomeModal]);
 
   // Effect to load wallet information
   useEffect(() => {

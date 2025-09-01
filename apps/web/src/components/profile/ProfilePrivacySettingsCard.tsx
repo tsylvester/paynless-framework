@@ -53,7 +53,7 @@ export const ProfilePrivacySettingsCard: React.FC = () => {
     {
       value: 'private',
       label: 'Private',
-      description: 'Only you and members of organizations can see your details.'
+      description: 'Only you and members of organizations you share can see your profile details.'
     },
     {
       value: 'public',

@@ -1,5 +1,5 @@
-import { useAiStore, initialAiStateValues } from './aiStore';
-import { AiState as AiStateTypeFromTypes, Chat, AiProvider, SystemPrompt } from '@paynless/types';
+import { useAiStore } from './aiStore';
+import { initialAiStateValues, AiState as AiStateTypeFromTypes, Chat, AiProvider, SystemPrompt } from '@paynless/types';
 import { vi, describe, beforeEach, it, expect, afterEach } from 'vitest';
 import { analytics } from '@paynless/analytics';
 import { useAuthStore } from './authStore';

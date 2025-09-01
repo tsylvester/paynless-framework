@@ -1,9 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, SpyInstance } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { ProfilePage } from './Profile';
 import { useAuthStore } from '@paynless/store';
 import type { UserProfile } from '@paynless/types';
-import ErrorBoundary from '../components/common/ErrorBoundary'; // Import ErrorBoundary to mock its console.error
 
 // Mock child components
 vi.mock('../components/profile/EditName', () => ({ 
@@ -17,6 +16,9 @@ vi.mock('../components/wallet/WalletBalanceDisplay', () => ({
 }));
 vi.mock('../components/profile/ProfilePrivacySettingsCard', () => ({ 
   ProfilePrivacySettingsCard: () => <div data-testid="profile-privacy-settings-card">Mock ProfilePrivacySettingsCard</div> 
+}));
+vi.mock('../components/profile/NotificationSettingsCard', () => ({
+  NotificationSettingsCard: () => <div data-testid="notification-settings-card">Email Notifications</div>
 }));
 vi.mock('../components/common/CardSkeleton', () => ({
   CardSkeleton: ({numberOfFields}: {numberOfFields: number}) => (
@@ -52,6 +54,11 @@ const mockUserProfile: UserProfile = {
   role: 'user',
   created_at: 'somedate',
   updated_at: 'somedate',
+  chat_context: {},
+  has_seen_welcome_modal: false,
+  is_subscribed_to_newsletter: false,
+  last_selected_org_id: null,
+  profile_privacy_setting: 'public',
   // avatar_url: '', // Ensure all fields from type are present or optional
   // username: 'initialuser',
   // onboarded: true,
@@ -65,7 +72,7 @@ const renderProfilePage = () => {
 };
 
 describe('ProfilePage Component', () => {
-  let consoleErrorSpy: vi.SpyInstance;
+  let consoleErrorSpy: SpyInstance;
 
   beforeEach(() => {
     // Suppress console.error for ErrorBoundary tests, but allow other errors
@@ -91,7 +98,7 @@ describe('ProfilePage Component', () => {
       // Ensure all properties accessed by ProfilePage or its direct children (if not mocked out) are here
       user: { email: 'test@example.com' }, // Add mock user if EditEmail or others need it from authStore
       updateUser: vi.fn(), 
-    } as any); // Use `as any` carefully or provide a more complete mock type
+    }); // Use `as any` carefully or provide a more complete mock type
   });
 
   afterEach(() => {
@@ -105,7 +112,7 @@ describe('ProfilePage Component', () => {
       profile: null,
       isLoading: true,
       error: null,
-    } as any);
+    });
     renderProfilePage();
     const skeletonContainer = screen.getByTestId('profile-grid-skeleton-container');
     expect(skeletonContainer).toBeInTheDocument();
@@ -123,7 +130,7 @@ describe('ProfilePage Component', () => {
       profile: null,
       isLoading: false,
       error: testError,
-    }as any);
+    });
     renderProfilePage();
     expect(screen.getByText('Could not load Profile Page')).toBeInTheDocument(); // Card Title
     expect(screen.getByText(`Profile data could not be loaded. ${testError.message}`)).toBeInTheDocument();
@@ -135,7 +142,7 @@ describe('ProfilePage Component', () => {
       profile: null,
       isLoading: false,
       error: null, // No specific error object, but profile is null
-    } as any);
+    });
     renderProfilePage();
     expect(screen.getByText('Profile Unavailable')).toBeInTheDocument(); // Card Title
     expect(screen.getByText('Profile data is unavailable. Please ensure you are logged in and try refreshing the page.')).toBeInTheDocument();
@@ -151,6 +158,8 @@ describe('ProfilePage Component', () => {
     expect(screen.getByTestId('edit-email')).toBeInTheDocument();
     expect(screen.getByTestId('wallet-balance-display')).toBeInTheDocument();
     expect(screen.getByTestId('profile-privacy-settings-card')).toBeInTheDocument();
+    expect(screen.getByTestId('notification-settings-card')).toBeInTheDocument();
+    expect(screen.getByText('Email Notifications')).toBeInTheDocument();
   });
 
   it('should display ErrorBoundary fallback for a child component error', async () => {
@@ -170,7 +179,7 @@ describe('ProfilePage Component', () => {
       user: { email: 'test@example.com' },
       updateProfile: mockUpdateProfile, // ensure all needed functions are present
       updateUser: vi.fn() 
-    } as any);
+    });
 
     render(<ProfilePageWithMockedError />);
 

@@ -120,6 +120,8 @@ describe('DialecticApiClient', () => {
             projectId: 'proj-123',
             stageSlug: mockStageObject.slug,
             iterationNumber: 1,
+            continueUntilComplete: false,
+            walletId: 'wallet-default',
         };
         const requestBody = { action: 'generateContributions', payload: validPayload };
 
@@ -154,8 +156,14 @@ describe('DialecticApiClient', () => {
         };
 
         const mockSuccessResponse: GenerateContributionsResponse = {
-            message: 'Contributions generated successfully for thesis stage.',
-            contributions: [mockContribution],
+            sessionId: validPayload.sessionId,
+            projectId: validPayload.projectId,
+            stage: mockStageObject.slug,
+            iteration: validPayload.iterationNumber,
+            status: 'generating',
+            job_ids: ['job-123'],
+            successfulContributions: [mockContribution],
+            failedAttempts: [],
         };
 
         it('should call apiClient.post with the correct endpoint and body', async () => {
@@ -212,6 +220,22 @@ describe('DialecticApiClient', () => {
             });
             expect(result.status).toBe(0);
             expect(result.data).toBeUndefined();
+        });
+
+        it('forwards walletId unchanged in the request payload', async () => {
+            const payloadWithWallet = { ...validPayload, walletId: 'wallet-abc' };
+            const apiResponse: ApiResponse<GenerateContributionsResponse> = {
+                data: mockSuccessResponse,
+                status: 200,
+            };
+            mockApiClientPost.mockResolvedValue(apiResponse);
+
+            await dialecticApiClient.generateContributions(payloadWithWallet);
+
+            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, {
+                action: 'generateContributions',
+                payload: expect.objectContaining({ walletId: 'wallet-abc' }),
+            });
         });
     });     
     

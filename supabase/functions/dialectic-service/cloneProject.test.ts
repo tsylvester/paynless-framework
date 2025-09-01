@@ -10,9 +10,7 @@ import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockQueryB
 import { createMockFileManagerService, MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import { generateShortId } from '../_shared/utils/path_constructor.ts';
-import type { DialecticProjectResource } from "../dialectic-service/dialectic.interface.ts";
-
-type DialecticContributionRow = Tables<'dialectic_contributions'>;
+import type { DialecticMemoryRow, DialecticFeedbackRow, DialecticContributionRow, DialecticProjectResourceRow } from "../dialectic-service/dialectic.interface.ts";
 
 describe("cloneProject", () => {
     let mockSupabaseSetup: MockSupabaseClientSetup;
@@ -27,6 +25,14 @@ describe("cloneProject", () => {
 
     let uuidCallCount = 0;
 
+    // Narrowing helpers for mock insert payloads
+    function isArrayWithOptionalId(val: unknown): val is Array<{ id?: string }> {
+        return Array.isArray(val) && val.every((v) => v !== null && typeof v === 'object');
+    }
+    function isObjectWithOptionalId(val: unknown): val is { id?: string } {
+        return val !== null && typeof val === 'object';
+    }
+
     beforeEach(() => {
         mockSupabaseSetup = createMockSupabaseClient(cloningUserId, {});
         mockFileManager = createMockFileManagerService();
@@ -34,65 +40,72 @@ describe("cloneProject", () => {
         uuidCallCount = 0;
         cryptoMock = stub(crypto, "randomUUID", (): `${string}-${string}-${string}-${string}-${string}` => {
             uuidCallCount++;
-            const baseId = `mock-${uuidCallCount.toString().padStart(4, '0')}`;
             if (uuidCallCount === 1) {
-                capturedNewProjectId = `${baseId}-project-xxxx-xxxx-xxxxxxxxxxxx`;
-                return capturedNewProjectId as `${string}-${string}-${string}-${string}-${string}`;
+                capturedNewProjectId = '00000000-0000-0000-0000-000000000001';
+                return '00000000-0000-0000-0000-000000000001';
             }
             if (uuidCallCount === 2) {
-                capturedNewSessionId1 = `${baseId}-session-xxxx-xxxx-xxxxxxxxxxxx`;
-                return capturedNewSessionId1 as `${string}-${string}-${string}-${string}-${string}`;
+                capturedNewSessionId1 = '00000000-0000-0000-0000-000000000002';
+                return '00000000-0000-0000-0000-000000000002';
             }
-            return `${baseId}-record-xxxx-xxxx-xxxxxxxxxxxx` as `${string}-${string}-${string}-${string}-${string}`;
+            return '00000000-0000-0000-0000-00000000ffff';
         });
 
         mockFileManager.uploadAndRegisterFile = spy(
             (context: UploadContext): Promise<FileManagerResponse> => {
                 const newPath = constructStoragePath(context.pathContext);
                 const fileRecordId = crypto.randomUUID();
-
-                let recordPartial: Partial<FileRecord> = {
-                    id: fileRecordId,
-                    user_id: cloningUserId,
-                    file_name: context.pathContext.originalFileName || 'unknown_file.dat',
-                    storage_bucket: 'test-bucket',
-                    storage_path: newPath.storagePath,
-                    mime_type: context.mimeType || 'application/octet-stream',
-                    size_bytes: context.sizeBytes,
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                };
+                const nowIso = new Date().toISOString();
 
                 if (context.contributionMetadata) {
-                    const meta = context.contributionMetadata as Required<UploadContext>['contributionMetadata'];
-                    recordPartial = {
-                        ...recordPartial,
+                    const meta = context.contributionMetadata;
+                    const contributionRecord = {
+                        id: fileRecordId,
                         session_id: meta.sessionId,
-                        stage: meta.stageSlug,
+                        user_id: context.userId,
+                        stage: context.pathContext.stageSlug || meta.stageSlug,
                         iteration_number: meta.iterationNumber,
                         model_id: meta.modelIdUsed,
-                        model_name: context.pathContext.modelSlug || meta.modelNameDisplay || 'unknown_model',
-                        contribution_type: meta.contributionType,
-                        raw_response_storage_path: meta.rawJsonResponseContent ? newPath.storagePath.replace(".md", "_raw.json").replace(".json", "_raw.json") : undefined,
-                        seed_prompt_url: meta.seedPromptStoragePath,
-                        processing_time_ms: meta.processingTimeMs,
-                        tokens_used_input: meta.tokensUsedInput,
-                        tokens_used_output: meta.tokensUsedOutput,
-                        error: meta.errorDetails,
-                        citations: meta.citations,
-                        edit_version: meta.editVersion,
-                        is_latest_edit: meta.isLatestEdit,
-                        target_contribution_id: meta.targetContributionId,
-                        original_model_contribution_id: meta.originalModelContributionId,
-                    } as Partial<Database['public']['Tables']['dialectic_contributions']['Row']>;
+                        model_name: context.pathContext.modelSlug || meta.modelNameDisplay,
+                        prompt_template_id_used: meta.promptTemplateIdUsed ?? null,
+                        seed_prompt_url: meta.seedPromptStoragePath ?? null,
+                        edit_version: meta.editVersion ?? 1,
+                        is_latest_edit: meta.isLatestEdit ?? true,
+                        original_model_contribution_id: meta.originalModelContributionId ?? null,
+                        raw_response_storage_path: meta.rawJsonResponseContent ? `${newPath.storagePath}/${(newPath.fileName || '').replace(/\.(md|json)$/i, '')}_raw.json` : null,
+                        target_contribution_id: meta.target_contribution_id ?? null,
+                        tokens_used_input: meta.tokensUsedInput ?? null,
+                        tokens_used_output: meta.tokensUsedOutput ?? null,
+                        processing_time_ms: meta.processingTimeMs ?? null,
+                        error: meta.errorDetails ?? null,
+                        citations: meta.citations ?? null,
+                        created_at: nowIso,
+                        updated_at: nowIso,
+                        contribution_type: meta.contributionType ?? null,
+                        file_name: newPath.fileName,
+                        storage_bucket: 'test-bucket',
+                        storage_path: newPath.storagePath,
+                        size_bytes: context.sizeBytes,
+                        mime_type: context.mimeType,
+                        document_relationships: meta.document_relationships ?? null,
+                    }; // conforms to dialectic_contributions.Row
+                    return Promise.resolve({ record: contributionRecord, error: null });
                 } else {
-                    recordPartial = {
-                        ...recordPartial,
+                    const resourceRecord = {
+                        id: fileRecordId,
                         project_id: context.pathContext.projectId,
-                        resource_description: context.description || null,
-                    } as Partial<Database['public']['Tables']['dialectic_project_resources']['Row']>;
+                        user_id: context.userId!,
+                        file_name: newPath.fileName,
+                        storage_bucket: 'test-bucket',
+                        storage_path: newPath.storagePath,
+                        mime_type: context.mimeType,
+                        size_bytes: context.sizeBytes,
+                        resource_description: context.description ? context.description : null,
+                        created_at: nowIso,
+                        updated_at: nowIso,
+                    }; // conforms to dialectic_project_resources.Row
+                    return Promise.resolve({ record: resourceRecord, error: null });
                 }
-                return Promise.resolve({ record: recordPartial as FileRecord, error: null });
             }
         );
     });
@@ -139,7 +152,10 @@ describe("cloneProject", () => {
                         return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
                     },
                     insert: (state: MockQueryBuilderState) => {
-                        const insertPayload = (state.insertData as TablesInsert<"dialectic_projects">[])[0];
+                        const insertPayloadRaw = state.insertData;
+                        const insertPayload = isArrayWithOptionalId(insertPayloadRaw)
+                            ? insertPayloadRaw[0]
+                            : (isObjectWithOptionalId(insertPayloadRaw) ? insertPayloadRaw : {});
                         capturedNewProjectId = insertPayload.id!;
                         const newProjectEntry = {
                             ...originalProjectData, 
@@ -224,7 +240,10 @@ describe("cloneProject", () => {
                         return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
                     },
                     insert: (state: MockQueryBuilderState) => {
-                        const insertPayload = (state.insertData as TablesInsert<"dialectic_projects">[])[0];
+                        const insertPayloadRaw = state.insertData;
+                        const insertPayload = isArrayWithOptionalId(insertPayloadRaw)
+                            ? insertPayloadRaw[0]
+                            : (isObjectWithOptionalId(insertPayloadRaw) ? insertPayloadRaw : {});
                         newProjectIdCapture = insertPayload.id!;
                         return Promise.resolve({ data: [{...insertPayload, project_name: "Cloned Resource Project"}], error: null, count: 1, status: 201, statusText: 'Created' });
                     },
@@ -264,9 +283,9 @@ describe("cloneProject", () => {
         const fmCalls = mockFileManager.uploadAndRegisterFile.calls;
         assertEquals(fmCalls.length, 3, "FileManagerService should be called for each of the 3 resources.");
 
-        const firstCallArgs = fmCalls[0].args[0] as UploadContext;
+        const firstCallArgs = fmCalls[0].args[0];
         assertEquals(firstCallArgs.pathContext.projectId, newProjectIdCapture);
-        assertEquals(firstCallArgs.pathContext.fileType, "general_resource" as FileType);
+        assertEquals(firstCallArgs.pathContext.fileType, "general_resource");
         assertEquals(firstCallArgs.pathContext.originalFileName, originalResourcesData[0].file_name);
         assertEquals(firstCallArgs.mimeType, originalResourcesData[0].mime_type);
         assertEquals(firstCallArgs.userId, cloningUserId);
@@ -276,9 +295,9 @@ describe("cloneProject", () => {
         assertEquals(firstCallArgs.pathContext.stageSlug, undefined, "StageSlug should be undefined for simple resource1");
         assertEquals(firstCallArgs.pathContext.modelSlug, undefined, "ModelSlug should be undefined for simple resource1");
 
-        const secondCallArgs = fmCalls[1].args[0] as UploadContext;
+        const secondCallArgs = fmCalls[1].args[0];
         assertEquals(secondCallArgs.pathContext.projectId, newProjectIdCapture);
-        assertEquals(secondCallArgs.pathContext.fileType, "initial_user_prompt" as FileType);
+        assertEquals(secondCallArgs.pathContext.fileType, "initial_user_prompt");
         assertEquals(secondCallArgs.pathContext.originalFileName, originalResourcesData[1].file_name);
         assertEquals(secondCallArgs.mimeType, originalResourcesData[1].mime_type);
         assertEquals(secondCallArgs.description, originalResourcesData[1].resource_description);
@@ -286,9 +305,9 @@ describe("cloneProject", () => {
         assertEquals(secondCallArgs.pathContext.stageSlug, undefined, "StageSlug should be undefined for simple resource2");
         assertEquals(secondCallArgs.pathContext.modelSlug, undefined, "ModelSlug should be undefined for simple resource2");
 
-        const thirdCallArgs = fmCalls[2].args[0] as UploadContext;
+        const thirdCallArgs = fmCalls[2].args[0];
         assertEquals(thirdCallArgs.pathContext.projectId, newProjectIdCapture);
-        assertEquals(thirdCallArgs.pathContext.fileType, "general_resource" as FileType);
+        assertEquals(thirdCallArgs.pathContext.fileType, "general_resource");
         assertEquals(thirdCallArgs.pathContext.originalFileName, originalResourcesData[2].file_name);
         assertEquals(thirdCallArgs.pathContext.sessionId, undefined, "SessionId should be undefined for this project-level seed_prompt");
         assertEquals(thirdCallArgs.pathContext.iteration, undefined, "Iteration should be undefined for this project-level seed_prompt path format");
@@ -367,28 +386,30 @@ describe("cloneProject", () => {
             {
                 id: "contrib1-uuid", session_id: originalSessionId1, user_id: cloningUserId,
                 file_name: "claude-3-opus_1_thesis.md", storage_bucket: "test-bucket",
-                storage_path: `${originalProjectId}/sessions/${originalSession1ShortId}/iteration_1/1_thesis/claude-3-opus_1_thesis.md`,
+                storage_path: `${originalProjectId}/session_${originalSession1ShortId}/iteration_1/1_thesis/claude-3-opus_1_thesis.md`,
                 mime_type: "text/markdown", size_bytes: 1024, stage: "thesis", iteration_number: 1, 
                 model_id: "ai_model_id_opus", model_name: "claude-3-opus", 
                 contribution_type: "model_output",
-                raw_response_storage_path: `${originalProjectId}/sessions/${originalSession1ShortId}/iteration_1/1_thesis/raw_responses/claude-3-opus_1_thesis_raw.json`,
-                seed_prompt_url: `${originalProjectId}/sessions/${originalSession1ShortId}/iteration_1/1_thesis/seed_prompt.md`,
+                raw_response_storage_path: `${originalProjectId}/session_${originalSession1ShortId}/iteration_1/1_thesis/raw_responses/claude-3-opus_1_thesis_raw.json`,
+                seed_prompt_url: `${originalProjectId}/session_${originalSession1ShortId}/iteration_1/1_thesis/seed_prompt.md`,
                 created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
                 error: "", citations: null, processing_time_ms: 1000, prompt_template_id_used: null, target_contribution_id: null,
                 tokens_used_input: 100, tokens_used_output: 200, edit_version: 1, is_latest_edit: true, original_model_contribution_id: null,
+                document_relationships: null,
             },
             {
                 id: "contrib2-uuid", session_id: originalSessionId1, user_id: cloningUserId,
-                file_name: "gemini-1.5-pro_0_critique.md", storage_bucket: "test-bucket",
-                storage_path: `${originalProjectId}/sessions/${originalSession1ShortId}/iteration_1/2_critique/gemini-1.5-pro_0_critique.md`,
-                mime_type: "text/markdown", size_bytes: 512, stage: "critique", iteration_number: 1, 
+                file_name: "gemini-1.5-pro_0_antithesis.md", storage_bucket: "test-bucket",
+                storage_path: `${originalProjectId}/session_${originalSession1ShortId}/iteration_1/2_antithesis/gemini-1.5-pro_0_antithesis.md`,
+                mime_type: "text/markdown", size_bytes: 512, stage: "antithesis", iteration_number: 1, 
                 model_id: "ai_model_id_gemini", model_name: "gemini-1.5-pro", 
                 contribution_type: "model_output", 
                 raw_response_storage_path: "",
-                seed_prompt_url: `${originalProjectId}/sessions/${originalSession1ShortId}/iteration_1/2_critique/seed_prompt.md`,
+                seed_prompt_url: `${originalProjectId}/session_${originalSession1ShortId}/iteration_1/2_antithesis/seed_prompt.md`,
                 created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
                 error: "", citations: null, processing_time_ms: 800, prompt_template_id_used: null, target_contribution_id: "contrib1-uuid",
                 tokens_used_input: 50, tokens_used_output: 150, edit_version: 2, is_latest_edit: true, original_model_contribution_id: "some_prior_edit_id_for_contrib2",
+                document_relationships: null,
             }
         ];
         
@@ -409,9 +430,12 @@ describe("cloneProject", () => {
                         return Promise.resolve({ data: null, error: { name: "MockError", message: "Project not found in mock"} });
                     },
                     insert: (state: MockQueryBuilderState) => {
-                        const insertPayload = (state.insertData as TablesInsert<"dialectic_projects">[])[0];
+                        const insertPayloadRaw = state.insertData;
+                        const insertPayload = isArrayWithOptionalId(insertPayloadRaw)
+                            ? insertPayloadRaw[0]
+                            : (isObjectWithOptionalId(insertPayloadRaw) ? insertPayloadRaw : {});
                         capturedNewProjectIdLocal = insertPayload.id!;
-                        const newProjectEntry = { ...originalProjectData, ...insertPayload, project_name: "Cloned Complex Project" };
+                        const newProjectEntry = { ...originalProjectData, ...(insertPayload), project_name: "Cloned Complex Project" };
                         return Promise.resolve({ data: [newProjectEntry], error: null, count: 1, status: 201 });
                     },
                 },
@@ -426,7 +450,10 @@ describe("cloneProject", () => {
                         return Promise.resolve({ data: [], error: null });
                     },
                     insert: (state: MockQueryBuilderState) => {
-                        const insertPayload = (state.insertData as TablesInsert<"dialectic_sessions">[])[0];
+                        const insertPayloadRaw = state.insertData;
+                        const insertPayload = isArrayWithOptionalId(insertPayloadRaw)
+                            ? insertPayloadRaw[0]
+                            : (isObjectWithOptionalId(insertPayloadRaw) ? insertPayloadRaw : {});
                         capturedNewSessionId1Local = insertPayload.id!;
                         const newSessionEntry = { ...originalSessionsData[0], ...insertPayload, project_id: capturedNewProjectIdLocal };
                         return Promise.resolve({ data: [newSessionEntry], error: null, count: 1, status: 201 });
@@ -472,13 +499,13 @@ describe("cloneProject", () => {
 
         // Assertions for main contribution file (contrib1)
         const contrib1MainCallArgs = fmCalls.find(call => {
-            const ctx = call.args[0] as UploadContext;
+            const ctx = call.args[0];
             return ctx.pathContext.originalFileName === originalContributionsData[0].file_name;
-        })?.args[0] as UploadContext;
+        })?.args[0];
         assert(contrib1MainCallArgs, "File manager should have been called for contribution 1 main file");
         assertEquals(contrib1MainCallArgs.pathContext.projectId, capturedNewProjectIdLocal);
         assertEquals(contrib1MainCallArgs.pathContext.sessionId, capturedNewSessionId1Local);
-        assertEquals(contrib1MainCallArgs.pathContext.fileType, "model_contribution_main" as FileType);
+        assertEquals(contrib1MainCallArgs.pathContext.fileType, "model_contribution_main");
         assertEquals(contrib1MainCallArgs.pathContext.originalFileName, originalContributionsData[0].file_name);
         assertEquals(contrib1MainCallArgs.pathContext.iteration, originalContributionsData[0].iteration_number);
         assertEquals(contrib1MainCallArgs.pathContext.stageSlug, "thesis");
@@ -496,8 +523,7 @@ describe("cloneProject", () => {
         const clonedSession1ShortId = generateShortId(capturedNewSessionId1Local!);
         const expectedNewSeedPath1Parts = [
             capturedNewProjectIdLocal, 
-            'sessions',
-            clonedSession1ShortId, 
+            `session_${clonedSession1ShortId}`,
             `iteration_${originalContributionsData[0].iteration_number}`,
             '1_thesis', 
             'seed_prompt.md'
@@ -509,23 +535,23 @@ describe("cloneProject", () => {
  
         // Assertions for second contribution (contrib2) - main file only
         const contrib2MainCallArgs = fmCalls.find(call => {
-            const ctx = call.args[0] as UploadContext;
+            const ctx = call.args[0];
             return ctx.pathContext.originalFileName === originalContributionsData[1].file_name;
-        })?.args[0] as UploadContext;
+        })?.args[0];
         assert(contrib2MainCallArgs, "File manager should have been called for contribution 2 main file");
         assertEquals(contrib2MainCallArgs.pathContext.projectId, capturedNewProjectIdLocal);
         assertEquals(contrib2MainCallArgs.pathContext.sessionId, capturedNewSessionId1Local);
-        assertEquals(contrib2MainCallArgs.pathContext.fileType, "model_contribution_main" as FileType);
+        assertEquals(contrib2MainCallArgs.pathContext.fileType, "model_contribution_main");
         assertEquals(contrib2MainCallArgs.pathContext.originalFileName, originalContributionsData[1].file_name); 
         assertEquals(contrib2MainCallArgs.pathContext.iteration, originalContributionsData[1].iteration_number);
-        assertEquals(contrib2MainCallArgs.pathContext.stageSlug, "2_critique"); 
+        assertEquals(contrib2MainCallArgs.pathContext.stageSlug, "antithesis"); 
         assertEquals(contrib2MainCallArgs.pathContext.modelSlug, "gemini-1.5-pro"); 
         assertEquals(contrib2MainCallArgs.pathContext.attemptCount, 0); 
 
         assert(contrib2MainCallArgs.contributionMetadata, "Contribution metadata should exist for contrib2 main");
         assertEquals(contrib2MainCallArgs.contributionMetadata.sessionId, capturedNewSessionId1Local);
         assertEquals(contrib2MainCallArgs.contributionMetadata.modelIdUsed, originalContributionsData[1].model_id);
-        assertEquals(contrib2MainCallArgs.contributionMetadata.stageSlug, "2_critique");
+        assertEquals(contrib2MainCallArgs.contributionMetadata.stageSlug, "antithesis");
         assertEquals(contrib2MainCallArgs.contributionMetadata.iterationNumber, originalContributionsData[1].iteration_number);
         assertEquals(contrib2MainCallArgs.contributionMetadata.rawJsonResponseContent, "", "Raw JSON content for contrib2 should be empty string");
         assert(contrib2MainCallArgs.contributionMetadata.seedPromptStoragePath, "Cloned seedPromptStoragePath should exist for contrib2");
@@ -533,14 +559,253 @@ describe("cloneProject", () => {
         const clonedSession1ShortIdForContrib2 = generateShortId(capturedNewSessionId1Local!);
         const expectedNewSeedPath2Parts = [
             capturedNewProjectIdLocal,
-            'sessions',
-            clonedSession1ShortIdForContrib2,
+            `session_${clonedSession1ShortIdForContrib2}`,
             `iteration_${originalContributionsData[1].iteration_number}`,
-            "2_critique", 
+            "2_antithesis", 
             'seed_prompt.md'
         ];
         const actualNewSeedPath2Parts = contrib2MainCallArgs.contributionMetadata.seedPromptStoragePath!.split('/');
         assertEquals(actualNewSeedPath2Parts, expectedNewSeedPath2Parts);
+    });
+
+    it("should deeply clone resources, contributions with relationships, memory, and feedback", async () => {
+        const originalProjectData = {
+            id: originalProjectId, user_id: cloningUserId, project_name: "Deep Clone Project",
+            initial_user_prompt: "Deep prompt", status: "active",
+            created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+            process_template_id: "pt-deep", selected_domain_id: "domain-deep",
+            initial_prompt_resource_id: null, repo_url: null, selected_domain_overlay_id: null, user_domain_overlay_values: null,
+        };
+
+        const originalSessionId = "orig-session-uuid-1";
+        const originalSessionShortId = generateShortId(originalSessionId);
+
+        const originalSessionsData = [
+            {
+                id: originalSessionId, project_id: originalProjectId, session_description: "Only session",
+                iteration_count: 1, status: "in_progress", current_stage_id: "stage_1_thesis",
+                created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+                selected_model_ids: ["mc_claude_3_opus"], user_input_reference_url: null, associated_chat_id: null,
+            }
+        ];
+
+        const originalResourcesData = [
+            {
+                id: "res-initial-uuid", project_id: originalProjectId, user_id: cloningUserId,
+                file_name: "initial_prompt.md", storage_bucket: "test-bucket",
+                storage_path: `${originalProjectId}/initial_prompt.md`,
+                mime_type: "text/markdown", size_bytes: 123, resource_description: JSON.stringify({ type: "initial_user_prompt" }),
+                created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+            },
+            {
+                id: "res-general-uuid", project_id: originalProjectId, user_id: cloningUserId,
+                file_name: "notes.txt", storage_bucket: "test-bucket",
+                storage_path: `${originalProjectId}/general_resource/notes.txt`,
+                mime_type: "text/plain", size_bytes: 45, resource_description: JSON.stringify({ type: "general_resource", tag: "info" }),
+                created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+            },
+        ];
+
+        const contrib1Id = "contrib1-uuid";
+        const contrib2Id = "contrib2-uuid";
+        const originalContributionsData: Array<DialecticContributionRow & { model_name: string; seed_prompt_url?: string; raw_response_storage_path?: string }> = [
+            {
+                id: contrib1Id, session_id: originalSessionId, user_id: cloningUserId,
+                file_name: "claude-3-opus_0_thesis.md", storage_bucket: "test-bucket",
+                storage_path: `${originalProjectId}/session_${originalSessionShortId}/iteration_1/1_thesis/claude-3-opus_0_thesis.md`,
+                mime_type: "text/markdown", size_bytes: 1000, stage: "thesis", iteration_number: 1,
+                model_id: "ai_model_id_opus", model_name: "claude-3-opus",
+                contribution_type: "model_output",
+                raw_response_storage_path: `${originalProjectId}/session_${originalSessionShortId}/iteration_1/1_thesis/raw_responses/claude-3-opus_0_thesis_raw.json`,
+                seed_prompt_url: `${originalProjectId}/session_${originalSessionShortId}/iteration_1/1_thesis/seed_prompt.md`,
+                created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+                error: null, citations: null, processing_time_ms: 900, prompt_template_id_used: null, target_contribution_id: null,
+                tokens_used_input: 10, tokens_used_output: 20, edit_version: 1, is_latest_edit: true, original_model_contribution_id: null,
+                document_relationships: { thesis: contrib1Id },
+            },
+            {
+                id: contrib2Id, session_id: originalSessionId, user_id: cloningUserId,
+                file_name: "gemini-1.5-pro_0_antithesis.md", storage_bucket: "test-bucket",
+                storage_path: `${originalProjectId}/session_${originalSessionShortId}/iteration_1/2_antithesis/gemini-1.5-pro_0_antithesis.md`,
+                mime_type: "text/markdown", size_bytes: 800, stage: "antithesis", iteration_number: 1,
+                model_id: "ai_model_id_gemini", model_name: "gemini-1.5-pro",
+                contribution_type: "model_output",
+                raw_response_storage_path: `${originalProjectId}/session_${originalSessionShortId}/iteration_1/2_antithesis/raw_responses/gemini-1.5-pro_0_antithesis_raw.json`,
+                seed_prompt_url: `${originalProjectId}/session_${originalSessionShortId}/iteration_1/2_antithesis/seed_prompt.md`,
+                created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+                error: null, citations: null, processing_time_ms: 700, prompt_template_id_used: null, target_contribution_id: contrib1Id,
+                tokens_used_input: 15, tokens_used_output: 25, edit_version: 1, is_latest_edit: true, original_model_contribution_id: null,
+                document_relationships: { thesis: contrib1Id, antithesis: contrib2Id },
+            },
+        ];
+
+        const originalMemoryData = [
+            {
+                id: "mem-1", session_id: originalSessionId, source_contribution_id: contrib1Id,
+                content: "key fact A", embedding: null, fts: null, metadata: null,
+                created_at: new Date().toISOString(),
+            },
+            {
+                id: "mem-2", session_id: originalSessionId, source_contribution_id: contrib2Id,
+                content: "key fact B", embedding: "EMBED_BLOB", fts: null, metadata: { topic: "critique" },
+                created_at: new Date().toISOString(),
+            },
+        ];
+
+        const originalFeedbackData = [
+            {
+                id: "fb-1", project_id: originalProjectId, session_id: originalSessionId, user_id: cloningUserId,
+                stage_slug: "thesis", iteration_number: 1, storage_bucket: "test-bucket",
+                storage_path: `${originalProjectId}/sessions/${originalSessionShortId}/iteration_1/1_thesis/feedback`,
+                file_name: "user-feedback.md", mime_type: "text/markdown", size_bytes: 200,
+                feedback_type: "user_note", resource_description: { rating: 5 },
+                created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+            },
+        ];
+
+        const insertedMemory: DialecticMemoryRow[] = [];
+        const insertedFeedback: DialecticFeedbackRow[] = [];
+
+        let deepNewProjectId = "";
+        let deepNewSessionId = "";
+
+        mockSupabaseSetup.client = createMockSupabaseClient(cloningUserId, {
+            genericMockResults: {
+                dialectic_projects: {
+                    select: (state: MockQueryBuilderState) => {
+                        if (state.filters.some(f => f.column === 'id' && f.value === originalProjectId)) {
+                            return Promise.resolve({ data: [originalProjectData], error: null, count: 1, status: 200, statusText: 'OK' });
+                        }
+                        if (state.filters.some(f => f.column === 'id' && f.value === deepNewProjectId)) {
+                            const clonedData = { ...originalProjectData, id: deepNewProjectId, project_name: "Deep Clone Project - Copy" };
+                            return Promise.resolve({ data: [clonedData], error: null, count: 1, status: 200, statusText: 'OK' });
+                        }
+                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
+                    },
+                    insert: (state: MockQueryBuilderState) => {
+                        const raw = state.insertData;
+                        const payload = Array.isArray(raw) ? raw[0] : raw;
+                        deepNewProjectId = payload.id;
+                        const row = { ...originalProjectData, ...payload };
+                        return Promise.resolve({ data: [row], error: null, count: 1, status: 201, statusText: 'Created' });
+                    },
+                },
+                dialectic_project_resources: {
+                    select: (state: MockQueryBuilderState) => {
+                        if (state.filters.some(f => f.column === 'project_id' && f.value === originalProjectId)) {
+                            return Promise.resolve({ data: originalResourcesData, error: null, count: originalResourcesData.length, status: 200, statusText: 'OK' });
+                        }
+                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
+                    },
+                },
+                dialectic_sessions: {
+                    select: (state: MockQueryBuilderState) => {
+                        if (state.filters.some(f => f.column === 'project_id' && f.value === originalProjectId)) {
+                            if (state.selectColumns === 'id') {
+                                return Promise.resolve({ data: originalSessionsData.map(s => ({ id: s.id })), error: null, count: originalSessionsData.length, status: 200, statusText: 'OK' });
+                            }
+                            return Promise.resolve({ data: originalSessionsData, error: null, count: originalSessionsData.length, status: 200, statusText: 'OK' });
+                        }
+                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
+                    },
+                    insert: (state: MockQueryBuilderState) => {
+                        const raw = state.insertData;
+                        const payload = Array.isArray(raw) ? raw[0] : raw;
+                        deepNewSessionId = payload.id;
+                        const newRow = { ...originalSessionsData[0], ...payload, project_id: deepNewProjectId };
+                        return Promise.resolve({ data: [newRow], error: null, count: 1, status: 201, statusText: 'Created' });
+                    },
+                },
+                dialectic_contributions: {
+                    select: (state: MockQueryBuilderState) => {
+                        if (state.filters.some(f => f.column === 'session_id' && f.value === originalSessionId)) {
+                            return Promise.resolve({ data: originalContributionsData, error: null, count: originalContributionsData.length, status: 200, statusText: 'OK' });
+                        }
+                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
+                    },
+                },
+                dialectic_memory: {
+                    select: (state: MockQueryBuilderState) => {
+                        if (state.filters.some(f => f.column === 'session_id' && f.value === originalSessionId)) {
+                            return Promise.resolve({ data: originalMemoryData, error: null, count: originalMemoryData.length, status: 200, statusText: 'OK' });
+                        }
+                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
+                    },
+                    insert: (state: MockQueryBuilderState) => {
+                        const raw = state.insertData;
+                        const payloads = Array.isArray(raw) ? raw : [raw];
+                        payloads.forEach(p => insertedMemory.push(p));
+                        return Promise.resolve({ data: payloads, error: null, count: payloads.length, status: 201, statusText: 'Created' });
+                    },
+                },
+                dialectic_feedback: {
+                    select: (state: MockQueryBuilderState) => {
+                        if (state.filters.some(f => f.column === 'session_id' && f.value === originalSessionId)) {
+                            return Promise.resolve({ data: originalFeedbackData, error: null, count: originalFeedbackData.length, status: 200, statusText: 'OK' });
+                        }
+                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: 'OK' });
+                    },
+                    insert: (state: MockQueryBuilderState) => {
+                        const raw = state.insertData;
+                        const payloads = Array.isArray(raw) ? raw  : [raw];
+                        payloads.forEach(p => insertedFeedback.push(p));
+                        return Promise.resolve({ data: payloads, error: null, count: payloads.length, status: 201, statusText: 'Created' });
+                    },
+                },
+            },
+            storageMock: {
+                downloadResult: (bucketId: string, path: string) => {
+                    if (bucketId === 'test-bucket') {
+                        if (path === originalResourcesData[0].storage_path) return Promise.resolve({ data: new Blob(["initial"], { type: 'text/markdown' }), error: null });
+                        if (path === originalResourcesData[1].storage_path) return Promise.resolve({ data: new Blob(["notes"], { type: 'text/plain' }), error: null });
+
+                        if (path === originalContributionsData[0].storage_path) return Promise.resolve({ data: new Blob(["c1 main"], { type: 'text/markdown' }), error: null });
+                        if (path === originalContributionsData[0].raw_response_storage_path) return Promise.resolve({ data: new Blob(["{\"raw\":1}"], { type: 'application/json' }), error: null });
+
+                        if (path === originalContributionsData[1].storage_path) return Promise.resolve({ data: new Blob(["c2 main"], { type: 'text/markdown' }), error: null });
+                        if (path === originalContributionsData[1].raw_response_storage_path) return Promise.resolve({ data: new Blob(["{\"raw\":2}"], { type: 'application/json' }), error: null });
+                    }
+                    return Promise.resolve({ data: null, error: new Error("Mock download error: path not found") });
+                }
+            }
+        }).client;
+
+        const typedClient = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
+        const result = await cloneProject(typedClient, mockFileManager, originalProjectId, "Deep Clone Project - Copy", cloningUserId);
+
+        assert(result.data, "Expected data for successful deep clone.");
+        assertEquals(result.error, null);
+        assertEquals(result.data?.project_name, "Deep Clone Project - Copy");
+        assertEquals(result.data?.id, deepNewProjectId);
+
+        // FileManager calls: 2 resources + 2 contributions = 4
+        const fmCalls = mockFileManager.uploadAndRegisterFile.calls;
+        assertEquals(fmCalls.length, 4, "Expected 4 FileManager uploads (2 resources + 2 contributions)");
+
+        // Validate contribution metadata preservation: document_relationships, citations, etc.
+        const contribCallContexts = fmCalls
+            .map(call => call.args[0])
+            .filter(ctx => ctx.contributionMetadata);
+        assertEquals(contribCallContexts.length, 2);
+        const [c1Ctx, c2Ctx] = contribCallContexts;
+        assert(c1Ctx.contributionMetadata);
+        assertEquals(c1Ctx.contributionMetadata!.stageSlug, "thesis");
+        assertEquals(c1Ctx.contributionMetadata!.document_relationships ?? null, originalContributionsData[0].document_relationships);
+        assert(c2Ctx.contributionMetadata);
+        assertEquals(c2Ctx.contributionMetadata!.stageSlug, "antithesis");
+        assertEquals(c2Ctx.contributionMetadata!.document_relationships ?? null, originalContributionsData[1].document_relationships);
+
+        // Memory and feedback should be duplicated with new session/project IDs
+        assertEquals(insertedMemory.length, originalMemoryData.length, "All memory rows should be cloned");
+        insertedMemory.forEach((m) => {
+            assertEquals(m.session_id, deepNewSessionId);
+            assert(m.source_contribution_id, "Cloned memory should preserve a source_contribution_id (remapped to cloned id)");
+        });
+        assertEquals(insertedFeedback.length, originalFeedbackData.length, "All feedback rows should be cloned");
+        insertedFeedback.forEach((f) => {
+            assertEquals(f.session_id, deepNewSessionId);
+            assertEquals(f.project_id, deepNewProjectId);
+        });
     });
 
 });

@@ -149,5 +149,5 @@ Deno.test('getInitialPromptContent - should return fallback content if no direct
     user_domain_overlay_values: null,
   };
   const result = await getInitialPromptContent(mockDbClient, project, mockLogger, downloadFromStorage);
-  expect(result).toEqual({ content: 'No prompt provided.' });
+  expect(result).toEqual({ error: 'No prompt provided.' });
 }); 

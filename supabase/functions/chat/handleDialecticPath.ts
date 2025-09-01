@@ -1,0 +1,237 @@
+import {
+    AdapterResponsePayload,
+    ChatApiRequest,
+    ChatHandlerSuccessResponse,
+    ChatMessageRow,
+    Messages,
+} from "../_shared/types.ts";
+import { getMaxOutputTokens } from "../_shared/utils/affordability_utils.ts";
+import { TokenUsageSchema } from "./zodSchema.ts";
+import { PathHandlerContext } from "./prepareChatContext.ts";
+import type { CountTokensDeps } from "../_shared/types/tokenizer.types.ts";
+import { isApiChatMessage } from "../_shared/utils/type_guards.ts";
+
+export async function handleDialecticPath(
+    context: PathHandlerContext
+): Promise<ChatHandlerSuccessResponse | { error: { message: string, status?: number } }> {
+    const {
+        deps,
+        userId,
+        requestBody,
+        wallet,
+        aiProviderAdapter,
+        modelConfig,
+        finalSystemPromptIdForDb,
+        apiKey,
+        providerApiIdentifier,
+    } = context;
+    const { logger, tokenWalletService, countTokens: countTokensFn, debitTokens } = deps;
+    const {
+        message: userMessageContent,
+        providerId: requestProviderId,
+        promptId: requestPromptId,
+        organizationId,
+        max_tokens_to_generate,
+        continue_until_complete
+    } = requestBody;
+    
+    logger.info('Dialectic request processing (no rewind).');
+
+    const tokenizerDeps: CountTokensDeps = {
+        getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
+        countTokensAnthropic: (text: string) => (text ?? '').length,
+        logger: logger,
+    };
+
+    // Build candidate messages, then narrow to allowed roles/content using type guards (no casting)
+    const candidateMessages: Messages[] = Array.isArray(requestBody.messages) && requestBody.messages.length > 0
+        ? requestBody.messages.map((m) => ({ role: m.role, content: m.content }))
+        : [{ role: 'user', content: userMessageContent }];
+    const effectiveMessages: { role: 'system' | 'user' | 'assistant'; content: string }[] = candidateMessages
+        .filter((m): m is { role: 'system' | 'user' | 'assistant'; content: string } => isApiChatMessage(m) && typeof m.content === 'string');
+    if (effectiveMessages.length === 0) {
+        effectiveMessages.push({ role: 'user', content: userMessageContent });
+    }
+
+    // Construct a single ChatApiRequest instance up-front and use it to drive both sizing and send
+    let adapterChatRequestNormal: ChatApiRequest = {
+        message: userMessageContent,
+        messages: effectiveMessages,
+        providerId: requestProviderId,
+        promptId: requestPromptId,
+        chatId: undefined,
+        organizationId: organizationId,
+        continue_until_complete: continue_until_complete,
+        systemInstruction: requestBody.systemInstruction,
+        resourceDocuments: requestBody.resourceDocuments,
+        isDialectic: true,
+    };
+
+    let maxAllowedOutputTokens: number;
+    try {
+        if (!modelConfig) {
+            logger.error('Critical: modelConfig is null before token counting (normal path).', { providerId: requestProviderId, apiIdentifier: providerApiIdentifier });
+            return { error: { message: 'Internal server error: Provider configuration missing for token calculation.', status: 500 } };
+        }
+        const tokensRequiredForNormal = await countTokensFn(
+            tokenizerDeps,
+            {
+                systemInstruction: adapterChatRequestNormal.systemInstruction,
+                message: adapterChatRequestNormal.message,
+                messages: adapterChatRequestNormal.messages,
+                resourceDocuments: adapterChatRequestNormal.resourceDocuments,
+            },
+            modelConfig,
+        );
+        logger.info('Estimated tokens for normal prompt.', { tokensRequiredForNormal, model: providerApiIdentifier });
+
+        if (modelConfig.provider_max_input_tokens && tokensRequiredForNormal > modelConfig.provider_max_input_tokens) {
+            logger.warn('Request exceeds provider max input tokens.', {
+                tokensRequired: tokensRequiredForNormal,
+                providerMaxInput: modelConfig.provider_max_input_tokens,
+                model: providerApiIdentifier
+            });
+            return { error: { message: `Your message is too long. The maximum allowed length for this model is ${modelConfig.provider_max_input_tokens} tokens, but your message is ${tokensRequiredForNormal} tokens.`, status: 413 } };
+        }
+        
+        maxAllowedOutputTokens = getMaxOutputTokens(
+            parseFloat(String(wallet.balance)),
+            tokensRequiredForNormal,
+            modelConfig,
+            logger
+        );
+
+        if (maxAllowedOutputTokens < 1) {
+            logger.warn('Insufficient balance for estimated prompt tokens (normal path).', {
+                walletId: wallet.walletId,
+                balance: wallet.balance,
+                estimatedCost: tokensRequiredForNormal,
+                maxAllowedOutput: maxAllowedOutputTokens
+            });
+            return { error: { message: `Insufficient token balance for this request. Please add funds to your wallet.`, status: 402 } };
+        }
+    } catch(e: unknown) {
+        const errorMessage = e instanceof Error ? e.message : String(e);
+        logger.error('Error during token counting for normal prompt:', { error: errorMessage, model: providerApiIdentifier });
+        return { error: { message: `Internal server error during token calculation: ${errorMessage}`, status: 500 } };
+    }
+
+    // Wallet preflight: require wallet on request and ensure it matches context
+    if (!requestBody.walletId || typeof requestBody.walletId !== 'string') {
+        logger.warn('Dialectic path preflight failed: missing walletId on request body.');
+        return { error: { message: 'Wallet required for chat operation.', status: 400 } };
+    }
+    if (!wallet || !wallet.walletId) {
+        logger.error('Dialectic path preflight failed: wallet context missing.');
+        return { error: { message: 'Internal server error: Wallet context missing.', status: 500 } };
+    }
+    if (requestBody.walletId !== wallet.walletId) {
+        logger.warn('Dialectic path preflight failed: mismatched walletId between request and context.', { requestWalletId: requestBody.walletId, contextWalletId: wallet.walletId });
+        return { error: { message: 'Requested wallet does not match active wallet.', status: 403 } };
+    }
+
+    logger.info(`Processing with real provider: ${providerApiIdentifier}`);
+    if (!apiKey) {
+        logger.error(`Critical: API key for ${providerApiIdentifier} was not resolved before normal path adapter call.`);
+        return { error: { message: 'Internal server error: API key missing for chat operation.', status: 500 } };
+    }
+
+    let adapterResponsePayload: AdapterResponsePayload;
+    try {
+        adapterChatRequestNormal = {
+            ...adapterChatRequestNormal,
+            max_tokens_to_generate: Math.min(max_tokens_to_generate || Infinity, maxAllowedOutputTokens),
+        };
+
+        adapterResponsePayload = await aiProviderAdapter.sendMessage(
+            adapterChatRequestNormal,
+            providerApiIdentifier
+        );
+        logger.info('AI adapter returned successfully (dialectic path).');
+
+        // No post-hoc capping: token usage is not mutated here. SSOT cap is enforced pre-send via request.max_tokens_to_generate.
+     } catch (adapterError) {
+        logger.error(`Normal path error: AI adapter (${providerApiIdentifier}) failed.`, { error: adapterError });
+        const errorMessage = adapterError instanceof Error ? adapterError.message : 'AI service request failed.';
+        
+        // For dialectic jobs, we do not save the error to the database.
+        // The error is returned to the caller (the worker) to be handled.
+        logger.warn('Dialectic job failed, not saving error message to DB.', { userId });
+
+        return {
+            error: {
+                message: errorMessage,
+                status: 502
+            }
+        };
+     }
+
+    try {
+        const parsedTokenUsage = TokenUsageSchema.nullable().safeParse(adapterResponsePayload.token_usage);
+        if (!parsedTokenUsage.success) {
+            logger.error('Normal path: Failed to parse token_usage from adapter.', { error: parsedTokenUsage.error, payload: adapterResponsePayload.token_usage });
+            return { error: { message: 'Received invalid token usage data from AI provider.', status: 502 }};
+        }
+
+        const assistantMessageId = crypto.randomUUID();
+        const { userMessage, assistantMessage } = await debitTokens(
+            { logger, tokenWalletService: tokenWalletService! },
+            {
+                wallet,
+                tokenUsage: parsedTokenUsage.data,
+                modelConfig,
+                userId,
+                chatId: undefined,
+                relatedEntityId: assistantMessageId,
+                databaseOperation: async () => {
+                    const userMessageInsert: ChatMessageRow = {
+                        id: crypto.randomUUID(),
+                        chat_id: null,
+                        user_id: userId,
+                        role: 'user',
+                        content: userMessageContent,
+                        is_active_in_thread: true,
+                        ai_provider_id: requestProviderId,
+                        system_prompt_id: finalSystemPromptIdForDb,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        error_type: null,
+                        response_to_message_id: null,
+                        token_usage: null,
+                    };
+                     const assistantMessageInsert: ChatMessageRow = {
+                        id: assistantMessageId,
+                        chat_id: null,
+                        role: 'assistant',
+                        content: adapterResponsePayload.content,
+                        ai_provider_id: adapterResponsePayload.ai_provider_id,
+                        system_prompt_id: finalSystemPromptIdForDb,
+                        token_usage: adapterResponsePayload.token_usage,
+                        is_active_in_thread: true,
+                        error_type: null,
+                        response_to_message_id: userMessageInsert.id,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        user_id: userId,
+                    };
+                    return await Promise.resolve({ userMessage: userMessageInsert, assistantMessage: assistantMessageInsert });
+                }
+            }
+        );
+        
+        return {
+            userMessage,
+            assistantMessage,
+            chatId: undefined,
+            finish_reason: adapterResponsePayload.finish_reason,
+        };
+
+    } catch (err) {
+        const typedErr = err instanceof Error ? err : new Error(String(err));
+        // This is a critical failure, likely from the database operation within debitTokens.
+        // We re-throw it to ensure the caller (and the test's assertRejects) knows the operation failed catastrophically.
+        logger.error('Error during debitTokens transaction for normal path. Re-throwing.', { error: typedErr.message });
+        throw typedErr;
+    }
+}
+

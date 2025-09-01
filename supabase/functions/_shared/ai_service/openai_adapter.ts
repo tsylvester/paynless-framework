@@ -1,195 +1,251 @@
-import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig, TiktokenEncoding } from '../types.ts';
-import type { Json } from '../../../functions/types_db.ts';
+import OpenAI from 'npm:openai';
+import type { ChatCompletionMessageParam } from 'npm:openai/resources/chat/completions';
+import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig, EmbeddingResponse } from '../types.ts';
+import type { Tables } from '../../types_db.ts';
+import { isJson, isAiModelExtendedConfig } from '../utils/type_guards.ts';
 
-const OPENAI_API_BASE = 'https://api.openai.com/v1';
-
-// Define a type for the items in the OpenAI models list
-interface OpenAIModelItem {
-  id: string;
-  owned_by?: string;
-  context_window?: number; // Provided by OpenAI API for many models
-  // Other fields from OpenAI API might exist, e.g., relating to capabilities or rate limits.
-  // For now, we focus on id and context_window for config derivation.
-  [key: string]: unknown;
-}
 
 /**
  * Implements AiProviderAdapter for OpenAI models.
  */
-export class OpenAiAdapter implements AiProviderAdapter {
+export class OpenAiAdapter {
+  private client: OpenAI;
+  private logger: ILogger;
+  private modelConfig: AiModelExtendedConfig;
 
-  constructor(private apiKey: string, private logger: ILogger) {}
+  constructor(
+    provider: Tables<'ai_providers'>,
+    apiKey: string, 
+    logger: ILogger, 
+  ) {
+    if(!isJson(provider.config)) {
+        throw new Error('provider.config is not a valid JSON object');
+    }
+    if(!isAiModelExtendedConfig(provider.config)) {
+        throw new Error('provider.config is not a valid AiModelExtendedConfig object');
+    }
+    this.client = new OpenAI({ apiKey });
+    this.logger = logger;
+    this.modelConfig = provider.config;
+    this.logger.info(`[OpenAiAdapter] Initialized with config: ${JSON.stringify(this.modelConfig)}`);
+  }
 
   async sendMessage(
-    request: ChatApiRequest, // Contains previous messages if chatId was provided
-    modelIdentifier: string, // e.g., "openai-gpt-4o" -> "gpt-4o"
+    request: ChatApiRequest,
+    modelIdentifier: string,
   ): Promise<AdapterResponsePayload> {
     this.logger.debug('[OpenAiAdapter] sendMessage called', { modelIdentifier });
-    // Use fetch directly
-    const openaiUrl = `${OPENAI_API_BASE}/chat/completions`;
-    // Remove provider prefix if present (ensure this matches your DB data convention)
     const modelApiName = modelIdentifier.replace(/^openai-/i, '');
 
-    // Map app messages to OpenAI format
-    const openaiMessages = (request.messages ?? []).map(msg => ({
+    // Placeholder for token validation logic, as per the plan
+    // This should use a token counting utility and check against this.modelConfig
+    const maxInputTokens = this.modelConfig.provider_max_input_tokens || this.modelConfig.context_window_tokens;
+    if (maxInputTokens) {
+        // const tokenCount = countTokens(request.messages, this.modelConfig); // PSEUDO-CODE
+        // if (tokenCount > maxInputTokens) {
+        //     throw new Error(`[OpenAiAdapter] Input token count (${tokenCount}) exceeds model limit of ${maxInputTokens}.`);
+        // }
+    }
+
+    const openaiMessages: ChatCompletionMessageParam[] = (request.messages ?? []).map(msg => ({
       role: msg.role,
       content: msg.content,
-    })).filter(msg => msg.content); // Ensure no empty messages
+    })).filter(msg => msg.content);
 
-    // Add the current user message if it exists
     if (request.message) {
       openaiMessages.push({ role: 'user', content: request.message });
     }
 
-    const openaiPayload: { 
-      model: string;
-      messages: { role: string; content: string }[];
-      max_tokens?: number; // Define max_tokens as optional here
-      // temperature: number; // Example of other params
-    } = {
+    const payload: OpenAI.Chat.Completions.ChatCompletionCreateParams = {
       model: modelApiName,
       messages: openaiMessages,
-      // Add other parameters as needed
-      // temperature: 0.7,
     };
 
-    // Add max_tokens to the payload if it's provided in the request
-    if (request.max_tokens_to_generate && request.max_tokens_to_generate > 0) {
-      openaiPayload.max_tokens = request.max_tokens_to_generate;
-    }
-
-    this.logger.info(`Sending fetch request to OpenAI model: ${modelApiName}`, { url: openaiUrl });
-
-    const response = await fetch(openaiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify(openaiPayload),
-    });
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      this.logger.error(`OpenAI API fetch error (${response.status}): ${errorBody}`, { modelApiName, status: response.status });
-      throw new Error(`OpenAI API request failed: ${response.status} ${response.statusText}`);
-    }
-
-    const jsonResponse = await response.json();
-
-    const choice = jsonResponse.choices?.[0];
-    const aiContent = choice?.message?.content?.trim();
-    
-    if (!aiContent) {
-      this.logger.error("OpenAI fetch response missing message content:", { response: jsonResponse, modelApiName });
-      throw new Error('OpenAI response content is empty or missing.');
-    }
-
-    const finishReason = choice?.finish_reason;
-    let finish_reason: AdapterResponsePayload['finish_reason'];
-
-    switch (finishReason) {
-      case 'stop':
-        finish_reason = 'stop';
-        break;
-      case 'length':
-        finish_reason = 'length';
-        break;
-      case 'tool_calls':
-        finish_reason = 'tool_calls';
-        break;
-      case 'content_filter':
-        finish_reason = 'content_filter';
-        break;
-      case 'function_call':
-        finish_reason = 'function_call';
-        break;
-      default:
-        finish_reason = 'unknown';
-        if (finishReason) { // Log if we get a new, unexpected reason
-            this.logger.warn(`OpenAI returned an unknown finish reason: ${finishReason}`, { modelApiName, finishReason });
-        }
-        break;
-    }
-    
-    const tokenUsage = jsonResponse.usage ? {
-      prompt_tokens: jsonResponse.usage.prompt_tokens,
-      completion_tokens: jsonResponse.usage.completion_tokens,
-      total_tokens: jsonResponse.usage.total_tokens,
-    } : null;
-
-    // Construct the response conforming to AdapterResponsePayload
-    const assistantResponse: AdapterResponsePayload = {
-      role: 'assistant',
-      content: aiContent,
-      ai_provider_id: request.providerId, // Pass through the provider DB ID
-      system_prompt_id: request.promptId !== '__none__' ? request.promptId : null, // Pass through prompt DB ID
-      token_usage: tokenUsage,
-      finish_reason: finish_reason,
-      // REMOVED fields not provided by adapter: id, chat_id, created_at, user_id
+    // Guardrail: Respect client-provided cap; otherwise cap by the tighter of model caps
+    const isOSeries = modelApiName.startsWith('gpt-4o') || modelApiName.startsWith('o');
+    const applyCap = (cap: number) => {
+      if (!(cap > 0)) return;
+      if (isOSeries) {
+        // Prefer new param for o-series
+        payload.max_completion_tokens = cap;
+      } else {
+        payload.max_tokens = cap;
+      }
     };
-    this.logger.debug('[OpenAiAdapter] sendMessage successful', { modelApiName });
-    return assistantResponse;
+
+    if (typeof request.max_tokens_to_generate === 'number') {
+      applyCap(request.max_tokens_to_generate);
+    } else {
+      const hardCap = this.modelConfig.hard_cap_output_tokens;
+      const providerCap = this.modelConfig.provider_max_output_tokens;
+      const candidates: number[] = [];
+      if (typeof hardCap === 'number' && hardCap > 0) candidates.push(hardCap);
+      if (typeof providerCap === 'number' && providerCap > 0) candidates.push(providerCap);
+      if (candidates.length > 0) {
+        const fallbackCap = Math.min(...candidates);
+        applyCap(fallbackCap);
+      }
+    }
+
+    this.logger.info(`Sending request to OpenAI model: ${modelApiName}`);
+    
+    try {
+      const completion = await this.client.chat.completions.create(payload);
+      
+      const choice = completion.choices?.[0];
+      const aiContent = choice?.message?.content?.trim() || null;
+      
+      if (!aiContent) {
+        this.logger.error("OpenAI response missing message content:", { response: completion, modelApiName });
+        throw new Error('OpenAI response content is empty or missing.');
+      }
+
+      const finishReason = choice?.finish_reason;
+      let finish_reason: AdapterResponsePayload['finish_reason'];
+
+      switch (finishReason) {
+        case 'stop':
+          finish_reason = 'stop';
+          break;
+        case 'length':
+          finish_reason = 'length';
+          break;
+        case 'tool_calls':
+          finish_reason = 'tool_calls';
+          break;
+        case 'content_filter':
+          finish_reason = 'content_filter';
+          break;
+        case 'function_call':
+          finish_reason = 'function_call';
+          break;
+        default:
+          finish_reason = 'unknown';
+          if (finishReason) {
+              this.logger.warn(`OpenAI returned an unknown finish reason: ${finishReason}`, { modelApiName, finishReason });
+          }
+          break;
+      }
+      
+      const tokenUsage = completion.usage ? {
+        prompt_tokens: completion.usage.prompt_tokens,
+        completion_tokens: completion.usage.completion_tokens,
+        total_tokens: completion.usage.total_tokens,
+      } : null;
+
+      const assistantResponse: AdapterResponsePayload = {
+        role: 'assistant',
+        content: aiContent,
+        ai_provider_id: request.providerId,
+        system_prompt_id: request.promptId !== '__none__' ? request.promptId : null,
+        token_usage: tokenUsage,
+        finish_reason: finish_reason,
+      };
+      
+      this.logger.debug('[OpenAiAdapter] sendMessage successful', { modelApiName });
+      return assistantResponse;
+    } catch (error) {
+      if (error instanceof OpenAI.APIError) {
+        this.logger.error(`OpenAI API error (${error.status}): ${error.message}`, { modelApiName, status: error.status });
+        throw new Error(`OpenAI API request failed: ${error.status} ${error.name}`);
+      }
+      if (error instanceof Error) {
+        this.logger.error(`Error sending message to OpenAI: ${error.message}`, { modelApiName, error });
+      } else {
+        this.logger.error(`Error sending message to OpenAI: ${error}`, { modelApiName, error });
+      }
+      throw error;
+    }
   }
 
-  async listModels(): Promise<ProviderModelInfo[]> {
-    const modelsUrl = `${OPENAI_API_BASE}/models`;
-    this.logger.info("[OpenAiAdapter] Fetching models from OpenAI...", { url: modelsUrl });
+  // Overload for sync script to get raw data
+  async listModels(getRaw: true): Promise<{ models: ProviderModelInfo[], raw: unknown }>;
+  // Overload for standard adapter contract
+  async listModels(getRaw?: false): Promise<ProviderModelInfo[]>;
+  // Implementation
+  async listModels(getRaw?: boolean): Promise<ProviderModelInfo[] | { models: ProviderModelInfo[], raw: unknown }> {
+    this.logger.info("[OpenAiAdapter] Fetching models from OpenAI...");
 
-    this.logger.debug("[OpenAiAdapter] Before fetch call");
-    const response = await fetch(modelsUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
-      },
-    });
-    this.logger.debug(`[OpenAiAdapter] After fetch call (Status: ${response.status})`);
+    try {
+      const modelsPage = await this.client.models.list();
+      const models: ProviderModelInfo[] = [];
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      this.logger.error(`[OpenAiAdapter] OpenAI API error fetching models (${response.status}): ${errorBody}`, { status: response.status });
-      throw new Error(`OpenAI API request failed fetching models: ${response.status} ${response.statusText}`);
-    }
-
-    this.logger.debug("[OpenAiAdapter] Before response.json() call");
-    const jsonResponse = await response.json();
-    this.logger.debug("[OpenAiAdapter] After response.json() call");
-    const models: ProviderModelInfo[] = [];
-
-    if (jsonResponse.data && Array.isArray(jsonResponse.data)) {
-      jsonResponse.data.forEach((model: OpenAIModelItem) => {
-        // Filter for models we are interested in (e.g., GPT series)
-        if (model.id && (model.id.includes('gpt') || model.id.includes('instruct'))) {
-            const config: Partial<AiModelExtendedConfig> = {};
-
-            // Set context window and provider max input tokens from API if available
-            if (model.context_window) {
-                config.context_window_tokens = model.context_window;
-                config.provider_max_input_tokens = model.context_window;
-            }
-
-            // Tokenization strategy is NOT set by the adapter from OpenAI /models endpoint,
-            // as OpenAI does not provide these specific details (encoding name, chatml status) directly here.
-            // These will be handled by defaults in createDefaultOpenAIConfig and merged.
-            // config.tokenization_strategy = { ... }; // REMOVED
-            
-            // provider_max_output_tokens is not set here as it's not reliably in /models list.
-
-            models.push({
-                api_identifier: `openai-${model.id}`,
-                name: `OpenAI ${model.id}`,
-                description: `Owned by: ${model.owned_by}`,
-                // Only include config if it has properties (e.g. context_window_tokens was set)
-                config: Object.keys(config).length > 0 ? config as Json : undefined,
-            });
+      for (const model of modelsPage.data) {
+        if (model.id && (model.id.includes('gpt') || model.id.includes('instruct') || model.id.includes('text-embedding'))) {
+          const config: AiModelExtendedConfig = {
+            ...this.modelConfig,
+            api_identifier: model.id,
+          };
+          
+          models.push({
+            api_identifier: `openai-${model.id}`,
+            name: `OpenAI ${model.id}`,
+            description: `Owned by: ${model.owned_by}`,
+            config: config,
+          });
         }
-      });
-    }
+      }
+      
+      this.logger.info(`[OpenAiAdapter] Found ${models.length} potentially usable models from OpenAI.`);
+      
+      if (getRaw) {
+        return { models, raw: modelsPage.data };
+      }
+      return models;
 
-    this.logger.info(`[OpenAiAdapter] Found ${models.length} potentially usable models from OpenAI.`);
-    return models;
+    } catch(error) {
+      if (error instanceof OpenAI.APIError) {
+        this.logger.error(`[OpenAiAdapter] OpenAI API error fetching models (${error.status}): ${error.message}`, { status: error.status });
+      } else {
+        if (error instanceof Error) {
+          this.logger.error(`[OpenAiAdapter] Error fetching models: ${error.message}`, { error });
+        } else {
+          this.logger.error(`[OpenAiAdapter] Error fetching models: ${error}`, { error });
+        }
+      }
+      throw new Error(`Failed to fetch models from OpenAI.`);
+    }
+  }
+  
+  async getEmbedding(text: string): Promise<EmbeddingResponse> {
+    const modelApiName = this.modelConfig.api_identifier.replace(/^openai-/i, '');
+    this.logger.info(`[OpenAiAdapter] Getting embedding for text with model ${modelApiName}`);
+    try {
+      const embeddingResponse = await this.client.embeddings.create({
+        model: modelApiName,
+        input: text,
+        encoding_format: 'float',
+      });
+      
+      if (!embeddingResponse.usage) {
+        this.logger.warn('[OpenAiAdapter] OpenAI embedding response did not include usage data.');
+        // Handle cases where usage is unexpectedly missing, perhaps return a default or throw
+        // For now, we'll construct the response with zeroed usage to prevent crashes downstream.
+        return {
+            embedding: embeddingResponse.data[0].embedding,
+            usage: { prompt_tokens: 0, total_tokens: 0 },
+        };
+      }
+
+      this.logger.debug('[OpenAiAdapter] getEmbedding successful');
+      return {
+        embedding: embeddingResponse.data[0].embedding,
+        usage: {
+            prompt_tokens: embeddingResponse.usage.prompt_tokens,
+            total_tokens: embeddingResponse.usage.total_tokens,
+        },
+      };
+    } catch (error) {
+      if (error instanceof OpenAI.APIError) {
+        this.logger.error(`[OpenAiAdapter] OpenAI API error getting embedding (${error.status}): ${error.message}`, { status: error.status });
+        throw new Error(`OpenAI API request failed: ${error.status} ${error.name}`);
+      }
+      if (error instanceof Error) {
+        this.logger.error(`[OpenAiAdapter] Error getting embedding: ${error.message}`, { error });
+      } else {
+        this.logger.error(`[OpenAiAdapter] Error getting embedding: ${error}`, { error });
+      }
+      throw error;
+    }
   }
 }
-
-// Removed: export const openAiAdapter = new OpenAiAdapter(); 
-// The class OpenAiAdapter is now exported directly and will be instantiated by the factory. 

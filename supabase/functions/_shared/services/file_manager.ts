@@ -3,9 +3,9 @@ import { constructStoragePath } from '../utils/path_constructor.ts'
 import type {
   Database,
   TablesInsert,
-  Json
 } from '../../types_db.ts'
-import type { FileManagerResponse, UploadContext, PathContext, FileRecord } from '../types/file_manager.types.ts'
+import type { FileManagerResponse, UploadContext, PathContext } from '../types/file_manager.types.ts'
+import { FileType } from '../types/file_manager.types.ts'
 
 const MAX_UPLOAD_ATTEMPTS = 5; // Max attempts for filename collision resolution
 
@@ -20,9 +20,14 @@ function getTableForFileType(
   switch (fileType) {
     case 'model_contribution_main':
     case 'contribution_document':
+    case 'pairwise_synthesis_chunk':
+    case 'reduced_synthesis':
+    case 'synthesis':
       return 'dialectic_contributions'
     case 'user_feedback':
       return 'dialectic_feedback'
+    case 'project_export_zip':
+      return 'dialectic_project_resources'
     default:
       return 'dialectic_project_resources'
   }
@@ -55,18 +60,36 @@ export class FileManagerService {
   async uploadAndRegisterFile(
     context: UploadContext,
   ): Promise<FileManagerResponse> {
+    const isContinuation = context.contributionMetadata?.isContinuation ?? false;
+
+    // --- Path Construction ---
+    // Decide which PathContext to use based on whether this is a continuation chunk.
+    const pathContextForStorage: PathContext = isContinuation
+      ? {
+        // For continuations, we construct a new PathContext to ensure it includes
+        // the necessary flags for chunked path generation.
+        ...context.pathContext, // Base context
+        isContinuation: true,
+        turnIndex: context.contributionMetadata?.turnIndex ?? 0,
+        // Ensure critical fields from metadata are present if not on base context
+        modelSlug: context.contributionMetadata?.modelNameDisplay, // Use modelNameDisplay for slug consistency
+        stageSlug: context.contributionMetadata?.stageSlug,
+        contributionType: context.contributionMetadata?.contributionType,
+      }
+      : context.pathContext;
+
+    // --- Standard Upload Logic (Now handles both cases) ---
     let finalMainContentFilePath = ""; 
     let finalFileName = "";
     let mainUploadError: { message: string; status?: number } | Error | null = null;
     let currentAttemptCount = 0;
 
-    if (context.pathContext.fileType === 'model_contribution_main' || context.pathContext.fileType === 'model_contribution_raw_json') {
+    // This logic is restored from the original function to handle filename collisions for contributions
+    if (pathContextForStorage.fileType === 'model_contribution_main' || pathContextForStorage.fileType === 'model_contribution_raw_json') {
       for (currentAttemptCount = 0; currentAttemptCount < MAX_UPLOAD_ATTEMPTS; currentAttemptCount++) {
         const attemptPathContext: PathContext = {
-          ...context.pathContext,
+          ...pathContextForStorage,
           attemptCount: currentAttemptCount,
-          modelSlug: context.pathContext.modelSlug!,
-          stageSlug: context.pathContext.stageSlug!,
         };
         const pathParts = constructStoragePath(attemptPathContext);
         const fullPathForUpload = `${pathParts.storagePath}/${pathParts.fileName}`;
@@ -80,14 +103,18 @@ export class FileManagerService {
 
         mainUploadError = uploadResult.error;
 
+        if (mainUploadError) {
+          console.error(`[FileManagerService] Storage upload failed for path ${fullPathForUpload}. Error:`, JSON.stringify(mainUploadError, null, 2));
+        }
+
         if (!mainUploadError) {
           finalMainContentFilePath = pathParts.storagePath; // Directory path
           finalFileName = pathParts.fileName;          // Filename
           break; 
         } else if (mainUploadError.message && 
-                   (mainUploadError.message.includes('The resource already exists') || 
+                  (mainUploadError.message.includes('The resource already exists') || 
                     ('status' in mainUploadError && mainUploadError.status === 409)
-                   )
+                  )
                   ) {
           if (currentAttemptCount === MAX_UPLOAD_ATTEMPTS - 1) {
             mainUploadError = new Error(`Failed to upload file after ${MAX_UPLOAD_ATTEMPTS} attempts due to filename collisions.`);
@@ -99,7 +126,7 @@ export class FileManagerService {
         }
       }
     } else {
-      const pathParts = constructStoragePath(context.pathContext);
+      const pathParts = constructStoragePath(pathContextForStorage);
       const fullPathForUpload = `${pathParts.storagePath}/${pathParts.fileName}`;
       finalMainContentFilePath = pathParts.storagePath; // Directory path
       finalFileName = pathParts.fileName;          // Filename
@@ -121,15 +148,14 @@ export class FileManagerService {
     }
     
     let rawJsonResponseFullStoragePath: string | null = null; // Stores full path for DB
-    if (context.pathContext.fileType === 'model_contribution_main' && context.contributionMetadata?.rawJsonResponseContent) {
+          const isModelContribution = getTableForFileType(pathContextForStorage.fileType) === 'dialectic_contributions' && pathContextForStorage.fileType !== 'contribution_document';
+
+    if (isModelContribution && context.contributionMetadata?.rawJsonResponseContent) {
       try {
         const rawJsonPathContext: PathContext = {
-          ...context.pathContext, 
-          fileType: 'model_contribution_raw_json',
-          originalFileName: finalFileName.replace(/(\.\w+)$/, '_raw.json'), 
-          attemptCount: currentAttemptCount, 
-          modelSlug: context.pathContext.modelSlug!, 
-          stageSlug: context.pathContext.stageSlug!,
+          ...pathContextForStorage,
+          fileType: FileType.ModelContributionRawJson,
+          attemptCount: currentAttemptCount,
         };
         const rawJsonPathParts = constructStoragePath(rawJsonPathContext);
         const fullPathForRawJsonUpload = `${rawJsonPathParts.storagePath}/${rawJsonPathParts.fileName}`;
@@ -147,150 +173,182 @@ export class FileManagerService {
           rawJsonResponseFullStoragePath = null; 
         }
       } catch (e: unknown) {
-         console.warn(`Error processing raw JSON for ${finalFileName}: ${(e as Error).message}.`);
-         rawJsonResponseFullStoragePath = null;
+        console.warn(`Error processing raw JSON for ${finalFileName}: ${e instanceof Error ? e.message : 'Unknown error'}`);
+        rawJsonResponseFullStoragePath = null;
       }
     }
 
-    const targetTable = getTableForFileType(context.pathContext.fileType)
+    const targetTable = getTableForFileType(pathContextForStorage.fileType)
 
-    let recordData:
-      | TablesInsert<'dialectic_project_resources'>
-      | TablesInsert<'dialectic_contributions'>
-      | TablesInsert<'dialectic_feedback'>;
-
-    if (targetTable === 'dialectic_project_resources') {
-      let finalDescriptionString: string | null = null;
-      if (typeof context.description === 'string') {
-        try {
-          const parsedJson = JSON.parse(context.description);
-          const descriptionObject = typeof parsedJson === 'object' && parsedJson !== null 
-            ? { ...parsedJson, type: context.pathContext.fileType }
-            : { type: context.pathContext.fileType, originalDescription: context.description };
-          finalDescriptionString = JSON.stringify(descriptionObject);
-        } catch (e) {
-          finalDescriptionString = JSON.stringify({ type: context.pathContext.fileType, originalDescription: context.description });
-        }
-      } else {
-        finalDescriptionString = null;
-      }
-
-      recordData = {
-        project_id: context.pathContext.projectId,
-        user_id: context.userId!,
-        file_name: finalFileName, 
-        mime_type: context.mimeType,
-        size_bytes: context.sizeBytes,
-        storage_bucket: this.storageBucket,
-        storage_path: finalMainContentFilePath, // Should be directory path now
-        resource_description: finalDescriptionString,
-      };
-    } else if (targetTable === 'dialectic_contributions') {
-      if (!context.contributionMetadata || !context.pathContext.sessionId || context.contributionMetadata.iterationNumber === undefined || !context.pathContext.stageSlug || !context.pathContext.modelSlug) {
-        // Construct full path for removal if needed
-        const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
-        if (!mainUploadError) { 
-            await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]);
-            if (rawJsonResponseFullStoragePath) { await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFullStoragePath]); }
-        }
-        return { record: null, error: { message: 'Missing required metadata for contribution.' }};
-      }
-      const meta = context.contributionMetadata;
-      recordData = {
-        session_id: context.pathContext.sessionId,
-        model_id: meta.modelIdUsed,
-        model_name: meta.modelNameDisplay,
-        user_id: context.userId,
-        stage: context.pathContext.stageSlug, 
-        iteration_number: meta.iterationNumber,
-        storage_bucket: this.storageBucket,
-        storage_path: finalMainContentFilePath, // Should be directory path now
-        mime_type: context.mimeType,
-        size_bytes: context.sizeBytes,
-        file_name: finalFileName, 
-        raw_response_storage_path: rawJsonResponseFullStoragePath, // Stores full path
-        tokens_used_input: meta.tokensUsedInput,
-        tokens_used_output: meta.tokensUsedOutput,
-        processing_time_ms: meta.processingTimeMs,
-        seed_prompt_url: meta.seedPromptStoragePath,
-        prompt_template_id_used: meta.promptTemplateIdUsed,
-        citations: meta.citations,
-        contribution_type: meta.contributionType,
-        error: meta.errorDetails,
-        target_contribution_id: meta.targetContributionId,
-        edit_version: meta.editVersion ?? 1,
-        is_latest_edit: meta.isLatestEdit ?? true,
-        original_model_contribution_id: meta.originalModelContributionId,
-      };
-    } else {  targetTable === 'dialectic_feedback'
-      if (!context.pathContext.projectId || !context.userId || !context.pathContext.stageSlug || context.pathContext.iteration === undefined || !context.pathContext.sessionId ) {
-        const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
-        if (!mainUploadError) { await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]); }
-        return { record: null, error: { message: 'Missing required fields for feedback record.' } };
-      }
-
-      if (typeof context.feedbackTypeForDb !== 'string' || !context.feedbackTypeForDb) {
-        const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
-        if (!mainUploadError) { await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]); }
-        return { record: null, error: { message: "'feedbackTypeForDb' is missing in UploadContext for user_feedback."}};
-      }
-
-      const feedbackInsertData: TablesInsert<'dialectic_feedback'> = {
-        project_id: context.pathContext.projectId, 
-        session_id: context.pathContext.sessionId,
-        user_id: context.userId, 
-        stage_slug: context.pathContext.stageSlug,
-        iteration_number: context.pathContext.iteration,
-        storage_bucket: this.storageBucket,
-        storage_path: finalMainContentFilePath, 
-        file_name: finalFileName, 
-        mime_type: context.mimeType,
-        size_bytes: context.sizeBytes,
-        feedback_type: context.feedbackTypeForDb, 
-        resource_description: (context.resourceDescriptionForDb as Json) || null,
-      };
-      recordData = feedbackInsertData;
-    }
-
-    let newRecordResult;
-    if (targetTable === 'dialectic_project_resources') {
-      newRecordResult = await this.supabase
-        .from(targetTable)
-        .insert(recordData as TablesInsert<'dialectic_project_resources'>)
-        .select()
-        .single();
-    } else if (targetTable === 'dialectic_contributions') {
-      newRecordResult = await this.supabase
-        .from(targetTable)
-        .insert(recordData as TablesInsert<'dialectic_contributions'>)
-        .select()
-        .single();
-    } else { // dialectic_feedback
-      newRecordResult = await this.supabase
-        .from(targetTable)
-        .insert(recordData as TablesInsert<'dialectic_feedback'>) 
-        .select()
-        .single();
-    }
-
-    const { data: newRecord, error: insertError } = newRecordResult;
-
-    if (insertError) {
-      // Only remove if main upload succeeded but DB insert failed.
-      // If mainUploadError was already set, the file might not have been uploaded or the path is wrong.
-      if (!mainUploadError) {
-          await this.supabase.storage.from(this.storageBucket).remove([finalMainContentFilePath]);
-          if (rawJsonResponseFullStoragePath) {
-            await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFullStoragePath]);
+    try {
+      if (targetTable === 'dialectic_project_resources') {
+        let finalDescriptionString: string | null = null;
+        if (typeof context.description === 'string') {
+          try {
+            const parsedJson = JSON.parse(context.description);
+            const descriptionObject = typeof parsedJson === 'object' && parsedJson !== null 
+              ? { ...parsedJson, type: pathContextForStorage.fileType }
+              : { type: pathContextForStorage.fileType, originalDescription: context.description };
+            finalDescriptionString = JSON.stringify(descriptionObject);
+          } catch (e) {
+            finalDescriptionString = JSON.stringify({ type: pathContextForStorage.fileType, originalDescription: context.description });
           }
+        } else {
+          finalDescriptionString = null;
+        }
+
+        const recordData: TablesInsert<'dialectic_project_resources'> = {
+          project_id: pathContextForStorage.projectId,
+          user_id: context.userId!,
+          file_name: finalFileName, 
+          mime_type: context.mimeType,
+          size_bytes: context.sizeBytes,
+          storage_bucket: this.storageBucket,
+          storage_path: finalMainContentFilePath,
+          resource_description: finalDescriptionString,
+        };
+        const { data: newRecord, error: insertError } = await this.supabase
+          .from(targetTable)
+          .insert(recordData)
+          .select()
+          .single();
+
+        if (insertError) {
+          throw insertError;
+        }
+        return { record: newRecord, error: null };
+
+      } else if (targetTable === 'dialectic_contributions') {
+        if (!context.contributionMetadata || !pathContextForStorage.sessionId || context.contributionMetadata.iterationNumber === undefined || !pathContextForStorage.stageSlug) {
+          const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
+          if (!mainUploadError) { 
+              await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]);
+              if (rawJsonResponseFullStoragePath) { await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFullStoragePath]); }
+          }
+          return { record: null, error: { message: 'Missing required metadata for contribution.' }};
+        }
+        const meta = context.contributionMetadata;
+
+        // Enforce strict lineage: continuations must provide target_contribution_id
+        if (meta.isContinuation === true) {
+          const hasValidLink = typeof meta.target_contribution_id === 'string' && meta.target_contribution_id.length > 0;
+          if (!hasValidLink) {
+            const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
+            if (!mainUploadError) {
+              await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]);
+              if (rawJsonResponseFullStoragePath) {
+                await this.supabase.storage.from(this.storageBucket).remove([rawJsonResponseFullStoragePath]);
+              }
+            }
+            return { record: null, error: { message: 'Missing target_contribution_id for continuation.' } };
+          }
+        }
+        const recordData: TablesInsert<'dialectic_contributions'> = {
+          session_id: pathContextForStorage.sessionId,
+          model_id: meta.modelIdUsed,
+          model_name: meta.modelNameDisplay,
+          user_id: context.userId,
+          stage: pathContextForStorage.stageSlug, 
+          iteration_number: meta.iterationNumber,
+          storage_bucket: this.storageBucket,
+          storage_path: finalMainContentFilePath,
+          mime_type: context.mimeType,
+          size_bytes: context.sizeBytes,
+          file_name: finalFileName, 
+          raw_response_storage_path: rawJsonResponseFullStoragePath,
+          tokens_used_input: meta.tokensUsedInput,
+          tokens_used_output: meta.tokensUsedOutput,
+          processing_time_ms: meta.processingTimeMs,
+          seed_prompt_url: meta.seedPromptStoragePath,
+          prompt_template_id_used: meta.promptTemplateIdUsed,
+          citations: meta.citations,
+          contribution_type: meta.contributionType,
+          error: meta.errorDetails,
+          target_contribution_id: meta.target_contribution_id,
+          document_relationships: meta.document_relationships,
+          edit_version: meta.editVersion ?? 1,
+          is_latest_edit: meta.isLatestEdit ?? true,
+          original_model_contribution_id: meta.originalModelContributionId,
+        };
+        const { data: newRecord, error: insertError } = await this.supabase
+          .from(targetTable)
+          .insert(recordData)
+          .select()
+          .single();
+        
+        if (insertError) {
+          throw insertError;
+        }
+        // If this contribution references a parent via target_contribution_id, mark the parent as not latest
+        if (typeof meta.target_contribution_id === 'string' && meta.target_contribution_id.length > 0) {
+          try {
+            await this.supabase
+              .from('dialectic_contributions')
+              .update({ is_latest_edit: false })
+              .eq('id', meta.target_contribution_id);
+          } catch (_) {
+            // Non-fatal; continue returning the newly created record
+          }
+        }
+        return { record: newRecord, error: null };
+
+      } else { // dialectic_feedback
+        if (!pathContextForStorage.projectId || !context.userId || !pathContextForStorage.stageSlug || pathContextForStorage.iteration === undefined || !pathContextForStorage.sessionId ) {
+          const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
+          if (!mainUploadError) { await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]); }
+          return { record: null, error: { message: 'Missing required fields for feedback record.' } };
+        }
+  
+        if (typeof context.feedbackTypeForDb !== 'string' || !context.feedbackTypeForDb) {
+          const fullPathToRemove = `${finalMainContentFilePath}/${finalFileName}`;
+          if (!mainUploadError) { await this.supabase.storage.from(this.storageBucket).remove([fullPathToRemove]); }
+          return { record: null, error: { message: "'feedbackTypeForDb' is missing in UploadContext for user_feedback."}};
+        }
+  
+        const recordData: TablesInsert<'dialectic_feedback'> = {
+          project_id: pathContextForStorage.projectId, 
+          session_id: pathContextForStorage.sessionId,
+          user_id: context.userId, 
+          stage_slug: pathContextForStorage.stageSlug,
+          iteration_number: pathContextForStorage.iteration,
+          storage_bucket: this.storageBucket,
+          storage_path: finalMainContentFilePath, 
+          file_name: finalFileName, 
+          mime_type: context.mimeType,
+          size_bytes: context.sizeBytes,
+          feedback_type: context.feedbackTypeForDb, 
+          resource_description: (context.resourceDescriptionForDb) || null,
+        };
+        const { data: newRecord, error: insertError } = await this.supabase
+          .from(targetTable)
+          .insert(recordData) 
+          .select()
+          .single();
+        
+        if (insertError) {
+          throw insertError;
+        }
+        return { record: newRecord, error: null };
       }
+    } catch(e) {
+      if (!mainUploadError) {
+        const { data: files, error: listError } = await this.supabase.storage
+          .from(this.storageBucket)
+          .list(finalMainContentFilePath);
+
+        if (listError) {
+          console.error(`[FileManager] Failed to list files for cleanup at path: ${finalMainContentFilePath}. Manual cleanup may be required.`, listError);
+        } else if (files && files.length > 0) {
+          const pathsToRemove = files.map(file => `${finalMainContentFilePath}/${file.name}`);
+          await this.supabase.storage.from(this.storageBucket).remove(pathsToRemove);
+        }
+      }
+      const errorMessage = e instanceof Error ? e.message : 'Unknown database error';
       return {
         record: null,
-        error: { message: "Database registration failed after successful upload.", details: insertError.message },
+        error: { message: "Database registration failed after successful upload.", details: errorMessage },
       }
     }
-
-    return { record: newRecord as FileRecord, error: null }
   }
 
   /**
@@ -323,5 +381,109 @@ export class FileManagerService {
     }
 
     return { signedUrl: data.signedUrl, error: null }
+  }
+
+  /**
+   * Assembles contribution chunks into a single final document and uploads it.
+   * This is used at the end of a continuation chain to create the final user-facing artifact.
+   *
+   * @param rootContributionId The ID of the initial contribution in the chain.
+   * @returns An object containing the final file path or an error.
+   */
+  async assembleAndSaveFinalDocument(
+    rootContributionId: string,
+  ): Promise<{ finalPath: string | null; error: Error | null }> {
+    try {
+      // 1. Fetch all contributions in the session to build the chain client-side.
+      // This is simpler than a complex recursive CTE query.
+      const { data: rootContribution, error: rootError } = await this.supabase
+        .from('dialectic_contributions')
+        .select('id, session_id, storage_path, file_name')
+        .eq('id', rootContributionId)
+        .single();
+
+      if (rootError || !rootContribution) {
+        throw new Error(`Could not find root contribution with ID: ${rootContributionId}`);
+      }
+
+      const { data: allContributions, error: fetchError } = await this.supabase
+        .from('dialectic_contributions')
+        .select('id, document_relationships, storage_path, file_name, created_at, target_contribution_id')
+        .eq('session_id', rootContribution.session_id);
+
+      if (fetchError) {
+        throw fetchError;
+      }
+
+      // 2. Build the ordered chain of chunks.
+      const chunkMap = new Map(allContributions.map(c => [c.id, c]));
+      const orderedChunks: typeof allContributions = [];
+      let currentId: string | null = rootContributionId;
+
+      while (currentId) {
+        const currentChunk = chunkMap.get(currentId);
+        if (!currentChunk) break;
+        
+        orderedChunks.push(currentChunk);
+        
+        // Find the next chunk in the chain
+        const nextChunk = allContributions.find(c => c.target_contribution_id === currentId);
+        currentId = nextChunk ? nextChunk.id : null;
+      }
+
+      // 3. Download and concatenate content.
+      let finalContent = '';
+      for (const chunk of orderedChunks) {
+        const fullPath = `${chunk.storage_path}/${chunk.file_name}`;
+        const { data, error } = await this.supabase.storage
+          .from(this.storageBucket)
+          .download(fullPath);
+        if (error) {
+          throw new Error(`Failed to download chunk ${chunk.id} from ${fullPath}: ${error.message}`);
+        }
+        finalContent += await data.text();
+      }
+
+      // 4. Upload the final assembled document.
+      // The final path is simply the path of the root contribution.
+      const finalPath = `${rootContribution.storage_path}/${rootContribution.file_name}`;
+
+      const { error: uploadError } = await this.supabase.storage
+        .from(this.storageBucket)
+        .upload(finalPath, finalContent, {
+          contentType: 'text/markdown',
+          upsert: true, // Overwrite if it somehow exists
+        });
+
+      if (uploadError) {
+        throw new Error(`Failed to upload final document to ${finalPath}: ${uploadError.message}`);
+      }
+
+      // 5. Update is_latest_edit flags:
+      //    - All continuation chunks in the chain should no longer be latest edits
+      //    - The root contribution (final assembled document) should be the latest edit
+      try {
+        const allChunkIds = orderedChunks.map(c => c.id);
+        if (allChunkIds.length > 0) {
+          await this.supabase
+            .from('dialectic_contributions')
+            .update({ is_latest_edit: false })
+            .in('id', allChunkIds);
+        }
+        await this.supabase
+          .from('dialectic_contributions')
+          .update({ is_latest_edit: true })
+          .eq('id', rootContributionId);
+      } catch (_) {
+        // If this update fails, we still return success for the file assembly; logging occurs below
+      }
+
+      return { finalPath, error: null };
+
+    } catch (e: unknown) {
+      const error = e instanceof Error ? e : new Error('An unknown error occurred during final document assembly.');
+      console.error(`[FileManagerService] assembleAndSaveFinalDocument failed:`, error);
+      return { finalPath: null, error };
+    }
   }
 } 

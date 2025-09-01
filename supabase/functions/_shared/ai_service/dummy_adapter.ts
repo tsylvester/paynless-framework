@@ -1,135 +1,278 @@
-import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, TokenUsage, AiModelExtendedConfig } from '../types.ts';
-import type { Json } from '../../../functions/types_db.ts';
-
-export interface DummyAdapterConfig {
-    modelId: string;
-    mode: 'echo' | 'fixed_response';
-    fixedResponse?: {
-        content: string;
-        promptTokens?: number;
-        completionTokens?: number;
-    };
-    // For echo mode, we might want to simulate token calculation
-    tokensPerChar?: number; 
-    basePromptTokens?: number;
-    tokenization_strategy: AiModelExtendedConfig['tokenization_strategy'];
-    provider_max_input_tokens?: number;
-    provider_max_output_tokens?: number;
-}
+import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger, AiModelExtendedConfig, Messages, EmbeddingResponse } from '../types.ts';
+import { countTokens } from '../utils/tokenizer_utils.ts';
+import type { CountTokensDeps, CountableChatPayload } from '../types/tokenizer.types.ts';
+import { ContextWindowError } from '../utils/errors.ts';
+import type { Tables } from '../../types_db.ts';
+import { isJson, isAiModelExtendedConfig } from '../utils/type_guards.ts';
 
 /**
  * Implements AiProviderAdapter for dummy/testing models.
+ * This adapter is for testing and development. It echoes the user's message back
+ * and provides token counts calculated by the application's standard tokenizer.
+ * It does not connect to any external service.
  */
-export class DummyAdapter implements AiProviderAdapter {
-    private config: DummyAdapterConfig;
+export class DummyAdapter {
+    private apiKey: string;
+    private logger: ILogger;
+    private modelConfig: AiModelExtendedConfig;
+    private providerId: string;
 
     constructor(
-        // The apiKey for dummy adapters could be a stringified JSON config 
-        // or a simple identifier that maps to a predefined config.
-        // For simplicity, we'll use a direct config object here, 
-        // but in the factory, this might be parsed from a string.
-        config: DummyAdapterConfig,
-        private logger: ILogger
+        provider: Tables<'ai_providers'>,
+        apiKey: string,
+        logger: ILogger,
     ) {
-        this.config = config;
-        this.logger.debug(`[DummyAdapter] Initialized for model: ${config.modelId}, mode: ${config.mode}`);
+        if(!isJson(provider.config)) {
+            throw new Error('provider.config is not a valid JSON object');
+        }
+        if(!isAiModelExtendedConfig(provider.config)) {
+            throw new Error('provider.config is not a valid AiModelExtendedConfig object');
+        }
+        this.apiKey = apiKey; // Stored for interface consistency, but not used.
+        this.logger = logger;
+        if (provider.provider === 'dummy') {
+            this.modelConfig = provider.config;
+            const resolvedWindow = (typeof this.modelConfig.context_window_tokens === 'number' && this.modelConfig.context_window_tokens > 0)
+                ? this.modelConfig.context_window_tokens
+                : 200_000;
+            const resolvedProvMaxIn = (typeof this.modelConfig.provider_max_input_tokens === 'number' && this.modelConfig.provider_max_input_tokens > 0)
+                ? this.modelConfig.provider_max_input_tokens
+                : resolvedWindow;
+            const resolvedHardCapOut = (typeof this.modelConfig.hard_cap_output_tokens === 'number' && this.modelConfig.hard_cap_output_tokens > 0)
+                ? this.modelConfig.hard_cap_output_tokens
+                : 4_096;
+            const resolvedProvMaxOut = (typeof this.modelConfig.provider_max_output_tokens === 'number' && this.modelConfig.provider_max_output_tokens > 0)
+                ? this.modelConfig.provider_max_output_tokens
+                : resolvedHardCapOut;
+            this.modelConfig.context_window_tokens = resolvedWindow;
+            this.modelConfig.provider_max_input_tokens = resolvedProvMaxIn;
+            this.modelConfig.hard_cap_output_tokens = resolvedHardCapOut;
+            this.modelConfig.provider_max_output_tokens = resolvedProvMaxOut;
+        } else {
+            this.modelConfig = provider.config; // Stored for interface consistency.
+        }
+        this.providerId = provider.id;
+        this.logger.info(`[DummyAdapter] Initialized with config: ${JSON.stringify(this.modelConfig)}`);
     }
 
     async sendMessage(
         request: ChatApiRequest,
-        modelIdentifier: string, // e.g., "dummy-echo-v1"
+        modelIdentifier: string,
     ): Promise<AdapterResponsePayload> {
-        this.logger.debug(`[DummyAdapter] sendMessage called for model: ${modelIdentifier}`, { request });
+        const messageContent = request.message || '';
 
-        const requestMessagesString = (request.messages ?? []).map(m => m.content).join('\n') + (request.message ? '\n' + request.message : '');
-        let fullResponseContent = '';
+        // Check for continuation simulation
+        if (messageContent.includes("Partial echo due to max_tokens")) {
+            const completionContent = "This is the continued content.";
+            
+            // Calculate tokens for both prompt and completion using full-payload triple-arg API
+            const tokenizerDeps: CountTokensDeps = {
+                getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
+                countTokensAnthropic: (text: string) => (text ?? '').length,
+                logger: this.logger,
+            };
 
-        // 1. Determine the full potential response content
-        if (this.config.mode === 'echo') {
-            // In echo mode, the full response is always based on the *initial* user message, not the growing history.
-            fullResponseContent = `Echo: ${request.message || 'No message provided'}`;
-        } else if (this.config.mode === 'fixed_response') {
-            fullResponseContent = this.config.fixedResponse?.content ?? 'This is a fixed response.';
-        } else {
-            this.logger.error(`[DummyAdapter] Unknown mode: ${this.config.mode}`);
-            throw new Error(`DummyAdapter: Unknown mode '${this.config.mode}'`);
+            const promptPayload: CountableChatPayload = { message: messageContent, messages: [] };
+            const completionPayload: CountableChatPayload = { messages: [{ role: 'assistant', content: completionContent }] };
+
+            const promptTokens = countTokens(tokenizerDeps, promptPayload, this.modelConfig);
+            const completionTokens = countTokens(tokenizerDeps, completionPayload, this.modelConfig);
+
+            return {
+                role: 'assistant',
+                content: completionContent,
+                ai_provider_id: this.providerId,
+                system_prompt_id: null,
+                token_usage: {
+                    prompt_tokens: promptTokens,
+                    completion_tokens: completionTokens,
+                    total_tokens: promptTokens + completionTokens,
+                },
+                finish_reason: 'stop',
+            };
         }
 
-        // 2. Calculate and validate INPUT tokens based on the current request history
-        let prompt_tokens = (this.config.basePromptTokens ?? 10) + Math.ceil(requestMessagesString.length * (this.config.tokensPerChar ?? 0.25));
-        if (this.config.mode === 'fixed_response' && this.config.fixedResponse?.promptTokens !== undefined) {
-            prompt_tokens = this.config.fixedResponse.promptTokens;
-        }
+        this.logger.info(`[DummyAdapter] sendMessage called for model: ${modelIdentifier}`);
 
-        if (this.config.provider_max_input_tokens && prompt_tokens > this.config.provider_max_input_tokens) {
-            this.logger.error(`[DummyAdapter] Input tokens exceeded limit.`, { prompt_tokens, limit: this.config.provider_max_input_tokens });
-            throw new Error(`Input prompt exceeds the model's maximum context size of ${this.config.provider_max_input_tokens} tokens.`);
+        if (messageContent.includes('SIMULATE_ERROR')) {
+            this.logger.warn(`[DummyAdapter] SIMULATE_ERROR keyword found. Throwing test error.`);
+            throw new Error('Simulated adapter error for testing retry logic.');
         }
-
-        // 3. Determine how much content has already been sent in previous continuation calls
-        const alreadySentContent = (request.messages ?? [])
-            .filter(m => m.role === 'assistant')
-            .map(m => m.content)
-            .join('');
         
-        const remainingContent = fullResponseContent.substring(alreadySentContent.length);
+        let content = `Echo from ${modelIdentifier}: ${messageContent.replace(/SIMULATE_MAX_TOKENS|SIMULATE_LARGE_OUTPUT_KB=\d+/g, '').trim()}`;
+        let finishReason: 'stop' | 'max_tokens' = 'stop';
 
-        // 4. Determine the chunk to send in this response
-        let responseChunk = remainingContent;
-        let finish_reason: 'stop' | 'length' = 'stop';
-        const maxOutputTokens = this.config.provider_max_output_tokens;
-        
-        if (maxOutputTokens) {
-            const maxChars = Math.floor(maxOutputTokens / (this.config.tokensPerChar ?? 0.25));
-            if (remainingContent.length > maxChars) {
-                responseChunk = remainingContent.substring(0, maxChars);
-                finish_reason = 'length';
+        if (messageContent.includes('SIMULATE_MAX_TOKENS')) {
+            this.logger.warn(`[DummyAdapter] SIMULATE_MAX_TOKENS keyword found. Simulating partial response.`);
+            finishReason = 'max_tokens';
+            const cleanMessage = messageContent.replace(/SIMULATE_MAX_TOKENS|SIMULATE_LARGE_OUTPUT_KB=\d+/g, '').trim();
+            content = `Partial echo due to max_tokens from ${modelIdentifier}: ${cleanMessage}`;
+        } else if (messageContent.includes('SIMULATE_LARGE_OUTPUT_KB=')) {
+            const match = messageContent.match(/SIMULATE_LARGE_OUTPUT_KB=(\d+)/);
+            if (match && match[1]) {
+                const targetKb = parseInt(match[1], 10);
+                const targetBytes = targetKb * 1024;
+                this.logger.warn(`[DummyAdapter] SIMULATE_LARGE_OUTPUT_KB=${targetKb} keyword found. Generating ~${targetKb}KB of text.`);
+                
+                let largeContent = `Large output simulation from ${modelIdentifier}:\n`;
+                const baseMessage = messageContent.replace(/SIMULATE_LARGE_OUTPUT_KB=\d+\s*|SIMULATE_MAX_TOKENS/g, '').trim();
+
+                while (new TextEncoder().encode(largeContent).length < targetBytes) {
+                    largeContent += baseMessage + '\n';
+                }
+                content = largeContent;
+                finishReason = 'stop';
             }
         }
-        
-        // 5. Calculate completion tokens for the CURRENT chunk
-        let completion_tokens = Math.ceil(responseChunk.length * (this.config.tokensPerChar ?? 0.25));
-        if (this.config.mode === 'fixed_response' && this.config.fixedResponse?.completionTokens !== undefined) {
-            // In fixed mode, the completion tokens are for the WHOLE response, not the chunk.
-            // This is a simplification for testing. If we need more nuanced token accounting for 
-            // fixed-response continuation, this would need to be more complex.
-            // For now, we prioritize the fixed value if present.
-            completion_tokens = this.config.fixedResponse.completionTokens;
+
+        // 4. Simulate a context window error for oversized input
+        const maxTokens = this.modelConfig.context_window_tokens || this.modelConfig.context_window_tokens;
+        const tokenizerDeps: CountTokensDeps = {
+            getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
+            countTokensAnthropic: (text: string) => (text ?? '').length,
+            logger: this.logger,
+        };
+        const narrowedMessages: Messages[] = (request.messages || [])
+            .filter((m) => (m.role === 'system' || m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string');
+        const initialPayload: CountableChatPayload = narrowedMessages.length > 0
+            ? { messages: narrowedMessages }
+            : { message: request.message, messages: [] };
+        const initialTokenCount = countTokens(tokenizerDeps, initialPayload, this.modelConfig);
+
+        if (maxTokens && initialTokenCount > maxTokens) {
+             this.logger.warn(`[DummyAdapter] Input tokens (${initialTokenCount}) exceed model limit (${maxTokens}). Simulating a context window error.`);
+             throw new ContextWindowError(`The model's context window is ${maxTokens} tokens. Your request has ${initialTokenCount} tokens.`);
         }
         
-        // 6. Construct final payload
-        const tokenUsage: TokenUsage = {
-            prompt_tokens,
-            completion_tokens,
-            total_tokens: prompt_tokens + completion_tokens,
-            finish_reason,
+        // Apply output caps from request or model config
+        const completionTokenizerDeps: CountTokensDeps = {
+            getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
+            countTokensAnthropic: (text: string) => (text ?? '').length,
+            logger: this.logger,
+        };
+
+        const clientCap = (typeof request.max_tokens_to_generate === 'number' && request.max_tokens_to_generate > 0)
+            ? request.max_tokens_to_generate
+            : undefined;
+        const modelHardCap = (typeof this.modelConfig.hard_cap_output_tokens === 'number' && this.modelConfig.hard_cap_output_tokens > 0)
+            ? this.modelConfig.hard_cap_output_tokens
+            : undefined;
+        const capTokens = clientCap ?? modelHardCap;
+
+        if (typeof capTokens === 'number' && capTokens >= 0) {
+            // Truncate completion content by measured token count using binary search
+            const completionPayloadFor = (text: string): CountableChatPayload => ({ messages: [{ role: 'assistant', content: text }] });
+            const initialTokens = countTokens(completionTokenizerDeps, completionPayloadFor(content), this.modelConfig);
+            if (initialTokens > capTokens) {
+                let left = 0;
+                let right = content.length;
+                let best = 0;
+                while (left <= right) {
+                    const mid = Math.floor((left + right) / 2);
+                    const candidate = content.slice(0, mid);
+                    const t = countTokens(completionTokenizerDeps, completionPayloadFor(candidate), this.modelConfig);
+                    if (t <= capTokens) {
+                        best = mid;
+                        left = mid + 1;
+                    } else {
+                        right = mid - 1;
+                    }
+                }
+                content = content.slice(0, best);
+                finishReason = 'max_tokens';
+            }
+        }
+
+        // --- Default Behavior ---
+        return this.createResponse(request, content, finishReason);
+    }
+
+    private createResponse(
+        request: ChatApiRequest,
+        content: string,
+        finish_reason: 'stop' | 'max_tokens'
+    ): AdapterResponsePayload {
+        const tokenizerDeps: CountTokensDeps = {
+            getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
+            countTokensAnthropic: (text: string) => (text ?? '').length,
+            logger: this.logger,
+        };
+        const promptPayload: CountableChatPayload = { message: request.message, messages: [] };
+        const completionPayload: CountableChatPayload = { messages: [{ role: 'assistant', content }] };
+
+        const promptTokens = countTokens(tokenizerDeps, promptPayload, this.modelConfig);
+        const completionTokens = countTokens(tokenizerDeps, completionPayload, this.modelConfig);
+
+        const tokenUsage = {
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: promptTokens + completionTokens,
         };
         
         const assistantResponse: AdapterResponsePayload = {
             role: 'assistant',
-            content: responseChunk,
-            ai_provider_id: request.providerId, 
+            content,
+            ai_provider_id: this.providerId, 
             system_prompt_id: request.promptId !== '__none__' ? request.promptId : null,
-            token_usage: tokenUsage as unknown as Json,
+            token_usage: tokenUsage,
+            finish_reason,
         };
 
-        this.logger.debug('[DummyAdapter] sendMessage successful', { response: assistantResponse });
+        this.logger.info(`[DummyAdapter] sendMessage successful with finish_reason: '${finish_reason}'`, { response: assistantResponse });
         return assistantResponse;
     }
 
     async listModels(): Promise<ProviderModelInfo[]> {
-        // Return a list containing the model this adapter is configured for
-        // In a real scenario, a "dummy" provider might list several dummy models
-        // and the factory would choose which one to instantiate.
-        // For now, this adapter is configured for one specific model.
         const modelInfo: ProviderModelInfo = {
-            api_identifier: this.config.modelId, // e.g., "dummy-echo-v1"
-            name: `Dummy Model (${this.config.mode}) - ${this.config.modelId}`,
-            description: `A dummy AI model for testing purposes. Mode: ${this.config.mode}.`,
-            // context_length: 2048, // Example
-            // type: 'chat', // Example
+            api_identifier: 'dummy-model-v1',
+            name: `Dummy Model (Echo)`,
+            description: `A dummy AI model for testing purposes. It echoes back the user's message.`,
+            config: this.modelConfig,
         };
-        this.logger.debug('[DummyAdapter] listModels called', { modelInfo });
+        this.logger.info('[DummyAdapter] listModels called', { modelInfo });
         return [modelInfo];
     }
-} 
+
+    async getEmbedding(text: string): Promise<EmbeddingResponse> {
+        this.logger.info('[DummyAdapter] getEmbedding called');
+
+        // Compute usage via tokenizer to remain consistent with the rest of the stack
+        const tokenizerDeps: CountTokensDeps = {
+            getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? '').map((_, i) => i) }),
+            countTokensAnthropic: (t: string) => (t ?? '').length,
+            logger: this.logger,
+        };
+        const payload = { message: text, messages: [] } satisfies CountableChatPayload;
+        const promptTokens = countTokens(tokenizerDeps, payload, this.modelConfig);
+
+        // Deterministic, offline embedding (no network). Fixed dimension aligned with DB/RPC (3072).
+        const DIMENSION = 3072;
+        const vector: number[] = Array.from({ length: DIMENSION }, () => 0);
+
+        // Simple character-accumulation hash for determinism
+        for (let i = 0; i < text.length; i++) {
+            const codePoint = text.codePointAt(i);
+            if (codePoint === undefined) continue;
+            const idx = codePoint % DIMENSION;
+            // Mix in a few bits to avoid trivial collisions for repeated chars
+            const mixed = ((codePoint << 5) - codePoint) ^ (i * 1315423911);
+            vector[idx] += (mixed % 1000) / 1000; // keep values small and stable
+            // If surrogate pair, skip the next unit to avoid double-counting
+            if (codePoint > 0xffff) i++;
+        }
+
+        // Optional L2 normalization for bounded magnitude
+        let norm = 0;
+        for (let i = 0; i < DIMENSION; i++) norm += vector[i] * vector[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < DIMENSION; i++) vector[i] = vector[i] / norm;
+
+        return {
+            embedding: vector,
+            usage: {
+                prompt_tokens: promptTokens,
+                total_tokens: promptTokens,
+            },
+        };
+    }
+}

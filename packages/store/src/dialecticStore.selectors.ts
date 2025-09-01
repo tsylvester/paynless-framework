@@ -76,7 +76,7 @@ export const selectCurrentProjectInitialPrompt = createSelector(
 // Selector for the current project sessions
 export const selectCurrentProjectSessions = createSelector(
   [selectCurrentProjectDetail],
-  (project) => project?.dialectic_sessions
+  (project) =>  project?.dialectic_sessions
 );
 
 // Selector for the project prompt update status

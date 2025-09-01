@@ -154,7 +154,7 @@
     *   `[ ] 2.X.5.4.2 [BE]` Develop backend function `estimateDialecticStageCost` in `dialectic-service`.
         *   Input: `projectId`, `sessionId`, `stageSlug`, `iterationNumber`, `modelIds`, `walletId`.
         *   Output: `EstimatedTokenUsage { perModel: Array<{modelId: string, estimatedTokens: number}>, totalEstimatedTokens: number }`.
-        *   Logic: Construct the potential seed prompt(s) and use a token counting utility (e.g., from `supabase/functions/_shared/` or similar to `countTokensForMessages` from chat service logs).
+        *   Logic: Construct the potential seed prompt(s) and use a token counting utility (e.g., from `supabase/functions/_shared/` or similar to `countTokens` from chat service logs).
     *   `[ ] 2.X.5.4.3 [API/STORE]` Add API client method and store thunk for `estimateDialecticStageCost`. Store estimate in `DialecticState`.
     *   `[ ] 2.X.5.4.4 [UI]` In `apps/web/src/components/dialectic/StageTabCard.tsx`:
         *   Trigger `estimateDialecticStageCost` thunk upon model selection.

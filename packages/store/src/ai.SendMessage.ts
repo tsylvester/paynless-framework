@@ -1,14 +1,15 @@
 import type { 
   ChatMessage, 
-  MessageForTokenCounting, 
+  Messages, 
   ChatApiRequest,
   ILogger,
   AiState,
   PendingAction,
   Chat,
   HandleSendMessageServiceParams,
-  InternalProcessResult
+  InternalProcessResult,
 } from '@paynless/types';
+import { isChatRole } from '@paynless/utils';
 
 
 // --- Core Message Processing (adapts to take logger and token directly) ---
@@ -18,7 +19,7 @@ async function coreMessageProcessing(
     targetProviderId: string;
     targetPromptId: string | null;
     targetChatId?: string | null;
-    selectedContextMessages?: MessageForTokenCounting[];
+    selectedContextMessages?: Messages[];
     effectiveOrganizationId?: string | null;
     token: string; // Auth token is now passed directly
     rewindTargetMessageId?: string | null;
@@ -75,16 +76,16 @@ async function coreMessageProcessing(
     // Assuming token_usage is a valid, if optional, field on assistantMessage (ChatMessageRow)
     if (assistantMessage?.token_usage && typeof assistantMessage.token_usage === 'object') {
         // The type of assistantMessage.token_usage should be inferred from ChatMessageRow (DB schema)
-        const usage = assistantMessage.token_usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number, cost?: number }; // Keep cast for specific shape if DB type is JsonValue
-        if (usage.cost) {
-          actualCostWalletTokens = usage.cost;
+        const usage = assistantMessage.token_usage;
+        if (usage && typeof usage === 'number') {
+          actualCostWalletTokens = usage;
         }
     }
 
     return {
       success: true, 
-      finalUserMessage: finalUserMessage as ChatMessage | undefined, 
-      assistantMessage: assistantMessage as ChatMessage,
+      finalUserMessage: finalUserMessage, 
+      assistantMessage: assistantMessage,
       newlyCreatedChatId, 
       actualCostWalletTokens, 
       wasRewind: isRewind,
@@ -176,7 +177,7 @@ export async function handleSendMessage(
   }
   const apiPromptId = selectedPromptId === null || selectedPromptId === '__none__' ? '__none__' : selectedPromptId;
 
-  let finalContextMessages: MessageForTokenCounting[] = [];
+  let finalContextMessages: Messages[] = [];
   if (providedContextMessages && providedContextMessages.length > 0) {
       finalContextMessages = providedContextMessages;
   } else if (optimisticMessageChatId && messagesByChatId[optimisticMessageChatId] && messagesByChatId[optimisticMessageChatId].length > 0) {
@@ -184,13 +185,20 @@ export async function handleSendMessage(
       // (e.g. after addOptimisticUserMessage or from a rewind that maintains the same chatId)
       const currentMessages = messagesByChatId[optimisticMessageChatId] || [];
       const currentSelections = selectedMessagesMap[optimisticMessageChatId] || {};
+
       finalContextMessages = currentMessages
-          .filter(m => m.id !== tempUserMessageId && currentSelections[m.id]) // Exclude the current user message being sent, include selected history
-          .map((m: ChatMessage) => ({ 
-            role: m.role as MessageForTokenCounting['role'], 
-            content: m.content 
-            // Note: 'name' is omitted as ChatMessage type does not have it, and it's optional in MessageForTokenCounting
-          }));
+        .filter(m => m.id !== tempUserMessageId && currentSelections[m.id]) // Exclude the current user message being sent, include selected history
+        .reduce<Messages[]>((acc, m) => {
+          if (isChatRole(m.role)) {
+            // The type guard has confirmed m.role is a valid ChatRole.
+            // We can now safely construct the object.
+            acc.push({
+              role: m.role,
+              content: m.content,
+            });
+          }
+          return acc;
+        }, []);
   }
   // If none of the above, finalContextMessages remains an empty array. 
   // This covers new chats where no contextMessages are explicitly provided, 
@@ -265,9 +273,9 @@ export async function handleSendMessage(
       }
       let messagesForChatProcessing = [...(state.messagesByChatId[optimisticMessageChatId] || [])];
       if (finalUserMessage) {
-          messagesForChatProcessing = messagesForChatProcessing.map(msg => msg.id === tempUserMessageId ? { ...finalUserMessage, status: 'sent' as const } as ChatMessage : msg );
+          messagesForChatProcessing = messagesForChatProcessing.map(msg => msg.id === tempUserMessageId ? { ...finalUserMessage, status: 'sent' } : msg );
       } else {
-           messagesForChatProcessing = messagesForChatProcessing.map(msg => msg.id === tempUserMessageId ? { ...msg, chat_id: actualNewChatId, status: 'sent' as const } as ChatMessage : msg );
+           messagesForChatProcessing = messagesForChatProcessing.map(msg => msg.id === tempUserMessageId ? { ...msg, chat_id: actualNewChatId, status: 'sent' } : msg );
       }
       if (isActualRewind) {
           const processedUserMsgForRewind = messagesForChatProcessing.find(m => m.role === 'user' && (m.id === finalUserMessage?.id || m.id === tempUserMessageId));

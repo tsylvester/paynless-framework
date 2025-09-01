@@ -78,7 +78,7 @@ describe("exportProject", () => {
             mime_type: "text/plain",
             size_bytes: 100,
             storage_bucket: mockExportBucket,
-            storage_path: "project_files/resource1.txt",
+            storage_path: `${mockProjectId}/general_resource`,
             resource_description: JSON.stringify({type: "general_resource"}),
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -109,8 +109,8 @@ describe("exportProject", () => {
             mime_type: "text/markdown",
             size_bytes: 200,
             storage_bucket: mockExportBucket,
-            storage_path: "session_files/contrib1_content.md",
-            raw_response_storage_path: "session_files/contrib1_raw.json",
+            storage_path: `${mockProjectId}/session_${"sess-1".replace(/-/g, '').substring(0,8)}/iteration_1/1_thesis`,
+            raw_response_storage_path: `${mockProjectId}/session_${"sess-1".replace(/-/g, '').substring(0,8)}/iteration_1/1_thesis/raw_responses/contrib1_raw.json`,
             contribution_type: "model_completion",
             citations: null,
             error: null,
@@ -125,6 +125,7 @@ describe("exportProject", () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             seed_prompt_url: null,
+            document_relationships: null,
         };
         contribution1ContentBuffer = await new Blob(["Contribution 1 main content"]).arrayBuffer();
         contribution1RawJsonContentBuffer = await new Blob([JSON.stringify({ raw: "response" })]).arrayBuffer();
@@ -148,7 +149,7 @@ describe("exportProject", () => {
             mime_type: "application/zip",
             size_bytes: 12345,
             storage_bucket: mockExportBucket,
-            storage_path: `project_exports/${mockProjectId}/project_export_${mockProjectName.replace(/\s+/g, '-')}_TIMESTAMP.zip`,
+            storage_path: `${mockProjectId}`,
             resource_description: JSON.stringify({type: "project_export_zip"}),
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -195,10 +196,10 @@ describe("exportProject", () => {
         
         // Define the mock implementations first
         const downloadFromStorageImpl = async (_client: SupabaseClient, bucket: string, path: string): Promise<DownloadStorageResult> => {
-            if (bucket === mockExportBucket && path === resource1Data.storage_path) {
+            if (bucket === mockExportBucket && path === `${resource1Data.storage_path}/${resource1Data.file_name}`) {
                 return { data: resource1ContentBuffer, error: null };
             }
-            if (bucket === mockExportBucket && path === contribution1Data.storage_path) {
+            if (bucket === mockExportBucket && path === `${contribution1Data.storage_path}/${contribution1Data.file_name}`) {
                 return { data: contribution1ContentBuffer, error: null };
             }
             if (bucket === mockExportBucket && path === contribution1Data.raw_response_storage_path) {
@@ -252,8 +253,8 @@ describe("exportProject", () => {
         assertEquals(result.status, 200);
         
         assertEquals(downloadFromStorageSpy.calls.length, 3);
-        assertEquals(downloadFromStorageSpy.calls[0].args, [mockSupabaseSetup.client as any, mockExportBucket, resource1Data.storage_path]);
-        assertEquals(downloadFromStorageSpy.calls[1].args, [mockSupabaseSetup.client as any, mockExportBucket, contribution1Data.storage_path]);
+        assertEquals(downloadFromStorageSpy.calls[0].args, [mockSupabaseSetup.client as any, mockExportBucket, `${resource1Data.storage_path}/${resource1Data.file_name}`]);
+        assertEquals(downloadFromStorageSpy.calls[1].args, [mockSupabaseSetup.client as any, mockExportBucket, `${contribution1Data.storage_path}/${contribution1Data.file_name}`]);
         assertEquals(downloadFromStorageSpy.calls[2].args, [mockSupabaseSetup.client as any, mockExportBucket, contribution1Data.raw_response_storage_path]);
 
         assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1);
@@ -261,14 +262,14 @@ describe("exportProject", () => {
         assertEquals(uploadArgs.pathContext.projectId, mockProjectId);
         assertEquals(uploadArgs.userId, mockUser.id);
         assertInstanceOf(uploadArgs.fileContent, Buffer);
-        assertEquals(uploadArgs.pathContext.fileType, 'general_resource'); 
+        assertEquals(uploadArgs.pathContext.fileType, 'project_export_zip'); 
         assertExists(uploadArgs.pathContext.originalFileName);
 
         assertEquals(createSignedUrlForPathSpy.calls.length, 1);
         assertEquals(createSignedUrlForPathSpy.calls[0].args, [
             mockSupabaseSetup.client as any, 
             mockFileRecordForZip.storage_bucket, 
-            mockFileRecordForZip.storage_path, 
+            `${mockFileRecordForZip.storage_path}/${mockFileRecordForZip.file_name}`, 
             3600
         ]);
         
@@ -445,7 +446,7 @@ describe("exportProject", () => {
         
         // Should only download contribution files, not project resources
         assertEquals(downloadFromStorageSpy.calls.length, 2, "Should attempt to download 2 contribution files.");
-        assertEquals(downloadFromStorageSpy.calls[0].args[2], contribution1Data.storage_path);
+        assertEquals(downloadFromStorageSpy.calls[0].args[2], `${contribution1Data.storage_path}/${contribution1Data.file_name}`);
         assertEquals(downloadFromStorageSpy.calls[1].args[2], contribution1Data.raw_response_storage_path);
 
         assertEquals(mockFileManager.uploadAndRegisterFile.calls.length, 1, "File manager should be called to upload the zip.");
@@ -485,7 +486,7 @@ describe("exportProject", () => {
             mime_type: "text/plain",
             size_bytes: 50,
             storage_bucket: mockExportBucket,
-            storage_path: "project_files/resource2_fails.txt",
+            storage_path: `${mockProjectId}/general_resource`,
             resource_description: JSON.stringify({type: "another_resource"}),
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -502,9 +503,9 @@ describe("exportProject", () => {
         });
 
         const localDownloadImpl = async (_client: SupabaseClient, bucket: string, path: string): Promise<DownloadStorageResult> => {
-            if (path === resource1Data.storage_path) return { data: resource1ContentBuffer, error: null };
-            if (path === resource2Data.storage_path) return { data: null, error: new Error("Simulated download failure for resource2") };
-            if (path === contribution1Data.storage_path) return { data: contribution1ContentBuffer, error: null };
+            if (path === `${resource1Data.storage_path}/${resource1Data.file_name}`) return { data: resource1ContentBuffer, error: null };
+            if (path === `${resource2Data.storage_path}/${resource2Data.file_name}`) return { data: null, error: new Error("Simulated download failure for resource2") };
+            if (path === `${contribution1Data.storage_path}/${contribution1Data.file_name}`) return { data: contribution1ContentBuffer, error: null };
             if (path === contribution1Data.raw_response_storage_path) return { data: contribution1RawJsonContentBuffer, error: null };
             return { data: null, error: new Error(`Test localDownloadImpl: Unknown path ${path}`) };
         };

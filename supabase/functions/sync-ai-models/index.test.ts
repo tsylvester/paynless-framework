@@ -7,6 +7,11 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { mainHandler, type SyncAiModelsDeps, type SyncResult } from "./index.ts"; 
 // Import the actual default deps to partially mock them
 import { defaultDeps as actualDefaultDeps } from './index.ts';
+import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
+import { syncOpenAIModels, type SyncOpenAIDeps } from "./openai_sync.ts";
+import { syncAnthropicModels, type SyncAnthropicDeps } from "./anthropic_sync.ts";
+import { syncGoogleModels, type SyncGoogleDeps } from "./google_sync.ts";
+import type { ProviderModelInfo, AiModelExtendedConfig } from "../_shared/types.ts";
 
 // Helper to create mock dependencies for the main handler
 // Start with actual defaults and override as needed
@@ -322,3 +327,67 @@ Deno.test("sync-ai-models mainHandler", {
     });
 
 }); // End Deno.test suite
+
+// NEW: Adaptive floors integration across providers
+Deno.test("adaptive provider floors are applied for unknown models (OpenAI/Anthropic/Google)", async () => {
+  // Anthropic unknown -> >= 200k
+  {
+    const { client: mockClient, spies } = createMockSupabaseClient();
+    const deps: SyncAnthropicDeps = {
+      listProviderModels: async () => ({ models: [{ api_identifier: 'anthropic-claude-4-foo-20260101', name: 'Claude Unknown' } as ProviderModelInfo], raw: {} }),
+      getCurrentDbModels: async () => [],
+      log: () => {},
+      error: () => {},
+    };
+    await syncAnthropicModels(mockClient as unknown as SupabaseClient, 'key', deps);
+    const insertSpy = spies.fromSpy.calls[0]?.returned.insert;
+    const insertArgs = insertSpy?.calls[0]?.args?.[0] as Array<{ config: AiModelExtendedConfig }> | undefined;
+    if (!insertArgs || insertArgs.length === 0) throw new Error('No insert captured for Anthropic test');
+    const cfg = insertArgs[0].config;
+    if (typeof cfg.context_window_tokens !== 'number' || typeof cfg.provider_max_input_tokens !== 'number') throw new Error('Missing window fields');
+    assert(cfg.context_window_tokens >= 200_000 && cfg.provider_max_input_tokens >= 200_000);
+  }
+
+  // Google unknown -> >= 1,048,576
+  {
+    const { client: mockClient, spies } = createMockSupabaseClient();
+    const deps: SyncGoogleDeps = {
+      listProviderModels: async () => ({ models: [{ api_identifier: 'google-gemini-3-foo', name: 'Gemini Unknown' } as ProviderModelInfo], raw: {} }),
+      getCurrentDbModels: async () => [],
+      log: () => {},
+      error: () => {},
+    };
+    await syncGoogleModels(mockClient as unknown as SupabaseClient, 'key', deps);
+    const insertSpy = spies.fromSpy.calls[0]?.returned.insert;
+    const insertArgs = insertSpy?.calls[0]?.args?.[0] as Array<{ config: AiModelExtendedConfig }> | undefined;
+    if (!insertArgs || insertArgs.length === 0) throw new Error('No insert captured for Google test');
+    const cfg = insertArgs[0].config;
+    if (typeof cfg.context_window_tokens !== 'number' || typeof cfg.provider_max_input_tokens !== 'number') throw new Error('Missing window fields');
+    assert(cfg.context_window_tokens >= 1_048_576 && cfg.provider_max_input_tokens >= 1_048_576);
+  }
+
+  // OpenAI unknowns -> 4.1 >= 1,047,576; 4o >= 128,000
+  {
+    const { client: mockClient, spies } = createMockSupabaseClient();
+    const deps: SyncOpenAIDeps = {
+      listProviderModels: async () => ({ models: [
+        { api_identifier: 'openai-gpt-4.1-foo', name: 'OpenAI 4.1 Unknown' } as ProviderModelInfo,
+        { api_identifier: 'openai-gpt-4o-foo', name: 'OpenAI 4o Unknown' } as ProviderModelInfo,
+      ], raw: {} }),
+      getCurrentDbModels: async () => [],
+      log: () => {},
+      error: () => {},
+    };
+    await syncOpenAIModels(mockClient as unknown as SupabaseClient, 'key', deps);
+    const insertSpy = spies.fromSpy.calls[0]?.returned.insert;
+    const insertArgs = insertSpy?.calls[0]?.args?.[0] as Array<{ api_identifier: string; config: AiModelExtendedConfig }> | undefined;
+    if (!insertArgs || insertArgs.length < 2) throw new Error('No insert captured for OpenAI test');
+    const m41 = insertArgs.find(r => r.api_identifier === 'openai-gpt-4.1-foo');
+    const m4o = insertArgs.find(r => r.api_identifier === 'openai-gpt-4o-foo');
+    if (!m41 || !m4o) throw new Error('Missing 4.1 or 4o rows');
+    assert(typeof m41.config.provider_max_input_tokens === 'number' && m41.config.provider_max_input_tokens >= 1_047_576);
+    assert(typeof m41.config.context_window_tokens === 'number' && m41.config.context_window_tokens >= 1_047_576);
+    assert(typeof m4o.config.provider_max_input_tokens === 'number' && m4o.config.provider_max_input_tokens >= 128_000);
+    assert(typeof m4o.config.context_window_tokens === 'number' && m4o.config.context_window_tokens >= 128_000);
+  }
+});

@@ -1,26 +1,43 @@
-import { create } from "zustand";
-import type {
-	ApiError,
-	ApiResponse,
-	DialecticProject,
-	CreateProjectPayload,
-	DialecticStateValues,
-	DialecticStore,
-	StartSessionPayload,
-	DialecticSession,
-	UpdateProjectInitialPromptPayload,
-	DialecticStage,
-	SubmitStageResponsesPayload,
-	SubmitStageResponsesResponse,
-	SaveContributionEditPayload,
-	DialecticContribution,
-	DialecticDomain,
-	UpdateSessionModelsPayload,
-	GenerateContributionsPayload,
-	GenerateContributionsResponse,
-} from "@paynless/types";
-import { api } from "@paynless/api";
-import { logger } from "@paynless/utils";
+import { create } from 'zustand';
+import { immer } from 'zustand/middleware/immer';
+import { 
+  type ApiError, 
+  type ApiResponse, 
+  type DialecticProject, 
+  type CreateProjectPayload, 
+  type DialecticStateValues, 
+  type DialecticStore, 
+  type StartSessionPayload,
+  type DialecticSession,
+  type UpdateProjectInitialPromptPayload,
+  type DialecticStage,
+  type SubmitStageResponsesPayload,
+  type SubmitStageResponsesResponse,
+  type SaveContributionEditPayload,
+  type DialecticContribution,
+  type DialecticDomain,
+  type UpdateSessionModelsPayload,
+  type GenerateContributionsPayload,
+  type GenerateContributionsResponse,
+  type DialecticProjectRow,
+  type DialecticLifecycleEvent,
+  type ContributionGenerationStartedPayload,
+  type DialecticContributionStartedPayload,
+  type ContributionGenerationRetryingPayload,
+  type DialecticContributionReceivedPayload,
+  type ContributionGenerationFailedPayload,
+  type ContributionGenerationCompletePayload,
+  type ContributionGenerationContinuedPayload,
+  type DialecticProgressUpdatePayload,
+  type ProgressData,
+  isContributionStatus,
+} from '@paynless/types';
+import { api } from '@paynless/api';
+import { useWalletStore } from './walletStore';
+import { useAiStore } from './aiStore';
+import { selectActiveChatWalletInfo } from './walletStore.selectors';
+import { logger } from '@paynless/utils';
+
 
 export const initialDialecticStateValues: DialecticStateValues = {
 	domains: [],
@@ -109,51 +126,59 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	isFetchingFeedbackFileContent: false,
 	fetchFeedbackFileContentError: null,
 
-	activeDialecticWalletId: null,
+  activeDialecticWalletId: null,
+
+  sessionProgress: {},
 };
 
-export const useDialecticStore = create<DialecticStore>((set, get) => ({
-	...initialDialecticStateValues,
+export type DialecticState = DialecticStateValues & DialecticStore;
 
-	fetchDomains: async () => {
-		set({ isLoadingDomains: true, domainsError: null });
-		logger.info("[DialecticStore] Fetching dialectic domains...");
-		try {
-			const response = await api.dialectic().listDomains();
-			if (response.error) {
-				logger.error("[DialecticStore] Error fetching domains:", {
-					errorDetails: response.error,
-				});
-				set({
-					domains: [],
-					isLoadingDomains: false,
-					domainsError: response.error,
-				});
-			} else {
-				const domains = response.data || [];
-				logger.info("[DialecticStore] Successfully fetched domains:", {
-					domains,
-				});
-				set({
-					domains,
-					isLoadingDomains: false,
-					domainsError: null,
-				});
-			}
-		} catch (error: unknown) {
-			const networkError: ApiError = {
-				message:
-					error instanceof Error
-						? error.message
-						: "An unknown network error occurred while fetching domains",
-				code: "NETWORK_ERROR",
-			};
-			logger.error("[DialecticStore] Network error fetching domains:", {
-				errorDetails: networkError,
-			});
-			set({ domains: [], isLoadingDomains: false, domainsError: networkError });
-		}
-	},
+export const selectGeneratingSessionsForSession = (state: DialecticState, sessionId: string): string[] => {
+  return state.generatingSessions[sessionId] || [];
+};
+
+export const useDialecticStore = create<DialecticStore>()(
+  immer((set, get) => ({
+    ...initialDialecticStateValues,
+    
+    _handleProgressUpdate: (event: DialecticProgressUpdatePayload) => {
+        logger.info(`[DialecticStore] Handling progress update for session ${event.sessionId}`, { event });
+        set(state => {
+          const progress: ProgressData = {
+            current_step: event.current_step,
+            total_steps: event.total_steps,
+            message: event.message,
+          };
+          state.sessionProgress[event.sessionId] = progress;
+        });
+    },
+
+    fetchDomains: async () => {
+    set({ isLoadingDomains: true, domainsError: null });
+    logger.info('[DialecticStore] Fetching dialectic domains...');
+    try {
+      const response = await api.dialectic().listDomains();
+      if (response.error) {
+        logger.error('[DialecticStore] Error fetching domains:', { errorDetails: response.error });
+        set({ domains: [], isLoadingDomains: false, domainsError: response.error });
+      } else {
+        const domains = response.data || [];
+        logger.info('[DialecticStore] Successfully fetched domains:', { domains });
+        set({
+          domains,
+          isLoadingDomains: false,
+          domainsError: null,
+        });
+      }
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while fetching domains',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error fetching domains:', { errorDetails: networkError });
+      set({ domains: [], isLoadingDomains: false, domainsError: networkError });
+    }
+  },
 
 	setSelectedDomain: (domain: DialecticDomain | null) => {
 		logger.info("[DialecticStore] Setting selected domain", { domain });
@@ -482,70 +507,53 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
 		}
 	},
 
-	createDialecticProject: async (
-		payload: CreateProjectPayload,
-	): Promise<ApiResponse<DialecticProject>> => {
-		set({ isCreatingProject: true, createProjectError: null });
-		logger.info(
-			"[DialecticStore] Creating new dialectic project with payload:",
-			{ payload },
-		);
+  createDialecticProject: async (payload: CreateProjectPayload): Promise<ApiResponse<DialecticProjectRow>> => {
+    set({ isCreatingProject: true, createProjectError: null });
+    logger.info('[DialecticStore] Creating new dialectic project with payload:', { payload });
+    
+    // The API client now expects FormData
+    const formData = new FormData();
+    formData.append('action', 'createProject');
+    formData.append('projectName', payload.projectName);
+    formData.append('selectedDomainId', payload.selectedDomainId);
+    
+    if (payload.initialUserPrompt) {
+        formData.append('initialUserPromptText', payload.initialUserPrompt);
+    }
+    if (payload.selectedDomainOverlayId) {
+        formData.append('selectedDomainOverlayId', payload.selectedDomainOverlayId);
+    }
+    if (payload.promptFile) {
+        formData.append('promptFile', payload.promptFile);
+    }
 
-		// The API client now expects FormData
-		const formData = new FormData();
-		formData.append("action", "createProject");
-		formData.append("projectName", payload.projectName);
-		formData.append("selectedDomainId", payload.selectedDomainId);
+    try {
+        const response: ApiResponse<DialecticProjectRow> = await api.dialectic().createProject(formData);
 
-		if (payload.initialUserPrompt) {
-			formData.append("initialUserPromptText", payload.initialUserPrompt);
-		}
-		if (payload.selectedDomainOverlayId) {
-			formData.append(
-				"selectedDomainOverlayId",
-				payload.selectedDomainOverlayId,
-			);
-		}
-		if (payload.promptFile) {
-			formData.append("promptFile", payload.promptFile);
-		}
-
-		try {
-			const response = await api.dialectic().createProject(formData);
-
-			if (response.error) {
-				logger.error("[DialecticStore] Error creating project:", {
-					errorDetails: response.error,
-				});
-				set({ isCreatingProject: false, createProjectError: response.error });
-			} else {
-				logger.info("[DialecticStore] Successfully created project:", {
-					project: response.data,
-				});
-				// Add the new project to the start of the projects list
-				set((state) => ({
-					projects: [response.data as DialecticProject, ...state.projects],
-					isCreatingProject: false,
-					createProjectError: null,
-					currentProjectDetail: response.data as DialecticProject, // Also set as current
-				}));
-			}
-			return response;
-		} catch (error: unknown) {
-			const networkError: ApiError = {
-				message:
-					error instanceof Error
-						? error.message
-						: "An unknown network error occurred",
-				code: "NETWORK_ERROR",
-			};
-			logger.error("[DialecticStore] Network error creating project:", {
-				errorDetails: networkError,
-			});
-			set({ isCreatingProject: false, createProjectError: networkError });
-			return { error: networkError, status: 0 };
-		}
-	},
+        if (response.error) {
+            logger.error('[DialecticStore] Error creating project:', { errorDetails: response.error });
+            set({ isCreatingProject: false, createProjectError: response.error });
+        } else {
+            logger.info('[DialecticStore] Successfully created project:', { project: response.data });
+            // Add the new project to the start of the projects list
+            set(state => ({
+                projects: [response.data, ...state.projects],
+                isCreatingProject: false,
+                createProjectError: null,
+                currentProjectDetail: response.data, // Also set as current
+            }));
+        }
+        return response;
+    } catch (error: unknown) {
+        const networkError: ApiError = {
+            message: error instanceof Error ? error.message : 'An unknown network error occurred',
+            code: 'NETWORK_ERROR',
+        };
+        logger.error('[DialecticStore] Network error creating project:', { errorDetails: networkError });
+        set({ isCreatingProject: false, createProjectError: networkError });
+        return { error: networkError, status: 0 };
+    }
+  },
 
 	startDialecticSession: async (
 		payload: StartSessionPayload,
@@ -658,9 +666,16 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
 		set({ projectDetailError: null });
 	},
 
-	fetchContributionContent: async (contributionId: string) => {
-		const currentCache = get().contributionContentCache;
-		const entry = currentCache[contributionId];
+  fetchContributionContent: async (contributionId: string) => {
+    // A placeholder contribution is generated on the client-side for immediate UI feedback.
+    // Its ID will always start with "placeholder-". It does not exist in the backend,
+    // so we must prevent any attempt to fetch its content.
+    if (contributionId.startsWith('placeholder-')) {
+      return;
+    }
+
+    const currentCache = get().contributionContentCache;
+    const entry = currentCache[contributionId];
 
 		// 1. Check cache for already loaded, non-error content
 		if (entry && entry.content && !entry.error) {
@@ -902,139 +917,86 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
 		}
 	},
 
-	updateDialecticProjectInitialPrompt: async (
-		payload: UpdateProjectInitialPromptPayload,
-	): Promise<ApiResponse<DialecticProject>> => {
-		set({ isUpdatingProjectPrompt: true, projectDetailError: null });
-		logger.info(
-			`[DialecticStore] Attempting to update initial prompt for project: ${payload.projectId}`,
-		);
-		try {
-			const response = await api
-				.dialectic()
-				.updateDialecticProjectInitialPrompt(payload);
-			if (response.error || !response.data) {
-				const error =
-					response.error ||
-					({
-						message: "No data returned from update initial prompt",
-						code: "UNKNOWN_ERROR",
-					} as ApiError);
-				logger.error("[DialecticStore] Failed to update initial prompt:", {
-					errorDetails: error,
-				});
-				set({ isUpdatingProjectPrompt: false, projectDetailError: error });
-				return { data: undefined, error, status: response.status || 0 };
-			}
-			logger.info(
-				`[DialecticStore] Successfully updated initial prompt for project: ${response.data.id}`,
-			);
-			set((state) => ({
-				isUpdatingProjectPrompt: false,
-				projectDetailError: null,
-				currentProjectDetail:
-					state.currentProjectDetail &&
-					state.currentProjectDetail.id === response.data?.id
-						? response.data
-						: state.currentProjectDetail,
-				projects: state.projects.map((p) =>
-					p.id === response.data?.id ? response.data! : p,
-				),
-			}));
-			return response;
-		} catch (err: unknown) {
-			const errMsg = err instanceof Error ? err.message : "Unknown error";
-			const networkError: ApiError = { message: errMsg, code: "NETWORK_ERROR" };
-			logger.error(
-				"[DialecticStore] Network or unexpected error updating initial prompt:",
-				{ errorDetails: networkError },
-			);
-			set({ isUpdatingProjectPrompt: false, projectDetailError: networkError });
-			return { data: undefined, error: networkError, status: 0 };
-		}
-	},
+  updateDialecticProjectInitialPrompt: async (payload: UpdateProjectInitialPromptPayload): Promise<ApiResponse<DialecticProjectRow>> => {
+    set({ isUpdatingProjectPrompt: true, projectDetailError: null });
+    logger.info(`[DialecticStore] Attempting to update initial prompt for project: ${payload.projectId}`);
+    try {
+      const response: ApiResponse<DialecticProjectRow> = await api.dialectic().updateDialecticProjectInitialPrompt(payload);
+      if (response.error || !response.data) {
+        const error: ApiError = response.error || { message: 'No data returned from update initial prompt', code: 'UNKNOWN_ERROR' };
+        logger.error('[DialecticStore] Failed to update initial prompt:', { errorDetails: error });
+        set({ isUpdatingProjectPrompt: false, projectDetailError: error });
+        return { data: undefined, error, status: response.status || 0 };
+      }
+      logger.info(`[DialecticStore] Successfully updated initial prompt for project: ${response.data.id}`);
+      set(state => ({
+        isUpdatingProjectPrompt: false,
+        projectDetailError: null,
+        currentProjectDetail: state.currentProjectDetail && state.currentProjectDetail.id === response.data?.id 
+          ? response.data 
+          : state.currentProjectDetail,
+        projects: state.projects.map(p => p.id === response.data?.id ? response.data! : p),
+      }));
+      return response;
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      const networkError: ApiError = { message: errMsg, code: 'NETWORK_ERROR' };
+      logger.error('[DialecticStore] Network or unexpected error updating initial prompt:', { errorDetails: networkError });
+      set({ isUpdatingProjectPrompt: false, projectDetailError: networkError });
+      return { data: undefined, error: networkError, status: 0 };
+    }
+  },
 
-	updateSessionModels: async (
-		payload: UpdateSessionModelsPayload,
-	): Promise<ApiResponse<DialecticSession>> => {
-		set({ isUpdatingSessionModels: true, updateSessionModelsError: null });
-		logger.info("[DialecticStore] Updating session models...", { payload });
-		try {
-			const response = await api.dialectic().updateSessionModels(payload);
-			if (response.error || !response.data) {
-				const error =
-					response.error ||
-					({
-						message: "No data returned from update session models",
-						code: "UNKNOWN_ERROR",
-					} as ApiError);
-				logger.error("[DialecticStore] Error updating session models:", {
-					errorDetails: error,
-					sessionId: payload.sessionId,
-				});
-				set({
-					isUpdatingSessionModels: false,
-					updateSessionModelsError: error,
-				});
-				return { error, status: response.status || 0, data: undefined };
-			} else {
-				logger.info("[DialecticStore] Successfully updated session models:", {
-					sessionId: payload.sessionId,
-					updatedSession: response.data,
-				});
-				const updatedSessionFromApi = response.data;
-				set((state) => {
-					let newCurrentProjectDetail = state.currentProjectDetail;
-					if (
-						state.currentProjectDetail &&
-						state.currentProjectDetail.dialectic_sessions
-					) {
-						const sessionIndex =
-							state.currentProjectDetail.dialectic_sessions.findIndex(
-								(s) => s.id === updatedSessionFromApi.id,
-							);
-						if (sessionIndex !== -1) {
-							const newSessions = [
-								...state.currentProjectDetail.dialectic_sessions,
-							];
-							// Merge: keep existing fields, overwrite with new ones from updatedSessionFromApi
-							newSessions[sessionIndex] = {
-								...newSessions[sessionIndex],
-								...updatedSessionFromApi,
-							};
-							newCurrentProjectDetail = {
-								...state.currentProjectDetail,
-								dialectic_sessions: newSessions,
-							};
-						}
-					}
-					return {
-						currentProjectDetail: newCurrentProjectDetail,
-						isUpdatingSessionModels: false,
-						updateSessionModelsError: null,
-					};
-				});
-				return { data: updatedSessionFromApi, status: response.status || 200 };
-			}
-		} catch (error: unknown) {
-			const networkError: ApiError = {
-				message:
-					error instanceof Error
-						? error.message
-						: "An unknown network error occurred while updating session models",
-				code: "NETWORK_ERROR",
-			};
-			logger.error("[DialecticStore] Network error updating session models:", {
-				errorDetails: networkError,
-				sessionId: payload.sessionId,
-			});
-			set({
-				isUpdatingSessionModels: false,
-				updateSessionModelsError: networkError,
-			});
-			return { error: networkError, status: 0, data: undefined };
-		}
-	},
+  updateSessionModels: async (payload: UpdateSessionModelsPayload): Promise<ApiResponse<DialecticSession>> => {
+    set({ isUpdatingSessionModels: true, updateSessionModelsError: null });
+    logger.info('[DialecticStore] Updating session models...', { payload });
+    try {
+      const response = await api.dialectic().updateSessionModels(payload);
+      if (response.error || !response.data) {
+        const error: ApiError = response.error || { message: 'No data returned from update session models', code: 'UNKNOWN_ERROR' };
+        logger.error('[DialecticStore] Error updating session models:', { errorDetails: error, sessionId: payload.sessionId });
+        set({ isUpdatingSessionModels: false, updateSessionModelsError: error });
+        return { error, status: response.status || 0, data: undefined };
+      } else {
+        logger.info('[DialecticStore] Successfully updated session models:', { sessionId: payload.sessionId, updatedSession: response.data });
+        const updatedSessionFromApi = response.data;
+        set(state => {
+          let newCurrentProjectDetail = state.currentProjectDetail;
+          if (state.currentProjectDetail && state.currentProjectDetail.dialectic_sessions) {
+            const sessionIndex = state.currentProjectDetail.dialectic_sessions.findIndex(
+              s => s.id === updatedSessionFromApi.id
+            );
+            if (sessionIndex !== -1) {
+              const newSessions = [...state.currentProjectDetail.dialectic_sessions];
+              // Merge: keep existing fields, overwrite with new ones from updatedSessionFromApi
+              newSessions[sessionIndex] = {
+                ...newSessions[sessionIndex],
+                ...updatedSessionFromApi,
+              };
+              newCurrentProjectDetail = {
+                ...state.currentProjectDetail,
+                dialectic_sessions: newSessions,
+              };
+            }
+          }
+          return {
+            currentProjectDetail: newCurrentProjectDetail,
+            isUpdatingSessionModels: false,
+            updateSessionModelsError: null,
+          };
+        });
+        return { data: updatedSessionFromApi, status: response.status || 200 };
+      }
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while updating session models',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error updating session models:', { errorDetails: networkError, sessionId: payload.sessionId });
+      set({ isUpdatingSessionModels: false, updateSessionModelsError: networkError });
+      return { error: networkError, status: 0, data: undefined };
+    }
+  },
 
 	setSelectedModelIds: (modelIds: string[]) => {
 		logger.info("[DialecticStore] Setting selected model IDs.", { modelIds });
@@ -1134,82 +1096,60 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
 			},
 		}));
 
-		logger.info(
-			`[DialecticStore] Fetching initial prompt content for resource ID: ${resourceId}`,
-		);
-		try {
-			const response = await api
-				.dialectic()
-				.getProjectResourceContent({ resourceId });
-
-			if (response.error || !response.data) {
-				const error =
-					response.error ||
-					({
-						message: "No data returned while fetching prompt content",
-						code: "NO_DATA",
-					} as ApiError);
-				logger.error(
-					"[DialecticStore] Error fetching initial prompt content:",
-					{ resourceId, errorDetails: error },
-				);
-				set((state) => ({
-					initialPromptContentCache: {
-						...state.initialPromptContentCache,
-						[resourceId]: {
-							...state.initialPromptContentCache[resourceId], // Spread existing to keep content/fileName if they were there
-							isLoading: false,
-							error,
-						},
-					},
-				}));
-			} else {
-				logger.info(
-					"[DialecticStore] Successfully fetched initial prompt content:",
-					{
-						resourceId,
-						fileName: response.data.fileName,
-						contentLength: response.data.content?.length,
-					},
-				);
-				set((state) => ({
-					initialPromptContentCache: {
-						...state.initialPromptContentCache,
-						[resourceId]: {
-							isLoading: false,
-							error: null,
-							content: response.data?.content || "",
-							fileName: response.data?.fileName || "",
-						},
-					},
-				}));
-			}
-		} catch (error: unknown) {
-			const networkError: ApiError = {
-				message:
-					error instanceof Error
-						? error.message
-						: "An unknown network error occurred while fetching initial prompt content",
-				code: "NETWORK_ERROR",
-			};
-			logger.error(
-				"[DialecticStore] Network error fetching initial prompt content:",
-				{ resourceId, errorDetails: networkError },
-			);
-			set((state) => ({
-				initialPromptContentCache: {
-					...state.initialPromptContentCache,
-					[resourceId]: {
-						// When a network error occurs, create a full entry
-						isLoading: false,
-						error: networkError,
-						content: "", // Provide default empty string for content
-						fileName: "", // Provide default empty string for fileName
-					},
-				},
-			}));
-		}
-	},
+    logger.info(`[DialecticStore] Fetching initial prompt content for resource ID: ${resourceId}`);
+    try {
+      const response = await api.dialectic().getProjectResourceContent({ resourceId });
+      
+      if (response.error || !response.data) {
+        const error: ApiError = response.error || { message: 'No data returned while fetching prompt content', code: 'NO_DATA' };
+        logger.error('[DialecticStore] Error fetching initial prompt content:', { resourceId, errorDetails: error });
+        set(state => ({
+          initialPromptContentCache: {
+            ...state.initialPromptContentCache,
+            [resourceId]: {
+              ...state.initialPromptContentCache[resourceId], // Spread existing to keep content/fileName if they were there
+              isLoading: false,
+              error,
+            },
+          }
+        }));
+      } else {
+        logger.info('[DialecticStore] Successfully fetched initial prompt content:', { 
+          resourceId, 
+          fileName: response.data.fileName,
+          contentLength: response.data.content?.length 
+        });
+        set(state => ({
+          initialPromptContentCache: {
+            ...state.initialPromptContentCache,
+            [resourceId]: {
+              isLoading: false,
+              error: null,
+              content: response.data?.content || '',
+              fileName: response.data?.fileName || '',
+            },
+          }
+        }));
+      }
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while fetching initial prompt content',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error fetching initial prompt content:', { resourceId, errorDetails: networkError });
+      set(state => ({
+        initialPromptContentCache: {
+          ...state.initialPromptContentCache,
+          [resourceId]: { // When a network error occurs, create a full entry
+            isLoading: false,
+            error: networkError,
+            content: '', // Provide default empty string for content
+            fileName: '', // Provide default empty string for fileName
+          },
+        }
+      }));
+    }
+  },
 
 	reset: () => {
 		logger.info("[DialecticStore] Resetting store to initial state", {
@@ -1218,93 +1158,408 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
 		set(initialDialecticStateValues);
 	},
 
-	_handleGenerationCompleteEvent: (data: {
-		sessionId: string;
-		projectId: string;
-	}) => {
-		logger.info(
-			"[DialecticStore] Handling contribution generation complete event.",
-			{ data },
-		);
-		set((state) => ({
-			generatingSessions: {
-				...state.generatingSessions,
-				[data.sessionId]: false,
-			},
-		}));
+  // Internal handler for completion events from notificationStore
+  _handleGenerationCompleteEvent: (data: { sessionId: string; projectId: string; [key: string]: unknown }) => {
+    logger.info('[DialecticStore] Handling generation complete event', data);
+    set(state => {
+      // Remove the session from the generating list
+      delete state.generatingSessions[data.sessionId];
+      
+      // If no more sessions are generating, update the overall status
+      if (Object.keys(state.generatingSessions).length === 0) {
+        state.contributionGenerationStatus = 'idle';
+      }
+    });
+    // Trigger a refetch of the project details to get the new contributions
+    get().fetchDialecticProjectDetails(data.projectId);
+  },
+  
+  // NEW: Internal handler for all dialectic lifecycle events from notificationStore
+  _handleDialecticLifecycleEvent: (payload: DialecticLifecycleEvent) => {
+    logger.info('[DialecticStore] Received lifecycle event from notificationStore:', { payload });
+    const handlers = get();
+    switch (payload.type) {
+        case 'contribution_generation_started':
+            handlers._handleContributionGenerationStarted(payload);
+            break;
+        case 'dialectic_contribution_started':
+            handlers._handleDialecticContributionStarted(payload);
+            break;
+        case 'contribution_generation_retrying':
+            handlers._handleContributionGenerationRetrying(payload);
+            break;
+        case 'dialectic_contribution_received':
+            handlers._handleDialecticContributionReceived(payload);
+            break;
+        case 'contribution_generation_failed':
+            handlers._handleContributionGenerationFailed(payload);
+            break;
+        case 'contribution_generation_complete':
+            handlers._handleContributionGenerationComplete(payload);
+            break;
+        case 'contribution_generation_continued':
+            handlers._handleContributionGenerationContinued(payload);
+            break;
+        case 'dialectic_progress_update':
+            handlers._handleProgressUpdate(payload);
+            break;
+        default:
+            logger.warn('[DialecticStore] Received unhandled dialectic lifecycle event', { payload });
+    }
+  },
 
-		// Refresh the project details to pull in new contributions
-		get().fetchDialecticProjectDetails(data.projectId);
-	},
+  // --- Private Handlers for Lifecycle Events ---
+  _handleContributionGenerationStarted: (event: ContributionGenerationStartedPayload) => {
+    set({
+      contributionGenerationStatus: 'generating',
+      generateContributionsError: null,
+    });
+    // This event is session-wide, but we can also use it to update a specific placeholder
+    // if we want immediate feedback per job.
+    set(state => {
+      const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
+      if (session?.dialectic_contributions) {
+        const placeholder = session.dialectic_contributions.find(c => c.job_id === event.job_id);
+        if (placeholder) {
+          placeholder.status = 'generating';
+        }
+      }
+      // Sync with activeSessionDetail if it's the same session
+      if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
+        state.activeSessionDetail = { ...session };
+      }
+    });
+  },
 
-	generateContributions: async (
-		payload: GenerateContributionsPayload,
-	): Promise<ApiResponse<GenerateContributionsResponse>> => {
-		logger.info("[DialecticStore] Initiating contributions generation...", {
-			payload,
-		});
-		set((state) => ({
-			contributionGenerationStatus: "generating",
-			generatingSessions: {
-				...state.generatingSessions,
-				[payload.sessionId]: true,
-			},
-			generateContributionsError: null,
-		}));
+  _handleDialecticContributionStarted: (event: DialecticContributionStartedPayload) => {
+    set(state => {
+      const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
+      if (session?.dialectic_contributions) {
+        // Find placeholder by job_id
+        const placeholder = session.dialectic_contributions.find(c => c.job_id === event.job_id);
+        if (placeholder) {
+          placeholder.status = 'generating';
+        }
+      }
+      // Sync with activeSessionDetail if it's the same session
+      if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
+        state.activeSessionDetail = { ...session };
+      }
+    });
+  },
 
-		try {
-			const response = await api.dialectic().generateContributions(payload);
+  _handleContributionGenerationRetrying: (event: ContributionGenerationRetryingPayload) => {
+    set(state => {
+      const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
+      if (session?.dialectic_contributions) {
+        // Find placeholder by job_id
+        const placeholder = session.dialectic_contributions.find(c => c.job_id === event.job_id);
+        if (placeholder) {
+          placeholder.status = 'retrying';
+          placeholder.error = { 
+              message: event.error || 'An error occurred during generation. Retrying...',
+              code: 'CONTRIBUTION_RETRYING' 
+          };
+        }
+      }
+      // Sync with activeSessionDetail if it's the same session
+      if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
+        state.activeSessionDetail = { ...session };
+      }
+    });
+  },
 
-			if (response.error) {
-				logger.error("[DialecticStore] Error generating contributions:", {
-					errorDetails: response.error,
-				});
-				set((state) => ({
-					contributionGenerationStatus: "failed",
-					generateContributionsError: response.error,
-					generatingSessions: {
-						...state.generatingSessions,
-						[payload.sessionId]: false,
-					},
-				}));
-				return { error: response.error } as ApiResponse<never>;
-			} else {
-				logger.info(
-					"[DialecticStore] Successfully requested contribution generation.",
-					{ responseData: response.data },
-				);
-				// The process is now asynchronous, so we just reset the global status
-				// The session-specific status remains true until a notification arrives.
-				set({
-					contributionGenerationStatus: "idle",
-					generateContributionsError: null,
-				});
-				return {
-					data: response.data,
-				} as ApiResponse<GenerateContributionsResponse>;
-			}
-		} catch (error: unknown) {
-			const networkError: ApiError = {
-				message:
-					error instanceof Error
-						? error.message
-						: "An unknown network error occurred while generating contributions",
-				code: "NETWORK_ERROR",
-			};
-			logger.error("[DialecticStore] Network error generating contributions:", {
-				errorDetails: networkError,
-			});
-			set((state) => ({
-				contributionGenerationStatus: "failed",
-				generateContributionsError: networkError,
-				generatingSessions: {
-					...state.generatingSessions,
-					[payload.sessionId]: false,
-				},
-			}));
-			return { error: networkError } as ApiResponse<never>;
-		}
-	},
+  _handleDialecticContributionReceived: (event: DialecticContributionReceivedPayload) => {
+    logger.info('[DialecticStore] Handling contribution received. About to update state.', { event });
+    let wasGenerationCompleted = false;
+    let projectIdForRefetch: string | null = null;
+
+    set(state => {
+      const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
+      if (session) {
+        projectIdForRefetch = state.currentProjectDetail?.id || null;
+      }
+      
+      if (session?.dialectic_contributions) {
+        // Find placeholder by job_id
+        const idx = session.dialectic_contributions.findIndex(c => c.job_id === event.job_id);
+        
+        const newStatus = event.is_continuing ? 'continuing' : 'completed';
+        if (isContributionStatus(newStatus)) {
+          const newContribution = {
+            ...event.contribution,
+            status: newStatus,
+            job_id: event.job_id,
+          };
+
+          if (idx > -1) {
+            session.dialectic_contributions[idx] = newContribution;
+          } else {
+            session.dialectic_contributions.push(newContribution);
+          }
+        }
+      }
+      
+      // Sync with activeSessionDetail if it's the same session
+      if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
+        state.activeSessionDetail = { ...session };
+      }
+
+      // Remove the completed job ID from tracking
+      if (state.generatingSessions[event.sessionId] && event.job_id) {
+        state.generatingSessions[event.sessionId] = state.generatingSessions[event.sessionId].filter(id => id !== event.job_id);
+        
+        if (state.generatingSessions[event.sessionId].length === 0) {
+          wasGenerationCompleted = true;
+          delete state.generatingSessions[event.sessionId];
+        }
+      }
+      
+      if (wasGenerationCompleted && Object.keys(state.generatingSessions).length === 0) {
+        state.contributionGenerationStatus = 'idle';
+      }
+    });
+
+    if (wasGenerationCompleted && projectIdForRefetch) {
+      logger.info(`[DialecticStore] All jobs for session ${event.sessionId} are complete. Triggering project detail refetch.`);
+      get().fetchDialecticProjectDetails(projectIdForRefetch);
+    }
+  },
+
+  _handleContributionGenerationContinued: (event: ContributionGenerationContinuedPayload) => {
+    set(state => {
+      const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
+      if (session?.dialectic_contributions) {
+        const placeholderId = `placeholder-${event.sessionId}-${event.contribution.model_id}-${event.contribution.iteration_number}`;
+        const idx = session.dialectic_contributions.findIndex(c => c.id.startsWith(placeholderId));
+
+        const continuingStatus = 'continuing';
+        if (isContributionStatus(continuingStatus)) {
+            let targetContribution: DialecticContribution | undefined;
+            if (idx > -1) {
+                targetContribution = session.dialectic_contributions[idx];
+            } else {
+                const realIdx = session.dialectic_contributions.findIndex(c => c.id === event.contribution.id);
+                if (realIdx > -1) {
+                    targetContribution = session.dialectic_contributions[realIdx];
+                }
+            }
+
+            if (targetContribution) {
+                Object.assign(targetContribution, event.contribution);
+                targetContribution.status = continuingStatus;
+            } else {
+                session.dialectic_contributions.push({
+                    ...event.contribution,
+                    status: continuingStatus,
+                });
+            }
+        }
+      }
+      // Sync with activeSessionDetail if it's the same session
+      if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
+        state.activeSessionDetail = { ...session };
+      }
+      // Do not remove the job_id from tracking, as the generation is still in progress.
+    });
+  },
+
+  _handleContributionGenerationFailed: (event: ContributionGenerationFailedPayload) => {
+    set(state => {
+      const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === event.sessionId);
+      if (session?.dialectic_contributions) {
+        // Find and update placeholder by job_id if a job_id is provided
+        if (event.job_id) {
+            const placeholder = session.dialectic_contributions.find(c => c.job_id === event.job_id);
+            if (placeholder) {
+                placeholder.status = 'failed';
+                placeholder.error = event.error || { message: 'Generation failed for this specific job.', code: 'JOB_FAILED' };
+            }
+        } else {
+            // Catastrophic failure: Mark all remaining pending/generating placeholders for this session as failed
+            session.dialectic_contributions.forEach(c => {
+                if (c.status === 'pending' || c.status === 'generating' || c.status === 'retrying') {
+                    c.status = 'failed';
+                    c.error = event.error || { message: 'Generation failed due to a session-wide error.', code: 'GENERATION_FAILED' };
+                }
+            });
+        }
+      }
+      // Sync with activeSessionDetail if it's the same session
+      if (session && state.activeSessionDetail && state.activeSessionDetail.id === event.sessionId) {
+        state.activeSessionDetail = { ...session };
+      }
+      // Clear tracking for this session only if the failure is catastrophic (no job_id)
+      if (!event.job_id) {
+        delete state.generatingSessions[event.sessionId];
+        state.contributionGenerationStatus = 'failed';
+        state.generateContributionsError = event.error || { message: 'Generation failed without a specific error.', code: 'GENERATION_FAILED' };
+      }
+    });
+  },
+
+  _handleContributionGenerationComplete: (event: ContributionGenerationCompletePayload) => {
+    set(state => {
+      // Remove the session from the generating list
+      delete state.generatingSessions[event.sessionId];
+      
+      // If no more sessions are generating, update the overall status
+      if (Object.keys(state.generatingSessions).length === 0) {
+        state.contributionGenerationStatus = 'idle';
+      }
+    });
+    // Trigger a refetch of the project details to get the new contributions
+    get().fetchDialecticProjectDetails(event.projectId);
+  },
+
+  generateContributions: async (payload: GenerateContributionsPayload): Promise<ApiResponse<GenerateContributionsResponse>> => {
+    const { sessionId, stageSlug, iterationNumber } = payload;
+    logger.info('[DialecticStore] Initiating contributions generation...', { payload });
+  
+    const { currentProjectDetail, selectedModelIds } = get();
+    if (!currentProjectDetail) {
+      const error: ApiError = { message: 'No project loaded', code: 'PRECONDITION_FAILED' };
+      logger.error('[DialecticStore] Precondition failed: No project loaded.', { payload });
+      set({ generateContributionsError: error });
+      return { error, status: 400 };
+    }
+  
+    // --- Step 15.b: Immediate UI feedback with placeholders ---
+    set(state => {
+      const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
+      if (session) {
+        state.contributionGenerationStatus = 'generating';
+        state.generateContributionsError = null;
+        if (!session.dialectic_contributions) {
+          session.dialectic_contributions = [];
+        }
+        
+        selectedModelIds.forEach((modelId, index) => {
+          // Find model details from catalog to get the name
+          const modelDetails = state.modelCatalog.find(m => m.id === modelId);
+          const tempId = `placeholder-${sessionId}-${modelId}-${iterationNumber}-${index}`;
+          const placeholder: DialecticContribution = {
+            id: tempId,
+            job_id: null, // Initialized to null, will be updated after API call
+            session_id: sessionId,
+            stage: stageSlug,
+            iteration_number: iterationNumber,
+            model_id: modelId,
+            model_name: modelDetails?.model_name || 'Unknown Model',
+            status: 'pending',
+            // --- Fill in other required fields with default/null values ---
+            user_id: null,
+            prompt_template_id_used: null,
+            seed_prompt_url: null,
+            edit_version: 0,
+            is_latest_edit: true,
+            original_model_contribution_id: null,
+            raw_response_storage_path: null,
+            target_contribution_id: null,
+            tokens_used_input: null,
+            tokens_used_output: null,
+            processing_time_ms: null,
+            error: null,
+            citations: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            contribution_type: null,
+            file_name: null,
+            storage_bucket: null,
+            storage_path: null,
+            size_bytes: null,
+            mime_type: null,
+          };
+          if (session.dialectic_contributions) {
+            session.dialectic_contributions.push(placeholder);
+          }
+        });
+      }
+    });
+  
+    try {
+      // Enrich payload with active walletId from wallet store
+      const activeWalletInfo = selectActiveChatWalletInfo(
+        useWalletStore.getState(),
+        useAiStore.getState().newChatContext
+      );
+      if (activeWalletInfo && activeWalletInfo.walletId) {
+        payload = { ...payload, walletId: activeWalletInfo.walletId };
+      }
+
+      const response = await api.dialectic().generateContributions(payload);
+  
+      if (response.error || !response.data?.job_ids) {
+        const error: ApiError = response.error || { message: 'API call succeeded but returned no job_ids', code: 'UNEXPECTED_RESPONSE' };
+        logger.error('[DialecticStore] Error generating contributions:', { errorDetails: error });
+        set(state => {
+          state.contributionGenerationStatus = 'failed';
+          state.generateContributionsError = error;
+          // --- Mark placeholders as failed ---
+          const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
+          if (session) {
+            session.dialectic_contributions?.forEach(c => {
+              if (c.status === 'pending') {
+                c.status = 'failed';
+                c.error = error;
+              }
+            });
+          }
+        });
+        return { error, status: response.status };
+      }
+  
+      logger.info('[DialecticStore] Successfully enqueued contributions generation job.', { job_ids: response.data.job_ids });
+      set(state => {
+        if (!response.data?.job_ids) return;
+
+        // --- Associate job_ids with placeholders ---
+        const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
+        if (session) {
+            const pendingPlaceholders = session.dialectic_contributions?.filter(c => c.status === 'pending' && c.iteration_number === iterationNumber) || [];
+            
+            // FIX 2: More robust matching
+            response.data.job_ids.forEach((jobId, index) => {
+                const modelIdForThisJob = selectedModelIds[index];
+                const placeholder = pendingPlaceholders.find(p => p.model_id === modelIdForThisJob && !p.job_id);
+                if (placeholder) {
+                    placeholder.job_id = jobId;
+                }
+            });
+        }
+        
+        // --- Track the new job IDs ---
+        state.generatingSessions = {
+          ...state.generatingSessions,
+          [sessionId]: [...(state.generatingSessions[sessionId] || []), ...response.data.job_ids],
+        };
+      });
+  
+      return { data: response.data, status: response.status };
+  
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error generating contributions:', { errorDetails: networkError });
+      set(state => {
+        state.contributionGenerationStatus = 'failed';
+        state.generateContributionsError = networkError;
+        // --- Mark placeholders as failed ---
+        const session = state.currentProjectDetail?.dialectic_sessions?.find(s => s.id === sessionId);
+        if (session) {
+          session.dialectic_contributions?.forEach(c => {
+            if (c.status === 'pending') {
+              c.status = 'failed';
+              c.error = networkError;
+            }
+          });
+        }
+      });
+      return { error: networkError, status: 500 };
+    }
+  },
 
 	setSubmittingStageResponses: (isSubmitting: boolean) =>
 		set({ isSubmittingStageResponses: isSubmitting }),
@@ -1396,73 +1651,53 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
 		}
 	},
 
-	saveContributionEdit: async (
-		payload: SaveContributionEditPayload,
-	): Promise<ApiResponse<DialecticContribution>> => {
-		set({ isSavingContributionEdit: true, saveContributionEditError: null });
-		logger.info("[DialecticStore] Saving contribution edit...", { payload });
+  saveContributionEdit: async (payload: SaveContributionEditPayload): Promise<ApiResponse<DialecticContribution>> => {
+    set({ isSavingContributionEdit: true, saveContributionEditError: null });
 
-		try {
-			const response = await api.dialectic().saveContributionEdit(payload);
-
-			if (response.error) {
-				logger.error("[DialecticStore] Error saving contribution edit:", {
-					error: response.error,
-				});
-				set({
-					isSavingContributionEdit: false,
-					saveContributionEditError: response.error,
-				});
-			} else {
-				logger.info("[DialecticStore] Successfully saved contribution edit.", {
-					newContribution: response.data,
-				});
-				set({
-					isSavingContributionEdit: false,
-					saveContributionEditError: null,
-				});
-
-				const newContribution = response.data;
-				if (newContribution) {
-					logger.info(
-						`[DialecticStore] Updating content cache for new contribution version ${newContribution.id}.`,
-					);
-					set((state) => ({
-						contributionContentCache: {
-							...state.contributionContentCache,
-							[newContribution.id]: {
-								content: payload.editedContentText,
-								isLoading: false,
-								error: undefined,
-							},
-						},
-					}));
-				}
-
-				logger.info(
-					`[DialecticStore] Contribution edit saved for project ${payload.projectId}. Refetching project details.`,
-				);
-				await get().fetchDialecticProjectDetails(payload.projectId);
-			}
-			return response;
-		} catch (error: unknown) {
-			const networkError: ApiError = {
-				message:
-					error instanceof Error
-						? error.message
-						: "A network error occurred while saving edit",
-				code: "NETWORK_ERROR",
-			};
-			logger.error("[DialecticStore] Network error saving edit:", {
-				error: networkError,
-			});
-			set({
-				isSavingContributionEdit: false,
-				saveContributionEditError: networkError,
-			});
-			return { data: undefined, error: networkError, status: 0 };
-		}
-	},
+    try {
+      const response = await api.dialectic().saveContributionEdit(payload);
+      if (response.error) {
+        logger.error('[DialecticStore] Error saving contribution edit:', { errorDetails: response.error });
+        set({ isSavingContributionEdit: false, saveContributionEditError: response.error });
+        return response;
+      } else {
+        const updatedContribution = response.data;
+        logger.info('[DialecticStore] Successfully saved contribution edit.', { contributionId: updatedContribution?.id });
+        
+        set(state => {
+          if (state.currentProjectDetail && state.currentProjectDetail.dialectic_sessions && updatedContribution) {
+            const sessionIndex = state.currentProjectDetail.dialectic_sessions.findIndex(
+              session => session.id === updatedContribution.session_id
+            );
+            if (sessionIndex !== -1) {
+              const session = state.currentProjectDetail.dialectic_sessions[sessionIndex];
+              if (session && session.dialectic_contributions) {
+                // Find the index of the ORIGINAL contribution that was edited
+                const contributionIndex = session.dialectic_contributions.findIndex(
+                  c => c.id === payload.originalContributionIdToEdit
+                );
+                if (contributionIndex !== -1) {
+                  // Replace the old contribution object with the new one from the API
+                  session.dialectic_contributions[contributionIndex] = updatedContribution;
+                }
+              }
+            }
+          }
+        });
+        
+        set({ isSavingContributionEdit: false, saveContributionEditError: null });
+        return response;
+      }
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while saving contribution edit',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error saving contribution edit:', { errorDetails: networkError });
+      set({ isSavingContributionEdit: false, saveContributionEditError: networkError });
+      return { data: undefined, error: networkError, status: 0 };
+    }
+  },
 
 	fetchAndSetCurrentSessionDetails: async (sessionId: string) => {
 		logger.info(
@@ -1503,66 +1738,47 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
 				},
 			);
 
-			set((state) => {
-				const updatedProjectDetail = state.currentProjectDetail;
-				let sessionWithContributions = fetchedSession; // Default to fetchedSession
+      set((state) => {
+        let sessionWithContributions = fetchedSession; // Default to fetchedSession
 
-				if (updatedProjectDetail && updatedProjectDetail.dialectic_sessions) {
-					const sessionIndex =
-						updatedProjectDetail.dialectic_sessions.findIndex(
-							(s) => s.id === fetchedSession.id,
-						);
-					if (sessionIndex !== -1) {
-						const existingSessionData =
-							updatedProjectDetail.dialectic_sessions[sessionIndex];
-						updatedProjectDetail.dialectic_sessions[sessionIndex] = {
-							...fetchedSession,
-							dialectic_contributions:
-								fetchedSession.dialectic_contributions ||
-								existingSessionData.dialectic_contributions ||
-								[],
-							feedback:
-								fetchedSession.feedback || existingSessionData.feedback || [],
-							dialectic_session_models:
-								fetchedSession.dialectic_session_models ||
-								existingSessionData.dialectic_session_models ||
-								[],
-						};
-						// After merging, this is the session we want for activeSessionDetail
-						sessionWithContributions =
-							updatedProjectDetail.dialectic_sessions[sessionIndex];
-					} else {
-						// Session not found in current project, add it.
-						// Ensure the pushed session has at least an empty contributions array if not present.
-						const sessionToAdd = {
-							...fetchedSession,
-							dialectic_contributions:
-								fetchedSession.dialectic_contributions || [],
-							feedback: fetchedSession.feedback || [],
-							dialectic_session_models:
-								fetchedSession.dialectic_session_models || [],
-						};
-						updatedProjectDetail.dialectic_sessions.push(sessionToAdd);
-						sessionWithContributions = sessionToAdd;
-					}
-				}
+        if (state.currentProjectDetail && state.currentProjectDetail.dialectic_sessions) {
+          const sessionIndex = state.currentProjectDetail.dialectic_sessions.findIndex(s => s.id === fetchedSession.id);
+          if (sessionIndex !== -1) {
+            const existingSessionData = state.currentProjectDetail.dialectic_sessions[sessionIndex];
+            const mergedSession = {
+              ...fetchedSession,
+              dialectic_contributions: fetchedSession.dialectic_contributions || existingSessionData.dialectic_contributions || [],
+              feedback: fetchedSession.feedback || existingSessionData.feedback || [],
+              dialectic_session_models: fetchedSession.dialectic_session_models || existingSessionData.dialectic_session_models || [],
+            };
+            state.currentProjectDetail.dialectic_sessions[sessionIndex] = mergedSession;
+            // After merging, this is the session we want for activeSessionDetail
+            sessionWithContributions = mergedSession; 
+          } else {
+            // Session not found in current project, add it. 
+            // Ensure the pushed session has at least an empty contributions array if not present.
+            const sessionToAdd = {
+                ...fetchedSession,
+                dialectic_contributions: fetchedSession.dialectic_contributions || [],
+                feedback: fetchedSession.feedback || [],
+                dialectic_session_models: fetchedSession.dialectic_session_models || [],
+            };
+            state.currentProjectDetail.dialectic_sessions.push(sessionToAdd);
+            sessionWithContributions = sessionToAdd;
+          }
+        }
 
-				return {
-					isLoadingActiveSessionDetail: false,
-					activeSessionDetailError: null,
-					activeSessionDetail: sessionWithContributions, // Use the potentially enriched session
-					currentProjectDetail: updatedProjectDetail
-						? { ...updatedProjectDetail }
-						: null,
-				};
-			});
-
-			// Set the active context including the stage
-			get().setActiveDialecticContext({
-				projectId: fetchedSession.project_id,
-				sessionId: fetchedSession.id,
-				stage: fetchedStageDetails, // This can be null, setActiveDialecticContext should handle it
-			});
+        state.isLoadingActiveSessionDetail = false;
+        state.activeSessionDetailError = null;
+        state.activeSessionDetail = sessionWithContributions; // Use the potentially enriched session
+      });
+      
+      // Set the active context including the stage
+      get().setActiveDialecticContext({
+        projectId: fetchedSession.project_id,
+        sessionId: fetchedSession.id,
+        stage: fetchedStageDetails, // This can be null, setActiveDialecticContext should handle it
+      });
 
 			// Set selected models based on the session
 			if (fetchedSession.selected_model_ids) {
@@ -1608,32 +1824,23 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
 			!state.currentProjectDetail ||
 			state.currentProjectDetail.id !== projectId;
 
-		if (needsProjectFetch) {
-			logger.info(
-				`[DialecticStore] Project context differs or not set. Fetching project details for ${projectId} before session.`,
-			);
-			await state.fetchDialecticProjectDetails(projectId);
-		}
+    if (needsProjectFetch) {
+      logger.info(`[DialecticStore] Project context differs or not set. Fetching project details for ${projectId} before session.`);
+      await state.fetchDialecticProjectDetails(projectId);
+    }
+    
+    if (!get().projectDetailError) {
+        logger.info(`[DialecticStore] Proceeding to fetch session details for ${sessionId}.`);
+        await get().fetchAndSetCurrentSessionDetails(sessionId);
 
-		logger.info(
-			`[DialecticStore] Proceeding to fetch session details for ${sessionId}.`,
-		);
-		await get().fetchAndSetCurrentSessionDetails(sessionId);
-
-		// After fetching, get the latest project detail to find the first stage
-		const finalProjectDetail = get().currentProjectDetail;
-		if (
-			finalProjectDetail &&
-			finalProjectDetail.dialectic_process_templates?.stages?.length
-		) {
-			const firstStageSlug =
-				finalProjectDetail.dialectic_process_templates.stages[0].slug;
-			logger.info(
-				`[DialecticStore] Setting initial active stage for deep link: ${firstStageSlug}`,
-			);
-			get().setActiveStage(firstStageSlug);
-		}
-	},
+        const finalProjectDetail = get().currentProjectDetail;
+        if (finalProjectDetail && finalProjectDetail.dialectic_process_templates?.stages?.length) {
+            const firstStageSlug = finalProjectDetail.dialectic_process_templates.stages[0].slug;
+            logger.info(`[DialecticStore] Setting initial active stage for deep link: ${firstStageSlug}`);
+            get().setActiveStage(firstStageSlug);
+        }
+    }
+  },
 
 	// ADDED: Actions for fetching feedback file content
 	fetchFeedbackFileContent: async (payload: {
@@ -1711,8 +1918,8 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
 		set({ activeDialecticWalletId: walletId });
 	},
 
-	setActiveStage: (slug: string | null) => {
-		logger.info(`[DialecticStore] Setting active stage slug to: ${slug}`);
-		set({ activeStageSlug: slug });
-	},
-}));
+  setActiveStage: (slug: string | null) => {
+    logger.info(`[DialecticStore] Setting active stage slug to: ${slug}`);
+    set({ activeStageSlug: slug });
+  },
+})));

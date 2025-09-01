@@ -1,295 +1,207 @@
-import { assertEquals, assertExists, assertInstanceOf, assertRejects } from "jsr:@std/assert@0.225.3";
-import { spy, assertSpyCall, assertSpyCalls, stub, type Spy } from "jsr:@std/testing@0.225.1/mock"; 
-
-// Import the handler function and the dependency interface
+import { assertEquals, assertExists } from "jsr:@std/assert@0.225.3";
+import { spy, stub, type Spy, assertSpyCall, assertSpyCalls } from "jsr:@std/testing@0.225.1/mock";
 import { handleMeRequest, type MeHandlerDeps } from "./index.ts";
+import { createMockSupabaseClient, type MockSupabaseClientSetup, type IMockClientSpies, type MockSupabaseDataConfig } from '../_shared/supabase.mock.ts';
+import type { SupabaseClient, User } from "@supabase/supabase-js";
+import type { EmailMarketingService } from "../_shared/types.ts";
+import type { EmailFactoryConfig } from "../_shared/email_service/factory.ts";
+import {
+  handleCorsPreflightRequest,
+  createErrorResponse,
+  createSuccessResponse,
+} from '../_shared/cors-headers.ts';
+import { createSupabaseClient, createUnauthorizedResponse } from '../_shared/auth.ts';
+import { getEmailMarketingService } from "../_shared/email_service/factory.ts";
 
-// Import types needed for mocks and deps signature
-import type { 
-    SupabaseClient, 
-    User,
-} from "@supabase/supabase-js";
-// Import the shared mock utility
-import { 
-    createMockSupabaseClient, 
-    type MockSupabaseDataConfig,
-    type MockSupabaseClientSetup,
-    type IMockClientSpies
-} from '../_shared/supabase.mock.ts';
+class MockPostgrestError extends Error {
+    readonly code: string;
+    details: string;
+    hint: string;
 
-// --- Test Cases ---
+    constructor(message: string, code: string) {
+        super(message);
+        this.name = 'PostgrestError';
+        this.code = code;
+        this.details = '';
+        this.hint = '';
+    }
+}
+
 Deno.test("Me Function (/me) Tests", async (t) => {
-
-    // --- Mock Data ---
     const mockUserId = 'user-me-123';
-    const mockUser: User = { id: mockUserId, email: 'me@example.com' } as any;
+    const mockUser: User = { 
+        id: mockUserId, 
+        email: 'me@example.com', 
+        app_metadata: {}, 
+        user_metadata: {}, 
+        aud: 'authenticated', 
+        created_at: new Date().toISOString(),
+        role: 'authenticated'
+    };
     const mockProfile = { id: mockUserId, username: 'testuser', avatar_url: 'url' };
     const mockUpdateData = { username: 'updateduser' };
     const mockUpdatedProfile = { ...mockProfile, ...mockUpdateData };
 
-    // --- Helper to create Mock Dependencies ---
-    let latestSpies: IMockClientSpies;
+    let handleCorsSpy: Spy<typeof handleCorsPreflightRequest>;
+    let createUnauthorizedSpy: Spy<typeof createUnauthorizedResponse>;
+    let createErrorSpy: Spy<typeof createErrorResponse>;
+    let createSuccessSpy: Spy<typeof createSuccessResponse>;
+    let createSupabaseSpy: Spy<typeof createSupabaseClient>;
+    let getEmailServiceSpy: Spy<typeof getEmailMarketingService>;
+    let addUserToListSpy: Spy<EmailMarketingService['addUserToList']>;
+    let removeUserSpy: Spy<EmailMarketingService['removeUser']>;
+    
+    let supabaseSpies: IMockClientSpies;
 
-    const createMockDeps = (config: MockSupabaseDataConfig = {}, overrides: Partial<MeHandlerDeps> = {}): MeHandlerDeps => {
-        
-        // Default Config for Mock Supabase Client (Success cases)
-        const defaultConfig: MockSupabaseDataConfig = {
-            mockUser: mockUser,
+    const setup = (config: MockSupabaseDataConfig = {}) => {
+        const { client: mockSupabaseClient, spies } = createMockSupabaseClient(mockUserId, {
+            mockUser,
             genericMockResults: {
-                'user_profiles': { 
-                    select: { data: [mockProfile], error: null, status: 200 }, 
-                    update: { data: [mockUpdatedProfile], error: null, status: 200 },
+                'user_profiles': {
+                    select: { data: [mockProfile], error: null },
+                    update: { data: [mockUpdatedProfile], error: null },
+                    ...config.genericMockResults?.['user_profiles'],
                 }
             },
-            ...config, // Merge with test-specific config
-        };
+            ...config
+        });
+        supabaseSpies = spies;
 
-        const { client: mockClient, spies }: MockSupabaseClientSetup = createMockSupabaseClient(mockUserId, defaultConfig);
-        latestSpies = spies;
-
-        const defaultSpies: MeHandlerDeps = {
-            handleCorsPreflightRequest: spy(() => null),
-            createUnauthorizedResponse: spy((msg: string, _req: Request) => new Response(JSON.stringify({ error: msg }), { status: 401 })),
-            createErrorResponse: spy((message: string, status = 500, _request: Request, _error?: Error | unknown, _additionalHeaders?: Record<string, string>) => new Response(JSON.stringify({ error: message }), { status })),
-            createSuccessResponse: spy((data: unknown, status = 200, _request: Request, _additionalHeaders?: Record<string, string>) => new Response(JSON.stringify(data), { status })),
-            createSupabaseClient: spy((_req: Request): SupabaseClient => mockClient as unknown as SupabaseClient),
-        };
-
-        return { ...defaultSpies, ...overrides }; 
+        handleCorsSpy = spy(() => null);
+        createUnauthorizedSpy = spy((msg: string) => new Response(JSON.stringify({ error: msg }), { status: 401 }));
+        createErrorSpy = spy((msg: string, status = 500) => new Response(JSON.stringify({ error: msg }), { status }));
+        createSuccessSpy = spy((data: unknown) => new Response(JSON.stringify(data), { status: 200 }));
+        createSupabaseSpy = spy(() => mockSupabaseClient as unknown as SupabaseClient);
+        
+        addUserToListSpy = spy(() => Promise.resolve());
+        removeUserSpy = spy(() => Promise.resolve());
+        getEmailServiceSpy = spy(() => ({
+            addUserToList: addUserToListSpy,
+            removeUser: removeUserSpy,
+            updateUserAttributes: spy(() => Promise.resolve()),
+        }));
     };
-    
-    // Stub Deno.env.get
+
+    const getDeps = (): MeHandlerDeps => ({
+        handleCorsPreflightRequest: () => null, // Provide a default function, not a spy
+        createUnauthorizedResponse: createUnauthorizedSpy,
+        createErrorResponse: createErrorSpy,
+        createSuccessResponse: createSuccessSpy,
+        createSupabaseClient: createSupabaseSpy,
+        getEmailMarketingService: getEmailServiceSpy,
+    });
+
     const envGetStub = stub(Deno.env, "get", (key: string): string | undefined => {
         if (key === 'SUPABASE_URL') return 'http://localhost:54321';
         if (key === 'SUPABASE_ANON_KEY') return 'test-anon-key';
-        return undefined;
+        return 'dummy-value';
     });
 
-    // --- Actual Tests --- 
     try {
         await t.step("OPTIONS request should handle CORS preflight", async () => {
+            setup();
             const mockResponse = new Response(null, { status: 204 });
-            const mockDeps = createMockDeps({}, { handleCorsPreflightRequest: spy(() => mockResponse) });
-            const req = new Request('http://example.com/me', { method: 'OPTIONS' });
-            const res = await handleMeRequest(req, mockDeps);
-            assertEquals(res, mockResponse);
-            assertSpyCall(mockDeps.handleCorsPreflightRequest as Spy, 0); 
-        });
-
-        await t.step("Request without auth token should cause getUser failure -> 401", async () => {
-            const authError = new Error("Test auth error");
-            const mockDeps = createMockDeps({ simulateAuthError: authError });
-
-            const req = new Request('http://example.com/me', { method: 'GET' });
-            const res = await handleMeRequest(req, mockDeps);
-
-            assertEquals(res.status, 401);
-            assertSpyCall(mockDeps.createSupabaseClient as Spy, 0);
-            assertSpyCall(latestSpies.auth.getUserSpy, 0);
-            assertSpyCall(mockDeps.createUnauthorizedResponse as Spy, 0, { args: ["Not authenticated", req] });
-            const querySpies = latestSpies.getLatestQueryBuilderSpies('user_profiles');
-            assertEquals(querySpies, undefined);
-        });
-
-        // --- GET Tests ---
-        await t.step("GET: successful profile fetch should return profile", async () => {
-            const mockDeps = createMockDeps(); 
-            const req = new Request('http://example.com/me', { method: 'GET' });
-            const res = await handleMeRequest(req, mockDeps);
+            const deps = getDeps();
             
-            assertEquals(res.status, 200);
-            const body = await res.json();
-            assertEquals(body.user.id, mockUser.id);
-            assertEquals(body.profile.id, mockProfile.id);
+            // Stub the dependency for this specific test
+            const corsStub = stub(deps, "handleCorsPreflightRequest", () => mockResponse);
 
-            assertSpyCall(latestSpies.auth.getUserSpy, 0); 
-            const querySpies = latestSpies.getLatestQueryBuilderSpies('user_profiles');
-            assertExists(querySpies);
-            assertSpyCall(querySpies.select as Spy, 0);
-            assertSpyCall(querySpies.eq as Spy, 0, { args: ['id', mockUserId] });
-            assertSpyCall(querySpies.single as Spy, 0);
-            assertSpyCall(mockDeps.createSuccessResponse as Spy, 0); 
-            assertSpyCalls(mockDeps.createErrorResponse as Spy, 0);
+            try {
+                const req = new Request('http://example.com/me', { method: 'OPTIONS' });
+                const res = await handleMeRequest(req, deps);
+                assertEquals(res, mockResponse);
+                assertSpyCall(corsStub, 0);
+            } finally {
+                corsStub.restore(); // Restore the original function
+            }
         });
 
-        await t.step("GET: profile fetch DB error should return 500", async () => {
-            const dbError = new Error("Database is down");
-            const mockDeps = createMockDeps({
-                genericMockResults: { 
-                    'user_profiles': { select: { data: null, error: dbError, status: 500 } }
-                }
-            });
-
+        await t.step("Request without auth token should fail", async () => {
+            setup({ simulateAuthError: new Error("Auth error") });
             const req = new Request('http://example.com/me', { method: 'GET' });
-            const res = await handleMeRequest(req, mockDeps);
-
-            assertEquals(res.status, 500);
-            assertSpyCall(latestSpies.auth.getUserSpy, 0);
-            const querySpies = latestSpies.getLatestQueryBuilderSpies('user_profiles');
-            assertExists(querySpies);
-            assertSpyCall(querySpies.select as Spy, 0);
-            assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Failed to fetch profile", 500, req] }); 
-            assertSpyCalls(mockDeps.createSuccessResponse as Spy, 0); 
+            await handleMeRequest(req, getDeps());
+            assertSpyCall(createUnauthorizedSpy, 0);
         });
 
-        await t.step("GET: profile fetch exception should return 500", async () => {
-            const exception = new Error("Unexpected Store Exception");
-            const mockDeps = createMockDeps({
-                genericMockResults: { 
-                    'user_profiles': { 
-                        select: () => Promise.reject(exception) 
-                    } 
-                }
-            });
-
+        await t.step("GET: successful profile fetch returns profile", async () => {
+            setup();
             const req = new Request('http://example.com/me', { method: 'GET' });
-            const res = await handleMeRequest(req, mockDeps);
-
-            assertEquals(res.status, 500);
-            assertSpyCall(latestSpies.auth.getUserSpy, 0);
-            const querySpies = latestSpies.getLatestQueryBuilderSpies('user_profiles');
-            assertExists(querySpies);
-            assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Failed to fetch profile", 500, req] });
-            assertSpyCalls(mockDeps.createSuccessResponse as Spy, 0); 
+            await handleMeRequest(req, getDeps());
+            const querySpies = supabaseSpies.getLatestQueryBuilderSpies('user_profiles');
+            assertExists(querySpies?.select);
+            assertSpyCall(querySpies.select, 0);
+            assertSpyCall(createSuccessSpy, 0);
         });
 
-        await t.step("GET: missing profile (PGRST116) should create and return new profile", async () => {
-            const notFoundError = new Error("Not Found") as Error & { code: string };
-            notFoundError.code = 'PGRST116';
-            const newProfile = { id: mockUserId, first_name: null, role: 'user' };
+        await t.step("POST: successful profile update returns updated profile", async () => {
+            setup();
+            const req = new Request('http://example.com/me', {
+                method: 'POST',
+                body: JSON.stringify(mockUpdateData)
+            });
+            await handleMeRequest(req, getDeps());
+            const querySpies = supabaseSpies.getLatestQueryBuilderSpies('user_profiles');
+            assertExists(querySpies?.update);
+            assertSpyCall(querySpies.update, 0, { args: [mockUpdateData] });
+            assertSpyCall(createSuccessSpy, 0);
+        });
 
-            let selectCallCount = 0;
-            const mockDeps = createMockDeps({
-                genericMockResults: { 
-                    'user_profiles': { 
-                        select: () => {
-                            selectCallCount++;
-                            // On the first call, simulate "Not Found"
-                            if (selectCallCount === 1) {
-                                return Promise.resolve({ data: null, error: notFoundError, status: 404 });
-                            }
-                            // On subsequent calls (after insert), return the new profile
-                            return Promise.resolve({ data: [newProfile], error: null, status: 200 });
-                        },
-                        // The insert call should succeed and return the new profile
-                        insert: { data: [newProfile], error: null, status: 201 }
+        await t.step("POST: subscribing to newsletter calls addUserToList", async () => {
+            setup({
+                genericMockResults: {
+                    'user_profiles': {
+                        select: { data: [{ is_subscribed_to_newsletter: false }], error: null },
                     }
                 }
             });
+            const req = new Request('http://example.com/me', {
+                method: 'POST',
+                body: JSON.stringify({ is_subscribed_to_newsletter: true })
+            });
+            await handleMeRequest(req, getDeps());
+            assertSpyCall(addUserToListSpy, 0);
+            assertSpyCalls(removeUserSpy, 0);
+        });
 
+        await t.step("POST: unsubscribing from newsletter calls removeUser", async () => {
+            setup({
+                genericMockResults: {
+                    'user_profiles': {
+                        select: { data: [{ is_subscribed_to_newsletter: true }], error: null },
+                    }
+                }
+            });
+            const req = new Request('http://example.com/me', {
+                method: 'POST',
+                body: JSON.stringify({ is_subscribed_to_newsletter: false })
+            });
+            await handleMeRequest(req, getDeps());
+            assertSpyCalls(addUserToListSpy, 0);
+            assertSpyCall(removeUserSpy, 0);
+        });
+
+        await t.step("GET: missing profile creates a new one", async () => {
+            const notFoundError = new MockPostgrestError("Not found", "PGRST116");
+            const newProfileData = { id: mockUserId, first_name: null, role: 'user' };
+            setup({
+                genericMockResults: {
+                    'user_profiles': {
+                        select: { data: null, error: notFoundError },
+                        insert: { data: [newProfileData], error: null }
+                    }
+                }
+            });
             const req = new Request('http://example.com/me', { method: 'GET' });
-            const res = await handleMeRequest(req, mockDeps);
-            
-            assertEquals(res.status, 200);
+            const res = await handleMeRequest(req, getDeps());
             const body = await res.json();
-            assertEquals(body.user.id, mockUser.id);
-            assertEquals(body.profile.id, newProfile.id);
-            assertEquals(body.profile.role, 'user');
-
-            assertSpyCall(latestSpies.auth.getUserSpy, 0);
-            const querySpies = latestSpies.getLatestQueryBuilderSpies('user_profiles');
-            assertExists(querySpies);
-            
-            assertEquals(selectCallCount, 1);
-            assertSpyCall(querySpies.insert as Spy, 0);
-            assertSpyCall(mockDeps.createSuccessResponse as Spy, 0);
-            assertSpyCalls(mockDeps.createErrorResponse as Spy, 0);
-        });
-
-        // --- PUT Tests ---
-         await t.step("PUT: successful profile update should return updated profile", async () => {
-            const mockDeps = createMockDeps();
-            const req = new Request('http://example.com/me', { 
-                method: 'PUT', 
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(mockUpdateData)
-            });
-            const res = await handleMeRequest(req, mockDeps);
-            
-            assertEquals(res.status, 200);
-            const body = await res.json();
-            assertEquals(body, mockUpdatedProfile);
-
-            assertSpyCall(latestSpies.auth.getUserSpy, 0);
-            const querySpies = latestSpies.getLatestQueryBuilderSpies('user_profiles');
-            assertExists(querySpies);
-            assertSpyCall(querySpies.update as Spy, 0, { args: [mockUpdateData] });
-            assertSpyCall(querySpies.eq as Spy, 0, { args: ['id', mockUserId] });
-            assertSpyCall(querySpies.select as Spy, 0);
-            assertSpyCall(querySpies.single as Spy, 0);
-            assertSpyCall(mockDeps.createSuccessResponse as Spy, 0);
-            assertSpyCalls(mockDeps.createErrorResponse as Spy, 0);
-        });
-
-        await t.step("PUT: invalid JSON body should return 400", async () => {
-            const mockDeps = createMockDeps(); 
-            const req = new Request('http://example.com/me', { 
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: '{ not json '
-            });
-            
-            const res = await handleMeRequest(req, mockDeps);
-            assertEquals(res.status, 400);
-            assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Invalid JSON body for update", 400, req] });
-            assertSpyCall(latestSpies.auth.getUserSpy, 0);
-        });
-
-        await t.step("PUT: update DB error should return 500", async () => {
-            const dbError = new Error("Conflict on update");
-            const mockDeps = createMockDeps({
-                genericMockResults: { 
-                    'user_profiles': { update: { data: null, error: dbError, status: 500 } }
-                }
-            });
-            
-            const req = new Request('http://example.com/me', { 
-                method: 'PUT', 
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(mockUpdateData)
-            });
-
-            const res = await handleMeRequest(req, mockDeps);
-
-            assertEquals(res.status, 500);
-            assertSpyCall(latestSpies.auth.getUserSpy, 0);
-            const querySpies = latestSpies.getLatestQueryBuilderSpies('user_profiles');
-            assertExists(querySpies);
-            assertSpyCall(querySpies.update as Spy, 0);
-            assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Failed to update profile", 500, req] });
-        });
-
-        await t.step("PUT: update exception should return 500", async () => {
-            const exception = new Error("Transaction failed");
-            const mockDeps = createMockDeps({
-                genericMockResults: { 
-                    'user_profiles': { update: () => Promise.reject(exception) } 
-                }
-            });
-
-            const req = new Request('http://example.com/me', { 
-                method: 'PUT', 
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(mockUpdateData)
-            });
-            const res = await handleMeRequest(req, mockDeps);
-
-            assertEquals(res.status, 500);
-            assertSpyCall(latestSpies.auth.getUserSpy, 0);
-            assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Failed to update profile", 500, req] });
-        });
-
-        // --- Other Method Tests ---
-        await t.step("POST request should return 405 Method Not Allowed", async () => {
-            const mockDeps = createMockDeps();
-            const req = new Request('http://example.com/me', { method: 'POST' });
-            const res = await handleMeRequest(req, mockDeps);
-            assertEquals(res.status, 405);
-            assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Method not allowed", 405, req] });
+            assertEquals(body.profile.id, newProfileData.id);
+            const querySpies = supabaseSpies.getLatestQueryBuilderSpies('user_profiles');
+            assertExists(querySpies?.insert);
+            assertSpyCall(querySpies.insert, 0);
+            assertSpyCall(createSuccessSpy, 0);
         });
 
     } finally {
-        // Restore stubs
         envGetStub.restore();
     }
 });

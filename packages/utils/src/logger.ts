@@ -140,15 +140,18 @@ export class Logger {
   /**
    * Log an error message
    */
-  public error(message: string, metadata?: LogMetadata): void {
+  public error(message: string | Error, metadata?: LogMetadata): void {
     if (!this.shouldLog(LogLevel.ERROR)) return;
     
+    const errorMessage = message instanceof Error ? message.message : message;
+    const errorMetadata = message instanceof Error ? { ...metadata, stack: message.stack } : metadata;
+
     if (this.config.enableConsole) {
       // Pass metadata object separately if it exists
-      if (metadata) {
-        console.error(`[${new Date().toISOString()}] ${message}`, metadata);
+      if (errorMetadata) {
+        console.error(`[${new Date().toISOString()}] ${errorMessage}`, errorMetadata);
       } else {
-        console.error(`[${new Date().toISOString()}] ${message}`);
+        console.error(`[${new Date().toISOString()}] ${errorMessage}`);
       }
     }
   }

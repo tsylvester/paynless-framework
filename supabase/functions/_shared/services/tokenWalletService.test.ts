@@ -87,7 +87,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
       const tokenWalletService = new TokenWalletService(primaryUserClient, adminClient);
       
-      const testOrg = findProcessedResource(processedResources, 'testOrg');
+      const testOrg = findProcessedResource(processedResources, 'organizations', 'testOrg');
       assertExists(testOrg, "Test organization should have been created.");
       assertExists(testOrg.id, "Test organization ID should exist.");
 
@@ -161,7 +161,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
       const tokenWalletService = new TokenWalletService(primaryUserClient, adminClient);
       
-      const testOrg = findProcessedResource(processedResources, 'testOrg');
+      const testOrg = findProcessedResource(processedResources, 'organizations', 'testOrg');
       assertExists(testOrg, "Test organization should have been created.");
       assertExists(testOrg.id, "Test organization ID should exist.");
 
@@ -424,7 +424,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
         const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
         const tokenWalletService = new TokenWalletService(primaryUserClient, adminClient);
         
-        const testOrg = findProcessedResource(processedResources, 'testOrg');
+        const testOrg = findProcessedResource(processedResources, 'organizations', 'testOrg');
         assertExists(testOrg?.id, "Test organization should have been created with an ID.");
 
         // Get the org wallet via context to find its ID
@@ -481,7 +481,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
               "local"
             );
             
-            const orgResource = findProcessedResource(processedResources, "org");
+            const orgResource = findProcessedResource(processedResources, "organizations", "org");
             assertExists(orgResource?.id, "Organization should have been created with an ID.");
             orgId = orgResource.id;
 
@@ -637,7 +637,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
       const tokenWalletService = new TokenWalletService(primaryUserClient, adminClient);
 
-      const testOrg = findProcessedResource(processedResources, 'org');
+      const testOrg = findProcessedResource(processedResources, 'organizations', 'org');
       assertExists(testOrg?.id, "Test organization should have been created with an ID.");
 
       const wallet = await tokenWalletService.getWalletForContext(primaryUserId, testOrg.id);
@@ -696,7 +696,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       };
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
       const tokenWalletService = new TokenWalletService(primaryUserClient, adminClient);
-      const orgForRlsTest = findProcessedResource(processedResources, 'org');
+      const orgForRlsTest = findProcessedResource(processedResources, 'organizations', 'org');
       assertExists(orgForRlsTest?.id);
 
       const orgWallet = await tokenWalletService.getWalletForContext(primaryUserId!, orgForRlsTest.id);
@@ -739,7 +739,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
       const tokenWalletService = new TokenWalletService(primaryUserClient, adminClient);
 
-      const orgResource = findProcessedResource(processedResources, "org");
+      const orgResource = findProcessedResource(processedResources, "organizations", "org");
       assertExists(orgResource?.id, "Organization should have been created with an ID.");
 
       // First, get the user's personal wallet to confirm it has the distinct balance
@@ -823,7 +823,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       };
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
       const tokenWalletService = new TokenWalletService(primaryUserClient, adminClient);
-      const org = findProcessedResource(processedResources, 'org');
+      const org = findProcessedResource(processedResources, 'organizations', 'org');
       assertExists(org?.id);
       
       // Org wallet is created by trigger with 0 balance, we need to add funds.
@@ -864,7 +864,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       };
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
       const tokenWalletService = new TokenWalletService(primaryUserClient, adminClient);
-      const org = findProcessedResource(processedResources, 'org');
+      const org = findProcessedResource(processedResources, 'organizations', 'org');
       assertExists(org?.id);
 
       const orgWallet = await tokenWalletService.getWalletForContext(primaryUserId!, org.id);
@@ -923,7 +923,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       };
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
       const tokenWalletService = new TokenWalletService(primaryUserClient, adminClient);
-      const org = findProcessedResource(processedResources, 'org');
+      const org = findProcessedResource(processedResources, 'organizations', 'org');
       assertExists(org?.id);
 
       // Main user (admin) creates an org and its wallet
@@ -1018,7 +1018,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       };
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
       const tokenWalletService = new TokenWalletService(primaryUserClient, adminClient);
-      const org = findProcessedResource(processedResources, 'org');
+      const org = findProcessedResource(processedResources, 'organizations', 'org');
       assertExists(org?.id);
 
       // Main user (admin) creates an org and its wallet
@@ -1188,7 +1188,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       };
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
       const tokenWalletService = new TokenWalletService(primaryUserClient, adminClient);
-      const testOrg = findProcessedResource(processedResources, 'org');
+      const testOrg = findProcessedResource(processedResources, 'organizations', 'org');
       assertExists(testOrg?.id);
 
       const orgWallet = await tokenWalletService.getWalletForContext(primaryUserId, testOrg.id);
@@ -1382,7 +1382,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       };
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
       const tokenWalletService = new TokenWalletService(primaryUserClient, adminClient);
-      const org = findProcessedResource(processedResources, 'org');
+      const org = findProcessedResource(processedResources, 'organizations', 'org');
       assertExists(org?.id);
       
       const orgWallet = await tokenWalletService.getWalletForContext(primaryUserId, org.id);
@@ -1552,7 +1552,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
         }]
       }, 'local');
       const tokenWalletService = new TokenWalletService(primaryUserClient, adminClient);
-      const org = findProcessedResource(processedResources, 'org');
+      const org = findProcessedResource(processedResources, 'organizations', 'org');
       assertExists(org?.id);
 
       const orgWallet = await tokenWalletService.getWalletForContext(primaryUserId, org.id);
@@ -1617,7 +1617,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       };
       const { primaryUserId, primaryUserClient, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
       const tokenWalletService = new TokenWalletService(primaryUserClient, adminClient);
-      const org = findProcessedResource(processedResources, 'org');
+      const org = findProcessedResource(processedResources, 'organizations', 'org');
       assertExists(org?.id);
       
       const orgWallet = await tokenWalletService.getWalletForContext(primaryUserId, org.id); // Get the auto-created org wallet
@@ -1664,7 +1664,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
         ]
       };
       const { primaryUserId: adminId, adminClient, processedResources } = await coreInitializeTestStep(config, 'local');
-      const org = findProcessedResource(processedResources, 'org');
+      const org = findProcessedResource(processedResources, 'organizations', 'org');
       assertExists(org?.id);
 
       const adminService = new TokenWalletService(adminClient, adminClient);
