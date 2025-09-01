@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { create } from "zustand";
 import {
 	AiProvider,
 	SystemPrompt,
@@ -23,7 +23,7 @@ import {
 } from '@paynless/types' // IMPORT NECESSARY TYPES
 
 // Import api AFTER other local/utility imports but BEFORE code that might use types that cause issues with mocking
-import { api } from '@paynless/api'; // MOVED HERE
+import { api } from "@paynless/api"; // MOVED HERE
 
 import { logger } from '@paynless/utils';
 import { useAuthStore } from './authStore';
@@ -42,32 +42,36 @@ type ProfileFetchError = { userId: string; error: Error };
 
 // Use the imported AiStore type
 export const useAiStore = create<AiStore>()(
-    // devtools(
-        // immer(
-            (set, get) => {
-                // Re-add the runtime constant hack to ensure build passes - MOVED INSIDE
-                // @ts-expect-error HACK: Preserving Chat type for build until full store hydration or alternative fix.
-                        const _preserveChatType: Chat = {
-                            id: 'temp-build-fix',
-                            created_at: new Date().toISOString(),
-                            updated_at: new Date().toISOString(),
-                            organization_id: null,
-                            system_prompt_id: null,
-                            title: null,
-                            user_id: null,
-                            // Add other required fields from Chat type if necessary, matching their types
-                            // Example: is_active_in_thread: true // If Chat requires this
-                        };
-                // console.log('Using preserveChatType hack for build', !!preserveChatType); // Optional: keeping it commented for now to reduce side-effects further
+	// devtools(
+	// immer(
+	(set, get) => {
+		// Re-add the runtime constant hack to ensure build passes - MOVED INSIDE
+		// @ts-expect-error HACK: Preserving Chat type for build until full store hydration or alternative fix.
+		const _preserveChatType: Chat = {
+			id: "temp-build-fix",
+			created_at: new Date().toISOString(),
+			updated_at: new Date().toISOString(),
+			organization_id: null,
+			system_prompt_id: null,
+			title: null,
+			user_id: null,
+			// Add other required fields from Chat type if necessary, matching their types
+			// Example: is_active_in_thread: true // If Chat requires this
+		};
+		// console.log('Using preserveChatType hack for build', !!preserveChatType); // Optional: keeping it commented for now to reduce side-effects further
 
-                // --- Helper function to update chat context in user's profile ---
-                const _updateChatContextInProfile = async (contextUpdate: Partial<ChatContextPreferences>) => {
-                    try {
-                        const { profile, updateProfile } = useAuthStore.getState();
-                        if (!profile || !updateProfile) {
-                            logger.warn('[aiStore._updateChatContextInProfile] User profile or updateProfile action not available. Skipping update.');
-                            return;
-                        }
+		// --- Helper function to update chat context in user's profile ---
+		const _updateChatContextInProfile = async (
+			contextUpdate: Partial<ChatContextPreferences>,
+		) => {
+			try {
+				const { profile, updateProfile } = useAuthStore.getState();
+				if (!profile || !updateProfile) {
+					logger.warn(
+						"[aiStore._updateChatContextInProfile] User profile or updateProfile action not available. Skipping update.",
+					);
+					return;
+				}
 
                         let newChatContextState: ChatContextPreferences = { ...contextUpdate };
                         // Use a more direct type check that TypeScript can reliably analyze
@@ -78,38 +82,54 @@ export const useAiStore = create<AiStore>()(
                             };
                         }
 
-                        // Type the payload for updateProfile
-                        const profileUpdatePayload: UserProfileUpdate = {
-                            chat_context: newChatContextState
-                        };
+				// Type the payload for updateProfile
+				const profileUpdatePayload: UserProfileUpdate = {
+					chat_context: newChatContextState,
+				};
 
-                        logger.info('[aiStore._updateChatContextInProfile] Attempting to update chat_context in profile:', profileUpdatePayload);
-                        const result = await updateProfile(profileUpdatePayload);
+				logger.info(
+					"[aiStore._updateChatContextInProfile] Attempting to update chat_context in profile:",
+					profileUpdatePayload,
+				);
+				const result = await updateProfile(profileUpdatePayload);
 
-                        if (result) {
-                            logger.info('[aiStore._updateChatContextInProfile] Successfully updated chat_context in profile.');
-                        } else {
-                            // Error should be logged by updateProfile in authStore, but we can add context here
-                            logger.error('[aiStore._updateChatContextInProfile] Failed to update chat_context in profile. See authStore logs for details.');
-                        }
-                    } catch (error) {
-                        logger.error('[aiStore._updateChatContextInProfile] Error during chat_context update:', { error });
-                    }
-                };
+				if (result) {
+					logger.info(
+						"[aiStore._updateChatContextInProfile] Successfully updated chat_context in profile.",
+					);
+				} else {
+					// Error should be logged by updateProfile in authStore, but we can add context here
+					logger.error(
+						"[aiStore._updateChatContextInProfile] Failed to update chat_context in profile. See authStore logs for details.",
+					);
+				}
+			} catch (error) {
+				logger.error(
+					"[aiStore._updateChatContextInProfile] Error during chat_context update:",
+					{ error },
+				);
+			}
+		};
 
-                const _fetchAndStoreUserProfiles = async (userIds: string[]) => {
-                    const currentUser = useAuthStore.getState().user;
-                    const existingProfiles = get().chatParticipantsProfiles;
-                    
-                    const idsToFetch = userIds.filter(id => 
-                        id !== currentUser?.id && 
-                        !existingProfiles[id]
-                    );
+		const _fetchAndStoreUserProfiles = async (userIds: string[]) => {
+			const currentUser = useAuthStore.getState().user;
+			const existingProfiles = get().chatParticipantsProfiles;
 
-                    if (idsToFetch.length === 0) {
-                        logger.debug('[aiStore._fetchAndStoreUserProfiles] No new user profiles to fetch.', { requestedUserIds: userIds, currentUserId: currentUser?.id, existingProfileCount: Object.keys(existingProfiles).length });
-                        return;
-                    }
+			const idsToFetch = userIds.filter(
+				(id) => id !== currentUser?.id && !existingProfiles[id],
+			);
+
+			if (idsToFetch.length === 0) {
+				logger.debug(
+					"[aiStore._fetchAndStoreUserProfiles] No new user profiles to fetch.",
+					{
+						requestedUserIds: userIds,
+						currentUserId: currentUser?.id,
+						existingProfileCount: Object.keys(existingProfiles).length,
+					},
+				);
+				return;
+			}
 
                     logger.info('[aiStore._fetchAndStoreUserProfiles] Attempting to fetch profiles for user IDs:', { userIds: idsToFetch });
                     
@@ -119,9 +139,9 @@ export const useAiStore = create<AiStore>()(
                             .catch((error: Error): ProfileFetchError => ({ userId, error }))
                     );
 
-                    const results = await Promise.allSettled(profilePromises);
-                    const newProfilesMap: { [userId: string]: UserProfile } = {};
-                    let successfullyFetchedCount = 0;
+			const results = await Promise.allSettled(profilePromises);
+			const newProfilesMap: { [userId: string]: UserProfile } = {};
+			let successfullyFetchedCount = 0;
 
                     results.forEach(result => {
                         if (result.status === 'fulfilled') {
@@ -151,102 +171,133 @@ export const useAiStore = create<AiStore>()(
                         }
                     });
 
-                    if (successfullyFetchedCount > 0) {
-                        set(state => ({
-                            chatParticipantsProfiles: {
-                                ...state.chatParticipantsProfiles,
-                                ...newProfilesMap,
-                            }
-                        }));
-                        logger.info(`[aiStore._fetchAndStoreUserProfiles] Successfully fetched and stored ${successfullyFetchedCount} of ${idsToFetch.length} requested profiles.`, { fetchedUserIds: Object.keys(newProfilesMap) });
-                    } else {
-                        logger.warn('[aiStore._fetchAndStoreUserProfiles] No new profiles were successfully fetched.', { totalAttempted: idsToFetch.length });
-                    }
-                };
+			if (successfullyFetchedCount > 0) {
+				set((state) => ({
+					chatParticipantsProfiles: {
+						...state.chatParticipantsProfiles,
+						...newProfilesMap,
+					},
+				}));
+				logger.info(
+					`[aiStore._fetchAndStoreUserProfiles] Successfully fetched and stored ${successfullyFetchedCount} of ${idsToFetch.length} requested profiles.`,
+					{ fetchedUserIds: Object.keys(newProfilesMap) },
+				);
+			} else {
+				logger.warn(
+					"[aiStore._fetchAndStoreUserProfiles] No new profiles were successfully fetched.",
+					{ totalAttempted: idsToFetch.length },
+				);
+			}
+		};
 
-                // _addOptimisticUserMessage moved below to be part of the returned object
-                // addOptimisticMessageForReplay moved below to be part of the returned object
+		// _addOptimisticUserMessage moved below to be part of the returned object
+		// addOptimisticMessageForReplay moved below to be part of the returned object
 
-                return {
-                    // --- State Properties ---
-                    ...initialAiStateValues,
+		return {
+			// --- State Properties ---
+			...initialAiStateValues,
 
-                    // --- Selectors (Derived State) ---
-                    selectSelectedChatMessages: () => {
-                        const { messagesByChatId, currentChatId, selectedMessagesMap } = get();
-                        if (!currentChatId || !messagesByChatId[currentChatId]) {
-                            return [];
-                        }
-                        const currentSelections = selectedMessagesMap[currentChatId];
-                        if (!currentSelections) return [];
-                        return messagesByChatId[currentChatId].filter(msg => currentSelections[msg.id]);
-                    },
+			// --- Selectors (Derived State) ---
+			selectSelectedChatMessages: () => {
+				const { messagesByChatId, currentChatId, selectedMessagesMap } = get();
+				if (!currentChatId || !messagesByChatId[currentChatId]) {
+					return [];
+				}
+				const currentSelections = selectedMessagesMap[currentChatId];
+				if (!currentSelections) return [];
+				return messagesByChatId[currentChatId].filter(
+					(msg) => currentSelections[msg.id],
+				);
+			},
 
-                    // --- Internal Helper Actions (now part of the store interface) ---
-                    _updateChatContextInProfile, // Expose if needed by other actions/tests
-                    _fetchAndStoreUserProfiles,  // Expose if needed by other actions/tests
-                    
-                    _addOptimisticUserMessage: (msgContent: string, explicitChatId?: string | null): { tempId: string, chatIdUsed: string, createdTimestamp: string } => {
-                        const { currentChatId, newChatContext, messagesByChatId, selectedMessagesMap } = get();
-                        const { user: currentUser } = useAuthStore.getState();
-                        const createdTimestamp = new Date().toISOString();
-                        let chatIdUsed = explicitChatId || currentChatId;
-                        let isNewChat = false;
+			// --- Internal Helper Actions (now part of the store interface) ---
+			_updateChatContextInProfile, // Expose if needed by other actions/tests
+			_fetchAndStoreUserProfiles, // Expose if needed by other actions/tests
 
-                        if (!chatIdUsed) {
-                            isNewChat = true;
-                            // Determine if this is for an org or personal based on newChatContext
-                            // No longer need to check newChatContext for ID generation, just for logging if desired.
-                            chatIdUsed = crypto.randomUUID(); // Generate UUID for new chat
-                            logger.info('[aiStore._addOptimisticUserMessage] No explicit or current chatId, generated UUID for new chat:', { chatIdUsed, forOrgContext: newChatContext && newChatContext !== 'personal' });
-                        } else {
-                            logger.info('[aiStore._addOptimisticUserMessage] Using existing or explicit chatId:', { chatIdUsed });
-                        }
-                        
-                        const tempId = `optimistic-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-                        const optimisticMessage: ChatMessage = {
-                            id: tempId,
-                            chat_id: chatIdUsed,
-                            role: 'user',
-                            content: msgContent,
-                            created_at: createdTimestamp,
-                            updated_at: createdTimestamp,
-                            user_id: currentUser?.id || null, // Can be null if user is anonymous
-                            ai_provider_id: null,
-                            system_prompt_id: null,
-                            token_usage: null,
-                            is_active_in_thread: true,
-                            error_type: null,
-                            response_to_message_id: null,
-                        };
+			_addOptimisticUserMessage: (
+				msgContent: string,
+				explicitChatId?: string | null,
+			): { tempId: string; chatIdUsed: string; createdTimestamp: string } => {
+				const {
+					currentChatId,
+					newChatContext,
+					messagesByChatId,
+					selectedMessagesMap,
+				} = get();
+				const { user: currentUser } = useAuthStore.getState();
+				const createdTimestamp = new Date().toISOString();
+				let chatIdUsed = explicitChatId || currentChatId;
+				let isNewChat = false;
 
-                        const currentMessagesForChat = messagesByChatId[chatIdUsed] || [];
-                        const updatedMessagesForChat = [...currentMessagesForChat, optimisticMessage];
-                        
-                        const updatedMessagesByChatId = {
-                            ...messagesByChatId,
-                            [chatIdUsed]: updatedMessagesForChat,
-                        };
+				if (!chatIdUsed) {
+					isNewChat = true;
+					// Determine if this is for an org or personal based on newChatContext
+					// No longer need to check newChatContext for ID generation, just for logging if desired.
+					chatIdUsed = crypto.randomUUID(); // Generate UUID for new chat
+					logger.info(
+						"[aiStore._addOptimisticUserMessage] No explicit or current chatId, generated UUID for new chat:",
+						{
+							chatIdUsed,
+							forOrgContext: newChatContext && newChatContext !== "personal",
+						},
+					);
+				} else {
+					logger.info(
+						"[aiStore._addOptimisticUserMessage] Using existing or explicit chatId:",
+						{ chatIdUsed },
+					);
+				}
 
-                        // Automatically select the new optimistic message
-                        const updatedSelectedMessagesMap = {
-                            ...selectedMessagesMap,
-                            [chatIdUsed]: {
-                                ...(selectedMessagesMap[chatIdUsed] || {}),
-                                [tempId]: true,
-                            },
-                        };
+				const tempId = `optimistic-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+				const optimisticMessage: ChatMessage = {
+					id: tempId,
+					chat_id: chatIdUsed,
+					role: "user",
+					content: msgContent,
+					created_at: createdTimestamp,
+					updated_at: createdTimestamp,
+					user_id: currentUser?.id || null, // Can be null if user is anonymous
+					ai_provider_id: null,
+					system_prompt_id: null,
+					token_usage: null,
+					is_active_in_thread: true,
+					error_type: null,
+					response_to_message_id: null,
+				};
 
-                        set(state => ({
-                            messagesByChatId: updatedMessagesByChatId,
-                            selectedMessagesMap: updatedSelectedMessagesMap,
-                            currentChatId: isNewChat ? chatIdUsed : state.currentChatId,
-                            isLoadingAiResponse: true, // CORRECTED from isSending
-                            pendingAction: 'SEND_MESSAGE', // Store 'SEND_MESSAGE' when optimistically sending
-                        }));
-                        logger.info('[aiStore._addOptimisticUserMessage] Added optimistic user message:', { tempId, chatIdUsed, newChat: isNewChat });
-                        return { tempId, chatIdUsed, createdTimestamp };
-                    },
+				const currentMessagesForChat = messagesByChatId[chatIdUsed] || [];
+				const updatedMessagesForChat = [
+					...currentMessagesForChat,
+					optimisticMessage,
+				];
+
+				const updatedMessagesByChatId = {
+					...messagesByChatId,
+					[chatIdUsed]: updatedMessagesForChat,
+				};
+
+				// Automatically select the new optimistic message
+				const updatedSelectedMessagesMap = {
+					...selectedMessagesMap,
+					[chatIdUsed]: {
+						...(selectedMessagesMap[chatIdUsed] || {}),
+						[tempId]: true,
+					},
+				};
+
+				set((state) => ({
+					messagesByChatId: updatedMessagesByChatId,
+					selectedMessagesMap: updatedSelectedMessagesMap,
+					currentChatId: isNewChat ? chatIdUsed : state.currentChatId,
+					isLoadingAiResponse: true, // CORRECTED from isSending
+					pendingAction: "SEND_MESSAGE", // Store 'SEND_MESSAGE' when optimistically sending
+				}));
+				logger.info(
+					"[aiStore._addOptimisticUserMessage] Added optimistic user message:",
+					{ tempId, chatIdUsed, newChat: isNewChat },
+				);
+				return { tempId, chatIdUsed, createdTimestamp };
+			},
 
                     setContinueUntilComplete: (shouldContinue: boolean) => {
                         set({ continueUntilComplete: shouldContinue });
@@ -307,16 +358,20 @@ export const useAiStore = create<AiStore>()(
                                     logger.warn('[aiStore] Prompts response data is not in the expected array format.', { data: promptsResponse.data });
                                 }
 
-                                logger.info('[aiStore] Initial loadedProviders from API:', {
-                                    count: loadedProviders.length,
-                                    providerNames: loadedProviders.map(p => p.name) // Log names for brevity
-                                });
-                                logger.info(`[aiStore] Value of import.meta.env.MODE in loadAiConfig: "${import.meta.env.MODE}"`);
+						logger.info("[aiStore] Initial loadedProviders from API:", {
+							count: loadedProviders.length,
+							providerNames: loadedProviders.map((p) => p.name), // Log names for brevity
+						});
+						logger.info(
+							`[aiStore] Value of import.meta.env.MODE in loadAiConfig: "${import.meta.env.MODE}"`,
+						);
 
-                                // Filter out dummy providers if not in development mode
-                                if (import.meta.env.MODE !== 'development') {
-                                    logger.info(`[aiStore] MODE is "${import.meta.env.MODE}", attempting to filter dummy providers.`);
-                                    const originalProviderNames = loadedProviders.map(p => p.name); // For logging before filter
+						// Filter out dummy providers if not in development mode
+						if (import.meta.env.MODE !== "development") {
+							logger.info(
+								`[aiStore] MODE is "${import.meta.env.MODE}", attempting to filter dummy providers.`,
+							);
+							const originalProviderNames = loadedProviders.map((p) => p.name); // For logging before filter
 
                                     loadedProviders = loadedProviders.filter(provider => {
                                         const isDummy = provider.name && provider.name.toLowerCase().includes('dummy');
@@ -343,344 +398,430 @@ export const useAiStore = create<AiStore>()(
                                 });
                             }
 
-                            set({
-                                availableProviders: loadedProviders, 
-                                availablePrompts: loadedPrompts,   
-                                isConfigLoading: false,
-                                aiError: null
-                            });
-                            
-                            logger.info(`AI Config loaded successfully. Providers: ${loadedProviders.length}, Prompts: ${loadedPrompts.length}`);
-                        } catch (error: unknown) {
-                            const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred while loading AI configuration.';
-                            logger.error('Error loading AI config:', { error: errorMessage });
-                            set({
-                                availableProviders: [], 
-                                availablePrompts: [],  
-                                aiError: errorMessage,
-                                isConfigLoading: false,
-                            });
-                        }
-                    },
+					set({
+						availableProviders: loadedProviders,
+						availablePrompts: loadedPrompts,
+						isConfigLoading: false,
+						aiError: null,
+					});
 
-                    loadChatHistory: async (organizationId?: string | null) => {
-                        const contextKey = organizationId === null || organizationId === undefined ? 'personal' : organizationId;
-                        logger.info(`[aiStore.loadChatHistory] Loading history for context: ${contextKey}`);
+					logger.info(
+						`AI Config loaded successfully. Providers: ${loadedProviders.length}, Prompts: ${loadedPrompts.length}`,
+					);
+				} catch (error: unknown) {
+					const errorMessage =
+						error instanceof Error
+							? error.message
+							: "An unknown error occurred while loading AI configuration.";
+					logger.error("Error loading AI config:", { error: errorMessage });
+					set({
+						availableProviders: [],
+						availablePrompts: [],
+						aiError: errorMessage,
+						isConfigLoading: false,
+					});
+				}
+			},
 
-                        const { isLoadingHistoryByContext } = get();
-                        const isCurrentlyLoading = contextKey === 'personal'
-                            ? isLoadingHistoryByContext.personal
-                            : isLoadingHistoryByContext.orgs[contextKey];
+			loadChatHistory: async (organizationId?: string | null) => {
+				const contextKey =
+					organizationId === null || organizationId === undefined
+						? "personal"
+						: organizationId;
+				logger.info(
+					`[aiStore.loadChatHistory] Loading history for context: ${contextKey}`,
+				);
 
-                        if (isCurrentlyLoading) {
-                            logger.info(`[aiStore.loadChatHistory] History for context '${contextKey}' is already loading. Skipping.`);
-                            return;
-                        }
+				const { isLoadingHistoryByContext } = get();
+				const isCurrentlyLoading =
+					contextKey === "personal"
+						? isLoadingHistoryByContext.personal
+						: isLoadingHistoryByContext.orgs[contextKey];
 
-                        set(state => {
-                            const newIsLoading = {
-                                personal: state.isLoadingHistoryByContext.personal,
-                                orgs: { ...state.isLoadingHistoryByContext.orgs }
-                            };
-                            const newErrors = {
-                                personal: state.historyErrorByContext.personal,
-                                orgs: { ...state.historyErrorByContext.orgs }
-                            };
+				if (isCurrentlyLoading) {
+					logger.info(
+						`[aiStore.loadChatHistory] History for context '${contextKey}' is already loading. Skipping.`,
+					);
+					return;
+				}
 
-                            if (contextKey === 'personal') {
-                                newIsLoading.personal = true;
-                                newErrors.personal = null;
-                            } else {
-                                newIsLoading.orgs[contextKey] = true;
-                                newErrors.orgs[contextKey] = null;
-                            }
-                            return { 
-                                isLoadingHistoryByContext: newIsLoading,
-                                historyErrorByContext: newErrors,
-                            };
-                        });
+				set((state) => {
+					const newIsLoading = {
+						personal: state.isLoadingHistoryByContext.personal,
+						orgs: { ...state.isLoadingHistoryByContext.orgs },
+					};
+					const newErrors = {
+						personal: state.historyErrorByContext.personal,
+						orgs: { ...state.historyErrorByContext.orgs },
+					};
 
-                        try {
-                            const token = useAuthStore.getState().session?.access_token;
-                            if (!token) {
-                                throw new AuthRequiredError('Authentication required to fetch chat history.');
-                            }
+					if (contextKey === "personal") {
+						newIsLoading.personal = true;
+						newErrors.personal = null;
+					} else {
+						newIsLoading.orgs[contextKey] = true;
+						newErrors.orgs[contextKey] = null;
+					}
+					return {
+						isLoadingHistoryByContext: newIsLoading,
+						historyErrorByContext: newErrors,
+					};
+				});
 
-                            // The API client handles personal history when no orgId is passed.
-                            const response = (contextKey === 'personal' || !contextKey)
-                                ? await api.ai().getChatHistory(token)
-                                : await api.ai().getChatHistory(token, contextKey);
+				try {
+					const token = useAuthStore.getState().session?.access_token;
+					if (!token) {
+						throw new AuthRequiredError(
+							"Authentication required to fetch chat history.",
+						);
+					}
 
-                            if (response.error) {
-                                throw new Error(response.error.message || `Failed to fetch chat history for context: ${contextKey}`);
-                            }
+					// The API client handles personal history when no orgId is passed.
+					const response =
+						contextKey === "personal" || !contextKey
+							? await api.ai().getChatHistory(token)
+							: await api.ai().getChatHistory(token, contextKey);
 
-                            const sortedChats = response.data 
-                                ? [...response.data].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()) 
-                                : [];
+					if (response.error) {
+						throw new Error(
+							response.error.message ||
+								`Failed to fetch chat history for context: ${contextKey}`,
+						);
+					}
 
-                            logger.info(`[aiStore.loadChatHistory] Successfully fetched ${sortedChats.length} chats for context: ${contextKey}`);
+					const sortedChats = response.data
+						? [...response.data].sort(
+								(a, b) =>
+									new Date(b.updated_at).getTime() -
+									new Date(a.updated_at).getTime(),
+							)
+						: [];
 
-                            set(state => {
-                                const newChatsByContext = {
-                                    personal: state.chatsByContext.personal,
-                                    orgs: { ...state.chatsByContext.orgs }
-                                };
-                                const newIsLoading = {
-                                    personal: state.isLoadingHistoryByContext.personal,
-                                    orgs: { ...state.isLoadingHistoryByContext.orgs }
-                                };
+					logger.info(
+						`[aiStore.loadChatHistory] Successfully fetched ${sortedChats.length} chats for context: ${contextKey}`,
+					);
 
-                                if (contextKey === 'personal') {
-                                    newChatsByContext.personal = sortedChats;
-                                    newIsLoading.personal = false;
-                                } else {
-                                    newChatsByContext.orgs[contextKey] = sortedChats;
-                                    newIsLoading.orgs[contextKey] = false;
-                                }
+					set((state) => {
+						const newChatsByContext = {
+							personal: state.chatsByContext.personal,
+							orgs: { ...state.chatsByContext.orgs },
+						};
+						const newIsLoading = {
+							personal: state.isLoadingHistoryByContext.personal,
+							orgs: { ...state.isLoadingHistoryByContext.orgs },
+						};
 
-                                return {
-                                    chatsByContext: newChatsByContext,
-                                    isLoadingHistoryByContext: newIsLoading,
-                                };
-                            });
-                        } catch (error: unknown) {
-                            const errorMessage = error instanceof Error ? error.message : String(error);
-                            logger.error(`[aiStore.loadChatHistory] Error fetching history for context: ${contextKey}`, { error: errorMessage });
-                            set(state => {
-                                const newIsLoading = {
-                                    personal: state.isLoadingHistoryByContext.personal,
-                                    orgs: { ...state.isLoadingHistoryByContext.orgs }
-                                };
-                                const newErrors = {
-                                    personal: state.historyErrorByContext.personal,
-                                    orgs: { ...state.historyErrorByContext.orgs }
-                                };
+						if (contextKey === "personal") {
+							newChatsByContext.personal = sortedChats;
+							newIsLoading.personal = false;
+						} else {
+							newChatsByContext.orgs[contextKey] = sortedChats;
+							newIsLoading.orgs[contextKey] = false;
+						}
 
-                                if (contextKey === 'personal') {
-                                    newIsLoading.personal = false;
-                                    newErrors.personal = errorMessage;
-                                } else {
-                                    newIsLoading.orgs[contextKey] = false;
-                                    newErrors.orgs[contextKey] = errorMessage;
-                                }
-                                return {
-                                    isLoadingHistoryByContext: newIsLoading,
-                                    historyErrorByContext: newErrors,
-                                };
-                            });
-                        }
-                    },
+						return {
+							chatsByContext: newChatsByContext,
+							isLoadingHistoryByContext: newIsLoading,
+						};
+					});
+				} catch (error: unknown) {
+					const errorMessage =
+						error instanceof Error ? error.message : String(error);
+					logger.error(
+						`[aiStore.loadChatHistory] Error fetching history for context: ${contextKey}`,
+						{ error: errorMessage },
+					);
+					set((state) => {
+						const newIsLoading = {
+							personal: state.isLoadingHistoryByContext.personal,
+							orgs: { ...state.isLoadingHistoryByContext.orgs },
+						};
+						const newErrors = {
+							personal: state.historyErrorByContext.personal,
+							orgs: { ...state.historyErrorByContext.orgs },
+						};
 
-                    loadChatDetails: async (chatId) => {
-                        logger.info(`[aiStore] loadChatDetails called for chatId: ${chatId}`);
-                        if (!chatId) {
-                            logger.warn('[aiStore] loadChatDetails called with null or undefined chatId. Aborting.');
-                            set({ aiError: 'Cannot load details for an undefined chat.', isDetailsLoading: false });
-                            return;
-                        }
-                        set({ isDetailsLoading: true, aiError: null, currentChatId: chatId });
-                            const token = useAuthStore.getState().session?.access_token;
-                            if (!token) {
-                            set({ aiError: 'Authentication token not found.', isDetailsLoading: false });
-                            return;
-                        }
+						if (contextKey === "personal") {
+							newIsLoading.personal = false;
+							newErrors.personal = errorMessage;
+						} else {
+							newIsLoading.orgs[contextKey] = false;
+							newErrors.orgs[contextKey] = errorMessage;
+						}
+						return {
+							isLoadingHistoryByContext: newIsLoading,
+							historyErrorByContext: newErrors,
+						};
+					});
+				}
+			},
 
-                        try {
-                            // Find the organization ID by searching through all org chat lists for this chatId
-                            let orgId: string | null = null;
-                            const { chatsByContext, newChatContext, currentChatId } = get();
-                            
-                            // Search through all organization chat lists to find which org contains this chat
-                            for (const [orgIdKey, orgChats] of Object.entries(chatsByContext.orgs)) {
-                                if (orgChats && orgChats.some(chat => chat.id === chatId)) {
-                                    orgId = orgIdKey;
-                                    break;
-                                }
-                            }
-                            
-                            // Fallback: if this is the current chat and context is not personal, use newChatContext
-                            if (!orgId && currentChatId === chatId && newChatContext !== 'personal') {
-                                orgId = newChatContext;
-                            }
-                            
-                            logger.info(`[aiStore] Attempting to fetch chat details for chatId: ${chatId}, derived orgId: ${orgId}`);
+			loadChatDetails: async (chatId) => {
+				logger.info(`[aiStore] loadChatDetails called for chatId: ${chatId}`);
+				if (!chatId) {
+					logger.warn(
+						"[aiStore] loadChatDetails called with null or undefined chatId. Aborting.",
+					);
+					set({
+						aiError: "Cannot load details for an undefined chat.",
+						isDetailsLoading: false,
+					});
+					return;
+				}
+				set({ isDetailsLoading: true, aiError: null, currentChatId: chatId });
+				const token = useAuthStore.getState().session?.access_token;
+				if (!token) {
+					set({
+						aiError: "Authentication token not found.",
+						isDetailsLoading: false,
+					});
+					return;
+				}
 
+				try {
+					// Find the organization ID by searching through all org chat lists for this chatId
+					let orgId: string | null = null;
+					const { chatsByContext, newChatContext, currentChatId } = get();
 
-                            // const response = await api.ai.getChatWithMessages(chatId, token, orgId ?? undefined );
-                            // Corrected API call: Assuming getChatWithMessages might not need orgId if chatId is globally unique
-                            // or the backend derives context from chatId + user token.
-                            // The key is that `api.ai()` returns the client, then we call methods on it.
-                            const response = await api.ai().getChatWithMessages(chatId, token, orgId ?? undefined);
+					// Search through all organization chat lists to find which org contains this chat
+					for (const [orgIdKey, orgChats] of Object.entries(
+						chatsByContext.orgs,
+					)) {
+						if (orgChats && orgChats.some((chat) => chat.id === chatId)) {
+							orgId = orgIdKey;
+							break;
+						}
+					}
 
-                    
-                            if (response.error || !response.data) {
-                                throw new Error(response.error?.message || 'Failed to load chat messages.');
-                            }
-                            const { chat, messages } = response.data; // chat object is needed for updating context
+					// Fallback: if this is the current chat and context is not personal, use newChatContext
+					if (
+						!orgId &&
+						currentChatId === chatId &&
+						newChatContext !== "personal"
+					) {
+						orgId = newChatContext;
+					}
 
-                            set(state => {
-                                const newMessagesByChatId = {
-                                        ...state.messagesByChatId,
-                                        [chatId]: messages,
-                                };
+					logger.info(
+						`[aiStore] Attempting to fetch chat details for chatId: ${chatId}, derived orgId: ${orgId}`,
+					);
 
-                                // Select all loaded messages by default
-                                const newSelectedMessagesMap = { ...state.selectedMessagesMap };
-                                const selectionsForThisChat: { [messageId: string]: boolean } = {};
-                                messages.forEach(message => {
-                                    selectionsForThisChat[message.id] = true;
-                                });
-                                newSelectedMessagesMap[chatId] = selectionsForThisChat;
+					// const response = await api.ai.getChatWithMessages(chatId, token, orgId ?? undefined );
+					// Corrected API call: Assuming getChatWithMessages might not need orgId if chatId is globally unique
+					// or the backend derives context from chatId + user token.
+					// The key is that `api.ai()` returns the client, then we call methods on it.
+					const response = await api
+						.ai()
+						.getChatWithMessages(chatId, token, orgId ?? undefined);
 
-                                // Update chatsByContext to include this chat if not already present
-                                const newChatsByContext = { ...state.chatsByContext };
-                                if (chat.organization_id) {
-                                    // Organization chat
-                                    const orgId = chat.organization_id;
-                                    const orgChats = newChatsByContext.orgs[orgId] || [];
-                                    const chatExists = orgChats.some(existingChat => existingChat.id === chatId);
-                                    if (!chatExists) {
-                                        newChatsByContext.orgs = {
-                                            ...newChatsByContext.orgs,
-                                            [orgId]: [...orgChats, chat]
-                                        };
-                                    } else {
-                                        // Update existing chat with latest data
-                                        newChatsByContext.orgs = {
-                                            ...newChatsByContext.orgs,
-                                            [orgId]: orgChats.map(existingChat => 
-                                                existingChat.id === chatId ? chat : existingChat
-                                            )
-                                        };
-                                    }
-                                } else {
-                                    // Personal chat
-                                    const personalChats = newChatsByContext.personal || [];
-                                    const chatExists = personalChats.some(existingChat => existingChat.id === chatId);
-                                    if (!chatExists) {
-                                        newChatsByContext.personal = [...personalChats, chat];
-                                    } else {
-                                        // Update existing chat with latest data
-                                        newChatsByContext.personal = personalChats.map(existingChat => 
-                                            existingChat.id === chatId ? chat : existingChat
-                                        );
-                                    }
-                                }
+					if (response.error || !response.data) {
+						throw new Error(
+							response.error?.message || "Failed to load chat messages.",
+						);
+					}
+					const { chat, messages } = response.data; // chat object is needed for updating context
 
-                                return {
-                                    messagesByChatId: newMessagesByChatId,
-                                    selectedMessagesMap: newSelectedMessagesMap,
-                                    chatsByContext: newChatsByContext,
-                                    isDetailsLoading: false,
-                                    currentChatId: chatId, // Ensure currentChatId is set to the one being loaded
-                                    aiError: null,
-                                };
-                            });
-                            logger.info(`[aiStore] Successfully loaded and set ${messages.length} messages for chatId: ${chatId}. All are now selected.`);
+					set((state) => {
+						const newMessagesByChatId = {
+							...state.messagesByChatId,
+							[chatId]: messages,
+						};
 
-                        } catch (error) {
-                            const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
-                            logger.error(`[aiStore] Error loading chat details for chatId ${chatId}:`, { error: errorMessage });
-                            set({ aiError: `Failed to load messages for chat ${chatId}: ${errorMessage}`, isDetailsLoading: false });
-                        }
-                    },
+						// Select all loaded messages by default
+						const newSelectedMessagesMap = { ...state.selectedMessagesMap };
+						const selectionsForThisChat: { [messageId: string]: boolean } = {};
+						messages.forEach((message) => {
+							selectionsForThisChat[message.id] = true;
+						});
+						newSelectedMessagesMap[chatId] = selectionsForThisChat;
 
-                    startNewChat: (organizationId?: string | null) => {
-                        //const currentUser = useAuthStore.getState().user;
-                        //const currentTimestamp = Date.now(); // Keep for logging if needed, but not for ID
-                        // Ensure newChatContext is correctly set if organizationId is provided
-                        const contextForNewChat = organizationId || 'personal'; 
+						// Update chatsByContext to include this chat if not already present
+						const newChatsByContext = { ...state.chatsByContext };
+						if (chat.organization_id) {
+							// Organization chat
+							const orgId = chat.organization_id;
+							const orgChats = newChatsByContext.orgs[orgId] || [];
+							const chatExists = orgChats.some(
+								(existingChat) => existingChat.id === chatId,
+							);
+							if (!chatExists) {
+								newChatsByContext.orgs = {
+									...newChatsByContext.orgs,
+									[orgId]: [...orgChats, chat],
+								};
+							} else {
+								// Update existing chat with latest data
+								newChatsByContext.orgs = {
+									...newChatsByContext.orgs,
+									[orgId]: orgChats.map((existingChat) =>
+										existingChat.id === chatId ? chat : existingChat,
+									),
+								};
+							}
+						} else {
+							// Personal chat
+							const personalChats = newChatsByContext.personal || [];
+							const chatExists = personalChats.some(
+								(existingChat) => existingChat.id === chatId,
+							);
+							if (!chatExists) {
+								newChatsByContext.personal = [...personalChats, chat];
+							} else {
+								// Update existing chat with latest data
+								newChatsByContext.personal = personalChats.map(
+									(existingChat) =>
+										existingChat.id === chatId ? chat : existingChat,
+								);
+							}
+						}
 
-                        // Generate a UUID for the new chat.
-                        const newTempChatId = crypto.randomUUID();
+						return {
+							messagesByChatId: newMessagesByChatId,
+							selectedMessagesMap: newSelectedMessagesMap,
+							chatsByContext: newChatsByContext,
+							isDetailsLoading: false,
+							currentChatId: chatId, // Ensure currentChatId is set to the one being loaded
+							aiError: null,
+						};
+					});
+					logger.info(
+						`[aiStore] Successfully loaded and set ${messages.length} messages for chatId: ${chatId}. All are now selected.`,
+					);
+				} catch (error) {
+					const errorMessage =
+						error instanceof Error
+							? error.message
+							: "An unknown error occurred.";
+					logger.error(
+						`[aiStore] Error loading chat details for chatId ${chatId}:`,
+						{ error: errorMessage },
+					);
+					set({
+						aiError: `Failed to load messages for chat ${chatId}: ${errorMessage}`,
+						isDetailsLoading: false,
+					});
+				}
+			},
 
-                        logger.info(`[aiStore] startNewChat called. Org ID: ${organizationId}. New context: ${contextForNewChat}. New UUID chat ID: ${newTempChatId}`);
+			startNewChat: (organizationId?: string | null) => {
+				//const currentUser = useAuthStore.getState().user;
+				//const currentTimestamp = Date.now(); // Keep for logging if needed, but not for ID
+				// Ensure newChatContext is correctly set if organizationId is provided
+				const contextForNewChat = organizationId || "personal";
 
-                        set(state => {
-                            const newSelectedMessagesMap = { ...state.selectedMessagesMap };
-                            // Initialize/clear selections for the new temporary chat ID
-                            newSelectedMessagesMap[newTempChatId] = {};
+				// Generate a UUID for the new chat.
+				const newTempChatId = crypto.randomUUID();
 
-                            return {
-                                currentChatId: newTempChatId,
-                                messagesByChatId: {
-                                    ...state.messagesByChatId,
-                                    [newTempChatId]: [] // Initialize with empty messages array
-                                },
-                                selectedMessagesMap: newSelectedMessagesMap, // ADDED
-                            aiError: null,
-                                isDetailsLoading: false, 
-                            isLoadingAiResponse: false,
-                                newChatContext: contextForNewChat, // Set the context for the new chat
-                                rewindTargetMessageId: null, // Clear any rewind state
-                            };
-                        });
-                        logger.info(`[aiStore] New chat started. currentChatId is now ${newTempChatId}. Selections for it are cleared.`);
-                    },
+				logger.info(
+					`[aiStore] startNewChat called. Org ID: ${organizationId}. New context: ${contextForNewChat}. New UUID chat ID: ${newTempChatId}`,
+				);
 
-                    clearAiError: () => {
-                         // Use plain set without immer
-                         set({ aiError: null });
-                    },
-                    
-                    checkAndReplayPendingChatAction: async () => {
-                        logger.info('[aiStore] Checking for pending chat action...');
-                        const pendingActionJSON = localStorage.getItem('pendingAction');
-                        if (!pendingActionJSON) {
-                            logger.info('[aiStore] No pending action found.');
-                            return;
-                        }
+				set((state) => {
+					const newSelectedMessagesMap = { ...state.selectedMessagesMap };
+					// Initialize/clear selections for the new temporary chat ID
+					newSelectedMessagesMap[newTempChatId] = {};
 
-                        let pendingAction: PendingAction<ChatApiRequest> | null = null;
-                        try {
-                            pendingAction = JSON.parse(pendingActionJSON);
-                        } catch (e) {
-                            logger.error('[aiStore] Failed to parse pending action from localStorage.', { error: e });
-                            localStorage.removeItem('pendingAction'); // Clear invalid item
-                            return;
-                        }
+					return {
+						currentChatId: newTempChatId,
+						messagesByChatId: {
+							...state.messagesByChatId,
+							[newTempChatId]: [], // Initialize with empty messages array
+						},
+						selectedMessagesMap: newSelectedMessagesMap, // ADDED
+						aiError: null,
+						isDetailsLoading: false,
+						isLoadingAiResponse: false,
+						newChatContext: contextForNewChat, // Set the context for the new chat
+						rewindTargetMessageId: null, // Clear any rewind state
+					};
+				});
+				logger.info(
+					`[aiStore] New chat started. currentChatId is now ${newTempChatId}. Selections for it are cleared.`,
+				);
+			},
 
-                        if (!pendingAction || typeof pendingAction.body !== 'object' || pendingAction.body === null) {
-                            logger.error('[aiStore] Pending action is invalid or body is missing.', { action: pendingAction });
-                            localStorage.removeItem('pendingAction'); // Clear invalid item
-                            return;
-                        }
+			clearAiError: () => {
+				// Use plain set without immer
+				set({ aiError: null });
+			},
 
+			checkAndReplayPendingChatAction: async () => {
+				logger.info("[aiStore] Checking for pending chat action...");
+				const pendingActionJSON = localStorage.getItem("pendingAction");
+				if (!pendingActionJSON) {
+					logger.info("[aiStore] No pending action found.");
+					return;
+				}
 
-                        // Helper inside checkAndReplayPendingChatAction to add optimistic message for replay
-                        const addOptimisticMessageForReplay = (messageContent: string, existingChatId?: string | null): { tempId: string, chatIdForOptimistic: string } => {
-                            const tempId = `temp-user-${Date.now()}`;
-                            // If replaying for an existing chat, use its ID. Otherwise, create a temporary one.
-                            const chatIdForOptimistic = existingChatId || `temp-chat-replay-${Date.now()}`;
+				let pendingAction: PendingAction<ChatApiRequest> | null = null;
+				try {
+					pendingAction = JSON.parse(pendingActionJSON);
+				} catch (e) {
+					logger.error(
+						"[aiStore] Failed to parse pending action from localStorage.",
+						{ error: e },
+					);
+					localStorage.removeItem("pendingAction"); // Clear invalid item
+					return;
+				}
 
-                            const userMsg: ChatMessage = {
-                                id: tempId,
-                                chat_id: chatIdForOptimistic,
-                                user_id: useAuthStore.getState().user?.id || 'optimistic-user-replay',
-                                role: 'user',
-                                content: messageContent,
-                                ai_provider_id: null,
-                                system_prompt_id: null,
-                                token_usage: null,
-                                created_at: new Date(parseInt(tempId.split('-')[2])).toISOString(),
-                                is_active_in_thread: true,
-                                updated_at: new Date(parseInt(tempId.split('-')[2])).toISOString(),
-                                error_type: null,
-                                response_to_message_id: null,
-                            };
+				if (
+					!pendingAction ||
+					typeof pendingAction.body !== "object" ||
+					pendingAction.body === null
+				) {
+					logger.error(
+						"[aiStore] Pending action is invalid or body is missing.",
+						{ action: pendingAction },
+					);
+					localStorage.removeItem("pendingAction"); // Clear invalid item
+					return;
+				}
 
-                            set(state => ({
-                                messagesByChatId: {
-                                    ...state.messagesByChatId,
-                                    [chatIdForOptimistic]: [...(state.messagesByChatId[chatIdForOptimistic] || []), userMsg]
-                                },
-                                // Set currentChatId so selectors can pick up the optimistic message
-                                currentChatId: chatIdForOptimistic,
-                            }));
-                            logger.info('[aiStore] Added optimistic pending message for replay via helper.', { tempId, chatIdForOptimistic });
-                            return { tempId, chatIdForOptimistic };
-                        };
+				// Helper inside checkAndReplayPendingChatAction to add optimistic message for replay
+				const addOptimisticMessageForReplay = (
+					messageContent: string,
+					existingChatId?: string | null,
+				): { tempId: string; chatIdForOptimistic: string } => {
+					const tempId = `temp-user-${Date.now()}`;
+					// If replaying for an existing chat, use its ID. Otherwise, create a temporary one.
+					const chatIdForOptimistic =
+						existingChatId || `temp-chat-replay-${Date.now()}`;
+
+					const userMsg: ChatMessage = {
+						id: tempId,
+						chat_id: chatIdForOptimistic,
+						user_id:
+							useAuthStore.getState().user?.id || "optimistic-user-replay",
+						role: "user",
+						content: messageContent,
+						ai_provider_id: null,
+						system_prompt_id: null,
+						token_usage: null,
+						created_at: new Date(parseInt(tempId.split("-")[2])).toISOString(),
+						is_active_in_thread: true,
+						updated_at: new Date(parseInt(tempId.split("-")[2])).toISOString(),
+						error_type: null,
+						response_to_message_id: null,
+					};
+
+					set((state) => ({
+						messagesByChatId: {
+							...state.messagesByChatId,
+							[chatIdForOptimistic]: [
+								...(state.messagesByChatId[chatIdForOptimistic] || []),
+								userMsg,
+							],
+						},
+						// Set currentChatId so selectors can pick up the optimistic message
+						currentChatId: chatIdForOptimistic,
+					}));
+					logger.info(
+						"[aiStore] Added optimistic pending message for replay via helper.",
+						{ tempId, chatIdForOptimistic },
+					);
+					return { tempId, chatIdForOptimistic };
+				};
 
 
                         if (pendingAction.endpoint === 'chat' && pendingAction.method === 'POST' && typeof pendingAction.body === 'object' && pendingAction.body !== null) {
@@ -692,14 +833,19 @@ export const useAiStore = create<AiStore>()(
                                 return;
                             }
 
-                            logger.info('[aiStore] Pending chat action is valid and user authenticated. Processing...');
-                            set({ isLoadingAiResponse: true, aiError: null });
+					logger.info(
+						"[aiStore] Pending chat action is valid and user authenticated. Processing...",
+					);
+					set({ isLoadingAiResponse: true, aiError: null });
 
                             const messageContent = String(pendingAction.body['message'] || '');
                             // Pass the original chatId from the pending action body if it exists
                             const originalChatIdFromPendingAction = pendingAction.body['chatId'];
 
-                            const { tempId, chatIdForOptimistic } = addOptimisticMessageForReplay(messageContent, originalChatIdFromPendingAction);
+					const { tempId, chatIdForOptimistic } = addOptimisticMessageForReplay(
+						messageContent,
+						originalChatIdFromPendingAction,
+					);
 
                             try {   
                                 // Ensure the body sent to API matches ChatApiRequest, especially chatId
@@ -712,15 +858,18 @@ export const useAiStore = create<AiStore>()(
                                     // rewindFromMessageId is not typically part of a generic pending action replay for send.
                                 };
 
-                                const response: ApiResponse<ChatMessage> = await api.post( // Using baseApi.post
-                                    `/${pendingAction.endpoint}`, // Should be '/chat'
-                                    apiRequestBody,
-                                    { token }
-                                );
+						const response: ApiResponse<ChatMessage> = await api.post(
+							// Using baseApi.post
+							`/${pendingAction.endpoint}`, // Should be '/chat'
+							apiRequestBody,
+							{ token },
+						);
 
-                                if (response.error) {
-                                    throw new Error(response.error.message || 'API returned an error during replay');
-                                }
+						if (response.error) {
+							throw new Error(
+								response.error.message || "API returned an error during replay",
+							);
+						}
 
                                 if (response.data) {
                                     const assistantMessage = response.data;
@@ -801,101 +950,118 @@ export const useAiStore = create<AiStore>()(
                         }
                     },
 
-                    deleteChat: async (chatId: string, organizationId?: string | null) => {
-                        const token = useAuthStore.getState().session?.access_token;
-                        if (!token) {
-                            set({ aiError: 'Authentication token not found.' });
-                            return;
-                        }
+			deleteChat: async (chatId: string, organizationId?: string | null) => {
+				const token = useAuthStore.getState().session?.access_token;
+				if (!token) {
+					set({ aiError: "Authentication token not found." });
+					return;
+				}
 
-                        set({ aiError: null }); 
+				set({ aiError: null });
 
-                        try {
-                            const response = await api.ai().deleteChat(chatId, token, organizationId);
+				try {
+					const response = await api
+						.ai()
+						.deleteChat(chatId, token, organizationId);
 
-                            if (response.error) {
-                                throw new Error(response.error.message || 'Failed to delete chat');
-                            }
+					if (response.error) {
+						throw new Error(response.error.message || "Failed to delete chat");
+					}
 
-                            set(state => {
-                                const newMessagesByChatId = { ...state.messagesByChatId };
-                                delete newMessagesByChatId[chatId];
+					set((state) => {
+						const newMessagesByChatId = { ...state.messagesByChatId };
+						delete newMessagesByChatId[chatId];
 
-                                let newChatsByContext = { ...state.chatsByContext };
-                                if (organizationId) {
-                                    const orgChats = (state.chatsByContext.orgs[organizationId] || []).filter(c => c.id !== chatId);
-                                    newChatsByContext = {
-                                        ...newChatsByContext,
-                                        orgs: { ...newChatsByContext.orgs, [organizationId]: orgChats },
-                                    };
-                                } else {
-                                    const personalChats = (state.chatsByContext.personal || []).filter(c => c.id !== chatId);
-                                    newChatsByContext = {
-                                        ...newChatsByContext,
-                                        personal: personalChats,
-                                    };
-                                }
+						let newChatsByContext = { ...state.chatsByContext };
+						if (organizationId) {
+							const orgChats = (
+								state.chatsByContext.orgs[organizationId] || []
+							).filter((c) => c.id !== chatId);
+							newChatsByContext = {
+								...newChatsByContext,
+								orgs: { ...newChatsByContext.orgs, [organizationId]: orgChats },
+							};
+						} else {
+							const personalChats = (
+								state.chatsByContext.personal || []
+							).filter((c) => c.id !== chatId);
+							newChatsByContext = {
+								...newChatsByContext,
+								personal: personalChats,
+							};
+						}
 
-                                let newCurrentChatId = state.currentChatId;
-                                if (state.currentChatId === chatId) {
-                                    newCurrentChatId = null; 
-                                }
+						let newCurrentChatId = state.currentChatId;
+						if (state.currentChatId === chatId) {
+							newCurrentChatId = null;
+						}
 
-                                return {
-                                    ...state,
-                                    messagesByChatId: newMessagesByChatId,
-                                    chatsByContext: newChatsByContext,
-                                    currentChatId: newCurrentChatId,
-                                    aiError: null,
-                                };
-                            });
+						return {
+							...state,
+							messagesByChatId: newMessagesByChatId,
+							chatsByContext: newChatsByContext,
+							currentChatId: newCurrentChatId,
+							aiError: null,
+						};
+					});
 
-                            // Call startNewChat if the deleted chat was active and currentChatId was reset
-                            // This check ensures startNewChat is called only if the deletion was successful and current chat was indeed the one deleted.
-                            if (get().currentChatId === null && get().messagesByChatId[chatId] === undefined) { 
-                                get().startNewChat(null); 
-                            }
-                            
-                            // useAnalyticsStore.getState().trackEvent('chat_deleted', { chat_id: chatId, organization_id: organizationId });
-                            logger.info('Chat deleted successfully', { chatId, organizationId });
+					// Call startNewChat if the deleted chat was active and currentChatId was reset
+					// This check ensures startNewChat is called only if the deletion was successful and current chat was indeed the one deleted.
+					if (
+						get().currentChatId === null &&
+						get().messagesByChatId[chatId] === undefined
+					) {
+						get().startNewChat(null);
+					}
 
-                        } catch (error: unknown) {
-                            const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred while deleting the chat.';
-                            logger.error('Error deleting chat:', { chatId, organizationId, error: errorMessage });
-                            set({
-                                aiError: errorMessage,
-                            });
-                        }
-                    },
+					// useAnalyticsStore.getState().trackEvent('chat_deleted', { chat_id: chatId, organization_id: organizationId });
+					logger.info("Chat deleted successfully", { chatId, organizationId });
+				} catch (error: unknown) {
+					const errorMessage =
+						error instanceof Error
+							? error.message
+							: "An unexpected error occurred while deleting the chat.";
+					logger.error("Error deleting chat:", {
+						chatId,
+						organizationId,
+						error: errorMessage,
+					});
+					set({
+						aiError: errorMessage,
+					});
+				}
+			},
 
-                    prepareRewind: (messageId: string, chatId: string) => {
-                        set({
-                            rewindTargetMessageId: messageId,
-                            currentChatId: chatId, // Ensure the context is set to the chat being rewound
-                            aiError: null, // Clear any previous errors as we are starting a new action
-                        });
-                        logger.info(`[rewind] Prepared rewind for messageId: ${messageId} in chatId: ${chatId}`);
-                    },
+			prepareRewind: (messageId: string, chatId: string) => {
+				set({
+					rewindTargetMessageId: messageId,
+					currentChatId: chatId, // Ensure the context is set to the chat being rewound
+					aiError: null, // Clear any previous errors as we are starting a new action
+				});
+				logger.info(
+					`[rewind] Prepared rewind for messageId: ${messageId} in chatId: ${chatId}`,
+				);
+			},
 
-                    cancelRewindPreparation: () => {
-                        set({
-                            rewindTargetMessageId: null,
-                            // currentChatId remains as is, no need to change it here
-                        });
-                        logger.info('[rewind] Canceled rewind preparation.');
-                    },
+			cancelRewindPreparation: () => {
+				set({
+					rewindTargetMessageId: null,
+					// currentChatId remains as is, no need to change it here
+				});
+				logger.info("[rewind] Canceled rewind preparation.");
+			},
 
-                    setSelectedProvider: (providerId: string | null) => {
-                        set({ selectedProviderId: providerId });
-                        logger.info(`[aiStore] selectedProviderId set to: ${providerId}`);
-                        _updateChatContextInProfile({ selectedProviderId: providerId });
-                    },
-            
-                    setSelectedPrompt: (promptId: string | null) => {
-                        set({ selectedPromptId: promptId });
-                        logger.info(`[aiStore] selectedPromptId set to: ${promptId}`);
-                        _updateChatContextInProfile({ selectedPromptId: promptId });
-                    },
+			setSelectedProvider: (providerId: string | null) => {
+				set({ selectedProviderId: providerId });
+				logger.info(`[aiStore] selectedProviderId set to: ${providerId}`);
+				_updateChatContextInProfile({ selectedProviderId: providerId });
+			},
+
+			setSelectedPrompt: (promptId: string | null) => {
+				set({ selectedPromptId: promptId });
+				logger.info(`[aiStore] selectedPromptId set to: ${promptId}`);
+				_updateChatContextInProfile({ selectedPromptId: promptId });
+			},
 
                     // --- Hydration Actions ---
                     setChatContextHydrated: (hydrated: boolean) => {
@@ -932,96 +1098,105 @@ export const useAiStore = create<AiStore>()(
                         }));
                     },
 
-                    // --- Message Selection Actions ---
-                    toggleMessageSelection: (chatId: string, messageId: string) => {
-                        set(state => {
-                            const currentSelection = state.selectedMessagesMap[chatId]?.[messageId];
-                            // If undefined (not in map), it defaults to true. So, toggling an undefined (implicitly true) makes it false.
-                            // If true, toggling makes it false.
-                            // If false, toggling makes it true.
-                            // This means: if undefined or true, set to false. Else (if false), set to true.
-                            // Simplified: new state is !(currentSelection ?? true)
-                            // Let's follow the plan: "Toggles the boolean value ... Defaults to true if the message isn't in the map."
-                            // This should mean that if it's not in the map, the value to toggle *from* is effectively false for the purpose of map storage,
-                            // so the first toggle makes it true.
-                            // OR, it means the UI considers it true, and a toggle should make it false (explicitly in map).
-                            // The most straightforward interpretation of "Defaults to true if the message isn't in the map [for the toggle action itself]"
-                            // is that if it's not there, this action will add it as 'true'.
+			// --- Message Selection Actions ---
+			toggleMessageSelection: (chatId: string, messageId: string) => {
+				set((state) => {
+					const currentSelection =
+						state.selectedMessagesMap[chatId]?.[messageId];
+					// If undefined (not in map), it defaults to true. So, toggling an undefined (implicitly true) makes it false.
+					// If true, toggling makes it false.
+					// If false, toggling makes it true.
+					// This means: if undefined or true, set to false. Else (if false), set to true.
+					// Simplified: new state is !(currentSelection ?? true)
+					// Let's follow the plan: "Toggles the boolean value ... Defaults to true if the message isn't in the map."
+					// This should mean that if it's not in the map, the value to toggle *from* is effectively false for the purpose of map storage,
+					// so the first toggle makes it true.
+					// OR, it means the UI considers it true, and a toggle should make it false (explicitly in map).
+					// The most straightforward interpretation of "Defaults to true if the message isn't in the map [for the toggle action itself]"
+					// is that if it's not there, this action will add it as 'true'.
 
-                            const newSelectionState = currentSelection === undefined ? true : !currentSelection;
+					const newSelectionState =
+						currentSelection === undefined ? true : !currentSelection;
 
-                            return {
-                                selectedMessagesMap: {
-                                    ...state.selectedMessagesMap,
-                                    [chatId]: {
-                                        ...(state.selectedMessagesMap[chatId] || {}),
-                                        [messageId]: newSelectionState,
-                                    }
-                                }
-                            };
-                        });
-                    },
-                    
-                    selectAllMessages: (chatId: string) => {
-                        set(state => {
-                            const messagesForChat = state.messagesByChatId[chatId];
-                            // If no messages are loaded for the chat, we still might want to ensure the map is empty or non-existent for this chat
-                            // rather than doing nothing, to reflect a "select all" on an empty set.
-                            // However, the plan says "Iterates through messages for the given chatId (from messagesByChatId)"
-                            // So, if messagesForChat is undefined/empty, newSelectionsForChat will be empty.
-                            const newSelectionsForChat: { [messageId: string]: boolean } = {};
-                            if (messagesForChat) {
-                                for (const message of messagesForChat) {
-                                    newSelectionsForChat[message.id] = true;
-                                }
-                            }
-                    
-                            return {
-                                selectedMessagesMap: {
-                                    ...state.selectedMessagesMap,
-                                    [chatId]: newSelectionsForChat,
-                                }
-                            };
-                        });
-                    },
-                    
-                    deselectAllMessages: (chatId: string) => {
-                        set(state => {
-                            const messagesForChat = state.messagesByChatId[chatId];
-                            const newSelectionsForChat: { [messageId: string]: boolean } = {};
-                            if (messagesForChat) {
-                                for (const message of messagesForChat) {
-                                    newSelectionsForChat[message.id] = false;
-                                }
-                            }
-                            // If messagesForChat is empty, this will set an empty object for the chat's selections, effectively deselecting all.
-                    
-                            return {
-                                selectedMessagesMap: {
-                                    ...state.selectedMessagesMap,
-                                    [chatId]: newSelectionsForChat,
-                                }
-                            };
-                        });
-                    },
-                    
-                    clearMessageSelections: (chatId: string) => {
-                        set(state => {
-                            const newSelectedMessagesMap = { ...state.selectedMessagesMap };
-                            delete newSelectedMessagesMap[chatId];
-                            logger.info(`[aiStore] Cleared message selections for chat ID: ${chatId}`);
-                            return { selectedMessagesMap: newSelectedMessagesMap };
-                        });
-                    },
+					return {
+						selectedMessagesMap: {
+							...state.selectedMessagesMap,
+							[chatId]: {
+								...(state.selectedMessagesMap[chatId] || {}),
+								[messageId]: newSelectionState,
+							},
+						},
+					};
+				});
+			},
 
-                    // --- Test utility actions (consider moving to a separate test setup file if they grow) ---
-                    _dangerouslySetStateForTesting: (newState: Partial<AiState>) => {
-                        if (import.meta.env.MODE === 'test' || import.meta.env['NODE_ENV'] === 'test') {
-                            set(newState);
-                        } else {
-                            logger.warn('[aiStore._dangerouslySetStateForTesting] This function is only available in test environments.');
-                        }
-                    },
+			selectAllMessages: (chatId: string) => {
+				set((state) => {
+					const messagesForChat = state.messagesByChatId[chatId];
+					// If no messages are loaded for the chat, we still might want to ensure the map is empty or non-existent for this chat
+					// rather than doing nothing, to reflect a "select all" on an empty set.
+					// However, the plan says "Iterates through messages for the given chatId (from messagesByChatId)"
+					// So, if messagesForChat is undefined/empty, newSelectionsForChat will be empty.
+					const newSelectionsForChat: { [messageId: string]: boolean } = {};
+					if (messagesForChat) {
+						for (const message of messagesForChat) {
+							newSelectionsForChat[message.id] = true;
+						}
+					}
+
+					return {
+						selectedMessagesMap: {
+							...state.selectedMessagesMap,
+							[chatId]: newSelectionsForChat,
+						},
+					};
+				});
+			},
+
+			deselectAllMessages: (chatId: string) => {
+				set((state) => {
+					const messagesForChat = state.messagesByChatId[chatId];
+					const newSelectionsForChat: { [messageId: string]: boolean } = {};
+					if (messagesForChat) {
+						for (const message of messagesForChat) {
+							newSelectionsForChat[message.id] = false;
+						}
+					}
+					// If messagesForChat is empty, this will set an empty object for the chat's selections, effectively deselecting all.
+
+					return {
+						selectedMessagesMap: {
+							...state.selectedMessagesMap,
+							[chatId]: newSelectionsForChat,
+						},
+					};
+				});
+			},
+
+			clearMessageSelections: (chatId: string) => {
+				set((state) => {
+					const newSelectedMessagesMap = { ...state.selectedMessagesMap };
+					delete newSelectedMessagesMap[chatId];
+					logger.info(
+						`[aiStore] Cleared message selections for chat ID: ${chatId}`,
+					);
+					return { selectedMessagesMap: newSelectedMessagesMap };
+				});
+			},
+
+			// --- Test utility actions (consider moving to a separate test setup file if they grow) ---
+			_dangerouslySetStateForTesting: (newState: Partial<AiState>) => {
+				if (
+					import.meta.env.MODE === "test" ||
+					import.meta.env["NODE_ENV"] === "test"
+				) {
+					set(newState);
+				} else {
+					logger.warn(
+						"[aiStore._dangerouslySetStateForTesting] This function is only available in test environments.",
+					);
+				}
+			},
 
                     // SIMPLIFIED sendMessage ACTION
                     sendMessage: async (data: { message: string; providerId: string; promptId: string | null; chatId?: string | null; contextMessages?: Messages[] }) => {
@@ -1062,26 +1237,37 @@ export const useAiStore = create<AiStore>()(
                             logger: logger,
                         };
 
-                        const assistantMessage = await handleSendMessage(serviceParams);
+				const assistantMessage = await handleSendMessage(serviceParams);
 
-                        // --- Post-processing: Wallet Refresh (if needed) ---
-                        if (assistantMessage) { // Only refresh if send was successful
-                            try {
-                                const activeWalletInfo = walletServiceAdapter.getActiveWalletInfo(); // Get current info again
-                                logger.info('[aiStore sendMessage] Triggering wallet refresh after successful message.');
-                                if (activeWalletInfo.type === 'organization' && activeWalletInfo.orgId) {
-                                    useWalletStore.getState().loadOrganizationWallet(activeWalletInfo.orgId);
-                                } else {
-                                    useWalletStore.getState().loadPersonalWallet();
-                                }
-                            } catch (walletError) {
-                                logger.error('[aiStore sendMessage] Error triggering wallet refresh:', { error: String(walletError) });
-                            }
-                        }
-                        return assistantMessage; // Return the assistant message or null
-                    },
-                };
-            }
-        // )
-    // )
+				// --- Post-processing: Wallet Refresh (if needed) ---
+				if (assistantMessage) {
+					// Only refresh if send was successful
+					try {
+						const activeWalletInfo = walletServiceAdapter.getActiveWalletInfo(); // Get current info again
+						logger.info(
+							"[aiStore sendMessage] Triggering wallet refresh after successful message.",
+						);
+						if (
+							activeWalletInfo.type === "organization" &&
+							activeWalletInfo.orgId
+						) {
+							useWalletStore
+								.getState()
+								.loadOrganizationWallet(activeWalletInfo.orgId);
+						} else {
+							useWalletStore.getState().loadPersonalWallet();
+						}
+					} catch (walletError) {
+						logger.error(
+							"[aiStore sendMessage] Error triggering wallet refresh:",
+							{ error: String(walletError) },
+						);
+					}
+				}
+				return assistantMessage; // Return the assistant message or null
+			},
+		};
+	},
+	// )
+	// )
 );

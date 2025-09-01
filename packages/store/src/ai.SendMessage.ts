@@ -170,7 +170,8 @@ export async function handleSendMessage(
   const effectiveChatIdForApi = inputChatId ?? existingChatIdFromState ?? null;
   let organizationIdForApi: string | undefined | null = undefined;
   if (!effectiveChatIdForApi) {
-      organizationIdForApi = newChatContext;
+      // Only set organizationId if newChatContext is not 'personal' (which is not a valid UUID)
+      organizationIdForApi = newChatContext && newChatContext !== 'personal' ? newChatContext : undefined;
   } else if (activeWalletInfo.type === 'organization' && activeWalletInfo.orgId) {
       organizationIdForApi = activeWalletInfo.orgId;
   }
