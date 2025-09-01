@@ -50,7 +50,7 @@ This document outlines the current test coverage for the `/chat` Supabase Edge F
 
 ### B. `handlePostRequest` Function:
 
-*   **Critical Dependency Checks (`TokenWalletService`, `countTokensForMessages`):** **Covered** (implicitly by tests passing with these services injected).
+*   **Critical Dependency Checks (`TokenWalletService`, `countTokens`):** **Covered** (implicitly by tests passing with these services injected).
 *   **Input Validation (`ChatApiRequest` body):**
     *   `message` missing/invalid: **Covered** (`index.sendMessage.test.ts`).
     *   `providerId` missing/invalid: Missing case untested; invalid (DB lookup fail) **Covered**.

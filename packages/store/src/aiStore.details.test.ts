@@ -77,7 +77,8 @@ describe('aiStore - loadChatDetails', () => {
     initialAiStateValues = aiStoreModule.initialAiStateValues;
 
     // Reset store to initial data state before each test.
-    useAiStore.setState(initialAiStateValues);
+    // The `false` parameter ensures we MERGE the state, preserving the actions.
+    useAiStore.setState(initialAiStateValues, false);
 
     // Configure the mock for useAuthStore.getState() for each test
     mockAuthGetStateFn.mockReturnValue({

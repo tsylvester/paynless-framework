@@ -1,91 +1,95 @@
-import type { AiProviderAdapter, ILogger } from '../types.ts';
+import type { AiProviderAdapter, FactoryDependencies } from '../types.ts';
 import { OpenAiAdapter } from './openai_adapter.ts';
 import { AnthropicAdapter } from './anthropic_adapter.ts';
 import { GoogleAdapter } from './google_adapter.ts';
-import { DummyAdapter, type DummyAdapterConfig } from './dummy_adapter.ts';
-import type { Json } from '../../../functions/types_db.ts';
+import { DummyAdapter } from './dummy_adapter.ts';
+
+export const defaultProviderMap: Record<string, AiProviderAdapter> = {
+    'openai-': OpenAiAdapter,
+    'anthropic-': AnthropicAdapter,
+    'google-': GoogleAdapter,
+    'dummy-': DummyAdapter,
+};
+
+export const testProviderMap: Record<string, AiProviderAdapter> = {
+    'dummy': DummyAdapter,
+    'openai-': DummyAdapter,
+    'anthropic-': DummyAdapter,
+    'google-': DummyAdapter,
+};
+
+// Helper type for the adapter instance. An instance is the object returned by calling `new` on a constructable type.
+type AiProviderAdapterInstance = InstanceType<AiProviderAdapter>;
 /**
- * Factory function to get the appropriate AI provider adapter.
+ * Factory function to get the appropriate AI provider adapter instance.
  *
  * @param providerApiIdentifier - The API identifier of the provider (e.g., 'openai-gpt-4o', 'dummy-echo-v1').
- * @param providerDbConfig - The 'config' JSON object from the ai_providers table in the database.
- * @param apiKey - The API key for the specified provider (used for real providers).
- * @param logger - Optional logger instance.
- * @returns The corresponding AiProviderAdapter instance, or null if the provider is unknown or configuration is invalid.
+ * @param providerDbConfig - The 'config' JSON object from the ai_providers table.
+ * @param apiKey - The API key for the specified provider.
+ * @param logger - Logger instance.
+ * @param providerMap - A map of provider prefixes to their corresponding adapter classes.
+ * @returns The corresponding adapter instance, or null if the provider is unknown or configuration is invalid.
  */
 export function getAiProviderAdapter(
-    providerApiIdentifier: string,
-    providerDbConfig: Json | null,
-    apiKey: string,
-    logger?: ILogger
-): AiProviderAdapter | null {
-  const effectiveLogger = logger || {
-    debug: (message: string, metadata?: object) => console.debug(`[FactoryDefaultLogger/DEBUG] ${message}`, metadata || ''),
-    info:  (message: string, metadata?: object) => console.info(`[FactoryDefaultLogger/INFO] ${message}`, metadata || ''),
-    warn:  (message: string, metadata?: object) => console.warn(`[FactoryDefaultLogger/WARN] ${message}`, metadata || ''),
-    error: (message: string | Error, metadata?: object) => console.error(`[FactoryDefaultLogger/ERROR] ${message}`, metadata || ''),
-  } as ILogger;
+    dependencies: FactoryDependencies
+): AiProviderAdapterInstance | null {
 
-  const identifierLower = providerApiIdentifier.toLowerCase();
+    const { 
+        provider, 
+        apiKey, 
+        logger, 
+        providerMap,
+    } = dependencies;
 
-  if (identifierLower.startsWith('dummy-')) {
-    effectiveLogger.info(`[Factory] Attempting to create DummyAdapter for: ${providerApiIdentifier}`);
-
-    if (!providerDbConfig || typeof providerDbConfig !== 'object') {
-      effectiveLogger.error(`[Factory] CRITICAL: No database config (AiProvider.config) provided or not an object for dummy provider ${providerApiIdentifier}. DummyAdapter cannot be configured.`);
-      return null;
-    }
-
-    // Directly cast and use the database config.
-    // Perform runtime validation for key fields.
-    const adapterConfig = providerDbConfig as unknown as DummyAdapterConfig;
-
-    // Validate essential fields from the database config
-    if (!adapterConfig.mode) {
-      effectiveLogger.error(`[Factory] CRITICAL: 'mode' is missing in database config for dummy provider ${providerApiIdentifier}.`);
-      return null;
-    }
-    if (!adapterConfig.tokenization_strategy) {
-      effectiveLogger.error(`[Factory] CRITICAL: 'tokenization_strategy' is missing in database config for dummy provider ${providerApiIdentifier}.`);
-      return null;
-    }
+    const identifierLower = provider.api_identifier.toLowerCase();
     
-    // Ensure modelId is set, defaulting to providerApiIdentifier if not in config
-    // This is a reasonable default as the identifier itself can serve as the modelId for dummy adapters.
-    if (!adapterConfig.modelId) {
-      effectiveLogger.warn(`[Factory] 'modelId' missing in DB config for ${providerApiIdentifier}. Using api_identifier as fallback.`);
-      adapterConfig.modelId = providerApiIdentifier;
+    const isTestMode = (Deno.env.get('TEST_MODE') === 'true') || (Deno.env.get('VITE_TEST_MODE') === 'true');
+    const effectiveProviderMap: Record<string, AiProviderAdapter> = providerMap ?? (isTestMode ? testProviderMap : defaultProviderMap);
+
+    const providerPrefix = Object.keys(effectiveProviderMap).find(prefix => identifierLower.startsWith(prefix));
+
+    if (!providerPrefix) {
+        logger.warn(`[Factory] Unknown or unsupported AI provider api_identifier: ${provider.api_identifier}.`);
+        return null;
     }
 
-    // Apply defaults for optional numeric fields if not present
-    adapterConfig.tokensPerChar = adapterConfig.tokensPerChar ?? 0.25;
-    adapterConfig.basePromptTokens = adapterConfig.basePromptTokens ?? 10;
+    const AdapterClass = effectiveProviderMap[providerPrefix];
+    let providerToUse = provider;
 
-    // Validate fixedResponse if mode requires it
-    if (adapterConfig.mode === 'fixed_response' && (!adapterConfig.fixedResponse || typeof adapterConfig.fixedResponse.content !== 'string')) {
-         effectiveLogger.error(`[Factory] CRITICAL: mode is 'fixed_response' but 'fixedResponse.content' is missing or invalid in database config for ${providerApiIdentifier}.`);
-         return null;
+    // A real provider MUST have its configuration from the database.
+    if (!provider.config && providerPrefix !== 'dummy-') {
+        logger.error(`[Factory] AiModelExtendedConfig is required for real provider ${provider.api_identifier} but was not provided.`);
+        return null;
     }
 
-    effectiveLogger.info(`[Factory] Successfully configured DummyAdapter for ${providerApiIdentifier} using database config.`);
-    return new DummyAdapter(adapterConfig, effectiveLogger);
-  }
+    // Enforce non-zero cost defaults: never create zero-cost configs.
+    if (!provider.config && providerPrefix === 'dummy-') {
+        logger.debug(`[Factory] Creating default config for DummyAdapter with 1:1 billing.`);
+        const defaultConfig = {
+            api_identifier: provider.api_identifier,
+            input_token_cost_rate: 1,
+            output_token_cost_rate: 1,
+            tokenization_strategy: { type: 'none' },
+        };
+        providerToUse = { ...provider, config: defaultConfig };
+    }
 
-  // Logic for real providers based on providerApiIdentifier prefix
-  if (identifierLower.startsWith('openai-')) {
-    effectiveLogger.info(`Creating OpenAI Adapter for ${providerApiIdentifier}`);
-    // Future: OpenAIAdapter could also use providerDbConfig for model-specific settings (e.g., context window from DB)
-    return new OpenAiAdapter(apiKey, effectiveLogger /*, providerDbConfig */);
-  }
-  if (identifierLower.startsWith('anthropic-')) {
-    effectiveLogger.info(`Creating Anthropic Adapter for ${providerApiIdentifier}`);
-    return new AnthropicAdapter(apiKey, effectiveLogger /*, providerDbConfig */);
-  }
-  if (identifierLower.startsWith('google-')) {
-    effectiveLogger.info(`Creating Google Adapter for ${providerApiIdentifier}`);
-    return new GoogleAdapter(apiKey, effectiveLogger /*, providerDbConfig */);
-  }
+    // Validate cost rates strictly > 0 for all providers
+    const cfg = providerToUse.config as unknown as { input_token_cost_rate?: unknown; output_token_cost_rate?: unknown } | undefined;
+    const inRate = cfg && typeof cfg.input_token_cost_rate === 'number' ? cfg.input_token_cost_rate : undefined;
+    const outRate = cfg && typeof cfg.output_token_cost_rate === 'number' ? cfg.output_token_cost_rate : undefined;
+    if (inRate === undefined || inRate < 0 || outRate === undefined || outRate <= 0) {
+        logger.error(`[Factory] Invalid token cost rates for ${provider.api_identifier}.`, { input_token_cost_rate: inRate, output_token_cost_rate: outRate });
+        return null;
+    }
 
-  effectiveLogger.warn(`[Factory] Unknown or unsupported AI provider api_identifier: ${providerApiIdentifier}.`);
-  return null;
-} 
+    logger.info(`Creating adapter for ${provider.api_identifier}`);
+
+    try {
+        const adapterInstance = new AdapterClass(providerToUse, apiKey, logger);
+        return adapterInstance;
+    } catch (error) {
+        logger.error(`[Factory] Failed to instantiate adapter for ${provider.api_identifier}`, { error: error instanceof Error ? error.message : String(error) });
+        return null;
+    }
+}

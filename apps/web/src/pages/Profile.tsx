@@ -2,12 +2,12 @@ import { useAuthStore } from '@paynless/store'
 import { EditName } from '../components/profile/EditName'
 import { EditEmail } from '../components/profile/EditEmail'
 import { ProfilePrivacySettingsCard } from '../components/profile/ProfilePrivacySettingsCard'
+import { NotificationSettingsCard } from '../components/profile/NotificationSettingsCard'
 import { WalletBalanceDisplay } from '../components/wallet/WalletBalanceDisplay'
 import ErrorBoundary from '../components/common/ErrorBoundary'
 import { CardSkeleton } from '../components/common/CardSkeleton'
 import { Card, CardHeader, CardContent, CardTitle } from '../components/ui/card'
 import { AlertTriangle } from 'lucide-react'
-import React from 'react'
 
 export function ProfilePage() {
   const {
@@ -154,6 +154,26 @@ export function ProfilePage() {
           }
         >
           <ProfilePrivacySettingsCard />
+        </ErrorBoundary>
+
+        <ErrorBoundary
+          fallback={
+            <Card className="w-full border-destructive bg-destructive/10">
+              <CardHeader>
+                <CardTitle className="flex items-center text-destructive text-lg">
+                  <AlertTriangle size={20} className="mr-2 shrink-0" />
+                  Error in Notification Settings
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-destructive/90 text-sm">
+                  This section could not be loaded. Please try refreshing.
+                </p>
+              </CardContent>
+            </Card>
+          }
+        >
+          <NotificationSettingsCard />
         </ErrorBoundary>
       </div>
     </div>

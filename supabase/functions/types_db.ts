@@ -42,6 +42,7 @@ export type Database = {
           description: string | null
           id: string
           is_active: boolean
+          is_default_embedding: boolean
           is_enabled: boolean
           name: string
           provider: string | null
@@ -54,6 +55,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_active?: boolean
+          is_default_embedding?: boolean
           is_enabled?: boolean
           name: string
           provider?: string | null
@@ -66,6 +68,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_active?: boolean
+          is_default_embedding?: boolean
           is_enabled?: boolean
           name?: string
           provider?: string | null
@@ -76,7 +79,7 @@ export type Database = {
       chat_messages: {
         Row: {
           ai_provider_id: string | null
-          chat_id: string
+          chat_id: string | null
           content: string
           created_at: string
           error_type: string | null
@@ -91,7 +94,7 @@ export type Database = {
         }
         Insert: {
           ai_provider_id?: string | null
-          chat_id: string
+          chat_id?: string | null
           content: string
           created_at?: string
           error_type?: string | null
@@ -106,7 +109,7 @@ export type Database = {
         }
         Update: {
           ai_provider_id?: string | null
-          chat_id?: string
+          chat_id?: string | null
           content?: string
           created_at?: string
           error_type?: string | null
@@ -227,6 +230,7 @@ export type Database = {
           citations: Json | null
           contribution_type: string | null
           created_at: string
+          document_relationships: Json | null
           edit_version: number
           error: string | null
           file_name: string | null
@@ -256,6 +260,7 @@ export type Database = {
           citations?: Json | null
           contribution_type?: string | null
           created_at?: string
+          document_relationships?: Json | null
           edit_version?: number
           error?: string | null
           file_name?: string | null
@@ -285,6 +290,7 @@ export type Database = {
           citations?: Json | null
           contribution_type?: string | null
           created_at?: string
+          document_relationships?: Json | null
           edit_version?: number
           error?: string | null
           file_name?: string | null
@@ -451,6 +457,143 @@ export type Database = {
             columns: ["session_id"]
             isOneToOne: false
             referencedRelation: "dialectic_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_generation_jobs: {
+        Row: {
+          attempt_count: number
+          completed_at: string | null
+          created_at: string
+          error_details: Json | null
+          id: string
+          iteration_number: number
+          max_retries: number
+          parent_job_id: string | null
+          payload: Json
+          prerequisite_job_id: string | null
+          results: Json | null
+          session_id: string
+          stage_slug: string
+          started_at: string | null
+          status: string
+          target_contribution_id: string | null
+          user_id: string
+        }
+        Insert: {
+          attempt_count?: number
+          completed_at?: string | null
+          created_at?: string
+          error_details?: Json | null
+          id?: string
+          iteration_number: number
+          max_retries?: number
+          parent_job_id?: string | null
+          payload: Json
+          prerequisite_job_id?: string | null
+          results?: Json | null
+          session_id: string
+          stage_slug: string
+          started_at?: string | null
+          status?: string
+          target_contribution_id?: string | null
+          user_id: string
+        }
+        Update: {
+          attempt_count?: number
+          completed_at?: string | null
+          created_at?: string
+          error_details?: Json | null
+          id?: string
+          iteration_number?: number
+          max_retries?: number
+          parent_job_id?: string | null
+          payload?: Json
+          prerequisite_job_id?: string | null
+          results?: Json | null
+          session_id?: string
+          stage_slug?: string
+          started_at?: string | null
+          status?: string
+          target_contribution_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_generation_jobs_parent_job_id_fkey"
+            columns: ["parent_job_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_generation_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_generation_jobs_prerequisite_job_id_fkey"
+            columns: ["prerequisite_job_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_generation_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_generation_jobs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_generation_jobs_target_contribution_id_fkey"
+            columns: ["target_contribution_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_contributions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_memory: {
+        Row: {
+          content: string
+          created_at: string
+          embedding: string | null
+          fts: unknown | null
+          id: string
+          metadata: Json | null
+          session_id: string
+          source_contribution_id: string | null
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          embedding?: string | null
+          fts?: unknown | null
+          id?: string
+          metadata?: Json | null
+          session_id: string
+          source_contribution_id?: string | null
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          embedding?: string | null
+          fts?: unknown | null
+          id?: string
+          metadata?: Json | null
+          session_id?: string
+          source_contribution_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_memory_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_memory_source_contribution_id_fkey"
+            columns: ["source_contribution_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_contributions"
             referencedColumns: ["id"]
           },
         ]
@@ -761,6 +904,30 @@ export type Database = {
           },
         ]
       }
+      dialectic_trigger_logs: {
+        Row: {
+          created_at: string | null
+          error_details: string | null
+          id: number
+          job_id: string
+          log_message: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          error_details?: string | null
+          id?: number
+          job_id: string
+          log_message?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          error_details?: string | null
+          id?: number
+          job_id?: string
+          log_message?: string | null
+        }
+        Relationships: []
+      }
       domain_process_associations: {
         Row: {
           created_at: string
@@ -915,7 +1082,11 @@ export type Database = {
           created_at: string
           data: Json | null
           id: string
+          is_internal_event: boolean
+          link_path: string | null
+          message: string | null
           read: boolean
+          title: string | null
           type: string
           user_id: string
         }
@@ -923,7 +1094,11 @@ export type Database = {
           created_at?: string
           data?: Json | null
           id?: string
+          is_internal_event?: boolean
+          link_path?: string | null
+          message?: string | null
           read?: boolean
+          title?: string | null
           type: string
           user_id: string
         }
@@ -931,7 +1106,11 @@ export type Database = {
           created_at?: string
           data?: Json | null
           id?: string
+          is_internal_event?: boolean
+          link_path?: string | null
+          message?: string | null
           read?: boolean
+          title?: string | null
           type?: string
           user_id?: string
         }
@@ -1340,7 +1519,9 @@ export type Database = {
           chat_context: Json | null
           created_at: string
           first_name: string | null
+          has_seen_welcome_modal: boolean
           id: string
+          is_subscribed_to_newsletter: boolean
           last_name: string | null
           last_selected_org_id: string | null
           profile_privacy_setting: string
@@ -1351,7 +1532,9 @@ export type Database = {
           chat_context?: Json | null
           created_at?: string
           first_name?: string | null
+          has_seen_welcome_modal?: boolean
           id: string
+          is_subscribed_to_newsletter?: boolean
           last_name?: string | null
           last_selected_org_id?: string | null
           profile_privacy_setting?: string
@@ -1362,7 +1545,9 @@ export type Database = {
           chat_context?: Json | null
           created_at?: string
           first_name?: string | null
+          has_seen_welcome_modal?: boolean
           id?: string
+          is_subscribed_to_newsletter?: boolean
           last_name?: string | null
           last_selected_org_id?: string | null
           profile_privacy_setting?: string
@@ -1495,9 +1680,13 @@ export type Database = {
       }
       create_notification_for_user: {
         Args: {
-          target_user_id: string
-          notification_type: string
-          notification_data: Json
+          p_target_user_id: string
+          p_notification_type: string
+          p_notification_data: Json
+          p_title?: string
+          p_message?: string
+          p_link_path?: string
+          p_is_internal_event?: boolean
         }
         Returns: undefined
       }
@@ -1542,23 +1731,64 @@ export type Database = {
         }
         Returns: boolean
       }
-      perform_chat_rewind: {
+      match_dialectic_chunks: {
         Args: {
-          p_chat_id: string
-          p_rewind_from_message_id: string
-          p_user_id: string
-          p_new_user_message_content: string
-          p_new_user_message_ai_provider_id: string
-          p_new_assistant_message_content: string
-          p_new_assistant_message_ai_provider_id: string
-          p_new_user_message_system_prompt_id?: string
-          p_new_assistant_message_token_usage?: Json
-          p_new_assistant_message_system_prompt_id?: string
-          p_new_assistant_message_error_type?: string
+          query_embedding: string
+          query_text: string
+          match_threshold: number
+          match_count: number
+          session_id_filter: string
+          rrf_k?: number
         }
         Returns: {
-          new_user_message_id: string
-          new_assistant_message_id: string
+          id: string
+          content: string
+          metadata: Json
+          similarity: number
+          rank: number
+        }[]
+      }
+      perform_chat_rewind: {
+        Args:
+          | {
+              p_chat_id: string
+              p_rewind_from_message_id: string
+              p_user_id: string
+              p_new_user_message_content: string
+              p_new_user_message_ai_provider_id: string
+              p_new_assistant_message_content: string
+              p_new_assistant_message_ai_provider_id: string
+              p_new_user_message_system_prompt_id?: string
+              p_new_assistant_message_token_usage?: Json
+              p_new_assistant_message_system_prompt_id?: string
+              p_new_assistant_message_error_type?: string
+            }
+          | {
+              p_chat_id: string
+              p_rewind_from_message_id: string
+              p_user_id: string
+              p_new_user_message_id: string
+              p_new_user_message_content: string
+              p_new_user_message_ai_provider_id: string
+              p_new_user_message_system_prompt_id: string
+              p_new_assistant_message_id: string
+              p_new_assistant_message_content: string
+              p_new_assistant_message_token_usage: Json
+              p_new_assistant_message_ai_provider_id: string
+              p_new_assistant_message_system_prompt_id: string
+            }
+        Returns: {
+          id: string
+          chat_id: string
+          user_id: string
+          role: string
+          content: string
+          created_at: string
+          updated_at: string
+          is_active_in_thread: boolean
+          token_usage: Json
+          ai_provider_id: string
+          system_prompt_id: string
         }[]
       }
       record_token_transaction: {
@@ -1617,6 +1847,29 @@ export type Database = {
               p_error_details: string
               p_model_id: string
               p_contribution_type: string
+            }
+          | {
+              p_original_contribution_id: string
+              p_session_id: string
+              p_user_id: string
+              p_stage: string
+              p_iteration_number: number
+              p_storage_bucket: string
+              p_storage_path: string
+              p_mime_type: string
+              p_size_bytes: number
+              p_raw_response_storage_path: string
+              p_tokens_used_input: number
+              p_tokens_used_output: number
+              p_processing_time_ms: number
+              p_citations: Json
+              p_target_contribution_id: string
+              p_edit_version: number
+              p_is_latest_edit: boolean
+              p_original_model_contribution_id: string
+              p_error_details: string
+              p_contribution_type: string
+              p_model_id?: string
             }
           | {
               p_original_contribution_id: string

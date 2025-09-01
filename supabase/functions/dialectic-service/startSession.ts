@@ -1,39 +1,46 @@
 // deno-lint-ignore-file no-explicit-any
-import { 
-    StartSessionPayload, 
-    StartSessionSuccessResponse, 
+import {
+    StartSessionPayload,
+    StartSessionSuccessResponse,
 } from "./dialectic.interface.ts";
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import type { Database, Json } from "../types_db.ts";
 import { logger } from "../_shared/logger.ts";
 import type { ILogger } from "../_shared/types.ts";
 import { PromptAssembler } from "../_shared/prompt-assembler.ts";
-import { ProjectContext, StageContext, SessionContext } from "../_shared/prompt-assembler.interface.ts";
+import { ProjectContext, StageContext, SessionContext, IPromptAssembler } from "../_shared/prompt-assembler.interface.ts";
 import { FileManagerService } from "../_shared/services/file_manager.ts";
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts';
 import { formatResourceDescription } from '../_shared/utils/resourceDescriptionFormatter.ts';
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
 import { downloadFromStorage } from '../_shared/supabase_storage_utils.ts';
+import { IFileManager } from '../_shared/types/file_manager.types.ts';
+import { FileType } from "../_shared/types/file_manager.types.ts";
+import { FactoryDependencies, AiProviderAdapterInstance, AiProviderAdapter } from '../_shared/types.ts';
+import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
+import { defaultProviderMap } from '../_shared/ai_service/factory.ts';
 
 export interface StartSessionDeps {
-  randomUUID: () => string;
-  logger: ILogger;
-  fileManager: FileManagerService;
+    logger: ILogger;
+    fileManager: IFileManager;
+    promptAssembler: IPromptAssembler;
+    randomUUID: () => string;
+    getAiProviderAdapter: (deps: FactoryDependencies) => AiProviderAdapterInstance | null;
+    providerMap?: Record<string, AiProviderAdapter>;
+    embeddingApiKey?: string;
 }
+
 
 export async function startSession(
   user: User,
   dbClient: SupabaseClient<Database>,
   payload: StartSessionPayload,
-  partialDeps?: Partial<StartSessionDeps> 
+  partialDeps?: Partial<StartSessionDeps>
 ): Promise<{ data?: StartSessionSuccessResponse; error?: { message: string; status?: number; details?: string, code?: string } }> {
-    const deps: StartSessionDeps = { 
-        randomUUID: () => crypto.randomUUID(),
-        logger: logger,
-        fileManager: new FileManagerService(dbClient),
-        ...partialDeps 
-    };
-    const { randomUUID, logger: log, fileManager } = deps;
+    const log: ILogger = partialDeps?.logger || logger;
+    const fileManager: IFileManager = partialDeps?.fileManager || new FileManagerService(dbClient);
+    const randomUUID = partialDeps?.randomUUID || (() => crypto.randomUUID());
+    const getAiProviderAdapterDep = partialDeps?.getAiProviderAdapter || getAiProviderAdapter;
 
     log.info(`[startSession] Function started for user ${user.id} with payload projectId: ${payload.projectId}`);
 
@@ -56,7 +63,7 @@ export async function startSession(
         log.error(`[startSession] Project ${project.id} is missing a 'process_template_id'. Cannot start session.`);
         return { error: { message: "Project is not configured with a process template.", status: 400 } };
     }
-
+    
     // 1. Find the initial stage for the session.
     // If a stageSlug is provided, use it. Otherwise, find the template's entry point.
     let initialStageId: string | undefined;
@@ -202,9 +209,6 @@ export async function startSession(
 
     log.info(`[startSession] Determined initial stage: '${initialStageName}' (ID: ${initialStageId})`);
 
-    const associatedChatId = originatingChatId || randomUUID();
-    const descriptionForDb = sessionDescription?.trim() || `${project.project_name || 'Unnamed Project'} - New Session`;
-
     // Prepare prompt assembly context
     const { dialectic_domains, ...projectData } = project;
     const projectContext: ProjectContext = {
@@ -228,12 +232,41 @@ export async function startSession(
         log.error(`[startSession] Failed to get initial prompt content for project ${project.id}`, { error: initialPrompt.error });
         return { error: { message: initialPrompt.error || "Failed to retrieve initial prompt content.", status: 500 } };
     }
+    
+    // Fetch the model config for the default embedding model
+    const { data: embeddingProvider, error: providerError } = await dbClient
+        .from('ai_providers')
+        .select('*')
+        .eq('is_default_embedding', true)
+        .single();
+    if (providerError || !embeddingProvider) {
+        log.error('[startSession] Failed to fetch provider for OpenAI embedding model.', { error: providerError });
+        return { error: { message: "Configuration for embedding model not found.", status: 500 } };
+    }
+   
+    const assembler: IPromptAssembler = partialDeps?.promptAssembler || (() => {
+        const apiKey = partialDeps?.embeddingApiKey || Deno.env.get('OPENAI_API_KEY');
+        if (!apiKey) {
+            log.error('[startSession] OPENAI_API_KEY environment variable not set.');
+            throw new Error('Server configuration error: OPENAI_API_KEY is missing.');
+        }
 
-    const assembler = new PromptAssembler(dbClient);
+        const adapter = getAiProviderAdapterDep({
+           provider: embeddingProvider,
+           apiKey: apiKey,
+           logger: log,
+           providerMap: partialDeps?.providerMap || defaultProviderMap,
+        });
 
-    // Create a temporary SessionContext for the assembler, as the full session record isn't created yet.
-    // Or, create the session record earlier if assembler needs its actual ID.
-    // For now, using a partial context if assembler can handle it, or we create session first.
+        if (!adapter) {
+            log.error('[startSession] Failed to create AI adapter for embedding.', { providerId: embeddingProvider.id });
+            throw new Error('Failed to create AI adapter for embedding.');
+        }
+
+
+        return new PromptAssembler(dbClient, (bucket, path) => downloadFromStorage(dbClient, bucket, path));
+    })();
+
 
     // Create the session record first, so its ID and other details can be used by the assembler
     const sessionId = randomUUID();
@@ -270,7 +303,7 @@ export async function startSession(
         sessionContextForAssembler, 
         stageContext, 
         initialPrompt.content,
-        1 // Add iterationNumber for startSession
+        1
     );
 
     if (!assembledSeedPrompt) {
@@ -287,7 +320,7 @@ export async function startSession(
     const seedPromptUploadResult = await fileManager.uploadAndRegisterFile({
         pathContext: {
             projectId: project.id,
-            fileType: 'seed_prompt', 
+            fileType: FileType.SeedPrompt, 
             sessionId: newSessionRecord.id,
             iteration: 1,
             stageSlug: stageContext.slug,
@@ -329,4 +362,3 @@ export async function startSession(
 
     return { data: successResponse };
 }
-  

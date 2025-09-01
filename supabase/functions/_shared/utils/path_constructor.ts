@@ -1,4 +1,4 @@
-import type { PathContext } from '../types/file_manager.types.ts'
+import { FileType, type PathContext } from '../types/file_manager.types.ts';
 
 /**
  * Defines the structure for a constructed path, separating directory and filename.
@@ -10,7 +10,6 @@ export interface ConstructedPath {
 
 /**
  * Sanitizes a string to be used as a file or directory name.
- * Replaces spaces with underscores and converts to lowercase.
  * @param input The string to sanitize.
  * @returns The sanitized string.
  */
@@ -25,133 +24,174 @@ export function sanitizeForPath(input: string): string {
  * @returns A short identifier.
  */
 export function generateShortId(uuid: string, length: number = 8): string {
-  // Remove hyphens and take the first `length` characters.
-  // This is a simple approach; for more robust collision avoidance, consider other hashing/encoding.
   return uuid.replace(/-/g, '').substring(0, length);
 }
 
 /**
- * Maps a stage slug to its corresponding directory name as per the defined file structure.
- * @param stageSlug The lowercase slug of the stage (e.g., "thesis", "antithesis").
- * @returns The mapped directory name (e.g., "1_hypothesis") or the original slug if no mapping exists.
+ * Maps a stage slug to its corresponding directory name.
+ * @param stageSlug The lowercase slug of the stage.
+ * @returns The mapped directory name.
  */
 export function mapStageSlugToDirName(stageSlug: string): string {
   const lowerCaseSlug = stageSlug.toLowerCase();
   switch (lowerCaseSlug) {
-    case 'thesis':
-      return '1_thesis';
-    case 'antithesis':
-      return '2_antithesis';
-    case 'synthesis':
-      return '3_synthesis';
-    case 'parenthesis':
-      return '4_parenthesis';
-    case 'paralysis':
-      return '5_paralysis';
-    default:
-      // If the slug doesn't match a specific mapping, return it as is or handle as an error.
-      // For now, returning as is, assuming stageSlug might sometimes already be the dir name.
-      // Consider throwing an error if strict mapping is required:
-      // throw new Error(`Unknown stage slug for directory mapping: ${stageSlug}`);
-      return lowerCaseSlug; 
+    case 'thesis': return '1_thesis';
+    case 'antithesis': return '2_antithesis';
+    case 'synthesis': return '3_synthesis';
+    case 'parenthesis': return '4_parenthesis';
+    case 'paralysis': return '5_paralysis';
+    default: return lowerCaseSlug;
   }
 }
 
 /**
  * Constructs a deterministic storage path for a file based on its context.
- * This function is the single source of truth for all file paths in Supabase Storage,
- * aligning with the structure in "AI Dialectic Implementation Plan Phase 2.md".
- * @param context The context defining the file's place in the project structure.
- * @returns A relative path for the file within the Supabase Storage bucket.
  */
 export function constructStoragePath(context: PathContext): ConstructedPath {
   const {
     projectId,
     fileType,
-    originalFileName, // Optional in PathContext, validated per case
+    originalFileName,
     sessionId: rawSessionId,
     iteration,
     stageSlug: rawStageSlug,
     modelSlug: rawModelSlug,
     attemptCount,
+    contributionType,
+    sourceModelSlugs,
+    sourceAnchorType,
+    sourceAnchorModelSlug,
+    sourceAttemptCount,
+    pairedModelSlug,
+    isContinuation,
+    turnIndex,
   } = context;
 
   const projectRoot = projectId;
-
-  // Helper variables, compute only if relevant context exists
   const shortSessionId = rawSessionId ? generateShortId(rawSessionId) : undefined;
   const mappedStageDir = rawStageSlug ? mapStageSlugToDirName(rawStageSlug) : undefined;
+  const modelSlugSanitized = rawModelSlug ? sanitizeForPath(rawModelSlug) : undefined;
 
-  let basePathForStageFiles = "";
+  // This is the root path for all stage-related files.
+  // Specific subdirectories like `_work` or `raw_responses` will be appended later.
+  let stageRootPath = "";
   if (projectRoot && shortSessionId && iteration !== undefined && mappedStageDir) {
-    basePathForStageFiles = `${projectRoot}/sessions/${shortSessionId}/iteration_${iteration}/${mappedStageDir}`;
+    stageRootPath = `${projectRoot}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}`;
   }
 
+
+
   switch (fileType) {
-    case 'project_readme':
+    case FileType.ProjectReadme:
       return { storagePath: projectRoot, fileName: 'project_readme.md' };
-
-    case 'initial_user_prompt':
-      if (!originalFileName) {
-        throw new Error('originalFileName is required for initial_user_prompt file type.');
-      }
+    case FileType.MasterPlan:
+        return { storagePath: projectRoot, fileName: 'Master_Plan.md' };
+    case FileType.ProjectExportZip:
+        if (!originalFileName) throw new Error('originalFileName is required for project_export_zip.');
+        return { storagePath: projectRoot, fileName: sanitizeForPath(originalFileName) };
+    case FileType.PendingFile:
+        if (!originalFileName) throw new Error('originalFileName is required for pending_file.');
+        return { storagePath: `${projectRoot}/Pending`, fileName: sanitizeForPath(originalFileName) };
+    case FileType.CurrentFile:
+        if (!originalFileName) throw new Error('originalFileName is required for current_file.');
+        return { storagePath: `${projectRoot}/Current`, fileName: sanitizeForPath(originalFileName) };
+    case FileType.CompleteFile:
+        if (!originalFileName) throw new Error('originalFileName is required for complete_file.');
+        return { storagePath: `${projectRoot}/Complete`, fileName: sanitizeForPath(originalFileName) };
+    case FileType.InitialUserPrompt:
+      if (!originalFileName) throw new Error('originalFileName is required for initial_user_prompt.');
       return { storagePath: projectRoot, fileName: sanitizeForPath(originalFileName) };
-
-    case 'project_settings_file':
+    case FileType.ProjectSettingsFile:
       return { storagePath: projectRoot, fileName: 'project_settings.json' };
-
-    case 'general_resource':
-      if (!originalFileName) {
-        throw new Error('originalFileName is required for general_resource file type.');
-      }
+    case FileType.GeneralResource:
+      if (!originalFileName) throw new Error('originalFileName is required for general_resource.');
       return { storagePath: `${projectRoot}/general_resource`, fileName: sanitizeForPath(originalFileName) };
-    
-    // Session-specific 'user_prompt' and 'system_settings' (using 0_seed_inputs) are removed
-    // as they are not in the documented file tree.
-
-    case 'seed_prompt':
-      if (!basePathForStageFiles) { 
-        throw new Error('projectId, sessionId, iteration, and stageSlug are required for seed_prompt file type.');
-      }
-      return { storagePath: basePathForStageFiles, fileName: 'seed_prompt.md' };
-
-    case 'user_feedback':
-      if (!basePathForStageFiles || !rawStageSlug) { 
-        throw new Error('projectId, sessionId, iteration, and stageSlug are required for user_feedback file type.');
-      }
-      return { storagePath: basePathForStageFiles, fileName: `user_feedback_${sanitizeForPath(rawStageSlug)}.md` };
-
-    case 'model_contribution_main': {
-      if (!basePathForStageFiles || !rawModelSlug || !rawStageSlug || attemptCount === undefined || attemptCount === null) {
-        throw new Error('projectId, sessionId, iteration, stageSlug, modelSlug, and attemptCount are required for model_contribution_main.');
-      }
-      const modelSlugSanitized = sanitizeForPath(rawModelSlug);
-      const stageSlugSanitized = sanitizeForPath(rawStageSlug);
-      return { storagePath: basePathForStageFiles, fileName: `${modelSlugSanitized}_${attemptCount}_${stageSlugSanitized}.md` };
+    case FileType.SeedPrompt:
+      if (!stageRootPath) throw new Error('Base path context required for seed_prompt.');
+      return { storagePath: stageRootPath, fileName: 'seed_prompt.md' };
+    case FileType.UserFeedback:
+      if (!stageRootPath || !rawStageSlug) throw new Error('Base path context and stageSlug required for user_feedback.');
+      return { storagePath: stageRootPath, fileName: `user_feedback_${sanitizeForPath(rawStageSlug)}.md` };
+    case FileType.ContributionDocument: {
+      if (!stageRootPath || !originalFileName) throw new Error('Base path and originalFileName required for contribution_document.');
+      return { storagePath: `${stageRootPath}/documents`, fileName: sanitizeForPath(originalFileName) };
     }
 
-    case 'model_contribution_raw_json': {
-      if (!basePathForStageFiles || !rawModelSlug || !rawStageSlug || attemptCount === undefined || attemptCount === null) {
-        throw new Error('projectId, sessionId, iteration, stageSlug, modelSlug, and attemptCount are required for model_contribution_raw_json.');
-      }
-      const rawResponsesPath = `${basePathForStageFiles}/raw_responses`;
-      const modelSlugSanitizedRaw = sanitizeForPath(rawModelSlug);
-      const stageSlugSanitizedRaw = sanitizeForPath(rawStageSlug);
-      return { storagePath: rawResponsesPath, fileName: `${modelSlugSanitizedRaw}_${attemptCount}_${stageSlugSanitizedRaw}_raw.json` };
-    }
+    // --- All Model Contributions (Main, Raw, and Intermediate Types) ---
+    case FileType.ModelContributionMain:
+    case FileType.ModelContributionRawJson:
+    case FileType.PairwiseSynthesisChunk:
+    case FileType.ReducedSynthesis:
+    case FileType.Synthesis: {
+      // For fileType calls, infer contributionType.
+      const effectiveContributionType = contributionType ?? fileType;
+      const contributionTypeSanitized = sanitizeForPath(effectiveContributionType);
       
-    case 'contribution_document': {
-       if (!basePathForStageFiles || !originalFileName) {
-        throw new Error('projectId, sessionId, iteration, stageSlug, and originalFileName are required for contribution_document.');
+      // We must re-validate context with the now-known effectiveContributionType
+      if (!stageRootPath || !modelSlugSanitized || !contributionTypeSanitized || attemptCount === undefined) {
+        throw new Error('Required context missing for model contribution file.');
       }
-      return { storagePath: `${basePathForStageFiles}/documents`, fileName: sanitizeForPath(originalFileName) };
+
+      let baseFileName: string;
+      const suffix = fileType === FileType.ModelContributionRawJson ? '_raw.json' : '.md';
+
+      switch (effectiveContributionType) {
+        case 'antithesis':
+          if (!sourceModelSlugs || sourceModelSlugs.length !== 1 || !sourceAnchorType || sourceAttemptCount === undefined) {
+            throw new Error('Antithesis requires one sourceModelSlug, a sourceAnchorType, and a sourceAttemptCount.');
+          }
+          baseFileName = `${modelSlugSanitized}_critiquing_(${sanitizeForPath(sourceModelSlugs[0])}'s_${sanitizeForPath(sourceAnchorType)}_${sourceAttemptCount})_${attemptCount}_${contributionTypeSanitized}`;
+          break;
+        case FileType.PairwiseSynthesisChunk:
+          if (!sourceAnchorType || !sourceAnchorModelSlug || !pairedModelSlug) {
+            throw new Error('Required sourceAnchorType, sourceAnchorModelSlug, and pairedModelSlug missing for pairwise_synthesis_chunk.');
+          }
+          baseFileName = `${modelSlugSanitized}_synthesizing_${sanitizeForPath(sourceAnchorModelSlug)}_with_${sanitizeForPath(pairedModelSlug)}_on_${sanitizeForPath(sourceAnchorType)}_${attemptCount}_${contributionTypeSanitized}`;
+          break;
+        case FileType.ReducedSynthesis: {
+          if (!sourceAnchorType || !sourceAnchorModelSlug) {
+            throw new Error('Required sourceAnchorType and sourceAnchorModelSlug missing for reduced_synthesis.');
+          }
+          baseFileName = `${modelSlugSanitized}_reducing_${sanitizeForPath(sourceAnchorType)}_by_${sanitizeForPath(sourceAnchorModelSlug)}_${attemptCount}_${contributionTypeSanitized}`;
+          break;
+        }
+        default: // Covers thesis, synthesis, parenthesis, paralysis
+          baseFileName = `${modelSlugSanitized}_${attemptCount}_${contributionTypeSanitized}`;
+          break;
+      }
+      
+      const continuationSuffix = isContinuation ? `_continuation_${turnIndex}` : '';
+      const fileName = `${baseFileName}${continuationSuffix}${suffix}`;
+
+      let storagePath: string;
+      const isIntermediate = effectiveContributionType === FileType.PairwiseSynthesisChunk || effectiveContributionType === FileType.ReducedSynthesis;
+
+      if (isIntermediate || isContinuation) {
+        storagePath = (fileType === FileType.ModelContributionRawJson)
+          ? `${stageRootPath}/_work/raw_responses`
+          : `${stageRootPath}/_work`;
+      } else {
+        storagePath = (fileType === FileType.ModelContributionRawJson)
+          ? `${stageRootPath}/raw_responses`
+          : stageRootPath;
+      }
+
+      return { storagePath, fileName };
+    }
+
+    case FileType.RagContextSummary: {
+      if (!stageRootPath || !modelSlugSanitized || !sourceModelSlugs || sourceModelSlugs.length === 0) {
+        throw new Error('Required context missing for rag_context_summary.');
+      }
+      const sourceModelSlugsSanitized = [...sourceModelSlugs].sort().map(sanitizeForPath).join('_and_');
+      const fileName = `${modelSlugSanitized}_compressing_${sourceModelSlugsSanitized}_rag_summary.txt`;
+      return { storagePath: `${stageRootPath}/_work`, fileName };
     }
 
     default: {
-      // This will cause a compile-time error if fileType is not exhausted,
-      // ensuring all defined FileTypes are handled.
+      // This will cause a TypeScript error if any FileType is not handled.
       const _exhaustiveCheck: never = fileType;
       throw new Error(`Unhandled file type: ${_exhaustiveCheck}`);
     }
   }
-} 
+}

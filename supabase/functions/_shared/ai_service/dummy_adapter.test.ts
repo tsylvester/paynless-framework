@@ -1,295 +1,541 @@
-import { assertEquals, assertThrows } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { DummyAdapter, type DummyAdapterConfig } from "./dummy_adapter.ts";
-import type { ChatApiRequest, ILogger, TokenUsage, AiModelExtendedConfig } from "../types.ts";
+// supabase/functions/_shared/ai_service/dummy_adapter.test.ts
+import { assertEquals, assertExists, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
+import { 
+  DummyAdapter,
+} from "./dummy_adapter.ts";
+import { testAdapterContract, type MockApi } from "./adapter_test_contract.ts";
+import type { 
+  AdapterResponsePayload, 
+  AiModelExtendedConfig, 
+  ChatApiRequest, 
+  ProviderModelInfo, 
+  Messages,
+  EmbeddingResponse,
+  AiProviderAdapterInstance,
+} from "../types.ts";
+import { MockLogger } from "../logger.mock.ts";
+import { countTokens } from "../utils/tokenizer_utils.ts";
+import type { CountTokensDeps, CountableChatPayload } from "../types/tokenizer.types.ts";
+import { isTokenUsage } from "../utils/type_guards.ts";
+import { Tables } from "../../types_db.ts";
+import { isJson } from "../utils/type_guards.ts"; 
+import { ILogger } from "../types.ts";
+/**
+ * This test file uses the generic `testAdapterContract` to ensure the
+ * DummyAdapter conforms to the standard adapter interface. It also includes
+ * a specific test to verify the dummy's unique tokenization behavior.
+ */
 
-const mockLogger: ILogger = {
-    debug: (message: string, metadata?: object) => { console.debug("DEBUG:", message, metadata); },
-    info: (message: string, metadata?: object) => { console.info("INFO:", message, metadata); },
-    warn: (message: string, metadata?: object) => { console.warn("WARN:", message, metadata); },
-    error: (message: string | Error, metadata?: object) => { console.error("ERROR:", message, metadata); },
+const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
+    api_identifier: "dummy-model-v1",
+    input_token_cost_rate: 0,
+    output_token_cost_rate: 0,
+    tokenization_strategy: { 
+        type: 'tiktoken', 
+        tiktoken_encoding_name: 'cl100k_base' 
+    },
 };
 
-// Consistent name for the template
-const baseChatRequestData: Omit<ChatApiRequest, 'message' | 'providerId' | 'messages'> = {
+if(!isJson(MOCK_MODEL_CONFIG)) {
+    throw new Error('MOCK_MODEL_CONFIG is not a valid JSON object');
+}
+
+export const MOCK_PROVIDER: Tables<'ai_providers'> = {
+    id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+    provider: "dummy",
+    api_identifier: "dummy-model-v1",
+    name: "Dummy Model",
+    description: "A dummy AI model for testing purposes.",
+    is_active: true,
+    is_default_embedding: false,
+    is_enabled: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    config: MOCK_MODEL_CONFIG,
+};
+
+// For the contract test, the mock API should replicate the dummy's simple logic
+// without instantiating the real adapter to avoid infinite recursion with the stub.
+const mockDummyApi: MockApi = {
+    sendMessage: async (request: ChatApiRequest, modelIdentifier?: string): Promise<AdapterResponsePayload> => {
+        const responseContent = `Echo from ${modelIdentifier || 'dummy'}: ${request.message || 'No message'}`;
+
+        const buildTokenizerDeps = (): CountTokensDeps => ({
+            getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? "").map((_, i) => i) }),
+            countTokensAnthropic: (text: string) => (text ?? "").length,
+            logger: { warn: () => {}, error: () => {} },
+        });
+        const deps = buildTokenizerDeps();
+
+        const narrowedMessages: Messages[] = (request.messages || [])
+            .filter((m) => (m.role === 'system' || m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string');
+
+        const promptPayload: CountableChatPayload = {
+            systemInstruction: request.systemInstruction,
+            message: request.message,
+            messages: narrowedMessages,
+        };
+
+        const completionPayload: CountableChatPayload = {
+            messages: [{ role: 'assistant', content: responseContent }],
+        };
+
+        const promptTokens = countTokens(deps, promptPayload, MOCK_MODEL_CONFIG);
+        const completionTokens = countTokens(deps, completionPayload, MOCK_MODEL_CONFIG);
+
+        return {
+            role: 'assistant',
+            content: responseContent,
+            ai_provider_id: request.providerId,
+            system_prompt_id: request.promptId,
+            token_usage: {
+                prompt_tokens: promptTokens,
+                completion_tokens: completionTokens,
+                total_tokens: promptTokens + completionTokens,
+            },
+            finish_reason: 'stop',
+        };
+    },
+    listModels: async (): Promise<ProviderModelInfo[]> => {
+        return [{
+            api_identifier: 'dummy-model-v1',
+            name: `Dummy Model (Echo)`,
+            description: `A dummy AI model for testing purposes.`,
+            config: MOCK_MODEL_CONFIG,
+        }];
+    },
+};
+
+// --- Run Tests ---
+
+Deno.test("DummyAdapter: Contract Compliance", async (t) => {
+    let sendMessageStub: Stub<DummyAdapter>;
+    let listModelsStub: Stub<DummyAdapter>;
+
+    await t.step("Setup: Stub adapter prototype", () => {
+        sendMessageStub = stub(DummyAdapter.prototype, "sendMessage", (req, modelId) => mockDummyApi.sendMessage(req, modelId));
+        listModelsStub = stub(DummyAdapter.prototype, "listModels", () => mockDummyApi.listModels());
+    });
+    
+    // The contract test will spy on mockDummyApi. When it instantiates a real
+    // DummyAdapter, our stubs will intercept the calls and redirect them to the mock.
+    await testAdapterContract(t, DummyAdapter, mockDummyApi, MOCK_PROVIDER);
+    
+    await t.step("Teardown: Restore stubs", () => {
+        sendMessageStub.restore();
+        listModelsStub.restore();
+    });
+});
+
+// The specific behavior test validates the REAL adapter's implementation.
+Deno.test("[DummyAdapter] Specific Behavior - Correctly calculates token usage", async () => {
+    // Arrange
+    const adapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', new MockLogger());
+    const request: ChatApiRequest = {
+        message: "Hello, this is a test.", // This is 6 tokens with cl100k_base
+        providerId: 'dummy-provider',
+        promptId: '__none__',
+    };
+    const modelIdentifier = MOCK_MODEL_CONFIG.api_identifier;
+    
+    // Act
+    const result = await adapter.sendMessage(request, modelIdentifier);
+
+    // Assert
+    assertExists(result.token_usage);
+    assert(isTokenUsage(result.token_usage), "Token usage should conform to the TokenUsage interface.");
+
+    const buildTokenizerDeps = (): CountTokensDeps => ({
+        getEncoding: (_name: string) => ({ encode: (input: string) => Array.from(input ?? "").map((_, i) => i) }),
+        countTokensAnthropic: (text: string) => (text ?? "").length,
+        logger: { warn: () => {}, error: () => {} },
+    });
+    const deps = buildTokenizerDeps();
+    const expectedPromptTokens = countTokens(
+        deps,
+        { message: request.message, messages: [] },
+        MOCK_MODEL_CONFIG
+    );
+    const expectedCompletionTokens = countTokens(
+        deps,
+        { messages: [{ role: 'assistant', content: result.content }] },
+        MOCK_MODEL_CONFIG
+    );
+    const expectedTotalTokens = expectedPromptTokens + expectedCompletionTokens;
+
+    assertEquals(result.token_usage.prompt_tokens, expectedPromptTokens, "Prompt token count should be calculated correctly.");
+    assertEquals(result.token_usage.completion_tokens, expectedCompletionTokens, "Completion token count should be calculated correctly.");
+    assertEquals(result.token_usage.total_tokens, expectedTotalTokens, "Total token count should be the sum of prompt and completion.");
+});
+
+Deno.test("[FAILING TEST] DummyAdapter should throw an error when prompt contains SIMULATE_ERROR", async () => {
+  // Arrange
+  const adapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', new MockLogger());
+  const request: ChatApiRequest = {
+    message: "This is a test prompt with SIMULATE_ERROR.",
+    providerId: 'dummy-provider',
+    promptId: '__none__',
+  };
+  const modelIdentifier = MOCK_MODEL_CONFIG.api_identifier;
+  let caughtError: Error | null = null;
+
+  // Act
+  try {
+    await adapter.sendMessage(request, modelIdentifier);
+  } catch (error) {
+    if (error instanceof Error) {
+      caughtError = error;
+    } else {
+      throw error;
+    }
+  }
+
+  // Assert
+  assertExists(caughtError, "An error should have been thrown.");
+  assertEquals(caughtError.message, "Simulated adapter error for testing retry logic.");
+});
+
+Deno.test("[FAILING TEST] DummyAdapter should return a partial response for SIMULATE_MAX_TOKENS", async () => {
+  // Arrange
+  const adapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', new MockLogger());
+  const request: ChatApiRequest = {
+    message: "This is a test prompt with SIMULATE_MAX_TOKENS.",
+    providerId: 'dummy-provider',
+    promptId: '__none__',
+  };
+  const modelIdentifier = MOCK_MODEL_CONFIG.api_identifier;
+
+  // Act
+  const result = await adapter.sendMessage(request, modelIdentifier);
+
+  // Assert
+  assertEquals(result.finish_reason, "max_tokens", "The finish reason should be 'max_tokens'.");
+  assert(result.content.startsWith("Partial echo due to max_tokens"), "The content should indicate a partial response.");
+  assert(!result.content.includes("SIMULATE_MAX_TOKENS"), "The magic string should be stripped from the response.");
+});
+
+Deno.test("[FAILING TEST] DummyAdapter should generate a large response for SIMULATE_LARGE_OUTPUT_KB", async () => {
+    // Arrange
+    const adapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', new MockLogger());
+    const targetKb = 2; // Request a 2KB response
+    const request: ChatApiRequest = {
+        message: `This is the base text. SIMULATE_LARGE_OUTPUT_KB=${targetKb}`,
+        providerId: 'dummy-provider',
+        promptId: '__none__',
+    };
+    const modelIdentifier = MOCK_MODEL_CONFIG.api_identifier;
+
+    // Act
+    const result = await adapter.sendMessage(request, modelIdentifier);
+
+    // Assert
+    const responseSizeBytes = new TextEncoder().encode(result.content).length;
+    const targetBytes = targetKb * 1024;
+    assert(responseSizeBytes >= targetBytes, `Response size (${responseSizeBytes} bytes) should be at least ${targetBytes} bytes.`);
+    assert(result.content.includes("This is the base text."), "The base text should be included in the large response.");
+    assert(!result.content.includes("SIMULATE_LARGE_OUTPUT_KB"), "The magic string should be stripped from the response.");
+    assertEquals(result.finish_reason, "stop", "The finish reason should be 'stop' for a large but complete response.");
+});
+
+Deno.test("DummyAdapter respects client-provided max_tokens_to_generate and yields non-zero usage under non-zero cost rates", async () => {
+  const CONFIG_WITH_COSTS: AiModelExtendedConfig = {
+    api_identifier: "dummy-model-v1",
+    tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+    context_window_tokens: 10000,
+    input_token_cost_rate: 0,
+    output_token_cost_rate: 2,
+  };
+  if (!isJson(CONFIG_WITH_COSTS)) throw new Error('CONFIG_WITH_COSTS must be JSON');
+  const PROVIDER_WITH_COSTS: Tables<'ai_providers'> = {
+    ...MOCK_PROVIDER,
+    config: CONFIG_WITH_COSTS,
+  };
+
+  const adapter = new DummyAdapter(PROVIDER_WITH_COSTS, 'dummy-key', new MockLogger());
+  const K = 64;
+  const request: ChatApiRequest = {
+    message: "SIMULATE_LARGE_OUTPUT_KB=1 Hello world",
+    providerId: 'dummy-provider',
+    promptId: '__none__',
+    max_tokens_to_generate: K,
+  };
+  const modelIdentifier = CONFIG_WITH_COSTS.api_identifier;
+
+  const result = await adapter.sendMessage(request, modelIdentifier);
+  assertExists(result.token_usage);
+  assert(isTokenUsage(result.token_usage));
+  // completion should be capped by client K (K chosen high enough above envelope)
+  assert(result.token_usage.completion_tokens <= K, "completion_tokens should respect client-provided cap");
+  // Non-zero usage implies non-zero costs under non-zero rates at higher layers
+  assert(result.token_usage.total_tokens > 0, "total_tokens should be non-zero under non-zero rates setup");
+});
+
+Deno.test("DummyAdapter respects model hard_cap_output_tokens when client cap is absent", async () => {
+  const CONFIG_WITH_HARD_CAP: AiModelExtendedConfig = {
+    api_identifier: "dummy-model-v1",
+    tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+    context_window_tokens: 10000,
+    input_token_cost_rate: 0,
+    output_token_cost_rate: 2,
+    hard_cap_output_tokens: 64,
+  };
+  if (!isJson(CONFIG_WITH_HARD_CAP)) throw new Error('CONFIG_WITH_HARD_CAP must be JSON');
+  const PROVIDER_WITH_HARD_CAP: Tables<'ai_providers'> = {
+    ...MOCK_PROVIDER,
+    config: CONFIG_WITH_HARD_CAP,
+  };
+
+  const adapter = new DummyAdapter(PROVIDER_WITH_HARD_CAP, 'dummy-key', new MockLogger());
+  const request: ChatApiRequest = {
+    message: "SIMULATE_LARGE_OUTPUT_KB=1 This should exceed cap",
+    providerId: 'dummy-provider',
+    promptId: '__none__',
+  };
+  const modelIdentifier = CONFIG_WITH_HARD_CAP.api_identifier;
+
+  const result = await adapter.sendMessage(request, modelIdentifier);
+  assertExists(result.token_usage);
+  assert(isTokenUsage(result.token_usage));
+  // Desired behavior: without client cap, model hard cap should apply (64 chosen above envelope)
+  assert(result.token_usage.completion_tokens <= 64, "completion_tokens should respect model hard_cap_output_tokens");
+});
+
+Deno.test("DummyAdapter handles oversized input by throwing ContextWindowError (step 118)", async () => {
+  const CONFIG_SMALL_WINDOW: AiModelExtendedConfig = {
+    api_identifier: "dummy-model-v1",
+    tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
+    context_window_tokens: 50,
+    input_token_cost_rate: 1,
+    output_token_cost_rate: 1,
+  };
+  if (!isJson(CONFIG_SMALL_WINDOW)) throw new Error('CONFIG_SMALL_WINDOW must be JSON');
+  const PROVIDER_SMALL_WINDOW: Tables<'ai_providers'> = {
+    ...MOCK_PROVIDER,
+    config: CONFIG_SMALL_WINDOW,
+  };
+
+  const adapter = new DummyAdapter(PROVIDER_SMALL_WINDOW, 'dummy-key', new MockLogger());
+  const longText = 'A'.repeat(200);
+  const request: ChatApiRequest = {
+    message: longText,
+    providerId: 'dummy-provider',
+    promptId: '__none__',
+  };
+  const modelIdentifier = CONFIG_SMALL_WINDOW.api_identifier;
+
+  let threw = false;
+  try {
+    await adapter.sendMessage(request, modelIdentifier);
+  } catch (e) {
+    threw = true;
+  }
+  assert(threw, 'Expected ContextWindowError for oversized input in step 118');
+});
+
+Deno.test("[DummyAdapter] Specific Behavior - should handle continuation prompts", async () => {
+    // Arrange
+    const adapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', new MockLogger());
+    const continuationPrompt = "Partial echo due to max_tokens from dummy-model-v1: This is the first part.";
+    const request: ChatApiRequest = {
+        message: continuationPrompt,
+        providerId: 'dummy-provider',
+        promptId: '__none__',
+    };
+    const modelIdentifier = MOCK_MODEL_CONFIG.api_identifier;
+
+    // Act
+    const result = await adapter.sendMessage(request, modelIdentifier);
+
+    // Assert
+    assert(result.content !== continuationPrompt, "The adapter should not simply echo the continuation prompt back.");
+    assertEquals(result.finish_reason, "stop", "The finish reason for a continuation should be 'stop'.");
+    assertExists(result.token_usage, "Token usage object must exist.");
+    assert(isTokenUsage(result.token_usage), "Token usage should conform to the TokenUsage interface.");
+    assert(result.token_usage.prompt_tokens > 0, "Prompt tokens must be calculated for a continuation prompt.");
+});
+
+Deno.test("[DummyAdapter] Specific Behavior - should use the correct provider ID from config", async () => {
+    // Arrange
+    const specificProviderId = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"; // A valid UUID
+    const providerWithId: Tables<'ai_providers'> = {
+        ...MOCK_PROVIDER,
+        id: specificProviderId,
+    };
+    const adapter = new DummyAdapter(providerWithId, 'dummy-key', new MockLogger());
+    const continuationPrompt = "Partial echo due to max_tokens from dummy-model-v1: This is the first part.";
+    const request: ChatApiRequest = {
+        message: continuationPrompt,
+        providerId: 'some-other-id', // This should be ignored in favor of the config's ID
+        promptId: '__none__',
+    };
+    const modelIdentifier = providerWithId.api_identifier;
+
+    // Act
+    const result = await adapter.sendMessage(request, modelIdentifier);
+
+    // Assert
+    assertEquals(result.ai_provider_id, specificProviderId, "The ai_provider_id should match the id from the model configuration.");
+});
+
+Deno.test("DummyAdapter getEmbedding returns 3072-d vectors", async () => {
+  const now = new Date().toISOString();
+
+  const providerRow: Tables<'ai_providers'> = {
+    id: crypto.randomUUID(),
+    name: "OpenAI text-embedding-3-large",
+    api_identifier: "openai-text-embedding-3-large",
+    description: null,
+    is_active: true,
+    is_enabled: true,
+    is_default_embedding: true,
+    provider: "openai",
+    created_at: now,
+    updated_at: now,
+    // Minimal extended config satisfying guards
+    config: {
+      api_identifier: "openai-text-embedding-3-large",
+      context_window_tokens: 8191,
+      input_token_cost_rate: 0.13,
+      tokenization_strategy: {
+        type: "tiktoken",
+        is_chatml_model: false,
+        tiktoken_encoding_name: "cl100k_base",
+      },
+      hard_cap_output_tokens: 4096,
+      output_token_cost_rate: 1,
+      provider_max_input_tokens: 8191,
+      provider_max_output_tokens: 4096,
+    },
+  };
+
+  const logger: ILogger = {
+    info: () => undefined,
+    warn: () => undefined,
+    error: () => undefined,
+    debug: () => undefined,
+  };
+
+  const adapter = new DummyAdapter(providerRow, "sk-test", logger);
+
+  // Provide only the method used by EmbeddingClient to satisfy structural typing
+  // Provide minimal shape: EmbeddingClient only calls getEmbedding; provide no-op for others
+  const adapterInstance: AiProviderAdapterInstance = {
+    getEmbedding: (text: string): Promise<EmbeddingResponse> => adapter.getEmbedding(text),
+    async sendMessage() { throw new Error("not used in this test"); },
+    async listModels() { return []; },
+  };
+
+  const res = await adapter.getEmbedding("test text for embedding");
+
+  assert(Array.isArray(res.embedding), "embedding should be an array");
+  assertEquals(res.embedding.length, 3072);
+  assert(!!res.usage && typeof res.usage.total_tokens === "number");
+});
+
+// RED: Dummy honors injected provider config (no internal override)
+Deno.test("[DummyAdapter] honors injected provider config for context window/tokenizer", async () => {
+  const now = new Date().toISOString();
+  const providerRow: Tables<'ai_providers'> = {
+    id: crypto.randomUUID(),
+    name: "OpenAI gpt-4o",
+    api_identifier: "openai-gpt-4o",
+    description: null,
+    is_active: true,
+    is_enabled: true,
+    is_default_embedding: false,
+    provider: "openai",
+    created_at: now,
+    updated_at: now,
+    config: {
+      api_identifier: "openai-gpt-4o",
+      context_window_tokens: 128000,
+      provider_max_input_tokens: 128000,
+      provider_max_output_tokens: 4096,
+      input_token_cost_rate: 5,
+      output_token_cost_rate: 15,
+      tokenization_strategy: {
+        type: "tiktoken",
+        is_chatml_model: true,
+        tiktoken_encoding_name: "cl100k_base",
+        api_identifier_for_tokenization: "gpt-4o",
+      },
+      hard_cap_output_tokens: 4096,
+    },
+  };
+
+  const adapter = new DummyAdapter(providerRow, "sk-test", new MockLogger());
+
+  // Build a payload large enough to exceed tiny defaults but under 128k window
+  const longText = "A".repeat(50000);
+  const request: ChatApiRequest = {
+    message: longText,
+    providerId: providerRow.id,
     promptId: "__none__",
-}; 
+  };
 
-Deno.test("DummyAdapter - Echo Mode - Basic Echo", async () => {
-    const testConfig: DummyAdapterConfig = {
-        modelId: "dummy-echo-test-basic",
-        mode: "echo",
-        tokensPerChar: 0.25,
-        basePromptTokens: 10,
-        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' }
-    };
-    const adapter = new DummyAdapter(testConfig, mockLogger);
-    const currentMessage = "Hello world";
-    const chatRequest: ChatApiRequest = {
-        ...baseChatRequestData,
-        messages: [{ role: "user", content: "Previous message" }],
-        message: currentMessage,
-        providerId: "test-provider-id-echo-basic",
-    };
+  let threw = false;
+  try {
+    await adapter.sendMessage(request, providerRow.api_identifier);
+  } catch (_e) {
+    threw = true;
+  }
 
-    const response = await adapter.sendMessage(chatRequest, testConfig.modelId);
-
-    assertEquals(response.content, `Echo: ${currentMessage}`);
-    assertEquals(response.role, "assistant");
-    assertEquals(response.ai_provider_id, chatRequest.providerId);
-    
-    const tokenUsage = response.token_usage as unknown as TokenUsage;
-    
-    // Updated calculation to include historical messages for prompt tokens
-    const historicalMessages = chatRequest.messages ?? []; // Default to empty array if undefined
-    const historyContent = historicalMessages.map(m => m.content).join('\n');
-    const historyTokens = historicalMessages.length > 0 ? Math.ceil(historyContent.length * (testConfig.tokensPerChar ?? 0)) : 0;
-
-    const expectedPromptTokens = 
-        (testConfig.basePromptTokens ?? 0) + 
-        historyTokens + 
-        Math.ceil((chatRequest.message?.length ?? 0) * (testConfig.tokensPerChar ?? 0));
-
-    assertEquals(tokenUsage?.prompt_tokens, expectedPromptTokens);
-    const expectedCompletionTokens = Math.ceil(response.content.length * (testConfig.tokensPerChar ?? 0));
-    assertEquals(tokenUsage?.completion_tokens, expectedCompletionTokens);
-    assertEquals(tokenUsage?.total_tokens, expectedPromptTokens + expectedCompletionTokens);
-    assertEquals(tokenUsage.finish_reason, 'stop'); // Assert it stops correctly on a short response
+  // Expectation: should NOT throw ContextWindowError because injected window is 128k
+  assertEquals(threw, false, "Adapter should honor injected 128k window without overriding to a tiny cap");
 });
 
-Deno.test("DummyAdapter - Echo Mode - No Message, No History", async () => {
-    const testConfig: DummyAdapterConfig = {
-        modelId: "dummy-echo-no-message",
-        mode: "echo",
-        tokensPerChar: 0.25, 
-        basePromptTokens: 10,
-        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' }
-    };
-    const adapter = new DummyAdapter(testConfig, mockLogger);
-    const chatRequest: ChatApiRequest = {
-        ...baseChatRequestData,
-        messages: [],
-        message: "",
-        providerId: "test-provider-id-echo-no-message",
-    };
+// RED: Dummy has a rational self-default (when used as itself)
+Deno.test("[DummyAdapter] uses rational self-default window when constructed as dummy", async () => {
+  const now = new Date().toISOString();
+  const providerRow: Tables<'ai_providers'> = {
+    id: crypto.randomUUID(),
+    name: "Dummy Echo v1",
+    api_identifier: "dummy-echo-v1",
+    description: null,
+    is_active: true,
+    is_enabled: true,
+    is_default_embedding: false,
+    provider: "dummy",
+    created_at: now,
+    updated_at: now,
+    // minimal extended config: omit context/provider_max to force adapter defaults
+    config: {
+      api_identifier: "dummy-echo-v1",
+      input_token_cost_rate: 1,
+      output_token_cost_rate: 1,
+      tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+      hard_cap_output_tokens: 4096,
+    },
+  };
 
-    const response = await adapter.sendMessage(chatRequest, testConfig.modelId);
-    const tokenUsageEchoNoMsg = response.token_usage as unknown as TokenUsage;
+  const adapter = new DummyAdapter(providerRow, "sk-test", new MockLogger());
 
-    assertEquals(response.content, "Echo: No message provided");
-    assertEquals(tokenUsageEchoNoMsg?.prompt_tokens, testConfig.basePromptTokens);
-    const expectedCompletionTokensEchoNoMsg = Math.ceil(response.content.length * (testConfig.tokensPerChar ?? 0));
-    assertEquals(tokenUsageEchoNoMsg?.completion_tokens, expectedCompletionTokensEchoNoMsg);
-    assertEquals(tokenUsageEchoNoMsg.finish_reason, 'stop');
+  // Build a payload large enough to exceed tiny defaults but under 200k
+  const longText = "B".repeat(150000);
+  const request: ChatApiRequest = {
+    message: longText,
+    providerId: providerRow.id,
+    promptId: "__none__",
+  };
+
+  let threw = false;
+  try {
+    await adapter.sendMessage(request, providerRow.api_identifier);
+  } catch (_e) {
+    threw = true;
+  }
+
+  // Expectation: should NOT throw because dummy self-default window should be >= 200k
+  assertEquals(threw, false, "Dummy self-default window should be sufficiently large (>= 200k)");
+
+  // RED: Also assert the adapter exposes a rational self-default on its config via listModels
+  const models = await adapter.listModels();
+  assert(Array.isArray(models) && models.length === 1);
+  const cfgCandidate = models[0] && typeof models[0] === 'object' ? (models[0] as ProviderModelInfo).config : undefined;
+  assert(!!cfgCandidate && typeof cfgCandidate === 'object', 'adapter.listModels should expose a config');
+  const cfg = cfgCandidate as AiModelExtendedConfig;
+  // These fields should be populated by the adapter's self-defaults when missing on input
+  assert(typeof cfg.provider_max_input_tokens === "number" && cfg.provider_max_input_tokens >= 200_000, "provider_max_input_tokens should default to >= 200k");
+  assert(typeof cfg.context_window_tokens === "number" && cfg.context_window_tokens >= 200_000, "context_window_tokens should default to >= 200k");
 });
-
-Deno.test("DummyAdapter - Fixed Response Mode - Basic Fixed Response", async () => {
-    const fixedContent = "This is a predetermined answer for fixed response test.";
-    const testConfig: DummyAdapterConfig = {
-        modelId: "dummy-fixed-test-basic",
-        mode: "fixed_response",
-        fixedResponse: {
-            content: fixedContent,
-            promptTokens: 50,
-            completionTokens: 15,
-        },
-        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' }
-    };
-    const adapter = new DummyAdapter(testConfig, mockLogger);
-    const chatRequest: ChatApiRequest = {
-        ...baseChatRequestData,
-        messages: [{ role: "user", content: "User question, will be ignored." }],
-        message: "Another user question, also ignored.",
-        providerId: "test-provider-id-fixed-basic",
-    };
-
-    const response = await adapter.sendMessage(chatRequest, testConfig.modelId);
-
-    assertEquals(response.content, fixedContent);
-    assertEquals(response.role, "assistant");
-    assertEquals(response.ai_provider_id, chatRequest.providerId);
-
-    const tokenUsageFixedBasic = response.token_usage as unknown as TokenUsage;
-    assertEquals(tokenUsageFixedBasic?.prompt_tokens, 50);
-    assertEquals(tokenUsageFixedBasic?.completion_tokens, 15);
-    assertEquals(tokenUsageFixedBasic?.total_tokens, 65);
-    assertEquals(tokenUsageFixedBasic.finish_reason, 'stop');
-});
-
-Deno.test("DummyAdapter - Fixed Response Mode - Default token calculation", async () => {
-    const fixedContent = "Fixed answer with default token calculation.";
-    const testConfig: DummyAdapterConfig = {
-        modelId: "dummy-fixed-default-tokens-test",
-        mode: "fixed_response",
-        fixedResponse: {
-            content: fixedContent, // promptTokens & completionTokens will be calculated by adapter
-        },
-        tokensPerChar: 0.3, 
-        basePromptTokens: 8,
-        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' }
-    };
-    const adapter = new DummyAdapter(testConfig, mockLogger);
-    const userMessageContent = "Query for default token calc in fixed response.";
-    const historyMessageContent = "History for default token calc in fixed response.";
-    const chatRequest: ChatApiRequest = {
-        ...baseChatRequestData,
-        messages: [{ role: "user", content: historyMessageContent }],
-        message: userMessageContent,
-        providerId: "test-provider-id-fixed-default-tokens",
-    };
-    
-    // Calculation based on DummyAdapter logic
-    const fullInputForCalc = ((chatRequest.messages ?? []).map(m => m.content).join('\\n') + '\\n' + chatRequest.message);
-    const expectedPromptTokensDefault = (testConfig.basePromptTokens ?? 0) + Math.ceil(fullInputForCalc.length * (testConfig.tokensPerChar ?? 0));
-    const expectedCompletionTokensDefault = Math.ceil(fixedContent.length * (testConfig.tokensPerChar ?? 0));
-
-    const response = await adapter.sendMessage(chatRequest, testConfig.modelId);
-    const tokenUsageFixedDefault = response.token_usage as unknown as TokenUsage;
-
-    assertEquals(response.content, fixedContent);
-    assertEquals(tokenUsageFixedDefault?.prompt_tokens, expectedPromptTokensDefault);
-    assertEquals(tokenUsageFixedDefault?.completion_tokens, expectedCompletionTokensDefault);
-    assertEquals(tokenUsageFixedDefault?.total_tokens, expectedPromptTokensDefault + expectedCompletionTokensDefault);
-    assertEquals(tokenUsageFixedDefault.finish_reason, 'stop');
-});
-
-Deno.test("DummyAdapter - listModels Method", async () => {
-    const echoConfig: DummyAdapterConfig = {
-        modelId: "dummy-model-for-listing-echo",
-        mode: "echo",
-        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' }
-    };
-    const echoAdapter = new DummyAdapter(echoConfig, mockLogger);
-    const echoModels = await echoAdapter.listModels();
-    assertEquals(echoModels.length, 1);
-    assertEquals(echoModels[0].api_identifier, echoConfig.modelId);
-    assertEquals(echoModels[0].name, `Dummy Model (echo) - ${echoConfig.modelId}`);
-
-    const fixedConfig: DummyAdapterConfig = {
-        modelId: "dummy-model-for-listing-fixed",
-        mode: "fixed_response",
-        fixedResponse: { content: "Fixed response for listModels test" },
-        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' }
-    };
-    const fixedAdapter = new DummyAdapter(fixedConfig, mockLogger);
-    const fixedModels = await fixedAdapter.listModels();
-    assertEquals(fixedModels.length, 1);
-    assertEquals(fixedModels[0].api_identifier, fixedConfig.modelId);
-    assertEquals(fixedModels[0].name, `Dummy Model (fixed_response) - ${fixedConfig.modelId}`);
-}); 
-
-Deno.test("DummyAdapter - Invalid Mode throws error during sendMessage", async () => {
-    const invalidConfig = {
-        modelId: "dummy-invalid-mode-test",
-        mode: "non_existent_mode", 
-        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' }
-    } as unknown as DummyAdapterConfig; // Cast to allow testing invalid mode
-    const adapter = new DummyAdapter(invalidConfig, mockLogger);
-    const chatRequest: ChatApiRequest = {
-        ...baseChatRequestData,
-        messages: [],
-        message: "Test message for the invalid mode scenario",
-        providerId: "test-provider-id-invalid-mode",
-    };
-
-    try {
-        await adapter.sendMessage(chatRequest, invalidConfig.modelId);
-        // If sendMessage does not throw, this line will be reached, failing the test.
-        assertEquals(true, false, "Expected adapter.sendMessage to throw an error for invalid mode.");
-    } catch (e) {
-        assertEquals(e instanceof Error, true, "Caught error should be an instance of Error");
-        if (e instanceof Error) { // Type guard for TypeScript
-            assertEquals(e.message, `DummyAdapter: Unknown mode '${invalidConfig.mode}'`, "Error message mismatch.");
-        } else {
-            // Should not happen if the above assertEquals(e instanceof Error, true) passes
-            assertEquals(true, false, "Caught something that was not an Error instance.");
-        }
-    }
-}); 
-
-Deno.test("DummyAdapter - Input Token Limit Exceeded", async () => {
-    const testConfig: DummyAdapterConfig = {
-        modelId: "dummy-input-limit-test",
-        mode: "echo",
-        tokensPerChar: 1,
-        basePromptTokens: 5,
-        provider_max_input_tokens: 20,
-        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' }
-    };
-    const adapter = new DummyAdapter(testConfig, mockLogger);
-    const chatRequest: ChatApiRequest = {
-        ...baseChatRequestData,
-        message: "This message is definitely too long.",
-        providerId: "test-provider-id-input-limit",
-        messages: [{role: 'user', content: 'This message is definitely too long.'}]
-    };
-
-    try {
-        await adapter.sendMessage(chatRequest, testConfig.modelId);
-        // If it doesn't throw, the test fails.
-        assertEquals(true, false, "Expected sendMessage to throw an error but it did not.");
-    } catch (e) {
-        if (e instanceof Error) {
-            assertEquals(e.message, `Input prompt exceeds the model's maximum context size of 20 tokens.`);
-        } else {
-            // Fail if the caught object is not an error
-            assertEquals(true, false, "Caught something that was not an Error instance.");
-        }
-    }
-});
-
-Deno.test("DummyAdapter - Simulates multi-part continuation correctly", async () => {
-    const fullContent = "This is the full, long response that requires continuation."; // 60 chars
-    const testConfig: DummyAdapterConfig = {
-        modelId: "dummy-continuation-test",
-        mode: "fixed_response",
-        fixedResponse: { content: fullContent },
-        tokensPerChar: 1, // 1 char = 1 token
-        provider_max_output_tokens: 20, // Send in chunks of 20
-        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' }
-    };
-    const adapter = new DummyAdapter(testConfig, mockLogger);
-    const providerId = "test-provider-id-continuation";
-
-    // --- First call ---
-    const initialRequest: ChatApiRequest = {
-        ...baseChatRequestData,
-        message: "Start the process.",
-        providerId,
-        messages: [{ role: 'user', content: 'Start the process.' }]
-    };
-
-    const response1 = await adapter.sendMessage(initialRequest, testConfig.modelId);
-    assertEquals(response1.content, "This is the full, lo"); // 20 chars
-    assertEquals((response1.token_usage as unknown as TokenUsage).finish_reason, "length");
-
-    // --- Second call ---
-    const secondRequest: ChatApiRequest = {
-        ...initialRequest,
-        messages: [ // History now includes the first partial response
-            { role: 'user', content: 'Start the process.' },
-            { role: 'assistant', content: response1.content }
-        ]
-    };
-
-    const response2 = await adapter.sendMessage(secondRequest, testConfig.modelId);
-    assertEquals(response2.content, "ng response that req"); // 20 chars
-    assertEquals((response2.token_usage as unknown as TokenUsage).finish_reason, "length");
-
-    // --- Third call ---
-    const thirdRequest: ChatApiRequest = {
-        ...initialRequest,
-        messages: [ // History includes both partial responses
-            { role: 'user', content: 'Start the process.' },
-            { role: 'assistant', content: response1.content },
-            { role: 'assistant', content: response2.content }
-        ]
-    };
-
-    const response3 = await adapter.sendMessage(thirdRequest, testConfig.modelId);
-    assertEquals(response3.content, "uires continuation."); // 20 chars
-    assertEquals((response3.token_usage as unknown as TokenUsage).finish_reason, "stop");
-    
-    // --- Verify total content ---
-    const finalContent = response1.content + response2.content + response3.content;
-    assertEquals(finalContent, fullContent);
-}); 

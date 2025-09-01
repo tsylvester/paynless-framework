@@ -1,11 +1,18 @@
 import { vi, Mock } from 'vitest';
 import { act } from '@testing-library/react';
-import { initialAiStateValues, useAiStore as originalUseAiStore } from '@paynless/store';
+import { initialAiStateValues } from '@paynless/types';
 import type { AiStore, AiProvider, SystemPrompt, UserProfile } from '@paynless/types';
 
-// Hold the current mock state for aiStore
-// Initialize with spread of initialAiStateValues and then override actions with vi.fn()
-let currentAiMockState: AiStore = {
+export type MockedUseAiStoreHook = (<TResult>(
+    selector?: (state: AiStore) => TResult
+) => TResult | AiStore) & {
+    getState: () => AiStore;
+    setState: (newState: Partial<AiStore>) => void;
+};
+
+let internalMockAiStoreState: AiStore;
+
+const initializeMockAiState = (): AiStore => ({
     ...initialAiStateValues,
     setNewChatContext: vi.fn(),
     loadAiConfig: vi.fn(),
@@ -19,6 +26,7 @@ let currentAiMockState: AiStore = {
     cancelRewindPreparation: vi.fn(),
     setSelectedProvider: vi.fn(),
     setSelectedPrompt: vi.fn(),
+    setContinueUntilComplete: vi.fn(),
     setChatContextHydrated: vi.fn(),
     hydrateChatContext: vi.fn(),
     resetChatContextToDefaults: vi.fn(),
@@ -26,63 +34,54 @@ let currentAiMockState: AiStore = {
     selectAllMessages: vi.fn(),
     deselectAllMessages: vi.fn(),
     clearMessageSelections: vi.fn(),
-    _addOptimisticUserMessage: vi.fn() as unknown as AiStore['_addOptimisticUserMessage'],
+    _addOptimisticUserMessage: vi.fn(),
     _updateChatContextInProfile: vi.fn(),
     _fetchAndStoreUserProfiles: vi.fn(),
     _dangerouslySetStateForTesting: vi.fn(),
-    addOptimisticMessageForReplay: vi.fn() as unknown as AiStore['addOptimisticMessageForReplay'],
+    addOptimisticMessageForReplay: vi.fn(),
+});
+
+internalMockAiStoreState = initializeMockAiState();
+
+export const internalMockAiStoreGetState = (): AiStore => internalMockAiStoreState;
+
+export function mockedUseAiStoreHookLogic<S>(
+    selector?: (state: AiStore) => S
+): S | AiStore {
+    if (selector) {
+        return selector(internalMockAiStoreState);
+    }
+    return internalMockAiStoreState;
+}
+
+mockedUseAiStoreHookLogic.getState = internalMockAiStoreGetState;
+mockedUseAiStoreHookLogic.setState = (newState: Partial<AiStore>) => {
+    internalMockAiStoreState = {
+        ...internalMockAiStoreState,
+        ...newState,
+    };
 };
 
-const mockSetState = vi.fn((updater) => {
+// --- Export mockSetState directly for easier use in tests ---
+export const mockSetState = (updater: Partial<AiStore> | ((state: AiStore) => Partial<AiStore>)) => {
     let newStatePart: Partial<AiStore>;
     if (typeof updater === 'function') {
-        newStatePart = updater(currentAiMockState);
+        newStatePart = updater(internalMockAiStoreState);
     } else {
         newStatePart = updater;
     }
-    currentAiMockState = { ...currentAiMockState, ...newStatePart };
-}) as unknown as (typeof originalUseAiStore.setState);
-
-const mockGetState = vi.fn(() => currentAiMockState) as unknown as (typeof originalUseAiStore.getState);
-
-// Define the hook implementation
-function useAiStoreHookImpl<S>(selector: (state: AiStore) => S): S;
-function useAiStoreHookImpl(): AiStore;
-function useAiStoreHookImpl<S>(selector?: (state: AiStore) => S) {
-    if (selector) {
-        try {
-            return selector(currentAiMockState);
-        } catch (e) {
-            console.error("Error in selector during mock execution (aiStore.mock.ts):", e);
-            if (typeof (currentAiMockState as unknown as Record<string, unknown>)[selector.name] === 'undefined') {
-                 console.warn(`Selector '${selector.name}' not found on currentAiMockState. Available keys: ${Object.keys(currentAiMockState).join(', ')}`);
-            }
-            return undefined as S; 
-        }
-    }
-    return currentAiMockState;
-}
-
-// Attach static methods to the implementation
-useAiStoreHookImpl.setState = mockSetState;
-useAiStoreHookImpl.getState = mockGetState;
-useAiStoreHookImpl.subscribe = vi.fn(() => vi.fn()) as typeof originalUseAiStore.subscribe;
-useAiStoreHookImpl.destroy = vi.fn() as typeof originalUseAiStore.destroy;
-
-export const mockedUseAiStoreHookLogic = useAiStoreHookImpl as typeof originalUseAiStore;
-
-// --- Export mockSetState directly for easier use in tests ---
-export { mockSetState }; 
+    internalMockAiStoreState = { ...internalMockAiStoreState, ...newStatePart };
+};
 // --- End export ---
 
 // --- New Exported Getters ---
 export const getAiStoreState = (): AiStore => {
-    return currentAiMockState;
+    return internalMockAiStoreState;
 };
 
 export const getToggleMessageSelectionSpy = (): Mock => {
     // Ensure the function is indeed a mock (it is, by initialization)
-    return currentAiMockState.toggleMessageSelection as Mock;
+    return internalMockAiStoreState.toggleMessageSelection as Mock;
 };
 // --- End New Exported Getters ---
 
@@ -156,38 +155,10 @@ export const mockSetIsChatContextHydrated = (isHydrated: boolean) => {
 
 export const resetAiStoreMock = () => {
     // Reset to initial state values and re-mock actions
-    currentAiMockState = {
-        ...initialAiStateValues,
-        setNewChatContext: vi.fn(),
-        loadAiConfig: vi.fn(),
-        sendMessage: vi.fn(),
-        loadChatHistory: vi.fn(),
-        loadChatDetails: vi.fn(),
-        startNewChat: vi.fn(),
-        clearAiError: vi.fn(),
-        deleteChat: vi.fn(),
-        prepareRewind: vi.fn(),
-        cancelRewindPreparation: vi.fn(),
-        setSelectedProvider: vi.fn(),
-        setSelectedPrompt: vi.fn(),
-        setChatContextHydrated: vi.fn(),
-        hydrateChatContext: vi.fn(),
-        resetChatContextToDefaults: vi.fn(),
-        toggleMessageSelection: vi.fn(),
-        selectAllMessages: vi.fn(),
-        deselectAllMessages: vi.fn(),
-        clearMessageSelections: vi.fn(),
-        _addOptimisticUserMessage: vi.fn() as unknown as AiStore['_addOptimisticUserMessage'],
-        _updateChatContextInProfile: vi.fn(),
-        _fetchAndStoreUserProfiles: vi.fn(),
-        _dangerouslySetStateForTesting: vi.fn(),
-        addOptimisticMessageForReplay: vi.fn() as unknown as AiStore['addOptimisticMessageForReplay'],
-    };
+    internalMockAiStoreState = initializeMockAiState();
     // The vi.fn() calls above ensure mocks are fresh, no need to loop and clear.
 };
 
 // The actual mock hook that tests will use.
 // It uses the mock implementation and returns slices of the mock state.
-export const useAiStore = vi.fn().mockImplementation(selector => {
-    return selector(currentAiMockState);
-}); 
+export const useAiStore: MockedUseAiStoreHook = mockedUseAiStoreHookLogic; 

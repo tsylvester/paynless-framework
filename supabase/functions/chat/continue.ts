@@ -4,8 +4,9 @@ import type {
     ILogger,
     TokenUsage,
   } from "../_shared/types.ts";
-  import type { AiProviderAdapter } from "../_shared/types.ts";
-  
+  import type { AiProviderAdapterInstance } from "../_shared/types.ts";
+  import { shouldContinue } from "../_shared/utils/continue_util.ts";
+  import { isTokenUsage } from "../_shared/utils/type_guards.ts";
   const MAX_CONTINUATIONS = 4; // Max 4 additional calls, for a total of 5
   
   /**
@@ -21,7 +22,7 @@ import type {
    * @returns A promise that resolves to the combined and final assistant message payload.
    */
   export async function handleContinuationLoop(
-    adapter: AiProviderAdapter,
+    adapter: AiProviderAdapterInstance,
     initialApiRequest: ChatApiRequest,
     providerApiIdentifier: string,
     apiKey: string,
@@ -50,26 +51,33 @@ import type {
       const response = await adapter.sendMessage(
         currentRequest,
         providerApiIdentifier,
-        apiKey,
       );
 
       logger.debug(`[Continue] Loop #${continuationCount}. Received partial response.`, { content: response.content.substring(0, 100) + '...' });
   
       // Correctly accumulate token usage from each call.
-      const token_usage = response.token_usage as TokenUsage | null;
-      if (token_usage) {
-        accumulatedTokenUsage.prompt_tokens += token_usage.prompt_tokens || 0;
-        accumulatedTokenUsage.completion_tokens += token_usage.completion_tokens || 0;
+      const token_usage = response.token_usage;
+      if (isTokenUsage(token_usage)) {
+        if (typeof token_usage.prompt_tokens === 'number') {
+            accumulatedTokenUsage.prompt_tokens += token_usage.prompt_tokens;
+        }
+        if (typeof token_usage.completion_tokens === 'number') {
+            accumulatedTokenUsage.completion_tokens += token_usage.completion_tokens;
+        }
         logger.debug(`[Continue] Loop #${continuationCount}. Accumulated tokens.`, { accumulatedTokenUsage });
       }
   
       accumulatedContent += response.content;
       lastResponse = response;
   
-      const finishReason = token_usage?.finish_reason;
+      // Ensure finishReason is not undefined before passing to the utility.
+      const finishReason = response.finish_reason ?? null;
+      if (response.finish_reason === undefined) {
+        logger.warn(`[Continue] Finish reason was undefined, treating as 'null'.`);
+      }
       logger.info(`[Continue] Loop #${continuationCount}: Finish reason is '${finishReason}'`);
   
-      if (finishReason !== "length" || continuationCount >= MAX_CONTINUATIONS) {
+      if (!shouldContinue(finishReason, continuationCount, MAX_CONTINUATIONS)) {
         if (finishReason !== "length") {
             logger.info(`[Continue] Breaking loop: finish reason is '${finishReason}'.`);
         } else {
@@ -103,8 +111,10 @@ import type {
       ...lastResponse,
       content: accumulatedContent,
       token_usage: {
-        ...accumulatedTokenUsage,
-        finish_reason: "stop", // Force the final reason to be 'stop'.
+        prompt_tokens: accumulatedTokenUsage.prompt_tokens,
+        completion_tokens: accumulatedTokenUsage.completion_tokens,
+        total_tokens: accumulatedTokenUsage.total_tokens,
       },
+      finish_reason: "stop", // Force the final reason to be 'stop'.
     };
   }

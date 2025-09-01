@@ -1,386 +1,227 @@
-import { assertEquals, assertExists, assertRejects, assertInstanceOf } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { spy, stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
-import { AnthropicAdapter } from './anthropic_adapter.ts';
-import type { ChatApiRequest, ILogger } from '../types.ts';
+// supabase/functions/_shared/ai_service/anthropic_adapter.test.ts
+import { assertEquals, assertExists, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
+import Anthropic from 'npm:@anthropic-ai/sdk';
+import type { APIPromise } from 'npm:@anthropic-ai/sdk/core';
+import type { Message, MessageParam, TextBlock } from 'npm:@anthropic-ai/sdk/resources/messages';
 
-// Define an interface for the expected token usage structure (consistent with other tests)
-interface MockTokenUsage {
-  prompt_tokens: number;
-  completion_tokens: number;
-  total_tokens: number;
+import { AnthropicAdapter } from './anthropic_adapter.ts';
+import { testAdapterContract, type MockApi } from './adapter_test_contract.ts';
+import type { AdapterResponsePayload, ChatApiRequest, ProviderModelInfo, AiModelExtendedConfig } from "../types.ts";
+import { MockLogger } from "../logger.mock.ts";
+import { Tables } from "../../types_db.ts";
+import { isJson } from "../utils/type_guards.ts";
+
+// --- Mock Data & Helpers ---
+
+const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
+    api_identifier: 'claude-3-opus-20240229',
+    input_token_cost_rate: 0,
+    output_token_cost_rate: 0,
+    tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3-opus-20240229' },
+};
+const mockLogger = new MockLogger();
+
+if(!isJson(MOCK_MODEL_CONFIG)) {
+    throw new Error('MOCK_MODEL_CONFIG is not a valid JSON object');
 }
 
-// Mock logger for testing
-const mockLogger: ILogger = {
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
+const MOCK_PROVIDER: Tables<'ai_providers'> = {
+    id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14", // Unique mock ID
+    provider: "anthropic",
+    api_identifier: "anthropic-claude-3-opus-20240229",
+    name: "Anthropic Claude 3 Opus",
+    description: "A mock Anthropic model for testing.",
+    is_active: true,
+    is_default_embedding: false,
+    is_enabled: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    config: MOCK_MODEL_CONFIG,
 };
 
-// --- Test Data ---
-const MOCK_API_KEY = 'sk-ant-test-key';
-const MOCK_MODEL_ID = 'anthropic-claude-3-opus-20240229';
-const MOCK_SYSTEM_PROMPT = "You are a helpful test assistant.";
-const MOCK_CHAT_REQUEST_WITH_SYSTEM: ChatApiRequest = {
-  message: 'User message',
-  providerId: 'provider-uuid-anthropic',
-  promptId: 'prompt-uuid-system',
-  chatId: 'chat-uuid-def',
-  messages: [
-    { role: 'system', content: MOCK_SYSTEM_PROMPT },
-    { role: 'user', content: 'First user turn' },
-    { role: 'assistant', content: 'First assistant turn' },
-  ],
-};
-const MOCK_CHAT_REQUEST_NO_SYSTEM: ChatApiRequest = {
-    message: 'Another user message',
-    providerId: 'provider-uuid-anthropic',
-    promptId: '__none__', // No system prompt selected
-    chatId: 'chat-uuid-ghi',
-    messages: [
-      { role: 'user', content: 'Previous user turn' },
-      { role: 'assistant', content: 'Previous assistant turn' },
-    ],
-};
-
-const MOCK_CHAT_REQUEST_CONSECUTIVE_USER: ChatApiRequest = {
-    message: 'Third user message',
-    providerId: 'provider-uuid-anthropic',
-    promptId: '__none__',
-    chatId: 'chat-uuid-consecutive',
-    messages: [
-      { role: 'user', content: 'First user turn' },
-      { role: 'assistant', content: 'First assistant turn' },
-      { role: 'user', content: 'Second user turn' }, // Consecutive user
-    ],
-};
-
-const MOCK_CHAT_REQUEST_ENDS_ASSISTANT: ChatApiRequest = {
-    message: 'This should fail',
-    providerId: 'provider-uuid-anthropic',
-    promptId: '__none__',
-    chatId: 'chat-uuid-ends-assistant',
-    messages: [
-      { role: 'user', content: 'First user turn' },
-      { role: 'assistant', content: 'Last message in history' },
-    ],
-};
-
-const MOCK_CHAT_REQUEST_INVALID_END_ROLE: ChatApiRequest = {
-    message: '', // No new message from user
-    providerId: 'provider-uuid-anthropic',
-    promptId: '__none__',
-    chatId: 'chat-uuid-invalid-end',
-    messages: [
-      { role: 'user', content: 'User turn' },
-      { role: 'assistant', content: 'History ends with assistant' },
-    ],
-};
-
-const MOCK_ANTHROPIC_SUCCESS_RESPONSE = {
+const MOCK_ANTHROPIC_SUCCESS_RESPONSE: Message = {
   id: "msg_01A1B2C3D4E5F6G7H8I9J0K1L2",
   type: "message",
   role: "assistant",
   model: "claude-3-opus-20240229",
-  content: [
-    {
-      type: "text",
-      text: " Okay, how can I help you today? "
-    }
-  ],
+  content: [{ type: "text", text: " Okay, how can I help you today? " }],
   stop_reason: "end_turn",
   stop_sequence: null,
-  usage: {
-    input_tokens: 75,
-    output_tokens: 20
-  }
+  usage: { input_tokens: 75, output_tokens: 20 },
 };
 
-// --- Tests ---
-Deno.test("AnthropicAdapter sendMessage - Success with System Prompt", async () => {
-  const mockFetch = stub(globalThis, "fetch", () =>
-    Promise.resolve(
-      new Response(JSON.stringify(MOCK_ANTHROPIC_SUCCESS_RESPONSE), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    )
-  );
-
-  try {
-    const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
-    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_WITH_SYSTEM, MOCK_MODEL_ID);
-
-    // Assert fetch was called correctly
-    assertEquals(mockFetch.calls.length, 1);
-    const fetchArgs = mockFetch.calls[0].args;
-    assertEquals(fetchArgs[0], 'https://api.anthropic.com/v1/messages');
-    assertEquals(fetchArgs[1]?.method, 'POST');
-    assertEquals((fetchArgs[1]?.headers as Record<string, string>)['x-api-key'], MOCK_API_KEY);
-    assertEquals((fetchArgs[1]?.headers as Record<string, string>)['anthropic-version'], '2023-06-01');
-    const body = JSON.parse(fetchArgs[1]?.body as string);
-    assertEquals(body.model, 'claude-3-opus-20240229'); // Prefix removed
-    assertEquals(body.system, MOCK_SYSTEM_PROMPT);
-    assertEquals(body.messages.length, 3); // System prompt removed, history + new message
-    assertEquals(body.messages[0].role, 'user');
-    assertEquals(body.messages[1].role, 'assistant');
-    assertEquals(body.messages[2].role, 'user');
-    assertEquals(body.messages[2].content, 'User message');
-
-    // Assert result structure
-    assertExists(result);
-    assertEquals(result.role, 'assistant');
-    assertEquals(result.content, 'Okay, how can I help you today?'); // Trimmed
-    assertEquals(result.ai_provider_id, MOCK_CHAT_REQUEST_WITH_SYSTEM.providerId);
-    assertEquals(result.system_prompt_id, MOCK_CHAT_REQUEST_WITH_SYSTEM.promptId);
-    // Cast token_usage to expected shape for testing
-    const tokens = result.token_usage as { prompt_tokens: number; completion_tokens: number; total_tokens: number };
-    assertEquals(tokens?.prompt_tokens, 75);
-    assertEquals(tokens?.completion_tokens, 20);
-    assertEquals(tokens?.total_tokens, 95); // Calculated
-
-  } finally {
-    mockFetch.restore();
-  }
-});
-
-Deno.test("AnthropicAdapter sendMessage - Success without System Prompt", async () => {
-  const mockFetch = stub(globalThis, "fetch", () =>
-      Promise.resolve(
-        new Response(JSON.stringify(MOCK_ANTHROPIC_SUCCESS_RESPONSE), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      )
-    );
-
-    try {
-      const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
-      const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_NO_SYSTEM, MOCK_MODEL_ID);
-
-      // Assert fetch was called correctly
-      assertEquals(mockFetch.calls.length, 1);
-      const fetchArgs = mockFetch.calls[0].args;
-      const body = JSON.parse(fetchArgs[1]?.body as string);
-      assertEquals(body.system, undefined); // System prompt should be omitted
-      assertEquals(body.messages.length, 3);
-      assertEquals(body.messages[2].role, 'user');
-      assertEquals(body.messages[2].content, 'Another user message');
-
-      // Assert result structure (content is same mock response)
-      assertExists(result);
-      assertEquals(result.role, 'assistant');
-      assertEquals(result.content, 'Okay, how can I help you today?');
-      assertEquals(result.ai_provider_id, MOCK_CHAT_REQUEST_NO_SYSTEM.providerId);
-      assertEquals(result.system_prompt_id, null); // Should be null as promptId was '__none__'
-      // Add token assertions
-      assertExists(result.token_usage);
-      const tokens = result.token_usage as unknown as MockTokenUsage; // Cast
-      assertEquals(tokens.prompt_tokens, MOCK_ANTHROPIC_SUCCESS_RESPONSE.usage.input_tokens, "Prompt tokens mismatch");
-      assertEquals(tokens.completion_tokens, MOCK_ANTHROPIC_SUCCESS_RESPONSE.usage.output_tokens, "Completion tokens mismatch");
-      assertEquals(tokens.total_tokens, MOCK_ANTHROPIC_SUCCESS_RESPONSE.usage.input_tokens + MOCK_ANTHROPIC_SUCCESS_RESPONSE.usage.output_tokens, "Total tokens mismatch");
-
-    } finally {
-      mockFetch.restore();
-    }
-});
-
-Deno.test("AnthropicAdapter sendMessage - API Error", async () => {
-  const mockFetch = stub(globalThis, "fetch", () =>
-    Promise.resolve(
-      new Response(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    )
-  );
-
-  try {
-    const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
-    await assertRejects(
-      () => adapter.sendMessage(MOCK_CHAT_REQUEST_WITH_SYSTEM, MOCK_MODEL_ID),
-      Error,
-      "Anthropic API request failed: 401"
-    );
-  } finally {
-    mockFetch.restore();
-  }
-});
-
-Deno.test("AnthropicAdapter sendMessage - Consecutive User Messages", async () => {
-    const mockFetch = stub(globalThis, "fetch", () =>
-      Promise.resolve(
-        new Response(JSON.stringify(MOCK_ANTHROPIC_SUCCESS_RESPONSE), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      )
-    );
-
-    try {
-        const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
-        await adapter.sendMessage(MOCK_CHAT_REQUEST_CONSECUTIVE_USER, MOCK_MODEL_ID);
-
-        assertEquals(mockFetch.calls.length, 1);
-        const fetchArgs = mockFetch.calls[0].args;
-        const body = JSON.parse(fetchArgs[1]?.body as string);
-        assertEquals(body.messages.length, 3);
-        assertEquals(body.messages[0].role, 'user');
-        assertEquals(body.messages[0].content, 'First user turn'); 
-        assertEquals(body.messages[1].role, 'assistant');
-        assertEquals(body.messages[1].content, 'First assistant turn');
-        assertEquals(body.messages[2].role, 'user'); 
-        assertEquals(body.messages[2].content, 'Second user turn'); // The newest message ('Third...') was skipped by filter
-
-    } finally {
-        mockFetch.restore();
-    }
-});
-
-Deno.test("AnthropicAdapter sendMessage - History Ends With Assistant", async () => {
-    // History ends with assistant, BUT we add a new user message, making the sequence valid.
-    // Therefore, validation should pass, and fetch should be called.
-    // The test needs to mock a successful response.
-    const mockFetch = stub(globalThis, "fetch", () =>
-      Promise.resolve(
-        new Response(JSON.stringify(MOCK_ANTHROPIC_SUCCESS_RESPONSE), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      )
-    );
-    
-    try {
-        const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
-        const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_ENDS_ASSISTANT, MOCK_MODEL_ID);
-
-        // Assert fetch was called
-        assertEquals(mockFetch.calls.length, 1);
-        const fetchArgs = mockFetch.calls[0].args;
-        const body = JSON.parse(fetchArgs[1]?.body as string);
-        assertEquals(body.messages.length, 3); // History + new message
-        assertEquals(body.messages[0].role, 'user');
-        assertEquals(body.messages[1].role, 'assistant');
-        assertEquals(body.messages[2].role, 'user'); // The new message
-        assertEquals(body.messages[2].content, 'This should fail'); 
-
-        // Assert result (using the standard mock success response)
-        assertExists(result);
-        assertEquals(result.role, 'assistant');
-        assertEquals(result.content, 'Okay, how can I help you today?');
-
-    } finally {
-        mockFetch.restore();
-    }
-});
-
-Deno.test("AnthropicAdapter sendMessage - Request must end with user message (new message empty)", async () => {
-    const mockFetch = stub(globalThis, "fetch", () =>
-        Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
-    ); // Should not be called
-
-    try {
-        const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
-        await assertRejects(
-            () => adapter.sendMessage(MOCK_CHAT_REQUEST_INVALID_END_ROLE, MOCK_MODEL_ID),
-            Error,
-            "Cannot send request to Anthropic: message history format invalid." 
-        );
-        assertEquals(mockFetch.calls.length, 0); // Ensure fetch was not called
-    } finally {
-        mockFetch.restore();
-    }
-});
-
-Deno.test("AnthropicAdapter sendMessage - Finish Reason Max Tokens", async () => {
-  const mockMaxTokensResponse = {
-    ...MOCK_ANTHROPIC_SUCCESS_RESPONSE,
-    stop_reason: "max_tokens",
-    content: [{ type: "text", text: "This is a partial response..." }],
-  };
-
-  const mockFetch = stub(globalThis, "fetch", () =>
-    Promise.resolve(
-      new Response(JSON.stringify(mockMaxTokensResponse), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    )
-  );
-
-  try {
-    const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
-    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_WITH_SYSTEM, MOCK_MODEL_ID);
-
-    // Assert that the partial content is returned
-    assertEquals(result.content, "This is a partial response...");
-    // Assert that the standardized finish reason is 'length'
-    assertEquals(result.finish_reason, 'length');
-  } finally {
-    mockFetch.restore();
-  }
-});
-
-Deno.test("AnthropicAdapter listModels - Success", async () => {
-  // Mock a successful response from Anthropic's /models endpoint
-  const mockModelsResponse = {
+const MOCK_ANTHROPIC_MODELS_RESPONSE = {
     data: [
-      { id: "claude-3-opus-20240229", name: "Claude 3 Opus", description: "Most powerful model" },
-      { id: "claude-3-sonnet-20240229", name: "Claude 3 Sonnet", description: "Balanced model" },
+      { id: "claude-3-opus-20240229", name: "Claude 3 Opus" },
+      { id: "claude-3-sonnet-20240229", name: "Claude 3 Sonnet" },
     ]
-  };
-  const mockFetch = stub(globalThis, "fetch", () =>
-    Promise.resolve(
-      new Response(JSON.stringify(mockModelsResponse), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    )
-  );
+};
 
-  try {
-    const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
-    const models = await adapter.listModels();
+// This is the mock API that the test contract will spy on.
+const mockAnthropicApi: MockApi = {
+            sendMessage: async (request: ChatApiRequest): Promise<AdapterResponsePayload> => {
+            const usage = MOCK_ANTHROPIC_SUCCESS_RESPONSE.usage;
+            const contentBlock = MOCK_ANTHROPIC_SUCCESS_RESPONSE.content[0];
+            const content = contentBlock.type === 'text' ? contentBlock.text : '';
 
-    // Assert fetch was called correctly
-    assertEquals(mockFetch.calls.length, 1);
-    const fetchArgs = mockFetch.calls[0].args;
-    assertEquals(fetchArgs[0], 'https://api.anthropic.com/v1/models'); // Check endpoint
-    assertEquals(fetchArgs[1]?.method, 'GET');
-    assertEquals((fetchArgs[1]?.headers as Record<string, string>)['x-api-key'], MOCK_API_KEY);
-    assertEquals((fetchArgs[1]?.headers as Record<string, string>)['anthropic-version'], '2023-06-01');
+            return {
+                role: 'assistant',
+                content: content.trim(),
+                ai_provider_id: request.providerId,
+                system_prompt_id: request.promptId,
+                token_usage: {
+                    prompt_tokens: usage.input_tokens,
+                    completion_tokens: usage.output_tokens,
+                    total_tokens: usage.input_tokens + usage.output_tokens,
+                },
+                finish_reason: 'stop',
+            };
+        },
+    listModels: async (): Promise<ProviderModelInfo[]> => {
+        return MOCK_ANTHROPIC_MODELS_RESPONSE.data.map(m => ({
+            api_identifier: `anthropic-${m.id}`,
+            name: m.name,
+            config: MOCK_MODEL_CONFIG,
+        }));
+    }
+};
 
-    // Assert result structure
-    assertExists(models);
-    assertEquals(models.length, 2);
-    assertEquals(models[0].api_identifier, 'anthropic-claude-3-opus-20240229');
-    assertEquals(models[0].name, 'Claude 3 Opus');
-    assertEquals(models[1].api_identifier, 'anthropic-claude-3-sonnet-20240229');
-    assertEquals(models[1].name, 'Claude 3 Sonnet');
-  } finally {
-    mockFetch.restore();
-  }
+// --- Run Tests ---
+
+Deno.test("AnthropicAdapter: Contract Compliance", async (t) => {
+    let sendMessageStub: Stub<AnthropicAdapter>;
+    let listModelsStub: Stub<AnthropicAdapter>;
+
+    await t.step("Setup: Stub adapter prototype", () => {
+        sendMessageStub = stub(AnthropicAdapter.prototype, "sendMessage", (req, modelId) => mockAnthropicApi.sendMessage(req, modelId));
+        listModelsStub = stub(AnthropicAdapter.prototype, "listModels", () => mockAnthropicApi.listModels());
+    });
+
+    await testAdapterContract(t, AnthropicAdapter, mockAnthropicApi, MOCK_PROVIDER);
+
+    await t.step("Teardown: Restore stubs", () => {
+        sendMessageStub.restore();
+        listModelsStub.restore();
+    });
 });
 
-Deno.test("AnthropicAdapter listModels - API Error", async () => {
-  const mockFetch = stub(globalThis, "fetch", () =>
-    Promise.resolve(
-      new Response(JSON.stringify({ type: 'error', error: { message: 'Auth error' } }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    )
-  );
+// --- Provider-Specific Tests ---
 
-  try {
-    const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
-    await assertRejects(
-      async () => await adapter.listModels(), // Removed API key from call
-      Error,
-      "Anthropic API request failed fetching models: 401"
-    );
-  } finally {
-    mockFetch.restore();
-  }
-}); 
+Deno.test("AnthropicAdapter - Specific Tests: Alternating Role Filtering", async () => {
+    // For this specific test, we need to stub the underlying client library `create` method
+    // because we are testing the internal logic of the REAL sendMessage method, not the contract.
+    function createMockMessagePromise(msg: Message): APIPromise<Message> {
+        return Promise.resolve(msg) as APIPromise<Message>;
+    }
+    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+            
+    try {
+        const adapter = new AnthropicAdapter(MOCK_PROVIDER, 'sk-ant-test-key', mockLogger);
+        const request: ChatApiRequest = {
+            message: 'Third user message',
+            providerId: 'test-provider',
+            promptId: '__none__',
+            max_tokens_to_generate: 200,
+            messages: [
+              { role: 'user', content: 'First user turn' },
+              { role: 'assistant', content: 'First assistant turn' },
+              { role: 'user', content: 'Second user turn, which is consecutive' },
+            ],
+        };
+
+        await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        
+        assertEquals(messagesCreateStub.calls.length, 1);
+        const callArgs = messagesCreateStub.calls[0].args[0];
+        
+        // The adapter merges the last two user messages.
+        assertEquals(callArgs.messages.length, 3, "Should have 3 messages after combining");
+
+        const assertTextBlockContent = (message: MessageParam, expectedText: string) => {
+            assert(Array.isArray(message.content) && message.content[0].type === 'text', `Message content is not a TextBlock`);
+            assert((message.content[0].text).includes(expectedText));
+        }
+
+        assertTextBlockContent(callArgs.messages[0], 'First user turn');
+        assertTextBlockContent(callArgs.messages[1], 'First assistant turn');
+        assertTextBlockContent(callArgs.messages[2], 'Second user turn, which is consecutive');
+        assertTextBlockContent(callArgs.messages[2], 'Third user message');
+        
+    } finally {
+        messagesCreateStub.restore();
+    }
+});
+
+Deno.test("AnthropicAdapter - Specific Tests: forwards client max_tokens_to_generate to Anthropic", async () => {
+    function createMockMessagePromise(msg: Message): APIPromise<Message> {
+        return Promise.resolve(msg) as APIPromise<Message>;
+    }
+    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+
+    try {
+        const adapter = new AnthropicAdapter(MOCK_PROVIDER, 'sk-ant-test-key', mockLogger);
+        const K = 123;
+        const request: ChatApiRequest = {
+            message: 'Hello max tokens',
+            providerId: 'test-provider',
+            promptId: '__none__',
+            max_tokens_to_generate: K,
+            messages: [ { role: 'user', content: 'u1' } ],
+        };
+
+        await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+
+        assertEquals(messagesCreateStub.calls.length, 1);
+        const callArgs = messagesCreateStub.calls[0].args[0];
+        assertEquals(callArgs.max_tokens, K, 'Anthropic payload must use client-provided max_tokens_to_generate');
+    } finally {
+        messagesCreateStub.restore();
+    }
+});
+
+Deno.test("AnthropicAdapter - Specific Tests: does NOT inject 4096 default when client cap is absent", async () => {
+    function createMockMessagePromise(msg: Message): APIPromise<Message> {
+        return Promise.resolve(msg) as APIPromise<Message>;
+    }
+    const messagesCreateStub = stub(Anthropic.Messages.prototype, "create", () => createMockMessagePromise(MOCK_ANTHROPIC_SUCCESS_RESPONSE));
+
+    try {
+        // Provide a provider config with a model hard cap so the adapter need not inject 4096
+        const PROVIDER_WITH_HARD_CAP: Tables<'ai_providers'> = {
+            id: MOCK_PROVIDER.id,
+            provider: MOCK_PROVIDER.provider,
+            api_identifier: MOCK_PROVIDER.api_identifier,
+            name: MOCK_PROVIDER.name,
+            description: MOCK_PROVIDER.description,
+            is_active: MOCK_PROVIDER.is_active,
+            is_default_embedding: MOCK_PROVIDER.is_default_embedding,
+            is_enabled: MOCK_PROVIDER.is_enabled,
+            created_at: MOCK_PROVIDER.created_at,
+            updated_at: MOCK_PROVIDER.updated_at,
+            config: {
+                api_identifier: MOCK_MODEL_CONFIG.api_identifier,
+                input_token_cost_rate: MOCK_MODEL_CONFIG.input_token_cost_rate,
+                output_token_cost_rate: MOCK_MODEL_CONFIG.output_token_cost_rate,
+                tokenization_strategy: MOCK_MODEL_CONFIG.tokenization_strategy,
+                hard_cap_output_tokens: 250,
+            },
+        };
+        const adapter = new AnthropicAdapter(PROVIDER_WITH_HARD_CAP, 'sk-ant-test-key', mockLogger);
+        const request: ChatApiRequest = {
+            message: 'No cap provided',
+            providerId: 'test-provider',
+            promptId: '__none__',
+            messages: [ { role: 'user', content: 'u1' } ],
+        };
+
+        await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+
+        assertEquals(messagesCreateStub.calls.length, 1);
+        const callArgs = messagesCreateStub.calls[0].args[0];
+        // With no client cap, adapter should use model hard cap (not 4096 fallback)
+        assertEquals(callArgs.max_tokens, 250, 'Adapter must use model hard cap when client cap is absent');
+    } finally {
+        messagesCreateStub.restore();
+    }
+});

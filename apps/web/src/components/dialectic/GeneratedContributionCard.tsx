@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useDialecticStore, selectContributionById } from '@paynless/store';
-import { ApiError, DialecticContribution } from '@paynless/types';
+import { ApiError, DialecticContribution, ApiResponse } from '@paynless/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -38,7 +38,7 @@ export const GeneratedContributionCard: React.FC<GeneratedContributionCardProps>
   const fetchContributionContent = useDialecticStore(state => state.fetchContributionContent);
   const saveContributionEdit = useDialecticStore(state => state.saveContributionEdit);
   const isSavingEdit = useDialecticStore(state => state.isSavingContributionEdit);
-  const saveEditError = useDialecticStore(state => state.saveContributionEditError as ApiError | null);
+  const saveEditError: ApiError | null = useDialecticStore(state => state.saveContributionEditError);
   const resetSaveEditError = useDialecticStore(state => state.resetSaveContributionEditError);
 
   const [isEditing, setIsEditing] = useState(false);
@@ -81,7 +81,7 @@ export const GeneratedContributionCard: React.FC<GeneratedContributionCardProps>
     if(saveEditError && resetSaveEditError) resetSaveEditError();
 
     try {
-        const result = await saveContributionEdit({
+        const result: ApiResponse<DialecticContribution> = await saveContributionEdit({
             projectId: projectId,
             sessionId: contribution.session_id,
             originalModelContributionId: contribution.original_model_contribution_id || contribution.id,
@@ -93,8 +93,8 @@ export const GeneratedContributionCard: React.FC<GeneratedContributionCardProps>
         toast.success('Edit Saved', { description: 'Your changes to the contribution have been saved.' });
         setIsEditing(false);
       } else {
-        const errorPayload = result as unknown as { error: ApiError };
-        toast.error("Failed to Save Edit", { description: errorPayload?.error?.message || saveEditError?.message || "An unexpected error occurred." });
+        const errorPayload: ApiError = result.error;
+        toast.error("Failed to Save Edit", { description: errorPayload?.message || saveEditError?.message || "An unexpected error occurred." });
       }
     } catch (e: unknown) {
         const errorMessage = e instanceof Error ? e.message : "A client-side error occurred while saving.";
@@ -108,7 +108,66 @@ export const GeneratedContributionCard: React.FC<GeneratedContributionCardProps>
   };
 
   if (!contribution) {
-    return <Card className="animate-pulse"><CardHeader><Skeleton className="h-5 w-3/4"/></CardHeader><CardContent><Skeleton className="h-20 w-full"/></CardContent></Card>;
+    // Render a skeleton loader if the contribution object is not found in the store
+    return <Card className="animate-pulse flex flex-col gap-6 rounded-xl border py-6 shadow-sm" data-testid="skeleton-card"><CardHeader><Skeleton className="h-5 w-3/4"/></CardHeader><CardContent><Skeleton className="h-20 w-full"/></CardContent></Card>;
+  }
+
+  const status = contribution.status;
+
+  if (status && (['pending', 'generating', 'retrying', 'continuing']).includes(status)) {
+    const getStatusMessage = () => {
+      switch (status) {
+        case 'pending':
+          return `Contribution from ${contribution.model_name} is pending in the queue...`;
+        case 'generating':
+          return `Generating contribution with ${contribution.model_name}...`;
+        case 'retrying':
+          return `An issue occurred. Retrying generation for ${contribution.model_name}...`;
+        case 'continuing':
+          return `Receiving response from ${contribution.model_name}...`;
+        default:
+          return 'Loading...';
+      }
+    };
+
+    return (
+      <Card className="flex flex-col h-full">
+        <CardHeader>
+          <CardTitle className="text-lg">{contribution.model_name}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center flex-grow py-8">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="mt-4 text-muted-foreground">{getStatusMessage()}</p>
+          {status === 'retrying' && contribution.error && (
+            <p className="mt-2 text-xs text-destructive text-center">{contribution.error.message}</p>
+          )}
+          {/* Show partial content if continuing */}
+          {status === 'continuing' && displayContent && (
+            <div className="w-full mt-4 p-4 border rounded-md bg-muted/50 max-h-48 overflow-y-auto">
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{displayContent}</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (status === 'failed') {
+    return (
+      <Card className="flex flex-col h-full border-destructive">
+        <CardHeader>
+          <CardTitle className="text-lg">{contribution.model_name}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex-grow py-4">
+          <Alert variant="destructive">
+            <AlertTitle>Generation Failed</AlertTitle>
+            <AlertDescription>
+              {contribution.error?.message || 'An unexpected error occurred and the contribution could not be generated.'}
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+    );
   }
 
   const isUserEdited = contribution.edit_version > 1 && contribution.user_id;

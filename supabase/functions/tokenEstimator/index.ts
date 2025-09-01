@@ -7,7 +7,9 @@ import {
 } from '../_shared/cors-headers.ts';
 import { createSupabaseClient } from '../_shared/auth.ts';
 import { logger } from '../_shared/logger.ts';
-import type { AiModelExtendedConfig, MessageForTokenCounting } from '../_shared/types.ts';
+import type { ILogger } from '../_shared/types.ts';
+import type { AiModelExtendedConfig, Messages } from '../_shared/types.ts';
+import { countTokens } from 'npm:@anthropic-ai/tokenizer@0.0.4';
 
 // Import tiktoken types and functions
 import { 
@@ -55,14 +57,14 @@ function createEncoding(encodingName: string): EncodingResult {
 // Dependency injection interface for token estimation
 interface TokenEstimationDeps {
   createEncoding: typeof createEncoding;
-  logger: typeof logger;
+  logger: ILogger;
 }
 
 /**
  * Server-side implementation of token estimation (moved from packages/utils/src/tokenCostUtils.ts)
  */
 function estimateInputTokens(
-  textOrMessages: string | MessageForTokenCounting[],
+  textOrMessages: string | Messages[],
   modelConfig: AiModelExtendedConfig,
   deps: TokenEstimationDeps
 ): number {
@@ -175,6 +177,18 @@ function estimateInputTokens(
       }
     }
 
+    case 'anthropic_tokenizer': {
+      const textToEstimate = typeof textOrMessages === 'string'
+        ? textOrMessages
+        : textOrMessages.map(m => m.content || '').join('\n');
+      try {
+        return countTokens(textToEstimate);
+      } catch (e) {
+        logger.warn('Anthropic tokenizer failed in estimator. Falling back to rough character count.', { error: e });
+        return APPROXIMATE_TOKEN_ESTIMATE_FOR_UNKNOWN(textToEstimate);
+      }
+    }
+
     case 'rough_char_count': {
       const ratio = tokenization_strategy.chars_per_token_ratio || DEFAULT_CHARS_PER_TOKEN;
       if (ratio <= 0) {
@@ -184,7 +198,6 @@ function estimateInputTokens(
       return Math.ceil(textToEstimate.length / ratio);
     }
 
-    case 'claude_tokenizer':
     case 'google_gemini_tokenizer':
     case 'none':
     default: {
@@ -196,7 +209,7 @@ function estimateInputTokens(
 }
 
 interface EstimateTokensRequest {
-  textOrMessages: string | MessageForTokenCounting[];
+  textOrMessages: string | Messages[];
   modelConfig: AiModelExtendedConfig;
 }
 

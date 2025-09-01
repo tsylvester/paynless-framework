@@ -307,9 +307,9 @@ export class TokenWalletService implements ITokenWalletService {
 
       if (walletData && walletData.user_id) {
         await this.supabaseAdminClient.rpc('create_notification_for_user', {
-          target_user_id: walletData.user_id,
-          notification_type: 'WALLET_TRANSACTION',
-          notification_data: {
+          p_target_user_id: walletData.user_id,
+          p_notification_type: 'WALLET_TRANSACTION',
+          p_notification_data: {
             subject: 'Wallet Balance Updated',
             message: `Your token balance has changed. New balance: ${rpcResult.balance_after_txn}`,
             target_path: '/transaction-history',

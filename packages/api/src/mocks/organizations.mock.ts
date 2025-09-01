@@ -68,6 +68,8 @@ export const defaultMockMembers: OrganizationMemberWithProfile[] = [ // Use Orga
              last_selected_org_id: null,
              chat_context: null,
              profile_privacy_setting: 'private',
+             is_subscribed_to_newsletter: false,
+             has_seen_welcome_modal: false,
           }
     },
     { 
@@ -87,6 +89,8 @@ export const defaultMockMembers: OrganizationMemberWithProfile[] = [ // Use Orga
              last_selected_org_id: null,
              chat_context: null,
              profile_privacy_setting: 'private',
+             is_subscribed_to_newsletter: false,
+             has_seen_welcome_modal: false,
           }
     },
 ]

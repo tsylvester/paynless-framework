@@ -1,15 +1,18 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@0.225.3";
+import { assertEquals, assertRejects, assert } from "jsr:@std/assert@0.225.3";
 import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
 import { 
     PromptAssembler, 
 } from "./prompt-assembler.ts";
-import { ProjectContext, SessionContext, StageContext } from "./prompt-assembler.interface.ts";
+import { ProjectContext, SessionContext, StageContext, AssemblerSourceDocument } from "./prompt-assembler.interface.ts";
 import { FileManagerService } from "./services/file_manager.ts";
 import { type InputArtifactRules, type ArtifactSourceRule, type DialecticContribution } from '../dialectic-service/dialectic.interface.ts';
 import { createMockSupabaseClient, type MockSupabaseDataConfig, type IMockSupabaseClient, type IMockClientSpies, type MockSupabaseClientSetup, type MockQueryBuilderState } from "./supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Json, Tables } from "../types_db.ts";
 import { Database } from "../types_db.ts";
+import { constructStoragePath } from './utils/path_constructor.ts';
+import { FileType } from "./types/file_manager.types.ts";
+import { join } from "jsr:@std/path/join";
 
 Deno.test("PromptAssembler", async (t) => {
     await t.step("_gatherInputsForStage tests", async (tCtx) => {
@@ -55,8 +58,8 @@ Deno.test("PromptAssembler", async (t) => {
             currentConsoleErrorSpy = null;
             currentConsoleInfoSpy = null;
             currentConsoleWarnSpy = null;
-            if (mockSupabaseSetup && typeof (mockSupabaseSetup as any).clearAllStubs === 'function') {
-                (mockSupabaseSetup as any).clearAllStubs();
+            if (mockSupabaseSetup && typeof mockSupabaseSetup.clearAllStubs === 'function') {
+                mockSupabaseSetup.clearAllStubs();
             }
             mockSupabaseSetup = null;
         };
@@ -107,10 +110,10 @@ Deno.test("PromptAssembler", async (t) => {
                 };
                 const iterationNumber = 1;
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
+                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
 
-                assertEquals(result.priorStageContributions, "");
-                assertEquals(result.priorStageFeedback, "");
+                assertEquals(Array.isArray(result), true);
+                assertEquals(result.length, 0);
             } finally {
                 teardown();
             }
@@ -163,10 +166,10 @@ Deno.test("PromptAssembler", async (t) => {
                 };
                 const iterationNumber = 1;
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
+                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
 
-                assertEquals(result.priorStageContributions, "");
-                assertEquals(result.priorStageFeedback, "");
+                assertEquals(Array.isArray(result), true);
+                assertEquals(result.length, 0);
                 
                 const stagesTableSpies = spies.getHistoricQueryBuilderSpies('dialectic_stages', 'in');
                 assertEquals(stagesTableSpies?.callCount, 0, "Expected dbClient.from('dialectic_stages')...in() not to be called");
@@ -222,10 +225,10 @@ Deno.test("PromptAssembler", async (t) => {
                 };
                 const iterationNumber = 1;
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
+                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
 
-                assertEquals(result.priorStageContributions, "");
-                assertEquals(result.priorStageFeedback, "");
+                assertEquals(Array.isArray(result), true);
+                assertEquals(result.length, 0);
                 
                 assertEquals(currentConsoleErrorSpy!.calls.length > 0, true, "Expected console.error to be called for invalid JSON rules");
 
@@ -289,10 +292,10 @@ Deno.test("PromptAssembler", async (t) => {
                     expected_output_artifacts: null,
                 };
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, 1);
+                const result = await assembler.gatherInputsForStage(stage, project, session, 1);
 
-                assertEquals(result.priorStageContributions, "");
-                assertEquals(result.priorStageFeedback, "");
+                assertEquals(Array.isArray(result), true);
+                assertEquals(result.length, 0);
                 assertEquals(currentConsoleErrorSpy!.calls.length > 0, true, "Expected console.error to be called for semantically invalid rule");
 
             } finally {
@@ -344,7 +347,9 @@ Deno.test("PromptAssembler", async (t) => {
                 },
                 storageMock: {
                     downloadResult: async (bucketId: string, path: string) => {
-                        if (bucketId === "test-bucket" && path === `${storagePath}/${fileName}`) {
+                        const expectedPath = join(storagePath, fileName);
+                        const expectedPathFs = expectedPath.replace(/\\/g, '/');
+                        if (bucketId === "test-bucket" && (path === expectedPath || path === expectedPathFs)) {
                             return { data: new Blob([contribContent]), error: null };
                         }
                         return { data: null, error: new Error("Unexpected download path in mock") };
@@ -408,24 +413,31 @@ Deno.test("PromptAssembler", async (t) => {
                     expected_output_artifacts: null,
                 };
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
+                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
                 
-                const expectedHeader = "Contributions from some-slug stage\n\n";
-                const expectedContentSegment = `#### Contribution from ${modelName}\n${contribContent}\n\n`;
-
                 console.log("--- TEST LOG: should fetch and format only contributions ---");
-                console.log("ACTUAL:", JSON.stringify(result.priorStageContributions));
-                console.log("EXPECTED HEADER:", JSON.stringify(expectedHeader));
-                console.log("EXPECTED CONTENT:", JSON.stringify(expectedContentSegment));
+                console.log("ACTUAL:", JSON.stringify(result));
+                console.log("EXPECTED CONTENT:", JSON.stringify(contribContent));
                 console.log("--- END TEST LOG ---");
 
-                assertEquals(result.priorStageContributions.includes(expectedHeader), true, `Contribution section header missing or incorrect. Got: ${result.priorStageContributions}`);
-                assertEquals(result.priorStageContributions.includes(expectedContentSegment), true, `Contribution content missing or incorrect. Got: ${result.priorStageContributions}`);
-                assertEquals(result.priorStageFeedback, "");
+                assertEquals(result.length, 1);
+                const doc = result[0];
+                assertEquals(doc.id, "contrib1");
+                assertEquals(doc.type, "contribution");
+                assertEquals(doc.content, contribContent);
+                assertEquals(doc.metadata.modelName, modelName);
+                assertEquals(doc.metadata.displayName, mockStageDisplayName);
+                assertEquals(doc.metadata.header, "Contributions from some-slug stage");
                 
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
                 assertEquals(downloadSpies.calls.length, 1);
-                assertEquals(downloadSpies.calls[0].args[0], `${storagePath}/${fileName}`);
+                const actualPath = downloadSpies.calls[0].args[0];
+                const expectedJoined = join(storagePath, fileName);
+                const expectedFs = expectedJoined.replace(/\\/g, '/');
+                assert(
+                    actualPath === expectedJoined || actualPath === expectedFs,
+                    `Expected download path to be '${expectedJoined}' or '${expectedFs}', got '${actualPath}'`
+                );
             } finally {
                 teardown();
             }
@@ -436,9 +448,18 @@ Deno.test("PromptAssembler", async (t) => {
             const mockStageDisplayName = "Previous Feedback Stage";
             const feedbackContent = "This is user feedback content.";
             const projectId = "p100";
+            const userId = "u100";
             const sessionId = "s100";
             const iteration = 2;
-            const expectedFeedbackPath = `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/${feedbackStageSlug}/user_feedback_${feedbackStageSlug}.md`;
+
+            const feedbackPathParts = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iteration - 1, // Feedback is from previous iteration
+                stageSlug: feedbackStageSlug,
+                fileType: FileType.UserFeedback,
+            });
+            const expectedFeedbackPath = join(feedbackPathParts.storagePath, feedbackPathParts.fileName);
 
             const config: MockSupabaseDataConfig = {
                 genericMockResults: {
@@ -450,11 +471,24 @@ Deno.test("PromptAssembler", async (t) => {
                             }
                             return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
                         }
+                    },
+                    'dialectic_feedback': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const sessionFilter = state.filters.find(f => f.column === 'session_id' && f.value === sessionId);
+                            const stageFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === feedbackStageSlug);
+                            const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === iteration - 1);
+                            const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === userId);
+                            if (sessionFilter && stageFilter && iterFilter && userFilter) {
+                                return { data: [{ id: 'fb-1', storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: null, error: Object.assign(new Error("Not Found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" };
+                        }
                     }
                 },
                 storageMock: {
                     downloadResult: async (bucketId: string, path: string) => {
-                        if (bucketId === "test-bucket" && path === expectedFeedbackPath) {
+                        const expectedFeedbackPathFs = expectedFeedbackPath.replace(/\\/g, '/');
+                        if (bucketId === "test-bucket" && (path === expectedFeedbackPath || path === expectedFeedbackPathFs)) {
                             return { data: new Blob([feedbackContent]), error: null };
                         }
                         return { data: null, error: new Error(`Unexpected download path for feedback: ${path}, expected ${expectedFeedbackPath}`) };
@@ -466,7 +500,7 @@ Deno.test("PromptAssembler", async (t) => {
             try {
                 const project: ProjectContext = { 
                     id: projectId,
-                    user_id: 'u100',
+                    user_id: userId,
                     project_name: "Test Project P100",
                     initial_user_prompt: "Initial prompt for P100",
                     initial_prompt_resource_id: null,
@@ -516,27 +550,29 @@ Deno.test("PromptAssembler", async (t) => {
                     expected_output_artifacts: null,
                 };
                 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
+                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
                 
-                const expectedFeedback = `---
-### User Feedback on Previous Stage: ${mockStageDisplayName}
----
-
-${feedbackContent}
-
----
-`;
                 console.log("--- TEST LOG: should fetch and format only feedback ---");
-                console.log("ACTUAL:", JSON.stringify(result.priorStageFeedback));
-                console.log("EXPECTED:", JSON.stringify(expectedFeedback));
+                console.log("ACTUAL:", JSON.stringify(result));
+                console.log("EXPECTED:", JSON.stringify(feedbackContent));
                 console.log("--- END TEST LOG ---");
 
-                assertEquals(result.priorStageFeedback, expectedFeedback, `Feedback content mismatch. Got: ${JSON.stringify(result.priorStageFeedback)}`);
-                assertEquals(result.priorStageContributions, "", "Contributions should be empty, but was not.");
+                assertEquals(result.length, 1);
+                const doc = result[0];
+                assertEquals(doc.id, 'fb-1');
+                assertEquals(doc.type, "feedback");
+                assertEquals(doc.content, feedbackContent);
+                assertEquals(doc.metadata.displayName, mockStageDisplayName);
+                assertEquals(doc.metadata.header, undefined); // No header defined in rule
 
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
                 assertEquals(downloadSpies.calls.length, 1);
-                assertEquals(downloadSpies.calls[0].args[0], expectedFeedbackPath);
+                const actualPath = downloadSpies.calls[0].args[0];
+                const expectedFs = expectedFeedbackPath.replace(/\\/g, '/');
+                assert(
+                    actualPath === expectedFeedbackPath || actualPath === expectedFs,
+                    `Expected download path to be '${expectedFeedbackPath}' or '${expectedFs}', got '${actualPath}'`
+                );
 
             } finally {
                 teardown();
@@ -556,7 +592,15 @@ ${feedbackContent}
             const iteration = 3;
             const contribStoragePath = "path/to";
             const contribFileName = "contrib-both.md";
-            const expectedFeedbackPath = `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/${feedbackSlug}/user_feedback_${feedbackSlug}.md`;
+
+            const feedbackPathParts = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: iteration - 1,
+                stageSlug: feedbackSlug,
+                fileType: FileType.UserFeedback
+            });
+            const expectedFeedbackPath = join(feedbackPathParts.storagePath, feedbackPathParts.fileName);
 
             const config: MockSupabaseDataConfig = {
                 genericMockResults: {
@@ -579,7 +623,7 @@ ${feedbackContent}
                                 return { 
                                     data: [{
                                         id: "contrib-both", storage_path: contribStoragePath, file_name: contribFileName,
-                                        storage_bucket: "test-bucket", model_name: modelName, session_id: sessionId, iteration_number: iteration, stage: contribSlug, is_latest_edit: true, created_at: new Date().toISOString(), user_id: 'u1', content_type: 'text/markdown', raw_text_content: null, word_count: null, token_count: null, dialectic_project_id: projectId,
+                                        storage_bucket: "test-bucket", model_name: modelName, session_id: sessionId, iteration_number: iteration, stage: contribSlug, is_latest_edit: true, created_at: new Date().toISOString(), user_id: 'u200', content_type: 'text/markdown', raw_text_content: null, word_count: null, token_count: null, dialectic_project_id: projectId,
                                         model_id: "model-gamma-id", prompt_template_id_used: null, seed_prompt_url: null, edit_version: 1,
                                         original_model_contribution_id: null, raw_response_storage_path: null, target_contribution_id: null,
                                         tokens_used_input: null, tokens_used_output: null, processing_time_ms: null, error: null, citations: null,
@@ -590,14 +634,29 @@ ${feedbackContent}
                             }
                             return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
                         }
+                    },
+                    'dialectic_feedback': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const sessionFilter = state.filters.find(f => f.column === 'session_id' && f.value === sessionId);
+                            const stageFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === feedbackSlug);
+                            const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === iteration - 1);
+                            const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === 'u200');
+                            if (sessionFilter && stageFilter && iterFilter && userFilter) {
+                                return { data: [{ id: 'fb-both', storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: null, error: Object.assign(new Error("Not Found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" };
+                        }
                     }
                 },
                 storageMock: {
                     downloadResult: async (bucketId: string, path: string) => {
-                        if (bucketId === "test-bucket" && path === `${contribStoragePath}/${contribFileName}`) {
+                        const expectedContribPath = join(contribStoragePath, contribFileName);
+                        const expectedContribPathFs = expectedContribPath.replace(/\\/g, '/');
+                        const expectedFeedbackPathFs = expectedFeedbackPath.replace(/\\/g, '/');
+                        if (bucketId === "test-bucket" && (path === expectedContribPath || path === expectedContribPathFs)) {
                             return { data: new Blob([contribContent]), error: null };
                         }
-                        if (bucketId === "test-bucket" && path === expectedFeedbackPath) {
+                        if (bucketId === "test-bucket" && (path === expectedFeedbackPath || path === expectedFeedbackPathFs)) {
                             return { data: new Blob([feedbackContent]), error: null };
                         }
                         return { data: null, error: new Error(`Unexpected download path (both): ${path}`) };
@@ -667,31 +726,30 @@ ${feedbackContent}
                     expected_output_artifacts: null,
                 };
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
-
-                const expectedContribHeader = "Contributions from contrib-slug-for-both stage\n\n";
-                const expectedContribContent = `#### Contribution from ${modelName}\n${contribContent}\n\n`;
-                const expectedFeedback = `Feedback from feedback-slug-for-both stage
----
-
-${feedbackContent}
-
----
-`;
+                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
 
                 console.log("--- TEST LOG: should fetch and format both contributions and feedback ---");
-                console.log("ACTUAL (Contrib):", JSON.stringify(result.priorStageContributions));
-                console.log("EXPECTED (Contrib Header):", JSON.stringify(expectedContribHeader));
-                console.log("EXPECTED (Contrib Content):", JSON.stringify(expectedContribContent));
-                console.log("ACTUAL (Feedback):", JSON.stringify(result.priorStageFeedback));
-                console.log("EXPECTED (Feedback):", JSON.stringify(expectedFeedback));
+                console.log("ACTUAL:", JSON.stringify(result));
                 console.log("--- END TEST LOG ---");
 
-                assertEquals(result.priorStageContributions.includes(expectedContribHeader), true, `Contribution header mismatch. Got: ${result.priorStageContributions}`);
-                assertEquals(result.priorStageContributions.includes(expectedContribContent), true);
+                assertEquals(result.length, 2);
                 
-                assertEquals(result.priorStageFeedback, expectedFeedback);
-                
+                const contribDoc = result.find(d => d.type === 'contribution');
+                const feedbackDoc = result.find(d => d.type === 'feedback');
+
+                assertEquals(!!contribDoc, true, "Contribution document not found in result");
+                assertEquals(contribDoc?.id, "contrib-both");
+                assertEquals(contribDoc?.content, contribContent);
+                assertEquals(contribDoc?.metadata.header, "Contributions from contrib-slug-for-both stage");
+                assertEquals(contribDoc?.metadata.displayName, contribDisplayName);
+                assertEquals(contribDoc?.metadata.modelName, modelName);
+
+                assertEquals(!!feedbackDoc, true, "Feedback document not found in result");
+                assertEquals(feedbackDoc?.id, "fb-both");
+                assertEquals(feedbackDoc?.content, feedbackContent);
+                assertEquals(feedbackDoc?.metadata.header, "Feedback from feedback-slug-for-both stage");
+                assertEquals(feedbackDoc?.metadata.displayName, feedbackDisplayName);
+
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
                 assertEquals(downloadSpies.calls.length, 2, "Expected two download calls");
             } finally {
@@ -712,7 +770,15 @@ ${feedbackContent}
             const iteration = 1;
             const contribStoragePath = "path";
             const contribFileName = "ch.md";
-            const expectedFeedbackPath = `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/${feedbackSlug}/user_feedback_${feedbackSlug}.md`;
+            const feedbackPathParts = constructStoragePath({
+                projectId,
+                sessionId,
+                iteration: 1, // Feedback is from previous iteration, which is 1
+                stageSlug: feedbackSlug,
+                fileType: FileType.UserFeedback
+            });
+            const expectedFeedbackPath = join(feedbackPathParts.storagePath, feedbackPathParts.fileName);
+            const expectedContribPath = join(contribStoragePath, contribFileName);
 
             const config: MockSupabaseDataConfig = {
                 genericMockResults: {
@@ -746,12 +812,32 @@ ${feedbackContent}
                             }
                              return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
                         }
+                    },
+                    'dialectic_feedback': {
+                         select: async (state: MockQueryBuilderState) => {
+                            const sessionFilter = state.filters.find(f => f.column === 'session_id' && f.value === sessionId);
+                            const stageFilter = state.filters.find(f => f.column === 'stage_slug' && f.value === feedbackSlug);
+                            const iterFilter = state.filters.find(f => f.column === 'iteration_number' && f.value === 1); // targetIteration is 1 when iteration is 1
+                            const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === 'u300');
+                            if (sessionFilter && stageFilter && iterFilter && userFilter) {
+                                return { data: [{ storage_bucket: 'test-bucket', storage_path: feedbackPathParts.storagePath, file_name: feedbackPathParts.fileName }], error: null, count: 1, status: 200, statusText: "OK" };
+                            }
+                            return { data: null, error: Object.assign(new Error("Not Found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" };
+                        }
                     }
                 },
                 storageMock: {
                     downloadResult: async (bucketId: string, path: string) => {
-                        if (bucketId === "test-bucket" && path === `${contribStoragePath}/${contribFileName}`) return { data: new Blob([contribContent]), error: null };
-                        if (bucketId === "test-bucket" && path === expectedFeedbackPath) return { data: new Blob([feedbackContent]), error: null };
+                        const expectedContribPathFs = expectedContribPath.replace(/\\/g, '/');
+                        const expectedFeedbackPathFs = expectedFeedbackPath.replace(/\\/g, '/');
+                        if (
+                            bucketId === "test-bucket" &&
+                            (path === expectedContribPath || path === expectedContribPathFs)
+                        ) return { data: new Blob([contribContent]), error: null };
+                        if (
+                            bucketId === "test-bucket" &&
+                            (path === expectedFeedbackPath || path === expectedFeedbackPathFs)
+                        ) return { data: new Blob([feedbackContent]), error: null };
                         return { data: null, error: new Error(`Unexpected download path (custom header): ${path}`) };
                     }
                 }
@@ -819,27 +905,25 @@ ${feedbackContent}
                     expected_output_artifacts: null,
                 };
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
+                const result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
 
-                const expectedContrib = `${customContribHeader}\n\n#### Contribution from ${modelName}\n${contribContent}\n\n`;
-
-                const expectedFeedback = `${customFeedbackHeader}
----
-
-${feedbackContent}
-
----
-`;
                 console.log("--- TEST LOG: should use custom section_headers ---");
-                console.log("ACTUAL (Contrib):", JSON.stringify(result.priorStageContributions));
-                console.log("EXPECTED (Contrib):", JSON.stringify(expectedContrib));
-                console.log("ACTUAL (Feedback):", JSON.stringify(result.priorStageFeedback));
-                console.log("EXPECTED (Feedback):", JSON.stringify(expectedFeedback));
+                console.log("ACTUAL:", JSON.stringify(result));
                 console.log("--- END TEST LOG ---");
 
-                assertEquals(result.priorStageContributions, expectedContrib, `Contribution content mismatch. Got: ${JSON.stringify(result.priorStageContributions)}`);
-                assertEquals(result.priorStageFeedback, expectedFeedback, `Feedback content mismatch. Got: ${JSON.stringify(result.priorStageFeedback)}`);
-                
+                assertEquals(result.length, 2);
+
+                const contribDoc = result.find(d => d.type === 'contribution');
+                const feedbackDoc = result.find(d => d.type === 'feedback');
+
+                assertEquals(!!contribDoc, true, "Custom header contribution document not found");
+                assertEquals(contribDoc?.content, contribContent);
+                assertEquals(contribDoc?.metadata.header, customContribHeader);
+
+                assertEquals(!!feedbackDoc, true, "Custom header feedback document not found");
+                assertEquals(feedbackDoc?.content, feedbackContent);
+                assertEquals(feedbackDoc?.metadata.header, customFeedbackHeader);
+
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
                 assertEquals(downloadSpies.calls.length, 2, "Expected two download calls for custom headers test");
             } finally {
@@ -851,9 +935,9 @@ ${feedbackContent}
             const optionalFeedbackSlug = "prev-stage-optional-feedback";
             const optionalFeedbackDisplayName = "Optional Feedback Stage";
             const projectId = "p400";
+            const userId = 'u400';
             const sessionId = "s400";
             const iteration = 1;
-            const expectedFeedbackPath = `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/${optionalFeedbackSlug}/user_feedback_${optionalFeedbackSlug}.md`;
 
             const config: MockSupabaseDataConfig = {
                 genericMockResults: {
@@ -865,14 +949,21 @@ ${feedbackContent}
                             }
                             return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
                         }
+                    },
+                    'dialectic_feedback': {
+                        select: async (state: MockQueryBuilderState) => {
+                            const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === userId);
+                            if (!userFilter) {
+                                // If the filter is missing, return something unexpected to make the test fail in a clear way.
+                                return { data: [], error: new Error("Missing user_id filter in feedback query mock") };
+                            }
+                            return { data: null, error: Object.assign(new Error("Not Found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" };
+                        }
                     }
                 },
                 storageMock: {
-                    downloadResult: async (bucketId: string, path: string) => {
-                        if (bucketId === "test-bucket" && path === expectedFeedbackPath) {
-                            return { data: null, error: null };
-                        }
-                        return { data: null, error: new Error(`Unexpected download path (optional feedback): ${path}`) };
+                    downloadResult: async () => {
+                        return { data: null, error: new Error(`Download should not be called`) };
                     }
                 }
             };
@@ -881,7 +972,7 @@ ${feedbackContent}
             try {
                 const project: ProjectContext = { 
                     id: projectId,
-                    user_id: 'u400',
+                    user_id: userId,
                     project_name: "Test Project P400",
                     initial_user_prompt: "Initial prompt for P400",
                     initial_prompt_resource_id: null,
@@ -932,44 +1023,19 @@ ${feedbackContent}
                 };
 
                 let errorThrown = false;
-                let result: { priorStageContributions: string; priorStageFeedback: string } | null = null;
+                let result: AssemblerSourceDocument[] | null = null;
                 try {
-                     result = await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
+                     result = await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
                 } catch (e) {
                     errorThrown = true;
                     console.error("Test unexpectedly threw an error:", e)
                 }
                 
                 assertEquals(errorThrown, false, "Error was unexpectedly thrown for missing optional feedback.");
-                assertEquals(result?.priorStageContributions, "");
-                
-                assertEquals(result?.priorStageFeedback, "", "Feedback content was not empty as expected.");
-                
-                const errorLogCall = currentConsoleErrorSpy!.calls.find(call => {
-                    if (!(call.args.length > 1 && typeof call.args[0] === 'string' && typeof call.args[1] === 'object' && call.args[1] !== null)) {
-                        return false;
-                    }
-
-                    const messageString = call.args[0];
-                    const detailsObject = call.args[1] as { error?: { message?: string }, rule?: ArtifactSourceRule }; // Type assertion for easier access
-
-                    const pathCheck = messageString.includes(`[PromptAssembler._gatherInputsForStage] Failed to download feedback file. Path: ${expectedFeedbackPath}`);
-                    const errorMessageCheck = detailsObject.error?.message?.includes("No data returned from storage download");
-                    
-                    const ruleCheck = call.args.some(arg => { // This part can remain as it checks any argument for the rule structure
-                        if (typeof arg === 'object' && arg !== null && (arg as {rule?: ArtifactSourceRule}).rule) {
-                            const ruleArg = (arg as {rule: ArtifactSourceRule}).rule;
-                            return ruleArg.stage_slug === optionalFeedbackSlug && ruleArg.required === false;
-                        }
-                        return false;
-                    });
-
-                    return pathCheck && errorMessageCheck && ruleCheck;
-                });
-                assertEquals(!!errorLogCall, true, "Expected console.error log for failed optional feedback download not found or incorrect.");
+                assertEquals(result?.length, 0, "Result should be empty");
                 
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
-                assertEquals(downloadSpies.calls.length, 1);
+                assertEquals(downloadSpies.calls.length, 0);
             } finally {
                 teardown();
             }
@@ -979,9 +1045,9 @@ ${feedbackContent}
             const requiredFeedbackSlug = "prev-stage-req-feedback";
             const requiredFeedbackDisplayName = "Required Feedback Stage";
             const projectId = "p500";
+            const userId = 'u500';
             const sessionId = "s500";
             const iteration = 1;
-            const expectedFeedbackPath = `projects/${projectId}/sessions/${sessionId}/iteration_${iteration}/${requiredFeedbackSlug}/user_feedback_${requiredFeedbackSlug}.md`;
 
             const config: MockSupabaseDataConfig = {
                 genericMockResults: {
@@ -992,14 +1058,20 @@ ${feedbackContent}
                                 return { data: [{ slug: requiredFeedbackSlug, display_name: requiredFeedbackDisplayName }], error: null, count: 1, status: 200, statusText: "OK" };
                             }
                             return { data: [], error: null, count: 0, status: 200, statusText: "OK" };
+                       }
+                    },
+                    'dialectic_feedback': {
+                        select: async (state: MockQueryBuilderState) => {
+                             const userFilter = state.filters.find(f => f.column === 'user_id' && f.value === userId);
+                            if (!userFilter) {
+                                return { data: [], error: new Error("Missing user_id filter in required feedback query mock") };
+                            }
+                            return { data: null, error: Object.assign(new Error("Not Found"), { code: "PGRST116" }), count: 0, status: 404, statusText: "Not Found" };
                         }
                     }
                 },
                 storageMock: {
                     downloadResult: async (bucketId: string, path: string) => {
-                        if (bucketId === "test-bucket" && path === expectedFeedbackPath) {
-                            return { data: null, error: null };
-                        }
                         return { data: null, error: new Error(`Unexpected download path (required feedback): ${path}`) };
                     }
                 }
@@ -1009,7 +1081,7 @@ ${feedbackContent}
             try {
                 const project: ProjectContext = { 
                     id: projectId,
-                    user_id: 'u500',
+                    user_id: userId,
                     project_name: "Test Project P500",
                     initial_user_prompt: "Initial prompt for P500",
                     initial_prompt_resource_id: null,
@@ -1061,14 +1133,14 @@ ${feedbackContent}
 
                 await assertRejects(
                     async () => {
-                        await assembler['_gatherInputsForStage'](stage, project, session, iterationNumber);
+                        await assembler.gatherInputsForStage(stage, project, session, iterationNumber);
                     },
                     Error,
-                    `Failed to download REQUIRED feedback for stage '${requiredFeedbackDisplayName}' (slug: ${requiredFeedbackSlug})`
+                    `Required feedback for stage '${requiredFeedbackDisplayName}' was not found.`
                 );
                 
                 const downloadSpies = spies.storage.from("test-bucket").downloadSpy;
-                assertEquals(downloadSpies.calls.length, 1);
+                assertEquals(downloadSpies.calls.length, 0);
             } finally {
                 teardown();
             }
@@ -1113,7 +1185,7 @@ ${feedbackContent}
                 };
 
                 await assertRejects(
-                    async () => await assembler['_gatherInputsForStage'](stage, project, session, 1),
+                    async () => await assembler.gatherInputsForStage(stage, project, session, 1),
                     Error,
                     `Failed to retrieve REQUIRED AI contributions for stage '${mockStageDisplayName}'.`
                 );
@@ -1161,10 +1233,9 @@ ${feedbackContent}
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, expected_output_artifacts: null,
                 };
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, 1);
+                const result = await assembler.gatherInputsForStage(stage, project, session, 1);
 
-                assertEquals(result.priorStageContributions, "", "priorStageContributions was not empty as expected when optional DB query fails.");
-                assertEquals(result.priorStageFeedback, "");
+                assertEquals(result.length, 0, "Result should be empty");
                 assertEquals(currentConsoleErrorSpy!.calls.some(call => call.args[0].includes("Failed to retrieve AI contributions")), true, "Expected console.error for DB failure");
             } finally {
                 teardown();
@@ -1229,7 +1300,7 @@ ${feedbackContent}
                 };
 
                 await assertRejects(
-                    async () => await assembler['_gatherInputsForStage'](stage, project, session, 1),
+                    async () => await assembler.gatherInputsForStage(stage, project, session, 1),
                     Error,
                     `Failed to download REQUIRED content for contribution ${badContentContribId} from stage '${mockStageDisplayName}'.`
                 );
@@ -1301,10 +1372,9 @@ ${feedbackContent}
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, expected_output_artifacts: null,
                 };
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, 1);
+                const result = await assembler.gatherInputsForStage(stage, project, session, 1);
 
-                assertEquals(result.priorStageContributions, "", "priorStageContributions was not empty as expected when optional item misses storage details.");
-                assertEquals(result.priorStageFeedback, "");
+                assertEquals(result.length, 0, "Result should be empty");
                 assertEquals(currentConsoleErrorSpy!.calls.some(call => 
                     call.args.length > 0 &&
                     typeof call.args[0] === 'string' &&
@@ -1366,14 +1436,14 @@ ${feedbackContent}
                 };
 
                 await assertRejects(
-                    async () => await assembler['_gatherInputsForStage'](stage, project, session, 1),
+                    async () => await assembler.gatherInputsForStage(stage, project, session, 1),
                     Error,
                     `REQUIRED Contribution ${badContribId} from stage '${mockStageDisplayName}' is missing storage details.`
                 );
                 assertEquals(currentConsoleWarnSpy!.calls.some(call => 
                     call.args.length > 0 && 
                     typeof call.args[0] === 'string' && 
-                    call.args[0].includes(`Contribution ${badContribId} is missing storage_path or storage_bucket`)
+                    call.args[0].includes(`Contribution ${badContribId} is missing storage details`)
                 ), true, "Expected console.warn for missing storage details");
             } finally {
                 teardown();
@@ -1431,15 +1501,14 @@ ${feedbackContent}
                     slug: "curr", display_name: "Current", description: null, system_prompts: null, domain_specific_prompt_overlays: [], created_at: new Date().toISOString(), default_system_prompt_id: null, expected_output_artifacts: null,
                 };
 
-                const result = await assembler['_gatherInputsForStage'](stage, project, session, 1);
+                const result = await assembler.gatherInputsForStage(stage, project, session, 1);
 
-                assertEquals(result.priorStageContributions, "", "priorStageContributions was not empty as expected when optional item misses storage details.");
-                assertEquals(result.priorStageFeedback, "");
+                assertEquals(result.length, 0, "Result should be empty");
                 assertEquals(currentConsoleWarnSpy!.calls.some(call => 
                     call.args.length > 0 &&
                     typeof call.args[0] === 'string' &&
-                    call.args[0].includes(`Contribution ${badContribId} is missing storage_path or storage_bucket`)
-                ), true, "Expected console.warn for missing storage details");
+                    call.args[0].includes(`Contribution ${badContribId} is missing storage details`)
+                ), true, "Expected console.warn for missing storage details on optional item");
             } finally {
                 teardown();
             }

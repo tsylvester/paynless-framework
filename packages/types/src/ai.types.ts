@@ -64,11 +64,20 @@ export type TiktokenEncoding = 'cl100k_base' | 'p50k_base' | 'r50k_base' | 'gpt2
 /**
  * Interface for messages used in token counting functions.
  */
-export interface MessageForTokenCounting {
-  role: "system" | "user" | "assistant" | "function"; // Function role might be needed for some models
+export enum ChatRole {
+  SYSTEM = 'system',
+  USER = 'user',
+  ASSISTANT = 'assistant',
+  FUNCTION = 'function',
+}
+
+export interface Messages {
+  role: ChatRole; // Function role might be needed for some models
   content: string | null; // Content can be null for some function calls
   name?: string; // Optional, for function calls
 }
+
+
 
 /**
  * Extended configuration for an AI model, stored in the `ai_providers.config` JSON column.
@@ -116,7 +125,7 @@ export interface ChatApiRequest {
   promptId: SystemPrompt['id']; // Reference aliased type
   chatId?: Chat['id'] | null;   // Reference aliased type (optional for new chats)
   organizationId?: string | null; // Add optional organizationId
-  contextMessages?: MessageForTokenCounting[]; // Added for selected context
+  contextMessages?: Messages[]; // Added for selected context
   rewindFromMessageId?: string | null; // Added for rewind
   max_tokens_to_generate?: number; // Added for output capping
   temperature?: number; // Added for temperature control
@@ -286,7 +295,7 @@ export interface AiActions {
     providerId: AiProvider['id']; // Use aliased type
     promptId: SystemPrompt['id'] | null; // MODIFIED HERE
     chatId?: Chat['id'] | null; // Use aliased type
-    contextMessages?: MessageForTokenCounting[]; // Use the more permissive type here
+    contextMessages?: Messages[]; // Use the more permissive type here
   }) => Promise<ChatMessage | null>; // Use aliased type
   loadChatHistory: (organizationId?: string | null) => Promise<void>;
   loadChatDetails: (chatId: Chat['id']) => Promise<void>; // Use aliased type
@@ -313,10 +322,10 @@ export interface AiActions {
 
   // --- Internal actions exposed for testing or complex workflows ---
   _addOptimisticUserMessage: (msgContent: string, explicitChatId?: string | null) => { tempId: string, chatIdUsed: string, createdTimestamp: string };
-  addOptimisticMessageForReplay: (messageContent: string, existingChatId?: string | null) => { tempId: string, chatIdForOptimistic: string };
   _updateChatContextInProfile: (contextUpdate: Partial<ChatContextPreferences>) => Promise<void>;
   _fetchAndStoreUserProfiles: (userIds: string[]) => Promise<void>;
   _dangerouslySetStateForTesting: (newState: Partial<AiState>) => void;
+  checkAndReplayPendingChatAction: () => Promise<void>;
 }
 
 /**
@@ -377,7 +386,7 @@ export interface ChatContextPreferences {
  * Request structure for token estimation.
  */
 export interface TokenEstimationRequest {
-  textOrMessages: string | MessageForTokenCounting[];
+  textOrMessages: string | Messages[];
   modelConfig: AiModelExtendedConfig;
 }
 

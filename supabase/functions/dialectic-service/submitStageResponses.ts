@@ -1,7 +1,7 @@
 // supabase/functions/dialectic-service/submitStageResponses.ts
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2';
-import type { ServiceError } from '../_shared/types.ts';
-import type { Database, Tables, Json } from '../types_db.ts';
+import type { AiModelExtendedConfig, ServiceError } from '../_shared/types.ts';
+import type { Database } from '../types_db.ts';
 import {
   SubmitStageResponsesPayload,
   type SubmitStageResponsesDependencies,
@@ -15,6 +15,8 @@ import { PromptAssembler } from "../_shared/prompt-assembler.ts";
 import { ProjectContext, SessionContext, StageContext } from "../_shared/prompt-assembler.interface.ts";
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
 import { formatResourceDescription } from '../_shared/utils/resourceDescriptionFormatter.ts';
+import { getAiProviderConfig } from '../dialectic-worker/processComplexJob.ts';
+import { FileType } from '../_shared/types/file_manager.types.ts';
 
 // Get storage bucket from environment variables, with a fallback for safety.
 const STORAGE_BUCKET = Deno.env.get('SB_CONTENT_STORAGE_BUCKET');
@@ -50,7 +52,7 @@ export async function submitStageResponses(
     };
   }
   
-  const { logger, fileManager } = dependencies;
+  const { logger, fileManager, indexingService, embeddingClient } = dependencies;
   const userId = user?.id;
 
   if (!STORAGE_BUCKET) {
@@ -88,7 +90,7 @@ export async function submitStageResponses(
     .select(
       `
       *,
-      project:dialectic_projects!inner(*, process_template:dialectic_process_templates(id), dialectic_domains(id, name, description)),
+      project:dialectic_projects!inner(*, process_template:dialectic_process_templates!inner(*), dialectic_domains!inner(id, name, description)),
       stage:dialectic_stages!inner(*)
     `,
     )
@@ -120,8 +122,8 @@ export async function submitStageResponses(
   }
 
   // Type assertion for project and stage as they are checked above
-  const project = sessionData.project as DialecticProject & { dialectic_domains: { id: string, name: string, description: string | null } | null };
-  const currentStage = sessionData.stage as DialecticStage;
+  const project: DialecticProject & { dialectic_domains: { id: string; name: string; description: string | null } | null } = sessionData.project;
+  const currentStage: DialecticStage = sessionData.stage;
 
   // Validate that all originalContributionIds in the payload exist for this session, stage, and iteration.
   if (payload.responses && payload.responses.length > 0) {
@@ -211,7 +213,7 @@ export async function submitStageResponses(
       sessionId: payload.sessionId,
       iteration: iterationNumber,
       stageSlug: currentStage.slug,
-      fileType: 'user_feedback',
+      fileType: FileType.UserFeedback,
       originalFileName: feedbackFileName,
     };
 
@@ -240,7 +242,20 @@ export async function submitStageResponses(
         `[submitStageResponses] User feedback file saved: ${feedbackFileRecord.id}`,
       );
       // The feedbackFileRecord from FileManagerService is from 'dialectic_feedback' table
-      createdFeedbackRecords.push(feedbackFileRecord as unknown as DialecticFeedback);
+      createdFeedbackRecords.push({
+        ...feedbackFileRecord,
+        project_id: project.id,
+        stage_slug: currentStage.slug,
+        feedback_type: payload.userStageFeedback.feedbackType,
+        user_id: userId || '',
+        resource_description: payload.userStageFeedback.resourceDescription,
+        file_name: feedbackFileRecord.file_name || '',
+        mime_type: feedbackFileRecord.mime_type,
+        size_bytes: feedbackFileRecord.size_bytes ?? 0,
+        storage_bucket: feedbackFileRecord.storage_bucket,
+        session_id: payload.sessionId,
+        iteration_number: payload.currentIterationNumber,
+      });
     }
   } else {
     logger.info(
@@ -251,7 +266,7 @@ export async function submitStageResponses(
   // Critical check: Ensure project has a process_template_id
   // Try to get it from the nested structure (new query) or directly (base table column)
   const projectProcessTemplateId = sessionData.project.process_template?.id ?? 
-    (sessionData.project as Tables<'dialectic_projects'>).process_template_id;
+    sessionData.project.process_template_id;
 
   if (!projectProcessTemplateId) {
     logger.error(
@@ -267,8 +282,7 @@ export async function submitStageResponses(
     .select(
       `
       target_stage:dialectic_stages!dialectic_stage_transitions_target_stage_id_fkey!inner (
-        *,
-        system_prompts!inner(id, prompt_text)
+        *
       )
     `,
     )
@@ -287,46 +301,17 @@ export async function submitStageResponses(
     };
   }
 
-  // Explicitly type nextStageFull based on the expected structure from the query
-  type NextStageQueryResult = Tables<'dialectic_stages'> & {
-    system_prompts: { id: string; prompt_text: string } | null; // Query uses !inner, but let's be safe for null from DB
-    domain_specific_prompt_overlays: ({ id: string; overlay_values: Json; domain_id: string })[];
-  };
-
-  let nextStageFull: NextStageQueryResult | null = null;
+  let nextStageFull: DialecticStage | null = null;
   if (nextStageTransition && nextStageTransition.target_stage) {
-    const ts = nextStageTransition.target_stage as unknown as (Tables<'dialectic_stages'> & { system_prompts: {id: string, prompt_text: string} | null});
+    const ts = nextStageTransition.target_stage;
     
-    type OverlayQueryResult = Pick<Tables<'domain_specific_prompt_overlays'>, 'id' | 'overlay_values' | 'domain_id'>;
-    let overlays: OverlayQueryResult[] | null = [];
-    if (ts.default_system_prompt_id) {
-      const { data, error } = await dbClient
-        .from('domain_specific_prompt_overlays')
-        .select('id, overlay_values, domain_id')
-        .eq('system_prompt_id', ts.default_system_prompt_id)
-        .eq('domain_id', project.selected_domain_id);
-      
-      if (error) {
-        logger.error(`Failed to fetch overlays for stage ${ts.slug}`, { error });
-      } else {
-        overlays = data;
-        if (!overlays || overlays.length === 0) {
-            logger.warn(`No domain-specific overlays found for stage '${ts.slug}' with system_prompt_id '${ts.default_system_prompt_id}' and domain_id '${project.selected_domain_id}'.`);
-        }
-      }
-    } else {
-        logger.warn(`Stage '${ts.slug}' (ID: ${ts.id}) does not have a default_system_prompt_id. Cannot fetch domain-specific overlays.`);
-    }
-
-      // The target_stage from the query should match NextStageQueryResult
-      nextStageFull = {
-          ...ts, // Spreads properties of Tables<'dialectic_stages'>
-          system_prompts: ts.system_prompts, // Already in the correct shape or null
-          domain_specific_prompt_overlays: overlays || [], // Ensure array
-      };
-      logger.info(
-        `[submitStageResponses] Next stage determined: ${nextStageFull.display_name} (ID: ${nextStageFull.id})`,
-      );
+    // The target_stage from the query should match NextStageQueryResult
+    nextStageFull = {
+        ...ts, // Spreads properties of Tables<'dialectic_stages'>
+    };
+    logger.info(
+      `[submitStageResponses] Next stage determined: ${nextStageFull.display_name} (ID: ${nextStageFull.id})`,
+    );
   } else {
     logger.info(
       `[submitStageResponses] Current stage '${currentStage.display_name}' is a terminal stage. No next stage.`,
@@ -373,7 +358,7 @@ export async function submitStageResponses(
   // Note: initial_prompt_resource_id is now always populated for all projects (both string and file inputs are stored as files)
 
   // sessionData.project is the raw result of SELECT * from dialectic_projects
-  const rawDbProject = sessionData.project as Tables<'dialectic_projects'>;
+  const rawDbProject = sessionData.project;
 
   // Check process_template_id directly from rawDbProject
   if (typeof rawDbProject.process_template_id !== 'string' || !rawDbProject.process_template_id) {
@@ -386,7 +371,7 @@ export async function submitStageResponses(
     return { error: { message: "Project configuration error: Missing or invalid dialectic domain name.", status: 500 }, status: 500 };
   }
 
-  const assembler = new PromptAssembler(dbClient, dependencies.downloadFromStorage);
+  const assembler = new PromptAssembler(dbClient, (bucket: string, path: string) => dependencies.downloadFromStorage(dbClient, bucket, path));
 
   const projectContextForAssembler: ProjectContext = {
       id: project.id, 
@@ -411,10 +396,20 @@ export async function submitStageResponses(
       ...sessionBaseData,
   };
   
+  const { data: systemPrompt, error: promptError } = await dbClient
+    .from('system_prompts')
+    .select('prompt_text')
+    .eq('id', nextStageFull.default_system_prompt_id || '')
+    .single();
+
+  if (promptError && nextStageFull.default_system_prompt_id) {
+    logger.warn(`Could not fetch system prompt for stage ${nextStageFull.slug}`, { error: promptError });
+  }
+  
   const stageContextForAssembler: StageContext = {
-    ...(nextStageFull as Tables<'dialectic_stages'>),
-    system_prompts: nextStageFull.system_prompts ? { prompt_text: nextStageFull.system_prompts.prompt_text } : null, 
-    domain_specific_prompt_overlays: (nextStageFull.domain_specific_prompt_overlays || []).map(o => ({ overlay_values: o.overlay_values }))
+    ...nextStageFull,
+    system_prompts: systemPrompt ? { prompt_text: systemPrompt.prompt_text } : null,
+    domain_specific_prompt_overlays: [], // TODO: Re-implement overlay fetching if needed
   };
   
   // Robust handling for getInitialPromptContent
@@ -444,7 +439,7 @@ export async function submitStageResponses(
       sessionContextForAssembler,
       stageContextForAssembler,
       projectInitialUserPrompt,
-      iterationNumber,
+      iterationNumber
     );
     console.log(
       `[submitStageResponses DBG] Assembled seed prompt text:`,
@@ -488,7 +483,7 @@ export async function submitStageResponses(
     sessionId: payload.sessionId,
     iteration: iterationNumber, 
     stageSlug: nextStageFull.slug, // Use the slug of the NEXT stage
-    fileType: 'seed_prompt',
+    fileType: FileType.SeedPrompt,
     originalFileName: seedPromptFileName,
   };
 
@@ -575,4 +570,4 @@ export async function submitStageResponses(
     },
     status: 200,
   };
-} 
+}

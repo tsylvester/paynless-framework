@@ -44,7 +44,7 @@ Deno.test('getMaxOutputTokens', async (t) => {
     // twenty_percent_balance_as_output_tokens = floor((0.20 * 900) / 2) = 90
     // dynamic_hard_cap = min(90, 4096) = 90
     // result = min(450, 90) = 90
-    assertEquals(result, 90);
+    assertEquals(result, 400);
   });
 
   await t.step('should return -1 when balance is insufficient for the prompt', () => {
@@ -93,7 +93,7 @@ Deno.test('getMaxOutputTokens', async (t) => {
     // twenty_percent_balance_as_output_tokens = floor((0.20 * 100) / 2) = 10
     // dynamic_hard_cap = min(10, 4096) = 10
     // result = min(50, 10) = 10
-    assertEquals(result, 10);
+    assertEquals(result, 20);
   });
 
   await t.step('should be capped by provider hard cap', () => {
@@ -126,7 +126,7 @@ Deno.test('getMaxOutputTokens', async (t) => {
     // provider_hard_cap = Infinity
     // dynamic_hard_cap = min(90, Infinity) = 90
     // result = min(450, 90) = 90
-    assertEquals(result, 90);
+    assertEquals(result, 400);
   });
 
   await t.step('should throw error for invalid input_token_cost_rate', () => {
@@ -147,6 +147,33 @@ Deno.test('getMaxOutputTokens', async (t) => {
     assertEquals(mockLoggerErrorCalls.length, 1);
   });
 
+  await t.step('should throw error when output_token_cost_rate is negative', () => {
+    beforeEachStep();
+    const invalidModelConfig = { ...modelConfig, output_token_cost_rate: -0.1 };
+    assertThrows(() => {
+        getMaxOutputTokens(1000, 100, invalidModelConfig, mockLogger);
+    }, Error, 'Cannot calculate max output tokens: Invalid output token cost rate.');
+    assertEquals(mockLoggerErrorCalls.length, 1);
+  });
+
+  await t.step('should throw error when output_token_cost_rate is missing', () => {
+    beforeEachStep();
+    const invalidModelConfig = { ...modelConfig, output_token_cost_rate: undefined } as unknown as AiModelExtendedConfig;
+    assertThrows(() => {
+        getMaxOutputTokens(1000, 100, invalidModelConfig, mockLogger);
+    }, Error, 'Cannot calculate max output tokens: Invalid output token cost rate.');
+    assertEquals(mockLoggerErrorCalls.length, 1);
+  });
+
+  await t.step('should throw error when input_token_cost_rate is missing', () => {
+    beforeEachStep();
+    const invalidModelConfig = { ...modelConfig, input_token_cost_rate: undefined } as unknown as AiModelExtendedConfig;
+    assertThrows(() => {
+        getMaxOutputTokens(1000, 100, invalidModelConfig, mockLogger);
+    }, Error, 'Cannot calculate max output tokens: Invalid input token cost rate.');
+    assertEquals(mockLoggerErrorCalls.length, 1);
+  });
+
   await t.step('should work with floating point rates', () => {
     beforeEachStep();
     const user_balance_tokens = 1000;
@@ -163,7 +190,7 @@ Deno.test('getMaxOutputTokens', async (t) => {
     // twenty_percent_balance_as_output_tokens = floor((0.20 * 950) / 1.5) = 126
     // dynamic_hard_cap = min(126, 4096) = 126
     // result = min(633, 126) = 126
-    assertEquals(result, 126);
+    assertEquals(result, 533);
   });
 
   await t.step('should return 0 for negative balance even with deficit allowance due to dynamic cap', () => {
@@ -180,7 +207,7 @@ Deno.test('getMaxOutputTokens', async (t) => {
     // dynamic_hard_cap = min(9, 4096) = 9
     // non_negative_dynamic_hard_cap = max(0, 9) = 9
     // result = min(45, 9) = 9
-    assertEquals(result, 9);
+    assertEquals(result, 0);
   });
 
   await t.step('should return 0 if provider hard cap is 0', () => {
@@ -235,6 +262,54 @@ Deno.test('getMaxOutputTokens', async (t) => {
     // twenty_percent_balance_as_output_tokens = floor((0.20 * 100) / 2) = 10
     // dynamic_hard_cap = min(10, 4096) = 10
     // result = min(50, 10) = 10
-    assertEquals(result, 10);
+    assertEquals(result, 50);
+  });
+
+  // --- SSOT RED tests (spend fraction = 0.80) ---
+  await t.step('budget cap uses 80% of remaining balance (no provider caps)', () => {
+    beforeEachStep();
+    const user_balance_tokens = 1000;
+    const prompt_input_tokens = 100;
+    const cfg: AiModelExtendedConfig = {
+      ...modelConfig,
+      hard_cap_output_tokens: undefined,
+      // no provider_max_output_tokens
+    };
+    const result = getMaxOutputTokens(user_balance_tokens, prompt_input_tokens, cfg, mockLogger);
+    // SSOT target expectation (RED):
+    // prompt_cost = 100 * 1 = 100
+    // remaining = 1000 - 100 = 900
+    // spendable_budget = min(balance * 0.80 = 800, remaining = 900) = 800
+    // output_tokens = floor(800 / output_rate(2)) = 400
+    // Expected under SSOT: 400 (current implementation uses 20% and should FAIL this RED test)
+    assertEquals(result, 400);
+  });
+
+  await t.step('user cap < provider cap → user cap wins', () => {
+    beforeEachStep();
+    const user_balance_tokens = 1000;
+    const prompt_input_tokens = 100;
+    const cfg: AiModelExtendedConfig = {
+      ...modelConfig,
+      hard_cap_output_tokens: 10000,
+      provider_max_output_tokens: 10000,
+    };
+    const result = getMaxOutputTokens(user_balance_tokens, prompt_input_tokens, cfg, mockLogger);
+    // SSOT user cap (as above) expected: 400; both provider caps are higher → user cap should win
+    assertEquals(result, 400);
+  });
+
+  await t.step('[SSOT] user cap > provider cap → provider cap wins', () => {
+    beforeEachStep();
+    const user_balance_tokens = 1_000_000; // very large
+    const prompt_input_tokens = 10;
+    const cfg: AiModelExtendedConfig = {
+      ...modelConfig,
+      hard_cap_output_tokens: undefined,
+      provider_max_output_tokens: 50,
+    };
+    const result = getMaxOutputTokens(user_balance_tokens, prompt_input_tokens, cfg, mockLogger);
+    // Provider cap 50 should dominate
+    assertEquals(result, 50);
   });
 });

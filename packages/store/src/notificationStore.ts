@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { api } from '@paynless/api';
-import type { Notification, ApiError } from '@paynless/types';
-import { logger } from '@paynless/utils';
+import type { Notification, ApiError, DialecticLifecycleEvent } from '@paynless/types';
+import { logger, isDialecticLifecycleEventType, isDialecticContribution, isApiError } from '@paynless/utils';
 import { useDialecticStore } from './dialecticStore';
 import { useWalletStore } from './walletStore';
 
@@ -40,40 +40,129 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
 
     // --- NEW: Internal Realtime Callback Handler ---
     const handleIncomingNotification = (notification: Notification | null | undefined) => {
-        if (!notification || typeof notification !== 'object' || !notification.id || !notification.user_id || !notification.type || !notification.created_at) {
+        logger.info('[NotificationStore] Raw incoming notification from Supabase Realtime:', { notification });
+        if (!notification || !notification.id || !notification.user_id || !notification.type) {
             logger.warn('[NotificationStore] Received invalid notification data from subscription.', { payload: notification ?? 'undefined/null' });
             return;
         }
         logger.debug('[NotificationStore] Received notification via Realtime', { id: notification.id, type: notification.type });
 
-        // --- NEW: Special handling for contribution generation ---
-        if (notification.type === 'contribution_generation_complete') {
-            const { data } = notification;
-            if (data && typeof data === 'object' && 'sessionId' in data && 'projectId' in data) {
-                logger.info('[NotificationStore] Handling contribution generation completion event.', { data });
-                useDialecticStore.getState()._handleGenerationCompleteEvent?.({
-                    sessionId: data['sessionId'] as string,
-                    projectId: data['projectId'] as string,
-                });
-            } else {
-                logger.warn('[NotificationStore] Received contribution_generation_complete event with invalid data.', { data });
+        // --- NEW: Simplified Routing Logic ---
+        if (notification.is_internal_event) {
+            logger.info(`[NotificationStore] Routing internal event: ${notification.type}`, { data: notification.data });
+            // Map other_generation_failed -> contribution_generation_failed for store routing
+            if (notification.type === 'other_generation_failed') {
+                const data = notification.data;
+                if (data && typeof (data)['sessionId'] === 'string' && isApiError((data)['error'])) {
+                    const eventPayload: DialecticLifecycleEvent = {
+                        type: 'contribution_generation_failed',
+                        sessionId: (data)['sessionId'],
+                        error: (data)['error'],
+                        job_id: typeof (data)['job_id'] === 'string' ? (data)['job_id'] : undefined,
+                    };
+                    useDialecticStore.getState()._handleDialecticLifecycleEvent?.(eventPayload);
+                } else {
+                    logger.warn(`[NotificationStore] Internal event 'other_generation_failed' received, but its data payload did not match the expected format.`, { data });
+                }
+                return;
             }
+
+            if (isDialecticLifecycleEventType(notification.type)) {
+                if (notification.data) {
+                    let eventPayload: DialecticLifecycleEvent | null = null;
+                    const { type, data } = notification;
+
+                    // This switch is for type-safe payload construction.
+                    switch (type) {
+                        case 'contribution_generation_started':
+                            if (typeof data['sessionId'] === 'string' && typeof data['modelId'] === 'string' && typeof data['iterationNumber'] === 'number' && typeof data['job_id'] === 'string') {
+                                eventPayload = { type, sessionId: data['sessionId'], modelId: data['modelId'], iterationNumber: data['iterationNumber'], job_id: data['job_id'] };
+                            }
+                            break;
+                        case 'dialectic_contribution_started':
+                             if (typeof data['sessionId'] === 'string' && typeof data['modelId'] === 'string' && typeof data['iterationNumber'] === 'number' && typeof data['job_id'] === 'string') {
+                                eventPayload = { type, sessionId: data['sessionId'], modelId: data['modelId'], iterationNumber: data['iterationNumber'], job_id: data['job_id'] };
+                            }
+                            break;
+                        case 'contribution_generation_retrying':
+                             if (typeof data['sessionId'] === 'string' && typeof data['modelId'] === 'string' && typeof data['iterationNumber'] === 'number' && typeof data['job_id'] === 'string') {
+                                eventPayload = { type, sessionId: data['sessionId'], modelId: data['modelId'], iterationNumber: data['iterationNumber'], job_id: data['job_id'], error: typeof data['error'] === 'string' ? data['error'] : undefined };
+                            }
+                            break;
+                        case 'dialectic_contribution_received':
+                             if (typeof data['sessionId'] === 'string' && typeof data['job_id'] === 'string' && isDialecticContribution(data['contribution'])) {
+                                eventPayload = { 
+                                    type, 
+                                    sessionId: data['sessionId'], 
+                                    contribution: data['contribution'],
+                                    job_id: data['job_id'],
+                                    is_continuing: typeof data['is_continuing'] === 'boolean' ? data['is_continuing'] : false,
+                                };
+                            }
+                            break;
+                        case 'contribution_generation_failed':
+                             if (typeof data['sessionId'] === 'string' && isApiError(data['error'])) {
+                                eventPayload = { type, sessionId: data['sessionId'], error: data['error'], job_id: typeof data['job_id'] === 'string' ? data['job_id'] : undefined, modelId: typeof data['modelId'] === 'string' ? data['modelId'] : undefined };
+                            }
+                            break;
+                        case 'contribution_generation_complete':
+                            if (typeof data['sessionId'] === 'string' && typeof data['projectId'] === 'string') {
+                                eventPayload = { type, sessionId: data['sessionId'], projectId: data['projectId'] };
+                            }
+                            break;
+                        case 'dialectic_progress_update':
+                            if (
+                                typeof data['sessionId'] === 'string' &&
+                                typeof data['stageSlug'] === 'string' &&
+                                typeof data['current_step'] === 'number' &&
+                                typeof data['total_steps'] === 'number' &&
+                                typeof data['message'] === 'string'
+                            ) {
+                                eventPayload = {
+                                    type,
+                                    sessionId: data['sessionId'],
+                                    stageSlug: data['stageSlug'],
+                                    current_step: data['current_step'],
+                                    total_steps: data['total_steps'],
+                                    message: data['message'],
+                                };
+                            }
+                            break;
+                        case 'contribution_generation_continued':
+                             if (typeof data['sessionId'] === 'string' && typeof data['projectId'] === 'string' && typeof data['modelId'] === 'string' && typeof data['continuationNumber'] === 'number' && isDialecticContribution(data['contribution']) && typeof data['job_id'] === 'string') {
+                                eventPayload = { type, sessionId: data['sessionId'], projectId: data['projectId'], modelId: data['modelId'], continuationNumber: data['continuationNumber'], contribution: data['contribution'], job_id: data['job_id'] };
+                            }
+                            break;
+                    }
+
+                    if (eventPayload) {
+                        useDialecticStore.getState()._handleDialecticLifecycleEvent?.(eventPayload);
+                    } else {
+                        logger.warn(`[NotificationStore] Internal event '${type}' received, but its data payload did not match the expected format.`, { data });
+                    }
+                } else {
+                    logger.warn(`[NotificationStore] Received internal event '${notification.type}' with no data.`);
+                }
+            } else {
+                logger.warn(`[NotificationStore] Received internal event with an unknown or unhandled type: '${notification.type}'`);
+            }
+            return;
         }
-        
+
         if (notification.type === 'WALLET_TRANSACTION') {
             const { data } = notification;
-            if (data && typeof data === 'object' && 'walletId' in data && 'newBalance' in data) {
+            if (data && typeof data === 'object' && 'walletId' in data && typeof data['walletId'] === 'string' && 'newBalance' in data && typeof data['newBalance'] === 'string') {
                 logger.info('[NotificationStore] Handling wallet transaction event.', { data });
                 useWalletStore.getState()._handleWalletUpdateNotification({
-                    walletId: data['walletId'] as string,
-                    newBalance: data['newBalance'] as string,
+                    walletId: data['walletId'],
+                    newBalance: data['newBalance'],
                 });
             } else {
                 logger.warn('[NotificationStore] Received WALLET_TRANSACTION event with invalid data.', { data });
             }
         }
-
-        get().addNotification(notification as Notification);
+        
+        get().addNotification(notification);
     };
     // -------------------------------------------
 
@@ -101,9 +190,11 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                     set({ error: response.error, isLoading: false, notifications: [], unreadCount: 0 });
                 } else {
                     const fetchedNotifications = response.data ?? [];
-                    const sortedNotifications = sortNotifications(fetchedNotifications);
+                    // Filter out internal events that should not be displayed in the UI.
+                    const userFacingNotifications = fetchedNotifications.filter(n => !n.is_internal_event);
+                    const sortedNotifications = sortNotifications(userFacingNotifications);
                     const unreadCount = calculateUnreadCount(sortedNotifications);
-                    logger.info(`[notificationStore] Fetched ${sortedNotifications.length} notifications, ${unreadCount} unread.`);
+                    logger.info(`[notificationStore] Fetched ${fetchedNotifications.length} total notifications, showing ${userFacingNotifications.length} user-facing notifications. ${unreadCount} are unread.`);
                     set({
                         notifications: sortedNotifications,
                         unreadCount: unreadCount,

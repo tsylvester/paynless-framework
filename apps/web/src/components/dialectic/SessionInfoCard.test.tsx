@@ -31,6 +31,7 @@ vi.mock('@paynless/store', async () => {
     selectIsStageReadyForSessionIteration: vi.fn(),
     selectContributionGenerationStatus: actualOriginalStoreModule.selectContributionGenerationStatus,
     selectGenerateContributionsError: actualOriginalStoreModule.selectGenerateContributionsError,
+    selectGeneratingSessionsForSession: actualOriginalStoreModule.selectGeneratingSessionsForSession,
     selectPersonalWallet: walletStoreMockModule.selectPersonalWallet,
     selectIsLoadingPersonalWallet: walletStoreMockModule.selectIsLoadingPersonalWallet,
     selectPersonalWalletError: walletStoreMockModule.selectPersonalWalletError,
@@ -425,23 +426,24 @@ describe('SessionInfoCard', () => {
     });
 
     it('displays generating contributions indicator when status is "initiating"', () => {
-      setupMockStore({ contributionGenerationStatus: 'initiating' }, true, mockSession);
-      renderComponent(); // No accordion needed for this, it's in the header
-      expect(screen.getByTestId('generating-contributions-indicator')).toBeInTheDocument();
-      expect(screen.getByText(/Generating contributions, please wait.../i)).toBeInTheDocument();
-    });
-
-    it('displays generating contributions indicator when status is "generating"', () => {
-      setupMockStore({ contributionGenerationStatus: 'generating' }, true, mockSession);
+      setupMockStore({ generatingSessions: { [mockSessionId]: ['job-1'] } }, true, mockSession);
       renderComponent();
       expect(screen.getByTestId('generating-contributions-indicator')).toBeInTheDocument();
       expect(screen.getByText(/Generating contributions, please wait.../i)).toBeInTheDocument();
     });
 
-    it('displays generation error if status is "failed" and error is present', () => {
+    it('displays generating contributions indicator when status is "generating"', () => {
+      setupMockStore({ generatingSessions: { [mockSessionId]: ['job-1', 'job-2'] } }, true, mockSession);
+      renderComponent();
+      expect(screen.getByTestId('generating-contributions-indicator')).toBeInTheDocument();
+      expect(screen.getByText(/Generating contributions, please wait.../i)).toBeInTheDocument();
+      expect(screen.getByText(/\(2 running\)/)).toBeInTheDocument();
+    });
+
+    it('displays generation error if error is present', () => {
       const error: ApiError = { message: 'Generation failed hard', code: 'GEN_FAIL' };
       setupMockStore(
-        { contributionGenerationStatus: 'failed', generateContributionsError: error },
+        { generateContributionsError: error },
         true,
         mockSession
       );
@@ -452,8 +454,8 @@ describe('SessionInfoCard', () => {
       expect(within(errorAlert).getByText(error.message)).toBeInTheDocument();
     });
 
-    it('does not display generation error or indicator if status is "idle"', () => {
-      setupMockStore({ contributionGenerationStatus: 'idle' }, true, mockSession);
+    it('does not display generation error or indicator if not generating and no error', () => {
+      setupMockStore({ generatingSessions: {} }, true, mockSession);
       renderComponent();
       expect(screen.queryByTestId('generating-contributions-indicator')).toBeNull();
       expect(screen.queryByTestId('generate-contributions-error')).toBeNull();

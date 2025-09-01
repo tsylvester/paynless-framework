@@ -14,7 +14,8 @@ import {
   DialecticContribution, 
   ApiError, 
   DialecticFeedback, 
-  SubmitStageResponsesPayload
+  SubmitStageResponsesPayload,
+  AIModelCatalogEntry
 } from '@paynless/types';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,15 @@ import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
 import { cn } from '@/lib/utils';
+
+const isApiError = (error: unknown): error is ApiError => {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof (error as ApiError).message === 'string'
+  );
+};
 
 // Skeleton component for GeneratedContributionCard
 const GeneratedContributionCardSkeleton: React.FC = () => (
@@ -120,12 +130,16 @@ export const SessionContributionsDisplayCard: React.FC = () => {
   }, [activeStage, resetSubmitError, submissionError]);
 
   const displayedContributions = useMemo(() => {
-    if (!session?.dialectic_contributions || !session.iteration_count || !activeStage) {
+    if (!session || !session.iteration_count || !activeStage || !session.dialectic_contributions) {
       return [];
     }
+    const isGenerating = contributionGenerationStatus === 'generating';
+    const state = useDialecticStore.getState();
+    const selectedModelIds = state.selectedModelIds;
+    const modelCatalog = state.modelCatalog;
 
     const contributionsForStageAndIteration = session.dialectic_contributions.filter(
-      c => c.stage === activeStage.slug && c.iteration_number === session.iteration_count
+      (c) => c.stage === activeStage.slug && c.iteration_number === session.iteration_count
     );
 
     const latestEditsMap = new Map<string, DialecticContribution>();
@@ -139,46 +153,84 @@ export const SessionContributionsDisplayCard: React.FC = () => {
         latestEditsMap.set(originalId, contrib);
       }
     }
-    // Ensure the original contribution is added if no edit is present, or if it IS the latest edit.
     for (const contrib of contributionsForStageAndIteration) {
-        const originalId = contrib.original_model_contribution_id || contrib.id;
-        if (!latestEditsMap.has(originalId)) { // If no version of this originalId is in map, add it
-            latestEditsMap.set(originalId, contrib);
-        } else { // An edit might exist, ensure we are not overwriting a latest_edit with a non-latest_edit original
-            const currentInMap = latestEditsMap.get(originalId)!;
-            // If current in map is not the original one and the original one is marked as latest_edit, something is wrong.
-            // This logic favors edits if present and marked is_latest_edit.
-            // If the current one in map is NOT the latest_edit, but this 'contrib' (original) IS latest_edit, prefer it.
-            if (!currentInMap.is_latest_edit && contrib.id === originalId && contrib.is_latest_edit) {
-                latestEditsMap.set(originalId, contrib);
-            }
+      const originalId = contrib.original_model_contribution_id || contrib.id;
+      if (!latestEditsMap.has(originalId)) {
+        latestEditsMap.set(originalId, contrib);
+      } else {
+        const currentInMap = latestEditsMap.get(originalId)!;
+        if (!currentInMap.is_latest_edit && contrib.id === originalId && contrib.is_latest_edit) {
+          latestEditsMap.set(originalId, contrib);
         }
+      }
     }
 
     const finalContributions: DialecticContribution[] = [];
     const originalIdsWithAnyLatestEdit = new Set<string>();
 
-    // Prioritize contributions explicitly marked as is_latest_edit
-    contributionsForStageAndIteration.forEach(c => {
-        if (c.is_latest_edit) {
-            originalIdsWithAnyLatestEdit.add(c.original_model_contribution_id || c.id);
-            finalContributions.push(c);
-        }
+    contributionsForStageAndIteration.forEach((c) => {
+      if (c.is_latest_edit) {
+        originalIdsWithAnyLatestEdit.add(c.original_model_contribution_id || c.id);
+        finalContributions.push(c);
+      }
     });
 
-    // Add remaining contributions from the map only if their original_id isn't already represented by a latest_edit version
     latestEditsMap.forEach((value, key) => {
-        if (!originalIdsWithAnyLatestEdit.has(key)) {
-            finalContributions.push(value);
-        }
+      if (!originalIdsWithAnyLatestEdit.has(key)) {
+        finalContributions.push(value);
+      }
     });
-    
-    // Deduplicate just in case the logic above had an edge case, ensuring unique IDs
-    const uniqueFinalContributions = Array.from(new Map(finalContributions.map(c => [c.id, c])).values());
 
-    return uniqueFinalContributions.sort((a,b) => (a.model_name || '').localeCompare(b.model_name || ''));
+    const uniqueFinalContributions = Array.from(new Map(finalContributions.map((c) => [c.id, c])).values());
 
-  }, [session, activeStage]);
+    // --- Placeholder Logic ---
+    if (isGenerating && selectedModelIds.length > 0) {
+      const placeholders: DialecticContribution[] = [];
+      const receivedModelIds = new Set(uniqueFinalContributions.map(c => c.model_id));
+
+      selectedModelIds.forEach(modelId => {
+        if (!receivedModelIds.has(modelId)) {
+          const modelInfo = modelCatalog.find((m: AIModelCatalogEntry) => m.id === modelId);
+          placeholders.push({
+            id: `placeholder-${session.id}-${modelId}-${session.iteration_count}`,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            session_id: session.id,
+            stage: activeStage.slug,
+            iteration_number: session.iteration_count,
+            model_id: modelId,
+            model_name: modelInfo?.model_name || null,
+            status: 'pending', // This is the key for the placeholder
+            // --- These fields are non-essential for a placeholder but satisfy the type ---
+            is_latest_edit: true,
+            edit_version: 0,
+            user_id: null,
+            prompt_template_id_used: null,
+            seed_prompt_url: null,
+            raw_response_storage_path: null,
+            original_model_contribution_id: null,
+            target_contribution_id: null,
+            tokens_used_input: null,
+            tokens_used_output: null,
+            processing_time_ms: null,
+            error: null,
+            citations: null,
+            contribution_type: null,
+            file_name: null,
+            storage_bucket: null,
+            storage_path: null,
+            size_bytes: null,
+            mime_type: null,
+          });
+        }
+      });
+       // Combine unique real contributions with placeholders
+       const combined = [...uniqueFinalContributions, ...placeholders];
+       return combined.sort((a,b) => (a.model_name || '').localeCompare(b.model_name || ''));
+    }
+
+    return uniqueFinalContributions.sort((a, b) => (a.model_name || '').localeCompare(b.model_name || ''));
+  }, [session, activeStage, contributionGenerationStatus]);
 
   const handleResponseChange = (originalModelContributionId: string, responseText: string) => {
     setStageResponses(prev => ({ ...prev, [originalModelContributionId]: responseText }));
@@ -246,10 +298,15 @@ export const SessionContributionsDisplayCard: React.FC = () => {
       }
       
     } catch (error) {
-      const apiError = error as ApiError;
-      toast.error('Submission Failed', {
-          description: apiError.message || 'An unexpected error occurred.'
-      });
+      if (isApiError(error)) {
+        toast.error('Submission Failed', {
+            description: error.message || 'An unexpected error occurred.'
+        });
+      } else {
+        toast.error('Submission Failed', {
+            description: 'An unexpected error occurred.'
+        });
+      }
     }
   };
   

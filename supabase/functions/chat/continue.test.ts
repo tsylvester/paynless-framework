@@ -7,12 +7,13 @@ import {
   import type {
     ChatApiRequest,
     AdapterResponsePayload,
-    AiProviderAdapter,
     TokenUsage,
     ILogger,
+    AiProviderAdapterInstance,
   } from "../_shared/types.ts";
   import { handleContinuationLoop } from "./continue.ts";
-  
+    import { isTokenUsage } from "../_shared/utils/type_guards.ts";
+
   // --- Test Setup: Mock Logger ---
   const mockLogger: ILogger = {
     debug: spy(() => {}),
@@ -23,39 +24,45 @@ import {
   
   // --- Test Setup: Mock AI Provider Adapter ---
   const createMockAiAdapter = (
-    responses: { content: string; finishReason: TokenUsage['finish_reason'] }[],
-  ): { adapter: AiProviderAdapter, sendMessageSpy: Spy<unknown, [ChatApiRequest], Promise<AdapterResponsePayload>> } => {
-    const sendMessageSpy = spy(
-      async (
-        _request: ChatApiRequest,
-      ): Promise<AdapterResponsePayload> => {
-        const responseConfig = responses.shift();
-        if (!responseConfig) {
-          throw new Error("Mock AI Adapter ran out of responses.");
-        }
-        const { content, finishReason } = responseConfig;
-  
-        return {
-          role: "assistant",
-          content: content,
-          ai_provider_id: "mock-provider-id",
-          system_prompt_id: "mock-prompt-id",
-          token_usage: {
-            prompt_tokens: 10, // Dummy value, we'll assert total below
-            completion_tokens: 5, // Dummy value
-            total_tokens: 15, // Dummy value
-            finish_reason: finishReason,
+    responses: {
+      content: string;
+      finishReason: AdapterResponsePayload["finish_reason"];
+    }[],
+  ): {
+    adapter: AiProviderAdapterInstance;
+    sendMessageSpy: Spy<AiProviderAdapterInstance, [request: ChatApiRequest, modelIdentifier: string], Promise<AdapterResponsePayload>>;
+  } => {
+    
+    const mockAdapter: AiProviderAdapterInstance = {
+        sendMessage: async (
+            _request: ChatApiRequest,
+            _providerApiIdentifier: string,
+          ): Promise<AdapterResponsePayload> => {
+            const responseConfig = responses.shift();
+            if (!responseConfig) {
+              throw new Error("Mock AI Adapter ran out of responses.");
+            }
+            const { content, finishReason } = responseConfig;
+      
+            return {
+              role: "assistant",
+              content: content,
+              ai_provider_id: "mock-provider-id",
+              system_prompt_id: "mock-prompt-id",
+              token_usage: {
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                total_tokens: 15,
+              },
+              finish_reason: finishReason,
+            };
           },
-        };
-      },
-    );
-  
-    const adapter: AiProviderAdapter = {
-      sendMessage: sendMessageSpy,
-      listModels: async () => [],
+        listModels: async () => Promise.resolve([]),
     };
+
+    const sendMessageSpy = spy(mockAdapter, "sendMessage");
   
-    return { adapter, sendMessageSpy };
+    return { adapter: mockAdapter, sendMessageSpy };
   };
   
   // --- Test Suite ---
@@ -83,9 +90,11 @@ import {
         // Assert
         assertEquals(response.content, "Complete response.");
         assertEquals(sendMessageSpy.calls.length, 1);
-        const tokenUsage = response.token_usage as unknown as TokenUsage;
-        assertEquals(tokenUsage.prompt_tokens, 10);
-        assertEquals(tokenUsage.completion_tokens, 5);
+        const tokenUsage = response.token_usage;
+        if (isTokenUsage(tokenUsage)) {
+            assertEquals(tokenUsage.prompt_tokens, 10);
+            assertEquals(tokenUsage.completion_tokens, 5);
+        }
       },
     );
   

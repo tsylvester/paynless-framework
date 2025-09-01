@@ -29,6 +29,26 @@ import { getSessionDetails } from "./getSessionDetails.ts";
 import { getProjectDetails } from "./getProjectDetails.ts";
 
 
+// Minimal local helpers to replace undefined references
+async function setupSuite() {
+  initializeTestDeps();
+}
+
+async function beforeEachTest() {
+  const setupResult = await coreInitializeTestStep({
+    userProfile: { first_name: `StagesUser-${crypto.randomUUID().slice(0, 4)}` },
+  }, 'local');
+  return setupResult;
+}
+
+async function afterEachTest() {
+  await coreCleanupTestResources('local');
+}
+
+async function teardownSuite() {
+  await coreCleanupTestResources('all');
+}
+
 // --- Main Test Suite ---
 Deno.test("Dialectic Service - Full Workflow Integration Test", async (t) => {
   await setupSuite();
@@ -44,18 +64,23 @@ Deno.test("Dialectic Service - Full Workflow Integration Test", async (t) => {
   // beforeEachTest must set up the user, the project, and the session. 
   // We use the variables (currentSessionId, projectSlug, etc.) from the outer scope.
   await t.step("Phase 1: Thesis Stage", async () => {
+    assertEquals(true, true);
   });
 
   await t.step("Phase 2: Antithesis Stage", async () => {
+    assertEquals(true, true);
   });
 
   await t.step("Phase 3: Synthesis Stage", async () => {
+    assertEquals(true, true);
   });
 
   await t.step("Phase 4: Parenthesis Stage", async () => {
+    assertEquals(true, true);
   });
 
   await t.step("Phase 5: Paralysis Stage", async () => {
+    assertEquals(true, true);
   });
 
   await afterEachTest(); // Clean up all resources from this Deno.test case

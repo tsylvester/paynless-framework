@@ -4,35 +4,41 @@ import {
 	SystemPrompt,
 	ChatMessage,
 	ChatApiRequest,
-	ApiResponse,
-	PendingAction, // Correctly from @paynless/types
-	AuthRequiredError, // Correctly from @paynless/types
-	Chat,
-	AiState, // Explicitly ensure AiState is imported
-	AiStore,
-	initialAiStateValues, // <-- Add this import
-	UserProfileUpdate, // Added for typing the updateProfile payload
-	ChatContextPreferences,
-	UserProfile, // Import UserProfile from @paynless/types
-	MessageForTokenCounting,
-	ChatHandlerSuccessResponse, // For casting the api call result type
-	ILogger, // For casting the logger type
-	IAuthService,
-	IWalletService,
-	IAiStateService,
-	HandleSendMessageServiceParams,
-} from "@paynless/types"; // IMPORT NECESSARY TYPES
+    ApiResponse,
+    PendingAction, // Correctly from @paynless/types
+    AuthRequiredError, // Correctly from @paynless/types
+    Chat,
+    AiState, // Explicitly ensure AiState is imported
+    AiStore, 
+    initialAiStateValues,     // <-- Add this import
+    UserProfileUpdate, // Added for typing the updateProfile payload
+    ChatContextPreferences,
+    UserProfile, // Import UserProfile from @paynless/types
+    Messages,
+    ChatHandlerSuccessResponse, // For casting the api call result type
+    IAuthService,
+    IWalletService,
+    IAiStateService,
+    HandleSendMessageServiceParams,
+} from '@paynless/types' // IMPORT NECESSARY TYPES
 
 // Import api AFTER other local/utility imports but BEFORE code that might use types that cause issues with mocking
 import { api } from "@paynless/api"; // MOVED HERE
 
-import { logger } from "@paynless/utils";
-import { useAuthStore } from "./authStore";
-import { useWalletStore } from "./walletStore"; // Keep this for getState()
-import { selectActiveChatWalletInfo } from "./walletStore.selectors"; // Corrected import path
+import { logger } from '@paynless/utils';
+import { useAuthStore } from './authStore';
+import { useWalletStore } from './walletStore'; // Keep this for getState()
+import { selectActiveChatWalletInfo } from './walletStore.selectors'; // Corrected import path
+import { isChatContextPreferences, isAiProvidersApiResponse, isSystemPromptsApiResponse } from '@paynless/utils';
 
 // Import the new handler function and its required interfaces from ai.SendMessage.ts
-import { handleSendMessage } from "./ai.SendMessage";
+import {
+    handleSendMessage,
+} from './ai.SendMessage';
+
+
+type ProfileFetchSuccess = { userId: string; response: ApiResponse<UserProfile> };
+type ProfileFetchError = { userId: string; error: Error };
 
 // Use the imported AiStore type
 export const useAiStore = create<AiStore>()(
@@ -67,14 +73,14 @@ export const useAiStore = create<AiStore>()(
 					return;
 				}
 
-				// Ensure chat_context is treated as an object, even if initially null from DB
-				const currentChatContext = (profile.chat_context ||
-					{}) as ChatContextPreferences;
-
-				const newChatContextState = {
-					...currentChatContext,
-					...contextUpdate,
-				};
+                        let newChatContextState: ChatContextPreferences = { ...contextUpdate };
+                        // Use a more direct type check that TypeScript can reliably analyze
+                        if (typeof profile.chat_context === 'object' && profile.chat_context !== null && !Array.isArray(profile.chat_context)) {
+                            newChatContextState = {
+                                ...(profile.chat_context),
+                                ...contextUpdate,
+                            };
+                        }
 
 				// Type the payload for updateProfile
 				const profileUpdatePayload: UserProfileUpdate = {
@@ -125,79 +131,45 @@ export const useAiStore = create<AiStore>()(
 				return;
 			}
 
-			logger.info(
-				"[aiStore._fetchAndStoreUserProfiles] Attempting to fetch profiles for user IDs:",
-				{ userIds: idsToFetch },
-			);
-
-			const profilePromises = idsToFetch.map(
-				(userId) =>
-					api
-						.users()
-						.getProfile(userId) // Use the new UserApiClient method
-						.then((response: ApiResponse<UserProfile>) => ({
-							userId,
-							response,
-						})) // Explicitly type response
-						.catch((error: Error) => ({ userId, error })), // Explicitly type error as Error
-			);
+                    logger.info('[aiStore._fetchAndStoreUserProfiles] Attempting to fetch profiles for user IDs:', { userIds: idsToFetch });
+                    
+                    const profilePromises = idsToFetch.map(userId => 
+                        api.users().getProfile(userId)
+                            .then((response: ApiResponse<UserProfile>): ProfileFetchSuccess => ({ userId, response }))
+                            .catch((error: Error): ProfileFetchError => ({ userId, error }))
+                    );
 
 			const results = await Promise.allSettled(profilePromises);
 			const newProfilesMap: { [userId: string]: UserProfile } = {};
 			let successfullyFetchedCount = 0;
 
-			results.forEach((result) => {
-				if (result.status === "fulfilled") {
-					const { userId, response, error } = result.value as {
-						userId: string;
-						response?: ApiResponse<UserProfile>;
-						error?: Error;
-					}; // error is now Error
-
-					if (error) {
-						// Handle errors caught by the .catch in profilePromises
-						logger.warn(
-							`[aiStore._fetchAndStoreUserProfiles] Error fetching profile for user ${userId} (caught by promise.catch):`,
-							{ error },
-						);
-					} else if (response && response.data && !response.error) {
-						newProfilesMap[userId] = response.data;
-						successfullyFetchedCount++;
-					} else if (response && response.error) {
-						logger.warn(
-							`[aiStore._fetchAndStoreUserProfiles] API error fetching profile for user ${userId} (RLS denial or other server error):`,
-							{
-								status: response.status,
-								errorCode: response.error.code,
-								errorMessage: response.error.message,
-							},
-						);
-						// Do not add to newProfilesMap, RLS likely denied access or another server-side issue occurred
-					} else {
-						logger.warn(
-							`[aiStore._fetchAndStoreUserProfiles] Unexpected empty response or structure for user ${userId}.`,
-							{ response },
-						);
-					}
-				} else {
-					// result.status === 'rejected' - error from api.users().getProfile() itself before .then/.catch
-					// This case should ideally be less common if getProfile itself catches and returns ApiResponse
-					const failedPromise = result.reason as
-						| { userId?: string; error?: Error }
-						| Error; // Refined type for failedPromise
-					const userId =
-						typeof failedPromise === "object" &&
-						failedPromise !== null &&
-						"userId" in failedPromise &&
-						typeof failedPromise.userId === "string"
-							? failedPromise.userId
-							: "unknown_user_id_in_rejected_promise";
-					logger.error(
-						`[aiStore._fetchAndStoreUserProfiles] Promise rejected while fetching profile for user ${userId}:`,
-						{ reason: result.reason },
-					);
-				}
-			});
+                    results.forEach(result => {
+                        if (result.status === 'fulfilled') {
+                            const value = result.value;
+                            // This is a type guard to differentiate between success and error shapes
+                            if ('error' in value) {
+                                logger.warn(`[aiStore._fetchAndStoreUserProfiles] Error fetching profile for user ${value.userId} (caught by promise.catch):`, { error: value.error });
+                            } else {
+                                const { userId, response } = value;
+                                if (response.data && !response.error) {
+                                    newProfilesMap[userId] = response.data;
+                                    successfullyFetchedCount++;
+                                } else if (response.error) {
+                                    logger.warn(`[aiStore._fetchAndStoreUserProfiles] API error fetching profile for user ${userId} (RLS denial or other server error):`, { 
+                                        status: response.status, 
+                                        errorCode: response.error.code, 
+                                        errorMessage: response.error.message 
+                                    });
+                                } else {
+                                    logger.warn(`[aiStore._fetchAndStoreUserProfiles] Unexpected empty response or structure for user ${userId}.`, { response });
+                                }
+                            }
+                        } else { // result.status === 'rejected'
+                            const reason = result.reason;
+                            const userId = (reason && typeof reason === 'object' && 'userId' in reason && typeof reason.userId === 'string') ? reason.userId : 'unknown';
+                            logger.error(`[aiStore._fetchAndStoreUserProfiles] Promise rejected while fetching profile for user ${userId}:`, { reason });
+                        }
+                    });
 
 			if (successfullyFetchedCount > 0) {
 				set((state) => ({
@@ -327,120 +299,64 @@ export const useAiStore = create<AiStore>()(
 				return { tempId, chatIdUsed, createdTimestamp };
 			},
 
-			addOptimisticMessageForReplay: (
-				messageContent: string,
-				existingChatId?: string | null,
-			): { tempId: string; chatIdForOptimistic: string } => {
-				const { messagesByChatId, selectedMessagesMap } = get();
-				const { user: currentUser } = useAuthStore.getState(); // Ensure currentUser is available
-				const createdTimestamp = new Date().toISOString();
+                    setContinueUntilComplete: (shouldContinue: boolean) => {
+                        set({ continueUntilComplete: shouldContinue });
+                        logger.info(`[aiStore.setContinueUntilComplete] Set continueUntilComplete to: ${shouldContinue}`);
+                    },
 
-				// Determine the chat ID to use for this replayed message
-				let chatIdForOptimistic = existingChatId;
-				if (!chatIdForOptimistic) {
-					// If no existingChatId is provided (e.g., truly new chat for replay or error state),
-					// generate a UUID.
-					chatIdForOptimistic = crypto.randomUUID();
-					logger.warn(
-						"[aiStore.addOptimisticMessageForReplay] No existingChatId provided for replay, generated UUID:",
-						{ chatIdForOptimistic },
-					);
-				} else {
-					logger.info(
-						"[aiStore.addOptimisticMessageForReplay] Using provided existingChatId for replay:",
-						{ chatIdForOptimistic },
-					);
-				}
+                    // --- Public Action Definitions ---
+                    setNewChatContext: (contextId: string | null) => {
+                        set({ newChatContext: contextId });
+                        logger.info(`[aiStore] newChatContext set to: ${contextId}`);
+                        _updateChatContextInProfile({ newChatContext: contextId });
+                    },
+                    loadAiConfig: async () => {
+                        logger.info('Loading AI config...');
+                        set({ isConfigLoading: true, aiError: null }); 
+                        try {
+                            const [providersResponse, promptsResponse] = await Promise.all([
+                                api.ai().getAiProviders(),
+                                api.ai().getSystemPrompts(),
+                            ]);
 
-				const tempId = `optimistic-replay-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-				const optimisticMessage: ChatMessage = {
-					id: tempId,
-					chat_id: chatIdForOptimistic, // Use the determined chat ID
-					role: "user",
-					content: messageContent,
-					created_at: createdTimestamp,
-					updated_at: createdTimestamp,
-					user_id: currentUser?.id || null,
-					ai_provider_id: null,
-					system_prompt_id: null,
-					token_usage: null,
-					is_active_in_thread: true,
-					error_type: null,
-					response_to_message_id: null,
-				};
+                            if (providersResponse.error || promptsResponse.error) {
+                                const errorMessages: string[] = [];
+                                if (providersResponse.error) {
+                                    errorMessages.push(providersResponse.error?.message || 'Failed to load AI providers.');
+                                }
+                                if (promptsResponse.error) {
+                                    errorMessages.push(promptsResponse.error?.message || 'Failed to load system prompts.');
+                                }
+                                const errorMessage = errorMessages.join(' ');
+                                logger.error('[aiStore] Error loading AI config:', { message: errorMessage });
+                                set({ 
+                                    isConfigLoading: false, 
+                                    aiError: errorMessage,
+                                    availableProviders: [],
+                                    availablePrompts: [],
+                                });
+                                return;
+                            }
 
-				const currentMessagesForChat =
-					messagesByChatId[chatIdForOptimistic] || [];
-				const updatedMessagesForChat = [
-					...currentMessagesForChat,
-					optimisticMessage,
-				];
+                            let loadedProviders: AiProvider[] = [];
+                            let loadedPrompts: SystemPrompt[] = [];
 
-				const updatedMessagesByChatId = {
-					...messagesByChatId,
-					[chatIdForOptimistic]: updatedMessagesForChat,
-				};
-
-				// Automatically select the new replayed optimistic message
-				const updatedSelectedMessagesMap = {
-					...selectedMessagesMap,
-					[chatIdForOptimistic]: {
-						...(selectedMessagesMap[chatIdForOptimistic] || {}),
-						[tempId]: true,
-					},
-				};
-
-				set((_state) => ({
-					messagesByChatId: updatedMessagesByChatId,
-					selectedMessagesMap: updatedSelectedMessagesMap,
-					// currentChatId might not change here unless explicitly intended for replay to set context
-					// currentChatMessages: updatedMessagesForChat, // Consider if this direct update is needed
-					// isSending might not be appropriate for replay, depends on UX for replay
-				}));
-				logger.info(
-					"[aiStore.addOptimisticMessageForReplay] Added optimistic message for replay:",
-					{ tempId, chatIdUsed: chatIdForOptimistic },
-				);
-				return { tempId, chatIdForOptimistic };
-			},
-			setContinueUntilComplete: (shouldContinue: boolean) => {
-				set({ continueUntilComplete: shouldContinue });
-				logger.info(
-					`[aiStore.setContinueUntilComplete] Set continueUntilComplete to: ${shouldContinue}`,
-				);
-			},
-
-			// --- Public Action Definitions ---
-			setNewChatContext: (contextId: string | null) => {
-				set({ newChatContext: contextId });
-				logger.info(`[aiStore] newChatContext set to: ${contextId}`);
-				_updateChatContextInProfile({ newChatContext: contextId });
-			},
-			loadAiConfig: async () => {
-				logger.info("Loading AI config...");
-				set({ isConfigLoading: true, aiError: null });
-				try {
-					const [providersResponse, promptsResponse] = await Promise.all([
-						api.ai().getAiProviders(),
-						api.ai().getSystemPrompts(),
-					]);
-					const errorMessages: string[] = [];
-					let loadedProviders: AiProvider[] = [];
-					let loadedPrompts: SystemPrompt[] = [];
-
-					type ProvidersPayload = { providers: AiProvider[] };
-					if (
-						!providersResponse.error &&
-						providersResponse.data &&
-						typeof providersResponse.data === "object" &&
-						providersResponse.data !== null &&
-						"providers" in providersResponse.data &&
-						Array.isArray(
-							(providersResponse.data as ProvidersPayload).providers,
-						)
-					) {
-						loadedProviders = (providersResponse.data as ProvidersPayload)
-							.providers;
+                            try {
+                                if (isAiProvidersApiResponse(providersResponse.data)) {
+                                    loadedProviders = providersResponse.data.providers;
+                                } else if (Array.isArray(providersResponse.data)) {
+                                    loadedProviders = providersResponse.data;
+                                } else {
+                                    logger.warn('[aiStore] Providers response data is not in the expected array format.', { data: providersResponse.data });
+                                }
+                                
+                                if (isSystemPromptsApiResponse(promptsResponse.data)) {
+                                    loadedPrompts = promptsResponse.data.prompts;
+                                } else if (Array.isArray(promptsResponse.data)) {
+                                    loadedPrompts = promptsResponse.data;
+                                } else {
+                                    logger.warn('[aiStore] Prompts response data is not in the expected array format.', { data: promptsResponse.data });
+                                }
 
 						logger.info("[aiStore] Initial loadedProviders from API:", {
 							count: loadedProviders.length,
@@ -457,56 +373,30 @@ export const useAiStore = create<AiStore>()(
 							);
 							const originalProviderNames = loadedProviders.map((p) => p.name); // For logging before filter
 
-							loadedProviders = loadedProviders.filter((provider) => {
-								const isDummy =
-									provider.name &&
-									provider.name.toLowerCase().includes("dummy");
-								if (isDummy) {
-									logger.info(
-										`[aiStore] Identified dummy provider for filtering: name="${provider.name}"`,
-									);
-								}
-								return !isDummy;
-							});
-							logger.info(
-								`[aiStore] Providers after filtering: count=${loadedProviders.length}`,
-								{
-									providerNamesAfter: loadedProviders.map((p) => p.name),
-									providerNamesBefore: originalProviderNames,
-								},
-							);
-						} else {
-							logger.info(
-								`[aiStore] MODE is "${import.meta.env.MODE}", skipping dummy provider filter.`,
-							);
-						}
-					} else if (providersResponse.error) {
-						errorMessages.push(
-							providersResponse.error?.message ||
-								"Failed to load AI providers.",
-						);
-					}
-
-					type PromptsPayload = { prompts: SystemPrompt[] };
-					if (
-						!promptsResponse.error &&
-						promptsResponse.data &&
-						typeof promptsResponse.data === "object" &&
-						promptsResponse.data !== null &&
-						"prompts" in promptsResponse.data &&
-						Array.isArray((promptsResponse.data as PromptsPayload).prompts)
-					) {
-						loadedPrompts = (promptsResponse.data as PromptsPayload).prompts;
-					} else if (promptsResponse.error) {
-						errorMessages.push(
-							promptsResponse.error?.message ||
-								"Failed to load system prompts.",
-						);
-					}
-
-					if (errorMessages.length > 0) {
-						throw new Error(errorMessages.join(" \n"));
-					}
+                                    loadedProviders = loadedProviders.filter(provider => {
+                                        const isDummy = provider.name && provider.name.toLowerCase().includes('dummy');
+                                        if (isDummy) {
+                                            logger.info(`[aiStore] Identified dummy provider for filtering: name="${provider.name}"`);
+                                        }
+                                        return !isDummy;
+                                    });
+                                    logger.info(`[aiStore] Providers after filtering: count=${loadedProviders.length}`, {
+                                        providerNamesAfter: loadedProviders.map(p => p.name),
+                                        providerNamesBefore: originalProviderNames
+                                    });
+                                } else {
+                                    logger.info(`[aiStore] MODE is "${import.meta.env.MODE}", skipping dummy provider filter.`);
+                                }
+                            } catch (error: unknown) {
+                                const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred while loading AI configuration.';
+                                logger.error('Error loading AI config:', { error: errorMessage });
+                                set({
+                                    availableProviders: [], 
+                                    availablePrompts: [],  
+                                    aiError: errorMessage,
+                                    isConfigLoading: false,
+                                });
+                            }
 
 					set({
 						availableProviders: loadedProviders,
@@ -933,52 +823,40 @@ export const useAiStore = create<AiStore>()(
 					return { tempId, chatIdForOptimistic };
 				};
 
-				if (
-					pendingAction.endpoint === "chat" &&
-					pendingAction.method === "POST" &&
-					pendingAction.body
-				) {
-					const token = useAuthStore.getState().session?.access_token;
-					if (!token) {
-						logger.error(
-							"[aiStore] Cannot replay pending action: User is not authenticated (no token).",
-						);
-						set({
-							aiError: "Authentication required to replay pending action.",
-						});
-						// Do not remove pendingAction here, user might log in.
-						return;
-					}
+
+                        if (pendingAction.endpoint === 'chat' && pendingAction.method === 'POST' && typeof pendingAction.body === 'object' && pendingAction.body !== null) {
+                            const token = useAuthStore.getState().session?.access_token;
+                            if (!token) {
+                                logger.error('[aiStore] Cannot replay pending action: User is not authenticated (no token).');
+                                set({ aiError: 'Authentication required to replay pending action.' });
+                                // Do not remove pendingAction here, user might log in.
+                                return;
+                            }
 
 					logger.info(
 						"[aiStore] Pending chat action is valid and user authenticated. Processing...",
 					);
 					set({ isLoadingAiResponse: true, aiError: null });
 
-					const messageContent = String(pendingAction.body["message"] || "");
-					// Pass the original chatId from the pending action body if it exists
-					const originalChatIdFromPendingAction = pendingAction.body[
-						"chatId"
-					] as string | null | undefined;
+                            const messageContent = String(pendingAction.body['message'] || '');
+                            // Pass the original chatId from the pending action body if it exists
+                            const originalChatIdFromPendingAction = pendingAction.body['chatId'];
 
 					const { tempId, chatIdForOptimistic } = addOptimisticMessageForReplay(
 						messageContent,
 						originalChatIdFromPendingAction,
 					);
 
-					try {
-						// Ensure the body sent to API matches ChatApiRequest, especially chatId
-						const apiRequestBody: ChatApiRequest = {
-							message: messageContent,
-							providerId: pendingAction.body["providerId"] as string,
-							promptId: pendingAction.body["promptId"] as string,
-							chatId: originalChatIdFromPendingAction, // Now correctly typed
-							organizationId: pendingAction.body["organizationId"] as
-								| string
-								| undefined
-								| null,
-							// rewindFromMessageId is not typically part of a generic pending action replay for send.
-						};
+                            try {   
+                                // Ensure the body sent to API matches ChatApiRequest, especially chatId
+                                const apiRequestBody: ChatApiRequest = {
+                                    message: messageContent,
+                                    providerId: pendingAction.body['providerId'],
+                                    promptId: pendingAction.body['promptId'],
+                                    chatId: originalChatIdFromPendingAction, // Now correctly typed
+                                    organizationId: pendingAction.body['organizationId'],
+                                    // rewindFromMessageId is not typically part of a generic pending action replay for send.
+                                };
 
 						const response: ApiResponse<ChatMessage> = await api.post(
 							// Using baseApi.post
@@ -993,118 +871,84 @@ export const useAiStore = create<AiStore>()(
 							);
 						}
 
-						if (response.data) {
-							const assistantMessage = response.data;
-							set((state) => {
-								const actualNewChatId = assistantMessage.chat_id;
+                                if (response.data) {
+                                    const assistantMessage = response.data;
+                                    set(state => {
+                                        const actualNewChatId = assistantMessage.chat_id;
+                                        
+                                        const newMessagesByChatId = { ...state.messagesByChatId };
+                                        let updatedMessagesForChat = [...(newMessagesByChatId[chatIdForOptimistic] || [])];
+                                        
+                                        // Update the optimistic user message to 'sent'
+                                        updatedMessagesForChat = updatedMessagesForChat.map(msg =>
+                                            msg.id === tempId
+                                                ? { ...msg, status: 'sent', chat_id: actualNewChatId } // Ensure chat_id is updated
+                                                : msg
+                                        );
+                                        
+                                        // Add assistant message
+                                        updatedMessagesForChat.push(assistantMessage);
 
-								const newMessagesByChatId = { ...state.messagesByChatId };
-								let updatedMessagesForChat = [
-									...(newMessagesByChatId[chatIdForOptimistic] || []),
-								];
+                                        if (chatIdForOptimistic !== actualNewChatId && actualNewChatId && newMessagesByChatId[chatIdForOptimistic]) {
+                                            newMessagesByChatId[actualNewChatId] = updatedMessagesForChat;
+                                            delete newMessagesByChatId[chatIdForOptimistic];
+                                        } else {
+                                            if (actualNewChatId) {
+                                                newMessagesByChatId[actualNewChatId] = updatedMessagesForChat;
+                                            }
+                                        }
 
-								// Update the optimistic user message to 'sent'
-								updatedMessagesForChat = updatedMessagesForChat.map((msg) =>
-									msg.id === tempId
-										? {
-												...msg,
-												status: "sent" as const,
-												chat_id: actualNewChatId,
-											} // Ensure chat_id is updated
-										: msg,
-								);
+                                        return {
+                                            messagesByChatId: newMessagesByChatId,
+                                            currentChatId: actualNewChatId, // Update currentChatId to the real one
+                                            isLoadingAiResponse: false,
+                                            aiError: null,
+                                        };
+                                    });
+                                    localStorage.removeItem('pendingAction'); // Clear after successful replay
+                                    logger.info('[aiStore] Pending chat action replayed successfully.', { chatId: assistantMessage.chat_id });
+                                } else {
+                                    throw new Error('API returned success but no data during replay.');
+                                }
+                            } catch (error: unknown) {
+                                // Make the check more robust, similar to sendMessage
+                                const isAuthError = error instanceof AuthRequiredError || 
+                                                  (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AuthRequiredError');
+                                const errorMessage = isAuthError ? 'Session expired during replay. Please log in again.' 
+                                                   : (error instanceof Error ? error.message : String(error));
+                                logger.error('[aiStore] Error during pending action replay API call:', { error: errorMessage });
+                                set(state => {
+                                    const messagesForThisChat = state.messagesByChatId[chatIdForOptimistic];
+                                    let updatedMessages = messagesForThisChat ? [...messagesForThisChat] : [];
 
-								// Add assistant message
-								updatedMessagesForChat.push(assistantMessage);
-
-								if (
-									chatIdForOptimistic !== actualNewChatId &&
-									newMessagesByChatId[chatIdForOptimistic]
-								) {
-									newMessagesByChatId[actualNewChatId] = updatedMessagesForChat;
-									delete newMessagesByChatId[chatIdForOptimistic];
-								} else {
-									newMessagesByChatId[actualNewChatId] = updatedMessagesForChat;
-								}
-
-								return {
-									messagesByChatId: newMessagesByChatId,
-									currentChatId: actualNewChatId, // Update currentChatId to the real one
-									isLoadingAiResponse: false,
-									aiError: null,
-								};
-							});
-							localStorage.removeItem("pendingAction"); // Clear after successful replay
-							logger.info(
-								"[aiStore] Pending chat action replayed successfully.",
-								{ chatId: assistantMessage.chat_id },
-							);
-						} else {
-							throw new Error(
-								"API returned success but no data during replay.",
-							);
-						}
-					} catch (error: unknown) {
-						// Make the check more robust, similar to sendMessage
-						const isAuthError =
-							error instanceof AuthRequiredError ||
-							(typeof error === "object" &&
-								error !== null &&
-								"name" in error &&
-								(error as { name: string }).name === "AuthRequiredError");
-						const errorMessage = isAuthError
-							? "Session expired during replay. Please log in again."
-							: error instanceof Error
-								? error.message
-								: String(error);
-						logger.error(
-							"[aiStore] Error during pending action replay API call:",
-							{ error: errorMessage },
-						);
-						set((state) => {
-							const messagesForThisChat =
-								state.messagesByChatId[chatIdForOptimistic];
-							let updatedMessages = messagesForThisChat
-								? [...messagesForThisChat]
-								: [];
-
-							if (!isAuthError) {
-								// Only set to 'error' if it's NOT an AuthRequiredError
-								updatedMessages = messagesForThisChat
-									? messagesForThisChat.map((msg) =>
-											msg.id === tempId
-												? { ...msg, status: "error" as const }
-												: msg,
-										)
-									: [];
-							}
-							// If it is an AuthError, updatedMessages remains as it was (i.e. with 'pending' status)
-							// if (isAuthError) {
-							//     logger.info('[Replay AuthError Debug] Messages before return in set', { messages: JSON.stringify(updatedMessages) });
-							// } // Removed log
-
-							return {
-								isLoadingAiResponse: false,
-								aiError: errorMessage,
-								messagesByChatId: {
-									...state.messagesByChatId,
-									[chatIdForOptimistic]: updatedMessages,
-								},
-							};
-						});
-						if (isAuthError) {
-							// Pending action is kept for next login.
-						}
-					}
-				} else {
-					logger.warn(
-						"[aiStore] Pending action found, but not a valid chat POST. Ignoring.",
-						{ action: pendingAction },
-					);
-					// Optionally remove if it's clearly malformed and not a chat POST.
-					// localStorage.removeItem('pendingAction');
-				}
-			},
+                                    if (!isAuthError) { // Only set to 'error' if it's NOT an AuthRequiredError
+                                        updatedMessages = updatedMessages.map(msg =>
+                                            msg.id === tempId
+                                                ? { ...msg, status: 'error', error_type: 'replay_failed' } // Add error status
+                                                : msg
+                                        );
+                                    }
+                                    // If it is an AuthError, the message status remains pending, which is the desired behavior.
+                                    
+                                    return {
+                                        isLoadingAiResponse: false,
+                                        aiError: errorMessage,
+                                        messagesByChatId: {
+                                            ...state.messagesByChatId,
+                                            [chatIdForOptimistic]: updatedMessages,
+                                        },
+                                    };
+                                });
+                                if (isAuthError) {
+                                    // Pending action is kept for next login.
+                                }
+                            }
+                        } else {
+                            logger.warn('[aiStore] Pending action found, but not a valid chat POST. Ignoring.', { action: pendingAction });
+                            // Optionally remove if it's clearly malformed and not a chat POST.
+                            // localStorage.removeItem('pendingAction');
+                        }
+                    },
 
 			deleteChat: async (chatId: string, organizationId?: string | null) => {
 				const token = useAuthStore.getState().session?.access_token;
@@ -1219,65 +1063,40 @@ export const useAiStore = create<AiStore>()(
 				_updateChatContextInProfile({ selectedPromptId: promptId });
 			},
 
-			// --- Hydration Actions ---
-			setChatContextHydrated: (hydrated: boolean) => {
-				set({ isChatContextHydrated: hydrated });
-				logger.info(`[aiStore] isChatContextHydrated set to: ${hydrated}`);
-			},
+                    // --- Hydration Actions ---
+                    setChatContextHydrated: (hydrated: boolean) => {
+                        set({ isChatContextHydrated: hydrated });
+                    },
 
-			hydrateChatContext: (chatContext: ChatContextPreferences | null) => {
-				if (chatContext) {
-					logger.info(
-						"[aiStore] Attempting to hydrate chat context from profile:",
-						{ data: chatContext },
-					);
-					const updates: Partial<
-						Pick<
-							AiState,
-							"newChatContext" | "selectedProviderId" | "selectedPromptId"
-						>
-					> = {};
-					if (typeof chatContext.newChatContext !== "undefined") {
-						updates.newChatContext = chatContext.newChatContext;
-					}
-					if (typeof chatContext.selectedProviderId !== "undefined") {
-						updates.selectedProviderId = chatContext.selectedProviderId;
-					}
-					if (typeof chatContext.selectedPromptId !== "undefined") {
-						updates.selectedPromptId = chatContext.selectedPromptId;
-					}
+                    hydrateChatContext: (chatContext: unknown) => {
+                        if (isChatContextPreferences(chatContext)) {
+                            logger.info('[aiStore.hydrateChatContext] Hydrating AI context from user profile:', { context: chatContext });
+                            const { newChatContext, selectedProviderId, selectedPromptId } = chatContext;
+                            
+                            set(state => ({
+                                ...state,
+                                newChatContext: newChatContext !== undefined ? newChatContext : state.newChatContext,
+                                selectedProviderId: selectedProviderId !== undefined ? selectedProviderId : state.selectedProviderId,
+                                selectedPromptId: selectedPromptId !== undefined ? selectedPromptId : state.selectedPromptId,
+                                isChatContextHydrated: true,
+                            }));
+                        } else {
+                            logger.warn('[aiStore.hydrateChatContext] Received chat context from profile is not valid. Using store defaults.', { receivedContext: chatContext });
+                            // Still mark as hydrated to prevent re-attempts on every render
+                            set({ isChatContextHydrated: true });
+                        }
+                    },
 
-					if (Object.keys(updates).length > 0) {
-						set(updates);
-						logger.info(
-							"[aiStore] Chat context hydrated with values:",
-							updates,
-						);
-					} else {
-						logger.info(
-							"[aiStore] chat_context from profile was empty or contained no relevant keys. No hydration applied.",
-						);
-					}
-				} else {
-					logger.info(
-						"[aiStore] No chat_context found in profile to hydrate from.",
-					);
-				}
-				// Always mark as hydrated after attempt, even if no data, to prevent re-attempts in same session part
-				set({ isChatContextHydrated: true });
-			},
-
-			resetChatContextToDefaults: () => {
-				logger.info(
-					"[aiStore] Resetting chat context to defaults and clearing hydration flag.",
-				);
-				set({
-					newChatContext: initialAiStateValues.newChatContext,
-					selectedProviderId: initialAiStateValues.selectedProviderId,
-					selectedPromptId: initialAiStateValues.selectedPromptId,
-					isChatContextHydrated: false,
-				});
-			},
+                    resetChatContextToDefaults: () => {
+                        logger.info('[aiStore.resetChatContextToDefaults] Resetting AI context to initial default values.');
+                        set(state => ({
+                            ...state,
+                            newChatContext: initialAiStateValues.newChatContext,
+                            selectedProviderId: initialAiStateValues.selectedProviderId,
+                            selectedPromptId: initialAiStateValues.selectedPromptId,
+                            isChatContextHydrated: false, // Reset hydration status
+                        }));
+                    },
 
 			// --- Message Selection Actions ---
 			toggleMessageSelection: (chatId: string, messageId: string) => {
@@ -1379,54 +1198,44 @@ export const useAiStore = create<AiStore>()(
 				}
 			},
 
-			// SIMPLIFIED sendMessage ACTION
-			sendMessage: async (data: {
-				message: string;
-				providerId: string;
-				promptId: string | null;
-				chatId?: string | null;
-				contextMessages?: MessageForTokenCounting[];
-			}) => {
-				// --- Create Adapters for Service Dependencies ---
-				const authStoreState = useAuthStore.getState();
-				const authServiceAdapter: IAuthService = {
-					getCurrentUser: () => authStoreState.user,
-					getSession: () => authStoreState.session,
-					requestLoginNavigation: () => {
-						if (authStoreState.navigate) authStoreState.navigate("/login");
-					},
-				};
+                    // SIMPLIFIED sendMessage ACTION
+                    sendMessage: async (data: { message: string; providerId: string; promptId: string | null; chatId?: string | null; contextMessages?: Messages[] }) => {
+                        // --- Create Adapters for Service Dependencies ---
+                        const authStoreState = useAuthStore.getState();
+                        const authServiceAdapter: IAuthService = {
+                            getCurrentUser: () => authStoreState.user,
+                            getSession: () => authStoreState.session,
+                            requestLoginNavigation: () => {
+                                if (authStoreState.navigate) authStoreState.navigate('/login');
+                            }
+                        };
 
-				const walletServiceAdapter: IWalletService = {
-					getActiveWalletInfo: () =>
-						selectActiveChatWalletInfo(useWalletStore.getState()),
-				};
+                        const walletServiceAdapter: IWalletService = {
+                            getActiveWalletInfo: () => selectActiveChatWalletInfo(useWalletStore.getState(), get().newChatContext)
+                        };
 
-				const aiStateServiceAdapter: IAiStateService = {
-					getAiState: get,
-					setAiState: set,
-					addOptimisticUserMessage: get()._addOptimisticUserMessage,
-				};
-
-				// --- Prepare parameters for handleSendMessage ---
-				const serviceParams: HandleSendMessageServiceParams = {
-					data: {
-						message: data.message,
-						chatId: data.chatId,
-						contextMessages: data.contextMessages,
-					},
-					aiStateService: aiStateServiceAdapter,
-					authService: authServiceAdapter,
-					walletService: walletServiceAdapter,
-					callChatApi: async (
-						request: ChatApiRequest,
-						options: RequestInit,
-					): Promise<ApiResponse<ChatHandlerSuccessResponse>> => {
-						const response = await api.ai().sendChatMessage(request, options);
-						return response; // No transformation needed - API client now returns the correct type
-					},
-					logger: logger as ILogger,
-				};
+                        const aiStateServiceAdapter: IAiStateService = {
+                            getAiState: get, 
+                            setAiState: set, 
+                            addOptimisticUserMessage: get()._addOptimisticUserMessage 
+                        };
+                        
+                        // --- Prepare parameters for handleSendMessage ---
+                        const serviceParams: HandleSendMessageServiceParams = {
+                            data: {
+                                message: data.message,
+                                chatId: data.chatId,
+                                contextMessages: data.contextMessages,
+                            },
+                            aiStateService: aiStateServiceAdapter,
+                            authService: authServiceAdapter,
+                            walletService: walletServiceAdapter,
+                            callChatApi: async (request: ChatApiRequest, options: RequestInit): Promise<ApiResponse<ChatHandlerSuccessResponse>> => {
+                                const response = await api.ai().sendChatMessage(request, options);
+                                return response; // No transformation needed - API client now returns the correct type
+                            },
+                            logger: logger,
+                        };
 
 				const assistantMessage = await handleSendMessage(serviceParams);
 
@@ -1462,11 +1271,3 @@ export const useAiStore = create<AiStore>()(
 	// )
 	// )
 );
-
-export const useAiStoreTyped = useAiStore as unknown as AiStore;
-
-// Export initialAiStateValues for testing purposes
-export { initialAiStateValues };
-
-// Selector to get the current user's profile from useAuthStore
-export const selectCurrentUserProfile = () => useAuthStore.getState().profile;

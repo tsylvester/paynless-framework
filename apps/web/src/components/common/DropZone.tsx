@@ -1,4 +1,4 @@
-import React, { useState, DragEvent, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils'; // Assuming Shadcn's utility for class merging
 import { UploadCloud } from 'lucide-react';
 import { platformEventEmitter } from '@paynless/platform'; // Import emitter

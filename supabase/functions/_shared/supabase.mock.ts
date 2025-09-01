@@ -6,7 +6,7 @@ import {
   } from "npm:@supabase/supabase-js@^2.43.4";
   import type { User } from "npm:@supabase/gotrue-js@^2.6.3";
   // Revert to deno.land/std for spy/stub to diagnose callCount issue
-  import { spy, stub, type Spy } from "https://deno.land/std@0.190.0/testing/mock.ts";
+  import { spy, stub, type Spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
   import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
 
 
@@ -69,6 +69,9 @@ export interface IMockSupabaseClient {
   auth: IMockSupabaseAuth; 
   rpc: (name: string, params?: object, options?: { head?: boolean, count?: 'exact' | 'planned' | 'estimated' }) => Promise<{ data: unknown | null; error: Error | null; count: number | null; status: number; statusText: string; }>;
   storage: IMockStorageAPI;
+  functions?: {
+    invoke: (fn: string, opts: unknown) => Promise<{ data: unknown, error: unknown }>
+  };
   getLatestBuilder(tableName: string): IMockQueryBuilder | undefined;
   getHistoricBuildersForTable(tableName: string): IMockQueryBuilder[] | undefined;
   clearAllTrackedBuilders(): void;
@@ -140,6 +143,7 @@ export interface IMockClientSpies {
     client: IMockSupabaseClient;
     spies: IMockClientSpies;
     clearAllStubs?: () => void;
+    genericMockResults: MockSupabaseDataConfig['genericMockResults'];
   }
   
 
@@ -714,6 +718,7 @@ class MockSupabaseClient implements IMockSupabaseClient {
     public readonly storage: IMockStorageAPI; // Implement this
     public readonly rpcSpy: Spy<IMockSupabaseClient['rpc']>;
     public readonly fromSpy: Spy<IMockSupabaseClient['from']>;
+    public functions?: { invoke: (fn: string, opts: unknown) => Promise<{ data: unknown, error: unknown }> };
     private _config: MockSupabaseDataConfig;
     private _latestBuilders: Map<string, MockQueryBuilder> = new Map();
     private _historicBuildersByTable: Map<string, MockQueryBuilder[]> = new Map();
@@ -979,6 +984,7 @@ export function createMockSupabaseClient(
         client: mockClientInstance as unknown as IMockSupabaseClient,
         spies: clientSpies,
         clearAllStubs,
+        genericMockResults: config.genericMockResults,
     };
 }
 
